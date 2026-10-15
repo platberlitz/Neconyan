@@ -10,7 +10,7 @@ import { captureConversationRoleplaySource } from './conversation-roleplay-sourc
 import { saveQuickImageToUserImages } from './quick-image-gen.js';
 import { generateQuickImageGenJobImage } from './quick-image-gen-job.js';
 import { prepareConversationScopedImagePrompt } from './quick-image-gen-scoped.js';
-import { withRoleplayAccount } from '../roleplay-store.js';
+import { withRoleplayAccount, roleplayHash } from '../roleplay-store.js';
 
 const IMAGE_KEYWORDS = /\b(send\s*pic|selfie|photo|image|picture|show\s*me)\b/i;
 const SELFIE_SCENE = 'a casual selfie in the current moment';
@@ -154,6 +154,9 @@ export function createConversationImageGenerator({ fetchImpl } = {}) {
                 ...(delivery.extra || {}),
                 conversation_mode_image: true,
                 image_url: imageUrl,
+                ...(snapshot.mediaPolicyVersion === 1 ? { neconyan_image_prompt: { version: 1,
+                    mode: snapshot.quickImageGenChatImageInput ?? 'include', attachment_hash: roleplayHash(['image', imageUrl]),
+                    ...(snapshot.quickImageGenChatImageInput === 'caption' ? { caption: { source: 'media-title' } } : {}) } } : {}),
                 image_prompt: prompt,
                 ...(delivery.attachReplyReference && snapshot.replyReference ? { conversation_reply_to: snapshot.replyReference } : {}),
                 ...(partner ? { partner_avatar: speaker.avatar } : {}),

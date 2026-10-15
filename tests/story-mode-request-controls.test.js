@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { canonicalPromptMedia, createPromptMediaContext, promptImageCopyDescriptor, promptMediaText, selectPromptMedia } from '../public/scripts/prompt-media-policy.js';
 import { formatPromptReasoning } from '../public/scripts/reasoning-prompt-format.js';
 /* eslint-disable playwright/no-standalone-expect -- Jest test.each tables are not Playwright tests. */
 import { describe, expect, jest, test } from '@jest/globals';
@@ -179,6 +181,13 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
             parseToolCalls: () => {}, saveFunctionToolInvocations: jest.fn(async () => {}),
         },
     });
+    context.promptMediaText = promptMediaText;
+    context.promptImageCopyDescriptor = promptImageCopyDescriptor;
+    context.validatePromptImageCopies = async copies => { if (copies.length) throw new Error('Derivative needs a host fixture'); };
+    context.projectBrowserPromptMedia = (records, metadata = context.chat_metadata) => selectPromptMedia(records,
+        createPromptMediaContext({ power_user: context.power_user, extension_settings: context.extension_settings },
+            metadata, context.oai_settings, { backend: context.main_api === 'openai' ? 'chat' : 'text' }),
+        { hash: value => createHash('sha256').update(canonicalPromptMedia(value)).digest('hex') });
     for (const name of ['unshallowCharacter', 'removeDepthPrompts', 'setExtensionPrompt', 'deleteItemizedPromptForMessage', 'removeLastMessage', 'requestMobileChatBottomPin', 'hideSwipeButtons', 'showSwipeButtons', 'setFloatingPrompt', 'flushWIInjections', 'flushEphemeralStoppingStrings', 'addPersonaDescriptionExtensionPrompt', 'setInContextMessages', 'setGenerationProgress', 'showStopButton', 'parseAndSaveLogprobs', 'playMessageSound', 'processImageAttachment', 'addOneMessage', 'statMesProcess', 'saveLogprobsForActiveMessage', 'appendMediaToMessage', 'addCopyToCodeBlocks', 'updateSwipeCounter', 'applyStreamingVisibleWrite', 'scrollStartedStreamingMessageThroughLifecycle', 'scrollChatToBottom', 'checkQuotaError', 'checkModerationError', 'tryParseStreamingError']) {
         context[name] = jest.fn();
     }

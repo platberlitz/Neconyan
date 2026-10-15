@@ -1,3 +1,4 @@
+import { managedImportPath, prepareManagedImageImport, assertOrdinaryImportPath, assertManagedChatDependencies } from './import-managed-images.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { setImmediate as yieldToServer } from 'node:timers/promises';
@@ -82,15 +83,17 @@ export async function captureAccountImport(base, account, input, { defaults } = 
             files.push({ relative: file.relative, defaultIndex, size: Buffer.from(file.data, 'base64').length, target });
         }
         // Saved settings become visible only after all other imported files are durable.
-        files.sort((left, right) => Number(left.relative === 'settings.json') - Number(right.relative === 'settings.json'));
+        files.sort((left, right) => Number(managedImportPath(right.relative)) - Number(managedImportPath(left.relative))
+            || Number(left.relative === 'settings.json') - Number(right.relative === 'settings.json'));
         const removals = input.mode === 'extensions' ? extensionRemovals(lease, files) : [];
-        return { ...captured, ...(coreOnly ? { content: 'core', parts } : {}), mode: input.mode, account, files, defaults: defaultsHash, removals, extensionsReport, pipeline: BATCHED_PIPELINE,
+        return { ...captured, ...(coreOnly ? { content: 'core', parts } : {}), mode: input.mode, account, files, defaults: defaultsHash, removals, extensionsReport, pipeline: BATCHED_PIPELINE, managedImageBundleVersion: 1,
             directories: [...new Set([...captured.directories, ...content.directories])], importedCount: captured.files.length };
     });
 }
 
 export async function runAccountImport(context, plan, dependencies = {}) {
     try {
+        if (plan.managedImageBundleVersion !== 1) for (const file of plan.files) assertOrdinaryImportPath(file.relative);
         // Older imports which have not begun publication can also use the bounded-memory path.
         // Keep their accepted plan untouched; the record remembers which publication format to resume.
         const batched = plan.pipeline === BATCHED_PIPELINE || withOperation(context, ({ value }) => value.importPipeline === BATCHED_PIPELINE || !value.importReady);
@@ -134,6 +137,7 @@ async function runBatchedImport(context, plan, dependencies) {
     await report('Opening saved backup', 0, plan.files.length);
     const archive = plan.archive && plan.files.some(file => file.zip) ? await openImportArchive(plan.archive) : null;
     try {
+        let managed;
         if (!record.importReady) {
             const retained = [...plan.files.entries()].filter(([index, file]) => !(archive && file.zip)
                 // Finish a single in-flight copy from an older interrupted import, preserving its evidence.
@@ -145,6 +149,7 @@ async function runBatchedImport(context, plan, dependencies) {
                 await report('Copying import files', position + 1, retained.length);
             }
             dependencies.afterImportInputs?.();
+            managed = await prepareManagedImageImport(context, plan, (file, index) => readPlannedInput(context, archive, file, index));
             const checked = [...plan.files.entries()].filter(([, file]) => importNeedsCheck(file));
             const prepared = {};
             // Damaged files are listed and left out; every healthy file still imports.
@@ -153,7 +158,9 @@ async function runBatchedImport(context, plan, dependencies) {
             for (const [position, [index, file]] of checked.entries()) {
                 context.signal.throwIfAborted();
                 try {
-                    const value = prepareImportValue(context, file, index, await readPlannedInput(context, archive, file, index));
+                    const bytes = await readPlannedInput(context, archive, file, index);
+                    assertManagedChatDependencies(context, plan, file, bytes, managed);
+                    const value = prepareImportValue(context, file, index, bytes);
                     if (value?.bytes !== undefined) prepared[index] = { bytes: value.bytes };
                 } catch (error) {
                     const reason = importSkipReason(file, error);
@@ -164,17 +171,17 @@ async function runBatchedImport(context, plan, dependencies) {
             }
             const assertTargets = lease => {
                 const skip = new Set(skipped.map(item => item.index));
-                for (const [index, file] of plan.files.entries()) if (!skip.has(index)) assertImportTarget(lease, file.target);
+                for (const [index, file] of plan.files.entries()) if (!skip.has(index) && !managed.has(index)) assertImportTarget(lease, file.target);
                 for (const file of plan.removals) assertImportTarget(lease, { ...file, resource: null });
             };
             withOperation(context, ({ lease }) => {
                 context.signal.throwIfAborted();
                 assertTargets(lease);
                 const root = roleplayLease(lease).scope.directories.root;
-                for (const directory of plan.directories) createRoleplayDirectory(path.join(root, directory), root);
+                for (const directory of plan.directories.filter(directory => !managedImportPath(directory))) createRoleplayDirectory(path.join(root, directory), root);
             });
             const unchecked = new Set(skipped.map(item => item.index));
-            const staged = [...plan.files.entries()].filter(([index, file]) => !file.target.resource && !file.personaSettings && !unchecked.has(index)).map(([index, file]) => ({ file, index }));
+            const staged = [...plan.files.entries()].filter(([index, file]) => !file.target.resource && !file.personaSettings && !managed.has(index) && !unchecked.has(index)).map(([index, file]) => ({ file, index }));
             let done = 0;
             if (staged.length) await report('Preparing imported files', 0, staged.length);
             for (const batch of importBatches(staged, item => item.file.size)) {
@@ -194,8 +201,9 @@ async function runBatchedImport(context, plan, dependencies) {
             });
             dependencies.afterImportStaged?.();
         }
+        managed ??= await prepareManagedImageImport(context, plan, (file, index) => readPlannedInput(context, archive, file, index));
         await report('Saving imported files', record.effects['import-publish']?.next ?? 0, plan.files.length);
-        await publishImportBatches(context, plan, { archive, afterImportPublication: dependencies.afterImportPublication,
+        await publishImportBatches(context, plan, { archive, managed, afterImportPublication: dependencies.afterImportPublication,
             afterPersonaSettingsPrepared: dependencies.afterPersonaSettingsPrepared, afterPersonaSettingsPublication: dependencies.afterPersonaSettingsPublication,
             skipped: new Set((record.importSkipped ?? []).map(item => item.index)),
             onSkip: (value, item) => {
@@ -210,6 +218,7 @@ async function runBatchedImport(context, plan, dependencies) {
 }
 
 async function runCapturedImport(context, plan, dependencies) {
+    for (const file of plan.files) assertOrdinaryImportPath(file.relative);
     let record = withOperation(context, ({ value }) => value);
     if (!record.importReady) {
         for (const [index, file] of plan.files.entries()) {

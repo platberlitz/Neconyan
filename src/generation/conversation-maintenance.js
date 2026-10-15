@@ -1,3 +1,5 @@
+import { projectConversationImageInput } from '../../public/scripts/neconyan-conversation/prompt-media.js';
+import { roleplayHash } from '../roleplay-store.js';
 import {
     MEMORY_SUMMARY_INTERVAL_MESSAGES,
     MEMORY_SUMMARY_MIN_MESSAGES,
@@ -123,8 +125,9 @@ async function buildSummarySnapshot(request, job) {
         userName: participant.userName, macros: participant.macros, groupNames: participant.groupNames,
         previousSummary: branch.memorySummary || '',
         memoryFingerprint: getConversationMemoryFingerprint(branch),
-        messages: messages.map(message => {
-            const attachmentSummary = getConversationAttachmentSummary(message);
+        mediaPolicy: participant.mediaPolicy,
+        messages: projectConversationImageInput(messages, participant.mediaPolicy, { hash: roleplayHash }).map(message => {
+            const attachmentSummary = message.promptAttachmentSummary;
             return { id: message.id, name: message.name, mes: message.mes, ...(attachmentSummary ? { attachmentSummary } : {}) };
         }),
         throughId,

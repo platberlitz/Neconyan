@@ -15,7 +15,7 @@ const DEFAULT_TEMPLATE = '[{{user}} sends {{char}} a picture that contains: {{ca
 
 /** Bind the exact selected uploaded media before the job intent is accepted. The caller holds the account lock. */
 export function captureRoleplayCaptions(directories, settings, { records, images, serverPrompt, display,
-    automatic = true, selection = [], reviewedPrompt, reviewed } = {}) {
+    automatic = true, selection = [], reviewedPrompt, reviewed, mediaPolicy = null } = {}) {
     const options = settings.extension_settings?.caption ?? {};
     if (settings.extension_settings?.disabledExtensions?.includes('caption') || automatic && (!serverPrompt || !options.auto_mode)) return null;
     const items = [];
@@ -28,6 +28,14 @@ export function captureRoleplayCaptions(directories, settings, { records, images
             if (!record || !media || !images[imageIndex] || images[imageIndex].index !== index) throw captionError('The selected caption media is invalid.');
             items.push({ index, mediaIndex, imageIndex, recordHash: roleplayHash(record), mediaHash: roleplayHash(media) });
         }
+    } else if (mediaPolicy) {
+        images.forEach((image, imageIndex) => {
+            const index = image.index, mediaIndex = image.mediaIndex;
+            const record = records[index + 1], item = record?.extra?.media?.[mediaIndex];
+            if (item?.source === 'upload' && !item.captioned && !record.is_system) {
+                items.push({ index, mediaIndex, imageIndex, recordHash: roleplayHash(record), mediaHash: roleplayHash(item) });
+            }
+        });
     } else records.slice(1).forEach((record, index) => {
         const media = record.extra?.media ?? [];
         const indices = (record.extra?.media_display ?? display) === 'gallery' ? media.length ? [record.extra?.media_index ?? 0] : []

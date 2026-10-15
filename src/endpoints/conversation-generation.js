@@ -1,3 +1,5 @@
+import { verifyPromptImageCopy } from '../managed-image-files.js';
+import { roleplayHash } from '../roleplay-store.js';
 /**
  * Conversation Mode REST API - Generation and Prompt Building
  *
@@ -268,11 +270,12 @@ export async function buildConversationPromptMessages(messages, directive, speak
     groupId = '',
     userName = 'User',
     signal,
-    userDirectories,
+    userDirectories, mediaPolicy = null,
 } = {}) {
     return composeConversationPromptMessages(messages, directive, speakerName, {
-        groupId, userName,
-        convertImages: urls => convertImageUrlsToBase64(urls, 3, { signal, userDirectories }),
+        groupId, userName, mediaPolicy, hash: roleplayHash,
+        validateImages: copies => { for (const copy of copies) verifyPromptImageCopy(userDirectories, copy); },
+        convertImages: (urls, { beforeRead }) => convertImageUrlsToBase64(urls, 3, { signal, userDirectories, beforeRead }),
     });
 }
 

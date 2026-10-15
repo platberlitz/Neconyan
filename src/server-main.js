@@ -139,6 +139,14 @@ app.use('/api/in-chat-agents', express.json({ limit: AGENT_STORAGE_LIMITS.preset
 app.use('/api/jobs', express.json({ limit: JOB_INTENT_LIMIT_BYTES }), express.urlencoded({ extended: false, limit: JOB_INTENT_LIMIT_BYTES }));
 // A named Roleplay workflow carries one instruction, one Story or Guided prompt
 // and the chat revisions it answers, so it stays far below the job intent size.
+// Image recovery controls are bounded before the broad legacy parsers. Compression cannot bypass admission bounds.
+app.use('/api/roleplay/images', (request, response, next) => {
+    if (request.method === 'POST' && !request.is('application/json')) return response.status(415).json({ error: 'Image recovery requires JSON.' });
+    if (request.get('content-encoding') && request.get('content-encoding') !== 'identity') return response.status(415).json({ error: 'Compressed image recovery requests are not supported.' });
+    next();
+});
+app.use('/api/roleplay/images/materialise', express.json({ limit: '2mb', inflate: false }));
+app.use('/api/roleplay/images', express.json({ limit: '64kb', inflate: false }));
 app.use('/api/roleplay', express.json({ limit: '256kb' }), express.urlencoded({ extended: false, limit: '256kb' }));
 app.use('/api/notebooks', express.json({ limit: '8mb' }), express.urlencoded({ extended: false, limit: '256kb' }));
 app.use('/api/scratchpad', express.json({ limit: '4mb' }), express.urlencoded({ extended: false, limit: '256kb' }));

@@ -1,4 +1,9 @@
+import { promptImageCopyDescriptor } from '../../public/scripts/prompt-media-policy.js';
+import { verifyPromptImageCopy } from '../managed-image-files.js';
 import path from 'node:path';
+import { createPromptMediaContext, promptMediaText, selectPromptMedia } from '../../public/scripts/prompt-media-policy.js';
+import { mergeChatPresetSettings } from '../../public/scripts/chat-preset-request.js';
+import { resolveGenerationProfile } from './profiles.js';
 import { imageSize } from 'image-size';
 import { getExistingWorldInfoFilename, isValidWorldInfoData } from '../endpoints/worldinfo.js';
 import { readJson } from '../mewmory/store.js';
@@ -68,7 +73,33 @@ export function savedAttachments(directories, records) {
     }).filter(Boolean);
 }
 
-export function captureSavedRoleplayImages(directories, records, display, caption = {}) {
+export function captureSavedRoleplayImages(directories, records, display, caption = {}, mediaPolicy = null) {
+    if (mediaPolicy) {
+        const projection = selectPromptMedia(records, mediaPolicy, { hash: roleplayHash, includeCaptionReads: true });
+        return projection.records.slice(1).flatMap((record, index) => {
+            if (record.extra?.tool_invocations !== undefined) return [];
+            const decisions = projection.decisions.filter(item => item.index === index && item.read);
+            return decisions.flatMap((decision, offset) => {
+                const media = record.extra.media[offset];
+                let originalEvidence;
+                if (decision.image_url) {
+                    const original = records[index + 1].extra?.media?.[decision.mediaIndex];
+                    originalEvidence = verifyPromptImageCopy(directories, promptImageCopyDescriptor(original));
+                }
+                const isolated = { ...record, extra: { ...record.extra, media: [media], media_display: 'list' } };
+                try {
+                    return captureSavedRoleplayImages(directories, [records[0], isolated], 'list', caption)
+                        .map(image => ({ ...image, index, mediaIndex: decision.mediaIndex,
+                            ...(originalEvidence ? { originalEvidence } : {}),
+                            ...(!decision.send ? { captionOnly: true } : {}) }));
+                } catch (error) {
+                    error.imageIssue = { reason: error.code === 'ROLEPLAY_SOURCE_MISSING' ? 'missing-file' : 'unsupported-image',
+                        index, mediaIndex: decision.mediaIndex, actions: ['review', 'display-only', 'caption', 'replace'] };
+                    throw error;
+                }
+            });
+        });
+    }
     return records.slice(1).flatMap((message, index) => {
         const media = message.extra?.media;
         if (media === undefined) return [];
@@ -257,7 +288,8 @@ function selectedBooks(settings, saved, character, avatar, personaLorebook) {
 
 /** Capture the actual saved book selection before private job admission. */
 export function captureRoleplayWorldInfo(base, account, source, { avatar, maxContext, tokenizer = 'o200k_base', trigger = 'normal', serverPrompt = false,
-    agentIds = [], agentContext = false, nativeBindingVersion = 1, promptEffect = null }) {
+    agentIds = [], agentContext = false, nativeBindingVersion = 1, promptEffect = null, mediaPolicyVersion = 0, mediaBinding = null }) {
+    if (![0, 1].includes(mediaPolicyVersion)) throw roleplayError('ROLEPLAY_INVALID', 'This image input version is unsupported.', 409);
     if (!['normal', 'continue', 'swipe', 'regenerate'].includes(trigger) || typeof serverPrompt !== 'boolean'
         || ![0, 1].includes(nativeBindingVersion) || nativeBindingVersion === 0 && agentIds.length
         || promptEffect !== null && !['append', 'continue', 'swipe', 'alternative', 'replace'].includes(promptEffect)) {
@@ -275,6 +307,18 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         const file = path.join(base.directories.root, 'settings.json');
         const savedSettings = readJson(file, {});
         const settings = { ...savedSettings, ...savedSettings.world_info_settings };
+        let mediaMaterial = null;
+        if (mediaPolicyVersion && mediaBinding) {
+            try { mediaMaterial = resolveGenerationProfile(base.directories, mediaBinding); } catch (error) {
+                // Keep accepted connection changes on the existing retry/review path.
+                if (!error.code && error.status === 409) throw roleplayError('ROLEPLAY_SOURCE_CHANGED', error.message);
+                throw error;
+            }
+        }
+        const mediaPolicy = mediaPolicyVersion ? createPromptMediaContext(savedSettings, saved.records[0].chat_metadata,
+            mediaMaterial ? mergeChatPresetSettings(mediaMaterial.active, mediaMaterial.preset) : savedSettings.oai_settings ?? {},
+            { backend: mediaMaterial?.backend ?? (savedSettings.main_api === 'textgenerationwebui' ? 'text' : 'chat') }) : null;
+        const mediaProjection = mediaPolicy ? selectPromptMedia(promptRecords, mediaPolicy, { hash: roleplayHash }) : null;
         settings.power_user = savedSettings.power_user;
         const persona = selectedPersona(settings, saved, source, avatar, base.directories);
         const group = source.locator.group ? readRoleplayEntityLocked(lease, 'group', source.groupId).data : null;
@@ -322,12 +366,12 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         const scopedNotes = captureScopedAuthorsNotes(saved.locator.group ? saved.records[0].chat_metadata?.note_chara
             : findCharacterNoteEntry(note.chara, avatar), getPersonaNoteEntry(note.persona, personaAvatar), personaAvatar);
         const attachments = agentContext ? [] : savedAttachments(base.directories, promptRecords);
-        const images = agentContext ? [] : captureSavedRoleplayImages(base.directories, promptRecords, settings.power_user?.media_display ?? 'list', extensions.caption);
+        const images = agentContext ? [] : captureSavedRoleplayImages(base.directories, promptRecords, settings.power_user?.media_display ?? 'list', extensions.caption, mediaPolicy);
         const captions = agentContext ? null : captureRoleplayCaptions(base.directories, savedSettings, { records: promptRecords, images,
-            serverPrompt, display: settings.power_user?.media_display ?? 'list' });
+            serverPrompt, display: settings.power_user?.media_display ?? 'list', mediaPolicy });
         const history = promptRecords.slice(1).flatMap((message, index) => {
             if (message.is_system) return [];
-            const text = (attachments.find(item => item.index === index)?.text ?? '') + String(message.mes ?? '');
+            const text = (attachments.find(item => item.index === index)?.text ?? '') + (mediaProjection ? promptMediaText(mediaProjection.records[index + 1], index, mediaProjection) : String(message.mes ?? ''));
             return [(settings.world_info_include_names ?? DEFAULTS.world_info_include_names)
                 ? `${message.name}: ${text}` : text];
         }).reverse();
@@ -387,6 +431,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         const enhancedMacros = Boolean(settings.power_user?.experimental_macro_engine)
             && !extensions.disabledExtensions?.some(name => normalizeExtensionBootId(name) === 'macroenhanced');
         const snapshot = { account: { accountId: account.accountId, dataEpoch: account.dataEpoch }, source, serverPrompt,
+            ...(mediaPolicy ? { mediaPolicyVersion, mediaPolicy, mediaBinding, captionTexts: mediaProjection.captionTexts.filter(item => !item.composed) } : {}),
             macroPolicyVersion: serverPrompt ? 1 : 0,
             browserMacros: capturedBrowserMacros(settings.extension_settings, character.data?.data?.extensions ?? character.data?.extensions, saved.records[0].chat_metadata),
             browserMacroSyntax: { compatExpressions: enhancedMacros && Boolean(extensions.MacroEnhanced?.compatExpressions),
@@ -490,6 +535,7 @@ export function assertRoleplayWorldInfoCurrent(base, snapshot) {
         serverPrompt: snapshot.serverPrompt,
         agentIds: snapshot.agents?.forcedIds ?? [], agentContext: snapshot.agentContext ?? false,
         nativeBindingVersion: Object.hasOwn(snapshot, 'nativeBindingVersion') ? snapshot.nativeBindingVersion : 0,
+        mediaPolicyVersion: snapshot.mediaPolicyVersion ?? 0, mediaBinding: snapshot.mediaBinding ?? null,
     });
     // Previously accepted jobs retain their original snapshot shape and write
     // policy; adding the boundary must not invalidate paid work after an update.

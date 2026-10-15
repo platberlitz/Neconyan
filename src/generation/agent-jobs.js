@@ -57,7 +57,7 @@ export function captureAgentRequest(base, account, source, { avatar, mode = 'run
         return { ids, binding, mode };
     });
     const worldInfo = captureRoleplayWorldInfo(base, account, source, { avatar, maxContext: 8192, serverPrompt: true,
-        trigger: 'continue', agentIds: selection.ids, agentContext: true });
+        trigger: 'continue', agentIds: selection.ids, agentContext: true, mediaPolicyVersion: 1, mediaBinding: selection.binding });
     if (!worldInfo.agents) throw fail('The saved message has no Agent work or history to use.');
     const saved = withRoleplayAccount(base, account, lease => assertRoleplaySourceLocked(lease, source));
     const records = saved.records.slice(0, source.message.index + 2);

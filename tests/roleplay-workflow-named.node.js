@@ -278,7 +278,7 @@ test('saved message bookkeeping from the page and extensions does not stop a rep
     const legacy = saved(t, { mutate: records => { records[2].extra = { ...records[2].extra, image: 'data:image/png;base64,AAAA' }; } });
     const calls = { count: 0, prompts: [] };
     await assert.rejects(legacy.run('guided.response', { intent: guide, calls, key: 'named-legacy-image' }),
-        { code: 'ROLEPLAY_INVALID', message: /non-text content/ });
+        { code: 'ROLEPLAY_INVALID', message: /Only saved images from your account/ });
     assert.equal(calls.count, 0);
 });
 

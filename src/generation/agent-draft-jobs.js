@@ -34,7 +34,7 @@ export function captureAgentDraftRequest(base, account, source, { avatar, agentI
         });
         return { relative, parents, binding: connection ? captureGenerationBinding(base.directories, connection, acknowledgement) : null };
     });
-    const worldInfo = captureRoleplayWorldInfo(base, account, source, { avatar, serverPrompt: true, maxContext: 8192, agentContext: true, agentIds: [agentId] });
+    const worldInfo = captureRoleplayWorldInfo(base, account, source, { avatar, serverPrompt: true, maxContext: 8192, agentContext: true, agentIds: [agentId], mediaPolicyVersion: 1, mediaBinding: captured.binding });
     const records = withRoleplayAccount(base, account, lease => assertRoleplaySourceLocked(lease, source).records);
     const request = { ...captured, worldInfo, macros: savedRoleplayMacroSnapshot(worldInfo, records),
         agent: { id: agentId, draft, draftId, revision, sourceTextHash: roleplayHash(draft) } };

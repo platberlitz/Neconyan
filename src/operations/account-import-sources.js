@@ -1,3 +1,4 @@
+import { MANAGED_IMAGE_MARKER, assertManagedImportSpelling } from './import-managed-images.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Transform, pipeline } from 'node:stream';
@@ -32,9 +33,11 @@ function safeRelativePath(value) {
     return parts.join('/');
 }
 
-export function importRelativePath(value) {
+export function importRelativePath(value, { managedMetadata = false } = {}) {
     const safe = safeRelativePath(value);
     if (!safe) return null;
+    if (managedMetadata) assertManagedImportSpelling(safe);
+    if (managedMetadata && safe === MANAGED_IMAGE_MARKER) return safe;
     const parts = safe.split('/');
     if (parts.some(part => /^\.neconyan-chat-[a-f0-9]{64}\.lock(?:\.owner)?$/.test(part))) return null;
     if (!(parts.length === 1 && ROOT_FILES.includes(parts[0])) && !ROOT_DIRECTORIES.includes(parts[0])) return null;
@@ -80,7 +83,7 @@ export function captureFolderImport(base, sourcePath, { extensionsOnly = false, 
     const visit = (filename, relative, depth = 0) => {
         if (depth > 32 || visited++ >= 100000) throw operationError('The import exceeds its file or folder capacity.', 413);
         if (within(filename, targetRoot) || within(filename, roleplayStoreDirectory(base))) throw operationError('The import source contains this account or its protected records.', 400);
-        const normalized = importRelativePath(relative);
+        const normalized = importRelativePath(relative, { managedMetadata: true });
         const safe = safeRelativePath(relative);
         if (!safe || !normalized && !coreOnly) return;
         const stat = fs.lstatSync(filename);
@@ -102,7 +105,7 @@ export function captureFolderImport(base, sourcePath, { extensionsOnly = false, 
             files.push({ relative: normalized, filename, size: file.size, evidence: evidence(file) });
         }
     };
-    const selected = extensionsOnly ? [USER_DIRECTORY_TEMPLATE.extensions] : coreOnly ? fs.readdirSync(sourceRoot).sort() : [...ROOT_FILES, ...ROOT_DIRECTORIES];
+    const selected = extensionsOnly ? [USER_DIRECTORY_TEMPLATE.extensions] : coreOnly ? fs.readdirSync(sourceRoot).sort() : [MANAGED_IMAGE_MARKER, ...ROOT_FILES, ...ROOT_DIRECTORIES];
     for (const relative of selected) if (coreOnly || fs.existsSync(path.join(sourceRoot, relative))) visit(path.join(sourceRoot, relative), relative);
     if (!files.length && (!coreOnly || !excluded.length)) throw operationError('No importable files were found in that folder.', 400);
     return { sourceRoot, files, directories, total, ...(coreOnly ? { excluded } : {}) };
@@ -146,7 +149,7 @@ export async function captureZipImport(source, { coreOnly = false, parts } = {})
     for (const entry of entries) {
         if (entry.name.startsWith('__MACOSX/') || entry.name.endsWith('/')) continue;
         const segments = entry.name.split('/');
-        const recognised = index => importRelativePath(segments.slice(index).join('/'))
+        const recognised = index => importRelativePath(segments.slice(index).join('/'), { managedMetadata: true })
             && (!coreOnly || coreImportPath(segments.slice(index).join('/'), false));
         for (let index = 0; index < segments.length; index++) if (recognised(index)) {
             // A user may itself be named 'characters' or another recognised folder.
@@ -180,7 +183,7 @@ export async function captureZipImport(source, { coreOnly = false, parts } = {})
     for (const entry of entries) {
         if (selected && !entry.name.startsWith(selected + '/')) continue;
         const value = selected ? entry.name.slice(selected.length + 1) : entry.name;
-        const relative = importRelativePath(value);
+        const relative = importRelativePath(value, { managedMetadata: true });
         if (coreOnly && (!relative || !coreImportPath(relative, entry.name.endsWith('/'), parts))) {
             const safe = safeRelativePath(value);
             if (safe && !entry.name.endsWith('/')) excluded.push({ file: safe, reason: importExclusionReason(safe, parts) });

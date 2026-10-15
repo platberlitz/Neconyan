@@ -1,3 +1,4 @@
+import { isManagedImagePath } from '../managed-image-files.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { readRoleplayFile, roleplayHash } from '../roleplay-store.js';
@@ -36,7 +37,7 @@ export function captureMaintenanceFiles(base) {
             else if (entry.isFile()) {
                 const file = readRoleplayFile(filename, MAINTENANCE_FILE_LIMIT);
                 if (!file) throw operationError('A maintenance source disappeared during the scan. Try a new scan.');
-                files.push({ relative: relative(root, filename), evidence: authoringEvidence(file), size: file.bytes.length,
+                files.push({ managedImage: isManagedImagePath(base.directories, filename), relative: relative(root, filename), evidence: authoringEvidence(file), size: file.bytes.length,
                     mtime: fs.statSync(filename).mtimeMs });
             } else throw operationError('Maintenance found a source that is not a regular file.');
         }
@@ -125,6 +126,7 @@ export function maintenanceReport(plan) {
     const groups = new Set(plan.groupChats);
     const within = (file, key) => plan.roots[key] && file.startsWith(plan.roots[key] + '/');
     for (const file of plan.files) {
+        if (file.managedImage) continue;
         const value = file.relative;
         const name = path.basename(value);
         let category;

@@ -29,6 +29,8 @@ import {
     getMediaDisplay,
     chatElement,
 } from '../script.js';
+import { getCurrentUserHandle } from './user.js';
+import { detachMessageMedia } from './prompt-media-policy.js';
 import { selected_group } from './group-chats.js';
 import { power_user } from './power-user.js';
 import {
@@ -46,7 +48,6 @@ import {
     getFileExtension,
     convertTextToBase64,
     isSameFile,
-    clamp,
     escapeHtml,
 } from './utils.js';
 import { extension_settings, renderExtensionTemplateAsync, saveMetadataDebounced } from './extensions.js';
@@ -1024,12 +1025,21 @@ function expandMessageMedia(messageId, mediaIndex) {
  * @param {JQuery<HTMLElement>} messageBlock Message block element
  */
 async function deleteMessageMedia(messageId, mediaIndex, messageBlock) {
-    if (isNaN(messageId) || isNaN(mediaIndex)) {
-        console.warn('Invalid message ID or media index');
-        return;
-    }
-
-    const deleteUrls = [];
+    const message = chat[messageId];
+    if (!message || !Array.isArray(message.extra?.media) || !Number.isSafeInteger(mediaIndex)
+        || mediaIndex < 0 || mediaIndex >= message.extra.media.length) return;
+    const origin = { chat, metadata: chat_metadata, id: getCurrentChatId(), account: getCurrentUserHandle(), swipe: message.swipe_id };
+    const fields = ['media', 'media_index', 'media_display', 'inline_image'];
+    const pick = extra => Object.fromEntries(fields.filter(key => Object.hasOwn(extra ?? {}, key)).map(key => [key, extra[key]]));
+    const before = structuredClone(pick(message.extra));
+    const unchanged = () => chat === origin.chat && chat_metadata === origin.metadata && getCurrentChatId() === origin.id
+        && getCurrentUserHandle() === origin.account && chat[messageId] === message && message.swipe_id === origin.swipe;
+    const apply = (extra, values) => {
+        for (const key of fields) {
+            if (Object.hasOwn(values, key)) extra[key] = structuredClone(values[key]);
+            else delete extra[key];
+        }
+    };
     const deleteFromServerId = 'delete_media_files_checkbox';
     let deleteFromServer = true;
 
@@ -1061,50 +1071,41 @@ async function deleteMessageMedia(messageId, mediaIndex, messageBlock) {
         },
     });
 
-    if (!value) {
-        return;
+    if (![POPUP_RESULT.AFFIRMATIVE, POPUP_RESULT.CUSTOM1].includes(value)) return;
+    if (!unchanged() || JSON.stringify(pick(message.extra)) !== JSON.stringify(before)) {
+        toastr.info(t`The chat or image changed. Open the attachment again.`); return;
     }
-
-    /** @type {ChatMessage} */
-    const message = chat[messageId];
-
-    if (!Array.isArray(message?.extra?.media)) {
-        console.debug('Message has no media');
-        return;
+    const swipeExtra = message.swipe_info?.[message.swipe_id]?.extra;
+    const swipeBefore = swipeExtra ? structuredClone(pick(swipeExtra)) : null;
+    if (swipeBefore?.media && JSON.stringify(swipeBefore) !== JSON.stringify(before)) {
+        toastr.warning(t`This reply and its saved alternative have different attachments. Reload the chat before removing an image.`); return;
     }
-
-    if (mediaIndex < 0 || mediaIndex >= message.extra.media.length) {
-        console.warn('Invalid media index for message');
-        return;
-    }
-
-    deleteUrls.push(message.extra.media[mediaIndex].url);
-    message.extra.media.splice(mediaIndex, 1);
-
-    if (message.extra.media_index === mediaIndex) {
-        const newIndex = mediaIndex > 0 ? mediaIndex - 1 : 0;
-        message.extra.media_index = clamp(newIndex, 0, message.extra.media.length - 1);
-    }
-
-    if (value === POPUP_RESULT.CUSTOM1) {
-        for (const media of message.extra.media) {
-            deleteUrls.push(media.url);
+    const detached = detachMessageMedia(message.extra, mediaIndex, value === POPUP_RESULT.CUSTOM1);
+    const after = pick(detached.extra);
+    apply(message.extra, after);
+    if (swipeExtra) apply(swipeExtra, after);
+    try {
+        if (!await saveChatConditional()) throw new Error(t`The attachment removal could not be saved.`);
+    } catch (error) {
+        if (unchanged() && JSON.stringify(pick(message.extra)) === JSON.stringify(after)) {
+            apply(message.extra, before);
+            if (swipeExtra && JSON.stringify(pick(swipeExtra)) === JSON.stringify(after)) apply(swipeExtra, swipeBefore);
+            appendMediaToMessage(message, messageBlock, SCROLL_BEHAVIOR.KEEP);
         }
-        delete message.extra.media;
-        delete message.extra.inline_image;
-        delete message.extra.title;
-        delete message.extra.append_title;
+        toastr.error(error.message, t`Attachment kept`, { escapeHtml: true }); return;
     }
-
-    if (deleteFromServer) {
-        for (const url of deleteUrls) {
-            if (!url) continue;
-            await deleteMediaFromServer(url, true);
-        }
-    }
-
-    await saveChatConditional();
+    if (!unchanged()) return;
     appendMediaToMessage(message, messageBlock, SCROLL_BEHAVIOR.KEEP);
+    if (deleteFromServer) for (const url of new Set(detached.urls)) {
+        if (!unchanged()) return;
+        try {
+            const result = await deleteMediaFromServer(url, true, origin.account);
+            if (result === false) throw new Error('Image file retained');
+            if (result?.retained) toastr.info(t`Attachment removed. Its saved copy is kept because other chats may use it.`);
+        } catch {
+            toastr.warning(t`Attachment removed, but its saved file could not be deleted.`);
+        }
+    }
 }
 
 /**
@@ -1142,11 +1143,11 @@ async function switchMessageMediaDisplay(messageId, messageBlock, targetDisplay)
  * @param {boolean} [silent=false] If true, do not show error messages
  * @returns {Promise<boolean>} True if media file was deleted, false otherwise.
  */
-export async function deleteMediaFromServer(url, silent = false) {
+export async function deleteMediaFromServer(url, silent = false, account = getCurrentUserHandle()) {
     try {
         const result = await fetch('/api/images/delete', {
             method: 'POST',
-            headers: getRequestHeaders(),
+            headers: { ...getRequestHeaders(), 'X-Neconyan-Account': account },
             body: JSON.stringify({ path: url }),
         });
 
@@ -1158,10 +1159,14 @@ export async function deleteMediaFromServer(url, silent = false) {
             return false;
         }
 
+        if (result.headers.get('content-type')?.includes('application/json')) {
+            const outcome = await result.json();
+            if (outcome.retained === true) return { retained: true };
+        }
         await eventSource.emit(event_types.MEDIA_ATTACHMENT_DELETED, url);
         return true;
     } catch (error) {
-        toastr.error(error?.message || String(error), t`Could not delete image`);
+        if (!silent) toastr.error(error?.message || String(error), t`Could not delete image`);
         console.error('Could not delete image', error);
         return false;
     }

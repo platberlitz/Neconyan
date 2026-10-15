@@ -1,3 +1,5 @@
+import { assertMutableImagePath } from '../managed-image-files.js';
+import { assertOrdinaryImportPath, publishManagedImportLocked } from './import-managed-images.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -65,8 +67,10 @@ export async function stageImportBatch(context, batch, { archive, prepared }) {
                 let effect = value.effects[key];
                 if (effect?.state === 'done' && effect.skipped) { skipped.push({ index, relative: file.relative, reason: effect.skipped }); continue; }
                 if (effect?.state === 'done') continue;
+                assertOrdinaryImportPath(file.relative);
                 assertImportTarget(lease, file.target);
                 const filename = path.join(root, file.relative);
+                assertMutableImagePath(roleplayLease(lease).scope.directories, filename);
                 createRoleplayDirectory(path.dirname(filename), root);
                 let fd;
                 if (effect) {
@@ -173,7 +177,7 @@ function chatInput(file, operationKey, records) {
  * Publish staged files, chats and cards in plan order behind one saved cursor.
  * Every step is safe to repeat: chats and cards keep receipts, and a renamed file already matches its staged evidence.
  */
-export async function publishImportBatches(context, plan, { archive, onProgress, onSkip, afterImportPublication,
+export async function publishImportBatches(context, plan, { archive, managed = new Map(), onProgress, onSkip, afterImportPublication,
     afterPersonaSettingsPrepared, afterPersonaSettingsPublication, skipped = new Set() } = {}) {
     let next = withOperation(context, ({ value, save }) => {
         if (!value.effects[PUBLISH_EFFECT]) { value.effects[PUBLISH_EFFECT] = { state: 'prepared', next: 0 }; save(); }
@@ -186,11 +190,11 @@ export async function publishImportBatches(context, plan, { archive, onProgress,
         let bytes = 0;
         for (let index = next; index < plan.files.length && batch.length < limit; index++) {
             const file = plan.files[index];
-            const size = file.target.resource || file.personaSettings ? file.size : 0;
+            const size = file.target.resource || file.personaSettings || managed.get(index)?.kind === 'image' ? file.size : 0;
             if (batch.length && bytes + size > BATCH_BYTES) break;
             batch.push({ file, index }); bytes += size;
         }
-        for (const item of batch) if ((item.file.target.resource || item.file.personaSettings) && !skipped.has(item.index)) item.bytes = await readPlannedInput(context, archive, item.file, item.index);
+        for (const item of batch) if ((item.file.target.resource || item.file.personaSettings || managed.get(item.index)?.kind === 'image') && !skipped.has(item.index)) item.bytes = await readPlannedInput(context, archive, item.file, item.index);
         const started = Date.now();
         const reached = withOperation(context, ({ lease, value, save }) => {
             context.signal.throwIfAborted();
@@ -205,7 +209,10 @@ export async function publishImportBatches(context, plan, { archive, onProgress,
                 if (skipped.has(index)) { effect.next = index + 1; continue; }
                 const operationKey = `application:${context.job.id}:import:${index}`;
                 const resource = file.target.resource;
-                if (file.personaSettings) {
+                if (managed.has(index)) {
+                    flush();
+                    publishManagedImportLocked(lease, managed.get(index), input);
+                } else if (file.personaSettings) {
                     flush();
                     let reason;
                     try {
@@ -245,13 +252,16 @@ export async function publishImportBatches(context, plan, { archive, onProgress,
                     if (file.relative === 'settings.json') flush();
                     const staged = value.effects[`stage:${index}`]?.staged;
                     if (!staged) throw operationError('The prepared import publication is missing.');
+                    assertOrdinaryImportPath(file.relative);
                     const filename = path.join(root, file.relative);
+                    assertMutableImagePath(scope.directories, filename);
                     const current = inspectRoleplayFile(filename, BINARY_FILE_LIMIT, { allowMissingParent: true });
                     if (!same(evidence(current), staged.after)) {
                         assertImportTarget(lease, file.target);
                         const temporary = path.join(root, staged.temporary);
                         const retained = inspectRoleplayFile(temporary, BINARY_FILE_LIMIT);
                         if (!retained || !same(evidence(retained), staged.after) || retained.size !== staged.size) throw operationError('The prepared import publication is missing.');
+                        assertMutableImagePath(scope.directories, filename);
                         fs.renameSync(temporary, filename);
                         if (!same(physical(fs.lstatSync(filename, { bigint: true })), staged.after.physical)) throw operationError('The imported file publication needs recovery.');
                     }

@@ -137,7 +137,8 @@ export function captureQuickImageRequest(base, account, source, { avatar, mode, 
     });
     if (request.options.useWorldInfo && request.options.useLLMPrompt && !request.reviewed) {
         const limit = withRoleplayAccount(base, account, () => getChatProfileContextLimit(base.directories, request.snapshot.quickImageGenTextAI.binding)) ?? 8192;
-        request.worldInfo = captureRoleplayWorldInfo(base, account, source, { avatar, maxContext: limit, serverPrompt: false });
+        request.worldInfo = captureRoleplayWorldInfo(base, account, source, { avatar, maxContext: limit, serverPrompt: false,
+            mediaPolicyVersion: 1, mediaBinding: request.snapshot.quickImageGenTextAI.binding });
         if (request.worldInfo.settingsHash !== request.settingsHash || request.worldInfo.hookPolicy.scanContributors.length) throw fail('The image lore sources need their saved native contributors.');
     }
     if (Buffer.byteLength(JSON.stringify(request)) > 2 * 1024 * 1024) throw fail('The accepted image inputs exceed their saved limit.');

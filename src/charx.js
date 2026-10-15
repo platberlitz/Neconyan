@@ -1,3 +1,4 @@
+import { assertMutableImagePath } from './managed-image-files.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import _ from 'lodash';
@@ -360,6 +361,7 @@ export function persistCharXAssets(assets, bufferMap, directories, characterFold
                 // Delete existing sprite with same base name (any extension) - matches sprites.js behavior
                 deleteExistingByBaseName(targetDir, asset.baseName);
                 const filePath = path.join(targetDir, `${asset.baseName}.${asset.ext || 'png'}`);
+                assertMutableImagePath(directories, filePath);
                 writeFileAtomicSync(filePath, buffer);
                 summary.sprites += 1;
                 continue;
@@ -375,6 +377,7 @@ export function persistCharXAssets(assets, bufferMap, directories, characterFold
                 deleteExistingByBaseName(backgroundDir, asset.baseName);
                 const fileName = `${asset.baseName}.${asset.ext || 'png'}`;
                 const filePath = path.join(backgroundDir, fileName);
+                assertMutableImagePath(directories, filePath);
                 writeFileAtomicSync(filePath, buffer);
                 summary.backgrounds += 1;
                 continue;
@@ -387,6 +390,7 @@ export function persistCharXAssets(assets, bufferMap, directories, characterFold
                 }
                 // Overwrite existing misc asset with same name
                 const filePath = path.join(miscDir, `${asset.baseName}.${asset.ext || 'png'}`);
+                assertMutableImagePath(directories, filePath);
                 writeFileAtomicSync(filePath, buffer);
                 summary.misc += 1;
             }

@@ -1,3 +1,4 @@
+import { projectPromptMediaRecords } from '../../public/scripts/prompt-media-policy.js';
 import { appendHelperPrefillMessages } from '../../public/scripts/extensions/helper-prefill.js';
 import { buildPromptTransformRecentChat, getAgentLengthTarget } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-context.js';
 import { ACTIVE_LORE_MACRO, buildAgentContextMacros, captureSecretsTrackerState, captureTrackerState, SECRETS_TRACKER_MACRO, TRACKER_STATE_MACRO, usesAgentMacro } from '../../public/scripts/extensions/in-chat-agents/agent-context-macros.js';
@@ -114,6 +115,7 @@ async function scannedAgentLoreText(context, options, agents, identity) {
     const captured = captureRoleplayWorldInfo(options.base, snapshot.account, snapshot.source, {
         avatar: snapshot.avatar, tokenizer: snapshot.tokenizer, maxContext: 4096, serverPrompt: true, trigger: snapshot.global?.trigger,
         agentIds: snapshot.agents?.forcedIds ?? [], agentContext: snapshot.agentContext ?? false,
+        mediaPolicyVersion: snapshot.mediaPolicyVersion ?? 0, mediaBinding: snapshot.mediaBinding ?? null,
     });
     const pre = readArtifact(context.directories, context.job.id, 'roleplay-agents-pre');
     const selection = await prepareRoleplayWorldInfo(options.base, captured, { macros: options.macros,
@@ -130,6 +132,7 @@ function evaluate(environment, text, snapshot) {
 /** Freeze activation and pre-prompt contributions before history preparation or World Info scanning. */
 export function prepareRoleplayAgentContributions(context, { base, snapshot, records, policyRecords = records, macros, generationType, assertCurrent, random = Math.random }) {
     if (!snapshot.agents) return null;
+    records = projectPromptMediaRecords(records, snapshot.mediaPolicy, { hash: roleplayHash });
     const identity = roleplayHash({ intent: context.job.intent, agents: snapshot.agents, records, generationType });
     const completed = readPhase(context, snapshot.account, 'roleplay-agents-pre', identity);
     if (completed) return completed;
@@ -260,6 +263,9 @@ function interceptResult(original, output, agent, format) {
 
 /** Intercept a complete prepared request, or the saved main response, using ordered saved steps. */
 export async function runRoleplayAgentInterceptors(context, options) {
+    if (options.snapshot?.mediaPolicy) options = { ...options,
+        records: projectPromptMediaRecords(options.records, options.snapshot.mediaPolicy, { hash: roleplayHash }),
+        ...(options.metadataRecords ? { metadataRecords: projectPromptMediaRecords(options.metadataRecords, options.snapshot.mediaPolicy, { hash: roleplayHash }) } : {}) };
     const { base, snapshot, timing = 'pre-generation', format = 'text', value } = options;
     if (!snapshot.agents) return { value, runs: [] };
     const identity = roleplayHash({ intent: context.job.intent, timing, format, value });
@@ -339,6 +345,9 @@ function postprocessingPlan(context, account, phaseName, identity, selected, mod
 
 export async function runRoleplayAgentPostprocessing(context, options) {
     const { base, snapshot, records, value, generationType, macros } = options;
+    const originalMetadataRecords = options.metadataRecords ?? records;
+    options = { ...options, records: projectPromptMediaRecords(records, snapshot.mediaPolicy, { hash: roleplayHash }),
+        ...(options.metadataRecords ? { metadataRecords: projectPromptMediaRecords(options.metadataRecords, snapshot.mediaPolicy, { hash: roleplayHash }) } : {}) };
     if (!snapshot.agents) return { text: value, extra: {}, metadata: {}, runs: [] };
     const identity = roleplayHash({ intent: context.job.intent, records, value, generationType });
     const phaseName = options.namespace ? `roleplay-agent-post:${options.namespace}` : 'roleplay-agent-post';
@@ -363,7 +372,7 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     const usesContinuityNotes = selected.some(agent => usesAgentMacro(agent.prompt, CONTINUITY_NOTES_MACRO));
     const referenceAgents = usesTrackers || usesContinuityNotes ? readRoleplayAgents(base, snapshot) : [];
     options = { ...options, agentReference: { lore: options.activeLore ?? await scannedAgentLoreText(context, options, selected, identity),
-        agents: usesTrackers ? referenceAgents : [], records: options.metadataRecords ?? records,
+        agents: usesTrackers ? referenceAgents : [], records: options.metadataRecords ?? options.records,
         continuityNotes: usesContinuityNotes ? latestContinuityNotes(records, referenceAgents) : '' } };
     let postFailed = false;
     const runs = [];
@@ -452,7 +461,7 @@ export async function runRoleplayAgentPostprocessing(context, options) {
         } catch (error) { outcome = 'error'; throw error; } finally { endDiagnosticAgent(activity, outcome); }
     }
     if (companionOutput) return savePhase(context, snapshot.account, phaseName, { identity, text, extra: {}, metadata: {}, runs });
-    const trackerRecords = structuredClone(options.metadataRecords ?? records);
+    const trackerRecords = structuredClone(originalMetadataRecords);
     const effect = context.job.intent.effect;
     if (['continue', 'swipe', 'agent'].includes(effect) && context.job.intent.source?.message) trackerRecords[context.job.intent.source.message.index + 1].mes = text;
     else if (effect === 'replace' && context.job.intent.source?.range) trackerRecords.splice(context.job.intent.source.range.start + 1, context.job.intent.source.range.count, { mes: text, is_user: false });

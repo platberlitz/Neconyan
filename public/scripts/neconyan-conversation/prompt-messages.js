@@ -1,3 +1,4 @@
+import { projectConversationImageInput } from './prompt-media.js';
 import { MEDIA_DISPLAY } from '../constants.js';
 import { TRANSCRIPT_MESSAGE_LIMIT } from './constants.js';
 import { buildConversationGroupReferenceContext, formatPromptText } from './shared-helpers.js';
@@ -5,11 +6,12 @@ import { getConversationAttachmentSummary, getConversationMediaDisplay, getConve
 
 /** Compose the same transcript on either host; only image loading belongs to the host. */
 export async function composeConversationPromptMessages(messages, directive, speakerName, {
-    groupId = '', userName = 'User', convertImages,
+    groupId = '', userName = 'User', convertImages, validateImages, mediaPolicy = null, hash,
 } = {}) {
-    const imageUrls = [];
+    if (mediaPolicy) messages = projectConversationImageInput(messages, mediaPolicy, { hash });
+    const imageUrls = [], imageCopies = [];
     const rows = messages.slice(-TRANSCRIPT_MESSAGE_LIMIT).map((message, index) => {
-        const parts = [formatPromptText(message.mes, 1800), getConversationAttachmentSummary(message), formatPromptText(message.extra?.conversation_attachment_context, 2800)].filter(Boolean);
+        const parts = [formatPromptText(message.mes, 1800), (mediaPolicy ? message.promptAttachmentSummary : getConversationAttachmentSummary(message)), formatPromptText(message.extra?.conversation_attachment_context, 2800)].filter(Boolean);
         const media = getConversationPromptMediaAttachments(message);
         if (!parts.length && !media.length) return null;
         const text = parts.length ? `${message.name || 'Speaker'}: ${parts.join(' ')}` : `${message.name || 'Speaker'} sent an attachment.`;
@@ -26,11 +28,15 @@ export async function composeConversationPromptMessages(messages, directive, spe
             row.imageOffset = imageUrls.length;
             row.imageCount = urls.length;
             imageUrls.push(...urls);
+            imageCopies.push(...urls.map((_url, index) => message.promptImageCopies?.[index] ?? null));
         }
         return row;
     }).filter(Boolean);
     // A single host call bounds image conversion across the entire transcript.
-    const images = imageUrls.length ? await convertImages(imageUrls) : [];
+    if (imageCopies.some(Boolean) && !validateImages) throw new Error('Review saved prompt copies before sending these images.');
+    const images = imageUrls.length ? await convertImages(imageUrls, { beforeRead: index => {
+        if (imageCopies[index]) return validateImages([imageCopies[index]]);
+    } }) : [];
     for (const row of rows) {
         if (row.imageOffset === undefined) continue;
         for (const url of images.slice(row.imageOffset, row.imageOffset + row.imageCount).filter(Boolean)) {

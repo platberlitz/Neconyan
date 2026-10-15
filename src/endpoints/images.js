@@ -1,3 +1,4 @@
+import { assertMutableImagePath, isManagedImagePath } from '../managed-image-files.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Buffer } from 'node:buffer';
@@ -54,8 +55,10 @@ router.post('/upload', async (request, response) => {
             pathToNewFile = path.join(request.user.directories.userImages, sanitize(request.body.ch_name), sanitize(filename));
         }
 
+        assertMutableImagePath(request.user.directories, pathToNewFile);
         ensureDirectory(path.dirname(pathToNewFile));
         const imageBuffer = Buffer.from(image, 'base64');
+        assertMutableImagePath(request.user.directories, pathToNewFile);
         await fs.promises.writeFile(pathToNewFile, new Uint8Array(imageBuffer));
         response.send({ path: clientRelativePath(request.user.directories.root, pathToNewFile) });
     } catch (error) {
@@ -119,6 +122,8 @@ router.post('/folders', (request, response) => {
 
 router.post('/delete', async (request, response) => {
     try {
+        const account = request.get('X-Neconyan-Account');
+        if (account && account !== request.user.profile.handle) return response.status(409).send({ error: 'account_changed' });
         if (!request.body.path) {
             return response.status(400).send('No file was chosen.');
         }
@@ -132,6 +137,7 @@ router.post('/delete', async (request, response) => {
             return response.status(404).send('That file could not be found.');
         }
 
+        if (isManagedImagePath(request.user.directories, pathToDelete)) return response.json({ retained: true });
         fs.unlinkSync(pathToDelete);
         console.info(`Deleted image: ${request.body.path} from ${request.user.profile.handle}`);
         return response.sendStatus(200);

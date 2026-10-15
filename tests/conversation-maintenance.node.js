@@ -453,3 +453,23 @@ for (const kind of ['summary', 'schedule']) {
         assert.equal(calls, 1);
     });
 }
+
+for (const mode of ['display-only', 'caption']) test(`native maintenance honours versioned ${mode} image input and keeps document context`, async t => {
+    const directories = makeDirectories();
+    t.after(() => fs.rmSync(directories.root, { recursive: true, force: true }));
+    const saved = writeSettings(directories), branch = saved.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].branches.main;
+    const { roleplayHash } = await import('../src/roleplay-store.js');
+    const { attachmentIdentity } = await import('../public/scripts/prompt-media-policy.js');
+    const item = { type: 'image', url: 'data:image/png;base64,BROKEN', title: 'PRIVATE_IMAGE_TITLE', append_title: true };
+    item.neconyan_prompt = { version: 1, mode, attachment_hash: roleplayHash(attachmentIdentity(item)),
+        ...(mode === 'caption' ? { caption: { source: 'custom', text: 'Reviewed description' } } : {}) };
+    branch.messages = [{ id: 'mixed', role: 'user', mes: 'Authored prose', extra: { media: [item], files: [{ url: 'f', name: 'notes.txt' }] } },
+        { id: 'answer', role: 'character', mes: 'Existing answer' }];
+    fs.writeFileSync(path.join(directories.root, SETTINGS_FILE), JSON.stringify(saved));
+    const request = { user: { profile: { handle: 'tester' }, directories } };
+    const accepted = await acceptConversationSummary(request, { submissionKey: 'image-maintenance', force: true, target: { avatar: 'nova.png', branchId: 'main' } });
+    const snapshot = readArtifact(directories, accepted.job.id, 'request'), prompt = buildConversationSummaryPrompt(snapshot);
+    assert.match(prompt, /Authored prose/); assert.match(prompt, /notes.txt/);
+    assert.doesNotMatch(prompt, /PRIVATE_IMAGE_TITLE|BROKEN|image_url/);
+    assert.equal((prompt.match(/Reviewed description/g) ?? []).length, mode === 'caption' ? 1 : 0);
+});

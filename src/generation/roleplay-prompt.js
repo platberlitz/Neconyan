@@ -1,5 +1,6 @@
-import { roleplayError } from '../roleplay-store.js';
+import { roleplayError, roleplayHash } from '../roleplay-store.js';
 import { isDeepStrictEqual } from 'node:util';
+import { promptMediaText, selectPromptMedia, projectPromptMediaRecords } from '../../public/scripts/prompt-media-policy.js';
 import Handlebars from 'handlebars';
 import { AGENT_REGEX_PLACEMENT, applyRegexScriptList } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { selectToolHistoryReasoning } from '../../public/scripts/chat-input-capabilities.js';
@@ -38,6 +39,8 @@ export function selectRoleplayPromptRecords(records, source, effect) {
 
 /** Apply saved prompt-only transformations before both lore scanning and memory budgeting. */
 export function prepareRoleplayHistoryContent(records, snapshot, environment, agentHistory = {}) {
+    const mediaProjection = snapshot.mediaPolicy ? selectPromptMedia(records, snapshot.mediaPolicy, { hash: roleplayHash }) : null;
+    if (mediaProjection) records = mediaProjection.records;
     const attachments = new Map(snapshot.attachments.map(item => [item.index, item.text]));
     let position = 0;
     const substitute = (value, overrides = {}, postProcess) => environment.evaluate(value, {
@@ -83,7 +86,7 @@ export function prepareRoleplayHistoryContent(records, snapshot, environment, ag
     const content = records.slice(1).map((record, index) => {
         if (record.is_system && !record.extra?.tool_invocations && index !== companionHistory.hostIndex) { worldInfoContent.push(''); return ''; }
         const depth = visibleCount - position++ - 1;
-        const original = record.is_system && !record.extra?.tool_invocations ? '' : record.mes;
+        const original = record.is_system && !record.extra?.tool_invocations ? '' : mediaProjection ? promptMediaText(record, index, mediaProjection) : record.mes;
         const afterAgent = applyAgentHistoryRegex(original, record, agentHistory.scripts?.[index],
             depth - (snapshot.global.trigger === 'continue' ? 1 : 0), snapshot, environment);
         const transform = value => applyRegexScriptList(value, snapshot.regex,
@@ -153,6 +156,7 @@ export function prepareRoleplayHistoryContent(records, snapshot, environment, ag
 
 /** Macro inputs come from captured account sources, not a prepared page prompt. */
 export function savedRoleplayMacroSnapshot(snapshot, records) {
+    records = projectPromptMediaRecords(records, snapshot.mediaPolicy, { hash: roleplayHash });
     const names = snapshot.speakerNames;
     const group = snapshot.groupNames ?? [];
     return {
@@ -504,6 +508,14 @@ export function buildRoleplaySavedHistory(records, options) {
         throw roleplayError('ROLEPLAY_INVALID', 'A saved Roleplay chat is required for prompt construction.', 409);
     }
     if (records.length === 1) return [];
+    if (options?.mediaPolicy) {
+        const projection = selectPromptMedia(records, options.mediaPolicy, { hash: roleplayHash });
+        if (options.captionTexts && !isDeepStrictEqual(options.captionTexts, projection.captionTexts.filter(item => !item.composed))) {
+            throw roleplayError('ROLEPLAY_IMAGE_INPUT', 'The saved image description evidence changed.');
+        }
+        records = projection.records.map((record, index) => index && options.preparedContent === undefined
+            ? { ...record, mes: promptMediaText(record, index - 1, projection) } : record);
+    }
     return buildPromptHistory(records, options);
 }
 

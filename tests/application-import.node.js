@@ -893,3 +893,83 @@ test('an older import stopped while retaining inputs upgrades without changing i
     assert.equal(record.state, 'completed');
     assert.equal(JSON.parse(fs.readFileSync(path.join(p.base.directories.root, 'settings.json'))).name1, 'Recovered older import');
 });
+
+async function managedSource(p) {
+    const { decodeCompatibleImage, publishManagedImage } = await import('../src/managed-image-files.js');
+    sourceFile(p, 'settings.json', '{}');
+    fs.mkdirSync(path.join(p.sourceRoot, 'user/images'), { recursive: true });
+    const url = publishManagedImage({ root: p.sourceRoot, userImages: path.join(p.sourceRoot, 'user/images') }, decodeCompatibleImage(`data:image/png;base64,${png.toString('base64')}`));
+    sourceFile(p, 'chats/Nova/Managed.jsonl', [p.f.records[0], { name: 'User', is_user: true, mes: 'Picture', extra: { media: [{ type: 'image', url }] } }].map(JSON.stringify).join('\n'));
+    return url;
+}
+for (const content of ['all', 'core']) test(`managed image bundle survives ${content} folder restore and keeps a distinct target authority`, async t => {
+    const p = setup(t), url = await managedSource(p);
+    const accepted = await accept(p, `managed-${content}`, { mode: 'folder', path: p.sourceRoot, content, ...(content === 'core' ? { parts: ['chats'] } : {}) });
+    await runOperation(accepted.context);
+    const { verifyManagedImage } = await import('../src/managed-image-files.js');
+    const verified = verifyManagedImage(p.base.directories, url);
+    assert.equal(verified.size, png.length);
+    assert.notEqual(fs.readFileSync(path.join(p.sourceRoot, '.neconyan-managed-images.json'), 'utf8'), fs.readFileSync(path.join(p.base.directories.root, '.neconyan-managed-images.json'), 'utf8'));
+    const again = await accept(p, `managed-${content}-again`, { mode: 'folder', path: p.sourceRoot, content, ...(content === 'core' ? { parts: ['chats'] } : {}) });
+    await runOperation(again.context);
+    assert.deepEqual(verifyManagedImage(p.base.directories, url).physical, verified.physical);
+    const chat = fs.readFileSync(path.join(p.base.directories.chats, 'Nova/Managed.jsonl'), 'utf8');
+    assert.ok(chat.includes(url));
+});
+for (const damage of ['missing-root', 'missing-record', 'changed-image', 'changed-record', 'unrelated-destination']) test(`managed import refuses ${damage} before publishing dependent chats`, async t => {
+    const p = setup(t), url = await managedSource(p), filename = path.join(p.sourceRoot, url.slice(1));
+    if (damage === 'missing-root') fs.unlinkSync(path.join(p.sourceRoot, '.neconyan-managed-images.json'));
+    if (damage === 'missing-record') fs.unlinkSync(filename + '.record.json');
+    if (damage === 'changed-image') fs.writeFileSync(filename, 'different');
+    if (damage === 'changed-record') fs.writeFileSync(filename + '.record.json', '{}');
+    if (damage === 'unrelated-destination') {
+        const folder = path.join(p.base.directories.root, 'user/images/neconyan-repaired');
+        fs.mkdirSync(folder, { recursive: true }); fs.writeFileSync(path.join(folder, 'authored.png'), png);
+    }
+    const accepted = await accept(p, `managed-${damage}`);
+    await assert.rejects(runOperation(accepted.context), /image|Image|PNG|copy|folder/i);
+    assert.equal(fs.existsSync(path.join(p.base.directories.chats, 'Nova/Managed.jsonl')), false);
+    assert.equal(fs.existsSync(path.join(p.base.directories.root, 'settings.json')), false);
+});
+test('managed publication resumes after image delivery without replacing its physical file', async t => {
+    const p = setup(t), url = await managedSource(p);
+    const accepted = await accept(p, 'managed-crash');
+    await assert.rejects(runOperation(accepted.context, { afterImportPublication({ relative }) { if (relative === url.slice(1)) throw new Error('managed publication crash'); } }), /managed publication crash/);
+    const { verifyManagedImage } = await import('../src/managed-image-files.js');
+    const before = verifyManagedImage(p.base.directories, url);
+    await runOperation(accepted.context);
+    assert.deepEqual(verifyManagedImage(p.base.directories, url).physical, before.physical);
+});
+test('managed bundle restores from a retained ZIP with core chat selection', async t => {
+    const p = setup(t), url = await managedSource(p);
+    const entries = [];
+    const visit = relative => {
+        for (const item of fs.readdirSync(path.join(p.sourceRoot, relative), { withFileTypes: true })) {
+            const name = relative ? relative + '/' + item.name : item.name;
+            if (item.isDirectory()) visit(name); else entries.push(['backup/' + name, fs.readFileSync(path.join(p.sourceRoot, name))]);
+        }
+    };
+    visit('');
+    const filename = path.join(p.sourceRoot, 'backup.zip'); await zipFile(filename, entries);
+    const upload = await retainUploadedArchive(p.base, p.f.scope, 'managed-zip', filename);
+    const accepted = await accept(p, 'managed-zip-import', { mode: 'zip', inputId: upload.id, content: 'core', parts: ['chats'] });
+    await runOperation(accepted.context);
+    const { verifyManagedImage } = await import('../src/managed-image-files.js');
+    assert.equal(verifyManagedImage(p.base.directories, url).size, png.length);
+});
+
+test('chat-only import refuses a missing entire managed bundle, including inactive derivatives', async t => {
+    const p = setup(t), url = '/user/images/neconyan-repaired/' + 'a'.repeat(64) + '.png';
+    sourceFile(p, 'chats/Nova/Managed.jsonl', [p.f.records[0], { name: 'Nova', mes: 'Visible prose', extra: {}, swipe_id: 0,
+        swipe_info: [{ extra: {} }, { extra: { media: [{ type: 'image', url: '/user/images/old.png', neconyan_prompt: { image_url: url } }] } }] }].map(JSON.stringify).join('\n'));
+    const accepted = await accept(p, 'missing-entire-bundle', { mode: 'folder', path: p.sourceRoot, content: 'core', parts: ['chats'] });
+    await assert.rejects(runOperation(accepted.context), /managed image|prompt copy/i);
+    assert.equal(fs.existsSync(path.join(p.base.directories.chats, 'Nova/Managed.jsonl')), false);
+});
+test('reserved namespace path aliases refuse during capture before staging', async t => {
+    const p = setup(t);
+    const filename = path.join(p.sourceRoot, 'aliased.zip');
+    await zipFile(filename, [['settings.json', '{}'], ['user/images/Neconyan-Repaired./anything.png', png]]);
+    const upload = await retainUploadedArchive(p.base, p.f.scope, 'aliased-images', filename);
+    await assert.rejects(captureZipImport(upload), /ambiguous protected image path/);
+});

@@ -1,3 +1,6 @@
+import { conversationState } from '../../neconyan-conversation/state.js';
+import { generatedImageInputPreference } from '../../prompt-media-policy.js';
+import { effectiveBrowserPromptMediaContext, generatedImagePromptPolicy, preflightImageInput } from '../../prompt-media-client.js';
 import {
     MAX_IMAGE_BYTES,
     MAX_PROVIDER_RESPONSE_BYTES,
@@ -3108,8 +3111,26 @@ function normalizeAutoGenerateSettings(settings) {
     return settings;
 }
 
+function currentImageInputPreference(settings = getSettings()) {
+    return generatedImageInputPreference(settings, conversationState.conversationWorkspaceOpen);
+}
+
+async function refreshPromptImageEffectiveState() {
+    const select = document.getElementById('qig-chat-image-input');
+    if (select) select.value = currentImageInputPreference();
+    const state = await effectiveBrowserPromptMediaContext();
+    const text = state.account === 'display-only' ? 'Effective input: Show only, controlled by the account setting.'
+        : state.chat === 'display-only' ? 'Effective input: Show only, controlled by this chat setting.'
+        : !state.inlineImages ? 'Image files are disabled by the connection. Description choices and existing automatic description settings remain separate.'
+        : 'Individual image choices apply. Sending an image also requires a compatible vision connection.';
+    for (const id of ['qig-image-input-effective', 'qig-context-image-input-effective']) {
+        const node = document.getElementById(id); if (node) node.textContent = text;
+    }
+}
+
 function normalizeContextMediaSettings(settings) {
     if (!settings || typeof settings !== "object") return settings;
+    settings.contextMediaImageInput = ["display-only", "caption", "include"].includes(settings.contextMediaImageInput) ? settings.contextMediaImageInput : "include";
     settings.contextMediaEveryMessages = Math.trunc(clampNumber(settings.contextMediaEveryMessages, 1, 100, CONTEXT_MEDIA_EVERY_DEFAULT));
     settings.contextMediaDelayMs = Math.trunc(clampNumber(settings.contextMediaDelayMs, 0, 60000, AUTO_GENERATE_DELAY_DEFAULT));
     settings.contextMediaConfidence = Math.trunc(clampNumber(settings.contextMediaConfidence, 0, 100, CONTEXT_MEDIA_CONFIDENCE_DEFAULT));
@@ -10029,7 +10050,15 @@ function toAbsoluteImageUrl(url) {
 
 async function resolveChatInsertImageUrl(entryOrUrl, outputMode = getSettings()?.outputMode) {
     const entry = normalizeGenerationEntry(entryOrUrl);
+    const mode = entry.metadataSettings?.chatImageInput ?? currentImageInputPreference();
+    const url = await resolveChatInsertDisplayUrl(entry, outputMode);
+    return preflightImageInput(url, mode);
+}
+
+async function resolveChatInsertDisplayUrl(entryOrUrl, outputMode = getSettings()?.outputMode) {
+    const entry = normalizeGenerationEntry(entryOrUrl);
     if (!entry.url && !entry.sourceUrl) throw new Error("Generated image has no valid delivery URL");
+    if (entry.serverPath && (entry.metadataSettings?.saveToServer ?? getSettings().saveToServer)) return entry.serverPath;
     if (normalizeOutputMode(outputMode) !== "image_url") {
         const inlineSource = entry.url || entry.sourceUrl;
         if (inlineSource.startsWith("data:")) return inlineSource;
@@ -10350,6 +10379,9 @@ async function insertImageIntoMessage(entryOrUrl, targetMessageIndex = null, opt
     options.commitGuard?.();
     if (!isChatIdentitySnapshotCurrent(chatIdentity, { requireMetadata: true })) throw new DOMException("Image insertion chat changed", "AbortError");
 
+    if (typeof ctx.appendMediaToMessage !== 'function') {
+        throw new Error('This app version cannot preserve image input choices. The generated image remains in the gallery; update the app before inserting it.');
+    }
     const hadExtra = Object.prototype.hasOwnProperty.call(message, "extra");
     if (!message.extra || typeof message.extra !== 'object') {
         message.extra = {};
@@ -10414,12 +10446,7 @@ async function insertImageIntoMessage(entryOrUrl, targetMessageIndex = null, opt
                 message.extra.media_display = 'gallery';
             }
 
-            mediaEntry = {
-                url: url,
-                type: 'image',
-                title: title,
-                source: 'generated',
-            };
+            mediaEntry = generatedImagePromptPolicy({ url, type: 'image', title, source: 'generated' }, entry.metadataSettings?.chatImageInput ?? currentImageInputPreference());
             message.extra.media.push(mediaEntry);
             message.extra.inline_image = true;
             message.extra.media_index = message.extra.media.length - 1;
@@ -10545,7 +10572,7 @@ async function insertImageAsNewMessage(entryOrUrl, options = {}) {
         send_date: new Date().toISOString(),
         mes: "Generated image",
         extra: {
-            media: [{ url, type: 'image', title, source: 'generated' }],
+            media: [generatedImagePromptPolicy({ url, type: 'image', title, source: 'generated' }, entry.metadataSettings?.chatImageInput ?? currentImageInputPreference())],
             media_display: 'gallery',
             media_index: 0,
             inline_image: true,
@@ -10625,7 +10652,7 @@ async function insertImageAsHiddenReply(entryOrUrl, options = {}) {
         send_date: new Date().toISOString(),
         mes: "Generated image",
         extra: {
-            media: [{ url, type: 'image', title, source: 'generated' }],
+            media: [generatedImagePromptPolicy({ url, type: 'image', title, source: 'generated' }, entry.metadataSettings?.chatImageInput ?? currentImageInputPreference())],
             media_display: 'gallery',
             media_index: 0,
             inline_image: true,
@@ -10902,6 +10929,7 @@ async function insertContextMedia(media, {
     commitGuard,
     targetSnapshot,
     conversationCheckpoint,
+    imageInput = "include",
 } = {}) {
     const ctx = getContext();
     const chat = ctx?.chat;
@@ -10916,7 +10944,13 @@ async function insertContextMedia(media, {
         staleMessage: "Context Media chat changed",
         failureMessage: "Context Media chat persistence reported failure",
     });
-    const attachment = createContextMediaAttachment(media);
+    let attachment = createContextMediaAttachment(media);
+    if (attachment.type === 'image') {
+        attachment = generatedImagePromptPolicy(attachment, imageInput);
+        if (imageInput === 'caption' && !String(attachment.title ?? '').trim()) throw new Error('This library image has no saved description. Choose Show only or add a description first.');
+        attachment.url = await preflightImageInput(attachment.url, imageInput);
+        attachment = generatedImagePromptPolicy(attachment, imageInput);
+    }
     if (attachment.type === "video" && typeof ctx.appendMediaToMessage !== "function") {
         throw new Error("Video attachments require a newer Neconyan media API");
     }
@@ -11663,6 +11697,7 @@ async function classifyAndInsertContextMedia(snapshot, { testOnly = false } = {}
         commitGuard: snapshot.commitGuard,
         targetSnapshot: snapshot.targetSnapshot,
         conversationCheckpoint: snapshot.conversationCheckpoint,
+        imageInput: snapshot.settings?.contextMediaImageInput ?? "include",
     });
     _contextMediaPreviousMediaId = media.id;
     return { ...result, media };
@@ -12121,6 +12156,7 @@ function installLifecycleCleanup() {
         teardownQuickImageGen();
     });
     pageLifecycleScope.listen(window, "unload", teardownQuickImageGen);
+    pageLifecycleScope.listen(window, "sb:conversation-workspace-state-changed", () => { requestAnimationFrame(() => { void refreshPromptImageEffectiveState().catch(error => log(error.message)); }); });
 }
 
 function renderOpenGallery() {
@@ -17060,7 +17096,7 @@ function refreshAllUI(s) {
         "qig-auto-generate-every": "autoGenerateEveryMessages",
         "qig-context-media-every": "contextMediaEveryMessages",
         "qig-context-media-confidence": "contextMediaConfidence",
-        "qig-context-media-insert-mode": "contextMediaInsertMode",
+        "qig-context-media-insert-mode": "contextMediaInsertMode", "qig-context-image-input": "contextMediaImageInput",
         "qig-two-step-instruction": "twoStepInstruction",
         "qig-background-mode": "backgroundMode",
         "qig-output-mode": "outputMode",
@@ -19514,6 +19550,11 @@ function createUI() {
                             <div class="qig-field"><label for="qig-context-media-confidence">Minimum confidence</label><input id="qig-context-media-confidence" type="number" value="${esc(s.contextMediaConfidence)}" min="0" max="100"></div>
                             <div class="qig-field"><label for="qig-context-media-insert-mode">Insert as</label><select id="qig-context-media-insert-mode"><option value="replace" ${s.contextMediaInsertMode === "replace" ? "selected" : ""}>Attachment on reply</option><option value="new" ${s.contextMediaInsertMode === "new" ? "selected" : ""}>New assistant message</option><option value="hidden" ${s.contextMediaInsertMode === "hidden" ? "selected" : ""}>Hidden reply</option></select></div>
                         </div>
+                        <div class="qig-field"><label for="qig-context-image-input">Library images in future chat replies</label><select id="qig-context-image-input">
+                            <option value="include" ${s.contextMediaImageInput === 'include' ? 'selected' : ''}>Send the image</option>
+                            <option value="display-only" ${s.contextMediaImageInput === 'display-only' ? 'selected' : ''}>Show only</option>
+                            <option value="caption" ${s.contextMediaImageInput === 'caption' ? 'selected' : ''}>Use its saved description</option>
+                        </select><small id="qig-context-image-input-effective"></small></div>
                         <small class="qig-muted">Runs independently from image generation. Classification uses Text AI; GIFs are images and MP4/WebM are videos.</small>
                     </div>
                     <div class="qig-filter-panel">
@@ -19669,6 +19710,13 @@ function createUI() {
                 </label>
                 <div class="qig-control-grid">
                     <div class="qig-field">
+                        <label for="qig-chat-image-input">Use in future chat replies</label>
+                        <select id="qig-chat-image-input">
+                            <option value="display-only" ${currentImageInputPreference(s) === 'display-only' ? "selected" : ""}>Show only</option>
+                            <option value="caption" ${currentImageInputPreference(s) === "caption" ? "selected" : ""}>Use the generation prompt as a description</option>
+                            <option value="include" ${currentImageInputPreference(s) === "include" ? "selected" : ""}>Send the image</option>
+                        </select>
+                        <small>Show only keeps the picture visible without sending its file or attachment description to the chat model. Account and chat display-only settings take priority.</small><small id="qig-image-input-effective"></small>
                         <label>Chat insert output</label>
                         <select id="qig-output-mode">
                             <option value="inline" ${normalizeOutputMode(s.outputMode) === "inline" ? "selected" : ""}>Inline data URL</option>
@@ -19688,7 +19736,7 @@ function createUI() {
                 </div>
                 <label class="checkbox_label" style="margin-left:16px;opacity:${s.autoInsert ? "1" : "0.6"};">
                     <input id="qig-insert-hidden-reply" type="checkbox" ${s.insertAsHiddenReply ? "checked" : ""} ${s.autoInsert ? "" : "disabled"}>
-                    <span>Send as hidden reply (prevents payload errors)</span>
+                    <span>Insert as a hidden reply</span>
                 </label>
                 <label class="checkbox_label" style="margin-top:4px;">
                     <input id="qig-save-to-server" type="checkbox" ${s.saveToServer ? "checked" : ""}>
@@ -19944,6 +19992,8 @@ function createUI() {
     });
     bind("qig-context-media-every", "contextMediaEveryMessages", true, false, () => normalizeContextMediaSettings(getSettings()));
     bind("qig-context-media-confidence", "contextMediaConfidence", true, false, () => normalizeContextMediaSettings(getSettings()));
+    bind("qig-context-image-input", "contextMediaImageInput", false, false, () => normalizeContextMediaSettings(getSettings()));
+    void refreshPromptImageEffectiveState().catch(error => log(error.message));
     bind("qig-context-media-insert-mode", "contextMediaInsertMode", false, false, () => normalizeContextMediaSettings(getSettings()));
     document.getElementById("qig-context-media-delay").oninput = (event) => {
         const s = getSettings();
@@ -20641,6 +20691,10 @@ function createUI() {
         };
     }
     bindCheckbox("qig-auto-insert", "autoInsert");
+    document.getElementById('qig-chat-image-input')?.addEventListener('change', event => {
+        getSettings()[conversationState.conversationWorkspaceOpen ? 'conversationChatImageInput' : 'chatImageInput'] = event.target.value;
+        saveSettingsDebounced();
+    });
     const outputModeEl = document.getElementById("qig-output-mode");
     if (outputModeEl) {
         outputModeEl.onchange = (e) => {
@@ -23103,6 +23157,7 @@ function getMetadataSettings(s, options = {}) {
         model: hasEffectiveRequest ? effectiveParameters.model : getProviderModelId(s, provider),
         saveToServer: s.saveToServer,
         saveToServerEmbedMetadata: s.saveToServerEmbedMetadata,
+        chatImageInput: currentImageInputPreference(s),
     };
 
     if (provider === "local") {

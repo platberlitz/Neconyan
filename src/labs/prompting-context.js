@@ -1,4 +1,6 @@
+import { roleplayHash } from '../roleplay-store.js';
 import path from 'node:path';
+import { createPromptMediaContext, selectPromptMedia } from '../../public/scripts/prompt-media-policy.js';
 import { parseChatJsonl } from '../chat-recovery.js';
 import { readRoleplayFile } from '../roleplay-store.js';
 import { roleplayEntityContent } from '../generation/roleplay-source.js';
@@ -77,7 +79,9 @@ export function capturePromptingContext(base, account, pins, { maxTokens = 300, 
         chat, settings, allowEmpty: true, tokenizer: { kind: 'binding', binding },
     });
     const metadata = records[0].chat_metadata, extensions = settings.extension_settings ?? {}, note = extensions.note ?? {};
+    const mediaPolicy = createPromptMediaContext(settings, metadata, controls, { backend: material.backend });
     const snapshot = {
+        mediaPolicy, mediaPolicyVersion: 1, captionTexts: selectPromptMedia(records, mediaPolicy, { hash: roleplayHash }).captionTexts.filter(item => !item.composed),
         source: { locator: selected }, avatar, characterFile: path.parse(avatar).name, speakerNames: { user: names.user, character: names.char },
         groupNames: [], unmutedGroupNames: [], groupPrompt: null, pinExamples: Boolean(power.pin_examples), alwaysForceName: Boolean(power.always_force_name2),
         contextRetention: { html: power.html_context_depth ?? -1, ooc: power.ooc_context_depth ?? -1 },
@@ -86,7 +90,7 @@ export function capturePromptingContext(base, account, pins, { maxTokens = 300, 
         promptSettings: Object.fromEntries(['instruct', 'context', 'sysprompt', 'collapse_newlines', 'strip_examples', 'token_padding', 'user_prompt_bias']
             .filter(key => power[key] !== undefined).map(key => [key, power[key]])),
         attachments: savedAttachments(base.directories, records),
-        images: captureSavedRoleplayImages(base.directories, records, power.media_display ?? 'list', extensions.caption), mediaDisplay: power.media_display ?? 'list',
+        images: captureSavedRoleplayImages(base.directories, records, power.media_display ?? 'list', extensions.caption, mediaPolicy), mediaDisplay: power.media_display ?? 'list',
         systemPrompt: (power.prefer_character_prompt ?? true) ? metadata.system_prompt || data.system_prompt || '' : '',
         postHistory: { character: (power.prefer_character_jailbreak ?? true) ? data.post_history_instructions ?? '' : '',
             textEnabled: Boolean(power.sysprompt?.enabled), text: power.sysprompt?.post_history ?? '' },

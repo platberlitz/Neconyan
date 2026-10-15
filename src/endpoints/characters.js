@@ -1,3 +1,4 @@
+import { assertMutableImagePath } from '../managed-image-files.js';
 import path from 'node:path';
 import fs from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
@@ -1600,6 +1601,7 @@ async function importFromByaf(uploadPath, { request }, preservedFileName) {
             const file = getUniqueName(baseName, (name) => fs.existsSync(path.join(filePath, `${name}${extension}`)));
             if (Buffer.isBuffer(bg.data)) {
                 const newFile = `${file}${extension}`;
+                assertMutableImagePath(request.user.directories, path.join(filePath, newFile));
                 tryWriteFileSync(path.join(filePath, newFile), bg.data);
                 bg.name = clientRelativePath(request.user.directories.root, path.join(filePath, newFile)); // Update background name to the new file
                 console.log(`Created ${newFile} background from BYAF import`);

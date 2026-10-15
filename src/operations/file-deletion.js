@@ -1,3 +1,4 @@
+import { assertMutableImagePath } from '../managed-image-files.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { assertUntrackedRoleplayFiles, readRoleplayFile, roleplayFileLocator, roleplayHash, roleplayLease } from '../roleplay-store.js';
@@ -48,6 +49,7 @@ export function publishFileDeletions(context, files, result, { verify = () => {}
                 if (current) {
                     if (roleplayHash(authoringEvidence(current)) !== roleplayHash(effect.evidence)) throw operationError('A later file replaced a reviewed deletion target. The later file was kept.');
                     assertUntrackedRoleplayFiles(lease, [filename]);
+                    assertMutableImagePath(scope.directories, filename);
                     fs.unlinkSync(filename);
                     const descriptor = fs.openSync(path.dirname(filename), 'r');
                     try { fs.fsyncSync(descriptor); } finally { fs.closeSync(descriptor); }

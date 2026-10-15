@@ -718,3 +718,27 @@ test('a long saved chat with many swipes still scans its lorebooks in the World 
     await runLabJob(f.context(health));
     assert.equal(readLabRecord(f.base, 'long-health').result.chatMessageCount, 1600);
 });
+
+test('native scene maps explicit image descriptions after hidden rows without sending broken gallery bytes', async () => {
+    const f = fixture(), directories = f.base.directories;
+    const png = fs.readFileSync(new URL('../default/content/backgrounds/__transparent.png', import.meta.url));
+    fs.writeFileSync(path.join(directories.characters, 'nova.png'), writeCard(png, JSON.stringify({ name: 'Nova', description: 'An astronaut.', chat: 'scene' })));
+    const records = fs.readFileSync(f.chatPath, 'utf8').split('\n').map(JSON.parse);
+    const { attachmentIdentity } = await import('../public/scripts/prompt-media-policy.js');
+    const { roleplayHash } = await import('../src/roleplay-store.js');
+    const item = { type: 'image', url: 'data:image/png;base64,BROKEN', title: 'PRIVATE_SELECTED_TITLE', append_title: true };
+    item.neconyan_prompt = { version: 1, mode: 'caption', attachment_hash: roleplayHash(attachmentIdentity(item)), caption: { source: 'custom', text: 'Reviewed gallery description' } };
+    records.push({ name: 'Nova', is_system: true, mes: '', extra: { media: [{ type: 'image', url: 'data:image/png;base64,BROKEN', title: 'PRIVATE_HIDDEN_TITLE' }] } });
+    records.push({ name: 'User', is_user: true, mes: 'Authored image message', extra: { media_display: 'gallery', media_index: 1,
+        media: [{ type: 'image', url: '/user/images/missing.png', title: 'PRIVATE_UNSELECTED_TITLE', append_title: true }, item] } });
+    fs.writeFileSync(f.chatPath, records.map(JSON.stringify).join('\n'));
+    const accepted = await acceptLabJob(f.request, { key: 'image-policy-scene', kind: 'prompting.scene', characterAvatar: 'nova.png',
+        connectionProfileId: 'saved', presets: [{ apiId: 'openai', name: 'Default' }], turns: ['Continue.'] });
+    await runLabJob(f.context(accepted), { generate: async ({ messages }) => {
+        const text = JSON.stringify(messages);
+        assert.match(text, /Authored image message/);
+        assert.equal((text.match(/Reviewed gallery description/g) ?? []).length, 1);
+        assert.doesNotMatch(text, /PRIVATE_|BROKEN|image_url/);
+        return { text: 'Scene continues' };
+    } });
+});

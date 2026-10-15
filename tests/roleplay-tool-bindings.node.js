@@ -20,10 +20,15 @@ const { runPathfinderNotebookJob } = await import('../src/generation/pathfinder-
 const { validFunctionTools } = await import('../public/scripts/chat-input-capabilities.js');
 const { ASSISTANT_TOOL_NAMES, PATHFINDER_TOOL_NAMES } = await import('../src/generation/native-tool-definitions.js');
 
-function prepared(t, { assistant = false, pathfinder = false, sidecarEnabled = true, profile = false } = {}) {
+function prepared(t, { assistant = false, pathfinder = false, sidecarEnabled = true, profile = false, legacyImage = false } = {}) {
     const f = fixture(t);
     const dirs = f.scope.directories;
     f.records[1].extra = {};
+    if (legacyImage) {
+        dirs.userImages = path.join(dirs.root, 'user/images'); fs.mkdirSync(dirs.userImages, { recursive: true });
+        fs.writeFileSync(path.join(dirs.userImages, 'legacy.png'), png);
+        f.records[1].extra.media = [{ type: 'image', url: '/user/images/legacy.png', title: 'Previously saved description', captioned: true, append_title: true }];
+    }
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     if (assistant) {
         const card = { name: 'Nova', description: 'Assistant', data: { name: 'Nova', description: 'Assistant',
@@ -84,11 +89,17 @@ test('without the Pathfinder sidecar only its summary function is offered, and b
 });
 
 test('a previously accepted prompt keeps its original source and tool definitions after native bindings are introduced', async t => {
-    const f = prepared(t, { assistant: true, profile: true });
+    const f = prepared(t, { assistant: true, profile: true, legacyImage: true });
     const legacy = captureRoleplayWorldInfo(f.f.scope, f.snapshot.account, f.source,
         { avatar: 'Nova.png', maxContext: 4000, serverPrompt: true, nativeBindingVersion: 0 });
     assert.equal(Object.hasOwn(legacy, 'nativeBindingVersion'), false);
     assert.equal(Object.hasOwn(legacy, 'tools'), false);
+    for (const field of ['mediaPolicyVersion', 'mediaPolicy', 'mediaBinding', 'captionTexts']) assert.equal(Object.hasOwn(legacy, field), false);
+    const golden = JSON.stringify(legacy), goldenHash = roleplayHash(legacy);
+    const again = captureRoleplayWorldInfo(f.f.scope, legacy.account, f.source,
+        { avatar: 'Nova.png', maxContext: 4000, serverPrompt: true, nativeBindingVersion: 0 });
+    assert.equal(JSON.stringify(again), golden);
+    assert.equal(roleplayHash(again), goldenHash);
     assert.doesNotThrow(() => assertRoleplayWorldInfoCurrent(f.f.scope, legacy));
     assert.ok(f.snapshot.nativeBindingVersion === 1 && f.snapshot.tools.definitions.length === 26);
     const request = { binding: { kind: 'profile', ...captureChatProfile(f.dirs, 'main') }, worldInfo: legacy,
@@ -103,7 +114,7 @@ test('a previously accepted prompt keeps its original source and tool definition
     await runRoleplayReplyJob(context, { contextLimit: () => 4096,
         promptBackend: () => ({ backend: 'chat', active: { prompts: [{ identifier: 'main', role: 'system', content: '' },
             { identifier: 'chatHistory', marker: true, system_prompt: true }], prompt_order: [{ character_id: 100001,
-            order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }], function_calling: true },
+            order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }], function_calling: true, media_inlining: false },
         profile: { model: 'fixture' }, source: 'custom' }),
         generate: async ({ beforeDispatch, functionTools }) => {
             beforeDispatch();
@@ -112,6 +123,8 @@ test('a previously accepted prompt keeps its original source and tool definition
             return { text: 'Existing accepted tools retained.' };
         } });
     assert.equal(calls, 1);
+    assert.equal(JSON.stringify(context.job.request?.worldInfo ?? request.worldInfo), golden);
+    await runRoleplayReplyJob({ ...context, job: getJob(f.dirs, jobId) }, { generate: () => assert.fail('Legacy result replayed a paid request') });
     assert.equal(fs.readFileSync(f.f.filename, 'utf8').trim().split('\n').map(line => JSON.parse(line)).at(-1).mes,
         'Existing accepted tools retained.');
 });

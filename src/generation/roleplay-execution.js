@@ -571,6 +571,10 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         ? promptBackend(directories, request.binding) : null);
     const chatInput = namingMaterial && (!namingMaterial.backend || namingMaterial.backend === 'chat');
     let media = request.worldInfo?.images ?? [];
+    if (request.worldInfo?.mediaPolicy && !request.worldInfo.mediaPolicy.inlineImages) {
+        // Completed automatic captions contribute text; their input files are not main-model images.
+        media = media.filter(image => image.file);
+    }
     const capabilities = request.serverPrompt && chatInput && (hasToolHistory || functionTools.length || media.length
         || namingMaterial.source === 'openrouter' && (request.modelOverride || namingMaterial.profile?.model))
         ? await prepareRoleplayCapabilities(context, namingMaterial, request.binding,
@@ -584,14 +588,14 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     if (media.length && (!request.serverPrompt || !chatInput || !supportsChatImages(toolControls, { model_list: capabilities?.models ?? [] }))) {
         if (media.some((image, imageIndex) => !image.captioned && (!captions
             || !request.worldInfo.captions.items.some(item => item.imageIndex === imageIndex)))) {
-            throw roleplayError('ROLEPLAY_INVALID', 'These saved Roleplay images need a bound vision connection or saved captions.', 409);
+            throw Object.assign(roleplayError('ROLEPLAY_INVALID', 'These saved Roleplay images need a bound vision connection or saved captions.', 409), { imageIssue: { reason: 'vision-unavailable', index: media[0]?.index ?? -1, mediaIndex: media[0]?.mediaIndex ?? -1, actions: ['review', 'display-only', 'caption'] } });
         }
         media = media.map(image => ({ ...image, captionOnly: true }));
     }
     if (media.length && !['low', 'auto', 'high'].includes(imageDetail)) {
         throw roleplayError('ROLEPLAY_INVALID', 'The saved image detail setting is invalid.', 409);
     }
-    const historyOptions = request.worldInfo && { reasoningInPrompt: request.worldInfo.reasoningInPrompt,
+    const historyOptions = request.worldInfo && { captionTexts: request.worldInfo.captionTexts, mediaPolicy: request.worldInfo.mediaPolicy, reasoningInPrompt: request.worldInfo.reasoningInPrompt,
         reasoning: request.worldInfo.reasoning, regex: request.worldInfo.regex,
         attachments: request.worldInfo.attachments.filter(item => !vectors?.projection.files.some(file => file.index === item.index)), images: media, imageDetail, mediaDisplay: request.worldInfo.mediaDisplay,
         preparedContent: preparedHistory?.content,
@@ -659,7 +663,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             retainedIndices.set(index, retainedIndices.size);
             return true;
         })];
-        for (const key of ['attachments', 'images']) historyOptions[key] = historyOptions[key]
+        for (const key of ['attachments', 'images', ...(historyOptions.captionTexts ? ['captionTexts'] : [])]) historyOptions[key] = historyOptions[key]
             .filter(item => retainedIndices.has(item.index)).map(item => ({ ...item, index: retainedIndices.get(item.index) }));
         historyOptions.preparedContent = historyOptions.preparedContent.filter((_value, index) => retainedIndices.has(index));
     }
