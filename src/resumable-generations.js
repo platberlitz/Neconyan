@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer';
 import express from 'express';
+import { beginServerWork } from './android-wake.js';
 
 /**
  * Neconyan: generation replies that outlive the client connection.
@@ -93,6 +94,8 @@ export class ResumableGeneration {
     constructor(key) {
         this.key = key;
         this.createdAt = Date.now();
+        // A reply that outlives its connection still has to finish with the screen off.
+        this.endWork = beginServerWork();
         /** @type {number|null} */
         this.finishedAt = null;
         /** @type {number|null} */
@@ -215,6 +218,7 @@ export class ResumableGeneration {
             return;
         }
         this.finishedAt = Date.now();
+        this.endWork();
         this.cancelHooks.clear();
         this.releaseHeaderWaiters();
         for (const subscriber of this.subscribers) {
@@ -224,6 +228,7 @@ export class ResumableGeneration {
     }
 
     forceDiscard() {
+        this.endWork();
         if (generations.get(this.key) === this) {
             generations.delete(this.key);
         }

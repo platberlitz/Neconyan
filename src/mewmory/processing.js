@@ -7,6 +7,7 @@ import { EXTRACTION_CONTRACT, PAWSPECTIVE_CONTRACT } from './contracts.js';
 import { callJsonRole, readConfig, ROLE_LABELS, roleVersion } from './models.js';
 import { loadCurrentState } from './sources.js';
 import { mutateState, statePath } from './store.js';
+import { beginServerWork } from '../android-wake.js';
 
 const running = new Map();
 const objectiveKinds = ['entity', 'state', 'event', 'relationship', 'knowledge', 'commitment'];
@@ -387,9 +388,11 @@ export async function processBatch(directories, locator, options = {}, call = ca
     }
     const job = runBatch(directories, locator, options, call);
     running.set(key, job);
+    const endWork = beginServerWork();
     try {
         return await job;
     } finally {
         running.delete(key);
+        endWork();
     }
 }

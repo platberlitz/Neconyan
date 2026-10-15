@@ -49,6 +49,39 @@ def server_pid():
                           capture_output=True, text=True, timeout=30).stdout.strip()
 
 
+def server_wake_held():
+    power = adb('shell', 'dumpsys', 'power')
+    if 'Wake Locks: size=' in power:
+        power = power.split('Wake Locks: size=', 1)[1].split('\n\n', 1)[0]
+    return "'Neconyan:server'" in power
+
+
+def server_busy():
+    return 'android-busy' in private('ls', 'files').split()
+
+
+def wait_until(check, seconds, message):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if check():
+            return
+        time.sleep(2)
+    raise AssertionError(message)
+
+
+def check_idle_wake_lock(request, token):
+    """Work keeps the phone awake; an idle server lets it sleep again."""
+    request('/api/settings/get', {}, token)
+    assert server_busy(), 'A request did not mark the server busy'
+    wait_until(lambda: not server_busy() and not server_wake_held(), 120, 'An idle server still keeps the phone awake')
+    # The app follows the marker in both directions, not only once at startup.
+    private('touch', 'files/android-busy')
+    wait_until(server_wake_held, 20, 'The app did not keep the phone awake for busy work')
+    private('rm', '-f', 'files/android-busy')
+    wait_until(lambda: not server_wake_held(), 20, 'The app kept the phone awake after the work finished')
+    print('The server holds its wake lock only while it is working.', flush=True)
+
+
 def window_labels():
     try:
         adb('shell', 'uiautomator', 'dump', '/data/local/tmp/neconyan-window.xml')
@@ -242,6 +275,7 @@ try:
     time.sleep(2)
     assert name in request('/api/characters/get', {'avatar_url': avatar}, token)
     print('The local server remains available with the Activity in the background.', flush=True)
+    check_idle_wake_lock(request, token)
     adb('shell', 'am', 'force-stop', package)
 finally:
     adb('forward', '--remove', 'tcp:' + port)

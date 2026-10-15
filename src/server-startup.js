@@ -70,6 +70,7 @@ import { router as labsRouter } from './endpoints/labs.js';
 import { router as operationsRouter } from './endpoints/operations.js';
 import { router as roleplayRouter } from './endpoints/roleplay.js';
 import { resumableGenerationMiddleware, router as resumableGenerationsRouter } from './resumable-generations.js';
+import { serverWorkMiddleware } from './android-wake.js';
 
 /**
  * @typedef {object} ServerStartupResult
@@ -86,6 +87,7 @@ import { resumableGenerationMiddleware, router as resumableGenerationsRouter } f
  * @param {import('express').Express} app The Express app to use
  */
 export function setupPrivateEndpoints(app) {
+    app.use(serverWorkMiddleware);
     app.use('/', userDataRouter);
     // Neconyan: resumable generations. The router is mounted first so its own requests never register as generations.
     app.use('/api/resumable-generations', resumableGenerationsRouter);

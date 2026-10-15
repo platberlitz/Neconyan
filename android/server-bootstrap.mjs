@@ -6,6 +6,7 @@ import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { serverEvents, EVENT_NAMES } from './src/server-events.js';
 import { verifyAndroidStorage } from './file-stats.mjs';
 import { initialiseCrashDiagnostics, installCrashHandlers } from './src/crash-diagnostics.js';
+import { beginServerWork, configureServerWakeMarker } from './src/android-wake.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const [privatePath, port, password, mode = 'normal'] = process.argv.slice(2);
@@ -50,9 +51,16 @@ if (mode === 'safe') process.env.NECONYAN_SAFE_START = '1';
 process.env.NECONYAN_REQUEST_TRACE = path.join(process.env.TMPDIR, 'requests.txt');
 process.argv = [process.argv[0], path.join(root, 'server.js'), '--configPath', configPath];
 const readyPath = path.join(statePath, 'android-ready.json');
+// The app holds its wake lock only while this marker exists; starting up counts as work.
+configureServerWakeMarker(path.join(statePath, 'android-busy'));
+const endStartup = beginServerWork();
 serverEvents.once(EVENT_NAMES.SERVER_STARTED, () => {
     started = true;
+    endStartup();
     writeFileAtomicSync(readyPath, JSON.stringify({ pid: process.pid, port: Number(port), safe: mode === 'safe' }), { mode: 0o600 });
 });
-process.once('exit', () => fs.rmSync(readyPath, { force: true }));
+process.once('exit', () => {
+    fs.rmSync(readyPath, { force: true });
+    configureServerWakeMarker(null);
+});
 await import('./server.js');

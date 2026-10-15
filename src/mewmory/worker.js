@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { beginServerWork } from '../android-wake.js';
 import { fail, hash, sourceFingerprint } from './core.js';
 import { readConfig } from './models.js';
 import { isStaleSourceError, pendingSources, processBatch, processingVersion } from './processing.js';
@@ -38,9 +39,11 @@ export async function startProcessing(directories, locator, { all = false, check
     const controller = new AbortController();
     const entry = { controller, promise: null, root: directories.root };
     running.set(key, entry);
+    const endWork = beginServerWork();
     entry.promise = run(directories, locator, state.branchId, job, controller.signal, call)
         .finally(() => {
             running.delete(key);
+            endWork();
             wake();
         });
     return state;

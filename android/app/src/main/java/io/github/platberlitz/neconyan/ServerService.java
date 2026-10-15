@@ -20,6 +20,9 @@ public final class ServerService extends Service {
     private boolean started;
     private boolean nodeStarted;
     private PowerManager.WakeLock wake;
+    private FileObserver busyWatcher;
+    private boolean stopping;
+    private static final String BUSY = "android-busy";
     private static final java.util.concurrent.atomic.AtomicBoolean runtimeClaimed = new java.util.concurrent.atomic.AtomicBoolean();
 
     public static synchronized JSONObject credentials(Context context) throws Exception {
@@ -57,6 +60,14 @@ public final class ServerService extends Service {
             boolean safe = intent != null && intent.getBooleanExtra(SAFE, false);
             new File(getFilesDir(), "android-ready.json").delete();
             wake = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Neconyan:server");
+            wake.setReferenceCounted(false);
+            // Starting up keeps the phone awake. After that the server creates this marker while it
+            // is working and removes it when idle, so an idle server no longer stops the phone sleeping.
+            new File(getFilesDir(), BUSY).delete();
+            busyWatcher = new FileObserver(getFilesDir(), FileObserver.CREATE | FileObserver.DELETE | FileObserver.MOVED_TO | FileObserver.MOVED_FROM) {
+                @Override public void onEvent(int event, String path) { if (BUSY.equals(path)) syncWake(); }
+            };
+            busyWatcher.startWatching();
             wake.acquire();
             new Thread(() -> {
                 try {
@@ -90,6 +101,18 @@ public final class ServerService extends Service {
         }
         // Reopen after process loss; do not repeatedly boot a failing native runtime.
         return START_NOT_STICKY;
+    }
+
+    private synchronized void syncWake() {
+        if (wake == null || stopping) return;
+        if (new File(getFilesDir(), BUSY).exists()) { if (!wake.isHeld()) wake.acquire(); }
+        else if (wake.isHeld()) wake.release();
+    }
+
+    private synchronized void stopWake() {
+        stopping = true;
+        if (busyWatcher != null) busyWatcher.stopWatching();
+        if (wake != null && wake.isHeld()) wake.release();
     }
 
     private void rotate(String current, String previous) throws IOException {
@@ -202,7 +225,7 @@ public final class ServerService extends Service {
     @Override public void onDestroy() {
         ActivityBreadcrumbs.state("stopping");
         new File(getFilesDir(), "android-ready.json").delete();
-        if (wake != null && wake.isHeld()) wake.release();
+        stopWake();
         if (nodeStarted) {
             // Node handles SIGTERM through Neconyan's existing orderly shutdown.
             try { CrashDiagnostics.markServerStopping(this); } catch (Throwable ignored) { }

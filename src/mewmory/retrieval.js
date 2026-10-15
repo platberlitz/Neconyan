@@ -9,6 +9,7 @@ import { expandNeighbours, hybridCandidates, searchDocuments, terms, updateIndex
 import { RAG_DEFAULTS } from '../../public/scripts/mewmory/rag-settings.js';
 import { loadCurrentState } from './sources.js';
 import { mutateState, statePath } from './store.js';
+import { beginServerWork } from '../android-wake.js';
 import { getCounter } from './tokens.js';
 import { listJobs } from '../jobs/store.js';
 
@@ -20,8 +21,12 @@ export function recallInBackground(directories, locator, options = {}, dependenc
     if (running.has(key)) return running.get(key);
     const run = () => recall(directories, locator, { ...options, local: false, background: true, signal: undefined }, dependencies);
     // A message rewritten mid-pick (for example by a post-generation agent) gets one fresh attempt instead of leaving no memories.
+    const endWork = beginServerWork();
     const job = run().catch(error => error?.status === 409 ? run() : Promise.reject(error))
-        .finally(() => running.delete(key));
+        .finally(() => {
+            running.delete(key);
+            endWork();
+        });
     running.set(key, job);
     job.catch(error => console.warn('Mewmory background recall:', error.message));
     return job;

@@ -1,4 +1,5 @@
 import { serverEvents } from '../server-events.js';
+import { beginServerWork } from '../android-wake.js';
 import { subscribeJobsChanged } from './notifications.js';
 import {
     getJob,
@@ -137,6 +138,7 @@ async function runJob(job) {
         const controller = new AbortController();
         controllers.set(job.id, controller);
         running.set(job.id, saved);
+        const endWork = beginServerWork();
         // Every failure path, including a failed running-state write, must
         // release the slot and target lock. Secondary status writes never
         // become unhandled rejections.
@@ -152,6 +154,7 @@ async function runJob(job) {
         } finally {
             running.delete(job.id);
             controllers.delete(job.id);
+            endWork();
         }
     } catch (error) {
         await settleQuietly(() => serverEvents.emit('job-status-failed', { owner: job.owner, message: error?.message ?? 'Job could not be read.' }));
