@@ -123,6 +123,7 @@ export async function showPromptMediaReview(initialLocator = locator()) {
         return result;
     };
     const prepare = async (issue, file) => {
+        if (issue.mode === 'detach') throw new Error('Use Save choice to detach this attachment, or choose how to use the copy in replies.');
         let blob = file;
         if (!blob) {
             const source = await request('source', { observation: page.observation, identity: issue.identity }, captured);
@@ -196,10 +197,10 @@ export async function showPromptMediaReview(initialLocator = locator()) {
                 }
             }
             if (issue.mediaIndex >= 0) {
-                row.append(button('Preview compatible copy', () => run(() => prepare(issue))));
+                row.append(button('Preview compatible copy', () => run(() => prepare(action()))));
                 const uploadLabel = element('label', 'Or choose a replacement for the prompt copy');
                 const upload = document.createElement('input'); upload.type = 'file'; upload.accept = 'image/png,image/jpeg,image/webp';
-                upload.addEventListener('change', () => { if (upload.files[0]) void run(() => prepare(issue, upload.files[0])); }); uploadLabel.append(upload); row.append(uploadLabel);
+                upload.addEventListener('change', () => { if (upload.files[0]) void run(() => prepare(action(), upload.files[0])); }); uploadLabel.append(upload); row.append(uploadLabel);
             }
             content.append(row);
         }

@@ -5354,6 +5354,9 @@ export function ensureMessageMediaIsArray(mes) {
      * @param {ChatMessageExtra} obj
      */
     function migrateMediaToArray(obj) {
+        const legacyImages = obj.media === undefined && (Array.isArray(obj.image_swipes)
+            || isPlainObjectProperty(obj, 'image') && typeof obj.image === 'string');
+        const imageDescription = legacyImages ? { title: obj.title, append_title: obj.append_title } : {};
         if (isPlainObjectProperty(obj, 'file')) {
             if (!Array.isArray(obj.files)) {
                 obj.files = [];
@@ -5372,7 +5375,7 @@ export function ensureMessageMediaIsArray(mes) {
             for (const swipe of obj.image_swipes) {
                 if (swipe && typeof swipe === 'string') {
                     obj.media_display = MEDIA_DISPLAY.GALLERY;
-                    obj.media.push({ type: MEDIA_TYPE.IMAGE, url: swipe });
+                    obj.media.push({ type: MEDIA_TYPE.IMAGE, url: swipe, ...imageDescription });
                 }
             }
             delete obj.image_swipes;
@@ -5385,7 +5388,7 @@ export function ensureMessageMediaIsArray(mes) {
             const imageValue = obj.image;
             delete obj.image;
             if (imageValue && typeof imageValue === 'string') {
-                obj.media.push({ type: MEDIA_TYPE.IMAGE, url: imageValue });
+                obj.media.push({ type: MEDIA_TYPE.IMAGE, url: imageValue, ...imageDescription });
             }
             if (obj.media_display === MEDIA_DISPLAY.GALLERY) {
                 const selectedIndex = obj.media.findIndex(t => t.url === imageValue);
@@ -5395,6 +5398,9 @@ export function ensureMessageMediaIsArray(mes) {
             }
             obj.media = obj.media.filter((v, i, a) => i === a.findIndex(t => t.url === v.url));
         }
+
+        // Legacy descriptions follow their images; modern message titles remain independent.
+        if (legacyImages) delete obj.append_title;
 
         if (isPlainObjectProperty(obj, 'video')) {
             if (!Array.isArray(obj.media)) {

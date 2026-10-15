@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { after, test } from 'node:test';
-import { fixture } from './roleplay-transactions-fixture.js';
+import { fixture, png } from './roleplay-transactions-fixture.js';
 
 const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
 const { captureRoleplaySource } = await import('../src/generation/roleplay-source.js');
@@ -17,6 +17,7 @@ const { roleplayHash } = await import('../src/roleplay-store.js');
 const { runRoleplayReplyJob } = await import('../src/generation/roleplay-execution.js');
 const { getRegexScriptRevision } = await import('../public/scripts/extensions/in-chat-agents/regex-snapshot-store.js');
 const { MEMORY_SHARD_TEMPLATE_ID } = await import('../public/scripts/extensions/in-chat-agents/companion/companion-shared.js');
+const { decodeCompatibleImage, managedImageUrl, publishManagedImage } = await import('../src/managed-image-files.js');
 after(cancelAutoSaves);
 
 const controls = { prompts: [{ identifier: 'main', role: 'system', system_prompt: true, content: '' },
@@ -31,7 +32,7 @@ function prepared(t, agents, { global = {}, effect = 'append', changeRecords, ex
     for (const directory of [directories.worlds, directories.inChatAgents]) fs.mkdirSync(directory, { recursive: true });
     f.records[1].extra = {};
     f.records[2].extra ??= {};
-    changeRecords?.(f.records);
+    changeRecords?.(f.records, directories);
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n') + '\n');
     if (extraCard) fs.copyFileSync(path.join(directories.characters, 'Nova.png'), path.join(directories.characters, 'Kit.png'));
     fs.writeFileSync(path.join(directories.worlds, 'Bells.json'), JSON.stringify({ entries: { 1: { uid: 1, key: ['evening-bell'],
@@ -467,6 +468,29 @@ const trackerCompanion = id => ({ ...companion(id), category: 'tracker',
     prompt: `TASK_${id.toUpperCase()}\n[WORLD|Place]\ndetail: note\n[/WORLD]`,
     postProcess: { enabled: true, type: 'extract', extractPattern: '\\[WORLD\\|[^\\]]*\\][\\s\\S]*?\\[\\/WORLD\\]', extractVariable: `${id}_world` } });
 const trackerBlock = '[WORLD|Market]\ndetail: Bells mark closing time.\n[/WORLD]';
+
+test('a compatible image copy survives the companion prompt and its post-processing pass', async t => {
+    const originalUrl = `data:image/png;base64,${png.toString('base64')}`;
+    const f = prepared(t, [trackerCompanion('world')], { imagePolicy: true, changeRecords(records, directories) {
+        directories.userImages = path.join(directories.root, 'user/images');
+        fs.mkdirSync(directories.userImages, { recursive: true });
+        const image = decodeCompatibleImage(originalUrl);
+        publishManagedImage(directories, image);
+        records[1].extra.media = [{ type: 'image', url: originalUrl, neconyan_prompt: {
+            version: 1, mode: 'include', attachment_hash: roleplayHash(['image', originalUrl]), image_url: managedImageUrl(image),
+        } }];
+    } });
+    let calls = 0;
+    await f.run({ promptBackend: () => ({ backend: 'chat', active: { ...controls, media_inlining: true }, profile: { model: 'fixture' }, source: 'custom' }),
+        generate: paid('main', 'Main reply'), generateAgent: paid('agent', () => {
+            calls++; return { text: trackerBlock };
+        }) });
+    const result = f.rows().at(-1).extra.inChatAgentCompanionResults.world;
+    assert.equal(calls, 1);
+    assert.equal(result.status, 'done');
+    assert.equal(result.content, trackerBlock);
+    assert.equal(f.rows()[1].extra.media[0].url, originalUrl);
+});
 const trackerRoleplay = 'Mira wandered past the stalls, trailing her fingers over the bolts of silk. "You will not find better '
     + 'cloth this side of the river," the merchant called after her, and she laughed despite herself.';
 
