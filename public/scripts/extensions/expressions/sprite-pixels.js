@@ -67,7 +67,7 @@ function isBackground(data, i, palette) {
 }
 
 /** Recover antialiasing from the local foreground colour, rather than leaving a white fringe. */
-function softenSpriteEdges(bitmap, background, palette, check) {
+function softenSpriteEdges(bitmap, background, palette, check, transparentCutout = false) {
     const { data, width, height } = bitmap;
     const core = new Uint8Array(width * height);
     const edges = [];
@@ -79,12 +79,13 @@ function softenSpriteEdges(bitmap, background, palette, check) {
             for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
                 const nx = x + dx, ny = y + dy;
                 if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+                // Partial coverage still belongs to the subject. Treating it as
+                // outside would move the edge inwards on every cleanup pass.
                 if (background[ny * width + nx]) outside = true;
                 else inside = true;
             }
             if (!outside && data[pixel * 4 + 3] === 255) core[pixel] = 1;
-            // Existing soft transparency is already unmatted and must not be applied twice.
-            if (outside && inside && data[pixel * 4 + 3] === 255) edges.push(pixel);
+            if (outside && inside && (data[pixel * 4 + 3] === 255 || (transparentCutout && data[pixel * 4 + 3] > 0))) edges.push(pixel);
         }
     }
     for (let pixel = 0; pixel < background.length; pixel++) if (background[pixel]) data[pixel * 4 + 3] = 0;
@@ -92,11 +93,17 @@ function softenSpriteEdges(bitmap, background, palette, check) {
     for (let index = 0; index < edges.length; index++) {
         if ((index & 1023) === 0) check();
         const pixel = edges[index], offset = pixel * 4, x = pixel % width, y = Math.floor(pixel / width);
-        let bestDistance = Infinity, foreground = -1, bestAlpha = 1;
+        let bestDistance = Infinity, foreground = -1, bestAlpha = 1, nearestDistance = Infinity, nearestDifference = Infinity;
         for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
             const nx = x + dx, ny = y + dy, distance = dx * dx + dy * dy;
-            if (distance >= bestDistance || nx < 0 || ny < 0 || nx >= width || ny >= height || !core[ny * width + nx]) continue;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height || !core[ny * width + nx]) continue;
             const candidate = (ny * width + nx) * 4;
+            const difference = Math.max(Math.abs(data[candidate] - data[offset]), Math.abs(data[candidate + 1] - data[offset + 1]), Math.abs(data[candidate + 2] - data[offset + 2]));
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearestDifference = difference;
+            } else if (distance === nearestDistance) nearestDifference = Math.min(nearestDifference, difference);
+            if (distance >= bestDistance) continue;
             for (const colour of palette) {
                 let dot = 0, length = 0;
                 for (let c = 0; c < 3; c++) {
@@ -116,7 +123,13 @@ function softenSpriteEdges(bitmap, background, palette, check) {
             }
         }
         if (foreground < 0 || bestAlpha >= 0.98) continue;
-        data[offset + 3] = bestAlpha < 0.025 ? 0 : Math.round(255 * bestAlpha);
+        // A nearby matching solid colour is evidence of actual detail, including
+        // white fur. Do not replace it with a darker sample farther inside.
+        if (transparentCutout && nearestDifference < 16) continue;
+        // Already-cut-out pixels carry their coverage in alpha. Correct their
+        // colour without applying that coverage a second time.
+        if (bestAlpha < 0.025) data[offset + 3] = 0;
+        else if (!transparentCutout || data[offset + 3] === 255) data[offset + 3] = Math.round(255 * bestAlpha);
         for (let c = 0; c < 3; c++) data[offset + c] = data[foreground + c];
     }
 }
@@ -173,7 +186,17 @@ export function removeSpriteBackground(bitmap, check = () => {}) {
     const { data, width, height } = bitmap;
     check();
     const palette = backgroundPalette(bitmap);
-    if (!palette.length) return bitmap;
+    if (!palette.length) {
+        const transparent = new Uint8Array(width * height);
+        let count = 0;
+        for (let pixel = 0; pixel < transparent.length; pixel++) {
+            if (data[pixel * 4 + 3] === 0) { transparent[pixel] = 1; count++; }
+        }
+        // Previously cleaned PNGs have no opaque perimeter left to sample.
+        // Their transparent outline still identifies the narrow edge to dematte.
+        if (count) softenSpriteEdges(bitmap, transparent, [[255, 255, 255]], check, true);
+        return bitmap;
+    }
     const visited = new Uint8Array(width * height);
     const background = new Uint8Array(width * height);
     const stack = new Uint32Array(width * height);
