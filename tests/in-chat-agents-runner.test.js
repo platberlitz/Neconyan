@@ -8624,6 +8624,29 @@ describe('in-chat agent post-processing runner', () => {
         expect(buildPromptDynamicMacros('Reply', null, agent)['secrets-tracker']).toBe('');
     });
 
+    test('links the Continuity Companion and Corrector in browser runs only while both are switched on', async () => {
+        const { buildPromptDynamicMacros } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        enabledAgents.push(
+            { id: 'fixer', sourceTemplateId: 'tpl-continuity-corrector' },
+            { id: 'notes', sourceTemplateId: 'tpl-continuity-companion' },
+        );
+        const earlier = { is_user: false, mes: 'Before', extra: { inChatAgentCompanionResults: { notes: { status: 'done', content: 'Mara lost a glove.' } } } };
+        const reply = { is_user: false, mes: 'She wears one glove.', extra: { inChatAgentPromptRuns: [
+            { agentId: 'fixer', beforeText: 'She wears both gloves.', nextMessageText: 'She wears one glove.' },
+        ] } };
+        chat.push(earlier, reply);
+        const corrector = { prompt: '{{continuity-notes}}' };
+        const companion = { prompt: '{{continuity-corrections}}' };
+        expect(buildPromptDynamicMacros(reply.mes, reply, corrector)['continuity-notes']).toBe('Mara lost a glove.');
+        expect(buildPromptDynamicMacros(reply.mes, reply, companion)['continuity-corrections'])
+            .toBe('- Changed "She wears both gloves." to "She wears one glove."');
+        expect(buildPromptDynamicMacros(reply.mes, reply, { prompt: 'Nothing linked' })['continuity-notes']).toBe('');
+
+        enabledAgents.splice(0, enabledAgents.length);
+        expect(buildPromptDynamicMacros(reply.mes, reply, corrector)['continuity-notes']).toBe('');
+        expect(buildPromptDynamicMacros(reply.mes, reply, companion)['continuity-corrections']).toBe('');
+    });
+
     test('gives prompt-transform rewrites the recent chat they ask for, and nothing by default', async () => {
         usePromptTransformPostAgent();
         enabledAgents[0].prompt = 'Trim to {{lengthTarget}}.';

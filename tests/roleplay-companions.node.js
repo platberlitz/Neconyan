@@ -89,6 +89,51 @@ test('companion prompts expand the separate saved secrets macro', async t => {
     assert.equal(f.rows().at(-1).extra.inChatAgentCompanionResults.reader.content, 'Checked knowledge boundaries');
 });
 
+function continuityPair({ companionEnabled = true } = {}) {
+    return [
+        { id: 'corrector', name: 'Continuity Corrector', enabled: true, phase: 'post', sourceTemplateId: 'tpl-continuity-corrector',
+            prompt: 'FIX_REPLY <notes>{{continuity-notes}}</notes>', postProcess: { enabled: true, promptTransformEnabled: true } },
+        { ...companion('audit'), name: 'Continuity Companion', enabled: companionEnabled, sourceTemplateId: 'tpl-continuity-companion',
+            prompt: 'AUDIT_REPLY <fixes>{{continuity-corrections}}</fixes>' },
+    ];
+}
+
+const earlierContinuityNote = records => {
+    records[2].extra.inChatAgentCompanionResults = { audit: { status: 'done', content: 'Mara lost her left glove at the gate.' } };
+};
+
+test('the Continuity Corrector reads the latest Continuity note and the Companion hears what it fixed', async t => {
+    const f = prepared(t, continuityPair(), { changeRecords: earlierContinuityNote });
+    let audited = 0;
+    await f.run({ generate: paid('main', 'Mara pulls on both gloves. The bell rings.'), generateAgent: paid('agent', ({ messages }) => {
+        const prompt = messages.map(message => message.content).join('\n');
+        if (prompt.includes('FIX_REPLY')) {
+            assert.match(prompt, /<notes>Mara lost her left glove at the gate\.<\/notes>/);
+            return { text: 'Mara pulls on her right glove. The bell rings.' };
+        }
+        audited++;
+        assert.match(prompt, /<fixes>- Changed "Mara pulls on both gloves\." to "Mara pulls on her right glove\."<\/fixes>/);
+        return { text: 'Fixed: the lost glove.' };
+    }) });
+    const row = f.rows().at(-1);
+    assert.equal(audited, 1);
+    assert.equal(row.mes, 'Mara pulls on her right glove. The bell rings.');
+    const run = row.extra.inChatAgentPromptRuns.find(entry => entry.agentId === 'corrector');
+    assert.deepEqual(run.corrections, [{ before: 'Mara pulls on both gloves.', after: 'Mara pulls on her right glove.' }]);
+});
+
+test('a switched-off Continuity Companion gives the Corrector no notes', async t => {
+    const f = prepared(t, continuityPair({ companionEnabled: false }), { changeRecords: earlierContinuityNote });
+    let corrected = 0;
+    await f.run({ generate: paid('main', 'Mara waits.'), generateAgent: paid('agent', ({ messages }) => {
+        const prompt = messages.map(message => message.content).join('\n');
+        assert.match(prompt, /FIX_REPLY <notes><\/notes>/);
+        corrected++;
+        return { text: 'Mara waits.' };
+    }) });
+    assert.equal(corrected, 1);
+});
+
 test('an oversized bound Companion set refuses admission before any model or chat change', t => {
     const agents = Array.from({ length: 27 }, (_, index) => companion(`capacity-${index}`));
     assert.throws(() => prepared(t, agents), { code: 'ROLEPLAY_COMPANION_CAPACITY', status: 507 });

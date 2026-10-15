@@ -9,9 +9,9 @@
     "memory",
     "notes"
   ],
-  "version": 1,
+  "version": 2,
   "author": "Neconyan",
-  "prompt": "Read the latest assistant reply and recent context as a continuity auditor. Write a concise side note for the user. Focus on contradictions, unresolved promises, changed locations, injuries, inventory, relationship shifts, and setup that may matter in the next few turns. Use 3-6 bullets. If everything is stable, write: Continuity looks stable.",
+  "prompt": "Read the latest assistant reply and recent context as a continuity auditor. Write a concise side note for the user. Focus on contradictions, unresolved promises, changed locations, injuries, inventory, relationship shifts, and setup that may matter in the next few turns.\n\n<corrector_fixes>\n{{continuity-corrections}}\n</corrector_fixes>\n\nWhen the block above lists fixes, the Continuity Corrector already made them to this reply. Open with one bullet that starts with Fixed: and sums them up, then report only what is still wrong. Leave those slips out of the rest of the note unless a fix created a new problem. When the block is empty, skip this step.\n\nUse 3-6 bullets. If everything is stable, write: Continuity looks stable.",
   "phase": "post",
   "execution": "companion",
   "companion": {

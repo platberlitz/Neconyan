@@ -8,6 +8,10 @@ import { getStringHash } from '../../macro-primitives.js';
 const RETIRED_BUNDLED_PROMPTS = Object.freeze([
     // Director's Commentary before it became a neutral, sceptical critic.
     Object.freeze({ templateId: 'tpl-directors-commentary-companion', hash: 8744971503937750, length: 823 }),
+    // Continuity Companion before it was told what the Continuity Corrector fixed.
+    Object.freeze({ templateId: 'tpl-continuity-companion', hash: 956974946916292, length: 345 }),
+    // Continuity Corrector before it read the Continuity Companion's notes.
+    Object.freeze({ templateId: 'tpl-continuity-corrector', hash: 4999155226325119, length: 4491 }),
 ]);
 
 /**

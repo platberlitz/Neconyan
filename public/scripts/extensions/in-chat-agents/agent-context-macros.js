@@ -1,6 +1,7 @@
 // Shared by the browser runner and the server Roleplay runner, so keep it free of DOM and app imports.
 
 import { getTrackerMetadataKey } from './tracker-state.js';
+import { CONTINUITY_NOTES_MACRO } from './continuity-link.js';
 
 export const GROUP_CARDS_MACRO = 'group-cards';
 export const ACTIVE_LORE_MACRO = 'active-lore';
@@ -119,10 +120,11 @@ export function buildTrackerStateText(trackers) {
 
 /**
  * Dynamic macros that give an agent prompt its Mewmory memories, group member cards,
- * the lorebook entries and Author's Note in effect for the reply, and the saved tracker state.
+ * the lorebook entries and Author's Note in effect for the reply, the saved tracker state,
+ * and the latest Continuity Companion note.
  * Lore and the note keep their own {{char}} and {{user}} names filled in.
  */
-export function buildAgentContextMacros({ mewmory = null, groupCards = null, userName = '', charName = '', lore = '', authorsNote = '', trackers = null, secretsTrackers = null } = {}) {
+export function buildAgentContextMacros({ mewmory = null, groupCards = null, userName = '', charName = '', lore = '', authorsNote = '', trackers = null, secretsTrackers = null, continuityNotes = '' } = {}) {
     const names = value => {
         const filled = text(value);
         return filled && charName ? fillNames(filled, charName, userName) : filled;
@@ -134,5 +136,6 @@ export function buildAgentContextMacros({ mewmory = null, groupCards = null, use
         [ACTIVE_AUTHORS_NOTE_MACRO]: names(authorsNote),
         [TRACKER_STATE_MACRO]: buildTrackerStateText(trackers),
         [SECRETS_TRACKER_MACRO]: buildTrackerStateText(secretsTrackers),
+        [CONTINUITY_NOTES_MACRO]: text(continuityNotes),
     };
 }

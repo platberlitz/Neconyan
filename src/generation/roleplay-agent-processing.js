@@ -1,6 +1,7 @@
 import { appendHelperPrefillMessages } from '../../public/scripts/extensions/helper-prefill.js';
 import { buildPromptTransformRecentChat, getAgentLengthTarget } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-context.js';
 import { ACTIVE_LORE_MACRO, buildAgentContextMacros, captureSecretsTrackerState, captureTrackerState, SECRETS_TRACKER_MACRO, TRACKER_STATE_MACRO, usesAgentMacro } from '../../public/scripts/extensions/in-chat-agents/agent-context-macros.js';
+import { CONTINUITY_NOTES_MACRO, describeTextCorrections, isContinuityCorrector, latestContinuityNotes } from '../../public/scripts/extensions/in-chat-agents/continuity-link.js';
 import { applyRegexScriptList } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { buildRegexScriptRefsForAgent } from '../../public/scripts/extensions/in-chat-agents/regex-snapshot-store.js';
 import { inspectTrackerState, mergeTrackerRepairPayload, TRACKER_REPAIR_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
@@ -90,7 +91,8 @@ function agentContextMacros(snapshot, mewmory = null, reference = null) {
     return buildAgentContextMacros({ mewmory, groupCards: snapshot.groupCards, userName: snapshot.speakerNames?.user,
         charName: snapshot.speakerNames?.character, lore: reference?.lore, authorsNote: savedAuthorsNote(snapshot),
         trackers: reference ? captureTrackerState(reference.agents, reference.records?.[0]?.chat_metadata) : null,
-        secretsTrackers: reference ? captureSecretsTrackerState(reference.agents, reference.records?.[0]?.chat_metadata) : null });
+        secretsTrackers: reference ? captureSecretsTrackerState(reference.agents, reference.records?.[0]?.chat_metadata) : null,
+        continuityNotes: reference?.continuityNotes });
 }
 
 /** The lore the main reply was built with, so Agents check the reply against the same entries. */
@@ -358,8 +360,11 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     const modelName = id => `${options.namespace ? options.namespace + ':' : ''}post:${id}`;
     const version = postprocessingPlan(context, snapshot.account, phaseName, identity, selected, modelName);
     const usesTrackers = selected.some(agent => [TRACKER_STATE_MACRO, SECRETS_TRACKER_MACRO].some(macro => usesAgentMacro(agent.prompt, macro)));
+    const usesContinuityNotes = selected.some(agent => usesAgentMacro(agent.prompt, CONTINUITY_NOTES_MACRO));
+    const referenceAgents = usesTrackers || usesContinuityNotes ? readRoleplayAgents(base, snapshot) : [];
     options = { ...options, agentReference: { lore: options.activeLore ?? await scannedAgentLoreText(context, options, selected, identity),
-        agents: usesTrackers ? readRoleplayAgents(base, snapshot) : [], records: options.metadataRecords ?? records } };
+        agents: usesTrackers ? referenceAgents : [], records: options.metadataRecords ?? records,
+        continuityNotes: usesContinuityNotes ? latestContinuityNotes(records, referenceAgents) : '' } };
     let postFailed = false;
     const runs = [];
     const parallel = snapshot.agents.appendMode === 'parallel';
@@ -371,7 +376,9 @@ export async function runRoleplayAgentPostprocessing(context, options) {
         isAppend: agent => agent.postProcess.promptTransformMode === 'append',
         runRewrite: async (agent, body) => {
             const run = await modelRun(scope, options, agent, body, modelName(agent.id));
-            runs.push({ ...run, mode: 'rewrite' });
+            // The Continuity Companion is told what the Corrector fixed, so it does not report those slips again.
+            const corrections = !companionOutput && isContinuityCorrector(agent) && run.outputText ? { corrections: describeTextCorrections(body, run.outputText) } : {};
+            runs.push({ ...run, ...corrections, mode: 'rewrite' });
             if (companionOutput && run.status !== 'done') { postFailed = true; return { stop: true }; }
             return run.outputText ? { text: run.outputText } : {};
         },

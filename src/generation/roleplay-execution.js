@@ -228,7 +228,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             } else {
                 post = await runRoleplayAgentPostprocessing(context, { ...options, value: intercepted.value });
                 publishTextPreview(post.text, { inChatAgents: post.extra.inChatAgents, stage: 'companions' });
-                companions = await runRoleplayCompanions(context, { ...options, effect, value: post.text });
+                companions = await runRoleplayCompanions(context, { ...options, effect, value: post.text, continuityRuns: post.runs });
             }
             if (effect === 'continue') output.continuedText = post.text;
             else if (message.mes !== undefined) message.mes = post.text;

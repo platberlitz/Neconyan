@@ -57,6 +57,7 @@ import { buildFallbackPromptText, extractProfileResponseText } from './llm-utils
 import { buildPromptTransformRecentChat } from './prompt-transform-context.js';
 import { getTrackerRepairConnectionProfile, getTrackerRepairTimeoutMs, isTrackerRepairRunAgent, markTrackerRepairRunAgent } from './tracker-repair-run.js';
 import { buildAgentContextMacros, captureGroupCards, captureSecretsTrackerState, captureTrackerState, getPreparedActiveLore, getPreparedMewmoryContext, SECRETS_TRACKER_MACRO, setPreparedActiveLore, TRACKER_STATE_MACRO, usesAgentMacro, usesGroupCardsMacro } from './agent-context-macros.js';
+import { buildContinuityCorrectionsText, CONTINUITY_CORRECTIONS_MACRO, CONTINUITY_NOTES_MACRO, continuityCorrectionsFromRuns, latestContinuityNotes } from './continuity-link.js';
 import { getConnectionProfileDisplayName, getConnectionProfileModelName } from './profile-utils.js';
 import { describeAgentRunModel } from './model-label.js';
 import {
@@ -2288,11 +2289,11 @@ export function buildPromptDynamicMacros(messageText = '', message = null, agent
         agentName,
         generationType: normalizedGenerationType,
         lengthTarget: getAgentLengthTarget(agent),
-        ...buildBrowserAgentContextMacros(agent),
+        ...buildBrowserAgentContextMacros(agent, message),
     };
 }
 
-function buildBrowserAgentContextMacros(agent) {
+function buildBrowserAgentContextMacros(agent, message = null) {
     const context = getContext?.() ?? {};
     const group = context.groupId ? context.groups?.find(item => item.id === context.groupId) : null;
     const groupCards = group && usesGroupCardsMacro(agent?.prompt)
@@ -2304,8 +2305,16 @@ function buildBrowserAgentContextMacros(agent) {
     const chatId = getCurrentChatId();
     const trackers = usesAgentMacro(agent?.prompt, TRACKER_STATE_MACRO) ? captureTrackerState(getEnabledAgents(), chat_metadata) : null;
     const secretsTrackers = usesAgentMacro(agent?.prompt, SECRETS_TRACKER_MACRO) ? captureSecretsTrackerState(getEnabledAgents(), chat_metadata) : null;
-    return buildAgentContextMacros({ mewmory: getPreparedMewmoryContext(chatId), groupCards, userName: context.name1, charName: context.name2,
-        lore: getPreparedActiveLore(chatId), authorsNote: context.extensionPrompts?.[AUTHORS_NOTE_PROMPT_KEY]?.value, trackers, secretsTrackers });
+    const messageIndex = message ? chat.indexOf(message) : -1;
+    const continuityNotes = usesAgentMacro(agent?.prompt, CONTINUITY_NOTES_MACRO)
+        ? latestContinuityNotes(messageIndex >= 0 ? chat.slice(0, messageIndex) : chat, getEnabledAgents()) : '';
+    const continuityCorrections = message && usesAgentMacro(agent?.prompt, CONTINUITY_CORRECTIONS_MACRO)
+        ? buildContinuityCorrectionsText(continuityCorrectionsFromRuns(getAgentExtraValue(message, PROMPT_RUNS_EXTRA_KEY), getEnabledAgents())) : '';
+    return {
+        ...buildAgentContextMacros({ mewmory: getPreparedMewmoryContext(chatId), groupCards, userName: context.name1, charName: context.name2,
+            lore: getPreparedActiveLore(chatId), authorsNote: context.extensionPrompts?.[AUTHORS_NOTE_PROMPT_KEY]?.value, trackers, secretsTrackers, continuityNotes }),
+        [CONTINUITY_CORRECTIONS_MACRO]: continuityCorrections,
+    };
 }
 
 function updateMessageRegexSnapshot(message, activeAgents, generationType) {

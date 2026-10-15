@@ -8,7 +8,7 @@ const templates = new URL('../public/scripts/extensions/in-chat-agents/templates
 const readTemplate = name => JSON.parse(fs.readFileSync(new URL(name, templates), 'utf8'));
 
 test('untouched old built-in prompts are recognised for an update, edited and current ones are not', () => {
-    for (const name of ['directors-commentary-companion']) {
+    for (const name of ['directors-commentary-companion', 'continuity-companion', 'continuity-corrector']) {
         const template = readTemplate(`${name}.json`);
         assert.equal(template.version, 2);
         assert.equal(isRetiredBundledPrompt(template.id, template.prompt), false);
@@ -18,6 +18,10 @@ test('untouched old built-in prompts are recognised for an update, edited and cu
     assert.equal(isRetiredBundledPrompt('tpl-directors-commentary-companion', oldDirector), true);
     assert.equal(isRetiredBundledPrompt('tpl-continuity-companion', oldDirector), false);
     assert.equal(isRetiredBundledPrompt('tpl-directors-commentary-companion', `${oldDirector} Be kind.`), false);
+    const oldCompanion = 'Read the latest assistant reply and recent context as a continuity auditor. Write a concise side note for the user. Focus on contradictions, unresolved promises, changed locations, injuries, inventory, relationship shifts, and setup that may matter in the next few turns. Use 3-6 bullets. If everything is stable, write: Continuity looks stable.';
+    assert.equal(isRetiredBundledPrompt('tpl-continuity-companion', oldCompanion), true);
+    assert.equal(isRetiredBundledPrompt('tpl-continuity-corrector', oldCompanion), false);
+    assert.equal(isRetiredBundledPrompt('tpl-continuity-companion', `${oldCompanion} Also list weather.`), false);
 });
 
 test('Director\'s Commentary asks for criticism, not only praise', () => {
