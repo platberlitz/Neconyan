@@ -128,6 +128,8 @@ function normaliseImages(extra) {
         ...(extra.append_title !== undefined ? { append_title: extra.append_title } : {}) }));
     if (extra.image_swipes) { extra.media_display = 'gallery'; extra.media_index = Math.max(0, urls.indexOf(extra.image)); }
     delete extra.image; delete extra.image_swipes;
+    // The legacy title belongs to the image. Its inclusion flag moved onto each media item.
+    delete extra.append_title;
 }
 function transform(records, input, scope) {
     const images = [];
@@ -226,11 +228,12 @@ function transform(records, input, scope) {
         const record = candidate[action.index + 1], original = records[action.index + 1];
         const active = record.swipe_info?.[record.swipe_id];
         const oldActive = original.swipe_info?.[original.swipe_id];
+        const fields = ['media', 'image', 'image_swipes', 'media_index', 'media_display', 'inline_image'];
+        if (original.extra.media === undefined && (typeof original.extra.image === 'string' || Array.isArray(original.extra.image_swipes))) fields.push('append_title');
         if (oldActive?.extra && !same(oldActive.extra, original.extra)) {
-            const fields = ['media', 'image', 'image_swipes', 'media_index', 'media_display', 'inline_image'];
             if (fields.some(key => !same(oldActive.extra[key], original.extra[key]))) throw repairFailure('The active alternative has different attachments. Review it before repair.');
         }
-        if (active?.extra) for (const key of ['media', 'image', 'image_swipes', 'media_index', 'media_display', 'inline_image']) {
+        if (active?.extra) for (const key of fields) {
             if (Object.hasOwn(record.extra, key)) active.extra[key] = structuredClone(record.extra[key]); else delete active.extra[key];
         }
     }

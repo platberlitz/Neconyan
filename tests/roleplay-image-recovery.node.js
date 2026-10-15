@@ -18,6 +18,26 @@ function setup(t, group = false) {
         actions: [{ ...scan.issues[0], mode: 'display-only' }] };
     return { ...f, scan, input };
 }
+test('repair keeps a legacy image title attached to the image and its active alternative', async t => {
+    const f = fixture(t);
+    f.records[1].extra = { image: 'data:image/png;base64,broken', title: 'PRIVATE_IMAGE_TITLE', append_title: true };
+    f.records[1].swipe_id = 0;
+    f.records[1].swipes = [f.records[1].mes];
+    f.records[1].swipe_info = [{ extra: structuredClone(f.records[1].extra) }];
+    fs.writeFileSync(f.filename, f.records.map(row => JSON.stringify(row)).join('\n'));
+    const scan = scanRoleplayImages(f.scope, { locator: f.locator });
+    applyRoleplayImageRepair(f.scope, { account: { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch },
+        key: 'legacy-title', observation: scan.observation, actions: [{ ...scan.issues[0], mode: 'display-only' }] }, roleplayNativeHost);
+    const records = fs.readFileSync(f.filename, 'utf8').split('\n').map(JSON.parse);
+    const { createPromptMediaContext, selectPromptMedia } = await import('../public/scripts/prompt-media-policy.js');
+    for (const extra of [records[1].extra, records[1].swipe_info[0].extra]) {
+        assert.equal(extra.title, 'PRIVATE_IMAGE_TITLE');
+        assert.equal(extra.media[0].title, 'PRIVATE_IMAGE_TITLE');
+        const projection = selectPromptMedia([{}, { ...records[1], extra }], createPromptMediaContext({}), { hash: roleplayHash });
+        assert.equal(Boolean(projection.records[1].extra.append_title), false);
+        assert.deepEqual(projection.captionTexts, []);
+    }
+});
 for (const group of [false, true]) test(`${group ? 'group' : 'solo'} scan is read-only and repair preserves authored data, retries and undo`, t => {
     const f = setup(t, group);
     assert.equal(Object.keys(readRoleplayAccount(f.scope).resources).length, 0);

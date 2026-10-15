@@ -138,7 +138,17 @@ export function selectPromptMedia(records, context, { hash, includeCaptionReads 
                 const text = description(record, item, policy, index, mediaIndex);
                 captionTexts.push({ index, mediaIndex, text, ...(hash ? { sourceHash: hash([attachmentIdentity(item), policy.caption, text]) } : {}) }); additions.push(text);
             }
-            if (decision.send || includeCaptionReads && read) included.push({ ...item, ...(policy.image_url ? { url: policy.image_url } : {}), append_title: false });
+            if (decision.send || includeCaptionReads && read) {
+                const projectedItem = { ...item, append_title: false };
+                if (policy.image_url) {
+                    projectedItem.url = policy.image_url;
+                    // The derived attachment now names the resolved copy. Keep its policy bound to
+                    // that URL for subsequent prompt passes; the saved record retains source evidence.
+                    projectedItem.neconyan_prompt = { version: policy.version, mode: policy.mode,
+                        attachment_hash: hash(attachmentIdentity(projectedItem)) };
+                }
+                included.push(projectedItem);
+            }
         }
         if (included.length > 4) throw promptMediaError('too-many-images', index, -1, 'Choose up to four images for this reply or use a gallery.');
         if (included.length) { extra.media = included; extra.media_display = 'list'; delete extra.media_index; } else { delete extra.media; delete extra.media_index; delete extra.media_display; delete extra.inline_image; }

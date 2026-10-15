@@ -2,11 +2,27 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { test } from 'node:test';
-import { attachmentIdentity, canonicalPromptMedia, createPromptMediaContext, detachMessageMedia, generatedImageInputPreference, promptMediaText, selectPromptMedia } from '../public/scripts/prompt-media-policy.js';
+import { attachmentIdentity, canonicalPromptMedia, createPromptMediaContext, detachMessageMedia, generatedImageInputPreference, projectPromptMediaRecords, promptMediaText, selectPromptMedia } from '../public/scripts/prompt-media-policy.js';
 const hash = value => crypto.createHash('sha256').update(canonicalPromptMedia(value)).digest('hex');
 const context = (images = 'include', controls = {}) => createPromptMediaContext({ power_user: { neconyan_prompt_media: { version: 1, images } } }, {}, controls);
 const records = extra => [{}, { is_user: true, mes: 'Authored text', extra }];
 const image = { type: 'image', url: 'data:image/png;base64,unrepaired', title: 'Image description', append_title: true };
+
+test('compatible copies remain usable when companion processing projects history again', () => {
+    const item = { ...image, url: '/user/images/original.png', neconyan_prompt: {
+        version: 1, mode: 'include', attachment_hash: hash(['image', '/user/images/original.png']),
+        image_url: `/user/images/neconyan-repaired/${'a'.repeat(64)}.png`, original_evidence: { rawHash: 'b'.repeat(64) },
+    } };
+    const source = records({ media: [item] }), before = structuredClone(source);
+    const once = projectPromptMediaRecords(source, context(), { hash });
+    const twice = projectPromptMediaRecords(once, context(), { hash });
+    assert.deepEqual(twice, once);
+    assert.equal(twice[1].extra.media[0].url, item.neconyan_prompt.image_url);
+    assert.deepEqual(source, before);
+    const changed = structuredClone(source);
+    changed[1].extra.media[0].url = '/user/images/changed.png';
+    assert.throws(() => projectPromptMediaRecords(changed, context(), { hash }), /changed/);
+});
 
 test('display only preserves saved data and omits bytes, descriptions and caption work', () => {
     const source = records({ media: [image], media_index: -1, media_display: 'gallery' });
