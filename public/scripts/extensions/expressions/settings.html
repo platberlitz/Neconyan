@@ -65,6 +65,12 @@
                             <input id="expressions_agent_sprite_remove_background" type="checkbox">
                             <span data-i18n="Also remove white or other plain backgrounds">Also remove white or other plain backgrounds</span>
                         </label>
+                        <label class="checkbox_label" for="expressions_agent_sprite_matting">
+                            <input id="expressions_agent_sprite_matting" type="checkbox" aria-describedby="expressions_matting_hint">
+                            <span data-i18n="AI background removal (optional)">AI background removal (optional)</span>
+                        </label>
+                        <small id="expressions_matting_hint" data-i18n="Downloads a 176 MB anime cut-out model once. Runs locally on the server, around 1 GB RAM and 20 seconds per image on a small server. It can remove interior background gaps, but may also remove fine details. Export your set before redoing cleanup.">Downloads a 176 MB anime cut-out model once. Runs locally on the server, around 1 GB RAM and 20 seconds per image on a small server. It can remove interior background gaps, but may also remove fine details. Export your set before redoing cleanup.</small>
+                        <small id="expressions_model_status" role="status" aria-live="polite"></small>
                     </div>
                     <div class="expression_agent_prompt_block flex-container flexFlowColumn">
                         <label for="expressions_agent_sprite_prompt" class="title_restorable">
