@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { beginServerWork } from '../android-wake.js';
 import { fail, hash, sourceFingerprint } from './core.js';
 import { readConfig } from './models.js';
 import { isStaleSourceError, pendingSources, processBatch, processingVersion } from './processing.js';
 import { loadCurrentState } from './sources.js';
-import { listStories, mutateState, readStateShared, statePath } from './store.js';
+import { chatPath, listStories, mutateState, readStateShared, statePath } from './store.js';
 
 const running = new Map();
 const MAX_RUNNING = 4;
@@ -13,6 +15,30 @@ let wake = () => {};
 const atCapacity = (directories, automatic) => running.size >= MAX_RUNNING
     || (automatic && (running.size >= MAX_RUNNING - 1
         || [...running.values()].filter(entry => entry.root === directories.root).length >= 2));
+// Reconciling a story re-reads its chat, cards, lorebooks and files, and with dozens of enabled
+// chats that kept the server busy for most of every scan while nothing had changed. A story is
+// reconciled again only when one of those files changes, or every ten minutes as a safety net.
+const RECONCILE_REFRESH_MS = 10 * 60_000;
+const reconciled = new Map();
+const fileStamp = filename => {
+    try {
+        const stat = fs.statSync(filename);
+        return [stat.ino, stat.size, stat.mtimeMs];
+    } catch {
+        return null;
+    }
+};
+const directoryStamp = directory => {
+    let names;
+    try {
+        names = fs.readdirSync(directory).sort();
+    } catch {
+        return null;
+    }
+    return names.map(name => [name, fileStamp(path.join(directory, name))]);
+};
+const sharedInputs = (directories, config) => hash([config, fileStamp(path.join(directories.root, 'settings.json')),
+    ...[directories.characters, directories.groups, directories.worlds, directories.files].map(directoryStamp)]);
 const fingerprint = (state, config) => hash([sourceFingerprint(state), processingVersion(config), config.revision, state.overrides, state.excludedSources]);
 
 /** Persist intent before starting work; neither the HTTP connection nor the selected chat owns it. */
@@ -97,8 +123,15 @@ export async function cancelProcessing(directories, locator) {
 /** One bounded scan also resumes persisted manual work after a restart. */
 export async function scanProcessing(directories, call, { reconcile = true } = {}) {
     const config = readConfig(directories);
-    for (const story of listStories(directories).sort((a, b) => b.updatedAt - a.updatedAt)) {
-        if (running.has(statePath(directories, story.locator))) continue;
+    const shared = reconcile ? sharedInputs(directories, config) : null;
+    const stories = listStories(directories).sort((a, b) => b.updatedAt - a.updatedAt);
+    const seen = new Set();
+    for (const [index, story] of stories.entries()) {
+        const key = statePath(directories, story.locator);
+        seen.add(key);
+        // Each story's checks are synchronous; let waiting requests run between them.
+        if (index) await new Promise(resolve => setImmediate(resolve));
+        if (running.has(key)) continue;
         try {
             if (story.processing?.status === 'running' && (!story.enabled || (story.processing.automatic && !config.autoUpdate))) {
                 mutateState(directories, story.locator, state => {
@@ -108,18 +141,38 @@ export async function scanProcessing(directories, call, { reconcile = true } = {
             }
             if (!story.enabled || atCapacity(directories, story.processing?.status !== 'running' || story.processing.automatic)) continue;
             if (story.processing?.status !== 'running' && !(config.autoUpdate && config.roles.extractor.enabled)) continue;
-            const state = reconcile ? await loadCurrentState(directories, story.locator) : readStateShared(directories, story.locator);
+            let state;
+            let chat;
+            if (reconcile) {
+                chat = fileStamp(chatPath(directories, story.locator));
+                const last = reconciled.get(key);
+                if (last?.idle && Date.now() - last.at < RECONCILE_REFRESH_MS
+                    && last.stamp === hash([shared, chat, fileStamp(key)])) continue;
+                state = await loadCurrentState(directories, story.locator);
+            } else {
+                state = readStateShared(directories, story.locator);
+            }
             const previous = state.processing;
+            let idle = false;
             if (previous?.status === 'running' && (!previous.automatic || config.autoUpdate)) {
                 await startProcessing(directories, story.locator, previous, call);
             } else if (config.autoUpdate && config.roles.extractor.enabled
                 && pendingSources(state, config, { checkpoint: config.excludeHistory }).length
                 && (!['failed', 'cancelled'].includes(previous?.status) || previous.fingerprint !== fingerprint(state, config))) {
                 await startProcessing(directories, story.locator, { all: true, checkpoint: config.excludeHistory, automatic: true }, call);
+            } else {
+                idle = true;
             }
+            // The chat is stamped as it was before the read, so a save during it is noticed next time.
+            if (reconcile) reconciled.set(key, { idle, at: Date.now(), stamp: hash([shared, chat, fileStamp(key)]) });
         } catch (error) {
+            reconciled.delete(key);
             console.warn('[Mewmory] Could not schedule story:', error.message);
         }
+    }
+    const directory = path.join(directories.root, 'mewmory', 'stories');
+    for (const key of reconciled.keys()) {
+        if (path.dirname(key) === directory && !seen.has(key)) reconciled.delete(key);
     }
 }
 

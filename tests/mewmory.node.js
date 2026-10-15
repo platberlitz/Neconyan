@@ -454,6 +454,34 @@ test('startup clears interrupted jobs that are now disabled and skips idle sourc
     assert.equal(pendingSources(completed, readConfig(directories), { checkpoint: true }).length, 0);
 });
 
+test('periodic scans skip reconciling a story whose files have not changed', async t => {
+    const { directories, write } = disk(t);
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    let calls = 0;
+    const call = async () => {
+        calls++;
+        return { value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role: 'extractor' } };
+    };
+    await scanProcessing(directories, call);
+    await waitForProcessing(directories, locator);
+    await scanProcessing(directories, call);
+    const settled = calls;
+    // Reconciling checks the memory file before deciding whether to rewrite it.
+    const exists = t.mock.method(fs, 'existsSync');
+    await scanProcessing(directories, call);
+    assert.equal(exists.mock.calls.filter(entry => entry.arguments[0] === statePath(directories, locator)).length, 0);
+    exists.mock.restore();
+    write([...fixture.messages, { name: 'Mara', mes: 'A new message.', is_user: false }]);
+    await scanProcessing(directories, call);
+    const completed = await waitForProcessing(directories, locator);
+    assert.ok(calls > settled);
+    assert.equal(pendingSources(completed, readConfig(directories), { checkpoint: true }).length, 0);
+});
+
 test('safe start pauses interrupted processing instead of resuming it', async t => {
     const { directories } = disk(t);
     const config = defaultConfig();
