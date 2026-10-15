@@ -149,4 +149,8 @@ export const refreshedKnowledgeCases = [
     ['What does Low-memory mode change and how does Use automatic recommendations work?', 'settings.device', 'Use automatic recommendations'],
     ['How do I switch Chat Completion Tabs on or off from the sidebar?', 'tools.completion-tabs', 'switches Chat Completion Tabs on and off directly'],
     ['How do I make the keyboard open automatically when a chat opens?', 'settings.writing', 'Open keyboard when a chat opens'],
+    ['Why is my Director\'s Commentary so critical now?', 'agents.directors-commentary', 'neutral, sceptical critic'],
+    ['Does the Continuity Companion know what the Continuity Corrector fixed?', 'agents.continuity-corrector', 'Fixed: line'],
+    ['Why does the Android app drain my battery while idle?', 'start.android', 'keeps the phone awake only while its server is working'],
+    ['Does the chat redraw when a server reply finishes in a hidden tab?', 'chat.server-replies', 'joins the chat in place'],
 ];
