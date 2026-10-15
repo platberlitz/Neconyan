@@ -21,7 +21,7 @@ const syncSource = source.match(/export function syncCustomEndpointPresetSelecti
 const POPUP_TYPE = { CONFIRM: 'confirm' };
 const POPUP_RESULT = { AFFIRMATIVE: 1, CANCEL: 0 };
 const scriptSource = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const saverSource = ['buildSettingsPayloadExtensionSettings', 'saveSettings', 'saveSettingsInner', 'captureActiveGenerationSelection', 'normalizeSettingsVersion', 'normalizeSettingsRevision']
+const saverSource = ['buildSettingsPayloadExtensionSettings', 'rememberSavedSettings', 'matchesDownloadedSettings', 'saveSettings', 'saveSettingsInner', 'captureActiveGenerationSelection', 'normalizeSettingsVersion', 'normalizeSettingsRevision']
     .map(name => scriptSource.match(new RegExp(`(?:async )?function ${name}\\([\\s\\S]*?\\n\\}`))[0]).join('\n');
 const sources = Object.fromEntries([...source.matchAll(/chat_completion_sources\.([A-Z0-9_]+)/g)].map(([, name]) => [name, name.toLowerCase()]));
 const keys = Object.fromEntries(Object.keys(sources).map(name => [name, `api_key_${name.toLowerCase()}`]));
@@ -59,6 +59,8 @@ function createHarness({ profile = normalizeCustomEndpointPreset({ name: 'Saved 
         accountImportSettingsPause: null,
         pendingSettingsAcknowledgements: 0,
         acknowledgedGenerationSettings: null,
+        lastSavedSettings: null,
+        downloadedSettings: null,
         generationSettingsSnapshot,
         getPresetManager: () => null,
         settingsReady: true,
@@ -569,7 +571,10 @@ describe('Queued settings save acknowledgement', () => {
     test('keeps the queue usable after a failed attempt and advances subsequent request versions', async () => {
         const { context } = createHarness();
         let failSave;
+        const save = context.fetch.getMockImplementation();
         context.fetch.mockImplementationOnce(() => new Promise((_, reject) => { failSave = reject; }));
+        // A change while the second save is out gives the third one something to send.
+        context.fetch.mockImplementationOnce(async (url, request) => { context.amount_gen = 300; return save(url, request); });
         const first = context.saveSettings(0, { returnResult: true });
         const second = context.saveSettings(0, { returnResult: true });
         const third = context.saveSettings(0, { returnResult: true });
@@ -580,6 +585,58 @@ describe('Queued settings save acknowledgement', () => {
         expect(context.fetch.mock.calls.map(([, request]) => JSON.parse(request.body)._version)).toEqual([1, 1, 2]);
         expect(context.lastServerSettingsVersion).toBe(3);
         expect(context.toastr.error).toHaveBeenCalledTimes(1);
+    });
+
+    test('a save that would send what the server already has is not uploaded again', async () => {
+        const { context } = createHarness();
+        expect(await context.saveSettings(0, { returnResult: true })).toBe(true);
+        const acknowledgement = context.acknowledgedGenerationSettings;
+        expect(await context.saveSettings(0, { returnResult: true })).toBe(true);
+        expect(context.fetch).toHaveBeenCalledTimes(1);
+        expect(context.acknowledgedGenerationSettings).toBe(acknowledgement);
+        expect(context.eventSource.emit).toHaveBeenCalledTimes(1);
+
+        context.amount_gen = 300;
+        expect(await context.saveSettings(0, { returnResult: true })).toBe(true);
+        expect(context.fetch).toHaveBeenCalledTimes(2);
+        expect(JSON.parse(context.fetch.mock.calls[1][1].body)).toMatchObject({ _version: 2, amount_gen: 300 });
+    });
+
+    test('a newer server version always gets a real save', async () => {
+        const { context } = createHarness();
+        await context.saveSettings(0, { returnResult: true });
+        context.lastServerSettingsVersion = 7;
+        expect(await context.saveSettings(0, { returnResult: true })).toBe(true);
+        expect(context.fetch).toHaveBeenCalledTimes(2);
+        expect(JSON.parse(context.fetch.mock.calls[1][1].body)._version).toBe(7);
+    });
+
+    test('a change made while a save is out is still uploaded afterwards', async () => {
+        const { context } = createHarness();
+        const save = context.fetch.getMockImplementation();
+        context.fetch.mockImplementationOnce(async (url, request) => { context.amount_gen = 300; return save(url, request); });
+        await context.saveSettings(0, { returnResult: true });
+        expect(await context.saveSettings(0, { returnResult: true })).toBe(true);
+        expect(context.fetch).toHaveBeenCalledTimes(2);
+        expect(JSON.parse(context.fetch.mock.calls[1][1].body).amount_gen).toBe(300);
+    });
+
+    test('the first save is skipped only when it matches the settings downloaded at start-up', async () => {
+        for (const [downloaded, uploads] of [[{}, 0], [{ amount_gen: 300 }, 1]]) {
+            const { context } = createHarness();
+            await context.saveSettings(0, { returnResult: true });
+            const sent = JSON.parse(context.fetch.mock.calls[0][1].body);
+            const fresh = createHarness().context;
+            const text = { ...sent, ...downloaded, extension_settings: { ...sent.extension_settings, neconyan_conversation: { characters: { a: {} } } } };
+            delete text._version;
+            delete text._settingsRevision;
+            delete text._conversationOmitted;
+            fresh.downloadedSettings = { account: 'one', version: 1, settingsRevision: 1, text: JSON.stringify(text) };
+            expect(await fresh.saveSettings(0, { returnResult: true })).toBe(true);
+            expect(fresh.fetch).toHaveBeenCalledTimes(uploads);
+            expect(fresh.downloadedSettings).toBeNull();
+            expect(fresh.acknowledgedGenerationSettings).toMatchObject({ account: 'one', settingsRevision: 1 + uploads });
+        }
     });
 
     test('preserves conflict state and blocks subsequent writes with the existing prompt', async () => {

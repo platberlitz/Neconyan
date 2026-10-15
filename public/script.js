@@ -1046,6 +1046,11 @@ let lastServerSettingsVersion = 0;
 // Neconyan: revision of non-Conversation settings, so native Conversation writes do not force reloads.
 let lastServerSettingsRevision = 0;
 let acknowledgedGenerationSettings = null;
+// The last request body the server accepted, already carrying the version it returned. An
+// identical next body means nothing changed, so it is not uploaded again.
+let lastSavedSettings = null;
+// The settings text the server sent at start-up, kept until the first save compares against it.
+let downloadedSettings = null;
 let pendingSettingsAcknowledgements = 0;
 let settingsSaveQueue = Promise.resolve();
 let accountImportSettingsPause = null;
@@ -13335,6 +13340,13 @@ export async function getSettings(initLoaderHandle = null, initialData = null) {
         await setUserControls(data.enable_accounts);
         conversationSync.assertConversationAccount();
         acknowledgedGenerationSettings = downloadedGenerationSettings;
+        lastSavedSettings = null;
+        downloadedSettings = {
+            account: data.inChatAgentAccount,
+            version: lastServerSettingsVersion,
+            settingsRevision: lastServerSettingsRevision,
+            text: data.settings,
+        };
         conversationSync.captureConversationStore(conversationBaseline, conversationVersion);
         setRequestCompressionConfig(data.request_compression);
 
@@ -13566,6 +13578,45 @@ function buildSettingsPayloadExtensionSettings() {
     return payload;
 }
 
+/**
+ * Swap the accepted version into the body that was sent. The live settings may have changed
+ * while the request was out, so the body is never serialised again here.
+ */
+function rememberSavedSettings(account, sentBody, sentVersion, saved, acknowledgement) {
+    const versionText = version => JSON.stringify(version).slice(0, -1) + ',';
+    const sentPrefix = versionText(sentVersion);
+    if (!sentBody.startsWith(sentPrefix)) return null;
+    const body = versionText({ _version: saved._version, _settingsRevision: saved._settingsRevision })
+        + sentBody.slice(sentPrefix.length);
+    return { account, body, acknowledgement };
+}
+
+/**
+ * Lay the downloaded settings out as a save body, so the first save can tell whether it would
+ * only send the server what it already has. Any difference, even in key order, means a real save.
+ */
+function matchesDownloadedSettings(account, payload, serializedPayload) {
+    const downloaded = downloadedSettings;
+    downloadedSettings = null;
+    if (downloaded?.account !== account || downloaded.version !== payload._version
+        || downloaded.settingsRevision !== payload._settingsRevision) return false;
+    try {
+        const source = JSON.parse(downloaded.text);
+        const extensionSettings = { ...source.extension_settings };
+        delete extensionSettings[CONVERSATION_STORE_KEY];
+        const body = Object.fromEntries(Object.keys(payload).map(key => [key, source[key]]));
+        Object.assign(body, {
+            _version: payload._version,
+            _settingsRevision: payload._settingsRevision,
+            _conversationOmitted: true,
+            extension_settings: extensionSettings,
+        });
+        return JSON.stringify(body) === serializedPayload;
+    } catch {
+        return false;
+    }
+}
+
 async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle()) {
     acknowledgedGenerationSettings = null;
     if (!settingsReady) {
@@ -13632,6 +13683,23 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
 
     try {
         const serializedPayload = JSON.stringify(payload);
+        if (lastSavedSettings?.account === account && lastSavedSettings.body === serializedPayload) {
+            // Start-up and programmatic control updates request many saves that change nothing;
+            // each one would upload every setting again.
+            acknowledgedGenerationSettings = lastSavedSettings.acknowledgement;
+            return true;
+        }
+        if (!lastSavedSettings && matchesDownloadedSettings(account, payload, serializedPayload)) {
+            acknowledgedGenerationSettings = {
+                account,
+                settingsRevision: payload._settingsRevision,
+                controls: generationSettingsSnapshot(JSON.parse(serializedPayload)),
+            };
+            lastSavedSettings = { account, body: serializedPayload, acknowledgement: acknowledgedGenerationSettings };
+            return true;
+        }
+        lastSavedSettings = null;
+        const submittedVersion = { _version: payload._version, _settingsRevision: payload._settingsRevision };
         const submittedGenerationSettings = generationSettingsSnapshot(JSON.parse(serializedPayload));
         const saveSettingsRequest = await compressRequest({
             method: 'POST',
@@ -13672,10 +13740,13 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
         acknowledgedGenerationSettings = { account, settingsRevision: lastServerSettingsRevision, controls: submittedGenerationSettings };
         payload._version = lastServerSettingsVersion;
         payload._settingsRevision = lastServerSettingsRevision;
+        const accepted = rememberSavedSettings(account, serializedPayload, submittedVersion, payload, acknowledgedGenerationSettings);
 
         settings = payload;
         await eventSource.emit(event_types.SETTINGS_UPDATED);
-        return account === getCurrentUserHandle();
+        if (account !== getCurrentUserHandle()) return false;
+        lastSavedSettings = accepted;
+        return true;
     } catch (error) {
         if (account !== getCurrentUserHandle()) return false;
         console.error('Error saving settings:', error);
