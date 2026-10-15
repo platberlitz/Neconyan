@@ -23,6 +23,7 @@ import { normalizeSegmentText } from './utils.js';
 import { queueColorStateSave } from './live-colors.js';
 
 const MAX_STREAMING_SEGMENT_ASSIGNMENTS = 512;
+const previewAssignments = new WeakMap();
 let streamingIdentity = null;
 
 function getStreamingChatIdentity(context) {
@@ -118,12 +119,12 @@ function observeStreamingTarget() {
     streamingSession.observer.observe(streamingSession.mesText, { childList: true, subtree: true, characterData: true });
 }
 
-function stabilizeStreamingAssignments(attribution, overrideOptions) {
+function stabilizeStreamingAssignments(attribution, overrideOptions, assignments = stableSegmentAssignments) {
     const overrides = overrideOptions.overrides;
     for (const segment of attribution.segments.slice(0, MAX_STREAMING_SEGMENT_ASSIGNMENTS)) {
         const key = `${segment.delimiter}:${segment.index}`;
         const overridden = overrides && Object.prototype.hasOwnProperty.call(overrides, String(segment.index));
-        const cached = stableSegmentAssignments.get(key);
+        const cached = assignments.get(key);
         // Quote numbers can shift while text streams in, so only reuse a guess
         // for the same quote.
         if (!overridden && cached && cached.start === segment.start) {
@@ -133,12 +134,62 @@ function stabilizeStreamingAssignments(attribution, overrideOptions) {
             // manufacture high confidence for a weak attribution.
             segment.confidence = cached.confidence ?? (Number(segment.confidence) || 0);
         } else {
-            stableSegmentAssignments.set(key, { start: segment.start, assignment: segment.assignment ? { ...segment.assignment } : null, confidence: Number(segment.confidence) || 0 });
+            assignments.set(key, { start: segment.start, assignment: segment.assignment ? { ...segment.assignment } : null, confidence: Number(segment.confidence) || 0 });
         }
     }
-    while (stableSegmentAssignments.size > MAX_STREAMING_SEGMENT_ASSIGNMENTS) {
-        stableSegmentAssignments.delete(stableSegmentAssignments.keys().next().value);
+    while (assignments.size > MAX_STREAMING_SEGMENT_ASSIGNMENTS) {
+        assignments.delete(assignments.keys().next().value);
     }
+}
+
+function paintAttributedSegments(mesText, attribution) {
+    const quoteSegments = attribution.segments.filter(seg => seg.delimiter !== '*' && seg.delimiter !== '_');
+    const emphasisSegments = attribution.segments.filter(seg => seg.delimiter === '*' || seg.delimiter === '_');
+    const quoteElements = Array.from(mesText.querySelectorAll('q'));
+    const emphasisElements = Array.from(mesText.querySelectorAll('em'));
+    const matched = new Set();
+    const decorate = (segment, element) => {
+        matched.add(element);
+        applySegmentDecoration(segment, element);
+    };
+    matchSegmentsToElements(quoteSegments, quoteElements, seg => normalizeSegmentText(seg.text), decorate, { allowAnchoredFallback: true });
+    matchSegmentsToElements(emphasisSegments, emphasisElements, seg => normalizeSegmentText(seg.text.slice(1, -1)), decorate, { allowAnchoredFallback: true });
+    for (const element of quoteElements.concat(emphasisElements)) {
+        if (!matched.has(element)) clearSegmentDecoration(element);
+    }
+
+    // Unwrapping narrator spans during a stream would re-enter the observer.
+    const narrator = getNarratorVisual(settings, applyThemeReadabilityAndBrightness);
+    if (narrator) decorateNarratorTextNodes(mesText, narrator);
+}
+
+/** Paint an unsaved server draft without chat indexes, metadata or colour saves. */
+export function paintPreviewMessage(message, element) {
+    if (!settings.enabled || !message || isHostSystemOrToolMessage(message)
+        || !element?.isConnected || !element.matches('#chat .mes[data-roleplay-draft]')) return false;
+    const mesText = element.querySelector('.mes_text');
+    if (!mesText) return false;
+    const text = String(message.mes ?? '');
+    if (!isDomEngine() || mesText.querySelector('font[color]') || collectFontColorsFromText(text).size) {
+        mesText.querySelectorAll('[data-dc-colored], [data-dc-seg]').forEach(clearSegmentDecoration);
+        applyCustomFontsToFontTags(mesText, text);
+        return true;
+    }
+
+    let cached = previewAssignments.get(element);
+    if (!cached || cached.name !== message.name || !text.startsWith(cached.text)
+        || cached.thoughtSymbols !== settings.thoughtSymbols) {
+        cached = { assignments: new Map(), name: message.name, thoughtSymbols: settings.thoughtSymbols };
+        previewAssignments.set(element, cached);
+    }
+    // No mesIndex or autoAddMessageSpeaker: attribution must not borrow a saved
+    // message's overrides, alter the browser stream, or persist partial output.
+    const attribution = attributeDialogueSegments(text, message.name, { streaming: true });
+    stabilizeStreamingAssignments(attribution, {}, cached.assignments);
+    paintAttributedSegments(mesText, attribution);
+    applyCustomFontsToFontTags(mesText, text);
+    cached.text = text;
+    return true;
 }
 
 export function getPaintedStreamingAssignment(mesIndex, message, segment) {
@@ -184,27 +235,7 @@ export function paintStreamingMessage() {
         streamingSession.assignments.clear();
         if (attribution.createdCharacters) queueColorStateSave({ history: false, injectPrompt: false });
 
-        const quoteSegments = attribution.segments.filter(seg => seg.delimiter !== '*' && seg.delimiter !== '_');
-        const emphasisSegments = attribution.segments.filter(seg => seg.delimiter === '*' || seg.delimiter === '_');
-        const quoteElements = Array.from(mesText.querySelectorAll('q'));
-        const emphasisElements = Array.from(mesText.querySelectorAll('em'));
-        const matched = new Set();
-        const decorate = (segment, element) => {
-            matched.add(element);
-            applySegmentDecoration(segment, element);
-        };
-        matchSegmentsToElements(quoteSegments, quoteElements, seg => normalizeSegmentText(seg.text), decorate, { allowAnchoredFallback: true });
-        matchSegmentsToElements(emphasisSegments, emphasisElements, seg => normalizeSegmentText(seg.text.slice(1, -1)), decorate, { allowAnchoredFallback: true });
-        for (const element of quoteElements.concat(emphasisElements)) {
-            if (!matched.has(element)) clearSegmentDecoration(element);
-        }
-
-        // Narrator spans only ever get added here. Unwrapping them mid-stream is
-        // a childList mutation that would re-enter this observer and make the
-        // narration blink between its own colour and the default.
-        const narrator = getNarratorVisual(settings, applyThemeReadabilityAndBrightness);
-        if (narrator) decorateNarratorTextNodes(mesText, narrator);
-
+        paintAttributedSegments(mesText, attribution);
         applyCustomFontsToFontTags(mesText, msg.mes);
         return true;
     } finally {
