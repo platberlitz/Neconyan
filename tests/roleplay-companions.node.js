@@ -530,6 +530,30 @@ test('native tracker Companions repair a broken reply and fail without closing a
     assert.match(results.lost.error, /Tracker repair returned invalid output/);
 });
 
+for (const accepted of [true, false]) {
+    test(`native tracker cleanup ${accepted ? 'repairs' : 'rejects'} a closed but unrenderable Event record`, async t => {
+        const template = JSON.parse(fs.readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/event-tracker.json', import.meta.url)));
+        const scripts = JSON.parse(fs.readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/regex-bundles.json', import.meta.url)))[template.id];
+        const event = '[EVENT|✅ RESOLVED|The war question was answered|Tonight]\ncontext: The answer is the Archon War.\n[/EVENT]';
+        const broken = event.replace('|✅ RESOLVED|', '|⚠️ THREAT|✅ RESOLVED|');
+        const f = prepared(t, [{ ...template, ...companion('events'), category: 'tracker', prompt: template.prompt, regexScripts: scripts }]);
+        const prompts = [];
+        await f.run({ generate: paid('main', 'Main reply'), generateAgent: paid('agent', options => {
+            prompts.push(JSON.stringify(options.messages));
+            return { text: prompts.length === 1 || !accepted ? broken : event };
+        }) });
+        const result = f.rows().at(-1).extra.inChatAgentCompanionResults.events;
+        assert.equal(prompts.length, 2);
+        assert.match(prompts[1], /Repair mode/);
+        assert.match(prompts[1], /Current companion agent note/);
+        if (accepted) assert.equal(result.content, event);
+        else {
+            assert.equal(result.status, 'error');
+            assert.match(result.error, /Tracker repair returned invalid output/);
+        }
+    });
+}
+
 test('versioned show-only broken images survive companion lore recapture without leaking titles', async t => {
     const f = prepared(t, [companion('side', { includeWorldInfo: true, contextMessages: 4 })], { imagePolicy: true, changeRecords(records) {
         records[0].chat_metadata.neconyan_prompt_media = { version: 1, images: 'display-only' };

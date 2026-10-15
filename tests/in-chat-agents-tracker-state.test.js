@@ -11,6 +11,7 @@ const {
     getTrackerRepairPayload,
     hasUnlabelledTrackerBullets,
     inspectCompanionTrackerOutput,
+    inspectTrackerRepairState,
     inspectTrackerState,
     mergeTrackerRepairPayload,
     normalizeCompanionTrackerRepairPayload,
@@ -25,6 +26,90 @@ const statusAgent = {
         extractVariable: 'status_data',
     },
 };
+
+const templates = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/index.json', import.meta.url), 'utf8'));
+const bundles = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/regex-bundles.json', import.meta.url), 'utf8'));
+const tracker = id => ({ ...templates.find(agent => agent.id === id), regexScripts: bundles[id] });
+const eventAgent = tracker('tpl-event-tracker');
+const event = '[EVENT|✅ RESOLVED|The war question was answered|Tonight]\ncontext: The answer is the Archon War.\n[/EVENT]';
+const promise = '[EVENT|💬 PROMISE|Defer the remaining questions|Tomorrow]\ncontext: They will talk after resting.\n[/EVENT]';
+const brokenEvent = event.replace('|✅ RESOLVED|', '|⚠️ THREAT|✅ RESOLVED|');
+
+describe('tracker repair display audit', () => {
+    test.each(templates.filter(agent => agent.category === 'tracker').map(agent => [agent.id]))('%s accepts its bundled format examples', id => {
+        const agent = tracker(id);
+        const { tag } = inspectTrackerState(agent, agent.prompt);
+        const examples = findTrackerBlocks(agent.prompt, tag).filter(block => block.complete
+            && /^\[[^\n]+\]\n[\s\S]*\n\[\/[^\n]+\]$/.test(block.text));
+        expect(examples.length).toBeGreaterThan(0);
+        for (const block of examples) {
+            expect(inspectTrackerRepairState(agent, block.text).status).toBe('valid');
+            expect(normalizeCompanionTrackerRepairPayload(agent, block.text).payload).toBe(block.text);
+            expect(inspectCompanionTrackerOutput(agent, block.text).action).toBe('keep');
+        }
+    });
+
+    test.each([
+        ['tpl-npc-profiles', '[NPC:REF|Ava|red scarf|wary]', '[NPC:REL|Bo|trust increased]'],
+        ['tpl-the-census', '[CENSUS:SIGHTING|Ava|red scarf|wary]', '[CENSUS:AMENDED|Bo|trust increased]'],
+    ])('%s keeps complete one-line variants without consuming following prose', (id, first, second) => {
+        const agent = tracker(id);
+        const text = `Before\n${first}\nBetween\n${second}\nAfter`;
+        expect(inspectTrackerRepairState(agent, text).payloads).toEqual([first, second]);
+        expect(normalizeCompanionTrackerRepairPayload(agent, `${first}\n${second}`).payload).toBe(`${first}\n\n${second}`);
+        expect(inspectCompanionTrackerOutput(agent, `${first}\n${second}`).action).toBe('keep');
+        expect(mergeTrackerRepairPayload(agent, text, `${second}\n${first}`).text)
+            .toBe(`Before\n${second}\n\n${first}\nBetween\n\nAfter`);
+    });
+
+    test('repairs an unrenderable event even when the neighbouring record renders', () => {
+        const mixed = `${brokenEvent}\n\n${promise}`;
+        expect(inspectTrackerState(eventAgent, mixed).status).toBe('valid');
+        expect(inspectTrackerRepairState(eventAgent, mixed).status).toBe('unrenderable');
+        expect(normalizeCompanionTrackerRepairPayload(eventAgent, mixed).payload).toBe('');
+        expect(inspectCompanionTrackerOutput(eventAgent, mixed)).toEqual({ action: 'repair', content: '', reason: 'unrenderable' });
+        expect(getCompanionTrackerAutoRepairPayload(eventAgent, mixed)).toBe('');
+        expect(normalizeCompanionTrackerRepairPayload(eventAgent, `${event}\n\n${promise}`, { previousText: mixed }).payload)
+            .toBe(`${event}\n\n${promise}`);
+        expect(normalizeCompanionTrackerRepairPayload(eventAgent, event, { previousText: mixed }).status).toBe('missing-records');
+        expect(getCompanionTrackerAutoRepairPayload(eventAgent, event, { previousText: mixed })).toBe('');
+    });
+
+    test('does not count a stray closing tag as another record to preserve', () => {
+        const previousText = `${brokenEvent}\n[/EVENT]`;
+        expect(normalizeCompanionTrackerRepairPayload(eventAgent, event, { previousText }).payload).toBe(event);
+        expect(getCompanionTrackerAutoRepairPayload(eventAgent, event, { previousText })).toBe(event);
+    });
+
+    test('uses only enabled assistant display rules, including combined display and prompt rules', () => {
+        const script = { findRegex: '\\[STATUS\\|[^\\]]*\\][\\s\\S]*?\\[/STATUS\\]', replaceString: '<aside>Ready</aside>', placement: [2] };
+        const text = '[STATUS|Alice|Ready|Mild]\nnote\n[/STATUS]';
+        for (const overrides of [{ disabled: true }, { markdownOnly: false, promptOnly: true }, { placement: [1] }]) {
+            expect(inspectTrackerRepairState({ ...statusAgent, regexScripts: [{ ...script, findRegex: 'never matches', ...overrides }] }, text).status).toBe('valid');
+        }
+        expect(inspectTrackerRepairState({ ...statusAgent, regexScripts: [{ ...script, promptOnly: true }] }, text).status).toBe('valid');
+        expect(inspectTrackerRepairState({ ...statusAgent, regexScripts: [{ ...script, promptOnly: true, findRegex: 'never matches' }] }, text).status).toBe('unrenderable');
+        expect(inspectTrackerRepairState({ ...statusAgent, regexScripts: [{ ...script, findRegex: 'note', replaceString: 'changed' }] }, text).status).toBe('unrenderable');
+    });
+
+    test('repairs field order without a model and checks the result against the display rule', () => {
+        const agent = tracker('tpl-relationship-tracker');
+        const correct = findTrackerBlocks(agent.prompt, 'METER').find(block => block.complete).text;
+        const swapped = correct.replace(/(date: [^\n]*)\n(turn: [^\n]*)/, '$2\n$1');
+        expect(inspectTrackerRepairState(agent, swapped).status).toBe('unrenderable');
+        expect(normalizeCompanionTrackerRepairPayload(agent, swapped).payload).toBe(correct);
+    });
+
+    test('uses the supplied macro substitutions when matching a custom display regex', () => {
+        const agent = { ...statusAgent, regexScripts: [{ findRegex: '\\[STATUS\\|{{char}}\\|[^\\]]*\\][\\s\\S]*?\\[/STATUS\\]',
+            replaceString: '<aside>$0</aside>', substituteRegex: 1 }] };
+        const text = '[STATUS|Alice|Ready|Mild]\nnote\n[/STATUS]';
+        const options = { characterOverride: 'Alice', substituteParamsFn: value => value.replace('{{char}}', 'Alice') };
+        expect(inspectTrackerRepairState(agent, text, options).status).toBe('unrenderable');
+        agent.regexScripts[0].replaceString = '<aside>Ready</aside>';
+        expect(inspectTrackerRepairState(agent, text, options).status).toBe('valid');
+    });
+});
 
 describe('in-chat agent tracker state', () => {
     test('field order repair retains exact values, inline HTML, and surrounding trackers', () => {

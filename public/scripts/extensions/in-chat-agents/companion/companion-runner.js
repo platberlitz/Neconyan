@@ -9,7 +9,9 @@ import {
     saveChatDebounced,
     setExtensionPrompt,
     substituteParams,
+    substituteParamsExtended,
 } from '../../../../script.js';
+import { withReadOnlyVariables } from '../../../variable-read-only.js';
 import { power_user } from '../../../power-user.js';
 import { extension_settings, getContext } from '../../../extensions.js';
 import { eventSource, event_types } from '../../../events.js';
@@ -19,6 +21,7 @@ import { getConnectionProfileDisplayName } from '../profile-utils.js';
 import {
     areAgentsGloballyEnabled,
     getAgentById,
+    getAgentRegexScripts,
     getAgents,
     getCompanionConfig,
     getEnabledAgents,
@@ -1745,12 +1748,20 @@ export function captureCompanionResultTarget(messageIndex, agentId) {
     return () => isCurrent() && JSON.stringify(getCompanionResults(chat[messageIndex])[agentId]) === snapshot;
 }
 
+function trackerDisplayOptions(agent, messageIndex) {
+    return {
+        scripts: getAgentRegexScripts(agent), characterOverride: chat[messageIndex]?.name,
+        substituteParamsFn: (...args) => withReadOnlyVariables(() => substituteParams(...args)),
+        substituteParamsExtendedFn: (...args) => withReadOnlyVariables(() => substituteParamsExtended(...args)),
+    };
+}
+
 /**
  * Automatic tracker runs must leave only the tracker block. A reply that is story prose (with or
  * without the tracker under it) is regenerated once; a broken block gets one repair pass. Both
  * extra calls reuse `generate`, and the usage of every call is added to `attempt.tokenUsage`.
  */
-async function cleanUpCompanionTrackerOutput(agent, attempt, generate, extraContextSections) {
+async function cleanUpCompanionTrackerOutput(agent, attempt, generate, extraContextSections, displayOptions) {
     const addUsage = next => ({
         ...next,
         tokenUsage: {
@@ -1758,14 +1769,14 @@ async function cleanUpCompanionTrackerOutput(agent, attempt, generate, extraCont
             outputTokens: (attempt.tokenUsage?.outputTokens ?? 0) + (next.tokenUsage?.outputTokens ?? 0),
         },
     });
-    let check = inspectCompanionTrackerOutput(agent, attempt.rawContent);
+    let check = inspectCompanionTrackerOutput(agent, attempt.rawContent, displayOptions);
     if (check.action === 'keep') return { ...attempt, rawContent: check.content };
 
     let brokenContent = attempt.rawContent;
     if (check.action === 'regenerate') {
         const fallback = check.content;
         attempt = addUsage(await generate({ repair: false, extraContextSections }));
-        check = inspectCompanionTrackerOutput(agent, attempt.rawContent);
+        check = inspectCompanionTrackerOutput(agent, attempt.rawContent, displayOptions);
         if (check.action === 'keep') return { ...attempt, rawContent: check.content };
         // Still story prose: an intact tracker block from either reply beats another call.
         const payload = check.content || fallback;
@@ -1777,7 +1788,7 @@ async function cleanUpCompanionTrackerOutput(agent, attempt, generate, extraCont
         repair: true,
         extraContextSections: [...extraContextSections, { title: 'Current companion agent note', content: brokenContent }],
     }));
-    const payload = getCompanionTrackerAutoRepairPayload(agent, attempt.rawContent);
+    const payload = getCompanionTrackerAutoRepairPayload(agent, attempt.rawContent, { ...displayOptions, previousText: brokenContent });
     if (!payload) throw new Error('Tracker repair returned invalid output.');
     return { ...attempt, rawContent: payload };
 }
@@ -1824,7 +1835,7 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
 
             let attempt = initialOutput ?? await generate({ repair, extraContextSections });
             if (!repair && agent.category === 'tracker') {
-                attempt = await cleanUpCompanionTrackerOutput(agent, attempt, generate, extraContextSections);
+                attempt = await cleanUpCompanionTrackerOutput(agent, attempt, generate, extraContextSections, trackerDisplayOptions(agent, messageIndex));
             }
             const { rawContent, tokenUsage } = attempt;
             let content = await applyCompanionOutputPostPassesToContent(agent, rawContent, messageIndex, cancelRevision);
@@ -1835,7 +1846,9 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
             // fix for a malformed block, so "nothing changed" must roll back to the stored tracker state
             // rather than overwrite it with a sentinel that renders as nothing.
             if (repair && agent.category === 'tracker') {
-                const payload = normalizeCompanionTrackerRepairPayload(agent, content).payload;
+                const payload = normalizeCompanionTrackerRepairPayload(agent, content, {
+                    ...trackerDisplayOptions(agent, messageIndex), previousText: previous,
+                }).payload;
                 if (!payload) {
                     throw new Error('Tracker repair returned invalid output.');
                 }
@@ -1863,7 +1876,7 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
             if (targetChanged) return { agentId: agent.id, changed: false, result: null };
             const cancelled = targetChanged || getAgentGenerationCancelRevision() !== cancelRevision || error?.name === 'AbortError';
             const restoreResult = previousResult ?? run?.previousResult ?? null;
-            if (repair) {
+            if (repair && cancelled) {
                 restoreCompanionResult(message, agent.id, restoreResult);
             } else {
                 settleFailedCompanionRun(message, agent, restoreResult, { cancelled, error });
@@ -2445,9 +2458,9 @@ export async function runCompanionAgentOnMessage(agentId, messageIndex, { cancel
     const previousResult = storedResult && typeof storedResult === 'object' ? structuredClone(storedResult) : null;
     const previousContent = getCompanionResultContent(message, agent.id);
     if (repair && agent.category === 'tracker') {
-        const existingPayload = normalizeCompanionTrackerRepairPayload(agent, previousContent).payload;
+        const existingPayload = normalizeCompanionTrackerRepairPayload(agent, previousContent, trackerDisplayOptions(agent, messageIndex)).payload;
         if (existingPayload) {
-            if (existingPayload !== previousContent || storedResult?.status !== 'done') {
+            if (existingPayload !== previousContent || storedResult?.status !== 'done' || storedResult?.lastRunError) {
                 updateCompanionResult(message, agent.id, { status: 'done', content: existingPayload, error: '' });
                 await emitCompanionResultsUpdated(messageIndex, agent.id);
                 if (!isTargetCurrent()) return null;

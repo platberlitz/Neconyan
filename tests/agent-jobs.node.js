@@ -315,6 +315,65 @@ test('repairing selected companion cards does not turn a dependent companion tas
     assert.equal(requests, 1);
 });
 
+const eventTemplate = JSON.parse(fs.readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/event-tracker.json', import.meta.url)));
+const eventScripts = JSON.parse(fs.readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/regex-bundles.json', import.meta.url)))[eventTemplate.id];
+const fixedEvent = '[EVENT|✅ RESOLVED|The war question was answered|Tonight]\ncontext: The answer is the Archon War.\n[/EVENT]';
+const keptEvent = '[EVENT|💬 PROMISE|Defer the remaining questions|Tomorrow]\ncontext: They will talk after resting.\n[/EVENT]';
+const brokenEvents = `${fixedEvent.replace('|✅ RESOLVED|', '|⚠️ THREAT|✅ RESOLVED|')}\n\n${keptEvent}`;
+const fixedEvents = `${fixedEvent}\n\n${keptEvent}`;
+
+for (const mode of ['repair-trackers', 'repair-companions']) {
+    for (const [label, output, accepted] of [['valid', fixedEvents, true], ['unrenderable', brokenEvents, false], ['missing record', fixedEvent, false], ['empty sentinel', 'tracker-none', false]]) {
+        test(`${mode} checks every Event Tracker record and preserves the source on ${label} output`, async t => {
+            const sidecar = mode === 'repair-companions';
+            const agent = { ...eventTemplate, id: 'events', enabled: true, execution: sidecar ? 'companion' : 'inline', regexScripts: eventScripts };
+            const original = `Before\n${brokenEvents}\nAfter`;
+            const prior = { status: 'done', content: brokenEvents, collapsed: true, updatedAt: 1, tokenUsage: { inputTokens: 12, outputTokens: 4 } };
+            const f = prepared(t, [agent], records => {
+                records[2].mes = sidecar ? 'Answer' : original;
+                records[2].swipes[0] = records[2].mes;
+                if (sidecar) records[2].extra.inChatAgentCompanionResults = { events: prior, other: { status: 'done', content: 'Keep other' } };
+            });
+            let calls = 0;
+            await f.action(mode, ['events']).run({ generate: paid(({ messages }) => {
+                calls++;
+                assert.match(JSON.stringify(messages), /Repair mode/);
+                return { text: output };
+            }) });
+            const result = f.saved()[2];
+            assert.equal(calls, 1);
+            assert.deepEqual(result.swipe_info[1], f.records[2].swipe_info[1]);
+            if (sidecar) {
+                assert.equal(result.mes, 'Answer');
+                const note = result.extra.inChatAgentCompanionResults.events;
+                assert.equal(note.content, accepted ? fixedEvents : brokenEvents);
+                assert.equal(note.collapsed, true);
+                assert.equal(result.extra.inChatAgentCompanionResults.other.content, 'Keep other');
+                if (!accepted) assert.deepEqual(note, { ...prior, lastRunError: 'Tracker repair returned invalid output.', lastRunFailureKind: 'invalid' });
+            } else {
+                assert.equal(result.mes, accepted ? `Before\n${fixedEvents}\n\n\nAfter` : original);
+                if (!accepted) assert.equal(result.extra.inChatAgentTransformHistory, undefined);
+            }
+            if (accepted) await f.action(mode, ['events']).run({ generate: () => assert.fail('already-renderable records need no model call') });
+        });
+    }
+
+    test(`${mode} reorders labelled fields locally instead of paying for a rewrite`, async t => {
+        const sidecar = mode === 'repair-companions';
+        const correct = '[STATE|Nova]\ndate: Tonight\nturn: Keep this fact\n[/STATE]';
+        const broken = correct.replace('date: Tonight\nturn: Keep this fact', 'turn: Keep this fact\ndate: Tonight');
+        const f = prepared(t, [{ id: 'ordered', enabled: true, category: 'tracker', phase: 'pre', execution: sidecar ? 'companion' : 'inline', prompt: correct,
+            postProcess: { enabled: true, type: 'extract', extractVariable: 'ordered', extractPattern: '\\[STATE\\|[^\\]]*\\][\\s\\S]*?\\[/STATE\\]' },
+            regexScripts: [{ findRegex: '\\[STATE\\|([^\\]]*)\\]\\ndate: ([^\\n]*)\\nturn: ([^\\n]*)\\n\\[/STATE\\]', replaceString: '<aside>$1 $2 $3</aside>', placement: [2], markdownOnly: true }] }], records => {
+            if (sidecar) records[2].extra.inChatAgentCompanionResults = { ordered: { status: 'done', content: broken } };
+            else records[2].mes = `Before\n${broken}\nAfter`;
+        });
+        await f.action(mode, ['ordered']).run({ generate: () => assert.fail('field order can be fixed without a model') });
+        const result = f.saved()[2];
+        assert.equal(sidecar ? result.extra.inChatAgentCompanionResults.ordered.content : result.mes, sidecar ? correct : `Before\n${correct}\nAfter`);
+    });
+}
+
 test('a length-limited manual rewrite preserves the original message or note without applying later regex scripts', async t => {
     const f = prepared(t, [{ id: 'edit', enabled: true, prompt: 'EDIT', regexScripts: [{ id: 'replace', findRegex: 'Answer', replaceString: 'WRONG', markdownOnly: false, promptOnly: false, placement: [2] }] }], records => {
         records[2].extra.inChatAgentCompanionResults = { side: { status: 'done', content: 'Answer in a note', updatedAt: 1 } };
