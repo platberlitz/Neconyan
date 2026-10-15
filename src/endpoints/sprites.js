@@ -6,6 +6,7 @@ import archiver from 'archiver';
 import { getImageBuffers } from '../util.js';
 import { deleteSpriteFiles, exportSpriteFiles, listSpriteFiles, saveSpriteFiles } from '../generation/sprite-storage.js';
 import { roleplayAccountBase, roleplayAccountStamp } from '../roleplay-store.js';
+import { installSpriteModel, processSpriteModel, spriteModelStatus } from '../generation/sprite-models.js';
 
 /** Import optional Risu images through the same protected writer as uploaded sprites. */
 export function importRisuSprites(directories, data) {
@@ -25,6 +26,30 @@ export function importRisuSprites(directories, data) {
 }
 
 export const router = express.Router();
+
+router.get('/models', async (_request, response) => {
+    try { response.json(await spriteModelStatus()); } catch (error) { response.status(error.status ?? 500).json({ error: error.message }); }
+});
+
+router.post('/models/install', async (request, response) => {
+    const controller = new AbortController();
+    response.on('close', () => { if (!response.writableEnded) controller.abort(); });
+    try {
+        await installSpriteModel(request.body?.kind, { signal: controller.signal });
+        response.json({ ok: true });
+    } catch (error) { if (!response.destroyed) response.status(error.status ?? 500).json({ error: error.message }); }
+});
+
+router.post('/process', express.raw({ type: 'application/octet-stream', limit: '16mb' }), async (request, response) => {
+    const controller = new AbortController();
+    response.on('close', () => { if (!response.writableEnded) controller.abort(); });
+    try {
+        const result = await processSpriteModel(request.query.kind, { data: request.body,
+            width: Number(request.query.width), height: Number(request.query.height), scale: Number(request.query.scale || 2),
+        }, { signal: controller.signal });
+        response.type('application/octet-stream').send(Buffer.from(result.data));
+    } catch (error) { if (!response.destroyed) response.status(error.status ?? 500).json({ error: error.message }); }
+});
 
 router.get('/get', (request, response) => {
     try { return response.send(listSpriteFiles(request.user.directories, request.query.name)); } catch (error) {

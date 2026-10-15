@@ -23,6 +23,9 @@ await jest.unstable_mockModule('../src/util.js', () => ({
 await jest.unstable_mockModule('../src/generation/sprite-storage.js', () => ({
     saveSpriteFiles, listSpriteFiles: jest.fn(), deleteSpriteFiles: jest.fn(), exportSpriteFiles: jest.fn(),
 }));
+await jest.unstable_mockModule('../src/generation/sprite-models.js', () => ({
+    installSpriteModel: jest.fn(), processSpriteModel: jest.fn(), spriteModelStatus: jest.fn(),
+}));
 await jest.unstable_mockModule('../src/roleplay-store.js', () => ({
     roleplayAccountBase: jest.fn(), roleplayAccountStamp: jest.fn(),
 }));

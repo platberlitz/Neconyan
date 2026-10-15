@@ -20,8 +20,11 @@ import { Popup, POPUP_RESULT } from '../../popup.js';
 import { t } from '../../i18n.js';
 import { removeReasoningFromString } from '../../reasoning.js';
 import { isExpressionLabel, isExpressionSpriteName, parseExpressionLabels, expressionLabelFromFilename, nextExpressionSpriteName } from './expression-labels.js';
-import { cleanSpriteBitmap, splitSpriteBitmap } from './sprite-pixels.js';
+import { splitSpriteBitmap } from './sprite-pixels.js';
 import { getExpressionSpriteBackground, TRANSPARENT_DEFAULT_EXPRESSION_SPRITE_PROMPT } from './sprite-prompts.js';
+import { enhanceSpriteBitmap } from './sprite-enhancement.js';
+
+let spriteProcessingController = null;
 import { getExpressionSpriteSheetGrid } from './sprite-prompts.js';
 import { readExpressionSets, resolveExpressionMember, applyExpressionMemberPrompt } from './expression-sets.js';
 import { bindExpressionSets, renderExpressionSets } from './expression-sets-ui.js';
@@ -1015,7 +1018,7 @@ async function uploadSpriteCommand({ name, label, folder = null, spriteName = nu
 
 function setExpressionGenerationBusy(isBusy) {
     inSpriteGeneration = !!isBusy;
-    $('#expressions_agent_sprite_background, #expressions_agent_sprite_remove_background').prop('disabled', inSpriteGeneration);
+    $('#expressions_agent_sprite_matting, #expressions_agent_sprite_background, #expressions_agent_sprite_remove_background').prop('disabled', inSpriteGeneration);
     $('#expressions_generate_missing_sprites, #expressions_upload_sprite_sheet, #expressions_redo_sprite_cleanup, #expressions_remove_all_sprites, .expression_list_generate, .expression_list_regenerate')
         .toggleClass('disabled', inSpriteGeneration)
         .attr('aria-disabled', String(inSpriteGeneration));
@@ -1045,6 +1048,7 @@ async function requestExpressionGenerationStop() {
     }
 
     expressionGenerationCancelRequested = true;
+    spriteProcessingController?.abort();
     const stopped = await stopExpressionSpriteGeneration();
     toastr.info(stopped ? t`Stopping sprite generation...` : t`Stopping after the current step...`, t`Sprite Generation`);
 }
@@ -1101,7 +1105,7 @@ async function generateAndUploadExpressionSprite(expression, spriteFolderName, {
     // tiles. Without this, the "Remove background" option never applies to single sprites.
     let uploadUrl = imageUrl;
     let processedUrl = null;
-    if (shouldRemoveSpriteBackground()) {
+    if (shouldRemoveSpriteBackground() || extension_settings.expressions.agentSpriteMatting) {
         try {
             processedUrl = await postProcessSpriteImage(imageUrl);
             uploadUrl = processedUrl;
@@ -1167,14 +1171,16 @@ function shouldRemoveSpriteBackground() {
         || getExpressionSpriteBackground(extension_settings.expressions.agentSpriteBackground) !== 'white';
 }
 
-function postProcessSpriteCanvas(canvas) {
+async function postProcessSpriteCanvas(canvas) {
     const context = canvas.getContext('2d');
-    const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-    cleanSpriteBitmap(pixels, {
-        removeBackground: shouldRemoveSpriteBackground(), keyOnly: !extension_settings.expressions.agentSpriteRemoveBackground,
-        check: throwIfExpressionGenerationStopped,
-    });
-    context.putImageData(pixels, 0, 0);
+    spriteProcessingController = new AbortController();
+    try {
+        const pixels = await enhanceSpriteBitmap(context.getImageData(0, 0, canvas.width, canvas.height), extension_settings.expressions, {
+            headers: getRequestHeaders(), signal: spriteProcessingController.signal, check: throwIfExpressionGenerationStopped,
+        });
+        canvas.width = pixels.width; canvas.height = pixels.height;
+        context.putImageData(new ImageData(new Uint8ClampedArray(pixels.data), pixels.width, pixels.height), 0, 0);
+    } finally { spriteProcessingController = null; }
 }
 
 async function postProcessSpriteImage(imageUrl) {
@@ -3090,6 +3096,31 @@ export async function init() {
         $('#expressions_agent_sprite_background').val(extension_settings.expressions.agentSpriteBackground).on('change', function () {
             extension_settings.expressions.agentSpriteBackground = getExpressionSpriteBackground(this.value);
             saveSettingsDebounced();
+        });
+        const modelControls = $('#expressions_agent_sprite_matting');
+        $('#expressions_agent_sprite_matting').prop('checked', !!extension_settings.expressions.agentSpriteMatting);
+        modelControls.on('change', async function () {
+            const key = 'agentSpriteMatting';
+            const value = this.checked;
+            const previous = extension_settings.expressions[key] || false;
+            const status = $('#expressions_model_status');
+            modelControls.prop('disabled', true);
+            try {
+                if (value) {
+                    status.text(t`Preparing the optional model. The first download can take a few minutes...`);
+                    const response = await fetch('/api/sprites/models/install', { method: 'POST', headers: getRequestHeaders(), body: JSON.stringify({ kind: 'matting' }) });
+                    if (!response.ok) {
+                        const error = await response.json().catch(() => ({}));
+                        throw new Error(error.error || t`Could not prepare the sprite model. Please try again.`);
+                    }
+                }
+                extension_settings.expressions[key] = value;
+                saveSettingsDebounced();
+                status.text(value ? t`Model ready. It will run on generated images and Redo crop/cleanup.` : '');
+            } catch (error) {
+                this.checked = previous;
+                status.text(error.message);
+            } finally { modelControls.prop('disabled', inSpriteGeneration); }
         });
         $('#expressions_agent_sprite_remove_background')
             .prop('checked', !!extension_settings.expressions.agentSpriteRemoveBackground)

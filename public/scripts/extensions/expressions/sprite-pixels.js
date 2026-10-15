@@ -210,12 +210,24 @@ function removeCornerSpecks(bitmap, check) {
 }
 
 /** Remove confidently sampled, edge-connected backgrounds while protecting enclosed white detail. */
-export function removeSpriteBackground(bitmap, check = () => {}, { keyOnly = false } = {}) {
+export function removeSpriteBackground(bitmap, check = () => {}, { mask, keyOnly = false } = {}) {
     validateBitmap(bitmap);
     const { data, width, height } = bitmap;
     check();
     const palette = backgroundPalette(bitmap);
-    if (keyOnly && !palette.key) return bitmap;
+    if (mask) {
+        if (!(mask instanceof Uint8Array) || mask.length !== width * height) throw new Error('The sprite foreground mask is invalid.');
+        const background = new Uint8Array(mask.length);
+        for (let p = 0; p < mask.length; p++) {
+            data[p * 4 + 3] = Math.min(data[p * 4 + 3], mask[p]);
+            if (!data[p * 4 + 3]) background[p] = 1;
+        }
+        // The model owns the silhouette. A colour flood must not erase white
+        // clothing which the model has identified as foreground.
+        softenSpriteEdges(bitmap, background, palette.length ? palette : [[255, 255, 255]], check, true);
+        removeKeySpill(bitmap, background, palette.key, check);
+        return bitmap;
+    } else if (keyOnly && !palette.key) return bitmap;
     if (!palette.length) {
         const transparent = new Uint8Array(width * height);
         let count = 0;
@@ -288,9 +300,9 @@ export function centreSprite(bitmap) {
     return bitmap;
 }
 
-export function cleanSpriteBitmap(bitmap, { removeBackground = false, keyOnly = false, check = () => {} } = {}) {
+export function cleanSpriteBitmap(bitmap, { removeBackground = false, mask, keyOnly = false, check = () => {} } = {}) {
     check();
-    if (removeBackground) removeSpriteBackground(bitmap, check, { keyOnly });
+    if (removeBackground || mask) removeSpriteBackground(bitmap, check, { mask, keyOnly });
     centreSprite(bitmap);
     check();
     return bitmap;

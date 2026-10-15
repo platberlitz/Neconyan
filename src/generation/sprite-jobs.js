@@ -13,6 +13,7 @@ import { resolveCharacterImageSettings } from '../../public/scripts/extensions/q
 import { cleanSpriteBitmap, splitSpriteBitmap } from '../../public/scripts/extensions/expressions/sprite-pixels.js';
 import { expressionLabelFromFilename, isExpressionLabel, isExpressionSpriteName, nextExpressionSpriteName } from '../../public/scripts/extensions/expressions/expression-labels.js';
 import { readExpressionSets, resolveExpressionMember, applyExpressionMemberPrompt } from '../../public/scripts/extensions/expressions/expression-sets.js';
+import { processSpriteModel } from './sprite-models.js';
 import { buildCharacterCardSpritePrompt, buildExpressionSpritePrompt, buildExpressionSpriteSheetPrompt,
     DEFAULT_EXPRESSION_SPRITE_PROMPT, getExpressionSpriteBackground, getExpressionSpriteNegative, getExpressionSpriteSheetGrid } from '../../public/scripts/extensions/expressions/sprite-prompts.js';
 import { admitNativeMediaJob, ensureNativeMediaDirectory, finishNativeMediaJob, mediaDirectoryEvidence, mediaFileEvidence,
@@ -133,6 +134,7 @@ export function captureSpriteRequest(base, account, source, { avatar, labels, fo
         return { version: 1, avatar, folder, mode, characterScope, settingsHash: roleplayHash(settings), qigFingerprint: quickImageGenSettingsFingerprint(qig),
             referenceSources: ['individual', 'sheet'].includes(mode) ? captureQuickImageReferenceSources(base.directories, qig) : [],
             removeBackground: Boolean(options.agentSpriteRemoveBackground) || context.background !== 'white', keyOnly: !options.agentSpriteRemoveBackground, targets, parents, sheet, grid, prompts,
+            matting: options.agentSpriteMatting === true,
             negative: [qig.negativePrompt, getExpressionSpriteNegative(context.background)].filter(Boolean).join(', ') };
     });
 }
@@ -174,7 +176,7 @@ function readFrozenImage(context, name, input) {
 }
 
 /** Native individual, generated-sheet, imported-sheet and cleanup work; saved results precede publication. */
-export async function runSpriteJob(context, { fetchImpl = fetch, wait, afterPublication } = {}) {
+export async function runSpriteJob(context, { fetchImpl = fetch, wait, afterPublication, processModel = processSpriteModel } = {}) {
     const request = context.job.intent?.request;
     if (context.job.intent?.kind !== 'sprites' || request?.version !== 1 || !Array.isArray(request.targets)) throw fail('The accepted sprite job is invalid.');
     const prior = withNativeMediaReceipt(context, ({ value }) => value.state === 'closed' ? value.result : null, { checkSource: false });
@@ -195,14 +197,20 @@ export async function runSpriteJob(context, { fetchImpl = fetch, wait, afterPubl
             expectedAccount: context.job.intent.media, assertSourceLocked, fetch: fetchImpl, wait });
     };
     const saveTile = (index, image) => withNativeMediaReceipt(context, () => writeImageArtifact(context.directories, context.job.id, `sprite:tile:${index}`, image));
+    const enhance = async bitmap => {
+        const mask = request.matting ? (await processModel('matting', bitmap, { signal: context.signal })).data : undefined;
+        if (mask || request.mode !== 'individual' || request.removeBackground) cleanSpriteBitmap(bitmap,
+            { mask, removeBackground: request.removeBackground, keyOnly: request.keyOnly, check: () => context.signal.throwIfAborted() });
+        return bitmap;
+    };
     if (['sheet', 'split'].includes(request.mode) && request.targets.length) {
         const missing = withNativeMediaReceipt(context, () => request.targets.some((_item, index) => readImageArtifact(context.directories, context.job.id, `sprite:tile:${index}`) === undefined));
         if (missing) {
             const image = request.mode === 'sheet' ? await imageFor(0) : readFrozenImage(context, 'sprite:source-sheet', request.sheet);
             const bitmap = await decodeServerImage(Buffer.from(image.base64, 'base64'));
             const tiles = splitSpriteBitmap(bitmap, request.grid, request.targets.length,
-                { removeBackground: request.removeBackground, keyOnly: request.keyOnly, check: () => context.signal.throwIfAborted() });
-            for (let index = 0; index < tiles.length; index++) saveTile(index, { base64: (await encodeServerImage(tiles[index])).toString('base64'), format: 'png' });
+                { check: () => context.signal.throwIfAborted() });
+            for (let index = 0; index < tiles.length; index++) saveTile(index, { base64: (await encodeServerImage(await enhance(tiles[index]))).toString('base64'), format: 'png' });
         }
     }
     const outputs = [];
@@ -213,9 +221,7 @@ export async function runSpriteJob(context, { fetchImpl = fetch, wait, afterPubl
         if (tile === undefined) {
             const image = request.mode === 'cleanup' ? readFrozenImage(context, `sprite:source:${index}`, target.source) : await imageFor(index);
             const bitmap = await decodeServerImage(Buffer.from(image.base64, 'base64'));
-            if (request.mode === 'cleanup' || request.removeBackground) cleanSpriteBitmap(bitmap,
-                { removeBackground: request.removeBackground, keyOnly: request.keyOnly, check: () => context.signal.throwIfAborted() });
-            tile = { base64: (await encodeServerImage(bitmap)).toString('base64'), format: 'png' };
+            tile = { base64: (await encodeServerImage(await enhance(bitmap))).toString('base64'), format: 'png' };
             saveTile(index, tile);
         }
         check();
