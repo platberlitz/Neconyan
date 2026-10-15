@@ -1581,13 +1581,19 @@ export function maybeAutoRecolorAfterColorChange() {
 export function applyThemeOrBrightnessChange(mutator, options = {}) {
     const keys = Object.keys(characterColors);
     const snapshot = captureEffectiveColorSnapshot(keys);
+    // Automatic repaints follow the page and usually land on the colours already saved;
+    // saving those again uploads every setting for nothing.
+    const colorState = () => JSON.stringify([characterColors, settings.narratorStyle]);
+    const before = options.saveOnlyChanges ? colorState() : null;
     mutator();
     invalidateThemeCache();
     syncAllEffectiveColors();
     applyLiveColorChangesFromSnapshot(snapshot, keys, { saveImmediately: options.saveImmediately });
     applyFastColorUiUpdates(keys);
     refreshGradientVisualSurfaces(keys);
-    if (options.saveImmediately) saveData({ preserveEffectiveColors: true });
+    if (options.saveImmediately && (before === null || colorState() !== before)) {
+        saveData({ preserveEffectiveColors: true });
+    }
 }
 
 function formatGradientPresetName(name) {

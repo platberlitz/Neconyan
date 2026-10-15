@@ -1324,8 +1324,7 @@ function rgbToHex({ r, g, b }) {
     return `#${channel(r)}${channel(g)}${channel(b)}`;
 }
 
-function compositeSurfaceOver(base) {
-    const target = document.querySelector('#chat .mes_text, .mes_text') || document.body;
+function compositeSurfaceOver(base, target = document.querySelector('#chat .mes_text, .mes_text') || document.body) {
     const ancestors = [];
     for (let element = target; element; element = element.parentElement) ancestors.push(element);
     let surface = base;
@@ -1350,12 +1349,42 @@ export function getContrastSurfaceColor() {
     }
     const now = Date.now();
     if (cachedContrastSurface && now - cachedContrastSurfaceCheckedAt < 250) return cachedContrastSurface;
-    const fallback = detectTheme() === 'dark'
+    const theme = detectTheme();
+    const fallback = theme === 'dark'
         ? { r: 32, g: 35, b: 40, a: 1 }
         : { r: 245, g: 245, b: 245, a: 1 };
-    cachedContrastSurface = rgbToHex(compositeSurfaceOver(fallback));
+    const message = document.querySelector('#chat .mes_text');
+    if (message) {
+        cachedContrastSurface = rgbToHex(compositeSurfaceOver(fallback, message));
+        rememberMessageSurface(theme, cachedContrastSurface);
+    } else {
+        cachedContrastSurface = recallMessageSurface(theme) || rgbToHex(compositeSurfaceOver(fallback));
+    }
     cachedContrastSurfaceCheckedAt = now;
     return cachedContrastSurface;
+}
+
+// Before a chat draws a message only the page backdrop can be measured, and it is a different
+// colour from the chat. Colours worked out against it were saved, then worked out again and
+// saved back once a message appeared: two uploads of every setting on each start.
+const MESSAGE_SURFACE_KEY = 'dialogue-colors:message-surface';
+
+function rememberMessageSurface(theme, surface) {
+    try {
+        const value = JSON.stringify({ theme, surface });
+        if (localStorage.getItem(MESSAGE_SURFACE_KEY) !== value) localStorage.setItem(MESSAGE_SURFACE_KEY, value);
+    } catch {
+        // Storage can be unavailable; the surface is simply measured again next time.
+    }
+}
+
+function recallMessageSurface(theme) {
+    try {
+        const stored = JSON.parse(localStorage.getItem(MESSAGE_SURFACE_KEY) || 'null');
+        return stored?.theme === theme ? normalizeHexColor(stored.surface, null) : null;
+    } catch {
+        return null;
+    }
 }
 
 function relativeLuminance(hexColor) {
@@ -1426,6 +1455,12 @@ export function ensureReadableContrast(hexColor, surfaceColor = null, minimumRat
 
 export function getReadableSurfaceSignature() {
     return getContrastSurfaceColor();
+}
+
+// Readability is measured against the chat behind a message. Until one is drawn only the
+// page backdrop is there to measure, and it is a different colour.
+export function hasMessageSurface() {
+    return typeof document !== 'undefined' && document.querySelector('#chat .mes_text') !== null;
 }
 
 // The slider walks a share of the distance to the theme lightness bound instead of adding raw

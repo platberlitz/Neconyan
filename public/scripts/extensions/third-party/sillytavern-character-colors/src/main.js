@@ -9,7 +9,7 @@ import { scheduleCustomFontRefresh } from './fonts.js';
 import { redo, undo } from './history.js';
 import { applyHtmlBreakingSpanRepair, applyOverreachingSpanRepair, applyToolCallMessageRepair, commit, onNewMessage, repaintDomAfterCharacterDataChange, resumePendingChatSave } from './live-colors.js';
 import { consumeMainAiQuietGenerationEnd, populateProfileDropdown } from './llm.js';
-import { detectTheme, getReadableSurfaceSignature, invalidateThemeCache } from './palettes.js';
+import { detectTheme, getReadableSurfaceSignature, hasMessageSurface, invalidateThemeCache } from './palettes.js';
 import { buildMinimalPromptInstruction, flushPromptInjection, getEffectivePromptMode, injectPrompt } from './prompts.js';
 import { eventSource, event_types, getContext } from './st-api.js';
 import { attributionChatGeneration, autoSyncPendingRecord, characterColors, expandedCharacterRows, groupProfiles, isDomEngine, isStreamingGenerationActive, lastCharKey, lastProcessedMessageSignature, pendingAttributionVerifications, runtimeState, selectedCharacterKeys, setAttributionChatGeneration, setEnabledLifecycleSynchronizer, setIsStreamingGenerationActive, setLastCharKey, setLastProcessedMessageSignature, setPendingAttributionVerifications, setSwapMode, settings, swapMode } from './state.js';
@@ -43,12 +43,14 @@ function scheduleAutoThemeProbes() {
         if (!settings.enabled || settings.themeMode !== 'auto') return;
         invalidateThemeCache();
         const currentTheme = detectTheme();
-        const currentSurface = getReadableSurfaceSignature();
+        // With no message on screen there is no surface to judge, so the last one stands.
+        const currentSurface = hasMessageSurface() ? getReadableSurfaceSignature() : null;
         const themeChanged = lastAppliedAutoTheme
-            && (currentTheme !== lastAppliedAutoTheme || currentSurface !== lastAppliedAutoSurface);
+            && (currentTheme !== lastAppliedAutoTheme
+                || (currentSurface !== null && currentSurface !== lastAppliedAutoSurface));
         lastAppliedAutoTheme = currentTheme;
-        lastAppliedAutoSurface = currentSurface;
-        if (themeChanged) applyThemeOrBrightnessChange(() => {}, { saveImmediately: true });
+        if (currentSurface !== null) lastAppliedAutoSurface = currentSurface;
+        if (themeChanged) applyThemeOrBrightnessChange(() => {}, { saveImmediately: true, saveOnlyChanges: true });
     }, delay));
 }
 
@@ -127,8 +129,11 @@ export function syncAutomaticRuntime() {
     setupContextMenu();
     invalidateThemeCache();
     lastAppliedAutoTheme = settings.themeMode === 'auto' ? detectTheme() : null;
-    lastAppliedAutoSurface = settings.themeMode === 'auto' ? getReadableSurfaceSignature() : null;
-    if (lastAppliedAutoTheme) applyThemeOrBrightnessChange(() => {}, { saveImmediately: true });
+    // At start-up no message is drawn yet. Repainting against the bare page rewrote every
+    // saved colour, and the first message rewrote them back, two full settings uploads on
+    // each start. The settle probes repaint once a chat shows a message.
+    lastAppliedAutoSurface = lastAppliedAutoTheme && hasMessageSurface() ? getReadableSurfaceSignature() : null;
+    if (lastAppliedAutoSurface) applyThemeOrBrightnessChange(() => {}, { saveImmediately: true, saveOnlyChanges: true });
     return true;
 }
 
@@ -404,7 +409,10 @@ export function registerEventHandlers() {
             cancelStreamingAttributionVerification();
         },
         chatCreated: resetDialogueCountsForNewChat,
-        chatChanged: handleChatChanged,
+        chatChanged: () => {
+            handleChatChanged();
+            if (settings.enabled && automaticRuntimeActive) scheduleAutoThemeProbes();
+        },
         // Storage identity follows host renames even while colouring is disabled.
         chatRenamed: async payload => {
             try {
