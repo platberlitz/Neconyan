@@ -2,8 +2,9 @@ import { Buffer } from 'node:buffer';
 import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
+import archiver from 'archiver';
 import { getImageBuffers } from '../util.js';
-import { deleteSpriteFiles, listSpriteFiles, saveSpriteFiles } from '../generation/sprite-storage.js';
+import { deleteSpriteFiles, exportSpriteFiles, listSpriteFiles, saveSpriteFiles } from '../generation/sprite-storage.js';
 import { roleplayAccountBase, roleplayAccountStamp } from '../roleplay-store.js';
 
 /** Import optional Risu images through the same protected writer as uploaded sprites. */
@@ -28,6 +29,23 @@ export const router = express.Router();
 router.get('/get', (request, response) => {
     try { return response.send(listSpriteFiles(request.user.directories, request.query.name)); } catch (error) {
         return response.sendStatus(error.status ?? 500);
+    }
+});
+
+router.post('/export', async (request, response) => {
+    try {
+        const files = exportSpriteFiles(request.user.directories, request.body.name);
+        if (!files.length) return response.sendStatus(404);
+        const archive = archiver('zip', { zlib: { level: 6 } });
+        archive.on('error', error => response.destroy(error));
+        response.on('close', () => archive.abort());
+        response.attachment(`${request.body.name.replaceAll('/', '-')}-expressions.zip`);
+        archive.pipe(response);
+        for (const file of files) archive.append(file.bytes, { name: file.filename });
+        await archive.finalize();
+    } catch (error) {
+        if (response.headersSent) response.destroy(error);
+        else response.sendStatus(error.status ?? 500);
     }
 });
 

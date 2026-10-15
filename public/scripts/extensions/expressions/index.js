@@ -5,7 +5,7 @@ import { characters, eventSource, event_types, generateQuietPrompt, generateRaw,
 import { dragElement, isMobile } from '../../RossAscends-mods.js';
 import { getContext, extension_settings, ModuleWorkerWrapper, renderExtensionTemplateAsync } from '../../extensions.js';
 import { loadMovingUIState, performFuzzySearch, power_user } from '../../power-user.js';
-import { onlyUnique, debounce, getCharaFilename, trimToEndSentence, trimToStartSentence, waitUntilCondition, findChar, isFalseBoolean, includesIgnoreCaseAndAccents } from '../../utils.js';
+import { onlyUnique, debounce, download, getCharaFilename, trimToEndSentence, trimToStartSentence, waitUntilCondition, findChar, isFalseBoolean, includesIgnoreCaseAndAccents } from '../../utils.js';
 import { hideMutedSprites, selected_group } from '../../group-chats.js';
 import { isJsonSchemaSupported } from '../../textgen-settings.js';
 import { debounce_timeout } from '../../constants.js';
@@ -1305,6 +1305,29 @@ async function deleteExpressionSpriteFile(name, label, spriteName) {
 
     if (!result.ok) {
         throw new Error(`Sprite delete failed with status ${result.status}`);
+    }
+}
+
+async function onClickExportSprites() {
+    const name = $('#image_list').data('name');
+    if (!name) return;
+    const downloadName = name.replace(/[/\\:*?"<>|]/g, '-');
+    const button = $('#expressions_export_sprites').prop('disabled', true);
+    try {
+        const response = await fetch('/api/sprites/export', {
+            method: 'POST', headers: getRequestHeaders(), body: JSON.stringify({ name }),
+        });
+        if (response.status === 404) {
+            toastr.info(t`This set has no images to export.`, t`Export expressions`);
+            return;
+        }
+        if (!response.ok) throw new Error(`Sprite export failed (${response.status}).`);
+        download(await response.blob(), `${downloadName}-expressions.zip`, 'application/zip');
+    } catch (error) {
+        console.error('[Expressions] Export failed:', error);
+        toastr.error(t`Could not export these expressions. Please try again.`, t`Export expressions`);
+    } finally {
+        button.prop('disabled', false);
     }
 }
 
@@ -2874,6 +2897,7 @@ export async function init() {
         } });
         $('#expression_override_button').on('click', onClickExpressionOverrideButton);
         $('#expression_upload_pack_button').on('click', onClickExpressionUploadPackButton);
+        $('#expressions_export_sprites').on('click', onClickExportSprites);
         $('#expressions_generate_missing_sprites')
             .on('click', onClickGenerateMissingSprites)
             .on('keydown', onExpressionGenerationKeydown);

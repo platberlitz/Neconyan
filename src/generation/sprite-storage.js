@@ -112,3 +112,16 @@ export function listSpriteFiles(directories, name) {
         });
     });
 }
+
+/** Take one account-locked snapshot, preserving the original filenames and bytes. */
+export function exportSpriteFiles(directories, name) {
+    return withSprites(directories, name, false, (_lease, folder, files) => {
+        let bytes = 0;
+        return files.sort().map(filename => {
+            const stored = readRoleplayFile(path.join(folder, filename), MAX_IMAGE_BYTES);
+            bytes += stored.bytes.length;
+            if (bytes > 256 * 1024 * 1024) throw roleplayError('SPRITE_EXPORT_TOO_LARGE', 'This sprite pack is too large to export.', 413);
+            return { filename, bytes: stored.bytes };
+        });
+    });
+}
