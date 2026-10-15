@@ -133,7 +133,13 @@
                 </div>
             </section>
             <section class="expression_section expression_section_sprites">
-                <h3 class="expression_section_title" data-i18n="Sprites for this character">Sprites for this character</h3>
+                <h3 class="expression_section_title" data-i18n="Expression images">Expression images</h3>
+                <label for="expression_owner" data-i18n="Create expressions for">Create expressions for</label>
+                <select id="expression_owner"><option value="" data-i18n="Chat character">Chat character</option></select>
+                <div id="expression_persona_hint" hidden>
+                    <small data-i18n="Generate from this persona's name and description. Choose an image for their latest message and future messages; older messages keep their saved expression.">Generate from this persona's name and description. Choose an image for their latest message and future messages; older messages keep their saved expression.</small>
+                    <button type="button" id="expression_persona_clear" class="menu_button" data-i18n="Clear persona expression">Clear persona expression</button>
+                </div>
                 <div id="no_chat_expressions" data-i18n="Open a chat to see the character expressions.">
                     Open a chat to see the character expressions.
                 </div>

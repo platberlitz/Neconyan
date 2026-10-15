@@ -12706,8 +12706,10 @@ export function parseAvatarSource(rawSrc) {
 }
 
 export function getMessageExpressionAvatar(message) {
-    if (!message || message.is_user || message.is_system || message.extra?.type === system_message_types.NARRATOR) return null;
+    if (!message || message.is_system || message.extra?.type === system_message_types.NARRATOR) return null;
     const forced = message.force_avatar ? parseAvatarSource(message.force_avatar) : null;
+    if (message.is_user) return forced?.type === 'persona' && forced.file && !/[/\\\x00-\x1f]/.test(forced.file)
+        && forced.file !== '.' && forced.file !== '..' ? `persona:${forced.file}` : null;
     if (forced && forced.type !== 'avatar') return null;
     const avatar = message.original_avatar || forced?.file || (!selected_group && characters[this_chid]?.avatar);
     if (!avatar || (forced && forced.file !== avatar)) return null;

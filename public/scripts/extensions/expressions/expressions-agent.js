@@ -235,6 +235,15 @@ export function getExpressionSpritePromptContext(characterName, characterAvatar)
     };
 }
 
+export function getPersonaExpressionSpritePromptContext(name, description) {
+    return {
+        characterName: name || 'Persona',
+        characterCard: buildCharacterCardPrompt({ name, description }),
+        framing: getExpressionSpriteFraming(),
+        promptTemplate: getExpressionSpritePromptTemplate(),
+    };
+}
+
 /**
  * Find the enabled expressions agent among active in-chat agents.
  * @returns {Promise<object|null>}

@@ -99,6 +99,21 @@ describe('exact expression history', () => {
 });
 
 describe('expression asset snapshots', () => {
+    test('persona generation uses its description and keeps its captured identity when selection changes', () => {
+        const persona = { name: 'Robin', avatar: 'robin.png', folder: '__personas/one' };
+        const personaTargets = new Map([[persona.avatar, persona]]);
+        const power_user = { persona_descriptions: { 'robin.png': { description: 'Blue eyes and a green coat.' } } };
+        const runtime = vm.createContext({ personaTargets, power_user, getLastCharacterMessage: () => ({}),
+            getPersonaExpressionSpritePromptContext: (name, description) => ({ characterName: name, characterCard: description }) });
+        vm.runInContext(extract(expressions, 'getExpressionGenerationTarget'), runtime);
+        const target = runtime.getExpressionGenerationTarget(persona.folder);
+        personaTargets.clear();
+        power_user.persona_descriptions['robin.png'].description = 'Changed';
+        expect(target.characterName).toBe('Robin');
+        expect(target.characterAvatar).toBeNull();
+        expect(target.promptContext.characterCard).toBe('Blue eyes and a green coat.');
+    });
+
     test('generation follows the folder owner rather than a later group speaker or an imported duplicate', () => {
         const member = { id: 'mira', name: 'Mira', folder: 'cast/mira', description: 'Original notes' };
         const original = { name: 'Original cast', avatar: 'original.png', data: { extensions: { expression_sets: { members: [member], active: 'mira' } } } };
@@ -108,7 +123,7 @@ describe('expression asset snapshots', () => {
         const characters = [original, copy, nova];
         const runtime = vm.createContext({ getContext: () => ({ characters, groupId: 'group' }), getLastCharacterMessage: () => message,
             getExpressionCharacter: (target = message) => characters.find(character => character.avatar === target.original_avatar),
-            readExpressionSets, applyExpressionMemberPrompt, extension_settings: { expressionOverrides: [] },
+            readExpressionSets, applyExpressionMemberPrompt, extension_settings: { expressionOverrides: [] }, personaTargets: new Map(),
             getExpressionSpritePromptContext: name => ({ characterName: name, characterCard: name }),
         });
         const helpers = ['getExpressionFolderCharacter', 'getExpressionGenerationTarget'];
@@ -171,7 +186,7 @@ describe('expression asset snapshots', () => {
         const runtime = vm.createContext({ getContext: () => context, getLastCharacterMessage: () => ({ name: 'Mira and Sol', original_avatar: 'cast.png' }),
             getExpressionCharacter: () => context.characters[context.characterId],
             readExpressionSets, applyExpressionMemberPrompt, getExpressionSpritePromptContext: () => ({ characterName: 'Mira and Sol', characterCard: 'Shared history' }),
-            spriteCache: {}, extension_settings: { expressions: {}, expressionOverrides: [] }, nextExpressionSpriteName, maybeGenerateExpressionSprite: generate, uploadSpriteCommand: upload,
+            spriteCache: {}, extension_settings: { expressions: {}, expressionOverrides: [] }, personaTargets: new Map(), nextExpressionSpriteName, maybeGenerateExpressionSprite: generate, uploadSpriteCommand: upload,
             throwIfExpressionGenerationStopped: () => {}, setExpressionGenerationBusy: () => {}, inSpriteGeneration: true,
         });
         vm.runInContext(['getExpressionFolderCharacter', 'getExpressionGenerationTarget', 'generateUniqueSpriteName', 'generateAndUploadExpressionSprite'].map(name => extract(expressions, name)).join('\n'), runtime);
