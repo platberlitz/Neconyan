@@ -240,7 +240,9 @@ export function readChatShared(directories, locator) {
 }
 
 const storySummaryCache = new Map();
-const STORY_SUMMARY_CACHE_MAX_ENTRIES = 128;
+// Summaries are a few hundred bytes. The worker lists every story each scan, so a cap below the
+// story count evicted each entry just before it was needed and every scan re-parsed every archive.
+const STORY_SUMMARY_CACHE_MAX_ENTRIES = 10_000;
 
 function cloneStorySummary(summary) {
     return {
