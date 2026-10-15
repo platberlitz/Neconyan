@@ -70,6 +70,13 @@
                             <span data-i18n="AI background removal (optional)">AI background removal (optional)</span>
                         </label>
                         <small id="expressions_matting_hint" data-i18n="Downloads a 176 MB anime cut-out model once. Runs locally on the server, around 1 GB RAM and 20 seconds per image on a small server. It can remove interior background gaps, but may also remove fine details. Export your set before redoing cleanup.">Downloads a 176 MB anime cut-out model once. Runs locally on the server, around 1 GB RAM and 20 seconds per image on a small server. It can remove interior background gaps, but may also remove fine details. Export your set before redoing cleanup.</small>
+                        <label for="expressions_agent_sprite_upscale" data-i18n="Enlarge after cleanup (optional)">Enlarge after cleanup (optional)</label>
+                        <select id="expressions_agent_sprite_upscale" aria-describedby="expressions_upscale_hint">
+                            <option value="0" data-i18n="Off">Off</option>
+                            <option value="2" data-i18n="2x larger">2x larger</option>
+                            <option value="4" data-i18n="4x larger">4x larger</option>
+                        </select>
+                        <small id="expressions_upscale_hint" data-i18n="Downloads a 2.5 MB anime upscaler once. Processes small sections to limit memory use and keeps transparency. Runs after cleanup; enlarging an image again makes it larger again.">Downloads a 2.5 MB anime upscaler once. Processes small sections to limit memory use and keeps transparency. Runs after cleanup; enlarging an image again makes it larger again.</small>
                         <small id="expressions_model_status" role="status" aria-live="polite"></small>
                     </div>
                     <div class="expression_agent_prompt_block flex-container flexFlowColumn">

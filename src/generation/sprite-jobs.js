@@ -134,7 +134,7 @@ export function captureSpriteRequest(base, account, source, { avatar, labels, fo
         return { version: 1, avatar, folder, mode, characterScope, settingsHash: roleplayHash(settings), qigFingerprint: quickImageGenSettingsFingerprint(qig),
             referenceSources: ['individual', 'sheet'].includes(mode) ? captureQuickImageReferenceSources(base.directories, qig) : [],
             removeBackground: Boolean(options.agentSpriteRemoveBackground) || context.background !== 'white', keyOnly: !options.agentSpriteRemoveBackground, targets, parents, sheet, grid, prompts,
-            matting: options.agentSpriteMatting === true,
+            matting: options.agentSpriteMatting === true, upscale: [2, 4].includes(Number(options.agentSpriteUpscale)) ? Number(options.agentSpriteUpscale) : 0,
             negative: [qig.negativePrompt, getExpressionSpriteNegative(context.background)].filter(Boolean).join(', ') };
     });
 }
@@ -201,7 +201,7 @@ export async function runSpriteJob(context, { fetchImpl = fetch, wait, afterPubl
         const mask = request.matting ? (await processModel('matting', bitmap, { signal: context.signal })).data : undefined;
         if (mask || request.mode !== 'individual' || request.removeBackground) cleanSpriteBitmap(bitmap,
             { mask, removeBackground: request.removeBackground, keyOnly: request.keyOnly, check: () => context.signal.throwIfAborted() });
-        return bitmap;
+        return request.upscale ? processModel('upscale', { ...bitmap, scale: request.upscale }, { signal: context.signal }) : bitmap;
     };
     if (['sheet', 'split'].includes(request.mode) && request.targets.length) {
         const missing = withNativeMediaReceipt(context, () => request.targets.some((_item, index) => readImageArtifact(context.directories, context.job.id, `sprite:tile:${index}`) === undefined));

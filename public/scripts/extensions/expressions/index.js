@@ -21,11 +21,8 @@ import { t } from '../../i18n.js';
 import { removeReasoningFromString } from '../../reasoning.js';
 import { isExpressionLabel, isExpressionSpriteName, parseExpressionLabels, expressionLabelFromFilename, nextExpressionSpriteName } from './expression-labels.js';
 import { splitSpriteBitmap } from './sprite-pixels.js';
-import { getExpressionSpriteBackground, TRANSPARENT_DEFAULT_EXPRESSION_SPRITE_PROMPT } from './sprite-prompts.js';
+import { getExpressionSpriteBackground, getExpressionSpriteSheetGrid, TRANSPARENT_DEFAULT_EXPRESSION_SPRITE_PROMPT } from './sprite-prompts.js';
 import { enhanceSpriteBitmap } from './sprite-enhancement.js';
-
-let spriteProcessingController = null;
-import { getExpressionSpriteSheetGrid } from './sprite-prompts.js';
 import { readExpressionSets, resolveExpressionMember, applyExpressionMemberPrompt } from './expression-sets.js';
 import { bindExpressionSets, renderExpressionSets } from './expression-sets-ui.js';
 import { personaExpressionFolder, personaExpressionSelection } from './persona-expressions.js';
@@ -245,6 +242,7 @@ let spriteCache = {};
 let spriteListLoadRevision = 0;
 let inApiCall = false;
 let inSpriteGeneration = false;
+let spriteProcessingController = null;
 let expressionGenerationCancelRequested = false;
 
 /** @type {{[characterName: string]: string}} */
@@ -1018,7 +1016,7 @@ async function uploadSpriteCommand({ name, label, folder = null, spriteName = nu
 
 function setExpressionGenerationBusy(isBusy) {
     inSpriteGeneration = !!isBusy;
-    $('#expressions_agent_sprite_matting, #expressions_agent_sprite_background, #expressions_agent_sprite_remove_background').prop('disabled', inSpriteGeneration);
+    $('#expressions_agent_sprite_matting, #expressions_agent_sprite_upscale, #expressions_agent_sprite_background, #expressions_agent_sprite_remove_background').prop('disabled', inSpriteGeneration);
     $('#expressions_generate_missing_sprites, #expressions_upload_sprite_sheet, #expressions_redo_sprite_cleanup, #expressions_remove_all_sprites, .expression_list_generate, .expression_list_regenerate')
         .toggleClass('disabled', inSpriteGeneration)
         .attr('aria-disabled', String(inSpriteGeneration));
@@ -1105,7 +1103,7 @@ async function generateAndUploadExpressionSprite(expression, spriteFolderName, {
     // tiles. Without this, the "Remove background" option never applies to single sprites.
     let uploadUrl = imageUrl;
     let processedUrl = null;
-    if (shouldRemoveSpriteBackground() || extension_settings.expressions.agentSpriteMatting) {
+    if (shouldRemoveSpriteBackground() || extension_settings.expressions.agentSpriteMatting || Number(extension_settings.expressions.agentSpriteUpscale)) {
         try {
             processedUrl = await postProcessSpriteImage(imageUrl);
             uploadUrl = processedUrl;
@@ -3097,18 +3095,20 @@ export async function init() {
             extension_settings.expressions.agentSpriteBackground = getExpressionSpriteBackground(this.value);
             saveSettingsDebounced();
         });
-        const modelControls = $('#expressions_agent_sprite_matting');
+        const modelControls = $('#expressions_agent_sprite_matting, #expressions_agent_sprite_upscale');
         $('#expressions_agent_sprite_matting').prop('checked', !!extension_settings.expressions.agentSpriteMatting);
+        $('#expressions_agent_sprite_upscale').val([2, 4].includes(Number(extension_settings.expressions.agentSpriteUpscale)) ? String(extension_settings.expressions.agentSpriteUpscale) : '0');
         modelControls.on('change', async function () {
-            const key = 'agentSpriteMatting';
-            const value = this.checked;
-            const previous = extension_settings.expressions[key] || false;
+            const matting = this.id === 'expressions_agent_sprite_matting';
+            const key = matting ? 'agentSpriteMatting' : 'agentSpriteUpscale';
+            const value = matting ? this.checked : Number(this.value);
+            const previous = extension_settings.expressions[key] || (matting ? false : 0);
             const status = $('#expressions_model_status');
             modelControls.prop('disabled', true);
             try {
                 if (value) {
                     status.text(t`Preparing the optional model. The first download can take a few minutes...`);
-                    const response = await fetch('/api/sprites/models/install', { method: 'POST', headers: getRequestHeaders(), body: JSON.stringify({ kind: 'matting' }) });
+                    const response = await fetch('/api/sprites/models/install', { method: 'POST', headers: getRequestHeaders(), body: JSON.stringify({ kind: matting ? 'matting' : 'upscale' }) });
                     if (!response.ok) {
                         const error = await response.json().catch(() => ({}));
                         throw new Error(error.error || t`Could not prepare the sprite model. Please try again.`);
@@ -3118,7 +3118,8 @@ export async function init() {
                 saveSettingsDebounced();
                 status.text(value ? t`Model ready. It will run on generated images and Redo crop/cleanup.` : '');
             } catch (error) {
-                this.checked = previous;
+                if (matting) this.checked = previous;
+                else this.value = String(previous);
                 status.text(error.message);
             } finally { modelControls.prop('disabled', inSpriteGeneration); }
         });
