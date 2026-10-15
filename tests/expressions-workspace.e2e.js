@@ -164,6 +164,18 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
             expect(state.errors).toEqual([]);
         });
 
+        test('the delete confirmation names the image instead of [object Object]', async ({ page }) => {
+            const state = await fixture(page);
+            await page.locator('#image_list [data-filename="joy.png"] .expression_list_delete').click();
+            const popup = page.locator('dialog[open]').last();
+            await expect(popup.locator('h3')).toHaveText('Delete Expression');
+            await expect(popup).toContainText('Are you sure you want to delete this expression?');
+            await expect(popup.locator('code')).toHaveText('joy.png');
+            await expect(popup).not.toContainText('[object Object]');
+            await popup.locator('.popup-button-cancel').click();
+            expect(state.errors).toEqual([]);
+        });
+
         for (const light of [false, true]) {
             test(`buttons fit and retain contrast in ${light ? 'light' : 'dark'} colours`, async ({ page }) => {
                 const palette = light ? JSON.parse(readFileSync(new URL('../default/content/themes/Neconyan Calico.json', import.meta.url), 'utf8')) : theme;

@@ -889,11 +889,19 @@ export class PopupUtils {
      * Builds popup content with header and text below
      *
      * @param {string?} header - The header to be added to the text
-     * @param {string?} text - The main text content
+     * @param {string|HTMLElement|JQuery<HTMLElement>?} text - The main text content
+     * @returns {string|HTMLElement|JQuery<HTMLElement>?}
      */
     static BuildTextWithHeader(header, text) {
         if (!header) {
             return text;
+        }
+        // Elements cannot go into a template string: they would show as [object Object].
+        if (text instanceof jQuery || text instanceof HTMLElement) {
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = `<h3>${header}</h3>`;
+            $(wrapper).append(text);
+            return wrapper;
         }
         return `<h3>${header}</h3>
             ${text ?? ''}`; // Convert no text to empty string
