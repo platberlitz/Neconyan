@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import express from 'express';
 import { fixture } from './roleplay-transactions-fixture.js';
 
-const { deleteSpriteFiles, listSpriteFiles, saveSpriteFiles } = await import('../src/generation/sprite-storage.js');
-const { importRisuSprites } = await import('../src/endpoints/sprites.js');
+const { deleteSpriteFiles, exportSpriteFiles, listSpriteFiles, saveSpriteFiles } = await import('../src/generation/sprite-storage.js');
+const { importRisuSprites, router } = await import('../src/endpoints/sprites.js');
+const { getImageBuffers } = await import('../src/util.js');
 const { captureSpriteRequest, admitSpriteJob } = await import('../src/generation/sprite-jobs.js');
 const { roleplayAccountStamp } = await import('../src/roleplay-store.js');
 
@@ -40,10 +42,47 @@ test('sprite HTTP/import writers reject symlink folders and exact-path aliases',
     assert.throws(() => saveSpriteFiles(f.scope.directories, 'Nova', [{ filename: 'joy.png', bytes: image }]));
     assert.throws(() => deleteSpriteFiles(f.scope.directories, 'Nova', 'joy'));
     assert.throws(() => listSpriteFiles(f.scope.directories, 'Nova'));
+    assert.throws(() => exportSpriteFiles(f.scope.directories, 'Nova'));
     assert.deepEqual(fs.readdirSync(outside), ['joy.png']);
     for (const name of ['../Nova', 'Nova/../other', 'Nova/x/extra', '/Nova', 'Nova\\x']) {
         assert.throws(() => saveSpriteFiles(f.scope.directories, name, [{ filename: 'joy.png', bytes: image }]), { code: 'SPRITE_INVALID' });
     }
+});
+
+test('sprite export preserves all variants and formats, isolates the selected set, and can be reimported', t => {
+    const f = fixture(t);
+    const original = [{ filename: 'joy.png', bytes: image }, { filename: 'joy-2.webp', bytes: Buffer.from('webp fixture') }];
+    saveSpriteFiles(f.scope.directories, 'cast/mira', original);
+    saveSpriteFiles(f.scope.directories, 'cast/sol', [{ filename: 'anger.png', bytes: image }]);
+    const exported = exportSpriteFiles(f.scope.directories, 'cast/mira');
+    assert.deepEqual(exported, [original[1], original[0]]);
+    saveSpriteFiles(f.scope.directories, 'restored', exported);
+    assert.deepEqual(exportSpriteFiles(f.scope.directories, 'restored'), exported);
+    assert.deepEqual(exportSpriteFiles(f.scope.directories, 'missing'), []);
+    assert.throws(() => exportSpriteFiles(f.scope.directories, '../outside'), { code: 'SPRITE_INVALID' });
+});
+
+test('the export endpoint downloads a usable ZIP with original filenames and rejects missing or unsafe sets', async t => {
+    const f = fixture(t);
+    const files = [{ filename: 'joy.png', bytes: image }, { filename: 'joy-2.png', bytes: image }];
+    saveSpriteFiles(f.scope.directories, 'Persona/set', files);
+    const app = express();
+    app.use(express.json(), (request, response, next) => { request.user = { directories: f.scope.directories }; next(); }, router);
+    const server = app.listen(0, '127.0.0.1');
+    await new Promise(resolve => server.once('listening', resolve));
+    t.after(() => { server.closeAllConnections(); server.close(); });
+    const request = name => fetch(`http://127.0.0.1:${server.address().port}/export`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+    });
+    const response = await request('Persona/set');
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-disposition'), /Persona-set-expressions.zip/);
+    const zip = path.join(f.root, 'export.zip');
+    fs.writeFileSync(zip, Buffer.from(await response.arrayBuffer()));
+    const unpacked = await getImageBuffers(zip);
+    assert.deepEqual(unpacked.map(([filename, bytes]) => ({ filename, bytes })), [files[1], files[0]]);
+    assert.equal((await request('missing')).status, 404);
+    assert.equal((await request('../outside')).status, 409);
 });
 
 test('custom labels and rapid replacements retain their identity and invalidate the image URL', t => {

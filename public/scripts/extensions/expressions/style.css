@@ -346,7 +346,6 @@ img.expression.default {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
-#expressions_container #expression_add_many,
 #expressions_container label[for="expression_search"] {
     grid-column: 1 / -1;
 }
