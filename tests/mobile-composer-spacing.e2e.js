@@ -1,6 +1,6 @@
 /* global document, getComputedStyle, HTMLElement */
 import { expect, test } from '@playwright/test';
-import { openQuietChatForSmoke, waitForAnimationFrames } from './chat-scroll-regression-helpers.js';
+import { isolateSettingsSaves, openQuietChatForSmoke, waitForAnimationFrames } from './chat-scroll-regression-helpers.js';
 
 const IPHONE_USER_AGENT = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
 
@@ -62,6 +62,8 @@ test.describe('mobile composer spacing at 320x568', () => {
     });
 
     test('normal and compact modes keep the action rails clear of the textarea', async ({ page }) => {
+        // This suite measures the single-row input; whole-interface compact mode is a separate setting.
+        await isolateSettingsSaves(page, settings => { settings.power_user.compact_input_area = true; });
         await openQuietChatForSmoke(page);
 
         await page.evaluate(async () => {
