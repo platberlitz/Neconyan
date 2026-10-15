@@ -5772,15 +5772,17 @@ function updateMessageItemizedPromptButton(message, { messageId = chat.indexOf(m
  * @param {number} [options.messageId] Message ID
  * @param {boolean} [options.updateGreeting=true] Whether to persist greeting substitutions
  * @param {ChatMessage|null} [options.messageContext=null] Display-only draft outside the saved chat
+ * @param {boolean} [options.isPreview=false] Balance unfinished Markdown for a live draft
  * @returns {string} Formatted message HTML
  */
-function getMessageTextHTML(message, { messageId = chat.indexOf(message), updateGreeting = true, messageContext = null }) {
+function getMessageTextHTML(message, { messageId = chat.indexOf(message), updateGreeting = true, messageContext = null, isPreview = false }) {
     // if mes.extra.uses_system_ui is true, set an override on the sanitizer options
     /** @type {Partial<DOMPurify.Config>} */
     const sanitizerOverrides = message.extra?.uses_system_ui ? { MESSAGE_ALLOW_SYSTEM_UI: true } : {};
+    const text = message.extra?.display_text || message.mes;
 
     return messageFormatting(
-        message.extra?.display_text || message.mes,
+        isPreview ? balanceStreamingMarkdown(text) : text,
         message.name,
         message.is_system,
         message.is_user,
@@ -6057,7 +6059,7 @@ export function updateMessageElement(mes, { messageId = chat.length - 1, message
     }
     const momentDate = timestampToMoment(mes.send_date);
     const timestamp = momentDate.isValid() ? momentDate.format('LL LT') : '';
-    const messageHTML = getMessageTextHTML(mes, { messageId, updateGreeting: !isPreview, messageContext: isPreview ? mes : null });
+    const messageHTML = getMessageTextHTML(mes, { messageId, updateGreeting: !isPreview, messageContext: isPreview ? mes : null, isPreview });
     const bookmarkLink = mes?.extra?.bookmark_link;
     const tokenCount = mes.extra?.token_count;
     const { timerValue, timerTitle } = formatGenerationTimer(mes.gen_started, mes.gen_finished, tokenCount, mes.extra?.reasoning_duration, mes.extra?.time_to_first_token, mes.extra?.reasoning_tokens);

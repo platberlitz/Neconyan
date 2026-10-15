@@ -2251,7 +2251,7 @@ export function decorateMessageDom(mesElement, msg, mesIndex) {
 }
 
 export function undecorateAllMessages() {
-    document.querySelectorAll('#chat .mes[mesid]').forEach(undecorateMessageDom);
+    document.querySelectorAll('#chat .mes[mesid], #chat .mes[data-roleplay-draft]').forEach(undecorateMessageDom);
 }
 
 // Disconnect every long-lived "decorated message" watcher. Called on chat

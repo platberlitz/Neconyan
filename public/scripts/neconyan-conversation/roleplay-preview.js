@@ -72,6 +72,9 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             else chat.append(node);
         }
         node.querySelector('[role="status"]').textContent = labels[latest.stage] || labels.preparing;
+        // Display-only decorators run before the browser paints. Saved-message
+        // events would incorrectly treat this draft as part of the chat history.
+        document.dispatchEvent(new CustomEvent('neconyan:roleplay-preview-rendered', { detail: { message, element: node } }));
         rendered = latest;
         // A live bottom landing must supersede resize anchors for older positions,
         // and honour the same automatic/manual scrolling policy as saved replies.

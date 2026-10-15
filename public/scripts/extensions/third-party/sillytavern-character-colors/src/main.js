@@ -13,7 +13,7 @@ import { detectTheme, getReadableSurfaceSignature, hasMessageSurface, invalidate
 import { buildMinimalPromptInstruction, flushPromptInjection, getEffectivePromptMode, injectPrompt } from './prompts.js';
 import { eventSource, event_types, getContext } from './st-api.js';
 import { attributionChatGeneration, autoSyncPendingRecord, characterColors, expandedCharacterRows, groupProfiles, isDomEngine, isStreamingGenerationActive, lastCharKey, lastProcessedMessageSignature, pendingAttributionVerifications, runtimeState, selectedCharacterKeys, setAttributionChatGeneration, setEnabledLifecycleSynchronizer, setIsStreamingGenerationActive, setLastCharKey, setLastProcessedMessageSignature, setPendingAttributionVerifications, setSwapMode, settings, swapMode } from './state.js';
-import { beginStreamingPaint, endStreamingPaint } from './streaming-paint.js';
+import { beginStreamingPaint, endStreamingPaint, paintPreviewMessage } from './streaming-paint.js';
 import { confirmAutoSyncRecord, doAutoSyncMarkersMatch, ensureRegexScript, getAutoSyncRecord, getCharKey, getStorageKey, initAutoSync, loadData, markCurrentPersonaKept, migrateLegacyLocalStorageIfNeeded, migrateRenamedCharacterStorage, migrateRenamedChatStorage, persistLocalEnabledState, saveData, stopAutoSyncPolling, syncAutoSyncPolling, tryLoadFromCard, updateAutoSyncUI } from './storage.js';
 import { applyRestoredPersonaColor, applyThemeOrBrightnessChange, clearAutoColorizeIndicators, createUI, ensurePersonaCharacter, mountWandMenuItem, renamePersonaCharacter, syncUIWithSettings, updateCharList, updateLegend } from './ui.js';
 import { cancelStreamingAttributionVerification, captureLoadedAttributionMessageBaseline, clearAutoAttributionVerificationQueue, queueAutoAttributionVerificationForRenderedMessages, scheduleStreamingAttributionVerification } from './verify.js';
@@ -362,6 +362,9 @@ export function handleMessageDeleted() {
 export function registerEventHandlers() {
     if (runtimeState.eventsRegistered) return;
     runtimeState.eventHandlers = {
+        previewRendered: ({ detail }) => {
+            if (settings.enabled && automaticRuntimeActive) paintPreviewMessage(detail?.message, detail?.element);
+        },
         generationStarted: (type, _options, dryRun) => {
             if (!settings.enabled || !automaticRuntimeActive) return;
             if (dryRun) return;
@@ -462,6 +465,7 @@ export function registerEventHandlers() {
         },
     };
     lastAppliedAutoTheme = null;
+    document.addEventListener('neconyan:roleplay-preview-rendered', runtimeState.eventHandlers.previewRendered);
     if (event_types.GENERATION_STARTED) eventSource.on(event_types.GENERATION_STARTED, runtimeState.eventHandlers.generationStarted);
     eventSource.on(event_types.GENERATION_AFTER_COMMANDS, runtimeState.eventHandlers.generationAfterCommands);
     eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, runtimeState.eventHandlers.characterMessageRendered);
