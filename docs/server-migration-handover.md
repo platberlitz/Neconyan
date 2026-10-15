@@ -69,6 +69,75 @@ the PR against staging and validate the resulting APK on the reporting device.
 
 ## Release preparation: 1.0.0
 
+### 15 October: 1.3.3 release, staging starts 1.3.4
+
+I refreshed the handbook for the grouped sidebar tools, Dialogue Colors (Narrator
+cards, 'Not characters' and 'Clean messages'), Low-memory mode, bounded
+Conversation history, Roleplay replies in hidden tabs, card-script widgets and the
+Scratchpad prompt review. A second pass covered the Continuity Companion and
+Corrector link, the sceptical Director's Commentary, the two new continuity
+placeholders, idle Android sleep and finished replies joining the chat in place.
+It is published from `neconyan-docs` commits
+`2e1f51604f71d84d21024a806810d189c8193ffe`,
+`b9127c562d7254e4cb21dbfca0c6eebc7bb0842e` and
+`afd4a51a8c1451629978e694d789042aaf6471b2` by Pages runs `38638224264`,
+`38639321694` and `38720851042`. Strict build, all 53 page link and asset checks
+and phone and desktop browser checks passed each time, and the changed pages were
+checked on the live site. The shared assistant reference is now revision 28, with
+155 shared retrieval cases. Changelog highlights were added before promotion.
+
+The release was paused mid-way for performance reports from an iPhone 16 and a
+Samsung S24 Ultra. Fixes shipped to staging before promotion: finished server
+replies join the chat in place instead of redrawing it (the owner confirmed this
+on a real iPhone); hidden tabs stop receiving the live preview; the Android app
+holds its wake lock only while the server works, plus 30 seconds; background
+Mewmory scans skip unchanged chats and yield between stories; start-up skips
+settings uploads that match what the server already has; Dialogue Colors measures
+readability against a chat message rather than the bare start-up page; phones
+load phone-sized avatars at start-up. The live instance's idle server CPU fell
+from about 25 seconds per minute to under a tenth of a second.
+
+`main` was fast-forwarded to `7e2006c0d31e373fa4a6d00fc38af655698fba82`.
+Neconyan 1.3.3 is published at
+https://github.com/platberlitz/Neconyan/releases/tag/v1.3.3 with annotated tag
+`v1.3.3` and nine assets. Signed Android run `38735126597` passed the Android 11,
+13 and 15 emulator lifecycle and native checks on this exact commit. Both APK
+signatures match the existing official signing identity. Their embedded commit,
+version and frontend files were checked with `scripts/verify-android-release.py`,
+whose output matches `provenance.json`; the native libraries' 16 KiB ELF alignment
+passed, and all eight listed checksums matched. All 4,016 source files match
+`git archive`. All nine published assets were downloaded again and matched the
+verified build files byte for byte; GitHub's SHA-256 digests also matched.
+Physical phones were not tested.
+
+On Android 11 the new idle wake-lock check once missed its 20-second release
+window after the test removed the busy marker by hand. Only two Mewmory files had
+changed since the same check passed on all three versions at `c31aca79`, and the
+unchanged job-only retry passed. The likeliest cause is a request re-marking the
+server busy with its 30-second grace, which outlasts the test's window; that is
+inferred, not proven. If it recurs, widen the window or log the marker state.
+
+Full local checks passed at `d03e9ce9`: 488 unit suites (6,605 tests, three
+skipped), 2,371 server tests, the dedicated Mewmory tests, root and test lint,
+frontend budgets and the production build. The focused assistant browser checks
+passed across all nine variants on phone and desktop.
+
+Every browser failure was resolved and verified before publication. Combined
+coverage is 1,749 passed and 19 existing skips across all 16 groups. Run
+`38720413901` at `3a012579` passed groups 1-9, 11 and 13-15; run `38727329467` at
+`7e2006c0` passed groups 10, 12 and 16. Earlier runs at `d105183a` and `9c0bd6ae`
+found and fixed two outdated tests after the sidebar regrouping and locale
+start-up change, a real Echo name-plate defect after jump scrolls, the sign-in
+page fetching the language list twice, and outdated language expectations. The
+Notes full-screen check failed three times on GitHub: reduced motion still gives
+every element a 0.01 ms transition, so a single box read right after the switch
+could catch the starting size. The test now waits for the box to settle. Two
+settings tests relied on uploads that 1.3.3 deliberately skips when nothing
+changed; they now change an unrelated setting first. No assertions were weakened
+or skipped. Duplicate full runs were cancelled; passing groups were preserved.
+The six project-boundary tests and changed-test lint passed for the 1.3.4 staging
+version bump.
+
 ### 13 October: 1.3.2 release, staging starts 1.3.3
 
 I refreshed the handbook for General Scratchpad, image and portrait reviews,
