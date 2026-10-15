@@ -10,6 +10,21 @@ const pixel = (image, x, y) => [...image.data.slice((y * image.width + x) * 4, (
 const paint = (image, x, y, colour) => image.data.set(colour, (y * image.width + x) * 4);
 
 describe('conservative transparency cleanup', () => {
+    test.each([[0, 255, 0], [255, 0, 255]])('removes uneven key colour %j and its soft edge without bleaching white clothes', (r, g, b) => {
+        const key = [r, g, b], image = bitmap([...key, 255], 64);
+        for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+            paint(image, x, y, [...key.map(c => c ? 180 + (x + y) % 76 : 8), 255]);
+        }
+        const foreground = [170, 130, 85];
+        for (let y = 16; y < 48; y++) for (let x = 16; x < 48; x++) paint(image, x, y, [...foreground, 255]);
+        for (let y = 20; y < 44; y++) paint(image, 15, y, [...foreground.map((c, i) => Math.round(c * 0.5 + key[i] * 0.5)), 255]);
+        paint(image, 32, 32, [255, 255, 255, 255]);
+        removeSpriteBackground(image);
+        expect(pixel(image, 8, 32)[3]).toBe(0);
+        expect(pixel(image, 15, 32)[3]).toBeLessThan(200);
+        expect(pixel(image, 32, 32)).toEqual([255, 255, 255, 255]);
+        expect(pixel(image, 20, 32)).toEqual([...foreground, 255]);
+    });
     test('existing alpha and exposed white fur survive unchanged', () => {
         const image = bitmap([255, 255, 255, 0]);
         for (let y = 4; y < 12; y++) for (let x = 4; x < 12; x++) image.data.set([255, 255, 255, x === 4 ? 128 : 255], (y * 16 + x) * 4);

@@ -14,6 +14,7 @@
 import { getContext, extension_settings } from '../../extensions.js';
 import { system_message_types } from '../../../script.js';
 import { normalizeAgentExpressionLabel, resolveExpressionsAgentProfile as resolveProfile } from './expressions-agent-utils.js';
+import { DEFAULT_EXPRESSION_SPRITE_PROMPT, getExpressionSpriteBackground, TRANSPARENT_DEFAULT_EXPRESSION_SPRITE_PROMPT } from './sprite-prompts.js';
 
 const EXPRESSIONS_AGENT_TEMPLATE_ID = 'tpl-expressions-agent';
 const CHARACTER_CARD_PROMPT_LIMIT = 2400;
@@ -40,18 +41,7 @@ export const LEGACY_DEFAULT_EXPRESSION_SPRITE_PROMPT = [
     'Only the facial expression should change. Keep pose, camera, composition, and silhouette stable across all generated expressions.',
     'Clean isolated character sprite, emotional face, production-ready expression sheet tile.',
 ].join('\n');
-export const DEFAULT_EXPRESSION_SPRITE_PROMPT = [
-    '{{generationInstructions}}',
-    '{{sheetInstructions}}',
-    'Use these character card details as the source of truth for the character\'s actual appearance:',
-    '{{characterCard}}',
-    '{{framingInstructions}}',
-    'Preserve the same character identity, species, body, hair, eyes, clothing, accessories, colors, and style described in the card.',
-    'Consistency rules: same front-facing angle, same crop, same scale, same head and body position, same outfit, same hairstyle, same accessories, true transparent background.',
-    'If true alpha transparency is unavailable, use flat pure white only. Never draw a checkerboard or transparency grid.',
-    'Only the facial expression should change. Keep pose, camera, composition, and silhouette stable across all generated expressions.',
-    'Clean isolated character sprite, emotional face, production-ready expression sheet tile.',
-].join('\n');
+export { DEFAULT_EXPRESSION_SPRITE_PROMPT, TRANSPARENT_DEFAULT_EXPRESSION_SPRITE_PROMPT };
 
 /**
  * Cached import handles for the companion subsystem. Populated lazily because the
@@ -231,6 +221,7 @@ export function getExpressionSpritePromptContext(characterName, characterAvatar)
         characterName: character?.name || characterName || context.name2 || 'character',
         characterCard: buildCharacterCardPrompt(fields),
         framing: getExpressionSpriteFraming(),
+        background: getExpressionSpriteBackground(extension_settings?.expressions?.agentSpriteBackground),
         promptTemplate: getExpressionSpritePromptTemplate(),
     };
 }
@@ -240,6 +231,7 @@ export function getPersonaExpressionSpritePromptContext(name, description) {
         characterName: name || 'Persona',
         characterCard: buildCharacterCardPrompt({ name, description }),
         framing: getExpressionSpriteFraming(),
+        background: getExpressionSpriteBackground(extension_settings?.expressions?.agentSpriteBackground),
         promptTemplate: getExpressionSpritePromptTemplate(),
     };
 }

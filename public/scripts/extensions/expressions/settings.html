@@ -54,9 +54,16 @@
                             <option value="bust" data-i18n="Bust portrait (consistent close-up)">Bust portrait (consistent close-up)</option>
                             <option value="full_body" data-i18n="Full body (consistent standing pose)">Full body (consistent standing pose)</option>
                         </select>
-                        <label class="checkbox_label" for="expressions_agent_sprite_remove_background" title="Only enable for sheets drawn on a plain white or solid-color background. Leave off for full-bleed art (e.g. GPT Image 2), which has no background to strip." data-i18n="[title]Only enable for sheets drawn on a plain white or solid-color background. Leave off for full-bleed art (e.g. GPT Image 2), which has no background to strip.">
+                        <label for="expressions_agent_sprite_background" data-i18n="Generation background">Generation background</label>
+                        <select id="expressions_agent_sprite_background">
+                            <option value="green" data-i18n="Green (recommended)">Green (recommended)</option>
+                            <option value="magenta" data-i18n="Magenta (for green characters)">Magenta (for green characters)</option>
+                            <option value="white" data-i18n="White or transparent">White or transparent</option>
+                        </select>
+                        <small data-i18n="Green and magenta backgrounds are removed automatically. Choose a colour absent from the character. Separate images retain more detail than a large sheet; image size follows Quick Image Gen settings.">Green and magenta backgrounds are removed automatically. Choose a colour absent from the character. Separate images retain more detail than a large sheet; image size follows Quick Image Gen settings.</small>
+                        <label class="checkbox_label" for="expressions_agent_sprite_remove_background">
                             <input id="expressions_agent_sprite_remove_background" type="checkbox">
-                            <span data-i18n="Remove background (white/solid-color sheets only)">Remove background (white/solid-color sheets only)</span>
+                            <span data-i18n="Also remove white or other plain backgrounds">Also remove white or other plain backgrounds</span>
                         </label>
                     </div>
                     <div class="expression_agent_prompt_block flex-container flexFlowColumn">
@@ -66,7 +73,7 @@
                                 <i class="fa-solid fa-clock-rotate-left fa-sm"></i>
                             </div>
                         </label>
-                        <small data-i18n="Sent to Quick Image Gen before generating or regenerating expression sprites. Macros: {{generationInstructions}}, {{characterName}}, {{expression}}, {{expressions}}, {{characterCard}}, {{framingInstructions}}, {{sheetInstructions}}.">Sent to Quick Image Gen before generating or regenerating expression sprites. Macros: {{generationInstructions}}, {{characterName}}, {{expression}}, {{expressions}}, {{characterCard}}, {{framingInstructions}}, {{sheetInstructions}}.</small>
+                        <small data-i18n="Sent to Quick Image Gen before generating or regenerating expression sprites. Macros: {{generationInstructions}}, {{characterName}}, {{expression}}, {{expressions}}, {{characterCard}}, {{framingInstructions}}, {{sheetInstructions}}, {{backgroundInstructions}}.">Sent to Quick Image Gen before generating or regenerating expression sprites. Macros: {{generationInstructions}}, {{characterName}}, {{expression}}, {{expressions}}, {{characterCard}}, {{framingInstructions}}, {{sheetInstructions}}, {{backgroundInstructions}}.</small>
                         <textarea id="expressions_agent_sprite_prompt" type="text" class="text_pole textarea_compact autoSetHeight" rows="8" placeholder="Use &lcub;&lcub;generationInstructions&rcub;&rcub;, &lcub;&lcub;characterCard&rcub;&rcub;, &lcub;&lcub;framingInstructions&rcub;&rcub;, and &lcub;&lcub;sheetInstructions&rcub;&rcub; macros."></textarea>
                     </div>
                 </details>

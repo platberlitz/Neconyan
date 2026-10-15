@@ -7,7 +7,7 @@
  */
 
 import { getExtensionCapability } from '../../neconyan-conversation/extension-capabilities.js';
-import { buildExpressionSpritePrompt, buildExpressionSpriteSheetPrompt, EXPRESSION_SPRITE_NEGATIVE, getExpressionSpriteSheetGrid } from './sprite-prompts.js';
+import { buildExpressionSpritePrompt, buildExpressionSpriteSheetPrompt, getExpressionSpriteNegative, getExpressionSpriteSheetGrid } from './sprite-prompts.js';
 
 const SPINNER_ID = 'expression-agent-spinner';
 
@@ -126,7 +126,7 @@ export async function generateExpressionSprite(expression, promptContext) {
         return await runWithQigCapability(async (qig, signal) => {
             const qigSettings = qig.getSettingsSnapshot();
             const prompt = buildExpressionSpritePrompt(expression, promptContext);
-            const negative = [qigSettings?.negativePrompt, EXPRESSION_SPRITE_NEGATIVE].filter(Boolean).join(', ');
+            const negative = [qigSettings?.negativePrompt, getExpressionSpriteNegative(promptContext?.background)].filter(Boolean).join(', ');
             const entry = await qig.generateImage(prompt, negative, { signal });
             return entry?.url || null;
         });
@@ -160,7 +160,7 @@ export async function generateExpressionSpriteSheet(expressions, promptContext) 
             const qigSettings = qig.getSettingsSnapshot();
             const grid = getExpressionSpriteSheetGrid(labels.length);
             const prompt = buildExpressionSpriteSheetPrompt(labels, promptContext, grid);
-            const negative = [qigSettings?.negativePrompt, EXPRESSION_SPRITE_NEGATIVE].filter(Boolean).join(', ');
+            const negative = [qigSettings?.negativePrompt, getExpressionSpriteNegative(promptContext?.background)].filter(Boolean).join(', ');
             const entry = await qig.generateImage(prompt, negative, { signal });
             return entry?.url ? { imageUrl: entry.url, grid } : null;
         });

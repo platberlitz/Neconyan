@@ -11,22 +11,64 @@ const FRAMING = {
     ].join('\n'),
 };
 
-export const EXPRESSION_SPRITE_NEGATIVE = [
+export const EXPRESSION_SPRITE_BACKGROUNDS = ['green', 'magenta', 'white'];
+
+const BACKGROUND_KEYS = {
+    green: 'one flat solid chroma-key green (#00FF00)',
+    magenta: 'one flat solid chroma-key magenta (#FF00FF)',
+};
+
+const NEGATIVE = [
     'three-quarter view', '3/4 view', 'side view', 'profile view', 'looking away', 'rotated shoulders',
     'tilted head', 'tilted camera', 'dutch angle', 'top-down view', 'low angle', 'different crop',
-    'different zoom', 'different outfit', 'different hairstyle', 'different accessories', 'opaque background',
-    'colored background', 'busy background', 'checkerboard background', 'transparent checkerboard',
+    'different zoom', 'different outfit', 'different hairstyle', 'different accessories',
+    'busy background', 'checkerboard background', 'transparent checkerboard',
     'transparency grid', 'alpha checkerboard', 'gray checkerboard', 'captions', 'labels', 'text',
     'expression names', 'overlapping cells', 'sprites crossing cell boundaries', 'cut off character', 'adjacent sprite fragments',
-].join(', ');
+];
 
-export const DEFAULT_EXPRESSION_SPRITE_PROMPT = [
+export function getExpressionSpriteBackground(value) {
+    return EXPRESSION_SPRITE_BACKGROUNDS.includes(value) ? value : 'green';
+}
+
+export function getExpressionSpriteNegative(background) {
+    const extra = getExpressionSpriteBackground(background) === 'white'
+        ? ['opaque background', 'colored background']
+        : ['gradient background', 'textured background', 'cast shadow', 'white background', 'transparent background'];
+    return [...NEGATIVE, ...extra].join(', ');
+}
+
+export function getExpressionSpriteBackgroundInstructions(background) {
+    const key = BACKGROUND_KEYS[getExpressionSpriteBackground(background)];
+    if (!key) {
+        return 'Use a true transparent background. If true alpha transparency is unavailable, use flat pure white only. Never draw a checkerboard or transparency grid.';
+    }
+    return [
+        `Background: fill the entire canvas, edge to edge, with ${key}. This background rule replaces any transparency or white background instruction.`,
+        'No gradient, shading, texture, floor, cast shadow, glow, vignette, checkerboard or transparency in the background.',
+        'Never use that background colour anywhere on the character, and keep a clear gap of background around the whole outline.',
+    ].join('\n');
+}
+
+/** The default prompt before background colours, kept so saved copies of it can be upgraded. */
+export const TRANSPARENT_DEFAULT_EXPRESSION_SPRITE_PROMPT = [
     '{{generationInstructions}}', '{{sheetInstructions}}',
     'Use these character card details as the source of truth for the character\'s actual appearance:',
     '{{characterCard}}', '{{framingInstructions}}',
     'Preserve the same character identity, species, body, hair, eyes, clothing, accessories, colors, and style described in the card.',
     'Consistency rules: same front-facing angle, same crop, same scale, same head and body position, same outfit, same hairstyle, same accessories, true transparent background.',
     'If true alpha transparency is unavailable, use flat pure white only. Never draw a checkerboard or transparency grid.',
+    'Only the facial expression should change. Keep pose, camera, composition, and silhouette stable across all generated expressions.',
+    'Clean isolated character sprite, emotional face, production-ready expression sheet tile.',
+].join('\n');
+
+export const DEFAULT_EXPRESSION_SPRITE_PROMPT = [
+    '{{generationInstructions}}', '{{sheetInstructions}}',
+    'Use these character card details as the source of truth for the character\'s actual appearance:',
+    '{{characterCard}}', '{{framingInstructions}}',
+    'Preserve the same character identity, species, body, hair, eyes, clothing, accessories, colors, and style described in the card.',
+    'Consistency rules: same front-facing angle, same crop, same scale, same head and body position, same outfit, same hairstyle, same accessories, same plain background.',
+    '{{backgroundInstructions}}',
     'Only the facial expression should change. Keep pose, camera, composition, and silhouette stable across all generated expressions.',
     'Clean isolated character sprite, emotional face, production-ready expression sheet tile.',
 ].join('\n');
@@ -51,10 +93,15 @@ export function getExpressionSpriteSheetGrid(count) {
     return { columns, rows: Math.ceil(count / columns) };
 }
 
+function hasPlaceholder(template, key) {
+    return new RegExp(`{{\\s*${key}\\s*}}`, 'i').test(template);
+}
+
 function fromTemplate(template, values) {
-    const missing = ['generationInstructions', 'sheetInstructions'].filter(key => values[key] && !new RegExp(`{{\\s*${key}\\s*}}`, 'i').test(template));
+    const missing = ['generationInstructions', 'sheetInstructions'].filter(key => values[key] && !hasPlaceholder(template, key));
     const text = Object.entries(values).reduce((value, [key, replacement]) => value.replace(new RegExp(`{{\\s*${key}\\s*}}`, 'gi'), () => String(replacement ?? '')), template);
-    return [missing.map(key => values[key]).join('\n'), text].filter(Boolean).join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
+    const background = hasPlaceholder(template, 'backgroundInstructions') ? '' : values.backgroundInstructions;
+    return [missing.map(key => values[key]).join('\n'), text, background].filter(Boolean).join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 function build(labels, context, grid) {
@@ -64,27 +111,32 @@ function build(labels, context, grid) {
     const generationInstructions = grid ? `Create one image containing a matching character expression sheet for ${characterName}.`
         : `Create one image in a matching character expression sprite set for ${characterName}.\nExpression to show: ${labels[0]}.`;
     const unused = grid ? grid.columns * grid.rows - labels.length : 0;
+    const background = getExpressionSpriteBackground(context.background);
+    const backgroundInstructions = getExpressionSpriteBackgroundInstructions(background);
+    const keyed = background !== 'white';
     const sheetInstructions = grid ? [
         `Create one complete character expression sheet for ${characterName}.`,
         `Sheet layout: ${grid.columns} columns by ${grid.rows} rows, equal-size cells, row-major order.`,
         `Generate the first ${labels.length} cells using these expressions in order:\n${labels.map((label, index) => `${index + 1}. ${label}`).join('\n')}`,
-        unused > 0 ? `Leave the final ${unused} unused cell(s) transparent or flat white.` : '',
-        'Use true alpha transparency for the sheet and every cell. If true transparency is not available, use a flat pure white background only.',
+        unused > 0 ? (keyed ? `Leave the final ${unused} unused cell(s) empty, showing only the background colour.`
+            : `Leave the final ${unused} unused cell(s) transparent or flat white.`) : '',
+        keyed ? 'Use the same flat background colour across the whole sheet and every cell.'
+            : 'Use true alpha transparency for the sheet and every cell. If true transparency is not available, use a flat pure white background only.',
         'Do not draw a checkerboard, transparency grid, gray squares, paper texture, or any background pattern.',
         'No captions, labels, numbers, expression names, borders, gutters, panel outlines, or decorative dividers.',
-        'Keep every character, prop, weapon, accessory, hair strand, and shadow fully inside its own cell with clear transparent padding on all sides.',
+        'Keep every character, prop, weapon, accessory, hair strand, and shadow fully inside its own cell with clear empty padding on all sides.',
         'Do not let any part of a sprite cross into another cell. Adjacent cells must never overlap or leak into each other.',
         'Each filled cell must contain exactly one clean sprite tile that can be cropped by equal grid coordinates.',
     ].filter(Boolean).join('\n') : '';
     const template = String(context.promptTemplate || '').trim();
     if (template) return fromTemplate(template, { characterName, characterCard, framing, framingInstructions: FRAMING[framing],
-        expression: grid ? 'each listed expression' : labels[0], expressions: labels.join(', '), generationInstructions, sheetInstructions });
+        expression: grid ? 'each listed expression' : labels[0], expressions: labels.join(', '), generationInstructions, sheetInstructions, backgroundInstructions });
     return [generationInstructions, sheetInstructions,
         characterCard ? `Use these character card details as the source of truth for the character's actual appearance:\n${characterCard}` : '',
         FRAMING[framing],
         'Preserve the same character identity, species, body, hair, eyes, clothing, accessories, colors, and style described in the card.',
-        'Consistency rules: same front-facing angle, same crop, same scale, same head and body position, same outfit, same hairstyle, same accessories, true transparent background.',
-        'If true transparency is not available, use flat pure white only. Never draw a checkerboard or transparency grid.',
+        'Consistency rules: same front-facing angle, same crop, same scale, same head and body position, same outfit, same hairstyle, same accessories, same plain background.',
+        backgroundInstructions,
         'Only the facial expression should change. Keep pose, camera, composition, and silhouette stable across all generated expressions.',
         grid ? 'Clean isolated character sprite, emotional face, production-ready expression sheet.'
             : 'Clean isolated character sprite, emotional face, production-ready expression sheet tile.',

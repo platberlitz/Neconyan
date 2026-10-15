@@ -14,7 +14,7 @@ import { cleanSpriteBitmap, splitSpriteBitmap } from '../../public/scripts/exten
 import { expressionLabelFromFilename, isExpressionLabel, isExpressionSpriteName, nextExpressionSpriteName } from '../../public/scripts/extensions/expressions/expression-labels.js';
 import { readExpressionSets, resolveExpressionMember, applyExpressionMemberPrompt } from '../../public/scripts/extensions/expressions/expression-sets.js';
 import { buildCharacterCardSpritePrompt, buildExpressionSpritePrompt, buildExpressionSpriteSheetPrompt,
-    DEFAULT_EXPRESSION_SPRITE_PROMPT, EXPRESSION_SPRITE_NEGATIVE, getExpressionSpriteSheetGrid } from '../../public/scripts/extensions/expressions/sprite-prompts.js';
+    DEFAULT_EXPRESSION_SPRITE_PROMPT, getExpressionSpriteBackground, getExpressionSpriteNegative, getExpressionSpriteSheetGrid } from '../../public/scripts/extensions/expressions/sprite-prompts.js';
 import { admitNativeMediaJob, ensureNativeMediaDirectory, finishNativeMediaJob, mediaDirectoryEvidence, mediaFileEvidence,
     publishNativeMediaFile, removeReplacedMediaFile, withNativeMediaReceipt } from './media-jobs.js';
 
@@ -124,15 +124,16 @@ export function captureSpriteRequest(base, account, source, { avatar, labels, fo
         const context = applyExpressionMemberPrompt({ characterName: card.name || stem, characterCard: buildCharacterCardSpritePrompt({
             description: card.description, creatorNotes: card.creator_notes || saved.data.creatorcomment,
             personality: card.personality, scenario: card.scenario, charDepthPrompt: card.extensions?.depth_prompt?.prompt,
-        }), framing: options.agentSpriteFraming || 'bust', promptTemplate: options.agentSpritePrompt || DEFAULT_EXPRESSION_SPRITE_PROMPT }, member);
+        }), framing: options.agentSpriteFraming || 'bust', promptTemplate: options.agentSpritePrompt || DEFAULT_EXPRESSION_SPRITE_PROMPT,
+        background: getExpressionSpriteBackground(options.agentSpriteBackground) }, member);
         if (!['bust', 'full_body'].includes(context.framing) || typeof context.promptTemplate !== 'string' || context.promptTemplate.length > 64 * 1024) throw fail('The saved sprite prompt controls are invalid.');
         const grid = ['sheet', 'split'].includes(mode) && targets.length ? getExpressionSpriteSheetGrid(targets.length) : null;
         const prompts = mode === 'sheet' ? [buildExpressionSpriteSheetPrompt(targets.map(item => item.label), context, grid)]
             : mode === 'individual' ? targets.map(item => buildExpressionSpritePrompt(item.label, context)) : [];
         return { version: 1, avatar, folder, mode, characterScope, settingsHash: roleplayHash(settings), qigFingerprint: quickImageGenSettingsFingerprint(qig),
             referenceSources: ['individual', 'sheet'].includes(mode) ? captureQuickImageReferenceSources(base.directories, qig) : [],
-            removeBackground: Boolean(options.agentSpriteRemoveBackground), targets, parents, sheet, grid, prompts,
-            negative: [qig.negativePrompt, EXPRESSION_SPRITE_NEGATIVE].filter(Boolean).join(', ') };
+            removeBackground: Boolean(options.agentSpriteRemoveBackground) || context.background !== 'white', keyOnly: !options.agentSpriteRemoveBackground, targets, parents, sheet, grid, prompts,
+            negative: [qig.negativePrompt, getExpressionSpriteNegative(context.background)].filter(Boolean).join(', ') };
     });
 }
 
@@ -200,7 +201,7 @@ export async function runSpriteJob(context, { fetchImpl = fetch, wait, afterPubl
             const image = request.mode === 'sheet' ? await imageFor(0) : readFrozenImage(context, 'sprite:source-sheet', request.sheet);
             const bitmap = await decodeServerImage(Buffer.from(image.base64, 'base64'));
             const tiles = splitSpriteBitmap(bitmap, request.grid, request.targets.length,
-                { removeBackground: request.removeBackground, check: () => context.signal.throwIfAborted() });
+                { removeBackground: request.removeBackground, keyOnly: request.keyOnly, check: () => context.signal.throwIfAborted() });
             for (let index = 0; index < tiles.length; index++) saveTile(index, { base64: (await encodeServerImage(tiles[index])).toString('base64'), format: 'png' });
         }
     }
@@ -213,7 +214,7 @@ export async function runSpriteJob(context, { fetchImpl = fetch, wait, afterPubl
             const image = request.mode === 'cleanup' ? readFrozenImage(context, `sprite:source:${index}`, target.source) : await imageFor(index);
             const bitmap = await decodeServerImage(Buffer.from(image.base64, 'base64'));
             if (request.mode === 'cleanup' || request.removeBackground) cleanSpriteBitmap(bitmap,
-                { removeBackground: request.removeBackground, check: () => context.signal.throwIfAborted() });
+                { removeBackground: request.removeBackground, keyOnly: request.keyOnly, check: () => context.signal.throwIfAborted() });
             tile = { base64: (await encodeServerImage(bitmap)).toString('base64'), format: 'png' };
             saveTile(index, tile);
         }

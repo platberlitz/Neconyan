@@ -1,6 +1,7 @@
 const ALPHA_THRESHOLD = 24;
 const MAX_PIXELS = 16 * 1024 * 1024;
 const spread = (r, g, b) => Math.max(r, g, b) - Math.min(r, g, b);
+const keyStrength = (r, g, b, key) => key === 'green' ? g - Math.max(r, b) : Math.min(r, b) - g;
 
 function validateBitmap({ data, width, height }) {
     if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1
@@ -20,9 +21,11 @@ function backgroundPalette({ data, width, height }) {
         if (alpha < 250) { transparent++; return; }
         // Paper whites often straddle several quantisation buckets after JPEG
         // compression or generation. Treat their small tint/shade changes together.
-        const key = Math.min(red, green, blue) >= 210 && spread(red, green, blue) <= 28
-            ? 'paper' : [red, green, blue].map(channel => Math.floor(channel / 16)).join(',');
-        const bucket = buckets.get(key) || { count: 0, red: 0, green: 0, blue: 0 };
+        const key = keyStrength(red, green, blue, 'green') >= 96 ? 'green'
+            : keyStrength(red, green, blue, 'magenta') >= 96 ? 'magenta'
+                : Math.min(red, green, blue) >= 210 && spread(red, green, blue) <= 28
+                    ? 'paper' : [red, green, blue].map(channel => Math.floor(channel / 16)).join(',');
+        const bucket = buckets.get(key) || { key, count: 0, red: 0, green: 0, blue: 0 };
         bucket.count++;
         bucket.red += red;
         bucket.green += green;
@@ -36,9 +39,14 @@ function backgroundPalette({ data, width, height }) {
     // removed some sides; fully transparent sprites must keep exposed white fur.
     const opaque = sampled - transparent;
     if (opaque < Math.max(6, sampled * 0.15)) return [];
-    const dominant = sorted.filter(bucket => bucket.count >= opaque * 0.12).slice(0, 2);
+    const chroma = sorted.find(bucket => ['green', 'magenta'].includes(bucket.key) && bucket.count >= opaque * 0.65);
+    const dominant = chroma ? [chroma] : sorted.filter(bucket => bucket.count >= opaque * 0.12).slice(0, 2);
     if (dominant.reduce((sum, bucket) => sum + bucket.count, 0) < opaque * 0.65) return [];
     const palette = dominant.map(bucket => [bucket.red / bucket.count, bucket.green / bucket.count, bucket.blue / bucket.count]);
+    if (chroma) {
+        palette.key = chroma.key;
+        palette[0] = chroma.key === 'green' ? [0, 255, 0] : [255, 0, 255];
+    }
     // Two shades are useful for a printed transparency grid. A colourful boundary
     // is more likely full-bleed artwork than a removable two-colour background.
     if (palette.length > 1 && palette.some(([r, g, b]) => spread(r, g, b) > 32)) return [];
@@ -61,9 +69,30 @@ function backgroundPalette({ data, width, height }) {
 function isBackground(data, i, palette) {
     const red = data[i], green = data[i + 1], blue = data[i + 2], alpha = data[i + 3];
     if (alpha < ALPHA_THRESHOLD) return true;
+    if (palette.key) return keyStrength(red, green, blue, palette.key) >= 100;
     return palette.some(([r, g, b]) => (red - r) ** 2 + (green - g) ** 2 + (blue - b) ** 2 <= 32 ** 2
         || (Math.min(r, g, b) >= 210 && Math.min(red, green, blue) >= 210
             && spread(red, green, blue) <= 28 && Math.max(Math.abs(red - r), Math.abs(green - g), Math.abs(blue - b)) <= 38));
+}
+
+function removeKeySpill({ data, width, height }, background, key, check) {
+    if (!key) return;
+    for (let y = 0; y < height; y++) {
+        if ((y & 63) === 0) check();
+        for (let x = 0; x < width; x++) {
+            const i = (y * width + x) * 4;
+            if (!data[i + 3]) continue;
+            let edge = false;
+            for (let dy = -2; dy <= 2 && !edge; dy++) for (let dx = -2; dx <= 2; dx++) {
+                const nx = x + dx, ny = y + dy;
+                if (nx >= 0 && ny >= 0 && nx < width && ny < height && background[ny * width + nx]) { edge = true; break; }
+            }
+            if (!edge) continue;
+            const excess = Math.max(0, keyStrength(data[i], data[i + 1], data[i + 2], key));
+            if (key === 'green') data[i + 1] -= excess;
+            else { data[i] -= excess; data[i + 2] -= excess; }
+        }
+    }
 }
 
 /** Recover antialiasing from the local foreground colour, rather than leaving a white fringe. */
@@ -181,11 +210,12 @@ function removeCornerSpecks(bitmap, check) {
 }
 
 /** Remove confidently sampled, edge-connected backgrounds while protecting enclosed white detail. */
-export function removeSpriteBackground(bitmap, check = () => {}) {
+export function removeSpriteBackground(bitmap, check = () => {}, { keyOnly = false } = {}) {
     validateBitmap(bitmap);
     const { data, width, height } = bitmap;
     check();
     const palette = backgroundPalette(bitmap);
+    if (keyOnly && !palette.key) return bitmap;
     if (!palette.length) {
         const transparent = new Uint8Array(width * height);
         let count = 0;
@@ -220,6 +250,7 @@ export function removeSpriteBackground(bitmap, check = () => {}) {
         enqueue(x + 1, y); enqueue(x - 1, y); enqueue(x, y + 1); enqueue(x, y - 1);
     }
     softenSpriteEdges(bitmap, background, palette, check);
+    removeKeySpill(bitmap, background, palette.key, check);
     removeCornerSpecks(bitmap, check);
     return bitmap;
 }
@@ -257,9 +288,9 @@ export function centreSprite(bitmap) {
     return bitmap;
 }
 
-export function cleanSpriteBitmap(bitmap, { removeBackground = false, check = () => {} } = {}) {
+export function cleanSpriteBitmap(bitmap, { removeBackground = false, keyOnly = false, check = () => {} } = {}) {
     check();
-    if (removeBackground) removeSpriteBackground(bitmap, check);
+    if (removeBackground) removeSpriteBackground(bitmap, check, { keyOnly });
     centreSprite(bitmap);
     check();
     return bitmap;
