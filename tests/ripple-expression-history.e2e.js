@@ -13,10 +13,10 @@ const requestJson = request => JSON.parse((request.headers()['content-encoding']
 const first = '/characters/Expression Cat/joy-1.png?t=1';
 const second = '/characters/Expression Cat/joy-2.png?t=2';
 
-async function fixture(page) {
+async function fixture(page, chatStyle = 6) {
     let envelope, settings;
     const storage = createMockRoleplayStore(() => envelope.roleplayAccount);
-    const state = { saved: null, saves: 0, modelCalls: [], errors: [], groups: [], storage };
+    const state = { saved: null, saves: 0, savedSettings: null, modelCalls: [], errors: [], groups: [], storage };
     const character = { name: 'Expression Cat', avatar: 'expression-cat.png', chat: 'expression-chat', first_mes: 'Legacy greeting',
         mes_example: '', shallow: false, tags: [], data: { name: 'Expression Cat', first_mes: 'Legacy greeting', description: '', extensions: {} } };
     page.on('pageerror', error => state.errors.push(error.message));
@@ -25,7 +25,7 @@ async function fixture(page) {
         settings ??= JSON.parse(envelope.settings);
         settings.firstRun = false;
         settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', 'NeconyanTutorialIndex.v1': '0' };
-        Object.assign(settings.power_user, theme, { theme: theme.name, chat_display: 6, waifuMode: true, chat_truncation: 50 });
+        Object.assign(settings.power_user, theme, { theme: theme.name, chat_display: chatStyle, waifuMode: chatStyle === 6, chat_truncation: 50 });
         settings.extension_settings.expressions = { ...settings.extension_settings.expressions, api: 99, showDefault: true };
         settings.extension_settings.disabledExtensions = (settings.extension_settings.disabledExtensions ?? []).filter(id => !['regex', 'expressions'].includes(id));
         await route.fulfill({ json: { ...envelope, settings: JSON.stringify(settings) } });
@@ -34,6 +34,7 @@ async function fixture(page) {
         settings = requestJson(route.request());
         await acknowledgeSettingsSave(route);
         settings._settingsRevision = Number(settings._settingsRevision || 0) + 1;
+        state.savedSettings = structuredClone(settings);
     });
     await page.route('**/api/characters/all', route => route.fulfill({ json: [character] }));
     await page.route('**/api/characters/chats', route => route.fulfill({ json: [{ file_name: character.chat, message_count: 1 }] }));
@@ -74,6 +75,84 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
             hasTouch: phone, isMobile: phone,
             ...(phone ? { userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36' } : {}) });
         test.setTimeout(120000);
+        test('optional phone portraits follow saved expressions in every chat style', async ({ page }) => {
+            const state = await fixture(page, 0);
+            await selectSprite(page, 'joy-1.png');
+            await expect(page.locator('#toast-container .toast')).toHaveCount(0, { timeout: 20000 });
+            await page.screenshot({ path: `../screenshots/expressions-display-${name}-before.png`, animations: 'disabled' });
+            await page.evaluate(() => window.NeconyanShell.openExtensionSettings('expressions'));
+            const toggle = page.locator('#expressions_mobile_portraits');
+            await expect(toggle).toBeVisible();
+            await expect(toggle).not.toBeChecked();
+            await toggle.check();
+            await page.screenshot({ path: `../screenshots/expressions-display-${name}-setting.png`, animations: 'disabled' });
+            await page.evaluate(() => window.NeconyanShell.closeWorkspace());
+            await expect(toggle).toBeHidden();
+            await expect(page.locator('[data-ui-closing]')).toHaveCount(0);
+            const portrait = page.locator('#chat .mes[mesid="0"] .neconyan-mobile-expression img');
+            if (!phone) {
+                await expect(portrait).toHaveCount(0);
+                await page.screenshot({ path: '../screenshots/expressions-display-desktop-after.png', animations: 'disabled' });
+                await page.setViewportSize({ width: 393, height: 852 });
+            }
+            for (let style = 0; style <= 12; style++) {
+                await page.locator('#chat_display').selectOption(String(style), { force: true });
+                if (style === 6) {
+                    await expect(portrait).toHaveCount(0);
+                    await expect(page.locator('#chat .mes[mesid="0"] .neconyan-expression-avatar')).toBeVisible();
+                    continue;
+                }
+                await expect(portrait).toBeVisible();
+                await expect(portrait).toHaveAttribute('src', first);
+                const geometry = await portrait.evaluate(image => {
+                    const rect = image.getBoundingClientRect();
+                    const text = image.closest('.mes_block').querySelector('.mes_text').getBoundingClientRect();
+                    return { fit: getComputedStyle(image).objectFit, left: rect.left, right: rect.right,
+                        height: rect.height, bottom: rect.bottom, textTop: text.top,
+                        overflow: document.documentElement.scrollWidth > window.innerWidth };
+                });
+                expect(geometry.fit, `style ${style}`).toBe('contain');
+                expect(geometry.height, `style ${style}`).toBeGreaterThan(80);
+                expect(geometry.left, `style ${style}`).toBeGreaterThanOrEqual(0);
+                expect(geometry.right, `style ${style}`).toBeLessThanOrEqual(393);
+                expect(geometry.bottom, `style ${style}`).toBeLessThanOrEqual(geometry.textTop);
+                expect(geometry.overflow, `style ${style}`).toBe(false);
+                if (phone && [0, 3, 10].includes(style)) await page.screenshot({ path: `../screenshots/expressions-display-phone-style-${style}-after.png` });
+            }
+            await page.locator('#chat_display').selectOption('0', { force: true });
+            await selectSprite(page, 'joy-2.png');
+            await expect(portrait).toHaveAttribute('src', second);
+            // Chat-style changes debounce the same settings save as this option.
+            // Reload only once the server has acknowledged the actual selection.
+            await expect.poll(() => state.savedSettings?.extension_settings?.expressions?.mobilePortraits).toBe(true);
+            await page.reload();
+            await page.waitForFunction(() => window.SillyTavern?.getContext().characters.length && window.NeconyanShell?.openExtensionSettings);
+            await page.evaluate(async () => window.SillyTavern.getContext().selectCharacterById(0, { switchMenu: false }));
+            await expect(portrait).toHaveAttribute('src', second);
+            await expect(portrait).toBeVisible();
+            await page.setViewportSize({ width: 1280, height: 900 });
+            await expect(portrait).toHaveCount(0);
+            await page.setViewportSize({ width: 393, height: 852 });
+            await expect(portrait).toBeVisible();
+            await page.route(url => url.pathname.endsWith('/missing.png'), route => route.fulfill({ status: 404, body: '' }));
+            await page.evaluate(async () => {
+                const core = await import('/script.js');
+                await core.recordMessageExpression(core.captureExpressionTarget(core.chat[0]), '/characters/Expression Cat/missing.png');
+            });
+            await expect(page.locator('#chat .neconyan-mobile-expression')).toBeHidden();
+            await selectSprite(page, 'joy-2.png');
+            await expect(portrait).toBeVisible();
+            await page.evaluate(() => window.NeconyanShell.openExtensionSettings('expressions'));
+            await expect(toggle).toBeChecked();
+            await toggle.uncheck();
+            await page.evaluate(() => window.NeconyanShell.closeWorkspace());
+            await expect(portrait).toHaveCount(0);
+            await page.locator('#chat_display').selectOption('6', { force: true });
+            await expect(page.locator('#chat .mes[mesid="0"] .neconyan-expression-avatar')).toBeVisible();
+            expect(state.modelCalls).toEqual([]);
+            expect(state.errors).toEqual([]);
+        });
+
         test('Fine-tuning opens existing controls and Ripple preserves exact message/swipe history', async ({ page }, info) => {
             const state = await fixture(page);
             for (const [route, control] of [['regex', '#open_regex_editor'], ['expressions', '#expression_api']]) {

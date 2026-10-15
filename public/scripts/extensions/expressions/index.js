@@ -2832,6 +2832,11 @@ function migrateSettings() {
 }
 
 export async function init() {
+    const phoneViewport = window.matchMedia('(max-width: 768px)');
+    function updateMobileExpressionDisplay() {
+        document.body.classList.toggle('neconyan-mobile-expressions', phoneViewport.matches && !!extension_settings.expressions.mobilePortraits);
+        document.dispatchEvent(new Event('sb:expression-display-updated'));
+    }
     function addExpressionImage() {
         const html = `
         <div id="expression-wrapper">
@@ -2885,6 +2890,13 @@ export async function init() {
             .on('click', onClickRemoveAllSprites)
             .on('keydown', onExpressionGenerationKeydown);
         setExpressionGenerationBusy(inSpriteGeneration);
+        $('#expressions_mobile_portraits').prop('checked', !!extension_settings.expressions.mobilePortraits).on('input', function () {
+            extension_settings.expressions.mobilePortraits = this.checked;
+            updateMobileExpressionDisplay();
+            saveSettingsDebounced();
+        });
+        phoneViewport.addEventListener('change', updateMobileExpressionDisplay);
+        updateMobileExpressionDisplay();
         $('#expression_translate').prop('checked', extension_settings.expressions.translate).on('input', function () {
             extension_settings.expressions.translate = !!$(this).prop('checked');
             saveSettingsDebounced();

@@ -1,6 +1,24 @@
 /* Neconyan mobile shell foundation: final sheet contract for modal drawers.
  * Keep this at the end of the shell sheet so it beats older mobile drawer rules. */
 @media screen and (max-width: 768px) {
+    body.neconyan.neconyan-mobile-expressions #chat .mes .mes_block > .neconyan-mobile-expression {
+        display: none;
+        clear: both;
+        width: min(140px, 50%);
+        height: 160px;
+        max-height: 20svh;
+        margin: 8px auto 12px;
+    }
+    body.neconyan.neconyan-mobile-expressions #chat .mes .mes_block > .neconyan-mobile-expression.has-expression { display: block; }
+    body.neconyan.neconyan-mobile-expressions #chat .neconyan-mobile-expression > img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+    }
     body.neconyan #completion_prompt_manager #completion_prompt_manager_list li.completion_prompt_manager_prompt > span:nth-child(3) { touch-action: pan-x; }
     body.neconyan #completion_prompt_manager #completion_prompt_manager_list li.completion_prompt_manager_prompt .prompt_manager_prompt_controls > .prompt-manager-pin-action {
         display: inline-flex; align-items: center; justify-content: center; gap: 6px;
