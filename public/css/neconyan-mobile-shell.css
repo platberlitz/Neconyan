@@ -132,15 +132,23 @@
         --sb-composer-left-rail-width: calc(var(--sb-composer-action-size) * 2 + 3px);
         --sb-composer-right-rail-width: calc(var(--sb-composer-action-size) + var(--sb-composer-send-width) + 3px);
         display: grid !important;
-        grid-template-columns: var(--sb-composer-left-rail-width) minmax(0, 1fr) var(--sb-composer-right-rail-width) !important;
-        grid-template-rows: minmax(var(--sb-mobile-composer-input-height), auto) !important;
-        grid-template-areas: 'tools input action' !important;
+        grid-template-columns: var(--sb-composer-columns, var(--sb-composer-left-rail-width) minmax(0, 1fr) var(--sb-composer-right-rail-width)) !important;
+        grid-template-rows: var(--sb-mobile-composer-rows, minmax(var(--sb-mobile-composer-input-height), auto)) !important;
+        grid-template-areas: var(--sb-composer-areas, 'tools input action') !important;
         align-items: center !important;
-        gap: 0 6px !important;
+        gap: var(--sb-mobile-composer-row-gap, 0) 6px !important;
         min-height: calc(var(--sb-mobile-composer-input-height) + 4px) !important;
         padding: 2px 4px !important;
         box-sizing: border-box !important;
         overflow: visible !important;
+    }
+
+    /* Compact Input Area is separate from the whole-interface compact mode. */
+    #send_form:not(.compact) #nonQRFormItems {
+        --sb-composer-columns: minmax(0, 1fr) var(--sb-composer-right-rail-width);
+        --sb-composer-areas: 'input input' 'tools action';
+        --sb-mobile-composer-rows: minmax(var(--sb-mobile-composer-input-height), auto) var(--sb-composer-action-size);
+        --sb-mobile-composer-row-gap: 4px;
     }
 
     :root[data-sb-compact-mode='true'] #nonQRFormItems {
@@ -150,7 +158,7 @@
         --sb-composer-action-icon-size: clamp(11px, calc(14px * var(--sb-bottom-bar-scale, 1)), 16px);
         --sb-composer-left-rail-width: calc(var(--sb-composer-action-size) * 2 + 4px);
         --sb-composer-right-rail-width: calc(var(--sb-composer-action-size) + var(--sb-composer-send-width) + 4px);
-        gap: 0 6px !important;
+        gap: var(--sb-mobile-composer-row-gap, 0) 6px !important;
     }
 
     #leftSendForm {
@@ -3087,7 +3095,7 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         --sb-composer-action-icon-size: clamp(12px, calc(15px * var(--sb-bottom-bar-scale, 1)), 18px);
         --sb-composer-left-rail-width: calc(var(--sb-composer-action-size) * 2 + 4px);
         --sb-composer-right-rail-width: calc(var(--sb-composer-action-size) + var(--sb-composer-send-width) + 4px);
-        gap: 0 6px !important;
+        gap: var(--sb-mobile-composer-row-gap, 0) 6px !important;
         min-height: calc(var(--sb-mobile-composer-input-height) + 3px) !important;
         padding: 3px 4px !important;
     }
