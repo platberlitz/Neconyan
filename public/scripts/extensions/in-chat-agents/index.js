@@ -111,6 +111,7 @@ import {
     createDefaultRegexScript,
     normalizeRegexScript,
 } from './regex-scripts.js';
+import { updateRetiredFindPatterns } from './retired-regex-patterns.js';
 import { initPathfinder, teardownPathfinder } from './pathfinder-init.js';
 import { openPathfinderSettings, closePathfinderSettings, canClosePathfinderSettings, cancelPathfinderSummary, isPathfinderAgent } from './pathfinder-settings-ui.js';
 import { getPathfinderToolDefinitions } from './pathfinder/tool-definitions.js';
@@ -374,6 +375,7 @@ async function finishAgentLibraryInitialization() {
 
     await migrateBundledRegexScriptsToSavedAgents();
     noteUpdate(await migrateCyoaChoiceRegexCleanupToSavedAgents(), 'CYOA choice regex rule updated', 'CYOA choice regex rules updated');
+    noteUpdate(await migrateRetiredRegexFindPatternsToSavedAgents(), 'agent regex rule updated to read more replies', 'agent regex rules updated to read more replies');
     noteUpdate(await migrateBundledTemplateMetadataToSavedAgents(), 'agent credit updated', 'agent credits updated');
     if (await migrateLegacyParallelTrackerPromptToSavedAgents() > 0) {
         startupUpdates.push('Parallel Off-Screen now asks for "Person: what they are doing" lines');
@@ -2254,6 +2256,29 @@ async function migrateLegacyParallelTrackerPromptToSavedAgents() {
     }
 
     await saveAgentBatch(changes, 'Parallel tracker prompt');
+    return changes.length;
+}
+
+/**
+ * Unedited copies of a replaced bundled find pattern take the current one. An edited
+ * pattern never matches a retired one exactly, so this runs even for locked agents.
+ */
+async function migrateRetiredRegexFindPatternsToSavedAgents() {
+    const bundledScripts = Object.values(templateRegexBundles).flat();
+    const findBundledScript = scriptId => bundledScripts.find(script => script?.id === scriptId);
+    const changes = [];
+
+    for (const agent of getAgents().map(agent => structuredClone(agent))) {
+        const regexScripts = updateRetiredFindPatterns(agent.regexScripts, findBundledScript);
+        if (!regexScripts) {
+            continue;
+        }
+
+        agent.regexScripts = regexScripts;
+        changes.push(agent);
+    }
+
+    await saveAgentBatch(changes, 'Retired regex patterns');
     return changes.length;
 }
 

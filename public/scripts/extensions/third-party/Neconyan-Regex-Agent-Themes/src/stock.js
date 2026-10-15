@@ -710,7 +710,7 @@ export const STOCK = [
         "scriptName": "Liminal: Miracle Certificate",
         "family": "tracker",
         "source": "regex-bundles.json",
-        "findRegex": "/\\[CERT\\|([^\\]\\n\\r|]+)\\|([^\\]\\n\\r|]+)\\|([^\\]\\n\\r|]+)\\][ \\t]*\\r?\\n?[ \\t]*(?:stamp:[ \\t]*)?((?:(?!\\[\\/|\\[[A-Z])[^\\n\\r])*)(?:\\s*\\[\\/CERT\\])?/g",
+        "findRegex": "/\\[CERT\\|([^\\]\\n\\r|]+)\\|([^\\]\\n\\r|]+)(?:\\|([^\\]\\n\\r|]+))?\\][ \\t]*\\r?\\n?[ \\t]*(?:stamp:[ \\t]*)?((?:(?!\\[\\/|\\[[A-Z])[^\\n\\r])*)(?:\\s*\\[\\/CERT\\])?/g",
         "groups": 4,
         "flags": "g",
         "delimited": true,
