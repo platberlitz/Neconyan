@@ -24,6 +24,7 @@ import { cleanSpriteBitmap, splitSpriteBitmap } from './sprite-pixels.js';
 import { getExpressionSpriteSheetGrid } from './sprite-prompts.js';
 import { readExpressionSets, resolveExpressionMember, applyExpressionMemberPrompt } from './expression-sets.js';
 import { bindExpressionSets, renderExpressionSets } from './expression-sets-ui.js';
+import { personaExpressionFolder, personaExpressionSelection } from './persona-expressions.js';
 import {
     DEFAULT_EXPRESSION_SPRITE_PROMPT,
     LEGACY_DEFAULT_EXPRESSION_SPRITE_PROMPT,
@@ -31,6 +32,7 @@ import {
     getAgentExpressionState,
     getExpressionsAgentStatus,
     getExpressionSpritePromptContext,
+    getPersonaExpressionSpritePromptContext,
     maybeGenerateExpressionSprite,
     maybeGenerateExpressionSpriteSheet,
     stopExpressionSpriteGeneration,
@@ -130,6 +132,61 @@ const DEFAULT_EXPRESSION_SPRITE_REMOVE_BACKGROUND = false;
 
 let expressionsList = null;
 let processedExpressions = new WeakMap();
+let managedPersonaAvatar = '';
+const personaTargets = new Map();
+
+function getManagedPersona() {
+    return personaTargets.get(managedPersonaAvatar);
+}
+
+async function refreshExpressionOwners() {
+    const select = document.getElementById('expression_owner');
+    if (!select) return;
+    const entries = await Promise.all(Object.entries(power_user.personas || {}).filter(([avatar]) => avatar && !/[/\\\x00-\x1f]/.test(avatar) && avatar !== '.' && avatar !== '..').map(async ([avatar, name]) => {
+        const folder = await personaExpressionFolder(avatar);
+        return { avatar, name, folder };
+    }));
+    personaTargets.clear();
+    select.replaceChildren(new Option(t`Chat character`, ''));
+    for (const target of entries) {
+        personaTargets.set(target.avatar, target);
+        select.add(new Option(t`Persona: ${target.name}`, target.avatar));
+    }
+    if (!personaTargets.has(managedPersonaAvatar)) managedPersonaAvatar = '';
+    select.value = managedPersonaAvatar;
+    await refreshManagedExpressions();
+}
+
+async function refreshManagedExpressions() {
+    const persona = getManagedPersona();
+    $('#expression_persona_hint').prop('hidden', !persona);
+    $('#expression_member_controls, .expression_override_label, .expression_override_controls, #expression_override_cleanup_button').toggle(!persona);
+    const folder = persona?.folder || getSpriteFolderName();
+    if (folder) await validateImages(folder, true);
+}
+
+async function selectPersonaExpression(src) {
+    const persona = getManagedPersona();
+    if (!persona) return;
+    const identity = `persona:${persona.avatar}`;
+    const message = getContext().chat.findLast(message => getMessageExpressionAvatar(message) === identity);
+    const target = message && captureExpressionTarget(message);
+    extension_settings.expressions.personaSelections ??= {};
+    extension_settings.expressions.personaSelections[persona.avatar] = src;
+    saveSettingsDebounced();
+    if (target) await recordMessageExpression(target, src);
+}
+
+async function applyPersonaExpression(messageId) {
+    const message = getContext().chat[messageId];
+    const identity = getMessageExpressionAvatar(message);
+    if (!message?.is_user || !identity?.startsWith('persona:') || getSavedMessageExpression(message)) return;
+    const target = captureExpressionTarget(message);
+    const avatar = identity.slice('persona:'.length);
+    const folder = await personaExpressionFolder(avatar);
+    const src = personaExpressionSelection(extension_settings.expressions.personaSelections, avatar, folder);
+    if (src !== undefined && isExpressionTargetCurrent(target)) await recordMessageExpression(target, src);
+}
 
 function getExpressionClassificationSnapshot(message, swipe = message.swipe_id ?? 0) {
     const extra = message.swipe_info?.[swipe]?.extra;
@@ -157,7 +214,7 @@ function seedExpressionHistory() {
 }
 
 function needsExpression(message) {
-    return getMessageExpressionAvatar(message) && message.mes && message.mes !== '...'
+    return !message.is_user && getMessageExpressionAvatar(message) && message.mes && message.mes !== '...'
         && processedExpressions.get(message)?.get(message.swipe_id ?? 0)?.text !== message.mes;
 }
 
@@ -641,6 +698,7 @@ function getExpressionFolderCharacter(folder, message = getLastCharacterMessage(
 }
 
 function getManagedExpressionCharacter() {
+    if (getManagedPersona()) return null;
     const avatar = $('#image_list').data('avatar');
     return getContext().characters.find(character => character.avatar === avatar) ?? getExpressionCharacter();
 }
@@ -923,14 +981,10 @@ async function uploadSpriteCommand({ name, label, folder = null, spriteName = nu
         return '';
     }
 
-    name = name || getLastCharacterMessage().original_avatar || getLastCharacterMessage().name;
-    const char = findChar({ name });
-
-    if (!folder) {
-        folder = spriteFolderNameFromCharacter(char);
-    } else if (folder.startsWith('/') || folder.startsWith('\\')) {
-        const subfolder = folder.slice(1);
-        folder = `${char.name}/${subfolder}`;
+    if (!folder || folder.startsWith('/') || folder.startsWith('\\')) {
+        name = name || getLastCharacterMessage().original_avatar || getLastCharacterMessage().name;
+        const char = findChar({ name });
+        folder = folder ? `${char.name}/${folder.slice(1)}` : spriteFolderNameFromCharacter(char);
     }
 
     try {
@@ -1001,6 +1055,12 @@ function getExpressionSpriteGenerationMode() {
 }
 
 function getExpressionGenerationTarget(spriteFolderName, currentLastMessage = getLastCharacterMessage()) {
+    const persona = [...personaTargets.values()].find(target => target.folder === spriteFolderName);
+    if (persona) {
+        const description = power_user.persona_descriptions?.[persona.avatar]?.description || '';
+        return { characterName: persona.name, characterAvatar: null, uploadName: persona.name,
+            promptContext: getPersonaExpressionSpritePromptContext(persona.name, description) };
+    }
     const context = getContext();
     const folderCharacterName = String(spriteFolderName || '').split('/')[0];
     const character = getExpressionFolderCharacter(spriteFolderName, currentLastMessage);
@@ -1311,7 +1371,7 @@ async function deleteExpressionSpriteFile(name, label, spriteName) {
 async function onClickExportSprites() {
     const name = $('#image_list').data('name');
     if (!name) return;
-    const downloadName = name.replace(/[/\\:*?"<>|]/g, '-');
+    const downloadName = (getManagedPersona()?.name || name).replace(/[/\\:*?"<>|]/g, '-');
     const button = $('#expressions_export_sprites').prop('disabled', true);
     try {
         const response = await fetch('/api/sprites/export', {
@@ -1906,8 +1966,10 @@ function removeExpression() {
     $('img.expression').off('error');
     $('img.expression').prop('src', '');
     $('img.expression').removeClass('default');
-    $('#open_chat_expressions').hide();
-    $('#no_chat_expressions').show();
+    if (!getManagedPersona()) {
+        $('#open_chat_expressions').hide();
+        $('#no_chat_expressions').show();
+    }
 }
 
 /**
@@ -1920,16 +1982,19 @@ async function validateImages(spriteFolderName, forceRedrawCached = false) {
         return;
     }
 
-    const revision = ++spriteListLoadRevision;
+    const managedAvatar = managedPersonaAvatar;
+    const draw = !managedAvatar || getManagedPersona()?.folder === spriteFolderName;
+    const revision = draw ? ++spriteListLoadRevision : spriteListLoadRevision;
     const generation = getChatGeneration();
     const chatId = getCurrentChatId();
-    const isCurrent = () => revision === spriteListLoadRevision && generation === getChatGeneration() && chatId === getCurrentChatId();
+    const isCurrent = () => (!draw || (revision === spriteListLoadRevision && managedAvatar === managedPersonaAvatar))
+        && generation === getChatGeneration() && chatId === getCurrentChatId();
     const labels = await getExpressionsList();
     if (!isCurrent()) return;
 
     if (spriteCache[spriteFolderName]) {
-        if (forceRedrawCached && ($('#image_list').data('name') !== spriteFolderName
-            || $('#image_list').data('avatar') !== getExpressionFolderCharacter(spriteFolderName)?.avatar)) {
+        if (draw && forceRedrawCached && ($('#image_list').data('name') !== spriteFolderName
+            || $('#image_list').data('avatar') !== (getManagedPersona()?.avatar || getExpressionFolderCharacter(spriteFolderName)?.avatar))) {
             console.debug('force redrawing character sprites list');
             await drawSpritesList(spriteFolderName, labels, spriteCache[spriteFolderName], isCurrent);
         }
@@ -1939,7 +2004,7 @@ async function validateImages(spriteFolderName, forceRedrawCached = false) {
 
     const sprites = await getSpritesList(spriteFolderName);
     if (!isCurrent()) return;
-    const validExpressions = await drawSpritesList(spriteFolderName, labels, sprites, isCurrent);
+    const validExpressions = draw ? await drawSpritesList(spriteFolderName, labels, sprites, isCurrent) : sprites;
     if (isCurrent()) spriteCache[spriteFolderName] = validExpressions;
 }
 
@@ -2010,10 +2075,11 @@ async function drawSpritesList(spriteFolderName, labels, sprites, isCurrent = ()
     if (!isCurrent()) return validExpressions;
     $('#no_chat_expressions').hide();
     $('#open_chat_expressions').show();
-    const character = getExpressionFolderCharacter(spriteFolderName);
-    $('#image_list').empty().data('name', spriteFolderName).data('avatar', character?.avatar || '').append(items);
-    $('#image_list_header_name').text(spriteFolderName);
-    renderExpressionSets(character, spriteFolderName);
+    const persona = getManagedPersona();
+    const character = persona ? null : getExpressionFolderCharacter(spriteFolderName);
+    $('#image_list').empty().data('name', spriteFolderName).data('avatar', persona?.avatar || character?.avatar || '').append(items);
+    $('#image_list_header_name').text(persona?.name || spriteFolderName);
+    if (!persona) renderExpressionSets(character, spriteFolderName);
     filterExpressionImages();
     return validExpressions;
 }
@@ -2285,6 +2351,13 @@ async function setExpression(spriteFolderName, expression, { force = false, over
 }
 
 function onClickExpressionImage() {
+    const persona = getManagedPersona();
+    if (persona) {
+        const filename = $(this).attr('data-filename');
+        const file = spriteCache[persona.folder]?.flatMap(expression => expression.files).find(file => file.fileName === filename);
+        if (file) void selectPersonaExpression(file.imageSrc);
+        return;
+    }
     // If there is no expression image and we clicked on the placeholder, we remove the sprite by calling via the expression label
     if ($(this).attr('data-expression-type') === 'failure') {
         const label = $(this).attr('data-expression');
@@ -2320,6 +2393,7 @@ async function onClickExpressionAddCustom() {
     // Force refresh sprites list
     expressionsList = null;
     spriteCache = {};
+    if (getManagedPersona()) await refreshManagedExpressions();
     moduleWorker();
 }
 
@@ -2353,6 +2427,7 @@ async function onClickExpressionRemoveCustom() {
     // Force refresh sprites list
     expressionsList = null;
     spriteCache = {};
+    if (getManagedPersona()) await refreshManagedExpressions();
     moduleWorker();
 }
 
@@ -2368,6 +2443,7 @@ function onExpressionApiChanged() {
         }
         expressionsList = null;
         spriteCache = {};
+        if (getManagedPersona()) void refreshManagedExpressions();
         moduleWorker();
         saveSettingsDebounced();
     }
@@ -2884,6 +2960,12 @@ export async function init() {
         $('#expressions_container').append(template);
         const settings = $('#expressions_container .expression_settings');
         settings.find('.expression_section_sprites').prependTo(settings.find('.inline-drawer-content'));
+        $('#expression_owner').on('change', async function () {
+            managedPersonaAvatar = String(this.value);
+            spriteListLoadRevision++;
+            await refreshManagedExpressions();
+        });
+        $('#expression_persona_clear').on('click', () => selectPersonaExpression(null));
         $('#expression_add_many').on('click', onClickExpressionAddCustom);
         $('#expression_search, #expression_visibility').on('input change', filterExpressionImages);
         bindExpressionSets({ getCharacter: getManagedExpressionCharacter, refresh: async () => {
@@ -3038,6 +3120,7 @@ export async function init() {
     addVisualNovelMode();
     migrateSettings();
     await addSettings();
+    await refreshExpressionOwners();
     seedExpressionHistory();
     const wrapper = new ModuleWorkerWrapper(moduleWorker);
     const updateFunction = wrapper.update.bind(wrapper);
@@ -3050,6 +3133,7 @@ export async function init() {
         // character changed
         removeExpression();
         spriteCache = {};
+        if (getManagedPersona()) void refreshManagedExpressions();
         lastExpression = {};
         cleanupExpressionAgentSpinner();
 
@@ -3076,6 +3160,10 @@ export async function init() {
         }
     });
     document.addEventListener('sb:chat-style-updated', () => void restoreExpressionHistory());
+    eventSource.on(event_types.USER_MESSAGE_RENDERED, applyPersonaExpression);
+    eventSource.on(event_types.PERSONA_CHANGED, refreshExpressionOwners);
+    eventSource.on(event_types.PERSONA_UPDATED, refreshExpressionOwners);
+    eventSource.on(event_types.PERSONA_CREATED, refreshExpressionOwners);
     eventSource.on(event_types.MOVABLE_PANELS_RESET, updateVisualNovelModeDebounced);
     eventSource.on(event_types.GROUP_UPDATED, updateVisualNovelModeDebounced);
     // Refresh the agent status when settings change (e.g. the user enables the

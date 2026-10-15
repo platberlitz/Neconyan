@@ -17,7 +17,7 @@ async function fixture(page, palette = theme) {
     const character = { name: 'Mira and Sol', avatar: 'mira-and-sol.png', chat: 'expressions-workspace', first_mes: 'Mira: Hello!',
         mes_example: '', shallow: false, tags: [], data: { name: 'Mira and Sol', first_mes: 'Mira: Hello!',
             description: 'Mira has silver hair. Sol has red hair.', extensions: {} } };
-    const state = { character, errors: [], folders: [], failSave: false, spriteNames: ['joy.png', 'neutral.png'], uploads: [] };
+    const state = { character, errors: [], folders: [], failSave: false, spriteNames: ['joy.png', 'neutral.png'], uploads: [], uploadFolders: [], exports: [], savedSettings: null };
     page.on('pageerror', error => state.errors.push(error.message));
     await page.route('**/api/settings/get', async route => {
         envelope ??= await (await route.fetch()).json();
@@ -25,6 +25,8 @@ async function fixture(page, palette = theme) {
         settings.firstRun = false;
         settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
         Object.assign(settings.power_user, palette, { theme: palette.name, chat_display: 6 });
+        settings.power_user.personas = { 'robin.png': 'Robin', 'robin-alt.png': 'Robin' };
+        settings.power_user.persona_descriptions = { 'robin.png': { description: 'Blue eyes and a green coat.' }, 'robin-alt.png': { description: 'Red hair and a blue jacket.' } };
         settings.extension_settings.expressions = { ...settings.extension_settings.expressions, api: 99, showDefault: true };
         settings.extension_settings.disabledExtensions = (settings.extension_settings.disabledExtensions ?? []).filter(id => id !== 'expressions');
         await route.fulfill({ json: { ...envelope, settings: JSON.stringify(settings) } });
@@ -33,6 +35,7 @@ async function fixture(page, palette = theme) {
         settings = requestJson(route.request());
         await acknowledgeSettingsSave(route);
         settings._settingsRevision = Number(settings._settingsRevision || 0) + 1;
+        state.savedSettings = structuredClone(settings);
     });
     await page.route('**/api/characters/all', route => route.fulfill({ json: [character] }));
     await page.route('**/api/characters/chats', route => route.fulfill({ json: [{ file_name: character.chat, message_count: 1 }] }));
@@ -54,8 +57,13 @@ async function fixture(page, palette = theme) {
         const body = route.request().postDataBuffer().toString();
         const spriteName = body.match(/name="spriteName"\r\n\r\n([^\r]+)/)[1];
         state.uploads.push(spriteName);
+        state.uploadFolders.push(body.match(/name="name"\r\n\r\n([^\r]+)/)[1]);
         state.spriteNames.push(`${spriteName}.png`);
         return route.fulfill({ json: {} });
+    });
+    await page.route('**/api/sprites/export', route => {
+        state.exports.push(requestJson(route.request()).name);
+        return route.fulfill({ contentType: 'application/zip', body: Buffer.from('export download fixture') });
     });
     await page.route(url => url.pathname.startsWith('/characters/'), route => route.fulfill({ path: avatar }));
     await page.route('**/thumbnail?**', route => route.fulfill({ path: avatar }));
@@ -176,6 +184,83 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
             expect(state.errors).toEqual([]);
         });
 
+        test('export downloads the current character set and reports an empty set without leaving the button disabled', async ({ page }) => {
+            const state = await fixture(page);
+            const download = page.waitForEvent('download');
+            await page.locator('#expressions_export_sprites').click();
+            expect((await download).suggestedFilename()).toBe('Mira and Sol-expressions.zip');
+            expect(state.exports).toEqual(['Mira and Sol']);
+            await page.route('**/api/sprites/export', route => route.fulfill({ status: 404 }));
+            await page.locator('#expressions_export_sprites').click();
+            await expect(page.getByText('This set has no images to export.', { exact: true })).toBeVisible();
+            await expect(page.locator('#expressions_export_sprites')).toBeEnabled();
+            expect(state.errors).toEqual([]);
+        });
+
+        test('persona sets generate, upload, export and retain independent user-message portraits', async ({ page }) => {
+            const state = await fixture(page);
+            await page.locator('#expression_owner').selectOption('robin.png');
+            await expect(page.locator('#expression_member_controls')).toBeHidden();
+            await expect(page.locator('#image_list_header_name')).toHaveText('Robin');
+            const folder = await page.locator('#image_list').evaluate(element => window.$(element).data('name'));
+            expect(folder).toMatch(/^__personas\/[a-f0-9]{64}$/);
+            await page.evaluate(async () => {
+                const { registerExtensionCapability } = await import('/scripts/neconyan-conversation/extension-capabilities.js');
+                window.expressionPrompts = [];
+                registerExtensionCapability('quick-image-gen', { ensureReady: async () => {}, getSettingsSnapshot: () => ({}),
+                    generateImage: async prompt => { window.expressionPrompts.push(prompt); return { url: '/img/neconyan-character.png' }; } });
+            });
+            await page.locator('#image_list [data-expression="anger"] .expression_list_generate').click();
+            await expect.poll(() => state.uploadFolders).toContain(folder);
+            const prompts = await page.evaluate(() => window.expressionPrompts);
+            expect(prompts[0]).toContain('Robin');
+            expect(prompts[0]).toContain('Blue eyes and a green coat.');
+            expect(prompts[0]).not.toContain('Mira has silver hair');
+            const download = page.waitForEvent('download');
+            await page.locator('#expressions_export_sprites').click();
+            expect((await download).suggestedFilename()).toBe('Robin-expressions.zip');
+            expect(state.exports).toEqual([folder]);
+
+            await page.evaluate(async () => {
+                const core = await import('/script.js');
+                await core.sendMessageAsUser('My first reply.', '', null, false, 'Robin', 'robin.png');
+            });
+            await page.locator('#image_list [data-filename="joy.png"]').click();
+            await expect.poll(() => page.evaluate(() => window.SillyTavern.getContext().chat.at(-1).extra.neconyanExpression?.avatar)).toBe('persona:robin.png');
+            await page.evaluate(async () => {
+                const core = await import('/script.js');
+                await core.sendMessageAsUser('Another reply.', '', null, false, 'Robin', 'robin.png');
+                await core.sendMessageAsUser('A different persona.', '', null, false, 'Robin', 'robin-alt.png');
+            });
+            const history = await page.evaluate(() => window.SillyTavern.getContext().chat.slice(-3).map(message => message.extra.neconyanExpression));
+            expect(history[0].src).toBe(`/characters/${folder}/joy.png`);
+            expect(history[1]).toEqual(history[0]);
+            expect(history[2]).toBeUndefined();
+            await page.locator('#expression_owner').selectOption('robin-alt.png');
+            await expect.poll(() => page.locator('#image_list').evaluate(element => window.$(element).data('name'))).not.toBe(folder);
+            await page.locator('#image_list [data-filename="neutral.png"]').click();
+            await expect.poll(() => page.evaluate(() => window.SillyTavern.getContext().chat.at(-1).extra.neconyanExpression?.avatar)).toBe('persona:robin-alt.png');
+            await page.locator('#expression_persona_clear').click();
+            await expect.poll(() => page.evaluate(() => window.SillyTavern.getContext().chat.at(-1).extra.neconyanExpression?.src)).toBeNull();
+            await expect.poll(() => state.savedSettings?.extension_settings.expressions.personaSelections?.['robin.png']).toBe(history[0].src);
+            await page.locator('#expression_owner').selectOption('robin.png');
+            await page.locator('#expression_owner').scrollIntoViewIfNeeded();
+            await expect(page.locator('#toast-container .toast')).toHaveCount(0, { timeout: 20000 });
+            await page.screenshot({ path: `../screenshots/expressions-persona-${name}-after.png`, animations: 'disabled' });
+            await page.reload();
+            await page.waitForFunction(() => window.SillyTavern?.getContext().characters.length && window.NeconyanShell?.openExtensionSettings);
+            await page.evaluate(async () => {
+                await window.SillyTavern.getContext().selectCharacterById(0, { switchMenu: false });
+                window.NeconyanShell.openExtensionSettings('expressions');
+            });
+            await page.locator('#expression_owner').selectOption('robin.png');
+            await expect.poll(() => page.locator('#image_list').evaluate(element => window.$(element).data('name'))).toBe(folder);
+            await expect(page.locator('#chat .mes[is_user="true"] .neconyan-expression-avatar')).toHaveCount(2);
+            await page.locator('#expression_owner').selectOption('');
+            await expect(page.locator('#expression_member_controls')).toBeVisible();
+            expect(state.errors).toEqual([]);
+        });
+
         for (const light of [false, true]) {
             test(`buttons fit and retain contrast in ${light ? 'light' : 'dark'} colours`, async ({ page }) => {
                 const palette = light ? JSON.parse(readFileSync(new URL('../default/content/themes/Neconyan Calico.json', import.meta.url), 'utf8')) : theme;
@@ -183,13 +268,15 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
                 await addMember(page, 'Mira');
                 await page.locator('#expression_member_details summary').click();
                 for (const accent of [null, 'Pearl', 'Midnight Ink']) {
+                    await page.locator('#expression_owner').selectOption('');
                     if (accent) await page.locator(`.sb-accent-profile-apply[aria-label="Apply ${accent} accent profile"]`).evaluate(element => element.click());
-                    for (const id of ['expression_add_many', 'expression_member_save', 'expression_member_add', 'expression_member_remove']) {
+                    for (const id of ['expression_add_many', 'expressions_export_sprites', 'expression_member_save', 'expression_member_add', 'expression_member_remove', 'expression_persona_clear']) {
+                        if (id === 'expression_persona_clear') await page.locator('#expression_owner').selectOption('robin.png');
                         const button = page.locator(`#${id}`);
                         await button.scrollIntoViewIfNeeded();
                         for (const hover of [false, true]) {
                             if (hover) await button.hover();
-                            else await page.locator('#expression_member').hover();
+                            else await page.locator('#expression_owner').hover();
                             const result = await button.evaluate(async element => {
                                 const { contrastRatio } = await import('/scripts/theme-contrast.js');
                                 const ctx = document.createElement('canvas').getContext('2d');
