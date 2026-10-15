@@ -299,6 +299,7 @@ for (const phone of [false, true]) {
             const open = new Set();
             window.previewAttempts = 0;
             window.previewLive = () => [...open].filter(connection => !connection.silent).length;
+            window.previewOpen = () => open.size;
             window.silencePreviews = () => { for (const connection of open) connection.silent = true; };
             window.fetch = async (input, init = {}) => {
                 const url = typeof input === 'string' ? input : input.url;
@@ -350,9 +351,14 @@ for (const phone of [false, true]) {
             await expect(status).toHaveText('Writing reply…');
             await page.evaluate(() => window.silencePreviews());
             await setVisibility('hidden');
+            // A hidden page closes the preview stream and opens no new one, so a phone
+            // is not kept awake receiving text nobody can see.
+            await expect.poll(() => page.evaluate(() => window.previewOpen()), { timeout: 5000 }).toBe(0);
+            const hiddenAttempts = await page.evaluate(() => window.previewAttempts);
             app.provider.mode.finishStream();
             await expect.poll(() => app.provider.calls.length, { timeout: 30000 }).toBe(2);
             await page.waitForTimeout(1500);
+            expect(await page.evaluate(() => window.previewAttempts)).toBe(hiddenAttempts);
             await expect(preview).not.toContainText('the finished reply.');
             await expect(status).toHaveText('Writing reply…');
             // Back on the tab: the preview shows the finished text and the real stage

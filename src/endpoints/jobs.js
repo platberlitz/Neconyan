@@ -130,6 +130,9 @@ router.get('/:id/preview', (request, response) => {
             if (response.writableLength > 1024 * 1024) { response.end(); return; }
             try { response.write(`data: ${JSON.stringify(value)}\n\n`); response.flush?.(); } catch { response.end(); }
         };
+        // Each frame carries the whole reply so far. The Roleplay preview redraws twice a
+        // second, so faster frames only cost the reader's data and battery.
+        const previewInterval = conversation ? 50 : 250;
         let nextPreview = null, previewTimer = null;
         const subscribe = conversation ? subscribeConversationPreview : subscribeRoleplayPreview;
         const unsubscribe = subscribe(owner, job.id, preview => {
@@ -138,7 +141,7 @@ router.get('/:id/preview', (request, response) => {
             previewTimer = setTimeout(() => {
                 previewTimer = null;
                 send({ preview: nextPreview });
-            }, 50);
+            }, previewInterval);
         });
         send({ preview: initial ?? { stage: 'preparing', text: '', name: job.intent.request.worldInfo?.speakerNames?.character } });
         const terminal = new Set(['completed', 'cancelled', 'failed', 'interrupted', 'conflict']);

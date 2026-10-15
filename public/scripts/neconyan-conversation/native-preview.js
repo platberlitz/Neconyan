@@ -12,7 +12,6 @@ export function getNativeConversationPreviews(avatar, { branchId, groupId, perso
 
 /** Reconnect to display-only server state; the regular observer owns saved-message readback. */
 export function observeNativeConversationPreview(jobId, account) {
-    const controller = new AbortController();
     const entry = { account, participants: [] };
     previews.set(jobId, entry);
     let stopped = false;
@@ -25,12 +24,27 @@ export function observeNativeConversationPreview(jobId, account) {
         if (Boolean(participants.length) !== diagnosticRunning) { diagnosticRunning = Boolean(participants.length); diagnostic(diagnosticRunning ? 'generating' : null); }
         scheduleInterfaceRefresh({ syncControls: false });
     };
+    // Close the stream while the page is hidden so a phone is not kept awake receiving
+    // text nobody sees; the regular observer still reads the saved reply.
+    let attempt = null;
+    let wake = null;
+    const hidden = () => document.visibilityState === 'hidden';
+    const onVisibility = () => {
+        if (hidden()) { attempt?.abort(); return; }
+        wake?.(); wake = null;
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     const run = async () => {
         while (current()) {
+            if (hidden()) {
+                await new Promise(resolve => { wake = resolve; });
+                continue;
+            }
+            attempt = new AbortController();
             try {
                 const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/preview`, {
                     headers: { ...getRequestHeaders(), 'X-Neconyan-Account': account },
-                    credentials: 'same-origin', signal: controller.signal,
+                    credentials: 'same-origin', signal: attempt.signal,
                 });
                 if ([401, 403, 404, 409].includes(response.status)) return;
                 if (!response.ok || !response.body) throw new Error('Preview unavailable.');
@@ -58,6 +72,7 @@ export function observeNativeConversationPreview(jobId, account) {
         }
     };
     const clear = () => {
+        document.removeEventListener('visibilitychange', onVisibility);
         diagnostic(null);
         if (previews.get(jobId) !== entry) return;
         previews.delete(jobId);
@@ -66,7 +81,8 @@ export function observeNativeConversationPreview(jobId, account) {
     void run().finally(clear);
     return () => {
         stopped = true;
-        controller.abort();
+        attempt?.abort();
+        wake?.(); wake = null;
         clear();
     };
 }

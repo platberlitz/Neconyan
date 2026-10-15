@@ -76,19 +76,36 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         // and honour the same automatic/manual scrolling policy as saved replies.
         if (nearBottom) scrollChatToBottom({ isNearBottom: nearBottom });
     };
-    const timer = setInterval(render, 500);
+    const hidden = () => document.visibilityState === 'hidden';
+    let timer = hidden() ? null : setInterval(render, 500);
     let attempt = null;
+    let wake = null;
     // A backgrounded phone tab can lose its connection without an error, leaving
     // the reader waiting forever on a frozen preview. The server writes at least
     // once a second, so silence or a return to the page starts a fresh connection,
     // which begins with the server's current text and stage.
     const reconnect = () => attempt?.abort();
-    const onVisible = () => { if (document.visibilityState === 'visible') reconnect(); };
+    // Nobody reads a hidden preview, and receiving the growing reply several times
+    // a second keeps a phone's radio and processor awake. Close the stream while
+    // hidden; the job observer still notices the finish and reads the saved reply.
+    const onVisible = () => {
+        if (hidden()) {
+            clearInterval(timer); timer = null;
+            reconnect();
+            return;
+        }
+        if (!timer && !frozen && !stopped) timer = setInterval(render, 500);
+        if (wake) { wake(); wake = null; } else reconnect();
+    };
     document.addEventListener('visibilitychange', onVisible);
     globalThis.addEventListener?.('pageshow', reconnect);
     globalThis.addEventListener?.('online', reconnect);
     const run = async () => {
         while (!stopped) {
+            if (hidden()) {
+                await new Promise(resolve => { wake = resolve; });
+                continue;
+            }
             const current = new AbortController();
             attempt = current;
             let silence = null;
@@ -140,6 +157,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         stopped = true;
         diagnostic(null);
         attempt?.abort();
+        wake?.(); wake = null;
         document.removeEventListener('visibilitychange', onVisible);
         globalThis.removeEventListener?.('pageshow', reconnect);
         globalThis.removeEventListener?.('online', reconnect);
