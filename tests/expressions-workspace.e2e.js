@@ -17,7 +17,7 @@ async function fixture(page, palette = theme) {
     const character = { name: 'Mira and Sol', avatar: 'mira-and-sol.png', chat: 'expressions-workspace', first_mes: 'Mira: Hello!',
         mes_example: '', shallow: false, tags: [], data: { name: 'Mira and Sol', first_mes: 'Mira: Hello!',
             description: 'Mira has silver hair. Sol has red hair.', extensions: {} } };
-    const state = { character, errors: [], folders: [], failSave: false, spriteNames: ['joy.png', 'neutral.png'], uploads: [], uploadFolders: [], exports: [], savedSettings: null };
+    const state = { character, errors: [], folders: [], failSave: false, spriteNames: ['joy.png', 'neutral.png'], uploads: [], uploadFolders: [], uploadSizes: [], exports: [], savedSettings: null };
     page.on('pageerror', error => state.errors.push(error.message));
     await page.route('**/api/settings/get', async route => {
         envelope ??= await (await route.fetch()).json();
@@ -54,7 +54,9 @@ async function fixture(page, palette = theme) {
         return route.fulfill({ json: state.spriteNames.map(filename => ({ label: filename.split(/[.-]/)[0], path: `/characters/${folder}/${filename}` })) });
     });
     await page.route('**/api/sprites/upload', route => {
-        const body = route.request().postDataBuffer().toString();
+        const bytes = route.request().postDataBuffer(), body = bytes.toString();
+        const png = bytes.indexOf(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+        if (png >= 0) state.uploadSizes.push([bytes.readUInt32BE(png + 16), bytes.readUInt32BE(png + 20)]);
         const spriteName = body.match(/name="spriteName"\r\n\r\n([^\r]+)/)[1];
         state.uploads.push(spriteName);
         state.uploadFolders.push(body.match(/name="name"\r\n\r\n([^\r]+)/)[1]);
@@ -258,6 +260,93 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
             await expect(page.locator('#chat .mes[is_user="true"] .neconyan-expression-avatar')).toHaveCount(2);
             await page.locator('#expression_owner').selectOption('');
             await expect(page.locator('#expression_member_controls')).toBeVisible();
+            expect(state.errors).toEqual([]);
+        });
+
+        test('optional sprite models install explicitly, preserve output size, and stop without publishing failures', async ({ page }) => {
+            const state = await fixture(page), installs = [], calls = [];
+            let failInstall = true, failProcessing = false, holdProcessing = false, held;
+            await page.route('**/api/sprites/models/install', route => {
+                installs.push(requestJson(route.request()).kind);
+                return route.fulfill({ status: failInstall ? 403 : 200, json: failInstall ? { error: 'Model downloads are disabled in the server configuration.' } : { ok: true } });
+            });
+            await page.route('**/api/sprites/process?**', async route => {
+                const query = new URL(route.request().url()).searchParams;
+                const kind = query.get('kind'), width = Number(query.get('width')), height = Number(query.get('height'));
+                calls.push(kind);
+                if (holdProcessing) { held = route; return; }
+                if (failProcessing) return route.fulfill({ status: 500, json: { error: 'The model could not process this image.' } });
+                if (kind === 'matting') return route.fulfill({ contentType: 'application/octet-stream', body: Buffer.alloc(width * height, 255) });
+                expect(route.request().postDataBuffer().length).toBe(width * height * 4);
+                const scale = Number(query.get('scale'));
+                return route.fulfill({ contentType: 'application/octet-stream', body: Buffer.alloc(width * height * scale * scale * 4, 150) });
+            });
+            await page.evaluate(async () => {
+                const { registerExtensionCapability } = await import('/scripts/neconyan-conversation/extension-capabilities.js');
+                window.expressionPrompts = [];
+                registerExtensionCapability('quick-image-gen', { ensureReady: async () => {}, getSettingsSnapshot: () => ({}),
+                    generateImage: async prompt => { window.expressionPrompts.push(prompt); return { url: '/img/neconyan-character.png' }; } });
+            });
+            await page.locator('.expression_generation_options summary').click();
+            const background = page.locator('#expressions_agent_sprite_background');
+            const matting = page.locator('#expressions_agent_sprite_matting'), upscale = page.locator('#expressions_agent_sprite_upscale');
+            await expect(background).toHaveValue('green');
+            await expect(matting).not.toBeChecked();
+            await expect(upscale).toHaveValue('0');
+            expect(installs).toEqual([]);
+            await page.locator('#image_list [data-expression="anger"] .expression_list_generate').click();
+            await expect.poll(() => state.uploads.length).toBe(1);
+            expect(calls).toEqual([]);
+            expect((await page.evaluate(() => window.expressionPrompts))[0]).toContain('#00FF00');
+            await background.selectOption('magenta');
+            await matting.click();
+            await expect(page.locator('#expressions_model_status')).toContainText('downloads are disabled');
+            await expect(matting).not.toBeChecked();
+            failInstall = false;
+            await matting.check();
+            await expect(matting).toBeEnabled();
+            await upscale.selectOption('2');
+            await expect(upscale).toBeEnabled();
+            expect(installs).toEqual(['matting', 'matting', 'upscale']);
+            await page.locator('#image_list [data-expression="caring"] .expression_list_generate').click();
+            await expect.poll(() => state.uploads.length).toBe(2);
+            expect(calls).toEqual(['matting', 'upscale']);
+            expect(state.uploadSizes.at(-1)).toEqual(state.uploadSizes[0].map(size => size * 2));
+            expect((await page.evaluate(() => window.expressionPrompts))[1]).toContain('#FF00FF');
+            await expect.poll(() => state.savedSettings?.extension_settings.expressions.agentSpriteUpscale).toBe(2);
+            await matting.scrollIntoViewIfNeeded();
+            await expect(page.locator('#toast-container .toast')).toHaveCount(0, { timeout: 20000 });
+            await page.screenshot({ path: `../screenshots/expressions-models-${name}-after.png`, animations: 'disabled' });
+            for (const control of [background, upscale]) {
+                await control.scrollIntoViewIfNeeded();
+                const box = await control.boundingBox();
+                expect(box.width).toBeGreaterThan(100);
+                expect(box.x).toBeGreaterThanOrEqual(0);
+                expect(box.x + box.width).toBeLessThanOrEqual(phone ? 393 : 1280);
+            }
+            failProcessing = true;
+            await page.locator('#image_list [data-expression="fear"] .expression_list_generate').click();
+            await expect(page.locator('.toast-error').last()).toContainText('could not process');
+            await expect(upscale).toBeEnabled();
+            expect(state.uploads).toHaveLength(2);
+            failProcessing = false; holdProcessing = true;
+            await page.locator('#image_list [data-expression="fear"] .expression_list_generate').click();
+            await expect.poll(() => Boolean(held)).toBe(true);
+            await page.locator('.expression_set_tools summary').click();
+            await page.locator('#expressions_stop_sprite_generation').click();
+            await held.abort();
+            await expect(upscale).toBeEnabled();
+            expect(state.uploads).toHaveLength(2);
+            await page.reload();
+            await page.waitForFunction(() => window.SillyTavern?.getContext().characters.length && window.NeconyanShell?.openExtensionSettings);
+            await page.evaluate(async () => {
+                await window.SillyTavern.getContext().selectCharacterById(0, { switchMenu: false });
+                window.NeconyanShell.openExtensionSettings('expressions');
+            });
+            await page.locator('.expression_generation_options summary').click();
+            await expect(matting).toBeChecked();
+            await expect(upscale).toHaveValue('2');
+            expect(installs).toHaveLength(3);
             expect(state.errors).toEqual([]);
         });
 

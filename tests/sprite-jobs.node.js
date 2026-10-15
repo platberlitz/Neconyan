@@ -43,6 +43,26 @@ async function prepared(t, { mode = 'individual', labels = ['joy'], replacements
 
 function imageResponse(bytes) { return new Response(JSON.stringify({ data: [{ b64_json: bytes.toString('base64') }] }), { headers: { 'Content-Type': 'application/json' } }); }
 
+test('native sprite jobs freeze optional model choices and apply matting before enlargement', async t => {
+    const bytes = await encodeServerImage(bitmap());
+    const f = await prepared(t, { settings: { agentSpriteBackground: 'magenta', agentSpriteMatting: true, agentSpriteUpscale: 2 } });
+    assert.match(f.request.prompts[0], /#FF00FF/);
+    assert.equal(f.request.negative.includes('colored background'), false);
+    const calls = [];
+    await runSpriteJob(f.context(), { fetchImpl: async () => imageResponse(bytes), processModel: async (kind, image) => {
+        calls.push(kind);
+        if (kind === 'matting') {
+            const data = new Uint8Array(image.width * image.height).fill(255); data[8 * image.width + 8] = 0;
+            return { data };
+        }
+        assert.equal(image.scale, 2);
+        assert.equal(image.data[(8 * image.width + 8) * 4 + 3], 0);
+        return bitmap(image.width * 2, image.height * 2);
+    } });
+    assert.deepEqual(calls, ['matting', 'upscale']);
+    assert.equal((await decodeServerImage(fs.readFileSync(path.join(f.folder, 'joy.png')))).width, 32);
+});
+
 test('native sprites freeze the card prompt, publish once and retain ownership after job pruning', async t => {
     const f = await prepared(t);
     const bytes = await encodeServerImage(bitmap());

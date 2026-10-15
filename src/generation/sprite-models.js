@@ -11,6 +11,11 @@ export const SPRITE_MODELS = Object.freeze({
         sha256: 'f15622d853e8260172812b657053460e20806f04b9e05147d49af7bed31a6e99',
         url: 'https://huggingface.co/skytnt/anime-seg/resolve/493cb60893f47441b26ec4fb9a306bce9e342982/isnetis.onnx',
     },
+    upscale: {
+        filename: 'anime-upscale.onnx', bytes: 2492908,
+        sha256: '78baa685a1a92cac6e14ab2af2a8ad0ef56fa48629563b1414e3a7acc54d86e2',
+        url: 'https://huggingface.co/skillsafe-ai/realesr-animevideov3/resolve/185e9142d439d17e3fb99395600fb7d08af09de5/model.onnx',
+    },
 });
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 const directory = () => path.join(globalThis.DATA_ROOT, '_cache', 'sprite-models');
@@ -76,11 +81,12 @@ export async function installSpriteModel(kind, { fetchImpl = fetch, signal } = {
     try { await job; } finally { downloads.delete(kind); }
 }
 
-export function validateSpriteModelInput(kind, { width, height, data }) {
+export function validateSpriteModelInput(kind, { width, height, data, scale = 2 }) {
     modelFor(kind);
     if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1
         || !(data instanceof Uint8Array || data instanceof Uint8ClampedArray) || data.length !== width * height * 4) throw fail('Invalid sprite pixels.');
-    if (width * height > 4 * 1024 * 1024) throw fail('This image is too large for the sprite model. Use a smaller image.', 413);
+    if (width * height > 4 * 1024 * 1024 || (kind === 'upscale' && (![2, 4].includes(scale)
+        || width * height * scale * scale > 16 * 1024 * 1024))) throw fail('This image is too large for the selected sprite model. Use a smaller image or 2x enlargement.', 413);
 }
 
 /** One worker at a time, released after every image. Stop also releases its model memory. */

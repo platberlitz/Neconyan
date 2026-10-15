@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { parentPort, workerData } from 'node:worker_threads';
-import { matteSprite } from './sprite-model-pixels.js';
+import { matteSprite, upscaleSprite } from './sprite-model-pixels.js';
 
 try {
     // Resolve the runtime from its declared owner, including nested installations.
@@ -16,7 +16,7 @@ try {
         const output = await session.run({ [session.inputNames[0]]: new ort.Tensor('float32', input, [1, 3, height, width]) });
         return output[session.outputNames[0]].data;
     };
-    const result = await matteSprite(workerData, infer);
+    const result = await (workerData.kind === 'matting' ? matteSprite : upscaleSprite)(workerData, infer);
     parentPort.postMessage(result, [result.data.buffer]);
 } catch (error) {
     parentPort.postMessage({ error: `Sprite model failed: ${String(error?.message || error).slice(0, 300)}` });

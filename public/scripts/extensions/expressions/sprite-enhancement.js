@@ -18,6 +18,12 @@ export async function enhanceSpriteBitmap(bitmap, settings, { headers, signal, c
     const mask = settings.agentSpriteMatting ? await process('matting') : undefined;
     cleanSpriteBitmap(bitmap, { mask, removeBackground: settings.agentSpriteRemoveBackground
         || getExpressionSpriteBackground(settings.agentSpriteBackground) !== 'white', keyOnly: !settings.agentSpriteRemoveBackground, check });
+    const scale = Number(settings.agentSpriteUpscale);
+    if ([2, 4].includes(scale)) {
+        const data = await process('upscale', scale), width = bitmap.width * scale, height = bitmap.height * scale;
+        if (data.length !== width * height * 4) throw new Error('The upscaler returned an invalid image.');
+        bitmap = { width, height, data: new Uint8ClampedArray(data) };
+    }
     check();
     return bitmap;
 }
