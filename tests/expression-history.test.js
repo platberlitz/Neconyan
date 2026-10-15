@@ -187,7 +187,7 @@ describe('expression asset snapshots', () => {
             getExpressionCharacter: () => context.characters[context.characterId],
             readExpressionSets, applyExpressionMemberPrompt, getExpressionSpritePromptContext: () => ({ characterName: 'Mira and Sol', characterCard: 'Shared history' }),
             spriteCache: {}, extension_settings: { expressions: {}, expressionOverrides: [] }, personaTargets: new Map(), nextExpressionSpriteName, maybeGenerateExpressionSprite: generate, uploadSpriteCommand: upload,
-            throwIfExpressionGenerationStopped: () => {}, setExpressionGenerationBusy: () => {}, inSpriteGeneration: true,
+            throwIfExpressionGenerationStopped: () => {}, setExpressionGenerationBusy: () => {}, shouldRemoveSpriteBackground: () => false, inSpriteGeneration: true,
         });
         vm.runInContext(['getExpressionFolderCharacter', 'getExpressionGenerationTarget', 'generateUniqueSpriteName', 'generateAndUploadExpressionSprite'].map(name => extract(expressions, name)).join('\n'), runtime);
         const pending = runtime.generateAndUploadExpressionSprite('joy', member.folder, { showToast: false });

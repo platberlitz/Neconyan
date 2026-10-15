@@ -70,7 +70,7 @@ test.each([1, '1'])('a retired expression provider %p does not silently start pa
         EXPRESSION_SPRITE_FRAMING: { bust: 'bust' }, DEFAULT_EXPRESSION_SPRITE_FRAMING: 'bust',
         EXPRESSION_SPRITE_GENERATION_MODE: { individual: 'individual' }, DEFAULT_EXPRESSION_SPRITE_GENERATION_MODE: 'individual',
         DEFAULT_EXPRESSION_SPRITE_REMOVE_BACKGROUND: false, DEFAULT_EXPRESSION_SPRITE_PROMPT: 'default',
-        LEGACY_DEFAULT_EXPRESSION_SPRITE_PROMPT: 'legacy', syncExpressionsAgentProfile: async () => {},
+        LEGACY_DEFAULT_EXPRESSION_SPRITE_PROMPT: 'legacy', TRANSPARENT_DEFAULT_EXPRESSION_SPRITE_PROMPT: 'transparent', syncExpressionsAgentProfile: async () => {},
     });
     expect(settings).toMatchObject({ api: 99, fallback_expression: 'joy', llmPrompt: 'User prompt', agentSpritePrompt: 'User artwork prompt' });
 });

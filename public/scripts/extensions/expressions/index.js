@@ -21,6 +21,7 @@ import { t } from '../../i18n.js';
 import { removeReasoningFromString } from '../../reasoning.js';
 import { isExpressionLabel, isExpressionSpriteName, parseExpressionLabels, expressionLabelFromFilename, nextExpressionSpriteName } from './expression-labels.js';
 import { cleanSpriteBitmap, splitSpriteBitmap } from './sprite-pixels.js';
+import { getExpressionSpriteBackground, TRANSPARENT_DEFAULT_EXPRESSION_SPRITE_PROMPT } from './sprite-prompts.js';
 import { getExpressionSpriteSheetGrid } from './sprite-prompts.js';
 import { readExpressionSets, resolveExpressionMember, applyExpressionMemberPrompt } from './expression-sets.js';
 import { bindExpressionSets, renderExpressionSets } from './expression-sets-ui.js';
@@ -1014,6 +1015,7 @@ async function uploadSpriteCommand({ name, label, folder = null, spriteName = nu
 
 function setExpressionGenerationBusy(isBusy) {
     inSpriteGeneration = !!isBusy;
+    $('#expressions_agent_sprite_background, #expressions_agent_sprite_remove_background').prop('disabled', inSpriteGeneration);
     $('#expressions_generate_missing_sprites, #expressions_upload_sprite_sheet, #expressions_redo_sprite_cleanup, #expressions_remove_all_sprites, .expression_list_generate, .expression_list_regenerate')
         .toggleClass('disabled', inSpriteGeneration)
         .attr('aria-disabled', String(inSpriteGeneration));
@@ -1099,13 +1101,15 @@ async function generateAndUploadExpressionSprite(expression, spriteFolderName, {
     // tiles. Without this, the "Remove background" option never applies to single sprites.
     let uploadUrl = imageUrl;
     let processedUrl = null;
-    if (extension_settings.expressions.agentSpriteRemoveBackground) {
+    if (shouldRemoveSpriteBackground()) {
         try {
             processedUrl = await postProcessSpriteImage(imageUrl);
             uploadUrl = processedUrl;
         } catch (error) {
             if (isExpressionGenerationAbortError(error)) throw error;
             console.error('[Expressions] Failed to post-process generated sprite:', error);
+            toastr.error(error.message, t`Sprite Generation`);
+            return false;
         }
     }
 
@@ -1158,11 +1162,16 @@ function canvasToPngObjectUrl(canvas) {
     });
 }
 
+function shouldRemoveSpriteBackground() {
+    return extension_settings.expressions.agentSpriteRemoveBackground
+        || getExpressionSpriteBackground(extension_settings.expressions.agentSpriteBackground) !== 'white';
+}
+
 function postProcessSpriteCanvas(canvas) {
     const context = canvas.getContext('2d');
     const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
     cleanSpriteBitmap(pixels, {
-        removeBackground: extension_settings.expressions.agentSpriteRemoveBackground,
+        removeBackground: shouldRemoveSpriteBackground(), keyOnly: !extension_settings.expressions.agentSpriteRemoveBackground,
         check: throwIfExpressionGenerationStopped,
     });
     context.putImageData(pixels, 0, 0);
@@ -1187,7 +1196,7 @@ async function postProcessSpriteImage(imageUrl) {
         const context = canvas.getContext('2d');
         if (!context) throw new Error('Canvas is not available for expression sprite cleanup.');
         context.drawImage(image, 0, 0, width, height);
-        postProcessSpriteCanvas(canvas);
+        await postProcessSpriteCanvas(canvas);
         return await canvasToPngObjectUrl(canvas);
     } finally {
         URL.revokeObjectURL(sourceUrl);
@@ -1216,7 +1225,6 @@ async function splitSpriteSheetImage(imageUrl, grid, tileCount) {
         if (!sourceContext) throw new Error('Canvas is not available for sprite sheet splitting.');
         sourceContext.drawImage(image, 0, 0);
         const tiles = splitSpriteBitmap(sourceContext.getImageData(0, 0, sourceWidth, sourceHeight), grid, tileCount, {
-            removeBackground: extension_settings.expressions.agentSpriteRemoveBackground,
             check: throwIfExpressionGenerationStopped,
         });
         for (const tile of tiles) {
@@ -1227,6 +1235,7 @@ async function splitSpriteSheetImage(imageUrl, grid, tileCount) {
             const context = canvas.getContext('2d');
             if (!context) throw new Error('Canvas is not available for sprite sheet splitting.');
             context.putImageData(new ImageData(tile.data, tile.width, tile.height), 0, 0);
+            await postProcessSpriteCanvas(canvas);
             tileUrls.push(await canvasToPngObjectUrl(canvas));
         }
 
@@ -2916,13 +2925,18 @@ function migrateSettings() {
         saveSettingsDebounced();
     }
 
-    const previousDefaultSpritePrompt = DEFAULT_EXPRESSION_SPRITE_PROMPT.replace(
+    if (!['green', 'magenta', 'white'].includes(extension_settings.expressions.agentSpriteBackground)) {
+        extension_settings.expressions.agentSpriteBackground = 'green';
+        saveSettingsDebounced();
+    }
+    const previousDefaultSpritePrompt = TRANSPARENT_DEFAULT_EXPRESSION_SPRITE_PROMPT.replace(
         'true transparent background.\nIf true alpha transparency is unavailable, use flat pure white only. Never draw a checkerboard or transparency grid.',
         'transparent background.',
     );
     const previousPlainBackgroundDefaultSpritePrompt = previousDefaultSpritePrompt.replace('transparent background.', 'plain white or transparent background.');
     if (extension_settings.expressions.agentSpritePrompt === undefined
         || extension_settings.expressions.agentSpritePrompt === LEGACY_DEFAULT_EXPRESSION_SPRITE_PROMPT
+        || extension_settings.expressions.agentSpritePrompt === TRANSPARENT_DEFAULT_EXPRESSION_SPRITE_PROMPT
         || extension_settings.expressions.agentSpritePrompt === previousDefaultSpritePrompt
         || extension_settings.expressions.agentSpritePrompt === previousPlainBackgroundDefaultSpritePrompt) {
         extension_settings.expressions.agentSpritePrompt = DEFAULT_EXPRESSION_SPRITE_PROMPT;
@@ -3073,6 +3087,10 @@ export async function init() {
                     : DEFAULT_EXPRESSION_SPRITE_FRAMING;
                 saveSettingsDebounced();
             });
+        $('#expressions_agent_sprite_background').val(extension_settings.expressions.agentSpriteBackground).on('change', function () {
+            extension_settings.expressions.agentSpriteBackground = getExpressionSpriteBackground(this.value);
+            saveSettingsDebounced();
+        });
         $('#expressions_agent_sprite_remove_background')
             .prop('checked', !!extension_settings.expressions.agentSpriteRemoveBackground)
             .on('input', function () {
