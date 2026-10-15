@@ -22,6 +22,7 @@ import { getCurrentUserHandle } from '../user.js';
 import { getCurrentCharAvatar } from './context.js';
 import { getRoleplaySourceMessageRevision } from './roleplay-source.js';
 import { beginRoleplayReplacement } from './roleplay-replacement.js';
+import { withAbortSignal } from '../abort.js';
 
 const WORKFLOW_EVENT = 'neconyan:roleplay-workflow-finished';
 const RECONNECT_REASON = Symbol('roleplay-receipt-reconnect');
@@ -279,21 +280,6 @@ async function postSubmission(payload, account, url = '/api/roleplay/workflow/su
     return body;
 }
 
-async function withAbortSignal(promise, signal) {
-    if (!signal) return promise;
-    signal.throwIfAborted();
-    let onAbort;
-    const aborted = new Promise((_, reject) => {
-        onAbort = () => reject(signal.reason ?? new DOMException('The operation was aborted.', 'AbortError'));
-        signal.addEventListener('abort', onAbort, { once: true });
-    });
-    try {
-        return await Promise.race([promise, aborted]);
-    } finally {
-        signal.removeEventListener('abort', onAbort);
-    }
-}
-
 async function readReceipt(key, account, signal) {
     const response = await withAbortSignal(fetch(`/api/roleplay/workflow/receipt?key=${encodeURIComponent(key)}`, {
         credentials: 'same-origin',
@@ -329,16 +315,16 @@ function reconnectReading(entry) {
  */
 function readback(key, name, options) {
     const id = JSON.stringify([options.account, key]);
-    if (adopted.has(id)) {
-        const receipt = adopted.get(id);
-        settleFinished(key, receipt);
-        return Promise.resolve(receipt);
-    }
     const existing = reading.get(id);
     if (existing) {
         if (!options.passive) existing.options.passive = false;
         if (options.reconnect) reconnectReading(existing);
         return existing.promise;
+    }
+    if (adopted.has(id)) {
+        const receipt = adopted.get(id);
+        settleFinished(key, receipt);
+        return Promise.resolve(receipt);
     }
     const shared = { options: { ...options }, controller: null, settled: false };
     shared.promise = readbackReceipt(key, name, shared, id).finally(() => reading.delete(id));
@@ -378,6 +364,7 @@ async function readbackReceipt(key, name, shared, id) {
         }
         const controller = new AbortController();
         shared.controller = controller;
+        const timeout = setTimeout(() => controller.abort(new DOMException('Reply readback timed out.', 'TimeoutError')), 10000);
         let receipt;
         try {
             receipt = await readReceipt(key, account, controller.signal);
@@ -388,52 +375,59 @@ async function readbackReceipt(key, name, shared, id) {
                 );
                 continue;
             }
-        } catch (error) {
-            if (error === RECONNECT_REASON || controller.signal.reason === RECONNECT_REASON) {
-                attempt = -1;
-                continue;
+            if (!receipt.accepted) {
+                shared.settled = true;
+                settleFinished(key, null);
+                return null;
             }
-            shared.settled = true;
-            settleFinished(key, null);
-            throw error;
-        } finally {
-            if (shared.controller === controller) shared.controller = null;
-        }
-        shared.settled = true;
-        if (!receipt.accepted) {
-            settleFinished(key, null);
-            return null;
-        }
-        // Returning to a tab must not clear an editor that is saving or generating.
-        // The active job's own observer still adopts its newly completed reply.
-        if (account !== getCurrentUserHandle()) {
-            settleFinished(key, null);
-            return null;
-        }
-        if (options.passive && (busyName || isGenerating() || isChatSaving)) return null;
-        if (matchesCurrentWorkflowLocator(locator) && !adopted.has(id)) {
-            adopted.set(id, receipt);
-            if (!activeReload) {
+            // Returning to a tab must not clear an editor that is saving or generating.
+            // The active job's own observer still adopts its newly completed reply.
+            if (account !== getCurrentUserHandle()) {
+                settleFinished(key, null);
+                return null;
+            }
+            if (options.passive && (busyName || isGenerating() || isChatSaving)) return null;
+            if (matchesCurrentWorkflowLocator(locator) && !adopted.has(id)) {
+                if (activeReload) {
+                    // A different workflow owns that read. Recheck this receipt and
+                    // locator afterwards rather than adopting its unrelated result.
+                    await withAbortSignal(activeReload, controller.signal);
+                    continue;
+                }
                 activeReload = Promise.resolve()
                     .then(() => {
                         keepChatReadingPositionOnNextLoad(finishedReplyReadingAnchor());
-                        return refreshCurrentChatFromSaved();
+                        return refreshCurrentChatFromSaved({ signal: controller.signal });
                     })
                     .finally(() => {
                         keepChatReadingPositionOnNextLoad(null);
                         activeReload = null;
                     });
-            }
-            try {
                 await activeReload;
-            } catch (error) {
-                adopted.delete(id);
+                controller.signal.throwIfAborted();
+                if (account === getCurrentUserHandle() && matchesCurrentWorkflowLocator(locator)) adopted.set(id, receipt);
+            }
+            shared.settled = true;
+            announce({ key, name, state: receipt.state, result: receipt.result ?? null, jobId: receipt.jobId });
+            settleFinished(key, receipt);
+            return receipt;
+        } catch (error) {
+            if (error === RECONNECT_REASON || controller.signal.reason === RECONNECT_REASON) {
+                attempt = -1;
+                continue;
+            }
+            if (account !== getCurrentUserHandle() || attempt === 11 || error.status >= 400 && error.status < 500) {
+                shared.settled = true;
+                settleFinished(key, null);
                 throw error;
             }
+            // Keep the current reply visible while a transient read or pending save
+            // prevents adoption. Only displaying the saved result completes readback.
+            await withAbortSignal(new Promise(resolve => setTimeout(resolve, Math.min(2000, 250 * (attempt + 1)))), controller.signal).catch(() => {});
+        } finally {
+            clearTimeout(timeout);
+            if (shared.controller === controller) shared.controller = null;
         }
-        announce({ key, name, state: receipt.state, result: receipt.result ?? null, jobId: receipt.jobId });
-        settleFinished(key, receipt);
-        return receipt;
     }
     shared.settled = true;
     settleFinished(key, null);
@@ -735,6 +729,7 @@ export async function resumeNativeRoleplayWorkflowObservation({ reconnect = fals
             }
         }
         if (activeDiscovery && activeDiscovery.account === account) {
+            if (!activeDiscovery.reconnected) activeDiscovery.controller?.abort(RECONNECT_REASON);
             activeDiscovery.reconnected = true;
             for (const promise of reconnected) activeDiscovery.reconnectedPromises.add(promise);
         }
@@ -743,11 +738,24 @@ export async function resumeNativeRoleplayWorkflowObservation({ reconnect = fals
         if (!attachOnly) activeDiscovery.attachOnly = false;
         return activeDiscovery.promise;
     }
-    const cycle = { account, reconnected: Boolean(reconnect), attachOnly: Boolean(attachOnly), reconnectedPromises: reconnected, promise: null };
+    const cycle = { account, reconnected: Boolean(reconnect), attachOnly: Boolean(attachOnly), reconnectedPromises: reconnected, promise: null, controller: null };
     cycle.promise = (async () => {
         let jobs = [];
         try {
-            jobs = await listJobs({ includeDismissed: false, account });
+            for (;;) {
+                const controller = new AbortController();
+                cycle.controller = controller;
+                const timeout = setTimeout(() => controller.abort(), 10000);
+                try {
+                    jobs = await withAbortSignal(listJobs({ includeDismissed: false, account, signal: controller.signal }), controller.signal);
+                    break;
+                } catch (error) {
+                    if (controller.signal.reason !== RECONNECT_REASON) throw error;
+                } finally {
+                    clearTimeout(timeout);
+                    cycle.controller = null;
+                }
+            }
         } catch {
             return;
         } finally {

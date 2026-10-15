@@ -1,5 +1,6 @@
 import { chat as messages, getRequestHeaders, getThumbnailUrl, scrollChatToBottom, updateMessageElement } from '../../script.js';
 import { beginRoleplayReplacement } from './roleplay-replacement.js';
+import { withAbortSignal } from '../abort.js';
 
 const labels = {
     preparing: 'Preparing reply…', generating: 'Writing reply…', agents: 'Running Agents…',
@@ -112,10 +113,10 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             const heard = () => { clearTimeout(silence); silence = setTimeout(() => current.abort(), PREVIEW_SILENCE_MS); };
             try {
                 heard();
-                const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/preview`, {
+                const response = await withAbortSignal(fetch(`/api/jobs/${encodeURIComponent(jobId)}/preview`, {
                     headers: { ...getRequestHeaders(), 'X-Neconyan-Account': account },
                     credentials: 'same-origin', signal: current.signal,
-                });
+                }), current.signal);
                 // A missing job has no preview to wait for; other refusals are retried.
                 if (response.status === 404) return;
                 if (!response.ok || !response.body) throw new Error(`Reply preview returned ${response.status}.`);
@@ -123,7 +124,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                 try {
                     let pending = '';
                     while (!stopped) {
-                        const chunk = await reader.read();
+                        const chunk = await withAbortSignal(reader.read(), current.signal);
                         if (chunk.done) break;
                         heard();
                         pending += chunk.value;
@@ -147,8 +148,15 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                             if (value.state) { diagnostic(null); onTerminal(value); return; }
                         }
                     }
-                } finally { await reader.cancel().catch(() => {}); }
-            } catch { /* The ordinary job observer remains available during reconnects. */ } finally { clearTimeout(silence); }
+                } finally {
+                    // Safari can leave both read() and cancel() pending after suspension.
+                    // A stale connection must never hold up the next current snapshot.
+                    void reader.cancel().catch(() => {});
+                }
+            } catch { /* The ordinary job observer remains available during reconnects. */ } finally {
+                clearTimeout(silence);
+                current.abort();
+            }
             if (!stopped) await new Promise(resolve => setTimeout(resolve, 1000));
         }
     };
@@ -166,6 +174,6 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     // The finished reply is about to be saved and the chat rebuilt. Stop redrawing,
     // so the preview stays where the reader sees it and cannot reappear in the
     // emptied chat ahead of the saved messages.
-    stop.freeze = () => { frozen = true; clearInterval(timer); };
+    stop.freeze = () => { render(); frozen = true; clearInterval(timer); };
     return stop;
 }

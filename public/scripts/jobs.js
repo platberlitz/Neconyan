@@ -108,8 +108,8 @@ export async function submitJob({ type, intent, submissionKey, target = null, la
     });
 }
 
-export async function listJobs({ base = '', includeDismissed = false, account = getCurrentUserHandle() } = {}) {
-    const body = await requestJson(endpoint(base, `/list?includeDismissed=${includeDismissed}`), { account });
+export async function listJobs({ base = '', includeDismissed = false, account = getCurrentUserHandle(), signal } = {}) {
+    const body = await requestJson(endpoint(base, `/list?includeDismissed=${includeDismissed}`), { account, signal });
     return body?.jobs ?? [];
 }
 
