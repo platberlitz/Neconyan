@@ -12758,12 +12758,14 @@ export async function recordMessageExpression(target, src) {
     return true;
 }
 
-document.addEventListener('sb:chat-style-updated', () => {
+function refreshMessageExpressions() {
     document.querySelectorAll('#chat .mes[mesid]').forEach(row => {
         const message = chat[Number(row.getAttribute('mesid'))];
         renderMessageExpression(row, message, getMessageExpressionAvatar(message));
     });
-});
+}
+document.addEventListener('sb:chat-style-updated', refreshMessageExpressions);
+document.addEventListener('sb:expression-display-updated', refreshMessageExpressions);
 
 function isThumbnailAvatarSource(rawSrc) {
     try {

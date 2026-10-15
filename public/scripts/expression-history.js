@@ -38,16 +38,34 @@ export function writeMessageExpression(message, avatar, src) {
 }
 
 export function renderMessageExpression(row, message, avatar) {
-    const holder = row?.querySelector('.mesAvatarWrapper > .avatar');
+    if (!row) return;
+    const ripple = document.body.classList.contains('ripplestyle');
+    const src = readMessageExpression(message, avatar)?.src;
+    renderExpressionImage(row.querySelector('.mesAvatarWrapper > .avatar'), ripple && src);
+    let portrait = row.querySelector('.neconyan-mobile-expression');
+    if (ripple || !src || !document.body.classList.contains('neconyan-mobile-expressions')) {
+        portrait?.remove();
+        return;
+    }
+    if (!portrait) {
+        const text = row.querySelector('.mes_block > .mes_text');
+        if (!text) return;
+        portrait = document.createElement('div');
+        portrait.className = 'neconyan-mobile-expression';
+        text.before(portrait);
+    }
+    renderExpressionImage(portrait, src, 'neconyan-expression-portrait');
+}
+
+function renderExpressionImage(holder, src, className = 'neconyan-expression-avatar') {
     if (!holder) return;
-    const src = document.body.classList.contains('ripplestyle') && readMessageExpression(message, avatar)?.src;
-    let image = holder.querySelector('.neconyan-expression-avatar');
+    let image = holder.querySelector(`.${className}`);
     if (image?.getAttribute('src') === src) return;
     image?.remove();
     holder.classList.remove('has-expression');
     if (!src) return;
     image = document.createElement('img');
-    image.className = 'neconyan-expression-avatar';
+    image.className = className;
     image.alt = '';
     image.decoding = 'async';
     image.onload = () => {
