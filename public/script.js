@@ -1,3 +1,5 @@
+import { projectBrowserPromptMedia, validatePromptImageCopies } from './scripts/prompt-media-client.js';
+import { promptMediaText, promptImageCopyDescriptor } from './scripts/prompt-media-policy.js';
 import { formatRoleplayTextMessage, combineRoleplayTextPrompt } from './scripts/roleplay-text-format.js';
 import { roleplayLoadErrorMessage } from './scripts/roleplay-load-error.js';
 import { finishUiMotion, getUiDrawerEdge, getUiSlideOptions, isUiClosing, revealUi, setUiVisibility, slideSwipe } from './scripts/ui-motion.js';
@@ -1386,6 +1388,7 @@ async function firstLoadInit() {
         doDailyExtensionUpdatesCheck();
         await eventSource.emit(event_types.APP_INITIALIZED);
         await fixViewport();
+        (await import('./scripts/prompt-media-ui.js')).initPromptMediaControls();
         await eventSource.emit(event_types.APP_READY);
         void showLanguageChoicePrompt().catch(error => console.warn('Language choice unavailable.', error));
         const { initChatNavigation } = await import('./scripts/chat-navigation.js');
@@ -8925,8 +8928,12 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             const retainedContributions = hostedRetainedContributions
                 .map(item => item.contribution)
                 .filter(contribution => contribution.content);
-            const contextSourceMessage = hiddenCompanionHistory ? '' : originalMessage;
-            const worldInfoContextSourceMessage = hiddenCompanionHistory ? '' : worldInfoSourceMessage;
+            const mediaProjection = projectBrowserPromptMedia([{}, chatItem]);
+            await validatePromptImageCopies(mediaProjection.decisions.filter(choice => choice.send && choice.image_url)
+                .map(choice => promptImageCopyDescriptor(chatItem.extra?.media?.[choice.mediaIndex])));
+            const promptRecord = mediaProjection.records[1];
+            const contextSourceMessage = hiddenCompanionHistory ? '' : promptMediaText({ ...promptRecord, mes: originalMessage }, 0, mediaProjection);
+            const worldInfoContextSourceMessage = hiddenCompanionHistory ? '' : promptMediaText({ ...promptRecord, mes: worldInfoSourceMessage }, 0, mediaProjection);
             let message = contextSourceMessage;
             let regexType = chatItem.is_user ? regex_placement.USER_INPUT : regex_placement.AI_OUTPUT;
             let options = { isPrompt: true, depth: (coreChat.length - index - (isContinue ? 2 : 1)) };
@@ -8952,11 +8959,11 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             }
 
             const titles = [];
-            if (!hiddenCompanionHistory && chatItem?.extra?.append_title && chatItem?.extra?.title) {
-                titles.push(chatItem.extra.title);
+            if (!hiddenCompanionHistory && promptRecord?.extra?.append_title && promptRecord?.extra?.title) {
+                titles.push(promptRecord.extra.title);
             }
-            if (!hiddenCompanionHistory && Array.isArray(chatItem?.extra?.media)) {
-                for (const mediaItem of chatItem.extra.media) {
+            if (!hiddenCompanionHistory && Array.isArray(promptRecord?.extra?.media)) {
+                for (const mediaItem of promptRecord.extra.media) {
                     if (mediaItem?.title && mediaItem?.append_title) {
                         titles.push(mediaItem.title);
                     }
@@ -9005,7 +9012,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             return {
                 ...chatItem,
                 mes: consolidatedContextMessage,
-                extra: hiddenCompanionHistory ? {} : chatItem.extra,
+                extra: hiddenCompanionHistory ? {} : promptRecord.extra,
                 is_system: hiddenCompanionHistory ? false : chatItem.is_system,
                 ...(agentContributions.length > 0 && { agentContributions }),
                 index,

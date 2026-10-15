@@ -1,3 +1,5 @@
+import { promptAttachmentHash } from '../prompt-media-client.js';
+import { conversationReplyImageProof } from './prompt-media.js';
 import { getMessageTimeStamp } from '../RossAscends-mods.js';
 import { DEFAULT_BRANCH_ID, MAX_THREAD_MESSAGES, SAFE_TOAST_OPTIONS } from './constants.js';
 import {
@@ -144,6 +146,7 @@ export function buildConversationMessageReplyReference(message) {
         role: message.role || 'character',
         text,
         attachmentSummary,
+        neconyan_image_source: conversationReplyImageProof(message, { text, attachmentSummary }, truncateConversationReplyPreview(stripPreviewText(message.mes)), promptAttachmentHash),
         createdAt: message.created_at || Date.now(),
     };
 }

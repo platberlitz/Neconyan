@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { canonicalPromptMedia, createPromptMediaContext } from '../public/scripts/prompt-media-policy.js';
 /* global globalThis */
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 
@@ -26,6 +28,11 @@ const getConversationParticipants = jest.fn(() => [{ avatar: 'char.png', name: '
 const getConversationSoloMemorySummary = jest.fn(() => ({ summary: 'captured solo memory' }));
 const saveConversationMemorySummary = jest.fn();
 
+await jest.unstable_mockModule('../public/scripts/prompt-media-client.js', () => ({
+    promptAttachmentHash: value => createHash('sha256').update(canonicalPromptMedia(value)).digest('hex'),
+    browserPromptMediaContext: (metadata = {}) => createPromptMediaContext({}, metadata),
+    validatePromptImageCopies: async copies => { if (copies.length) throw new Error('Derivative needs a host fixture'); },
+}));
 await jest.unstable_mockModule('../public/script.js', () => ({ name1: 'User' }));
 await jest.unstable_mockModule('../public/scripts/personas.js', () => ({ user_avatar: 'persona-b.png' }));
 await jest.unstable_mockModule('../public/scripts/power-user.js', () => ({ power_user: { persona_description: 'active persona fallback' } }));

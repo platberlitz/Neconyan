@@ -25,6 +25,7 @@ describe('style decoder cannot break out of its style element', () => {
             const stubs = Object.fromEntries(libNames.map(name => [name, {}]));
             return { ...stubs, css, default: { ...stubs, css } };
         });
+        await jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => 'test' }));
         await jest.unstable_mockModule('../public/script.js', mockNames([
             'addCopyToCodeBlocks', 'appendMediaToMessage', 'characters', 'chat', 'eventSource', 'event_types',
             'getCurrentChatId', 'getRequestHeaders', 'name2', 'reloadCurrentChat', 'saveSettingsDebounced', 'this_chid',

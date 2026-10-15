@@ -1,3 +1,5 @@
+import { assertOrdinaryImportPath } from './import-managed-images.js';
+import { assertMutableImagePath } from '../managed-image-files.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -228,6 +230,7 @@ export async function stageImportFile(context, file, index, preparedValue) {
 }
 
 export function publishImportFile(context, file, index, prepared, { afterImportPublication } = {}) {
+    assertOrdinaryImportPath(file.relative);
     let entityBytes;
     if (file.target.resource && file.target.resource.kind !== 'chat') {
         const needsBytes = withOperation(context, ({ lease, value }) => {
@@ -273,6 +276,7 @@ export function publishImportFile(context, file, index, prepared, { afterImportP
                 const temporary = path.join(scope.directories.root, staged.temporary);
                 const input = inspectRoleplayFile(temporary, BINARY_FILE_LIMIT, { flush: true });
                 if (!input || !same(evidence(input), staged.after) || input.size !== staged.size) throw operationError('The prepared import publication is missing.');
+                assertMutableImagePath(scope.directories, filename);
                 fs.renameSync(temporary, filename);
                 fsyncDirectorySync(path.dirname(filename));
             }

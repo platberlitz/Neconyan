@@ -1,3 +1,4 @@
+import { promptAttachmentHash } from '../prompt-media-client.js';
 import { getRequestHeaders, is_send_press } from '../../script.js';
 import { isChatNavigationBlocked } from '../chat-navigation-flight.js';
 import { getCurrentUserHandle } from '../user.js';
@@ -214,7 +215,11 @@ export async function buildConversationAttachmentPromptContext(messageInput, vis
         }
     }
 
-    return parts.join('\n');
+    const context = parts.join('\n');
+    messageInput.extra.conversation_attachment_context_provenance = { version: 1,
+        source_hash: promptAttachmentHash([context, messageInput.extra.media ?? [], messageInput.extra.files ?? []]),
+        file_text: parts.slice(1).join('\n') };
+    return context;
 }
 
 export function focusConversationInput() {

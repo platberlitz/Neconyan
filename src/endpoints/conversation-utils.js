@@ -1147,7 +1147,7 @@ export async function fetchImageToBase64(imageUrl, {
 export async function convertImageUrlsToBase64(imageUrls, concurrency = 3, {
     signal,
     maxAggregateBytes = IMAGE_MAX_AGGREGATE_BYTES,
-    userDirectories,
+    userDirectories, beforeRead,
 } = {}) {
     const urls = Array.isArray(imageUrls) ? imageUrls : [];
     if (!urls.length) {
@@ -1172,6 +1172,7 @@ export async function convertImageUrlsToBase64(imageUrls, concurrency = 3, {
             reservedBytes += remainingBytes;
             let result;
             try {
+                await beforeRead?.(index);
                 result = await fetchImageToBase64(urls[index], {
                     signal,
                     maxBytes: remainingBytes,

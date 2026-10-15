@@ -21,7 +21,7 @@ const controls = { prompts: [{ identifier: 'main', role: 'system', system_prompt
     order: [{ identifier: 'main', enabled: true }, { identifier: 'worldInfoBefore', enabled: true }, { identifier: 'chatHistory', enabled: true }] }] };
 const json = value => new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } });
 
-function prepared(t, { caption = {}, blank = false, gallery = false, secret, mutate } = {}) {
+function prepared(t, { caption = {}, blank = false, gallery = false, secret, mutate, imagePolicy = false, mutateRecords } = {}) {
     const f = fixture(t);
     const directories = f.scope.directories;
     directories.userImages = path.join(directories.root, 'user', 'images');
@@ -33,6 +33,7 @@ function prepared(t, { caption = {}, blank = false, gallery = false, secret, mut
     const item = { url: '/user/images/photo.png', type: 'image', source: 'upload' };
     f.records[1].extra = { media: gallery ? [{ ...item, source: 'generated' }, item] : [item],
         media_display: gallery ? 'gallery' : 'list', media_index: gallery ? 1 : 0 };
+    mutateRecords?.(f.records);
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     const settings = { power_user: {}, world_info_settings: { world_info: { globalSelect: ['Caption lore'] }, world_info_budget: 200 },
         oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1' },
@@ -48,7 +49,7 @@ function prepared(t, { caption = {}, blank = false, gallery = false, secret, mut
     if (secret) writeSecret(directories, SECRET_KEYS[secret], 'caption-private-key');
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
     const source = f.source();
-    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 4000, serverPrompt: true });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 4000, serverPrompt: true, ...(imagePolicy ? { mediaPolicyVersion: 1 } : {}) });
     const binding = { kind: 'profile', ...captureChatProfile(directories, 'main') };
     const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'native-caption', effect: 'append', source,
         request: { binding, maxTokens: 32, characterName: 'Nova', worldInfo, serverPrompt: true, messages: [] } });
@@ -302,4 +303,21 @@ test('every bundled multimodal caption API uses its configured transport and res
         const accepted = JSON.stringify(getJob(f.directories, f.jobId).intent);
         assert(!accepted.includes('caption-private-key'));
     });
+});
+
+for (const mode of ['display-only', 'caption']) test(`versioned ${mode} image avoids automatic caption reads and provider calls`, async t => {
+    const { roleplayHash } = await import('../src/roleplay-store.js');
+    const { attachmentIdentity } = await import('../public/scripts/prompt-media-policy.js');
+    const f = prepared(t, { imagePolicy: true, mutateRecords(records) {
+        const item = records[1].extra.media[0]; item.url = 'data:image/png;base64,BROKEN'; item.title = 'PRIVATE_IMAGE_TITLE'; item.append_title = true;
+        item.neconyan_prompt = { version: 1, mode, attachment_hash: roleplayHash(attachmentIdentity(item)),
+            ...(mode === 'caption' ? { caption: { source: 'custom', text: 'Reviewed picture description' } } : {}) };
+    } });
+    await f.run({ localCaption: () => assert.fail('Unexpected caption call'), fetch: () => assert.fail('Unexpected image fetch'), generate: async ({ beforeDispatch, messages }) => {
+        beforeDispatch(); const text = JSON.stringify(messages);
+        assert.doesNotMatch(text, /PRIVATE_IMAGE_TITLE|BROKEN|image_url/); assert.match(text, /Describe the upload/);
+        assert.equal((text.match(/Reviewed picture description/g) ?? []).length, mode === 'caption' ? 1 : 0);
+        return { text: 'Saved without caption service' };
+    } });
+    assert.equal(readArtifact(f.directories, f.jobId, 'roleplay-captions'), undefined);
 });

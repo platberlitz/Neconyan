@@ -1,3 +1,6 @@
+import { createPromptMediaContext, generatedImageInputPreference } from '../../public/scripts/prompt-media-policy.js';
+import { projectConversationImageInput } from '../../public/scripts/neconyan-conversation/prompt-media.js';
+import { mergeChatPresetSettings } from '../../public/scripts/chat-preset-request.js';
 /**
  * Server-side Conversation participant policy.
  *
@@ -28,7 +31,7 @@ import { resolveSavedImageFilters } from './quick-image-gen-filters.js';
 import { captureQuickImageTextSettings } from './quick-image-gen-text.js';
 import { buildSavedProxyImageContext } from './quick-image-gen-proxy.js';
 import { captureBoundQuickImageReferenceSources } from './quick-image-gen-reference.js';
-import { roleplayAccountBase, roleplayAccountStamp } from '../roleplay-store.js';
+import { roleplayAccountBase, roleplayAccountStamp, roleplayHash } from '../roleplay-store.js';
 
 // Matches the browser regex: flexible whitespace and the curly apostrophe iOS
 // keyboards produce, so "y’all" and "you  all" are broad addresses too.
@@ -303,8 +306,11 @@ export async function buildConversationParticipantSnapshot(request, current, tar
         throw Object.assign(new Error('The captured character output transformations changed.'), { status: 409 });
     }
     const userName = String(current.settings.power_user?.personas?.[target.personaId] || current.settings.name1 || 'User');
+    const mediaPolicy = createPromptMediaContext(current.settings, current.branch,
+        mergeChatPresetSettings(material.active, material.preset), { backend: material.backend });
+    const promptMessages = projectConversationImageInput(current.branch.messages, mediaPolicy, { hash: roleplayHash });
     const messages = await buildConversationPromptMessages(current.branch.messages, directive, character.name, {
-        groupId: target.groupId, userName, userDirectories: directories,
+        groupId: target.groupId, userName, userDirectories: directories, mediaPolicy,
     });
     const timeContext = `Current system time context: ${new Intl.DateTimeFormat('en-GB', { timeZone, dateStyle: 'full', timeStyle: 'long' }).format(now)}. Timezone: ${timeZone}.`;
     const descriptor = current.settings.power_user?.persona_descriptions?.[target.personaId];
@@ -328,7 +334,7 @@ export async function buildConversationParticipantSnapshot(request, current, tar
         }
         const usable = limit && limit > settings.reply_max_tokens ? limit - settings.reply_max_tokens : null;
         assistantKnowledgeTokens = usable ? getAssistantKnowledgeBudget(usable) : FALLBACK_ASSISTANT_KNOWLEDGE_TOKENS;
-        const knowledge = await buildAssistantKnowledge({ character, messages: current.branch.messages, maxTokens: assistantKnowledgeTokens });
+        const knowledge = await buildAssistantKnowledge({ character, messages: promptMessages, maxTokens: assistantKnowledgeTokens });
         if (knowledge.text) system = `${system}\n\n${knowledge.text}`;
     }
     const groupMembers = target.groupId ? await Promise.all(current.group.members.map(async member => ({
@@ -340,10 +346,11 @@ export async function buildConversationParticipantSnapshot(request, current, tar
     const imageSettings = imageEnabled
         ? resolveCharacterImageSettings(current.settings.extension_settings?.['quick-image-gen'] || {}, { avatar }) : null;
     const snapshot = {
+        mediaPolicy, mediaPolicyVersion: 1,
         target, binding, settings, force, purpose: plan.purpose || 'reply', timeZone,
         // Freeze transport at acceptance so pre-upgrade paid steps keep their identity.
         streamPreview: ['chat', 'text'].includes(binding.backend || 'chat'),
-        ...(imageEnabled ? { quickImageGenCharacterScope: { avatar }, quickImageGenSettingsFingerprint:
+        ...(imageEnabled ? { quickImageGenChatImageInput: generatedImageInputPreference(imageSettings, true), quickImageGenCharacterScope: { avatar }, quickImageGenSettingsFingerprint:
             quickImageGenSettingsFingerprint(imageSettings),
         quickImageGenSDSettingsFingerprint: quickImageGenSettingsFingerprint(
             current.settings.extension_settings?.sd || current.settings.extension_settings?.['stable-diffusion'] || {}) } : {}),
@@ -370,7 +377,7 @@ export async function buildConversationParticipantSnapshot(request, current, tar
             system: { model: material.profile.model },
             variables: { global: current.settings.extension_settings?.variables?.global || {}, local: {} },
             extra: { character, characterAvatar: avatar,
-                chat: current.branch.messages.map(message => ({ ...message, is_user: message.role === 'user', is_system: message.role === 'system', send_date: message.timestamp })),
+                chat: promptMessages.map(message => ({ ...message, is_user: message.role === 'user', is_system: message.role === 'system', send_date: message.timestamp })),
                 chatMetadata: {}, powerUser: current.settings.power_user || {} },
         },
     };

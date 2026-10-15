@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { canonicalPromptMedia, createPromptMediaContext } from '../public/scripts/prompt-media-policy.js';
 /* global globalThis */
 import { afterEach, describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
@@ -76,6 +78,10 @@ function preparedPlaybackContext() {
 
 async function importConversationTts() {
     jest.resetModules();
+    await jest.unstable_mockModule('../public/scripts/prompt-media-client.js', () => ({
+        promptAttachmentHash: value => createHash('sha256').update(canonicalPromptMedia(value)).digest('hex'),
+        browserPromptMediaContext: (metadata = {}) => createPromptMediaContext({}, metadata),
+    }));
     await jest.unstable_mockModule('../public/script.js', () => ({ name1: 'User' }));
     await jest.unstable_mockModule('../public/scripts/neconyan-conversation/thread-store-utils.js', () => ({
         getConversationAttachmentSummary: jest.fn(() => '[Attachment]'),

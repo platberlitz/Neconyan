@@ -61,7 +61,7 @@ export function captureRoleplayWorkflowRequest(base, account, source, { avatar, 
         throw error('The selected speaker differs from the protected source.', 'ROLEPLAY_WORKFLOW_INVALID');
     }
     const options = { maxContext: contextLimit - maxTokens, trigger: roleplayEffectTrigger(effect),
-        promptEffect: effect, serverPrompt: true };
+        promptEffect: effect, serverPrompt: true, mediaPolicyVersion: 1, mediaBinding: binding };
     const speakers = group?.speakers.map(speaker => ({ ...speaker,
         worldInfo: captureRoleplayWorldInfo(base, account, source, { ...options, avatar: speaker.avatar }) }));
     const worldInfo = speakers?.[0]?.worldInfo ?? captureRoleplayWorldInfo(base, account, source, { ...options, avatar: selectedAvatar });
@@ -603,7 +603,8 @@ function nextGroupLineage(context, job, previous, index) {
     const worldInfo = captureRoleplayWorldInfo(base, account, source, { avatar: next.avatar,
         maxContext: job.intent.request.worldInfo.maxContext, tokenizer: job.intent.request.worldInfo.tokenizer,
         trigger: job.intent.request.worldInfo.global.trigger, serverPrompt: true,
-        nativeBindingVersion: job.intent.request.worldInfo.nativeBindingVersion });
+        nativeBindingVersion: job.intent.request.worldInfo.nativeBindingVersion,
+        mediaPolicyVersion: job.intent.request.worldInfo.mediaPolicyVersion ?? 0, mediaBinding: job.intent.request.worldInfo.mediaBinding ?? null });
     const record = { parentIntentHash: roleplayHash(job.intent), previousHash: previous.hash, index,
         source, worldInfo, account: { accountId: account.accountId, dataEpoch: account.dataEpoch } };
     const value = { ...record, hash: roleplayHash(record) };

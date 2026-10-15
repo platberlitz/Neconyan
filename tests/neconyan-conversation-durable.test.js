@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { canonicalPromptMedia, createPromptMediaContext } from '../public/scripts/prompt-media-policy.js';
 /* global globalThis */
 import { afterAll, beforeEach, describe, expect, jest, test } from '@jest/globals';
 
@@ -78,6 +80,10 @@ function makeGlobals() {
 
 async function loadAttachments() {
     await jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => account }));
+    await jest.unstable_mockModule('../public/scripts/prompt-media-client.js', () => ({
+        promptAttachmentHash: value => createHash('sha256').update(canonicalPromptMedia(value)).digest('hex'),
+        browserPromptMediaContext: (metadata = {}) => createPromptMediaContext({}, metadata),
+    }));
     await jest.unstable_mockModule('../public/script.js', () => ({
         getRequestHeaders: () => ({ 'X-CSRF-Token': 'csrf' }),
         getActiveGenerationAcknowledgement: jest.fn(),

@@ -77,11 +77,12 @@ export async function compilePromptingCapture({ context: plan, material, scene =
         throw new Error('Saved tool history needs a tool-capable Chat Completion connection.');
     }
     let images = remap(snapshot.images);
+    if (snapshot.mediaPolicy && !snapshot.mediaPolicy.inlineImages) images = images.filter(image => image.file);
     if (images.length && (textBackend || !supportsChatImages(controls, { model_list: models }))) {
         if (images.some(image => !image.captioned)) throw new Error('This prompt needs a vision connection or saved image captions.');
         images = images.map(image => ({ ...image, captionOnly: true }));
     }
-    const history = buildRoleplaySavedHistory(promptRecords, { preparedContent: retained.map(index => prepared.content[index]), attachments: remap(snapshot.attachments),
+    const history = buildRoleplaySavedHistory(promptRecords, { mediaPolicy: snapshot.mediaPolicy, ...(snapshot.captionTexts ? { captionTexts: remap(snapshot.captionTexts) } : {}), preparedContent: retained.map(index => prepared.content[index]), attachments: remap(snapshot.attachments),
         images, imageDetail: controls.inline_image_quality ?? 'auto', group: false, userName: snapshot.speakerNames.user,
         characterName: snapshot.speakerNames.character, reasoningInPrompt: snapshot.reasoningInPrompt, reasoning: snapshot.reasoning,
         companionHostIndex: retained.indexOf(prepared.companionHostIndex), toolHistory, toolSource: material.source, toolModel: material.profile?.model,

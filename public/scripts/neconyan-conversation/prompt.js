@@ -1,3 +1,5 @@
+import { browserPromptMediaContext, promptAttachmentHash, validatePromptImageCopies } from '../prompt-media-client.js';
+import { projectConversationImageInput } from './prompt-media.js';
 import { composeConversationPromptMessages } from './prompt-messages.js';
 import { composeConversationSystemPrompt } from './prompt-system.js';
 import { user_avatar } from '../personas.js';
@@ -7,6 +9,7 @@ import {
     TRANSCRIPT_MESSAGE_LIMIT,
 } from './constants.js';
 import {
+    getActiveConversationBranch,
     getConversationGroupIdForAvatar,
     getConversationPersonaId,
     getConversationThreadKey,
@@ -37,7 +40,6 @@ import {
 } from './settings-store.js';
 import { memorySummaryBusyAvatars } from './state.js';
 import {
-    getConversationAttachmentSummary,
     getConversationFileAttachments,
     getConversationMediaAttachments,
 } from './thread-store.js';
@@ -168,12 +170,13 @@ function getConversationLocalTimeContext(now = new Date()) {
 }
 
 export function formatConversationTranscript(messages) {
+    messages = projectConversationImageInput(messages, browserPromptMediaContext(getActiveConversationBranch(getCurrentCharAvatar(), { create: false }) ?? {}), { hash: promptAttachmentHash });
     return messages
         .slice(-TRANSCRIPT_MESSAGE_LIMIT)
         .map(message => {
             const parts = [
                 formatPromptText(message.mes, 1800),
-                getConversationAttachmentSummary(message),
+                message.promptAttachmentSummary,
             ].filter(Boolean);
             return parts.length ? `${message.name || 'Speaker'}: ${parts.join(' ')}` : '';
         })
@@ -207,7 +210,7 @@ export async function convertImageUrlToBase64(imageUrl) {
     }
 }
 
-export async function convertImageUrlsToBase64(imageUrls, concurrency = 3) {
+export async function convertImageUrlsToBase64(imageUrls, concurrency = 3, { beforeRead } = {}) {
     const urls = Array.isArray(imageUrls) ? imageUrls : [];
     if (!urls.length) {
         return [];
@@ -220,6 +223,7 @@ export async function convertImageUrlsToBase64(imageUrls, concurrency = 3) {
         while (nextIndex < urls.length) {
             const index = nextIndex;
             nextIndex += 1;
+            await beforeRead?.(index);
             results[index] = await convertImageUrlToBase64(urls[index]);
         }
     });
@@ -232,7 +236,7 @@ export async function buildConversationPromptMessages(messages, directive, speak
     return composeConversationPromptMessages(messages, directive, speakerName, {
         groupId,
         userName: getConversationPersonaName(personaId, 'User'),
-        convertImages: convertImageUrlsToBase64,
+        convertImages: (urls, options) => convertImageUrlsToBase64(urls, 3, options), validateImages: validatePromptImageCopies, mediaPolicy: browserPromptMediaContext(getActiveConversationBranch(getCurrentCharAvatar(), { create: false }) ?? {}), hash: promptAttachmentHash,
     });
 }
 

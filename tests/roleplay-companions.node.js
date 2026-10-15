@@ -24,7 +24,7 @@ const controls = { prompts: [{ identifier: 'main', role: 'system', system_prompt
 prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'worldInfoBefore', enabled: true }, { identifier: 'chatHistory', enabled: true }] }] };
 const companion = (id, options = {}) => ({ id, name: id.toUpperCase(), enabled: true, category: 'companion', execution: 'companion',
     phase: 'pre', prompt: `TASK_${id.toUpperCase()}`, companion: { includeWorldInfo: false, ...options } });
-function prepared(t, agents, { global = {}, effect = 'append', changeRecords, extraCard = false } = {}) {
+function prepared(t, agents, { global = {}, effect = 'append', changeRecords, extraCard = false, imagePolicy = false } = {}) {
     const f = fixture(t), directories = f.scope.directories;
     directories.worlds = path.join(directories.root, 'worlds');
     directories.inChatAgents = path.join(directories.root, 'InChatAgents');
@@ -47,7 +47,7 @@ function prepared(t, agents, { global = {}, effect = 'append', changeRecords, ex
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
     const anchored = ['continue', 'swipe'].includes(effect);
     const source = captureRoleplaySource(f.scope, { locator: f.locator, ...(anchored ? { message: f.records.length - 2 } : {}) });
-    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 4000, serverPrompt: true, trigger: anchored ? effect : 'normal' });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 4000, serverPrompt: true, ...(imagePolicy ? { mediaPolicyVersion: 1 } : {}), trigger: anchored ? effect : 'normal' });
     const request = { binding: { kind: 'profile', ...captureChatProfile(directories, 'main') }, maxTokens: 32, characterName: 'Nova', worldInfo, serverPrompt: true, messages: [] };
     const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'companions-native', source, effect, request });
     releaseJob(directories, jobId);
@@ -504,4 +504,22 @@ test('native tracker Companions repair a broken reply and fail without closing a
     assert.equal(results.world.content, trackerBlock);
     assert.equal(results.lost.status, 'error');
     assert.match(results.lost.error, /Tracker repair returned invalid output/);
+});
+
+test('versioned show-only broken images survive companion lore recapture without leaking titles', async t => {
+    const f = prepared(t, [companion('side', { includeWorldInfo: true, contextMessages: 4 })], { imagePolicy: true, changeRecords(records) {
+        records[0].chat_metadata.neconyan_prompt_media = { version: 1, images: 'display-only' };
+        records[1].extra.media = [{ type: 'image', url: 'data:image/png;base64,BROKEN', title: 'evening-bell PRIVATE_IMAGE_TITLE', append_title: true }];
+    } });
+    let calls = 0;
+    await f.run({ generate: paid('main', ({ messages }) => {
+        assert.doesNotMatch(JSON.stringify(messages), /PRIVATE_IMAGE_TITLE|THE_COMPANION_BELL_LORE|image_url/); return { text: 'Preserved answer' };
+    }), generateAgent: paid('agent', ({ messages }) => {
+        calls++; const text = JSON.stringify(messages);
+        assert.match(text, /Original/); assert.doesNotMatch(text, /PRIVATE_IMAGE_TITLE|THE_COMPANION_BELL_LORE|BROKEN|image_url/);
+        return { text: 'Companion note' };
+    }) });
+    assert.equal(calls, 1);
+    assert.equal(f.rows().at(-1).extra.inChatAgentCompanionResults.side.content, 'Companion note');
+    assert.match(f.rows()[1].extra.media[0].url, /BROKEN/);
 });

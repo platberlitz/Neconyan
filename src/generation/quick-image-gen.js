@@ -1,3 +1,4 @@
+import { assertMutableImagePath } from '../managed-image-files.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Buffer } from 'node:buffer';
@@ -667,6 +668,7 @@ export async function saveQuickImageToUserImages(directories, { base64, format =
             : `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${extension}`;
         let target = path.join(directories.userImages, sanitize(name));
         if (chName) target = path.join(directories.userImages, sanitize(chName), sanitize(name));
+        assertMutableImagePath(directories, target);
         const directory = path.dirname(target);
         ensureAccountImageDirectory(directories.root, directory);
         const bytes = Buffer.from(base64, 'base64');
@@ -683,6 +685,7 @@ export async function saveQuickImageToUserImages(directories, { base64, format =
             ensureAccountImageDirectory(directories.root, directory);
             try {
                 // Hard-link creates the final name only after the complete temporary image is durable.
+                assertMutableImagePath(directories, target);
                 fs.linkSync(temporary, target);
                 fsyncDirectorySync(directory);
             } catch (error) {

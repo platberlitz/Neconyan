@@ -23,7 +23,7 @@ const controls = { prompts: [{ identifier: 'main', role: 'system', system_prompt
     { identifier: 'chatHistory', marker: true, system_prompt: true }], prompt_order: [{ character_id: 100001,
     order: [{ identifier: 'main', enabled: true }, { identifier: 'worldInfoBefore', enabled: true }, { identifier: 'chatHistory', enabled: true }] }] };
 
-function prepared(t, agents, { effect = 'append', range = { start: 1, count: 1 }, review = false, translation = false, configure = () => {}, globalSettings = {} } = {}) {
+function prepared(t, agents, { effect = 'append', range = { start: 1, count: 1 }, review = false, translation = false, configure = () => {}, globalSettings = {}, imagePolicy = false } = {}) {
     const f = fixture(t);
     const directories = f.scope.directories;
     f.records[1].extra = {};
@@ -52,7 +52,7 @@ function prepared(t, agents, { effect = 'append', range = { start: 1, count: 1 }
     const source = effect === 'append' ? f.source() : captureRoleplaySource(f.scope, { locator: f.locator,
         ...(effect === 'replace' ? { range } : { message: 1 }) });
     const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 4000,
-        serverPrompt: true, trigger: { append: 'normal', replace: 'regenerate', continue: 'continue', swipe: 'swipe' }[effect] });
+        serverPrompt: true, ...(imagePolicy ? { mediaPolicyVersion: 1 } : {}), trigger: { append: 'normal', replace: 'regenerate', continue: 'continue', swipe: 'swipe' }[effect] });
     const request = { binding: { kind: 'profile', ...captureChatProfile(directories, 'main') }, maxTokens: 32,
         characterName: 'Nova', serverPrompt: true, worldInfo, messages: [] };
     const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'agent-pipeline', effect, source, request });
@@ -433,4 +433,33 @@ test('a damaged postprocessing proof cannot publish a reply or tracker state', a
         } }), /Agent|processing|proof|recovery/i);
     assert.equal(f.saved().length, 3);
     assert.deepEqual(f.saved()[2].swipes, f.records[2].swipes);
+});
+
+for (const mode of ['display-only', 'caption']) test(`versioned ${mode} images stay consistent through every bundled reply rewrite`, async t => {
+    const names = ['continuity-corrector', 'character-authenticity', 'format-fixer', 'user-agency-guard', 'knowledge-guard', 'friction-keeper', 'nsfw-enhancer', 'dialogue-humaniser', 'repetition-breaker', 'length-trimmer', 'proofreader'];
+    const agents = names.map(name => {
+        const template = JSON.parse(fs.readFileSync(new URL(`../public/scripts/extensions/in-chat-agents/templates/${name}.json`, import.meta.url)));
+        return { ...template, enabled: true, sourceTemplateId: template.id };
+    });
+    const { attachmentIdentity } = await import('../public/scripts/prompt-media-policy.js');
+    const f = prepared(t, agents, { imagePolicy: true, globalSettings: { appendAgentsExecutionMode: 'sequential' }, configure(records) {
+        const item = { type: 'image', url: 'data:image/png;base64,BROKEN', title: 'secret-signal PRIVATE_IMAGE_TITLE', append_title: true };
+        item.neconyan_prompt = { version: 1, mode, attachment_hash: roleplayHash(attachmentIdentity(item)),
+            ...(mode === 'caption' ? { caption: { source: 'custom', text: 'Reviewed visible description' } } : {}) };
+        records[1].extra.media = [item];
+    } });
+    let mainCalls = 0, agentCalls = 0;
+    const inspect = messages => {
+        const text = JSON.stringify(messages);
+        assert.doesNotMatch(text, /PRIVATE_IMAGE_TITLE|BOUND_LORE_FROM_AGENT|image_url|BROKEN/);
+        return text;
+    };
+    await f.run({ generate: paid('main', ({ messages }) => {
+        mainCalls++; const text = inspect(messages); assert.match(text, /Original/);
+        if (mode === 'caption') assert.match(text, /Reviewed visible description/);
+        return 'Main output';
+    }), generateAgent: paid('rewrite', ({ messages }) => { agentCalls++; inspect(messages); return `Pass ${agentCalls}`; }) });
+    assert.equal(mainCalls, 1); assert.equal(agentCalls, 11);
+    assert.match(f.saved()[1].extra.media[0].url, /BROKEN/);
+    await f.run({ generate: () => assert.fail('Repeated main'), generateAgent: () => assert.fail('Repeated rewrite') });
 });

@@ -1,3 +1,4 @@
+import { MANAGED_IMAGE_MARKER } from './import-managed-images.js';
 import { SETTINGS_FILE, USER_DIRECTORY_TEMPLATE } from '../constants.js';
 import { operationError } from './store.js';
 
@@ -12,6 +13,7 @@ export function normaliseCoreImportParts(parts = CORE_IMPORT_PARTS) {
 }
 
 function importPart(relative, directory) {
+    if (relative === MANAGED_IMAGE_MARKER && !directory) return 'chats';
     const root = relative.split('/')[0];
     if (root === 'characters') return 'characters';
     if (root === USER_DIRECTORY_TEMPLATE.worlds) return 'lorebooks';

@@ -274,6 +274,7 @@ async function postSubmission(payload, account, url = '/api/roleplay/workflow/su
     });
     const body = await response.json().catch(() => null);
     if (account !== getCurrentUserHandle()) throw new Error('account_changed');
+    if (!response.ok && body?.imageIssue) globalThis.dispatchEvent(new CustomEvent('neconyan:image-input-refused', { detail: body.imageIssue }));
     if (!response.ok) throw Object.assign(new Error(body?.error || `The ${payload.name} workflow was refused (${response.status}).`), { status: response.status, body });
     return body;
 }

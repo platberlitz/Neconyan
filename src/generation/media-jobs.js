@@ -1,3 +1,4 @@
+import { assertMutableImagePath } from '../managed-image-files.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { acceptJob, getJob } from '../jobs/store.js';
@@ -273,6 +274,7 @@ export function publishNativeMediaFile(context, { relative, before, bytes, check
                 const fresh = readRoleplayFile(filename, 25 * 1024 * 1024);
                 if (roleplayHash(mediaFileEvidence(fresh)) !== roleplayHash(before)) throw fail('The media file changed before replacement.', 'MEDIA_SOURCE_CHANGED');
             };
+            assertMutableImagePath(base.directories, filename);
             tryWriteFileSync(filename, Buffer.from(bytes), { mode: 0o600 }, before ? {
                 replaceFileOnly: true, expectedFileIdentity: { dev: BigInt(before.physical.dev), ino: BigInt(before.physical.ino) },
                 validateBeforeReplace: validate,

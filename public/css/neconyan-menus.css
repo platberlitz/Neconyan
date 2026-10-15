@@ -514,3 +514,37 @@ body.neconyan dialog.language-choice-popup {
 body.neconyan dialog.language-choice-popup .popup-button-ok {
     transition: none;
 }
+
+/* Image input review is a settings surface; long migrated titles must wrap on phones. */
+#prompt-media-review,
+#prompt-media-review .flexFlowColumn {
+    align-items: stretch;
+    text-align: start;
+    min-inline-size: 0;
+    gap: 12px;
+}
+#prompt-media-review fieldset {
+    margin-inline: 0;
+    min-inline-size: 0;
+    inline-size: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 8px;
+    padding: 12px;
+}
+#prompt-media-review p,
+#prompt-media-review label,
+#prompt-media-review legend {
+    overflow-wrap: anywhere;
+    text-align: start;
+}
+#prompt-media-review p { margin-block: 0; }
+#prompt-media-review input[type="file"],
+#prompt-media-review select,
+#prompt-media-review textarea {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    box-sizing: border-box;
+}
+#prompt-media-review .checkbox_label { justify-content: flex-start; }
+#prompt-media-review [hidden] { display: none; }

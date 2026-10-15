@@ -1516,7 +1516,7 @@ test('a damaged saved image result refuses delivery without contacting the provi
     await assert.rejects(generateQuickImageGenJobImage(context, { ...imageRequest, fetch: () => assert.fail('Provider replayed') }), { code: 'QIG_RESULT_RECOVERY' });
 });
 
-test('a Conversation image resumes from its saved provider result without paying or skipping for cooldown', async () => {
+for (const imageChoice of ['legacy', 'default', 'include', 'caption', 'display-only']) test(`a Conversation image resumes with its accepted ${imageChoice} choice without another paid request`, async () => {
     const directories = tempRoot();
     const branch = { id: 'main', name: 'Main', createdAt: 1, messages: [{ id: 'm1', role: 'user', name: 'User', mes: 'Hello' }] };
     fs.writeFileSync(path.join(directories.root, 'settings.json'), JSON.stringify({
@@ -1534,6 +1534,8 @@ test('a Conversation image resumes from its saved provider result without paying
         quickImageGenSettingsFingerprint: quickImageGenSettingsFingerprint(togetherSettings),
         macros: { extra: { character: { name: 'Nova', description: 'silver hair' } } },
     };
+    if (imageChoice !== 'legacy') snapshot.mediaPolicyVersion = 1;
+    if (!['legacy', 'default'].includes(imageChoice)) snapshot.quickImageGenChatImageInput = imageChoice;
     const speaker = snapshot.speaker;
     let calls = 0;
     const generateImage = createConversationImageGenerator({ fetchImpl: async () => { calls++; return jsonResponse({ data: [{ b64_json: PNG_BASE64 }] }); } });
@@ -1547,6 +1549,7 @@ test('a Conversation image resumes from its saved provider result without paying
         fetch: async () => { calls++; return jsonResponse({ data: [{ b64_json: PNG_BASE64 }] }); } });
     const changed = JSON.parse(fs.readFileSync(path.join(directories.root, 'settings.json'), 'utf8'));
     changed.extension_settings.neconyan_conversation.characters['nova.png'].branches.main.sessionMarkers = { image_at: Date.now() };
+    changed.extension_settings['quick-image-gen'].conversationChatImageInput = imageChoice === 'display-only' ? 'include' : 'display-only';
     fs.writeFileSync(path.join(directories.root, 'settings.json'), JSON.stringify(changed));
     assert.equal(await generateImage(context, snapshot, '', speaker), true);
     assert.equal(calls, 1);
@@ -1556,6 +1559,10 @@ test('a Conversation image resumes from its saved provider result without paying
     assert.equal(calls, 1);
     assert.equal(JSON.parse(fs.readFileSync(path.join(directories.root, 'settings.json'), 'utf8'))
         .extension_settings.neconyan_conversation.characters['nova.png'].branches.main.messages.length, 2);
+    const delivered = JSON.parse(fs.readFileSync(path.join(directories.root, 'settings.json'), 'utf8'))
+        .extension_settings.neconyan_conversation.characters['nova.png'].branches.main.messages[1];
+    if (imageChoice === 'legacy') assert.equal(Object.hasOwn(delivered.extra, 'neconyan_image_prompt'), false);
+    else assert.equal(delivered.extra.neconyan_image_prompt.mode, imageChoice === 'default' ? 'include' : imageChoice);
 });
 
 test('image prompt builder and keyword detector match the browser policy', () => {

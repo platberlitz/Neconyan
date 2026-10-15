@@ -1,3 +1,4 @@
+import { projectBrowserPromptMedia } from '../../prompt-media-client.js';
 import { ensureImageFormatSupported, getBase64Async, getFileExtension, isTrueBoolean, saveBase64AsFile } from '../../utils.js';
 import { getContext, extension_settings, renderExtensionTemplateAsync } from '../../extensions.js';
 import { appendMediaToMessage, chat_metadata, eventSource, event_types, getRequestHeaders, saveChatConditional, saveSettingsDebounced, substituteParams, updateMessageTokenAccounting } from '../../../script.js';
@@ -694,9 +695,16 @@ export async function init() {
         }
 
         const message = getContext().chat[messageId];
+        let decisions;
+        try { decisions = message ? projectBrowserPromptMedia([{}, message]).decisions : []; } catch (error) {
+            console.warn('Automatic image description needs an image input review:', error.message);
+            return;
+        }
         if (Array.isArray(message?.extra?.media) && message.extra.media.length > 0) {
             for (let mediaIndex = 0; mediaIndex < message.extra.media.length; mediaIndex++) {
                 const mediaAttachment = message.extra.media[mediaIndex];
+                if ((mediaAttachment.type ?? MEDIA_TYPE.IMAGE) === MEDIA_TYPE.IMAGE
+                    && !decisions.some(item => item.mediaIndex === mediaIndex && item.autoCaption)) continue;
                 if (mediaAttachment.type === MEDIA_TYPE.VIDEO && !isVideoCaptioningAvailable()) {
                     continue;
                 }

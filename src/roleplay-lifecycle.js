@@ -1,3 +1,4 @@
+import { pinnedImageRepairReceipts } from './roleplay-image-repair-store.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { addChatNavigationCharacterRenameSteps, assertChatNavigationCharacterRename, finishChatNavigationCharacterRename } from './chat-navigation-lifecycle.js';
@@ -173,7 +174,9 @@ function finishedState(state, pending, physical) {
 const CHAT_RECEIPT_KEEP_REVISIONS = 16;
 
 function prunableChatWriteReceipts(state, scope, keepKeyHash) {
-    const kept = new Set([keepKeyHash]);
+    const pins = pinnedImageRepairReceipts(scope, state);
+    if (pins === null) return [];
+    const kept = new Set([keepKeyHash, ...pins]);
     for (const resource of Object.values(state.resources)) if (resource.busySubmission) kept.add(resource.busySubmission);
     for (const receipt of Object.values(state.submissions)) {
         if (!receipt.jobId || !['preparing', 'accepted'].includes(receipt.state)) continue;
@@ -863,6 +866,11 @@ function writeIntent(state, input) {
         records: input.records, allowShrink: input.allowShrink === true, backup,
         ...(input.sourceKind === 'storage' ? { sourceKind: 'storage' } : {}), ...(input.force === true ? { force: true } : {}) });
     return { operationKeyHash: key(state, input.operationKey), intentHash, mode, locator, backup };
+}
+
+/** Expose the native identity for durable repair pins without duplicating intent hashing. */
+export function roleplayChatWriteIdentity(lease, input) {
+    return writeIntent(roleplayLease(lease).state, input);
 }
 
 function prepareAndApplyChatWrite(lease, input, host, intent, { source, before, beforeBytes, instanceId, expectedVacancy = null }) {

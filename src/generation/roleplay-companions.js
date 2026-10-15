@@ -1,3 +1,4 @@
+import { projectPromptMediaRecords } from '../../public/scripts/prompt-media-policy.js';
 import path from 'node:path';
 import { readArtifact, writeArtifact, createProviderScope } from '../jobs/artifacts.js';
 import { readRoleplayFile, roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
@@ -124,6 +125,7 @@ async function worldInfoContext(context, options, agents, identity) {
     const snapshot = captureRoleplayWorldInfo(options.base, options.snapshot.account, options.snapshot.source, {
         avatar: options.snapshot.avatar, tokenizer: options.snapshot.tokenizer, maxContext: 4096, serverPrompt: true, trigger: options.snapshot.global.trigger,
         agentIds: options.snapshot.agents?.forcedIds ?? [], agentContext: options.snapshot.agentContext ?? false,
+        mediaPolicyVersion: options.snapshot.mediaPolicyVersion ?? 0, mediaBinding: options.snapshot.mediaBinding ?? null,
     });
     const pre = readArtifact(context.directories, context.job.id, 'roleplay-agents-pre');
     const selection = await prepareRoleplayWorldInfo(options.base, snapshot, { macros: options.macros,
@@ -159,7 +161,7 @@ export async function runRoleplayCompanions(context, options) {
     if (!pre || pre.intentHash !== roleplayHash(context.job.intent) || pre.policyHash !== roleplayHash(snapshot.agents)) throw fail('The companion activation input needs recovery.');
     const { hash: preHash, ...preData } = pre;
     if (preHash !== roleplayHash(preData)) throw fail('The companion activation input is damaged.');
-    const preparedRecords = companionHostRecords(records, value, effect, assistantName);
+    const preparedRecords = companionHostRecords(projectPromptMediaRecords(records, snapshot.mediaPolicy, { hash: roleplayHash }), value, effect, assistantName);
     const messages = preparedRecords.slice(1);
     const hostResults = getActiveCompanionResults(messages.at(-1));
     const capacity = captureCompanionCapacity(all, records, snapshot.source, { agentContext: Boolean(snapshot.agentContext),
@@ -242,7 +244,8 @@ export async function runRoleplayCompanions(context, options) {
             model = cleaned.model ?? model;
         }
         const post = await runRoleplayAgentPostprocessing(shared, { ...options, companionAgent: agent, generationType: 'companion_output',
-            namespace: `companion:${agent.id}`, value: text, records: preparedRecords, assertCurrent, generate });
+            namespace: `companion:${agent.id}`, value: text, records: preparedRecords,
+            metadataRecords: companionHostRecords(records, value, effect, assistantName), assertCurrent, generate });
         text = content(post.text);
         if (isRepairTarget(agent) && agent.category === 'tracker') {
             text = normalizeCompanionTrackerRepairPayload(agent, text).payload;
