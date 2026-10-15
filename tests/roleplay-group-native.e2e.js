@@ -240,6 +240,8 @@ for (const [viewport, phone, raceSettings, companionCount] of [
                 if (!submissions.length) {
                     // Move the real saved revision after the browser captured its proof.
                     await page.evaluate(async () => {
+                        // An unchanged body is not uploaded again, so change a setting the turn does not read.
+                        (await import('/scripts/extensions.js')).extension_settings.raceTest = Date.now();
                         if (!await (await import('/script.js')).saveSettings(0, { returnResult: true })) throw new Error('The racing settings save failed.');
                     });
                 }

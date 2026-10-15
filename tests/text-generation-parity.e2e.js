@@ -70,6 +70,8 @@ for (const phone of [false, true]) {
             const core = await import('/script.js');
             const { cancelDebounce } = await import('/scripts/utils.js');
             cancelDebounce(core.saveSettingsDebounced);
+            // An unchanged body is not uploaded again, so change a setting the reply does not read.
+            (await import('/scripts/extensions.js')).extension_settings.heldSaveTest = true;
             return core.saveSettings(0, { returnResult: true });
         });
         await received;
