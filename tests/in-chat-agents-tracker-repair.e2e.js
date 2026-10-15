@@ -17,7 +17,7 @@ function labelBoundsWithinButton(element) {
     return { x: label.x - button.x, y: label.y - button.y, width: label.width, height: label.height };
 }
 
-async function openTrackerChat(account, chatName, broken, agentOverrides = {}) {
+async function openTrackerChat(account, chatName, broken, agentOverrides = {}, { templateName = 'relationship-tracker', companionContent } = {}) {
     const request = { avatar_url: account.avatar, file_name: chatName };
     const vacant = await account.context.request.post('/api/chats/get', {
         headers: account.headers, data: { ...request, allow_create: true },
@@ -25,24 +25,77 @@ async function openTrackerChat(account, chatName, broken, agentOverrides = {}) {
     expect(vacant.ok()).toBe(true);
     const vacancy = JSON.parse(vacant.headers()['x-neconyan-roleplay']);
     await account.post('/api/chats/save', { ...request,
-        chat: [{ chat_metadata: {} }, { name: 'Durable Nova', is_user: false, mes: `Before the tracker.\n\n${broken}\n\nAfter the tracker.`, extra: {} }],
+        chat: [{ chat_metadata: {} }, { name: 'Durable Nova', is_user: false, mes: `Before the tracker.\n\n${broken}\n\nAfter the tracker.`,
+            extra: companionContent ? { inChatAgentCompanionResults: { [agentOverrides.id]: {
+                status: 'done', content: companionContent, agentName: 'Event Tracker', agentCategory: 'tracker', format: 'markdown', displayMode: 'card',
+            } } } : {} }],
         roleplay: { account: vacancy.account, vacancy: vacancy.vacancy, operationKey: randomUUID() },
     });
     const page = await account.open({ workspace: false });
+    await page.addLocatorHandler(page.locator('#neconyan-tour-coachmark'), async tour => {
+        await tour.locator('[data-tour-coach-skip]').click();
+    });
     // eslint-disable-next-line playwright/no-networkidle -- Inspect only after the disposable preview finishes startup.
     await page.waitForLoadState('networkidle');
-    await page.evaluate(async ({ avatar, chatName, agentOverrides }) => {
+    await page.evaluate(async ({ avatar, chatName, agentOverrides, templateName }) => {
         const context = window.SillyTavern.getContext();
         await context.getCharacters();
         await context.selectCharacterById(context.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
         const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
-        const template = await (await fetch('/scripts/extensions/in-chat-agents/templates/relationship-tracker.json')).json();
+        const template = await (await fetch(`/scripts/extensions/in-chat-agents/templates/${templateName}.json`)).json();
         const bundles = await (await fetch('/scripts/extensions/in-chat-agents/templates/regex-bundles.json')).json();
         await store.saveAgent({ ...template, id: 'repair-relationship', enabled: true, regexScripts: bundles[template.id], ...agentOverrides });
         await (await import('/script.js')).openCharacterChat(chatName);
-    }, { avatar: account.avatar, chatName, agentOverrides });
+    }, { avatar: account.avatar, chatName, agentOverrides, templateName });
     await acknowledgeActiveSettings(page);
     return { page, request };
+}
+
+for (const phone of [false, true]) {
+    test(`Companion wrench repairs a mixed Event Tracker note on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
+        const event = '[EVENT|✅ RESOLVED|The Archon War question was answered|Tonight, kitchen table]\ncontext: Alhaitham now knows which war Kris fought in.\n[/EVENT]';
+        const promise = '[EVENT|💬 PROMISE|Defer the remaining war questions|Tomorrow]\ncontext: They agreed to talk after resting.\n[/EVENT]';
+        const broken = `${event.replace('[EVENT|', '[EVENT|⚠️ THREAT|')}\n\n${promise}`;
+        const fixed = `${event}\n\n${promise}`;
+        const account = await app.account({ phone, activeConnection: true,
+            configureSettings: saved => { saved.extension_settings.connectionManager.profiles[0].model = MODEL; } });
+        app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: event } }] };
+        const chatName = 'Mixed Event Tracker repair';
+        const { page, request } = await openTrackerChat(account, chatName, 'The scene is unchanged.', {
+            id: 'repair-event', execution: 'companion', companion: { trigger: 'manual', displayMode: 'card', format: 'markdown' },
+        }, { templateName: 'event-tracker', companionContent: broken });
+        const card = page.locator('#chat .ica--companion-card[data-agent-id="repair-event"]');
+        const note = card.locator('.ica--companion-body');
+        await expect(note).toContainText('[EVENT|⚠️ THREAT|✅ RESOLVED|');
+        await expect(note.locator('details')).toHaveCount(1);
+        await card.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: info.outputPath('event-before.png') });
+        await card.locator('[data-action="fix"]').click();
+        await expect(card.locator('.ica--companion-error')).toContainText('Showing the previous note.', { timeout: 30000 });
+        await expect(note).toContainText('[EVENT|⚠️ THREAT|✅ RESOLVED|');
+        await expect(note.locator('details')).toHaveCount(1);
+        await expect.poll(async () => (await account.post('/api/chats/get', request))[1].extra.inChatAgentCompanionResults['repair-event'].content).toBe(broken);
+        app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: fixed } }] };
+        await card.locator('[data-action="fix"]').click();
+        await expect(note).not.toContainText('[EVENT|', { timeout: 30000 });
+        await expect(note.locator('details')).toHaveCount(2);
+        await expect(card.locator('.ica--companion-error')).toHaveCount(0);
+        expect(app.provider.calls).toHaveLength(2);
+        await expect.poll(async () => (await account.post('/api/chats/get', request))[1].extra.inChatAgentCompanionResults['repair-event'].content).toBe(fixed);
+        const geometry = await card.evaluate(element => ({ left: element.getBoundingClientRect().left,
+            right: element.getBoundingClientRect().right, width: window.innerWidth, display: window.getComputedStyle(element).display }));
+        expect(geometry.left).toBeGreaterThanOrEqual(0);
+        expect(geometry.right).toBeLessThanOrEqual(geometry.width + 1);
+        expect(geometry.display).not.toBe('none');
+        await info.attach('event-geometry', { body: JSON.stringify(geometry), contentType: 'application/json' });
+        await page.screenshot({ path: info.outputPath('event-after.png') });
+        await card.locator('[data-action="fix"]').click();
+        await expect(card.locator('[data-action="fix"]')).toBeEnabled();
+        expect(app.provider.calls).toHaveLength(2);
+        await page.evaluate(async chatName => (await import('/script.js')).openCharacterChat(chatName), chatName);
+        await expect(note.locator('details')).toHaveCount(2);
+        await expect(page.locator('#chat .mes_text')).toContainText('The scene is unchanged.');
+    });
 }
 
 for (const { phone, kind } of [false, true].flatMap(phone => ['header', 'field order'].map(kind => ({ phone, kind })))) {

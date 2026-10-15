@@ -50,6 +50,7 @@ import {
 } from './agent-store.js';
 import { regexFromString, uuidv4 } from '../../utils.js';
 import { resetChatBackupSequence } from '../../chat-backup-sequence.js';
+import { withReadOnlyVariables } from '../../variable-read-only.js';
 import { isKimiK3Model } from '../../openai-model-capabilities.js';
 import { isGenerationLengthFinish } from '../../generation-request-controls.js';
 import { resolveExpressionsAgentProfile } from '../expressions/expressions-agent-utils.js';
@@ -85,10 +86,9 @@ import { buildRegexScriptRefsForAgent, cacheAgentRegexScripts, migrateLegacyRege
 import { AGENT_REGEX_PLACEMENT, applyRegexScriptList } from './regex-scripts.js';
 import { getCompanionReferenceIds, stripEmptyOutputSentinelLines } from './companion/companion-shared.js';
 import {
-    findTrackerBlocks,
     getTrackerMetadataKey,
     getTrackerRepairPayload,
-    inspectTrackerState,
+    inspectTrackerRepairState as inspectTrackerRepairStateWithScripts,
     mergeTrackerRepairPayload,
     repairTrackerFieldOrder,
     TRACKER_REPAIR_INSTRUCTION,
@@ -6445,27 +6445,10 @@ export async function runAgentOnTarget(agentId, target) {
 }
 
 function inspectTrackerRepairState(agent, text, characterOverride) {
-    const inspection = inspectTrackerState(agent, text);
-    if (inspection.status !== 'valid') return inspection;
-
-    const displayScripts = getAgentRegexScripts(agent).filter(script =>
-        !script.disabled && script.markdownOnly && !script.promptOnly
-        && script.placement?.includes(AGENT_REGEX_PLACEMENT.AI_OUTPUT),
-    );
-    if (displayScripts.length === 0) return inspection;
-
-    // A closed block can still have a broken header or missing fields. Check each
-    // block with the same display rules used by the message, not just extraction.
-    const broken = inspection.payloads.some(payload => {
-        const rendered = applyRegexScriptList(payload, displayScripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, {
-            characterOverride,
-            isMarkdown: true,
-            substituteParamsFn: substituteParams,
-            substituteParamsExtendedFn: substituteParamsExtended,
-        });
-        return rendered === payload || (inspection.tag && findTrackerBlocks(rendered, inspection.tag).length > 0);
-    });
-    return broken ? { ...inspection, status: 'unrenderable' } : inspection;
+    return withReadOnlyVariables(() => inspectTrackerRepairStateWithScripts(agent, text, {
+        scripts: getAgentRegexScripts(agent), characterOverride,
+        substituteParamsFn: substituteParams, substituteParamsExtendedFn: substituteParamsExtended,
+    }));
 }
 
 export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = agentGenerationCancelRevision } = {}) {

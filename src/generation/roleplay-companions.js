@@ -8,7 +8,7 @@ import { readRoleplayAgents } from './roleplay-agents-source.js';
 import { isNativeCompanion } from './agent-definition.js';
 import { runAgentModelStep } from './agent-model-step.js';
 import { runRoleplayAgentPostprocessing } from './roleplay-agent-processing.js';
-import { companionMessageTokens, previousCompanionNotes, resolveCompanionText, singleCompanionPrompt, batchCompanionPrompt } from './companion-context.js';
+import { companionEnvironment, companionMessageTokens, previousCompanionNotes, resolveCompanionText, singleCompanionPrompt, batchCompanionPrompt } from './companion-context.js';
 import { classifyCompanionFailureMessage, getActiveCompanionResults, isEmptyOutputSentinel, MEMORY_SHARD_TEMPLATE_ID, normalizeCompanionChatHistoryInjection } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { getCompanionTrackerAutoRepairPayload, inspectCompanionTrackerOutput, normalizeCompanionTrackerRepairPayload } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
 import { captureCompanionCapacity, MAX_COMPANION_RESULT_BYTES } from './companion-capacity.js';
@@ -206,6 +206,14 @@ export async function runRoleplayCompanions(context, options) {
     };
     const usageOf = async (prompt, raw) => ({ inputTokens: await count(JSON.stringify(prompt.messages)),
         outputTokens: await count(JSON.stringify({ role: 'assistant', content: content(raw) })) });
+    const trackerDisplayOptions = agent => {
+        // Display validation may override the speaker, but must not mutate the accepted request.
+        const environment = companionEnvironment({ ...input, macros: { ...input.macros, names: { ...input.macros.names } } }, agent);
+        const evaluate = (text, postProcess) => environment.evaluate(text, { legacy: !snapshot.experimentalMacroEngine, strictCapabilities: true, postProcess });
+        return { characterOverride: assistantName,
+            substituteParamsFn: (text, extra = {}) => evaluate(text, extra.postProcessFn),
+            substituteParamsExtendedFn: (text, _extra, postProcess) => evaluate(text, postProcess) };
+    };
     // Automatic tracker runs keep only the tracker block: story prose is regenerated once, a broken block gets one repair pass.
     const cleanTrackerOutput = async (agent, text, sections, stepName) => {
         const usage = [];
@@ -218,21 +226,22 @@ export async function runRoleplayCompanions(context, options) {
         };
         const done = value => ({ text: value, model, usage });
         const failed = reason => ({ error: reason, model, usage });
-        let check = inspectCompanionTrackerOutput(agent, text);
+        const displayOptions = trackerDisplayOptions(agent);
+        let check = inspectCompanionTrackerOutput(agent, text, displayOptions);
         if (check.action === 'keep') return done(check.content);
         let broken = text;
         if (check.action === 'regenerate') {
             const fallback = check.content;
             const next = await ask(false, sections, 'tracker-regenerate');
             if (next === null) return failed('The reply reached its output limit.');
-            check = inspectCompanionTrackerOutput(agent, next);
+            check = inspectCompanionTrackerOutput(agent, next, displayOptions);
             if (check.action === 'keep') return done(check.content);
             if (check.content || fallback) return done(check.content || fallback);
             broken = next;
         }
         const repaired = await ask(true, [...sections, { title: 'Current companion agent note', content: broken }], 'tracker-repair');
         if (repaired === null) return failed('The reply reached its output limit.');
-        const payload = getCompanionTrackerAutoRepairPayload(agent, repaired);
+        const payload = getCompanionTrackerAutoRepairPayload(agent, repaired, { ...displayOptions, previousText: broken });
         return payload ? done(payload) : failed('Tracker repair returned invalid output.');
     };
     const finishResult = async (agent, raw, model, prompt, runIdentity, tokenUsage, coverage, sections = [], stepName = `companion:${agent.id}`) => {
@@ -255,7 +264,9 @@ export async function runRoleplayCompanions(context, options) {
             metadataRecords: companionHostRecords(records, value, effect, assistantName), assertCurrent, generate });
         text = content(post.text);
         if (isRepairTarget(agent) && agent.category === 'tracker') {
-            text = normalizeCompanionTrackerRepairPayload(agent, text).payload;
+            text = normalizeCompanionTrackerRepairPayload(agent, text, {
+                ...trackerDisplayOptions(agent), previousText: hostResults[agent.id]?.content,
+            }).payload;
             if (!text) return failedResult(agent, runIdentity, 'Tracker repair returned invalid output.', model);
         } else if (!text) return failedResult(agent, runIdentity, 'Companion returned no output.', model);
         const prior = Object.hasOwn(hostResults, agent.id) ? hostResults[agent.id] : {};
@@ -275,7 +286,7 @@ export async function runRoleplayCompanions(context, options) {
         if (cached) return remember(cached);
         const prior = Object.hasOwn(hostResults, agent.id) ? hostResults[agent.id] : null;
         if (isRepairTarget(agent) && agent.category === 'tracker' && prior?.content) {
-            const normalised = normalizeCompanionTrackerRepairPayload(agent, prior.content).payload;
+            const normalised = normalizeCompanionTrackerRepairPayload(agent, prior.content, trackerDisplayOptions(agent)).payload;
             if (normalised) {
                 const record = { ...prior, ...baseRecord(agent, null), status: 'done', content: normalised, error: '', updatedAt: Date.now() };
                 delete record.lastRunError; delete record.lastRunFailureKind; delete record.failureKind; delete record.previousResult;

@@ -1,10 +1,11 @@
 import { escapeRegex } from '../../util/escape-regex.js';
+import { AGENT_REGEX_PLACEMENT, applyRegexScriptList, normalizeRegexScript } from './regex-scripts.js';
 
 function normalizeText(value = '') {
     return String(value ?? '').replaceAll(/\r\n?/g, '\n');
 }
 
-export const TRACKER_REPAIR_INSTRUCTION = 'Repair mode: produce the requested result again in the requested format. Keep scene prose, character dialogue, and narrative continuation outside the result. For choice/menu agents, return the bracketed choice or direction block.';
+export const TRACKER_REPAIR_INSTRUCTION = 'Repair mode: produce the requested result again in the requested format. Preserve every existing tracker record and its facts, including records that already have the correct format. Keep scene prose, character dialogue, and narrative continuation outside the result. For choice/menu agents, return the bracketed choice or direction block.';
 
 function getTrackerTagFromPattern(pattern = '') {
     return String(pattern).match(/\\+\[([A-Za-z][A-Za-z0-9_-]*)/)?.[1] ?? '';
@@ -25,9 +26,10 @@ function getTrackerTag(agent = {}, text = '') {
  * as [NPC:MAJOR|...] share the base tag's [/NPC] closer.
  * @param {string} text
  * @param {string} tag
+ * @param {{ isInlineBlock?: (header: string) => boolean }} options
  * @returns {Array<{ complete: boolean, replaceable: boolean, start: number, end: number, text: string }>}
  */
-export function findTrackerBlocks(text, tag) {
+export function findTrackerBlocks(text, tag, { isInlineBlock = () => false } = {}) {
     const source = normalizeText(text);
     if (!tag) return [];
 
@@ -57,6 +59,14 @@ export function findTrackerBlocks(text, tag) {
                 end,
                 text: source.slice(openMatch.index, end),
             });
+            continue;
+        }
+
+        // Some configured display rules consume a whole one-line record (NPC references,
+        // Census sightings). Its boundary is the header, never the following story prose.
+        const header = source.slice(openMatch.index, openingBracketEnd + 1);
+        if (hasCompleteOpener && openingBracketEnd < nextOpenStart && isInlineBlock(header)) {
+            blocks.push({ complete: true, replaceable: true, start: openMatch.index, end: openingBracketEnd + 1, text: header });
             continue;
         }
 
@@ -202,15 +212,19 @@ export function writeTrackerMetadataValue(metadata, key, value = '') {
  * complete [TAG]...[/TAG] block look broken.
  * @param {object} agent
  * @param {string} text
+ * @param {object} options display regex substitution options
  */
-export function inspectTrackerState(agent = {}, text = '') {
+export function inspectTrackerState(agent = {}, text = '', options = {}) {
     const pattern = String(agent?.postProcess?.extractPattern ?? '').trim();
     const source = normalizeText(text);
     const patternTag = getTrackerTagFromPattern(pattern);
     const tag = getTrackerTag(agent, source);
     const { regex, error } = compileExtractPattern(pattern);
     const matches = regex ? [...source.matchAll(regex)].map(match => String(match[0] ?? '')).filter(Boolean) : [];
-    const blocks = findTrackerBlocks(source, tag);
+    const displayScripts = getTrackerDisplayScripts(agent, options);
+    const blocks = findTrackerBlocks(source, tag, {
+        isInlineBlock: header => displayScripts.length > 0 && canRenderTrackerRecord(header, tag, displayScripts, options),
+    });
     const completeBlocks = blocks.filter(block => block.complete);
     const malformedBlocks = blocks.filter(block => !block.complete);
     const structuralPayloads = completeBlocks.map(block => block.text.trim()).filter(Boolean);
@@ -273,13 +287,23 @@ export function getTrackerRepairPayload(agent = {}, text = '') {
  * Inline message repair intentionally continues to reject malformed spans.
  * @param {object} agent
  * @param {string} text
+ * @param {object} options display regex substitution options and optional previousText
  */
-export function normalizeCompanionTrackerRepairPayload(agent = {}, text = '') {
-    const source = normalizeText(text);
-    const inspection = getTrackerRepairPayload(agent, source);
-    if (inspection.payload) {
-        return rejectUnlabelledTrackerBullets(agent, inspection);
+export function normalizeCompanionTrackerRepairPayload(agent = {}, text = '', options = {}) {
+    const inspection = normalizeCompanionTrackerPayload(agent, text, options);
+    // A repair must not silently drop the other records in a mixed good/bad note.
+    if (inspection.payload && options.previousText) {
+        const previous = inspectTrackerState(agent, options.previousText, options);
+        const recordCount = Math.max(previous.payloads.length, previous.blocks.filter(block => !block.text.startsWith('[/')).length);
+        if (inspection.payloads.length < recordCount) return { ...inspection, status: 'missing-records', payload: '' };
     }
+    return inspection;
+}
+
+function normalizeCompanionTrackerPayload(agent, text, options) {
+    const source = normalizeText(text);
+    const inspection = getRenderableTrackerRepairPayload(agent, repairTrackerFieldOrder(agent, source), options);
+    if (inspection.payload) return inspection;
 
     const malformedBlocks = inspection.blocks.filter(block => !block.complete);
     const firstContentIndex = source.search(/\S/u);
@@ -297,7 +321,33 @@ export function normalizeCompanionTrackerRepairPayload(agent = {}, text = '') {
         normalized = `${normalized}\n[/${inspection.tag}]`;
     }
 
-    return rejectUnlabelledTrackerBullets(agent, getTrackerRepairPayload(agent, normalized));
+    return getRenderableTrackerRepairPayload(agent, repairTrackerFieldOrder(agent, normalized), options);
+}
+
+/** Check every record against the display rules as well as its block boundaries. */
+export function inspectTrackerRepairState(agent = {}, text = '', options = {}) {
+    const inspection = inspectTrackerState(agent, text, options);
+    if (inspection.status !== 'valid') return inspection;
+    const displayScripts = getTrackerDisplayScripts(agent, options);
+    if (displayScripts.length === 0) return inspection;
+
+    const broken = inspection.payloads.some(payload => !canRenderTrackerRecord(payload, inspection.tag, displayScripts, options));
+    return broken ? { ...inspection, status: 'unrenderable' } : inspection;
+}
+
+function getTrackerDisplayScripts(agent, { scripts = agent.regexScripts ?? [] } = {}) {
+    return scripts.map(script => normalizeRegexScript(script)).filter(script =>
+        !script.disabled && script.markdownOnly && script.placement.includes(AGENT_REGEX_PLACEMENT.AI_OUTPUT));
+}
+
+function canRenderTrackerRecord(payload, tag, scripts, options) {
+    const rendered = applyRegexScriptList(payload, scripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, { ...options, isMarkdown: true });
+    return rendered !== payload && (!tag || findTrackerBlocks(rendered, tag).length === 0);
+}
+
+function getRenderableTrackerRepairPayload(agent, text, options) {
+    const inspection = inspectTrackerRepairState(agent, text, options);
+    return rejectUnlabelledTrackerBullets(agent, { ...inspection, payload: inspection.status === 'valid' ? inspection.value : '' });
 }
 
 function rejectUnlabelledTrackerBullets(agent, inspection) {
@@ -355,16 +405,17 @@ function getTextOutsideBlocks(source, blocks) {
  * Only trackers whose configuration names a [TAG]...[/TAG] block are checked.
  * @param {object} agent
  * @param {string} text
+ * @param {object} options display regex substitution options
  * @returns {{ action: 'keep'|'regenerate'|'repair', content: string, reason: string }}
  */
-export function inspectCompanionTrackerOutput(agent = {}, text = '') {
+export function inspectCompanionTrackerOutput(agent = {}, text = '', options = {}) {
     const source = normalizeText(text);
     const keep = (reason, content = source) => ({ action: 'keep', content, reason });
     if (agent?.category !== 'tracker' || !source.trim()) return keep('not-checked');
     const tag = getConfiguredTrackerTag(agent);
     if (!tag) return keep('not-checked');
 
-    const blocks = findTrackerBlocks(source, tag);
+    const blocks = inspectTrackerState(agent, source, options).blocks;
     const completeBlocks = blocks.filter(block => block.complete);
     const outside = getTextOutsideBlocks(source, completeBlocks);
     // Another block the tracker's own configuration asks for makes it a custom multi-block format;
@@ -385,6 +436,9 @@ export function inspectCompanionTrackerOutput(agent = {}, text = '') {
         if (hasUnlabelledTrackerBullets(agent, payload)) {
             return { action: 'repair', content: '', reason: 'unlabelled' };
         }
+        if (inspectTrackerRepairState(agent, payload, options).status !== 'valid') {
+            return { action: 'repair', content: '', reason: 'unrenderable' };
+        }
         if (isStoryLikeStrayText(outside)) {
             return { action: 'regenerate', content: payload, reason: 'story-text' };
         }
@@ -396,7 +450,7 @@ export function inspectCompanionTrackerOutput(agent = {}, text = '') {
     const trimmed = source.trim();
     const mistypedCloser = new RegExp(`(?:^|\\n)\\s*\\/?${escapeRegex(tag)}\\]\\s*$`, 'i');
     if (blocks.length === 1 && blocks[0].start === source.search(/\S/u) && mistypedCloser.test(trimmed)) {
-        const payload = normalizeCompanionTrackerRepairPayload(agent, trimmed).payload;
+        const payload = normalizeCompanionTrackerRepairPayload(agent, trimmed, options).payload;
         if (payload) return keep('closer-fixed', payload);
     }
     return { action: 'repair', content: '', reason: 'malformed' };
@@ -407,11 +461,14 @@ export function inspectCompanionTrackerOutput(agent = {}, text = '') {
  * than the manual repair: a block that never closes is rejected because it may hold story prose.
  * @param {object} agent
  * @param {string} text
+ * @param {object} options display regex substitution options
  */
-export function getCompanionTrackerAutoRepairPayload(agent = {}, text = '') {
-    const check = inspectCompanionTrackerOutput(agent, text);
-    if (check.action === 'keep') return normalizeCompanionTrackerRepairPayload(agent, check.content).payload;
-    return check.reason === 'story-text' ? check.content : '';
+export function getCompanionTrackerAutoRepairPayload(agent = {}, text = '', options = {}) {
+    const check = inspectCompanionTrackerOutput(agent, text, options);
+    if (check.action === 'keep' || check.reason === 'story-text') {
+        return normalizeCompanionTrackerRepairPayload(agent, check.content, options).payload;
+    }
+    return '';
 }
 
 /**

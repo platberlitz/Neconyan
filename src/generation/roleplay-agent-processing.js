@@ -5,7 +5,7 @@ import { ACTIVE_LORE_MACRO, buildAgentContextMacros, captureSecretsTrackerState,
 import { CONTINUITY_NOTES_MACRO, describeTextCorrections, isContinuityCorrector, latestContinuityNotes } from '../../public/scripts/extensions/in-chat-agents/continuity-link.js';
 import { applyRegexScriptList } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { buildRegexScriptRefsForAgent } from '../../public/scripts/extensions/in-chat-agents/regex-snapshot-store.js';
-import { inspectTrackerState, mergeTrackerRepairPayload, TRACKER_REPAIR_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
+import { inspectTrackerRepairState, mergeTrackerRepairPayload, repairTrackerFieldOrder, TRACKER_REPAIR_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
 import { buildPromptTransformSynthesisMessages, composePromptTransformDraft, planPromptTransformStages, runOrderedPromptTransformStages, runPromptTransformStages } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-synthesis.js';
 import { isLikelyPromptTransformRefusal } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-refusal.js';
 import { createMacroEnvironment } from '../macros/index.js';
@@ -438,16 +438,35 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     const environment = createMacroEnvironment(macros, {}, { readOnly: true });
     if (options.repairTrackers) {
         for (const agent of utilities.filter(item => item.postProcess.type === 'extract' && item.postProcess.extractVariable)) {
-            if (inspectTrackerState(agent, text).status === 'valid') continue;
+            aliases(environment, agent, text, generationType, options.assistantName, agentContextMacros(snapshot, options.mewmory, options.agentReference));
+            const displayOptions = { characterOverride: options.assistantName,
+                substituteParamsFn: (input, extra = {}) => environment.evaluate(input, { legacy: !snapshot.experimentalMacroEngine,
+                    strictCapabilities: true, postProcess: extra.postProcessFn }),
+                substituteParamsExtendedFn: (input, _extra, postProcess) => environment.evaluate(input, { legacy: !snapshot.experimentalMacroEngine,
+                    strictCapabilities: true, postProcess }) };
+            const inspection = inspectTrackerRepairState(agent, text, displayOptions);
+            if (inspection.status === 'valid') continue;
+            const reordered = repairTrackerFieldOrder(agent, text);
+            if (reordered !== text && inspectTrackerRepairState(agent, reordered, displayOptions).status === 'valid') {
+                text = reordered;
+                continue;
+            }
+            if (inspection.blocks.some(block => !block.replaceable) || !agent.prompt.trim()) {
+                runs.push({ agentId: agent.id, agentName: agent.name, mode: 'tracker-repair', status: 'error', changed: false,
+                    error: 'The tracker has no clear boundaries or repair instructions.' });
+                continue;
+            }
             const repairAgent = { ...agent, prompt: `${agent.prompt}\n\n${TRACKER_REPAIR_INSTRUCTION}`,
                 postProcess: { ...agent.postProcess, promptTransformMode: 'append' } };
             const run = await modelRun(context, options, repairAgent, text, `${options.namespace}:repair:${agent.id}`);
             const beforeText = text;
-            if (run.outputText) {
+            const repaired = inspectTrackerRepairState(agent, run.outputText, displayOptions);
+            if (run.status === 'done' && repaired.status === 'valid' && repaired.payloads.length >= inspection.blocks.length) {
                 const merged = mergeTrackerRepairPayload(agent, text, run.outputText, { prepend: prepend(agent, run.outputText) });
-                if (!merged.reason && inspectTrackerState(agent, merged.text).status === 'valid') text = merged.text;
+                if (!merged.reason) text = merged.text;
             }
-            runs.push({ ...run, mode: 'tracker-repair', beforeText, afterText: text, changed: text !== beforeText });
+            runs.push({ ...run, ...(text === beforeText && run.status === 'done' ? { status: 'error', error: 'Tracker repair returned invalid output.' } : {}),
+                mode: 'tracker-repair', beforeText, afterText: text, changed: text !== beforeText });
         }
     }
     if (!companionOutput && generationType !== 'impersonate' && (!manual || options.repairTrackers)) {

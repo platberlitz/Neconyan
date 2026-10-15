@@ -3410,7 +3410,41 @@ describe('in-chat agent post-processing runner', () => {
         expect(generateQuietPrompt).not.toHaveBeenCalled();
     });
 
-    test('restores the complete prior tracker companion result after invalid repair output', async () => {
+    describe('display-aware Companion tracker repair', () => {
+        const template = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/event-tracker.json', import.meta.url)));
+        const scripts = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/regex-bundles.json', import.meta.url)))[template.id];
+        const event = '[EVENT|✅ RESOLVED|The war question was answered|Tonight]\ncontext: The answer is the Archon War.\n[/EVENT]';
+        const promise = '[EVENT|💬 PROMISE|Defer the remaining questions|Tomorrow]\ncontext: They will talk after resting.\n[/EVENT]';
+        const broken = `${event.replace('|✅ RESOLVED|', '|⚠️ THREAT|✅ RESOLVED|')}\n\n${promise}`;
+        const fixed = `${event}\n\n${promise}`;
+
+        test.each([false, true].flatMap(repair => [['valid', fixed, true], ['unrenderable', broken, false], ['missing record', event, false]]
+            .map(([label, output, accepted]) => [repair, label, output, accepted])))('manual=%s handles %s output without losing a record', async (repair, _label, output, accepted) => {
+            const tracker = { ...createCompanionAgent({ ...template, id: 'display-event' }), regexScripts: scripts };
+            enabledAgents = [tracker];
+            if (!repair) generateQuietPrompt.mockResolvedValueOnce(broken);
+            generateQuietPrompt.mockResolvedValueOnce(output);
+            const runner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+            chat.push({ mes: 'Assistant reply', name: 'Assistant', is_user: false, is_system: false, extra: {} });
+            runner.setCompanionResult(chat[0], tracker, { status: 'done', content: broken, tokenUsage: { inputTokens: 12, outputTokens: 4 } });
+            const prior = structuredClone(chat[0].extra.inChatAgentCompanionResults[tracker.id]);
+
+            const result = await runner.runCompanionAgentOnMessage(tracker.id, 0, { repair });
+
+            expect(generateQuietPrompt).toHaveBeenCalledTimes(repair ? 1 : 2);
+            expect(generateQuietPrompt.mock.calls.at(-1)[0].quietPrompt).toContain('Repair mode');
+            expect(chat[0].mes).toBe('Assistant reply');
+            const repairedResult = expect.objectContaining({ status: 'done', content: fixed });
+            const failedResult = { ...prior, lastRunError: 'Tracker repair returned invalid output.', lastRunFailureKind: 'invalid' };
+            expect(result).toEqual(accepted ? repairedResult : failedResult);
+            if (accepted) {
+                await runner.runCompanionAgentOnMessage(tracker.id, 0, { repair: true });
+            }
+            expect(generateQuietPrompt).toHaveBeenCalledTimes(repair ? 1 : 2);
+        });
+    });
+
+    test('preserves the complete prior tracker companion result and explains invalid repair output', async () => {
         const tracker = createCompanionAgent({
             id: 'invalid-repair-companion',
             category: 'tracker',
@@ -3435,8 +3469,9 @@ describe('in-chat agent post-processing runner', () => {
 
         const result = await companionRunner.runCompanionAgentOnMessage(tracker.id, 0, { repair: true });
 
-        expect(result).toEqual(previousResult);
-        expect(chat[0].extra.inChatAgentCompanionResults[tracker.id]).toEqual(previousResult);
+        const failedResult = { ...previousResult, lastRunError: 'Tracker repair returned invalid output.', lastRunFailureKind: 'invalid' };
+        expect(result).toEqual(failedResult);
+        expect(chat[0].extra.inChatAgentCompanionResults[tracker.id]).toEqual(failedResult);
         expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
     });
 
@@ -4088,12 +4123,13 @@ describe('in-chat agent post-processing runner', () => {
             postProcess: { enabled: false },
         });
         enabledAgents = [runnableTracker, nonRunnableTracker];
-        generateQuietPrompt.mockResolvedValueOnce('[WORLD|Culture|Market]\ndetail: repaired\n[/WORLD]');
+        const repaired = '[WORLD|Culture|Market]\ndetail: repaired\n[/WORLD]\n\n[WORLD|Customs|Greeting]\ndetail: retained\n[/WORLD]';
+        generateQuietPrompt.mockResolvedValueOnce(repaired);
         const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
         chat.push({ mes: 'Assistant reply', name: 'Assistant', is_user: false, is_system: false, extra: {} });
         companionRunner.setCompanionResult(chat[0], runnableTracker, {
             status: 'done',
-            content: '[WORLD|Culture|Market]\nbroken detail without closer\n[WORLD|Duplicate|Broken]',
+            content: '[WORLD|Culture|Market]\nbroken detail without closer\n[WORLD|Customs|Greeting]',
         });
         companionRunner.setCompanionResult(chat[0], nonRunnableTracker, {
             status: 'done',
@@ -4107,7 +4143,7 @@ describe('in-chat agent post-processing runner', () => {
         expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
         expect(chat[0].extra.inChatAgentCompanionResults[runnableTracker.id]).toEqual(expect.objectContaining({
             status: 'done',
-            content: '[WORLD|Culture|Market]\ndetail: repaired\n[/WORLD]',
+            content: repaired,
         }));
         expect(chat[0].extra.inChatAgentCompanionResults[nonRunnableTracker.id]).toEqual(previousNonRunnable);
     });
