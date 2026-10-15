@@ -17,6 +17,7 @@ const { getJob, releaseJob, setJobState, updateJob, requestCancellation } = awai
 const { providerStep, readArtifact } = await import('../src/jobs/artifacts.js');
 const { readNativeMediaJobResult, readNativeMediaJobResultForOwner } = await import('../src/generation/media-jobs.js');
 const { releaseStoppedRoleplayWorkflow } = await import('../src/generation/roleplay-workflow-cancellation.js');
+const { requestRoleplayAgentStop } = await import('../src/generation/roleplay-agent-stop.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
 
 const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', system_prompt: true },
@@ -24,7 +25,7 @@ const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', 
 prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }],
 function_calling: true };
 
-function prepared(t, effect = 'append', { assistant = false, pathfinder = false, autoSwipe = false, autoContinue = false, continueTarget = 30 } = {}) {
+function prepared(t, effect = 'append', { assistant = false, pathfinder = false, agents = false, autoSwipe = false, autoContinue = false, continueTarget = 30 } = {}) {
     const f = fixture(t);
     const dirs = f.scope.directories;
     f.records[1].extra = {};
@@ -33,7 +34,7 @@ function prepared(t, effect = 'append', { assistant = false, pathfinder = false,
         name: 'Nova', description: 'Assistant', data: { name: 'Nova', description: 'Assistant',
             extensions: { neconyan_assistant: { id: 'miso-male' } } },
     })));
-    if (pathfinder) {
+    if (pathfinder || agents) {
         dirs.worlds = path.join(dirs.root, 'worlds');
         dirs.inChatAgents = path.join(dirs.root, 'InChatAgents');
         fs.mkdirSync(dirs.worlds);
@@ -41,9 +42,11 @@ function prepared(t, effect = 'append', { assistant = false, pathfinder = false,
         fs.writeFileSync(path.join(dirs.worlds, 'Manual.json'), JSON.stringify({ entries: {
             12: { uid: 12, key: ['telescope'], comment: 'Observatory', content: 'A broken telescope.' },
         } }));
-        fs.writeFileSync(path.join(dirs.inChatAgents, 'pathfinder.json'), JSON.stringify({ id: 'pathfinder',
+        if (pathfinder) fs.writeFileSync(path.join(dirs.inChatAgents, 'pathfinder.json'), JSON.stringify({ id: 'pathfinder',
             name: 'Pathfinder', category: 'tool', enabled: true, sourceTemplateId: 'tpl-pathfinder',
             settings: { sidecarEnabled: true, pipelineEnabled: false, enabledLorebooks: ['Manual'], includeContextualLorebooks: false } }));
+        if (agents) fs.writeFileSync(path.join(dirs.inChatAgents, 'rewrite.json'), JSON.stringify({ id: 'rewrite', name: 'Rewrite',
+            enabled: true, phase: 'post', prompt: 'REWRITE', postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64 } }));
     }
     dirs.openAI_Settings = path.join(dirs.root, 'openai-presets');
     fs.mkdirSync(dirs.openAI_Settings);
@@ -56,7 +59,7 @@ function prepared(t, effect = 'append', { assistant = false, pathfinder = false,
         oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1', function_calling: true },
         extension_settings: { connectionManager: { profiles: [{ id: 'main', api: 'custom', model: 'fixture', preset: 'Main',
             'api-url': 'http://127.0.0.1:18000/v1' }] },
-        ...(pathfinder ? { inChatAgents: { globalSettings: { enabled: true, pathfinderEnabled: true } } } : {}) },
+        ...(pathfinder || agents ? { inChatAgents: { globalSettings: { enabled: true, pathfinderEnabled: pathfinder } } } : {}) },
     }));
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
     const source = effect === 'append' ? f.source() : captureRoleplaySource(f.scope, { locator: f.locator, message: 1 });
@@ -66,13 +69,14 @@ function prepared(t, effect = 'append', { assistant = false, pathfinder = false,
     releaseJob(dirs, jobId);
     const context = () => ({ owner: f.scope.owner, directories: dirs, job: getJob(dirs, jobId), signal: new AbortController().signal });
     return { f, dirs, account, source, request, jobId, context,
-        async candidate(text, calls, { turn = 0, response = undefined } = {}) {
+        async candidate(text, calls, { turn = 0, response = undefined, generateAgent } = {}) {
             const pointer = readArtifact(dirs, jobId, turn ? `roleplay-workflow-child:${turn}` : 'roleplay-workflow-child');
             const child = getJob(dirs, pointer.jobId);
             setJobState(dirs, child.id, 'running');
             const result = await runRoleplayReplyJob({ owner: f.scope.owner, directories: dirs, job: getJob(dirs, child.id),
                 signal: new AbortController().signal }, { contextLimit: () => 4096,
                 promptBackend: () => ({ backend: 'chat', active: controls, profile: { model: 'fixture' }, source: 'custom' }),
+                ...(generateAgent ? { generateAgent } : {}),
                 ...(pathfinder ? { generatePathfinder: async options => {
                     const step = roleplayHash(['workflow-sidecar', child.id]);
                     options.onProviderStep(`provider:${step}`);
@@ -96,6 +100,25 @@ function prepared(t, effect = 'append', { assistant = false, pathfinder = false,
         },
         records: () => fs.readFileSync(f.filename, 'utf8').trim().split('\n').map(line => JSON.parse(line)),
     };
+}
+
+for (const policy of ['autoSwipe', 'autoContinue']) {
+    test(`stopping Agents publishes the completed workflow reply without starting ${policy}`, async t => {
+        const f = prepared(t, 'append', { agents: true, [policy]: true });
+        updateJob(f.dirs, f.jobId, { state: 'running' });
+        await runRoleplayWorkflowJob(f.context());
+        const calls = { count: 0 };
+        await f.candidate('Short', calls, { generateAgent: async ({ signal }) => {
+            assert.equal(requestRoleplayAgentStop(f.context()), true);
+            signal.throwIfAborted();
+        } });
+        const output = await runRoleplayWorkflowJob(f.context());
+        assert.equal(output.result.status, 'completed');
+        assert.equal(f.records().at(-1).mes, 'Short');
+        assert.equal(getJob(f.dirs, f.jobId).children.length, 1);
+        assert.equal(calls.count, 1);
+        assert.deepEqual(await runRoleplayWorkflowJob(f.context()), output);
+    });
 }
 
 for (const uncertain of [false, true]) {

@@ -74,6 +74,56 @@ async function terminal(account, id) {
 for (const phone of [false, true]) {
     const viewport = phone ? 'phone' : 'desktop';
 
+    test(`${viewport} stopping Agents saves the completed reply and keeps it after reopening`, async ({ app }) => {
+        app.provider.mode.streamReply = { first: 'The server ', rest: 'wrote this reply.' };
+        app.provider.mode.reply = { choices: [{ message: { content: 'An unfinished note.' }, finish_reason: 'stop' }] };
+        const account = await app.account({ phone, activeConnection: true, configureSettings(settings) {
+            settings.oai_settings.stream_openai = true;
+            settings.extension_settings.inChatAgents = { globalSettings: { enabled: true, separateRecentChats: false,
+                connectionProfile: 'durable', companionConcurrentWithPostGen: true } };
+        } });
+        const native = owned(app);
+        await fs.mkdir(native.directories.inChatAgents, { recursive: true });
+        await fs.writeFile(path.join(native.directories.inChatAgents, 'stop-note.json'), JSON.stringify({
+            id: 'stop-note', name: 'Stop note', enabled: true, category: 'companion', execution: 'companion', prompt: 'Keep a note.',
+        }));
+        const locator = await savedChat(account, `Stopped Agents ${viewport}`);
+        const page = await account.open({ workspace: false, readyTimeout: 120000 });
+        await openChat(page, locator);
+        const submitted = page.waitForResponse(acceptedSubmission);
+        await page.locator('#send_textarea').fill('Keep the reply when I stop the Agents.');
+        await page.locator('#send_textarea').press('Enter');
+        const { jobId } = await (await submitted).json();
+        try {
+            await expect.poll(() => typeof app.provider.mode.finishStream).toBe('function');
+            app.provider.mode.hold = 'unused-named-model';
+            app.provider.mode.finishStream();
+            await expect.poll(() => app.provider.calls.length, { timeout: 30000 }).toBe(2);
+            await expect(page.locator('#neconyan-roleplay-preview')).toContainText(ANSWER);
+            expect(readRoleplayChat(native.scope, locator).records.at(-1).is_user).toBe(true);
+            // Use the same Stop action as the composer, including its abort listener.
+            await page.evaluate(async () => (await import('/script.js')).stopGeneration());
+            const result = await terminal(account, jobId);
+            await expect(page.locator('#neconyan-roleplay-preview')).toHaveCount(0);
+            expect(result.state, JSON.stringify(result.error)).toBe('completed');
+            expect(readRoleplayChat(native.scope, locator).records.filter(row => row.mes === ANSWER)).toHaveLength(1);
+            await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
+            const tourSkip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
+            if (await tourSkip.isVisible()) await tourSkip.click();
+            const replyBounds = await page.locator('#chat .mes').last().boundingBox();
+            expect(replyBounds.width).toBeLessThanOrEqual(phone ? 393 : 1280);
+            await page.screenshot({ path: path.join('..', 'screenshots', `agent-stop-${viewport}-after.png`) });
+            await page.reload({ waitUntil: 'domcontentloaded' });
+            await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: 120000 });
+            await openChat(page, locator);
+            await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
+            expect(app.provider.calls).toHaveLength(2);
+        } finally {
+            app.provider.mode.finishStream?.();
+            await app.release();
+        }
+    });
+
     test(`${viewport} leaving before the first token submits without a paint and finishes with the page frozen`, async ({ app }) => {
         app.provider.mode.hold = 'conversation-fixture';
         app.provider.mode.streamReply = { first: 'The server ', rest: 'wrote this reply.' };

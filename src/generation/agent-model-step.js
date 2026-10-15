@@ -7,6 +7,7 @@ import { MAX_AGENT_FALLBACK_CONNECTIONS } from './agent-definition.js';
 import { getChatProfileContextLimit } from './profiles.js';
 import { runChatProfile } from './service.js';
 import { beginDiagnosticAgent, endDiagnosticAgent } from '../diagnostic-activity.js';
+import { isRoleplayAgentStop, withRoleplayAgentStop } from './roleplay-agent-stop.js';
 
 const fail = message => roleplayError('ROLEPLAY_AGENT_RECOVERY', message, 503);
 const limited = result => ['length', 'max_tokens', 'MAX_TOKENS', 'max_output_tokens'].includes(result.finishReason
@@ -25,6 +26,10 @@ function canTryFallback(context, error) {
  * Fallbacks never reuse the Agent's model override, which belongs to its own connection.
  */
 export async function runAgentModelStep(context, options) {
+    return withRoleplayAgentStop(context, scoped => runAgentModelWithFallbacks(scoped, options));
+}
+
+async function runAgentModelWithFallbacks(context, options) {
     const primaryId = options.binding?.profileId ?? '';
     const fallbacks = (Array.isArray(options.fallbacks) ? options.fallbacks : [])
         .filter(item => item?.binding && item.binding.profileId !== primaryId).slice(0, MAX_AGENT_FALLBACK_CONNECTIONS);
@@ -68,7 +73,7 @@ export async function runAgentModelStep(context, options) {
  * A failed attempt is never sent again. Its provider step, which may have no result if the
  * connection dropped, is closed as abandoned so the next connection may run.
  */
-function abandonAttempt(context, lock, name, identity, error) {
+function abandonAttempt(context, lock, name, identity, error, reason = 'fallback') {
     const key = `agent-model:${name}`;
     lock(() => {
         writeArtifact(context.directories, context.job.id, `${key}:failed`, { identity, reason: String(error?.message ?? error).slice(0, 2000),
@@ -76,7 +81,7 @@ function abandonAttempt(context, lock, name, identity, error) {
         const reference = readArtifact(context.directories, context.job.id, `${key}:provider`);
         const step = reference?.identity === identity && /^provider:[a-f0-9]{64}$/.test(reference?.step) ? reference.step : '';
         if (step && readArtifact(context.directories, context.job.id, step) === undefined) {
-            writeArtifact(context.directories, context.job.id, step, { abandoned: true, reason: 'fallback' });
+            writeArtifact(context.directories, context.job.id, step, { abandoned: true, reason });
         }
         if (step) markProviderSettled(context.directories, context.job.id, step);
     });
@@ -96,6 +101,7 @@ async function runSingleAgentModelStep(context, { base, account, name, identity,
         if (hash !== roleplayHash(data) || data.identity !== inputIdentity || typeof data.text !== 'string') throw fail('The saved Agent result is damaged.');
         return completed;
     }
+    context.signal.throwIfAborted();
     const activity = (Array.isArray(diagnostic) ? diagnostic : [diagnostic]).filter(Boolean).slice(0, 8).map(item => beginDiagnosticAgent(context, item));
     let outcome = 'done';
     try {
@@ -123,6 +129,7 @@ async function runSingleAgentModelStep(context, { base, account, name, identity,
             response = read(reference.step);
         }
         if (response === undefined) {
+            context.signal.throwIfAborted();
             if (unresolvedProviderStep(context.directories, context.job.id, { scope: context.providerScope, currentStep: reference?.step })) throw fail('An uncertain provider result cannot be repeated automatically.');
             assertCurrent();
             response = await generate({ context: base, jobContext: context, binding, modelOverride, messages: input.messages, stepNamespace: key,
@@ -145,6 +152,7 @@ async function runSingleAgentModelStep(context, { base, account, name, identity,
         return completed;
     } catch (error) {
         outcome = context.signal?.aborted || error?.name === 'AbortError' ? 'cancel' : 'error';
+        if (isRoleplayAgentStop(context.signal?.reason)) abandonAttempt(context, lock, name, inputIdentity, error, 'stopped');
         throw error;
     } finally { for (const handle of activity) endDiagnosticAgent(handle, outcome); }
 }

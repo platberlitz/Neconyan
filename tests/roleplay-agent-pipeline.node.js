@@ -3,6 +3,7 @@ import { getDiagnosticServerActivity } from '../src/diagnostic-activity.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { after } from 'node:test';
+import { setImmediate as nextTurn } from 'node:timers/promises';
 import { fixture } from './roleplay-transactions-fixture.js';
 
 const { captureRoleplaySource } = await import('../src/generation/roleplay-source.js');
@@ -14,6 +15,7 @@ const { roleplayHash } = await import('../src/roleplay-store.js');
 const { getJob, releaseJob, updateJob, recoverJobs } = await import('../src/jobs/store.js');
 const { providerStep, readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
 const { decideJobApproval } = await import('../src/generation/job-approvals.js');
+const { requestRoleplayAgentStop } = await import('../src/generation/roleplay-agent-stop.js');
 const { writeSecret, SECRET_KEYS } = await import('../src/endpoints/secrets.js');
 const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
 after(cancelAutoSaves);
@@ -76,6 +78,103 @@ function paid(label, response) {
         });
     };
 }
+
+for (const effect of ['append', 'continue', 'swipe', 'replace']) {
+    test(`stopping a reply rewrite preserves the completed ${effect} reply without repeating a provider request`, async t => {
+        const f = prepared(t, [{ id: 'rewrite', phase: 'post', prompt: 'REWRITE', postProcess: {
+            enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64,
+        } }], { effect, translation: true });
+        assert.equal(requestRoleplayAgentStop(f.context()), false, 'an unfinished main reply still uses normal cancellation');
+        let calls = 0;
+        await f.run({
+            generate: paid('main', () => ({ text: 'Main output',
+                response: { choices: [{ message: { reasoning_content: 'Saved reasoning' } }] } })),
+            generateAgent: paid('rewrite', ({ jobContext }) => {
+                calls++;
+                assert.equal(requestRoleplayAgentStop(f.context()), true);
+                assert.equal(requestRoleplayAgentStop(f.context()), true, 'repeated Stop is harmless');
+                jobContext.signal.throwIfAborted();
+                assert.fail('the Agent request must be aborted');
+            }), translationFetch: () => assert.fail('Stop must not start translation'),
+        });
+        assert.equal(calls, 1);
+        const saved = f.saved();
+        const reply = saved.at(-1);
+        assert.equal(reply.mes, effect === 'continue' ? 'AnswerMain output' : 'Main output');
+        assert.equal(reply.extra.reasoning, 'Saved reasoning');
+        if (effect === 'continue') assert.deepEqual(reply.swipes, ['AnswerMain output', 'Other']);
+        if (effect === 'swipe') assert.deepEqual(reply.swipes, ['Answer', 'Other', 'Main output']);
+        await f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') });
+        assert.deepEqual(f.saved(), saved);
+    });
+}
+
+test('stopping at the post-main review saves the already paid reply without approval or another request', async t => {
+    const f = prepared(t, [{ id: 'review', prompt: 'REVIEW_EDIT', phase: 'pre', preProcess: {
+        mode: 'intercept', interceptTiming: 'post-main-generation', applyMode: 'replace', maxTokens: 64,
+    } }], { review: true });
+    const pending = await f.run({ generate: paid('main', () => 'Keep this reply'), generateAgent: () => assert.fail('review is required') });
+    assert.equal(pending.waiting, true);
+    assert.equal(requestRoleplayAgentStop(f.context()), true);
+    assert.equal(getJob(f.directories, f.jobId).state, 'queued');
+    await f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('stopped Agent started') });
+    assert.equal(f.saved().at(-1).mes, 'Keep this reply');
+});
+
+test('stopping Agents cannot overwrite an independently edited chat', async t => {
+    const f = prepared(t, [{ id: 'rewrite', phase: 'post', prompt: 'REWRITE', postProcess: {
+        enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64,
+    } }]);
+    await assert.rejects(f.run({ generate: paid('main', () => 'Main output'), generateAgent: paid('rewrite', ({ jobContext }) => {
+        assert.equal(requestRoleplayAgentStop(f.context()), true);
+        const changed = f.saved();
+        changed[2].mes = 'Independent edit';
+        fs.writeFileSync(f.filename, changed.map(record => JSON.stringify(record)).join('\n'));
+        jobContext.signal.throwIfAborted();
+    }) }), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    assert.equal(f.saved().length, 3);
+    assert.equal(f.saved()[2].mes, 'Independent edit');
+});
+
+test('stopping synthesis keeps the original reply rather than an unfinished combination', async t => {
+    const f = prepared(t, ['one', 'two'].map(id => ({ id, phase: 'post', prompt: id,
+        postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 128 } })));
+    const calls = [];
+    await f.run({ generate: paid('main', () => 'Original reply'), generateAgent: paid('agents', ({ stepNamespace, jobContext }) => {
+        calls.push(stepNamespace);
+        if (stepNamespace === 'agent-model:post-synthesis') {
+            assert.equal(requestRoleplayAgentStop(f.context()), true);
+            jobContext.signal.throwIfAborted();
+        }
+        return stepNamespace;
+    }) });
+    assert.equal(calls.length, 3);
+    assert.equal(f.saved().at(-1).mes, 'Original reply');
+    await f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') });
+});
+
+for (const companionMode of ['sequential', 'parallel']) test(`stopping a ${companionMode} Companion keeps the completed reply and the earlier saved note`, async t => {
+    const f = prepared(t, ['first', 'second'].map((id, order) => ({ id, category: 'companion', prompt: id.toUpperCase(), injection: { order } })),
+        { globalSettings: { companionExecutionMode: companionMode } });
+    const calls = [];
+    await f.run({ generate: paid('main', () => 'Original reply'), generateAgent: paid('companions', async ({ stepNamespace, jobContext }) => {
+        calls.push(stepNamespace);
+        if (stepNamespace.endsWith(':second')) {
+            for (let attempt = 0; attempt < 100 && !readArtifact(f.directories, f.jobId, 'roleplay-companion:first'); attempt++) await nextTurn();
+            assert.ok(readArtifact(f.directories, f.jobId, 'roleplay-companion:first'), 'the other Companion finished before Stop');
+            assert.equal(requestRoleplayAgentStop(f.context()), true);
+            jobContext.signal.throwIfAborted();
+        }
+        return 'Completed first note';
+    }) });
+    assert.equal(calls.length, 2);
+    const saved = f.saved();
+    assert.equal(saved.at(-1).mes, 'Original reply');
+    assert.equal(saved.at(-1).extra.inChatAgentCompanionResults.first.content, 'Completed first note');
+    assert.equal(saved.at(-1).extra.inChatAgentCompanionResults.second, undefined);
+    await f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Companion repeated') });
+    assert.deepEqual(f.saved(), saved);
+});
 
 test('native Agent prompts, lore, complete-context interception and postprocessing commit one verified reply', async t => {
     const f = prepared(t, [
