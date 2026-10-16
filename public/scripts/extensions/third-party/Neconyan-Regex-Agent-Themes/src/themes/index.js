@@ -8,6 +8,9 @@ import { TECH_TERMINAL } from './tech-terminal.js';
 import { RETRO_PRINT } from './retro-print.js';
 import { FANTASY_BOLD } from './fantasy-bold.js';
 import { ANIMATED } from './animated.js';
+import { NIGHTFALL } from './nightfall.js';
+import { DAYLIGHT } from './daylight.js';
+import { AMBIENT_MOTION } from './ambient-motion.js';
 import { ADAPTIVE } from './adaptive.js';
 
 export const THEMES = Object.freeze([
@@ -15,7 +18,10 @@ export const THEMES = Object.freeze([
     ...TECH_TERMINAL,
     ...RETRO_PRINT,
     ...FANTASY_BOLD,
+    ...NIGHTFALL,
+    ...DAYLIGHT,
     ...ANIMATED,
+    ...AMBIENT_MOTION,
     ...ADAPTIVE,
 ]);
 
