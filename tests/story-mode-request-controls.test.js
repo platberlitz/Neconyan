@@ -74,7 +74,7 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
         chat: [{ name: 'Story', mes: 'Existing prose. ', extra: {}, is_user: false }],
         chat_metadata: {}, generationChatFilter: null, pendingGeneratedMessageExtra: null,
         generation_started: null, abortController: null, streamingProcessor: null,
-        activeGenerationRun: null, agentGenerationContextProvider: null, chatGeneration: 1,
+        activeGenerationRun: null, activeRoleplayJob: null, agentGenerationContextProvider: null, chatGeneration: 1,
         getCurrentChatId: () => 'story',
         amount_gen: 8192, max_context: 32768, kobold_horde_model: '',
         openai_messages_count: 1, itemizedPrompts: [], extension_prompts: {},

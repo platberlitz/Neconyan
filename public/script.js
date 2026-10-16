@@ -1028,6 +1028,7 @@ let chat_file_for_del = '';
 export let online_status = 'no_connection';
 
 export let is_send_press = false; //Send generation
+let activeRoleplayJob = null;
 export const isGenerating = () => (is_send_press || is_group_generating);
 
 let this_del_mes = -1;
@@ -8588,6 +8589,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             return;
         }
     }
+    if (!dryRun && activeRoleplayJob && type !== 'quiet') return;
 
     // Neconyan: keep cancellation and terminal cleanup attached to this invocation,
     // not to a successor group member, tool pass, or a newly selected chat.
@@ -10416,6 +10418,10 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
  * Stops the generation and any streaming if it is currently running.
  */
 export function stopGeneration() {
+    if (activeRoleplayJob) {
+        activeRoleplayJob.stop();
+        return true;
+    }
     const activeStreamingProcessor = streamingProcessor;
     const stopState = resolveStopGenerationState({
         isSendPressed: is_send_press || Boolean(activeGenerationRun),
@@ -11948,6 +11954,11 @@ export function getGeneratingModel(mes) {
  * A function mainly used to switch 'generating' state - setting it to false and activating the buttons again
  */
 export function activateSendButtons({ emitGenerationEnded = true } = {}) {
+    if (activeRoleplayJob) {
+        is_send_press = true;
+        deactivateSendButtons();
+        return;
+    }
     const lockState = resolveGenerationUiLockState({ isGenerating: false });
     is_send_press = false;
     if (lockState.bodyGeneratingValue === null) {
@@ -11978,6 +11989,18 @@ export function deactivateSendButtons({ markBodyGenerating = true } = {}) {
         delete document.body.dataset.generating;
     } else {
         document.body.dataset.generating = lockState.bodyGeneratingValue;
+    }
+}
+
+/** Reopened server replies own the same Send/Stop controls until saved readback. */
+export function setRoleplayJobControls(jobId, stop = null) {
+    const previous = activeRoleplayJob;
+    activeRoleplayJob = jobId ? { id: jobId, stop } : null;
+    if (activeRoleplayJob) {
+        is_send_press = true;
+        deactivateSendButtons();
+    } else if (previous) {
+        activateSendButtons({ emitGenerationEnded: false });
     }
 }
 

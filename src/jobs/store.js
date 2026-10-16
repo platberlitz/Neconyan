@@ -202,6 +202,7 @@ function readStore(directories) {
 const finishedCleanly = job => ['completed', 'cancelled'].includes(job.state);
 const unresolvedFailure = job => isTerminal(job) && !finishedCleanly(job) && !job.dismissed;
 const failureExpired = (job, at = now()) => unresolvedFailure(job)
+    && !job.retainedReply
     && (job.finishedAt ?? job.updatedAt ?? 0) <= at - JOB_FAILURE_RETENTION_MS;
 const baseRemovable = job => finishedCleanly(job) || (isTerminal(job) && (job.dismissed || failureExpired(job)));
 
@@ -663,6 +664,7 @@ export function dismissJob(directories, id) {
         const job = store.jobs[jobKey(id)];
         if (!job) throw fail(404, 'JOB_NOT_FOUND', 'This job no longer exists.');
         job.dismissed = true;
+        job.dismissedReason = 'user';
         job.updatedAt = now();
         // The client only ever sees the root, so dismissing it must also dismiss
         // the participants that would otherwise keep the family in the ledger.
@@ -670,6 +672,7 @@ export function dismissJob(directories, id) {
             const child = store.jobs[jobKey(childId)];
             if (!child) continue;
             child.dismissed = true;
+            child.dismissedReason = 'user';
             child.updatedAt = now();
         }
         return { job };
@@ -811,6 +814,21 @@ function hasSavedProviderResult(directories, job, step = job.recoveryStep) {
     }
 }
 
+// Earlier releases saved the finished preview but did not mark it for retention.
+// Recover that display copy on upgrade without replaying work or writing a chat.
+function hasRetainedRoleplayReply(directories, job) {
+    if (job.type !== 'media.roleplay-workflow' || job.parentId) return false;
+    for (const name of ['roleplay-recovery', 'roleplay-preview']) {
+        const filename = path.join(stateDir(directories), 'artifacts', jobKey(job.id), jobKey(name) + '.json');
+        try {
+            if (fs.statSync(filename).size > 16 * 1024 * 1024) continue;
+            const value = JSON.parse(fs.readFileSync(filename, 'utf8'));
+            if (value && !['preparing', 'generating'].includes(value.stage) && (value.text || value.reasoning)) return true;
+        } catch { /* A missing or damaged display copy cannot prove a saved result. */ }
+    }
+    return false;
+}
+
 /**
  * Start-up reconciliation. Work that was queued but never started is recovered
  * and returned for dispatch. Work that was running when the process stopped is
@@ -832,9 +850,17 @@ export function recoverJobs(directories, { startedAt = PROCESS_STARTED_AT, hold 
             job.recoverability = 'needs-retry';
         };
         for (const job of Object.values(store.jobs)) {
+            if (isTerminal(job) && job.state !== 'completed' && hasRetainedRoleplayReply(directories, job)) {
+                if (!job.retainedReply) { job.retainedReply = true; changed = true; }
+                if (job.dismissed && ['restart', 'expired'].includes(job.dismissedReason)) {
+                    job.dismissed = false;
+                    delete job.dismissedReason;
+                    changed = true;
+                }
+            }
             // Failures from before this start are cleared away; work this very
             // restart interrupts below stays visible so it can still be retried.
-            if (unresolvedFailure(job) && (job.finishedAt ?? job.updatedAt ?? 0) < startedAt) {
+            if (unresolvedFailure(job) && !job.retainedReply && (job.finishedAt ?? job.updatedAt ?? 0) < startedAt) {
                 changed = true;
                 job.dismissed = true;
                 job.dismissedReason = 'restart';

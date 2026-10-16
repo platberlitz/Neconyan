@@ -47,7 +47,7 @@ function createHost() {
         resolveGenerationUiLockState, resolveGenerationUnblockState, resolveStopGenerationState,
         limitGenerationProse, isGenerationLengthFinish,
         buildAssistantKnowledge, getAssistantKnowledgeBudget,
-        activeGenerationRun: null, agentGenerationContextProvider: null, abortController: null,
+        activeGenerationRun: null, activeRoleplayJob: null, agentGenerationContextProvider: null, abortController: null,
         generationChatFilter: null,
         chatId: 'chat-a', chatGeneration: 0, agentRunId: 0, cancelRevision: 0,
         chat: [], chat_metadata: {}, characters: [{ name: 'Assistant', data: { extensions: {} } }],
@@ -117,7 +117,7 @@ function createHost() {
     context.setExtensionPrompt = jest.fn((key, value) => { context.extension_prompts[key] = { value }; });
     context.getExtensionPrompt = async () => context.extension_prompts.pathfinder_pipeline_retrieval?.value ?? '';
     context.prepareOpenAIMessages = jest.fn(async data => [[{ role: 'system', content: data.extensionPrompts.pathfinder_pipeline_retrieval?.value ?? '' }], false]);
-    const scriptFunctions = ['setAgentGenerationContextProvider', 'Generate', 'sendTextareaMessage', 'buildRecoveryContext', 'generateQuietPrompt', 'showStopButton', 'hideStopButton', 'activateSendButtons', 'deactivateSendButtons', 'stopGeneration', 'unblockGeneration', 'getNextMessageId'];
+    const scriptFunctions = ['setAgentGenerationContextProvider', 'Generate', 'sendTextareaMessage', 'buildRecoveryContext', 'generateQuietPrompt', 'showStopButton', 'hideStopButton', 'activateSendButtons', 'deactivateSendButtons', 'stopGeneration', 'setRoleplayJobControls', 'unblockGeneration', 'getNextMessageId'];
     vm.runInContext(scriptFunctions.map(name => functionSource(scriptSource, name)).join('\n'), context);
     vm.runInContext(functionSource(worldSource, 'getWorldInfoPrompt'), context);
     vm.runInContext(functionSource(runnerSource, 'onWorldInfoActivated'), context);
@@ -150,6 +150,27 @@ function createHost() {
 afterEach(() => jest.restoreAllMocks());
 
 describe('Pathfinder integration with the real extracted host generation flow', () => {
+    test('a reopened server reply owns Send and Stop until it settles, while commands remain usable', async () => {
+        const host = createHost();
+        const cancel = jest.fn();
+        host.context.setRoleplayJobControls('accepted-reply', cancel);
+        host.context.activateSendButtons();
+        expect(host.context.is_send_press).toBe(true);
+        expect(host.buttons.visible).toBe(true);
+        await host.generate();
+        expect(host.context.sendGenerationRequest).not.toHaveBeenCalled();
+        host.input.value = '/is-generating';
+        await host.generate('normal', { suppressUserMessage: false });
+        expect(host.context.processCommands).toHaveBeenCalledWith('/is-generating');
+        expect(host.context.stopGeneration()).toBe(true);
+        expect(cancel).toHaveBeenCalledTimes(1);
+        expect(host.context.is_send_press).toBe(true);
+        host.context.setRoleplayJobControls(null);
+        expect(host.context.is_send_press).toBe(false);
+        expect(host.buttons.visible).toBe(false);
+        expect(host.emitted).not.toHaveBeenCalled();
+    });
+
     test('tags the actual native scan and removes only its activated entries before prompt assembly', async () => {
         const host = createHost();
         await host.generate();

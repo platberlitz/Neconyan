@@ -72,6 +72,7 @@ jest.unstable_mockModule('../public/script.js', () => ({
     isChatSaving: false,
     deactivateSendButtons: () => {},
     activateSendButtons: () => {},
+    setRoleplayJobControls: () => {},
     willRunNativeRoleplayWorkflow: (type, options = {}) => nativeEligible && !options.skipNativeRoleplay,
 }));
 

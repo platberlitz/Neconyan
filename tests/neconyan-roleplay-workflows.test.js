@@ -23,6 +23,7 @@ const saved = [];
 const reloads = [];
 const readingAnchors = [];
 const activations = [];
+const jobControls = jest.fn();
 let settingsPending = false;
 let generating = false;
 let chatSaving = false;
@@ -66,6 +67,7 @@ jest.unstable_mockModule('../public/scripts/chats.js', () => ({ hasPendingFileAt
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/roleplay-preview.js', () => ({
     observeRoleplayPreview: (id, options) => {
         const stop = jest.fn();
+        stop.recover = jest.fn(async () => false);
         previews.set(id, { ...options, stop });
         return stop;
     },
@@ -109,6 +111,7 @@ jest.unstable_mockModule('../public/script.js', () => ({
     get isChatSaving() { return chatSaving; },
     deactivateSendButtons: () => activations.push('busy'),
     activateSendButtons: () => activations.push('idle'),
+    setRoleplayJobControls: jobControls,
     willRunNativeRoleplayWorkflow: (type, options = {}) => nativeEligible && !options.skipNativeRoleplay,
 }));
 
@@ -125,6 +128,7 @@ const workflows = await import('../public/scripts/neconyan-conversation/roleplay
 
 beforeEach(() => {
     restoreDisplay.mockClear();
+    jobControls.mockClear();
     beginRoleplayReplacement.mockClear();
     account = 'alice';
     // The module holds this array, so the fixture edits it in place.
@@ -668,6 +672,9 @@ test('chat-open discovery after idempotent init attaches to a running workflow, 
     ]);
     await eventSource.emit(event_types.CHAT_CHANGED);
     await waitFor(() => observers.has('running-on-open'));
+    expect(jobControls).toHaveBeenLastCalledWith('running-on-open', expect.any(Function));
+    jobControls.mock.calls.at(-1)[1]();
+    expect(cancelJob).toHaveBeenCalledWith('running-on-open', { account: 'alice', reason: 'user_cancelled' });
     expect(listJobs).toHaveBeenCalledTimes(2);
     expect(requests.filter(entry => entry.url.includes('/workflow/receipt'))).toHaveLength(0);
     expect(reloads).toEqual([]);
@@ -678,6 +685,7 @@ test('chat-open discovery after idempotent init attaches to a running workflow, 
         await eventSource.emit(event_types.CHAT_CHANGED);
     };
     await observers.get('running-on-open').onStop('done');
+    expect(jobControls).toHaveBeenLastCalledWith(null, null);
     expect(reloads).toEqual([2]);
     expect(listJobs).toHaveBeenCalledTimes(2);
 
@@ -695,6 +703,21 @@ test('chat-open discovery after idempotent init attaches to a running workflow, 
     });
     await workflows.resumeNativeRoleplayWorkflowObservation();
     expect(observers.has('stale-account-job')).toBe(false);
+});
+
+test('recovery is displayed after an older completed reply refreshes the reopened chat', async () => {
+    const job = (id, state) => ({ id, state, type: 'media.roleplay-workflow', intent: {
+        media: { operationKey: id }, source: { locator: { chat: currentChatId, avatar: 'nova.png', group: false } },
+        request: { named: { name: 'roleplay.reply' } },
+    } });
+    listJobs.mockResolvedValueOnce([job('failed-latest', 'interrupted'), job('completed-earlier', 'completed')]);
+    receiptHandler = () => response(200, { key: 'completed-earlier', accepted: true, state: 'closed', jobId: 'completed-earlier', result: {} });
+    reloadHandler = async () => { expect(previews.has('failed-latest')).toBe(false); };
+    await workflows.resumeNativeRoleplayWorkflowObservation();
+    expect(reloads).toEqual([2]);
+    expect(previews.get('failed-latest').recoverOnly).toBe(true);
+    expect(previews.get('failed-latest').stop.recover).toHaveBeenCalledTimes(1);
+    expect(requests.filter(entry => entry.url.endsWith('/workflow/submit'))).toHaveLength(0);
 });
 
 test('a hanging receipt honours its abort signal on return and resolves the original generation without resubmitting', async () => {

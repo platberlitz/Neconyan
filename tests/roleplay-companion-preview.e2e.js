@@ -11,9 +11,9 @@ const visibility = (page, state) => page.evaluate(state => {
     document.dispatchEvent(new Event('visibilitychange'));
 }, state);
 
-for (const phone of [true, false]) {
+for (const [phone, stopAfterReturn] of [[true, false], [false, false], [true, true]]) {
     const viewport = phone ? 'phone' : 'desktop';
-    test(`${viewport} returning to a reply shows completed Companions before the last one finishes`, async ({ app }, info) => {
+    test(`${viewport} returning to a reply shows completed Companions before the last one finishes${stopAfterReturn ? ' and Stop keeps the reply' : ''}`, async ({ app }, info) => {
         test.setTimeout(180000);
         app.provider.mode.streamReply = { first: 'The main reply', rest: completedReply.slice('The main reply'.length) };
         app.provider.mode.hold = 'held-note';
@@ -83,6 +83,20 @@ for (const phone of [true, false]) {
             if (phone) await applyIOSOnlyCss(page);
             await expect(preview.locator('.ica--companion-ledger')).toContainText('The first Companion is already ready.', { timeout: 60000 });
             expect(app.provider.calls).toHaveLength(3);
+            await preview.scrollIntoViewIfNeeded();
+            await page.screenshot({ path: `../screenshots/roleplay-reopened-${viewport}-${process.env.NECONYAN_SCREENSHOT_PHASE || 'after'}.png`, scale: 'css' });
+            await expect.poll(() => page.evaluate(async () => (await import('/script.js')).isGenerating())).toBe(true);
+            await expect(page.locator('#mes_stop')).toBeVisible();
+            const length = await page.evaluate(async () => (await import('/script.js')).chat.length);
+            await page.locator('#send_textarea').fill('This must wait for the current reply.');
+            await page.locator('#send_textarea').press('Enter');
+            expect(await page.evaluate(async () => (await import('/script.js')).chat.length)).toBe(length);
+            await page.locator('#send_textarea').fill('');
+            if (stopAfterReturn) {
+                await page.locator('#mes_stop').click();
+                await account.settled(jobId);
+                expect(app.provider.calls.find(call => call.model === 'held-note').completedAt).toBeNull();
+            }
         } finally {
             await info.attach('preview-progress', { body: JSON.stringify({ errors, preview: await page.evaluate(() => window.fixturePreview) }), contentType: 'application/json' });
             app.provider.mode.finishStream?.();
@@ -92,7 +106,8 @@ for (const phone of [true, false]) {
         await expect(preview).toHaveCount(0);
         await expect(page.locator('#chat .mes[mesid]').last()).toContainText(completedReply);
         await page.evaluate(async () => (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).openCompanionPanel());
-        await expect(page.locator('#ica--tracker-panel')).toContainText('The last Companion has finished.');
+        if (!stopAfterReturn) await expect(page.locator('#ica--tracker-panel')).toContainText('The last Companion has finished.');
+        else await expect(page.locator('#ica--tracker-panel')).not.toContainText('The last Companion has finished.');
         expect(app.provider.calls).toHaveLength(3);
     });
 }

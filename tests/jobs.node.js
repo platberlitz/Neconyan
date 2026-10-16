@@ -259,6 +259,35 @@ test('restart clears earlier failures but keeps work the restart itself interrup
     assert.deepEqual(listJobs(directories).map(job => job.id), [running.id]);
 });
 
+test('completed Roleplay text survives failure expiry and restart, including older preview artifacts', () => {
+    const directories = tempDirectories('retained-reply');
+    const accept = key => acceptJob(directories, { owner: 'alice', type: 'media.roleplay-workflow', submissionKey: key, intent: {} }).job;
+    const retained = accept('retained');
+    writeArtifact(directories, retained.id, 'roleplay-recovery', { stage: 'agents', text: 'Completed paid reply.' });
+    setJobState(directories, retained.id, 'failed', { retainedReply: true });
+    updateJob(directories, retained.id, { finishedAt: Date.now() - JOB_FAILURE_RETENTION_MS - 1000 });
+    assert.equal(Boolean(getJob(directories, retained.id).dismissed), false);
+
+    const legacy = accept('legacy');
+    writeArtifact(directories, legacy.id, 'roleplay-preview', { stage: 'companions', text: 'Earlier completed reply.' });
+    setJobState(directories, legacy.id, 'interrupted');
+    updateJob(directories, legacy.id, { dismissed: true, dismissedReason: 'restart' });
+    const partial = accept('partial');
+    writeArtifact(directories, partial.id, 'roleplay-preview', { stage: 'generating', text: 'Unfinished' });
+    setJobState(directories, partial.id, 'failed');
+    recoverJobs(directories, { startedAt: Date.now() + 1 });
+    assert.equal(Boolean(getJob(directories, retained.id).dismissed), false);
+    assert.equal(getJob(directories, legacy.id).retainedReply, true);
+    assert.equal(getJob(directories, legacy.id).dismissed, false);
+    assert.equal(getJob(directories, partial.id).dismissed, true);
+
+    dismissJob(directories, legacy.id);
+    recoverJobs(directories, { startedAt: Date.now() + 1 });
+    assert.equal(getJob(directories, legacy.id).dismissed, true, 'an explicit dismissal must survive another restart');
+    assert.equal(getJob(directories, legacy.id).dismissedReason, 'user');
+    assert.deepEqual(listJobs(directories).map(job => job.id), [retained.id]);
+});
+
 test('clearing job history removes finished and failed records but keeps live and just-finished work', () => {
     const directories = tempDirectories('clear-history');
     const accept = key => acceptJob(directories, { owner: 'alice', type: 'test', submissionKey: key, intent: {} }).job;
