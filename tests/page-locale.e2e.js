@@ -33,10 +33,10 @@ async function openProfile(languages, { channel = 'chromium', contextOptions = {
     fs.writeFileSync(path.join(dir, 'Default', 'Preferences'), JSON.stringify({ intl: { accept_languages: list, selected_languages: list } }));
     // Playwright's test runner gives every context the locale en-US unless the option is present and undefined, which
     // would hide the profile's languages; no locale value and no language flag is set.
-    const context = await chromium.launchPersistentContext(dir, { channel, headless: true, serviceWorkers: 'block', locale: undefined, ...contextOptions });
+    const context = await test.step(`Launch ${channel} profile (${list})`, () => chromium.launchPersistentContext(dir, { channel, headless: true, serviceWorkers: 'block', locale: undefined, ...contextOptions }));
     const page = context.pages()[0] ?? await context.newPage();
     const close = async () => {
-        await context.close();
+        await test.step(`Close ${channel} profile (${list})`, () => context.close());
         // The profile stays locked for a moment after close (seen by the plan check and the amendment).
         fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
     };
@@ -44,16 +44,20 @@ async function openProfile(languages, { channel = 'chromium', contextOptions = {
 }
 
 // The channels each profile case runs on: Chromium always; Edge when installed, otherwise a printed note.
+let availableProfileChannels;
 async function profileChannels() {
-    try {
-        const edge = await chromium.launch({ channel: 'msedge', headless: true });
-        await edge.close();
-        return ['chromium', 'msedge'];
-    } catch (error) {
-        if (!/Chromium distribution 'msedge' is (not found|not supported)/.test(String(error.message))) throw error;
-        console.log(`C8: Edge is not installed here; profile cases run on Chromium only (${String(error.message).split('\n')[0]})`);
-        return ['chromium'];
-    }
+    availableProfileChannels ??= await test.step('Detect optional Edge browser once per worker', async () => {
+        try {
+            const edge = await chromium.launch({ channel: 'msedge', headless: true });
+            await edge.close();
+            return ['chromium', 'msedge'];
+        } catch (error) {
+            if (!/Chromium distribution 'msedge' is (not found|not supported)/.test(String(error.message))) throw error;
+            console.log(`C8: Edge is not installed here; profile cases run on Chromium only (${String(error.message).split('\n')[0]})`);
+            return ['chromium'];
+        }
+    });
+    return availableProfileChannels;
 }
 
 /**
@@ -278,6 +282,9 @@ test.describe('E3 the loader follows ordinary browser language settings', () => 
     });
 
     test('C8-E3b a browser whose language list is de, en-US, en (plain German at the top of the Languages settings) shows German', async ({ browser }) => {
+        // CI's first Edge launch took 21 seconds. Allow for multiple browser processes,
+        // while retaining the normal assertion deadlines for language behaviour.
+        test.setTimeout(60_000);
         for (const channel of await profileChannels()) {
             const { page, state, close } = await openE1(browser, { profileLanguages: ['de', 'en-US', 'en'], channel });
             expect(await page.evaluate(() => [...navigator.languages]), `${channel}: navigator.languages`).toEqual(['de', 'en-US', 'en']);
@@ -289,6 +296,7 @@ test.describe('E3 the loader follows ordinary browser language settings', () => 
     });
 
     test('C8-E3c a browser whose language list is it, en-US, en shows Italian', async ({ browser }) => {
+        test.setTimeout(60_000);
         for (const channel of await profileChannels()) {
             const { page, close } = await openE1(browser, { profileLanguages: ['it', 'en-US', 'en'], channel, dictionaryLocale: 'it-it', dictionary: markedWith(ITALIAN_MARK) });
             expect(await page.evaluate(() => [...navigator.languages]), `${channel}: navigator.languages`).toEqual(['it', 'en-US', 'en']);
@@ -299,6 +307,7 @@ test.describe('E3 the loader follows ordinary browser language settings', () => 
     });
 
     test('C8-E3d a supported language later in the list is used, unless English comes first', async ({ browser }) => {
+        test.setTimeout(60_000);
         for (const channel of await profileChannels()) {
             const german = await openE1(browser, { profileLanguages: ['nb', 'de-DE', 'en-US'], channel });
             expect(await german.page.evaluate(() => [...navigator.languages]), `${channel}: navigator.languages`).toEqual(['nb', 'de-DE', 'en-US']);
@@ -315,6 +324,7 @@ test.describe('E3 the loader follows ordinary browser language settings', () => 
     });
 
     test('C8-E3e a stored choice still wins over the browser\'s language list', async ({ browser }) => {
+        test.setTimeout(60_000);
         for (const channel of await profileChannels()) {
             const italian = await openE1(browser, { profileLanguages: ['de', 'en-US', 'en'], channel, stored: 'it-it', dictionaryLocale: 'it-it', dictionary: markedWith(ITALIAN_MARK) });
             expect(await italian.page.evaluate(() => [...navigator.languages]), `${channel}: navigator.languages`).toEqual(['de', 'en-US', 'en']);
