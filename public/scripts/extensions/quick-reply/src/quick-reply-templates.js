@@ -6,6 +6,7 @@
 export const DEFAULT_CUSTOM_SET_NAME = 'My quick replies';
 
 const DIRECTION_INJECT_ID = 'quick-reply-direction';
+const ASK_ANSWER_WRAPPER_OPEN = '<div style="white-space: pre-wrap; text-align: start">';
 
 /**
  * Ways a quick reply can behave. Each one is written into the reply's own message,
@@ -56,7 +57,18 @@ export function escapeQuickReplyCommandText(text) {
     if (value.startsWith('"')) {
         return `"${value.replace(/"/g, '\\"')}"`;
     }
-    return value
+    return escapeEmbeddedCommandText(value);
+}
+
+/**
+ * Makes text safe to place in the middle of a slash command's main value.
+ * Only pipes and '{:' are escaped: quotes there are kept as they are, and wrapping
+ * the text in quotes would leave the quotes and backslashes in the value.
+ * @param {string} text
+ * @returns {string}
+ */
+export function escapeEmbeddedCommandText(text) {
+    return String(text ?? '')
         .replace(/\|/g, '\\|')
         .replace(/\{:/g, '\\{:');
 }
@@ -75,14 +87,15 @@ export function buildQuickReplyMessage(mode, text) {
         case 'direct':
             // Sends anything already typed first, then asks for a reply that follows the one-off note.
             return [
-                `/inject id=${DIRECTION_INJECT_ID} position=chat depth=0 role=system ephemeral=true [Direction for the next reply only: ${escapeQuickReplyCommandText(value)}]`,
+                `/inject id=${DIRECTION_INJECT_ID} position=chat depth=0 role=system ephemeral=true [Direction for the next reply only: ${escapeEmbeddedCommandText(value)}]`,
                 '/getinput',
                 '/if left={{pipe}} rule=neq right="" {: /send {{input}} | /setinput "" :}',
                 '/trigger',
             ].join(' | ');
         case 'ask':
             // A failed or empty answer shows nothing instead of a blank pop-up.
-            return `/gen ${escapeQuickReplyCommandText(value)} | /if left={{pipe}} rule=neq right="" {: /popup {{pipe}} :}`;
+            // The pop-up shows HTML, so the wrapper keeps the answer's line breaks and lists.
+            return `/gen ${escapeQuickReplyCommandText(value)} | /if left={{pipe}} rule=neq right="" {: /popup ${ASK_ANSWER_WRAPPER_OPEN}{{pipe}}</div> :}`;
         case 'command':
             return value;
         case 'send':
