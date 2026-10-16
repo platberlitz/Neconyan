@@ -4,10 +4,15 @@
     body.neconyan.neconyan-mobile-expressions #chat .mes .mes_block > .neconyan-mobile-expression {
         display: none;
         clear: both;
-        width: min(140px, 50%);
-        height: 160px;
-        max-height: 20svh;
-        margin: 8px auto 12px;
+        box-sizing: border-box;
+        width: min(100%, 280px);
+        height: clamp(180px, 32svh, 320px);
+        margin: 6px auto 12px;
+        padding: 8px 8px 0;
+        overflow: hidden;
+        border: 1px solid color-mix(in srgb, var(--neco-ginger) 18%, var(--neco-border));
+        border-radius: 12px;
+        background: radial-gradient(ellipse 70% 55% at 50% 100%, color-mix(in srgb, var(--neco-ginger) 16%, transparent), transparent 70%), color-mix(in srgb, var(--neco-ginger) 5%, var(--neco-surface));
     }
     body.neconyan.neconyan-mobile-expressions #chat .mes .mes_block > .neconyan-mobile-expression.has-expression { display: block; }
     body.neconyan.neconyan-mobile-expressions #chat .neconyan-mobile-expression > img {
@@ -15,6 +20,7 @@
         width: 100%;
         height: 100%;
         object-fit: contain;
+        object-position: 50% 100%;
         border: 0;
         border-radius: 0;
         box-shadow: none;
