@@ -1,5 +1,10 @@
 // Questions and distinguishing facts shared by Node and real-browser retrieval checks.
 export const refreshedKnowledgeCases = [
+    ['How do I recover a finished reply after roleplay context changed?', 'chat.recovered-reply', 'Download reply saves a text file'],
+    ['Does Recovered reply survive a server restart?', 'chat.recovered-reply', 'including after a server restart'],
+    ['Will Copy reply overwrite my edited chat?', 'chat.recovered-reply', 'does not replace edited messages'],
+    ['Can I see completed Agent changes before all Agents finish?', 'chat.live-replies', 'Completed Agent changes appear before the remaining Agents finish'],
+    ['Does reopening a running reply restore Stop?', 'chat.live-replies', 'restores Stop and blocks another Send'],
     ['Why does Writing reply appear while I am watching the tab?', 'chat.live-replies', 'also use server jobs while you are watching'],
     ['Does the live reply bubble disappear before the saved reply is ready?', 'chat.live-replies', 'stays visible until the saved replacement is ready'],
     ['Does cancelling a replacement restore the original reply?', 'chat.live-replies', 'restores the original reply'],
