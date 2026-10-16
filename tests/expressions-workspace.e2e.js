@@ -111,10 +111,17 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
             await expect(page.locator('#image_list [data-expression="joy-soft"]')).toHaveCount(1);
             await page.locator('#expression_search').fill('sleepy');
             await expect(page.locator('#image_list .expression_list_item:visible')).toHaveCount(1);
-            await page.locator('#expression_visibility').selectOption('ready');
+            await page.locator('#expression_visibility [data-value="ready"]').click();
+            await expect(page.locator('#expression_visibility [data-value="ready"]')).toHaveAttribute('aria-pressed', 'true');
             await expect(page.locator('#image_list .expression_list_item:visible')).toHaveCount(0);
+            await expect(page.locator('#expression_count')).not.toBeEmpty();
             await page.locator('#expression_search').fill('');
-            await page.locator('#expression_visibility').selectOption('all');
+            await page.locator('#expression_visibility [data-value="missing"]').click();
+            await expect(page.locator('#image_list .expression_list_item[data-expression-type="failure"]:visible').first()).toBeVisible();
+            await expect(page.locator('#image_list .expression_list_item:not([data-expression-type="failure"]):visible')).toHaveCount(0);
+            await page.locator('#expression_visibility [data-value="all"]').click();
+            await expect(page.locator('#expression_count')).toBeEmpty();
+            await expect(page.locator('#expression_progress_bar')).toHaveAttribute('aria-valuemax', /\d+/);
 
             const mira = await addMember(page, 'Mira');
             await page.locator('#expression_member_details summary').click();
@@ -332,7 +339,6 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
             failProcessing = false; holdProcessing = true;
             await page.locator('#image_list [data-expression="fear"] .expression_list_generate').click();
             await expect.poll(() => Boolean(held)).toBe(true);
-            await page.locator('.expression_set_tools summary').click();
             await page.locator('#expressions_stop_sprite_generation').click();
             await held.abort();
             await expect(upscale).toBeEnabled();

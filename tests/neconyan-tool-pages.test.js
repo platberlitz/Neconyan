@@ -133,7 +133,7 @@ describe('Character Expressions opens as a page led by Miso', () => {
         expect(page.name).toBe('Character Expressions');
         expect(page.emptyWhen).toContain('#open_chat_expressions');
         const all = getToolTourSteps('expressions', { isShown: () => true }).map(step => step.id);
-        expect(all).toEqual(['welcome', 'classifier', 'agent', 'prompt', 'translate', 'choices', 'sprites', 'done']);
+        expect(all).toEqual(['welcome', 'sprites', 'classifier', 'agent', 'prompt', 'translate', 'choices', 'done']);
         const visible = getToolTourSteps('expressions', { isShown: () => false }).map(step => step.id);
         expect(visible).not.toContain('agent');
         expect(visible).not.toContain('prompt');
@@ -150,7 +150,7 @@ describe('Character Expressions opens as a page led by Miso', () => {
             expect(settings).toContain(`expression_section expression_section_${section}`);
         }
         expect(css).toContain('[data-tool-page=\'expressions\'] .expression_settings > .inline-drawer > .inline-drawer-header');
-        expect(css).toContain('[data-tool-page=\'expressions\'] #image_list');
+        expect(css).not.toContain('[data-tool-page=\'expressions\'] #image_list');
     });
 });
 

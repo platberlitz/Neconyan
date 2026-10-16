@@ -3541,9 +3541,9 @@ body.neconyan #open_chat_expressions .expression_buttons > .menu_button {
     gap: 6px;
     white-space: normal;
 }
+body.neconyan #open_chat_expressions .expression_buttons > .menu_button:last-child:nth-child(odd) { grid-column: 1 / -1; }
 body.neconyan #open_chat_expressions .expression_buttons > .menu_button > i { flex: 0 0 1.25em; }
 body.neconyan #open_chat_expressions .expression_buttons > .menu_button > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-body.neconyan #open_chat_expressions #expressions_stop_sprite_generation { grid-column: 1 / -1; }
 
 @media (max-width: 768px) {
     body.neconyan #neconyan-tour-coachmark.neconyan-tour-coachmark { right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); padding: 14px; }

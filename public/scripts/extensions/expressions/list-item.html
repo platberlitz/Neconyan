@@ -1,31 +1,43 @@
 {{#each images}}
-<div class="expression_list_item interactable" data-expression="{{../expression}}" data-expression-type="{{this.type}}" data-filename="{{this.fileName}}">
-    <div class="expression_list_buttons">
-        <div class="menu_button expression_list_upload" title="Upload image">
-            <i class="fa-solid fa-upload"></i>
+<div class="expression_list_item" data-expression="{{../expression}}" data-expression-type="{{this.type}}" data-filename="{{this.fileName}}">
+    <button type="button" class="expression_list_image_container" title="{{this.pickLabel}}" aria-label="{{this.pickLabel}}">
+        {{#if this.isMissing}}
+        <div class="expression_list_placeholder" aria-hidden="true">
+            <i class="fa-regular fa-image"></i>
+            <span data-i18n="No image yet">No image yet</span>
         </div>
-        {{#if this.canRegenerate}}
-        <div class="menu_button expression_list_regenerate" title="Regenerate with Quick Image Gen" role="button" tabindex="0" aria-label="Regenerate with Quick Image Gen">
-            <i class="fa-solid fa-arrows-rotate"></i>
-        </div>
+        {{else}}
+        <img class="expression_list_image" src="{{this.imageSrc}}" alt="" loading="lazy" decoding="async" />
         {{/if}}
-        {{#if this.canGenerate}}
-        <div class="menu_button expression_list_generate" title="Generate with Quick Image Gen" role="button" tabindex="0" aria-label="Generate with Quick Image Gen">
-            <i class="fa-solid fa-wand-magic-sparkles"></i>
-        </div>
+        {{#if this.isExtra}}
+        <span class="expression_list_badge" data-i18n="Extra">Extra</span>
         {{/if}}
-        <div class="menu_button expression_list_delete" title="Delete image">
-            <i class="fa-solid fa-trash"></i>
+    </button>
+    <div class="expression_list_footer">
+        <div class="expression_list_title">
+            <span class="expression_list_name">{{../expression}}</span>
+            {{#if ../isCustom}}<small class="expression_list_custom" data-i18n="custom">custom</small>{{/if}}
         </div>
-    </div>
-    <div class="expression_list_title">
-        <span>{{../expression}}</span>
-        {{#if ../isCustom}}
-            <small class="expression_list_custom">(custom)</small>
-        {{/if}}
-    </div>
-    <div class="expression_list_image_container" title="{{this.title}}">
-        <img class="expression_list_image" src="{{this.imageSrc}}" alt="{{this.title}}" data-epression="{{../expression}}" />
+        <div class="expression_list_buttons">
+            <button type="button" class="menu_button expression_list_upload" title="{{this.uploadLabel}}" aria-label="{{this.uploadLabel}}">
+                <i class="fa-solid fa-upload" aria-hidden="true"></i>
+            </button>
+            {{#if this.canRegenerate}}
+            <button type="button" class="menu_button expression_list_regenerate" title="{{this.regenerateLabel}}" aria-label="{{this.regenerateLabel}}">
+                <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+            </button>
+            {{/if}}
+            {{#if this.canGenerate}}
+            <button type="button" class="menu_button expression_list_generate" title="{{this.generateLabel}}" aria-label="{{this.generateLabel}}">
+                <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+            </button>
+            {{/if}}
+            {{#unless this.isMissing}}
+            <button type="button" class="menu_button expression_list_delete" title="{{this.deleteLabel}}" aria-label="{{this.deleteLabel}}">
+                <i class="fa-solid fa-trash" aria-hidden="true"></i>
+            </button>
+            {{/unless}}
+        </div>
     </div>
 </div>
 {{/each}}

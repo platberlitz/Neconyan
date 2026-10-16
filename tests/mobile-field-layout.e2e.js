@@ -67,7 +67,8 @@ test('memory corrections and expression actions fit phone, tablet and desktop wi
 
     // Keep the real controls exposed while the extension polls for a saved chat.
     await page.addStyleTag({ content: '#open_chat_expressions { display: block !important; } #no_chat_expressions { display: none !important; }' });
-    const expressionActions = page.locator('#open_chat_expressions .expression_buttons');
+    const toolGroups = page.locator('#open_chat_expressions .expression_set_tools .expression_buttons');
+    const primaryActions = page.locator('#open_chat_expressions .expression_primary_actions');
     const stop = page.locator('#expressions_stop_sprite_generation');
     for (const width of [320, 393, 820, 1280]) {
         await page.setViewportSize({ width, height: width <= 393 ? 852 : 900 });
@@ -80,30 +81,41 @@ test('memory corrections and expression actions fit phone, tablet and desktop wi
         }
         await expect(tools).toHaveAttribute('open', '');
         await expect(stop).toBeHidden();
-        await expressionActions.scrollIntoViewIfNeeded({ timeout: 10_000 });
+        await toolGroups.last().scrollIntoViewIfNeeded({ timeout: 10_000 });
         const field = await page.locator('#expression_override').boundingBox();
         const submit = await page.locator('#expression_override_button').boundingBox();
         expect(Math.abs(field.y - submit.y)).toBeLessThanOrEqual(1);
         expect(Math.abs(field.height - submit.height)).toBeLessThanOrEqual(1);
-        const boxes = await expressionActions.locator('.menu_button:visible').evaluateAll(elements =>
-            elements.map(element => element.getBoundingClientRect().toJSON()));
-        expect(boxes).toHaveLength(6);
-        for (const box of boxes) {
-            expect(box.x).toBeGreaterThanOrEqual(0);
-            expect(box.right).toBeLessThanOrEqual(width);
+        const groups = await toolGroups.evaluateAll(elements => elements.map(group => ({
+            box: group.getBoundingClientRect().toJSON(),
+            buttons: [...group.querySelectorAll(':scope > .menu_button')].filter(button => button.offsetParent).map(button => button.getBoundingClientRect().toJSON()),
+        })));
+        expect(groups.map(group => group.buttons.length)).toEqual([2, 3]);
+        for (const { box: groupBox, buttons } of groups) {
+            for (const box of buttons) {
+                expect(box.x).toBeGreaterThanOrEqual(0);
+                expect(box.right).toBeLessThanOrEqual(width);
+            }
+            if (width > 393) continue;
+            for (let index = 0; index < buttons.length; index += 2) {
+                expect(buttons[index].height).toBeGreaterThanOrEqual(44);
+                if (buttons[index + 1]) {
+                    expect(Math.abs(buttons[index].y - buttons[index + 1].y)).toBeLessThanOrEqual(1);
+                    expect(Math.abs(buttons[index].width - buttons[index + 1].width)).toBeLessThanOrEqual(1);
+                } else {
+                    // An odd last button takes the whole row instead of half of it.
+                    expect(Math.abs(buttons[index].width - groupBox.width)).toBeLessThanOrEqual(1);
+                }
+            }
         }
         if (width <= 393) {
-            for (let index = 0; index < boxes.length; index += 2) {
-                expect(Math.abs(boxes[index].y - boxes[index + 1].y)).toBeLessThanOrEqual(1);
-                expect(Math.abs(boxes[index].width - boxes[index + 1].width)).toBeLessThanOrEqual(1);
-                expect(Math.abs(boxes[index].height - boxes[0].height)).toBeLessThanOrEqual(1);
-                expect(boxes[index].height).toBeGreaterThanOrEqual(44);
-            }
             await stop.evaluate(element => element.classList.add('active'));
-            const activeBox = await stop.boundingBox();
-            const gridBox = await expressionActions.boundingBox();
-            expect(Math.abs(activeBox.width - gridBox.width)).toBeLessThanOrEqual(1);
-            expect(activeBox.y).toBeGreaterThanOrEqual(boxes[5].bottom);
+            await primaryActions.scrollIntoViewIfNeeded();
+            const [generate, activeBox, rowBox] = await Promise.all([
+                page.locator('#expressions_generate_missing_sprites').boundingBox(), stop.boundingBox(), primaryActions.boundingBox()]);
+            expect(Math.abs(activeBox.width - rowBox.width)).toBeLessThanOrEqual(1);
+            expect(activeBox.y).toBeGreaterThanOrEqual(generate.y + generate.height - 1);
+            expect(activeBox.height).toBeGreaterThanOrEqual(44);
             await stop.evaluate(element => element.classList.remove('active'));
             await expect(stop).toBeHidden();
         }

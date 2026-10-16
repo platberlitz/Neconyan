@@ -47,7 +47,7 @@ function setup() {
     vm.runInContext('const expressionRequests = new WeakMap();', runtime);
     load(runtime, core, ['captureExpressionTarget', 'isExpressionTargetCurrent']);
     load(runtime, bridge, ['getLatestAssistantMessage', 'getExpressionsAgent', 'getExpressionsAgentStatus', 'isExpressionsAgentAvailable', 'syncExpressionsAgentProfile', 'getAgentExpressionState']);
-    load(runtime, index, ['getExpressionClassificationSnapshot', 'rememberExpressionMessage', 'seedExpressionHistory', 'needsExpression', 'getLastCharacterMessage', 'moduleWorker', 'onAgentExpressionUpdated']);
+    load(runtime, index, ['getExpressionClassificationSnapshot', 'rememberExpressionMessage', 'seedExpressionHistory', 'needsExpression', 'getLastCharacterMessage', 'moduleWorker', 'onAgentExpressionUpdated', 'applyAgentExpressionUpdate']);
     const add = (status, content = '') => {
         const message = { name: 'Cat', original_avatar: 'Cat.png', mes: `Reply ${chat.length}`, extra: { inChatAgentCompanionResults: { [agent.id]: { status, content } } } };
         chat.push(message);
