@@ -107,12 +107,16 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
                 const geometry = await portrait.evaluate(image => {
                     const rect = image.getBoundingClientRect();
                     const text = image.closest('.mes_block').querySelector('.mes_text').getBoundingClientRect();
-                    return { fit: getComputedStyle(image).objectFit, left: rect.left, right: rect.right,
+                    const holder = image.parentElement.getBoundingClientRect();
+                    return { holderWidth: holder.width, holderHeight: holder.height, fit: getComputedStyle(image).objectFit, left: rect.left, right: rect.right,
                         height: rect.height, bottom: rect.bottom, textTop: text.top,
                         overflow: document.documentElement.scrollWidth > window.innerWidth };
                 });
                 expect(geometry.fit, `style ${style}`).toBe('contain');
                 expect(geometry.height, `style ${style}`).toBeGreaterThan(80);
+                // Big enough to read the face on a phone, in every chat style.
+                expect(geometry.holderHeight, `style ${style}`).toBeGreaterThanOrEqual(180);
+                expect(geometry.holderWidth, `style ${style}`).toBeGreaterThanOrEqual(200);
                 expect(geometry.left, `style ${style}`).toBeGreaterThanOrEqual(0);
                 expect(geometry.right, `style ${style}`).toBeLessThanOrEqual(393);
                 expect(geometry.bottom, `style ${style}`).toBeLessThanOrEqual(geometry.textTop);
