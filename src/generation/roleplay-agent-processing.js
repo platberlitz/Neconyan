@@ -387,6 +387,8 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     const runStages = version === 1 ? runLegacyPromptTransformStages : version === 2 ? runOrderedPromptTransformStages : runPromptTransformStages;
     const { draft } = await runStages({
         agents: selected, text: baseline, parallel, isPrepend: prepend, shouldStop: () => roleplayAgentsStopped(context),
+        onProgress: draft => options.onProgress?.({ text: composePromptTransformDraft(draft, join),
+            extra: { inChatAgents: displaySnapshot(pre, agents, generationType), inChatAgentPromptRuns: [...runs] } }),
         isAppend: agent => agent.postProcess.promptTransformMode === 'append',
         runRewrite: async (agent, body) => {
             const run = await modelRun(scope, options, agent, body, modelName(agent.id));
@@ -396,16 +398,23 @@ export async function runRoleplayAgentPostprocessing(context, options) {
             if (companionOutput && run.status !== 'done') { postFailed = true; return { stop: true }; }
             return run.outputText ? { text: run.outputText } : {};
         },
-        runAppend: async (batch, body) => {
+        runAppend: async (batch, body, onProgress = () => {}) => {
             let results;
+            const completed = new Map();
+            const runAppend = async item => {
+                const run = await modelRun(scope, options, item, body, modelName(item.id));
+                completed.set(item.id, run);
+                onProgress(batch.filter(agent => completed.has(agent.id)).map(agent => ({ agent, text: completed.get(agent.id).outputText })));
+                return run;
+            };
             if (parallel) {
-                const settled = await Promise.allSettled(batch.map(item => modelRun(scope, options, item, body, modelName(item.id))));
+                const settled = await Promise.allSettled(batch.map(runAppend));
                 const failed = settled.find(item => item.status === 'rejected');
                 if (failed) throw failed.reason;
                 results = settled.map(item => item.value);
             } else {
                 results = [];
-                for (const item of batch) results.push(await modelRun(scope, options, item, body, modelName(item.id)));
+                for (const item of batch) results.push(await runAppend(item));
             }
             runs.push(...results.map(run => ({ ...run, mode: 'append' })));
             if (companionOutput && results.some(run => run.status !== 'done')) { postFailed = true; return { stop: true }; }

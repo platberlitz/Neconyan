@@ -216,11 +216,12 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             }
             const pre = readArtifact(directories, job.id, 'roleplay-agents-pre');
             const onProgress = results => publishRoleplayPreview(context, { inChatAgentCompanionResults: results });
+            const onPostProgress = post => publishTextPreview(post.text, { ...post.extra, stage: 'agents' });
             let post, companions;
             if (request.worldInfo.agents.concurrentCompanions) {
                 const shared = { ...context, providerScope: createProviderScope(context) };
                 const settled = await Promise.allSettled([
-                    runRoleplayAgentPostprocessing(shared, { ...options, value: intercepted.value }).then(post => {
+                    runRoleplayAgentPostprocessing(shared, { ...options, value: intercepted.value, onProgress: onPostProgress }).then(post => {
                         publishTextPreview(post.text, { inChatAgents: post.extra.inChatAgents, stage: 'companions' });
                         return post;
                     }),
@@ -230,7 +231,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 if (failure) throw failure.reason;
                 [post, companions] = settled.map(item => item.value);
             } else {
-                post = await runRoleplayAgentPostprocessing(context, { ...options, value: intercepted.value });
+                post = await runRoleplayAgentPostprocessing(context, { ...options, value: intercepted.value, onProgress: onPostProgress });
                 publishTextPreview(post.text, { inChatAgents: post.extra.inChatAgents, stage: 'companions' });
                 companions = await runRoleplayCompanions(context, { ...options, effect, value: post.text, continuityRuns: post.runs, onProgress });
             }

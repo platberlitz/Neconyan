@@ -15,6 +15,46 @@ const isAppend = agent => agent.append === true;
 const agents = ids => ids.map(id => ({ id, append: id.startsWith('a') }));
 const describe = stages => stages.map(stage => `${stage.type}:${stage.agents.map(agent => agent.id).join(',')}`);
 
+for (const parallel of [false, true]) {
+    test(`${parallel ? 'parallel' : 'sequential'} progress exposes completed append blocks while another Agent waits`, async () => {
+        const progress = [];
+        let release;
+        const held = new Promise(resolve => { release = resolve; });
+        const pending = runPromptTransformStages({
+            agents: agents(['a1', 'a2', 'r1']), text: reply, parallel, isAppend,
+            onProgress: draft => progress.push(composePromptTransformDraft(draft, join)),
+            runAppend: async (group, body, publish) => {
+                assert.equal(body, reply);
+                const outputs = [{ agent: group[0], text: 'First choices' }];
+                publish(outputs);
+                await held;
+                return { outputs: [...outputs, { agent: group[1], text: 'Second choices' }] };
+            },
+            runRewrite: async () => ({ text: 'Rewritten reply' }),
+        });
+        await new Promise(resolve => setImmediate(resolve));
+        assert.ok(progress.some(text => text.includes('First choices')));
+        assert.ok(progress.every(text => !text.includes('Second choices')));
+        release();
+        const { draft } = await pending;
+        assert.equal(composePromptTransformDraft(draft, join), 'Rewritten reply\n\nFirst choices\n\nSecond choices');
+        assert.equal(progress.at(-1), composePromptTransformDraft(draft, join));
+    });
+}
+
+test('parallel progress never presents an independent rewrite as the combined reply', async () => {
+    const progress = [];
+    await runPromptTransformStages({ agents: agents(['r1', 'r2', 'a1']), text: reply, parallel: true, isAppend,
+        onProgress: draft => progress.push(composePromptTransformDraft(draft, join)),
+        runRewrite: async agent => ({ text: `Alternative ${agent.id}` }),
+        runAppend: async group => ({ outputs: [{ agent: group[0], text: 'Menu' }] }),
+        runSynthesis: async () => ({ text: 'Combined reply' }),
+    });
+    assert.ok(progress.some(text => text === `${reply}\n\nMenu`));
+    assert.ok(progress.every(text => !text.includes('Alternative')));
+    assert.equal(progress.at(-1), 'Combined reply\n\nMenu');
+});
+
 test('all parallel rewrites start on the original and synthesis waits for every result', async () => {
     const started = [];
     const releases = [];
