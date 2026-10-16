@@ -1,5 +1,12 @@
 // Questions and distinguishing facts shared by Node and real-browser retrieval checks.
 export const refreshedKnowledgeCases = [
+    ['Why does Writing reply appear while I am watching the tab?', 'chat.live-replies', 'also use server jobs while you are watching'],
+    ['Does the live reply bubble disappear before the saved reply is ready?', 'chat.live-replies', 'stays visible until the saved replacement is ready'],
+    ['Does cancelling a replacement restore the original reply?', 'chat.live-replies', 'restores the original reply'],
+    ['Does Message Timer keep counting elapsed seconds between text updates?', 'appearance.message-statistics', 'even between incoming text updates'],
+    ['Why does the timer stop during Agents?', 'appearance.message-statistics', 'stops when the main reply finishes'],
+    ['Does the dialoguecolors macro still work after I close the tab?', 'appearance.dialogue-server-prompt', 'captured instruction'],
+    ['Does changing the palette after submitting change the dialoguecolors macro?', 'appearance.dialogue-server-prompt', 'does not change an already submitted job'],
     ['How do I open General Scratchpad from Home?', 'scratchpad.start', 'one account-owned list separate from chats and notes'],
     ['Does General Scratchpad secretly share chat messages?', 'scratchpad.context', 'General shares no messages, swipes, lore'],
     ['How do Scratchpad images use Review avatar?', 'scratchpad.images', 'Review avatar'],
