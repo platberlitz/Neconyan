@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.3.4.1
+
+### Highlights
+- Reopening a server-run Roleplay reply now restores **Stop** and keeps **Send** blocked until that reply settles. A second message can no longer slip into the same chat while the first reply's Agents are still working.
+- If an Agent fails or the saved chat changes after the model finishes, **Recovered reply** keeps a readable copy beside the chat, with **Copy reply**, **Download reply** and **Dismiss**. It survives reopening and server restarts, including completed previews saved by the previous version, without overwriting your edits or paying for the reply again. Download a copy to keep it permanently; clearing job history or its storage limit can remove old copies.
+- Finished Agent additions and sequential rewrites now appear while the remaining Agents work. Parallel rewrite alternatives still wait for their combined result. Refreshed the official handbook and assistant help to explain live progress, Stop and recovered replies.
+
 ## v1.3.4
 
 ### Highlights
