@@ -6,6 +6,7 @@
 - Added image input choices for Roleplay and Conversation: **Send the image**, **Use a description** or **Show only**, which keeps a picture in the chat without feeding it to new automatic replies. Account and chat choices win over single images, and **Settings → Appearance → Avatar & Chat Styles → Review image input and repairs** is where you sort them out.
 - Added image recovery for chats that older connections choke on: preview a compatible copy, save exact copies of embedded images, repair several chats at once, and use **Recovery history** to export the original chat or undo a repair (as long as you haven't edited that chat since).
 - Stopping Agents after the main reply has finished now keeps that reply instead of throwing it away, without paying for it again. Coming back to a tab your phone suspended reconnects to the saved reply rather than leaving the preview stuck.
+- Server replies now show ticking elapsed seconds with **Message Timer** on, keep the live bubble visible until the saved reply is ready, and restore the original reply when you cancel an unfinished replacement. The `{{dialoguecolors}}` instructions are captured before sending, so they still reach the model after you close the tab or retry a request.
 - Dialogue colours show up while a server reply is still being written again, and finished Companion notes appear one by one, marked **Live reply**, instead of waiting for the slowest one.
 - Rebuilt the Character Expressions page with clearer image tiles, **All**, **Ready** and **Missing** filters, **Generate missing** and **More image tools**. Personas get their own expression sets, you can pick a persona's expression by hand, and **Export ZIP** saves a whole set.
 - Sprite cleanup leaves fewer white fringes, new sprites can be generated on a green or magenta background that's removed automatically, and there are two optional local models: AI background removal and a 2x or 4x anime enlarger. Both start off, and I'd export your set before using **Redo cleanup**.
@@ -14,6 +15,7 @@
 - **Fix trackers** now checks its output against the rules that actually display the tracker, so a block that closes its tags but still shows as raw text counts as a failed repair and your previous tracker stays.
 - Added 40 dark, light and animated Regex Agent Themes with a **Browse themes** gallery (filters, **Previous**, **Next**, **Surprise me**), plus eight more Termeownal palettes, and its checkboxes and radio buttons stay round.
 - Added ready-made Quick Reply sets (**Story controls**, **Reply directions**, **Writing helpers**, **Ask privately**) and **Make a quick reply** for building your own buttons, and refreshed the official handbook and assistant product help for this release.
+- Fixed a Conversation schedule editor focus race that could ignore Escape just after opening.
 
 ### Merged Staging PRs
 - PR #185 (2026-10-15) `fix(images): preserve chat compatibility and add recovery controls`
@@ -27,6 +29,7 @@
 - PR #193 (2026-10-16) `feat(regex-agent-themes): add 40 themes and an easier theme gallery`
 - PR #194 (2026-10-16) `feat(termeownal): add eight more palettes and keep toggles round`
 - PR #195 (2026-10-16) `feat(quick-reply): ready-made sets, a builder and a clearer panel`
+- PR #197 (2026-10-16) `fix(roleplay): preserve live timers, replies and dialogue colours`
 
 ## v1.3.3
 
