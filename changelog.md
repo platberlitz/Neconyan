@@ -1,5 +1,33 @@
 # Changelog
 
+## v1.3.4
+
+### Highlights
+- Added image input choices for Roleplay and Conversation: **Send the image**, **Use a description** or **Show only**, which keeps a picture in the chat without feeding it to new automatic replies. Account and chat choices win over single images, and **Settings → Appearance → Avatar & Chat Styles → Review image input and repairs** is where you sort them out.
+- Added image recovery for chats that older connections choke on: preview a compatible copy, save exact copies of embedded images, repair several chats at once, and use **Recovery history** to export the original chat or undo a repair (as long as you haven't edited that chat since).
+- Stopping Agents after the main reply has finished now keeps that reply instead of throwing it away, without paying for it again. Coming back to a tab your phone suspended reconnects to the saved reply rather than leaving the preview stuck.
+- Dialogue colours show up while a server reply is still being written again, and finished Companion notes appear one by one, marked **Live reply**, instead of waiting for the slowest one.
+- Rebuilt the Character Expressions page with clearer image tiles, **All**, **Ready** and **Missing** filters, **Generate missing** and **More image tools**. Personas get their own expression sets, you can pick a persona's expression by hand, and **Export ZIP** saves a whole set.
+- Sprite cleanup leaves fewer white fringes, new sprites can be generated on a green or magenta background that's removed automatically, and there are two optional local models: AI background removal and a 2x or 4x anime enlarger. Both start off, and I'd export your set before using **Redo cleanup**.
+- Expression portraits are bigger on phones and **Show expressions in phone chat** puts them above messages in every Roleplay chat style, including ones that hide avatars. Ripple keeps its side portrait.
+- **Compact Input Area** works on phones again, so you can pick a single-row composer or a full-width message box above the buttons.
+- **Fix trackers** now checks its output against the rules that actually display the tracker, so a block that closes its tags but still shows as raw text counts as a failed repair and your previous tracker stays.
+- Added 40 dark, light and animated Regex Agent Themes with a **Browse themes** gallery (filters, **Previous**, **Next**, **Surprise me**), plus eight more Termeownal palettes, and its checkboxes and radio buttons stay round.
+- Added ready-made Quick Reply sets (**Story controls**, **Reply directions**, **Writing helpers**, **Ask privately**) and **Make a quick reply** for building your own buttons, and refreshed the official handbook and assistant product help for this release.
+
+### Merged Staging PRs
+- PR #185 (2026-10-15) `fix(images): preserve chat compatibility and add recovery controls`
+- PR #186 (2026-10-15) `fix(agents): keep completed replies when stopping agents`
+- PR #187 (2026-10-15) `fix(roleplay): recover replies after tab suspension`
+- PR #188 (2026-10-15) `feat(expressions): add persona sets, exports and cleaner sprites`
+- PR #189 (2026-10-15) `fix(composer): restore the compact input toggle on phones`
+- PR #190 (2026-10-16) `fix(trackers): validate repair output against display regexes`
+- PR #191 (2026-10-16) `fix(roleplay): restore live colours and companion progress`
+- PR #192 (2026-10-16) `feat(expressions): rebuild the expressions page and enlarge phone portraits`
+- PR #193 (2026-10-16) `feat(regex-agent-themes): add 40 themes and an easier theme gallery`
+- PR #194 (2026-10-16) `feat(termeownal): add eight more palettes and keep toggles round`
+- PR #195 (2026-10-16) `feat(quick-reply): ready-made sets, a builder and a clearer panel`
+
 ## v1.3.3
 
 ### Highlights
