@@ -403,9 +403,12 @@ export function ensureDirectory(dirPath) {
 /**
  * Extracts all images from a ZIP archive.
  * @param {string} zipFilePath Path to the ZIP archive
+ * @param {object} [options]
+ * @param {number} [options.maxEntryBytes] Skip images larger than this once unpacked
+ * @param {number} [options.maxFiles] Stop after this many images
  * @returns {Promise<[string, Buffer][]>} Array of image buffers
  */
-export async function getImageBuffers(zipFilePath) {
+export async function getImageBuffers(zipFilePath, { maxEntryBytes = Infinity, maxFiles = Infinity } = {}) {
     return new Promise((resolve, reject) => {
         // Check if the zip file exists
         if (!fs.existsSync(zipFilePath)) {
@@ -422,7 +425,12 @@ export async function getImageBuffers(zipFilePath) {
                 zipfile.readEntry();
                 zipfile.on('entry', (entry) => {
                     const mimeType = mime.lookup(entry.fileName);
-                    if (mimeType && mimeType.startsWith('image/') && !entry.fileName.startsWith('__MACOSX')) {
+                    if (imageBuffers.length >= maxFiles) {
+                        zipfile.close();
+                        resolve(imageBuffers);
+                        return;
+                    }
+                    if (mimeType && mimeType.startsWith('image/') && !entry.fileName.startsWith('__MACOSX') && entry.uncompressedSize <= maxEntryBytes) {
                         zipfile.openReadStream(entry, (err, readStream) => {
                             if (err) {
                                 reject(err);

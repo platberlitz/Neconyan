@@ -50,6 +50,19 @@ import {
     runChatRecoveryBestEffort,
 } from '../chat-recovery.js';
 
+/**
+ * Imports embedded Risu sprites without letting a bad sprite block the character itself.
+ * @param {object} directories User directories
+ * @param {object} data Character card data
+ */
+function importRisuSpritesSafely(directories, data) {
+    try {
+        importRisuSprites(directories, data);
+    } catch (error) {
+        console.warn('The character was imported without its embedded sprites:', error?.message ?? error);
+    }
+}
+
 // With 100 MB limit it would take roughly 3000 characters to reach this limit
 const memoryCacheCapacity = getConfigValue('performance.memoryCacheCapacity', '100mb');
 const memoryCache = new MemoryLimitedMap(memoryCacheCapacity);
@@ -1674,7 +1687,7 @@ async function importFromJson(uploadPath, { request }, preservedFileName) {
 
     if (jsonData.spec !== undefined) {
         console.info(`Importing from ${jsonData.spec} json`);
-        importRisuSprites(request.user.directories, jsonData);
+        importRisuSpritesSafely(request.user.directories, jsonData);
         unsetPrivateFields(jsonData);
         jsonData = readFromV2(jsonData);
         jsonData.create_date = new Date().toISOString();
@@ -1758,7 +1771,7 @@ async function importFromPng(uploadPath, { request }, preservedFileName) {
 
     if (jsonData.spec !== undefined) {
         console.info(`Found a ${jsonData.spec} character file.`);
-        importRisuSprites(request.user.directories, jsonData);
+        importRisuSpritesSafely(request.user.directories, jsonData);
         unsetPrivateFields(jsonData);
         jsonData = readFromV2(jsonData);
         jsonData.create_date = new Date().toISOString();

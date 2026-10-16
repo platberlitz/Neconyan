@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
 import archiver from 'archiver';
+import sanitize from 'sanitize-filename';
 import { getImageBuffers } from '../util.js';
 import { deleteSpriteFiles, exportSpriteFiles, listSpriteFiles, saveSpriteFiles } from '../generation/sprite-storage.js';
 import { roleplayAccountBase, roleplayAccountStamp } from '../roleplay-store.js';
@@ -23,6 +24,26 @@ export function importRisuSprites(directories, data) {
     saveSpriteFiles(directories, name, [...selected.values()], { overwrite: false });
     delete risu.additionalAssets;
     delete risu.emotions;
+}
+
+const ZIP_SPRITE_LIMIT = 256;
+const ZIP_SPRITE_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Keeps one usable image per sprite name from a ZIP, so a stray duplicate or odd filename
+ * skips that file instead of refusing the whole pack.
+ * @param {[string, Buffer][]} images Filename and bytes pairs, in archive order
+ * @returns {{ filename: string, bytes: Buffer }[]}
+ */
+export function selectZipSprites(images) {
+    const selected = new Map();
+    for (const [filename, bytes] of images) {
+        const stem = path.parse(filename).name.toLowerCase();
+        if (!stem || filename !== sanitize(filename) || /\.svgz?$/i.test(filename) || selected.has(stem)) continue;
+        if (!Buffer.isBuffer(bytes) || !bytes.length || bytes.length > ZIP_SPRITE_BYTES) continue;
+        selected.set(stem, { filename, bytes });
+    }
+    return [...selected.values()].slice(0, ZIP_SPRITE_LIMIT);
 }
 
 export const router = express.Router();
@@ -89,9 +110,8 @@ router.post('/upload-zip', async (request, response) => {
         const base = roleplayAccountBase(request.user.directories);
         if (!base) return response.sendStatus(409);
         const account = roleplayAccountStamp(base);
-        const images = await getImageBuffers(uploaded);
-        const count = images.length ? saveSpriteFiles(request.user.directories, request.body.name,
-            images.map(([filename, bytes]) => ({ filename, bytes })), { account }) : 0;
+        const images = selectZipSprites(await getImageBuffers(uploaded, { maxEntryBytes: ZIP_SPRITE_BYTES, maxFiles: ZIP_SPRITE_LIMIT * 2 }));
+        const count = images.length ? saveSpriteFiles(request.user.directories, request.body.name, images, { account }) : 0;
         return response.send({ ok: true, count });
     } catch (error) { return response.sendStatus(error.status ?? 500); } finally { fs.rmSync(uploaded, { force: true }); }
 });

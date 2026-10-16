@@ -5,8 +5,8 @@ import test from 'node:test';
 import express from 'express';
 import { fixture } from './roleplay-transactions-fixture.js';
 
-const { deleteSpriteFiles, exportSpriteFiles, listSpriteFiles, saveSpriteFiles } = await import('../src/generation/sprite-storage.js');
-const { importRisuSprites, router } = await import('../src/endpoints/sprites.js');
+const { deleteSpriteFiles, exportSpriteFiles, listSpriteFiles, saveSpriteFiles, spriteFolderParts } = await import('../src/generation/sprite-storage.js');
+const { importRisuSprites, router, selectZipSprites } = await import('../src/endpoints/sprites.js');
 const { getImageBuffers } = await import('../src/util.js');
 const { captureSpriteRequest, admitSpriteJob } = await import('../src/generation/sprite-jobs.js');
 const { roleplayAccountStamp } = await import('../src/roleplay-store.js');
@@ -47,6 +47,35 @@ test('sprite HTTP/import writers reject symlink folders and exact-path aliases',
     for (const name of ['../Nova', 'Nova/../other', 'Nova/x/extra', '/Nova', 'Nova\\x']) {
         assert.throws(() => saveSpriteFiles(f.scope.directories, name, [{ filename: 'joy.png', bytes: image }]), { code: 'SPRITE_INVALID' });
     }
+});
+
+test('character names with filename-unsafe characters map to one sanitised folder for writes, lists and URLs', t => {
+    const f = fixture(t);
+    saveSpriteFiles(f.scope.directories, 'Re:Zero', [{ filename: 'joy.png', bytes: image }]);
+    assert.ok(fs.existsSync(path.join(f.scope.directories.characters, 'ReZero', 'joy.png')));
+    const [listed] = listSpriteFiles(f.scope.directories, 'Re:Zero');
+    assert.equal(listed.label, 'joy');
+    assert.match(listed.path, /^\/characters\/ReZero\/joy\.png\?t=/);
+    assert.equal(deleteSpriteFiles(f.scope.directories, 'Re:Zero', 'joy'), 1);
+});
+
+test('sprite folder names reject traversal and SVG files are refused', t => {
+    assert.deepEqual(spriteFolderParts('Bob/formal'), ['Bob', 'formal']);
+    for (const name of ['', '..', 'a/../b', 'a\\b', 'a/b/c', '/']) assert.equal(spriteFolderParts(name), null, name);
+    const f = fixture(t);
+    assert.throws(() => saveSpriteFiles(f.scope.directories, 'Mira', [{ filename: 'joy.svg', bytes: image }]), /./);
+});
+
+test('ZIP sprite uploads keep the first image per expression and skip unsafe or empty entries', () => {
+    const picked = selectZipSprites([
+        ['joy.png', image],
+        ['JOY.webp', image],
+        ['anger.svg', image],
+        ['fear:x.png', image],
+        ['sadness.png', Buffer.alloc(0)],
+        ['surprise.png', image],
+    ]);
+    assert.deepEqual(picked.map(item => item.filename), ['joy.png', 'surprise.png']);
 });
 
 test('sprite export preserves all variants and formats, isolates the selected set, and can be reimported', t => {

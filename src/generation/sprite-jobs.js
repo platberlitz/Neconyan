@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import sanitize from 'sanitize-filename';
+import { spriteFolderParts } from './sprite-storage.js';
 import { registerHandler } from '../jobs/runner.js';
 import { writeArtifact } from '../jobs/artifacts.js';
 import { readImageArtifact, writeImageArtifact } from '../jobs/image-artifacts.js';
@@ -74,8 +75,9 @@ export function captureSpriteRequest(base, account, source, { avatar, labels, fo
         if (member && folder && member.folder !== folder) throw fail('The sprite folder does not belong to the selected character expression set.');
         const configuredFolder = member?.folder || overrides.find(item => item?.name === stem)?.path || card.name || stem;
         folder ??= configuredFolder;
-        const parts = typeof folder === 'string' ? folder.split('/') : [];
-        if (!parts.length || parts.length > 2 || parts.some(part => !safePart(part))) throw fail('The sprite folder name is invalid.');
+        const parts = spriteFolderParts(folder);
+        if (!parts || parts.some(part => !safePart(part))) throw fail('The sprite folder name is invalid.');
+        folder = parts.join('/');
         const directory = path.join(base.directories.characters, ...parts);
         readRoleplayFile(path.join(directory, '.sprite-path-check'), 1024, { allowMissingParent: true });
         const relativeDirectory = path.relative(base.directories.root, directory).split(path.sep).join('/');

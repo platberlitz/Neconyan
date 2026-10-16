@@ -16,3 +16,11 @@ test('custom prompts receive the selected background rule and unused cells match
     expect(prompt).not.toContain('flat white');
     expect(buildExpressionSpritePrompt('joy', { background: 'white' })).toContain('flat pure white');
 });
+test('macro text inside a character card is not expanded a second time', () => {
+    const prompt = buildExpressionSpritePrompt('joy', {
+        characterName: 'Mira',
+        characterCard: 'Likes the {{expression}} macro and {{unknownMacro}}.',
+        promptTemplate: '{{generationInstructions}}\n{{characterCard}}',
+    });
+    expect(prompt).toContain('Likes the {{expression}} macro and {{unknownMacro}}.');
+});

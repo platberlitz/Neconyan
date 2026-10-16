@@ -12,16 +12,29 @@ const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 
 function invalid(message) { throw roleplayError('SPRITE_INVALID', message, 409); }
 
+/**
+ * Maps a sprite folder name to the parts stored on disk. Character names may hold characters a
+ * filename cannot (Re:Zero), so each part is sanitised the same way for reads, writes and URLs.
+ * @param {unknown} name Folder name, optionally with one subfolder (Bob/formal).
+ * @returns {string[]|null} The safe parts, or null when the name cannot map to a folder.
+ */
+export function spriteFolderParts(name) {
+    const parts = typeof name === 'string' && !name.includes('\\') ? name.split('/').map(part => sanitize(part)) : [];
+    if (!parts.length || parts.length > 2 || parts.some(part => !part || part === '.' || part === '..')) return null;
+    return parts;
+}
+
+function folderParts(name) {
+    return spriteFolderParts(name) ?? invalid('The sprite folder name is invalid.');
+}
+
 function folderPath(directories, name) {
-    const parts = typeof name === 'string' ? name.split('/') : [];
-    if (!parts.length || parts.length > 2 || parts.some(part => !part || part !== sanitize(part)
-        || part === '.' || part === '..' || part.includes('\\'))) invalid('The sprite folder name is invalid.');
-    return path.join(directories.characters, ...parts);
+    return path.join(directories.characters, ...folderParts(name));
 }
 
 function spriteFilename(name) {
     if (typeof name !== 'string' || !name || name !== sanitize(name) || path.basename(name) !== name
-        || !String(mime.lookup(name)).startsWith('image/')) invalid('The sprite filename is invalid.');
+        || !String(mime.lookup(name)).startsWith('image/') || /\.svgz?$/i.test(name)) invalid('The sprite filename is invalid.');
     return name;
 }
 
@@ -35,7 +48,7 @@ function withSprites(directories, name, create, operation, { mutate = false, acc
     if (!base) invalid('This account needs its protected media store.');
     const folder = folderPath(directories, name);
     return withRoleplayAccount(base, account ?? roleplayAccountStamp(base), lease => {
-        if (mutate) assertNativeMediaTargetIdle(lease, { kind: 'sprites', id: name });
+        if (mutate) assertNativeMediaTargetIdle(lease, { kind: 'sprites', id: folderParts(name).join('/') });
         // The protected reader also checks every physical parent when this probe is absent.
         readRoleplayFile(path.join(folder, '.sprite-path-check'), 1, { allowMissingParent: true });
         if (create) createRoleplayDirectory(folder, directories.root);
@@ -108,7 +121,7 @@ export function listSpriteFiles(directories, name) {
         return files.map(file => {
             const mtime = fs.statSync(path.join(folder, file)).mtimeMs;
             return { label: expressionLabelFromFilename(file, labels),
-                path: `/characters/${name.split('/').map(encodeURIComponent).join('/')}/${encodeURIComponent(file)}?t=${mtime}` };
+                path: `/characters/${folderParts(name).map(encodeURIComponent).join('/')}/${encodeURIComponent(file)}?t=${mtime}` };
         });
     });
 }

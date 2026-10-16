@@ -99,7 +99,9 @@ function hasPlaceholder(template, key) {
 
 function fromTemplate(template, values) {
     const missing = ['generationInstructions', 'sheetInstructions'].filter(key => values[key] && !hasPlaceholder(template, key));
-    const text = Object.entries(values).reduce((value, [key, replacement]) => value.replace(new RegExp(`{{\\s*${key}\\s*}}`, 'gi'), () => String(replacement ?? '')), template);
+    const lookup = new Map(Object.entries(values).map(([key, replacement]) => [key.toLowerCase(), replacement]));
+    // One pass, so macro text inside a character card is never expanded again.
+    const text = template.replace(/{{\s*([a-z]+)\s*}}/gi, (match, key) => lookup.has(key.toLowerCase()) ? String(lookup.get(key.toLowerCase()) ?? '') : match);
     const background = hasPlaceholder(template, 'backgroundInstructions') ? '' : values.backgroundInstructions;
     return [missing.map(key => values[key]).join('\n'), text, background].filter(Boolean).join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
 }
