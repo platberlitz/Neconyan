@@ -148,11 +148,15 @@ function baseRecord(agent, model) {
 /** Run automatic or explicitly selected companions from saved inputs and acknowledged provider steps. */
 export async function runRoleplayCompanions(context, options) {
     const { base, snapshot, records, value, generationType, effect, assistantName, binding, generate, assertCurrent } = options;
+    // Display-only copies cannot change the saved result or interrupt paid work.
+    const notifyProgress = results => {
+        try { options.onProgress?.(structuredClone(results)); } catch { /* An observer does not own the job. */ }
+    };
     const identity = roleplayHash({ intent: context.job.intent, records, value, generationType, effect,
         ...(options.selectedAgentIds ? { selectedAgentIds: options.selectedAgentIds, repair: Boolean(options.repair) } : {}) });
     const key = 'roleplay-companions';
     const previous = saved(context, snapshot.account, key, identity);
-    if (previous) return previous;
+    if (previous) { notifyProgress(previous.results); return previous; }
     await assertCurrent?.();
     const all = readRoleplayAgents(base, snapshot);
     const hidden = new Set(snapshot.agents.hiddenIds ?? []);
@@ -183,10 +187,17 @@ export async function runRoleplayCompanions(context, options) {
     const completed = new Map(), visited = new Set(pending.map(agent => agent.id)), changed = new Set();
     const shared = { ...context, providerScope: context.providerScope ?? createProviderScope(context) };
     const isRepairTarget = agent => Boolean(options.repair && (!options.selectedAgentIds || options.selectedAgentIds.some(id => references(agent).includes(id))));
+    const publishProgress = () => {
+        const entries = new Map(Object.entries(hostResults));
+        for (const agent of pending) entries.set(agent.id, { ...baseRecord(agent, null), status: 'pending', content: '' });
+        for (const [id, result] of completed) entries.set(id, result.record);
+        notifyProgress(Object.fromEntries(entries));
+    };
 
     const remember = result => {
         completed.set(result.agentId, result);
         if (result.changed) changed.add(result.agentId);
+        publishProgress();
         return result;
     };
 
@@ -313,6 +324,7 @@ export async function runRoleplayCompanions(context, options) {
     };
 
     while (pending.length) {
+        publishProgress();
         const remaining = new Set(pending.map(agent => agent.id));
         const blocked = pending.filter(agent => agent.companion.waitForDependencies && dependencies(agent, index).some(dependency => completed.has(dependency.id) && !completed.get(dependency.id).success));
         const ready = pending.filter(agent => !blocked.includes(agent) && (!agent.companion.waitForDependencies || dependencies(agent, index).every(dependency => !remaining.has(dependency.id))));
@@ -321,7 +333,7 @@ export async function runRoleplayCompanions(context, options) {
             const runIdentity = roleplayHash({ identity, agent: agent.id, dependencyFailure: true });
             const result = saved(context, snapshot.account, `roleplay-companion:${agent.id}`, runIdentity)
                 ?? failedResult(agent, runIdentity, cyclic.length ? 'Companion dependencies form a cycle.' : 'A required companion did not complete.');
-            completed.set(agent.id, result);
+            remember(result);
         }
         const sections = new Map(ready.map(agent => [agent.id, linkedContext(input, agent, sources, index, completed)]));
         const groups = units(ready, sections, binding);

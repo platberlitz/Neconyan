@@ -548,9 +548,9 @@ export function insertChoiceIntoMessageInput(rawText) {
     return true;
 }
 
-function buildCompanionCard(agentId, result, message) {
+function buildCompanionCard(agentId, result, message, isPreview = false) {
     const status = getResultStatus(result);
-    const runnable = Boolean(getAgentById(agentId)) && isValidCompanionMessage(message);
+    const runnable = !isPreview && Boolean(getAgentById(agentId)) && isValidCompanionMessage(message);
     const runDisabled = !areAgentsGloballyEnabled() || status === 'pending' ? ' disabled' : '';
     const agentName = cleanCompanionAgentName(result.agentName);
     const icon = String(result.icon ?? '').trim() || 'fa-user-astronaut';
@@ -577,14 +577,14 @@ function buildCompanionCard(agentId, result, message) {
                 <span class="ica--companion-summary-spacer"></span>
                 ${meta ? `<span class="ica--companion-meta" title="${escapeHtml(metaTitle || meta)}">${escapeHtml(meta)}</span>` : ''}
                 <span class="ica--companion-status">${escapeHtml(getStatusLabel(status))}</span>
-                <span class="ica--companion-actions">
+                ${isPreview ? '' : `<span class="ica--companion-actions">
                     ${runnable ? `<button type="button" class="ica--companion-action" data-action="regenerate" title="Regenerate companion note" aria-label="Regenerate companion note"${runDisabled}><i class="fa-solid fa-rotate-right"></i></button>` : ''}
                     ${runnable ? `<button type="button" class="ica--companion-action" data-action="fix" title="Fix this companion note with strict output enforcement" aria-label="Fix companion note"${runDisabled}><i class="fa-solid fa-wrench"></i></button>` : ''}
                     <button type="button" class="ica--companion-action" data-action="edit" title="Edit companion note" aria-label="Edit companion note"><i class="fa-solid fa-pen-to-square"></i></button>
                     ${lorebookButton}
                     <button type="button" class="ica--companion-action" data-action="copy" title="Copy companion note" aria-label="Copy companion note"><i class="fa-solid fa-copy"></i></button>
                     <button type="button" class="ica--companion-action caution" data-action="delete" title="Delete companion note" aria-label="Delete companion note"><i class="fa-solid fa-trash"></i></button>
-                </span>
+                </span>`}
             </summary>
             <div class="ica--companion-body">${buildCompanionBody(agentId, result, message)}</div>
             ${runnable ? buildCompanionCardControls(agentId) : ''}
@@ -592,9 +592,9 @@ function buildCompanionCard(agentId, result, message) {
     `;
 }
 
-export function renderCompanionResultsForMessage(messageIndex) {
-    const message = chat[messageIndex];
-    const messageElement = $(`.mes[mesid="${messageIndex}"]`);
+export function renderCompanionResultsForMessage(messageIndex, preview = null) {
+    const message = preview?.message ?? chat[messageIndex];
+    const messageElement = preview ? $(preview.element) : $(`.mes[mesid="${messageIndex}"]`);
 
     if (!messageElement.length) {
         return;
@@ -620,8 +620,8 @@ export function renderCompanionResultsForMessage(messageIndex) {
     }
 
     const target = captureMessageTargetState(message);
-    replaceCompanionView(ledger, entries.map(([agentId, result]) => buildCompanionCard(agentId, result, message)).join(''),
-        () => isMessageTargetCurrent(message, target, messageIndex, { text: false, revision: false }));
+    replaceCompanionView(ledger, entries.map(([agentId, result]) => buildCompanionCard(agentId, result, message, Boolean(preview))).join(''),
+        () => preview ? preview.element.isConnected : isMessageTargetCurrent(message, target, messageIndex, { text: false, revision: false }));
 }
 
 function renderAllCompanionResults() {
@@ -983,6 +983,13 @@ export function initCompanionCardUi() {
     }
 
     companionUiInitialized = true;
+    const previewResults = new WeakMap();
+    document.addEventListener('neconyan:roleplay-preview-rendered', ({ detail }) => {
+        const signature = JSON.stringify(detail.message.extra?.inChatAgentCompanionResults ?? {});
+        if (previewResults.get(detail.element) === signature) return;
+        previewResults.set(detail.element, signature);
+        renderCompanionResultsForMessage(null, detail);
+    });
     $(document).on('click', '.mes_run_companions', async function () {
         const messageIndex = getMessageIndexFromElement(this);
         if (messageIndex < 0) {

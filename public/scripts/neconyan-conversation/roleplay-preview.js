@@ -8,6 +8,8 @@ const labels = {
     translating: 'Translating reply…', speech: 'Preparing speech…', saving: 'Saving reply…',
 };
 const PREVIEW_SILENCE_MS = 5000;
+// Companion notes share the saved job artifact's 16 MiB limit.
+const MAX_PREVIEW_EVENT_LENGTH = 16 * 1024 * 1024;
 const FOLLOWED_STAGES = new Set(['preparing', 'generating', 'agents']);
 
 /** Display only: partial output never enters the chat array or a chat save. */
@@ -24,7 +26,13 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     let diagnosticStage = null;
     const diagnostic = phase => { try { globalThis.NeconyanCrashDiagnostics?.observePhase?.(diagnosticHandle, phase); } catch { /* Optional diagnostics. */ } };
     let restoreReplacement = () => {};
-    const remove = () => { node?.remove(); node = null; rendered = null; };
+    const remove = () => {
+        if (node) {
+            node.remove();
+            document.dispatchEvent(new CustomEvent('neconyan:roleplay-preview-removed', { detail: { element: node } }));
+        }
+        node = null; rendered = null;
+    };
     const render = () => {
         if (frozen) return;
         if (!isCurrent()) { remove(); restoreReplacement(); return; }
@@ -47,10 +55,11 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         }
         const reasoningDetails = node?.querySelector('.mes_reasoning_details');
         const message = { name: latest.name || 'Reply', is_user: false, is_system: false,
-            mes: latest.text || '', send_date: startedAt, gen_started: latest.gen_started || startedAt,
+            mes: latest.text || '', send_date: startedAt, gen_started: latest.gen_started || startedAt, gen_finished: latest.gen_finished,
             original_avatar: latest.avatar,
             force_avatar: latest.avatar ? getThumbnailUrl('avatar', latest.avatar) : undefined,
             extra: { reasoning: latest.reasoning || '', inChatAgents: latest.inChatAgents,
+                inChatAgentCompanionResults: latest.inChatAgentCompanionResults,
                 api: latest.generation?.source, model: latest.generation?.model,
                 token_count: latest.token_count, reasoning_tokens: latest.reasoning_tokens,
                 reasoning_duration: typeof latest.reasoning_duration === 'number'
@@ -84,11 +93,16 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     let timer = hidden() ? null : setInterval(render, 500);
     let attempt = null;
     let wake = null;
+    let reconnectRequested = false;
     // A backgrounded phone tab can lose its connection without an error, leaving
     // the reader waiting forever on a frozen preview. The server writes at least
     // once a second, so silence or a return to the page starts a fresh connection,
     // which begins with the server's current text and stage.
-    const reconnect = () => attempt?.abort();
+    const reconnect = () => {
+        reconnectRequested = true;
+        attempt?.abort();
+        wake?.(); wake = null;
+    };
     // Nobody reads a hidden preview, and receiving the growing reply several times
     // a second keeps a phone's radio and processor awake. Close the stream while
     // hidden; the job observer still notices the finish and reads the saved reply.
@@ -99,7 +113,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             return;
         }
         if (!timer && !frozen && !stopped) timer = setInterval(render, 500);
-        if (wake) { wake(); wake = null; } else reconnect();
+        reconnect();
     };
     document.addEventListener('visibilitychange', onVisible);
     globalThis.addEventListener?.('pageshow', reconnect);
@@ -112,6 +126,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             }
             const current = new AbortController();
             attempt = current;
+            reconnectRequested = false;
             let silence = null;
             const heard = () => { clearTimeout(silence); silence = setTimeout(() => current.abort(), PREVIEW_SILENCE_MS); };
             try {
@@ -126,12 +141,13 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                 const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
                 try {
                     let pending = '';
+                    let firstSnapshot = true;
                     while (!stopped) {
                         const chunk = await withAbortSignal(reader.read(), current.signal);
                         if (chunk.done) break;
                         heard();
                         pending += chunk.value;
-                        if (pending.length > 2 * 1024 * 1024) throw new Error('Reply preview exceeded its limit.');
+                        if (pending.length > MAX_PREVIEW_EVENT_LENGTH) throw new Error('Reply preview exceeded its limit.');
                         let boundary;
                         while ((boundary = pending.indexOf('\n\n')) >= 0) {
                             const event = pending.slice(0, boundary);
@@ -146,7 +162,8 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                                     diagnosticStage = latest.stage;
                                     diagnostic(({ preparing: 'preparing', generating: 'generating', agents: 'post-agents', companions: 'companions', review: 'waiting-review', saving: 'saving' })[diagnosticStage] || 'unknown');
                                 }
-                                if (!node) render();
+                                if (firstSnapshot || !node) render();
+                                firstSnapshot = false;
                             }
                             if (value.state) { diagnostic(null); onTerminal(value); return; }
                         }
@@ -160,7 +177,10 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                 clearTimeout(silence);
                 current.abort();
             }
-            if (!stopped) await new Promise(resolve => setTimeout(resolve, 1000));
+            if (!stopped && !hidden() && !reconnectRequested) await new Promise(resolve => {
+                const backoff = setTimeout(() => { wake = null; resolve(); }, 1000);
+                wake = () => { clearTimeout(backoff); resolve(); };
+            });
         }
     };
     void run();

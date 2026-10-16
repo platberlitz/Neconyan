@@ -157,7 +157,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         const publishTextPreview = (text, update) => publishRoleplayPreview(context, { ...update, text,
             token_count: count(text), reasoning_tokens: count(reply.extra.reasoning ?? '') });
         publishTextPreview(result.text, { reasoning: reply.extra.reasoning ?? '', generation: result.generation,
-            gen_started: reply.gen_started, reasoning_duration: reply.extra.reasoning_duration, reasoning_finished: true, stage: 'agents' });
+            gen_started: reply.gen_started, gen_finished: reply.gen_finished,
+            reasoning_duration: reply.extra.reasoning_duration, reasoning_finished: true, stage: 'agents' });
         if (request.worldInfo?.captions?.persist) {
             const { hash, ...captions } = readArtifact(directories, job.id, 'roleplay-captions') ?? {};
             if (hash !== roleplayHash(captions) || !Array.isArray(captions.results)) {
@@ -213,6 +214,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 return { waiting: true, approval: intercepted.approval };
             }
             const pre = readArtifact(directories, job.id, 'roleplay-agents-pre');
+            const onProgress = results => publishRoleplayPreview(context, { inChatAgentCompanionResults: results });
             let post, companions;
             if (request.worldInfo.agents.concurrentCompanions) {
                 const shared = { ...context, providerScope: createProviderScope(context) };
@@ -221,7 +223,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                         publishTextPreview(post.text, { inChatAgents: post.extra.inChatAgents, stage: 'companions' });
                         return post;
                     }),
-                    runRoleplayCompanions(shared, { ...options, effect, value: roleplayAgentOutputBaseline(intercepted.value, pre) }),
+                    runRoleplayCompanions(shared, { ...options, effect, value: roleplayAgentOutputBaseline(intercepted.value, pre), onProgress }),
                 ]);
                 const failure = settled.find(item => item.status === 'rejected');
                 if (failure) throw failure.reason;
@@ -229,7 +231,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             } else {
                 post = await runRoleplayAgentPostprocessing(context, { ...options, value: intercepted.value });
                 publishTextPreview(post.text, { inChatAgents: post.extra.inChatAgents, stage: 'companions' });
-                companions = await runRoleplayCompanions(context, { ...options, effect, value: post.text, continuityRuns: post.runs });
+                companions = await runRoleplayCompanions(context, { ...options, effect, value: post.text, continuityRuns: post.runs, onProgress });
             }
             if (effect === 'continue') output.continuedText = post.text;
             else if (message.mes !== undefined) message.mes = post.text;

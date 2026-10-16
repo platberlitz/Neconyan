@@ -82,6 +82,8 @@ const PANEL_ANCHOR_OPTIONS = {
 };
 
 let panelInitialized = false;
+let livePreview = null;
+let previewResultsSignature = '';
 let panelOpen = false;
 let panelLocked = getStoredPanelLocked();
 let handleHidden = getStoredHandleHidden();
@@ -536,8 +538,10 @@ export function collectPanelAgentStates() {
         }
     }
 
-    for (let messageIndex = chat.length - 1; messageIndex >= 0; messageIndex--) {
-        const message = chat[messageIndex];
+    const preview = livePreview?.element.isConnected ? livePreview.message : null;
+    for (let messageIndex = chat.length; messageIndex >= 0; messageIndex--) {
+        const isPreview = messageIndex === chat.length;
+        const message = isPreview ? preview : chat[messageIndex];
         // Notes on hidden hosts stay listed: "hide story above this shard" hides every earlier
         // shard's message, and skipping them here wiped those shards out of the panel entirely.
         if (!holdsReadableCompanionResults(message)) {
@@ -568,7 +572,7 @@ export function collectPanelAgentStates() {
                 byAgentId.set(agentId, state);
             }
 
-            const entry = { messageIndex, result, hostHidden: Boolean(message.is_system) };
+            const entry = { messageIndex, result, hostHidden: Boolean(message.is_system), ...(isPreview ? { preview: message } : {}) };
             if (!state.latest) {
                 state.latest = entry;
             } else {
@@ -646,7 +650,7 @@ function buildPanelEntryBody(agentId, entry) {
         return `<div class="ica--companion-error">${escapeHtml(entry.result.error || 'Companion run failed.')}</div>`;
     }
 
-    return buildLastRunErrorNotice(entry.result) + formatCompanionContent(agentId, entry.result, chat[entry.messageIndex], '.ica--tpanel-agent-body ');
+    return buildLastRunErrorNotice(entry.result) + formatCompanionContent(agentId, entry.result, entry.preview ?? chat[entry.messageIndex], '.ica--tpanel-agent-body ');
 }
 
 function buildChatOnlyComposer(state) {
@@ -741,7 +745,7 @@ function buildPanelAgentSection(state) {
     const settingsButton = state.agent
         ? '<button type="button" class="ica--cdash-action" data-action="panel-edit" title="Open this companion\'s full editor" aria-label="Open full editor"><i class="fa-solid fa-gear"></i></button>'
         : '';
-    const runLatestButton = state.agent
+    const runLatestButton = state.agent && !livePreview?.element.isConnected
         ? `<button type="button" class="ica--cdash-action" data-action="panel-run-latest" title="Run this companion on the latest assistant reply" aria-label="Run companion"${runDisabled}><i class="fa-solid fa-play"></i></button>`
         : '';
     const hiddenTitle = isHidden ? 'Unhide this companion' : 'Hide this companion (skipped on auto-trigger)';
@@ -797,17 +801,17 @@ function buildPanelAgentSection(state) {
 
     // A hidden host cannot be re-run: runSingleCompanionAgent rejects system messages, so the
     // rerun controls would silently do nothing. Editing the stored text and jumping still work.
-    const rerunButtons = latest.hostHidden || !state.agent
+    const rerunButtons = latest.preview || latest.hostHidden || !state.agent
         ? ''
         : `
                     <button type="button" class="ica--cdash-action" data-action="panel-regenerate" title="Write this note again from the message it came from" aria-label="Write note again"${runDisabled}><i class="fa-solid fa-rotate-right"></i></button>
                     <button type="button" class="ica--cdash-action" data-action="panel-fix" title="Write this note again with strict format rules (use when the model wrote roleplay instead)" aria-label="Fix note format"${runDisabled}><i class="fa-solid fa-wrench"></i></button>`;
 
     return `
-        <section class="ica--tpanel-agent" data-agent-id="${escapeHtml(agentId)}" data-message-index="${latest.messageIndex}" data-hidden="${isHidden}" data-host-hidden="${Boolean(latest.hostHidden)}">
+        <section class="ica--tpanel-agent" data-agent-id="${escapeHtml(agentId)}" ${latest.preview ? 'data-roleplay-draft="true"' : `data-message-index="${latest.messageIndex}"`} data-hidden="${isHidden}" data-host-hidden="${Boolean(latest.hostHidden)}">
             <div class="ica--tpanel-agent-head">
                 <span class="ica--tpanel-agent-name"><i class="fa-solid ${escapeHtml(icon)}"></i><span>${escapeHtml(name)}</span></span>
-                <span class="ica--tpanel-agent-when">#${latest.messageIndex}</span>
+                <span class="ica--tpanel-agent-when">${latest.preview ? 'Live reply' : `#${latest.messageIndex}`}</span>
                 ${buildAbsorbedPillHtml(latest)}
                 ${buildModelPillHtml(latest.result)}
                 ${buildCompanionTokenUsagePillsHtml(latest.result)}
@@ -815,15 +819,15 @@ function buildPanelAgentSection(state) {
                     ${dragHandleButton}
                     ${hiddenButton}
                     ${runLatestButton}${rerunButtons}
-                    ${canSendToLorebook && String(latest.result?.status ?? 'done') === 'done' ? '<button type="button" class="ica--cdash-action" data-action="panel-send-to-lorebook" title="Send this state to the attached lorebook" aria-label="Send state to lorebook"><i class="fa-solid fa-book-medical"></i></button>' : ''}
-                    <button type="button" class="ica--cdash-action" data-action="panel-edit-note" title="Edit this note by hand (for example, type your Plot Compass objective)" aria-label="Edit note"><i class="fa-solid fa-pen-to-square"></i></button>
+                    ${!latest.preview && canSendToLorebook && String(latest.result?.status ?? 'done') === 'done' ? '<button type="button" class="ica--cdash-action" data-action="panel-send-to-lorebook" title="Send this state to the attached lorebook" aria-label="Send state to lorebook"><i class="fa-solid fa-book-medical"></i></button>' : ''}
+                    ${latest.preview ? '' : '<button type="button" class="ica--cdash-action" data-action="panel-edit-note" title="Edit this note by hand (for example, type your Plot Compass objective)" aria-label="Edit note"><i class="fa-solid fa-pen-to-square"></i></button>'}
                     ${settingsButton}
-                    <button type="button" class="ica--cdash-action" data-action="panel-jump" title="Scroll to the source message" aria-label="Scroll to source message"><i class="fa-solid fa-comment-dots"></i></button>
+                    ${latest.preview ? '' : '<button type="button" class="ica--cdash-action" data-action="panel-jump" title="Scroll to the source message" aria-label="Scroll to source message"><i class="fa-solid fa-comment-dots"></i></button>'}
                 </span>
             </div>
             <div class="ica--tpanel-agent-body">${buildPanelEntryBody(agentId, latest)}</div>
-            ${buildPanelEntryControls(state)}
-            ${buildCompactionButton(state)}
+            ${latest.preview ? '' : buildPanelEntryControls(state)}
+            ${latest.preview ? '' : buildCompactionButton(state)}
             ${buildCompanionQuickControlsHtml(state.agent, { scope: 'panel' })}
             ${historyHtml}
         </section>
@@ -856,6 +860,7 @@ function buildPanelRunButtonHtml({ action, icon, label, title, count = 0, disabl
 }
 
 function buildPanelRunButtonsHtml() {
+    if (livePreview?.element.isConnected) return '';
     const runAllTitle = 'Run every switched-on companion on the latest reply, including those set to run only when you ask';
     if (!areAgentsGloballyEnabled()) {
         return `<div class="ica--tpanel-run" role="group" aria-label="Run companions">${buildPanelRunButtonHtml({ action: 'panel-regenerate-all', icon: 'fa-play', label: 'Run all', title: 'Switch Agents on to run companions', disabled: true })}</div>`;
@@ -1508,6 +1513,19 @@ export function initCompanionPanel() {
     }
 
     panelInitialized = true;
+    document.addEventListener('neconyan:roleplay-preview-rendered', ({ detail }) => {
+        const signature = JSON.stringify(detail.message.extra?.inChatAgentCompanionResults ?? {});
+        const changed = livePreview?.element !== detail.element || signature !== previewResultsSignature;
+        livePreview = detail;
+        previewResultsSignature = signature;
+        if (changed && panelOpen) renderPanel();
+    });
+    document.addEventListener('neconyan:roleplay-preview-removed', ({ detail }) => {
+        if (livePreview?.element !== detail.element) return;
+        livePreview = null;
+        previewResultsSignature = '';
+        if (panelOpen) renderPanel();
+    });
     $(document.body).append('<div id="ica--tracker-panel" class="ica--tpanel" data-edge="right" role="region" aria-label="Companions" aria-hidden="true"></div>');
     $(document.body).append(`
         <button type="button" id="ica--tracker-panel-handle" class="ica--tpanel-handle" data-edge="right" title="Open the Companion panel" aria-label="Open the Companion panel" aria-controls="ica--tracker-panel" aria-expanded="false" style="display:none">
