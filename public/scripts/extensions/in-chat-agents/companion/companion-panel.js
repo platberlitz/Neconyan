@@ -96,6 +96,7 @@ let returnFocus = null;
 let panelDragActive = false;
 let pendingPanelReorders = 0;
 let panelReorderChain = Promise.resolve();
+let panelSearchQuery = '';
 // Earlier notes render only once their 'Previous states' list is opened, a page at a time:
 // long chats hold hundreds of notes and the panel re-renders after every companion run.
 const PANEL_HISTORY_PAGE_SIZE = 20;
@@ -737,6 +738,7 @@ function buildPanelAgentSection(state) {
     const agentId = state.agentId ?? state.agent?.id ?? '';
     const latest = state.latest;
     const name = getStateDisplayName(state);
+    const searchText = escapeHtml(`${name} ${latest?.result?.content ?? ''}`.toLocaleLowerCase());
     const icon = getStateIcon(state);
     const isHidden = isAgentHidden(agentId);
     const canSendToLorebook = isLorebookAgent(state.agent);
@@ -759,7 +761,7 @@ function buildPanelAgentSection(state) {
 
     if (!latest) {
         return `
-            <section class="ica--tpanel-agent" data-agent-id="${escapeHtml(agentId)}" data-hidden="${isHidden}">
+            <section class="ica--tpanel-agent" data-agent-id="${escapeHtml(agentId)}" data-hidden="${isHidden}" data-search-text="${searchText}">
                 <div class="ica--tpanel-agent-head">
                     <span class="ica--tpanel-agent-name"><i class="fa-solid ${escapeHtml(icon)}"></i><span>${escapeHtml(name)}</span></span>
                     <span class="ica--tpanel-agent-actions">${dragHandleButton}${hiddenButton}${runLatestButton}${settingsButton}</span>
@@ -808,7 +810,7 @@ function buildPanelAgentSection(state) {
                     <button type="button" class="ica--cdash-action" data-action="panel-fix" title="Write this note again with strict format rules (use when the model wrote roleplay instead)" aria-label="Fix note format"${runDisabled}><i class="fa-solid fa-wrench"></i></button>`;
 
     return `
-        <section class="ica--tpanel-agent" data-agent-id="${escapeHtml(agentId)}" ${latest.preview ? 'data-roleplay-draft="true"' : `data-message-index="${latest.messageIndex}"`} data-hidden="${isHidden}" data-host-hidden="${Boolean(latest.hostHidden)}">
+        <section class="ica--tpanel-agent" data-agent-id="${escapeHtml(agentId)}" ${latest.preview ? 'data-roleplay-draft="true"' : `data-message-index="${latest.messageIndex}"`} data-hidden="${isHidden}" data-host-hidden="${Boolean(latest.hostHidden)}" data-search-text="${searchText}">
             <div class="ica--tpanel-agent-head">
                 <span class="ica--tpanel-agent-name"><i class="fa-solid ${escapeHtml(icon)}"></i><span>${escapeHtml(name)}</span></span>
                 <span class="ica--tpanel-agent-when">${latest.preview ? 'Live reply' : `#${latest.messageIndex}`}</span>
@@ -898,9 +900,39 @@ export function buildPanelHtml() {
                 <button type="button" class="ica--cdash-action" data-action="panel-close" title="Close panel" aria-label="Close panel"><i class="fa-solid fa-xmark"></i></button>
             </span>
         </div>
+        <div class="ica--tpanel-search">
+            <label for="ica--tpanel-search">${t`Search companions and notes`}</label>
+            <div class="ica--tpanel-search-row">
+                <input id="ica--tpanel-search" type="search" class="text_pole" data-role="panel-search" value="${escapeHtml(panelSearchQuery)}" placeholder="${escapeHtml(t`Name or latest note…`)}" autocomplete="off" aria-controls="ica--tpanel-results">
+                <button type="button" class="menu_button ica--tpanel-search-clear" data-action="panel-search-clear" aria-label="${escapeHtml(t`Clear companion search`)}" title="${escapeHtml(t`Clear companion search`)}"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <small data-role="panel-search-status" role="status" aria-live="polite"></small>
+        </div>
         ${buildPanelRunButtonsHtml()}
-        <div class="ica--tpanel-body">${body}</div>
+        <div class="ica--tpanel-body" id="ica--tpanel-results">${body}</div>
+        <div class="ica--cdash-empty" data-role="panel-search-empty" hidden>${t`No companions match. Try another name or clear the search.`}</div>
     `;
+}
+
+/** Filter existing sections so private drafts and expanded notes survive each keystroke. */
+function applyPanelSearch() {
+    const panel = document.getElementById?.('ica--tracker-panel');
+    if (!panel) return;
+    const terms = panelSearchQuery.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    const sections = [...panel.querySelectorAll('.ica--tpanel-agent')];
+    let matches = 0;
+    for (const section of sections) {
+        section.hidden = !terms.every(term => section.dataset.searchText?.includes(term));
+        if (!section.hidden) matches++;
+    }
+    const status = panel.querySelector('[data-role="panel-search-status"]');
+    if (status) status.textContent = terms.length ? t`${matches} of ${sections.length} companions` : '';
+    const empty = panel.querySelector('[data-role="panel-search-empty"]');
+    if (empty) empty.hidden = !terms.length || matches > 0 || sections.length === 0;
+    const clear = panel.querySelector('[data-action="panel-search-clear"]');
+    if (clear) clear.disabled = !panelSearchQuery;
+    const body = panel.querySelector('.ica--tpanel-body');
+    if (body && typeof $(body).sortable === 'function' && $(body).sortable('instance')) $(body).sortable('refresh');
 }
 
 function renderPanel() {
@@ -921,6 +953,7 @@ function renderPanel() {
     const scope = {};
     const target = captureMessageTargetState(scope);
     replaceCompanionView(panelElement, buildPanelHtml(), () => isMessageTargetCurrent(scope, target));
+    applyPanelSearch();
 
     for (const section of panel?.querySelectorAll(PANEL_ANCHOR_OPTIONS.messageSelector) ?? []) {
         const previousHeight = previousHeights.get(section.getAttribute(PANEL_ANCHOR_OPTIONS.keyAttribute));
@@ -967,7 +1000,7 @@ function setupPanelSortable() {
     }
 
     body.sortable({
-        items: '.ica--tpanel-agent',
+        items: '.ica--tpanel-agent:not([hidden])',
         handle: '.ica--tpanel-drag-handle',
         // jQuery UI's mouse widget matches event.target against `cancel` before the `handle`
         // gate runs; its default (`input, textarea, button, select, option`) would swallow every
@@ -983,7 +1016,7 @@ function setupPanelSortable() {
             ui.placeholder.height(ui.item.outerHeight());
         },
         stop: async function () {
-            const orderedIds = body.children('.ica--tpanel-agent').map((_, el) => el.dataset.agentId).get().filter(Boolean);
+            const orderedIds = body.children('.ica--tpanel-agent:not([hidden])').map((_, el) => el.dataset.agentId).get().filter(Boolean);
             panelDragActive = false;
             await applyPanelReorder(orderedIds);
         },
@@ -1139,6 +1172,13 @@ async function handlePanelAction(event) {
 
     const button = $(event.currentTarget);
     const action = button.attr('data-action');
+
+    if (action === 'panel-search-clear') {
+        panelSearchQuery = '';
+        $('#ica--tpanel-search').val('').trigger('focus');
+        applyPanelSearch();
+        return;
+    }
 
     if (action === 'panel-close') {
         closeCompanionPanel();
@@ -1549,10 +1589,20 @@ export function initCompanionPanel() {
     $('#ica--tracker-panel')[0]?.addEventListener('toggle', handlePanelHistoryToggle, true);
     $('#ica--tracker-panel').on('click', '[data-action]', event =>
         runCompanionViewAction(event.currentTarget, () => handlePanelAction(event)));
+    $('#ica--tracker-panel').on('input', '[data-role="panel-search"]', event => {
+        panelSearchQuery = event.currentTarget.value;
+        applyPanelSearch();
+    });
     $('#ica--tracker-panel').on('keydown', event => {
         if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
+            if (event.target.matches('[data-role="panel-search"]') && panelSearchQuery) {
+                panelSearchQuery = '';
+                event.target.value = '';
+                applyPanelSearch();
+                return;
+            }
             closeCompanionPanel();
         }
     });
@@ -1565,7 +1615,8 @@ export function initCompanionPanel() {
         event.stopPropagation();
 
         const section = this.closest('.ica--tpanel-agent');
-        const sibling = event.key === 'ArrowUp' ? section?.previousElementSibling : section?.nextElementSibling;
+        const sections = [...this.closest('.ica--tpanel-body').querySelectorAll('.ica--tpanel-agent:not([hidden])')];
+        const sibling = sections[sections.indexOf(section) + (event.key === 'ArrowUp' ? -1 : 1)];
         if (!section || !sibling?.classList?.contains('ica--tpanel-agent')) {
             return;
         }
@@ -1578,12 +1629,14 @@ export function initCompanionPanel() {
 
         const agentId = section.dataset.agentId || '';
         const orderedIds = $('#ica--tracker-panel .ica--tpanel-body')
-            .children('.ica--tpanel-agent')
+            .children('.ica--tpanel-agent:not([hidden])')
             .map((_, el) => el.dataset.agentId)
             .get()
             .filter(Boolean);
         await applyPanelReorder(orderedIds);
-        // applyPanelReorder re-renders the panel; put focus back so nudges can be chained.
+        // Keep keyboard nudges chainable without stealing focus from a search or draft
+        // the user moved to while the reordered companions were being saved.
+        if (document.activeElement && document.activeElement !== document.body && document.activeElement !== this) return;
         $('#ica--tracker-panel .ica--tpanel-agent')
             .filter((_, el) => el.dataset.agentId === agentId)
             .find('.ica--tpanel-drag-handle')
