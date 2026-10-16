@@ -43,23 +43,12 @@
     bottom: 0;
     padding: 0;
     left: 0;
-    filter: drop-shadow(2px 2px 2px #51515199);
+    filter: drop-shadow(2px 2px 2px color-mix(in srgb, var(--SmartThemeShadowColor, currentColor) 60%, transparent));
     z-index: 2;
     overflow: hidden;
     resize: both;
     display: flex;
     justify-content: center;
-}
-
-#no_chat_expressions {
-    text-align: center;
-    margin: 10px 0;
-    font-weight: bold;
-    opacity: 0.8;
-}
-
-#image_list_header_name {
-    font-weight: 400;
 }
 
 img.expression {
@@ -97,182 +86,767 @@ img.expression.default {
     height: 0px;
 }
 
-.expression_list_item {
-    position: relative;
-    max-width: 20%;
-    min-width: 100px;
-    max-height: 200px;
-    background-color: #515151b0;
-    border-radius: 10px;
-    cursor: pointer;
+/* Character Expressions workspace: images first, then how they are picked, then display choices. */
+#expressions_container {
+    --expression-gap: 12px;
+    --expression-tile-min: 132px;
+    --expression-control: 44px;
+}
+
+#expressions_container .expression_settings {
+    container: expression-settings / inline-size;
+}
+
+#expressions_container .expression_settings label:not(.sr-only) {
+    display: flex;
+    align-items: center;
+    margin-left: 0;
+}
+
+#expressions_container .expression_settings label input {
+    margin-left: 0;
+}
+
+#expressions_container .expression_section {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    gap: 8px;
+    min-width: 0;
 }
 
-.expression_list_image_container {
-    overflow: hidden;
-}
-
-.expression_list_title {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    text-align: center;
-    font-weight: 600;
-    background-color: #000000a8;
-    width: 100%;
-    height: 20%;
+#expressions_container .expression_section_header {
     display: flex;
-    justify-content: center;
-    align-items: center;
-    flex-direction: column;
-    line-height: 1;
-}
-.expression_list_custom {
-    font-size: 0.66rem;
-}
-
-.expression_list_buttons {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    display: flex;
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-    /* height: 20%; */
-    padding: 0.25rem;
-}
-
-.menu_button.expression_list_delete,
-.menu_button.expression_list_upload,
-.menu_button.expression_list_regenerate {
-    margin-top: 0;
-    margin-bottom: 0;
-}
-
-.expression_list_image {
-    max-width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-#image_list {
-    display: flex;
-    flex-direction: row;
-    column-gap: 1rem;
-    margin: 1rem;
     flex-wrap: wrap;
-    justify-content: space-evenly;
-    row-gap: 1rem;
-}
-
-#image_list .expression_list_item[data-expression-type="success"] .expression_list_title {
-    color: color-mix(in srgb, var(--color-primary, var(--sb-accent, var(--SmartThemeQuoteColor))) 88%, white 12%);
-}
-
-#image_list .expression_list_item[data-expression-type="additional"] .expression_list_title {
-    color: color-mix(in srgb, var(--color-accent, var(--sb-accent-soft, var(--SmartThemeUnderlineColor))) 82%, var(--SmartThemeBodyColor) 18%);
-}
-#image_list .expression_list_item[data-expression-type="additional"] .expression_list_title::before {
-    content: '➕';
-    position: absolute;
-    top: -7px;
-    left: -9px;
-    font-size: 14px;
-    color: transparent;
-    text-shadow: 0 0 0 darkolivegreen;
-}
-
-#image_list .expression_list_item[data-expression-type="failure"] .expression_list_title {
-    color: red;
-}
-
-.expression_settings label {
-    display: flex;
     align-items: center;
-    flex-direction: row;
-    margin-left: 0px;
+    justify-content: space-between;
+    gap: 8px;
 }
 
-.expression_agent_block {
-    display: flex;
-    flex-direction: column;
-    gap: 0.65rem;
-    padding: 0.75rem;
-    border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor, var(--SmartThemeQuoteColor)) 42%, transparent);
-    border-radius: var(--border-radius, 12px);
-    background: color-mix(in srgb, var(--SmartThemeBlurTintColor, var(--SmartThemeBodyColor)) 72%, transparent);
+#expressions_container .expression_set_name {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 4px 10px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 999px;
+    background: var(--neco-surface, transparent);
+    color: var(--neco-muted, var(--SmartThemeBodyColor));
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
 }
 
-.expression_agent_status {
-    gap: 0.2rem;
+#expressions_container .expression_set_name:empty,
+#expressions_container .expression_set_name:has(#image_list_header_name:empty) {
+    display: none;
 }
 
-.expression_agent_status small {
-    opacity: 0.85;
+#expressions_container #image_list_header_name {
+    overflow: hidden;
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.expression_agent_status small.available {
-    color: color-mix(in srgb, var(--color-success, var(--sb-success, #4caf50)) 90%, white 10%);
+#expressions_container .expression_owner_block,
+#expressions_container #expression_member_controls {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
 }
 
-.expression_agent_status small.unavailable {
-    color: color-mix(in srgb, var(--color-warning, var(--sb-warning, #ff9800)) 90%, white 10%);
-}
-
-.expression_agent_hint {
+#expressions_container #expression_owner,
+#expressions_container #expression_member {
+    min-width: 0;
     margin: 0;
 }
 
-.expression_agent_generation_controls,
-.expression_agent_prompt_block {
-    gap: 0.25rem;
+#expressions_container .expression_member_row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
 }
 
-#expressions_agent_sprite_prompt {
-    min-height: 8em;
+#expressions_container #expression_member {
+    flex: 1 1 160px;
 }
 
-#expressions_generate_missing_sprites,
-#expressions_upload_sprite_sheet,
-#expressions_redo_sprite_cleanup,
-.expression_list_generate,
-.expression_list_regenerate {
-    color: color-mix(in srgb, var(--color-primary, var(--sb-accent, var(--SmartThemeQuoteColor))) 88%, var(--SmartThemeBodyColor) 12%);
+#expressions_container #expression_persona_hint {
+    display: grid;
+    gap: 8px;
+    justify-items: start;
 }
 
-#expressions_stop_sprite_generation {
+#expressions_container #expression_persona_hint[hidden] {
     display: none;
-    color: color-mix(in srgb, var(--color-danger, var(--sb-danger, #d9534f)) 88%, var(--SmartThemeBodyColor) 12%);
 }
 
-#expressions_remove_all_sprites {
-    color: color-mix(in srgb, var(--color-danger, var(--sb-danger, #d9534f)) 88%, var(--SmartThemeBodyColor) 12%);
+#expressions_container #no_chat_expressions {
+    display: grid;
+    justify-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 24px 18px;
+    border: 1px dashed var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 12px;
+    color: var(--neco-muted, var(--SmartThemeBodyColor));
+    font-weight: 600;
+    text-align: center;
 }
 
-#expressions_stop_sprite_generation.active {
+#expressions_container #no_chat_expressions > i {
+    font-size: 28px;
+    color: color-mix(in srgb, var(--neco-ginger, currentColor) 70%, var(--neco-muted, currentColor));
+}
+
+#expressions_container #open_chat_expressions {
+    flex-direction: column;
+    gap: var(--expression-gap);
+    min-width: 0;
+}
+
+#expressions_container #open_chat_expressions:not([style*='none']) {
     display: flex;
 }
 
-#expressions_generate_missing_sprites[aria-disabled="true"],
-#expressions_upload_sprite_sheet[aria-disabled="true"],
-#expressions_redo_sprite_cleanup[aria-disabled="true"],
-#expressions_remove_all_sprites[aria-disabled="true"],
-.expression_list_generate[aria-disabled="true"],
-.expression_list_regenerate[aria-disabled="true"] {
+/* Progress: how much of the set has artwork. */
+#expressions_container .expression_progress {
+    display: grid;
+    gap: 8px;
+    padding: 12px 14px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 12px;
+    background: var(--neco-surface, transparent);
+}
+
+#expressions_container .expression_progress_text {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px 12px;
+}
+
+#expressions_container #expression_progress_label {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+}
+
+#expressions_container #expression_progress_hint {
+    color: var(--neco-muted, var(--SmartThemeBodyColor));
+    font-size: 12px;
+}
+
+#expressions_container .expression_progress_bar {
+    position: relative;
+    height: 8px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--neco-ink, currentColor) 10%, transparent);
+}
+
+#expressions_container .expression_progress_fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: calc(var(--expression-progress, 0) * 100%);
+    border-radius: inherit;
+    background: var(--neco-ginger, var(--SmartThemeQuoteColor));
+    transition: width 240ms ease;
+}
+
+#expressions_container .expression_progress_bar.complete .expression_progress_fill {
+    background: color-mix(in srgb, var(--color-success, var(--sb-color-success, var(--neco-ginger))) 70%, var(--neco-ginger, currentColor));
+}
+
+/* Buttons: secondary on the surface, accent on hover and focus; the primary keeps the shared fill. */
+#expressions_container .expression_settings .menu_button {
+    min-height: var(--expression-control);
+    min-width: var(--expression-control);
+    width: max-content;
+    max-width: 100%;
+    margin: 0;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: normal;
+}
+
+#expressions_container .expression_settings .menu_button:not(.menu_button_primary) {
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    background: var(--neco-surface, transparent);
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+}
+
+#expressions_container .expression_settings .menu_button:not(.menu_button_primary):focus-visible {
+    border-color: var(--neco-ginger, var(--SmartThemeQuoteColor));
+    background: color-mix(in srgb, var(--neco-ginger, transparent) 10%, var(--neco-surface, transparent));
+}
+
+@media (hover: hover) {
+    #expressions_container .expression_settings .menu_button:not(.menu_button_primary):hover {
+        border-color: var(--neco-ginger, var(--SmartThemeQuoteColor));
+        background: color-mix(in srgb, var(--neco-ginger, transparent) 10%, var(--neco-surface, transparent));
+    }
+}
+
+#expressions_container .expression_settings .menu_button:not(.menu_button_primary) > i {
+    color: color-mix(in srgb, var(--neco-ginger, currentColor) 75%, var(--neco-ink, currentColor));
+}
+
+#expressions_container .expression_settings .menu_button[aria-disabled='true'],
+#expressions_container .expression_settings .menu_button.disabled {
     opacity: 0.45;
     pointer-events: none;
 }
 
-#image_list .expression_list_item[data-expression-type="failure"] .expression_list_delete {
-    visibility: hidden;
+#expressions_container .expression_primary_actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+#expressions_container #expressions_stop_sprite_generation {
+    display: none;
+}
+
+#expressions_container #expressions_stop_sprite_generation.active {
+    display: flex;
+    border-color: color-mix(in srgb, var(--sb-color-error, var(--neco-ginger)) 55%, var(--neco-border, currentColor));
+    color: color-mix(in srgb, var(--sb-color-error, var(--neco-ginger)) 70%, var(--neco-ink, currentColor));
+}
+
+#expressions_container #expressions_stop_sprite_generation.active > i {
+    color: inherit;
+}
+
+/* Find and filter. */
+#expressions_container .expression_library_toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+#expressions_container .expression_search_field {
+    position: relative;
+    flex: 1 1 200px;
+    min-width: 0;
+}
+
+#expressions_container .expression_search_field > i {
+    position: absolute;
+    top: 50%;
+    left: 12px;
+    translate: 0 -50%;
+    color: var(--neco-muted, currentColor);
+    font-size: 13px;
     pointer-events: none;
 }
 
+#expressions_container #expression_search {
+    width: 100%;
+    min-height: var(--expression-control);
+    margin: 0;
+    padding-left: 34px;
+    border-radius: 999px;
+}
+
+#expressions_container .expression_filter {
+    display: inline-flex;
+    flex: 0 0 auto;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 999px;
+    background: var(--neco-surface, transparent);
+}
+
+#expressions_container .expression_filter_option {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 34px;
+    margin: 0;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--neco-muted, var(--SmartThemeBodyColor));
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 160ms ease, color 160ms ease;
+}
+
+@media (hover: hover) {
+    #expressions_container .expression_filter_option:hover {
+        color: var(--neco-ink, var(--SmartThemeBodyColor));
+        background: color-mix(in srgb, var(--neco-ginger, transparent) 10%, transparent);
+    }
+}
+
+#expressions_container .expression_filter_option[aria-pressed='true'] {
+    background: var(--neco-ginger, var(--SmartThemeQuoteColor));
+    color: var(--neco-on-accent, var(--SmartThemeBodyColor));
+}
+
+#expressions_container .expression_filter_count {
+    min-width: 20px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, currentColor 14%, transparent);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+
+#expressions_container .expression_filter_count:empty {
+    display: none;
+}
+
+#expressions_container .offline_mode {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: var(--neco-muted, var(--SmartThemeBodyColor));
+    font-size: 12px;
+}
+
+#expressions_container .offline_mode[style*='block'] {
+    display: flex;
+}
+
+#expressions_container #expression_count {
+    margin: 0;
+    color: var(--neco-muted, var(--SmartThemeBodyColor));
+    font-size: 13px;
+}
+
+#expressions_container #expression_count:empty {
+    display: none;
+}
+
+#expressions_container #expression_count.empty {
+    padding: 18px;
+    border: 1px dashed var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 12px;
+    text-align: center;
+}
+
+/* The grid: the picture stays clear, actions sit underneath. */
+#expressions_container #image_list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(var(--expression-tile-min), 1fr));
+    align-content: start;
+    gap: var(--expression-gap);
+    max-height: min(640px, 70vh);
+    margin: 0;
+    padding: 2px;
+    overflow-y: auto;
+}
+
+#expressions_container #image_list .expression_list_item {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    max-width: none;
+    min-height: 0;
+    max-height: none;
+    aspect-ratio: auto;
+    overflow: hidden;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 12px;
+    background: var(--neco-surface, transparent);
+    cursor: default;
+    transition: border-color 160ms ease, opacity 160ms ease;
+}
+
+#expressions_container #image_list .expression_list_item:is(:hover, :focus-within) {
+    border-color: color-mix(in srgb, var(--neco-ginger, currentColor) 60%, var(--neco-border, transparent));
+}
+
+#expressions_container #image_list .expression_list_image_container {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 4 / 5;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: 0;
+    background: color-mix(in srgb, var(--neco-ink, currentColor) 5%, var(--neco-canvas, transparent));
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+#expressions_container #image_list .expression_list_image_container:focus-visible {
+    outline-offset: -3px;
+}
+
+#expressions_container #image_list .expression_list_image {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+#expressions_container #image_list .expression_list_placeholder {
+    display: grid;
+    justify-items: center;
+    gap: 6px;
+    color: var(--neco-muted, currentColor);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#expressions_container #image_list .expression_list_placeholder > i {
+    font-size: 26px;
+    opacity: 0.7;
+}
+
+#expressions_container #image_list .expression_list_item[data-expression-type='failure'] {
+    border-style: dashed;
+    background: transparent;
+}
+
+#expressions_container #image_list .expression_list_item[data-expression-type='failure'] .expression_list_image_container {
+    background: transparent;
+}
+
+#expressions_container #image_list .expression_list_badge {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    padding: 2px 8px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--neco-surface, var(--SmartThemeBlurTintColor)) 90%, transparent);
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font-size: 11px;
+    font-weight: 700;
+}
+
+#expressions_container #image_list .expression_list_footer {
+    display: grid;
+    gap: 4px;
+    padding: 6px;
+    border-top: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+}
+
+#expressions_container #image_list .expression_list_title {
+    position: static;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    width: auto;
+    height: auto;
+    min-width: 0;
+    padding: 0 4px;
+    background: none;
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.3;
+    text-align: left;
+}
+
+#expressions_container #image_list .expression_list_name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#expressions_container #image_list .expression_list_item[data-expression-type='failure'] .expression_list_name {
+    color: var(--neco-muted, currentColor);
+}
+
+#expressions_container #image_list .expression_list_custom {
+    flex: 0 0 auto;
+    color: var(--neco-muted, currentColor);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+#expressions_container #image_list .expression_list_buttons {
+    position: static;
+    display: flex;
+    gap: 2px;
+    width: auto;
+    padding: 0;
+}
+
+#expressions_container #image_list .expression_list_buttons .menu_button {
+    flex: 1 1 0;
+    min-width: 32px;
+    min-height: 32px;
+    width: auto;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--neco-muted, var(--SmartThemeBodyColor));
+}
+
+#expressions_container #image_list .expression_list_buttons .menu_button > i {
+    color: inherit;
+}
+
+#expressions_container #image_list .expression_list_buttons .menu_button:is(:hover, :focus-visible) {
+    background: color-mix(in srgb, var(--neco-ginger, transparent) 14%, transparent);
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+}
+
+#expressions_container:has(#expressions_allow_multiple:not(:checked)) #image_list .expression_list_item[data-expression-type='additional'] {
+    opacity: 0.55;
+}
+
+#expressions_container:has(#expressions_allow_multiple:not(:checked)) #image_list .expression_list_item[data-expression-type='additional']:is(:hover, :focus-within) {
+    opacity: 1;
+}
+
+#expressions_container:has(#expressions_allow_multiple:not(:checked)) label[for='expressions_reroll_if_same'] {
+    opacity: 0.55;
+}
+
+/* Rarer tools, grouped by what they do. */
+#expressions_container details > summary {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    padding-block: 10px;
+    cursor: pointer;
+    font-weight: 700;
+    list-style: none;
+}
+
+#expressions_container details > summary::-webkit-details-marker {
+    display: none;
+}
+
+#expressions_container details > summary::after {
+    content: '\f078';
+    margin-left: auto;
+    padding-left: 12px;
+    color: var(--neco-muted, var(--SmartThemeBodyColor));
+    font-family: 'Font Awesome 6 Free';
+    font-size: 12px;
+    font-weight: 900;
+    transition: rotate 160ms ease;
+}
+
+#expressions_container details[open] > summary::after {
+    rotate: 180deg;
+}
+
+#expressions_container .expression_set_tools {
+    border-top: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+}
+
+#expressions_container .expression_set_tools[open] {
+    padding-bottom: 4px;
+}
+
+#expressions_container .expression_tool_group {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+}
+
+#expressions_container .expression_set_tools > summary + .expression_tool_group {
+    margin-top: 4px;
+}
+
+#expressions_container .expression_tool_group + .expression_tool_group {
+    margin-top: 18px;
+}
+
+#expressions_container .expression_settings .expression_tool_group > h4 {
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    font-family: var(--mainFontFamily, inherit);
+    color: var(--neco-muted, var(--SmartThemeBodyColor));
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+#expressions_container .expression_tool_group > h4 > label {
+    display: inline;
+    color: inherit;
+    font: inherit;
+}
+
+#expressions_container .expression_buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0;
+}
+
+#expressions_container .expression_override_controls {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 8px;
+}
+
+#expressions_container #expression_override {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: var(--expression-control);
+    margin: 0;
+}
+
+#expressions_container :is(.expression_naming_hint, .expression_override_label) code,
+#expressions_container .expression_custom_block code {
+    padding: 1px 5px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--neco-ink, currentColor) 8%, transparent);
+    font-size: 0.95em;
+}
+
+/* How expressions are picked, and display choices. */
+#expressions_container .expression_section :is(.expression_api_block, .expression_fallback_block, .expression_custom_block, .expression_llm_prompt_block) {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+}
+
+#expressions_container .expression_agent_block {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 14px;
+    border: 1px solid color-mix(in srgb, var(--neco-ginger, currentColor) 35%, var(--neco-border, transparent));
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-ginger, transparent) 6%, var(--neco-surface, transparent));
+}
+
+#expressions_container .expression_agent_status {
+    display: grid;
+    gap: 2px;
+}
+
+#expressions_container .expression_agent_status_title {
+    font-weight: 700;
+}
+
+#expressions_container .expression_agent_status small.available {
+    color: color-mix(in srgb, var(--color-success, var(--sb-color-success, currentColor)) 75%, var(--neco-ink, currentColor));
+}
+
+#expressions_container .expression_agent_status small.unavailable {
+    color: color-mix(in srgb, var(--color-warning, var(--sb-color-warning, currentColor)) 75%, var(--neco-ink, currentColor));
+}
+
+#expressions_container .expression_agent_hint {
+    margin: 0;
+}
+
+#expressions_container :is(.expression_agent_generation_controls, .expression_agent_prompt_block) {
+    display: grid;
+    gap: 6px;
+}
+
+#expressions_container #expressions_agent_sprite_prompt {
+    min-height: 8em;
+}
+
+#expressions_container .expression_prompt_type_block {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+#expressions_container .expression_prompt_type_block > legend {
+    padding: 0;
+    font-weight: 700;
+}
+
+#expressions_container .expression_custom_row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+#expressions_container #expression_custom {
+    flex: 1 1 160px;
+    min-width: 0;
+    margin: 0;
+}
+
+#expressions_container :is(button, select, input, summary, textarea):focus-visible {
+    outline: 2px solid var(--neco-ginger, var(--SmartThemeQuoteColor));
+    outline-offset: 2px;
+}
+
+#expressions_container [hidden] {
+    display: none;
+}
+
+@container expression-settings (max-width: 460px) {
+    #expressions_container .expression_library_toolbar {
+        display: grid;
+    }
+
+    #expressions_container .expression_filter {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    #expressions_container .expression_filter_option {
+        justify-content: center;
+        padding-inline: 6px;
+    }
+
+    #expressions_container .expression_primary_actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #expressions_container .expression_primary_actions > .menu_button {
+        width: auto;
+    }
+
+    #expressions_container .expression_primary_actions > :is(#expressions_generate_missing_sprites, #expressions_stop_sprite_generation) {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (pointer: coarse) {
+    #expressions_container .expression_filter_option {
+        min-height: 40px;
+    }
+
+    #expressions_container #image_list .expression_list_buttons .menu_button {
+        min-height: 40px;
+    }
+}
+
+/* Spinner shown over a tile while Quick Image Gen works on it. */
 .expression_agent_spinner {
     position: absolute;
     top: 8px;
@@ -298,140 +872,22 @@ img.expression.default {
     }
 }
 
-.expression_settings label input {
-    margin-left: 0px !important;
-}
-
-.expression_buttons .menu_button {
-    width: fit-content;
-    display: flex;
-    gap: 10px;
-    align-items: baseline;
-    flex-direction: row;
-}
-
-#expressions_container:has(#expressions_allow_multiple:not(:checked)) #image_list .expression_list_item[data-expression-type="additional"],
-#expressions_container:has(#expressions_allow_multiple:not(:checked)) label[for="expressions_reroll_if_same"] {
-    opacity: 0.3;
-    transition: opacity var(--animation-duration) ease;
-}
-#expressions_container:has(#expressions_allow_multiple:not(:checked)) #image_list .expression_list_item[data-expression-type="additional"]:hover,
-#expressions_container:has(#expressions_allow_multiple:not(:checked)) #image_list .expression_list_item[data-expression-type="additional"]:focus {
-    opacity: unset;
-}
-
-/* Keep the cast and the artwork together; less frequent tools live below the grid. */
-#expressions_container #expression_member_controls,
-#expressions_container .expression_library_toolbar {
-    display: grid;
-    gap: 8px;
-    margin-block: 8px 12px;
-    min-width: 0;
-}
-
-#expressions_container .expression_member_row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-}
-
-#expressions_container #expression_member {
-    flex: 1 1 140px;
-    min-width: 0;
-    margin: 0;
-}
-
-#expressions_container .expression_library_toolbar {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-}
-
-#expressions_container label[for="expression_search"] {
-    grid-column: 1 / -1;
-}
-
-#expressions_container #expression_search,
-#expressions_container #expression_visibility {
-    min-width: 0;
-    margin: 0;
-}
-
-#expressions_container #expression_count {
-    margin: 4px 0;
-    color: var(--neco-muted, var(--SmartThemeBodyColor));
-    font-size: 0.85em;
-}
-
-#expressions_container #image_list {
-    max-height: 480px;
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
-    padding: 2px;
-    align-content: start;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-}
-
-#expressions_container #image_list .expression_list_image {
-    object-fit: contain;
-}
-
-#expressions_container #image_list .expression_list_item {
-    min-height: 190px;
-}
-
-#expressions_container #image_list .expression_list_title {
-    color: var(--neco-ink, var(--SmartThemeBodyColor));
-}
-
-#expressions_container .expression_settings .menu_button {
-    min-height: 44px;
-    min-width: 44px;
-    margin: 0;
-    border: 1px solid color-mix(in srgb, var(--neco-ginger) 45%, var(--neco-border));
-    background: var(--neco-surface, var(--SmartThemeBlurTintColor));
-    color: var(--neco-ink, var(--SmartThemeBodyColor));
-    justify-content: center;
-    align-items: center;
-    white-space: normal;
-}
-
-#expressions_container #expression_add_many,
-#expressions_container #expression_member_save {
-    background: var(--neco-ginger);
-    color: var(--neco-on-accent);
-}
-
-#expressions_container #expression_add_many:hover,
-#expressions_container #expression_member_save:hover {
-    background: var(--neco-ginger-hover);
-}
-
-#expressions_container :is(button, select, input, summary):focus-visible {
-    outline: 2px solid var(--neco-ginger);
-    outline-offset: 2px;
-}
-
-#expressions_container details > summary {
-    min-height: 44px;
-    padding-block: 12px;
-    cursor: pointer;
-    font-weight: 700;
-}
-
-#expressions_container [hidden] {
-    display: none;
-}
-
 @media (prefers-reduced-motion: reduce) {
     .expression_agent_spinner,
-    #expressions_container #image_list .expression_list_item {
+    #expressions_container #image_list .expression_list_item,
+    #expressions_container .expression_progress_fill,
+    #expressions_container .expression_filter_option,
+    #expressions_container details > summary::after {
         animation: none;
         transition: none;
     }
 }
 
 body.reduced-motion .expression_agent_spinner,
-body.reduced-motion #expressions_container #image_list .expression_list_item {
+body.reduced-motion #expressions_container #image_list .expression_list_item,
+body.reduced-motion #expressions_container .expression_progress_fill,
+body.reduced-motion #expressions_container .expression_filter_option,
+body.reduced-motion #expressions_container details > summary::after {
     animation: none;
     transition: none;
 }

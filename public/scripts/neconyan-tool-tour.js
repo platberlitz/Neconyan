@@ -112,6 +112,14 @@ const TOOL_PAGES = Object.freeze({
                 hint: 'I have a sprite for every mood. Most of them are me asking for a snack.',
             },
             {
+                id: 'sprites',
+                targets: ['.expression_section_sprites'],
+                title: 'This character\'s sprites',
+                body: 'Every feeling has a tile here, and the bar shows how many already have a picture. Tap a picture to show it in chat now. The buttons under each tile **upload** a picture, **generate** one with Quick Image Gen, or **delete** it.\n**Generate missing** draws every empty tile at once. Use the search box and **All**, **Ready** or **Missing** to find a tile. **More image tools** holds the rarer jobs: uploading a character sheet or a ZIP, redoing cleanup and choosing another image folder.',
+                emptyBody: 'Every feeling gets a tile here once a chat is open. Open a chat with a character, then come back to upload, generate or delete their sprites.',
+                hint: 'Generate missing is my favourite button. Pictures appear and I did not even have to get up.',
+            },
+            {
                 id: 'classifier',
                 targets: ['.expression_api_block'],
                 title: 'Who reads the mood',
@@ -144,17 +152,9 @@ const TOOL_PAGES = Object.freeze({
             {
                 id: 'choices',
                 targets: ['.expression_section_behaviour'],
-                title: 'Sprite choices',
-                body: '**Allow multiple sprites per expression** lets one feeling have several pictures, and one is picked at random each time. **Re-roll if same sprite is used again** avoids showing the same one twice in a row.\n**Default / Fallback Expression** is shown when no feeling matches. **Custom Expressions** adds your own feelings beyond the built-in list; you can also switch to one with the **/emote** command.',
+                title: 'Display and choices',
+                body: '**Show expressions in phone chat** puts each reply\'s picture above its text on a phone. **Allow multiple sprites per expression** lets one feeling have several pictures, and one is picked at random each time. **Re-roll if same sprite is used again** avoids showing the same one twice in a row.\n**Default / Fallback Expression** is shown when no feeling matches. **Custom Expressions** adds your own feelings beyond the built-in list; you can also switch to one with the **/emote** command.',
                 hint: 'My custom expression is "belly rub, please". It gets used a lot.',
-            },
-            {
-                id: 'sprites',
-                targets: ['.expression_section_sprites'],
-                title: 'This character\'s sprites',
-                body: 'Every feeling has a tile here. Click a tile to show it now. The small buttons on each tile **upload** a picture, **generate** one with Quick Image Gen, or **delete** it.\nThe buttons above the tiles work on the whole set: **Generate missing sprites**, **Upload character sheet** to cut one big picture into sprites, or **Upload sprite pack (ZIP)**. **Sprite Folder Override** points this chat at a different folder of pictures.',
-                emptyBody: 'Every feeling gets a tile here once a chat is open. Open a chat with a character, then come back to upload, generate or delete their sprites.',
-                hint: 'Generate missing sprites is my favourite button. Pictures appear and I did not even have to get up.',
             },
             {
                 id: 'done',

@@ -5,7 +5,7 @@ import { characters, eventSource, event_types, generateQuietPrompt, generateRaw,
 import { dragElement, isMobile } from '../../RossAscends-mods.js';
 import { getContext, extension_settings, ModuleWorkerWrapper, renderExtensionTemplateAsync } from '../../extensions.js';
 import { loadMovingUIState, performFuzzySearch, power_user } from '../../power-user.js';
-import { onlyUnique, debounce, download, getCharaFilename, trimToEndSentence, trimToStartSentence, waitUntilCondition, findChar, isFalseBoolean, includesIgnoreCaseAndAccents } from '../../utils.js';
+import { onlyUnique, debounce, download, escapeHtml, getCharaFilename, trimToEndSentence, trimToStartSentence, waitUntilCondition, findChar, isFalseBoolean, includesIgnoreCaseAndAccents } from '../../utils.js';
 import { hideMutedSprites, selected_group } from '../../group-chats.js';
 import { isJsonSchemaSupported } from '../../textgen-settings.js';
 import { debounce_timeout } from '../../constants.js';
@@ -219,7 +219,15 @@ function needsExpression(message) {
         && processedExpressions.get(message)?.get(message.swipe_id ?? 0)?.text !== message.mes;
 }
 
-async function onAgentExpressionUpdated({ messageIndex, agentId }, update) {
+async function onAgentExpressionUpdated(event, update) {
+    try {
+        await applyAgentExpressionUpdate(event, update);
+    } catch (error) {
+        console.error('Expressions: could not apply the agent result', error);
+    }
+}
+
+async function applyAgentExpressionUpdate({ messageIndex, agentId }, update) {
     if (extension_settings.expressions.api !== EXPRESSION_API.agent) return;
     const context = getContext();
     const message = context.chat[messageIndex];
@@ -259,7 +267,7 @@ function getPlaceholderImage(expression, isCustom = false) {
         expression: expression,
         isCustom: isCustom,
         canGenerate: true,
-        title: 'No Image',
+        title: t`No image`,
         type: 'failure',
         fileName: 'No-Image-Placeholder.png',
         imageSrc: '/img/No-Image-Placeholder.png',
@@ -300,6 +308,7 @@ async function visualNovelRemoveInactive(container) {
     const context = getContext();
     const group = context.groups.find(x => x.id == context.groupId);
     const removeInactiveCharactersPromises = [];
+    if (!group) return;
 
     // remove inactive characters after 1 second
     container.find('.expression-holder').each((_, current) => {
@@ -338,7 +347,7 @@ async function visualNovelSetCharacterSprites(vnContainer) {
     const setSpritePromises = [];
     for (const avatar of group?.members ?? []) {
         // skip disabled characters
-        const isDisabled = group.disabled_members.includes(avatar);
+        const isDisabled = group.disabled_members?.includes(avatar);
         if (isDisabled && hideMutedSprites) {
             continue;
         }
@@ -371,6 +380,7 @@ async function visualNovelSetCharacterSprites(vnContainer) {
 export async function visualNovelUpdateLayers(container) {
     const context = getContext();
     const group = context.groups.find(x => x.id == context.groupId);
+    if (!group) return;
     const recentMessages = context.chat.map(x => x.original_avatar).filter(x => x).reverse().filter(onlyUnique);
     const filteredMembers = group.members.filter(x => !group.disabled_members.includes(x));
     const layerIndices = filteredMembers.slice().sort((a, b) => {
@@ -406,9 +416,13 @@ export async function visualNovelUpdateLayers(container) {
     let images = Array.from($('#visual-novel-wrapper .expression-holder')).sort(sortFunction);
     let imagesWidth = [];
 
-    for (const image of images) {
-        if (image instanceof HTMLImageElement && !image.complete) {
-            await new Promise(resolve => image.addEventListener('load', resolve, { once: true }));
+    for (const holder of images) {
+        const image = holder.querySelector('img');
+        if (image instanceof HTMLImageElement && image.getAttribute('src') && !image.complete) {
+            await new Promise(resolve => {
+                image.addEventListener('load', resolve, { once: true });
+                image.addEventListener('error', resolve, { once: true });
+            });
         }
     }
 
@@ -490,7 +504,8 @@ async function setImage(img, path, { isCurrent = () => true, fallback = null, fo
     const changed = img.attr('src') !== (src ?? '');
     img.stop(true, true).off('error').attr('src', src ?? '');
     img.toggleClass('default', !!src?.startsWith('/img/default-expressions/'));
-    if (changed && src && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const reducedMotion = document.body.classList.contains('reduced-motion') || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (changed && src && !reducedMotion) {
         img.addClass('expression-animating').css('opacity', 0);
         await img.animate({ opacity: 1 }, 200).promise();
         img.removeClass('expression-animating');
@@ -509,6 +524,16 @@ async function restoreExpressionHistory() {
         isCurrent: () => getChatGeneration() === generation && getLastCharacterMessage() === message
             && getSavedMessageExpression(message)?.src === saved?.src,
     });
+}
+
+const expressionWorker = new ModuleWorkerWrapper(moduleWorker);
+
+/**
+ * Refreshes expressions through the shared mutex so two refreshes never overlap.
+ * @param {{newChat?: boolean}} [options]
+ */
+function requestExpressionUpdate(options) {
+    return expressionWorker.update(options);
 }
 
 async function moduleWorker({ newChat = false } = {}) {
@@ -789,7 +814,7 @@ async function setSpriteFolderCommand({ name }, folder) {
     if (folder.startsWith('/') || folder.startsWith('\\')) {
         const currentLastMessage = getLastCharacterMessage();
         if (currentLastMessage.name === null && !name) {
-            toastr.error('Send a character message first, then set the sprites subfolder again.', 'Add a name to the command, for example name="folder".');
+            toastr.error(t`Send a character message first, then set the sprites subfolder again.`, t`Add a name to the command, for example name="folder".`);
             return '';
         }
         folder = folder.slice(1);
@@ -805,19 +830,19 @@ async function setSpriteFolderCommand({ name }, folder) {
 
 async function classifyCallback(/** @type {{api: string?, filter: string?, prompt: string?}} */ { api = null, filter = null, prompt = null }, text) {
     if (!text) {
-        toastr.error('Type some text first, then try again.');
+        toastr.error(t`Type some text first, then try again.`);
         return '';
     }
     if (api && !Object.keys(EXPRESSION_API).includes(api)) {
-        toastr.error('The selected classifier is not valid. Pick another one in the expression settings.');
+        toastr.error(t`The selected classifier is not valid. Pick another one in the expression settings.`);
         return '';
     }
 
-    const expressionApi = EXPRESSION_API[api] || extension_settings.expressions.api;
+    const expressionApi = api ? EXPRESSION_API[api] : extension_settings.expressions.api;
     const filterAvailable = !isFalseBoolean(filter);
 
     if (expressionApi === EXPRESSION_API.none) {
-        toastr.warning('Choose a classifier in the expression settings first.');
+        toastr.warning(t`Choose a classifier in the expression settings first.`);
         return '';
     }
 
@@ -826,8 +851,8 @@ async function classifyCallback(/** @type {{api: string?, filter: string?, promp
     return label;
 }
 
-/** @type {(args: {type: 'expression' | 'sprite'}, searchTerm: string) => Promise<string>} */
-async function setSpriteSlashCommand({ type }, searchTerm) {
+/** @type {(args: {type: 'expression' | 'sprite'}, searchTerm: string, options?: {folder?: string?}) => Promise<string>} */
+async function setSpriteSlashCommand({ type }, searchTerm, { folder = null } = {}) {
     type ??= 'expression';
     searchTerm = searchTerm.trim().toLowerCase();
     if (!searchTerm) {
@@ -838,7 +863,7 @@ async function setSpriteSlashCommand({ type }, searchTerm) {
     const currentLastMessage = getLastCharacterMessage();
     const target = captureExpressionTarget(currentLastMessage);
     rememberExpressionMessage(currentLastMessage);
-    const spriteFolderName = getSpriteFolderName(currentLastMessage, currentLastMessage?.name);
+    const spriteFolderName = folder || getSpriteFolderName(currentLastMessage, currentLastMessage?.name);
 
     let label = searchTerm;
 
@@ -871,7 +896,7 @@ async function setSpriteSlashCommand({ type }, searchTerm) {
         }
         case 'sprite': {
             // Fuzzy search for sprite file
-            const sprites = spriteCache[spriteFolderName].map(x => x.files).flat();
+            const sprites = (spriteCache[spriteFolderName] ?? []).flatMap(x => x.files);
             const results = performFuzzySearch('expression-expressions', sprites, [
                 { name: 'title', weight: 1 },
                 { name: 'fileName', weight: 1 },
@@ -986,6 +1011,10 @@ async function uploadSpriteCommand({ name, label, folder = null, spriteName = nu
     if (!folder || folder.startsWith('/') || folder.startsWith('\\')) {
         name = name || getLastCharacterMessage().original_avatar || getLastCharacterMessage().name;
         const char = findChar({ name });
+        if (!char) {
+            toastr.error(t`Character not found. Check the name= value, or send a character message first.`, t`Error Uploading Sprite`);
+            return '';
+        }
         folder = folder ? `${char.name}/${folder.slice(1)}` : spriteFolderNameFromCharacter(char);
     }
 
@@ -1450,7 +1479,7 @@ async function onClickExpressionRegenerate(event) {
 
     const confirmed = await Popup.show.confirm(
         t`Regenerate Sprite`,
-        t`Replace ${fileName} for ${expression} with a new Quick Image Gen sprite? This can use provider credits.`,
+        t`Replace ${escapeHtml(fileName)} for ${escapeHtml(expression)} with a new Quick Image Gen sprite? This can use provider credits.`,
     );
 
     if (!confirmed) return;
@@ -1491,7 +1520,7 @@ async function onClickRemoveAllSprites(event) {
 
     const confirmed = await Popup.show.confirm(
         t`Remove All Sprites`,
-        t`Remove ${spriteFiles.length} sprite image(s) from ${name}? This cannot be undone.`,
+        t`Remove ${spriteFiles.length} sprite image(s) from ${escapeHtml(name)}? This cannot be undone.`,
     );
 
     if (!confirmed) return;
@@ -1531,6 +1560,11 @@ async function onClickRemoveAllSprites(event) {
 async function onClickRedoSpriteCleanup(event) {
     event.stopPropagation();
 
+    if (inSpriteGeneration) {
+        toastr.info(t`Wait for sprite generation to finish, or stop it, before redoing cleanup.`, t`Sprite Generation`);
+        return;
+    }
+
     const name = $('#image_list').data('name');
     const generation = getChatGeneration();
     const { uploadName } = getExpressionGenerationTarget(name);
@@ -1548,7 +1582,7 @@ async function onClickRedoSpriteCleanup(event) {
 
     const confirmed = await Popup.show.confirm(
         t`Redo Crop and Transparency`,
-        t`Reprocess ${spriteFiles.length} sprite image(s) in ${name} with the improved crop and transparency cleanup? Existing sprite files will be overwritten.`,
+        t`Reprocess ${spriteFiles.length} sprite image(s) in ${escapeHtml(name)} with the improved crop and transparency cleanup? Existing sprite files will be overwritten.`,
     );
 
     if (!confirmed) return;
@@ -1610,7 +1644,7 @@ async function onClickUploadSpriteSheet(event) {
     const grid = getExpressionSpriteSheetGrid(missingLabels.length);
     const confirmed = await Popup.show.confirm(
         t`Upload Character Sheet`,
-        t`Upload a character sheet for ${missingLabels.length} missing sprite(s) in ${spriteFolderName}. The extension will split it as a ${grid.columns} x ${grid.rows} grid, left-to-right, top-to-bottom in this order: ${missingLabels.join(', ')}.`,
+        t`Upload a character sheet for ${missingLabels.length} missing sprite(s) in ${escapeHtml(spriteFolderName)}. The extension will split it as a ${grid.columns} x ${grid.rows} grid, left-to-right, top-to-bottom in this order: ${escapeHtml(missingLabels.join(', '))}.`,
     );
 
     if (!confirmed) return;
@@ -1678,8 +1712,8 @@ async function onClickGenerateMissingSprites(event) {
     const confirmed = await Popup.show.confirm(
         t`Generate Missing Sprites`,
         getExpressionSpriteGenerationMode() === EXPRESSION_SPRITE_GENERATION_MODE.sheet && missingLabels.length > 1
-            ? t`Generate one character sheet for ${missingLabels.length} missing sprite(s) in ${spriteFolderName}, then split it into individual expression images? This can use provider credits.`
-            : t`Generate ${missingLabels.length} missing sprite(s) for ${spriteFolderName} with Quick Image Gen? This may take a while and can use provider credits.`,
+            ? t`Generate one character sheet for ${missingLabels.length} missing sprite(s) in ${escapeHtml(spriteFolderName)}, then split it into individual expression images? This can use provider credits.`
+            : t`Generate ${missingLabels.length} missing sprite(s) for ${escapeHtml(spriteFolderName)} with Quick Image Gen? This may take a while and can use provider credits.`,
     );
 
     if (!confirmed) return;
@@ -1715,12 +1749,6 @@ async function onClickGenerateMissingSprites(event) {
             toastr.warning(t`${failedCount} expression sprite(s) could not be generated. Check your Quick Image Gen settings, then try again.`, t`Sprite Generation`);
         }
     });
-}
-
-function onExpressionGenerationKeydown(event) {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    $(event.currentTarget).trigger('click');
 }
 
 /**
@@ -1762,9 +1790,21 @@ function sampleClassifyText(text) {
  * @returns {Promise<string>} Prompt for the LLM API.
  */
 async function getLlmPrompt(labels) {
-    const labelsString = labels.map(x => `"${x}"`).join(', ');
-    const prompt = substituteParamsExtended(String(extension_settings.expressions.llmPrompt), { labels: labelsString });
-    return prompt;
+    return substituteParamsExtended(String(extension_settings.expressions.llmPrompt), { labels: formatLlmLabels(labels) });
+}
+
+/** @param {string[]} labels */
+function formatLlmLabels(labels) {
+    return labels.map(x => `"${x}"`).join(', ');
+}
+
+/**
+ * Fills a /classify prompt= override with the same label list as the saved prompt.
+ * @param {string?} customPrompt
+ * @param {string[]} labels
+ */
+function getCustomLlmPrompt(customPrompt, labels) {
+    return customPrompt ? substituteParamsExtended(customPrompt, { labels: formatLlmLabels(labels) }) : '';
 }
 
 /**
@@ -1881,9 +1921,12 @@ export async function getExpressionLabel(text, expressionsApi = extension_settin
 
                 if (localResult.ok) {
                     const data = await localResult.json();
-                    return data.classification[0].label;
+                    const label = data?.classification?.[0]?.label;
+                    if (label) return label;
                 }
-            } break;
+                console.warn('Local classifier gave no result. Using fallback expression', localResult.status);
+                return extension_settings.expressions.fallback_expression;
+            }
             // Using LLM
             case EXPRESSION_API.llm: {
                 try {
@@ -1894,7 +1937,7 @@ export async function getExpressionLabel(text, expressionsApi = extension_settin
                 }
 
                 const expressionsList = await getExpressionsList({ filterAvailable: filterAvailable });
-                const prompt = substituteParamsExtended(customPrompt, { labels: expressionsList }) || await getLlmPrompt(expressionsList);
+                const prompt = getCustomLlmPrompt(customPrompt, expressionsList) || await getLlmPrompt(expressionsList);
                 const applySchema = args => {
                     eventSource.removeListener(event_types.TEXT_COMPLETION_SETTINGS_READY, applySchema);
                     onTextGenSettingsReady(args, expressionsList);
@@ -1926,7 +1969,7 @@ export async function getExpressionLabel(text, expressionsApi = extension_settin
                 }
 
                 const expressionsList = await getExpressionsList({ filterAvailable: filterAvailable });
-                const prompt = substituteParamsExtended(customPrompt, { labels: expressionsList }) || await getLlmPrompt(expressionsList);
+                const prompt = getCustomLlmPrompt(customPrompt, expressionsList) || await getLlmPrompt(expressionsList);
                 const messages = [
                     { role: 'user', content: text + '\n\n' + prompt },
                 ];
@@ -1949,12 +1992,12 @@ export async function getExpressionLabel(text, expressionsApi = extension_settin
                 return '';
             }
             default: {
-                toastr.error('The selected classifier is not valid. Pick another one in the expression settings.');
+                toastr.error(t`The selected classifier is not valid. Pick another one in the expression settings.`);
                 return '';
             }
         }
     } catch (error) {
-        toastr.error('Could not work out the expression for this message. Check your classifier settings, then try again.');
+        toastr.error(t`Could not work out the expression for this message. Check your classifier settings, then try again.`);
         console.error(error);
         return extension_settings.expressions.fallback_expression;
     }
@@ -2007,7 +2050,7 @@ async function validateImages(spriteFolderName, forceRedrawCached = false) {
 
     if (spriteCache[spriteFolderName]) {
         if (draw && forceRedrawCached && ($('#image_list').data('name') !== spriteFolderName
-            || $('#image_list').data('avatar') !== (getManagedPersona()?.avatar || getExpressionFolderCharacter(spriteFolderName)?.avatar))) {
+            || $('#image_list').data('avatar') !== (getManagedPersona()?.avatar || getExpressionFolderCharacter(spriteFolderName)?.avatar || ''))) {
             console.debug('force redrawing character sprites list');
             await drawSpritesList(spriteFolderName, labels, spriteCache[spriteFolderName], isCurrent);
         }
@@ -2093,22 +2136,60 @@ async function drawSpritesList(spriteFolderName, labels, sprites, isCurrent = ()
     $('#image_list').empty().data('name', spriteFolderName).data('avatar', persona?.avatar || character?.avatar || '').append(items);
     $('#image_list_header_name').text(persona?.name || spriteFolderName);
     if (!persona) renderExpressionSets(character, spriteFolderName);
+    updateExpressionProgress(validExpressions.length, sorted.length);
     filterExpressionImages();
     return validExpressions;
 }
 
+/**
+ * Shows how many expressions in the open set have an image.
+ * @param {number} ready Expressions with at least one image
+ * @param {number} total Expressions in the set
+ */
+function updateExpressionProgress(ready, total) {
+    const missing = Math.max(0, total - ready);
+    const fraction = total > 0 ? Math.min(1, ready / total) : 0;
+    $('#expression_progress_label').text(t`${ready} of ${total} expressions have an image`);
+    $('#expression_progress_hint').text(missing > 0 ? t`${missing} still missing` : t`Every expression has an image`);
+    $('#expression_progress_bar')
+        .attr({ 'aria-valuemax': total, 'aria-valuenow': ready })
+        .css('--expression-progress', fraction.toFixed(4))
+        .toggleClass('complete', total > 0 && missing === 0);
+    const counts = { all: total, ready, missing };
+    $('#expression_visibility .expression_filter_count').each(function () {
+        $(this).text(String(counts[this.dataset.count] ?? ''));
+    });
+    $('#expressions_generate_missing_sprites').attr('data-missing', missing);
+}
+
+function getExpressionVisibility() {
+    return String($('#expression_visibility .expression_filter_option[aria-pressed="true"]').data('value') || 'all');
+}
+
+function onExpressionVisibilityClick() {
+    $('#expression_visibility .expression_filter_option').attr('aria-pressed', 'false');
+    $(this).attr('aria-pressed', 'true');
+    filterExpressionImages();
+}
+
 function filterExpressionImages() {
     const query = String($('#expression_search').val() || '').trim().toLowerCase();
-    const mode = $('#expression_visibility').val();
+    const mode = getExpressionVisibility();
     let shown = 0;
     const items = $('#image_list .expression_list_item');
     items.each(function () {
         const missing = this.dataset.expressionType === 'failure';
-        const visible = this.dataset.expression.includes(query) && (mode === 'all' || (mode === 'missing' ? missing : !missing));
+        const visible = this.dataset.expression.toLowerCase().includes(query) && (mode === 'all' || (mode === 'missing' ? missing : !missing));
         $(this).toggle(visible);
         if (visible) shown++;
     });
-    $('#expression_count').text(t`${shown} of ${items.length} images and expression slots`);
+    let message = '';
+    if (items.length && !shown) {
+        if (query) message = t`No expressions match '${query}'.`;
+        else if (mode === 'missing') message = t`Every expression has an image. Nicely done.`;
+        else message = t`No images yet. Generate or upload some to fill this list.`;
+    }
+    $('#expression_count').text(message).toggleClass('empty', Boolean(message));
 }
 
 /**
@@ -2120,7 +2201,21 @@ function filterExpressionImages() {
  * @returns {Promise<string>} Rendered list item template
  */
 async function getListItem(expression, { images, isCustom = false } = {}) {
-    return renderExtensionTemplateAsync(MODULE_NAME, 'list-item', { expression, images, isCustom: isCustom ?? false });
+    const decorated = (images ?? []).map(image => {
+        const isMissing = image.type === 'failure';
+        const name = image.title || expression;
+        return {
+            ...image,
+            isMissing,
+            isExtra: image.type === 'additional',
+            pickLabel: isMissing ? t`Use ${expression} in chat now` : t`Show ${name} in chat now`,
+            uploadLabel: t`Upload an image for ${expression}`,
+            generateLabel: t`Generate ${expression} with Quick Image Gen`,
+            regenerateLabel: t`Regenerate ${name} with Quick Image Gen`,
+            deleteLabel: t`Delete ${name}`,
+        };
+    });
+    return renderExtensionTemplateAsync(MODULE_NAME, 'list-item', { expression, images: decorated, isCustom: isCustom ?? false });
 }
 
 /**
@@ -2346,14 +2441,19 @@ function chooseSpriteForExpression(spriteFolderName, expression, { prevExpressio
 async function setExpression(spriteFolderName, expression, { force = false, overrideSpriteFile = null, vnMode = false, target = null, isCurrent = () => true } = {}) {
     await validateImages(spriteFolderName);
     if (!isCurrent()) return undefined;
+    const emoji = DEFAULT_EXPRESSIONS.includes(expression) ? expression : DEFAULT_FALLBACK_EXPRESSION;
+    const fallback = extension_settings.expressions.showDefault && expression !== RESET_SPRITE_LABEL
+        ? `/img/default-expressions/${emoji}.png` : null;
+    // An older reply can be classified late; save its expression without replacing the newer one on screen.
+    if (target?.message && !isLatestSpeakerMessage(target, vnMode)) {
+        const spriteFile = chooseSpriteForExpression(spriteFolderName, expression, { overrideSpriteFile });
+        return spriteFile?.imageSrc ?? fallback;
+    }
     const img = vnMode
         ? $('#visual-novel-wrapper .expression-holder').filter((_, element) => element.dataset.avatar === target?.avatar).find('img')
         : $('#expression-image');
     const prevExpressionSrc = img.attr('src');
     const spriteFile = chooseSpriteForExpression(spriteFolderName, expression, { prevExpressionSrc: prevExpressionSrc, overrideSpriteFile: overrideSpriteFile });
-    const emoji = DEFAULT_EXPRESSIONS.includes(expression) ? expression : DEFAULT_FALLBACK_EXPRESSION;
-    const fallback = extension_settings.expressions.showDefault && expression !== RESET_SPRITE_LABEL
-        ? `/img/default-expressions/${emoji}.png` : null;
     const src = await setImage(img, spriteFile?.imageSrc ?? null, { isCurrent, fallback, force });
     if (src === undefined) return undefined;
     img.attr({ 'data-sprite-folder-name': spriteFolderName, 'data-expression': expression,
@@ -2361,6 +2461,18 @@ async function setExpression(spriteFolderName, expression, { force = false, over
     img.parent().toggleClass('hidden', vnMode && !src);
     if (!vnMode) document.getElementById('expression-holder').style.display = '';
     return src;
+}
+
+/**
+ * Whether the target is the newest reply from its speaker, so its expression belongs on screen.
+ * @param {{message: object, avatar?: string}} target
+ * @param {boolean} vnMode
+ */
+function isLatestSpeakerMessage(target, vnMode) {
+    if (!vnMode) return getLastCharacterMessage() === target.message;
+    const latest = getContext().chat.findLast(message => !message.is_user && !message.is_system
+        && getMessageExpressionAvatar(message) === target.avatar);
+    return !latest || latest === target.message;
 }
 
 function onClickExpressionImage() {
@@ -2371,15 +2483,16 @@ function onClickExpressionImage() {
         if (file) void selectPersonaExpression(file.imageSrc);
         return;
     }
+    // The tile belongs to the set on screen, which can be a card member's set rather than the last speaker's.
+    const folder = String($('#image_list').data('name') || '') || null;
     // If there is no expression image and we clicked on the placeholder, we remove the sprite by calling via the expression label
-    if ($(this).attr('data-expression-type') === 'failure') {
-        const label = $(this).attr('data-expression');
-        setSpriteSlashCommand({ type: 'expression' }, label);
-        return;
-    }
-
-    const spriteFile = $(this).attr('data-filename');
-    setSpriteSlashCommand({ type: 'sprite' }, spriteFile);
+    const request = $(this).attr('data-expression-type') === 'failure'
+        ? setSpriteSlashCommand({ type: 'expression' }, String($(this).attr('data-expression') || ''), { folder })
+        : setSpriteSlashCommand({ type: 'sprite' }, String($(this).attr('data-filename') || ''), { folder });
+    request.catch(error => {
+        console.error('Expressions: could not show the chosen image', error);
+        toastr.error(t`That image could not be shown. Try again.`);
+    });
 }
 
 async function onClickExpressionAddCustom() {
@@ -2407,7 +2520,7 @@ async function onClickExpressionAddCustom() {
     expressionsList = null;
     spriteCache = {};
     if (getManagedPersona()) await refreshManagedExpressions();
-    moduleWorker();
+    void requestExpressionUpdate();
 }
 
 async function onClickExpressionRemoveCustom() {
@@ -2431,7 +2544,7 @@ async function onClickExpressionRemoveCustom() {
     const index = extension_settings.expressions.custom.indexOf(selectedExpression);
     extension_settings.expressions.custom.splice(index, 1);
     if (selectedExpression == extension_settings.expressions.fallback_expression) {
-        toastr.warning(`Deleted custom expression '${selectedExpression}' that was also selected as the fallback expression.\nFallback expression has been reset to '${DEFAULT_FALLBACK_EXPRESSION}'.`, 'Remove Custom Expression');
+        toastr.warning(t`'${selectedExpression}' was also the fallback expression, so the fallback is now '${DEFAULT_FALLBACK_EXPRESSION}'.`, t`Remove custom expression`);
         extension_settings.expressions.fallback_expression = DEFAULT_FALLBACK_EXPRESSION;
     }
     await renderAdditionalExpressionSettings();
@@ -2441,7 +2554,7 @@ async function onClickExpressionRemoveCustom() {
     expressionsList = null;
     spriteCache = {};
     if (getManagedPersona()) await refreshManagedExpressions();
-    moduleWorker();
+    void requestExpressionUpdate();
 }
 
 function onExpressionApiChanged() {
@@ -2457,7 +2570,7 @@ function onExpressionApiChanged() {
         expressionsList = null;
         spriteCache = {};
         if (getManagedPersona()) void refreshManagedExpressions();
-        moduleWorker();
+        void requestExpressionUpdate();
         saveSettingsDebounced();
     }
 }
@@ -2551,7 +2664,7 @@ async function handleFileUpload(url, formData) {
         return data ?? {};
     } catch (error) {
         console.error('Error uploading image:', error);
-        toastr.error('Could not upload the image. Try again.');
+        toastr.error(t`Could not upload the image. Try again.`);
         // null tells callers the upload did not happen; {} used to look like success.
         return null;
     }
@@ -2631,6 +2744,7 @@ async function onClickExpressionUpload(event) {
                 if (input) {
                     if (!validateExpressionSpriteName(expression, input)) {
                         toastr.warning(t`The name you entered does not follow the naming schema for the selected expression '${expression}'.`, t`Invalid Expression Sprite Name`);
+                        e.target.form.reset();
                         return;
                     }
                     spriteName = input;
@@ -2767,17 +2881,18 @@ async function onClickExpressionUploadPackButton() {
         formData.append('name', name);
         formData.append('avatar', file);
 
-        const uploadToast = toastr.info('Please wait...', 'Upload is processing', { timeOut: 0, extendedTimeOut: 0 });
-        const { count } = (await handleFileUpload('/api/sprites/upload-zip', formData)) ?? {};
-        toastr.clear(uploadToast);
+        const uploadToast = toastr.info(t`Please wait...`, t`Upload is processing`, { timeOut: 0, extendedTimeOut: 0 });
+        try {
+            const { count } = (await handleFileUpload('/api/sprites/upload-zip', formData)) ?? {};
 
-        // Only show success message if at least one image was uploaded
-        if (count) {
-            toastr.success(`Uploaded ${count} image(s) for ${name}`);
+            // Only show success message if at least one image was uploaded
+            if (count) {
+                toastr.success(t`Uploaded ${count} image(s) for ${name}`);
+            }
+        } finally {
+            toastr.clear(uploadToast);
+            e.target.form.reset();
         }
-
-        // Reset the input
-        e.target.form.reset();
     };
 
     $('#expression_upload_pack')
@@ -2810,7 +2925,7 @@ async function onClickExpressionDelete(event) {
     try {
         await deleteExpressionSpriteFile(name, expression, fileName);
     } catch (error) {
-        toastr.error('Could not delete the image. Try again in a moment.');
+        toastr.error(t`Could not delete the image. Try again in a moment.`);
     }
 
     // Refresh sprites list
@@ -2832,7 +2947,8 @@ function setExpressionOverrideHtml(forceClear = false) {
     if (expressionOverride && expressionOverride.path) {
         $('#expression_override').val(expressionOverride.path);
     } else if (expressionOverride) {
-        delete extension_settings.expressionOverrides[expressionOverride.name];
+        extension_settings.expressionOverrides.splice(extension_settings.expressionOverrides.indexOf(expressionOverride), 1);
+        saveSettingsDebounced();
     }
 
     if (forceClear && !expressionOverride) {
@@ -2976,8 +3092,6 @@ export async function init() {
     async function addSettings() {
         const template = await renderExtensionTemplateAsync(MODULE_NAME, 'settings');
         $('#expressions_container').append(template);
-        const settings = $('#expressions_container .expression_settings');
-        settings.find('.expression_section_sprites').prependTo(settings.find('.inline-drawer-content'));
         $('#expression_owner').on('change', async function () {
             managedPersonaAvatar = String(this.value);
             spriteListLoadRevision++;
@@ -2985,7 +3099,8 @@ export async function init() {
         });
         $('#expression_persona_clear').on('click', () => selectPersonaExpression(null));
         $('#expression_add_many').on('click', onClickExpressionAddCustom);
-        $('#expression_search, #expression_visibility').on('input change', filterExpressionImages);
+        $('#expression_search').on('input', filterExpressionImages);
+        $('#expression_visibility').on('click', '.expression_filter_option', onExpressionVisibilityClick);
         bindExpressionSets({ getCharacter: getManagedExpressionCharacter, refresh: async () => {
             const character = getManagedExpressionCharacter();
             const last = getLastCharacterMessage();
@@ -2998,21 +3113,11 @@ export async function init() {
         $('#expression_override_button').on('click', onClickExpressionOverrideButton);
         $('#expression_upload_pack_button').on('click', onClickExpressionUploadPackButton);
         $('#expressions_export_sprites').on('click', onClickExportSprites);
-        $('#expressions_generate_missing_sprites')
-            .on('click', onClickGenerateMissingSprites)
-            .on('keydown', onExpressionGenerationKeydown);
-        $('#expressions_upload_sprite_sheet')
-            .on('click', onClickUploadSpriteSheet)
-            .on('keydown', onExpressionGenerationKeydown);
-        $('#expressions_redo_sprite_cleanup')
-            .on('click', onClickRedoSpriteCleanup)
-            .on('keydown', onExpressionGenerationKeydown);
-        $('#expressions_stop_sprite_generation')
-            .on('click', onClickStopExpressionGeneration)
-            .on('keydown', onExpressionGenerationKeydown);
-        $('#expressions_remove_all_sprites')
-            .on('click', onClickRemoveAllSprites)
-            .on('keydown', onExpressionGenerationKeydown);
+        $('#expressions_generate_missing_sprites').on('click', onClickGenerateMissingSprites);
+        $('#expressions_upload_sprite_sheet').on('click', onClickUploadSpriteSheet);
+        $('#expressions_redo_sprite_cleanup').on('click', onClickRedoSpriteCleanup);
+        $('#expressions_stop_sprite_generation').on('click', onClickStopExpressionGeneration);
+        $('#expressions_remove_all_sprites').on('click', onClickRemoveAllSprites);
         setExpressionGenerationBusy(inSpriteGeneration);
         $('#expressions_mobile_portraits').prop('checked', !!extension_settings.expressions.mobilePortraits).on('input', function () {
             extension_settings.expressions.mobilePortraits = this.checked;
@@ -3046,8 +3151,6 @@ export async function init() {
         $(document).on('click', '.expression_list_upload', onClickExpressionUpload);
         $(document).on('click', '.expression_list_generate', onClickExpressionGenerate);
         $(document).on('click', '.expression_list_regenerate', onClickExpressionRegenerate);
-        $(document).on('keydown', '.expression_list_generate', onExpressionGenerationKeydown);
-        $(document).on('keydown', '.expression_list_regenerate', onExpressionGenerationKeydown);
         $(document).on('click', '.expression_list_delete', onClickExpressionDelete);
         $(window).on('resize', () => updateVisualNovelModeDebounced());
         $('#open_chat_expressions').hide();
@@ -3172,11 +3275,9 @@ export async function init() {
     await addSettings();
     await refreshExpressionOwners();
     seedExpressionHistory();
-    const wrapper = new ModuleWorkerWrapper(moduleWorker);
-    const updateFunction = wrapper.update.bind(wrapper);
-    eventSource.on('in_chat_agent_companion_results_updated', event => onAgentExpressionUpdated(event, updateFunction));
-    setInterval(updateFunction, UPDATE_INTERVAL);
-    moduleWorker();
+    eventSource.on('in_chat_agent_companion_results_updated', event => onAgentExpressionUpdated(event, requestExpressionUpdate));
+    setInterval(requestExpressionUpdate, UPDATE_INTERVAL);
+    void requestExpressionUpdate();
     dragElement($('#expression-holder'));
     eventSource.on(event_types.CHAT_CHANGED, () => {
         seedExpressionHistory();
@@ -3197,9 +3298,10 @@ export async function init() {
 
         if (isVisualNovelMode()) {
             $('#visual-novel-wrapper').empty();
+            updateVisualNovelModeDebounced();
         }
 
-        updateFunction({ newChat: true });
+        void requestExpressionUpdate({ newChat: true });
         void restoreExpressionHistory();
     });
     eventSource.on(event_types.MESSAGE_SWIPED, messageId => {
@@ -3209,6 +3311,7 @@ export async function init() {
             void restoreExpressionHistory();
         }
     });
+    eventSource.on(event_types.MESSAGE_DELETED, () => void restoreExpressionHistory());
     document.addEventListener('sb:chat-style-updated', () => void restoreExpressionHistory());
     eventSource.on(event_types.USER_MESSAGE_RENDERED, applyPersonaExpression);
     eventSource.on(event_types.PERSONA_CHANGED, refreshExpressionOwners);
