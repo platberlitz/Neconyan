@@ -108,11 +108,13 @@ describe('chat render lifecycle script wiring', () => {
         const redisplayChat = findExportedFunction('redisplayChat');
         const source = getSource(redisplayChat);
 
-        expect(source).toContain('const shouldReplaceRenderedWindow = renderedMessageCount > 0');
+        expect(source).toContain('const shouldReplaceRenderedWindow = replaceRenderedWindow || renderedMessageCount > 0');
         expect(source).toContain('const windowSize = getChatRenderWindowSize();');
         expect(source).toContain('const endIndex = Math.min(targetChat.length, startIndex + windowSize);');
         expect(source).toContain('const messages = targetChat.slice(startIndex, endIndex);');
-        expect(source).toContain('const renderedMessageIds = await renderRedisplayChatMessages({ messages, startIndex, pinBottomDuringRender, isCurrent });');
+        expect(source).toContain('await renderRedisplayChatMessages({ messages, startIndex, pinBottomDuringRender: !atomic && pinBottomDuringRender, isCurrent, insertFragment })');
+        expect(source).toContain('const pending = atomic ? document.createDocumentFragment() : null;');
+        expect(source).toContain('chatElement[0].appendChild(pending);');
         expect(source).toContain('if (!isCurrent()) return;');
         expect(source).toContain('applyCharacterTagsToMessageDivs({ mesIds: renderedMessageIds });');
         expect(source).toContain('syncChatHistoryWindowControls();');
@@ -127,8 +129,8 @@ describe('chat render lifecycle script wiring', () => {
 
         expect(source).toContain('const batchSize = getMobileChatRenderBatchSize(messages.length);');
         expect(source).toContain('if (isChatRenderLifecycleRolloutEnabled(CHAT_RENDER_LIFECYCLE_ROUTE.REDISPLAY_BATCH))');
-        expect(source).toContain('return renderRedisplayChatMessagesThroughLifecycle({ messages, startIndex, batchSize, pinBottomDuringRender, isCurrent });');
-        expect(source).toContain('return renderRedisplayChatMessagesLegacy({ messages, startIndex, batchSize, pinBottomDuringRender, isCurrent });');
+        expect(source).toContain('return renderRedisplayChatMessagesThroughLifecycle({ messages, startIndex, batchSize, pinBottomDuringRender, isCurrent, insertFragment });');
+        expect(source).toContain('return renderRedisplayChatMessagesLegacy({ messages, startIndex, batchSize, pinBottomDuringRender, isCurrent, insertFragment });');
     });
 
     test('guard-on redisplayChat delegates batch mechanics to the lifecycle render batch helper', () => {
@@ -140,7 +142,7 @@ describe('chat render lifecycle script wiring', () => {
         expect(source).toContain('firstMessageId: startIndex');
         expect(source).toContain('batchSize,');
         expect(source).toContain('renderMessageElement: (message, messageId) => updateMessageElement(message, { messageId })');
-        expect(source).toContain('insertFragment: fragment => chatElement[0].appendChild(fragment)');
+        expect(source).toContain('insertFragment,');
         expect(source).toContain('waitForNextFrame,');
         expect(source).toContain('markLastMessage: true');
         expect(source).toContain('afterBatch: pinBottomDuringRender ? () => beginChatLoadBottomLock() : undefined');
@@ -156,7 +158,7 @@ describe('chat render lifecycle script wiring', () => {
         expect(source).toContain('const fragment = document.createDocumentFragment();');
         expect(source).toContain('const messageElement = updateMessageElement(message, { messageId });');
         expect(source).toContain('newMessageElements.at(-1).classList.add(\'last_mes\');');
-        expect(source).toContain('chatElement[0].appendChild(fragment);');
+        expect(source).toContain('insertFragment(fragment);');
         expect(source).toContain('if (pinBottomDuringRender)');
         expect(source).toContain('beginChatLoadBottomLock();');
         expect(source).toContain('await waitForNextFrame();');

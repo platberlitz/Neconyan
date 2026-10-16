@@ -3639,7 +3639,7 @@ function scrollLoadedChatToBottom(isCurrent) {
     }
 }
 
-async function renderRedisplayChatMessagesLegacy({ messages, startIndex, batchSize, pinBottomDuringRender, isCurrent }) {
+async function renderRedisplayChatMessagesLegacy({ messages, startIndex, batchSize, pinBottomDuringRender, isCurrent, insertFragment }) {
     const renderedMessageIds = lodash.range(startIndex, startIndex + messages.length, 1);
     const shouldYieldBetweenBatches = batchSize < messages.length;
 
@@ -3664,7 +3664,7 @@ async function renderRedisplayChatMessagesLegacy({ messages, startIndex, batchSi
             fragment.appendChild(messageElement);
         }
         if (!isCurrent()) break;
-        chatElement[0].appendChild(fragment);
+        insertFragment(fragment);
 
         if (pinBottomDuringRender) {
             beginChatLoadBottomLock();
@@ -3678,13 +3678,13 @@ async function renderRedisplayChatMessagesLegacy({ messages, startIndex, batchSi
     return renderedMessageIds;
 }
 
-async function renderRedisplayChatMessagesThroughLifecycle({ messages, startIndex, batchSize, pinBottomDuringRender, isCurrent }) {
+async function renderRedisplayChatMessagesThroughLifecycle({ messages, startIndex, batchSize, pinBottomDuringRender, isCurrent, insertFragment }) {
     const { renderedMessageIds } = await renderMessagesInBatches({
         messages,
         firstMessageId: startIndex,
         batchSize,
         renderMessageElement: (message, messageId) => updateMessageElement(message, { messageId }),
-        insertFragment: fragment => chatElement[0].appendChild(fragment),
+        insertFragment,
         waitForNextFrame,
         markLastMessage: true,
         afterBatch: pinBottomDuringRender ? () => beginChatLoadBottomLock() : undefined,
@@ -3695,14 +3695,14 @@ async function renderRedisplayChatMessagesThroughLifecycle({ messages, startInde
 }
 
 async function renderRedisplayChatMessages({ messages, startIndex, pinBottomDuringRender = false,
-    isCurrent = captureChatRenderValidity() }) {
+    isCurrent = captureChatRenderValidity(), insertFragment = fragment => chatElement[0].appendChild(fragment) }) {
     const batchSize = getMobileChatRenderBatchSize(messages.length);
 
     if (isChatRenderLifecycleRolloutEnabled(CHAT_RENDER_LIFECYCLE_ROUTE.REDISPLAY_BATCH)) {
-        return renderRedisplayChatMessagesThroughLifecycle({ messages, startIndex, batchSize, pinBottomDuringRender, isCurrent });
+        return renderRedisplayChatMessagesThroughLifecycle({ messages, startIndex, batchSize, pinBottomDuringRender, isCurrent, insertFragment });
     }
 
-    return renderRedisplayChatMessagesLegacy({ messages, startIndex, batchSize, pinBottomDuringRender, isCurrent });
+    return renderRedisplayChatMessagesLegacy({ messages, startIndex, batchSize, pinBottomDuringRender, isCurrent, insertFragment });
 }
 
 /**
@@ -3712,14 +3712,16 @@ async function renderRedisplayChatMessages({ messages, startIndex, pinBottomDuri
  * @param {Number} [options.startIndex=0] Everything including and after startIndex will be replaced.
  * @param {Boolean} [options.fade=true] When false, the swipe chevrons will not fade in.
  * @param {Boolean} [options.pinBottomDuringRender=false] Keep initial chat loads at the newest rendered message while batches append.
+ * @param {Boolean} [options.atomic=false] Prepare batches off-screen, then replace the visible messages together.
+ * @param {Boolean} [options.replaceRenderedWindow=false] Replace the entire rendered window, including a missing swipe target.
+ * @param {Function} [options.onCommit] Called once prepared messages have replaced the visible rows.
  */
 export async function redisplayChat({ targetChat = chat, startIndex = 0, fade = true, pinBottomDuringRender = false,
-    isCurrent = captureChatRenderValidity() } = {}) {
+    isCurrent = captureChatRenderValidity(), atomic = false, replaceRenderedWindow = false, onCommit } = {}) {
     if (!isCurrent()) return;
     const messageElements = chatElement.find('.mes');
-    messageElements.removeClass('last_mes');
     const { renderedMessageCount, firstMessageId, lastMessageId } = getRenderedChatMessageWindow();
-    const shouldReplaceRenderedWindow = renderedMessageCount > 0
+    const shouldReplaceRenderedWindow = replaceRenderedWindow || renderedMessageCount > 0
         && Number.isInteger(firstMessageId)
         && Number.isInteger(lastMessageId)
         && (startIndex < firstMessageId || startIndex > lastMessageId + 1);
@@ -3728,8 +3730,12 @@ export async function redisplayChat({ targetChat = chat, startIndex = 0, fade = 
     const removedMessageElements = shouldReplaceRenderedWindow
         ? messageElements
         : messageElements.filter(`.mes[mesid="${startIndex}"]`).nextAll('.mes').addBack();
-    unobserveChatMessageResize(removedMessageElements);
-    removedMessageElements.remove();
+    const removePreviousMessages = () => {
+        messageElements.removeClass('last_mes');
+        unobserveChatMessageResize(removedMessageElements);
+        removedMessageElements.remove();
+    };
+    if (!atomic) removePreviousMessages();
 
     const t1 = performance.now();
 
@@ -3737,12 +3743,32 @@ export async function redisplayChat({ targetChat = chat, startIndex = 0, fade = 
     const endIndex = Math.min(targetChat.length, startIndex + windowSize);
     const messages = targetChat.slice(startIndex, endIndex);
 
-    if (messages.length > 0) {
-        const renderedMessageIds = await renderRedisplayChatMessages({ messages, startIndex, pinBottomDuringRender, isCurrent });
+    const pending = atomic ? document.createDocumentFragment() : null;
+    const insertFragment = fragment => (pending ?? chatElement[0]).appendChild(fragment);
+    // Saved data already describes the new rows. Prevent editing an old row while
+    // its replacement is being prepared, without blocking the chat's scrolling.
+    const previousInert = atomic ? messageElements.toArray().map(element => [element, element.inert]) : [];
+    for (const [element] of previousInert) element.inert = true;
+    let renderedMessageIds;
+    try {
+        renderedMessageIds = messages.length > 0
+            ? await renderRedisplayChatMessages({ messages, startIndex, pinBottomDuringRender: !atomic && pinBottomDuringRender, isCurrent, insertFragment }) : [];
         if (!isCurrent()) return;
-
-        applyCharacterTagsToMessageDivs({ mesIds: renderedMessageIds });
+        if (atomic) {
+            // Keep the current reply visible across the mobile renderer's frame yields.
+            const insertedElements = [...pending.children];
+            removePreviousMessages();
+            removeChatHistoryWindowControls();
+            chatElement[0].appendChild(pending);
+            onCommit?.();
+            // Earlier batches were detached when their first resize setup ran.
+            for (const element of insertedElements) observeChatMessageResize(element);
+            if (pinBottomDuringRender) beginChatLoadBottomLock();
+        }
+    } finally {
+        for (const [element, inert] of previousInert) element.inert = inert;
     }
+    if (renderedMessageIds.length) applyCharacterTagsToMessageDivs({ mesIds: renderedMessageIds });
 
     syncChatHistoryWindowControls();
     refreshSwipeButtons(false, fade);
@@ -4586,6 +4612,9 @@ export async function deleteMessage(id, swipeDeletionIndex = undefined, askConfi
 
 export const reloadChatMutex = new SimpleMutex(reloadCurrentChatUnsafe);
 export const reloadCurrentChat = reloadChatMutex.update.bind(reloadChatMutex);
+// Once read evidence is adopted, never put older data back into the saveable chat.
+// A failed render retries the current window; edits may have renumbered its rows.
+let savedChatRedraw = null;
 
 /**
  * Reloads the current chat unsafely, without mutex protection.
@@ -4647,19 +4676,38 @@ async function adoptSavedChatTail(signal) {
     if (!Array.isArray(records) || records.length < 2) return false;
     if (isChatSaving || hasPendingChatSave() || this_edit_mes_id !== undefined) return false;
 
+    await saveItemizedPrompts(chatId);
+    await loadItemizedPrompts(chatId);
+    signal?.throwIfAborted();
+    if (!isCurrent()) return true;
+    const canRender = () => isCurrent() && this_edit_mes_id === undefined
+        && !chatElement[0]?.querySelector('#curEditTextarea, .reasoning_edit_textarea');
+    if (!canRender() || isChatSaving || hasPendingChatSave()) return false;
+
     const [header, ...saved] = records;
     let first = 0;
     while (first < Math.min(chat.length, saved.length) && JSON.stringify(saved[first]) === JSON.stringify(chat[first])) first++;
+    const pendingRedraw = savedChatRedraw?.isCurrent() ? savedChatRedraw : null;
+    if (pendingRedraw) first = 0;
 
+    const readingAnchor = takeChatReloadReadingAnchor();
+    const wasNearBottom = isChatScrolledNearBottom();
+    const scrollVersion = chatScrollVersion;
     const { renderedMessageCount, firstMessageId, lastMessageId } = getRenderedChatMessageWindow();
-    const rebuildWindow = saved.length < chat.length || !renderedMessageCount
+    const windowSize = getChatRenderWindowSize();
+    const wasShowingTail = pendingRedraw?.wasShowingTail ?? lastMessageId === chat.length - 1;
+    const followSavedTail = wasNearBottom && wasShowingTail
+        && (Boolean(pendingRedraw) || saved.length > Math.max(first, firstMessageId) + windowSize);
+    const rebuildWindow = Boolean(pendingRedraw) || followSavedTail || saved.length < chat.length || !renderedMessageCount
         || !Number.isInteger(firstMessageId) || !Number.isInteger(lastMessageId)
         || (first <= lastMessageId && !chatElement[0].querySelector(`.mes[mesid="${Math.max(first, firstMessageId)}"]`));
     // The redraw starts at an element already on screen, or right after the last one.
-    const startIndex = rebuildWindow ? Math.max(0, Math.min(firstMessageId || 0, saved.length - getChatRenderWindowSize())) : Math.max(first, firstMessageId);
+    const startIndex = followSavedTail ? Math.max(0, saved.length - windowSize)
+        : rebuildWindow ? Math.max(0, Math.min(firstMessageId || 0, saved.length - windowSize)) : Math.max(first, firstMessageId);
     const redraw = rebuildWindow || startIndex <= lastMessageId + 1 && first < saved.length;
     if (!rememberRoleplayRead(locator, evidence)) return false;
 
+    savedChatRedraw = { wasShowingTail, isCurrent };
     const metadata = header?.chat_metadata ?? {};
     if (JSON.stringify(metadata) !== JSON.stringify(chat_metadata)) {
         cancelDebouncedMetadataSave();
@@ -4668,27 +4716,31 @@ async function adoptSavedChatTail(signal) {
     const adoptedMessages = saved.slice(first);
     adoptedMessages.forEach(ensureMessageMediaIsArray);
     chat.splice(first, chat.length - first, ...adoptedMessages);
-    await saveItemizedPrompts(chatId);
-    await loadItemizedPrompts(chatId);
-    if (!isCurrent()) return true;
-
-    const readingAnchor = takeChatReloadReadingAnchor();
-    const wasNearBottom = isChatScrolledNearBottom();
-    chatElement.find('#neconyan-roleplay-preview').remove();
+    const finishHandover = () => {
+        savedChatRedraw = null;
+        // An unchanged read has not replaced the detached original. Its owner
+        // still needs the marker to restore it if the replacement is cancelled.
+        if (redraw) chatElement.find('[data-roleplay-replacement]').remove();
+        chatElement.find('#neconyan-roleplay-preview').remove();
+    };
     if (redraw) {
-        // The swipe placeholder stands in for the message being redrawn below.
-        chatElement.find('[data-roleplay-replacement]').remove();
-        if (rebuildWindow) removeRenderedChatMessages();
-        await redisplayChat({ startIndex, fade: false, isCurrent });
-        if (!isCurrent()) return true;
+        await redisplayChat({ startIndex, fade: false, isCurrent: canRender, atomic: true,
+            replaceRenderedWindow: rebuildWindow, onCommit: finishHandover });
+    }
+    if (!isCurrent()) return true;
+    if (!canRender()) return false;
+    finishHandover();
+
+    const readerMoved = chatScrollVersion !== scrollVersion;
+    if (redraw) {
         // The scroll is placed below anyway when holding the reader's place or following the bottom.
-        const keepView = !readingAnchor && !wasNearBottom;
+        const keepView = readerMoved || !readingAnchor && !wasNearBottom;
         pruneRenderedChatMessagesToWindow({ windowSize: getChatRenderWindowSize(), pruneFrom: 'start', keepView });
     }
     syncRenderedChatLastMessageClass();
     syncChatHistoryWindowControls();
     refreshSwipeButtons();
-    if (!(readingAnchor && holdChatReloadReadingAnchor(readingAnchor, isCurrent)) && wasNearBottom) {
+    if (!readerMoved && !(readingAnchor && holdChatReloadReadingAnchor(readingAnchor, isCurrent)) && wasNearBottom) {
         scrollLoadedChatToBottomThroughLifecycle(isCurrent);
     }
 
@@ -14765,6 +14817,8 @@ export async function messageEdit(editMessageId) {
         console.warn(`Message element with id ${editMessageId} not found in DOM.`);
         return;
     }
+    // Keyboard shortcuts dispatch synthetic clicks, which bypass native inert.
+    if (messageElement[0]?.inert) return;
 
     this_edit_mes_id = editMessageId;
     destroySandbox(editMessageId, { reason: 'edit' });

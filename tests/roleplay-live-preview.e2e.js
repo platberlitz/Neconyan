@@ -1,6 +1,7 @@
 /* global window, document, requestAnimationFrame */
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { installSyntheticLongChat } from './chat-scroll-regression-helpers.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 
 test.setTimeout(180000);
@@ -71,5 +72,54 @@ for (const phone of [true, false]) {
         await expect(timer).toHaveText('5.0s');
         expect(await page.evaluate(async text => (await import('/script.js')).chat.some(message => message.mes === text), reply)).toBe(false);
         await page.evaluate(() => window.stopLivePreview());
+    });
+
+    for (const visibleCount of [30, 50]) test(`saved reply replaces the preview without an empty frame on ${viewport} (window ${visibleCount})`, async ({ app }) => {
+        const page = await openPreview(app, phone);
+        await installSyntheticLongChat(page, { messageCount: 30, visibleCount });
+        await page.evaluate(text => window.sendLivePreview({ childId: 'reply', stage: 'saving', text }), reply);
+        await expect(page.locator('#neconyan-roleplay-preview')).toContainText(reply);
+        await page.locator('#neconyan-roleplay-preview').scrollIntoViewIfNeeded();
+        const saved = await page.evaluate(async text => {
+            const core = await import('/script.js');
+            // Earlier metadata can change while the server works, requiring a batched redraw.
+            return [{ chat_metadata: core.chat_metadata }, ...core.chat.map(message => ({ ...message, extra: { ...message.extra, refreshed: true } })),
+                { name: 'Durable Nova', is_user: false, mes: text, extra: {} }];
+        }, reply);
+        await page.route('**/api/chats/get', async route => {
+            const response = await route.fetch();
+            await route.fulfill({ response, json: saved });
+        });
+        const observed = await page.evaluate(async ({ text, phone }) => {
+            const counts = [];
+            let recording = true;
+            let editAttempted = false;
+            let editorOpened = false;
+            const sample = () => {
+                counts.push([...document.querySelectorAll('#chat .mes_text')].filter(element => element.textContent.includes(text)).length);
+                const edit = document.querySelector('#chat .mes[inert].last_mes .mes_edit');
+                if (phone && edit && !editAttempted) {
+                    editAttempted = true;
+                    // The Up hotkey uses jQuery's synthetic click, which bypasses native inert.
+                    window.jQuery(edit).trigger('click');
+                    editorOpened = Boolean(document.querySelector('#curEditTextarea'));
+                }
+                if (recording) requestAnimationFrame(sample);
+            };
+            requestAnimationFrame(sample);
+            window.stopLivePreview.freeze();
+            await (await import('/script.js')).refreshCurrentChatFromSaved();
+            window.stopLivePreview();
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            recording = false;
+            return { counts, editAttempted, editorOpened };
+        }, { text: reply, phone });
+        const { counts } = observed;
+        expect(observed.editAttempted).toBe(phone);
+        expect(observed.editorOpened).toBe(false);
+        expect(counts.length).toBeGreaterThan(1);
+        expect(counts.every(count => count === 1), `Visible reply copies by frame: ${counts}`).toBe(true);
+        await expect(page.locator('#chat .mes[mesid]').last()).toContainText(reply);
+        await expect(page.locator('#neconyan-roleplay-preview')).toHaveCount(0);
     });
 }
