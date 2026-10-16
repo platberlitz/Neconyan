@@ -8,7 +8,7 @@ const panelSource = read('../public/scripts/extensions/in-chat-agents/companion/
 const panelDeclarations = parse(panelSource, { ecmaVersion: 'latest', sourceType: 'module' }).body
     .map(node => node.declaration ?? node)
     .filter(node => node.type !== 'ImportDeclaration' && (node.type === 'VariableDeclaration'
-        || ['renderPanel', 'applyPanelReorder', 'setupPanelSortable', 'refreshCompanionPanel'].includes(node.id?.name)))
+        || ['renderPanel', 'applyPanelSearch', 'applyPanelReorder', 'setupPanelSortable', 'refreshCompanionPanel'].includes(node.id?.name)))
     .map(node => panelSource.slice(node.start, node.end)).join('\n');
 
 for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 }]) {

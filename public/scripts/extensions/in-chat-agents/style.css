@@ -1512,6 +1512,52 @@ button.ica--card-pill--version-update {
     gap: 12px;
 }
 
+.ica--tpanel-search {
+    display: grid;
+    gap: 4px;
+}
+
+.ica--tpanel-search-row {
+    display: flex;
+    gap: 6px;
+}
+
+#ica--tpanel-search::-webkit-search-cancel-button {
+    display: none;
+}
+
+.ica--tpanel-search-row .text_pole {
+    flex: 1;
+    min-width: 0;
+    min-height: 44px;
+    margin: 0;
+}
+
+.ica--tpanel-search-row .ica--tpanel-search-clear {
+    flex: 0 0 44px;
+    min-height: 44px;
+    margin: 0;
+    color: var(--neco-ink);
+    background: transparent;
+    border: 1px solid var(--neco-ginger);
+}
+
+.ica--tpanel-search-row .ica--tpanel-search-clear:hover:not(:disabled) {
+    color: var(--neco-on-accent);
+    background: var(--neco-ginger);
+}
+
+.ica--tpanel-search-row :focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+.ica--tpanel-search small:empty,
+.ica--tpanel-agent[hidden],
+.ica--tpanel [data-role="panel-search-empty"][hidden] {
+    display: none;
+}
+
 .ica--tpanel-agent {
     display: flex;
     flex-direction: column;
