@@ -787,7 +787,7 @@ body.neconyan :is(.sbbs-root, .sbstory-bar, .sbtw-root, .sbterm-settings-content
     border-radius: var(--sb-radius-md);
     box-shadow: none;
 }
-body.neconyan :is(.sbbs-root, .sbstory-bar, .sbtw-root, .sbterm-settings-content, .promptTags-settings, .sbme-settings, .sbwil-root, .sbpl-root, .sbctm-root, .sbdistiller-root) :is(button, input, textarea, select, summary) {
+body.neconyan :is(.sbbs-root, .sbstory-bar, .sbtw-root, .sbterm-settings-content, .promptTags-settings, .sbme-settings, .sbwil-root, .sbpl-root, .sbctm-root, .sbdistiller-root) :is(button, input:not([type='checkbox'], [type='radio']), textarea, select, summary) {
     min-height: 36px;
     border-radius: var(--sb-radius-button);
 }
