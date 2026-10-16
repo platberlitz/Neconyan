@@ -1,4 +1,4 @@
-/* global document, window, getComputedStyle */
+/* global document, window, getComputedStyle, KeyboardEvent */
 import { isolateSettingsSaves } from './chat-scroll-regression-helpers.js';
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
@@ -104,6 +104,16 @@ for (const width of [1280, 390, 320]) {
                     expect(visibleGroups.length).toBeGreaterThan(0);
                     expect(visibleGroups.every(value => value === section)).toBe(true);
                     if (section === 'timing') {
+                        // A quick Escape must work before the next timer callback, too.
+                        const immediateEscape = await drawer.getByRole('button', { name: 'Edit schedule', exact: true }).evaluate(button => {
+                            button.focus();
+                            button.click();
+                            const overlay = document.querySelector('#sb_conversation_schedule_modal');
+                            const focusedInside = overlay?.contains(document.activeElement);
+                            document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+                            return { focusedInside, closed: !overlay?.isConnected, focusRestored: document.activeElement === button };
+                        });
+                        expect(immediateEscape).toEqual({ focusedInside: true, closed: true, focusRestored: true });
                         await drawer.getByRole('button', { name: 'Edit schedule', exact: true }).click();
                         await expect(page.locator('#sb_conversation_schedule_modal')).toBeVisible();
                         await page.keyboard.press('Escape');

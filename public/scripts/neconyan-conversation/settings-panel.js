@@ -422,9 +422,8 @@ export function openScheduleEditorModal(initialAvatar = getCurrentCharAvatar()) 
             first.focus({ preventScroll: true });
         }
     });
-    setTimeout(() => {
-        modal.focus({ preventScroll: true });
-    }, 0);
+    // The visible dialogue must own keyboard input before another key can arrive.
+    modal.focus({ preventScroll: true });
 
     saveBtn?.addEventListener('click', async () => {
         if (!editAvatar) {
