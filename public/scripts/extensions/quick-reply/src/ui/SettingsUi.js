@@ -6,7 +6,6 @@ import { QuickReplySet } from '../QuickReplySet.js';
 import { getUniqueQuickReplySetsByName, removeQuickReplySetLinksByName } from '../quick-reply-set-list.js';
 import { QuickReplySettings } from '../QuickReplySettings.js';
 import { buildQuickReplyMessage, DEFAULT_CUSTOM_SET_NAME, getUniqueQuickReplySetName } from '../quick-reply-templates.js';
-import { showQuickReplyBuilder, showQuickReplyTemplatePicker } from './quick-reply-helpers.js';
 
 export class SettingsUi {
     /** @type {QuickReplySettings} */ settings;
@@ -495,6 +494,7 @@ export class SettingsUi {
     }
 
     async browseTemplates() {
+        const { showQuickReplyTemplatePicker } = await import('./quick-reply-helpers.js');
         await showQuickReplyTemplatePicker({ onAdd: async (template) => this.addTemplateSet(template) });
     }
 
@@ -523,6 +523,7 @@ export class SettingsUi {
      * @returns {Promise<boolean>}
      */
     async makeQuickReply(targetSetName = DEFAULT_CUSTOM_SET_NAME) {
+        const { showQuickReplyBuilder } = await import('./quick-reply-helpers.js');
         return showQuickReplyBuilder({
             setNames: this.getSetNames(),
             defaultSetName: targetSetName,

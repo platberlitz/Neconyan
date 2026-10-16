@@ -30,7 +30,7 @@ async function request(action, body, captured, { binary = false } = {}) {
     if (!response.ok) { const error = await response.json().catch(() => ({})); throw new Error(error.error || 'Image review could not finish.'); }
     return binary ? response.blob() : response.json();
 }
-async function setAccountChoice(checked) {
+export async function setAccountChoice(checked) {
     const account = getCurrentUserHandle(), before = power_user.neconyan_prompt_media;
     const choice = { version: 1, images: checked ? 'display-only' : 'include' };
     power_user.neconyan_prompt_media = choice;
@@ -317,20 +317,6 @@ export async function showPromptMediaReview(initialLocator = locator()) {
     if (initialLocator) void run(() => showChat(initialLocator)); else status.textContent = 'Choose chats to review, or change the account preference above.';
     await shown;
 }
-export function initPromptMediaControls() {
-    const input = document.getElementById('prompt-images-account');
-    if (input) {
-        input.checked = power_user.neconyan_prompt_media?.images === 'display-only'; input.dataset.promptImagesAccount = 'true';
-        input.addEventListener('change', async () => { input.disabled = true; try { await setAccountChoice(input.checked); } catch (error) { input.checked = !input.checked; toastr.error(error.message); } finally { input.disabled = false; } });
-    }
-    document.getElementById('prompt-images-review')?.addEventListener('click', () => { void showPromptMediaReview().catch(error => toastr.error(error.message)); });
-    globalThis.addEventListener('neconyan:image-input-refused', () => {
-        toastr.warning('Review image input choices to keep pictures display-only, use a description, or prepare a compatible copy.', 'Image input needs attention', {
-            onclick: () => { void showPromptMediaReview().catch(error => toastr.error(error.message)); }, timeOut: 12000,
-        });
-    });
-}
-
 /** Conversation choices use its existing versioned store writer; Roleplay repair never rewrites that store. */
 async function showConversationPromptMediaReview() {
     const context = await import('./neconyan-conversation/context.js');

@@ -9,6 +9,24 @@ import { extension_settings } from './extensions.js';
 import { attachmentIdentity, canonicalPromptMedia, createPromptMediaContext, selectPromptMedia } from './prompt-media-policy.js';
 
 export const promptAttachmentHash = value => sha256(canonicalPromptMedia(value));
+
+// The review window loads on first use so it stays out of every cold start.
+const promptMediaUi = () => import('./prompt-media-ui.js');
+const openPromptMediaReview = () => { void promptMediaUi().then(ui => ui.showPromptMediaReview()).catch(error => toastr.error(error.message)); };
+
+export function initPromptMediaControls() {
+    const input = document.getElementById('prompt-images-account');
+    if (input) {
+        input.checked = power_user.neconyan_prompt_media?.images === 'display-only'; input.dataset.promptImagesAccount = 'true';
+        input.addEventListener('change', async () => { input.disabled = true; try { await (await promptMediaUi()).setAccountChoice(input.checked); } catch (error) { input.checked = !input.checked; toastr.error(error.message); } finally { input.disabled = false; } });
+    }
+    document.getElementById('prompt-images-review')?.addEventListener('click', openPromptMediaReview);
+    globalThis.addEventListener('neconyan:image-input-refused', () => {
+        toastr.warning('Review image input choices to keep pictures display-only, use a description, or prepare a compatible copy.', 'Image input needs attention', {
+            onclick: openPromptMediaReview, timeOut: 12000,
+        });
+    });
+}
 export function browserPromptMediaContext(metadata = chat_metadata) {
     return createPromptMediaContext({ power_user, extension_settings }, metadata, oai_settings,
         { backend: main_api === 'openai' ? 'chat' : 'text' });

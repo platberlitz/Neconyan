@@ -1,4 +1,4 @@
-import { projectBrowserPromptMedia, validatePromptImageCopies } from './scripts/prompt-media-client.js';
+import { initPromptMediaControls, projectBrowserPromptMedia, validatePromptImageCopies } from './scripts/prompt-media-client.js';
 import { promptMediaText, promptImageCopyDescriptor } from './scripts/prompt-media-policy.js';
 import { formatRoleplayTextMessage, combineRoleplayTextPrompt } from './scripts/roleplay-text-format.js';
 import { roleplayLoadErrorMessage } from './scripts/roleplay-load-error.js';
@@ -1389,7 +1389,7 @@ async function firstLoadInit() {
         doDailyExtensionUpdatesCheck();
         await eventSource.emit(event_types.APP_INITIALIZED);
         await fixViewport();
-        (await import('./scripts/prompt-media-ui.js')).initPromptMediaControls();
+        initPromptMediaControls();
         await eventSource.emit(event_types.APP_READY);
         void showLanguageChoicePrompt().catch(error => console.warn('Language choice unavailable.', error));
         const { initChatNavigation } = await import('./scripts/chat-navigation.js');

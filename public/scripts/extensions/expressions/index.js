@@ -22,7 +22,6 @@ import { removeReasoningFromString } from '../../reasoning.js';
 import { isExpressionLabel, isExpressionSpriteName, parseExpressionLabels, expressionLabelFromFilename, nextExpressionSpriteName } from './expression-labels.js';
 import { splitSpriteBitmap } from './sprite-pixels.js';
 import { getExpressionSpriteBackground, getExpressionSpriteSheetGrid, TRANSPARENT_DEFAULT_EXPRESSION_SPRITE_PROMPT } from './sprite-prompts.js';
-import { enhanceSpriteBitmap } from './sprite-enhancement.js';
 import { readExpressionSets, resolveExpressionMember, applyExpressionMemberPrompt } from './expression-sets.js';
 import { bindExpressionSets, renderExpressionSets } from './expression-sets-ui.js';
 import { personaExpressionFolder, personaExpressionSelection } from './persona-expressions.js';
@@ -1202,6 +1201,7 @@ async function postProcessSpriteCanvas(canvas) {
     const context = canvas.getContext('2d');
     spriteProcessingController = new AbortController();
     try {
+        const { enhanceSpriteBitmap } = await import('./sprite-enhancement.js');
         const pixels = await enhanceSpriteBitmap(context.getImageData(0, 0, canvas.width, canvas.height), extension_settings.expressions, {
             headers: getRequestHeaders(), signal: spriteProcessingController.signal, check: throwIfExpressionGenerationStopped,
         });
