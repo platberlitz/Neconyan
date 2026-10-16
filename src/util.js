@@ -406,9 +406,10 @@ export function ensureDirectory(dirPath) {
  * @param {object} [options]
  * @param {number} [options.maxEntryBytes] Skip images larger than this once unpacked
  * @param {number} [options.maxFiles] Stop after this many images
+ * @param {number} [options.maxTotalBytes] Reject with a 413 error once the unpacked total exceeds this
  * @returns {Promise<[string, Buffer][]>} Array of image buffers
  */
-export async function getImageBuffers(zipFilePath, { maxEntryBytes = Infinity, maxFiles = Infinity } = {}) {
+export async function getImageBuffers(zipFilePath, { maxEntryBytes = Infinity, maxFiles = Infinity, maxTotalBytes = Infinity } = {}) {
     return new Promise((resolve, reject) => {
         // Check if the zip file exists
         if (!fs.existsSync(zipFilePath)) {
@@ -417,30 +418,54 @@ export async function getImageBuffers(zipFilePath, { maxEntryBytes = Infinity, m
         }
 
         const imageBuffers = [];
+        let totalBytes = 0;
+        let settled = false;
+
+        const finish = (error) => {
+            if (settled) return;
+            settled = true;
+            if (error) reject(error);
+            else resolve(imageBuffers);
+        };
 
         yauzl.open(zipFilePath, { lazyEntries: true }, (err, zipfile) => {
             if (err) {
-                reject(err);
+                finish(err);
             } else {
                 zipfile.readEntry();
                 zipfile.on('entry', (entry) => {
                     const mimeType = mime.lookup(entry.fileName);
                     if (imageBuffers.length >= maxFiles) {
                         zipfile.close();
-                        resolve(imageBuffers);
+                        finish();
                         return;
                     }
                     if (mimeType && mimeType.startsWith('image/') && !entry.fileName.startsWith('__MACOSX') && entry.uncompressedSize <= maxEntryBytes) {
                         zipfile.openReadStream(entry, (err, readStream) => {
                             if (err) {
-                                reject(err);
+                                finish(err);
                             } else {
                                 const chunks = [];
+                                let entryBytes = 0;
                                 readStream.on('data', (chunk) => {
+                                    entryBytes += chunk.length;
+                                    if (totalBytes + entryBytes > maxTotalBytes) {
+                                        readStream.destroy();
+                                        zipfile.close();
+                                        finish(Object.assign(new Error('ZIP images exceed the unpacked size limit'), { status: 413 }));
+                                        return;
+                                    }
                                     chunks.push(chunk);
                                 });
 
+                                readStream.on('error', (readError) => {
+                                    zipfile.close();
+                                    finish(readError);
+                                });
+
                                 readStream.on('end', () => {
+                                    if (settled) return;
+                                    totalBytes += entryBytes;
                                     imageBuffers.push([path.parse(entry.fileName).base, Buffer.concat(chunks)]);
                                     zipfile.readEntry(); // Continue to the next entry
                                 });
@@ -452,11 +477,11 @@ export async function getImageBuffers(zipFilePath, { maxEntryBytes = Infinity, m
                 });
 
                 zipfile.on('end', () => {
-                    resolve(imageBuffers);
+                    finish();
                 });
 
                 zipfile.on('error', (err) => {
-                    reject(err);
+                    finish(err);
                 });
             }
         });

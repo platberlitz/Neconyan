@@ -28,6 +28,7 @@ export function importRisuSprites(directories, data) {
 
 const ZIP_SPRITE_LIMIT = 256;
 const ZIP_SPRITE_BYTES = 25 * 1024 * 1024;
+const ZIP_SPRITE_TOTAL_BYTES = 256 * 1024 * 1024;
 
 /**
  * Keeps one usable image per sprite name from a ZIP, so a stray duplicate or odd filename
@@ -110,7 +111,7 @@ router.post('/upload-zip', async (request, response) => {
         const base = roleplayAccountBase(request.user.directories);
         if (!base) return response.sendStatus(409);
         const account = roleplayAccountStamp(base);
-        const images = selectZipSprites(await getImageBuffers(uploaded, { maxEntryBytes: ZIP_SPRITE_BYTES, maxFiles: ZIP_SPRITE_LIMIT * 2 }));
+        const images = selectZipSprites(await getImageBuffers(uploaded, { maxEntryBytes: ZIP_SPRITE_BYTES, maxFiles: ZIP_SPRITE_LIMIT * 2, maxTotalBytes: ZIP_SPRITE_TOTAL_BYTES }));
         const count = images.length ? saveSpriteFiles(request.user.directories, request.body.name, images, { account }) : 0;
         return response.send({ ok: true, count });
     } catch (error) { return response.sendStatus(error.status ?? 500); } finally { fs.rmSync(uploaded, { force: true }); }
