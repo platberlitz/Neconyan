@@ -1225,6 +1225,8 @@ test('saved theme fonts remain local when an explicit font override is cleared',
     });
     await expectLoadedFont(page, 'Nunito');
     await expect(page.locator('body')).toHaveCSS('font-family', /Nunito/);
+    // Clearing inside the same save delay leaves nothing new to upload, so let Nunito land first.
+    await expect.poll(() => fixture.lastSaved?.power_user?.google_font).toBe('Nunito');
     const beforeClear = fixture.saves;
     await page.evaluate(() => {
         const select = document.getElementById('google_font_preset');
