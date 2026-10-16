@@ -135,7 +135,11 @@ test('Hush portrait-centred gutters survive narrow boundaries, custom and hidden
             await page.locator('#hideChatAvatarsEnabled').evaluate((el, hidden) => { el.checked = hidden; el.dispatchEvent(new Event('input', { bubbles: true })); }, state === 'hidden');
             await expect(page.locator('body')).toHaveClass(state === 'hidden' ? /hideChatAvatars/ : /^(?!.*hideChatAvatars)/);
             for (const id of ['0', '1', '4']) {
-                const m = await measure(page.locator(`#chat > .mes[mesid="${id}"]`));
+                const row = page.locator(`#chat > .mes[mesid="${id}"]`);
+                const offset = m => m.text.left - (state === 'hidden' ? m.row.left + m.inset : m.picture.left + m.picture.width / 2);
+                // A slow runner can measure the previous width's layout straight after a resize.
+                if (width <= 1000) await expect.poll(async () => Math.abs(offset(await measure(row))) < 0.5, { message: `${width} ${state} ${id} settles` }).toBe(true);
+                const m = await measure(row);
                 expect(m.scrollWidth).toBe(m.chatWidth);
                 if (width <= 1000) {
                     const anchor = state === 'hidden' ? m.row.left + m.inset : m.picture.left + m.picture.width / 2;
