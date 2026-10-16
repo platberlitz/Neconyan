@@ -69,6 +69,74 @@ the PR against staging and validate the resulting APK on the reporting device.
 
 ## Release preparation: 1.0.0
 
+### 17 October: 1.3.4.1 reply hotfix, staging returns to 1.3.5
+
+I fixed the server-run Roleplay regression in PR #198. Reopening a running chat
+restored its reply preview without restoring the busy controls. A new message
+could then change the saved chat while Agents were still working, and the failed
+job removed the completed reply from view. Reopening now restores Stop and blocks
+Send. Completed Agent additions and sequential rewrites appear while remaining
+Agents work. A failed reply keeps a read-only copy with Copy, Download and Dismiss,
+including after a server restart, without overwriting chat edits or repeating a
+model request. Older completed previews are recovered where their files remain.
+
+PR #198 was merged by fast-forwarding staging to `74a6e1dd`. The explicit merged-PR
+changelog entry is commit `0cb201fbc2f87b4d325304bec57a79c4d62c3cfc`, also the
+verified release commit promoted to main. The annotated tag `v1.3.4.1` has message
+'Neconyan 1.3.4.1'. This hotfix covers regular Node/Bun installations, the source
+download and both signed Android downloads. The running personal instance was
+not deployed as part of this release.
+
+The handbook is published from `neconyan-docs` commit
+`97a37450aad89e0008b4c797b1a1bd984481c3b0`, through successful Pages run
+`38928367282`. Its strict build, 53-page link/asset checks and phone/desktop browser
+checks passed. The changed Roleplay and About pages were verified again on the
+live site at 393x852 and 1280x900. Assistant knowledge is revision 33; source,
+retrieval and focused phone/desktop browser checks passed across all nine variants.
+
+All 497 unit suites passed with 6,772 passing tests and three existing skips.
+The 2,558 server tests and 96 Mewmory tests passed. The initial local server run
+exposed a progress-callback collision with Companion notes, a retention-test setup
+error and a new help-query mismatch; the fixes passed 121 focused checks. Full PR
+checks then passed in run `38926372668` at `74a6e1dd`. Root/test lint, frontend
+budgets and the production build passed; test lint retains 832 warnings and no
+errors. The later release commit changes only the merged-PR changelog entry.
+
+All 16 browser groups passed at the exact release commit in run `38927619426`:
+1,791 passed and 21 existing skips. Fifteen passing groups were retained. Group 11
+had one Bubbles scroll-position failure; its screenshot showed the chat at the
+natural message bottom rather than the requested crossing position. The test and
+the Bubbles module are unchanged from 1.3.4. The unchanged test passed locally,
+then the failed group alone passed all 113 tests on retry. No assertion or skip
+was changed. Duplicate main browser run `38941306802` was cancelled only after
+the retained run covered the identical commit.
+
+Focused phone/desktop checks passed for reattachment, Stop preserving the main
+reply, early Agent progress, independent chat edits, copying/downloading recovery,
+actual server restart, dismissal and no additional model calls. All three recovery
+buttons passed size and contrast checks across light/dark themes and default,
+pale and dark accents. Phone behaviour was emulated in Chromium; physical iPhones
+were not tested. Before/after screenshots are attached to PR #198.
+
+Android run `38941330916` passed without retries: signed build, WebView fixture and
+Android 11, 13 and 15 lifecycle/native checks. The optional historical native
+baseline was not requested and remains skipped. These are emulator results, not
+physical-phone tests. All nine built files passed independent verification:
+eight checksums, both signatures against the existing official signing identity,
+Android version `1.3.4.1` and code `1030401`, native 16 KiB ELF/ZIP alignment,
+embedded commit/frontend files and matching provenance. Every one of the 4,068
+source ZIP files matches `git archive` of the release commit, including its
+configured line endings.
+
+The release is public, stable and latest at
+https://github.com/platberlitz/Neconyan/releases/tag/v1.3.4.1. All nine published
+files were downloaded again and matched the verified build byte for byte; their
+GitHub SHA-256 digests also matched. The tag resolves to the exact build commit.
+
+Staging returns to `1.3.5`: the root package version, both root lockfile entries
+and the boundary expectations were updated together. All six boundary tests and
+lint for that test passed. Main and the published tag retain the verified hotfix.
+
 ### 16 October: 1.3.4 release, staging starts 1.3.5
 
 The release includes PRs #185-195 and #197. PR #197 adds live elapsed timers,
