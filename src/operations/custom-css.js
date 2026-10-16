@@ -4,7 +4,7 @@ import { runChatProfile } from '../generation/service.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { roleplayHash, roleplayLease } from '../roleplay-store.js';
-import { getSettingsVersion, prepareSettingsSave } from '../settings-version.js';
+import { getSettingsRevision, getSettingsVersion, prepareSettingsSave } from '../settings-version.js';
 import { captureLabConnection, readLabSettings } from '../labs/sources.js';
 import { registerOperation } from './jobs.js';
 import { operationError, withOperation } from './store.js';
@@ -74,7 +74,7 @@ export function publishCustomCss(context, plan, css, { afterCustomCssPublication
                 { expected: authoringEvidence(current), limit: SETTINGS_LIMIT });
             value.effects.settings = { state: 'prepared', staged };
             value.cssResult = { css, applied: true, customCss, previousVersion: getSettingsVersion(settings),
-                version: prepared.version, settingsRevision: prepared.settingsRevision };
+                previousSettingsRevision: getSettingsRevision(settings), version: prepared.version, settingsRevision: prepared.settingsRevision };
             save();
         }
         publishAuthoringFileLocked(lease, staged);

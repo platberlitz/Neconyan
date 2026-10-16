@@ -62,7 +62,8 @@ export async function generateCustomCssWithAI({
     });
     const result = record?.result ?? {};
     if (result.applied && account === getCurrentUserHandle()) {
-        core.adoptServerSettingsWrite({ account, previousVersion: result.previousVersion, version: result.version, settingsRevision: result.settingsRevision });
+        core.adoptServerSettingsWrite({ account, previousVersion: result.previousVersion, previousSettingsRevision: result.previousSettingsRevision,
+            version: result.version, settingsRevision: result.settingsRevision });
     }
     return result;
 }

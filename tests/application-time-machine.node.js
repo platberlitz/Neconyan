@@ -55,7 +55,9 @@ test('one accepted snapshot job saves every snapshot and the index after the pag
     fs.rmSync(path.join(p.dirs.root, 'jobs/index.json'));
     const again = await acceptApplicationOperation(p.request, { key: 'all', kind: 'time-machine-capture' });
     assert.equal(again.job, null);
-    assert.equal(readOperation(p.base, 'all').result.taken, p.total);
+    const { result } = readOperation(p.base, 'all');
+    assert.equal(result.taken, p.total);
+    assert.deepEqual([result.previousVersion, result.previousSettingsRevision, result.version, result.settingsRevision], [3, 5, 4, 6]);
 });
 
 test('unchanged items are skipped and retention removes the older copy of an edited lorebook', async t => {

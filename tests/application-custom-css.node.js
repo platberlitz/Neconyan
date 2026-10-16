@@ -45,7 +45,8 @@ test('one accepted CSS job saves into settings after the page is gone and never 
     assert.equal(saved.power_user.other, 'kept');
     assert.equal(saved._version, 4);
     const record = readOperation(p.base, 'css');
-    assert.deepEqual([record.result.applied, record.result.previousVersion, record.result.version], [true, 3, 4]);
+    assert.deepEqual([record.result.applied, record.result.previousVersion, record.result.previousSettingsRevision, record.result.version, record.result.settingsRevision],
+        [true, 3, 5, 4, 6]);
     fs.rmSync(path.join(p.base.directories.root, 'jobs/index.json'));
     const again = await acceptApplicationOperation(p.request, body('css'));
     assert.equal(again.job, null);

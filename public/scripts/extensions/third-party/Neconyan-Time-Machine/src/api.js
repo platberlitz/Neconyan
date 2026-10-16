@@ -332,7 +332,8 @@ export async function captureEverything(onProgress = () => {}) {
         settings[MODULE_NAME] = structuredClone(result.module);
         settings.character_attachments = isPlainObject(settings.character_attachments) ? settings.character_attachments : {};
         settings.character_attachments['__Neconyan-Card-Time-Machine__'] = structuredClone(result.attachments ?? []);
-        core.adoptServerSettingsWrite({ account, previousVersion: result.previousVersion, version: result.version, settingsRevision: result.settingsRevision });
+        core.adoptServerSettingsWrite({ account, previousVersion: result.previousVersion, previousSettingsRevision: result.previousSettingsRevision,
+            version: result.version, settingsRevision: result.settingsRevision });
     }
     return { taken: result.taken ?? 0, skipped: result.skipped ?? 0, failed: result.failed ?? 0, removed: result.removed ?? 0 };
 }

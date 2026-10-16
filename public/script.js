@@ -13543,11 +13543,16 @@ export async function pauseSettingsForAccountImport({ flush = true } = {}) {
 /**
  * Accept a settings write the server made on this account's behalf, but only when this page had
  * already seen the version the server wrote over. Otherwise the ordinary conflict reload applies.
- * @param {{account: string, previousVersion: number, version: number, settingsRevision: number}} write
+ * Conversation-only writes move `_version` but not `_settingsRevision`, and the server accepts a
+ * page that is behind only on those, so a matching previous revision is enough here too.
+ * @param {{account: string, previousVersion: number, previousSettingsRevision?: number, version: number, settingsRevision: number}} write
  * @returns {boolean}
  */
-export function adoptServerSettingsWrite({ account, previousVersion, version, settingsRevision }) {
-    if (account !== getCurrentUserHandle() || lastServerSettingsVersion !== previousVersion) return false;
+export function adoptServerSettingsWrite({ account, previousVersion, previousSettingsRevision, version, settingsRevision }) {
+    if (account !== getCurrentUserHandle()) return false;
+    const conversationOnlyDrift = Number.isSafeInteger(previousVersion) && previousVersion > lastServerSettingsVersion
+        && Number.isSafeInteger(previousSettingsRevision) && previousSettingsRevision === lastServerSettingsRevision;
+    if (lastServerSettingsVersion !== previousVersion && !conversationOnlyDrift) return false;
     if (!Number.isSafeInteger(version) || version <= previousVersion || !Number.isSafeInteger(settingsRevision)) return false;
     lastServerSettingsVersion = version;
     lastServerSettingsRevision = settingsRevision;

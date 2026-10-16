@@ -1,7 +1,7 @@
 /* global globalThis */
 import { describe, expect, jest, test } from '@jest/globals';
 
-async function importHelper({ resolvedProfileId = 'profile-1', result = { applied: true, customCss: '.done {}', previousVersion: 3, version: 4, settingsRevision: 9 } } = {}) {
+async function importHelper({ resolvedProfileId = 'profile-1', result = { applied: true, customCss: '.done {}', previousVersion: 3, previousSettingsRevision: 8, version: 4, settingsRevision: 9 } } = {}) {
     jest.resetModules();
 
     const resolveConnectionProfile = jest.fn(profileId => String(profileId || resolvedProfileId).trim());
@@ -102,7 +102,7 @@ describe('Neconyan Custom CSS AI helper', () => {
             expect.objectContaining({ scope: 'custom-css' }));
         expect(saveSettings).toHaveBeenCalledWith(0, { returnResult: true });
         expect(getActiveGenerationAcknowledgement).not.toHaveBeenCalled();
-        expect(adoptServerSettingsWrite).toHaveBeenCalledWith({ account: 'alice', previousVersion: 3, version: 4, settingsRevision: 9 });
+        expect(adoptServerSettingsWrite).toHaveBeenCalledWith({ account: 'alice', previousVersion: 3, previousSettingsRevision: 8, version: 4, settingsRevision: 9 });
         expect(result.customCss).toBe('.done {}');
     });
 

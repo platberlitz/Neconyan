@@ -5,7 +5,7 @@ import { read as readCard } from '../character-card-parser.js';
 import { getPresetSettingsByAPI } from '../endpoints/presets.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { readRoleplayFile, roleplayHash, roleplayLease } from '../roleplay-store.js';
-import { getSettingsVersion, prepareSettingsSave } from '../settings-version.js';
+import { getSettingsRevision, getSettingsVersion, prepareSettingsSave } from '../settings-version.js';
 import { publishFileDeletions } from './file-deletion.js';
 import { registerOperation } from './jobs.js';
 import { operationError, withOperation } from './store.js';
@@ -238,7 +238,8 @@ function publishIndex(context, planned, { afterTimeMachineIndex } = {}) {
             value.effects.settings = { state: 'prepared', staged };
             value.timeMachineDeletions = deletions;
             value.timeMachineResult = { taken: planned.snapshots.length, skipped: planned.skipped, failed: planned.failed ?? 0, removed: doomed.size,
-                module: nextModule, attachments, previousVersion: getSettingsVersion(settings), version: prepared.version,
+                module: nextModule, attachments, previousVersion: getSettingsVersion(settings),
+                previousSettingsRevision: getSettingsRevision(settings), version: prepared.version,
                 settingsRevision: prepared.settingsRevision };
             save();
         }
