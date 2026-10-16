@@ -704,11 +704,57 @@
     border-color: color-mix(in srgb, var(--SmartThemeQuoteColor, #9f7aea) 58%, transparent);
 }
 
-#rat_drawer .rat-filter-grid,
 #rat_drawer .rat-option-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
+}
+
+#rat_drawer .rat-browse-filters {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 15em);
+    gap: 8px;
+}
+
+#rat_drawer .rat-browse-filters > input[type='search'] {
+    grid-column: 1 / -1;
+}
+
+#rat_drawer .rat-mode-chips {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+#rat_drawer .rat-mode-chips .rat-chip {
+    display: inline-flex;
+    width: auto;
+    min-height: 30px;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    border-radius: 999px;
+    padding: 3px 11px;
+    font-size: 0.88em;
+}
+
+#rat_drawer .rat-mode-chips .rat-chip[aria-pressed='true'] {
+    border-color: var(--neco-ginger, var(--SmartThemeQuoteColor));
+    background: var(--neco-ginger, var(--SmartThemeQuoteColor));
+    color: var(--neco-on-accent, var(--SmartThemeBodyColor));
+}
+
+#rat_drawer .rat-mode-chips .rat-chip[aria-pressed='true']:hover {
+    border-color: var(--neco-ginger-hover, var(--neco-ginger, var(--SmartThemeQuoteColor)));
+    background: var(--neco-ginger-hover, var(--neco-ginger, var(--SmartThemeQuoteColor)));
+}
+
+#rat_drawer .rat-chip-count {
+    font-size: 0.86em;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.78;
 }
 
 #rat_drawer .rat-preview-stage {
@@ -736,10 +782,116 @@
     min-width: 0;
 }
 
-#rat_drawer .rat-gallery-count {
+#rat_drawer .rat-preview-stage-head > select {
+    width: auto;
+    max-width: 13em;
+    flex: 0 1 auto;
+    margin: 0;
+}
+
+/* The host boxes every settings h4; these are titles, not section headers. */
+#rat_drawer .rat-stage-title h4,
+#rat_drawer h4.rat-gallery-heading {
+    min-height: 0;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    letter-spacing: normal;
+    text-transform: none;
+}
+
+#rat_drawer .rat-stage-title h4 {
+    padding: 0;
+    color: inherit;
+    font-size: 1.12em;
+    line-height: 1.3;
+}
+
+#rat_drawer .rat-stage-meta {
+    color: color-mix(in srgb, currentColor 70%, transparent);
+    font-size: 0.84em;
+}
+
+#rat_drawer .rat-stage-nav {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+}
+
+#rat_drawer .rat-stage-nav .menu_button,
+#rat_drawer .rat-stage-actions .menu_button,
+#rat_drawer .rat-gallery-summary .menu_button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin: 0;
+}
+
+#rat_drawer .rat-stage-position {
+    font-size: 0.86em;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    white-space: nowrap;
+}
+
+#rat_drawer .rat-stage-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+#rat_drawer .rat-stage-actions > * {
+    flex: 1 1 9em;
+}
+
+#rat_drawer .rat-stage-apply:not(:disabled) {
+    border-color: var(--neco-ginger, var(--SmartThemeQuoteColor));
+    background: var(--neco-ginger, var(--SmartThemeQuoteColor));
+    color: var(--neco-on-accent, var(--SmartThemeBodyColor));
+    font-weight: 600;
+}
+
+#rat_drawer .rat-stage-apply:not(:disabled):hover {
+    border-color: var(--neco-ginger-hover, var(--neco-ginger, var(--SmartThemeQuoteColor)));
+    background: var(--neco-ginger-hover, var(--neco-ginger, var(--SmartThemeQuoteColor)));
+}
+
+#rat_drawer .rat-gallery-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     margin-top: 8px;
+}
+
+#rat_drawer .rat-gallery-count {
     font-size: 0.86em;
     font-weight: 600;
+}
+
+#rat_drawer .rat-gallery-group {
+    margin-top: 14px;
+}
+
+#rat_drawer .rat-gallery-heading {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    border-bottom: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+    padding: 0 0 4px;
+    font-size: 0.92em;
+}
+
+#rat_drawer .rat-gallery-heading-count {
+    color: color-mix(in srgb, currentColor 66%, transparent);
+    font-size: 0.86em;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
 }
 
 #rat_drawer .rat-gallery {
@@ -781,8 +933,20 @@
 
 #rat_drawer .rat-card-name {
     min-width: 0;
+    margin: 0;
+    border: 0;
+    padding: 0;
+    background: none;
     overflow-wrap: anywhere;
     font-size: 0.94em;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+#rat_drawer .rat-card-tags {
+    display: inline-flex;
+    flex: 0 0 auto;
+    gap: 6px;
 }
 
 #rat_drawer .rat-card-mode {
@@ -807,6 +971,11 @@
 
 #rat_drawer .rat-preview > * {
     max-width: 100%;
+}
+
+#rat_drawer .rat-thumbnail-hit {
+    min-width: 0;
+    cursor: pointer;
 }
 
 #rat_drawer .rat-thumbnail {
@@ -957,7 +1126,6 @@
 }
 
 @container rat-settings (max-width: 520px) {
-    #rat_drawer .rat-filter-grid,
     #rat_drawer .rat-option-grid,
     #rat_drawer .rat-gallery {
         grid-template-columns: 1fr;
@@ -972,16 +1140,23 @@
         flex-direction: column;
     }
 
-    #rat_drawer .rat-preview-stage-head .menu_button,
     #rat_drawer .rat-maintenance-group > .menu_button,
     #rat_drawer .rat-danger-zone > .menu_button {
         width: 100%;
     }
 
-    /* A full-width gallery card has room to show its complete tracker preview. */
+    #rat_drawer .rat-browse-filters {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    #rat_drawer .rat-preview-stage-head > select {
+        width: 100%;
+        max-width: none;
+    }
+
+    /* The stage shows the full preview; narrow cards stay short so the list scans quickly. */
     #rat_drawer .rat-thumbnail {
-        max-height: none;
-        overflow: visible;
+        max-height: 150px;
     }
 }
 
@@ -990,6 +1165,15 @@
     #rat_drawer select,
     #rat_drawer input[type='search'],
     #rat_drawer .rat-drawer-toggle {
+        min-height: 44px;
+    }
+}
+
+/* Chips follow the phone shell's width gate as well, so phones get full-size targets even when the pointer reports fine. */
+@media (pointer: coarse), (max-width: 768px) {
+    #rat_drawer .rat-mode-chips .rat-chip,
+    #rat_drawer .rat-stage-actions .menu_button,
+    #rat_drawer .rat-gallery-summary .menu_button {
         min-height: 44px;
     }
 }

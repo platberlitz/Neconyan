@@ -12,6 +12,18 @@ import { DENSITIES, OPEN_DEFAULTS, getSettings, isTemplateInScope, resolveThemeS
 import { TEMPLATE_LABELS } from './template-catalog.js';
 import { PREVIEW_KEYS, detectEncodedTags, mountPreview } from './preview.js';
 import {
+    MODE_FILTERS,
+    familyCounts,
+    filterEntries,
+    groupEntries,
+    hasActiveFilters,
+    isAnimatedEntry,
+    modeCounts,
+    modeLabel,
+    randomSlug,
+    stepSlug,
+} from './browse.js';
+import {
     applyAll,
     applyToAgent,
     inspectAgent,
@@ -712,31 +724,48 @@ function rerenderBrowse() {
     queueMicrotask(() => restoreInteraction(interaction));
 }
 
-function renderBrowse(settings) {
-    const content = view.sections.browse.content;
-    disconnectThumbnailObserver();
-    content.textContent = '';
-
-    const entries = themeEntries(settings);
-    if (!entries.some(entry => entry.slug === uiState.previewThemeSlug)) {
-        uiState.previewThemeSlug = settings.theme;
-    }
-
-    const familyOptions = [
-        { value: 'all', label: 'All families' },
-        { value: 'original', label: 'Original' },
-        ...FAMILIES.map(family => ({ value: family.id, label: family.label })),
+function familyOrder(settings) {
+    const order = [
+        { id: 'original', label: 'Original' },
+        ...FAMILIES,
     ];
     if (Object.keys(settings.customThemes).length) {
-        familyOptions.push({ value: 'custom', label: 'Custom' });
+        order.push({ id: 'custom', label: 'Custom' });
     }
+    return order;
+}
 
+function setPreviewTheme(slug) {
+    if (!slug || slug === uiState.previewThemeSlug) {
+        return;
+    }
+    uiState.previewThemeSlug = slug;
+    rerenderBrowse();
+}
+
+function clearBrowseFilters() {
+    uiState.family = 'all';
+    uiState.mode = 'all';
+    uiState.query = '';
+    rerenderBrowse();
+}
+
+function staticDisable(node, disabled) {
+    if (disabled) {
+        node.disabled = true;
+        node.dataset.ratStaticDisabled = 'true';
+    }
+    return node;
+}
+
+function renderBrowseFilters(settings, entries, families) {
     const search = el('input', {
         id: 'rat_theme_search',
         class: 'text_pole',
         type: 'search',
         value: uiState.query,
-        placeholder: 'Search themes',
+        placeholder: 'Search by name, colour or motion',
+        'aria-label': 'Search themes',
         'data-focus-key': 'rat_theme_search',
     });
     search.value = uiState.query;
@@ -745,21 +774,109 @@ function renderBrowse(settings) {
         rerenderBrowse();
     });
 
-    const family = select('rat_family_filter', familyOptions, uiState.family, (value) => {
+    const customCount = Object.keys(settings.customThemes).length;
+    const modeTotals = modeCounts(entries, uiState);
+    const chips = el('div', {
+        class: 'rat-mode-chips',
+        role: 'group',
+        'aria-label': 'Colour mode',
+    });
+    for (const filter of MODE_FILTERS) {
+        if (filter.id === 'custom' && !customCount) {
+            continue;
+        }
+        const pressed = uiState.mode === filter.id;
+        const count = modeTotals.get(filter.id) ?? 0;
+        const chip = button('', () => {
+            uiState.mode = filter.id;
+            rerenderBrowse();
+        }, {
+            className: 'menu_button rat-chip',
+            focusKey: `mode-${filter.id}`,
+            ariaLabel: `${filter.label}, ${count} ${count === 1 ? 'theme' : 'themes'}`,
+        });
+        chip.setAttribute('aria-pressed', String(pressed));
+        chip.append(
+            el('span', { text: filter.label }),
+            el('span', { class: 'rat-chip-count', 'aria-hidden': 'true', text: String(count) }),
+        );
+        chips.append(chip);
+    }
+
+    const familyTotals = familyCounts(entries, uiState);
+    const familyTotal = [...familyTotals.values()].reduce((sum, value) => sum + value, 0);
+    const family = select('rat_family_filter', [
+        { value: 'all', label: `All families (${familyTotal})` },
+        ...families.map(item => ({
+            value: item.id,
+            label: `${item.label} (${familyTotals.get(item.id) ?? 0})`,
+        })),
+    ], uiState.family, (value) => {
         uiState.family = value;
         rerenderBrowse();
     });
-    const mode = select('rat_mode_filter', [
-        { value: 'all', label: 'All colour modes' },
-        { value: 'light', label: 'Light' },
-        { value: 'dark', label: 'Dark' },
-        { value: 'adaptive', label: 'Adaptive' },
-        { value: 'host', label: 'Original host style' },
-        { value: 'custom', label: 'Custom' },
-    ], uiState.mode, (value) => {
-        uiState.mode = value;
-        rerenderBrowse();
-    });
+    family.setAttribute('aria-label', 'Theme family');
+
+    return el('div', { class: 'rat-browse-filters' }, [
+        search,
+        chips,
+        family,
+    ]);
+}
+
+function renderPreviewStage(settings, selected, ordered) {
+    const index = ordered.findIndex(entry => entry.slug === selected.slug);
+    const current = selected.slug === settings.theme;
+    const position = index === -1
+        ? `Not in this filter, ${ordered.length} shown`
+        : `${index + 1} of ${ordered.length}`;
+    const meta = [...new Set([modeLabel(selected.mode), selected.familyLabel])];
+    if (isAnimatedEntry(selected) && !meta.includes('Animated')) {
+        meta.push('Animated');
+    }
+
+    const preview = el('div', { class: 'rat-preview rat-selected-preview' });
+    mountPreview(preview, uiState.previewArchetype, selected.theme, settings.options);
+
+    const canStep = ordered.length > 1 || (ordered.length === 1 && index === -1);
+    const previous = staticDisable(button('Previous', () => setPreviewTheme(stepSlug(ordered, selected.slug, -1)), {
+        className: 'menu_button rat-step',
+        focusKey: 'stage-previous',
+        ariaLabel: 'Preview the previous theme',
+    }), !canStep);
+    const next = staticDisable(button('Next', () => setPreviewTheme(stepSlug(ordered, selected.slug, 1)), {
+        className: 'menu_button rat-step',
+        focusKey: 'stage-next',
+        ariaLabel: 'Preview the next theme',
+    }), !canStep);
+    const shuffle = staticDisable(button('Surprise me', () => setPreviewTheme(randomSlug(ordered, selected.slug)), {
+        className: 'menu_button rat-step',
+        focusKey: 'stage-shuffle',
+        ariaLabel: 'Preview a random theme from this list',
+    }), !ordered.some(entry => entry.slug !== selected.slug));
+    previous.prepend(el('i', { class: 'fa-solid fa-chevron-left', 'aria-hidden': 'true' }));
+    next.append(el('i', { class: 'fa-solid fa-chevron-right', 'aria-hidden': 'true' }));
+
+    const apply = staticDisable(button(
+        current ? 'Current default' : 'Apply this theme',
+        () => applyTheme(selected.slug),
+        {
+            className: 'menu_button rat-stage-apply',
+            focusKey: 'stage-apply',
+            ariaLabel: current
+                ? `${selected.name} is the current default theme`
+                : `Apply ${selected.name}`,
+        },
+    ), current);
+    const actions = [apply];
+    if (!current && settings.theme) {
+        actions.push(button('Show current', () => setPreviewTheme(settings.theme), {
+            className: 'menu_button rat-step',
+            focusKey: 'stage-current',
+            ariaLabel: 'Preview the current default theme',
+        }));
+    }
+
     const shape = select(
         'rat_preview_archetype',
         Object.keys(PREVIEW_KEYS).map(value => ({ value, label: ARCHETYPE_LABELS[value] ?? value })),
@@ -769,112 +886,167 @@ function renderBrowse(settings) {
             rerenderBrowse();
         },
     );
+    shape.setAttribute('aria-label', 'Preview shape');
 
-    content.append(el('div', { class: 'rat-filter-grid' }, [
-        fieldRow('Search', search),
-        fieldRow('Family', family),
-        fieldRow('Colour mode', mode),
-        fieldRow('Preview shape', shape),
-    ]));
-
-    const selected = entries.find(entry => entry.slug === uiState.previewThemeSlug) ?? entries[0];
-    const selectedPreview = el('div', { class: 'rat-preview rat-selected-preview' });
-    mountPreview(selectedPreview, uiState.previewArchetype, selected.theme, settings.options);
-    const selectedCurrent = selected.slug === settings.theme;
-    const selectedApply = button(
-        selectedCurrent ? 'Current default' : `Apply ${selected.name}`,
-        () => applyTheme(selected.slug),
-        {
-            disabled: selectedCurrent,
-            focusKey: `selected-apply-${selected.slug}`,
-        },
-    );
-    if (selectedCurrent) {
-        selectedApply.dataset.ratStaticDisabled = 'true';
-    }
-    content.append(el('section', {
+    const stage = el('section', {
         class: 'rat-preview-stage',
         'aria-labelledby': 'rat_selected_theme_name',
+        'aria-describedby': 'rat_selected_theme_meta',
     }, [
         el('div', { class: 'rat-preview-stage-head' }, [
-            el('div', {}, el('h4', { id: 'rat_selected_theme_name', text: selected.name })),
-            selectedApply,
+            el('div', { class: 'rat-stage-title' }, [
+                el('h4', { id: 'rat_selected_theme_name', text: selected.name }),
+                el('p', { id: 'rat_selected_theme_meta', class: 'rat-stage-meta', text: meta.join(' · ') }),
+            ]),
+            shape,
         ]),
-        selectedPreview,
+        preview,
+        el('div', { class: 'rat-stage-nav' }, [
+            previous,
+            el('span', { class: 'rat-stage-position', 'aria-live': 'polite', text: position }),
+            next,
+        ]),
+        el('div', { class: 'rat-stage-actions' }, [...actions, shuffle]),
+    ]);
+    stage.addEventListener('keydown', (event) => {
+        if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) {
+            return;
+        }
+        if (event.target instanceof HTMLSelectElement || event.target instanceof HTMLInputElement) {
+            return;
+        }
+        const delta = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0;
+        if (!delta || !canStep || uiState.busy) {
+            return;
+        }
+        event.preventDefault();
+        const focusKey = delta < 0 ? 'stage-previous' : 'stage-next';
+        view?.container.querySelector(`[data-focus-key="${focusKey}"]`)?.focus({ preventScroll: true });
+        setPreviewTheme(stepSlug(ordered, selected.slug, delta));
+    });
+    return stage;
+}
+
+function renderThemeCard(settings, entry) {
+    const selectedCard = uiState.previewThemeSlug === entry.slug;
+    const current = settings.theme === entry.slug;
+    const headingId = `rat_theme_name_${entry.slug}`;
+    const card = el('article', {
+        class: 'rat-card',
+        'data-selected': String(selectedCard),
+        'data-current': String(current),
+        'aria-labelledby': headingId,
+    });
+    const tags = el('span', { class: 'rat-card-tags' }, [
+        el('span', { class: 'rat-card-mode', text: modeLabel(entry.mode) }),
+    ]);
+    if (isAnimatedEntry(entry)) {
+        tags.append(el('span', { class: 'rat-card-mode', 'data-tag': 'animated', text: 'Animated' }));
+    }
+    card.append(el('div', { class: 'rat-card-head' }, [
+        el('h5', { id: headingId, class: 'rat-card-name', text: entry.name }),
+        tags,
     ]));
 
-    const query = uiState.query.trim().toLowerCase();
-    const filtered = entries.filter((entry) => {
-        const familyMatch = uiState.family === 'all' || entry.family === uiState.family;
-        const modeMatch = uiState.mode === 'all' || entry.mode === uiState.mode;
-        const queryMatch = !query || `${entry.name} ${entry.familyLabel} ${entry.mode}`.toLowerCase().includes(query);
-        return familyMatch && modeMatch && queryMatch;
+    const thumbnail = el('div', {
+        class: 'rat-preview rat-thumbnail',
+        inert: '',
+        'aria-hidden': 'true',
     });
+    try {
+        thumbnail.inert = true;
+    } catch {
+        // The attribute above remains the fallback for browsers without the property.
+    }
+    // Pointer shortcut only; the Preview button is the keyboard and screen-reader path.
+    const thumbnailHit = el('div', { class: 'rat-thumbnail-hit', title: `Preview ${entry.name}` }, thumbnail);
+    thumbnailHit.addEventListener('click', () => {
+        if (!uiState.busy) {
+            setPreviewTheme(entry.slug);
+        }
+    });
+    card.append(thumbnailHit);
+    scheduleThumbnail(thumbnail, uiState.previewArchetype, entry.theme, settings.options);
 
-    content.append(el('p', {
-        class: 'rat-gallery-count',
-        'aria-live': 'polite',
-        text: `${filtered.length} ${filtered.length === 1 ? 'theme' : 'themes'}`,
-    }));
+    const previewButton = staticDisable(button(selectedCard ? 'Previewing' : 'Preview', () => {
+        setPreviewTheme(entry.slug);
+    }, {
+        focusKey: `preview-${entry.slug}`,
+        ariaLabel: selectedCard ? `${entry.name} is in the preview` : `Preview ${entry.name}`,
+    }), selectedCard);
+    const applyButton = staticDisable(button(current ? 'Current' : 'Apply', () => applyTheme(entry.slug), {
+        focusKey: `apply-${entry.slug}`,
+        ariaLabel: current
+            ? `${entry.name} is the current default theme`
+            : `Apply ${entry.name}`,
+    }), current);
+    card.append(el('div', { class: 'rat-card-actions' }, [previewButton, applyButton]));
+    return card;
+}
 
-    if (!filtered.length) {
+function renderBrowse(settings) {
+    const content = view.sections.browse.content;
+    disconnectThumbnailObserver();
+    content.textContent = '';
+
+    const entries = themeEntries(settings);
+    if (!entries.some(entry => entry.slug === uiState.previewThemeSlug)) {
+        uiState.previewThemeSlug = settings.theme;
+    }
+    const families = familyOrder(settings);
+    if (uiState.family !== 'all' && !families.some(family => family.id === uiState.family)) {
+        uiState.family = 'all';
+    }
+    if (uiState.mode === 'custom' && !Object.keys(settings.customThemes).length) {
+        uiState.mode = 'all';
+    }
+
+    const groups = groupEntries(filterEntries(entries, uiState), families);
+    const ordered = groups.flatMap(group => group.entries);
+    const selected = entries.find(entry => entry.slug === uiState.previewThemeSlug) ?? entries[0];
+
+    content.append(renderBrowseFilters(settings, entries, families));
+    content.append(renderPreviewStage(settings, selected, ordered));
+
+    const summary = el('div', { class: 'rat-gallery-summary' }, [
+        el('p', {
+            class: 'rat-gallery-count',
+            'aria-live': 'polite',
+            text: `${ordered.length} of ${entries.length} themes`,
+        }),
+    ]);
+    if (hasActiveFilters(uiState)) {
+        summary.append(button('Clear filters', clearBrowseFilters, {
+            className: 'menu_button rat-step',
+            focusKey: 'clear-filters',
+        }));
+    }
+    content.append(summary);
+
+    if (!ordered.length) {
         content.append(el('p', {
             class: 'rat-empty',
-            text: 'No themes match these filters. Clear the search or choose another family.',
+            text: 'No themes match these filters. Clear the filters or try another word.',
         }));
         return;
     }
 
-    const gallery = el('div', { class: 'rat-gallery', id: 'rat_gallery' });
-    for (const entry of filtered) {
-        const selectedCard = uiState.previewThemeSlug === entry.slug;
-        const current = settings.theme === entry.slug;
-        const headingId = `rat_theme_name_${entry.slug}`;
-        const card = el('article', {
-            class: 'rat-card',
-            'data-selected': String(selectedCard),
-            'data-current': String(current),
-            'aria-labelledby': headingId,
-        });
-        card.append(el('div', { class: 'rat-card-head' }, [
-            el('h4', { id: headingId, class: 'rat-card-name', text: entry.name }),
-            el('span', { class: 'rat-card-mode', text: entry.mode }),
+    for (const group of groups) {
+        const headingId = `rat_gallery_group_${group.id}`;
+        const gallery = el('div', { class: 'rat-gallery', role: 'list', 'aria-labelledby': headingId });
+        for (const entry of group.entries) {
+            const card = renderThemeCard(settings, entry);
+            card.setAttribute('role', 'listitem');
+            gallery.append(card);
+        }
+        content.append(el('section', { class: 'rat-gallery-group', 'data-family': group.id }, [
+            el('h4', { id: headingId, class: 'rat-gallery-heading' }, [
+                el('span', { text: group.label }),
+                el('span', { class: 'rat-gallery-heading-count', text: String(group.entries.length) }),
+            ]),
+            gallery,
         ]));
-
-        const thumbnail = el('div', {
-            class: 'rat-preview rat-thumbnail',
-            inert: '',
-            'aria-hidden': 'true',
-        });
-        try {
-            thumbnail.inert = true;
-        } catch {
-            // The attribute above remains the fallback for browsers without the property.
-        }
-        card.append(thumbnail);
-        scheduleThumbnail(thumbnail, uiState.previewArchetype, entry.theme, settings.options);
-
-        const previewButton = button('Preview', () => {
-            uiState.previewThemeSlug = entry.slug;
-            rerenderBrowse();
-        }, {
-            focusKey: `preview-${entry.slug}`,
-            ariaLabel: `Preview ${entry.name}`,
-        });
-        const applyButton = button(current ? 'Current' : 'Apply', () => applyTheme(entry.slug), {
-            disabled: current,
-            focusKey: `apply-${entry.slug}`,
-            ariaLabel: current
-                ? `${entry.name} is the current default theme`
-                : `Apply ${entry.name}`,
-        });
-        if (current) {
-            applyButton.dataset.ratStaticDisabled = 'true';
-        }
-        card.append(el('div', { class: 'rat-card-actions' }, [previewButton, applyButton]));
-        gallery.append(card);
     }
-    content.append(gallery);
 }
 
 function updateOption(patch, { dirty = true } = {}) {
