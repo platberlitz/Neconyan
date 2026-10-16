@@ -1,6 +1,7 @@
 import { getContext, writeExtensionField } from '../../extensions.js';
 import { Popup } from '../../popup.js';
 import { t } from '../../i18n.js';
+import { uuidv4 } from '../../utils.js';
 import { EXPRESSION_SETS_KEY, readExpressionSets } from './expression-sets.js';
 
 /** Bind once. Resolve the owning card again for each action, then freeze it across saves. */
@@ -46,7 +47,7 @@ export function bindExpressionSets({ getCharacter, refresh }) {
             toastr.warning(t`Use a unique character name, up to 80 characters.`);
             return;
         }
-        const id = crypto.randomUUID();
+        const id = uuidv4();
         // Keep filenames independent of names typed in the UI and of card renames.
         const member = { id, name, description: '', folder: `expression-sets/${id}` };
         await save(character, { ...sets, active: id, auto: false, members: [...sets.members, member] });
