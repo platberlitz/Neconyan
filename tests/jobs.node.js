@@ -264,8 +264,8 @@ test('completed Roleplay text survives failure expiry and restart, including old
     const accept = key => acceptJob(directories, { owner: 'alice', type: 'media.roleplay-workflow', submissionKey: key, intent: {} }).job;
     const retained = accept('retained');
     writeArtifact(directories, retained.id, 'roleplay-recovery', { stage: 'agents', text: 'Completed paid reply.' });
-    setJobState(directories, retained.id, 'failed', { retainedReply: true });
-    updateJob(directories, retained.id, { finishedAt: Date.now() - JOB_FAILURE_RETENTION_MS - 1000 });
+    setJobState(directories, retained.id, 'failed');
+    updateJob(directories, retained.id, { retainedReply: true, finishedAt: Date.now() - JOB_FAILURE_RETENTION_MS - 1000 });
     assert.equal(Boolean(getJob(directories, retained.id).dismissed), false);
 
     const legacy = accept('legacy');

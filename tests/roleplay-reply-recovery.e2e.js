@@ -1,3 +1,4 @@
+/* global navigator */
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from '@playwright/test';
@@ -70,11 +71,12 @@ for (const phone of [true, false]) {
         const downloaded = await fs.readFile(await (await download).path(), 'utf8');
         expect(downloaded).toContain(mainReply);
         expect(downloaded).toContain(earlyBlock);
+        await account.context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await recovered.getByRole('button', { name: 'Copy reply' }).click();
+        await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(mainReply);
         const contrasts = await checkImageControlContrast(page, [1, 2, 3].map(index =>
             `#neconyan-roleplay-recovered-${jobId} .neconyan-roleplay-recovery-actions button:nth-child(${index})`), phone);
         await info.attach('recovery-button-contrast', { body: JSON.stringify(contrasts), contentType: 'application/json' });
-        await recovered.scrollIntoViewIfNeeded();
-        await page.screenshot({ path: `../screenshots/roleplay-recovered-${viewport}-after.png`, scale: 'css' });
         expect(app.provider.calls).toHaveLength(3);
 
         await app.restart();
@@ -84,6 +86,8 @@ for (const phone of [true, false]) {
         await expect(recovered).toContainText(mainReply, { timeout: 60000 });
         expect(await page.evaluate(async () => (await import('/script.js')).chat.at(-1).mes)).toBe('Independent edit that must survive.');
         expect(app.provider.calls).toHaveLength(3);
+        await recovered.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `../screenshots/roleplay-recovered-${viewport}-after.png`, scale: 'css' });
         await recovered.getByRole('button', { name: 'Dismiss', exact: true }).click();
         await expect(recovered).toHaveCount(0);
         await page.reload({ waitUntil: 'domcontentloaded' });

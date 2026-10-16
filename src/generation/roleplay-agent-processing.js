@@ -387,8 +387,12 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     const runStages = version === 1 ? runLegacyPromptTransformStages : version === 2 ? runOrderedPromptTransformStages : runPromptTransformStages;
     const { draft } = await runStages({
         agents: selected, text: baseline, parallel, isPrepend: prepend, shouldStop: () => roleplayAgentsStopped(context),
-        onProgress: draft => options.onProgress?.({ text: composePromptTransformDraft(draft, join),
-            extra: { inChatAgents: displaySnapshot(pre, agents, generationType), inChatAgentPromptRuns: [...runs] } }),
+        onProgress: draft => {
+            try {
+                options.onTextProgress?.({ text: composePromptTransformDraft(draft, join),
+                    extra: { inChatAgents: displaySnapshot(pre, agents, generationType), inChatAgentPromptRuns: [...runs] } });
+            } catch { /* A display observer cannot invalidate a paid Agent result. */ }
+        },
         isAppend: agent => agent.postProcess.promptTransformMode === 'append',
         runRewrite: async (agent, body) => {
             const run = await modelRun(scope, options, agent, body, modelName(agent.id));
