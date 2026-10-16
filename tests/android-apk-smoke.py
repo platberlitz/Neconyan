@@ -11,11 +11,14 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import sys
 import time
 import threading
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
+
+from android_emulator_support import capture_failure, ensure_root
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--adb', default='adb')
@@ -30,7 +33,7 @@ package = 'io.github.platberlitz.neconyan' + ('' if args.release else '.debug')
 
 
 def adb(*command):
-    return subprocess.check_output([args.adb, '-s', args.serial, *command], text=True, timeout=30).strip()
+    return subprocess.check_output([args.adb, '-s', args.serial, *command], text=True, stderr=subprocess.STDOUT, timeout=30).strip()
 
 
 def start():
@@ -71,14 +74,20 @@ def wait_until(check, seconds, message):
 
 def check_idle_wake_lock(request, token):
     """Work keeps the phone awake; an idle server lets it sleep again."""
+    def matches(phase, held, require_idle=False):
+        state = {'phase': phase, 'time': time.time(), 'busy': server_busy(), 'held': server_wake_held()}
+        with Path('android-wake-timeline.jsonl').open('a') as output:
+            output.write(json.dumps(state) + '\n')
+        return state['held'] == held and (not require_idle or not state['busy'])
+
     request('/api/settings/get', {}, token)
     assert server_busy(), 'A request did not mark the server busy'
-    wait_until(lambda: not server_busy() and not server_wake_held(), 120, 'An idle server still keeps the phone awake')
+    wait_until(lambda: matches('request idle', False, require_idle=True), 120, 'An idle server still keeps the phone awake')
     # The app follows the marker in both directions, not only once at startup.
     private('touch', 'files/android-busy')
-    wait_until(server_wake_held, 20, 'The app did not keep the phone awake for busy work')
+    wait_until(lambda: matches('manual acquire', True), 20, 'The app did not keep the phone awake for busy work')
     private('rm', '-f', 'files/android-busy')
-    wait_until(lambda: not server_wake_held(), 20, 'The app kept the phone awake after the work finished')
+    wait_until(lambda: matches('manual release', False), 20, 'The app kept the phone awake after the work finished')
     print('The server holds its wake lock only while it is working.', flush=True)
 
 
@@ -133,13 +142,6 @@ def wait_for_workspace():
             failure = error
         time.sleep(1)
     Path('android-window.xml').write_text(last)
-    # Capture before the emulator action shuts down its device on script failure.
-    for command, filename in [(('logcat', '-d'), 'android-logcat.txt'),
-                              (('shell', 'dumpsys', 'webviewupdate'), 'android-webview.txt')]:
-        with open(filename, 'w') as output:
-            subprocess.run([args.adb, '-s', args.serial, *command], stdout=output, stderr=subprocess.STDOUT, timeout=20, check=False)
-    with open('android-screen.png', 'wb') as screenshot:
-        subprocess.run([args.adb, '-s', args.serial, 'exec-out', 'screencap', '-p'], stdout=screenshot, timeout=20, check=False)
     raise AssertionError('The Android workspace did not become visible: ' + str(failure or 'Home and tour controls were absent'))
 
 
@@ -224,10 +226,19 @@ def check_long_chat(request, token):
         provider.server_close()
 
 
+def report_failure(kind, error, traceback):
+    # The emulator action shuts its device down as soon as this script exits.
+    # Keep the original exception and collect evidence while the device is alive.
+    sys.__excepthook__(kind, error, traceback)
+    try:
+        capture_failure([args.adb, '-s', args.serial], package, args.release)
+    except Exception as capture_error:
+        print('Could not finish emulator diagnostics: ' + str(capture_error), file=sys.stderr)
+
+
+sys.excepthook = report_failure
 if args.release:
-    adb('root')
-    adb('wait-for-device')
-    assert adb('shell', 'id', '-u') == '0', 'Signed app acceptance needs a root-capable disposable emulator'
+    ensure_root(adb)
 print(adb('shell', 'dumpsys', 'webviewupdate'), flush=True)
 print(adb('install', '-r', args.apk), flush=True)
 if int(adb('shell', 'getprop', 'ro.build.version.sdk')) >= 33:

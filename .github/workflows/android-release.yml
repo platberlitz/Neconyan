@@ -204,4 +204,9 @@ jobs:
             android-window.xml
             android-screen.png
             android-webview.txt
+            android-power.txt
+            android-wake-state.txt
+            android-wake-timeline.jsonl
+            android-processes.txt
+            android-diagnostic-errors.txt
           if-no-files-found: ignore
