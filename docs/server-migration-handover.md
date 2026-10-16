@@ -69,6 +69,88 @@ the PR against staging and validate the resulting APK on the reporting device.
 
 ## Release preparation: 1.0.0
 
+### 16 October: 1.3.4 release, staging starts 1.3.5
+
+The release includes PRs #185-195 and #197. PR #197 adds live elapsed timers,
+continuous reply bubbles through saved readback, captured Dialogue Colors
+instructions and the schedule editor's immediate keyboard focus. I merged it by
+fast-forwarding staging to `c04bf449`, then refreshed assistant help and the
+changelog in separate commits. PR #196 was promoted by fast-forwarding main to
+`02ea7a926b294a12b2acd321cd876a66e22c3990`. The final release commit is
+`b472b1e068b55e20552c9652f5816d78fdcec036`, which adds Android test diagnostics and
+bounded retries for temporary emulator startup connection failures.
+
+The handbook is published from `neconyan-docs` commits
+`e3979fb6502d09bbdd152ca4906efc4e92481dbb` and
+`32b49ad26d39d9112cbccac3d39f5d79dd191cca`, through successful Pages runs
+`38890780077` and `38902374325`. Strict builds, the 53-page link and asset checks,
+and the handbook's phone and desktop browser checks passed. All ten changed
+guides were checked again on the live site at 393x852 and 1280x900. Assistant
+knowledge is revision 32; its ten source/retrieval checks and both browser checks
+covering all nine assistant variants passed after the final refresh.
+
+All 497 unit suites passed at `c04bf449`: 6,770 tests passed and three existing
+tests remained skipped. The 2,553 server tests and 96 Mewmory tests passed at
+`3be2aeec`; later changes did not change server behaviour. Root and test lint,
+frontend budgets and the build passed, with affected checks repeated after the
+help refresh. All six final PR check jobs passed at `02ea7a92` in run
+`38909867893`. The Android harness follow-up passed eight new Python checks and
+the three existing wake-marker checks, including rejection of non-root or
+unrelated connection errors and preservation of the original failing assertion.
+
+Browser coverage is 1,788 passed and 21 existing skips across all 16 groups.
+Thirteen passing groups are retained from run `38891808553` at `3be2aeec`;
+corrected groups 8, 10 and 15 passed in run `38901175219` at `c04bf449`. The
+corrections made closed-page fixtures capture the real browser colour macro,
+allowed cold browser process startup within the four multi-profile locale
+checks, and fixed initial schedule-dialogue focus. Language assertions and their
+timeouts were unchanged. Forty-two affected local browser cases passed, plus the
+final assistant checks. Earlier readiness repairs addressed the first-run tour
+race, a lost theme-restoration save, an outdated Companion harness, font-save
+debouncing and resize settling. The preview-state comparison excludes only empty
+World Info timer slots added by an unrelated background scan. No new skips were
+added. Duplicate full browser runs were cancelled only where retained groups and
+focused checks already covered the candidate.
+
+Android run `38910944290` first passed the build, WebView and Android 15 checks,
+but Android 13 lost its connection before installation and Android 11 failed its
+final wake-release check. Its failure logs were collected after emulator shutdown
+and did not establish the wake failure's cause. The test-only follow-up preserves
+the 120/20/20-second idle/acquire/release assertions and captures diagnostics while
+the emulator is still available. Fresh matching files were built in run
+`38913689272` at the final release commit. The build, WebView fixture and Android
+11 and 15 lifecycle/native checks passed. Android 11 passed its unchanged wake
+assertion; this does not prove the cause of the earlier failure.
+
+Only the unchanged Android 13 job was retried in the final run. Its first attempt
+reported a changed process during token counting, although both token requests
+succeeded and retained logs and the process list showed the same server process.
+The process probe discarded command errors, so a failed probe is plausible but
+unproven. The retry passed, including token counting, wake release and the
+lifecycle/native checks. The other successful jobs were retained. The optional
+historical native baseline was not requested and remains skipped. These are
+emulator checks; physical phones were not tested. Phone-sized Linux WebKit checks
+also passed for live replies, with iPhone behaviour inferred rather than measured
+on a device.
+
+All nine built files passed independent verification: eight listed checksums,
+both APK signatures against the existing official identity, native 16 KiB ELF
+and ZIP alignment, embedded version/commit/frontend files and matching
+provenance. All 4,067 source ZIP files match `git archive` of the exact release
+commit byte for byte, including the configured line-ending conversions.
+
+The annotated tag `v1.3.4`, with message 'Neconyan 1.3.4', points to
+`b472b1e068b55e20552c9652f5816d78fdcec036`. The release and its nine verified files
+are published at https://github.com/platberlitz/Neconyan/releases/tag/v1.3.4.
+All nine published files were downloaded again and matched the verified build
+byte for byte. Their GitHub SHA-256 digests and sizes matched too. The release
+was confirmed public, stable and latest.
+
+Staging starts `1.3.5`: the root package version, both root lockfile entries and
+the matching boundary expectations were updated together. All six boundary
+tests and lint for that test passed. Main and the published tag retain the
+verified `1.3.4` release commit.
+
 ### 15 October: 1.3.3 release, staging starts 1.3.4
 
 I refreshed the handbook for the grouped sidebar tools, Dialogue Colors (Narrator
