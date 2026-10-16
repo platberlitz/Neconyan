@@ -5,6 +5,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { captureBrowserMacros } from './roleplay-browser-macros.js';
 import { setConfigFilePath } from '../src/util.js';
 import { USER_DIRECTORY_TEMPLATE } from '../src/constants.js';
 
@@ -46,12 +47,12 @@ async function chat(account, name) {
     return { group: false, avatar: account.avatar, chat: name };
 }
 
-function reply(native, avatar, locator, operationKey) {
+function reply(native, avatar, locator, operationKey, bundledMacros) {
     const source = captureRoleplaySource(native.scope, { locator });
     const settings = JSON.parse(fs.readFileSync(path.join(native.directories.root, 'settings.json'), 'utf8'));
     const binding = captureGenerationBinding(native.directories, { kind: 'active' }, { settingsRevision: getSettingsRevision(settings) });
     const request = { binding, maxTokens: 128, characterName: 'Durable Nova', messages: [], serverPrompt: true,
-        worldInfo: captureRoleplayWorldInfo(native.base, native.account, source, { avatar,
+        worldInfo: captureRoleplayWorldInfo(native.base, native.account, source, { avatar, bundledMacros,
             maxContext: getChatProfileContextLimit(native.directories, binding) - 128, serverPrompt: true }) };
     const { jobId } = admitRoleplayJob(native.base, native.account, { operationKey, effect: 'append', source, request });
     releaseJob(native.directories, jobId);
@@ -59,12 +60,15 @@ function reply(native, avatar, locator, operationKey) {
 }
 
 async function noPages(browser) {
+    let bundledMacros;
     for (const context of browser.contexts()) for (const page of context.pages()) {
+        bundledMacros = await captureBrowserMacros(page);
         // Finish startup writes before this test edits saved settings directly with every page closed.
         expect(await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }))).toBe(true);
         await page.close();
     }
     expect(browser.contexts().flatMap(context => context.pages())).toHaveLength(0);
+    return bundledMacros;
 }
 
 async function reopen(account, name, info) {
@@ -125,8 +129,8 @@ for (const phone of [false, true]) {
         const screenshots = path.resolve('..', 'screenshots');
         fs.mkdirSync(screenshots, { recursive: true });
         await before.screenshot({ path: path.join(screenshots, `parallel-agents-${viewport}-before.png`) });
-        await noPages(browser);
-        const jobId = reply(native, account.avatar, locator, 'parallel-reply-passes');
+        const bundledMacros = await noPages(browser);
+        const jobId = reply(native, account.avatar, locator, 'parallel-reply-passes', bundledMacros);
         await expect.poll(async () => {
             const job = await account.job(jobId);
             if (['failed', 'conflict', 'interrupted', 'completed'].includes(job.state)) {
@@ -170,7 +174,7 @@ for (const phone of [false, true]) {
             settings.world_info_settings = { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 };
         } });
         await account.open({ workspace: false });
-        await noPages(browser);
+        const bundledMacros = await noPages(browser);
         const native = accountScope(app);
         withRoleplayAccount(native.base, native.account, lease => {
             fs.writeFileSync(path.join(native.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
@@ -187,7 +191,7 @@ for (const phone of [false, true]) {
                 postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMode: 'rewrite', promptTransformMaxTokens: 64 } });
         });
         const locator = await chat(account, 'Stage7 saved Agents');
-        const jobId = reply(native, account.avatar, locator, 'stage7-agent-quick-reply');
+        const jobId = reply(native, account.avatar, locator, 'stage7-agent-quick-reply', bundledMacros);
         await account.settled(jobId);
         expect(browser.contexts().flatMap(context => context.pages())).toHaveLength(0);
         const accepted = getJob(native.directories, jobId).intent.request.worldInfo;
@@ -217,7 +221,7 @@ for (const phone of [false, true]) {
             settings.extension_settings.inChatAgents = { globalSettings: { enabled: true, pathfinderEnabled: true } };
         } });
         await account.open({ workspace: false });
-        await noPages(browser);
+        const bundledMacros = await noPages(browser);
         const native = accountScope(app);
         withRoleplayAccount(native.base, native.account, lease => {
             fs.writeFileSync(path.join(native.directories.worlds, 'Manual.json'), JSON.stringify({ entries: { 12: {
@@ -228,7 +232,7 @@ for (const phone of [false, true]) {
                     enabledLorebooks: ['Manual'], includeContextualLorebooks: false, confirmTools: { Pathfinder_Summarize: true } } });
         });
         const locator = await chat(account, 'Stage7 saved tool');
-        const parentId = reply(native, account.avatar, locator, 'stage7-model-tool');
+        const parentId = reply(native, account.avatar, locator, 'stage7-model-tool', bundledMacros);
         await account.settled(parentId, 'failed');
         expect(browser.contexts().flatMap(context => context.pages())).toHaveLength(0);
         expect(readArtifact(native.directories, parentId, 'roleplay-main-provider')).toBeTruthy();

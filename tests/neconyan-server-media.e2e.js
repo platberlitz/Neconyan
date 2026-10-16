@@ -7,6 +7,7 @@ import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { test as baseTest } from './neconyan-conversation-durable-fixture.js';
+import { captureBrowserMacros } from './roleplay-browser-macros.js';
 import { setConfigFilePath } from '../src/util.js';
 import { USER_DIRECTORY_TEMPLATE } from '../src/constants.js';
 
@@ -108,8 +109,13 @@ async function seedChat(account, name, image = true) {
 }
 
 async function closePages(browser) {
-    for (const context of browser.contexts()) for (const page of context.pages()) await page.close();
+    let bundledMacros;
+    for (const context of browser.contexts()) for (const page of context.pages()) {
+        bundledMacros = await captureBrowserMacros(page);
+        await page.close();
+    }
     expect(browser.contexts().flatMap(context => context.pages())).toHaveLength(0);
+    return bundledMacros;
 }
 
 async function reopen(account, name, info) {
@@ -136,13 +142,13 @@ async function reopen(account, name, info) {
     return page;
 }
 
-function acceptReply(native, avatar, locator, operationKey) {
+function acceptReply(native, avatar, locator, operationKey, bundledMacros) {
     const { base, stamp, scope, directories } = native;
     const source = captureRoleplaySource(scope, { locator });
     const settings = JSON.parse(fs.readFileSync(path.join(directories.root, 'settings.json'), 'utf8'));
     const binding = captureGenerationBinding(directories, { kind: 'active' }, { settingsRevision: getSettingsRevision(settings) });
     const intent = { operationKey, effect: 'append', source, request: { binding, maxTokens: 128, characterName: 'Durable Nova',
-        messages: [], serverPrompt: true, worldInfo: captureRoleplayWorldInfo(base, stamp, source, { avatar,
+        messages: [], serverPrompt: true, worldInfo: captureRoleplayWorldInfo(base, stamp, source, { avatar, bundledMacros,
             maxContext: getChatProfileContextLimit(directories, binding) - 128, serverPrompt: true }) } };
     const { jobId } = admitRoleplayJob(base, stamp, intent);
     releaseJob(directories, jobId);
@@ -168,7 +174,7 @@ for (const phone of [false, true]) {
             settings.world_info_settings = { world_info: { globalSelect: ['Bird'] }, world_info_budget: 50, world_info_depth: 4 };
         } });
         await account.open({ workspace: false });
-        await closePages(browser);
+        const bundledMacros = await closePages(browser);
         const native = privateAccount(app);
         withRoleplayAccount(native.base, native.stamp, () => {
             fs.mkdirSync(native.directories.userImages, { recursive: true });
@@ -186,7 +192,7 @@ for (const phone of [false, true]) {
             writeSecret(native.directories, SECRET_KEYS.LIBRE_URL, media.url + '/translate');
         });
         const locator = await seedChat(account, 'Stage6 contributors');
-        const { jobId, intent } = acceptReply(native, account.avatar, locator, 'stage6-contributors');
+        const { jobId, intent } = acceptReply(native, account.avatar, locator, 'stage6-contributors', bundledMacros);
         await account.settled(jobId);
         expect(browser.contexts().flatMap(context => context.pages())).toHaveLength(0);
         const saved = readRoleplayChat(native.scope, locator).records;
@@ -288,7 +294,7 @@ for (const phone of [false, true]) {
             settings.extension_settings.caption = { source: 'multimodal', multimodal_api: 'custom', multimodal_model: 'caption-fixture', auto_mode: true };
         } });
         await account.open({ workspace: false });
-        await closePages(browser);
+        const bundledMacros = await closePages(browser);
         const native = privateAccount(app);
         withRoleplayAccount(native.base, native.stamp, () => {
             fs.mkdirSync(native.directories.userImages, { recursive: true });
@@ -296,7 +302,7 @@ for (const phone of [false, true]) {
         });
         const locator = await seedChat(account, 'Stage6 unknown');
         const before = readRoleplayChat(native.scope, locator).records;
-        const { jobId, intent } = acceptReply(native, account.avatar, locator, 'stage6-unknown');
+        const { jobId, intent } = acceptReply(native, account.avatar, locator, 'stage6-unknown', bundledMacros);
         await expect.poll(() => app.provider.calls.filter(call => call.model === 'caption-fixture').length, { timeout: 60000 }).toBe(1);
         await app.stop('SIGKILL');
         await app.release();

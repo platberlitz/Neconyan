@@ -5,6 +5,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { captureBrowserMacros } from './roleplay-browser-macros.js';
 import { setConfigFilePath } from '../src/util.js';
 import { USER_DIRECTORY_TEMPLATE } from '../src/constants.js';
 
@@ -43,8 +44,13 @@ async function savedChat(account, name) {
 }
 
 async function noPages(browser) {
-    for (const context of browser.contexts()) for (const page of context.pages()) await page.close();
+    let bundledMacros;
+    for (const context of browser.contexts()) for (const page of context.pages()) {
+        bundledMacros = await captureBrowserMacros(page);
+        await page.close();
+    }
     expect(browser.contexts().flatMap(context => context.pages())).toHaveLength(0);
+    return bundledMacros;
 }
 
 for (const phone of [false, true]) {
@@ -61,7 +67,7 @@ for (const phone of [false, true]) {
             settings.power_user.auto_swipe_minimum_length = 15;
         } });
         await account.open({ workspace: false });
-        await noPages(browser);
+        const bundledMacros = await noPages(browser);
         const native = owned(app);
         const locator = await savedChat(account, `Stage8 ${viewport} progression`);
         const source = captureRoleplaySource(native.scope, { locator });
@@ -69,7 +75,7 @@ for (const phone of [false, true]) {
         const binding = captureGenerationBinding(native.directories, { kind: 'active' },
             { settingsRevision: getSettingsRevision(settings) });
         const request = captureRoleplayWorkflowRequest(native.base, native.account, source,
-            { avatar: account.avatar, binding, maxTokens: 128, effect: 'append' });
+            { avatar: account.avatar, binding, maxTokens: 128, effect: 'append', bundledMacros });
         const operationKey = `stage8-${viewport}-${randomUUID()}`;
         const admitted = admitRoleplayWorkflowJob(native.base, native.account, { operationKey, source, request });
         releaseJob(native.directories, admitted.jobId);
@@ -134,7 +140,7 @@ for (const phone of [false, true]) {
             { name: 'User', is_user: true, mes: 'Everyone, please answer.', extra: {} },
         ], roleplay: { account: vacancy.account, vacancy: vacancy.vacancy, operationKey: randomUUID() } });
         await account.open({ workspace: false });
-        await noPages(browser);
+        const bundledMacros = await noPages(browser);
         const native = owned(app);
         const locator = { group: true, chat: name };
         const source = captureRoleplaySource(native.scope, { locator, groupId: group.id });
@@ -142,7 +148,7 @@ for (const phone of [false, true]) {
         const binding = captureGenerationBinding(native.directories, { kind: 'active' },
             { settingsRevision: getSettingsRevision(settings) });
         const request = captureRoleplayWorkflowRequest(native.base, native.account, source,
-            { binding, maxTokens: 128, effect: 'append', generationId: 73 });
+            { binding, maxTokens: 128, effect: 'append', generationId: 73, bundledMacros });
         expect(request.group.speakers.map(speaker => speaker.avatar)).toEqual([account.avatar, otherAvatar]);
         const admitted = admitRoleplayWorkflowJob(native.base, native.account,
             { operationKey: `stage8-group-${viewport}-${randomUUID()}`, source, request });
