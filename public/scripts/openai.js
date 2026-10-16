@@ -91,6 +91,7 @@ import { renderTemplateAsync } from './templates.js';
 import { SlashCommandEnumValue } from './slash-commands/SlashCommandEnumValue.js';
 import { callGenericPopup, Popup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
 import { t } from './i18n.js';
+import { initCustomModelSearch } from './custom-model-search.js';
 import { extension_settings } from './extensions.js';
 import { ToolManager } from './tool-calling.js';
 import { accountStorage } from './util/AccountStorage.js';
@@ -3274,6 +3275,10 @@ function ensureModelIdSearchFavoriteButton(control) {
 }
 
 function openModelIdSearchSelect(control) {
+    if (control.source === chat_completion_sources.CUSTOM) {
+        document.getElementById('custom_model_search')?.focus();
+        return;
+    }
     const input = document.querySelector(control.input);
     const select = document.querySelector(control.select);
 
@@ -3327,7 +3332,10 @@ function initModelIdSearchControl(control) {
     ensureModelIdSearchPickerButton(control);
     ensureModelIdSearchFavoriteButton(control);
 
-    if (input.dataset.sbModelIdSearchBound !== 'true') {
+    const separateSearch = control.source === chat_completion_sources.CUSTOM;
+    if (separateSearch) initCustomModelSearch(select);
+
+    if (!separateSearch && input.dataset.sbModelIdSearchBound !== 'true') {
         input.addEventListener('input', () => {
             const state = getModelIdSearchState(control.source);
             state.query = input.value;
@@ -10457,6 +10465,7 @@ export function initOpenAI() {
 
     $('#custom_model_id').on('input', function () {
         oai_settings.custom_model = String($(this).val());
+        refreshModelIdSearchControlsForSource(chat_completion_sources.CUSTOM);
         updateKimiK3PrefillVisibility();
         updateChatCompletionSamplerControlVisibility();
         updateOpenAISettingsGroupVisibility();

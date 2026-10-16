@@ -56,6 +56,7 @@
     <link href="css/neconyan-crash-reports.css?v=20261017a-search-panels" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <link href="css/neconyan-card-scripts.css?v=20261017a-search-panels" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <link href="css/neconyan-menus.css?v=20261017a-search-panels" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
+    <link href="css/neconyan-model-search.css?v=20261017a-search-panels" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <link id="neconyan-chat-widgets-stylesheet" href="css/neconyan-chat-widgets.css?v=20261017a-search-panels" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <link href="css/neconyan-help.css?v=20260929b" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <link id="mewmory-css" href="css/mewmory.css?v=20260926c" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
@@ -3928,13 +3929,21 @@
                             <div data-for="api_key_custom" class="neutral_warning" data-i18n="For privacy reasons, your API key will be hidden after you click 'Connect'.">
                                 For privacy reasons, your API key will be hidden after you click 'Connect'.
                             </div>
-                            <h4 data-i18n="Enter a Model ID">Enter a Model ID</h4>
+                            <h4><label for="custom_model_id" data-i18n="Model ID">Model ID</label></h4>
                             <div class="flex-container">
                                 <input list="model_custom_select_fill" id="custom_model_id" class="text_pole wide100p" value="" autocomplete="off" data-i18n="[placeholder]Example: gpt-4o" placeholder="Example: gpt-4o">
                                 <datalist id="model_custom_select_fill" class="text_pole model_custom_select"></datalist>
                             </div>
-                            <h4 data-i18n="Available Models">Available Models</h4>
+                            <h4><label for="custom_model_search" data-i18n="Available Models">Available Models</label></h4>
                             <div class="flex-container">
+                                <div id="custom-model-search" hidden>
+                                    <div class="nn-custom-model-search-row">
+                                        <input id="custom_model_search" type="search" class="text_pole" autocomplete="off" aria-controls="custom-model-results" placeholder="Search by name or model ID…" data-i18n="[placeholder]Search by name or model ID…">
+                                        <button type="button" class="menu_button" aria-label="Clear model search" title="Clear model search" data-i18n="[aria-label]Clear model search;[title]Clear model search"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+                                    </div>
+                                    <small role="status" aria-live="polite"></small>
+                                    <div id="custom-model-results" data-model-results></div>
+                                </div>
                                 <select id="model_custom_select" class="text_pole model_custom_select" aria-label="Available Models" data-i18n="[aria-label]Available Models"></select>
                             </div>
                             <div class="range-block">
