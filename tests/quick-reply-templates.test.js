@@ -5,6 +5,7 @@ import {
     QUICK_REPLY_MODES,
     QUICK_REPLY_TEMPLATES,
     buildQuickReplyMessage,
+    escapeEmbeddedCommandText,
     escapeQuickReplyCommandText,
     getQuickReplyTemplate,
     getUniqueQuickReplySetName,
@@ -58,9 +59,17 @@ describe('buildQuickReplyMessage', () => {
         expect(segments[1]).toBe('/getinput');
     });
 
-    test('ask shows the answer in a pop-up and stays quiet when there is none', () => {
+    test('direct keeps a note that starts with a quote exactly as typed', () => {
+        // The note sits mid-value, so quoting it would leave quotes and backslashes in the injected text.
+        const message = buildQuickReplyMessage('direct', '"Run!" she shouts. Make it tense.');
+        expect(message.split(' | ')[0])
+            .toContain('[Direction for the next reply only: "Run!" she shouts. Make it tense.]');
+        expect(message).not.toContain('\\"');
+    });
+
+    test('ask shows the answer in a pop-up that keeps line breaks, and stays quiet when there is none', () => {
         expect(buildQuickReplyMessage('ask', 'Sum up the story.'))
-            .toBe('/gen Sum up the story. | /if left={{pipe}} rule=neq right="" {: /popup {{pipe}} :}');
+            .toBe('/gen Sum up the story. | /if left={{pipe}} rule=neq right="" {: /popup <div style="white-space: pre-wrap; text-align: start">{{pipe}}</div> :}');
     });
 
     test('command passes the text through untouched', () => {
@@ -89,6 +98,13 @@ describe('escapeQuickReplyCommandText', () => {
     test('quotes a value that starts with a quote', () => {
         expect(escapeQuickReplyCommandText('"hello"')).toBe('"\\"hello\\""');
         expect(escapeQuickReplyCommandText('"a" | "b"')).toBe('"\\"a\\" | \\"b\\""');
+    });
+});
+
+describe('escapeEmbeddedCommandText', () => {
+    test('escapes pipes and script openers but never quotes', () => {
+        expect(escapeEmbeddedCommandText('"a" | {: b')).toBe('"a" \\| \\{: b');
+        expect(escapeEmbeddedCommandText(undefined)).toBe('');
     });
 });
 
@@ -179,7 +195,7 @@ describe('ready-made templates', () => {
         const template = getQuickReplyTemplate('private-help');
         for (const reply of template.replies) {
             expect(reply.message.startsWith('/gen ')).toBe(true);
-            expect(reply.message).toContain('/popup {{pipe}}');
+            expect(reply.message).toContain('{{pipe}}</div> :}');
         }
     });
 });
