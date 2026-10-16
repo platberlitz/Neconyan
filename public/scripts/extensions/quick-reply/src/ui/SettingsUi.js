@@ -5,8 +5,8 @@ import { QuickReply } from '../QuickReply.js';
 import { QuickReplySet } from '../QuickReplySet.js';
 import { getUniqueQuickReplySetsByName, removeQuickReplySetLinksByName } from '../quick-reply-set-list.js';
 import { QuickReplySettings } from '../QuickReplySettings.js';
-import { getUniqueQuickReplySetName } from '../quick-reply-templates.js';
-import { showQuickReplyTemplatePicker } from './quick-reply-helpers.js';
+import { buildQuickReplyMessage, DEFAULT_CUSTOM_SET_NAME, getUniqueQuickReplySetName } from '../quick-reply-templates.js';
+import { showQuickReplyBuilder, showQuickReplyTemplatePicker } from './quick-reply-helpers.js';
 
 export class SettingsUi {
     /** @type {QuickReplySettings} */ settings;
@@ -142,7 +142,7 @@ export class SettingsUi {
         this.dom.querySelector('#qr--set-duplicate').addEventListener('click', async () => this.duplicateQrSet());
         this.dom.querySelector('#qr--set-delete').addEventListener('click', async () => this.deleteQrSet());
         this.dom.querySelector('#qr--set-add').addEventListener('click', async () => {
-            this.currentQrSet.addQuickReply();
+            await this.makeQuickReply(this.currentQrSet?.name || DEFAULT_CUSTOM_SET_NAME);
         });
         this.dom.querySelector('#qr--set-paste').addEventListener('click', async () => {
             const text = await navigator.clipboard.readText();
@@ -248,6 +248,7 @@ export class SettingsUi {
 
 
     prepareStart() {
+        this.dom.querySelector('#qr--make')?.addEventListener('click', async () => this.makeQuickReply());
         this.dom.querySelector('#qr--browseTemplates')?.addEventListener('click', async () => this.browseTemplates());
     }
 
@@ -514,6 +515,47 @@ export class SettingsUi {
         this.showSetInEditor(qrs);
         toastr.success(`Added '${qrs.name}'. Its buttons are now above the message box.`);
         return qrs;
+    }
+
+    /**
+     * Opens the quick reply builder.
+     * @param {string} [targetSetName] Set picked in the builder when it opens.
+     * @returns {Promise<boolean>}
+     */
+    async makeQuickReply(targetSetName = DEFAULT_CUSTOM_SET_NAME) {
+        return showQuickReplyBuilder({
+            setNames: this.getSetNames(),
+            defaultSetName: targetSetName,
+            newSetName: DEFAULT_CUSTOM_SET_NAME,
+            onSubmit: async (data) => this.addBuiltQuickReply(data),
+        });
+    }
+
+    /**
+     * Adds a quick reply made in the builder, creating its set when needed.
+     * @param {{ label: string, mode: string, text: string, setName: string }} data
+     * @returns {Promise<boolean>} False when the reply could not be added.
+     */
+    async addBuiltQuickReply({ label, mode, text, setName }) {
+        let qrs = QuickReplySet.get(setName);
+        if (qrs?.disableSend && mode !== 'send') {
+            toastr.warning(`'${qrs.name}' only puts text in the message box, so it cannot run this kind of button. Pick another set, or turn that set option off.`);
+            return false;
+        }
+        const isNewSet = !qrs;
+        if (isNewSet) {
+            qrs = new QuickReplySet();
+            qrs.name = setName || DEFAULT_CUSTOM_SET_NAME;
+        }
+        qrs.addQuickReply({ label, message: buildQuickReplyMessage(mode, text) });
+        if (isNewSet) {
+            this.insertNewQrSet(qrs);
+        }
+        await qrs.save();
+        this.ensureShownOnBar(qrs);
+        this.showSetInEditor(qrs);
+        toastr.success(`Added '${label}' to '${qrs.name}'.`);
+        return true;
     }
 
     async importQrSet(/**@type {FileList}*/files) {
