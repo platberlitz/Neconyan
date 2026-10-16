@@ -542,6 +542,10 @@ export class SettingsUi {
             toastr.warning(`'${qrs.name}' only puts text in the message box, so it cannot run this kind of button. Pick another set, or turn that set option off.`);
             return false;
         }
+        if (qrs?.injectInput && mode !== 'send') {
+            toastr.warning(`'${qrs.name}' adds what you typed to every button, which would break this kind of button. Pick another set, or turn that set option off.`);
+            return false;
+        }
         const isNewSet = !qrs;
         if (isNewSet) {
             qrs = new QuickReplySet();
