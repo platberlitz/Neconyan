@@ -459,3 +459,30 @@ test('a routine page save after acceptance keeps the reply, and a real settings 
     assert.equal(calls.count, 0);
     assert.equal(g.records().length, 3);
 });
+
+test('the bundled macro capture is validated and an explicit empty one is retained on the accepted request', async t => {
+    const f = saved(t);
+    const rejected = ['text', [], {}, { other: 'x' }, { dialoguecolors: 5 },
+        { dialoguecolors: '{{unresolved}}' }, { dialoguecolors: 'a'.repeat(64 * 1024 + 1) }];
+    for (const [index, bundledMacros] of rejected.entries()) {
+        await assert.rejects(acceptRoleplayNamedWorkflow(f.request(), f.body('roleplay.reply', { key: `bad-${index}`, bundledMacros })),
+            { apiError: 'roleplay_workflow_invalid', status: 400 });
+    }
+    assert.equal(f.records().length, 3);
+    const accepted = await acceptRoleplayNamedWorkflow(f.request(), f.body('roleplay.reply', { key: 'empty-capture', bundledMacros: { dialoguecolors: '' } }));
+    const worldInfo = getJob(f.dirs, accepted.jobId).intent.request.worldInfo;
+    assert.ok(Object.hasOwn(worldInfo, 'bundledMacros'));
+    assert.deepEqual(worldInfo.bundledMacros, { dialoguecolors: '' });
+});
+
+test('the same key replays an identical capture and conflicts on a changed one', async t => {
+    const f = saved(t);
+    const body = f.body('roleplay.reply', { key: 'same-key', bundledMacros: { dialoguecolors: 'SAME' } });
+    const first = await acceptRoleplayNamedWorkflow(f.request(), body);
+    const again = await acceptRoleplayNamedWorkflow(f.request(), body);
+    assert.equal(again.created, false);
+    assert.equal(again.jobId, first.jobId);
+    await assert.rejects(acceptRoleplayNamedWorkflow(f.request(),
+        f.body('roleplay.reply', { key: 'same-key', bundledMacros: { dialoguecolors: 'CHANGED' } })),
+    { code: 'MEDIA_INTENT_CONFLICT' });
+});

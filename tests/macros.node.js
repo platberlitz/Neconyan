@@ -52,6 +52,55 @@ test('custom vocabulary and syntax settings stay private while server lore overr
     }
 });
 
+test('page-captured bundled macros resolve from the snapshot, survive forks, and refuse when missing', () => {
+    const captured = createMacroEnvironment({ ...snapshot(), dynamicMacros: { dialoguecolors: 'INSTRUCTION' } });
+    assert.equal(captured.evaluate('before {{dialoguecolors}} after', { strictCapabilities: true }), 'before INSTRUCTION after');
+    assert.equal(captured.fork().evaluate('{{dialoguecolors}}', { strictCapabilities: true }), 'INSTRUCTION');
+    for (const legacy of [false, true]) {
+        const env = createMacroEnvironment({ ...snapshot(), writableScopes: ['local'], dynamicMacros: { dialoguecolors: 'INSTRUCTION' } });
+        assert.equal(env.evaluate('{{dialoguecolors}}', { strictCapabilities: true, legacy }), 'INSTRUCTION');
+    }
+    const empty = createMacroEnvironment({ ...snapshot(), dynamicMacros: { dialoguecolors: '' } });
+    assert.equal(empty.evaluate('[{{dialoguecolors}}]', { strictCapabilities: true }), '[]');
+    assert.equal(createMacroEnvironment({ ...snapshot(), writableScopes: ['local'] })
+        .evaluate('{{unrelatedunknown}}', { strictCapabilities: true }), '{{unrelatedunknown}}');
+});
+
+test('a missing bundled capture stays literal in generic strict hosts and refuses only in an opted-in Roleplay snapshot', () => {
+    for (const legacy of [false, true]) {
+        // Generic strict evaluation, including a saved Roleplay-shaped snapshot such as Prompting Lab or a manual Agent.
+        for (const generic of [createMacroEnvironment(snapshot()), createMacroEnvironment({ ...snapshot(), writableScopes: ['local'] })]) {
+            assert.equal(generic.evaluate('x {{dialoguecolors}} y', { legacy, strictCapabilities: true }), 'x {{dialoguecolors}} y');
+            assert.equal(generic.fork().evaluate('{{dialoguecolors}}', { legacy, strictCapabilities: true }), '{{dialoguecolors}}');
+        }
+        const missing = createMacroEnvironment({ ...snapshot(), writableScopes: ['local'], requireBundledMacros: true });
+        assert.throws(() => missing.evaluate('x {{dialoguecolors}} y', { legacy, strictCapabilities: true }),
+            { code: 'MACRO_BUNDLED_MISSING', status: 409 });
+        assert.throws(() => missing.fork().evaluate('{{DialogueColors}}', { legacy, strictCapabilities: true }),
+            { code: 'MACRO_BUNDLED_MISSING' });
+        // A comment never asks for the instruction.
+        assert.doesNotThrow(() => missing.evaluate('{{// {{dialoguecolors}} }}ok', { legacy, strictCapabilities: true }));
+    }
+    assert.equal(createMacroEnvironment({ ...snapshot(), requireBundledMacros: true })
+        .evaluate('{{// {{dialoguecolors}} }}ok', { strictCapabilities: true }), 'ok');
+    const missing = createMacroEnvironment({ ...snapshot(), writableScopes: ['local'], requireBundledMacros: true });
+    for (const input of ['{{if::dialoguecolors}}yes{{/if}}', '{{reverse::{{dialoguecolors}}}}', '{{setvar::k::{{dialoguecolors}}}}']) {
+        assert.throws(() => missing.evaluate(input, { strictCapabilities: true }), { code: 'MACRO_BUNDLED_MISSING' }, input);
+    }
+    // A placeholder produced at run time is refused too, not sent literally.
+    const produced = createMacroEnvironment({ ...snapshot(), writableScopes: ['local'], requireBundledMacros: true,
+        variables: { local: { held: '{{dialoguecolors}}' }, global: {} } });
+    assert.throws(() => produced.evaluate('{{getvar::held}}', { strictCapabilities: true }), { code: 'MACRO_BUNDLED_MISSING' });
+    // A nested evaluation that a handler swallows still fails the outer operation.
+    const nested = createMacroEnvironment({ writableScopes: ['local'], requireBundledMacros: true }, {}, { dynamicMacros: {
+        inner: () => { try { return nested.evaluate('{{dialoguecolors}}', { strictCapabilities: true }); } catch { return 'swallowed'; } },
+    } });
+    assert.throws(() => nested.evaluate('{{inner}}', { strictCapabilities: true }), { code: 'MACRO_BUNDLED_MISSING' });
+    // With the capture, the opted-in snapshot resolves it, explicit empty included.
+    const captured = createMacroEnvironment({ ...snapshot(), requireBundledMacros: true, dynamicMacros: { dialoguecolors: '' } });
+    assert.equal(captured.fork().evaluate('[{{if::dialoguecolors}}y{{/if}}{{dialoguecolors}}]', { strictCapabilities: true }), '[y]');
+});
+
 test('Roleplay variable policy refuses unsaveable writes, including read-only forks', () => {
     const state = { ...snapshot(), writableScopes: ['local'] };
     const env = createMacroEnvironment(state);

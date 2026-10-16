@@ -28,8 +28,10 @@ import { getRoleplaySourceMessageRevision } from '../../public/scripts/neconyan-
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const MAX_KEY_LENGTH = 256;
 const MAX_REVISION_BYTES = 512 * 1024;
+const MAX_BUNDLED_MACRO_BYTES = 64 * 1024;
+const BUNDLED_MACRO_NAMES = ['dialoguecolors'];
 const LEGACY_REPLY_BACKENDS = new Set(['kobold', 'novel', 'horde']);
-const SUBMISSION = ['key', 'name', 'intent', 'source', 'anchor', 'messageRevision', 'groupRevision', 'maxTokens', 'account', 'acknowledgement'];
+const SUBMISSION = ['key', 'name', 'intent', 'source', 'anchor', 'messageRevision', 'groupRevision', 'maxTokens', 'account', 'acknowledgement', 'bundledMacros'];
 const ANCHOR_FIELDS = ['messageIndex', 'chosen'];
 
 const invalid = (message, code = 'roleplay_workflow_invalid') => Object.assign(new Error(message), { status: 400, apiError: code });
@@ -52,6 +54,29 @@ function revision(value, label) {
     if (typeof value !== 'string' || !value) throw invalid(`Invalid ${label}.`);
     if (Buffer.byteLength(value, 'utf8') > MAX_REVISION_BYTES) throw invalid(`Oversized ${label}.`);
     return value;
+}
+
+/**
+ * The optional page-captured bundled macros. Only the named macros this build
+ * understands travel, and only as text the page already resolved: an explicit
+ * empty string is kept as the captured answer that the macro delivers nothing,
+ * while malformed, oversized or still-unresolved text is refused before any
+ * job is admitted.
+ */
+function bundledMacros(value) {
+    if (value === undefined) return undefined;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid('Invalid bundled macro capture.');
+    const keys = Object.keys(value);
+    if (!keys.length || keys.some(key => !BUNDLED_MACRO_NAMES.includes(key))) throw invalid('Invalid bundled macro capture.');
+    const captured = {};
+    for (const key of keys) {
+        const text = value[key];
+        if (typeof text !== 'string' || Buffer.byteLength(text, 'utf8') > MAX_BUNDLED_MACRO_BYTES || text.includes('{{')) {
+            throw invalid('Invalid bundled macro capture.');
+        }
+        captured[key] = text;
+    }
+    return captured;
 }
 
 function chatName(value) {
@@ -106,7 +131,7 @@ export function normalizeRoleplayWorkflowSubmission(body = {}) {
     if (!Number.isSafeInteger(settingsRevision) || settingsRevision < 0) throw invalid('Invalid settings revision.');
     return { key, name, named, locator: { chat: chatName(body.source.locator.chat), avatar, group: false },
         messageIndex, chosen: body.anchor.chosen === true, messageRevision: revision(body.messageRevision, 'message revision'),
-        maxTokens, account: accountStamp(body.account),
+        maxTokens, bundledMacros: bundledMacros(body.bundledMacros), account: accountStamp(body.account),
         acknowledgement: { account: identifier(body.acknowledgement?.account, 'account handle'), settingsRevision } };
 }
 
@@ -232,7 +257,7 @@ export async function acceptRoleplayNamedWorkflow(request, body = {}) {
     }
     const maxTokens = workflowTokenLimit(directories, binding, submission.maxTokens);
     const workflow = captureRoleplayWorkflowRequest(base, submission.account, captured.source,
-        { avatar: submission.locator.avatar, binding, maxTokens, named: submission.named });
+        { avatar: submission.locator.avatar, binding, maxTokens, named: submission.named, bundledMacros: submission.bundledMacros });
     const accepted = admitRoleplayWorkflowJob(base, submission.account,
         { operationKey: submission.key, source: captured.source, request: workflow });
     if (accepted.jobId) releaseJob(directories, accepted.jobId);
@@ -242,7 +267,7 @@ export async function acceptRoleplayNamedWorkflow(request, body = {}) {
         write: { instanceId: captured.source.instanceId, revision: captured.source.revision } };
 }
 
-const GROUP_SUBMISSION = ['key', 'name', 'source', 'messageCount', 'forcedAvatars', 'generationId', 'maxTokens', 'account', 'acknowledgement'];
+const GROUP_SUBMISSION = ['key', 'name', 'source', 'messageCount', 'forcedAvatars', 'generationId', 'maxTokens', 'account', 'acknowledgement', 'bundledMacros'];
 
 /**
  * One whole group turn. The page names the saved group chat, how many messages it
@@ -271,7 +296,8 @@ export function normalizeRoleplayGroupSubmission(body = {}) {
     const settingsRevision = body.acknowledgement?.settingsRevision;
     if (!Number.isSafeInteger(settingsRevision) || settingsRevision < 0) throw invalid('Invalid settings revision.');
     return { key, locator: { chat: chatName(body.source.locator.chat), avatar: '', group: true }, groupId, messageCount,
-        forcedAvatars: [...forcedAvatars], generationId: body.generationId, maxTokens, account: accountStamp(body.account),
+        forcedAvatars: [...forcedAvatars], generationId: body.generationId, maxTokens, bundledMacros: bundledMacros(body.bundledMacros),
+        account: accountStamp(body.account),
         acknowledgement: { account: identifier(body.acknowledgement?.account, 'account handle'), settingsRevision } };
 }
 
@@ -301,7 +327,7 @@ export async function acceptRoleplayGroupTurn(request, body = {}) {
     }
     const maxTokens = workflowTokenLimit(directories, binding, submission.maxTokens);
     const workflow = captureRoleplayWorkflowRequest(base, submission.account, source, { binding, maxTokens, effect: 'append',
-        forcedAvatars: submission.forcedAvatars, generationId: submission.generationId });
+        forcedAvatars: submission.forcedAvatars, generationId: submission.generationId, bundledMacros: submission.bundledMacros });
     const accepted = admitRoleplayWorkflowJob(base, submission.account, { operationKey: submission.key, source, request: workflow });
     if (accepted.jobId) releaseJob(directories, accepted.jobId);
     return { key: submission.key, name: 'group.reply', jobId: accepted.jobId ?? null,

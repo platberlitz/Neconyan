@@ -501,16 +501,24 @@ export function registerEventHandlers() {
     runtimeState.eventsRegistered = true;
 }
 
+/**
+ * The one {{dialoguecolors}} value: disabled, local DOM and colorize-profile modes
+ * deliver nothing, and profile outranks auto-detection, exactly as the registered
+ * macro below. Exported so server-owned prompts capture the same text the browser
+ * macro would have delivered instead of reaching the model as a literal placeholder.
+ */
+export function resolveDialogueColorsMacro() {
+    // Profile mode colors in a second request, so the macro delivers nothing:
+    // a leftover {{dialoguecolors}} in a preset must not reach the reply model.
+    if (!settings.enabled || isDomEngine() || getEffectivePromptMode() === 'profile') return '';
+    return buildMinimalPromptInstruction();
+}
+
 export function registerDialogueColorsMacro() {
     if (!settings.enabled || dialogueColorsMacroRegistered) return;
     try {
         const context = getContext();
-        const macroCallback = () => {
-            // Profile mode colors in a second request, so the macro delivers nothing:
-            // a leftover {{dialoguecolors}} in a preset must not reach the reply model.
-            if (!settings.enabled || isDomEngine() || getEffectivePromptMode() === 'profile') return '';
-            return buildMinimalPromptInstruction();
-        };
+        const macroCallback = () => resolveDialogueColorsMacro();
 
         if (context && context.registerMacro) {
             context.registerMacro('dialoguecolors', macroCallback);

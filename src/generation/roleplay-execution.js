@@ -45,6 +45,7 @@ import { createRoleplayStreamPreview, publishRoleplayPreview } from './roleplay-
 import { applyRoleplayVectorFiles, prepareRoleplayVectors } from './roleplay-vectors.js';
 import { prepareRoleplayNoteContext, prepareRoleplayNotebooks } from '../notebooks/context.js';
 import { roleplayAgentsStopped } from './roleplay-agent-stop.js';
+import { assertRoleplayBundledMacrosCaptured } from './roleplay-bundled-macros.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
 const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
@@ -365,7 +366,10 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     const boundMaterial = request.serverPrompt ? promptBackend(directories, request.binding) : null;
     if (boundMaterial) boundMaterial.power = { ...request.worldInfo?.promptSettings, ...boundMaterial.power };
     let characterScope = {};
-    const boundMacroSnapshot = snapshot => ({ ...snapshot,
+    // Roleplay execution alone refuses a missing page capture of a bundled macro;
+    // the post-reply stages in finish() keep the lenient snapshot so a paid reply
+    // from an older job is never stranded.
+    const boundMacroSnapshot = snapshot => ({ ...snapshot, requireBundledMacros: true,
         system: { ...snapshot.system, model: request.modelOverride || boundMaterial?.profile?.model || '' },
         extra: { ...snapshot.extra, ...characterScope, ...(boundMaterial && { powerUser: { ...boundMaterial.power,
             instruct: boundMaterial.instruct ?? boundMaterial.power?.instruct, context: boundMaterial.context ?? boundMaterial.power?.context },
@@ -401,6 +405,13 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             return { characterAvatar: request.worldInfo.avatar, character: character.data?.data ?? character.data };
         });
         if (request.serverPrompt) acceptedMacros = boundMacroSnapshot(savedRoleplayMacroSnapshot(request.worldInfo, initialRecords));
+        // Before captions, translation, vectors, Agents or Pathfinder can spend
+        // anything. A saved prompt is already frozen evidence and is reused as is.
+        if (request.serverPrompt && readArtifact(directories, job.id, 'roleplay-prompt') === undefined
+            && readArtifact(directories, job.id, 'roleplay-base-prompt') === undefined) {
+            assertRoleplayBundledMacrosCaptured(base, { snapshot: request.worldInfo, material: boundMaterial,
+                records: initialRecords, contributions });
+        }
         if (!Array.isArray(request.worldInfo.hookPolicy?.pathfinder)
             || request.worldInfo.hookPolicy.pathfinder.length && (!request.serverPrompt || !request.worldInfo.pathfinder)) {
             throw roleplayError('ROLEPLAY_INVALID', 'Enabled Pathfinder retrieval needs server-owned pre-scan execution.', 409);

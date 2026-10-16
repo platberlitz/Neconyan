@@ -53,6 +53,12 @@ jest.unstable_mockModule('../public/scripts/extensions.js', () => ({
     extension_settings: extensionSettings,
 }));
 
+// The loaded extension's own resolver; the capture must call exactly this.
+let dialogueColorsInstruction = 'Colour the dialogue in teal.';
+const dialogueColorsResolver = jest.fn(() => dialogueColorsInstruction);
+jest.unstable_mockModule('../public/scripts/extensions/third-party/sillytavern-character-colors/src/main.js',
+    () => ({ resolveDialogueColorsMacro: dialogueColorsResolver }));
+
 jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => account }));
 jest.unstable_mockModule('../public/scripts/extensions/vectors/native.js', () => ({ serviceVectorBrowserWork }));
 jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({ selected_group: null }));
@@ -142,6 +148,9 @@ beforeEach(() => {
     for (const key of Object.keys(extensionSettings)) delete extensionSettings[key];
     interceptors.length = 0;
     delete globalThis.DialogueColorsInterceptor;
+    delete globalThis.__dialogueColorsRuntime_v1;
+    dialogueColorsInstruction = 'Colour the dialogue in teal.';
+    dialogueColorsResolver.mockReset().mockImplementation(() => dialogueColorsInstruction);
     requests.length = 0;
     saved.length = 0;
     reloads.length = 0;
@@ -277,6 +286,7 @@ test('a story passage carries the Story prompt the page is using, with its macro
 });
 
 test('page-only prompt additions travel resolved and sorted, and server-built prompts stay behind', async () => {
+    globalThis.__dialogueColorsRuntime_v1 = { initialized: true };
     interceptors.push({ name: 'third-party/sillytavern-character-colors', key: 'DialogueColorsInterceptor' });
     globalThis.DialogueColorsInterceptor = jest.fn(async () => {
         extensionPrompts['dialogue-colors'] = { value: 'Colour {{user}} in teal.', position: 1, depth: 1, scan: false, role: 0 };
@@ -294,7 +304,99 @@ test('page-only prompt additions travel resolved and sorted, and server-built pr
         { key: '1_memory', content: 'Summary so far.', position: 0, depth: 0, role: 'system' },
         { key: 'dialogue-colors', content: 'Colour Alice in teal.', position: 1, depth: 1, role: 'system' },
     ] });
+    // The loaded extension's macro text travels top-level, captured exactly once.
+    expect(submit.body.bundledMacros).toEqual({ dialoguecolors: 'Colour the dialogue in teal.' });
+    expect(dialogueColorsResolver).toHaveBeenCalledTimes(1);
     await observers.get('job-1').onStop('done');
+    await pending;
+});
+
+test('a host-disabled Dialogue Colors extension supplies an explicit empty capture without resolving', async () => {
+    globalThis.DialogueColorsInterceptor = jest.fn();
+    extensionSettings.disabledExtensions = ['third-party/sillytavern-character-colors'];
+    const pending = workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' });
+    await settle();
+    const submit = requests.find(entry => entry.url.endsWith('/workflow/submit'));
+    expect(submit.body.bundledMacros).toEqual({ dialoguecolors: '' });
+    expect(dialogueColorsResolver).not.toHaveBeenCalled();
+    await observers.get('job-1').onStop('done');
+    await pending;
+});
+
+test('a page with no loaded Dialogue Colors extension supplies an explicit empty capture', async () => {
+    delete globalThis.__dialogueColorsRuntime_v1;
+    const pending = workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' });
+    await settle();
+    const submit = requests.find(entry => entry.url.endsWith('/workflow/submit'));
+    expect(submit.body.bundledMacros).toEqual({ dialoguecolors: '' });
+    expect(dialogueColorsResolver).not.toHaveBeenCalled();
+    await observers.get('job-1').onStop('done');
+    await pending;
+});
+
+test('capture waits for saved extension settings instead of using startup defaults', async () => {
+    let ready;
+    const runtime = { initialized: false, ready: new Promise(resolve => { ready = resolve; }) };
+    globalThis.__dialogueColorsRuntime_v1 = runtime;
+    const capture = workflows.captureBundledMacros();
+    await settle();
+    expect(dialogueColorsResolver).not.toHaveBeenCalled();
+    dialogueColorsInstruction = '';
+    runtime.initialized = true;
+    ready();
+    await expect(capture).resolves.toEqual({ dialoguecolors: '' });
+    expect(dialogueColorsResolver).toHaveBeenCalledTimes(1);
+});
+
+test('failed extension loading refuses before any submission rather than sending empty instructions', async () => {
+    globalThis.__dialogueColorsRuntime_v1 = { initialized: false, ready: Promise.resolve() };
+    await expect(workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' })).rejects.toThrow('did not finish loading');
+    expect(requests).toHaveLength(0);
+    expect(dialogueColorsResolver).not.toHaveBeenCalled();
+});
+
+test('a failed loaded resolver is not silently converted to a disabled capture', async () => {
+    globalThis.__dialogueColorsRuntime_v1 = { initialized: true };
+    dialogueColorsResolver.mockImplementationOnce(() => { throw new Error('Saved palette could not be read'); });
+    await expect(workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' })).rejects.toThrow('Saved palette could not be read');
+    expect(requests).toHaveLength(0);
+});
+
+test('a lost response reuses the same key and capture even when the extension changes or fails', async () => {
+    globalThis.__dialogueColorsRuntime_v1 = { initialized: true };
+    submitHandler = async () => { throw new Error('Lost response'); };
+    await expect(workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' })).rejects.toThrow('Lost response');
+    const first = requests.at(-1).body;
+    dialogueColorsInstruction = 'Different palette after submission.';
+    dialogueColorsResolver.mockImplementation(() => { throw new Error('Extension unavailable during retry'); });
+    submitHandler = async body => response(202, { key: body.key, jobId: 'same-job', created: false });
+    const accepted = await workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' });
+    expect(requests.at(-1).body).toEqual(first);
+    expect(dialogueColorsResolver).toHaveBeenCalledTimes(1);
+    await observers.get(accepted.jobId).onStop('done');
+    await accepted.finished;
+});
+
+test('the settings-proof retry replays the captured instruction instead of recalculating it', async () => {
+    globalThis.__dialogueColorsRuntime_v1 = { initialized: true };
+    globalThis.DialogueColorsInterceptor = jest.fn();
+    let attempts = 0;
+    submitHandler = async body => {
+        attempts += 1;
+        if (attempts === 1) {
+            dialogueColorsInstruction = 'A changed page instruction.';
+            return response(409, { error: 'Save first.', code: 'roleplay_settings_ack_required' });
+        }
+        return response(202, { key: body.key, jobId: 'job-2', created: true });
+    };
+    receiptHandler = () => response(200, { accepted: true, state: 'closed', jobId: 'job-2', result: {} });
+    const pending = workflows.runNativeRoleplayGeneration('normal');
+    await settle();
+    const submits = requests.filter(entry => entry.url.endsWith('/workflow/submit'));
+    expect(submits).toHaveLength(2);
+    expect(submits.every(entry => entry.body.bundledMacros.dialoguecolors === 'Colour the dialogue in teal.')).toBe(true);
+    expect(dialogueColorsResolver).toHaveBeenCalledTimes(1);
+    await observers.get('job-2').onStop('done');
     await pending;
 });
 
@@ -401,6 +503,8 @@ test('a group turn saves its settings proof after chat-save listeners finish', a
     const submits = requests.filter(entry => entry.url.endsWith('/group/submit'));
     expect(submits).toHaveLength(1);
     expect(submits[0].body.acknowledgement.settingsRevision).toBe(settingsRevision);
+    // The group turn carries the page capture too; with no loaded extension it is explicit empty text.
+    expect(submits[0].body.bundledMacros).toEqual({ dialoguecolors: '' });
     await observers.get('group-after-save').onStop('done');
     expect(await pending).toMatchObject({ accepted: true, state: 'closed' });
 });

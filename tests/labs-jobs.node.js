@@ -470,6 +470,26 @@ test('native prompt suites compile frozen sources, save checked runs, and do not
     assert.equal((await readPromptingStorage(f.base, f.account, 'getRun', [result.runs[0].id])).value, null);
 });
 
+test('a Prompting Lab capture keeps a page-only bundled macro literal instead of refusing the saved preset', async () => {
+    const f = fixture();
+    const settingsPath = path.join(f.base.directories.root, 'settings.json');
+    const settings = JSON.parse(fs.readFileSync(settingsPath));
+    settings.oai_settings = { ...JSON.parse(fs.readFileSync(new URL('./fixtures/openai-default-preset.json', import.meta.url))), ...settings.oai_settings };
+    settings.oai_settings.prompts = settings.oai_settings.prompts.map(prompt => prompt.identifier === 'main'
+        ? { ...prompt, content: 'LAB-MARK {{dialoguecolors}} LAB-MARK' } : prompt);
+    fs.writeFileSync(settingsPath, JSON.stringify(settings));
+    for (const [method, value] of [['saveCase', { id: 'case', name: 'Colour prompt', pins: { characterAvatar: 'nova.png', connectionProfileId: 'saved' },
+        userMessage: 'Describe the garden.', assertions: [] }], ['saveSuite', { id: 'suite', name: 'Colour tests', caseIds: ['case'] }]]) {
+        const accepted = await acceptLabJob(f.request, { key: method, kind: 'prompting.storage', method, args: [value] });
+        await runLabJob(f.context(accepted));
+    }
+    const suite = await acceptLabJob(f.request, { key: 'colour-run', kind: 'prompting.suite', suiteId: 'suite' });
+    await runLabJob(f.context(suite));
+    const [run] = readLabRecord(f.base, 'colour-run').result.runs;
+    assert.equal(run.error, null, JSON.stringify(run.error));
+    assert.match(JSON.stringify(run.capture.messages), /LAB-MARK \{\{dialoguecolors\}\} LAB-MARK/);
+});
+
 test('prompt comparisons capture server characters and retain both paid results for replay', async () => {
     const f = fixture();
     const accepted = await acceptLabJob(f.request, { key: 'experiment', kind: 'prompting.requests', operation: 'experiment',

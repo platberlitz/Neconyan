@@ -108,7 +108,11 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
         functions: {
             postProcess,
         },
-        dynamicMacros: Object.fromEntries(Object.entries(dynamicMacros).map(([key, value]) => [key.toLowerCase(), value])),
+        // Request-local dynamic macros may travel either with the snapshot itself
+        // (a saved roleplay capture) or as explicit options; the explicit option
+        // wins on a shared name so the caller keeps control.
+        dynamicMacros: Object.fromEntries(Object.entries({ ...(snapshot.dynamicMacros ?? {}), ...dynamicMacros })
+            .map(([key, value]) => [String(key).toLowerCase(), value])),
         extra: {
             chat: [], extensionPrompts: {},
             getInput: () => '', getCurrentChatId: () => data.chatId ?? '',
@@ -134,9 +138,12 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
         extra: { ...data.extra, powerUser: env.extra.powerUser, mainApi: env.extra.mainApi } }, capabilities, { readOnly, dynamicMacros, postProcess });
     env.captureState = () => structuredClone({ variables: data.variables,
         chatMetadata: env.extra.chatMetadata, bannedWords: env.extra.bannedWords });
+    // Only Roleplay execution opts in: there a missing page capture refuses instead
+    // of sending a literal placeholder. Forks keep the flag through the snapshot.
+    const bundledPolicy = { requireBundled: snapshot.requireBundledMacros === true };
     const evaluateContent = (content, { legacy = false, strictCapabilities = false, original: suppliedOriginal, postProcess: suppliedPostProcess } = {}) => {
         strictCapabilities ||= Boolean(snapshot.writableScopes);
-        if (strictCapabilities) assertServerMacroVocabulary(content, env.dynamicMacros, snapshot.browserMacros, snapshot.browserMacroSyntax);
+        if (strictCapabilities) assertServerMacroVocabulary(content, env.dynamicMacros, snapshot.browserMacros, snapshot.browserMacroSyntax, bundledPolicy);
         let unavailable;
         const extra = { ...env.extra };
         const missing = name => () => {
@@ -147,7 +154,7 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
             extra.assertMacroCondition = condition => {
                 if (!/^[\w-]+$/.test(condition)) return;
                 try {
-                    assertServerMacroVocabulary(`{{${condition}}}`, env.dynamicMacros, snapshot.browserMacros);
+                    assertServerMacroVocabulary(`{{${condition}}}`, env.dynamicMacros, snapshot.browserMacros, {}, bundledPolicy);
                 } catch (error) {
                     mutationError = error;
                     throw error;
@@ -181,13 +188,13 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
             const result = evaluateLegacyMacros(content, values, extra, suppliedPostProcess ?? postProcess);
             if (unavailable) throw unavailable;
             if (mutationError) throw mutationError;
-            if (strictCapabilities) assertServerMacroVocabulary(result, env.dynamicMacros, snapshot.browserMacros, snapshot.browserMacroSyntax);
+            if (strictCapabilities) assertServerMacroVocabulary(result, env.dynamicMacros, snapshot.browserMacros, snapshot.browserMacroSyntax, bundledPolicy);
             return result;
         }
         const result = MacroEngine.evaluate(content, { ...env, extra, content, contentHash: getStringHash(content), functions });
         if (unavailable) throw unavailable;
         if (mutationError) throw mutationError;
-        if (strictCapabilities) assertServerMacroVocabulary(result, env.dynamicMacros, snapshot.browserMacros, snapshot.browserMacroSyntax);
+        if (strictCapabilities) assertServerMacroVocabulary(result, env.dynamicMacros, snapshot.browserMacros, snapshot.browserMacroSyntax, bundledPolicy);
         return result;
     };
     let evaluationDepth = 0;
@@ -201,7 +208,7 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
         } catch (error) {
             // The shared evaluator catches handler errors. Keep a nested server
             // policy failure visible to the outer operation even after that catch.
-            if (['MACRO_BROWSER_ONLY', 'MACRO_WRITE_UNSUPPORTED'].includes(error?.code)) mutationError = error;
+            if (['MACRO_BROWSER_ONLY', 'MACRO_WRITE_UNSUPPORTED', 'MACRO_BUNDLED_MISSING'].includes(error?.code)) mutationError = error;
             throw error;
         } finally {
             evaluationDepth--;

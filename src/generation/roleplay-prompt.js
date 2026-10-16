@@ -163,6 +163,10 @@ export function savedRoleplayMacroSnapshot(snapshot, records) {
         chatId: snapshot.source.locator.chat,
         browserMacros: snapshot.browserMacros,
         browserMacroSyntax: snapshot.browserMacroSyntax,
+        // Page-captured bundled macros travel as request-local dynamic macros, so
+        // history, notes, cards, World Info and the prompt templates all resolve
+        // them exactly as the page's own macro would have.
+        ...(snapshot.bundledMacros ? { dynamicMacros: { ...snapshot.bundledMacros } } : {}),
         ...(snapshot.macroPolicyVersion === 1 ? { writableScopes: ['local'] } : {}),
         names: { user: names.user, char: names.character, group: group.join(', ') || names.character,
             groupNotMuted: (snapshot.unmutedGroupNames ?? group).join(', ') || names.character,

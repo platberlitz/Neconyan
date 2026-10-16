@@ -16,7 +16,7 @@ if (globalThis[RUNTIME_GUARD_KEY]?.initializing || globalThis[RUNTIME_GUARD_KEY]
         console.error('[Dialogue Colors] Runtime initialization failed:', error);
     };
     try {
-        Promise.resolve(install()).then(() => {
+        runtimeState.ready = Promise.resolve(install()).then(() => {
             runtimeState.initializing = false;
             runtimeState.initialized = true;
         }, fail);

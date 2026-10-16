@@ -21,7 +21,7 @@ const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', 
 prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }] };
 
 function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disabled = [], strategy = 1,
-    autoSwipe = false, autoContinue = false, pathfinder = false } = {}) {
+    autoSwipe = false, autoContinue = false, pathfinder = false, bundledMacros = null } = {}) {
     const f = fixture(t, true);
     const dirs = f.scope.directories;
     f.records[1].extra = {};
@@ -60,7 +60,7 @@ function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disable
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
     const source = captureRoleplaySource(f.scope, { locator: f.locator, groupId: 'group' });
     const request = captureRoleplayWorkflowRequest(f.scope, account, source, { binding: { kind: 'profile',
-        ...captureChatProfile(dirs, 'main') }, maxTokens: 32, effect: 'append', forcedAvatars, generationId: 47 });
+        ...captureChatProfile(dirs, 'main') }, maxTokens: 32, effect: 'append', forcedAvatars, generationId: 47, bundledMacros });
     const { jobId } = admitRoleplayWorkflowJob(f.scope, account, { operationKey: 'group-workflow', source, request });
     releaseJob(dirs, jobId);
     const context = () => ({ owner: f.scope.owner, directories: dirs, job: getJob(dirs, jobId), signal: new AbortController().signal });
@@ -125,6 +125,22 @@ test('saved whole-group turn completes speakers in order and retains each protec
     assert.equal(f.records()[2].mes, 'Answer');
     assert.equal(count.value, 2);
     assert.deepEqual(await runRoleplayWorkflowJob(f.context()), completed);
+});
+
+test('a captured page instruction reaches every initial group speaker and its next lineage', async t => {
+    const f = prepared(t, { bundledMacros: { dialoguecolors: 'Colour the group dialogue.' } });
+    assert.deepEqual(f.request.worldInfo.bundledMacros, { dialoguecolors: 'Colour the group dialogue.' });
+    assert.deepEqual(f.request.group.speakers.map(speaker => speaker.worldInfo.bundledMacros),
+        Array.from({ length: 2 }, () => ({ dialoguecolors: 'Colour the group dialogue.' })));
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const count = { value: 0 };
+    await f.completeCandidate(0, { avatar: 'Nova.png', name: 'Nova', modelOverride: '', reply: 'Nova replies.' }, count);
+    await runRoleplayWorkflowJob(f.context());
+    const lineage = readArtifact(f.dirs, f.jobId, 'roleplay-workflow-group-lineage:1');
+    assert.deepEqual(lineage.worldInfo.bundledMacros, { dialoguecolors: 'Colour the group dialogue.' });
+    const next = getJob(f.dirs, readArtifact(f.dirs, f.jobId, 'roleplay-workflow-child:1').jobId);
+    assert.deepEqual(next.intent.request.worldInfo.bundledMacros, { dialoguecolors: 'Colour the group dialogue.' });
 });
 
 test('stopping post-reply work in a group saves the current speaker and never starts the next one after recovery', async t => {

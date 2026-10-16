@@ -25,7 +25,7 @@ const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', 
 prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }],
 function_calling: true };
 
-function prepared(t, effect = 'append', { assistant = false, pathfinder = false, agents = false, autoSwipe = false, autoContinue = false, continueTarget = 30 } = {}) {
+function prepared(t, effect = 'append', { assistant = false, pathfinder = false, agents = false, autoSwipe = false, autoContinue = false, continueTarget = 30, bundledMacros = null } = {}) {
     const f = fixture(t);
     const dirs = f.scope.directories;
     f.records[1].extra = {};
@@ -64,24 +64,30 @@ function prepared(t, effect = 'append', { assistant = false, pathfinder = false,
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
     const source = effect === 'append' ? f.source() : captureRoleplaySource(f.scope, { locator: f.locator, message: 1 });
     const request = captureRoleplayWorkflowRequest(f.scope, account, source, { avatar: 'Nova.png',
-        binding: { kind: 'profile', ...captureChatProfile(dirs, 'main') }, maxTokens: 32, effect });
+        binding: { kind: 'profile', ...captureChatProfile(dirs, 'main') }, maxTokens: 32, effect, bundledMacros });
     const { jobId } = admitRoleplayWorkflowJob(f.scope, account, { operationKey: `root-${effect}`, source, request });
     releaseJob(dirs, jobId);
     const context = () => ({ owner: f.scope.owner, directories: dirs, job: getJob(dirs, jobId), signal: new AbortController().signal });
-    return { f, dirs, account, source, request, jobId, context,
-        async candidate(text, calls, { turn = 0, response = undefined, generateAgent } = {}) {
-            const pointer = readArtifact(dirs, jobId, turn ? `roleplay-workflow-child:${turn}` : 'roleplay-workflow-child');
-            const child = getJob(dirs, pointer.jobId);
-            setJobState(dirs, child.id, 'running');
-            const result = await runRoleplayReplyJob({ owner: f.scope.owner, directories: dirs, job: getJob(dirs, child.id),
-                signal: new AbortController().signal }, { contextLimit: () => 4096,
-                promptBackend: () => ({ backend: 'chat', active: controls, profile: { model: 'fixture' }, source: 'custom' }),
-                ...(generateAgent ? { generateAgent } : {}),
-                ...(pathfinder ? { generatePathfinder: async options => {
-                    const step = roleplayHash(['workflow-sidecar', child.id]);
-                    options.onProviderStep(`provider:${step}`);
-                    return providerStep(options.jobContext, step, async () => { options.beforeDispatch(); return { text: '' }; });
-                } } : {}),
+    const childJob = (turn = 0) => getJob(dirs, readArtifact(dirs, jobId, turn ? `roleplay-workflow-child:${turn}` : 'roleplay-workflow-child').jobId);
+    // One direct run of the child reply job, as the job runner would start it.
+    const runChild = (child, { generate, generateAgent, promptControls, pathfinderCalls = { count: 0 } } = {}) => {
+        setJobState(dirs, child.id, 'running');
+        return runRoleplayReplyJob({ owner: f.scope.owner, directories: dirs, job: getJob(dirs, child.id),
+            signal: new AbortController().signal }, { contextLimit: () => 4096,
+            promptBackend: () => ({ backend: 'chat', active: promptControls ?? controls, profile: { model: 'fixture' }, source: 'custom' }),
+            ...(generateAgent ? { generateAgent } : {}),
+            ...(pathfinder ? { generatePathfinder: async options => {
+                pathfinderCalls.count++;
+                const step = roleplayHash(['workflow-sidecar', child.id]);
+                options.onProviderStep(`provider:${step}`);
+                return providerStep(options.jobContext, step, async () => { options.beforeDispatch(); return { text: '' }; });
+            } } : {}),
+            generate });
+    };
+    return { f, dirs, account, source, request, jobId, context, childJob, runChild,
+        async candidate(text, calls, { turn = 0, response = undefined, generateAgent, promptControls, pathfinderCalls } = {}) {
+            const child = childJob(turn);
+            const result = await runChild(child, { generateAgent, promptControls, pathfinderCalls,
                 generate: async options => {
                     calls.count++;
                     calls.check?.(options, turn);
@@ -336,6 +342,39 @@ test('a model tool turn completes an owned child and resumes a second bound mode
     assert.equal(f.records()[2].mes, 'Answer');
 });
 
+test('a tool turn advances its lineage with the same captured page instruction', async t => {
+    const promptControls = {
+        ...controls,
+        prompts: [{ identifier: 'main', role: 'system', content: 'MARK {{dialoguecolors}} MARK', system_prompt: true },
+            { identifier: 'chatHistory', marker: true, system_prompt: true }],
+        prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }],
+    };
+    const f = prepared(t, 'append', { pathfinder: true, bundledMacros: { dialoguecolors: 'COLOUR-INSTRUCTION' } });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    await f.candidate('', calls, { response: { choices: [{ message: { tool_calls: [{ id: 'call-notebook', type: 'function',
+        function: { name: 'Pathfinder_Notebook', arguments: JSON.stringify({ action: 'write', key: 'door', content: 'The door is locked.' }) } }] } }] } });
+    const waiting = await runRoleplayWorkflowJob(f.context());
+    const toolJobId = waiting.childJobId;
+    setJobState(f.dirs, toolJobId, 'running');
+    await runPathfinderNotebookJob({ owner: f.f.scope.owner, directories: f.dirs, job: getJob(f.dirs, toolJobId),
+        signal: new AbortController().signal });
+    setJobState(f.dirs, toolJobId, 'completed');
+    recoverWaitingRoleplayWorkflow({ directories: f.dirs, owner: f.f.scope.owner, job: getJob(f.dirs, f.jobId) });
+    setJobState(f.dirs, f.jobId, 'running');
+    await runRoleplayWorkflowJob(f.context());
+    const lineage = readArtifact(f.dirs, f.jobId, 'roleplay-workflow-lineage:0');
+    assert.deepEqual(lineage.worldInfo.bundledMacros, { dialoguecolors: 'COLOUR-INSTRUCTION' });
+    await f.candidate('The saved door is locked.', { count: 0, check(options) {
+        const main = options.messages.find(message => String(message.content).includes('MARK'));
+        assert.ok(main, JSON.stringify(options.messages));
+        assert.equal(main.content, 'MARK COLOUR-INSTRUCTION MARK');
+    } }, { turn: 1, promptControls });
+    const done = await runRoleplayWorkflowJob(f.context());
+    assert.equal(done.result.status, 'completed');
+});
+
 test('a completed notebook tool advances only its owned chat source before the next model turn', async t => {
     const f = prepared(t, 'append', { pathfinder: true });
     updateJob(f.dirs, f.jobId, { state: 'running' });
@@ -516,4 +555,138 @@ test('a pathological saved swipe expression is refused before a model request is
         code: 'ROLEPLAY_WORKFLOW_INVALID',
     });
     assert.deepEqual(f.records, fs.readFileSync(f.filename, 'utf8').trim().split('\n').map(line => JSON.parse(line)));
+});
+
+test('a captured page instruction resolves inside the accepted preset and a recovered run reuses it', async t => {
+    const promptControls = {
+        prompts: [{ identifier: 'main', role: 'system', content: 'MARK {{dialoguecolors}} MARK', system_prompt: true },
+            { identifier: 'chatHistory', marker: true, system_prompt: true }],
+        prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }],
+    };
+    const f = prepared(t, 'append', { bundledMacros: { dialoguecolors: 'COLOUR-INSTRUCTION' } });
+    assert.deepEqual(f.request.worldInfo.bundledMacros, { dialoguecolors: 'COLOUR-INSTRUCTION' });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0, check(options) {
+        const main = options.messages.find(message => String(message.content).includes('MARK'));
+        assert.ok(main, JSON.stringify(options.messages));
+        assert.equal(main.content, 'MARK COLOUR-INSTRUCTION MARK');
+    } };
+    await f.candidate('Resolved from the capture.', calls, { promptControls });
+    const done = await runRoleplayWorkflowJob(f.context());
+    assert.equal(done.result.status, 'completed');
+    assert.equal(f.records().at(-1).mes, 'Resolved from the capture.');
+    // The stored prepared prompt and receipt are reused, so no second paid request is made.
+    assert.deepEqual(await runRoleplayWorkflowJob(f.context()), done);
+    assert.equal(calls.count, 1);
+});
+
+test('an accepted request without the capture refuses the dialogue colours placeholder before provider work', async t => {
+    const promptControls = {
+        prompts: [{ identifier: 'main', role: 'system', content: 'MARK {{dialoguecolors}} MARK', system_prompt: true },
+            { identifier: 'chatHistory', marker: true, system_prompt: true }],
+        prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }],
+    };
+    const f = prepared(t);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    await assert.rejects(f.candidate('Never sent.', calls, { promptControls }), { code: 'MACRO_BUNDLED_MISSING' });
+    assert.equal(calls.count, 0);
+    assert.equal(f.records().length, 3);
+});
+
+const markedControls = (extra = []) => ({
+    prompts: [{ identifier: 'main', role: 'system', content: 'MARK {{dialoguecolors}} MARK', system_prompt: true },
+        { identifier: 'chatHistory', marker: true, system_prompt: true }, ...extra],
+    prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true },
+        ...extra.map(prompt => ({ identifier: prompt.identifier, enabled: false }))] }],
+    function_calling: true,
+});
+const settledWorkflow = async (f, child) => {
+    setJobState(f.dirs, child.id, 'completed');
+    recoverWaitingRoleplayWorkflow({ directories: f.dirs, owner: f.f.scope.owner, job: getJob(f.dirs, f.jobId) });
+    setJobState(f.dirs, f.jobId, 'running');
+    return runRoleplayWorkflowJob(f.context());
+};
+const savedReply = (child, text, { lose = false } = {}) => async options => {
+    const step = roleplayHash(['workflow-candidate', child.id]);
+    options.onProviderStep(`provider:${step}`);
+    const result = await providerStep(options.jobContext, step, async () => { options.beforeDispatch(); return { text }; });
+    if (lose) throw new Error('The worker stopped after the provider answered.');
+    return result;
+};
+
+test('a missing capture refuses before paid Pathfinder retrieval, while a captured request pays for it', async t => {
+    for (const captured of [false, true]) {
+        await t.test(`captured: ${captured}`, async t => {
+            const f = prepared(t, 'append', { pathfinder: true, ...(captured ? { bundledMacros: { dialoguecolors: 'COLOUR' } } : {}) });
+            updateJob(f.dirs, f.jobId, { state: 'running' });
+            await runRoleplayWorkflowJob(f.context());
+            const calls = { count: 0 };
+            const pathfinderCalls = { count: 0 };
+            const run = f.candidate('Retrieved reply.', calls, { promptControls: markedControls(), pathfinderCalls });
+            if (captured) {
+                await run;
+                assert.ok(pathfinderCalls.count > 0, 'the control request reaches its paid Pathfinder stage');
+                assert.equal(calls.count, 1);
+                return;
+            }
+            await assert.rejects(run, { code: 'MACRO_BUNDLED_MISSING', status: 409 });
+            assert.equal(pathfinderCalls.count, 0);
+            assert.equal(calls.count, 0);
+            const child = f.childJob();
+            for (const artifact of ['roleplay-history-input', 'roleplay-world-info', 'roleplay-pathfinder', 'roleplay-prompt']) {
+                assert.equal(readArtifact(f.dirs, child.id, artifact), undefined, artifact);
+            }
+            assert.equal(f.records().length, 3);
+        });
+    }
+});
+
+test('a disabled preset prompt holding the placeholder does not refuse a request without the capture', async t => {
+    const f = prepared(t);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const controls = markedControls([{ identifier: 'unused', role: 'system', content: 'OFF {{dialoguecolors}}', system_prompt: false }]);
+    controls.prompts[0].content = 'PLAIN MAIN';
+    const calls = { count: 0, check(options) { assert.doesNotMatch(JSON.stringify(options.messages), /dialoguecolors|OFF/); } };
+    await f.candidate('Plain reply.', calls, { promptControls: controls });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).result.status, 'completed');
+    assert.equal(calls.count, 1);
+});
+
+test('older jobs without a capture recover their saved prompt and saved provider result without evaluating the placeholder', async t => {
+    // Prepared evidence saved before captures existed is reused as frozen: the
+    // placeholder now in the bound preset is neither scanned nor evaluated again.
+    await t.test('saved prompt, provider not yet asked', async t => {
+        const f = prepared(t);
+        updateJob(f.dirs, f.jobId, { state: 'running' });
+        await runRoleplayWorkflowJob(f.context());
+        const child = f.childJob();
+        await assert.rejects(f.runChild(child, { generate: async () => { throw new Error('The worker stopped before dispatch.'); } }),
+            /stopped before dispatch/);
+        const prompt = readArtifact(f.dirs, child.id, 'roleplay-prompt');
+        assert.ok(prompt, 'the first run saved its prepared prompt');
+        let sent;
+        const answer = savedReply(child, 'Recovered from the saved prompt.');
+        await f.runChild(child, { promptControls: markedControls(), generate: options => { sent = options.messages; return answer(options); } });
+        assert.deepEqual(sent, prompt.messages);
+        assert.deepEqual(readArtifact(f.dirs, child.id, 'roleplay-prompt'), prompt);
+        assert.equal((await settledWorkflow(f, child)).result.status, 'completed');
+        assert.equal(f.records().at(-1).mes, 'Recovered from the saved prompt.');
+    });
+    await t.test('saved provider result, reply not yet written', async t => {
+        const f = prepared(t);
+        updateJob(f.dirs, f.jobId, { state: 'running' });
+        await runRoleplayWorkflowJob(f.context());
+        const child = f.childJob();
+        await assert.rejects(f.runChild(child, { generate: savedReply(child, 'Paid before the update.', { lose: true }) }),
+            /stopped after the provider answered/);
+        let calls = 0;
+        await f.runChild(child, { promptControls: markedControls(), generate: async () => { calls++; throw new Error('not again'); } });
+        assert.equal(calls, 0);
+        assert.equal((await settledWorkflow(f, child)).result.status, 'completed');
+        assert.equal(f.records().at(-1).mes, 'Paid before the update.');
+    });
 });

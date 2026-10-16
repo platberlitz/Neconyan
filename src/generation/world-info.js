@@ -205,6 +205,17 @@ export function readBoundPathfinderBooks(base, snapshot) {
     });
 }
 
+/** Every bound book's data, read under the same identity checks as the scan, without scanning it. */
+export function readBoundRoleplayBooks(base, snapshot) {
+    return withRoleplayAccount(base, snapshot.account, lease => {
+        assertRoleplaySourceLocked(lease, snapshot.source);
+        if (roleplaySettingsHash(readJson(path.join(base.directories.root, 'settings.json'), {})) !== snapshot.settingsHash) {
+            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info settings changed after the request was accepted.');
+        }
+        return Object.fromEntries(Object.entries(boundBooks(base.directories, snapshot)).map(([name, value]) => [name, value.data]));
+    });
+}
+
 /** Resolve the chat lock, character connection and default before reading the account's last active persona. */
 function selectedPersona(settings, saved, source, avatar, directories) {
     const power = settings.power_user ?? {};
@@ -288,7 +299,7 @@ function selectedBooks(settings, saved, character, avatar, personaLorebook) {
 
 /** Capture the actual saved book selection before private job admission. */
 export function captureRoleplayWorldInfo(base, account, source, { avatar, maxContext, tokenizer = 'o200k_base', trigger = 'normal', serverPrompt = false,
-    agentIds = [], agentContext = false, nativeBindingVersion = 1, promptEffect = null, mediaPolicyVersion = 0, mediaBinding = null }) {
+    agentIds = [], agentContext = false, nativeBindingVersion = 1, promptEffect = null, mediaPolicyVersion = 0, mediaBinding = null, bundledMacros = null }) {
     if (![0, 1].includes(mediaPolicyVersion)) throw roleplayError('ROLEPLAY_INVALID', 'This image input version is unsupported.', 409);
     if (!['normal', 'continue', 'swipe', 'regenerate'].includes(trigger) || typeof serverPrompt !== 'boolean'
         || ![0, 1].includes(nativeBindingVersion) || nativeBindingVersion === 0 && agentIds.length
@@ -431,6 +442,9 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         const enhancedMacros = Boolean(settings.power_user?.experimental_macro_engine)
             && !extensions.disabledExtensions?.some(name => normalizeExtensionBootId(name) === 'macroenhanced');
         const snapshot = { account: { accountId: account.accountId, dataEpoch: account.dataEpoch }, source, serverPrompt,
+            // The page-captured bundled macros travel with the accepted request itself;
+            // an absent field keeps the old snapshot shape for already accepted jobs.
+            ...(bundledMacros ? { bundledMacros: structuredClone(bundledMacros) } : {}),
             ...(mediaPolicy ? { mediaPolicyVersion, mediaPolicy, mediaBinding, captionTexts: mediaProjection.captionTexts.filter(item => !item.composed) } : {}),
             macroPolicyVersion: serverPrompt ? 1 : 0,
             browserMacros: capturedBrowserMacros(settings.extension_settings, character.data?.data?.extensions ?? character.data?.extensions, saved.records[0].chat_metadata),
@@ -534,6 +548,9 @@ export function assertRoleplayWorldInfoCurrent(base, snapshot) {
         promptEffect: snapshot.global?.promptEffect ?? null,
         serverPrompt: snapshot.serverPrompt,
         agentIds: snapshot.agents?.forcedIds ?? [], agentContext: snapshot.agentContext ?? false,
+        // Re-assert the captured page macro text that was accepted, never whatever
+        // the current extension settings would resolve to now.
+        bundledMacros: Object.hasOwn(snapshot, 'bundledMacros') ? snapshot.bundledMacros : null,
         nativeBindingVersion: Object.hasOwn(snapshot, 'nativeBindingVersion') ? snapshot.nativeBindingVersion : 0,
         mediaPolicyVersion: snapshot.mediaPolicyVersion ?? 0, mediaBinding: snapshot.mediaBinding ?? null,
     });

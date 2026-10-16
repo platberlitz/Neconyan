@@ -13,7 +13,7 @@
  */
 import { activateSendButtons, chat, deactivateSendButtons, extension_prompts, getActiveGenerationAcknowledgement, getCurrentChatId, getRequestHeaders, isChatSaving, isGenerating, keepChatReadingPositionOnNextLoad, refreshCurrentChatFromSaved, saveChatConditional, saveSettings, substituteParams, willRunNativeRoleplayWorkflow } from '../../script.js';
 import { event_types, eventSource } from '../events.js';
-import { activeGenerationInterceptors } from '../extensions.js';
+import { activeGenerationInterceptors, extension_settings } from '../extensions.js';
 import { COMPANION_HISTORY_PROMPT_KEY_PREFIX } from '../extensions/in-chat-agents/companion/companion-shared.js';
 import { selected_group } from '../group-chats.js';
 import { cancelJob, listJobs, observeJob, TERMINAL } from '../jobs.js';
@@ -205,7 +205,7 @@ export async function capturePagePrompts(name, collector = null) {
     };
     for (const interceptor of activeGenerationInterceptors()) {
         if (interceptor.key === 'DialogueColorsInterceptor') {
-            await globalThis[interceptor.key]([], 0, () => {}, 'normal');
+            if (await dialogueColorsReady()) await globalThis[interceptor.key]([], 0, () => {}, 'normal');
             continue;
         }
         if (interceptor.key === 'vectors_rearrangeChat') {
@@ -245,6 +245,34 @@ export async function capturePagePrompts(name, collector = null) {
         if (page.length > MAX_PAGE_PROMPTS || bytes > MAX_PAGE_BYTES) return refuse('size');
     }
     return page;
+}
+
+const DIALOGUE_COLORS_EXTENSION = 'sillytavern-character-colors';
+
+async function dialogueColorsReady() {
+    const disabled = (extension_settings.disabledExtensions ?? [])
+        .some(name => String(name).replace(/^third-party\//, '') === DIALOGUE_COLORS_EXTENSION);
+    if (disabled) return false;
+    // The bootstrap publishes this guard before loading the saved settings.
+    const runtime = globalThis.__dialogueColorsRuntime_v1;
+    if (!runtime && typeof globalThis.DialogueColorsInterceptor !== 'function') return false;
+    await runtime?.ready;
+    if (!runtime?.initialized) throw new Error('Dialogue Colors did not finish loading. Reload the page before trying again.');
+    return true;
+}
+
+/** Capture the loaded extension's real macro, after its saved settings are ready. */
+async function loadedDialogueColorsMacro() {
+    if (!await dialogueColorsReady()) return '';
+    const { resolveDialogueColorsMacro } = await import('../extensions/third-party/sillytavern-character-colors/src/main.js');
+    const value = resolveDialogueColorsMacro();
+    if (typeof value !== 'string') throw new Error('Dialogue Colors could not prepare its prompt instruction.');
+    return value;
+}
+
+/** The optional page-captured bundled macros that travel with one submission. */
+export async function captureBundledMacros() {
+    return { dialoguecolors: await loadedDialogueColorsMacro() };
 }
 
 /** The one place that turns a generation type into the named workflow the server owns. */
@@ -562,6 +590,8 @@ async function submitRoleplayWorkflowRequest({ name, intent, locator, anchorInde
         key: createKey(name),
         name,
         intent,
+        // An uncertain submission reuses its capture and key, even if the page changed.
+        bundledMacros: await captureBundledMacros(),
         source: { locator },
         anchor: { messageIndex: anchorIndex, chosen },
         messageRevision: messageRevisionAt(anchorIndex),
@@ -609,6 +639,8 @@ export async function submitRoleplayGroupTurn({ groupId, forcedAvatars, generati
     const chatName = String(getCurrentChatId() || '').replace(/\.jsonl$/, '');
     if (!chatName || !groupId) throw new Error('Open a saved group chat before generating.');
     const locator = { chat: chatName, group: true, groupId: String(groupId) };
+    // Captured once, so the settings-proof retry replays the same instruction.
+    const bundledMacros = await captureBundledMacros();
     const stamp = roleplayAccountStamp().account;
     const payload = {
         key: createKey('group.reply'),
@@ -616,6 +648,7 @@ export async function submitRoleplayGroupTurn({ groupId, forcedAvatars, generati
         messageCount: chat.length,
         forcedAvatars,
         generationId,
+        bundledMacros,
         account: stamp,
     };
     const finished = awaitFinished(payload.key);

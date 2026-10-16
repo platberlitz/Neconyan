@@ -7,6 +7,7 @@ export const RUNTIME_GUARD_KEY = '__dialogueColorsRuntime_v1';
 export const runtimeState = {
     initializing: false,
     initialized: false,
+    ready: null,
     contextMenuSetup: false,
     keyboardSetup: false,
     eventsRegistered: false,
