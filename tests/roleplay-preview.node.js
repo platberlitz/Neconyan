@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
-import { createRoleplayStreamPreview, readRoleplayPreview } from '../src/generation/roleplay-preview.js';
+import { acceptJob } from '../src/jobs/store.js';
+import { readArtifact } from '../src/jobs/artifacts.js';
+import { createRoleplayStreamPreview, publishRoleplayPreview, readRoleplayPreview } from '../src/generation/roleplay-preview.js';
 
 test('live counts are bounded, include a paused stream\'s last chunk, and stop with their provider call', t => {
     t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1000 });
@@ -31,4 +36,27 @@ test('live counts are bounded, include a paused stream\'s last chunk, and stop w
     t.mock.timers.tick(500);
     assert.equal(read().text, 'First and last');
     assert.equal(calls, 4);
+});
+
+test('each completed Companion survives reconnect without changing the main reply or another candidate', t => {
+    const directories = { root: fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-preview-progress-')) };
+    t.after(() => fs.rmSync(directories.root, { recursive: true, force: true }));
+    const owner = 'preview-progress';
+    const { job } = acceptJob(directories, { owner, type: 'roleplay.workflow', submissionKey: randomUUID(), intent: { operation: 'roleplay-generate' } });
+    const context = { owner, directories, job: { id: randomUUID(), intent: { request: {
+        characterName: 'Nova', workflowCandidate: { parentJobId: job.id },
+    } } } };
+    publishRoleplayPreview(context, { text: 'Finished reply', gen_finished: '2026-10-16T12:00:00.000Z', stage: 'agents' });
+    const results = { early: { status: 'done', content: 'Ready' }, late: { status: 'pending', content: '' } };
+    publishRoleplayPreview(context, { inChatAgentCompanionResults: results });
+    const persisted = readArtifact(directories, job.id, 'roleplay-preview');
+    assert.deepEqual(persisted.inChatAgentCompanionResults, results);
+    assert.equal(persisted.text, 'Finished reply');
+    assert.equal(persisted.gen_finished, '2026-10-16T12:00:00.000Z');
+    assert.equal(persisted.stage, 'agents', 'Parallel Companions do not claim post-processing has finished');
+    publishRoleplayPreview(context, { stage: 'companions' });
+    assert.deepEqual(readRoleplayPreview({ owner, directories, job }).inChatAgentCompanionResults, results);
+    context.job.id = randomUUID();
+    publishRoleplayPreview(context, { text: 'Next candidate', stage: 'generating' });
+    assert.equal(readRoleplayPreview({ owner, directories, job }).inChatAgentCompanionResults, undefined);
 });

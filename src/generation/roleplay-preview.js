@@ -25,7 +25,7 @@ export function publishRoleplayPreview(context, update) {
     while (previews.size > 128) previews.delete(previews.keys().next().value);
     // Completed model text survives a browser or server reconnect. Token updates
     // stay in memory so a disk flush cannot delay each incoming token.
-    if (update.stage && update.stage !== 'generating') {
+    if ((update.stage && update.stage !== 'generating') || update.inChatAgentCompanionResults) {
         try { writeArtifact(directories, id, 'roleplay-preview', value); } catch { /* A display failure cannot invalidate a paid reply. */ }
     }
     for (const listener of listeners.get(key) ?? []) {

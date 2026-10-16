@@ -15,6 +15,8 @@ const { releaseJob, getJob, updateJob, recoverJobs } = await import('../src/jobs
 const { readArtifact, providerStep } = await import('../src/jobs/artifacts.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
 const { runRoleplayReplyJob } = await import('../src/generation/roleplay-execution.js');
+const { runRoleplayCompanions } = await import('../src/generation/roleplay-companions.js');
+const { savedRoleplayMacroSnapshot } = await import('../src/generation/roleplay-prompt.js');
 const { getRegexScriptRevision } = await import('../public/scripts/extensions/in-chat-agents/regex-snapshot-store.js');
 const { MEMORY_SHARD_TEMPLATE_ID } = await import('../public/scripts/extensions/in-chat-agents/companion/companion-shared.js');
 const { decodeCompatibleImage, managedImageUrl, publishManagedImage } = await import('../src/managed-image-files.js');
@@ -69,6 +71,39 @@ function paid(label, callback) {
         });
     };
 }
+
+test('Companions publish independent progress without letting an observer change paid results', async t => {
+    const f = prepared(t, [companion('early'), companion('late')]);
+    const progress = [];
+    const savedDuringProgress = [];
+    let calls = 0;
+    const generateAgent = paid('notes', ({ messages }) => {
+        calls++;
+        return { text: JSON.stringify(messages).includes('TASK_EARLY') ? 'First note' : 'Last note' };
+    });
+    await f.run({ generateAgent, generate: async options => {
+        const main = await paid('main', 'Main reply')(options);
+        await runRoleplayCompanions(options.jobContext, { base: f.scope, snapshot: f.worldInfo,
+            records: f.records, value: 'Main reply', generationType: 'normal', effect: 'append',
+            assistantName: 'Nova', binding: f.request.binding, generate: generateAgent,
+            macros: savedRoleplayMacroSnapshot(f.worldInfo, f.records),
+            assertCurrent: options.beforeDispatch,
+            onProgress(results) {
+                progress.push(structuredClone(results));
+                savedDuringProgress.push(f.rows().at(-1).mes);
+                if (results.early?.status === 'done') results.early.content = 'Observer changed its copy';
+                throw new Error('A disconnected observer must not interrupt generation');
+            } });
+        return main;
+    } });
+    assert.equal(calls, 2, 'The ordinary completion reuses both acknowledged results');
+    assert.ok(savedDuringProgress.every(text => text !== 'Main reply'), 'Progress has not saved the reply early');
+    assert.equal(progress[0].early.status, 'pending');
+    assert.equal(progress[0].late.status, 'pending');
+    assert.ok(progress.some(results => results.early?.content === 'First note' && results.late?.status === 'pending'));
+    assert.equal(progress.at(-1).late.content, 'Last note');
+    assert.equal(f.rows().at(-1).extra.inChatAgentCompanionResults.early.content, 'First note');
+});
 
 test('companion prompts expand the separate saved secrets macro', async t => {
     const f = prepared(t, [

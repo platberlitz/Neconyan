@@ -187,6 +187,7 @@ describe('companion tracker panel', () => {
         globalThis.document = {
             body: {},
             querySelector: jest.fn(() => null),
+            addEventListener: jest.fn(),
         };
         globalThis.$ = jest.fn(() => ({ length: 0, on: jest.fn(), append: jest.fn(), html: jest.fn(), toggle: jest.fn() }));
     });
@@ -212,6 +213,37 @@ describe('companion tracker panel', () => {
         expect(states[0].history).toHaveLength(7);
         expect(states[0].history[0].messageIndex).toBe(6);
         expect(states[0].history.at(-1).messageIndex).toBe(0);
+    });
+
+    test('shows live notes ahead of saved history without exposing saved-message actions', async () => {
+        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true, companion: { displayMode: 'panel' } }];
+        const saved = { is_user: false, mes: 'Saved reply' };
+        const preview = { is_user: false, mes: 'Live reply', extra: { inChatAgentCompanionResults: {} } };
+        chat.push(saved);
+        companionResultsByMessage.set(saved, { 'tracker-1': { status: 'done', content: 'Previous state' } });
+        companionResultsByMessage.set(preview, { 'tracker-1': { status: 'done', content: 'Ready before the last Companion' } });
+        const panel = await importPanel();
+        panel.initCompanionPanel();
+        const listeners = new Map(globalThis.document.addEventListener.mock.calls);
+        const element = { isConnected: true };
+        listeners.get('neconyan:roleplay-preview-rendered')({ detail: { element, message: preview } });
+
+        const [state] = panel.collectPanelAgentStates();
+        expect(state.latest.preview).toBe(preview);
+        expect(state.latest.result.content).toBe('Ready before the last Companion');
+        expect(state.history[0].result.content).toBe('Previous state');
+        const html = panel.buildPanelHtml();
+        expect(html).toContain('data-roleplay-draft="true"');
+        expect(html).toContain('Ready before the last Companion');
+        expect(html).not.toContain('data-action="panel-edit-note"');
+        expect(html).not.toContain('data-action="panel-regenerate"');
+        expect(html).not.toContain('data-action="panel-run-latest"');
+        expect(chat).toEqual([saved]);
+
+        element.isConnected = false;
+        listeners.get('neconyan:roleplay-preview-removed')({ detail: { element } });
+        expect(panel.collectPanelAgentStates()[0].latest.result.content).toBe('Previous state');
+        expect(panel.buildPanelHtml()).toContain('data-action="panel-edit-note"');
     });
 
     test('shows a model pill on the latest note that follows Short Model Name', async () => {
