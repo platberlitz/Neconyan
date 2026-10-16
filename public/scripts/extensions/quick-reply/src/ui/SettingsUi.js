@@ -5,6 +5,8 @@ import { QuickReply } from '../QuickReply.js';
 import { QuickReplySet } from '../QuickReplySet.js';
 import { getUniqueQuickReplySetsByName, removeQuickReplySetLinksByName } from '../quick-reply-set-list.js';
 import { QuickReplySettings } from '../QuickReplySettings.js';
+import { getUniqueQuickReplySetName } from '../quick-reply-templates.js';
+import { showQuickReplyTemplatePicker } from './quick-reply-helpers.js';
 
 export class SettingsUi {
     /** @type {QuickReplySettings} */ settings;
@@ -245,7 +247,13 @@ export class SettingsUi {
     }
 
 
+    prepareStart() {
+        this.dom.querySelector('#qr--browseTemplates')?.addEventListener('click', async () => this.browseTemplates());
+    }
+
+
     prepareDom() {
+        this.prepareStart();
         this.prepareGeneralSettings();
         this.prepareGlobalSetList();
         this.prepareChatSetList();
@@ -421,6 +429,91 @@ export class SettingsUi {
                 this.prepareCharacterSetList();
             }
         }
+    }
+
+    /** @returns {string[]} */
+    getSetNames() {
+        return getUniqueQuickReplySetsByName(QuickReplySet.list)
+            .map(qrs => qrs.name)
+            .toSorted((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    }
+
+    /**
+     * Adds a brand new set to the shared list and to the editor's set picker, keeping both sorted.
+     * @param {QuickReplySet} qrs
+     */
+    insertNewQrSet(qrs) {
+        const name = qrs.name.toLowerCase();
+        const idx = QuickReplySet.list.findIndex(it => it.name.toLowerCase().localeCompare(name) == 1);
+        if (idx > -1) {
+            QuickReplySet.list.splice(idx, 0, qrs);
+        } else {
+            QuickReplySet.list.push(qrs);
+        }
+        const opt = document.createElement('option'); {
+            opt.value = qrs.name;
+            opt.textContent = qrs.name;
+            opt.setAttribute('translate', 'no');
+            const next = Array.from(this.currentSet.options).find(it => it.value.toLowerCase().localeCompare(name) == 1);
+            if (next) {
+                next.insertAdjacentElement('beforebegin', opt);
+            } else {
+                this.currentSet.append(opt);
+            }
+        }
+    }
+
+    /**
+     * Makes sure a set's buttons appear above the message box: links it to every chat
+     * when it is not linked anywhere yet, and turns quick replies on.
+     * @param {QuickReplySet} qrs
+     */
+    ensureShownOnBar(qrs) {
+        const isLinked = [this.settings.config, this.settings.chatConfig, this.settings.charConfig]
+            .some(config => config?.hasSet(qrs));
+        if (!isLinked) {
+            this.settings.config.addSet(qrs);
+        }
+        if (!this.settings.isEnabled) {
+            this.settings.isEnabled = true;
+            if (this.isEnabled) this.isEnabled.checked = true;
+        }
+        this.settings.save();
+    }
+
+    /**
+     * Shows a set in the editor and refreshes the set lists after a change.
+     * @param {QuickReplySet} qrs
+     */
+    showSetInEditor(qrs) {
+        this.currentSet.value = qrs.name;
+        this.onQrSetChange();
+        this.prepareGlobalSetList();
+        this.prepareChatSetList();
+        this.prepareCharacterSetList();
+    }
+
+    async browseTemplates() {
+        await showQuickReplyTemplatePicker({ onAdd: async (template) => this.addTemplateSet(template) });
+    }
+
+    /**
+     * Creates a new set from a ready-made template and shows it above the message box.
+     * @param {import('../quick-reply-templates.js').QuickReplyTemplate} template
+     * @returns {Promise<QuickReplySet>}
+     */
+    async addTemplateSet(template) {
+        const qrs = new QuickReplySet();
+        qrs.name = getUniqueQuickReplySetName(template.name, this.getSetNames());
+        for (const reply of template.replies) {
+            qrs.addQuickReply({ label: reply.label, icon: reply.icon, showLabel: true, title: reply.title, message: reply.message });
+        }
+        this.insertNewQrSet(qrs);
+        await qrs.save();
+        this.ensureShownOnBar(qrs);
+        this.showSetInEditor(qrs);
+        toastr.success(`Added '${qrs.name}'. Its buttons are now above the message box.`);
+        return qrs;
     }
 
     async importQrSet(/**@type {FileList}*/files) {
