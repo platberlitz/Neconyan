@@ -6362,7 +6362,7 @@ export function formatCharacterAvatar(characterAvatar) {
  * console.log(timerValue); // 1.2s
  * console.log(timerTitle); // Generation queued: 12:34:56 7 Jan 2021\nReply received: 12:34:57 7 Jan 2021\nTime to generate: 1.2 seconds\nToken rate: 5 t/s
  */
-function formatGenerationTimer(gen_started, gen_finished, tokenCount, reasoningDuration = null, timeToFirstToken = null, reasoningTokens = null) {
+export function formatGenerationTimer(gen_started, gen_finished, tokenCount, reasoningDuration = null, timeToFirstToken = null, reasoningTokens = null) {
     if (!gen_started || !gen_finished) {
         return {};
     }

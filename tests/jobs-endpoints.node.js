@@ -196,7 +196,10 @@ test('live reply previews are account-scoped and disconnecting never cancels the
     assert.equal(response.status, 200);
     assert.match(response.headers.get('content-type'), /text\/event-stream/);
     const reader = response.body.getReader();
-    await reader.read();
+    const initialFrame = new TextDecoder().decode((await reader.read()).value).split('\n\n').find(line => line.startsWith('data: '));
+    const initialValue = JSON.parse(initialFrame.slice(6));
+    assert.ok(Number.isFinite(initialValue.serverTime));
+    assert.ok(Math.abs(Date.now() - initialValue.serverTime) < 10000);
     const unsubscribe = subscribeRoleplayPreview('alice', job.id, () => { throw new Error('lost viewer'); });
     assert.doesNotThrow(() => publishRoleplayPreview(context, { stage: 'generating', text: 'First token' }));
     unsubscribe();

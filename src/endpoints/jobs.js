@@ -129,7 +129,8 @@ router.get('/:id/preview', (request, response) => {
             if (response.destroyed || response.writableEnded) return;
             // A slow/disconnected reader must never hold up the generation worker.
             if (response.writableLength > 1024 * 1024) { response.end(); return; }
-            try { response.write(`data: ${JSON.stringify(value)}\n\n`); response.flush?.(); } catch { response.end(); }
+            // The client clock may differ, and the retained preview can be old.
+            try { response.write(`data: ${JSON.stringify({ ...value, serverTime: Date.now() })}\n\n`); response.flush?.(); } catch { response.end(); }
         };
         // Each frame carries the whole reply so far. The Roleplay preview redraws twice a
         // second, so faster frames only cost the reader's data and battery.

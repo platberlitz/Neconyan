@@ -1,4 +1,4 @@
-import { chat as messages, getRequestHeaders, getThumbnailUrl, scrollChatToBottom, updateMessageElement } from '../../script.js';
+import { chat as messages, formatGenerationTimer, getRequestHeaders, getThumbnailUrl, scrollChatToBottom, updateMessageElement } from '../../script.js';
 import { beginRoleplayReplacement } from './roleplay-replacement.js';
 import { withAbortSignal } from '../abort.js';
 
@@ -17,6 +17,8 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     let node = null;
     let latest = null;
     let receivedAt = 0;
+    let serverTime = null;
+    let receivedMonotonic = 0;
     let rendered = null;
     let childId = null;
     let startedAt = null;
@@ -43,7 +45,20 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             restoreReplacement = beginRoleplayReplacement(name, messageIndex, isCurrent);
         }
         const thinking = latest.stage === 'generating' && latest.reasoning && !latest.reasoning_finished;
-        if (node?.isConnected && latest === rendered && !thinking) return;
+        const elapsed = Math.max(0, performance.now() - receivedMonotonic);
+        const now = (serverTime ?? receivedAt) + elapsed;
+        const finishedAt = latest.gen_finished || (['preparing', 'generating'].includes(latest.stage || 'preparing') ? now : serverTime ?? receivedAt);
+        const reasoningDuration = typeof latest.reasoning_duration === 'number'
+            ? latest.reasoning_duration + (thinking ? elapsed : 0) : undefined;
+        if (node?.isConnected && latest === rendered && !thinking) {
+            // A quiet stream still has an elapsed time. Update only the badge,
+            // preserving the message text, selection and display-only colours.
+            const { timerValue, timerTitle } = formatGenerationTimer(latest.gen_started || startedAt, finishedAt,
+                latest.token_count, reasoningDuration, latest.time_to_first_token, latest.reasoning_tokens);
+            const timer = node.querySelector('.mes_timer');
+            if (timer) { timer.textContent = timerValue || ''; timer.title = timerTitle || ''; }
+            return;
+        }
         // Follow the reply while it is written; Agent and Companion output added after
         // that lands below the reader instead of pulling the page down to it.
         const nearBottom = FOLLOWED_STAGES.has(latest.stage || 'preparing')
@@ -51,19 +66,18 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         if (childId !== latest.childId) {
             remove();
             childId = latest.childId;
-            startedAt = new Date(latest.updatedAt || Date.now()).toISOString();
+            startedAt = new Date(latest.updatedAt || serverTime || receivedAt).toISOString();
         }
         const reasoningDetails = node?.querySelector('.mes_reasoning_details');
         const message = { name: latest.name || 'Reply', is_user: false, is_system: false,
-            mes: latest.text || '', send_date: startedAt, gen_started: latest.gen_started || startedAt, gen_finished: latest.gen_finished,
+            mes: latest.text || '', send_date: startedAt, gen_started: latest.gen_started || startedAt, gen_finished: finishedAt,
             original_avatar: latest.avatar,
             force_avatar: latest.avatar ? getThumbnailUrl('avatar', latest.avatar) : undefined,
             extra: { reasoning: latest.reasoning || '', inChatAgents: latest.inChatAgents,
                 inChatAgentCompanionResults: latest.inChatAgentCompanionResults,
                 api: latest.generation?.source, model: latest.generation?.model,
                 token_count: latest.token_count, reasoning_tokens: latest.reasoning_tokens,
-                reasoning_duration: typeof latest.reasoning_duration === 'number'
-                    ? latest.reasoning_duration + (thinking ? Math.max(0, Date.now() - receivedAt) : 0) : undefined,
+                time_to_first_token: latest.time_to_first_token, reasoning_duration: reasoningDuration,
                 ...(reasoningDetails && node.classList.contains('reasoning') ? { reasoning_collapsed: !reasoningDetails.open } : {}) } };
         const replacement = chat.querySelector('[data-roleplay-replacement]');
         const messageElement = updateMessageElement(message, { messageId: replacement ? Number(replacement.dataset.roleplayReplacement) : messages.length, isPreview: true,
@@ -158,6 +172,8 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                             // than rebuilding a growing Markdown message for every token.
                             if (value.preview) {
                                 latest = value.preview; receivedAt = Date.now();
+                                receivedMonotonic = performance.now();
+                                serverTime = Number.isFinite(value.serverTime) ? value.serverTime : null;
                                 if (latest.stage !== diagnosticStage && isCurrent()) {
                                     diagnosticStage = latest.stage;
                                     diagnostic(({ preparing: 'preparing', generating: 'generating', agents: 'post-agents', companions: 'companions', review: 'waiting-review', saving: 'saving' })[diagnosticStage] || 'unknown');
