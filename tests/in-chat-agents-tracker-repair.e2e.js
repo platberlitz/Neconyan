@@ -11,6 +11,11 @@ test.skip(process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1', 'Requires a
 const body = 'route: 🌱 Slow Burn Under Glass\npath: Close > Confidant > Intimate\nheart: He keeps holding hands.\ntrust: He trusts Kris.\nwant: Stay\nguard: Pride\nlikes: Soup\ndislikes: Distance\ntell: His thumb moves.\nunsaid: Stay here.\nmemory: Dinner: They held hands.\ndate: Dinner\nturn: Kris squeezed back.\nnext: Time together';
 const repaired = `[METER|Alhaitham|Confidant|💚 STABLE|🌅 WARMING]\n${body}\n[/METER]`;
 
+function configureTrackerSettings(saved) {
+    saved.extension_settings.connectionManager.profiles[0].model = MODEL;
+    saved.accountStorage = { ...saved.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
+}
+
 function labelBoundsWithinButton(element) {
     const label = element.getBoundingClientRect();
     const button = element.parentElement.getBoundingClientRect();
@@ -32,9 +37,6 @@ async function openTrackerChat(account, chatName, broken, agentOverrides = {}, {
         roleplay: { account: vacancy.account, vacancy: vacancy.vacancy, operationKey: randomUUID() },
     });
     const page = await account.open({ workspace: false });
-    await page.addLocatorHandler(page.locator('#neconyan-tour-coachmark'), async tour => {
-        await tour.locator('[data-tour-coach-skip]').click();
-    });
     // eslint-disable-next-line playwright/no-networkidle -- Inspect only after the disposable preview finishes startup.
     await page.waitForLoadState('networkidle');
     await page.evaluate(async ({ avatar, chatName, agentOverrides, templateName }) => {
@@ -58,7 +60,7 @@ for (const phone of [false, true]) {
         const broken = `${event.replace('[EVENT|', '[EVENT|⚠️ THREAT|')}\n\n${promise}`;
         const fixed = `${event}\n\n${promise}`;
         const account = await app.account({ phone, activeConnection: true,
-            configureSettings: saved => { saved.extension_settings.connectionManager.profiles[0].model = MODEL; } });
+            configureSettings: configureTrackerSettings });
         app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: event } }] };
         const chatName = 'Mixed Event Tracker repair';
         const { page, request } = await openTrackerChat(account, chatName, 'The scene is unchanged.', {
@@ -103,7 +105,7 @@ for (const { phone, kind } of [false, true].flatMap(phone => ['header', 'field o
         const broken = kind === 'header' ? repaired.replace('STABLE|', 'STABLE]')
             : repaired.replace('date: Dinner\nturn: Kris squeezed back.', 'turn: Kris squeezed back.\ndate: Dinner');
         const account = await app.account({ phone, activeConnection: true,
-            configureSettings: saved => { saved.extension_settings.connectionManager.profiles[0].model = MODEL; },
+            configureSettings: configureTrackerSettings,
             contextOptions: { ...(phone ? IPHONE_SAFARI_CONTEXT : {}), reducedMotion: 'no-preference' } });
         if (phone) await installIPhoneSafari(account.context);
         if (kind === 'header') app.provider.mode.hold = MODEL;
@@ -201,8 +203,8 @@ for (const { phone, kind } of [false, true].flatMap(phone => ['header', 'field o
 for (const phone of [false, true]) {
     test(`Fix trackers saves its connections and escapes a stalled primary on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
         const account = await app.account({ phone, activeConnection: true, configureSettings: saved => {
+            configureTrackerSettings(saved);
             const manager = saved.extension_settings.connectionManager;
-            manager.profiles[0].model = MODEL;
             for (const name of ['stalled', 'backup']) manager.profiles.push({ ...manager.profiles[0],
                 id: `repair-${name}`, name: `Repair ${name}`, model: `repair-${name}-model` });
         } });
