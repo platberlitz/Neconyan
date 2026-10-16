@@ -19,9 +19,9 @@ export default [
         content: 'In Dialogue Colors → Settings, Colors saved selects Per chat, Per card or Global. Per chat keeps a table for that chat; Per card reuses its card identity, with a separate group identity; Global shares a table across the account. Scope changes offer copy/start-empty or destination/merge/replace choices. Ordinary changes save to account settings. Per card does not embed colours in an exported card: use Storage & transfer → Save to card explicitly. Enable auto-sync is separate from ordinary server saving and starts off. Wait for save verification; use the shown error if a write fails.',
     },
     {
-        id: 'appearance.dialogue-method', title: 'Dialogue Colors: stored tags versus local display', keys: ['local coloring', 'DOM only', 'LLM coloring', 'colorize', 'verify speakers', 'auto recolor', 'dialogue colors method'],
-        sources: [colors + 'live-colors.js', colors + 'state.js', colors + 'ui.js'], anchors: ['LLM', 'Auto-recolor'],
-        content: 'Dialogue Colors offers LLM colouring and Local (DOM-only). LLM colouring can store font-colour tags in chat; Auto-recolor after changes can rewrite existing saved colour tags. Local colours the displayed page without rewriting message text, though speaker assignments can still be saved as chat metadata. Gradients are local appearance. Colorize and Verify are separate actions from manually changing a swatch; optional attribution verification can call a model even with local colouring. The shipped defaults enable the tool, Per card scope, LLM colouring and automatic recolouring.',
+        id: 'appearance.dialogue-method', title: 'Dialogue Colors: stored tags versus local display', keys: ['local coloring', 'DOM only', 'LLM coloring', 'colorize', 'verify speakers', 'auto recolor', 'dialogue colors method', 'Dialogue Colors appear', 'still being written'],
+        sources: [colors + 'live-colors.js', colors + 'state.js', colors + 'ui.js', colors + 'streaming-paint.js'], anchors: ['LLM', 'Auto-recolor', 'paintPreviewMessage'],
+        content: 'Dialogue Colors offers LLM colouring and Local (DOM-only). LLM colouring can store font-colour tags in chat; Auto-recolor after changes can rewrite existing saved colour tags. Local colours the displayed page without rewriting message text, though speaker assignments can still be saved as chat metadata. Gradients are local appearance. During a server-run reply, a display-only colour pass paints the unfinished draft as its text arrives and never saves partial output or speaker overrides. Colorize and Verify are separate actions from manually changing a swatch; optional attribution verification can call a model even with local colouring. The shipped defaults enable the tool, Per card scope, LLM colouring and automatic recolouring.',
     },
     {
         id: 'appearance.dialogue-palette', title: 'Dialogue palettes, locks, brightness and fonts', keys: ['new color palette', 'regenerate unlocked', 'lock colours', 'keep character colour', 'dialogue brightness', 'highlight dialogue', 'dialogue font'],
@@ -107,6 +107,11 @@ export default [
         id: 'appearance.bottom-bar-size', title: 'Changing the desktop Bottom Bar Size', keys: ['Bottom Bar Size', 'bottom chat bar width', 'composer width', 'bottom bar too wide', 'Page Width bottom bar'],
         sources: ['public/scripts/neconyan-tabs.js', 'public/css/neconyan.css', 'public/css/neconyan-mobile-shell.css'], anchors: ['Bottom Bar Size', 'Resize the bottom chat bar, send form, and action buttons without editing CSS.'],
         content: 'Settings → Appearance → Interface → Bottom Bar Size adjusts the desktop bottom chat bar independently of Page Width. It ranges from 70 to 150 in steps of 5 and saves as an appearance setting. If it is wider than the available space it scrolls sideways; below 300px of form width the composer stacks under its controls. Phones are unchanged.',
+    },
+    {
+        id: 'appearance.compact-input', title: 'Compact Input Area on phones', keys: ['Compact Input Area', 'single row composer', 'message box full width', 'phone composer layout'],
+        sources: [html, 'public/css/neconyan-mobile-shell.css', theme], anchors: ['Compact Input Area'],
+        content: 'On phones, Settings → Appearance → Visual Toggles → Chat layout has Compact Input Area, marked Phones only. On keeps the message box and its controls in one row; off puts a full-width message box above the controls. It applies and saves immediately. It is separate from the whole-interface compact mode and from Bottom Bar Size.',
     },
     {
         id: 'appearance.page-size', title: 'Page Size & Clarity sliders', keys: ['Page Width', 'Page Size', 'Margin Size', 'Line Spacing', 'narrow chat', 'wider chat', 'chat column width', 'sliders not working', 'message padding'],
