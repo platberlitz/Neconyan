@@ -709,14 +709,16 @@ body.sbterm {
    already terminal instead of arriving as themselves. Naming surfaces one at
    a time is what let host chrome leak through in the first place.
    Avatars are excluded: their shape follows the host's avatar setting.
+   Checkboxes and radios are excluded too: the host draws both as round
+   dot buttons, and flattening them left square dots in square boxes.
    Focus rings are drawn with outline, not box-shadow, so they survive.
    The leading `html` is load-bearing: the Paper theme rounds with
    `button:not(.a):not(.b) { border-radius: 14px !important }`, which ties this
    selector's specificity exactly and then wins on source order — leaving
    rounded composer chrome that also clipped the corners off its own icons. */
-html body.sbterm *:not([class*='avatar' i], [id*='avatar' i]),
-html body.sbterm *:not([class*='avatar' i], [id*='avatar' i])::before,
-html body.sbterm *:not([class*='avatar' i], [id*='avatar' i])::after {
+html body.sbterm *:not([class*='avatar' i], [id*='avatar' i], input[type='checkbox'], input[type='radio']),
+html body.sbterm *:not([class*='avatar' i], [id*='avatar' i], input[type='checkbox'], input[type='radio'])::before,
+html body.sbterm *:not([class*='avatar' i], [id*='avatar' i], input[type='checkbox'], input[type='radio'])::after {
     border-radius: 0 !important;
     box-shadow: none !important;
     text-shadow: none !important;
