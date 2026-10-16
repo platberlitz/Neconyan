@@ -49,7 +49,7 @@ export const NECONYAN_NATIVE_EXTENSIONS = Object.freeze([
     {
         directory: 'Neconyan-Terminal-UI',
         displayName: 'Termeownal UI',
-        version: '2.4.0',
+        version: '2.5.0',
         entry: 'index.js',
         style: 'style.css',
         sourceUrl: 'https://github.com/SillyBunnyTeam/SillyBunny-Terminal-UI',

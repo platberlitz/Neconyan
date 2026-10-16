@@ -1,8 +1,8 @@
 {
     "display_name": "Termeownal UI",
     "author": "platberlitz",
-    "version": "2.4.0",
-    "description": "Neconyan's command-first interface with a theme-aware pixel kitty, native navigation, slash autocomplete, live status, 37 palettes and touch-friendly controls.",
+    "version": "2.5.0",
+    "description": "Neconyan's command-first interface with a theme-aware pixel kitty, native navigation, slash autocomplete, live status, 45 palettes and touch-friendly controls.",
     "requires": [],
     "optional": [],
     "dependencies": [],

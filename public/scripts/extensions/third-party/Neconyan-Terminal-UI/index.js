@@ -50,6 +50,14 @@ const PALETTES = [
     ['construction-paper', 'Construction Paper'],
     ['midnight-kawaii', 'Midnight Kawaii'],
     ['night-orchid', 'Night Orchid'],
+    ['catppuccin-mocha', 'Catppuccin Mocha'],
+    ['tokyo-night', 'Tokyo Night'],
+    ['rose-pine', 'Rosé Pine'],
+    ['monokai', 'Monokai'],
+    ['commodore-64', 'Commodore 64'],
+    ['tuxedo-cat', 'Tuxedo Cat'],
+    ['solarized-light', 'Solarized Light'],
+    ['sakura-latte', 'Sakura Latte'],
     ['inherit', 'Inherit Active Theme'],
 ];
 
