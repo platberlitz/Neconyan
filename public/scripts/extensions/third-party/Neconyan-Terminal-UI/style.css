@@ -527,6 +527,118 @@ body.sbterm[data-sbterm-palette='night-orchid'] {
     --sbterm-glow: rgba(229, 169, 228, 0.14);
 }
 
+body.sbterm[data-sbterm-palette='catppuccin-mocha'] {
+    --sbterm-bg: #1e1e2e;
+    --sbterm-bg-alt: #28283b;
+    --sbterm-fg: #cdd6f4;
+    --sbterm-fg-dim: #a6adc8;
+    --sbterm-accent: #cba6f7;
+    --sbterm-accent2: #89dceb;
+    --sbterm-ok: #a6e3a1;
+    --sbterm-warn: #f9e2af;
+    --sbterm-err: #f38ba8;
+    --sbterm-border: #6c7086;
+    --sbterm-glow: rgba(203, 166, 247, 0.16);
+}
+
+body.sbterm[data-sbterm-palette='tokyo-night'] {
+    --sbterm-bg: #1a1b26;
+    --sbterm-bg-alt: #24283b;
+    --sbterm-fg: #c0caf5;
+    --sbterm-fg-dim: #9aa5ce;
+    --sbterm-accent: #7aa2f7;
+    --sbterm-accent2: #bb9af7;
+    --sbterm-ok: #9ece6a;
+    --sbterm-warn: #e0af68;
+    --sbterm-err: #f7768e;
+    --sbterm-border: #6b74a3;
+    --sbterm-glow: rgba(122, 162, 247, 0.16);
+}
+
+body.sbterm[data-sbterm-palette='rose-pine'] {
+    --sbterm-bg: #191724;
+    --sbterm-bg-alt: #1f1d2e;
+    --sbterm-fg: #e0def4;
+    --sbterm-fg-dim: #908caa;
+    --sbterm-accent: #ebbcba;
+    --sbterm-accent2: #c4a7e7;
+    --sbterm-ok: #9ccfd8;
+    --sbterm-warn: #f6c177;
+    --sbterm-err: #eb6f92;
+    --sbterm-border: #6e6a86;
+    --sbterm-glow: rgba(235, 188, 186, 0.14);
+}
+
+body.sbterm[data-sbterm-palette='monokai'] {
+    --sbterm-bg: #272822;
+    --sbterm-bg-alt: #33342c;
+    --sbterm-fg: #f8f8f2;
+    --sbterm-fg-dim: #b3ad93;
+    --sbterm-accent: #a6e22e;
+    --sbterm-accent2: #66d9ef;
+    --sbterm-ok: #a6e22e;
+    --sbterm-warn: #e6db74;
+    --sbterm-err: #ff6fa2;
+    --sbterm-border: #75715e;
+    --sbterm-glow: rgba(166, 226, 46, 0.14);
+}
+
+body.sbterm[data-sbterm-palette='commodore-64'] {
+    --sbterm-bg: #2a216b;
+    --sbterm-bg-alt: #352879;
+    --sbterm-fg: #c9c3ff;
+    --sbterm-fg-dim: #a39bf0;
+    --sbterm-accent: #a8a0ff;
+    --sbterm-accent2: #8fd3e0;
+    --sbterm-ok: #9ad284;
+    --sbterm-warn: #edf171;
+    --sbterm-err: #ff9a8f;
+    --sbterm-border: #7a6cd0;
+    --sbterm-glow: rgba(168, 160, 255, 0.18);
+}
+
+body.sbterm[data-sbterm-palette='tuxedo-cat'] {
+    --sbterm-bg: #0b0b0d;
+    --sbterm-bg-alt: #17171b;
+    --sbterm-fg: #f4f4f6;
+    --sbterm-fg-dim: #a3a3ad;
+    --sbterm-accent: #ff9ec4;
+    --sbterm-accent2: #d9d9e0;
+    --sbterm-ok: #b9f0c8;
+    --sbterm-warn: #ffe39a;
+    --sbterm-err: #ff7a8a;
+    --sbterm-border: #63636d;
+    --sbterm-glow: rgba(255, 158, 196, 0.14);
+}
+
+body.sbterm[data-sbterm-palette='solarized-light'] {
+    --sbterm-bg: #fdf6e3;
+    --sbterm-bg-alt: #eee8d5;
+    --sbterm-fg: #2c4a52;
+    --sbterm-fg-dim: #56696f;
+    --sbterm-accent: #1c679e;
+    --sbterm-accent2: #16736c;
+    --sbterm-ok: #5a6900;
+    --sbterm-warn: #8a5f00;
+    --sbterm-err: #b52a27;
+    --sbterm-border: #788a8c;
+    --sbterm-glow: transparent;
+}
+
+body.sbterm[data-sbterm-palette='sakura-latte'] {
+    --sbterm-bg: #fff4f6;
+    --sbterm-bg-alt: #fbe4ea;
+    --sbterm-fg: #45293a;
+    --sbterm-fg-dim: #7d5868;
+    --sbterm-accent: #b03a66;
+    --sbterm-accent2: #2a6c63;
+    --sbterm-ok: #36703f;
+    --sbterm-warn: #8a5800;
+    --sbterm-err: #b3302a;
+    --sbterm-border: #b07590;
+    --sbterm-glow: transparent;
+}
+
 /* Inherit: tokens follow the active host theme; host vars are never
    remapped in this mode (see §2 guard), which avoids a var() cycle. */
 body.sbterm[data-sbterm-palette='inherit'] {
@@ -548,7 +660,7 @@ html:root body.neconyan.sbterm {
     color-scheme: dark;
 }
 
-html:root body.neconyan.sbterm:is([data-sbterm-palette='gameboy-dmg'], [data-sbterm-palette='chrome-98'], [data-sbterm-palette='paper-tape'], [data-sbterm-palette='biometric-lab'], [data-sbterm-palette='newsprint']),
+html:root body.neconyan.sbterm:is([data-sbterm-palette='gameboy-dmg'], [data-sbterm-palette='chrome-98'], [data-sbterm-palette='paper-tape'], [data-sbterm-palette='biometric-lab'], [data-sbterm-palette='newsprint'], [data-sbterm-palette='solarized-light'], [data-sbterm-palette='sakura-latte']),
 html:root[data-sb-surface-tone='light'] body.neconyan.sbterm[data-sbterm-palette='inherit'] {
     color-scheme: light;
 }
@@ -754,7 +866,7 @@ body.sbterm.sbterm-avatar-tinted {
    dark source art: lifting the range before the blend is what keeps a dark
    picture legible here, and 1.55/0.7 is the point where dark art reads without
    bright art washing flat. Same set as the §1 color-scheme split. */
-body.sbterm.sbterm-avatar-tinted:is([data-sbterm-palette='gameboy-dmg'], [data-sbterm-palette='chrome-98'], [data-sbterm-palette='paper-tape'], [data-sbterm-palette='biometric-lab'], [data-sbterm-palette='newsprint']) {
+body.sbterm.sbterm-avatar-tinted:is([data-sbterm-palette='gameboy-dmg'], [data-sbterm-palette='chrome-98'], [data-sbterm-palette='paper-tape'], [data-sbterm-palette='biometric-lab'], [data-sbterm-palette='newsprint'], [data-sbterm-palette='solarized-light'], [data-sbterm-palette='sakura-latte']) {
     --sbterm-avatar-tone: var(--sbterm-bg);
     --sbterm-avatar-filter: grayscale(1) brightness(1.55) contrast(0.7);
     --sbterm-avatar-lift: 0.34;

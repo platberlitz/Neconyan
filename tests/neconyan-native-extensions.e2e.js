@@ -1055,7 +1055,7 @@ for (const width of [393, 1280]) {
                     await page.locator('#sb-hamburger').tap();
                 }
                 const paletteIds = await page.locator('#sbterm-palette option').evaluateAll(options => options.map(option => option.value));
-                expect(paletteIds).toHaveLength(37);
+                expect(paletteIds).toHaveLength(45);
                 for (const palette of paletteIds) {
                     await command(`palette ${palette}`);
                     const colours = await page.evaluate(() => {
@@ -1074,7 +1074,7 @@ for (const width of [393, 1280]) {
                     });
                     expect(colours.ink).toBe(colours.terminal);
                     expect(colours.marking).toBe(colours.accent);
-                    if (palette === 'paper-tape') expect(colours.scheme).toBe('light');
+                    if (['paper-tape', 'solarized-light', 'sakura-latte'].includes(palette)) expect(colours.scheme).toBe('light');
                 }
                 await command('palette inherit');
                 await page.evaluate(() => window.toastr.clear());
