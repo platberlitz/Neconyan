@@ -262,6 +262,8 @@ export class QuickReply {
                             lbl.classList.add('qr--set-itemLabel');
                             lbl.classList.add('text_pole');
                             lbl.value = this.label;
+                            lbl.placeholder = 'Button label';
+                            lbl.setAttribute('aria-label', 'Button label');
                             lbl.addEventListener('input', () => this.updateLabel(lbl.value));
                             lblContainer.append(lbl);
                         }
@@ -277,7 +279,8 @@ export class QuickReply {
                         opt.classList.add('fa-fw');
                         opt.classList.add('fa-solid');
                         opt.textContent = '⁝';
-                        opt.title = 'Additional options:\n - large editor\n - context menu\n - auto-execution\n - tooltip';
+                        opt.title = 'More options:\n - large editor\n - context menu\n - auto-execution\n - tooltip';
+                        opt.setAttribute('aria-label', 'More options');
                         opt.addEventListener('click', () => this.showEditor());
                         optContainer.append(opt);
                     }
@@ -288,6 +291,8 @@ export class QuickReply {
                     mes.id = `qr--set--item${this.id}`;
                     mes.classList.add('qr--set-itemMessage');
                     mes.value = this.message;
+                    mes.placeholder = 'What it sends, or a /command to run';
+                    mes.setAttribute('aria-label', 'What the button sends or runs');
                     //HACK need to use jQuery to catch the triggered event from the expanded editor
                     $(mes).on('input', () => this.updateMessage(mes.value));
                     itemContent.append(mes);

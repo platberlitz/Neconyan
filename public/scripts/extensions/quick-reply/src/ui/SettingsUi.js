@@ -96,7 +96,8 @@ export class SettingsUi {
             this.settings.chatConfig.renderSettingsInto(clone);
         } else {
             const info = document.createElement('div'); {
-                info.textContent = 'No active chat.';
+                info.className = 'qr--empty';
+                info.textContent = 'Open a chat to add sets that only show in it.';
                 // @ts-ignore
                 clone.append(info);
             }
@@ -111,7 +112,8 @@ export class SettingsUi {
             const setListContainer = /** @type {HTMLElement} */ (clone.querySelector('.qr--setList'));
             setListContainer.innerHTML = '';
             const info = document.createElement('div');
-            info.textContent = 'No character is currently loaded.';
+            info.className = 'qr--empty';
+            info.textContent = 'Open a character chat to add sets just for them.';
             setListContainer.append(info);
         } else {
             // Let the config object handle its own rendering. It will render an empty list if there are no sets,
