@@ -7,6 +7,10 @@
 - If an Agent fails or the saved chat changes after the model finishes, **Recovered reply** keeps a readable copy beside the chat, with **Copy reply**, **Download reply** and **Dismiss**. It survives reopening and server restarts, including completed previews saved by the previous version, without overwriting your edits or paying for the reply again. Download a copy to keep it permanently; clearing job history or its storage limit can remove old copies.
 - Finished Agent additions and sequential rewrites now appear while the remaining Agents work. Parallel rewrite alternatives still wait for their combined result. Refreshed the official handbook and assistant help to explain live progress, Stop and recovered replies.
 
+### Merged Staging PRs
+- PR #198 (2026-10-16) `fix(roleplay): preserve replies and restore live agent progress`
+
+
 ## v1.3.4
 
 ### Highlights
