@@ -45,6 +45,7 @@ await jest.unstable_mockModule('../public/scripts/extensions/quick-reply/src/Qui
 }));
 
 const { SettingsUi } = await import('../public/scripts/extensions/quick-reply/src/ui/SettingsUi.js');
+const { QuickReplySet } = await import('../public/scripts/extensions/quick-reply/src/QuickReplySet.js');
 
 function createLink(name) {
     return { set: { name } };
@@ -124,5 +125,32 @@ describe('Quick Reply settings deletion', () => {
         expect(settings.chatConfig.setList).toEqual([createLink('Memory Sharding'), createLink('Chat Other')]);
         expect(settings.charConfig.setList).toEqual([createLink('Memory Sharding'), createLink('Character Other')]);
         expect(settings.save).not.toHaveBeenCalled();
+    });
+});
+
+describe('Quick Reply builder set guards', () => {
+    function createGuardedSet(name, options) {
+        return { name, disableSend: false, injectInput: false, addQuickReply: jest.fn(), save: jest.fn(), ...options };
+    }
+
+    test.each([
+        ['disableSend', 'only puts text in the message box'],
+        ['injectInput', 'adds what you typed to every button'],
+    ])('refuses command-style buttons in a set with %s on', async (option, warning) => {
+        const qrs = createGuardedSet(`Guarded ${option}`, { [option]: true });
+        QuickReplySet.list.push(qrs);
+        global.toastr = { warning: jest.fn(), success: jest.fn() };
+        try {
+            const ui = new SettingsUi({});
+            for (const mode of ['box', 'direct', 'ask', 'command']) {
+                await expect(ui.addBuiltQuickReply({ label: 'Go', mode, text: 'x', setName: qrs.name })).resolves.toBe(false);
+            }
+            expect(qrs.addQuickReply).not.toHaveBeenCalled();
+            expect(global.toastr.warning).toHaveBeenCalledTimes(4);
+            expect(global.toastr.warning.mock.calls[0][0]).toContain(warning);
+        } finally {
+            QuickReplySet.list.splice(QuickReplySet.list.indexOf(qrs), 1);
+            delete global.toastr;
+        }
     });
 });

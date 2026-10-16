@@ -226,7 +226,14 @@ export function createQuickReplyTemplatePickerDom({ onAdd }) {
         addButton.addEventListener('click', async () => {
             if (addButton.hasAttribute('disabled')) return;
             addButton.setAttribute('disabled', '');
-            const result = await onAdd(template);
+            let result;
+            try {
+                result = await onAdd(template);
+            } catch (error) {
+                console.error('[Quick Reply] Could not add a ready-made set', error);
+                toastr.error(`Could not add '${template.name}'. Try again.`);
+                result = false;
+            }
             if (result === false) {
                 addButton.removeAttribute('disabled');
                 return;
