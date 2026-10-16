@@ -5,48 +5,47 @@
 			<div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
 		</div>
 		<div class="inline-drawer-content">
-			<label class="flex-container">
-				<input type="checkbox" id="qr--isEnabled"><span data-i18n="Enable Quick Replies">Enable Quick Replies</span>
+			<p class="qr--intro" data-i18n="Quick replies are buttons above the message box. One tap sends a saved message, steers the next reply or runs a command.">Quick replies are buttons above the message box. One tap sends a saved message, steers the next reply or runs a command.</p>
+			<label class="flex-container qr--toggle">
+				<input type="checkbox" id="qr--isEnabled"><span data-i18n="Show quick reply buttons">Show quick reply buttons</span>
 			</label>
-			<label class="flex-container">
-				<input type="checkbox" id="qr--isCombined"><span data-i18n="Combine Quick Replies">Combine Quick Replies</span>
-			</label>
-            <label class="flex-container">
-                <input type="checkbox" id="qr--showPopoutButton"><span data-i18n="Show Popout Button">Show Popout Button (on Desktop)</span>
-            </label>
+			<details class="qr--displayOptions">
+				<summary data-i18n="Display options">Display options</summary>
+				<label class="flex-container">
+					<input type="checkbox" id="qr--isCombined"><span data-i18n="Show all sets in one row">Show all sets in one row</span>
+				</label>
+				<label class="flex-container">
+					<input type="checkbox" id="qr--showPopoutButton"><span data-i18n="Show a pop-out button (desktop)">Show a pop-out button (desktop)</span>
+				</label>
+			</details>
 
 			<hr>
 
 			<div id="qr--global">
 				<div class="qr--head">
-					<div class="qr--title" data-i18n="Global Quick Reply Sets">Global Quick Reply Sets</div>
+					<div class="qr--title" data-i18n="Shown in every chat">Shown in every chat</div>
 					<div class="qr--actions">
-						<div class="qr--setListAdd menu_button menu_button_icon fa-solid fa-plus" id="qr--global-setListAdd" title="Add quick reply set"></div>
+						<button type="button" class="qr--setListAdd menu_button menu_button_icon" id="qr--global-setListAdd" title="Add a set that shows in every chat"><i class="fa-solid fa-plus" aria-hidden="true"></i><span data-i18n="Add set">Add set</span></button>
 					</div>
 				</div>
 				<div id="qr--global-setList" class="qr--setList"></div>
 			</div>
 
-			<hr>
-
 			<div id="qr--chat">
 				<div class="qr--head">
-					<div class="qr--title" data-i18n="Chat Quick Reply Sets">Chat Quick Reply Sets</div>
+					<div class="qr--title" data-i18n="Only in this chat">Only in this chat</div>
 					<div class="qr--actions">
-						<div class="qr--setListAdd menu_button menu_button_icon fa-solid fa-plus" id="qr--chat-setListAdd" title="Add quick reply set"></div>
+						<button type="button" class="qr--setListAdd menu_button menu_button_icon" id="qr--chat-setListAdd" title="Add a set that only shows in this chat"><i class="fa-solid fa-plus" aria-hidden="true"></i><span data-i18n="Add set">Add set</span></button>
 					</div>
 				</div>
 				<div id="qr--chat-setList" class="qr--setList"></div>
 			</div>
 
-			<hr>
-
 			<div id="qr--character">
 				<div class="qr--head">
-					<div class="qr--title" data-i18n="Character Quick Reply Sets">Character Quick Reply Sets</div>
-					<small data-i18n="(Private)">(Private)</small>
+					<div class="qr--title"><span data-i18n="Only with this character">Only with this character</span> <small class="qr--note" data-i18n="Kept in your settings, not in the character card.">Kept in your settings, not in the character card.</small></div>
 					<div class="qr--actions">
-						<div class="qr--setListAdd menu_button menu_button_icon fa-solid fa-plus" id="qr--character-setListAdd" title="Add quick reply set"></div>
+						<button type="button" class="qr--setListAdd menu_button menu_button_icon" id="qr--character-setListAdd" title="Add a set that only shows with this character"><i class="fa-solid fa-plus" aria-hidden="true"></i><span data-i18n="Add set">Add set</span></button>
 					</div>
 				</div>
 				<div id="qr--character-setList" class="qr--setList"></div>
@@ -56,42 +55,45 @@
 
 			<div id="qr--editor">
 				<div class="qr--head">
-					<div class="qr--title" data-i18n="Edit Quick Replies">Edit Quick Replies</div>
+					<div class="qr--title" data-i18n="Edit a set">Edit a set</div>
 					<div class="qr--actions">
-						<select id="qr--set" class="text_pole"></select>
-						<div class="qr--add menu_button menu_button_icon fa-solid fa-pencil" id="qr--set-rename" title="Rename quick reply set"></div>
-						<div class="qr--add menu_button menu_button_icon fa-solid fa-plus" id="qr--set-new" title="Create new quick reply set"></div>
-						<div class="qr--add menu_button menu_button_icon fa-solid fa-file-import" id="qr--set-import" title="Import quick reply set"></div>
+						<select id="qr--set" class="text_pole" aria-label="Set to edit" title="Set to edit"></select>
+						<div class="qr--add menu_button menu_button_icon fa-solid fa-pencil" id="qr--set-rename" title="Rename this set" aria-label="Rename this set"></div>
+						<div class="qr--add menu_button menu_button_icon fa-solid fa-plus" id="qr--set-new" title="New empty set" aria-label="New empty set"></div>
+						<div class="qr--add menu_button menu_button_icon fa-solid fa-file-import" id="qr--set-import" title="Import a set from a file" aria-label="Import a set from a file"></div>
 						<input type="file" id="qr--set-importFile" accept=".json" hidden>
-						<div class="qr--add menu_button menu_button_icon fa-solid fa-file-export" id="qr--set-export" title="Export quick reply set"></div>
-                        <div class="qr-add menu_button menu_button_icon fa-solid fa-paste" id="qr--set-duplicate" title="Duplicate quick reply set"></div>
-						<div class="qr--del menu_button menu_button_icon fa-solid fa-trash redWarningBG" id="qr--set-delete" title="Delete quick reply set"></div>
+						<div class="qr--add menu_button menu_button_icon fa-solid fa-file-export" id="qr--set-export" title="Export this set to a file" aria-label="Export this set to a file"></div>
+						<div class="qr--add menu_button menu_button_icon fa-solid fa-clone" id="qr--set-duplicate" title="Make a copy of this set" aria-label="Make a copy of this set"></div>
+						<div class="qr--del menu_button menu_button_icon fa-solid fa-trash redWarningBG" id="qr--set-delete" title="Delete this set" aria-label="Delete this set"></div>
 					</div>
 				</div>
-				<div id="qr--set-settings">
-					<label class="flex-container">
-						<input type="checkbox" id="qr--disableSend"> <span data-i18n="Disable Send (Insert Into Input Field)">Disable send (insert into input field)</span>
-					</label>
-					<label class="flex-container">
-						<input type="checkbox" id="qr--placeBeforeInput"> <span data-i18n="Place Quick Reply Before Input">Place quick reply before input</span>
-					</label>
-					<label class="flex-container" id="qr--injectInputContainer">
-						<input type="checkbox" id="qr--injectInput"> <span><span data-i18n="Inject user input automatically">Inject user input automatically</span> <small><span data-i18n="(if disabled, use ">(if disabled, use</span><code>{{input}}</code> <span data-i18n="macro for manual injection)">macro for manual injection)</span></small></span>
-					</label>
-					<div class="flex-container alignItemsCenter">
-						<toolcool-color-picker id="qr--color"></toolcool-color-picker>
-						<div class="menu_button" id="qr--colorClear">Clear</div>
-						<span data-i18n="Color">Color</span>
+				<details class="qr--setOptions">
+					<summary data-i18n="Set options">Set options</summary>
+					<div id="qr--set-settings">
+						<label class="flex-container">
+							<input type="checkbox" id="qr--disableSend"> <span data-i18n="Put replies in the message box instead of sending">Put replies in the message box instead of sending</span>
+						</label>
+						<label class="flex-container">
+							<input type="checkbox" id="qr--placeBeforeInput"> <span data-i18n="Put the reply before what I typed">Put the reply before what I typed</span>
+						</label>
+						<label class="flex-container" id="qr--injectInputContainer">
+							<input type="checkbox" id="qr--injectInput"> <span><span data-i18n="Add what I typed automatically">Add what I typed automatically</span> <small><span data-i18n="(otherwise use">(otherwise use</span> <code>{{input}}</code><span>)</span></small></span>
+						</label>
+						<div class="flex-container alignItemsCenter">
+							<toolcool-color-picker id="qr--color"></toolcool-color-picker>
+							<div class="menu_button" id="qr--colorClear" data-i18n="Clear">Clear</div>
+							<span data-i18n="Button colour">Button colour</span>
+						</div>
+						<label class="flex-container" id="qr--onlyBorderColorContainer">
+							<input type="checkbox" id="qr--onlyBorderColor"> <span data-i18n="Use the colour only as an outline">Use the colour only as an outline</span>
+						</label>
 					</div>
-					<label class="flex-container" id="qr--onlyBorderColorContainer">
-						<input type="checkbox" id="qr--onlyBorderColor"> <span data-i18n="Only apply color as accent">Only apply color as accent</span>
-					</label>
-				</div>
+				</details>
 				<div id="qr--set-qrList" class="qr--qrList"></div>
 				<div class="qr--set-qrListActions">
-					<div class="qr--add menu_button menu_button_icon fa-solid fa-plus" id="qr--set-add" title="Add quick reply"></div>
-					<div class="qr--paste menu_button menu_button_icon fa-solid fa-paste" id="qr--set-paste" title="Paste quick reply from clipboard"></div>
-					<div class="qr--import menu_button menu_button_icon fa-solid fa-file-import" id="qr--set-importQr" title="Import quick reply from file"></div>
+					<button type="button" class="qr--add menu_button menu_button_icon qr--set-addButton" id="qr--set-add" title="Make a new quick reply in this set"><i class="fa-solid fa-plus" aria-hidden="true"></i><span data-i18n="Add quick reply">Add quick reply</span></button>
+					<div class="qr--paste menu_button menu_button_icon fa-solid fa-paste" id="qr--set-paste" title="Paste a quick reply you copied" aria-label="Paste a quick reply you copied"></div>
+					<div class="qr--import menu_button menu_button_icon fa-solid fa-file-import" id="qr--set-importQr" title="Import a quick reply from a file" aria-label="Import a quick reply from a file"></div>
 				</div>
 			</div>
 		</div>

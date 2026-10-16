@@ -337,6 +337,74 @@
   justify-content: center;
   padding-bottom: 0.5em;
 }
+#qr--settings .qr--intro {
+  margin: 0 0 12px;
+  color: var(--neco-muted, inherit);
+  line-height: 1.45;
+}
+#qr--settings .qr--head .qr--setListAdd,
+#qr--settings .qr--set-qrListActions > .qr--set-addButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: max-content;
+  margin: 0;
+  white-space: nowrap;
+}
+#qr--settings .qr--displayOptions,
+#qr--settings .qr--setOptions {
+  margin: 8px 0;
+}
+#qr--settings .qr--displayOptions > summary,
+#qr--settings .qr--setOptions > summary {
+  width: max-content;
+  cursor: pointer;
+  color: var(--neco-muted, inherit);
+  padding: 4px 0;
+}
+#qr--settings .qr--displayOptions[open] > summary,
+#qr--settings .qr--setOptions[open] > summary {
+  color: inherit;
+  margin-bottom: 6px;
+}
+#qr--settings .qr--setOptions > #qr--set-settings {
+  padding: 12px;
+  border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+  border-radius: 8px;
+  background: var(--neco-raised, transparent);
+}
+#qr--settings #qr--global,
+#qr--settings #qr--chat,
+#qr--settings #qr--character {
+  margin-bottom: 12px;
+}
+#qr--settings #qr--global > .qr--head,
+#qr--settings #qr--chat > .qr--head,
+#qr--settings #qr--character > .qr--head {
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+#qr--settings .qr--head .qr--note {
+  display: block;
+  font-weight: normal;
+  color: var(--neco-muted, inherit);
+}
+#qr--settings .qr--empty {
+  padding: 4px 0;
+  color: var(--neco-muted, inherit);
+  font-size: 0.92em;
+}
+#qr--settings .qr--set-qrListActions > .qr--set-addButton {
+  padding: 0 12px;
+}
+@media screen and (max-width: 600px) {
+  #qr--settings .qr--displayOptions > summary,
+  #qr--settings .qr--setOptions > summary {
+    padding: 12px 0;
+  }
+}
 
 @media screen and (max-width: 600px) {
   #qr--settings #qr--editor > .qr--head {
@@ -435,7 +503,7 @@
   }
 
   #qr--settings #qr--set-qrList .qr--set-qrListContents > .qr--set-item .qr--content .qr--action,
-  #qr--settings .qr--set-qrListActions > .menu_button {
+  #qr--settings .qr--set-qrListActions > .menu_button:not(.qr--set-addButton) {
     flex: 0 0 38px;
     width: 38px;
     min-width: 38px;
