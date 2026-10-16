@@ -58,6 +58,8 @@ for (const phone of [false, true]) {
         await page.locator('#themes').evaluate(el => window.jQuery(el).val('Neconyan Calico').trigger('change'));
         await expect(page.locator('#bg1')).toHaveCSS('visibility', 'visible');
         expect(await page.evaluate(() => getComputedStyle(document.body, '::before').display)).not.toBe('none');
+        // The theme save is debounced; closing first leaves AMOLED Black on the shared server for later tests.
+        expect(await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }))).toBe(true);
         await context.close();
     });
 }
