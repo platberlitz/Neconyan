@@ -149,7 +149,17 @@ test('preview updates preserve gradients, exclusions and display-only state', as
         const savedState = await page.evaluate(async extension => {
             const core = await import('/script.js');
             const state = await import(`${extension}/state.js`);
-            return { before: JSON.parse(window.savedPreviewState), after: { chat: core.chat, colours: state.characterColors, metadata: core.chat_metadata } };
+            // A background world-info pass after the chat opens may add empty timed-effect slots.
+            const settled = value => {
+                const copy = JSON.parse(JSON.stringify(value));
+                const timed = copy.metadata?.timedWorldInfo;
+                if (timed && Object.values(timed).every(slot => slot && !Object.keys(slot).length)) delete copy.metadata.timedWorldInfo;
+                return copy;
+            };
+            return {
+                before: settled(JSON.parse(window.savedPreviewState)),
+                after: settled({ chat: core.chat, colours: state.characterColors, metadata: core.chat_metadata }),
+            };
         }, extension);
         expect(savedState.after).toEqual(savedState.before);
         expect(app.provider.calls).toHaveLength(0);
