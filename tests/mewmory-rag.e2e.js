@@ -56,7 +56,6 @@ for (const phone of [false, true]) {
         await workspace.locator('#mewmory-role-embedding').click();
         await workspace.getByLabel('Enable this role', { exact: true }).check();
         await workspace.getByLabel('Embedding connection', { exact: true }).selectOption('native');
-        await workspace.getByRole('button', { name: 'Save configuration', exact: true }).click();
         await expect(workspace.locator('#mewmory-settings-status')).toHaveText('Configuration saved.');
         await expect(workspace.getByLabel('Query prefix, optional', { exact: true })).toHaveValue('query: ');
         await expect(workspace.getByLabel('Document prefix, optional', { exact: true })).toHaveValue('passage: \n ');
