@@ -101,7 +101,6 @@ async function installFailClosedRoutes(page, { light = false, delayLogs = false,
     });
 
     let logsRequests = 0;
-    let statusRequests = 0;
     let failNextStatus = false;
     await page.route('**/api/server-admin/**', async route => {
         const endpoint = new URL(route.request().url()).pathname;
@@ -115,8 +114,9 @@ async function installFailClosedRoutes(page, { light = false, delayLogs = false,
                 await route.fulfill({ status: 403, json: { error: 'Automatic update checks are disabled in this fixture.' } });
                 return;
             }
-            statusRequests++;
-            if ((serverMode === 'retry' && failNextStatus) || (serverMode === 'initial-503' && statusRequests === 1)) {
+            // Keep the initial failure until the explicit retry, even if a background check arrives late.
+            const initialFailure = serverMode === 'initial-503' && route.request().postDataJSON()?.forceRefresh !== true;
+            if ((serverMode === 'retry' && failNextStatus) || initialFailure) {
                 failNextStatus = false;
                 await route.fulfill({ status: 503, json: { error: 'Server status is temporarily unavailable.' } });
                 return;
