@@ -31,6 +31,7 @@ for (const width of [393, 1280]) {
             const chosen = () => page.evaluate(async () => (await import('/scripts/openai.js')).oai_settings.custom_model);
             await expect(results.locator('.nn-model-list-option')).toHaveCount(4);
             // Models are grouped by the family in their name, with no hardcoded list.
+            await expect(results.locator('.nn-model-list-group')).toHaveText(['Atlas', 'Aurora']);
             await search.fill('  AURORA reasoning ');
             await expect(results.locator('.nn-model-list-option')).toHaveCount(1);
             await expect(results.locator('.nn-model-list-option')).toContainText('aurora-think');

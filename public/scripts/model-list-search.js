@@ -1,4 +1,5 @@
 import { t } from './i18n.js';
+import { groupByModelFamily } from './model-family.js';
 
 const MAX_ROWS = 50;
 const VALUE_CHECK_MS = 400;
@@ -120,8 +121,14 @@ export function attachModelListSearch(select, options = {}) {
                 byLabel.get(label).push(option);
             }
             for (const [label, items] of byLabel) groups.push({ label: label || t`Other`, items });
-        } else if (rest.length) {
-            groups.push({ label: favourites.length ? t`Other` : null, items: rest });
+        } else {
+            const families = groupByModelFamily(rest, option => option.value);
+            // Headings only help when at least one family holds several models.
+            if (families.some(group => group.label && group.items.length > 1)) {
+                for (const group of families) groups.push({ label: group.label ?? t`Other`, items: group.items });
+            } else if (rest.length) {
+                groups.push({ label: favourites.length ? t`Other` : null, items: rest });
+            }
         }
         return groups;
     }
