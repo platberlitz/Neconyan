@@ -4,21 +4,46 @@ import { getChatScrollSnapshot, growMessageBlockAboveViewport, installSyntheticL
 import { applyIOSOnlyCss, IPHONE_SAFARI_CONTEXT, installIPhoneSafari } from './ios-safari-emulation.js';
 
 test.setTimeout(90_000);
+test.use({ serviceWorkers: 'block' });
 
 // Keep the real preview renderer, formatter and scroll observers; only replace
 // the job's preview event stream so updates can arrive during a pending resize.
 async function installPreview(page) {
     await page.evaluate(async () => {
         const originalFetch = window.fetch;
-        window.fetch = (input, options) => String(input).includes('/api/jobs/scroll-regression/preview')
-            ? Promise.resolve(new Response(new ReadableStream({ start(controller) {
-                window.sendScrollPreview = preview => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ preview })}\n\n`));
-            } }), { headers: { 'Content-Type': 'text/event-stream' } }))
-            : originalFetch(input, options);
+        const encode = text => new TextEncoder().encode(text);
+        let current = null;
+        let latest = null;
+        const enqueue = text => {
+            try { current?.enqueue(encode(text)); } catch { current = null; }
+        };
+        // Like the server: every connection opens with the current snapshot, and a
+        // keepalive every second tells the reader the stream is still open.
+        window.sendScrollPreview = preview => {
+            latest = preview;
+            enqueue(`data: ${JSON.stringify({ preview })}\n\n`);
+        };
+        const keepalive = setInterval(() => enqueue(': keepalive\n\n'), 1000);
+        window.fetch = (input, options) => {
+            if (!String(input).includes('/api/jobs/scroll-regression/preview')) return originalFetch(input, options);
+            let own = null;
+            return Promise.resolve(new Response(new ReadableStream({
+                start(controller) {
+                    own = controller;
+                    current = controller;
+                    if (latest) controller.enqueue(encode(`data: ${JSON.stringify({ preview: latest })}\n\n`));
+                },
+                cancel() { if (current === own) current = null; },
+            }), { headers: { 'Content-Type': 'text/event-stream' } }));
+        };
         const { observeRoleplayPreview } = await import('/scripts/neconyan-conversation/roleplay-preview.js');
         const stop = observeRoleplayPreview('scroll-regression', { account: 'scroll-test', isCurrent: () => true, onTerminal: () => {} });
         window.scrollPreviewStop = stop;
-        window.stopScrollPreview = () => { stop(); window.fetch = originalFetch; };
+        window.stopScrollPreview = () => {
+            stop();
+            clearInterval(keepalive);
+            window.fetch = originalFetch;
+        };
     });
 }
 
