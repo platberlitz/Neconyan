@@ -11,6 +11,7 @@ async function prepare(app, phone) {
     app.provider.mode.reply = body => ({ translatedText: `FR: ${body.q}` });
     app.provider.mode.hold = [undefined];
     const account = await app.account({ phone, configureSettings(saved) {
+        saved.power_user.auto_focus_chat_input = false;
         saved.extension_settings.translate = { provider: 'libre', target_language: 'fr', internal_language: 'en', auto_mode: 'none', deepl_endpoint: 'free' };
     } });
     await account.post('/api/secrets/write', { key: 'libre_url', value: app.provider.url + '/translate' });
