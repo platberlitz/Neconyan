@@ -78,7 +78,6 @@ import {
     parseJsonFile,
     resetScrollHeight,
     stringFormat,
-    textValueMatcher,
     uuidv4,
 } from './utils.js';
 import { countChatCompletionPayloadTokensOpenAIAsync, countTokensOpenAIAsync, getTokenizerModel, primeOpenAITokenCache } from './tokenizers.js';
@@ -91,7 +90,8 @@ import { renderTemplateAsync } from './templates.js';
 import { SlashCommandEnumValue } from './slash-commands/SlashCommandEnumValue.js';
 import { callGenericPopup, Popup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
 import { t } from './i18n.js';
-import { initCustomModelSearch } from './custom-model-search.js';
+import { attachModelListSearch, focusModelListSearch } from './model-list-search.js';
+import { formatModelLabelWithSource } from './model-family.js';
 import { extension_settings } from './extensions.js';
 import { ToolManager } from './tool-calling.js';
 import { accountStorage } from './util/AccountStorage.js';
@@ -303,14 +303,11 @@ const MODEL_ID_SEARCH_CONTROLS = [
 ];
 
 const INLINE_SELECT_PICKER_CONTROLS = [
-    { source: 'nanogpt-model', select: '#model_nanogpt_select', label: 'NanoGPT Model' },
     { source: 'nanogpt-allowed-providers', select: '#nanogpt_allowed_providers', label: 'Allowed providers', multiple: true },
     { source: 'nanogpt-ignored-providers', select: '#nanogpt_ignored_providers', label: 'Ignored providers', multiple: true },
-    { source: 'openrouter-model-chat', select: '#model_openrouter_select', label: 'OpenRouter model' },
     { source: 'openrouter-sort-models', select: '#openrouter_sort_models', label: 'OpenRouter model sorting' },
     { source: 'openrouter-providers-chat', select: '#openrouter_providers_chat', label: 'OpenRouter providers', multiple: true },
     { source: 'openrouter-quantizations-chat', select: '#openrouter_quantizations_chat', label: 'OpenRouter quantizations', multiple: true },
-    { source: 'openrouter-model-text', select: '#openrouter_model', label: 'OpenRouter model' },
     { source: 'openrouter-middleout', select: '#openrouter_middleout', label: 'OpenRouter middle-out transform' },
     { source: 'openrouter-providers-text', select: '#openrouter_providers_text', label: 'OpenRouter providers', multiple: true },
     { source: 'openrouter-quantizations-text', select: '#openrouter_quantizations_text', label: 'OpenRouter quantizations', multiple: true },
@@ -2674,6 +2671,10 @@ function openModelSelectPicker(select, options = {}) {
         return;
     }
 
+    if (focusModelListSearch(select)) {
+        return;
+    }
+
     scrollElementIntoNearestPanelScroller(select);
 
     if (shouldUseInlineModelSelectPicker() && openInlineModelSelectPicker(select, options)) {
@@ -2730,25 +2731,7 @@ function ensureOpenAIModelPickerButton() {
 }
 
 function initOpenAIModelSearch() {
-    const $modelSelect = $('#model_openai_select');
     ensureOpenAIModelPickerButton();
-
-    if (shouldUseInlineModelSelectPicker() || $modelSelect.length === 0) {
-        return;
-    }
-
-    if ($modelSelect.hasClass('select2-hidden-accessible')) {
-        $modelSelect.select2('destroy');
-    }
-
-    $modelSelect.select2({
-        dropdownParent: getApiSelect2DropdownParent(),
-        placeholder: t`Select a model`,
-        searchInputPlaceholder: t`Search models...`,
-        searchInputCssClass: 'text_pole',
-        width: '100%',
-        matcher: textValueMatcher,
-    });
 }
 
 function updateOpenAIModelFavoriteButton() {
@@ -3275,10 +3258,6 @@ function ensureModelIdSearchFavoriteButton(control) {
 }
 
 function openModelIdSearchSelect(control) {
-    if (control.source === chat_completion_sources.CUSTOM) {
-        document.getElementById('custom_model_search')?.focus();
-        return;
-    }
     const input = document.querySelector(control.input);
     const select = document.querySelector(control.select);
 
@@ -3332,31 +3311,6 @@ function initModelIdSearchControl(control) {
     ensureModelIdSearchPickerButton(control);
     ensureModelIdSearchFavoriteButton(control);
 
-    const separateSearch = control.source === chat_completion_sources.CUSTOM;
-    if (separateSearch) initCustomModelSearch(select);
-
-    if (!separateSearch && input.dataset.sbModelIdSearchBound !== 'true') {
-        input.addEventListener('input', () => {
-            const state = getModelIdSearchState(control.source);
-            state.query = input.value;
-            rebuildModelIdSearchControl(control, { preserveQuery: true });
-        });
-        input.addEventListener('focus', () => {
-            const state = getModelIdSearchState(control.source);
-            state.query = input.value;
-            rebuildModelIdSearchControl(control, { preserveQuery: true });
-        });
-        input.addEventListener('blur', () => {
-            window.setTimeout(() => {
-                if (document.activeElement !== input && document.activeElement !== select) {
-                    getModelIdSearchState(control.source).query = '';
-                    rebuildModelIdSearchControl(control);
-                }
-            }, 160);
-        });
-        input.dataset.sbModelIdSearchBound = 'true';
-    }
-
     if (select.dataset.sbModelIdSearchBound !== 'true') {
         select.addEventListener('change', () => {
             window.setTimeout(() => {
@@ -3372,6 +3326,66 @@ function initModelIdSearchControl(control) {
 
 function initModelIdSearchControls() {
     MODEL_ID_SEARCH_CONTROLS.forEach(initModelIdSearchControl);
+}
+
+const MODEL_LIST_SEARCH_SELECTS = [
+    '#model_openai_select',
+    '#model_claude_select',
+    '#model_openrouter_select',
+    '#model_ai21_select',
+    '#model_google_select',
+    '#model_vertexai_select',
+    '#model_mistralai_select',
+    '#model_groq_select',
+    '#model_siliconflow_select',
+    '#model_minimax_select',
+    '#model_electronhub_select',
+    '#model_chutes_select',
+    '#model_nanogpt_select',
+    '#model_workers_ai_select',
+    '#model_deepseek_select',
+    '#model_fireworks_select',
+    '#model_cometapi_select',
+    '#model_perplexity_select',
+    '#model_cohere_select',
+    '#model_custom_select',
+    '#model_xai_select',
+    '#model_aimlapi_select',
+    '#model_pollinations_select',
+    '#model_moonshot_select',
+    '#model_zai_select',
+    '#model_linkapi_select',
+    '#azure_openai_model',
+];
+
+function getModelListSearchOptions(selector) {
+    switch (selector) {
+        case '#model_openrouter_select':
+            return {
+                template: getOpenRouterModelTemplate,
+                grouping: 'native',
+                isPinned: option => option.value === openrouter_website_model,
+            };
+        case '#model_electronhub_select':
+            return { template: getElectronHubModelTemplate, grouping: 'native' };
+        case '#model_aimlapi_select':
+            return { template: getAimlapiModelTemplate, grouping: 'native' };
+        case '#model_chutes_select':
+            return { template: getChutesModelTemplate };
+        case '#model_nanogpt_select':
+            return { template: getNanoGptModelTemplate };
+        default:
+            return {};
+    }
+}
+
+function initModelListSearches() {
+    for (const selector of MODEL_LIST_SEARCH_SELECTS) {
+        const select = document.querySelector(selector);
+        if (select instanceof HTMLSelectElement) {
+            attachModelListSearch(select, getModelListSearchOptions(selector));
+        }
+    }
 }
 
 function getOpenAISettingsDrawerStateKey(drawerId) {
@@ -4440,7 +4454,7 @@ function getNanoGptModelTemplate(option) {
 
     // Neconyan: share upstream model details with the mobile picker; treat catalogue fields as text.
     const row = $('<span>', { class: 'flex-container alignItemsBaseline', title: model.id });
-    row.append($('<strong>').text(model.name || model.id), document.createTextNode(` | ${contextLength} ctx | `), $('<small>').text(price));
+    row.append($('<strong>').text(formatModelLabelWithSource(model)), document.createTextNode(` | ${contextLength} ctx | `), $('<small>').text(price));
     const icons = $('<span>');
     for (const [capability, icon, title] of [
         ['vision', 'eye', 'This model supports vision'],
@@ -4625,7 +4639,7 @@ function saveModelList(data, source = oai_settings.chat_completion_source) {
             $('#model_nanogpt_select').append(
                 $('<option>', {
                     value: model.id,
-                    text: model.name || model.id,
+                    text: formatModelLabelWithSource(model),
                 }));
         });
 
@@ -10670,66 +10684,6 @@ export function initOpenAI() {
     }
 
     if (!shouldUseInlineModelSelectPicker()) {
-        $('#model_openai_select').select2({
-            dropdownParent: getApiSelect2DropdownParent(),
-            placeholder: t`Select a model`,
-            searchInputPlaceholder: t`Search models...`,
-            searchInputCssClass: 'text_pole',
-            width: '100%',
-            matcher: textValueMatcher,
-        });
-        $('#model_openrouter_select').select2({
-            dropdownParent: getApiSelect2DropdownParent(),
-            placeholder: t`Select a model`,
-            searchInputPlaceholder: t`Search models...`,
-            searchInputCssClass: 'text_pole',
-            width: '100%',
-            templateResult: getOpenRouterModelTemplate,
-            matcher: textValueMatcher,
-        });
-        $('#model_aimlapi_select').select2({
-            dropdownParent: getApiSelect2DropdownParent(),
-            placeholder: t`Select a model`,
-            searchInputPlaceholder: t`Search models...`,
-            searchInputCssClass: 'text_pole',
-            width: '100%',
-            templateResult: getAimlapiModelTemplate,
-        });
-        $('#model_electronhub_select').select2({
-            dropdownParent: getApiSelect2DropdownParent(),
-            placeholder: t`Select a model`,
-            searchInputPlaceholder: t`Search models...`,
-            searchInputCssClass: 'text_pole',
-            width: '100%',
-            templateResult: getElectronHubModelTemplate,
-            matcher: textValueMatcher,
-        });
-        $('#model_chutes_select').select2({
-            dropdownParent: getApiSelect2DropdownParent(),
-            placeholder: t`Select a model`,
-            searchInputPlaceholder: t`Search models...`,
-            searchInputCssClass: 'text_pole',
-            width: '100%',
-            templateResult: getChutesModelTemplate,
-            matcher: textValueMatcher,
-        });
-        $('#model_nanogpt_select').select2({
-            dropdownParent: getApiSelect2DropdownParent(),
-            placeholder: t`Select a model`,
-            searchInputPlaceholder: t`Search models...`,
-            searchInputCssClass: 'text_pole',
-            width: '100%',
-            templateResult: getNanoGptModelTemplate,
-            matcher: textValueMatcher,
-        });
-        $('#model_workers_ai_select').select2({
-            dropdownParent: getApiSelect2DropdownParent(),
-            placeholder: t`Select a model`,
-            searchInputPlaceholder: t`Search models...`,
-            searchInputCssClass: 'text_pole',
-            width: '100%',
-            matcher: textValueMatcher,
-        });
         $('#completion_prompt_manager_popup_entry_form_injection_trigger').select2({
             dropdownParent: getPromptManagerSelect2DropdownParent(),
             placeholder: t`All types (default)`,
@@ -10813,6 +10767,7 @@ export function initOpenAI() {
     bindInlineSelectPickerControls();
     rebuildOpenAIModelSelect();
     initModelIdSearchControls();
+    initModelListSearches();
     updateAdvancedFormattingVisibility();
     updateOpenAISettingsGroupVisibility();
     scheduleOpenAIUiRefresh();

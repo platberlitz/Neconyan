@@ -1,25 +1,27 @@
-#custom_form #model_custom_select[hidden],
-#custom-model-search[hidden] {
+/* :is() lends every rule an id's weight, so theme .text_pole and .menu_button rules do not win. */
+:is(#rm_api_block, body) .nn-model-list-native[hidden],
+:is(#rm_api_block, body) .nn-model-list-native + .select2-container {
     display: none;
 }
 
-#custom-model-search {
+:is(#rm_api_block, body) .nn-model-list {
     display: grid;
+    flex: 1 1 100%;
     gap: 8px;
     width: 100%;
     min-width: 0;
 }
 
-.nn-custom-model-search-row {
+:is(#rm_api_block, body) .nn-model-list-search-row {
     display: flex;
     gap: 6px;
 }
 
-#custom_model_search::-webkit-search-cancel-button {
+:is(#rm_api_block, body) .nn-model-list input[type="search"]::-webkit-search-cancel-button {
     display: none;
 }
 
-#custom-model-search .text_pole {
+:is(#rm_api_block, body) .nn-model-list .text_pole {
     flex: 1;
     width: 0;
     min-width: 0;
@@ -27,7 +29,7 @@
     margin: 0;
 }
 
-#custom-model-search .menu_button {
+:is(#rm_api_block, body) .nn-model-list .menu_button {
     flex: 0 0 44px;
     min-height: 44px;
     margin: 0;
@@ -36,7 +38,7 @@
     border: 1px solid var(--neco-ginger);
 }
 
-#custom-model-search [data-model-results] {
+:is(#rm_api_block, body) .nn-model-list-results {
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -46,7 +48,15 @@
     scrollbar-gutter: stable;
 }
 
-#custom-model-search .nn-custom-model-result {
+:is(#rm_api_block, body) .nn-model-list-group {
+    flex: none;
+    padding: 6px 4px 0;
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--neco-muted);
+}
+
+:is(#rm_api_block, body) .nn-model-list-option {
     display: flex;
     flex: none;
     align-items: center;
@@ -64,37 +74,47 @@
     cursor: pointer;
 }
 
-#custom-model-search .nn-custom-model-result-label {
+:is(#rm_api_block, body) .nn-model-list-option:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+:is(#rm_api_block, body) .nn-model-list-label {
     display: grid;
     flex: 1 1 auto;
     gap: 2px;
     min-width: 0;
 }
 
-#custom-model-search .nn-custom-model-result small {
+:is(#rm_api_block, body) .nn-model-list-label .flex-container {
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+:is(#rm_api_block, body) .nn-model-list-option small {
     color: inherit;
 }
 
-#custom-model-search .nn-custom-model-result-favourite {
+:is(#rm_api_block, body) .nn-model-list-favourite {
     flex: 0 0 auto;
     margin-inline-start: auto;
     color: var(--neco-ginger);
 }
 
-#custom-model-search .nn-custom-model-result[aria-pressed="true"] .nn-custom-model-result-favourite,
-#custom-model-search .nn-custom-model-result:hover .nn-custom-model-result-favourite {
+:is(#rm_api_block, body) .nn-model-list-option[aria-pressed="true"] .nn-model-list-favourite,
+:is(#rm_api_block, body) .nn-model-list-option:hover:not(:disabled) .nn-model-list-favourite {
     color: inherit;
 }
 
-#custom-model-search .nn-custom-model-result[aria-pressed="true"],
-#custom-model-search .nn-custom-model-result:hover,
-#custom-model-search .menu_button:hover:not(:disabled) {
+:is(#rm_api_block, body) .nn-model-list-option[aria-pressed="true"],
+:is(#rm_api_block, body) .nn-model-list-option:hover:not(:disabled),
+:is(#rm_api_block, body) .nn-model-list .menu_button:hover:not(:disabled) {
     color: var(--neco-on-accent);
     background: var(--neco-ginger);
     border-color: var(--neco-ginger);
 }
 
-#custom-model-search :focus-visible {
+:is(#rm_api_block, body) .nn-model-list :focus-visible {
     outline: 2px solid var(--neco-ginger);
     outline-offset: -2px;
 }

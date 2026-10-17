@@ -118,7 +118,8 @@ test('status metadata and model switches retain hidden sampling values through r
     await expect.poll(() => state.saved?.oai_settings.typical_p_openai).toBe(0.625);
     for (const model of ['openai/gpt-4o', 'anthropic/claude-sonnet-5']) {
         await open(page, 'api');
-        await page.locator('#model_nanogpt_select').selectOption(model);
+        await page.locator(`#model_nanogpt_select_results [data-model-id="${model}"]`).click();
+        await expect(page.locator('#model_nanogpt_select')).toHaveValue(model);
         await open(page, 'sampling');
         await expect(page.locator('#typical_p_openai')).toBeHidden();
     }

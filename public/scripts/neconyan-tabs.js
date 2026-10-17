@@ -512,7 +512,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261017b-model-star';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261017c-model-lists';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -19504,49 +19504,26 @@ function queueMobileViewportStateSync() {
 }
 
 function reinitSelect2AfterShell() {
-    const modelSelectors = [
-        '#mancer_model',
-        '#model_togetherai_select',
-        '#ollama_model',
-        '#tabby_model',
-        '#llamacpp_model',
-        '#model_infermaticai_select',
-        '#model_dreamgen_select',
-        '#openrouter_model',
-        '#vllm_model',
-        '#aphrodite_model',
-    ];
-
     if (isMobileViewport()) {
-        // On mobile, destroy Select2 (doesn't work on iOS Safari); filter inputs come from installModelFilterInputs()
-        for (const selector of modelSelectors) {
-            const $el = $(selector);
-            if ($el.length && $el.data('select2')) {
-                try {
-                    $el.select2('destroy');
-                } catch {
-                    // Ignore
-                }
-            }
-        }
-    } else {
-        // On desktop, reinitialize Select2 after DOM reparenting
-        const apiDropdownParent = $('#rm_api_block');
-        const select2Defaults = {
-            dropdownParent: apiDropdownParent.length ? apiDropdownParent : $(document.body),
-            minimumResultsForSearch: 0,
-        };
-        const allSelectors = [...modelSelectors, '.openrouter_quantizations', '.openrouter_providers', '#nanogpt_allowed_providers', '#nanogpt_ignored_providers'];
-        for (const selector of allSelectors) {
-            const $el = $(selector);
-            if ($el.length && $el.data('select2')) {
-                try {
-                    const config = $el.data('select2').options.options;
-                    $el.select2('destroy');
-                    $el.select2({ ...select2Defaults, ...config });
-                } catch {
-                    // Element may not have been initialized yet
-                }
+        return;
+    }
+
+    // On desktop, reinitialize Select2 after DOM reparenting
+    const apiDropdownParent = $('#rm_api_block');
+    const select2Defaults = {
+        dropdownParent: apiDropdownParent.length ? apiDropdownParent : $(document.body),
+        minimumResultsForSearch: 0,
+    };
+    const selectors = ['.openrouter_quantizations', '.openrouter_providers', '#nanogpt_allowed_providers', '#nanogpt_ignored_providers'];
+    for (const selector of selectors) {
+        const $el = $(selector);
+        if ($el.length && $el.data('select2')) {
+            try {
+                const config = $el.data('select2').options.options;
+                $el.select2('destroy');
+                $el.select2({ ...select2Defaults, ...config });
+            } catch {
+                // Element may not have been initialized yet
             }
         }
     }

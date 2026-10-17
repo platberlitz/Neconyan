@@ -6,7 +6,8 @@ import { renderTemplateAsync } from './templates.js';
 import { POPUP_TYPE, callGenericPopup } from './popup.js';
 import { t } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
-import { localizePagination, PAGINATION_TEMPLATE, textValueMatcher } from './utils.js';
+import { localizePagination, PAGINATION_TEMPLATE } from './utils.js';
+import { attachModelListSearch } from './model-list-search.js';
 import { isMobile } from './RossAscends-mods.js';
 import { updateServiceTierOptions } from './service-tiers.js';
 
@@ -14,8 +15,6 @@ let mancerModels = [];
 let togetherModels = [];
 let infermaticAIModels = [];
 let dreamGenModels = [];
-let vllmModels = [];
-let aphroditeModels = [];
 let featherlessModels = [];
 let tabbyModels = [];
 let llamacppModels = [];
@@ -495,8 +494,6 @@ export async function loadVllmModels(data) {
         return;
     }
 
-    vllmModels = data;
-
     if (!data.find(x => x.id === textgen_settings.vllm_model)) {
         textgen_settings.vllm_model = data[0]?.id || '';
     }
@@ -516,8 +513,6 @@ export async function loadAphroditeModels(data) {
         console.error('Invalid Aphrodite models data', data);
         return;
     }
-
-    aphroditeModels = data;
 
     if (!data.find(x => x.id === textgen_settings.aphrodite_model)) {
         textgen_settings.aphrodite_model = data[0]?.id || '';
@@ -896,34 +891,6 @@ function getTogetherModelTemplate(option) {
     `));
 }
 
-function getInfermaticAIModelTemplate(option) {
-    const model = infermaticAIModels.find(x => x.id === option?.element?.value);
-
-    if (!option.id || !model) {
-        return option.text;
-    }
-
-    return $((`
-        <div class="flex-container flexFlowColumn">
-            <div><strong>${DOMPurify.sanitize(model.id)}</strong></div>
-        </div>
-    `));
-}
-
-function getDreamGenModelTemplate(option) {
-    const model = dreamGenModels.find(x => x.id === option?.element?.value);
-
-    if (!option.id || !model) {
-        return option.text;
-    }
-
-    return $((`
-        <div class="flex-container flexFlowColumn">
-            <div><strong>${DOMPurify.sanitize(model.id)}</strong></div>
-        </div>
-    `));
-}
-
 function getOpenRouterModelTemplate(option) {
     const model = openRouterModels.find(x => x.id === option?.element?.value);
 
@@ -939,34 +906,6 @@ function getOpenRouterModelTemplate(option) {
     return $((`
         <div class="flex-container flexFlowColumn" title="${DOMPurify.sanitize(model.id)}">
             <div><strong>${DOMPurify.sanitize(model.name)}</strong> | ${model.context_length} ctx | <small>${price}</small></div>
-        </div>
-    `));
-}
-
-function getVllmModelTemplate(option) {
-    const model = vllmModels.find(x => x.id === option?.element?.value);
-
-    if (!option.id || !model) {
-        return option.text;
-    }
-
-    return $((`
-        <div class="flex-container flexFlowColumn">
-            <div><strong>${DOMPurify.sanitize(model.id)}</strong></div>
-        </div>
-    `));
-}
-
-function getAphroditeModelTemplate(option) {
-    const model = aphroditeModels.find(x => x.id === option?.element?.value);
-
-    if (!option.id || !model) {
-        return option.text;
-    }
-
-    return $((`
-        <div class="flex-container flexFlowColumn">
-            <div><strong>${DOMPurify.sanitize(model.id)}</strong></div>
         </div>
     `));
 }
@@ -1169,6 +1108,21 @@ export function initTextGenModels() {
     const nanoGptProvidersSelect = $('#nanogpt_allowed_providers, #nanogpt_ignored_providers');
     void syncNanoGptProvidersForModel('', '#nanogpt_allowed_providers');
 
+    for (const [selector, options] of [
+        ['#mancer_model', { template: getMancerModelTemplate }],
+        ['#model_togetherai_select', { template: getTogetherModelTemplate }],
+        ['#ollama_model', {}],
+        ['#tabby_model', { emptyLabel: t`[Currently loaded]` }],
+        ['#llamacpp_model', { emptyLabel: t`[Currently loaded]` }],
+        ['#model_infermaticai_select', {}],
+        ['#model_dreamgen_select', {}],
+        ['#openrouter_model', { template: getOpenRouterModelTemplate }],
+        ['#vllm_model', {}],
+        ['#aphrodite_model', {}],
+    ]) {
+        attachModelListSearch(document.querySelector(selector), options);
+    }
+
     if (shouldUseNativeApiSelects()) {
         return;
     }
@@ -1179,86 +1133,6 @@ export function initTextGenModels() {
         dropdownParent: apiDropdownParent.length ? apiDropdownParent : $(document.body),
         minimumResultsForSearch: 0,
     };
-    $('#mancer_model').select2({
-        ...select2Defaults,
-        placeholder: t`Select a model`,
-        searchInputPlaceholder: t`Search models...`,
-        searchInputCssClass: 'text_pole',
-        width: '100%',
-        templateResult: getMancerModelTemplate,
-    });
-    $('#model_togetherai_select').select2({
-        ...select2Defaults,
-        placeholder: t`Select a model`,
-        searchInputPlaceholder: t`Search models...`,
-        searchInputCssClass: 'text_pole',
-        width: '100%',
-        templateResult: getTogetherModelTemplate,
-    });
-    $('#ollama_model').select2({
-        ...select2Defaults,
-        placeholder: t`Select a model`,
-        searchInputPlaceholder: t`Search models...`,
-        searchInputCssClass: 'text_pole',
-        width: '100%',
-    });
-    $('#tabby_model').select2({
-        ...select2Defaults,
-        placeholder: t`[Currently loaded]`,
-        searchInputPlaceholder: t`Search models...`,
-        searchInputCssClass: 'text_pole',
-        width: '100%',
-        allowClear: true,
-    });
-    $('#llamacpp_model').select2({
-        ...select2Defaults,
-        placeholder: t`[Currently loaded]`,
-        searchInputPlaceholder: t`Search models...`,
-        searchInputCssClass: 'text_pole',
-        width: '100%',
-        allowClear: true,
-    });
-    $('#model_infermaticai_select').select2({
-        ...select2Defaults,
-        placeholder: t`Select a model`,
-        searchInputPlaceholder: t`Search models...`,
-        searchInputCssClass: 'text_pole',
-        width: '100%',
-        templateResult: getInfermaticAIModelTemplate,
-    });
-    $('#model_dreamgen_select').select2({
-        ...select2Defaults,
-        placeholder: t`Select a model`,
-        searchInputPlaceholder: t`Search models...`,
-        searchInputCssClass: 'text_pole',
-        width: '100%',
-        templateResult: getDreamGenModelTemplate,
-    });
-    $('#openrouter_model').select2({
-        ...select2Defaults,
-        placeholder: t`Select a model`,
-        searchInputPlaceholder: t`Search models...`,
-        searchInputCssClass: 'text_pole',
-        width: '100%',
-        templateResult: getOpenRouterModelTemplate,
-        matcher: textValueMatcher,
-    });
-    $('#vllm_model').select2({
-        ...select2Defaults,
-        placeholder: t`Select a model`,
-        searchInputPlaceholder: t`Search models...`,
-        searchInputCssClass: 'text_pole',
-        width: '100%',
-        templateResult: getVllmModelTemplate,
-    });
-    $('#aphrodite_model').select2({
-        ...select2Defaults,
-        placeholder: t`Select a model`,
-        searchInputPlaceholder: t`Search models...`,
-        searchInputCssClass: 'text_pole',
-        width: '100%',
-        templateResult: getAphroditeModelTemplate,
-    });
     $('.openrouter_quantizations').select2({
         ...select2Defaults,
         closeOnSelect: false,

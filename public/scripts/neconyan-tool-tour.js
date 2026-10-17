@@ -391,7 +391,7 @@ const TOOL_PAGES = Object.freeze({
                 targets: ['.neconyan-provider-model', '#model_openai_select', '#model_textgenerationwebui_select'],
                 optional: true,
                 title: 'Choosing the model',
-                body: 'Pick a model from **Available models**, or type its exact name. The list button opens a searchable list, and the star keeps favourites at the top.\nDifferent models write differently and cost different amounts, so it is worth trying a few.',
+                body: 'Pick a model from **Available models**, or type its exact name. Search the list by name or ID, and the star keeps favourites at the top.\nDifferent models write differently and cost different amounts, so it is worth trying a few.',
                 hint: 'The priciest model is not always the best one. It hurts me to say it.',
             },
             {
