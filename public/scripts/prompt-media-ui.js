@@ -4,10 +4,28 @@ import { selected_group } from './group-chats.js';
 import { getCurrentUserHandle } from './user.js';
 import { roleplayAccountStamp } from './roleplay-save-chain.js';
 import { Popup, POPUP_TYPE } from './popup.js';
+import { t, translate } from './i18n.js';
+import { escapeToastText, twoLineToastHtml } from './toast-lines.js';
+import { IMAGE_INPUT_SETTINGS_CHANGED } from './prompt-media-policy.js';
 
-const label = { include: 'Send the image', 'display-only': 'Show only', caption: 'Use a description', detach: 'Detach from message' };
+// Looked up when a dialog is built, so the names follow the interface language chosen by then.
+const choiceName = mode => ({
+    include: translate('Send the image', 'scoped.prompt_media.QIG-03'),
+    'display-only': translate('Show only', 'scoped.prompt_media.QIG-02'),
+    caption: translate('Use a description', 'scoped.prompt_media.QIG-04'),
+    detach: 'Detach from message',
+})[mode];
 function element(tag, text = '', className = '') {
     const node = document.createElement(tag); node.textContent = text; node.className = className; return node;
+}
+// Text already looked up by its exact key. Marked so the run-time localiser cannot match it again or capture a word of it.
+function final(node) { node.setAttribute('data-i18n-ignore', ''); return node; }
+// Quick Image Gen's 'Right now' line listens for this, so it follows the account, chat and branch choices made here.
+const announceSettingsChanged = () => globalThis.dispatchEvent(new CustomEvent(IMAGE_INPUT_SETTINGS_CHANGED));
+function choiceOption(mode) {
+    const option = element('option', choiceName(mode)); option.value = mode;
+    if (mode !== 'detach') final(option); // 'detach' is not looked up by key yet, so the localiser still handles it.
+    return option;
 }
 function button(text, action) {
     const node = element('button', text, 'menu_button'); node.type = 'button'; node.addEventListener('click', action); return node;
@@ -27,7 +45,7 @@ async function request(action, body, captured, { binary = false } = {}) {
     const response = await fetch(`/api/roleplay/images/${action}`, { method: 'POST', headers: { ...getRequestHeaders(),
         'Content-Type': 'application/json', 'X-Neconyan-Account': captured.owner }, body: JSON.stringify({ ...body, account: captured.account }) });
     requireAccount(captured);
-    if (!response.ok) { const error = await response.json().catch(() => ({})); throw new Error(error.error || 'Image review could not finish.'); }
+    if (!response.ok) { const error = await response.json().catch(() => ({})); throw Object.assign(new Error(error.error || 'Image review could not finish.'), { code: error.code }); }
     return binary ? response.blob() : response.json();
 }
 export async function setAccountChoice(checked) {
@@ -35,24 +53,27 @@ export async function setAccountChoice(checked) {
     const choice = { version: 1, images: checked ? 'display-only' : 'include' };
     power_user.neconyan_prompt_media = choice;
     try {
-        if (!await saveSettings(0, { returnResult: true })) throw new Error('The image preference was not saved.');
-        if (account !== getCurrentUserHandle()) throw new Error('The account changed.');
+        if (!await saveSettings(0, { returnResult: true })) throw new Error(t`Your setting was not saved. Try again.`);
+        if (account !== getCurrentUserHandle()) throw new Error(t`You switched accounts, so the setting was not saved.`);
         document.querySelectorAll('[data-prompt-images-account]').forEach(node => { node.checked = checked; });
     } catch (error) {
         if (account === getCurrentUserHandle() && power_user.neconyan_prompt_media === choice) {
             if (before === undefined) delete power_user.neconyan_prompt_media; else power_user.neconyan_prompt_media = before;
         }
         throw error;
+    } finally {
+        announceSettingsChanged();
     }
 }
-function checkbox(text, checked, action) {
+function checkbox(text, checked, action, { finalLabel = false } = {}) {
     const row = element('label', '', 'checkbox_label');
     const input = document.createElement('input'); input.type = 'checkbox'; input.checked = checked;
     input.addEventListener('change', async () => {
         input.disabled = true;
         try { await action(input.checked); } catch (error) { input.checked = !input.checked; toastr.error(error.message); } finally { input.disabled = false; }
     });
-    row.append(input, element('span', text)); return { row, input };
+    const caption = element('span', text); if (finalLabel) final(caption);
+    row.append(input, caption); return { row, input };
 }
 function download(blob, name) {
     const url = URL.createObjectURL(blob), link = document.createElement('a'); link.href = url; link.download = name; link.click();
@@ -92,14 +113,25 @@ async function remoteBlob(url) {
 function blobData(blob) {
     return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob); });
 }
-/** No image is fetched simply by opening this screen. */
-export async function showPromptMediaReview(initialLocator = locator()) {
+/**
+ * No image is fetched simply by opening this screen.
+ * With no origin it reviews whatever is open now: the Conversation thread when Conversation is active, otherwise the Roleplay chat.
+ * With the origin of a refusal (see roleplayImageOrigin and conversationImageOrigin) it reviews that chat, whatever is open now,
+ * or explains why it cannot be opened.
+ * @param {object} [origin] detail.origin of an image refusal
+ */
+export async function showPromptMediaReview(origin = null) {
+    if (origin) return openRefusalOrigin(origin);
     if (document.body.classList.contains('neconyan-conversation-active')) return showConversationPromptMediaReview();
+    return showRoleplayPromptMediaReview(locator());
+}
+/** The Roleplay dialog, opened on initialLocator. From a refusal's origin, the chat is read first and a chat that cannot be read gets no dialog. */
+async function showRoleplayPromptMediaReview(initialLocator, { fromOrigin = false } = {}) {
     const captured = currentAccount();
     const panel = element('div', '', 'flex-container flexFlowColumn'); panel.id = 'prompt-media-review';
     panel.append(element('h3', 'Images in replies'), element('p', 'Show only keeps pictures visible and leaves their files and attachment descriptions out of new replies.'));
     const explanation = element('details'); explanation.append(element('summary', 'What this choice covers'), element('p', 'Existing message text and memory are unchanged. Accepted work keeps its original input; use Stop to cancel it. Manual image descriptions and explicit tool reference images are separate actions. Independent extensions may have their own input controls.')); panel.append(explanation);
-    const accountChoice = checkbox('Keep chat images display-only across this account', power_user.neconyan_prompt_media?.images === 'display-only', setAccountChoice);
+    const accountChoice = checkbox(t`Don't send chat images to the model`, power_user.neconyan_prompt_media?.images === 'display-only', setAccountChoice, { finalLabel: true });
     accountChoice.input.dataset.promptImagesAccount = 'true'; panel.append(accountChoice.row);
     const status = element('p'); status.setAttribute('role', 'status'); panel.append(status);
     const navigation = element('div', '', 'flex-container flexWrap'), content = element('div', '', 'flex-container flexFlowColumn'); panel.append(navigation, content);
@@ -118,6 +150,7 @@ export async function showPromptMediaReview(initialLocator = locator()) {
         const result = await request(extra.materialisedImage ? 'materialise' : 'apply', pending.body, captured);
         pending = null;
         if (sameLocator(page.observation.locator) && beforeLocal === JSON.stringify(chat)) await refreshCurrentChatFromSaved();
+        announceSettingsChanged();
         status.textContent = 'Saved. The original chat is backed up; Recovery history offers export and undo.';
         await showChat(page.observation.locator, 0, false);
         return result;
@@ -152,9 +185,9 @@ export async function showPromptMediaReview(initialLocator = locator()) {
         const next = await request('scan', { locator: target, offset, ...(offset && page ? { observation: page.observation } : {}) }, captured);
         if (closed) return; page = next; content.replaceChildren();
         content.append(element('h4', target.chat), element('p', `${next.total} attachment locations. ${next.limited ? 'The report is limited to 10,000 locations.' : 'The inventory does not contact image websites.'}`));
-        const chatChoice = checkbox('Keep images display-only in this chat', next.chatPreference?.images === 'display-only', checked => run(() => apply([], { chatPreference: { version: 1, images: checked ? 'display-only' : 'include' } })));
+        const chatChoice = checkbox(t`Don't send this chat's images to the model`, next.chatPreference?.images === 'display-only', checked => run(() => apply([], { chatPreference: { version: 1, images: checked ? 'display-only' : 'include' } })), { finalLabel: true });
         content.append(chatChoice.row);
-        if (power_user.neconyan_prompt_media?.images === 'display-only') content.append(element('p', 'The account setting keeps these images display-only, whatever their individual choices.'));
+        if (power_user.neconyan_prompt_media?.images === 'display-only') content.append(final(element('p', t`'Don't send chat images to the model' is on for your account, so it applies here whatever you choose below.`)));
         content.append(element('p', 'An unrelated message title, text already copied into a message, and saved memory remain text. Sending an image also requires Send inline media and a compatible connection.'));
         const chosen = new Map();
         for (const issue of next.issues) {
@@ -163,7 +196,7 @@ export async function showPromptMediaReview(initialLocator = locator()) {
             row.append(element('p', issue.status.replaceAll('-', ' ') + (issue.title ? `: ${issue.title}` : '')));
             if (!issue.actions.length) { row.append(element('p', 'Audio and video retain their existing controls.')); content.append(row); continue; }
             const select = element('select', '', 'text_pole'); select.setAttribute('aria-label', 'Image input choice');
-            for (const mode of issue.actions) { const option = element('option', label[mode]); option.value = mode; select.append(option); }
+            for (const mode of issue.actions) select.append(choiceOption(mode));
             select.value = issue.actions.includes(issue.mode) ? issue.mode : issue.actions[0];
             const captionSource = element('select', '', 'text_pole'); captionSource.setAttribute('aria-label', 'Description source');
             for (const [value, name] of [['custom', 'Enter a description'], ['media-title', 'Saved image description'], ['message-title', 'Saved message title']]) {
@@ -230,7 +263,7 @@ export async function showPromptMediaReview(initialLocator = locator()) {
             row.append(checkbox(`${target.group ? 'Group' : target.avatar.replace(/\.png$/, '')}: ${target.chat}`, false, checked => { if (checked) chosen.set(key, target); else chosen.delete(key); }).row,
                 button('Review', () => run(() => showChat(target)))); content.append(row);
         }
-        content.append(button('Keep selected chats display-only', () => run(async () => {
+        content.append(final(button(t`Stop sending images in selected chats`, () => run(async () => {
             if (!chosen.size) throw new Error('Select at least one chat.');
             if (!await Popup.show.confirm('Keep images display-only in these chats?', `${chosen.size} chats will receive a reversible preference. Their image files and attachment descriptions will not enter new automatic replies.`)) return;
             const results = [];
@@ -246,7 +279,8 @@ export async function showPromptMediaReview(initialLocator = locator()) {
                 } catch (error) { results.push(`${target.chat}: ${error.message}`); }
                 status.textContent = results.join(' / ');
             }
-        })));
+            announceSettingsChanged();
+        }))));
         content.append(button('Save exact embedded-image copies in selected chats', () => run(async () => {
             if (!chosen.size) throw new Error('Select at least one chat.');
             if (!await Popup.show.confirm('Save compatible copies in these chats?', 'Each chat is saved separately with a backup. Existing image input choices and displayed originals are kept. A chat containing unsupported images or more than 128 embedded images needs individual review.')) return;
@@ -309,13 +343,113 @@ export async function showPromptMediaReview(initialLocator = locator()) {
         }
         if (history.next !== null) content.append(button('Next repairs', () => run(() => showHistory(history.next))));
     };
-    if (initialLocator) navigation.append(button('Current chat', () => run(() => showChat(initialLocator))));
+    // The chat that is actually open now, which is not always the chat this dialog opens on.
+    const openChat = locator();
+    if (openChat) navigation.append(button('Current chat', () => run(() => showChat(openChat))));
     navigation.append(button('Choose chats', () => run(() => showLibrary())), button('Recovery history', () => run(() => showHistory())));
+    if (fromOrigin) {
+        try { await showChat(initialLocator); } catch (error) {
+            // The server answers a missing chat file and an unreadable one alike (ROLEPLAY_IMAGE_RECOVERY), and a chat folder that is gone with ENOENT.
+            if (!['ROLEPLAY_IMAGE_RECOVERY', 'ENOENT'].includes(error?.code)) throw error;
+            explainOriginUnavailable();
+            return;
+        }
+    }
     const popup = new Popup(panel, POPUP_TYPE.TEXT, '', { wide: true, large: true, leftAlign: true, allowVerticalScrolling: true,
         okButton: 'Close', onClose: () => { closed = true; } });
     const shown = popup.show();
-    if (initialLocator) void run(() => showChat(initialLocator)); else status.textContent = 'Choose chats to review, or change the account preference above.';
+    if (!fromOrigin && initialLocator) void run(() => showChat(initialLocator)); else if (!initialLocator) status.textContent = 'Choose chats to review, or change the account preference above.';
     await shown;
+}
+const IMAGE_NOTICE_WINDOW_MS = 4000;
+const imageNoticeTimes = new Map();
+/** The origin carried by a refusal event, or null for an event that carries none or one this page does not know. */
+const noticeOrigin = detail => ['roleplay', 'conversation'].includes(detail?.origin?.workspace) ? detail.origin : null;
+/** What makes two refusals the same one: the reason and the place it came from. */
+const originIdentity = origin => origin?.workspace === 'roleplay'
+    ? ['roleplay', origin.account, origin.locator?.group, origin.locator?.chat, origin.locator?.avatar]
+    : origin ? ['conversation', origin.account, origin.avatar, origin.groupId, origin.personaId, origin.branchId] : null;
+/**
+ * The one notice for an image the person has to decide about, whichever route raised it. Line 1 is the refusal reason, as the
+ * server or the page worded it, looked up by its exact text and escaped; line 2 says what to do. Clicking opens the review for the
+ * chat that was refused (detail.origin), whatever is open when the person clicks.
+ * One refusal shows one notice: the same reason from the same origin again within a few seconds is not shown twice. The same
+ * reason from another origin is another notice.
+ * @param {{message?: string, origin?: object}} [detail] The refusal event's detail
+ * @returns {boolean} Whether a notice was shown
+ */
+export function showImageChoiceNotice(detail = {}) {
+    const reason = String(detail?.message ?? '').trim();
+    const origin = noticeOrigin(detail);
+    const key = JSON.stringify([reason, originIdentity(origin)]);
+    const now = Date.now();
+    for (const [other, at] of imageNoticeTimes) if (now - at >= IMAGE_NOTICE_WINDOW_MS) imageNoticeTimes.delete(other);
+    if (imageNoticeTimes.has(key)) return false;
+    imageNoticeTimes.set(key, now);
+    const shown = toastr.warning(twoLineToastHtml(t`Open Review chat images to choose what the model receives.`, reason, { reasonFirst: true }),
+        escapeToastText(t`Review needed before replying`), { escapeHtml: false, timeOut: 12000, onclick: () => { void showPromptMediaReview(origin).catch(error => toastr.error(error.message)); } });
+    shown?.find?.('.toast-message, .toast-title').attr('data-i18n-ignore', '');
+    return true;
+}
+/** Says why a notice cannot open its review. One toast, and no dialog. */
+function explainOrigin(text) {
+    toastr.info(text)?.find?.('.toast-message').attr('data-i18n-ignore', '');
+}
+function explainOriginUnavailable() {
+    explainOrigin(t`The chat or branch this notice refers to could not be opened, so its image review is not available.`);
+}
+function explainOriginAccount() {
+    explainOrigin(t`This notice belongs to another account. Switch back to that account to review the image.`);
+}
+function explainOriginBranch() {
+    explainOrigin(t`This notice refers to a different branch. Switch back to that branch to review the image.`);
+}
+/**
+ * Opens the review for the chat a refusal came from, or says why it cannot. Nothing here reads the chat that is open now, except to
+ * decide whether the origin is already open.
+ * - Another account: the account explanation.
+ * - Roleplay: the Roleplay dialog on that chat, even while Conversation or another chat is open. A character that is gone, or a chat
+ *   the server cannot find or read, gets the unavailable explanation.
+ * - Conversation: the dialog works on the open thread's active branch only. If the origin is not the open thread, the thread is opened
+ *   by the left rail's own path first. No branch is switched. A branch that still exists but is not the active one gets its own
+ *   explanation (it says to switch back to that branch); a destination that is missing or cannot be identified gets the unavailable
+ *   one: a character that is gone, a group that is gone, another persona, a branch that no longer exists (deleted, or recreated under
+ *   the same id with another lifetimeSeed or createdAt), or a path the rail refuses.
+ */
+async function openRefusalOrigin(origin) {
+    if (origin.account !== getCurrentUserHandle()) return explainOriginAccount();
+    if (origin.workspace === 'roleplay') {
+        // A chat that names no chat, or a solo chat whose character is gone, cannot be identified.
+        if (!origin.locator?.chat || (!origin.locator.group && !characters.some(character => character?.avatar === origin.locator.avatar))) return explainOriginUnavailable();
+        return showRoleplayPromptMediaReview(origin.locator, { fromOrigin: true });
+    }
+    const context = await import('./neconyan-conversation/context.js');
+    // The origin branch is identified by its id and, where the origin knows them, its lifetimeSeed and createdAt; what is in it does not matter.
+    const isOrigin = branch => Boolean(branch) && branch.id === origin.branchId && (!origin.lifetimeSeed || branch.lifetimeSeed === origin.lifetimeSeed)
+        && (!origin.createdAt || String(branch.createdAt) === origin.createdAt);
+    /** 'active' (the thread's active branch is the origin), 'inactive' (it still exists but another branch is active) or 'gone'. */
+    const branchState = () => {
+        const thread = { create: false, groupId: origin.groupId, personaId: origin.personaId };
+        if (isOrigin(context.getActiveConversationBranch(origin.avatar, thread))) return 'active';
+        return isOrigin(context.getActiveConversationBranch(origin.avatar, { ...thread, branchId: origin.branchId })) ? 'inactive' : 'gone';
+    };
+    const threadIsOrigin = async () => {
+        const { isConversationActiveThread } = await import('./neconyan-conversation/notifications.js');
+        return isConversationActiveThread(origin.avatar, origin.groupId, { personaId: origin.personaId });
+    };
+    if (!characters.some(character => character?.avatar === origin.avatar) || origin.personaId !== context.getConversationPersonaId()
+        || (origin.groupId && !context.isAvatarInConversationGroup(origin.avatar, origin.groupId, { personaId: origin.personaId })) || branchState() === 'gone') {
+        return explainOriginUnavailable();
+    }
+    if (branchState() === 'inactive') return explainOriginBranch();
+    if (!await threadIsOrigin()) {
+        const { selectConversationThread } = await import('./neconyan-conversation/chrome.js');
+        if (!await selectConversationThread(origin.avatar, { groupId: origin.groupId || null, showToast: false }) || !await threadIsOrigin()) return explainOriginUnavailable();
+        // The thread is open now; the branch can still have changed on the way.
+        const state = branchState();
+        if (state !== 'active') return state === 'inactive' ? explainOriginBranch() : explainOriginUnavailable();
+    }
+    return showConversationPromptMediaReview();
 }
 /** Conversation choices use its existing versioned store writer; Roleplay repair never rewrites that store. */
 async function showConversationPromptMediaReview() {
@@ -327,7 +461,7 @@ async function showConversationPromptMediaReview() {
     if (!branch) throw new Error('Open a Conversation chat to review its image input.');
     const panel = element('div', '', 'flex-container flexFlowColumn'); panel.id = 'prompt-media-review';
     panel.append(element('h3', 'Images in this Conversation'), element('p', 'Show only keeps pictures visible and excludes their files and attachment descriptions from new automatic replies. Existing message text and memory stay unchanged.'));
-    const accountChoice = checkbox('Keep images display-only across this account', power_user.neconyan_prompt_media?.images === 'display-only', setAccountChoice);
+    const accountChoice = checkbox(t`Don't send chat images to the model`, power_user.neconyan_prompt_media?.images === 'display-only', setAccountChoice, { finalLabel: true });
     accountChoice.input.dataset.promptImagesAccount = 'true'; panel.append(accountChoice.row);
     const branchIdentity = { id: branch.id, lifetimeSeed: branch.lifetimeSeed };
     const currentBranch = () => {
@@ -354,18 +488,19 @@ async function showConversationPromptMediaReview() {
             context.persistConversationStore();
             if (!await sync.flushConversationStore()) throw new Error('The Conversation choice was not saved.');
             requireAccount(captured);
+            announceSettingsChanged();
             toastr.success('Image input choice saved.');
         } catch (error) { undo?.(); throw error; } finally {
             saving = false; panel.setAttribute('aria-busy', 'false');
             panel.querySelectorAll('button, input, select, textarea').forEach(node => { node.disabled = false; });
         }
     };
-    panel.append(checkbox('Keep images display-only in this Conversation branch', branch.neconyan_prompt_media?.images === 'display-only', checked => save(current => {
+    panel.append(checkbox(t`Don't send this branch's images to the model`, branch.neconyan_prompt_media?.images === 'display-only', checked => save(current => {
         const before = current.neconyan_prompt_media, next = { version: 1, images: checked ? 'display-only' : 'include' };
         current.neconyan_prompt_media = next;
         return () => { if (current.neconyan_prompt_media === next) { if (before === undefined) delete current.neconyan_prompt_media; else current.neconyan_prompt_media = before; } };
-    })).row);
-    if (power_user.neconyan_prompt_media?.images === 'display-only') panel.append(element('p', 'The account setting overrides individual image choices.'));
+    }), { finalLabel: true }).row);
+    if (power_user.neconyan_prompt_media?.images === 'display-only') panel.append(final(element('p', t`'Don't send chat images to the model' is on for your account, so it applies here whatever you choose below.`)));
     for (const [index, message] of branch.messages.entries()) {
         const extra = message.extra ?? {};
         const media = [...(Array.isArray(extra.media) ? extra.media.map((item, mediaIndex) => ({ item, mediaIndex })) : []),
@@ -373,7 +508,7 @@ async function showConversationPromptMediaReview() {
         for (const { item, mediaIndex } of media.filter(({ item }) => (item?.type ?? 'image') === 'image')) {
             const row = element('fieldset', '', 'flex-container flexFlowColumn'); row.append(element('legend', `Message ${index + 1}, image ${mediaIndex === null ? 'generated' : mediaIndex + 1}`));
             const select = element('select', '', 'text_pole'); select.setAttribute('aria-label', 'Image input choice');
-            for (const mode of ['display-only', 'caption', 'include']) { const option = element('option', label[mode]); option.value = mode; select.append(option); }
+            for (const mode of ['display-only', 'caption', 'include']) select.append(choiceOption(mode));
             select.value = item.neconyan_prompt?.mode ?? 'include';
             const text = element('textarea', '', 'text_pole'); text.setAttribute('aria-label', 'Reviewed image description'); text.placeholder = 'Enter or review the description to use';
             text.value = item.neconyan_prompt?.caption?.text ?? item.title ?? '';

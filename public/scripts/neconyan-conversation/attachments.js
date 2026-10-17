@@ -1,4 +1,5 @@
 import { promptAttachmentHash } from '../prompt-media-client.js';
+import { conversationImageOrigin, imageInputIssueDetail, isImageInputIssue } from '../prompt-media-policy.js';
 import { getRequestHeaders, is_send_press } from '../../script.js';
 import { isChatNavigationBlocked } from '../chat-navigation-flight.js';
 import { getCurrentUserHandle } from '../user.js';
@@ -332,6 +333,23 @@ function getBranchRecord(avatar, branchId, { groupId, personaId }) {
     return threadStore?.branches?.[branchId] || null;
 }
 
+/**
+ * An image refusal gets the one actionable notice (showImageChoiceNotice in prompt-media-ui.js) instead of a generic toast.
+ * @param {unknown} error
+ * @param {object} [origin] The thread and branch the request was for, read when it started (conversationImageOrigin)
+ * @returns {boolean} True when the error was an image refusal and the notice was raised.
+ */
+function raiseImageRefusalNotice(error, origin) {
+    if (!isImageInputIssue(error)) return false;
+    globalThis.dispatchEvent(new CustomEvent('neconyan:image-input-refused', { detail: imageInputIssueDetail(error, origin) }));
+    return true;
+}
+
+/** The thread and branch this request is for, read from the branch it started on, before anything is awaited. */
+function requestRefusalOrigin({ avatar, branchId, groupId, personaId, branch, account }) {
+    return conversationImageOrigin({ avatar, groupId, personaId, branchId, lifetimeSeed: branch?.lifetimeSeed, createdAt: branch?.createdAt }, account);
+}
+
 /** Send new composer content: the server appends the user bubbles itself. */
 async function submitAcceptedSend({ avatar, branchId, groupId, personaId, text, input, account }) {
     if (conversationState.conversationUploadActive) {
@@ -342,6 +360,7 @@ async function submitAcceptedSend({ avatar, branchId, groupId, personaId, text, 
         toastr.warning('The Conversation thread is no longer available.');
         return;
     }
+    const origin = requestRefusalOrigin({ avatar, branchId, groupId, personaId, branch, account });
 
     const userName = getConversationPersonaName(personaId, 'You');
     const replyTarget = getActiveConversationReplyTarget(avatar, { branchId, groupId, personaId });
@@ -407,7 +426,7 @@ async function submitAcceptedSend({ avatar, branchId, groupId, personaId, text, 
             payload.submissionKey = resolveSubmissionKey(payload, account);
         }
 
-        const accepted = await acceptConversationSubmission(payload, { draftSignature, account });
+        const accepted = await acceptConversationSubmission(payload, { draftSignature, account, origin });
         if (!accepted) {
             return;
         }
@@ -427,7 +446,7 @@ async function submitAcceptedSend({ avatar, branchId, groupId, personaId, text, 
         }
         observeNativeConversationJob(accepted.job.id, account);
     } catch (error) {
-        toastr.error(error.message || 'The saved connection could not be used.', 'Reply not sent');
+        if (!raiseImageRefusalNotice(error, origin)) toastr.error(error.message || 'The saved connection could not be used.', 'Reply not sent');
     } finally {
         conversationState.conversationUploadActive = false;
         // Clear the busy flag even on the failure paths, then repaint so Send is
@@ -445,6 +464,7 @@ export async function submitAcceptedReply({ avatar, branchId, groupId, personaId
     if (!branch) {
         return;
     }
+    const origin = requestRefusalOrigin({ avatar, branchId, groupId, personaId, branch, account });
     const triggerMessages = (Array.isArray(triggers) ? triggers : []).filter(message => message?.id);
     // A forced reply may answer an empty thread; a plain reply needs a source.
     if (!triggerMessages.length && !force) {
@@ -472,7 +492,7 @@ export async function submitAcceptedReply({ avatar, branchId, groupId, personaId
             payload.bindingRequest = await preflightConversationBinding(payload, account);
             payload.submissionKey = submissionKey || resolveSubmissionKey(payload, account);
         }
-        const accepted = await acceptConversationSubmission(payload, { account, draftSignature });
+        const accepted = await acceptConversationSubmission(payload, { account, draftSignature, origin });
         if (accepted) {
             pendingSubmission = null;
             try {
@@ -485,7 +505,7 @@ export async function submitAcceptedReply({ avatar, branchId, groupId, personaId
             observeNativeConversationJob(accepted.job.id, account);
         }
     } catch (error) {
-        toastr.error(error.message || 'The saved connection could not be used.', 'Reply not sent');
+        if (!raiseImageRefusalNotice(error, origin)) toastr.error(error.message || 'The saved connection could not be used.', 'Reply not sent');
     } finally {
         conversationState.conversationUploadActive = false;
         // Clear the busy flag even on the failure paths, then repaint so Send is
@@ -547,6 +567,7 @@ async function acceptConversationSubmission(payload, meta = {}) {
         const alreadyUncertain = pendingSubmission?.account === account && pendingSubmission?.key === payload.submissionKey;
         pendingSubmission = !alreadyUncertain && error.status >= 400 && error.status < 500 ? null
             : { key: payload.submissionKey, signature, payload, account, draftSignature: meta.draftSignature || '' };
+        if (raiseImageRefusalNotice(error, meta.origin)) return null;
         const detail = error?.body?.error || error?.message || 'The Conversation reply could not be sent.';
         toastr.error(detail, 'Reply not sent');
         return null;

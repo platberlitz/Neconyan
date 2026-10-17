@@ -2,6 +2,7 @@ import { promptImageCopyDescriptor } from '../../public/scripts/prompt-media-pol
 import { verifyPromptImageCopy } from '../managed-image-files.js';
 import path from 'node:path';
 import { createPromptMediaContext, promptMediaText, selectPromptMedia } from '../../public/scripts/prompt-media-policy.js';
+import { uiText } from '../../public/scripts/ui-text.js';
 import { mergeChatPresetSettings } from '../../public/scripts/chat-preset-request.js';
 import { resolveGenerationProfile } from './profiles.js';
 import { imageSize } from 'image-size';
@@ -300,7 +301,7 @@ function selectedBooks(settings, saved, character, avatar, personaLorebook) {
 /** Capture the actual saved book selection before private job admission. */
 export function captureRoleplayWorldInfo(base, account, source, { avatar, maxContext, tokenizer = 'o200k_base', trigger = 'normal', serverPrompt = false,
     agentIds = [], agentContext = false, nativeBindingVersion = 1, promptEffect = null, mediaPolicyVersion = 0, mediaBinding = null, bundledMacros = null }) {
-    if (![0, 1].includes(mediaPolicyVersion)) throw roleplayError('ROLEPLAY_INVALID', 'This image input version is unsupported.', 409);
+    if (![0, 1].includes(mediaPolicyVersion)) throw roleplayError('ROLEPLAY_INVALID', uiText('The page and the server are running different versions. Reload the page, then try again.'), 409);
     if (!['normal', 'continue', 'swipe', 'regenerate'].includes(trigger) || typeof serverPrompt !== 'boolean'
         || ![0, 1].includes(nativeBindingVersion) || nativeBindingVersion === 0 && agentIds.length
         || promptEffect !== null && !['append', 'continue', 'swipe', 'alternative', 'replace'].includes(promptEffect)) {

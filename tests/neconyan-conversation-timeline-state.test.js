@@ -146,6 +146,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/typing.j
     withTypingParticipant: (_participant, task) => task(),
 }));
 
+const { reportConversationGenerationError } = await import('../public/scripts/neconyan-conversation/generation.js');
 const stateModule = await import('../public/scripts/neconyan-conversation/state.js');
 const {
     getActiveConversationReplyTarget,
@@ -171,10 +172,12 @@ function makeMessage(id, mes = `message ${id}`) {
 
 function deferred() {
     let resolve;
-    const promise = new Promise((resolvePromise) => {
+    let reject;
+    const promise = new Promise((resolvePromise, rejectPromise) => {
         resolve = resolvePromise;
+        reject = rejectPromise;
     });
-    return { promise, resolve };
+    return { promise, resolve, reject };
 }
 
 describe('conversation timeline operation identity', () => {
@@ -295,6 +298,24 @@ describe('conversation timeline operation identity', () => {
         expect(commitCharacterReplyCommands).not.toHaveBeenCalled();
         expect(extractCharacterReplyCommands).not.toHaveBeenCalled();
         expect(globalThis.toastr.success).toHaveBeenCalledWith('Message regenerated.');
+    });
+
+    test('a refused regeneration reports the thread and branch it was started on, not the persona open when the refusal arrives', async () => {
+        Object.assign(stores.get(storeKey('persona-a.png', 'char.png')).branches['branch-a'], { lifetimeSeed: 'seed-a', createdAt: 111 });
+        reportConversationGenerationError.mockClear();
+        const job = deferred();
+        submitConversationRewrite.mockImplementationOnce(() => job.promise);
+        const run = regenerateConversationMessage('message-2');
+        await Promise.resolve();
+        // The person moves to another persona and character while the server works.
+        currentPersonaId = 'persona-b.png';
+        currentAvatar = 'other.png';
+        const refusal = Object.assign(new Error('This image changed.'), { code: 'ROLEPLAY_IMAGE_INPUT' });
+        job.reject(refusal);
+        await run;
+        expect(reportConversationGenerationError).toHaveBeenCalledTimes(1);
+        expect(reportConversationGenerationError).toHaveBeenCalledWith('regenerate', refusal, { level: 'warning', origin: {
+            workspace: 'conversation', account: 'tester', avatar: 'char.png', groupId: '', personaId: 'persona-a.png', branchId: 'branch-a', lifetimeSeed: 'seed-a', createdAt: '111' } });
     });
 
     test('says the server is still writing when the page stops watching', async () => {

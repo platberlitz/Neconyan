@@ -1,4 +1,5 @@
 import { mergeChatPresetSettings } from '../../public/scripts/chat-preset-request.js';
+import { uiText } from '../../public/scripts/ui-text.js';
 import { supportsChatImages, supportsChatTools, supportsChatSignatures } from '../../public/scripts/chat-input-capabilities.js';
 import { prepareRoleplayCapabilities } from './roleplay-capabilities.js';
 import { getChatImageTokenCost } from '../../public/scripts/chat-prompt-tokens.js';
@@ -629,7 +630,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     if (media.length && (!request.serverPrompt || !chatInput || !supportsChatImages(toolControls, { model_list: capabilities?.models ?? [] }))) {
         if (media.some((image, imageIndex) => !image.captioned && (!captions
             || !request.worldInfo.captions.items.some(item => item.imageIndex === imageIndex)))) {
-            throw Object.assign(roleplayError('ROLEPLAY_INVALID', 'These saved Roleplay images need a bound vision connection or saved captions.', 409), { imageIssue: { reason: 'vision-unavailable', index: media[0]?.index ?? -1, mediaIndex: media[0]?.mediaIndex ?? -1, actions: ['review', 'display-only', 'caption'] } });
+            // The image code, with the imageIssue, is what lets the page show the one actionable notice: the job runner keeps only message, code and status.
+            throw Object.assign(roleplayError('ROLEPLAY_IMAGE_INPUT', uiText('This chat\'s connection cannot receive images. Set them to Show only or Use a description, or switch to a connection that accepts images.'), 409), { imageIssue: { reason: 'vision-unavailable', index: media[0]?.index ?? -1, mediaIndex: media[0]?.mediaIndex ?? -1, actions: ['review', 'display-only', 'caption'] } });
         }
         media = media.map(image => ({ ...image, captionOnly: true }));
     }

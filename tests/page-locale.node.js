@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { load } from 'cheerio';
 
+import { assembleLocaleData } from '../public/scripts/locale-assembly.js';
 import { mergePageDictionary, pickLocale, templateKeys, translationFor } from '../public/scripts/page-locale.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -94,12 +95,12 @@ test('P2 the pages see the same translations as the app for every page key and m
         return { ok: data !== null, json: async () => data };
     };
     const quiet = { log() {}, warn() {} };
-    const factory = new Function('langs', 'fetch', 'console', `${declaration(source, 'findLang')}\n${declaration(source, 'getLocaleData')}\nreturn getLocaleData;`);
-    const getLocaleData = factory(languages, fetchStub, quiet);
+    const factory = new Function('langs', 'fetch', 'console', 'assembleLocaleData', `${declaration(source, 'findLang')}\n${declaration(source, 'getLocaleData')}\nreturn getLocaleData;`);
+    const getLocaleData = factory(languages, fetchStub, quiet, assembleLocaleData);
     const keys = [...new Set([...Object.values(pageKeys).flat(), ...LOGIN_MESSAGES])];
     assert.equal(keys.length, 74);
     for (const { lang } of languages) {
-        const appDictionary = await getLocaleData(lang);
+        const { dictionary: appDictionary } = await getLocaleData(lang);
         const pageDictionary = mergePageDictionary(parsed(`public/locales/${lang}.json`), parsed(`public/locales/neconyan/${lang}.json`));
         for (const key of keys) {
             assert.equal(translationFor(pageDictionary, key), translationFor(appDictionary, key), `${lang}: ${key}`);

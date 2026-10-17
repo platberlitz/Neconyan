@@ -47,7 +47,7 @@ describe('style decoder cannot break out of its style element', () => {
         await jest.unstable_mockModule('../public/scripts/scrapers.js', () => ({ ScraperManager: class {} }));
         await jest.unstable_mockModule('../public/scripts/dragdrop.js', () => ({ DragAndDropHandler: class {} }));
         await jest.unstable_mockModule('../public/scripts/templates.js', () => ({ renderTemplateAsync: jest.fn() }));
-        await jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: strings => strings.join('') }));
+        await jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: strings => strings.join(''), translate: text => text }));
         await jest.unstable_mockModule('../public/scripts/RossAscends-mods.js', () => ({ humanizedDateTime: jest.fn() }));
         await jest.unstable_mockModule('../public/scripts/util/AccountStorage.js', () => ({ accountStorage: { getItem: jest.fn(), setItem: jest.fn() } }));
         await jest.unstable_mockModule('../public/scripts/constants.js', () => ({ MEDIA_DISPLAY: {}, MEDIA_SOURCE: {}, MEDIA_TYPE: {}, SCROLL_BEHAVIOR: {}, SWIPE_DIRECTION: {} }));

@@ -2,12 +2,19 @@ import { describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
+import { tableForKey } from '../public/scripts/locale-assembly.js';
+
+// translateElement reads its table through lookupTable, which reads tableForKey and the two module tables, so all three are in the scope.
+function translateElementContext(source, localeData) {
+    const context = vm.createContext({ localeData, scopedData: {}, tableForKey });
+    for (const name of ['lookupTable', 'translateElement']) vm.runInContext(source.match(new RegExp(`^function ${name}\\([\\s\\S]*?^}`, 'm'))[0], context);
+    return context;
+}
+
 describe('Neconyan native workspace module', () => {
     test('queued localisation accepts a label whose translation attribute was removed', () => {
         const source = readFileSync(new URL('../public/scripts/i18n.js', import.meta.url), 'utf8');
-        const translate = source.match(/^function translateElement\([\s\S]*?^}/m)[0];
-        const context = vm.createContext({ localeData: { Before: 'After' } });
-        vm.runInContext(translate, context);
+        const context = translateElementContext(source, { Before: 'After' });
         const element = { getAttribute: () => '[title]Before;Before', setAttribute: jest.fn(), textContent: '' };
         context.translateElement(element);
         expect(element.textContent).toBe('After');
@@ -18,10 +25,8 @@ describe('Neconyan native workspace module', () => {
     });
     test('a bracketed word inside a caption is not read as an attribute name', () => {
         const source = readFileSync(new URL('../public/scripts/i18n.js', import.meta.url), 'utf8');
-        const translate = source.match(/^function translateElement\([\s\S]*?^}/m)[0];
         const key = 'Channels like [SP] use the compatible API.';
-        const context = vm.createContext({ localeData: { [key]: 'Translated [SP] caption.' } });
-        vm.runInContext(translate, context);
+        const context = translateElementContext(source, { [key]: 'Translated [SP] caption.' });
         const element = { getAttribute: () => key, setAttribute: jest.fn(), textContent: '' };
         context.translateElement(element);
         expect(element.textContent).toBe('Translated [SP] caption.');
@@ -31,15 +36,13 @@ describe('Neconyan native workspace module', () => {
     });
     test('multiline tooltips do not replace the control label', () => {
         const source = readFileSync(new URL('../public/scripts/i18n.js', import.meta.url), 'utf8');
-        const translate = source.match(/^function translateElement\([\s\S]*?^}/m)[0];
         const key = 'Open checkpoint chat\nShift+Click to replace the existing checkpoint with a new one';
         const tooltip = 'Checkpoint-Chat öffnen\nUmschalt+Klick ersetzt den vorhandenen Checkpoint durch einen neuen';
-        const context = vm.createContext({ localeData: {
+        const context = translateElementContext(source, {
             [key]: tooltip,
             [`[data-tooltip]${key}`]: 'Checkpoint',
             'Open checkpoint chat': 'Checkpoint-Chat öffnen',
-        } });
-        vm.runInContext(translate, context);
+        });
         const element = {
             getAttribute: () => `[data-tooltip]${key};[aria-label]Open checkpoint chat`,
             setAttribute: jest.fn(),

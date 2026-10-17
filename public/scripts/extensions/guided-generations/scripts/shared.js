@@ -1,4 +1,5 @@
 import { extension_settings, getContext } from '../../../extensions.js';
+import { isImageInputIssue } from '../../../prompt-media-policy.js';
 import {
     getCurrentProfile,
     getCurrentProfileId,
@@ -96,7 +97,8 @@ async function submitGuidedWorkflow(name, prompt) {
         // A refusal is final. Falling back here would inject the guide and pay for
         // a second generation the server already accounted for.
         console.error('[GuidedGenerations] The named workflow was refused:', error);
-        globalThis.toastr?.error?.(error?.message || 'The guided workflow could not be started.', 'Nothing was generated');
+        // An image refusal has already raised its own notice (postSubmission), so it gets no second, generic toast.
+        if (!isImageInputIssue(error)) globalThis.toastr?.error?.(error?.message || 'The guided workflow could not be started.', 'Nothing was generated');
     }
     return true;
 }

@@ -23,7 +23,7 @@ const PRESERVATION = 'preservation';
 
 // What is cut out of which file: top-level functions, by name. A name that cannot be cut is a set-up error, never a skipped check.
 const wanted = {
-    'public/scripts/i18n.js': ['translateElement', 't', 'translate', 'getLocaleData'],
+    'public/scripts/i18n.js': ['translateElement', 't', 'translate', 'getLocaleData', 'lookupTable'],
     'public/script.js': ['getCharacterBlock'],
     'public/scripts/group-chats.js': ['getGroupBlock'],
     [`${conversation}/interface.js`]: ['buildBranchListFingerprint', 'buildPalsRailFingerprint', 'renderPalsRail'],
@@ -121,6 +121,9 @@ async function openScope(page, language) {
     await page.setContent('<main id="root"></main>');
     await page.addScriptTag({ type: 'module', content: `${await read('public/scripts/ui-localization.js')}\nwindow.localizeControls = localizeControls;` });
     await page.waitForFunction(() => typeof window.localizeControls === 'function');
+    // getLocaleData builds its two tables with assembleLocaleData, and lookupTable picks one with tableForKey.
+    await page.addScriptTag({ type: 'module', content: `${await read('public/scripts/locale-assembly.js')}\nwindow.localeAssembly = { assembleLocaleData, tableForKey };` });
+    await page.waitForFunction(() => typeof window.localeAssembly === 'object');
     await page.addScriptTag({ content: await read('public/lib/jquery-3.5.1.min.js') });
     await page.evaluate(async ([sources, constants, files, indexHtml, language]) => {
         const target = {};
@@ -139,7 +142,8 @@ async function openScope(page, language) {
         // The dictionary: the app's getLocaleData, given the three files in place of fetch.
         scope.findLang = lang => ({ lang });
         scope.fetch = async url => ({ ok: Object.hasOwn(files, url), json: async () => files[url] });
-        scope.localeData = await scope.getLocaleData(language);
+        Object.assign(scope, window.localeAssembly);
+        ({ dictionary: scope.localeData, scoped: scope.scopedData } = await scope.getLocaleData(language));
         scope.trackMissingDynamicTranslate = null;
         Object.assign(scope, constants, {
             $: window.jQuery, characters: [], selected_group: null, this_chid: undefined, power_user: {}, default_avatar: '', getThumbnailUrlForViewport: () => '',

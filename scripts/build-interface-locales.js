@@ -10,6 +10,7 @@ import { load } from 'cheerio';
 import { parse } from 'acorn';
 
 const root = path.resolve('public');
+const serverRoot = path.resolve('src');
 const output = path.join(root, 'locales/neconyan');
 const source = {};
 // The HTML parser turns a template hole (NUL, below) inside an attribute into U+FFFD, so a key or value
@@ -45,6 +46,8 @@ const selected = requested ? locales.filter(locale => requested.includes(locale.
 const hole = '\u0000';
 const captionProperties = ['label', 'title', 'placeholder', 'description', 'textContent', 'innerText', 'okButton', 'cancelButton', 'text', 'ariaLabel', 'tooltip', 'subtitle', 'heading', 'hint', 'emptyText', 'speaker'];
 const captionAttributes = ['title', 'placeholder', 'aria-label'];
+// Keep in step with SCOPED_PREFIX in public/scripts/locale-assembly.js. A scoped key is read only by an explicit lookup.
+const scopedPrefix = 'scoped.';
 const literalTextCache = new WeakMap();
 function literalText(node) {
     if (!node || typeof node !== 'object') return null;
@@ -85,7 +88,9 @@ function collectHtml($) {
         $(element).contents().filter((_i, node) => node.type === 'text').each((_i, node) => addCaption(node.data));
     });
     $('[title],[placeholder],[aria-label]').each((_index, element) => {
-        for (const attribute of captionAttributes) addCaption($(element).attr(attribute));
+        // An attribute that data-i18n reaches through a scoped key is looked up by that key alone, never as an exact caption.
+        const scopedAttributes = new Set(($(element).attr('data-i18n') || '').split(';').map(spec => spec.match(/^\[([^\]]+)\](.+)$/)).filter(match => match?.[2].startsWith(scopedPrefix)).map(match => match[1]));
+        for (const attribute of captionAttributes) if (!scopedAttributes.has(attribute)) addCaption($(element).attr(attribute));
     });
 }
 
@@ -108,8 +113,22 @@ const sentenceText = value => typeof value === 'string' && value.length <= 240 &
     && !/[{}<>[\]#=|\\\n]/.test(value.trim()) && !/^[A-Z][a-z\d]+(?:[A-Z][a-z\d]*)+$/.test(value.trim());
 const templateKey = node => node.quasis.map((q, index) => (q.value.cooked ?? '') + (index < node.expressions.length ? '${' + index + '}' : '')).join('');
 
+// uiText('...') marks a whole message that people are shown (see public/scripts/ui-text.js). It is collected wherever
+// the call sits, even in a throw or an Error, where the caption rules below stay quiet.
+function collectUiText(node) {
+    if (node.type !== 'CallExpression' || calleeName(node.callee) !== 'uiText') return;
+    const text = literalText(node.arguments[0])?.trim();
+    if (text) add(text);
+}
+
+// translate('English', 'scoped.key') names its English text through the scoped key alone. That text is not also an exact caption,
+// because an exact key can reach the matching dictionary and would then change the same words anywhere on the page.
+const isScopedTranslate = node => node.type === 'CallExpression' && node.callee.name === 'translate' && node.arguments[0]?.type === 'Literal'
+    && node.arguments[1]?.type === 'Literal' && typeof node.arguments[1].value === 'string' && node.arguments[1].value.startsWith(scopedPrefix);
+
 function walkAst(node, quiet = false) {
     if (!node || typeof node !== 'object') return;
+    collectUiText(node);
     if (!quiet && node.type === 'Literal' && sentenceText(node.value)) addCaption(node.value);
     if (!quiet && node.type === 'BinaryExpression' && sentenceText(literalText(node))) addCaption(literalText(node));
     if (!quiet && node.type === 'TemplateLiteral' && sentenceText(node.quasis[0].value.cooked) && !node.quasis.some(q => /[<>]/.test(q.value.cooked ?? ''))) {
@@ -144,7 +163,7 @@ function walkAst(node, quiet = false) {
             || (node.type === 'SwitchCase' && field === 'test')
             || (node.type === 'Property' && (field === 'key' || codeOnlyKeys.has(node.key?.name || node.key?.value)))
             || (node.type === 'MemberExpression' && field === 'property');
-        if (Array.isArray(value)) value.forEach(child => walkAst(child, childQuiet));
+        if (Array.isArray(value)) value.forEach((child, index) => walkAst(child, childQuiet || (field === 'arguments' && index === 0 && isScopedTranslate(node))));
         else if (value && typeof value === 'object') walkAst(value, childQuiet);
     }
 }
@@ -164,6 +183,27 @@ function visit(directory) {
     }
 }
 visit(root);
+// The server's own code is not scanned for captions. Only a literal passed to uiText() is collected from src/.
+function walkUiText(node) {
+    if (!node || typeof node !== 'object') return;
+    collectUiText(node);
+    for (const value of Object.values(node)) {
+        if (Array.isArray(value)) value.forEach(walkUiText);
+        else if (value && typeof value === 'object') walkUiText(value);
+    }
+}
+function visitServer(directory) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        if (entry.name === 'node_modules') continue;
+        const filename = path.join(directory, entry.name);
+        if (entry.isDirectory()) { visitServer(filename); continue; }
+        if (!filename.endsWith('.js')) continue;
+        try { walkUiText(parse(fs.readFileSync(filename, 'utf8'), { ecmaVersion: 'latest', sourceType: 'module' })); } catch (error) {
+            console.warn(`Skipped ${path.relative(process.cwd(), filename)}: ${error.message}`);
+        }
+    }
+}
+if (fs.existsSync(serverRoot)) visitServer(serverRoot);
 // Bundled assistant roles and summaries are shown on Home as plain text.
 const assistants = JSON.parse(fs.readFileSync(path.resolve('default/content/assistants/manifest.json'), 'utf8'));
 for (const personality of assistants.personalities || []) [personality.role, personality.summary].forEach(addCaption);

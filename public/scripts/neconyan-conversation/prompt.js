@@ -170,7 +170,7 @@ function getConversationLocalTimeContext(now = new Date()) {
 }
 
 export function formatConversationTranscript(messages) {
-    messages = projectConversationImageInput(messages, browserPromptMediaContext(getActiveConversationBranch(getCurrentCharAvatar(), { create: false }) ?? {}), { hash: promptAttachmentHash });
+    messages = projectConversationImageInput(messages, browserPromptMediaContext(getActiveConversationBranch(getCurrentCharAvatar(), { create: false }) ?? {}, { chatScope: 'branch' }), { hash: promptAttachmentHash });
     return messages
         .slice(-TRANSCRIPT_MESSAGE_LIMIT)
         .map(message => {
@@ -236,7 +236,7 @@ export async function buildConversationPromptMessages(messages, directive, speak
     return composeConversationPromptMessages(messages, directive, speakerName, {
         groupId,
         userName: getConversationPersonaName(personaId, 'User'),
-        convertImages: (urls, options) => convertImageUrlsToBase64(urls, 3, options), validateImages: validatePromptImageCopies, mediaPolicy: browserPromptMediaContext(getActiveConversationBranch(getCurrentCharAvatar(), { create: false }) ?? {}), hash: promptAttachmentHash,
+        convertImages: (urls, options) => convertImageUrlsToBase64(urls, 3, options), validateImages: validatePromptImageCopies, mediaPolicy: browserPromptMediaContext(getActiveConversationBranch(getCurrentCharAvatar(), { create: false }) ?? {}, { chatScope: 'branch' }), hash: promptAttachmentHash,
     });
 }
 

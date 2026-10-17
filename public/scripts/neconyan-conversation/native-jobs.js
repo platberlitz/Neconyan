@@ -8,6 +8,7 @@
  */
 import { cancelJob, listJobs, observeJob, TERMINAL } from '../jobs.js';
 import { getCurrentUserHandle } from '../user.js';
+import { conversationImageOrigin, imageInputIssueDetail, isImageInputIssue } from '../prompt-media-policy.js';
 import { presentPendingConversationClaims } from './presentation.js';
 import { scheduleInterfaceRefresh } from './render-scheduler.js';
 import { refreshConversationStore } from './store-sync.js';
@@ -43,6 +44,23 @@ function readback(account) {
     return entry.promise;
 }
 
+/**
+ * A reply job the server refused for an image (its error carries the code ROLEPLAY_IMAGE_INPUT) raises the one actionable notice
+ * (showImageChoiceNotice in prompt-media-ui.js), with the job's own message as the reason. Only reply jobs are reported here: the
+ * rewrite, selfie and schedule jobs are waited for by the call that started them, which reports their failure itself.
+ * Any other job failure is not reported by this observer, as before.
+ * Its origin is the job's own: the thread and branch the job record names (intent.target, and the branch's createdAt on job.target),
+ * and the account that observes it. The record has no lifetimeSeed, so createdAt tells a later branch that reuses the id apart.
+ * @returns {boolean} True when the notice was raised.
+ */
+function raiseReplyImageRefusal(job, account) {
+    if (job?.type !== 'conversation.reply' || job.state === 'completed' || !TERMINAL.has(job.state) || !isImageInputIssue(job.error)) return false;
+    const { avatar, groupId, personaId, branchId } = job.intent?.target ?? {};
+    const origin = conversationImageOrigin({ avatar, groupId, personaId, branchId, createdAt: job.target?.createdAt }, account);
+    globalThis.dispatchEvent(new CustomEvent('neconyan:image-input-refused', { detail: imageInputIssueDetail(job.error, origin) }));
+    return true;
+}
+
 /** Watch a native root job and merge its saved messages as they appear. */
 export function observeNativeConversationJob(jobId, account = getCurrentUserHandle()) {
     if (account !== getCurrentUserHandle()) return;
@@ -50,9 +68,12 @@ export function observeNativeConversationJob(jobId, account = getCurrentUserHand
         return;
     }
     let stopPreview;
+    // A terminal snapshot can be read again while its readback is retried; the notice is raised once.
+    let refusalRaised = false;
     const stop = observeJob(jobId, {
         account,
         onSnapshot: async job => {
+            if (!refusalRaised) refusalRaised = raiseReplyImageRefusal(job, account);
             if (['conversation.reply', 'conversation.rewrite'].includes(job.type) && !TERMINAL.has(job.state) && !stopPreview) stopPreview = observeNativeConversationPreview(jobId, account);
             await readback(account);
             await reviewAssistantJobChildren(job, account);

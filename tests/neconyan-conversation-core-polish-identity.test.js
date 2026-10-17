@@ -36,6 +36,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.
     saveGroupConversationSettings: jest.fn(),
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/generation.js', () => ({
+    conversationRequestOrigin: () => undefined,
     submitConversationRewrite,
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/media.js', () => ({

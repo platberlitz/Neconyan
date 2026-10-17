@@ -1,12 +1,16 @@
 import { addLanguageOptions, browserLanguages, initialLanguageChoice, isNewLanguageInstallation, readLanguageChoice, saveLanguagePreference, storedLanguage, writeLanguageChoice, BROWSER_LANGUAGE } from './page-locale.js';
 import { registerDebugFunction } from './power-user.js';
 import { updateSecretDisplay } from './secrets.js';
+import { assembleLocaleData, tableForKey } from './locale-assembly.js';
 import { localizeControls, localizeString } from './ui-localization.js';
 
 let localeFile = 'en';
 var langs;
 // Don't change to let/const! It will break module loading.
 var localeData;
+// Entries for 'scoped.' keys, which only translate() and data-i18n reach; never matched against page text. Same caveat.
+var scopedData;
+// True when either table has entries.
 let hasLocaleData = false;
 let initialChoice;
 
@@ -28,12 +32,32 @@ let trackMissingDynamicTranslate = null;
 export const getCurrentLocale = () => localeFile;
 
 /**
+ * The one place an explicit lookup picks its table: a 'scoped.' key reads the scoped table and every other key reads the
+ * matching dictionary. translate(), data-i18n and addLocaleData() all route through it. Either table is undefined
+ * until loading finishes, so a lookup made before then finds nothing and the caller's English text is used.
+ * @param {string} key
+ * @returns {Record<string, string>|undefined}
+ */
+function lookupTable(key) {
+    return tableForKey(key, localeData, scopedData);
+}
+
+/**
+ * @param {Record<string, string>|undefined} table
+ * @returns {boolean}
+ */
+function hasEntries(table) {
+    return Boolean(table) && Object.keys(table).length > 0;
+}
+
+/**
  * Adds additional localization data to the current locale file.
+ * A key beginning with 'scoped.' goes to the scoped table, every other key to the matching dictionary.
  * @param {string} localeId Locale ID (e.g. 'fr-fr' or 'zh-cn')
  * @param {Record<string, string>} data Localization data to add
  */
 export function addLocaleData(localeId, data) {
-    if (!localeData) {
+    if (!localeData || !scopedData) {
         console.warn('Localization data not loaded yet. Additional data will not be added.');
         return;
     }
@@ -45,8 +69,9 @@ export function addLocaleData(localeId, data) {
 
     for (const [key, value] of Object.entries(data)) {
         // Overrides for default locale data are not allowed
-        if (!Object.hasOwn(localeData, key)) {
-            localeData[key] = value;
+        const table = lookupTable(key);
+        if (!Object.hasOwn(table, key)) {
+            table[key] = value;
             hasLocaleData = true;
         }
     }
@@ -109,6 +134,7 @@ export function t(strings, ...values) {
  *
  * If the translation is based on a key, that one is used to find a possible translation in the translation file.
  * The original text still has to be provided, as that is the default value being returned if no translation is found.
+ * A key beginning with 'scoped.' is looked up in the scoped table only; any other key is looked up in the matching dictionary.
  *
  * For in-code text translation on a format string, using the template literal `t` is preferred.
  *
@@ -122,10 +148,11 @@ export function translate(text, key = null) {
         console.trace('WARN: No translation key provided');
         return '';
     }
-    if (trackMissingDynamicTranslate && localeData && !Object.hasOwn(localeData, translationKey)) {
+    const table = lookupTable(translationKey);
+    if (trackMissingDynamicTranslate && table && !Object.hasOwn(table, translationKey)) {
         trackMissingDynamicTranslate.add(translationKey);
     }
-    return localeData?.[translationKey] || text;
+    return table?.[translationKey] || text;
 }
 
 /**
@@ -143,12 +170,12 @@ export function localizeMessage(text) {
 /**
  * Fetches the locale data for the given language.
  * @param {string} language Language code
- * @returns {Promise<Record<string, string>>} Locale data
+ * @returns {Promise<{dictionary: Record<string, string>, scoped: Record<string, string>}>} The matching dictionary and the scoped table
  */
 async function getLocaleData(language) {
     let supportedLang = findLang(language);
     if (!supportedLang) {
-        return {};
+        return { dictionary: {}, scoped: {} };
     }
 
     const data = await fetch(`./locales/${language}.json`).then(response => {
@@ -159,18 +186,13 @@ async function getLocaleData(language) {
         return response.json();
     });
 
-    if (language === 'en') return data;
+    if (language === 'en') return { dictionary: data, scoped: {} };
     const readSupplement = async name => {
         const response = await fetch(`./locales/neconyan/${name}.json`);
         return response.ok ? response.json() : {};
     };
-    const [source, supplement] = await Promise.all([readSupplement('en'), readSupplement(language)]);
-    const combined = { ...data, ...supplement };
-    // Older translations use symbolic keys; new labelled controls use the English caption.
-    for (const [key, english] of Object.entries(source)) {
-        if (combined[key] && !Object.hasOwn(combined, english)) combined[english] = combined[key];
-    }
-    return combined;
+    const [catalogue, supplement] = await Promise.all([readSupplement('en'), readSupplement(language)]);
+    return assembleLocaleData({ base: data, supplement, catalogue });
 }
 
 /**
@@ -197,12 +219,12 @@ function translateElement(element) {
         // Neconyan: only a leading tag names an attribute; its caption may span multiple lines.
         const attributeMatch = key.match(/^\[([^\]]+)\](.+)$/s); // [attribute]key
         if (attributeMatch) { // attribute-tagged key
-            const localizedValue = localeData?.[attributeMatch[2]];
+            const localizedValue = lookupTable(attributeMatch[2])?.[attributeMatch[2]];
             if (localizedValue || localizedValue === '') {
                 element.setAttribute(attributeMatch[1], localizedValue);
             }
         } else { // No attribute tag, treat as 'text'
-            const localizedValue = localeData?.[key];
+            const localizedValue = lookupTable(key)?.[key];
             if (localizedValue || localizedValue === '') {
                 element.textContent = localizedValue;
             }
@@ -232,18 +254,18 @@ async function getMissingTranslations() {
     const langsToProcess = isSupportedNonEnglish() ? [findLang(localeFile)] : langs;
 
     for (const language of langsToProcess) {
-        const localeData = await getLocaleData(language.lang);
+        const { dictionary, scoped } = await getLocaleData(language.lang);
         $(document).find('[data-i18n]').each(function () {
             const keys = $(this).data('i18n').split(';'); // Multi-key entries are ; delimited
             for (const key of keys) {
                 const attributeMatch = key.match(/^\[([^\]]+)\](.+)$/s); // [attribute]key
                 if (attributeMatch) { // attribute-tagged key
-                    const localizedValue = localeData?.[attributeMatch[2]];
+                    const localizedValue = tableForKey(attributeMatch[2], dictionary, scoped)?.[attributeMatch[2]];
                     if (!localizedValue) {
                         missingData.push({ key, language: language.lang, value: String($(this).attr(attributeMatch[1])) });
                     }
                 } else { // No attribute tag, treat as 'text'
-                    const localizedValue = localeData?.[key];
+                    const localizedValue = tableForKey(key, dictionary, scoped)?.[key];
                     if (!localizedValue) {
                         missingData.push({ key, language: language.lang, value: $(this).text().trim() });
                     }
@@ -286,7 +308,7 @@ async function getMissingTranslations() {
  * @returns {Document|string} Translated root, in the same format as the input (Document or HTML string)
  */
 export function applyLocale(root = document) {
-    if (!localeData || Object.keys(localeData).length === 0) {
+    if (!hasEntries(localeData) && !hasEntries(scopedData)) {
         return root;
     }
 
@@ -332,11 +354,12 @@ export async function initLocales(installationData) {
     });
     if (langs.length && initialChoice.record) writeLanguageChoice(initialChoice.record);
     localeFile = initialChoice.locale;
-    try { localeData = await getLocaleData(localeFile); } catch (error) {
+    try { ({ dictionary: localeData, scoped: scopedData } = await getLocaleData(localeFile)); } catch (error) {
         console.warn('Dictionary unavailable; using English.', error);
         localeData = {};
+        scopedData = {};
     }
-    hasLocaleData = Object.keys(localeData).length > 0;
+    hasLocaleData = hasEntries(localeData) || hasEntries(scopedData);
     if (localeFile !== 'en' && !hasLocaleData) localeFile = 'en';
     document.documentElement.lang = localeFile;
     applyLocale();

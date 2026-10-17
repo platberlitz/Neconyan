@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { imageSize } from 'image-size';
 import { createRoleplayDirectory, inspectRoleplayFile, readRoleplayFile, roleplayHash } from './roleplay-store.js';
 import { readRepairJson, writeRepairJson, writeRepairBytes, repairFailure } from './roleplay-image-repair-store.js';
+import { uiText } from '../public/scripts/ui-text.js';
 
 const FOLDER = 'neconyan-repaired';
 const MARKER = '.neconyan-managed-images.json';
@@ -136,7 +137,7 @@ export function verifyManagedImage(directories, url) {
     const record = readRepairJson(filename + '.record.json', 4096).value;
     const file = inspectRoleplayFile(filename, LIMIT);
     if (record.version !== 1 || !file || record.rawHash !== file.rawHash || record.size !== file.size
-        || path.basename(filename) !== `${record.rawHash}.${record.extension}`) throw repairFailure('The saved prompt copy changed or is missing.');
+        || path.basename(filename) !== `${record.rawHash}.${record.extension}`) throw repairFailure(uiText('An image\'s compatible copy is missing or changed. Prepare a new one in Review chat images.'));
     return file;
 }
 
@@ -161,13 +162,13 @@ export function verifyPromptImageCopy(directories, descriptor) {
     if (!descriptor || Object.keys(descriptor).some(key => !['imageUrl', 'originalUrl', 'originalHash'].includes(key))
         || typeof descriptor.imageUrl !== 'string' || descriptor.imageUrl.length > 4096
         || descriptor.originalUrl !== null && (typeof descriptor.originalUrl !== 'string' || descriptor.originalUrl.length > 4096)) {
-        throw repairFailure('Review this image prompt copy before using it.');
+        throw repairFailure(uiText('An image\'s compatible copy record is damaged. Prepare a new copy in Review chat images.'));
     }
     verifyManagedImage(directories, descriptor.imageUrl);
     if (descriptor.originalUrl === null) return null;
     const evidence = inspectRoleplayFile(accountImagePath(directories, descriptor.originalUrl), 64 * 1024 * 1024);
     if (!evidence || evidence.rawHash !== descriptor.originalHash) {
-        throw repairFailure('The original image changed or is missing. Review its saved prompt copy.');
+        throw repairFailure(uiText('An image\'s original file changed or is missing, so its compatible copy is not used. Review it in Review chat images.'));
     }
     return { rawHash: evidence.rawHash, physical: evidence.physical };
 }

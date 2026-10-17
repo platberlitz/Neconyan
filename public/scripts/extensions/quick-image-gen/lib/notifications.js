@@ -14,11 +14,13 @@ const SEVERITIES = ["success", "info", "warning", "error"];
  *
  * The call signature deliberately mirrors toastr's own
  * `(message, title, options)` so migrating existing sites is a rename rather
- * than a rewrite. Two extra options are understood and stripped before the
+ * than a rewrite. Three extra options are understood and stripped before the
  * call reaches toastr:
  *
  *   throttleKey  suppress repeats of this key inside `throttleMs`
  *   logMessage   also send the text to the QIG log, even when the toast is suppressed
+ *   finalText    the text was already translated whole, so mark the message data-i18n-ignore
+ *                and the run-time localiser leaves it alone
  *
  * `escapeHtml` defaults to true. Toast bodies routinely carry provider error
  * text and user-typed names, and toastr renders HTML unless told otherwise.
@@ -68,6 +70,7 @@ export function createNotifier({
             throttleKey = "",
             throttleMs: windowMs = throttleMs,
             logMessage = false,
+            finalText = false,
             ...toastrOptions
         } = options || {};
 
@@ -80,7 +83,8 @@ export function createNotifier({
         const emit = target?.[severity];
         if (typeof emit !== "function") return false;
         try {
-            emit.call(target, text, title ?? "", { escapeHtml: true, ...toastrOptions });
+            const shown = emit.call(target, text, title ?? "", { escapeHtml: true, ...toastrOptions });
+            if (finalText) shown?.find?.(".toast-message")?.attr?.("data-i18n-ignore", "");
             return true;
         } catch (error) {
             record(`Notification failed: ${error?.message || error}`);
