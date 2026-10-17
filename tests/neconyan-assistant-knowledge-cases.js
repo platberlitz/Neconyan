@@ -1,5 +1,8 @@
 // Questions and distinguishing facts shared by Node and real-browser retrieval checks.
 export const refreshedKnowledgeCases = [
+    ['Does Mewmory save configuration automatically?', 'mewmory.autosave', 'number fields, model roles and credentials automatically'],
+    ['Does Mewmory hide accumulated history every 30000 tokens?', 'mewmory.hide-overflow', 'hiding repeats when visible history reaches the threshold again'],
+    ['Does the Mewmory hiding threshold keep 30000 tokens visible?', 'mewmory.hide-overflow', 'It does not retain a 30,000-token window'],
     ['What happens to my finished reply when an Agent fails?', 'chat.agent-failure-reply', 'never throws it away'],
     ['Do I need to regenerate after an Agent failed?', 'chat.agent-failure-reply', 'You do not need to regenerate'],
     ['Are failed Agents retried automatically?', 'chat.agent-failure-reply', 'retries the failed Agents once'],
@@ -169,7 +172,7 @@ export const refreshedKnowledgeCases = [
     ['How do I search my Input History?', 'chat.shortcuts', 'Search input history filters the list'],
     ['JannyAI login needed on the server when importing a link', 'tools.janny-import-errors', 'logging in from your own browser does not count'],
     ['Termux recovery: how does start-termux-import.sh find my Termux import folder?', 'start.termux-recovery', '~/.neconyan-import-folder on port 5534'],
-    ['Do the Turn on Mewmory in every new chat switches need Save configuration?', 'mewmory.new-chats', 'save as soon as you change them'],
+    ['Do the Turn on Mewmory in every new chat switches need Save configuration?', 'mewmory.new-chats', 'including switches and number fields'],
     ['How do I stop Dialogue Colors from colouring a scenario card or Narrator?', 'appearance.dialogue-exclusions', 'Add this card\'s name'],
     ['How do I clean [COLORS: ...] lines and colour tags from messages?', 'appearance.dialogue-clean', 'Color lines and tags'],
     ['What does Low-memory mode change and how does Use automatic recommendations work?', 'settings.device', 'Use automatic recommendations'],

@@ -186,7 +186,7 @@ test('current feature questions supply complete, actionable references to older 
         ['Can I hide the message statistics below the avatar?', 'appearance.message-statistics', 'Settings → Appearance → Visual Toggles'],
         ['How do I set up Mewmory with saved connections?', 'mewmory.setup', 'Original passages work without Facts and events or Pawspective interviews'],
         ['Can Mewmory search without an AI selector?', 'mewmory.search', 'ranked results go directly to the memory budget'],
-        ['How do I change Mewmory passage size and overlap?', 'mewmory.passages', 'Save configuration applies edits'],
+        ['How do I change Mewmory passage size and overlap?', 'mewmory.passages', 'Edits save automatically'],
         ['Why are Mewmory Data Bank file passages missing?', 'mewmory.files', 'This role may read'],
         ['Can Mewmory use native Vectorization?', 'mewmory.native-embeddings', 'Use chat retrieval in replies can stay off'],
         ['Does Mewmory support WebLLM?', 'mewmory.native-embeddings', 'WebLLM cannot run in Mewmory background jobs'],
