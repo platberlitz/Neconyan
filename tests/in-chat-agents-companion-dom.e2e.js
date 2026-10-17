@@ -98,7 +98,7 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                 window.areAgentsGloballyEnabled = () => false;
             });
             await page.addScriptTag({ content: [
-                'let panelLocked = false, livePreview = null; const panelOpen = true, panelLauncher = "handle";',
+                'let panelLocked = false, livePreview = null, panelSearchQuery = ""; const panelOpen = true, panelLauncher = "handle";',
                 declarations(`${companionPath}companion-panel.js`, [
                     'PANEL_LOCK_STORAGE_KEY', 'storePanelLocked', 'isCompanionPanelLocked', 'setCompanionPanelLocked',
                     'buildPanelRunButtonHtml', 'buildPanelRunButtonsHtml', 'buildPanelHtml', 'handlePanelAction',
