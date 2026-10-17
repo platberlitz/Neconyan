@@ -139,7 +139,8 @@ const SHARED_JSON_CACHE_MAX_BYTES = 64 * 1024 * 1024;
 let sharedJsonCacheBytes = 0;
 
 function sameCachedFileStat(cached, stat) {
-    return cached.dev === stat.dev && cached.ino === stat.ino && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs;
+    return cached.dev === stat.dev && cached.ino === stat.ino && cached.size === stat.size
+        && cached.mtimeMs === stat.mtimeMs && cached.ctimeMs === stat.ctimeMs;
 }
 
 function removeCachedJson(key) {
@@ -180,7 +181,7 @@ export function readJsonShared(filename, fallback) {
         if (error.code === 'ENOENT') return fallback;
         fail('Mewmory could not read the saved memories for this chat. Restore a valid export before making changes.', 409);
     }
-    const entry = { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, bytes: stat.size, data };
+    const entry = { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, bytes: stat.size, data };
     sharedJsonCache.set(key, entry);
     sharedJsonCacheBytes += entry.bytes;
     while (sharedJsonCacheBytes > SHARED_JSON_CACHE_MAX_BYTES && sharedJsonCache.size > 1) {

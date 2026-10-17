@@ -1,7 +1,8 @@
 import { projectPromptMediaRecords } from '../../public/scripts/prompt-media-policy.js';
 import path from 'node:path';
 import { readArtifact, writeArtifact, createProviderScope } from '../jobs/artifacts.js';
-import { readRoleplayFile, roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
+import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
+import { readRoleplaySettingsJson } from './settings-cache.js';
 import { getCounter } from '../mewmory/tokens.js';
 import { captureRoleplayWorldInfo, prepareRoleplayWorldInfo } from './world-info.js';
 import { readRoleplayAgents } from './roleplay-agents-source.js';
@@ -122,14 +123,16 @@ async function worldInfoContext(context, options, agents, identity) {
     const key = 'roleplay-companion-world-info';
     const previous = saved(context, options.snapshot.account, key, identity);
     if (previous) return previous.text;
-    await options.assertCurrent?.();
+    // The capture is synchronous and immediately followed by preparation, so
+    // preparation may skip its own opening capture. Its closing check still
+    // refuses a book or settings edit that lands during the asynchronous scan.
     const snapshot = captureRoleplayWorldInfo(options.base, options.snapshot.account, options.snapshot.source, {
         avatar: options.snapshot.avatar, tokenizer: options.snapshot.tokenizer, maxContext: 4096, serverPrompt: true, trigger: options.snapshot.global.trigger,
         agentIds: options.snapshot.agents?.forcedIds ?? [], agentContext: options.snapshot.agentContext ?? false,
         mediaPolicyVersion: options.snapshot.mediaPolicyVersion ?? 0, mediaBinding: options.snapshot.mediaBinding ?? null,
     });
     const pre = readArtifact(context.directories, context.job.id, 'roleplay-agents-pre');
-    const selection = await prepareRoleplayWorldInfo(options.base, snapshot, { macros: options.macros,
+    const selection = await prepareRoleplayWorldInfo(options.base, snapshot, { capturedNow: true, macros: options.macros,
         promptChat: options.messages.filter(message => !message.is_system).map(message => String(message.mes ?? '')).reverse(),
         promptInjections: (pre?.extensions ?? []).filter(extension => extension.scan).map(extension => extension.content) });
     await options.assertCurrent?.();
@@ -145,6 +148,35 @@ function baseRecord(agent, model) {
         chatHistoryPlacement: agent.companion.chatHistoryPlacement, chatHistoryInjection: normalizeCompanionChatHistoryInjection(agent.injection) };
 }
 
+/**
+ * The single Companion start rule shared by the early display prediction and
+ * the real run. It only decides which saved Companions are eligible and what
+ * the pending cards look like; it never starts, saves or spends anything.
+ */
+export function planRoleplayCompanionStart({ agents, snapshot, pre, records, value, effect, assistantName, selectedAgentIds }) {
+    const hidden = new Set(snapshot.agents.hiddenIds ?? []);
+    const sources = agents.filter(agent => isNativeCompanion(agent) && agent.prompt.trim() && (selectedAgentIds || !hidden.has(agent.id)));
+    const preparedRecords = companionHostRecords(projectPromptMediaRecords(records, snapshot.mediaPolicy, { hash: roleplayHash }), value, effect, assistantName);
+    const messages = preparedRecords.slice(1);
+    const hostResults = getActiveCompanionResults(messages.at(-1));
+    const availableTokens = messages.filter(message => !message.is_system).reduce((total, message) => total + companionMessageTokens(message), 0);
+    const pending = selectedAgentIds ? sources.filter(agent => selectedAgentIds.some(id => references(agent).includes(id)))
+        : sources.filter(agent => pre.activeIds.includes(agent.id) && agent.companion.trigger === 'auto' && availableTokens >= agent.companion.minContextTokens);
+    return { sources, preparedRecords, messages, hostResults, pending };
+}
+
+/** Display-only pending cards, merged over notes already kept on this reply. */
+export function roleplayCompanionPlaceholders({ hostResults, pending }) {
+    const entries = new Map(Object.entries(hostResults));
+    for (const agent of pending) entries.set(agent.id, { ...baseRecord(agent, null), status: 'pending', content: '' });
+    return Object.fromEntries(entries);
+}
+
+/** Saved Companions are durable results, never a pending card, whatever their order. */
+export function pendingRoleplayCompanionCards(pending, isSaved = () => false) {
+    return pending.filter(agent => !isSaved(agent));
+}
+
 /** Run automatic or explicitly selected companions from saved inputs and acknowledged provider steps. */
 export async function runRoleplayCompanions(context, options) {
     const { base, snapshot, records, value, generationType, effect, assistantName, binding, generate, assertCurrent } = options;
@@ -157,42 +189,59 @@ export async function runRoleplayCompanions(context, options) {
     const key = 'roleplay-companions';
     const previous = saved(context, snapshot.account, key, identity);
     if (previous) { notifyProgress(previous.results); return previous; }
-    await assertCurrent?.();
-    const all = readRoleplayAgents(base, snapshot);
-    const hidden = new Set(snapshot.agents.hiddenIds ?? []);
-    const sources = all.filter(agent => isNativeCompanion(agent) && agent.prompt.trim() && (options.selectedAgentIds || !hidden.has(agent.id)));
-    const index = referenceMap(sources);
+    const all = readRoleplayAgents(base, snapshot, options.agentCache);
     const pre = readArtifact(context.directories, context.job.id, 'roleplay-agents-pre');
     if (!pre || pre.intentHash !== roleplayHash(context.job.intent) || pre.policyHash !== roleplayHash(snapshot.agents)) throw fail('The companion activation input needs recovery.');
     const { hash: preHash, ...preData } = pre;
     if (preHash !== roleplayHash(preData)) throw fail('The companion activation input is damaged.');
-    const preparedRecords = companionHostRecords(projectPromptMediaRecords(records, snapshot.mediaPolicy, { hash: roleplayHash }), value, effect, assistantName);
-    const messages = preparedRecords.slice(1);
-    const hostResults = getActiveCompanionResults(messages.at(-1));
     const capacity = captureCompanionCapacity(all, records, snapshot.source, { agentContext: Boolean(snapshot.agentContext),
         trigger: snapshot.global?.trigger, hiddenIds: snapshot.agents.hiddenIds });
     if (roleplayHash(capacity) !== roleplayHash(snapshot.companionCapacity ?? null)) {
         throw fail('The admitted Companion result capacity differs from its saved source.');
     }
+    const plan = planRoleplayCompanionStart({ agents: all, snapshot, pre, records, value, effect, assistantName, selectedAgentIds: options.selectedAgentIds });
+    const { sources, preparedRecords, messages, hostResults } = plan;
+    let pending = plan.pending;
+    const index = referenceMap(sources);
+    if (options.selectedAgentIds?.length && !pending.length) throw fail('The selected companion is not enabled in this saved context.');
     const input = { ...options, records: preparedRecords, messages, agents: all };
-    const settings = withRoleplayAccount(base, snapshot.account, () => JSON.parse(readRoleplayFile(path.join(base.directories.root, 'settings.json'), 64 * 1024 * 1024).bytes.toString('utf8')));
+    const settings = withRoleplayAccount(base, snapshot.account, () => {
+        const value = readRoleplaySettingsJson(path.join(base.directories.root, 'settings.json'), { limit: 64 * 1024 * 1024 });
+        if (!value) throw fail('The saved companion settings are unreadable.');
+        return value;
+    });
     input.systemPrompt = String(settings.power_user?.sysprompt?.content ?? '');
     input.authorsNote = clean(records[0]?.chat_metadata?.note_prompt) || String(settings.extension_settings?.note?.default ?? '');
-    const availableTokens = messages.filter(message => !message.is_system).reduce((total, message) => total + companionMessageTokens(message), 0);
-    let pending = options.selectedAgentIds ? sources.filter(agent => options.selectedAgentIds.some(id => references(agent).includes(id)))
-        : sources.filter(agent => pre.activeIds.includes(agent.id) && agent.companion.trigger === 'auto' && availableTokens >= agent.companion.minContextTokens);
-    if (options.selectedAgentIds?.length && !pending.length) throw fail('The selected companion is not enabled in this saved context.');
-    input.worldInfo = await worldInfoContext(context, input, sources, identity);
-    const { count } = await getCounter(snapshot.tokenizer);
+    // World Info and the tokenizer are only paid for by a Companion that asks
+    // for them. A Companion without World Info can leave before that scan starts.
+    let worldInfoPromise = null;
+    const worldInfoText = () => (worldInfoPromise ??= worldInfoContext(context, input, sources, identity));
+    let counterPromise = null;
+    const count = async value => (await (counterPromise ??= getCounter(snapshot.tokenizer))).count(value);
     const completed = new Map(), visited = new Set(pending.map(agent => agent.id)), changed = new Set();
+    const durableCompanions = new Set();
+    const isDurableCompanion = agent => {
+        if (durableCompanions.has(agent.id)) return true;
+        try {
+            const savedResult = readArtifact(context.directories, context.job.id, `roleplay-companion:${agent.id}`);
+            if (savedResult !== undefined) durableCompanions.add(agent.id);
+            return savedResult !== undefined;
+        } catch { return false; }
+    };
     const shared = { ...context, providerScope: context.providerScope ?? createProviderScope(context) };
     const isRepairTarget = agent => Boolean(options.repair && (!options.selectedAgentIds || options.selectedAgentIds.some(id => references(agent).includes(id))));
     const publishProgress = () => {
-        const entries = new Map(Object.entries(hostResults));
-        for (const agent of pending) entries.set(agent.id, { ...baseRecord(agent, null), status: 'pending', content: '' });
+        if (roleplayAgentsStopped(context)) return;
+        const cards = pendingRoleplayCompanionCards(pending, isDurableCompanion);
+        const entries = new Map(Object.entries(roleplayCompanionPlaceholders({ hostResults, pending: cards })));
         for (const [id, result] of completed) entries.set(id, result.record);
         notifyProgress(Object.fromEntries(entries));
     };
+    // Show pending work before the World Info scan, token counting or provider
+    // preparation can delay it. The same cards are replaced by real results.
+    // A stopped pass has nothing writing, so it skips the cards and clears them
+    // through the final notification.
+    if (!roleplayAgentsStopped(context)) publishProgress();
 
     const remember = result => {
         completed.set(result.agentId, result);
@@ -305,6 +354,7 @@ export async function runRoleplayCompanions(context, options) {
             }
         }
         const extra = isRepairTarget(agent) && prior?.content ? [...sections, { title: 'Current companion agent note', content: prior.content }] : sections;
+        if (agent.companion.includeWorldInfo) input.worldInfo = await worldInfoText();
         const prompt = singleCompanionPrompt({ ...input, repair: isRepairTarget(agent) }, agent, extra);
         const stepName = `companion:${agent.id}${suffix}`;
         const model = await runModel(agent, stepName, prompt, agent.companion.maxTokens);
@@ -316,6 +366,7 @@ export async function runRoleplayCompanions(context, options) {
             for (const agent of group) outputs.push(await runSingle(agent, sections.get(agent.id)));
             return outputs;
         }
+        if (group[0].companion.includeWorldInfo) input.worldInfo = await worldInfoText();
         const linked = sections.get(group[0].id), prompt = batchCompanionPrompt(input, group, linked);
         const name = `companion-batch:${roleplayHash(group.map(agent => agent.id))}`;
         const model = await runModel(group[0], name, prompt, Math.min(64000, group.reduce((total, agent) => total + agent.companion.maxTokens, 0)), group);
@@ -372,6 +423,10 @@ export async function runRoleplayCompanions(context, options) {
     }
     const resultEntries = new Map(Object.entries(hostResults));
     for (const [id, result] of completed) resultEntries.set(id, result.record);
-    return persist(context, snapshot.account, key, { identity, results: Object.fromEntries(resultEntries),
+    const finalResults = Object.fromEntries(resultEntries);
+    // Clear any still-pending card for a Companion that was stopped or skipped
+    // before the result is persisted. Display only: the saved record is next.
+    notifyProgress(finalResults);
+    return persist(context, snapshot.account, key, { identity, results: finalResults,
         completed: [...completed.keys()], resultHashes: Object.fromEntries([...completed].map(([id, result]) => [id, result.hash])) });
 }

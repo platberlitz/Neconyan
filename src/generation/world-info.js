@@ -7,7 +7,7 @@ import { mergeChatPresetSettings } from '../../public/scripts/chat-preset-reques
 import { resolveGenerationProfile } from './profiles.js';
 import { imageSize } from 'image-size';
 import { getExistingWorldInfoFilename, isValidWorldInfoData } from '../endpoints/worldinfo.js';
-import { readJson } from '../mewmory/store.js';
+import { readJsonShared } from '../mewmory/store.js';
 import { getCounter } from '../mewmory/tokens.js';
 import { readRoleplayFile, roleplayError, roleplayHash, roleplaySettingsHash, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
 import { assertRoleplaySourceLocked, readRoleplayEntityLocked } from './roleplay-source.js';
@@ -198,7 +198,7 @@ export function readBoundPathfinderBooks(base, snapshot) {
     assertRoleplayWorldInfoCurrent(base, snapshot);
     return withRoleplayAccount(base, snapshot.account, lease => {
         assertRoleplaySourceLocked(lease, snapshot.source);
-        if (roleplaySettingsHash(readJson(path.join(base.directories.root, 'settings.json'), {})) !== snapshot.settingsHash) {
+        if (roleplaySettingsHash(readJsonShared(path.join(base.directories.root, 'settings.json'), {})) !== snapshot.settingsHash) {
             throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved Pathfinder settings changed after the request was accepted.');
         }
         const current = boundBooks(base.directories, snapshot);
@@ -210,7 +210,7 @@ export function readBoundPathfinderBooks(base, snapshot) {
 export function readBoundRoleplayBooks(base, snapshot) {
     return withRoleplayAccount(base, snapshot.account, lease => {
         assertRoleplaySourceLocked(lease, snapshot.source);
-        if (roleplaySettingsHash(readJson(path.join(base.directories.root, 'settings.json'), {})) !== snapshot.settingsHash) {
+        if (roleplaySettingsHash(readJsonShared(path.join(base.directories.root, 'settings.json'), {})) !== snapshot.settingsHash) {
             throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info settings changed after the request was accepted.');
         }
         return Object.fromEntries(Object.entries(boundBooks(base.directories, snapshot)).map(([name, value]) => [name, value.data]));
@@ -316,8 +316,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         }
         const character = readRoleplayEntityLocked(lease, 'character', avatar);
         if (character.changed) saveRoleplayAccount(lease);
-        const file = path.join(base.directories.root, 'settings.json');
-        const savedSettings = readJson(file, {});
+        const savedSettings = readJsonShared(path.join(base.directories.root, 'settings.json'), {});
         const settings = { ...savedSettings, ...savedSettings.world_info_settings };
         let mediaMaterial = null;
         if (mediaPolicyVersion && mediaBinding) {
@@ -567,8 +566,11 @@ export function assertRoleplayWorldInfoCurrent(base, snapshot) {
     }
 }
 
-export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.random, onEntriesLoaded, onScan, macros, promptChat, chatLength, promptGlobal, promptInjections = [], vectorEntries = [] } = {}) {
-    assertRoleplayWorldInfoCurrent(base, snapshot);
+export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.random, onEntriesLoaded, onScan, macros, promptChat, chatLength, promptGlobal, promptInjections = [], vectorEntries = [], capturedNow = false } = {}) {
+    // A caller that captured this exact snapshot synchronously just before this
+    // call does not need a second full capture at the start. The check after the
+    // asynchronous scan still runs, so an edit during preparation is refused.
+    if (!capturedNow) assertRoleplayWorldInfoCurrent(base, snapshot);
     let records;
     const selected = withRoleplayAccount(base, snapshot.account, lease => {
         records = assertRoleplaySourceLocked(lease, snapshot.source).records;
@@ -578,7 +580,7 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
             throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The World Info character changed after the request was accepted.');
         }
         if (character.changed) saveRoleplayAccount(lease);
-        if (roleplaySettingsHash(readJson(path.join(base.directories.root, 'settings.json'), {})) !== snapshot.settingsHash) {
+        if (roleplaySettingsHash(readJsonShared(path.join(base.directories.root, 'settings.json'), {})) !== snapshot.settingsHash) {
             throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info settings changed after the request was accepted.');
         }
         return boundBooks(base.directories, snapshot);

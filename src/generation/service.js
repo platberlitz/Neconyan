@@ -9,8 +9,8 @@ import {
     runBackendRequest,
 } from '../endpoints/conversation-generation.js';
 import { handleChatCompletionsBias, handleChatCompletionsStatus } from '../endpoints/backends/chat-completions.js';
-import { readJson } from '../mewmory/store.js';
 import { fail, hash } from '../mewmory/core.js';
+import { readJsonShared } from '../mewmory/store.js';
 import { isDefiniteProviderRefusal, providerRefused, providerStep, providerNotDispatched, readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { buildChatProfileRequest, resolveGenerationProfile } from './profiles.js';
 import { buildTextProfileRequest } from './text-request.js';
@@ -43,7 +43,7 @@ function restoreTransport(payload, material) {
  * server transport the Conversation API uses. Callers supply an already-built
  * request; saved chat profiles use runChatProfile below.
  */
-export async function runTextGeneration({ context, backend, payload, signal, anonymousCustom = false, boundProfile = false, fetch: fetchImpl, validatePrompt, onStream } = {}) {
+export async function runTextGeneration({ context, backend, payload, signal, anonymousCustom = false, boundProfile = false, fetch: fetchImpl, validatePrompt, beforeDispatch, onStream } = {}) {
     if (!context?.directories) throw Object.assign(new Error('A generation context is required.'), { status: 400, code: 'GENERATION_CONTEXT_MISSING' });
     if (!payload || typeof payload !== 'object' || Object.keys(payload).length === 0) {
         throw Object.assign(new Error('A generation payload is required.'), { status: 400, code: 'GENERATION_PAYLOAD_MISSING' });
@@ -55,7 +55,13 @@ export async function runTextGeneration({ context, backend, payload, signal, ano
     };
     let validationError;
     const send = validatePrompt && payload.chat_completion_source === 'custom' ? async (url, options) => {
-        try { await validatePrompt(JSON.parse(options.body)); } catch (error) { validationError = providerNotDispatched(error); throw validationError; }
+        try {
+            await validatePrompt(JSON.parse(options.body));
+            // Custom sources only reach this wrapper, so this is their last
+            // source check before the network request. Mark a refusal here as
+            // pre-dispatch so the job never records an uncertain paid call.
+            await beforeDispatch?.();
+        } catch (error) { validationError = providerNotDispatched(error); throw validationError; }
         return (fetchImpl || fetch)(url, options);
     } : fetchImpl;
     let response;
@@ -249,14 +255,20 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
         payload.stream = stream === true;
         const current = resolveGenerationProfile(context.directories, binding);
         payload = restoreTransport(payload, current);
-        await validatePrompt?.(payload, material);
+        // A Custom source validates the final serialised body immediately before
+        // its fetch; validating the same body twice only delays the request.
+        const dispatchValidation = payload.chat_completion_source === 'custom' && Boolean(validatePrompt);
+        if (!dispatchValidation) await validatePrompt?.(payload, material);
         const generation = { backend: binding.backend || 'chat', source: material.source,
             ...modelField(payload.model || modelOverride || material.profile.model),
             showThoughts: Boolean(material.active.show_thoughts || material.active.auto_append_reasoning_tags) };
         const call = async () => {
-            try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
+            if (!dispatchValidation) {
+                try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
+            }
             const requestPayload = payload;
             const result = await runTextGeneration({ context, backend: binding.backend, payload: requestPayload, signal, fetch: fetchImpl, validatePrompt,
+                beforeDispatch: dispatchValidation ? beforeDispatch : undefined,
                 onStream: onStream && (value => onStream({ ...value, generation })),
                 anonymousCustom: binding.backend === 'text' ? !material.secretId : payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy, boundProfile: true });
             if (raw && rawOptions.jsonSchema) return { ...result, generation: { ...generation, ...result.timing }, text: extractJsonFromData(result.response, {
@@ -294,13 +306,17 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
             ? { payload: withoutTransport(payload), macroState } : withoutTransport(payload));
     }
     payload = { ...restoreTransport(payload, material), stream: stream === true };
-    await validatePrompt?.(payload, material);
+    const dispatchValidation = payload.chat_completion_source === 'custom' && Boolean(validatePrompt);
+    if (!dispatchValidation) await validatePrompt?.(payload, material);
     const generation = { backend: 'chat', source: material.source,
         ...modelField(payload.model || modelOverride || material.profile.model),
         showThoughts: Boolean(material.active.show_thoughts || material.active.auto_append_reasoning_tags) };
     const call = async () => {
-        try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
+        if (!dispatchValidation) {
+            try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
+        }
         return runTextGeneration({ context, backend: 'chat', payload, signal, fetch: fetchImpl, validatePrompt,
+            beforeDispatch: dispatchValidation ? beforeDispatch : undefined,
             onStream: onStream && (value => onStream({ ...value, generation })),
             anonymousCustom: payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy, boundProfile: true })
             .then(result => ({ ...result, text: cleanGeneratedText(removePartialStops(result.text,
@@ -314,7 +330,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
 
 async function prepareChatRequest({ context, binding, messages, maxTokens, macroEnvironment, ephemeralStops,
     userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions = {}, functionTools = [], generationType = 'quiet', captureCleanupStops }, material) {
-    const saved = readJson(path.join(context.directories.root, 'settings.json'), {});
+    const saved = readJsonShared(path.join(context.directories.root, 'settings.json'), {});
     const power = { ...saved.power_user, ...material?.power };
     if (power.custom_stopping_strings_macro && !macroEnvironment?.evaluate) fail('This profile requires the captured chat macro context.', 400);
     let stoppingStrings;

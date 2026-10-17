@@ -13,7 +13,8 @@ const fail = message => roleplayError('ROLEPLAY_AGENT_RECOVERY', message, 503);
 const limited = result => ['length', 'max_tokens', 'MAX_TOKENS', 'max_output_tokens'].includes(result.finishReason
     ?? result.response?.choices?.[0]?.finish_reason ?? result.response?.stop_reason ?? result.response?.candidates?.[0]?.finishReason);
 
-const NO_FALLBACK_CODES = new Set(['ROLEPLAY_AGENT_RECOVERY', 'PROVIDER_OUTCOME_UNKNOWN']);
+const NO_FALLBACK_CODES = new Set(['ROLEPLAY_AGENT_RECOVERY', 'PROVIDER_OUTCOME_UNKNOWN',
+    'ROLEPLAY_SOURCE_CHANGED', 'ROLEPLAY_AGENT_SOURCE_CHANGED']);
 
 function canTryFallback(context, error) {
     return !context.signal?.aborted && error?.name !== 'AbortError' && !NO_FALLBACK_CODES.has(error?.code);
@@ -49,7 +50,6 @@ async function runAgentModelWithFallbacks(context, options) {
             lastError = Object.assign(new Error(String(failed.reason || 'The Agent connection failed.')), { status: failed.status });
             continue;
         }
-        if (index > 0) options.assertCurrent();
         try {
             const result = await runSingleAgentModelStep(context, { ...options, ...attempt });
             const labelled = index > 0 ? { ...result, fallbackIndex: index, fallbackLabel: attempt.profileLabel } : result;
@@ -107,7 +107,6 @@ async function runSingleAgentModelStep(context, { base, account, name, identity,
     try {
         let input = read(`${key}:input`);
         if (input === undefined) {
-            assertCurrent();
             const environment = createMacroEnvironment(macros, {}, { readOnly: true });
             const messages = buildMessages(environment);
             if (!Array.isArray(messages) || !messages.length || Buffer.byteLength(JSON.stringify(messages)) > 2 * 1024 * 1024) throw fail('The Agent request is empty or too large.');
@@ -131,12 +130,17 @@ async function runSingleAgentModelStep(context, { base, account, name, identity,
         if (response === undefined) {
             context.signal.throwIfAborted();
             if (unresolvedProviderStep(context.directories, context.job.id, { scope: context.providerScope, currentStep: reference?.step })) throw fail('An uncertain provider result cannot be repeated automatically.');
-            assertCurrent();
             response = await generate({ context: base, jobContext: context, binding, modelOverride, messages: input.messages, stepNamespace: key,
                 maxTokens: input.maxTokens, signal: context.signal, stream: false, userName: macros.names?.user ?? 'User',
                 characterName: macros.names?.char ?? 'Assistant', macroEnvironment: createMacroEnvironment(macros, {}, { readOnly: true }),
                 rawOptions: binding.backend && binding.backend !== 'chat' ? {} : { cacheScope: 'auxiliary' },
-                beforeDispatch: assertCurrent, onProviderStep: step => {
+                // The transport calls this immediately before its network request.
+                // Checking this caller's scoped signal after the shared gate keeps
+                // an individual Stop effective even when other callers share it.
+                beforeDispatch: async () => {
+                    await assertCurrent?.();
+                    context.signal.throwIfAborted();
+                }, onProviderStep: step => {
                     if (!/^provider:[a-f0-9]{64}$/.test(step)) throw fail('The Agent provider supplied no durable request identity.');
                     const next = { identity: inputIdentity, step };
                     if (reference !== undefined && roleplayHash(reference) !== roleplayHash(next)) throw fail('The saved Agent provider identity changed.');

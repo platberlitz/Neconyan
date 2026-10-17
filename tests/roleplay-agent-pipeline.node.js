@@ -16,6 +16,8 @@ const { getJob, releaseJob, updateJob } = await import('../src/jobs/store.js');
 const { providerStep, readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
 const { decideJobApproval } = await import('../src/generation/job-approvals.js');
 const { requestRoleplayAgentStop } = await import('../src/generation/roleplay-agent-stop.js');
+const { createFreshnessGate } = await import('../src/generation/roleplay-freshness-gate.js');
+const { subscribeRoleplayPreview } = await import('../src/generation/roleplay-preview.js');
 const { writeSecret, SECRET_KEYS } = await import('../src/endpoints/secrets.js');
 const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
 after(cancelAutoSaves);
@@ -25,7 +27,7 @@ const controls = { prompts: [{ identifier: 'main', role: 'system', system_prompt
     { identifier: 'chatHistory', marker: true, system_prompt: true }], prompt_order: [{ character_id: 100001,
     order: [{ identifier: 'main', enabled: true }, { identifier: 'worldInfoBefore', enabled: true }, { identifier: 'chatHistory', enabled: true }] }] };
 
-function prepared(t, agents, { effect = 'append', range = { start: 1, count: 1 }, review = false, translation = false, configure = () => {}, globalSettings = {}, imagePolicy = false } = {}) {
+function prepared(t, agents, { effect = 'append', range = { start: 1, count: 1 }, review = false, translation = false, configure = () => {}, globalSettings = {}, imagePolicy = false, previewParent = null } = {}) {
     const f = fixture(t);
     const directories = f.scope.directories;
     f.records[1].extra = {};
@@ -56,7 +58,8 @@ function prepared(t, agents, { effect = 'append', range = { start: 1, count: 1 }
     const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 4000,
         serverPrompt: true, ...(imagePolicy ? { mediaPolicyVersion: 1 } : {}), trigger: { append: 'normal', replace: 'regenerate', continue: 'continue', swipe: 'swipe' }[effect] });
     const request = { binding: { kind: 'profile', ...captureChatProfile(directories, 'main') }, maxTokens: 32,
-        characterName: 'Nova', serverPrompt: true, worldInfo, messages: [] };
+        characterName: 'Nova', serverPrompt: true, worldInfo, messages: [],
+        ...(previewParent ? { workflowCandidate: { version: 1, parentJobId: previewParent } } : {}) };
     const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'agent-pipeline', effect, source, request });
     releaseJob(directories, jobId);
     updateJob(directories, jobId, { state: 'running' });
@@ -623,4 +626,96 @@ for (const mode of ['display-only', 'caption']) test(`versioned ${mode} images s
     assert.equal(mainCalls, 1); assert.equal(agentCalls, 11);
     assert.match(f.saved()[1].extra.media[0].url, /BROKEN/);
     await f.run({ generate: () => assert.fail('Repeated main'), generateAgent: () => assert.fail('Repeated rewrite') });
+});
+
+test('parallel Companion dispatches share one post-reply freshness check', { timeout: 20000 }, async t => {
+    const agents = Array.from({ length: 5 }, (_, index) => ({ id: `side-${index}`, name: `Side ${index}`, enabled: true,
+        category: 'companion', execution: 'companion', phase: 'pre', prompt: `TASK_SIDE_${index}`,
+        companion: { includeWorldInfo: false } }));
+    const f = prepared(t, agents, { globalSettings: { companionExecutionMode: 'parallel' } });
+    let checks = 0;
+    const calls = [];
+    await f.run({
+        freshnessGate: check => createFreshnessGate(() => { checks++; check(); }),
+        generate: paid('main', () => 'Main reply'),
+        generateAgent: paid('agent', ({ messages }) => {
+            const task = JSON.stringify(messages).match(/TASK_SIDE_\d/)?.[0];
+            calls.push(task);
+            return { text: `Note for ${task}` };
+        }),
+    });
+    assert.equal(calls.length, 5);
+    assert.equal(checks, 1, 'one check covers every dispatch that arrived in the same turn');
+    assert.deepEqual(Object.keys(f.saved().at(-1).extra.inChatAgentCompanionResults).sort(), agents.map(agent => agent.id).sort());
+});
+
+test('a source edit between the saved Agent input and dispatch refuses without a provider call', async t => {
+    const f = prepared(t, [{ id: 'edit', phase: 'post', prompt: 'REWRITE_REPLY', postProcess: {
+        enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64,
+    } }]);
+    let providerCalls = 0;
+    await assert.rejects(f.run({
+        generate: paid('main', () => 'Main reply'),
+        generateAgent: async options => {
+            const changed = f.saved();
+            changed[2].mes = 'Independent edit';
+            fs.writeFileSync(f.filename, changed.map(record => JSON.stringify(record)).join('\n'));
+            await options.beforeDispatch();
+            providerCalls++;
+            return { text: 'Must not be sent' };
+        },
+    }), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    assert.equal(providerCalls, 0, 'the changed source is refused before the provider request');
+    assert.ok(readArtifact(f.directories, f.jobId, 'agent-model:post:edit:input'), 'the input was saved before its one remaining gate');
+    assert.equal(readArtifact(f.directories, f.jobId, 'agent-model:post:edit:provider'), undefined);
+});
+
+test('an approved review publishes pending Companions before post-reply work on the resumed result', { timeout: 20000 }, async t => {
+    const parent = 'review-pending-parent';
+    const f = prepared(t, [
+        { id: 'review', phase: 'pre', prompt: 'REVIEW_EDIT', preProcess: {
+            mode: 'intercept', interceptTiming: 'post-main-generation', applyMode: 'replace', maxTokens: 64,
+        } },
+        { id: 'edit', phase: 'post', prompt: 'EDIT_REPLY', postProcess: { enabled: true, promptTransformEnabled: true } },
+        { id: 'side', name: 'Side', enabled: true, category: 'companion', execution: 'companion', phase: 'pre',
+            prompt: 'TASK_SIDE', companion: { includeWorldInfo: false } },
+    ], { review: true, previewParent: parent });
+    const events = [];
+    const unsubscribe = subscribeRoleplayPreview(f.scope.owner, parent, preview => events.push({ kind: 'preview',
+        stage: preview.stage, side: preview.inChatAgentCompanionResults?.side?.status,
+        keys: Object.keys(preview.inChatAgentCompanionResults ?? {}) }));
+    t.after(unsubscribe);
+    const waiting = await f.run({ generate: paid('main', () => 'Unreviewed answer'), generateAgent: () => assert.fail('review is required') });
+    assert.equal(waiting.waiting, true);
+    const reviewFrame = events.findLast(event => event.kind === 'preview' && event.stage === 'review');
+    assert.ok(reviewFrame, 'the paused review frame is published');
+    assert.equal(reviewFrame.keys.length, 0, 'a paused review does not leave a Companion marked as running');
+    const approval = getJob(f.directories, f.jobId).result.approval;
+    decideJobApproval(f.context(), { id: approval.id, proposalHash: approval.proposalHash, decision: 'continue' });
+
+    let releaseEdit;
+    const editHeld = new Promise(resolve => { releaseEdit = resolve; });
+    let editEntered;
+    const editStarted = new Promise(resolve => { editEntered = resolve; });
+    let sideCalls = 0;
+    const running = f.run({ generate: () => assert.fail('the saved main result was repeated'), generateAgent: paid('agent', async options => {
+        const text = JSON.stringify(options.messages);
+        if (text.includes('REVIEW_EDIT')) { events.push({ kind: 'call', agent: 'review' }); return { text: 'Reviewed answer' }; }
+        if (text.includes('EDIT_REPLY')) { events.push({ kind: 'call', agent: 'edit' }); editEntered(); await editHeld; return { text: 'Edited answer' }; }
+        events.push({ kind: 'call', agent: 'side' });
+        sideCalls++;
+        return { text: 'Side note' };
+    }) });
+    await editStarted;
+    const reviewCall = events.findLastIndex(event => event.kind === 'call' && event.agent === 'review');
+    const announced = events.findLastIndex(event => event.kind === 'preview' && event.stage === 'agents' && event.side === 'pending');
+    const editCall = events.findIndex(event => event.kind === 'call' && event.agent === 'edit');
+    assert.ok(reviewCall >= 0, 'the approved interceptor ran on the resumed result');
+    assert.ok(announced < reviewCall, 'pending cards are published before the reviewed interceptor call');
+    assert.ok(announced < editCall, 'pending cards are visible before post-reply work starts');
+    assert.equal(sideCalls, 0, 'the one-at-a-time Companion waits for post-reply work');
+    releaseEdit();
+    await running;
+    assert.equal(f.saved().at(-1).mes, 'Edited answer');
+    assert.equal(f.saved().at(-1).extra.inChatAgentCompanionResults.side.content, 'Side note');
 });
