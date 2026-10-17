@@ -7,6 +7,7 @@
 - PR #201 (2026-10-17) `feat(models): searchable, auto-grouped model lists for every backend`
 - PR #202 (2026-10-17) `fix(roleplay): retry failed Agents and keep the finished reply`
 - PR #203 (2026-10-17) `fix(i18n): stop collecting header names as captions`
+- PR #204 (2026-10-17) `fix(images): clarify image choices and make controls translatable`
 
 ## v1.3.4.1
 
