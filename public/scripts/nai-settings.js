@@ -21,6 +21,7 @@ import {
 } from './utils.js';
 import { BIAS_CACHE, createNewLogitBiasEntry, displayLogitBias, getLogitBiasListResult } from './logit-bias.js';
 import { SECRET_KEYS, secret_state, writeSecret } from './secrets.js';
+import { attachModelListSearch } from './model-list-search.js';
 
 const default_preamble = '[ Style: chat, complex, sensory, visceral ]';
 const default_order = [1, 5, 0, 2, 3, 4];
@@ -946,6 +947,7 @@ export function initNovelAISettings() {
         $(`#settings_preset_novel option[value=${novelai_setting_names[default_preset]}]`).attr('selected', 'true');
         $('#settings_preset_novel').trigger('change');
     });
+    attachModelListSearch(document.querySelector('#model_novel_select'));
 
     $('#nai_prefix').on('change', function () {
         nai_settings.prefix = String($('#nai_prefix').find(':selected').val());

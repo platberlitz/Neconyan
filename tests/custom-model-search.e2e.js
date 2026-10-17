@@ -26,24 +26,25 @@ for (const width of [393, 1280]) {
             await page.waitForFunction(() => window.NeconyanShell && document.body.classList.contains('neconyan-rail-ready'));
             await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
             await page.locator('#api_button_openai').click();
-            const search = page.locator('#custom_model_search');
-            const results = page.locator('#custom-model-results');
+            const search = page.locator('#model_custom_select_search');
+            const results = page.locator('#model_custom_select_results');
             const chosen = () => page.evaluate(async () => (await import('/scripts/openai.js')).oai_settings.custom_model);
-            await expect(results.locator('button')).toHaveCount(4);
+            await expect(results.locator('.nn-model-list-option')).toHaveCount(4);
+            // Models are grouped by the family in their name, with no hardcoded list.
             await search.fill('  AURORA reasoning ');
-            await expect(results.locator('button')).toHaveCount(1);
-            await expect(results.locator('button')).toContainText('aurora-think');
+            await expect(results.locator('.nn-model-list-option')).toHaveCount(1);
+            await expect(results.locator('.nn-model-list-option')).toContainText('aurora-think');
             expect(await chosen()).toBe('aurora-chat');
             await search.press('Tab');
             expect(await chosen()).toBe('aurora-chat');
-            await results.locator('button').click();
+            await results.locator('.nn-model-list-option').click();
             await expect.poll(chosen).toBe('aurora-think');
             // Picking a model must not move focus back to the search box (that raises the phone keyboard).
             await expect(search).not.toBeFocused();
             await expect(page.locator('#custom_model_id')).toHaveValue('aurora-think');
             await search.fill('unknown model');
-            await expect(results.locator('button')).toHaveCount(0);
-            await expect(page.locator('#custom-model-search [role="status"]')).toContainText('No models match');
+            await expect(results.locator('.nn-model-list-option')).toHaveCount(0);
+            await expect(page.locator('[data-model-list-for="model_custom_select"] [role="status"]')).toContainText('No models match');
             await search.press('Enter');
             expect(await chosen()).toBe('aurora-think');
             await search.press('Escape');
@@ -51,7 +52,7 @@ for (const width of [393, 1280]) {
             await expect(search).toBeVisible();
             await search.fill('atlas');
             await search.press('ArrowDown');
-            await expect(results.locator('button').first()).toBeFocused();
+            await expect(results.locator('.nn-model-list-option').first()).toBeFocused();
             await page.keyboard.press('Enter');
             await expect.poll(chosen).toBe('atlas-small');
             await expect(search).toHaveValue('atlas');
@@ -59,14 +60,14 @@ for (const width of [393, 1280]) {
             // A completed catalogue refresh must retain the query and the chosen model.
             models = [...models, { id: 'atlas-new', name: 'Atlas New' }];
             await page.locator('#api_button_openai').click();
-            await expect(results.locator('button')).toHaveCount(3);
+            await expect(results.locator('.nn-model-list-option')).toHaveCount(3);
             await expect(search).toHaveValue('atlas');
             expect(await chosen()).toBe('atlas-small');
             await page.getByRole('button', { name: 'Clear model search', exact: true }).click();
-            await expect(results.locator('button')).toHaveCount(5);
+            await expect(results.locator('.nn-model-list-option')).toHaveCount(5);
             expect((await search.boundingBox()).height).toBeGreaterThanOrEqual(44);
             expect(await results.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
-            for (const button of await results.locator('button').all()) {
+            for (const button of await results.locator('.nn-model-list-option').all()) {
                 expect((await button.boundingBox()).height).toBeGreaterThanOrEqual(44);
                 // Each row grows to fit its name and ID instead of spilling into the next row.
                 expect(await button.evaluate(element => element.scrollHeight <= element.clientHeight + 1)).toBe(true);
@@ -89,9 +90,9 @@ for (const width of [393, 1280]) {
             // Large catalogues stay bounded, and models beyond the first page are searchable.
             models = Array.from({ length: 80 }, (_, index) => ({ id: `catalogue-${index}`, name: `Catalogue ${index}` }));
             await page.locator('#api_button_openai').click();
-            await expect(results.locator('button')).toHaveCount(50);
+            await expect(results.locator('.nn-model-list-option')).toHaveCount(50);
             await search.fill('catalogue-79');
-            await expect(results.locator('button')).toHaveCount(1);
+            await expect(results.locator('.nn-model-list-option')).toHaveCount(1);
             await search.press('Enter');
             await expect.poll(chosen).toBe('catalogue-79');
         } finally {

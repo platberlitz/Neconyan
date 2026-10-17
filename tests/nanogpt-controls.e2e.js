@@ -164,9 +164,13 @@ function pickerRow(menu, mobile, label) {
     return menu.locator(mobile ? 'button[role="option"]' : '.select2-results__option').filter({ hasText: label });
 }
 
+// The model list is always visible on both layouts; there is no picker to open.
+function modelRow(page, model) {
+    return page.locator('#model_nanogpt_select_results .nn-model-list-option').filter({ hasText: model.name });
+}
+
 async function chooseModel(page, mobile, model) {
-    const menu = await openPicker(page, mobile, 'model_nanogpt_select', 'nanogpt-model');
-    await pickerRow(menu, mobile, model.name).click();
+    await modelRow(page, model).click();
     await expect(page.locator('#model_nanogpt_select')).toHaveValue(model.id);
 }
 
@@ -233,22 +237,25 @@ for (const mobile of [false, true]) {
 
         test('model picker renders subscription metadata safely and keeps original IDs', async ({ page, baseURL }, testInfo) => {
             await setupNanoGpt(page, baseURL);
-            const menu = await openPicker(page, mobile, 'model_nanogpt_select', 'nanogpt-model');
+            await expect(page.locator('#model_nanogpt_select_results')).toBeVisible();
             await screenshot(page, testInfo, `${layout}-model-picker`);
-            for (const model of MODEL_CASES) {
-                const row = pickerRow(menu, mobile, model.name);
-                await expect(row.locator('strong')).toHaveText(model.name);
+            for (const [index, model] of MODEL_CASES.entries()) {
+                const row = modelRow(page, model);
+                // The name starts with the organisation from the model ID, so same-named models from different sources stay distinct.
+                await expect(row.locator('strong')).toHaveText(MODELS[index].name || MODELS[index].id);
                 await expect(row.locator('small[title]')).toHaveText(model.badge);
             }
-            const first = pickerRow(menu, mobile, MODELS[0].name);
+            await expect(modelRow(page, MODELS[1]).locator('strong')).toHaveText('DeepSeek Friendly');
+            await expect(modelRow(page, MODELS[0]).locator('strong')).toHaveText('Nano Tiny');
+            const first = modelRow(page, MODELS[0]);
             await expect(first).toContainText('128000 ctx');
             await expect(first).toContainText('$0.15/$0.6 in/out Mtoken');
             for (const capability of ['vision', 'reasoning', 'tool calling']) {
                 await expect(first.locator(`[aria-label="This model supports ${capability}"]`)).toHaveCount(1);
             }
-            await expect(pickerRow(menu, mobile, MODELS[2].name).locator('small[title]')).toHaveAttribute('title', 'Not included in subscription');
-            await expect(pickerRow(menu, mobile, MODELS[4].name)).toContainText(`${HTML_PAYLOAD} ctx`);
-            await expect(pickerRow(menu, mobile, MODELS[6].name).locator('small[title]')).toHaveAttribute('title', HTML_PAYLOAD);
+            await expect(modelRow(page, MODELS[2]).locator('small[title]')).toHaveAttribute('title', 'Not included in subscription');
+            await expect(modelRow(page, MODELS[4])).toContainText(`${HTML_PAYLOAD} ctx`);
+            await expect(modelRow(page, MODELS[6]).locator('small[title]')).toHaveAttribute('title', HTML_PAYLOAD);
             await expect(page.locator('[data-nanogpt-injected]')).toHaveCount(0);
             expect(await page.evaluate(() => window.__nanogptInjected)).toBeUndefined();
             await chooseModel(page, mobile, MODELS[1]);
@@ -310,16 +317,14 @@ for (const mobile of [false, true]) {
             const allowedPicker = page.locator('#nanogpt_allowed_providers_picker');
             await expect(allowedPicker).toBeVisible({ visible: mobile });
             await expect(allowedPicker).toHaveText('Select providers');
-            const modelField = page.locator(mobile ? '#model_nanogpt_select' : '#model_nanogpt_select + .select2 .select2-selection');
-            const modelBox = await modelField.boundingBox();
-            const modelRadius = await modelField.evaluate(element => window.getComputedStyle(element).borderRadius);
+            // The provider pickers line up with the model list above them.
+            const modelBox = await page.locator('[data-model-list-for="model_nanogpt_select"]').boundingBox();
             for (const kind of ['allowed', 'ignored']) {
                 const field = page.locator(mobile ? `#nanogpt_${kind}_providers_picker` : `#nanogpt_${kind}_providers + .select2 .select2-selection`);
                 const box = await field.boundingBox();
                 expect(box.x).toBeCloseTo(modelBox.x, 0);
                 expect(box.width).toBeCloseTo(modelBox.width, 0);
-                expect(box.height).toBeCloseTo(modelBox.height, 0);
-                await expect(field).toHaveCSS('border-radius', modelRadius);
+                expect(box.height).toBeGreaterThanOrEqual(mobile ? 44 : 24);
             }
             await screenshot(page, testInfo, `${layout}-provider-alignment`);
             await toggleProvider(page, mobile, 'allowed', 'Chutes');
