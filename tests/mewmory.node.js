@@ -33,6 +33,7 @@ const { startOperation, registerMewmoryOperations } = await import('../src/mewmo
 const { getJob: getSavedJob, recoverJobs, updateJob } = await import('../src/jobs/store.js');
 const { setDirectoriesResolver, testExports: jobRunner } = await import('../src/jobs/runner.js');
 const { readArtifact } = await import('../src/jobs/artifacts.js');
+const { applyOverflowHiding, prepareAutomaticHiding, writerTokenizerFromMaterial } = await import('../src/mewmory/hiding.js');
 
 test('RAG prefixes preserve whitespace through saving and real custom and native requests', async t => {
     const { directories } = disk(t);
@@ -907,6 +908,77 @@ function disk(t, messages = fixture.messages) {
     writeJson(path.join(root, 'settings.json'), {});
     return { directories, filename, write };
 }
+
+test('server automatic hiding skips disabled settings and keeps the latest reply visible', async t => {
+    const { directories } = disk(t);
+    const locator = { chat: 'Gift', avatar: 'Mara.png', group: false };
+    saveConfig(directories, { ...defaultConfig(), autoHide: false, writerTokenizer: 'o200k_base' });
+    assert.equal(await prepareAutomaticHiding(directories, locator), null);
+    saveConfig(directories, { ...readConfig(directories), autoHide: true, writerTokenizer: 'o200k_base' });
+    assert.equal(await prepareAutomaticHiding(directories, locator), null, 'Mewmory is still off for this chat');
+    mutateState(directories, locator, state => { state.enabled = true; }, 0);
+    const policy = await prepareAutomaticHiding(directories, locator);
+    assert.equal(policy.limit, defaultConfig().autoHideTokens);
+    const records = [{ chat_metadata: {} }, { is_user: true, mes: 'o'.repeat(20) },
+        { is_user: false, mes: 'r'.repeat(20) }, { is_user: true, mes: 'later' }];
+    const hidden = applyOverflowHiding(records, { limit: 15, count: text => text.length });
+    assert.deepEqual(hidden.records.map(record => record.is_system ?? false), [false, true, false, false]);
+    assert.equal(hidden.records[1].extra.mewmoryKeepHidden, true);
+    assert.equal(hidden.records[2].mes, 'r'.repeat(20));
+    assert.equal(hidden.hidden, 1);
+    assert.equal(applyOverflowHiding(records, { limit: 1000, count: text => text.length }).records, records);
+});
+
+test('automatic hiding rechecks settings, tokenizer choice, threshold and chat state at the write', async t => {
+    const { directories } = disk(t);
+    const locator = { chat: 'Gift', avatar: 'Mara.png', group: false };
+    saveConfig(directories, { ...defaultConfig(), autoHide: true, autoHideTokens: 1024, writerTokenizer: 'cl100k_base' });
+    mutateState(directories, locator, state => { state.enabled = true; }, 0);
+    const policy = await prepareAutomaticHiding(directories, locator);
+    assert.equal(policy.limit, 1024);
+    const records = () => [{ chat_metadata: {} }, { is_user: true, mes: 'old ' + 'word '.repeat(3000) },
+        { is_user: false, mes: 'latest reply' }];
+    assert.equal(applyOverflowHiding(records(), policy).hidden, 1);
+
+    saveConfig(directories, { ...readConfig(directories), autoHide: false });
+    assert.equal(applyOverflowHiding(records(), policy).hidden, 0, 'a disabled switch cannot apply a stale policy');
+
+    saveConfig(directories, { ...readConfig(directories), autoHide: true, autoHideTokens: 200000 });
+    assert.equal(applyOverflowHiding(records(), policy).hidden, 0, 'a raised threshold cannot apply a stale policy');
+
+    saveConfig(directories, { ...readConfig(directories), autoHideTokens: 1024, writerTokenizer: 'o200k_base' });
+    assert.equal(applyOverflowHiding(records(), policy).hidden, 0, 'a changed writer tokenizer cannot apply a stale policy');
+
+    saveConfig(directories, { ...readConfig(directories), writerTokenizer: 'cl100k_base' });
+    mutateState(directories, locator, state => { state.enabled = false; });
+    assert.equal(applyOverflowHiding(records(), policy).hidden, 0, 'a chat switched off while loading cannot apply');
+});
+
+test('server automatic hiding uses the actual OpenRouter metadata and provider-specific text model tokenizers', async () => {
+    const openRouter = { backend: 'chat', source: 'openrouter', preset: {},
+        profile: { model: 'meta-llama/llama-3.3-70b-instruct' },
+        active: { chat_completion_source: 'openrouter', openrouter_model: 'meta-llama/llama-3.3-70b-instruct' } };
+    assert.equal(await writerTokenizerFromMaterial(openRouter, { models: [{ id: 'meta-llama/llama-3.3-70b-instruct',
+        architecture: { tokenizer: 'Llama3' } }] }), 'llama3');
+
+    const text = { backend: 'text', source: 'openrouter', active: { model: 'generic-llama3-model' },
+        profile: { model: 'google/gemma-3-27b-it' }, power: { tokenizer: 99 } };
+    assert.equal(await writerTokenizerFromMaterial(text), 'gemma');
+});
+
+test('server automatic hiding resolves Text Completion OpenAI and saved Kobold or Horde writer tokenizers', async () => {
+    const textOpenAI = { backend: 'text', source: 'llamacpp', profile: { model: 'gpt-4o' }, power: { tokenizer: 2 } };
+    const textOpenAITokenizer = await writerTokenizerFromMaterial(textOpenAI);
+    assert.equal(textOpenAITokenizer, 'gpt-4o');
+    assert.equal((await getCounter(textOpenAITokenizer)).name, 'gpt-4o');
+
+    for (const [backend, source] of [['kobold', 'kobold'], ['horde', 'koboldhorde']]) {
+        const legacy = { backend, source, profile: { model: 'saved-model' }, power: { tokenizer: 1 } };
+        const tokenizer = await writerTokenizerFromMaterial(legacy);
+        assert.equal(tokenizer, 'gpt2', backend + ' must keep the saved GPT2 tokenizer');
+        assert.equal((await getCounter(tokenizer)).name, 'gpt2');
+    }
+});
 
 const trackerExtra = results => ({ inChatAgentCompanionResults: results });
 const trackerResult = (content, other = {}) => ({ agentName: 'Inventory', agentCategory: 'tracker', status: 'done', content, ...other });

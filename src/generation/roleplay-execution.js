@@ -9,7 +9,7 @@ import { explicitRetryRecovery, getJob, setJobResume, updateJob } from '../jobs/
 import { assertRoleplaySourceLocked, readRoleplayEntityLocked } from './roleplay-source.js';
 import { runChatProfile } from './service.js';
 import { createMacroEnvironment } from '../macros/index.js';
-import { applyRoleplayJobEffect, assertRoleplayCandidateOwner, completeRoleplayCandidateJob, readRoleplayJobResult } from '../roleplay-jobs.js';
+import { admittedRoleplayChatLocator, applyRoleplayJobEffect, assertRoleplayCandidateOwner, completeRoleplayCandidateJob, readRoleplayJobResult, roleplayHidingModels } from '../roleplay-jobs.js';
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { extractProviderReasoning, extractProviderReasoningSignature } from '../../public/scripts/generation-format.js';
@@ -25,6 +25,7 @@ import { loadCurrentStateSync } from '../mewmory/sources.js';
 import { mutateState, normalizeLocator, readChat } from '../mewmory/store.js';
 import { generationFingerprint } from '../mewmory/context.js';
 import { readConfig } from '../mewmory/models.js';
+import { prepareAutomaticHiding } from '../mewmory/hiding.js';
 import { createRoleplayChatCounter, createRoleplayTextCounter } from './roleplay-budget.js';
 import { createRoleplayTextPrompt } from './roleplay-text-prompt.js';
 import { readRoleplayPromptContributions } from './roleplay-contributions.js';
@@ -64,6 +65,16 @@ function requestOverrides(request) {
         throw roleplayError('ROLEPLAY_INVALID', 'Use saved connection settings for unsupported request controls or authentication.', 400);
     }
     return overrides;
+}
+
+async function prepareReplyHiding(directories, base, account, source, request, jobId) {
+    const locator = admittedRoleplayChatLocator(base, account, source);
+    if (!locator) return null;
+    return prepareAutomaticHiding(directories, locator, {
+        binding: request?.binding,
+        models: roleplayHidingModels(directories, jobId),
+        modelOverride: request?.modelOverride || '',
+    });
 }
 
 function replyOutput(result, effect, name, material) {
@@ -424,14 +435,16 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         writeArtifact(directories, job.id, 'roleplay-output', output);
         setJobResume(directories, job.id, 'roleplay-delivery');
         signal.throwIfAborted();
-        return { result: applyRoleplayJobEffect(base, account, { operationKey: roleplay.operationKey, jobId: job.id, output }, host) };
+        const hiding = await prepareReplyHiding(directories, base, account, source, request, job.id);
+        return { result: applyRoleplayJobEffect(base, account, { operationKey: roleplay.operationKey, jobId: job.id, output }, host, { hiding }) };
     };
     const saved = readArtifact(directories, job.id, 'roleplay-output');
     if (saved !== undefined) {
         if (!saved || typeof saved !== 'object' || Array.isArray(saved)) {
             throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved Roleplay result needs recovery.', 503);
         }
-        const result = applyRoleplayJobEffect(base, account, { operationKey: roleplay.operationKey, jobId: job.id, output: saved }, host);
+        const result = applyRoleplayJobEffect(base, account, { operationKey: roleplay.operationKey, jobId: job.id, output: saved },
+            host, { hiding: await prepareReplyHiding(directories, base, account, source, request, job.id) });
         return { result };
     }
     const providerReference = readArtifact(directories, job.id, 'roleplay-main-provider');

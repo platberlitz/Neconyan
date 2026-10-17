@@ -15,16 +15,23 @@ const { getJob, recoverJobs, releaseJob, requestCancellation, setJobState, updat
 const { readArtifact, providerStep } = await import('../src/jobs/artifacts.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
 const { requestRoleplayAgentStop } = await import('../src/generation/roleplay-agent-stop.js');
+const { enableMewmoryHiding } = await import('./mewmory-hiding-fixture.js');
 
 const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', system_prompt: true },
     { identifier: 'chatHistory', marker: true, system_prompt: true }],
 prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }] };
 
 function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disabled = [], strategy = 1,
-    autoSwipe = false, autoContinue = false, pathfinder = false, bundledMacros = null } = {}) {
+    autoSwipe = false, autoContinue = false, pathfinder = false, bundledMacros = null, history = 0 } = {}) {
     const f = fixture(t, true);
     const dirs = f.scope.directories;
     f.records[1].extra = {};
+    if (history) {
+        f.records.splice(1, 0, ...Array.from({ length: history }, (_, index) => ({
+            name: index % 2 === 0 ? 'User' : 'Nova', is_user: index % 2 === 0,
+            mes: 'history ' + index + ' ' + 'lorem ipsum dolor sit amet '.repeat(20), extra: {},
+        })));
+    }
     f.records.push({ name: 'User', is_user: true, mes: text, extra: {} });
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     fs.writeFileSync(path.join(dirs.characters, 'Other.png'), writeCard(png,
@@ -125,6 +132,33 @@ test('saved whole-group turn completes speakers in order and retains each protec
     assert.equal(f.records()[2].mes, 'Answer');
     assert.equal(count.value, 2);
     assert.deepEqual(await runRoleplayWorkflowJob(f.context()), completed);
+});
+
+test('group speakers keep their owned identities while clearing older history between speakers', async t => {
+    const f = prepared(t, { history: 20 });
+    enableMewmoryHiding(f.dirs, f.f.locator, { autoHideTokens: 1024 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const count = { value: 0 };
+    const firstReply = 'First speaker ' + 'long detail '.repeat(600);
+    await f.completeCandidate(0, { avatar: 'Nova.png', name: 'Nova', modelOverride: '', reply: firstReply }, count);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const firstWrite = readArtifact(f.dirs, f.jobId, 'roleplay-workflow-speaker:0');
+    const nextLineage = readArtifact(f.dirs, f.jobId, 'roleplay-workflow-group-lineage:1');
+    assert.equal(firstWrite.result.rawHash, nextLineage.source.rawHash);
+    await f.completeCandidate(1, { avatar: 'Other.png', name: 'Other', modelOverride: 'fixture-override',
+        reply: 'Second speaker reply' }, count);
+    const completed = await runRoleplayWorkflowJob(f.context());
+    assert.equal(completed.result.status, 'completed');
+    const saved = f.records();
+    const first = saved.find(record => record.mes === firstReply);
+    assert.ok(first?.is_system, 'the first speaker should be hidden once the second reply no longer fits');
+    assert.equal(first.extra?.mewmoryKeepHidden, true);
+    assert.equal(saved.at(-1).mes, 'Second speaker reply');
+    assert.ok(!saved.at(-1).is_system);
+    assert.deepEqual(await runRoleplayWorkflowJob(f.context()), completed);
+    assert.deepEqual(f.records(), saved);
+    assert.equal(count.value, 2);
 });
 
 test('a captured page instruction reaches every initial group speaker and its next lineage', async t => {

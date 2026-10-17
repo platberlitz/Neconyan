@@ -2,7 +2,7 @@ import { roleplayError, roleplayHash } from '../roleplay-store.js';
 import { assertRoleplaySourceLocked, captureRoleplayStorageSourceLocked } from './roleplay-source.js';
 import { captureRoleplayWorldInfo } from './world-info.js';
 import { getChatProfileContextLimit, resolveGenerationProfile } from './profiles.js';
-import { admitRoleplayJob, previewRoleplayWorkflowEffect, readRoleplayJobResult } from '../roleplay-jobs.js';
+import { admittedRoleplayChatLocator, admitRoleplayJob, previewRoleplayWorkflowEffect, readRoleplayJobResult, roleplayHidingModels } from '../roleplay-jobs.js';
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { commitSingleChatWriteLocked } from '../roleplay-lifecycle.js';
 import { attachOwnedChild, getJob, releaseChildJobs, updateJob } from '../jobs/store.js';
@@ -22,6 +22,7 @@ import { roleplayEffectTrigger } from './roleplay-prompt.js';
 import { registerHandler } from '../jobs/runner.js';
 import { releaseStoppedRoleplayWorkflow } from './roleplay-workflow-cancellation.js';
 import { roleplayAgentsStopped } from './roleplay-agent-stop.js';
+import { applyOverflowHiding, prepareAutomaticHiding } from '../mewmory/hiding.js';
 
 const error = (message, code = 'ROLEPLAY_WORKFLOW_RECOVERY') => roleplayError(code, message, 409);
 const CHILD = 'roleplay-workflow-child';
@@ -132,6 +133,16 @@ function root(context) {
         throw error('The saved workflow needs its original account and intent.');
     }
     return job;
+}
+
+async function prepareWorkflowHiding(context, job, chosen) {
+    const locator = admittedRoleplayChatLocator({ owner: context.owner, directories: context.directories }, job.intent.media, job.intent.source);
+    if (!locator) return null;
+    return prepareAutomaticHiding(context.directories, locator, {
+        binding: job.intent.request.binding,
+        models: roleplayHidingModels(context.directories, chosen.child.id),
+        modelOverride: chosen.child.intent.request.modelOverride || '',
+    });
 }
 
 function childRequest(job, turn = 0, history = [], lineage = null, decision = null, speakerIndex = 0) {
@@ -363,7 +374,7 @@ function savedToolHistory(context, job, chosen, turn, priorHistory) {
     return { history, lineage };
 }
 
-function finalPlan(context, job, chosen, { key = FINAL, speakerIndex = null, priorSpeaker = null, alternatives = [] } = {}) {
+function finalPlan(context, job, chosen, { key = FINAL, speakerIndex = null, priorSpeaker = null, alternatives = [], hiding = null } = {}) {
     const saved = readArtifact(context.directories, job.id, key);
     if (saved !== undefined) {
         const { hash, ...record } = saved;
@@ -382,9 +393,11 @@ function finalPlan(context, job, chosen, { key = FINAL, speakerIndex = null, pri
         const effect = job.intent.request.effect;
         const selected = previewRoleplayWorkflowEffect(lease, { source, effect, output: chosen.output,
             request: chosen.child.intent.request, job: chosen.child });
-        const original = assertRoleplaySourceLocked(lease, source, { effect }).records;
-        const records = addWorkflowAlternatives(selected, source, effect, chosen.output, original, alternatives);
-        const { source: storage } = captureRoleplayStorageSourceLocked(lease, source.locator);
+        const currentSource = assertRoleplaySourceLocked(lease, source, { effect });
+        const original = currentSource.records;
+        const withAlternatives = addWorkflowAlternatives(selected, source, effect, chosen.output, original, alternatives);
+        const records = applyOverflowHiding(withAlternatives, hiding, currentSource.locator).records;
+        const { source: storage } = captureRoleplayStorageSourceLocked(lease, currentSource.locator);
         if (priorSpeaker && (storage.rawHash !== priorSpeaker.result.rawHash
             || storage.instanceId !== priorSpeaker.result.instanceId || storage.revision !== priorSpeaker.result.revision)) {
             throw error('The previous group speaker is not the saved completed chat.');
@@ -463,7 +476,7 @@ function completedSpeaker(context, job, index, previous = null) {
     return saved;
 }
 
-function advanceSpeaker(context, job, chosen, index, turnEnd, previous = null, alternatives = []) {
+function advanceSpeaker(context, job, chosen, index, turnEnd, previous = null, alternatives = [], hiding = null) {
     const prior = completedSpeaker(context, job, index, previous);
     if (prior) return prior;
     const accepted = job.intent.request.group.speakers[index];
@@ -481,7 +494,7 @@ function advanceSpeaker(context, job, chosen, index, turnEnd, previous = null, a
     }
     chosen.output = output;
     const plan = finalPlan(context, job, chosen, { key: `${FINAL}:${index}`, speakerIndex: index,
-        priorSpeaker: previous, alternatives });
+        priorSpeaker: previous, alternatives, hiding });
     const result = publishPlan(context, job, chosen, plan, { effectId: `speaker:${index}`, proof: index });
     const record = { parentIntentHash: roleplayHash(job.intent), previousHash: previous?.hash ?? null,
         index, turnEnd, avatar: accepted.avatar, childJobId: chosen.child.id, candidateHash: plan.candidateHash,
@@ -535,7 +548,8 @@ async function runGroupWorkflow(context, job, beforePublication, decideCandidate
                 const alternatives = collectWorkflowAlternatives(context, job, { start: speakerStart, end: turn,
                     effect: job.intent.request.effect, speakerIndex: index,
                     candidateAt: previousTurn => selectedCandidate(context, job, savedChild(context, job, previousTurn).child) });
-                done = advanceSpeaker(context, job, chosen, index, turn + 1, previous, alternatives);
+                const hiding = await prepareWorkflowHiding(context, job, chosen);
+                done = advanceSpeaker(context, job, chosen, index, turn + 1, previous, alternatives, hiding);
                 turn++;
                 break;
             }
@@ -683,7 +697,8 @@ export async function runRoleplayWorkflowJob(context, { beforePublication, befor
     const alternatives = collectWorkflowAlternatives(context, job, { start: 0, end: turn,
         effect: job.intent.request.effect, candidateAt: previousTurn =>
             selectedCandidate(context, job, savedChild(context, job, previousTurn).child) });
-    const plan = finalPlan(context, job, chosen, { alternatives });
+    const hiding = await prepareWorkflowHiding(context, job, chosen);
+    const plan = finalPlan(context, job, chosen, { alternatives, hiding });
     await beforeCommit?.();
     const outcome = publishPlan(context, job, chosen, plan);
     await beforePublication?.();

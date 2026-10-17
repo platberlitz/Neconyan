@@ -20,6 +20,7 @@ import { commitSingleChatWriteLocked } from './roleplay-lifecycle.js';
 import { applyCaptionRecords } from './generation/caption-records.js';
 import { applyAgentCompletionRecords } from './generation/agent-completion-records.js';
 import { applyRoleplayMacroCommit } from './generation/roleplay-macro-commit.js';
+import { applyOverflowHiding } from './mewmory/hiding.js';
 import { assertRoleplayQuickReplyProof } from './generation/roleplay-quick-replies.js';
 import { applyManualAgentRecords } from './generation/agent-manual-records.js';
 import { applyPathfinderNotebookRecords } from './generation/pathfinder-notebook-records.js';
@@ -36,6 +37,29 @@ const JOB_EFFECT_KEY = roleplayHash('roleplay-job');
 const invalid = message => roleplayError('ROLEPLAY_INVALID', message, 400);
 const jobKey = (state, operationKey) => roleplayHash([state.accountId, 'roleplay-job', operationKey]);
 const writeKey = (state, operationKey) => roleplayHash([state.accountId, 'chat-write', `job:${operationKey}`]);
+
+/** The chat's current permanent name, following a supported rename and checking account ownership. */
+export function admittedRoleplayChatLocator(base, account, source) {
+    try {
+        return withRoleplayAccount(base, account, lease => {
+            confirmRoleplayAccount(lease);
+            const { state } = roleplayLease(lease);
+            const resource = state.resources[source?.instanceId];
+            if (!resource || resource.kind !== 'chat' || resource.status !== 'live'
+                || resource.accountId !== state.accountId || resource.dataEpoch !== state.dataEpoch) return null;
+            return structuredClone(resource.locator);
+        });
+    } catch {
+        return null;
+    }
+}
+
+/** Saved model metadata from the accepted generation, used to resolve the same tokenizer as its writer. */
+export function roleplayHidingModels(directories, jobId) {
+    const saved = readArtifact(directories, jobId, 'roleplay-model-capabilities');
+    if (!saved || saved.hash !== roleplayHash(saved.record) || !saved.record?.id) return [];
+    return [saved.record];
+}
 
 function assertOperationKey(operationKey) {
     if (typeof operationKey !== 'string' || !operationKey || operationKey.length > 200) throw invalid('This Roleplay job has an invalid ID.');
@@ -326,7 +350,7 @@ function closeReceipt(lease, keyHash, result) {
  * Apply a finished job's output. `account` is the stamp saved in the job's
  * intent, so a callback after a reset is refused as ROLEPLAY_ACCOUNT_CHANGED.
  */
-export function applyRoleplayJobEffect(base, account, { operationKey, jobId, output }, host) {
+export function applyRoleplayJobEffect(base, account, { operationKey, jobId, output }, host, { hiding = null } = {}) {
     assertOperationKey(operationKey);
     return withRoleplayAccount(base, account, lease => {
         confirmRoleplayAccount(lease);
@@ -356,11 +380,11 @@ export function applyRoleplayJobEffect(base, account, { operationKey, jobId, out
         }
         const captured = captureRoleplayStorageSourceLocked(lease, resource.locator);
         assertAnchor(captured.saved, source, effect);
-        const records = effectRecords(captured.saved.records, source, effect, output, request, job, scope.directories);
+        const hidden = applyOverflowHiding(effectRecords(captured.saved.records, source, effect, output, request, job, scope.directories), hiding, resource.locator);
         // The admission reservation covers this write's pending record; hand it over.
         receipt.reservedReceiptBytes = RECEIPT_RESERVE_BYTES;
         const result = commitSingleChatWriteLocked(lease, { operationKey: `job:${operationKey}`, mode: 'update', sourceKind: 'storage',
-            source: captured.source, records, allowShrink: effect === 'replace', backup: { deferBackup: true } }, host);
+            source: captured.source, records: hidden.records, allowShrink: effect === 'replace', backup: { deferBackup: true } }, host);
         return closeReceipt(lease, keyHash, result);
     });
 }

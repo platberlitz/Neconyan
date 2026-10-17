@@ -16,9 +16,17 @@ const { readRoleplayAccount } = await import('../src/roleplay-store.js');
 const { captureGenerationBinding } = await import('../src/generation/profiles.js');
 const { runChatProfile } = await import('../src/generation/service.js');
 const { roleplayNativeHost } = await import('../src/endpoints/chats.js');
+const { enableMewmoryHiding } = await import('./mewmory-hiding-fixture.js');
 
-function accepted(t, effect = 'append', anchor = {}) {
+function accepted(t, effect = 'append', anchor = {}, { history = 0 } = {}) {
     const f = fixture(t);
+    if (history) {
+        f.records.splice(1, 0, ...Array.from({ length: history }, (_, index) => ({
+            name: index % 2 === 0 ? 'User' : 'Nova', is_user: index % 2 === 0,
+            mes: 'history ' + index + ' ' + 'accumulated history remains saved. '.repeat(100), extra: {},
+        })));
+        fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    }
     const source = captureRoleplaySource(f.scope, { locator: f.locator, ...anchor });
     const request = { binding: { profileId: 'bound', fingerprint: 'saved' }, messages: [{ role: 'user', content: 'Hello' }],
         maxTokens: 32, characterName: 'Nova', userName: 'User' };
@@ -47,6 +55,42 @@ test('a bound server reply retains its reasoning and commits a single recorded a
     assert.equal(readRoleplayAccount(f.scope).pending, null);
     assert.equal(readArtifact(f.scope.directories, context.job.id, 'roleplay-output').message.mes, 'Answered');
     assert.deepEqual(await runRoleplayReplyJob(context, { generate }), first);
+    assert.equal(calls, 1);
+    assert.equal(readRoleplayChat(f.scope, f.locator).revision, saved.revision);
+});
+
+test('a server reply clears the older history once the Mewmory trigger is reached in its single recorded write', async t => {
+    const f = fixture(t);
+    const history = Array.from({ length: 40 }, (_, index) => ({
+        name: index % 2 === 0 ? 'User' : 'Nova', is_user: index % 2 === 0,
+        mes: 'history ' + index + ' ' + 'lorem ipsum dolor sit amet '.repeat(20), extra: {},
+    }));
+    f.records.splice(1, 0, ...history);
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    enableMewmoryHiding(f.scope.directories, f.locator, { autoHideTokens: 1024 });
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const request = { binding: { profileId: 'bound', fingerprint: 'saved' }, messages: [{ role: 'user', content: 'Hello' }],
+        maxTokens: 32, characterName: 'Nova', userName: 'User' };
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'server-hiding', effect: 'append', source, request });
+    releaseJob(f.scope.directories, jobId);
+    const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories, owner: f.scope.owner,
+        signal: new AbortController().signal };
+    const revisions = readRoleplayChat(f.scope, f.locator).revision;
+    let calls = 0;
+    const reply = 'Fresh reply ' + 'detail '.repeat(120);
+    const first = await runRoleplayReplyJob(context, { generate: async () => { calls++; return { text: reply }; } });
+    const saved = readRoleplayChat(f.scope, f.locator);
+    assert.equal(calls, 1);
+    assert.equal(saved.revision, revisions + 1);
+    assert.equal(saved.records.at(-1).mes, reply);
+    assert.ok(!saved.records.at(-1).is_system);
+    const rows = saved.records.slice(1);
+    const firstVisible = rows.findIndex(row => !row.is_system);
+    assert.equal(firstVisible, rows.length - 1, 'every older visible message is cleared in one pass');
+    assert.ok(rows.slice(0, firstVisible).every(row => row.is_system && row.extra?.mewmoryKeepHidden === true));
+    assert.ok(rows.slice(firstVisible).every(row => !row.is_system));
+    assert.deepEqual(await runRoleplayReplyJob(context, { generate: async () => { calls++; return { text: 'Again' }; } }), first);
     assert.equal(calls, 1);
     assert.equal(readRoleplayChat(f.scope, f.locator).revision, saved.revision);
 });
@@ -273,7 +317,7 @@ test('a stale source is refused before any provider work', async t => {
 });
 
 test('a bound swipe follows a renamed chat and tolerates an unrelated later append', async t => {
-    const { f, context } = accepted(t, 'swipe', { message: 1 });
+    const { f, context } = accepted(t, 'swipe', { message: 41 }, { history: 40 });
     const { commitRoleplayLifecycleLocked } = await import('../src/roleplay-lifecycle.js');
     const { withRoleplayAccount } = await import('../src/roleplay-store.js');
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
@@ -282,6 +326,7 @@ test('a bound swipe follows a renamed chat and tolerates an unrelated later appe
         operationKey: 'rename', action: 'chat-rename', intent: { destination },
         steps: [{ op: 'move', kind: 'chat', locator: f.locator, destination }],
     }));
+    enableMewmoryHiding(f.scope.directories, destination, { autoHideTokens: 1024 });
     const later = admitRoleplayJob(f.scope, account, { operationKey: 'later', effect: 'append',
         source: captureRoleplaySource(f.scope, { locator: destination }), request: { prompt: 'later' } });
     applyRoleplayJobEffect(f.scope, account, { operationKey: 'later', jobId: later.jobId,
@@ -293,8 +338,11 @@ test('a bound swipe follows a renamed chat and tolerates an unrelated later appe
         return { text: 'Bound swipe', response: {} };
     } });
     const saved = readRoleplayChat(f.scope, destination);
-    assert.equal(saved.records[2].mes, 'Bound swipe');
+    assert.equal(saved.records[42].mes, 'Bound swipe');
     assert.equal(saved.records.at(-1).mes, 'Unrelated');
+    assert.ok(saved.records.slice(1, -1).every(record => record.is_system && record.extra?.mewmoryKeepHidden === true),
+        'the renamed chat should still clear its older backlog');
+    assert.ok(!saved.records.at(-1).is_system);
     assert.equal(calls, 1);
 });
 
