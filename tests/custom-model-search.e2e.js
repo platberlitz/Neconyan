@@ -88,10 +88,12 @@ for (const width of [393, 1280]) {
             expect(starBox.y).toBeGreaterThanOrEqual(rowBox.y);
             expect(starBox.y + starBox.height).toBeLessThanOrEqual(rowBox.y + rowBox.height);
 
-            // Large catalogues stay bounded, and models beyond the first page are searchable.
+            // Large catalogues show every model, and search still finds later entries.
             models = Array.from({ length: 80 }, (_, index) => ({ id: `catalogue-${index}`, name: `Catalogue ${index}` }));
             await page.locator('#api_button_openai').click();
-            await expect(results.locator('.nn-model-list-option')).toHaveCount(50);
+            // The manually entered favourite remains alongside the 80 advertised models.
+            await expect(results.locator('.nn-model-list-option')).toHaveCount(81);
+            await expect(results.locator('[data-model-id="private/unlisted"] [data-model-favourite]')).toBeVisible();
             await search.fill('catalogue-79');
             await expect(results.locator('.nn-model-list-option')).toHaveCount(1);
             await search.press('Enter');

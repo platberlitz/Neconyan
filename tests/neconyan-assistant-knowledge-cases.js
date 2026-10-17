@@ -27,6 +27,7 @@ export const refreshedKnowledgeCases = [
     ['What does the Companion model label mean?', 'agents.model-labels', 'that completed run'],
     ['Why is a new Gemini model already in the right group in the model list?', 'connections.model-search', 'without an update'],
     ['Why do NanoGPT model names start with Google?', 'connections.model-search', 'hosts the same model from several organisations'],
+    ['Can I browse the full NanoGPT and OpenRouter model list without searching?', 'connections.model-search', 'scroll to browse the full catalogue without searching'],
     ['How do I put Pinned prompts beside my desktop chat?', 'connections.pinned-prompts', 'pinning alone does not enable a prompt'],
     ['Can phones show Pinned prompts beside the chat?', 'connections.pinned-prompts', 'do not show the chat-side panel'],
     ['How do I use Update APK inside the Android app?', 'start.android-updater', 'Approve installation in Android'],
