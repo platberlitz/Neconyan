@@ -2,9 +2,12 @@ import {
     changeMewmory, getMewmoryLocator, getMewmoryScope, hideOverflowMessages, initMewmory, mewmory, notifyMewmory,
     processMewmory, refreshMewmory, requestMewmory, stopMewmoryBackfill,
 } from './index.js';
+import { getRequestHeaders } from '../../script.js';
+import { currentUser } from '../user.js';
 import { getFriendlyTokenizerName } from '../tokenizers.js';
 import { uuidv4 } from '../utils.js';
 import { dismissJob, retryJob } from '../jobs.js';
+import { mewmoryConfigAutosave } from './config-autosave.js';
 import { PREFIX_PRESETS, RAG_DEFAULTS } from './rag-settings.js';
 
 const tabs = [['now', 'Now'], ['pawspective', 'Pawspective'], ['archive', 'Archive'], ['recall', 'Recall'], ['settings', 'Settings']];
@@ -14,7 +17,7 @@ const roles = { extractor: 'Facts and events', pawspective: 'Pawspective intervi
 const SWITCHES = ['enableNewChats', 'autoUpdate', 'localOnly', 'excludeHistory', 'autoHide'];
 const tokenizers = ['auto', 'o200k_base', 'cl100k_base', 'gpt2', 'llama', 'llama3', 'mistral', 'gemma', 'claude', 'qwen2', 'deepseek', 'nemo', 'jamba', 'yi'];
 const ui = { root: null, tab: 'now', owner: '', subject: '', significance: '', status: '', kind: 'objective', query: '', offset: 0,
-    source: null, editor: null, draft: null, savedDraft: '', configError: '', role: 'extractor', restore: null, matches: null,
+    source: null, editor: null, draft: null, configError: '', accountChanged: false, role: 'extractor', restore: null, matches: null,
     searchMode: 'hybrid', searchType: '', searchReport: null, running: false, progress: '', scope: '' };
 
 function node(tag, className = '', content = '') {
@@ -32,7 +35,11 @@ function button(label, handler, { primary = false, disabled = false } = {}) {
     return element;
 }
 
-function field(label, value, onChange, { type = 'text', multiline = false, options = null, key = label, hint = '', disabled = false } = {}) {
+function numberValue(text) {
+    return String(text).trim() === '' ? '' : Number(text);
+}
+
+function field(label, value, onChange, { type = 'text', multiline = false, options = null, key = label, hint = '', disabled = false, autosave = false } = {}) {
     const wrapper = node('div', 'mewmory-field');
     const control = node(options ? 'select' : multiline ? 'textarea' : 'input', 'text_pole');
     control.id = 'mewmory-field-' + key;
@@ -50,7 +57,10 @@ function field(label, value, onChange, { type = 'text', multiline = false, optio
     }
     control.value = value ?? '';
     control.disabled = disabled || ui.running;
-    control.addEventListener(options ? 'change' : 'input', () => onChange(type === 'number' ? Number(control.value) : control.value));
+    control.addEventListener(options ? 'change' : 'input', () => {
+        onChange(type === 'number' ? numberValue(control.value) : control.value);
+        if (autosave) scheduleConfigSave({ immediate: Boolean(options) });
+    });
     const caption = node('label', '', label);
     caption.htmlFor = control.id;
     wrapper.append(caption, control);
@@ -58,13 +68,16 @@ function field(label, value, onChange, { type = 'text', multiline = false, optio
     return wrapper;
 }
 
-function check(label, checked, onChange, disabled = false) {
+function check(label, checked, onChange, disabled = false, { autosave = false } = {}) {
     const wrapper = node('label', 'mewmory-check');
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.checked = Boolean(checked);
     input.disabled = disabled || ui.running;
-    input.addEventListener('change', () => onChange(input.checked));
+    input.addEventListener('change', () => {
+        onChange(input.checked);
+        if (autosave) scheduleConfigSave({ immediate: true });
+    });
     wrapper.append(input, node('span', '', label));
     return wrapper;
 }
@@ -521,22 +534,184 @@ function renderEditor(root) {
     root.append(editor);
 }
 
-function resetSettingsDraft(config = mewmory.config) {
-    ui.draft = structuredClone(config);
-    ui.draft.retrieval = { ...RAG_DEFAULTS, ...ui.draft.retrieval };
-    ui.savedDraft = JSON.stringify(ui.draft);
+function configErrorMessage(message) {
+    const text = typeof message === 'string' && message ? message : 'Mewmory settings could not be saved. Check your connection and try again.';
+    return text.replaceAll('Hide messages beyond, tokens', 'Hide older messages when the visible chat reaches, tokens');
+}
+
+function accountMismatchError(message) {
+    return Object.assign(new Error(message || 'The signed-in account changed. Reload the page before saving Mewmory settings.'), {
+        status: 403, code: 'MEWMORY_ACCOUNT_CHANGED',
+    });
+}
+
+function accountHeaders(account) {
+    return { ...getRequestHeaders(), ...(account ? { 'X-Neconyan-Account': account } : {}) };
+}
+
+function saveMewmoryConfig(config, { account = currentUser?.handle || null, signal } = {}) {
+    return fetch('/api/mewmory/config/save', {
+        method: 'POST',
+        headers: accountHeaders(account),
+        signal,
+        body: JSON.stringify({ config }),
+    }).then(async response => {
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw Object.assign(new Error(configErrorMessage(result.error)), { status: response.status, code: result.code });
+        }
+        if (!result.config) throw new Error('Mewmory did not return the saved configuration. Try again.');
+        if (account && result.config.account && result.config.account !== account) throw accountMismatchError();
+        confirmSavedSwitches(result.config, config);
+        return result.config;
+    });
+}
+
+function loadMewmoryConfig({ account = currentUser?.handle || null, signal } = {}) {
+    return fetch('/api/mewmory/config/get', {
+        method: 'POST',
+        headers: accountHeaders(account),
+        signal,
+        body: '{}',
+    }).then(async response => {
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw Object.assign(new Error(configErrorMessage(result.error)), { status: response.status, code: result.code });
+        }
+        if (!result.config) throw new Error('Mewmory did not return its configuration. Try again.');
+        if (account && result.config.account && result.config.account !== account) throw accountMismatchError();
+        return result.config;
+    });
+}
+
+function incompleteConfigDraft(draft) {
+    const missing = [];
+    const add = (label, value) => {
+        if (typeof value !== 'number' || !Number.isFinite(value)) missing.push(label);
+    };
+    add('Recent chat target, tokens', draft.historyWindow);
+    add('Hide older messages when the visible chat reaches, tokens', draft.autoHideTokens);
+    add('Selected memory budget, tokens', draft.memoryTokens);
+    add('Messages per update', draft.batchMessages);
+    add('Recall candidates', draft.candidateLimit);
+    for (const [label, key] of [['Passage size, characters', 'chunkSize'], ['Passage overlap, characters', 'chunkOverlap'],
+        ['Recent messages to search with', 'queryMessages'], ['Meaning weight, 0 to 1', 'semanticWeight'],
+        ['Minimum meaning similarity, 0 to 1', 'minSimilarity'], ['Maximum selected results', 'resultLimit'],
+        ['Maximum matches per source', 'maxPerSource'], ['Neighbouring passages, each side', 'neighbourChunks'],
+        ['Passages per embedding request', 'batchSize']]) add(label, draft.retrieval?.[key]);
+    for (const [name, role] of Object.entries(draft.roles || {})) {
+        const label = roles[name] || name;
+        add(label + ': Context limit, tokens', role.contextTokens);
+        add(label + ': Output limit, tokens', role.maxOutputTokens);
+        add(label + ': Timeout, seconds', role.timeoutMs);
+    }
+    if (!missing.length) return '';
+    const shown = missing.slice(0, 3).join('; ');
+    const rest = missing.length - 3;
+    return 'finish ' + shown + (rest > 0 ? ' and ' + rest + ' more number field' + (rest === 1 ? '' : 's') : '') + ' before this can save.';
+}
+
+function replaceDraftContents(target, source) {
+    for (const key of Object.keys(target)) if (!Object.hasOwn(source, key)) delete target[key];
+    for (const [key, value] of Object.entries(source)) {
+        if (value && typeof value === 'object' && !Array.isArray(value)
+            && target[key] && typeof target[key] === 'object' && !Array.isArray(target[key])) {
+            replaceDraftContents(target[key], value);
+        } else {
+            target[key] = value;
+        }
+    }
+}
+
+function syncSettingsDraft() {
+    if (!mewmory.config) return;
+    if (!ui.draft) {
+        ui.draft = structuredClone(mewmory.config);
+        ui.draft.retrieval = { ...RAG_DEFAULTS, ...ui.draft.retrieval };
+    }
+    mewmoryConfigAutosave.sync(mewmory.config, mewmory.config.account || currentUser?.handle || null);
 }
 
 function updateSettingsStatus() {
     const status = document.getElementById('mewmory-settings-status');
     if (!status || !ui.draft) return;
-    const changed = JSON.stringify(ui.draft) !== ui.savedDraft;
-    status.textContent = ui.configError ? 'Not saved: ' + ui.configError
-        : ui.draft.revision !== mewmory.config.revision ? 'Settings were saved elsewhere. Discard your unsaved settings to load them before editing again.'
-            : changed ? 'Unsaved changes. Mewmory still uses the saved configuration.'
-                : ui.draft.revision ? 'Configuration saved.' : 'No model configuration saved yet.';
-    status.dataset.error = String(Boolean(ui.configError));
+    const state = mewmoryConfigAutosave.state();
+    const message = state.error ? 'Not saved: ' + state.error
+        : state.invalid ? 'Not saved: ' + state.invalid
+            : state.saving ? 'Saving…'
+                : state.pending ? 'Unsaved changes. Saving automatically…'
+                    : state.revision ? 'Configuration saved.' : 'No model configuration saved yet.';
+    status.textContent = message + (state.remoteChange ? ' Settings were saved elsewhere; your edits were kept.' : '');
+    status.dataset.error = String(Boolean(state.error || state.invalid));
+    const retry = document.getElementById('mewmory-settings-retry');
+    if (retry) {
+        retry.hidden = !state.error || Boolean(state.invalid) || state.accountChanged;
+        retry.disabled = state.saving;
+    }
+    const discard = document.getElementById('mewmory-settings-discard');
+    if (discard) {
+        discard.hidden = state.accountChanged || (!state.pending && !state.error && !state.invalid);
+        discard.disabled = state.accountChanged || (!state.pending && !state.error && !state.invalid);
+    }
 }
+
+function handleConfigState() {
+    const state = mewmoryConfigAutosave.state();
+    const error = state.error || state.invalid || '';
+    const previous = ui.configError;
+    const accountChanged = Boolean(state.accountChanged);
+    const accountChangedBefore = ui.accountChanged;
+    ui.configError = error;
+    ui.accountChanged = accountChanged;
+    if (error) mewmory.error = error;
+    else if (previous && mewmory.error === previous) mewmory.error = '';
+    updateSettingsStatus();
+    if (Boolean(previous) !== Boolean(error) || accountChanged !== accountChangedBefore) queueMicrotask(notifyMewmory);
+    else if (error && error !== previous && mewmory.error === error) {
+        const heading = document.querySelector('#mewmory-workspace .mewmory-heading .mewmory-status');
+        if (heading) {
+            heading.textContent = error;
+            heading.dataset.error = 'true';
+        }
+    }
+}
+
+function handleConfigSaved(saved) {
+    if (!mewmory.config || saved.revision >= mewmory.config.revision) mewmory.config = saved;
+    window.dispatchEvent(new Event('mewmory:configured'));
+}
+
+function scheduleConfigSave(options) {
+    mewmoryConfigAutosave.schedule(options);
+}
+
+function discardSettingsDraft() {
+    mewmoryConfigAutosave.discard();
+    updateSettingsStatus();
+    render();
+}
+
+mewmoryConfigAutosave.configure({
+    readDraft: () => ui.draft,
+    writeDraft: draft => {
+        if (!draft) ui.draft = null;
+        else if (!ui.draft) ui.draft = draft;
+        else replaceDraftContents(ui.draft, draft);
+    },
+    getAccount: () => currentUser?.handle || null,
+    save: saveMewmoryConfig,
+    load: loadMewmoryConfig,
+    validate: incompleteConfigDraft,
+    onState: handleConfigState,
+    onSaved: handleConfigSaved,
+    onAccountChange: () => { mewmory.config = null; },
+    onAccountMismatch: () => { mewmory.config = null; },
+});
+
+window.addEventListener('neconyan:account-changing', () => {
+    mewmoryConfigAutosave.abandonAccount();
+    if (ui.root) render();
+});
 
 // A server still running older code drops switches it does not know and saves the rest.
 function confirmSavedSwitches(saved, expected) {
@@ -545,48 +720,29 @@ function confirmSavedSwitches(saved, expected) {
     }
 }
 
-function saveSwitch(key, value) {
-    const edited = JSON.stringify(ui.draft) !== ui.savedDraft;
-    const previous = ui.draft[key];
-    ui.draft[key] = value;
-    return act(async () => {
-        try {
-            const saved = await changeMewmory('config/save', { config: { ...mewmory.config, [key]: value } });
-            confirmSavedSwitches(saved.config, { [key]: value });
-            const draft = ui.draft;
-            resetSettingsDraft(saved.config);
-            if (edited) ui.draft = { ...draft, [key]: value, revision: saved.config.revision };
-            ui.configError = '';
-            window.dispatchEvent(new Event('mewmory:configured'));
-        } catch (error) {
-            ui.draft[key] = previous;
-            if (!edited) resetSettingsDraft();
-            ui.configError = error.message;
-            throw error;
-        }
-    }, { refresh: false });
-}
-
 function renderSettings(root) {
-    if (mewmory.config && (!ui.draft || JSON.stringify(ui.draft) === ui.savedDraft)) resetSettingsDraft();
+    syncSettingsDraft();
     const draft = ui.draft;
-    if (!draft) return;
+    if (!draft || !mewmory.config) return;
+    const configField = (label, value, onChange, options = {}) => field(label, value, onChange, { ...options, autosave: true });
+    const configCheck = (label, checked, onChange, disabled = false) => check(label, checked, onChange, disabled, { autosave: true });
     const settings = section('Automatic memory');
     settings.dataset.mewmoryTour = 'automatic';
     settings.append(node('p', 'mewmory-caption', 'Model roles are shared by all your chats; turning Mewmory on is per chat. These models are set up separately from the model that writes replies.'),
-        check('Turn on Mewmory in every new chat', draft.enableNewChats, value => saveSwitch('enableNewChats', value)),
-        check('Update automatically during play', draft.autoUpdate, value => saveSwitch('autoUpdate', value)),
-        check('Only use models on this computer', draft.localOnly, value => saveSwitch('localOnly', value)),
-        check('Leave out older chat that Mewmory has already remembered', draft.excludeHistory, value => saveSwitch('excludeHistory', value)),
-        check('Hide old messages automatically', draft.autoHide, value => saveSwitch('autoHide', value)));
+        configCheck('Turn on Mewmory in every new chat', draft.enableNewChats, value => { draft.enableNewChats = value; }),
+        configCheck('Update automatically during play', draft.autoUpdate, value => { draft.autoUpdate = value; }),
+        configCheck('Only use models on this computer', draft.localOnly, value => { draft.localOnly = value; }),
+        configCheck('Leave out older chat that Mewmory has already remembered', draft.excludeHistory, value => { draft.excludeHistory = value; }),
+        configCheck('Hide old messages automatically', draft.autoHide, value => { draft.autoHide = value; }));
     const budgets = node('div', 'mewmory-fields');
     budgets.append(
-        field('Hide messages beyond, tokens', draft.autoHideTokens, value => { draft.autoHideTokens = value; }, { type: 'number', hint: 'With automatic hiding on, older messages past this size are hidden after each reply. Mewmory still remembers them.' }),
-        field('Recent chat target, tokens', draft.historyWindow, value => { draft.historyWindow = value; }, { type: 'number', hint: 'Chat only. NPC references, selected memory and the rest of your prompt need additional room.' }),
-        field('Selected memory budget, tokens', draft.memoryTokens, value => { draft.memoryTokens = value; }, { type: 'number' }),
-        field('Messages per update', draft.batchMessages, value => { draft.batchMessages = value; }, { type: 'number', hint: 'Smaller batches use less space in the Facts and events model.' }),
-        field('Recall candidates', draft.candidateLimit, value => { draft.candidateLimit = value; }, { type: 'number' }),
-        field('Writer tokenizer', draft.writerTokenizer, value => { draft.writerTokenizer = value; }, { options: tokenizers, hint: 'Counts tokens, the units models measure text in. Auto follows the app’s own setting; pick one yourself if your service only gives rough estimates.' }),
+        configField('Hide older messages when the visible chat reaches, tokens', draft.autoHideTokens, value => { draft.autoHideTokens = value; }, { type: 'number',
+            hint: 'When the visible chat history reaches this many tokens, older messages are hidden and the count starts again from what remains. Hiding repeats each time it reaches this size. The latest reply can stay visible. Mewmory still remembers hidden messages.' }),
+        configField('Recent chat target, tokens', draft.historyWindow, value => { draft.historyWindow = value; }, { type: 'number', hint: 'Chat only. NPC references, selected memory and the rest of your prompt need additional room.' }),
+        configField('Selected memory budget, tokens', draft.memoryTokens, value => { draft.memoryTokens = value; }, { type: 'number' }),
+        configField('Messages per update', draft.batchMessages, value => { draft.batchMessages = value; }, { type: 'number', hint: 'Smaller batches use less space in the Facts and events model.' }),
+        configField('Recall candidates', draft.candidateLimit, value => { draft.candidateLimit = value; }, { type: 'number' }),
+        configField('Writer tokenizer', draft.writerTokenizer, value => { draft.writerTokenizer = value; }, { options: tokenizers, hint: 'Counts tokens, the units models measure text in. Auto follows the app’s own setting; pick one yourself if your service only gives rough estimates.' }),
     );
     settings.append(budgets);
     root.append(settings);
@@ -594,7 +750,7 @@ function renderSettings(root) {
     const rag = draft.retrieval;
     retrieval.append(node('p', 'mewmory-caption', 'Retrieval finds relevant saved text for the writer. Current replies use quick local search and completed recall; fresh meaning search and AI selection run in the background.'));
     const ragFields = node('div', 'mewmory-fields');
-    ragFields.append(field('Retrieval method', rag.mode, value => { rag.mode = value; }, { options: [['hybrid', 'Keywords and meaning'], ['keyword', 'Keywords'], ['semantic', 'Meaning, with keyword recovery']] }));
+    ragFields.append(configField('Retrieval method', rag.mode, value => { rag.mode = value; }, { options: [['hybrid', 'Keywords and meaning'], ['keyword', 'Keywords'], ['semantic', 'Meaning, with keyword recovery']] }));
     for (const [key, label, hint] of [
         ['chunkSize', 'Passage size, characters', 'Maximum size. Splitting prefers paragraphs, lines and words.'],
         ['chunkOverlap', 'Passage overlap, characters', 'Repeated context between passages; less than half the passage size. Repeated text is removed from the final prompt.'],
@@ -605,8 +761,8 @@ function renderSettings(root) {
         ['maxPerSource', 'Maximum matches per source', 'Keeps a long file from filling every candidate position.'],
         ['neighbourChunks', 'Neighbouring passages, each side', '0 to 2. Adds nearby original text within the memory budget.'],
         ['batchSize', 'Passages per embedding request', '1 to 10. Provider limits may lower this further.'],
-    ]) ragFields.append(field(label, rag[key], value => { rag[key] = value; }, { type: 'number', key: 'rag-' + key, hint }));
-    retrieval.append(ragFields, check('Search attached files and the Data Bank', rag.includeFiles, value => { rag.includeFiles = value; }),
+    ]) ragFields.append(configField(label, rag[key], value => { rag[key] = value; }, { type: 'number', key: 'rag-' + key, hint }));
+    retrieval.append(ragFields, configCheck('Search attached files and the Data Bank', rag.includeFiles, value => { rag.includeFiles = value; }),
         node('p', 'mewmory-caption', 'Only files attached to this account, character or chat are searched. File passages are references for the writer, not knowledge automatically given to characters. Allow file access separately for each model role.'));
     root.append(retrieval);
     const model = section('Model roles');
@@ -625,19 +781,19 @@ function renderSettings(root) {
     model.append(picker);
     const role = draft.roles[ui.role];
     const roleForm = node('fieldset', 'mewmory-role');
-    roleForm.append(node('legend', '', roles[ui.role]), check('Enable this role', role.enabled, value => { role.enabled = value; }));
+    roleForm.append(node('legend', '', roles[ui.role]), configCheck('Enable this role', role.enabled, value => { role.enabled = value; }));
     const fields = node('div', 'mewmory-fields');
     const native = ui.role === 'embedding' && role.provider === 'native';
-    if (ui.role === 'embedding') fields.append(field('Embedding connection', role.provider || 'custom', value => {
+    if (ui.role === 'embedding') fields.append(configField('Embedding connection', role.provider || 'custom', value => {
         role.provider = value; render();
     }, { key: 'embedding-provider', options: [['custom', 'Mewmory connection'], ['native', 'Use native Vectorization']],
         hint: 'Native mode follows Vectorization’s saved provider, model, credentials and prefixes. Its server providers work even when Vectorization chat retrieval is off.' }));
     if (native) roleForm.append(node('p', 'mewmory-caption', role.native
         ? 'Saved Vectorization connection: ' + role.native.source + ' · ' + (role.native.model || 'server default')
-        : 'Save this configuration to resolve the current Vectorization connection. Configure its provider and prefixes in Extensions > Built-in > Vectorization.'));
+        : 'Mewmory resolves the current Vectorization connection after these settings save. Configure its provider and prefixes in Extensions > Built-in > Vectorization.'));
     const profiles = (mewmory.config.profiles || []).filter(profile => ui.role !== 'embedding' || profile.embeddings);
     const selectedProfile = profiles.find(profile => profile.id === role.profileId);
-    if (!native) fields.append(field('Connection profile', role.profileId || '', value => {
+    if (!native) fields.append(configField('Connection profile', role.profileId || '', value => {
         role.profileId = value;
         const profile = profiles.find(profile => profile.id === value);
         role.model = profile?.model || '';
@@ -646,16 +802,16 @@ function renderSettings(root) {
     }, { options: [['', 'Manual endpoint'], ...profiles.map(profile => [profile.id, profile.name]),
         ...(role.profileId && !selectedProfile ? [[role.profileId, 'Unavailable saved profile']] : [])], key: 'profile-' + ui.role,
     hint: 'Uses the saved profile’s model and server-side credentials. Embeddings need an OpenAI-compatible profile.' }));
-    if (!native && role.profileId) fields.append(field(selectedProfile?.model ? 'Model override, optional' : 'Model', role.modelOverride || '', value => {
+    if (!native && role.profileId) fields.append(configField(selectedProfile?.model ? 'Model override, optional' : 'Model', role.modelOverride || '', value => {
         role.modelOverride = value;
         render();
     }, { key: 'model-override-' + ui.role, hint: selectedProfile?.model
         ? 'Leave blank to use the profile’s model: ' + selectedProfile.model
         : 'This profile has no saved model. Enter the model name provided by your service.' }));
     if (!native && !role.profileId) fields.append(
-        field('OpenAI-compatible endpoint', role.endpoint, value => { role.endpoint = value; }, { hint: 'For example: http://127.0.0.1:8000/v1', key: 'endpoint-' + ui.role }),
-        field('Model', role.model, value => { role.model = value; render(); }, { key: 'model-' + ui.role }),
-        field('API key', role.apiKey || '', value => { role.apiKey = value; }, { type: 'password', hint: role.hasKey ? 'A key is saved. Leave blank to keep it.' : 'Stored in the server’s protected credentials.', key: 'api-key-' + ui.role }),
+        configField('OpenAI-compatible endpoint', role.endpoint, value => { role.endpoint = value; }, { hint: 'For example: http://127.0.0.1:8000/v1', key: 'endpoint-' + ui.role }),
+        configField('Model', role.model, value => { role.model = value; render(); }, { key: 'model-' + ui.role }),
+        configField('API key', role.apiKey || '', value => { role.apiKey = value; }, { type: 'password', hint: role.hasKey ? 'A key is saved. Leave blank to keep it.' : 'Stored in the server’s protected credentials.', key: 'api-key-' + ui.role }),
     );
     const modelName = role.profileId ? role.modelOverride || selectedProfile?.model : role.model;
     const savedRole = mewmory.config.roles[ui.role];
@@ -663,34 +819,34 @@ function renderSettings(root) {
     const autoTokenizer = role.profileId && !role.modelOverride ? selectedProfile?.autoTokenizer
         : modelName === savedRole.model ? savedRole.autoTokenizer : '';
     fields.append(
-        field('Model revision, optional', role.modelRevision, value => { role.modelRevision = value; }, { key: 'revision-' + ui.role }),
-        field('Context limit, tokens', role.contextTokens, value => { role.contextTokens = value; }, { type: 'number', key: 'context-' + ui.role,
+        configField('Model revision, optional', role.modelRevision, value => { role.modelRevision = value; }, { key: 'revision-' + ui.role }),
+        configField('Context limit, tokens', role.contextTokens, value => { role.contextTokens = value; }, { type: 'number', key: 'context-' + ui.role,
             hint: 'Tokens are pieces of text counted by the model. Each role has its own limit. Set this to what your model service supports; changing it does not increase the model’s actual limit.' }),
-        field('Output limit, tokens', role.maxOutputTokens, value => { role.maxOutputTokens = value; }, { type: 'number', disabled: ui.role === 'embedding', key: 'output-' + ui.role,
+        configField('Output limit, tokens', role.maxOutputTokens, value => { role.maxOutputTokens = value; }, { type: 'number', disabled: ui.role === 'embedding', key: 'output-' + ui.role,
             hint: ui.role === 'embedding' ? '' : 'Space reserved for the reply. A larger value leaves less room for the request.' }),
-        field('Timeout, seconds', role.timeoutMs / 1000, value => { role.timeoutMs = value * 1000; }, { type: 'number', key: 'timeout-' + ui.role }),
-        field('Tokenizer for this role', role.tokenizer, value => { role.tokenizer = value; render(); }, {
+        configField('Timeout, seconds', typeof role.timeoutMs === 'number' ? role.timeoutMs / 1000 : '', value => { role.timeoutMs = value === '' ? '' : value * 1000; }, { type: 'number', key: 'timeout-' + ui.role }),
+        configField('Tokenizer for this role', role.tokenizer, value => { role.tokenizer = value; render(); }, {
             options: tokenizers.map(value => value === 'auto' ? ['auto', 'Auto (match this model)'] : value), key: 'tokenizer-' + ui.role,
-            hint: role.tokenizer === 'auto' ? (autoTokenizer ? 'Auto uses ' + autoTokenizer + '.' : 'Save the model settings to see Auto’s local tokenizer match.')
+            hint: role.tokenizer === 'auto' ? (autoTokenizer ? 'Auto uses ' + autoTokenizer + '.' : 'Auto’s local tokenizer match appears after these settings save.')
                 + ' Counts are approximate. Choose a tokenizer manually if your provider uses a different one.' : '',
         }),
     );
     if (ui.role === 'embedding') {
-        if (!native) fields.append(field('Prefix preset', '', value => {
+        if (!native) fields.append(configField('Prefix preset', '', value => {
             const preset = PREFIX_PRESETS[Number(value)];
             if (!preset || value === '') return;
             role.queryPrefix = preset.query; role.documentPrefix = preset.document; render();
         }, { options: [['', 'Choose a preset'], ...PREFIX_PRESETS.map((preset, index) => [String(index), preset.label])],
             hint: 'Use the prefix recommended by your embedding model. Leading spaces, trailing spaces and line breaks are kept exactly.' }));
-        fields.append(field('Query prefix, optional', native ? role.native?.queryPrefix || '' : role.queryPrefix, value => { role.queryPrefix = value; }, { multiline: true, disabled: native }),
-            field('Document prefix, optional', native ? role.native?.documentPrefix || '' : role.documentPrefix, value => { role.documentPrefix = value; }, { multiline: true, disabled: native }));
+        fields.append(configField('Query prefix, optional', native ? role.native?.queryPrefix || '' : role.queryPrefix, value => { role.queryPrefix = value; }, { multiline: true, disabled: native }),
+            configField('Document prefix, optional', native ? role.native?.documentPrefix || '' : role.documentPrefix, value => { role.documentPrefix = value; }, { multiline: true, disabled: native }));
     }
-    roleForm.append(fields, check('Allow sending story data to a service on another computer', role.allowRemote, value => { role.allowRemote = value; }));
-    if (!native && !role.profileId) roleForm.append(check('Remove the saved API key when saving', role.clearKey, value => { role.clearKey = value; }));
+    roleForm.append(fields, configCheck('Allow sending story data to a service on another computer', role.allowRemote, value => { role.allowRemote = value; }));
+    if (!native && !role.profileId) roleForm.append(configCheck('Remove the saved API key', role.clearKey, value => { role.clearKey = value; }));
     const scope = section('This role may read');
     scope.dataset.mewmoryTour = 'permissions';
     for (const [type, label] of [['chat', 'Chat messages'], ['character', 'Character cards'], ['lore', 'Enabled lore'], ['memory', 'Saved memories'], ['file', 'Attached files and Data Bank']]) {
-        scope.append(check(label, role.allowedData.includes(type), checked => {
+        scope.append(configCheck(label, role.allowedData.includes(type), checked => {
             role.allowedData = role.allowedData.filter(item => item !== type);
             if (checked) role.allowedData.push(type);
         }));
@@ -699,18 +855,12 @@ function renderSettings(root) {
     model.append(roleForm, node('p', 'mewmory-caption', 'Recall selector and Recall fallback only pick from memories that already exist. Only use models on this computer applies to every role. Embeddings are optional; keyword search always works.'));
     root.append(model);
     const actions = node('div', 'mewmory-actions');
-    actions.append(button('Save configuration', () => act(async () => {
-        try {
-            const saved = await changeMewmory('config/save', { config: ui.draft });
-            confirmSavedSwitches(saved.config, ui.draft);
-            resetSettingsDraft(saved.config);
-            ui.configError = '';
-            window.dispatchEvent(new Event('mewmory:configured'));
-        } catch (error) {
-            ui.configError = error.message;
-            throw error;
-        }
-    }), { primary: true }), button('Discard unsaved settings', () => { resetSettingsDraft(); ui.configError = ''; render(); }));
+    const retry = button('Retry saving', () => { void mewmoryConfigAutosave.retry(); }, { primary: true });
+    retry.id = 'mewmory-settings-retry';
+    retry.hidden = true;
+    const discard = button('Discard unsaved settings', discardSettingsDraft);
+    discard.id = 'mewmory-settings-discard';
+    actions.append(retry, discard);
     const status = node('p', 'mewmory-status');
     status.id = 'mewmory-settings-status';
     status.setAttribute('role', 'status');
@@ -738,7 +888,7 @@ function renderHealth(root) {
         : view.health.indexStatus === 'ready' ? 'meaning search (embeddings) and keyword search ready' : 'building meaning search (embeddings); keyword search works meanwhile')
         + (view.health.indexVersion ? ' · index ' + view.health.indexVersion.slice(0, 12) : '')),
     node('p', 'mewmory-caption', 'Older messages stay saved and searchable. If the memories plus recent chat cannot fit the writing model, the reply stops with an error instead of dropping them.'),
-    node('p', 'mewmory-caption', 'Hide old messages that no longer fit: counts back from the latest reply using your context size and hides everything older from the prompt. Mewmory still remembers them.'));
+    node('p', 'mewmory-caption', 'Hide old messages that no longer fit: once the visible chat reaches your hiding threshold, older messages are hidden and the count starts again. The latest reply can stay visible. Mewmory still remembers them.'));
     const actions = node('div', 'mewmory-actions');
     actions.append(button('Catch up on this whole chat', () => processMewmory({ all: true }), { disabled: mewmory.busy || !view.enabled }),
         button('Check for missed details', () => processMewmory({ all: true, checkpoint: true }), { disabled: mewmory.busy || !view.enabled }),

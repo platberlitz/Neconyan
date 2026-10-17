@@ -19,14 +19,22 @@ import { listJobs } from '../jobs/store.js';
 
 export const router = express.Router();
 
-function route(url, handler) {
+function route(url, handler, { accountScoped = false } = {}) {
     router.post(url, async (request, response) => {
         const controller = new AbortController();
         const cancellation = abortOnRequestClose(request, controller, response);
         try {
             if (!request.user?.directories?.root) return response.sendStatus(401);
+            const owner = request.user.profile?.handle;
+            const expected = request.get('X-Neconyan-Account');
+            if (accountScoped && expected && expected !== owner) {
+                return response.status(403).json({
+                    error: 'Mewmory settings belong to a different signed-in account. Reload the page before continuing.',
+                    code: 'MEWMORY_ACCOUNT_CHANGED',
+                });
+            }
             if (Buffer.byteLength(JSON.stringify(request.body || {})) > MAX_ARCHIVE_BYTES + 1024 * 1024) fail('This request to Mewmory is too large to accept.', 413);
-            const result = await handler(request.user.directories, request.body || {}, controller.signal, request.user.profile?.handle);
+            const result = await handler(request.user.directories, request.body || {}, controller.signal, owner);
             if (!response.destroyed) response.json(result);
         } catch (error) {
             if (!response.destroyed) response.status(error.status || 500).json({
@@ -37,6 +45,10 @@ function route(url, handler) {
             cancellation.cleanup();
         }
     });
+}
+
+function accountConfig(config, owner) {
+    return owner ? { ...config, account: owner } : config;
 }
 
 function expectedRevision(body, state) {
@@ -91,8 +103,12 @@ export function inspectState(state, config, { query = '', kind = '', ownerId = '
     };
 }
 
-route('/config/get', directories => ({ config: publicConfig(directories), stories: listStories(directories) }));
-route('/config/save', (directories, body) => ({ config: saveConfig(directories, body.config) }));
+route('/config/get', (directories, body, signal, owner) => ({
+    config: accountConfig(publicConfig(directories), owner), stories: listStories(directories),
+}), { accountScoped: true });
+route('/config/save', (directories, body, signal, owner) => ({
+    config: accountConfig(saveConfig(directories, body.config), owner),
+}), { accountScoped: true });
 
 route('/inspect', async (directories, body) => {
     const locator = normalizeLocator(body.locator);

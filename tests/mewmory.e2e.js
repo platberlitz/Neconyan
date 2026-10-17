@@ -71,7 +71,7 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     for (const role of Object.values(config.roles)) {
         Object.assign(role, { enabled: false, endpoint: '', model: '', profileId: '', modelOverride: '', tokenizer: 'auto' });
     }
-    const initial = await post('/api/mewmory/config/save', { config });
+    await post('/api/mewmory/config/save', { config });
     await page.evaluate(async endpoint => {
         const { extension_settings } = await import('/scripts/extensions.js');
         const manager = extension_settings.connectionManager;
@@ -86,20 +86,24 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     await page.locator('#neconyan-workspace-rail [data-neconyan-route="mewmory"]').click();
     await expect(workspace.getByRole('tab', { name: 'Now', exact: true })).toBeVisible();
     await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
-    for (const name of ['extractor', 'pawspective', 'embedding', 'selector', 'fallback']) {
+    const settingsStatus = workspace.locator('#mewmory-settings-status');
+    for (const name of ['extractor', 'pawspective', 'selector', 'fallback']) {
         await workspace.getByRole('group', { name: 'Model role to set up' }).locator('#mewmory-role-' + name).click();
         await workspace.getByLabel('Enable this role', { exact: true }).check();
         await workspace.getByLabel('Connection profile', { exact: true }).selectOption('mewmory-test-' + name);
         await expect(workspace.getByLabel('Tokenizer for this role')).toHaveValue('auto');
         await expect(workspace.getByLabel('Timeout, seconds', { exact: true })).toHaveValue('300');
+        await expect(settingsStatus).toHaveText('Configuration saved.');
+        expect((await post('/api/mewmory/config/get')).config.roles[name].enabled).toBe(true);
     }
-    const settingsStatus = workspace.locator('#mewmory-settings-status');
-    await expect(settingsStatus).toContainText('Unsaved changes');
-    await workspace.getByRole('button', { name: 'Save configuration', exact: true }).click();
+    const beforeInvalidRole = (await post('/api/mewmory/config/get')).config;
+    await workspace.getByRole('group', { name: 'Model role to set up' }).locator('#mewmory-role-embedding').click();
+    await workspace.getByLabel('Enable this role', { exact: true }).check();
+    await workspace.getByLabel('Connection profile', { exact: true }).selectOption('mewmory-test-embedding');
     await expect(settingsStatus).toContainText('Not saved: Embeddings:');
     await expect(settingsStatus).toContainText('no saved model');
-    expect((await post('/api/mewmory/config/get')).config.revision).toBe(initial.config.revision);
-    expect((await post('/api/mewmory/config/get')).config.roles.extractor.enabled).toBe(false);
+    expect((await post('/api/mewmory/config/get')).config.revision).toBe(beforeInvalidRole.revision);
+    expect((await post('/api/mewmory/config/get')).config.roles.embedding.enabled).toBe(false);
     await workspace.getByRole('button', { name: 'Refresh', exact: true }).click();
     await expect(settingsStatus).toContainText('Not saved: Embeddings:');
     await workspace.getByRole('tab', { name: 'Now', exact: true }).click();
@@ -108,7 +112,6 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     await workspace.getByRole('group', { name: 'Model role to set up' }).locator('#mewmory-role-embedding').click();
     await expect(workspace.getByLabel('Enable this role', { exact: true })).toBeChecked();
     await workspace.getByLabel('Model', { exact: true }).fill('text-embedding-3-small');
-    await workspace.getByRole('button', { name: 'Save configuration', exact: true }).click();
     await expect(settingsStatus).toHaveText('Configuration saved.');
     await expect(workspace.getByText(/Auto uses gpt-3.5-turbo/)).toBeVisible();
     await navigate(() => page.reload({ waitUntil: 'domcontentloaded' }));
@@ -131,16 +134,15 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     const changed = await post('/api/mewmory/config/save', { config: external });
     await workspace.getByRole('button', { name: 'Refresh', exact: true }).click();
     await expect(workspace.getByLabel('Messages per update')).toHaveValue('4');
-    await workspace.getByLabel('Messages per update').fill('3');
+    await workspace.getByLabel('Messages per update').fill('0');
     changed.config.memoryTokens += 1;
     await post('/api/mewmory/config/save', { config: changed.config });
     await workspace.getByRole('button', { name: 'Refresh', exact: true }).click();
-    await expect(workspace.getByLabel('Messages per update')).toHaveValue('3');
+    await expect(workspace.getByLabel('Messages per update')).toHaveValue('0');
     await expect(settingsStatus).toContainText('Settings were saved elsewhere');
     await workspace.getByRole('button', { name: 'Discard unsaved settings', exact: true }).click();
     await expect(workspace.getByLabel('Messages per update')).toHaveValue('4');
     await workspace.getByLabel('Messages per update').fill('3');
-    await workspace.getByRole('button', { name: 'Save configuration', exact: true }).click();
     await expect(settingsStatus).toHaveText('Configuration saved.');
     await workspace.getByLabel('Use Mewmory in this chat').check();
     await workspace.getByRole('tab', { name: 'Now', exact: true }).click();
@@ -184,9 +186,11 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
         await workspace.getByRole('group', { name: 'Model role to set up' }).locator('#mewmory-role-extractor').click();
         await expect(workspace.getByLabel('Connection profile', { exact: true })).toHaveValue('mewmory-test-extractor');
         await workspace.getByLabel('Tokenizer for this role').selectOption('cl100k_base');
-        await expect(settingsStatus).toContainText('Unsaved changes');
-        await workspace.getByRole('button', { name: 'Discard unsaved settings', exact: true }).click();
-        await expect(workspace.getByLabel('Tokenizer for this role')).toHaveValue('auto');
+        await expect(settingsStatus).toHaveText('Configuration saved.');
+        expect((await post('/api/mewmory/config/get')).config.roles.extractor.tokenizer).toBe('cl100k_base');
+        await workspace.getByLabel('Tokenizer for this role').selectOption('auto');
+        await expect(settingsStatus).toHaveText('Configuration saved.');
+        expect((await post('/api/mewmory/config/get')).config.roles.extractor.tokenizer).toBe('auto');
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
         const inputs = workspace.locator('input:not([type="checkbox"]):visible');
         for (let index = 0; index < await inputs.count(); index++) {
