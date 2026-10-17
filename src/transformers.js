@@ -16,6 +16,25 @@ function configureTransformers() {
     env.backends.onnx.wasm.wasmPaths = path.join(serverDirectory, 'node_modules', 'sillytavern-transformers', 'dist') + path.sep;
 }
 
+// The server-side RawImage reader decodes images with Jimp 0.22, which supports these formats.
+// Checking the signature and the header length first keeps malformed non-images, including ASF
+// headers that make the file-type 16.5.4 parser loop forever, away from the image parser.
+// file-type reads the first PNG chunk header (16 bytes) and peeks 24 bytes at a little-endian
+// TIFF; shorter buffers make it reject with an unhandled promise rejection inside Jimp.
+const SUPPORTED_IMAGE_HEADERS = [
+    { bytes: [0xff, 0xd8, 0xff], minimumLength: 3 }, // JPEG
+    { bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], minimumLength: 16 }, // PNG
+    { bytes: [0x47, 0x49, 0x46, 0x38], minimumLength: 4 }, // GIF
+    { bytes: [0x42, 0x4d], minimumLength: 2 }, // BMP
+    { bytes: [0x49, 0x49, 0x2a, 0x00], minimumLength: 24 }, // TIFF, little endian
+    { bytes: [0x4d, 0x4d, 0x00, 0x2a], minimumLength: 4 }, // TIFF, big endian
+];
+
+function isSupportedImageBuffer(buffer) {
+    return SUPPORTED_IMAGE_HEADERS.some(({ bytes, minimumLength }) =>
+        buffer.length >= minimumLength && bytes.every((byte, index) => buffer[index] === byte));
+}
+
 const tasks = {
     'text-classification': {
         defaultModel: 'Cohee/distilbert-base-uncased-go-emotions-onnx',
@@ -57,6 +76,9 @@ const tasks = {
 export async function getRawImage(image) {
     try {
         const buffer = Buffer.from(image, 'base64');
+        if (!isSupportedImageBuffer(buffer)) {
+            return null;
+        }
         const byteArray = new Uint8Array(buffer);
         const blob = new Blob([byteArray]);
 
