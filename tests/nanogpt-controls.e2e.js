@@ -2,6 +2,7 @@
 import { expect } from '@playwright/test';
 import { test as disposableTest } from './neconyan-conversation-durable-fixture.js';
 import { dismissOnboardingIfPresent, dismissOpenDialogIfPresent, waitForAnimationFrames } from './chat-scroll-regression-helpers.js';
+import { formatModelLabelWithSource } from '../public/scripts/model-family.js';
 
 // Routing choices are saved and reloaded, so each case owns its server-side settings too.
 const test = disposableTest.extend({
@@ -242,10 +243,10 @@ for (const mobile of [false, true]) {
             for (const [index, model] of MODEL_CASES.entries()) {
                 const row = modelRow(page, model);
                 // The name starts with the organisation from the model ID, so same-named models from different sources stay distinct.
-                await expect(row.locator('strong')).toHaveText(MODELS[index].name || MODELS[index].id);
+                await expect(row.locator('strong')).toHaveText(formatModelLabelWithSource(MODELS[index]));
                 await expect(row.locator('small[title]')).toHaveText(model.badge);
             }
-            await expect(modelRow(page, MODELS[1]).locator('strong')).toHaveText('DeepSeek Friendly');
+            await expect(modelRow(page, MODELS[1]).locator('strong')).toHaveText('DeepSeek/DeepSeek Friendly');
             await expect(modelRow(page, MODELS[0]).locator('strong')).toHaveText('Nano Tiny');
             const first = modelRow(page, MODELS[0]);
             await expect(first).toContainText('128000 ctx');

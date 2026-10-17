@@ -1,6 +1,8 @@
 import { describe, expect, test } from '@jest/globals';
 
 import {
+    formatModelLabelWithSource,
+    formatModelSource,
     getModelFamilyGroup,
     groupByModelFamily,
 } from '../public/scripts/model-family.js';
@@ -47,5 +49,24 @@ describe('model families from IDs', () => {
             ['GPT-5.6', ['gpt-5.6-sol']],
             [null, ['123-model']],
         ]);
+    });
+});
+
+describe('model source labels', () => {
+    test('names known and unknown sources', () => {
+        expect(formatModelSource('google')).toBe('Google');
+        expect(formatModelSource('meta-llama')).toBe('Meta Llama');
+        expect(formatModelSource('TEE')).toBe('TEE');
+        expect(formatModelSource('some-lab')).toBe('Some Lab');
+        expect(formatModelSource('')).toBe('');
+    });
+
+    test('puts the source in front of the model name', () => {
+        expect(formatModelLabelWithSource({ id: 'google/gemma-4-31b-it', name: 'Gemma 4 31B' })).toBe('Google/Gemma 4 31B');
+        expect(formatModelLabelWithSource({ id: 'TEE/gemma-4-31b-it', name: 'Gemma 4 31B' })).toBe('TEE/Gemma 4 31B');
+        expect(formatModelLabelWithSource({ id: 'gemma-4-31b-it', name: 'Gemma 4 31B', owned_by: 'google' })).toBe('Google/Gemma 4 31B');
+        expect(formatModelLabelWithSource({ id: 'gemma-4-31b-it', name: 'Gemma 4 31B' })).toBe('Gemma 4 31B');
+        expect(formatModelLabelWithSource({ id: 'thedrummer/orion' })).toBe('TheDrummer/orion');
+        expect(formatModelLabelWithSource({ id: 'google/gemma-x', name: 'Google: Gemma X' })).toBe('Google: Gemma X');
     });
 });

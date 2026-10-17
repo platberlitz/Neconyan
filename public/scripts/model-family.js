@@ -22,6 +22,30 @@ const FAMILY_NAMES = {
     qwq: 'QwQ',
 };
 
+const SOURCE_NAMES = {
+    ai21: 'AI21',
+    anthropic: 'Anthropic',
+    cohere: 'Cohere',
+    deepseek: 'DeepSeek',
+    'deepseek-ai': 'DeepSeek',
+    google: 'Google',
+    'meta-llama': 'Meta Llama',
+    microsoft: 'Microsoft',
+    minimax: 'MiniMax',
+    mistral: 'Mistral',
+    mistralai: 'Mistral AI',
+    moonshotai: 'Moonshot AI',
+    nousresearch: 'Nous Research',
+    nvidia: 'NVIDIA',
+    openai: 'OpenAI',
+    qwen: 'Qwen',
+    thedrummer: 'TheDrummer',
+    'x-ai': 'xAI',
+    xai: 'xAI',
+    'z-ai': 'Z.ai',
+    zhipu: 'Zhipu',
+};
+
 const VERSION = /^v?[1-9]\d?(?:\.\d+)*[a-z]?$/;
 const PARAMETER_SIZE = /^\d+(?:\.\d+)?[bkm]$/;
 const LETTER_VERSION = /^[a-z]\d+(?:\.\d+)?$/;
@@ -114,3 +138,32 @@ export function groupByModelFamily(items, getId) {
     return result;
 }
 
+/**
+ * Readable name of the organisation in a model ID prefix ('meta-llama' -> 'Meta Llama').
+ * @param {string} source
+ */
+export function formatModelSource(source) {
+    const value = String(source ?? '').trim();
+    if (!value) return '';
+    const known = SOURCE_NAMES[value.toLowerCase()];
+    if (known) return known;
+    if (/[A-Z]/.test(value)) return value;
+    return value.split(/[-_]+/).filter(Boolean).map(capitalise).join(' ');
+}
+
+/**
+ * Model label that starts with its source, for catalogues that host the same model
+ * from several organisations: 'google/gemma-4-31b-it' -> 'Google/Gemma 4 31B'.
+ * @param {{ id: string, name?: string, owned_by?: string }} model
+ */
+export function formatModelLabelWithSource(model) {
+    const id = String(model?.id ?? '');
+    const slash = id.indexOf('/');
+    const name = String(model?.name || (slash >= 0 ? id.slice(slash + 1) : id)).trim();
+    const source = formatModelSource(slash > 0 ? id.slice(0, slash) : model?.owned_by);
+    if (!source) return name;
+    const lowerName = name.toLowerCase();
+    const lowerSource = source.toLowerCase();
+    if (lowerName.startsWith(`${lowerSource}/`) || lowerName.startsWith(`${lowerSource}:`)) return name;
+    return `${source}/${name}`;
+}

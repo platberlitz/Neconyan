@@ -91,6 +91,7 @@ import { SlashCommandEnumValue } from './slash-commands/SlashCommandEnumValue.js
 import { callGenericPopup, Popup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
 import { t } from './i18n.js';
 import { attachModelListSearch, focusModelListSearch } from './model-list-search.js';
+import { formatModelLabelWithSource } from './model-family.js';
 import { extension_settings } from './extensions.js';
 import { ToolManager } from './tool-calling.js';
 import { accountStorage } from './util/AccountStorage.js';
@@ -4453,7 +4454,7 @@ function getNanoGptModelTemplate(option) {
 
     // Neconyan: share upstream model details with the mobile picker; treat catalogue fields as text.
     const row = $('<span>', { class: 'flex-container alignItemsBaseline', title: model.id });
-    row.append($('<strong>').text(model.name || model.id), document.createTextNode(` | ${contextLength} ctx | `), $('<small>').text(price));
+    row.append($('<strong>').text(formatModelLabelWithSource(model)), document.createTextNode(` | ${contextLength} ctx | `), $('<small>').text(price));
     const icons = $('<span>');
     for (const [capability, icon, title] of [
         ['vision', 'eye', 'This model supports vision'],
@@ -4638,7 +4639,7 @@ function saveModelList(data, source = oai_settings.chat_completion_source) {
             $('#model_nanogpt_select').append(
                 $('<option>', {
                     value: model.id,
-                    text: model.name || model.id,
+                    text: formatModelLabelWithSource(model),
                 }));
         });
 
