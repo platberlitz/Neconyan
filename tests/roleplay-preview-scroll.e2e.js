@@ -82,6 +82,8 @@ async function installHandoverGrowth(page, { selector, delayMs = 120, height = 2
                 const { setRoleplayJobControls } = await import('/script.js');
                 setRoleplayJobControls(nextJobId, () => {});
                 context.scrollChatToBottom({ force: true });
+                // Let the new Send's forced bottom paint before late media arrives.
+                await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
             }
             const chat = document.querySelector('#chat');
             const target = chat.querySelector(targetSelector);
@@ -219,8 +221,8 @@ async function finishReply(page, text) {
 
 // Uses the real saved-copy handover: the server read replaces the preview in the
 // same atomic render that saves the reply, with its Companion notes already on it.
-async function finishSavedReply(page, messageId) {
-    const finished = await page.evaluate(async () => {
+async function finishSavedReply(page, messageId, { clearJob = true } = {}) {
+    const finished = await page.evaluate(async ({ clearJob: shouldClearJob }) => {
         const chat = document.querySelector('#chat');
         const preview = chat.querySelector('#neconyan-roleplay-preview');
         if (!preview) throw new Error('No live preview to save.');
@@ -236,11 +238,11 @@ async function finishSavedReply(page, messageId) {
             await refreshCurrentChatFromSaved();
         } finally {
             keepChatReadingPositionOnNextLoad(null);
-            setRoleplayJobControls(null);
+            if (shouldClearJob) setRoleplayJobControls(null);
             window.stopScrollPreview();
         }
         return { previewTextTop };
-    });
+    }, { clearJob });
     // Outlast every chat-load settle pin and the reading-anchor hold.
     // eslint-disable-next-line playwright/no-wait-for-timeout
     await page.waitForTimeout(3000);
@@ -345,13 +347,19 @@ for (const phone of [false, true]) {
             await waitForAnimationFrames(page, 8);
 
             const textBefore = await previewMarkerTop(page, '#neconyan-roleplay-preview .mes_text');
+            const olderHeightBefore = await page.evaluate(id => document.querySelector(`#chat .mes[mesid="${id}"]`).getBoundingClientRect().height, olderId);
             await growMessageBlockAboveViewport(page, olderId, { height: 120 });
             await waitForAnimationFrames(page, 6);
 
             const textAfter = await previewMarkerTop(page, '#neconyan-roleplay-preview .mes_text');
+            const olderHeightAfter = await page.evaluate(id => document.querySelector(`#chat .mes[mesid="${id}"]`).getBoundingClientRect().height, olderId);
+            const measuredAdded = olderHeightAfter - olderHeightBefore;
             const after = await getChatScrollSnapshot(page);
+            expect(measuredAdded).toBeGreaterThanOrEqual(120);
             expect(after.bottomDelta).toBeGreaterThan(120);
-            expect(Math.abs(textAfter - textBefore)).toBeLessThanOrEqual(124);
+            const textMovement = textAfter - textBefore;
+            expect(textMovement).toBeGreaterThanOrEqual(-4);
+            expect(textMovement).toBeLessThanOrEqual(measuredAdded + 4);
         });
 
         test('preview updates respect disabled automatic scrolling', async ({ page }) => {
@@ -510,7 +518,7 @@ for (const phone of [false, true]) {
                 extra: { inChatAgentCompanionResults: companionNote('done', 30) },
             });
             await installHandoverGrowth(page, { selector: `.mes[mesid="${messageId}"] .mes_block`, delayMs: 120, height: 240, jobId: 'next-roleplay' });
-            await finishSavedReply(page, messageId);
+            await finishSavedReply(page, messageId, { clearJob: false });
 
             const after = await getChatScrollSnapshot(page);
             expect(after.bottomDelta).toBeLessThanOrEqual(16);
