@@ -57,6 +57,39 @@ const companionNote = (status, lines = 0) => ({
         updatedAt: new Date().toISOString(),
     },
 });
+const COMPANION_STATUSES = new Set(['pending', 'done', 'error', 'cancelled']);
+const companionStatus = result => COMPANION_STATUSES.has(result?.status) ? result.status : 'done';
+
+// Reply text and stage can match a frame drawn before a same-stage note change,
+// and iPhone draws those changes at a 250ms floor. Wait for the requested card
+// status and its rendered body before the caller measures geometry.
+async function waitForPreviewCompanions(page, companionResults) {
+    const preview = page.locator('#neconyan-roleplay-preview');
+    const entries = Object.entries(companionResults ?? {}).filter(([, result]) => result && typeof result === 'object');
+    if (entries.length === 0) {
+        // A preview without notes removes the previous ledger in the same render.
+        await expect(preview.locator('.ica--companion-ledger')).toHaveCount(0);
+        return;
+    }
+    for (const [agentId, result] of entries) {
+        const status = companionStatus(result);
+        const card = preview.locator(`.ica--companion-card[data-agent-id="${agentId}"]`);
+        await expect(card).toHaveCount(1);
+        await expect(card).toHaveClass(new RegExp(`\\bica--companion-card--${status}\\b`));
+        const body = card.locator('.ica--companion-body');
+        if (status === 'pending') {
+            await expect(body.locator('.ica--companion-pending')).toHaveCount(1);
+        } else if (status === 'done') {
+            const content = String(result.content ?? '').replace(/\s+/g, ' ').trim();
+            if (content) await expect(body).toContainText(content);
+            else await expect(body.locator('.ica--companion-empty')).toHaveCount(1);
+        } else if (status === 'error') {
+            await expect(body.locator('.ica--companion-error')).toContainText(String(result.error || 'Companion run failed.'));
+        } else {
+            await expect(body.locator('.ica--companion-empty')).toContainText('Companion run was cancelled.');
+        }
+    }
+}
 
 async function updatePreview(page, { stage = 'generating', lines = 1, agentLines = 0, companionResults = null } = {}) {
     const text = replyText(lines, agentLines);
@@ -65,6 +98,33 @@ async function updatePreview(page, { stage = 'generating', lines = 1, agentLines
     }), { stage, text, inChatAgentCompanionResults: companionResults ?? undefined });
     await expect(page.locator('#neconyan-roleplay-preview [role="status"]')).toHaveText(STAGE_LABELS[stage] || 'Writing reply…');
     await expect(page.locator('#neconyan-roleplay-preview .mes_text')).toHaveText(text);
+    await waitForPreviewCompanions(page, companionResults);
+}
+
+async function previewCompanionDiagnostics(page) {
+    return page.evaluate(() => {
+        const chat = document.querySelector('#chat');
+        const preview = chat.querySelector('#neconyan-roleplay-preview');
+        if (!preview) return null;
+        const chatTop = chat.getBoundingClientRect().top;
+        return {
+            previewHeight: Math.round(preview.getBoundingClientRect().height),
+            textHeight: Math.round((preview.querySelector('.mes_text') || preview).getBoundingClientRect().height),
+            cards: [...preview.querySelectorAll('.ica--companion-card')].map(card => {
+                const body = card.querySelector('.ica--companion-body');
+                const ledger = card.closest('.ica--companion-ledger');
+                return {
+                    agentId: card.getAttribute('data-agent-id'),
+                    cardClass: card.className,
+                    statusText: card.querySelector('.ica--companion-status')?.textContent ?? null,
+                    bodyHeight: body ? Math.round(body.getBoundingClientRect().height) : 0,
+                    bodyCharacters: body?.textContent?.trim().length ?? 0,
+                    ledgerHeight: ledger ? Math.round(ledger.getBoundingClientRect().height) : 0,
+                    ledgerTop: ledger ? Math.round(ledger.getBoundingClientRect().top - chatTop) : null,
+                };
+            }),
+        };
+    });
 }
 
 async function previewMarkerTop(page, selector) {
@@ -359,6 +419,13 @@ for (const phone of [false, true]) {
 
             const textAfter = await previewMarkerTop(page, '#neconyan-roleplay-preview .mes_text');
             const after = await getChatScrollSnapshot(page);
+            await test.info().attach('preview-companion-measurement', {
+                body: JSON.stringify({
+                    textBefore, textAfter, scroll: after,
+                    companion: await previewCompanionDiagnostics(page),
+                }),
+                contentType: 'application/json',
+            });
             expect(Math.abs(textAfter - textBefore)).toBeLessThanOrEqual(3);
             expect(after.bottomDelta).toBeGreaterThan(120);
         });
