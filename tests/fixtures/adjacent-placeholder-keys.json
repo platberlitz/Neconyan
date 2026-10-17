@@ -26,7 +26,6 @@
   "Lorebook${0} ${1} not loaded yet. the result only covers loaded books.",
   "Lorebook${0} ${1} not loaded yet. try again in a moment.",
   "Macro \"${0}\" (position ${1}${2}) argument \"${3}\" expected type ${4} but got value \"${5}\".",
-  "Message ${0}${1}${2}",
   "Move ${0} ${1}",
   "Name: ${0}\n${1}",
   "No group member found using ${0} ${1}",
