@@ -132,7 +132,9 @@ function walkAst(node, quiet = false) {
     }
     if (node.type === 'CallExpression' && ['setAttribute', 'attr'].includes(node.callee.property?.name) && captionAttributes.includes(literalText(node.arguments[0]))) addCaption(literalText(node.arguments[1]));
     if (node.type === 'CallExpression' && ['text', 'setTooltip'].includes(node.callee.property?.name) && node.arguments.length === 1) addCaption(literalText(node.arguments[0]));
+    // Header names are protocol values, not captions, so any call on an object named headers is code-only.
     const codeOnly = ((node.type === 'CallExpression' || node.type === 'NewExpression') && codeOnlyCalls.has(calleeName(node.callee)))
+        || (node.type === 'CallExpression' && /^headers$/i.test(node.callee.object?.property?.name ?? node.callee.object?.name ?? ''))
         || (node.type === 'CallExpression' && node.callee.object?.name === 'console')
         || (node.type === 'BinaryExpression' && ['===', '!==', '==', '!=', 'in', 'instanceof'].includes(node.operator))
         || ['ImportDeclaration', 'ExportAllDeclaration', 'ImportExpression', 'ThrowStatement'].includes(node.type);
