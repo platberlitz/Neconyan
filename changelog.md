@@ -2,6 +2,14 @@
 
 ## v1.3.5
 
+### Highlights
+- Every single-choice model menu is now a searchable list on phones and desktop. Type part of a name or model ID, press Enter for the first match, or scroll the full catalogue; lists are no longer cut off at 50 models. Favourites sit in their own group with a star at the right edge, and the rest are grouped by family worked out from the model ID, so a new release lands in the right group without an update. OpenRouter, ElectronHub and AIMLAPI keep their own vendor groups, and NanoGPT names start with the source that hosts the model.
+- Added search to the Companion panel. It filters by companion name and latest note, says how many companions match, and leaves unfinished drafts and expanded notes alone. Escape clears the search first, then closes the panel.
+- A failed Agent or Companion no longer throws away a finished Roleplay reply. The server retries the failed Agents once, keeps the ones that already finished, and adds the reply anyway if they fail again. You do not need to regenerate.
+- Post-reply Agents start as soon as the main reply finishes, with pending Companion cards naming what is about to run. A finished note grows its message without moving your place in the chat, and opening a chat still lands on its newest reply.
+- Server-written replies now follow **Screen updates per second** instead of redrawing twice a second, so long replies scroll more smoothly. Lower that setting if a phone struggles.
+- Reworded the image input and repair screens. **Don't send chat images to the model** covers every picture in your chats, **Review chat images** opens the right chat after a refusal, and **Change history** uses **Prepare a converted copy**, **Save a copy as it is**, **Finish this change** and **Undo change**. The screens can be translated now.
+
 ### Merged Staging PRs
 - PR #200 (2026-10-17) `fix(model-search): show favourites as a star and keep the keyboard down`
 - PR #201 (2026-10-17) `feat(models): searchable, auto-grouped model lists for every backend`
