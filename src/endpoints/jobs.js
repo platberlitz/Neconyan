@@ -11,7 +11,7 @@ import { retainConversationAutomaticAcceptance } from '../generation/conversatio
 import { decideJobApproval, readJobApproval } from '../generation/job-approvals.js';
 import { closeUnstartedRoleplayWorkflow } from '../generation/roleplay-workflow-cancellation.js';
 import { requestRoleplayAgentStop } from '../generation/roleplay-agent-stop.js';
-import { readRoleplayPreview, readRoleplayRecovery, subscribeRoleplayPreview } from '../generation/roleplay-preview.js';
+import { readRoleplayPreview, subscribeRoleplayPreview } from '../generation/roleplay-preview.js';
 import { readConversationPreview, subscribeConversationPreview } from '../generation/conversation-preview.js';
 import { subscribeJobsChanged } from '../jobs/notifications.js';
 import { getDiagnosticJobActivity } from '../diagnostic-activity.js';
@@ -122,10 +122,6 @@ router.get('/:id/preview', (request, response) => {
         const conversation = ['conversation.reply', 'conversation.rewrite'].includes(job.type);
         const base = { owner, directories };
         const account = job.intent.media;
-        if (!conversation && request.query?.recovery === 'true') {
-            const preview = withRoleplayAccount(base, account, () => readRoleplayRecovery({ ...base, job }));
-            return response.set('Cache-Control', 'no-store').json({ preview });
-        }
         const initial = conversation ? readConversationPreview(owner, job.id) : withRoleplayAccount(base, account, () => readRoleplayPreview({ ...base, job }));
         response.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store, no-transform', 'X-Accel-Buffering': 'no' });
         response.flushHeaders();

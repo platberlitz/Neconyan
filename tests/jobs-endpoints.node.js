@@ -192,7 +192,6 @@ test('live reply previews are account-scoped and disconnecting never cancels the
     const context = { ...base, job: child };
     const pathname = `/api/jobs/${job.id}/preview`;
     assert.equal((await request('GET', pathname, { account: 'bob' })).status, 404);
-    assert.equal((await request('GET', `${pathname}?recovery=true`, { account: 'bob' })).status, 404);
     const response = await request('GET', pathname);
     assert.equal(response.status, 200);
     assert.match(response.headers.get('content-type'), /text\/event-stream/);
@@ -203,16 +202,12 @@ test('live reply previews are account-scoped and disconnecting never cancels the
     assert.ok(Math.abs(Date.now() - initialValue.serverTime) < 10000);
     const unsubscribe = subscribeRoleplayPreview('alice', job.id, () => { throw new Error('lost viewer'); });
     assert.doesNotThrow(() => publishRoleplayPreview(context, { stage: 'generating', text: 'First token' }));
-    assert.deepEqual(await (await request('GET', `${pathname}?recovery=true`)).json(), { preview: null }, 'partial tokens are not a completed recovered reply');
     unsubscribe();
     let received = '';
     while (!received.includes('First token')) received += new TextDecoder().decode((await reader.read()).value);
     await reader.cancel();
     assert.equal(getJob(aliceDirs, job.id).cancellation.requested, false);
     publishRoleplayPreview(context, { stage: 'companions', text: 'Completed main reply' });
-    const recovery = await request('GET', `${pathname}?recovery=true`);
-    assert.equal(recovery.headers.get('cache-control'), 'no-store');
-    assert.equal((await recovery.json()).preview.text, 'Completed main reply');
     const reopened = await request('GET', pathname);
     const reopenedReader = reopened.body.getReader();
     assert.match(new TextDecoder().decode((await reopenedReader.read()).value), /Completed main reply/);

@@ -17,6 +17,26 @@ export function roleplayAgentsStopped({ directories, job }) {
     return true;
 }
 
+/**
+ * Keep the paid main reply when its after-reply Agents failed for good. The
+ * saved decision makes the next Agent pass skip the remaining work, exactly
+ * like the owner's Stop, but records that failure caused the stop.
+ */
+export function markRoleplayAgentsFailed({ directories, owner, job }) {
+    const account = job.intent?.roleplay;
+    return withRoleplayAccount({ owner, directories }, account, () => {
+        if (roleplayAgentsStopped({ directories, job })) return false;
+        writeArtifact(directories, job.id, key, { intentHash: roleplayHash(job.intent), reason: 'failed' });
+        return true;
+    });
+}
+
+/** Translation and speech are skipped only for the owner's Stop, never for a failure stop. */
+export function roleplayAgentsStoppedByOwner({ directories, job }) {
+    if (!roleplayAgentsStopped({ directories, job })) return false;
+    return readArtifact(directories, job.id, key)?.reason !== 'failed';
+}
+
 /** Stop only post-reply work. The normal cancellation path still owns an unfinished main reply. */
 export function requestRoleplayAgentStop({ directories, owner, job }) {
     if (job.owner !== owner || job.cancellation?.requested || !['running', 'queued', 'waiting'].includes(job.state)) return false;

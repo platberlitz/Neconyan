@@ -12,7 +12,7 @@ const { captureChatProfile } = await import('../src/generation/profiles.js');
 const { runRoleplayReplyJob } = await import('../src/generation/roleplay-execution.js');
 const { admitRoleplayJob } = await import('../src/roleplay-jobs.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
-const { getJob, releaseJob, updateJob, recoverJobs } = await import('../src/jobs/store.js');
+const { getJob, releaseJob, updateJob } = await import('../src/jobs/store.js');
 const { providerStep, readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
 const { decideJobApproval } = await import('../src/generation/job-approvals.js');
 const { requestRoleplayAgentStop } = await import('../src/generation/roleplay-agent-stop.js');
@@ -61,7 +61,7 @@ function prepared(t, agents, { effect = 'append', range = { start: 1, count: 1 }
     releaseJob(directories, jobId);
     updateJob(directories, jobId, { state: 'running' });
     const context = () => ({ directories, owner: f.scope.owner, job: getJob(directories, jobId), signal: new AbortController().signal });
-    const run = options => runRoleplayReplyJob(context(), { contextLimit: () => 4096,
+    const run = ({ signal, ...options } = {}) => runRoleplayReplyJob({ ...context(), ...(signal ? { signal } : {}) }, { contextLimit: () => 4096,
         promptBackend: () => ({ backend: 'chat', active: controls, profile: { model: 'fixture' }, source: 'custom' }), ...options });
     return { ...f, directories, account, source, request, jobId, context, run,
         saved: () => fs.readFileSync(f.filename, 'utf8').trim().split('\n').map(line => JSON.parse(line)) };
@@ -415,19 +415,23 @@ test('an acknowledged parallel Agent survives a lost sibling without committing 
     } })));
     let lose;
     const held = new Promise((_resolve, reject) => { lose = reject; });
-    let agentCalls = 0;
-    await assert.rejects(f.run({ generate: paid('main', () => 'Base'), generateAgent: paid('parallel', async ({ messages }) => {
-        agentCalls++;
-        if (messages[0].content.startsWith('ONE')) return held;
+    const calls = [];
+    let mainCalls = 0;
+    await f.run({ generate: paid('main', () => { mainCalls++; return 'Base'; }), generateAgent: paid('parallel', async ({ messages }) => {
+        const name = messages[0].content.startsWith('ONE') ? 'one' : 'two';
+        calls.push(name);
+        if (name === 'one') return held;
         lose(new Error('Unknown first Agent result'));
         return 'Acknowledged second result';
-    }) }), /Unknown first Agent result/);
-    assert.equal(agentCalls, 2);
-    assert.equal(f.saved().length, 3);
-    recoverJobs(f.directories);
-    assert.equal(getJob(f.directories, f.jobId).state, 'interrupted');
-    await assert.rejects(f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') }), /unknown|uncertain|recovery/i);
-    assert.equal(f.saved().length, 3);
+    }) });
+    assert.equal(mainCalls, 1);
+    assert.deepEqual(calls.filter(name => name === 'two'), ['two'], 'the acknowledged Agent is never requested again');
+    assert.deepEqual(calls.filter(name => name === 'one'), ['one', 'one'], 'the lost Agent is retried once');
+    const saved = f.saved();
+    assert.equal(saved.length, 4, 'the paid reply is still added');
+    assert.match(saved.at(-1).mes, /^Base/);
+    await f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') });
+    assert.deepEqual(f.saved(), saved);
 });
 
 test('run together starts append Agents beside rewrites and joins their cleaned blocks after the rewritten reply', async t => {
@@ -482,7 +486,11 @@ for (const legacy of [false, true]) {
         });
         if (legacy) {
             // Interrupt after the plan is saved but before any provider request, then simulate a v2 plan.
-            await assert.rejects(f.run({ generate, generateAgent: () => { throw new Error('before dispatch'); } }), /before dispatch/);
+            const interrupted = new AbortController();
+            await assert.rejects(f.run({ signal: interrupted.signal, generate, generateAgent: () => {
+                interrupted.abort(new Error('before dispatch'));
+                throw new Error('before dispatch');
+            } }), /before dispatch/);
             const plan = readArtifact(f.directories, f.jobId, 'roleplay-agent-post:plan');
             delete plan.hash;
             plan.version = 2;
@@ -495,17 +503,70 @@ for (const legacy of [false, true]) {
     });
 }
 
-test('an uncertain synthesis retains all rewrite receipts and never repeats a paid request', async t => {
+test('a synthesis that fails twice keeps the original reply and never repeats a paid rewrite', async t => {
     const f = prepared(t, ['one', 'two'].map(id => ({ id, phase: 'post', prompt: id,
         postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 128 } })));
-    await assert.rejects(f.run({ generate: paid('main', () => 'Original reply'), generateAgent: paid('agents', ({ stepNamespace }) => {
+    const calls = [];
+    await f.run({ generate: paid('main', () => 'Original reply'), generateAgent: paid('agents', ({ stepNamespace }) => {
+        calls.push(stepNamespace);
         if (stepNamespace === 'agent-model:post-synthesis') throw new Error('lost synthesis');
         return stepNamespace;
-    }) }), /lost synthesis/);
-    assert.equal(f.saved().length, 3);
-    for (const id of ['one', 'two']) assert.ok(readArtifact(f.directories, f.jobId, `agent-model:post:${id}:result`));
-    recoverJobs(f.directories);
-    await assert.rejects(f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') }), /unknown|uncertain|recovery/i);
+    }) });
+    assert.equal(calls.filter(name => name === 'agent-model:post-synthesis').length, 2, 'the failed synthesis is retried once');
+    assert.equal(calls.length, 4, 'completed rewrites are not requested again');
+    const saved = f.saved();
+    assert.equal(saved.length, 4);
+    assert.equal(saved.at(-1).mes, 'Original reply');
+    await f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') });
+    assert.deepEqual(f.saved(), saved);
+});
+
+test('an Agent that fails once is retried and its rewrite is saved without repeating the main reply', async t => {
+    const f = prepared(t, [{ id: 'rewrite', phase: 'post', prompt: 'REWRITE', postProcess: {
+        enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64,
+    } }]);
+    let mainCalls = 0, agentCalls = 0;
+    await f.run({ generate: paid('main', () => { mainCalls++; return 'Raw answer'; }), generateAgent: paid('rewrite', () => {
+        agentCalls++;
+        if (agentCalls === 1) throw new Error('Agent connection reset');
+        return 'Polished answer';
+    }) });
+    assert.equal(mainCalls, 1);
+    assert.equal(agentCalls, 2);
+    assert.equal(f.saved().length, 4);
+    assert.equal(f.saved().at(-1).mes, 'Polished answer');
+});
+
+test('an Agent that fails twice still saves the reply and keeps translation', async t => {
+    const f = prepared(t, [{ id: 'rewrite', phase: 'post', prompt: 'REWRITE', postProcess: {
+        enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64,
+    } }], { translation: true });
+    let agentCalls = 0, translations = 0;
+    await f.run({ generate: paid('main', () => 'Raw answer'), generateAgent: paid('rewrite', () => {
+        agentCalls++;
+        throw new Error('Agent provider is down');
+    }), translationFetch: async () => { translations++; return new Response(JSON.stringify({ translatedText: 'Réponse brute' })); } });
+    assert.equal(agentCalls, 2);
+    assert.equal(translations, 1, 'a failure stop is not the owner\'s Stop');
+    const reply = f.saved().at(-1);
+    assert.equal(f.saved().length, 4);
+    assert.equal(reply.mes, 'Raw answer');
+    assert.match(JSON.stringify(reply.extra), /Réponse brute/);
+    await f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') });
+});
+
+test('cancelling while Agents run still cancels the job instead of saving the reply', async t => {
+    const f = prepared(t, [{ id: 'rewrite', phase: 'post', prompt: 'REWRITE', postProcess: {
+        enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64,
+    } }]);
+    const cancel = new AbortController();
+    let agentCalls = 0;
+    await assert.rejects(f.run({ signal: cancel.signal, generate: paid('main', () => 'Raw answer'), generateAgent: () => {
+        agentCalls++;
+        cancel.abort(new Error('user cancelled'));
+        throw new Error('user cancelled');
+    } }), /user cancelled/);
+    assert.equal(agentCalls, 1, 'a cancellation is never retried');
     assert.equal(f.saved().length, 3);
 });
 
@@ -513,10 +574,11 @@ for (const output of [{ text: '' }, { text: 'Partial combination', finishReason:
     test(`an ${output.text ? 'incomplete' : 'empty'} synthesis cannot replace the original`, async t => {
         const f = prepared(t, ['one', 'two'].map(id => ({ id, phase: 'post', prompt: id,
             postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 128 } })));
-        await assert.rejects(f.run({ generate: paid('main', () => 'Original reply'), generateAgent: paid('agents', ({ stepNamespace }) =>
-            stepNamespace === 'agent-model:post-synthesis' ? output : stepNamespace) }), /empty or cut short/);
-        assert.equal(f.saved().length, 3);
-        await assert.rejects(f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') }), /empty or cut short/);
+        await f.run({ generate: paid('main', () => 'Original reply'), generateAgent: paid('agents', ({ stepNamespace }) =>
+            stepNamespace === 'agent-model:post-synthesis' ? output : stepNamespace) });
+        assert.equal(f.saved().length, 4);
+        assert.equal(f.saved().at(-1).mes, 'Original reply');
+        await f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') });
     });
 }
 
