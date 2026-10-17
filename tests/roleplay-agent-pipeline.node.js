@@ -778,6 +778,51 @@ test('parallel Companion dispatches share one post-reply freshness check', { tim
     assert.deepEqual(Object.keys(f.saved().at(-1).extra.inChatAgentCompanionResults).sort(), agents.map(agent => agent.id).sort());
 });
 
+test('the completed stream frame gains its token count before a held Companion runs', { timeout: 20000 }, async t => {
+    const parent = 'token-count-parent';
+    const f = prepared(t, [
+        { id: 'side', name: 'Side', enabled: true, category: 'companion', execution: 'companion', phase: 'pre',
+            prompt: 'TASK_SIDE', companion: { includeWorldInfo: false } },
+    ], { previewParent: parent });
+    const frames = [];
+    const unsubscribe = subscribeRoleplayPreview(f.scope.owner, parent, preview => frames.push({
+        text: preview.text, token_count: preview.token_count, reasoning_tokens: preview.reasoning_tokens, stage: preview.stage,
+    }));
+    t.after(unsubscribe);
+    let releaseCompanion;
+    const companionHeld = new Promise(resolve => { releaseCompanion = resolve; });
+    let companionEntered;
+    const companionStarted = new Promise(resolve => { companionEntered = resolve; });
+    const finalText = 'First words and the finished reply.';
+    const running = f.run({
+        generate: async options => {
+            await options.beforeDispatch?.();
+            options.onStream({ text: 'First words', reasoning: 'Considering' });
+            await nextTurn();
+            options.onStream({ text: finalText, reasoning: 'Considering the answer.' });
+            return { text: finalText, response: { choices: [{ message: { reasoning_content: 'Considering the answer.' } }] } };
+        },
+        generateAgent: async () => {
+            companionEntered();
+            await companionHeld;
+            return { text: 'Companion note' };
+        },
+    });
+    await companionStarted;
+    const initial = frames.find(frame => frame.text === 'First words' && Number.isInteger(frame.token_count)
+        && Number.isInteger(frame.reasoning_tokens));
+    assert.ok(initial, 'the initial stream frame is counted');
+    const completed = frames.findLast(frame => frame.text === finalText && frame.stage === 'agents'
+        && frame.token_count > initial.token_count && frame.reasoning_tokens > initial.reasoning_tokens);
+    assert.ok(completed, 'the completed frame is recounted before the Companion runs');
+    assert.equal(f.saved().length, 3, 'the reply is not saved while the Companion is held');
+    releaseCompanion();
+    await running;
+    assert.equal(f.saved().at(-1).mes, finalText);
+    assert.equal(f.saved().at(-1).extra.token_count, completed.token_count);
+    assert.equal(f.saved().at(-1).extra.reasoning_tokens, completed.reasoning_tokens);
+});
+
 test('a source edit between the saved Agent input and dispatch refuses without a provider call', async t => {
     const f = prepared(t, [{ id: 'edit', phase: 'post', prompt: 'REWRITE_REPLY', postProcess: {
         enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64,

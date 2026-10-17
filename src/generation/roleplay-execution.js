@@ -201,6 +201,21 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             counterPromise ??= getCounter(request.worldInfo?.tokenizer);
             return (await counterPromise).count(text);
         };
+        // The stream preview stops when the provider result arrives, so its
+        // trailing count can be cancelled while the completed text is already
+        // on screen. Recount that exact completed frame after the yield that
+        // let the text leave, before optional Agent work can hold it.
+        const completedText = result.text;
+        const completedReasoning = reply.extra.reasoning ?? '';
+        const [completedTokens, completedReasoningTokens] = await Promise.all([
+            count(completedText),
+            completedReasoning ? count(completedReasoning) : 0,
+        ]);
+        signal.throwIfAborted();
+        publishRoleplayPreview(context, { text: completedText, reasoning: completedReasoning, generation: result.generation,
+            gen_started: reply.gen_started, gen_finished: reply.gen_finished,
+            reasoning_duration: reply.extra.reasoning_duration, reasoning_finished: true, stage: 'agents',
+            ...(inChatAgents ? { inChatAgents } : {}), token_count: completedTokens, reasoning_tokens: completedReasoningTokens });
         const publishTextPreview = (text, update) => publishRoleplayPreview(context, { ...update, text });
         if (request.worldInfo?.captions?.persist) {
             const { hash, ...captions } = readArtifact(directories, job.id, 'roleplay-captions') ?? {};

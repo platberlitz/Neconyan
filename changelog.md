@@ -9,6 +9,7 @@
 - Replies kept by 1.3.4.1's **Recovered reply** card are saved automatically on the first normal start after updating, using the reply that was already paid for. If the chat changed or the saved result can't be verified, the old copy stays in job history instead of overwriting your edit. There's no new recovery card or restore button, and the main model isn't asked again.
 - Post-reply Agents start as soon as the main reply finishes, with pending Companion cards naming what is about to run. A finished note grows its message without moving your place in the chat, and opening a chat still lands on its newest reply.
 - Server-written replies now follow **Screen updates per second** instead of redrawing twice a second, so long replies scroll more smoothly. Lower that setting if a phone struggles.
+- The completed reply's token and reasoning counts update before Companions finish, instead of keeping an earlier streaming count while they run.
 - Reworded the image input and repair screens. **Don't send chat images to the model** covers every picture in your chats, **Review chat images** opens the right chat after a refusal, and **Change history** uses **Prepare a converted copy**, **Save a copy as it is**, **Finish this change** and **Undo change**. The screens can be translated now.
 - Rejected non-image input and truncated PNG/TIFF headers before caption decoding, fixing cases that could hang or stop the server.
 - Only the selected speech provider loads at startup, reducing background requests while keeping speech available in Roleplay and Conversation.
