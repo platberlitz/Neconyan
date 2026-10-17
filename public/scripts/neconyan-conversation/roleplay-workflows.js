@@ -36,7 +36,6 @@ const pending = new Map();
 const waiters = new Map();
 const adopted = new Map();
 const reading = new Map();
-const recovered = new Map();
 let busyName = null;
 let currentJobId = null;
 let activeReload = null;
@@ -47,22 +46,6 @@ function syncJobControls() {
     setRoleplayJobControls(entry?.[0] ?? null, entry ? () => {
         void cancelJob(entry[0], { account: entry[1].account, reason: 'user_cancelled' }).catch(() => {});
     } : null);
-}
-
-async function recoverReply(jobId, options) {
-    if (recovered.has(jobId) || !options.isCurrent()) return;
-    // Reserve the slot before importing/fetching; resume and terminal events can race.
-    const entry = { ...options, stop: null };
-    recovered.set(jobId, entry);
-    try {
-        const { observeRoleplayPreview } = await import('./roleplay-preview.js');
-        if (recovered.get(jobId) === entry && options.isCurrent()) {
-            entry.stop = observeRoleplayPreview(jobId, { ...options, recoverOnly: true });
-            if (await entry.stop.recover()) return;
-        }
-    } catch { /* The saved copy remains available on the next visit. */ }
-    entry.stop?.();
-    if (recovered.get(jobId) === entry) recovered.delete(jobId);
 }
 
 /**
@@ -525,19 +508,14 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
         onStop: async (reason) => {
             ended = true;
             if (reason !== 'done' && reason !== 'stopped') {
-                stopPreview.freeze?.();
+                stopPreview();
                 restore();
                 announce({ key, name, state: reason, result: null, jobId });
                 // A refused or lost job must not leave a caller waiting for a write
                 // that will never arrive.
                 settleFinished(key, null);
-                try {
-                    await recoverReply(jobId, { account, isCurrent, name, messageIndex });
-                } finally {
-                    stopPreview();
-                    observed.delete(jobId);
-                    syncJobControls();
-                }
+                observed.delete(jobId);
+                syncJobControls();
                 return;
             }
             stopPreview.freeze?.();
@@ -781,9 +759,6 @@ export async function runNativeRoleplayGeneration(type, { committed = false, pag
 /** Reattach to accepted workflows and read finished ones back, without submitting again. */
 export async function resumeNativeRoleplayWorkflowObservation({ reconnect = false, attachOnly = false } = {}) {
     const account = getCurrentUserHandle();
-    for (const [id, entry] of recovered) {
-        if (!entry.isCurrent()) { entry.stop?.(); recovered.delete(id); }
-    }
     for (const entry of [...observed.values()]) {
         if (entry.account !== account) entry.stop();
     }
@@ -833,7 +808,6 @@ export async function resumeNativeRoleplayWorkflowObservation({ reconnect = fals
         }
         if (account !== getCurrentUserHandle()) return;
         let finished = null;
-        const recoveries = [];
         for (const job of jobs) {
             if (job?.type !== 'media.roleplay-workflow' || job.parentId) continue;
             const key = job.intent?.media?.operationKey;
@@ -849,9 +823,6 @@ export async function resumeNativeRoleplayWorkflowObservation({ reconnect = fals
                     messageIndex: job.intent?.source?.message?.index ?? job.intent?.source?.range?.start });
             } else if (observed.has(job.id)) {
                 observed.get(job.id)?.onTerminal?.(job);
-            } else if (job.state !== 'completed') {
-                recoveries.push({ jobId: job.id, options: { account, name,
-                    isCurrent: () => account === getCurrentUserHandle() && matchesCurrentWorkflowLocator(locator) } });
             } else if (!cycle.attachOnly && !finished) {
                 finished = { key, name, locator };
             }
@@ -862,9 +833,6 @@ export async function resumeNativeRoleplayWorkflowObservation({ reconnect = fals
         if (cycle.reconnectedPromises.size) {
             await Promise.allSettled([...cycle.reconnectedPromises]);
         }
-        // Reading an older completed reply can rebuild the chat. Add recovery copies
-        // afterwards so that refresh cannot remove the failed reply's only visible text.
-        await Promise.all(recoveries.map(({ jobId, options }) => recoverReply(jobId, options)));
     })();
     activeDiscovery = cycle;
     return cycle.promise;
@@ -899,8 +867,6 @@ export function initNativeRoleplayWorkflows() {
     // The account binding arrives after the first paint, so discovery retries then.
     globalThis.addEventListener?.('sb:roleplay-account-bound', resume);
     eventSource.on(event_types.CHAT_CHANGED, () => {
-        for (const entry of recovered.values()) entry.stop?.();
-        recovered.clear();
         syncJobControls();
         if (isVisible() && getCurrentChatId() && !busyName && !isGenerating() && !activeReload) {
             void resumeNativeRoleplayWorkflowObservation({ attachOnly: true });

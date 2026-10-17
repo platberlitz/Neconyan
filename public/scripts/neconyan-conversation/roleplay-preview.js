@@ -1,14 +1,11 @@
 import { chat as messages, formatGenerationTimer, getRequestHeaders, getThumbnailUrl, scrollChatToBottom, updateMessageElement } from '../../script.js';
 import { beginRoleplayReplacement } from './roleplay-replacement.js';
 import { withAbortSignal } from '../abort.js';
-import { copyText, download } from '../utils.js';
-import { dismissJob } from '../jobs.js';
 
 const labels = {
     preparing: 'Preparing reply…', generating: 'Writing reply…', agents: 'Running Agents…',
     companions: 'Running Companions…', review: 'Waiting for your review…',
     translating: 'Translating reply…', speech: 'Preparing speech…', saving: 'Saving reply…',
-    recovered: 'Reply kept after interruption. Not added to this chat.',
 };
 const PREVIEW_SILENCE_MS = 5000;
 // Companion notes share the saved job artifact's 16 MiB limit.
@@ -16,7 +13,7 @@ const MAX_PREVIEW_EVENT_LENGTH = 16 * 1024 * 1024;
 const FOLLOWED_STAGES = new Set(['preparing', 'generating', 'agents']);
 
 /** Display only: partial output never enters the chat array or a chat save. */
-export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, name, messageIndex, recoverOnly = false }) {
+export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, name, messageIndex }) {
     let node = null;
     let latest = null;
     let receivedAt = 0;
@@ -44,7 +41,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         if (!latest) return;
         const chat = document.querySelector('#chat');
         if (!chat) return;
-        if (latest.stage !== 'recovered' && !chat.querySelector('[data-roleplay-replacement]')) {
+        if (!chat.querySelector('[data-roleplay-replacement]')) {
             restoreReplacement = beginRoleplayReplacement(name, messageIndex, isCurrent);
         }
         const thinking = latest.stage === 'generating' && latest.reasoning && !latest.reasoning_finished;
@@ -82,14 +79,14 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                 token_count: latest.token_count, reasoning_tokens: latest.reasoning_tokens,
                 time_to_first_token: latest.time_to_first_token, reasoning_duration: reasoningDuration,
                 ...(reasoningDetails && node.classList.contains('reasoning') ? { reasoning_collapsed: !reasoningDetails.open } : {}) } };
-        const replacement = latest.stage === 'recovered' ? null : chat.querySelector('[data-roleplay-replacement]');
+        const replacement = chat.querySelector('[data-roleplay-replacement]');
         const messageElement = updateMessageElement(message, { messageId: replacement ? Number(replacement.dataset.roleplayReplacement) : messages.length, isPreview: true,
             ...(node?.isConnected ? { messageElement: globalThis.jQuery(node) } : {}) });
         if (!node?.isConnected) {
             node = messageElement[0];
-            node.id = recoverOnly ? `neconyan-roleplay-recovered-${jobId}` : 'neconyan-roleplay-preview';
+            node.id = 'neconyan-roleplay-preview';
             node.style.flexShrink = '0';
-            node.setAttribute('aria-label', recoverOnly ? 'Recovered reply' : 'Reply in progress');
+            node.setAttribute('aria-label', 'Reply in progress');
             const status = document.createElement('small');
             status.className = 'timestamp';
             status.setAttribute('role', 'status');
@@ -107,7 +104,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         if (nearBottom) scrollChatToBottom({ isNearBottom: nearBottom });
     };
     const hidden = () => document.visibilityState === 'hidden';
-    let timer = recoverOnly || hidden() ? null : setInterval(render, 500);
+    let timer = hidden() ? null : setInterval(render, 500);
     let attempt = null;
     let wake = null;
     let reconnectRequested = false;
@@ -132,11 +129,9 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         if (!timer && !frozen && !stopped) timer = setInterval(render, 500);
         reconnect();
     };
-    if (!recoverOnly) {
-        document.addEventListener('visibilitychange', onVisible);
-        globalThis.addEventListener?.('pageshow', reconnect);
-        globalThis.addEventListener?.('online', reconnect);
-    }
+    document.addEventListener('visibilitychange', onVisible);
+    globalThis.addEventListener?.('pageshow', reconnect);
+    globalThis.addEventListener?.('online', reconnect);
     const run = async () => {
         while (!stopped) {
             if (hidden()) {
@@ -204,7 +199,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             });
         }
     };
-    if (!recoverOnly) void run();
+    void run();
     const stop = () => {
         stopped = true;
         diagnostic(null);
@@ -219,39 +214,5 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     // so the preview stays where the reader sees it and cannot reappear in the
     // emptied chat ahead of the saved messages.
     stop.freeze = () => { render(); frozen = true; clearInterval(timer); };
-    stop.recover = async () => {
-        const controller = new AbortController();
-        attempt = controller;
-        const timeout = setTimeout(() => controller.abort(), 10000);
-        try {
-            const response = await withAbortSignal(fetch(`/api/jobs/${encodeURIComponent(jobId)}/preview?recovery=true`, {
-                headers: { ...getRequestHeaders(), 'X-Neconyan-Account': account },
-                credentials: 'same-origin', signal: controller.signal,
-            }), controller.signal);
-            if (!response.ok) throw new Error('The saved reply could not be read.');
-            const { preview } = await response.json();
-            if (!preview || stopped || !isCurrent()) return false;
-            latest = { ...preview, stage: 'recovered' };
-            receivedAt = Date.now(); receivedMonotonic = performance.now();
-            render();
-            if (!node) return;
-            const controls = document.createElement('div');
-            controls.className = 'neconyan-roleplay-recovery-actions flex-container flexFlowRow flexWrap';
-            const add = (label, action) => {
-                const button = document.createElement('button');
-                button.type = 'button'; button.className = 'menu_button'; button.textContent = label;
-                button.addEventListener('click', () => { void Promise.resolve().then(action).catch(error => globalThis.toastr?.error?.(error.message)); });
-                controls.append(button);
-            };
-            add('Copy reply', () => copyText(latest.text));
-            add('Download reply', () => download(latest.text, 'recovered-reply.txt', 'text/plain'));
-            add('Dismiss', async () => { await dismissJob(jobId, { account }); stop(); });
-            node.querySelector('.mes_block').append(controls);
-            frozen = true;
-            return true;
-        } finally {
-            clearTimeout(timeout);
-        }
-    };
     return stop;
 }

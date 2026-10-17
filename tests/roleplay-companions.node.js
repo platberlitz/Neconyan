@@ -11,7 +11,7 @@ const { captureCompanionCapacity } = await import('../src/generation/companion-c
 const { captureRoleplayWorkflowCapacity } = await import('../src/generation/roleplay-workflow-capacity.js');
 const { captureChatProfile } = await import('../src/generation/profiles.js');
 const { admitRoleplayJob } = await import('../src/roleplay-jobs.js');
-const { releaseJob, getJob, updateJob, recoverJobs } = await import('../src/jobs/store.js');
+const { releaseJob, getJob, updateJob } = await import('../src/jobs/store.js');
 const { readArtifact, providerStep } = await import('../src/jobs/artifacts.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
 const { runRoleplayReplyJob } = await import('../src/generation/roleplay-execution.js');
@@ -285,7 +285,7 @@ test('saved companion batches, waiting dependencies and manual dependants run in
     assert.deepEqual(Object.values(f.rows().at(-1).extra.inChatAgentCompanionResults).map(result => result.content), ['A note', 'B note', 'C note', 'D note']);
 });
 
-test('a completed partial companion batch retries only its missing task, while a lost batch response cannot fall back', async t => {
+test('a completed partial companion batch retries only its missing task, while a lost batch response still saves the reply', async t => {
     for (const lost of [false, true]) {
         const f = prepared(t, [companion('a', { batch: true, batchAgentIds: ['b'] }), companion('b')]);
         const calls = [];
@@ -299,12 +299,11 @@ test('a completed partial companion batch retries only its missing task, while a
         }) });
         if (!lost) { await run(); assert.deepEqual(calls, ['batch', 'missing-b']); }
         else {
-            await assert.rejects(run(), /Lost paid batch response/);
-            assert.deepEqual(f.rows(), f.records);
-            recoverJobs(f.directories);
-            assert.equal(getJob(f.directories, f.jobId).state, 'interrupted');
-            await assert.rejects(f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('lost batch repeated') }), { code: 'ROLEPLAY_AGENT_RECOVERY' });
-            assert.deepEqual(calls, ['batch']);
+            await run();
+            assert.deepEqual(calls, ['batch', 'batch']);
+            assert.equal(f.rows().length, f.records.length + 1);
+            assert.equal(f.rows().at(-1).mes, 'Main reply');
+            assert.equal(f.rows().at(-1).extra.inChatAgentCompanionResults?.b, undefined);
         }
     }
 });
@@ -475,7 +474,7 @@ test('a replaced extra character card is rejected before the main or companion p
         generateAgent: () => assert.fail('changed card reached companion provider') }), error => error.status === 409);
 });
 
-test('a saved length-limited batch failure survives an interruption after another companion result is acknowledged', async t => {
+test('a saved length-limited batch failure survives the automatic retry after another companion result is acknowledged', async t => {
     const a = companion('a', { batch: true, batchAgentIds: ['b'] }), b = companion('b'), c = companion('c');
     const f = prepared(t, [a, b, c], { global: { companionExecutionMode: 'sequential' } });
     let calls = 0, interrupt = true;
@@ -490,12 +489,11 @@ test('a saved length-limited batch failure survives an interruption after anothe
         if (options.stepNamespace.endsWith('companion:c') && interrupt) { interrupt = false; throw new Error('interrupted after acknowledged C'); }
         return result;
     };
-    await assert.rejects(f.run({ generate, generateAgent }), /interrupted after acknowledged C/);
-    const failed = readArtifact(f.directories, f.jobId, 'roleplay-companion:a');
-    assert.equal(failed.record.status, 'error');
-    await f.run({ generate: () => assert.fail('saved main repeated'), generateAgent: () => assert.fail('acknowledged companion repeated') });
+    await f.run({ generate, generateAgent });
+    assert.equal(interrupt, false);
     assert.equal(calls, 2);
-    assert.deepEqual(readArtifact(f.directories, f.jobId, 'roleplay-companion:a'), failed);
+    assert.equal(readArtifact(f.directories, f.jobId, 'roleplay-companion:a').record.status, 'error');
+    assert.equal(f.rows().at(-1).mes, 'Reply');
     assert.equal(f.rows().at(-1).extra.inChatAgentCompanionResults.c.content, 'Complete C');
 });
 

@@ -1,5 +1,4 @@
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
-import { getJob, updateJob } from '../jobs/store.js';
 
 // Display-only state. It never supplies a prompt, a recovery proof or a chat write.
 const previews = new Map();
@@ -27,24 +26,11 @@ export function publishRoleplayPreview(context, update) {
     // Completed model text survives a browser or server reconnect. Token updates
     // stay in memory so a disk flush cannot delay each incoming token.
     if ((update.stage && update.stage !== 'generating') || update.inChatAgentCompanionResults) {
-        try {
-            writeArtifact(directories, id, 'roleplay-preview', value);
-            if (!['preparing', 'generating'].includes(value.stage) && (value.text || value.reasoning)) {
-                writeArtifact(directories, id, 'roleplay-recovery', value);
-                if (!getJob(directories, id)?.retainedReply) updateJob(directories, id, { retainedReply: true });
-            }
-        } catch { /* A display failure cannot invalidate a paid reply. */ }
+        try { writeArtifact(directories, id, 'roleplay-preview', value); } catch { /* A display failure cannot invalidate a paid reply. */ }
     }
     for (const listener of listeners.get(key) ?? []) {
         try { listener(value); } catch { /* A disconnected viewer does not own the job. */ }
     }
-}
-
-/** A readable copy, never authority to replace a chat that has since changed. */
-export function readRoleplayRecovery({ directories, job }) {
-    const value = readArtifact(directories, job.id, 'roleplay-recovery')
-        ?? readArtifact(directories, job.id, 'roleplay-preview');
-    return value && !['preparing', 'generating'].includes(value.stage) && (value.text || value.reasoning) ? value : null;
 }
 
 export function readRoleplayPreview({ owner, directories, job }) {

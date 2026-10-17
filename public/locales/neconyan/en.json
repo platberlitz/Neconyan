@@ -1,8 +1,4 @@
 {
-  "Copy reply": "Copy reply",
-  "Download reply": "Download reply",
-  "Recovered reply": "Recovered reply",
-  "Reply kept after interruption. Not added to this chat.": "Reply kept after interruption. Not added to this chat.",
   "Update the Android app before running card scripts. This older app doesn't restrict embedded pages from its export and update controls.": "Update the Android app before running card scripts. This older app doesn't restrict embedded pages from its export and update controls.",
   "Android controls are not ready. Reload this page and try again.": "Android controls are not ready. Reload this page and try again.",
   "Another export is open, the page changed, or the file exceeds 1 GiB.": "Another export is open, the page changed, or the file exceeds 1 GiB.",

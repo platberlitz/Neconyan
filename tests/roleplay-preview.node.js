@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { acceptJob } from '../src/jobs/store.js';
 import { readArtifact } from '../src/jobs/artifacts.js';
-import { createRoleplayStreamPreview, publishRoleplayPreview, readRoleplayPreview, readRoleplayRecovery } from '../src/generation/roleplay-preview.js';
+import { createRoleplayStreamPreview, publishRoleplayPreview, readRoleplayPreview } from '../src/generation/roleplay-preview.js';
 
 test('live counts are bounded, include a paused stream\'s last chunk, and stop with their provider call', t => {
     t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1000 });
@@ -54,12 +54,9 @@ test('each completed Companion survives reconnect without changing the main repl
     assert.equal(persisted.text, 'Finished reply');
     assert.equal(persisted.gen_finished, '2026-10-16T12:00:00.000Z');
     assert.equal(persisted.stage, 'agents', 'Parallel Companions do not claim post-processing has finished');
-    assert.deepEqual(readRoleplayRecovery({ directories, job }), persisted);
     publishRoleplayPreview(context, { stage: 'companions' });
     assert.deepEqual(readRoleplayPreview({ owner, directories, job }).inChatAgentCompanionResults, results);
     context.job.id = randomUUID();
     publishRoleplayPreview(context, { text: 'Next candidate', stage: 'generating' });
     assert.equal(readRoleplayPreview({ owner, directories, job }).inChatAgentCompanionResults, undefined);
-    publishRoleplayPreview(context, { stage: 'preparing', text: '' });
-    assert.equal(readRoleplayRecovery({ directories, job }).text, 'Finished reply', 'A later failed candidate cannot erase the completed copy');
 });

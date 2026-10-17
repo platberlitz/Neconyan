@@ -4,7 +4,7 @@ import { prepareRoleplayCapabilities } from './roleplay-capabilities.js';
 import { getChatImageTokenCost } from '../../public/scripts/chat-prompt-tokens.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { registerHandler } from '../jobs/runner.js';
-import { getJob, setJobResume } from '../jobs/store.js';
+import { explicitRetryRecovery, getJob, setJobResume, updateJob } from '../jobs/store.js';
 import { assertRoleplaySourceLocked, readRoleplayEntityLocked } from './roleplay-source.js';
 import { runChatProfile } from './service.js';
 import { createMacroEnvironment } from '../macros/index.js';
@@ -44,7 +44,7 @@ import { stageBoundModelToolCalls } from './roleplay-tool-dispatch.js';
 import { createRoleplayStreamPreview, publishRoleplayPreview } from './roleplay-preview.js';
 import { applyRoleplayVectorFiles, prepareRoleplayVectors } from './roleplay-vectors.js';
 import { prepareRoleplayNoteContext, prepareRoleplayNotebooks } from '../notebooks/context.js';
-import { roleplayAgentsStopped } from './roleplay-agent-stop.js';
+import { markRoleplayAgentsFailed, roleplayAgentsStoppedByOwner } from './roleplay-agent-stop.js';
 import { assertRoleplayBundledMacrosCaptured } from './roleplay-bundled-macros.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
@@ -186,70 +186,96 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             }
         }
         if (request.worldInfo?.agents) {
-            const current = assertSource();
-            let records = selectRoleplayPromptRecords(current.records, source, effect);
-            if (output.captions) records = applyCaptionRecords(records, request.worldInfo.captions.items, output.captions);
-            if (output.inputTranslation) {
-                records = structuredClone(records);
-                const record = records[output.inputTranslation.index + 1];
-                record.mes = output.inputTranslation.text;
-                record.extra = { ...record.extra, display_text: output.inputTranslation.displayText };
+            // The main reply is already paid for, so an Agent failure must never
+            // discard it. One automatic retry releases the uncertain provider
+            // steps first; then the reply is kept with the saved Agent work and
+            // anything unfinished skipped, exactly like the owner's Stop.
+            const runAgents = async () => {
+                const current = assertSource();
+                let records = selectRoleplayPromptRecords(current.records, source, effect);
+                if (output.captions) records = applyCaptionRecords(records, request.worldInfo.captions.items, output.captions);
+                if (output.inputTranslation) {
+                    records = structuredClone(records);
+                    const record = records[output.inputTranslation.index + 1];
+                    record.mes = output.inputTranslation.text;
+                    record.extra = { ...record.extra, display_text: output.inputTranslation.displayText };
+                }
+                const message = output.message ?? output.messages?.[0] ?? output;
+                const value = effect === 'continue' ? String(current.records[source.message.index + 1].mes ?? '') + output.text : message.mes ?? output.text;
+                const baseData = { intentHash: roleplayHash(job.intent), recordsHash: roleplayHash(records), value };
+                const baseProof = { ...baseData, hash: roleplayHash(baseData) };
+                withRoleplayAccount(base, account, () => {
+                    const previous = readArtifact(directories, job.id, 'roleplay-agent-output-base');
+                    if (previous !== undefined && roleplayHash(previous) !== roleplayHash(baseProof)) throw roleplayError('ROLEPLAY_AGENT_RECOVERY', 'The saved Agent response source changed.', 409);
+                    if (previous === undefined) writeArtifact(directories, job.id, 'roleplay-agent-output-base', baseProof);
+                });
+                const mewmory = request.serverPrompt ? withRoleplayAccount(base, account, () => readArtifact(directories, job.id, 'roleplay-mewmory')) ?? null : null;
+                const options = { base, snapshot: request.worldInfo, records, metadataRecords: current.records, binding: request.binding, mewmory,
+                    activeLore: roleplayAgentLoreText(selection),
+                    macros: savedRoleplayMacroSnapshot(request.worldInfo, records), generationType: request.worldInfo.global.trigger,
+                    assistantName: request.characterName, assertCurrent: () => { assertSource(); assertRoleplayWorldInfoCurrent(base, request.worldInfo); }, generate: generateAgent };
+                const intercepted = await runRoleplayAgentInterceptors(context, { ...options, value, timing: 'post-main-generation', format: 'text' });
+                if (intercepted.waiting) {
+                    publishRoleplayPreview(context, { stage: 'review' });
+                    return { waiting: true, approval: intercepted.approval };
+                }
+                const pre = readArtifact(directories, job.id, 'roleplay-agents-pre');
+                const onProgress = results => publishRoleplayPreview(context, { inChatAgentCompanionResults: results });
+                const onPostProgress = post => publishTextPreview(post.text, { ...post.extra, stage: 'agents' });
+                let post, companions;
+                if (request.worldInfo.agents.concurrentCompanions) {
+                    const shared = { ...context, providerScope: createProviderScope(context) };
+                    const settled = await Promise.allSettled([
+                        runRoleplayAgentPostprocessing(shared, { ...options, value: intercepted.value, onTextProgress: onPostProgress }).then(post => {
+                            publishTextPreview(post.text, { inChatAgents: post.extra.inChatAgents, stage: 'companions' });
+                            return post;
+                        }),
+                        runRoleplayCompanions(shared, { ...options, effect, value: roleplayAgentOutputBaseline(intercepted.value, pre), onProgress }),
+                    ]);
+                    const failure = settled.find(item => item.status === 'rejected');
+                    if (failure) throw failure.reason;
+                    [post, companions] = settled.map(item => item.value);
+                } else {
+                    post = await runRoleplayAgentPostprocessing(context, { ...options, value: intercepted.value, onTextProgress: onPostProgress });
+                    publishTextPreview(post.text, { inChatAgents: post.extra.inChatAgents, stage: 'companions' });
+                    companions = await runRoleplayCompanions(context, { ...options, effect, value: post.text, continuityRuns: post.runs, onProgress });
+                }
+                if (effect === 'continue') output.continuedText = post.text;
+                else if (message.mes !== undefined) message.mes = post.text;
+                else output.text = post.text;
+                message.extra = { ...message.extra, ...post.extra };
+                if (Object.keys(companions.results).length) message.extra.inChatAgentCompanionResults = companions.results;
+                const preIntercept = readArtifact(directories, job.id, 'roleplay-agent-intercepts:pre-generation');
+                if (preIntercept?.runs?.length || intercepted.runs.length) message.extra.inChatAgentPreGenerationInterceptHistory = [...(preIntercept?.runs ?? []), ...intercepted.runs];
+                output.agentProof = { pre: pre.hash, base: baseProof.hash, intercepts: intercepted.hash, post: post.hash, companions: companions.hash };
+            };
+            let agentResult;
+            try {
+                agentResult = await runAgents();
+            } catch (error) {
+                // A real cancellation keeps its error; every other failure here
+                // came out of the post-reply Agent phase and can be retried once.
+                if (signal.aborted) throw error;
+                console.warn('[Agents] Post-reply Agents failed; retrying once.', error?.message ?? error);
+                updateJob(directories, job.id, current => explicitRetryRecovery(current));
+                try {
+                    agentResult = await runAgents();
+                } catch (retryError) {
+                    if (signal.aborted) throw retryError;
+                    console.warn('[Agents] Post-reply Agents failed twice; saving the reply without the remaining Agent changes.', retryError?.message ?? retryError);
+                    markRoleplayAgentsFailed(context);
+                    updateJob(directories, job.id, current => explicitRetryRecovery(current));
+                    agentResult = await runAgents();
+                }
             }
-            const message = output.message ?? output.messages?.[0] ?? output;
-            const value = effect === 'continue' ? String(current.records[source.message.index + 1].mes ?? '') + output.text : message.mes ?? output.text;
-            const baseData = { intentHash: roleplayHash(job.intent), recordsHash: roleplayHash(records), value };
-            const baseProof = { ...baseData, hash: roleplayHash(baseData) };
-            withRoleplayAccount(base, account, () => {
-                const previous = readArtifact(directories, job.id, 'roleplay-agent-output-base');
-                if (previous !== undefined && roleplayHash(previous) !== roleplayHash(baseProof)) throw roleplayError('ROLEPLAY_AGENT_RECOVERY', 'The saved Agent response source changed.', 409);
-                if (previous === undefined) writeArtifact(directories, job.id, 'roleplay-agent-output-base', baseProof);
-            });
-            const mewmory = request.serverPrompt ? withRoleplayAccount(base, account, () => readArtifact(directories, job.id, 'roleplay-mewmory')) ?? null : null;
-            const options = { base, snapshot: request.worldInfo, records, metadataRecords: current.records, binding: request.binding, mewmory,
-                activeLore: roleplayAgentLoreText(selection),
-                macros: savedRoleplayMacroSnapshot(request.worldInfo, records), generationType: request.worldInfo.global.trigger,
-                assistantName: request.characterName, assertCurrent: () => { assertSource(); assertRoleplayWorldInfoCurrent(base, request.worldInfo); }, generate: generateAgent };
-            const intercepted = await runRoleplayAgentInterceptors(context, { ...options, value, timing: 'post-main-generation', format: 'text' });
-            if (intercepted.waiting) {
-                publishRoleplayPreview(context, { stage: 'review' });
-                return { waiting: true, approval: intercepted.approval };
-            }
-            const pre = readArtifact(directories, job.id, 'roleplay-agents-pre');
-            const onProgress = results => publishRoleplayPreview(context, { inChatAgentCompanionResults: results });
-            const onPostProgress = post => publishTextPreview(post.text, { ...post.extra, stage: 'agents' });
-            let post, companions;
-            if (request.worldInfo.agents.concurrentCompanions) {
-                const shared = { ...context, providerScope: createProviderScope(context) };
-                const settled = await Promise.allSettled([
-                    runRoleplayAgentPostprocessing(shared, { ...options, value: intercepted.value, onTextProgress: onPostProgress }).then(post => {
-                        publishTextPreview(post.text, { inChatAgents: post.extra.inChatAgents, stage: 'companions' });
-                        return post;
-                    }),
-                    runRoleplayCompanions(shared, { ...options, effect, value: roleplayAgentOutputBaseline(intercepted.value, pre), onProgress }),
-                ]);
-                const failure = settled.find(item => item.status === 'rejected');
-                if (failure) throw failure.reason;
-                [post, companions] = settled.map(item => item.value);
-            } else {
-                post = await runRoleplayAgentPostprocessing(context, { ...options, value: intercepted.value, onTextProgress: onPostProgress });
-                publishTextPreview(post.text, { inChatAgents: post.extra.inChatAgents, stage: 'companions' });
-                companions = await runRoleplayCompanions(context, { ...options, effect, value: post.text, continuityRuns: post.runs, onProgress });
-            }
-            if (effect === 'continue') output.continuedText = post.text;
-            else if (message.mes !== undefined) message.mes = post.text;
-            else output.text = post.text;
-            message.extra = { ...message.extra, ...post.extra };
-            if (Object.keys(companions.results).length) message.extra.inChatAgentCompanionResults = companions.results;
-            const preIntercept = readArtifact(directories, job.id, 'roleplay-agent-intercepts:pre-generation');
-            if (preIntercept?.runs?.length || intercepted.runs.length) message.extra.inChatAgentPreGenerationInterceptHistory = [...(preIntercept?.runs ?? []), ...intercepted.runs];
-            output.agentProof = { pre: pre.hash, base: baseProof.hash, intercepts: intercepted.hash, post: post.hash, companions: companions.hash };
+            if (agentResult?.waiting) return agentResult;
         }
-        if (request.worldInfo?.translation && !roleplayAgentsStopped(context)) {
+        if (request.worldInfo?.translation && !roleplayAgentsStoppedByOwner(context)) {
             publishRoleplayPreview(context, { stage: 'translating' });
             await translateIncomingRoleplayOutput(context, { base, snapshot: request.worldInfo,
                 effect: { type: effect }, output, assertSource, fetchImpl: translationFetch ?? fetch });
         }
-        if (request.worldInfo?.speech && !roleplayAgentsStopped(context)) {
+        if (request.worldInfo?.speech && !roleplayAgentsStoppedByOwner(context)) {
             publishRoleplayPreview(context, { stage: 'speech' });
             const speechRecords = assertSource().records;
             const message = output.message ?? output.messages?.[0] ?? output;
