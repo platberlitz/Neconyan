@@ -1,6 +1,7 @@
 import express from 'express';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
 import { buildAssistantKnowledge, getAssistantKnowledgeBudget } from '../../public/scripts/neconyan-assistant-knowledge.js';
+import { imageInputFields } from '../../public/scripts/prompt-media-policy.js';
 
 import { getSettingsRevision, getSettingsVersion } from '../settings-version.js';
 import { extractCharacterReplyCommandParts, normalizeConversationOutputText } from '../../public/scripts/neconyan-conversation/generation-utils.js';
@@ -164,11 +165,21 @@ const CONVERSATION_API_INFO = {
 
 const normalizeGroupRecord = group => normalizeConversationGroupRecord(group, normalizeConversationSettings);
 
+/**
+ * The reply for an image refusal (code ROLEPLAY_IMAGE_INPUT): its own words, code and imageIssue, so the page can offer the choice (D11).
+ * The words are fixed sentences about image settings. Every other error keeps the reply its route gave it before.
+ */
+const imageRefusalBody = error => ({ error: error.message, ...imageInputFields(error) });
+
 function sendRouteError(response, error) {
     if (response.headersSent || response.destroyed) {
         return;
     }
     console.error('Conversation REST API route failed', error);
+    if (error?.code === 'ROLEPLAY_IMAGE_INPUT') {
+        response.status(error.status || 409).send(imageRefusalBody(error));
+        return;
+    }
     response.status(error?.status || 500).send({ error: error?.apiError || 'conversation_request_failed' });
 }
 
@@ -677,6 +688,7 @@ router.post('/binding/preflight', asyncRoute(async (request, response) => {
     } catch (error) {
         const needsAcknowledgement = error.apiError === 'active_settings_ack_required';
         if (error.apiError === 'automation_server_owned') return response.status(409).send({ error: error.apiError, message: error.message });
+        if (error.code === 'ROLEPLAY_IMAGE_INPUT') return response.status(error.status || 409).send(imageRefusalBody(error));
         return response.status(error.status || 500).send({
             error: needsAcknowledgement ? error.apiError : 'connection_binding_invalid',
             message: needsAcknowledgement ? 'Save the active connection settings before generating a reply.'
@@ -729,7 +741,7 @@ router.post('/rewrite/submit', asyncRoute(async (request, response) => {
         const accepted = await acceptConversationRewrite(request, request.body || {});
         return response.status(accepted.created ? 202 : 200).send(accepted);
     } catch (error) {
-        if (error?.status >= 400 && error.status < 500) return response.status(error.status).send({ error: error.apiError || 'rewrite_rejected', message: error.message });
+        if (error?.status >= 400 && error.status < 500) return response.status(error.status).send({ error: error.apiError || 'rewrite_rejected', message: error.message, ...imageInputFields(error) });
         throw error;
     }
 }));
@@ -741,7 +753,7 @@ router.post('/selfie/submit', asyncRoute(async (request, response) => {
         const accepted = await acceptConversationSelfie(request, request.body || {});
         return response.status(accepted.created ? 202 : 200).send(accepted);
     } catch (error) {
-        if (error?.status >= 400 && error.status < 500) return response.status(error.status).send({ error: error.apiError || 'selfie_rejected', message: error.message });
+        if (error?.status >= 400 && error.status < 500) return response.status(error.status).send({ error: error.apiError || 'selfie_rejected', message: error.message, ...imageInputFields(error) });
         throw error;
     }
 }));

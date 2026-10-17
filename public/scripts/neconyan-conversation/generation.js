@@ -1,6 +1,7 @@
 import { buildAssistantKnowledge, getAssistantKnowledgeBudget, isNeconyanAssistant } from '../neconyan-assistant-knowledge.js';
 import { getCurrentUserHandle } from '../user.js';
 import { localizeMessage, t } from '../i18n.js';
+import { conversationImageOrigin, imageInputIssueDetail, isImageInputIssue } from '../prompt-media-policy.js';
 import { preflightConversationBinding, requestConversationBinding } from './bindings.js';
 import { CONVERSATION_ERROR_DETAIL_MAX_LENGTH, SAFE_TOAST_OPTIONS } from './constants.js';
 import { getConversationGroupIdForAvatar, getConversationPersonaId, getConversationThreadStore, getCurrentCharAvatar } from './context.js';
@@ -44,6 +45,21 @@ async function addAssistantKnowledge(requestOptions, scope, bindingRequest, assi
     requestOptions.systemPrompt = [requestOptions.systemPrompt, knowledge.text].filter(Boolean).join('\n\n');
 }
 
+/**
+ * The error for a Conversation job that did not complete. An image refusal (code ROLEPLAY_IMAGE_INPUT) keeps its code, status and
+ * imageIssue, so the reporter can raise the one notice (D11); any other failure is a plain error with the job's message, as before.
+ * @param {{error?: {message?: string, code?: string, status?: number, imageIssue?: object}}} job
+ * @param {string} fallback Words for a job that carries no message
+ * @returns {Error}
+ */
+function conversationJobError(job, fallback) {
+    const failure = job.error;
+    const error = new Error(failure?.message || fallback);
+    if (failure?.code !== 'ROLEPLAY_IMAGE_INPUT') return error;
+    return Object.assign(error, { code: failure.code, ...(typeof failure.status === 'number' ? { status: failure.status } : {}),
+        ...(failure.imageIssue !== null && typeof failure.imageIssue === 'object' ? { imageIssue: failure.imageIssue } : {}) });
+}
+
 function getDeviceTimeZone() {
     try {
         return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -69,7 +85,7 @@ export async function submitConversationRewrite(mode, messageId, options, assist
     if (!response?.job?.id) throw new Error('The server did not accept the rewrite.');
     const job = await waitForNativeConversationJob(response.job.id, account);
     if (!job) return null;
-    if (job.state !== 'completed') throw new Error(job.error?.message || 'The rewrite did not finish.');
+    if (job.state !== 'completed') throw conversationJobError(job, 'The rewrite did not finish.');
     return { messageId, job };
 }
 
@@ -95,7 +111,7 @@ export async function submitConversationSelfie({ avatar, speakerAvatar = avatar,
         const job = await waitForNativeConversationJob(response.job.id, account);
         if (!job) return null;
         if (job.state === 'cancelled') return job;
-        if (job.state !== 'completed') throw new Error(job.error?.message || 'The selfie did not finish.');
+        if (job.state !== 'completed') throw conversationJobError(job, 'The selfie did not finish.');
         return job;
     } finally {
         if (conversationState.imageGenerationAbortController === pending) {
@@ -106,8 +122,24 @@ export async function submitConversationSelfie({ avatar, speakerAvatar = avatar,
     }
 }
 
+/**
+ * The origin of a request for a thread (see conversationImageOrigin): the character, group, persona and branch it names, or the ones open now when it names
+ * none, with that branch's lifetimeSeed and createdAt and the signed-in account. Read when the request starts, before anything is awaited.
+ */
+export function conversationRequestOrigin({ avatar: named, branchId = '', groupId, personaId } = {}) {
+    const avatar = named || getCurrentCharAvatar();
+    const group = groupId ?? getConversationGroupIdForAvatar(avatar), persona = personaId ?? getConversationPersonaId();
+    const thread = getConversationThreadStore(avatar, { create: false, groupId: group, personaId: persona });
+    const id = branchId || thread?.activeBranchId;
+    return conversationImageOrigin({ avatar, groupId: group, personaId: persona, branchId: id,
+        lifetimeSeed: thread?.branches?.[id]?.lifetimeSeed, createdAt: thread?.branches?.[id]?.createdAt }, getCurrentUserHandle());
+}
+
 /** Run a manual selfie from a button or command and say how it went. */
 export async function requestConversationSelfie(options) {
+    // The thread this selfie is for, read before anything is awaited, with the same defaults the request itself uses. A refusal that
+    // arrives after the person has moved on still belongs to this thread.
+    const origin = conversationRequestOrigin(options);
     try {
         const job = await submitConversationSelfie(options);
         if (!job) {
@@ -115,7 +147,7 @@ export async function requestConversationSelfie(options) {
         }
         return true;
     } catch (error) {
-        reportConversationGenerationError('selfie', error, { level: 'warning' });
+        reportConversationGenerationError('selfie', error, { level: 'warning', origin });
         return false;
     }
 }
@@ -261,19 +293,27 @@ export function getConversationErrorDetail(error, { localize = false } = {}) {
     const text = String(detail || '')
         .replace(/\s+/g, ' ')
         .trim();
+    // An error whose text this feature already put into the reader's language is shown as given: no second lookup, no limit.
+    if (error?.localized === true) return text;
     // Look up the whole text, so a message longer than the limit still finds its key. A message the dictionary knows
     // is shown whole; any other text (server, provider or browser wording) keeps the limit, as before.
     const localized = localize ? localizeMessage(text) : text;
     return localized !== text ? localized : text.slice(0, CONVERSATION_ERROR_DETAIL_MAX_LENGTH);
 }
 
-export function reportConversationGenerationError(context, error, { toast = true, level = 'error' } = {}) {
+export function reportConversationGenerationError(context, error, { toast = true, level = 'error', origin = undefined } = {}) {
     const detail = getConversationErrorDetail(error);
     const label = context ? `Conversation ${context}` : 'Conversation generation';
     const log = level === 'warning' ? console.warn : console.error;
     log(`${label} failed${detail ? `: ${detail}` : ''}`, error);
 
     if (!toast) {
+        return;
+    }
+
+    // An image refusal gets the one actionable notice (showImageChoiceNotice in prompt-media-ui.js) instead of this generic toast.
+    if (isImageInputIssue(error)) {
+        globalThis.dispatchEvent(new CustomEvent('neconyan:image-input-refused', { detail: imageInputIssueDetail(error, origin) }));
         return;
     }
 
@@ -288,9 +328,9 @@ export function reportConversationGenerationError(context, error, { toast = true
     } else {
         message = `${label} failed${detail ? `: ${detail}` : '. Check the browser console for details.'}`;
     }
-    if (level === 'warning') {
-        globalThis.toastr?.warning?.(message, '', SAFE_TOAST_OPTIONS);
-    } else {
-        globalThis.toastr?.error?.(message, '', SAFE_TOAST_OPTIONS);
-    }
+    const shownToast = level === 'warning'
+        ? globalThis.toastr?.warning?.(message, '', SAFE_TOAST_OPTIONS)
+        : globalThis.toastr?.error?.(message, '', SAFE_TOAST_OPTIONS);
+    // The run-time localiser must not look the text up again.
+    if (error?.localized === true) shownToast?.find?.('.toast-message').attr('data-i18n-ignore', '');
 }

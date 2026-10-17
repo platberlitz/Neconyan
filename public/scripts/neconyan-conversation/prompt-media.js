@@ -1,5 +1,6 @@
 import { attachmentIdentity, promptImageCopyDescriptor, promptMediaError, selectPromptMedia } from '../prompt-media-policy.js';
 import { getConversationAttachmentSummary } from './thread-store-utils.js';
+import { uiText } from '../ui-text.js';
 
 export function conversationReplyImageProof(message, reference, authoredText, hash) {
     return { version: 1, source_hash: hash([message.id, message.mes ?? '', getConversationAttachmentSummary(message)]),
@@ -36,11 +37,11 @@ export function projectConversationImageInput(messages, mediaPolicy, { hash } = 
                 if (!choice || choice.version !== 1 || !hash || choice.source_hash !== hash([
                     source.extra.conversation_attachment_context, source.extra.conversation_reply_to ?? null])) {
                     throw promptMediaError('mixed-attachment-context', index, -1,
-                        'Review this message\'s saved attachment text before using Show only. You can keep reviewed text or omit the attachment context.');
+                        uiText('An older message saved image descriptions and file text together. Before Show only can apply, choose what the model receives for it in Review chat images.'));
                 }
                 if (choice.mode === 'omit') delete extra.conversation_attachment_context;
                 else if (choice.mode === 'replace' && typeof choice.text === 'string' && new TextEncoder().encode(choice.text).length <= 16384) extra.conversation_attachment_context = choice.text;
-                else throw promptMediaError('mixed-attachment-context', index, -1, 'Review this message\'s attachment text.');
+                else throw promptMediaError('mixed-attachment-context', index, -1, uiText('A message\'s reviewed attachment text is damaged. Choose again in Review chat images.'));
             }
         }
         // Descriptive labels are independent of byte conversion and gallery selection.
@@ -77,7 +78,7 @@ export function projectConversationImageInput(messages, mediaPolicy, { hash } = 
             const choice = record.extra.neconyan_image_context;
             if (!choice || choice.version !== 1 || !['omit', 'replace'].includes(choice.mode) || choice.mode === 'replace' && (typeof choice.text !== 'string' || new TextEncoder().encode(choice.text).length > 16384) || !hash
                 || choice.source_hash !== hash([sources[index].extra.conversation_attachment_context ?? '', reference])) {
-                throw promptMediaError('mixed-reply-context', index, -1, 'Review the quoted attachment text. Its original message is unavailable, changed, or lacks verified quote provenance.');
+                throw promptMediaError('mixed-reply-context', index, -1, uiText('A reply contains a quote that cannot be checked against its original message. Your image settings require you to review the quote before continuing. Choose what the model receives in Review chat images.'));
             }
             record.extra.conversation_reply_to = { ...reference, text: choice.mode === 'replace' ? choice.text : '', attachmentSummary: '' };
         }

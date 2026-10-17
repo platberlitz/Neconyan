@@ -307,7 +307,7 @@ export async function buildConversationParticipantSnapshot(request, current, tar
     }
     const userName = String(current.settings.power_user?.personas?.[target.personaId] || current.settings.name1 || 'User');
     const mediaPolicy = createPromptMediaContext(current.settings, current.branch,
-        mergeChatPresetSettings(material.active, material.preset), { backend: material.backend });
+        mergeChatPresetSettings(material.active, material.preset), { backend: material.backend, chatScope: 'branch' });
     const promptMessages = projectConversationImageInput(current.branch.messages, mediaPolicy, { hash: roleplayHash });
     const messages = await buildConversationPromptMessages(current.branch.messages, directive, character.name, {
         groupId: target.groupId, userName, userDirectories: directories, mediaPolicy,

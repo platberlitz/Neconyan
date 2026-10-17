@@ -54,6 +54,17 @@
     opacity: 1;
 }
 
+/* Generated images in replies: its help lines (workspace, Show only, Use a description, Right now) keep one small gap, and the next field starts clear of the last. */
+#qig-settings #qig-chat-image-input-workspace + small,
+#qig-settings #qig-chat-image-input-workspace + small + small,
+#qig-settings #qig-image-input-effective {
+    margin-top: 6px;
+}
+
+#qig-settings #qig-image-input-effective + label {
+    margin-top: 10px;
+}
+
 #qig-settings input:not([type="checkbox"]),
 #qig-settings select,
 #qig-settings textarea {

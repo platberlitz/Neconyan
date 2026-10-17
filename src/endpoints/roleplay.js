@@ -1,4 +1,5 @@
 import { verifyPromptImageCopy } from '../managed-image-files.js';
+import { uiText } from '../../public/scripts/ui-text.js';
 import { withRoleplayAccount, roleplayLease } from '../roleplay-store.js';
 import { captureSavedRoleplayImages } from '../generation/world-info.js';
 import { scanRoleplayImages, applyRoleplayImageRepair, resumeRoleplayImageRepair, discardRoleplayImageRepair, roleplayImageRepairHistory, exportRoleplayImageBackup, removeRoleplayImageBackup, listRoleplayImageChats, readRoleplayImageReviewSource } from '../roleplay-image-recovery.js';
@@ -108,10 +109,10 @@ router.post('/images/source', (request, response) => {
 router.post('/images/check', (request, response) => {
     try {
         let url = request.body.url;
-        if (typeof url !== 'string' || url.length > 4096) throw Object.assign(new Error('Save a compatible prompt copy before sending this image.'), { status: 409 });
+        if (typeof url !== 'string' || url.length > 4096) throw Object.assign(new Error(uiText('This image needs a compatible copy before it can be sent.')), { status: 409 });
         if (/^https?:/.test(url)) {
             const parsed = new URL(url), origin = `${request.protocol}://${request.get('host')}`;
-            if (parsed.origin !== origin || parsed.username || parsed.password || parsed.search || parsed.hash) throw Object.assign(new Error('This external image needs an explicitly saved prompt copy.'), { status: 409 });
+            if (parsed.origin !== origin || parsed.username || parsed.password || parsed.search || parsed.hash) throw Object.assign(new Error(uiText('This image is on another website. Save a compatible copy of it before sending it.')), { status: 409 });
             url = parsed.pathname;
         }
         const result = withRoleplayAccount(scope(request), request.body.account, lease => {

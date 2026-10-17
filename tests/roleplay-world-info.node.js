@@ -15,6 +15,7 @@ const { admitRoleplayJob, applyRoleplayJobEffect } = await import('../src/rolepl
 const { getJob, releaseJob } = await import('../src/jobs/store.js');
 const { readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
 const { runRoleplayReplyJob: runReply } = await import('../src/generation/roleplay-execution.js');
+const { registerHandler, setDirectoriesResolver, testExports: { runJob: runJobNow } } = await import('../src/jobs/runner.js');
 const { resetRoleplayAccount, roleplayAccountStamp, withRoleplayAccount } = await import('../src/roleplay-store.js');
 const { writeAgentRecordLocked } = await import('../src/in-chat-agent-storage.js');
 const { roleplayNativeHost } = await import('../src/endpoints/chats.js');
@@ -25,6 +26,7 @@ const defaultChatPreset = JSON.parse(fs.readFileSync(new URL('./fixtures/openai-
 const blankChatControls = { prompts: [{ identifier: 'main', role: 'system', system_prompt: true, content: '' },
     { identifier: 'chatHistory', marker: true, system_prompt: true }], prompt_order: [{ character_id: 100001,
     order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }] };
+const connectionCannotReceiveImages = 'This chat\'s connection cannot receive images. Set them to Show only or Use a description, or switch to a connection that accepts images.';
 const runRoleplayReplyJob = (context, options = {}) => runReply(context, {
     contextLimit: () => 4096, promptBackend: () => ({ backend: 'chat', active: blankChatControls }), ...options,
 });
@@ -786,9 +788,11 @@ test('a saved account image reaches only a bound vision prompt and changed bytes
     await assert.rejects(runRoleplayReplyJob(context, { promptBackend: () => vision,
         generate: () => { throw Error('Provider called'); } }), { code: 'ROLEPLAY_SOURCE_CHANGED' });
     fs.writeFileSync(imagePath, png);
+    // GEN-S01: the refusal carries the image code and its imageIssue, so the page can offer the choice (the job keeps the code).
     await assert.rejects(runRoleplayReplyJob(context, { promptBackend: () => ({ ...vision,
         active: { media_inlining: false } }), generate: () => { throw Error('Provider called'); } }),
-    { code: 'ROLEPLAY_INVALID' });
+    { code: 'ROLEPLAY_IMAGE_INPUT', status: 409, message: connectionCannotReceiveImages,
+        imageIssue: { reason: 'vision-unavailable', index: 0, mediaIndex: -1, actions: ['review', 'display-only', 'caption'] } });
     await assert.rejects(runRoleplayReplyJob(context, { promptBackend: () => vision,
         generate: async ({ beforeDispatch }) => { fs.writeFileSync(imagePath, Buffer.concat([png, Buffer.from('changed')])); beforeDispatch(); } }),
     { code: 'ROLEPLAY_SOURCE_CHANGED' });
@@ -799,6 +803,40 @@ test('a saved account image reaches only a bound vision prompt and changed bytes
         return { text: 'Image reply' };
     } });
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Image reply');
+});
+
+// The job runner keeps only { message, code, status } of a failed reply, so the page learns that a failure is about an image from the code alone.
+// tests/neconyan-roleplay-workflows.test.js feeds the page this same stored shape.
+test('a reply job refused for a connection that cannot receive images keeps the image code, and other invalid failures keep theirs', async t => {
+    const f = fixture(t);
+    f.records[1].extra = { media: [{ url: '/user/images/Nova/one.png', type: 'image' }], inline_image: true };
+    fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
+    f.scope.directories.userImages = path.join(f.scope.directories.root, 'user', 'images');
+    const imagePath = path.join(f.scope.directories.userImages, 'Nova', 'one.png');
+    fs.mkdirSync(path.dirname(imagePath), { recursive: true });
+    fs.writeFileSync(imagePath, png);
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 300 });
+    let backend;
+    registerHandler('roleplay.reply', context => runRoleplayReplyJob(context, { promptBackend: () => backend,
+        generate: () => { throw Error('Provider called'); } }));
+    setDirectoriesResolver(() => f.scope.directories);
+    const storedFailure = async operationKey => {
+        const { jobId } = admitRoleplayJob(f.scope, account, { operationKey, effect: 'append', source,
+            request: { binding: { profileId: 'saved', fingerprint: 'bound' }, serverPrompt: true, messages: [],
+                maxTokens: 20, characterName: 'Nova', worldInfo } });
+        releaseJob(f.scope.directories, jobId);
+        await runJobNow(getJob(f.scope.directories, jobId));
+        const saved = getJob(f.scope.directories, jobId);
+        assert.equal(saved.state, 'failed');
+        return saved.error;
+    };
+    backend = { source: 'custom', active: { ...blankChatControls, media_inlining: false } };
+    assert.deepEqual(await storedFailure('no-vision'), { message: connectionCannotReceiveImages, code: 'ROLEPLAY_IMAGE_INPUT', status: 409 });
+    // Any other invalid reply keeps the ordinary code, which the page shows as 'Reply stopped'.
+    backend = { source: 'custom', active: { ...blankChatControls, media_inlining: true, inline_image_quality: 'sharp' } };
+    assert.deepEqual(await storedFailure('bad-detail'), { message: 'The saved image detail setting is invalid.', code: 'ROLEPLAY_INVALID', status: 409 });
 });
 
 test('a bound image refuses unsafe paths and links before a provider call', t => {

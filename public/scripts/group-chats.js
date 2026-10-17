@@ -97,6 +97,7 @@ import { FILTER_TYPES, FilterHelper } from './filters.js';
 import { isExternalMediaAllowed } from './chats.js';
 import { POPUP_TYPE, Popup, callGenericPopup } from './popup.js';
 import { t } from './i18n.js';
+import { isImageInputIssue } from './prompt-media-policy.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { fetchWithCsrfRetry } from './csrf-token-refresh.js';
 import { chat_completion_sources, oai_settings } from './openai.js';
@@ -1760,6 +1761,19 @@ function getGroupChatNames(groupId) {
 }
 
 /**
+ * Tells the user a server-run group turn did not start. An image refusal has already raised its own notice
+ * (see postSubmission in roleplay-workflows.js), so it gets no second, generic toast. An error whose text this feature
+ * already put into the reader's language is marked, so the run-time localiser cannot match it again.
+ * @param {any} error The failure
+ */
+function reportGroupReplyFailure(error) {
+    console.error('Group reply failed', error);
+    if (isImageInputIssue(error)) return;
+    const shown = toastr.error(error?.message || t`The group reply could not start. Please try again.`, t`Group reply failed`);
+    if (error?.localized === true) shown?.find?.('.toast-message, .toast-title').attr('data-i18n-ignore', '');
+}
+
+/**
  * Generates text for the group chat by queueing members according to the activation strategy.
  * @param {boolean} byAutoMode If the generation was triggered programmatically.
  * @param {string?} type Generation type
@@ -1907,10 +1921,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
                     textResult = await workflows.submitRoleplayGroupTurn({ groupId: selected_group, forcedAvatars,
                         generationId: group_generation_id, signal: params?.signal ?? null });
                 } catch (error) {
-                    if (!params?.signal?.aborted && error?.name !== 'AbortError') {
-                        console.error('Group reply failed', error);
-                        toastr.error(error?.message || t`The group reply could not start. Please try again.`, t`Group reply failed`);
-                    }
+                    if (!params?.signal?.aborted && error?.name !== 'AbortError') reportGroupReplyFailure(error);
                     throw error;
                 }
                 if (selectedSpeakerChid !== -1 && !(params && typeof params.force_chid == 'number')) {

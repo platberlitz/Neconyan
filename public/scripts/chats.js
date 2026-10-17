@@ -55,7 +55,7 @@ import { POPUP_RESULT, POPUP_TYPE, Popup, callGenericPopup } from './popup.js';
 import { ScraperManager } from './scrapers.js';
 import { DragAndDropHandler } from './dragdrop.js';
 import { renderTemplateAsync } from './templates.js';
-import { t } from './i18n.js';
+import { t, translate } from './i18n.js';
 import { humanizedDateTime } from './RossAscends-mods.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE, SCROLL_BEHAVIOR, SWIPE_DIRECTION } from './constants.js';
@@ -1040,6 +1040,8 @@ async function deleteMessageMedia(messageId, mediaIndex, messageBlock) {
             else delete extra[key];
         }
     };
+    // These toasts say their words whole, so their message and title are marked for the run-time localiser to leave alone.
+    const final = (shown, parts = '.toast-message, .toast-title') => { shown?.find?.(parts).attr('data-i18n-ignore', ''); };
     const deleteFromServerId = 'delete_media_files_checkbox';
     let deleteFromServer = true;
 
@@ -1073,26 +1075,27 @@ async function deleteMessageMedia(messageId, mediaIndex, messageBlock) {
 
     if (![POPUP_RESULT.AFFIRMATIVE, POPUP_RESULT.CUSTOM1].includes(value)) return;
     if (!unchanged() || JSON.stringify(pick(message.extra)) !== JSON.stringify(before)) {
-        toastr.info(t`The chat or image changed. Open the attachment again.`); return;
+        final(toastr.info(t`The chat changed before the image was removed, so nothing was removed. Try again.`)); return;
     }
     const swipeExtra = message.swipe_info?.[message.swipe_id]?.extra;
     const swipeBefore = swipeExtra ? structuredClone(pick(swipeExtra)) : null;
     if (swipeBefore?.media && JSON.stringify(swipeBefore) !== JSON.stringify(before)) {
-        toastr.warning(t`This reply and its saved alternative have different attachments. Reload the chat before removing an image.`); return;
+        final(toastr.warning(t`This reply's saved data disagrees about its images, so nothing was removed. Reload the chat, then try again.`)); return;
     }
     const detached = detachMessageMedia(message.extra, mediaIndex, value === POPUP_RESULT.CUSTOM1);
     const after = pick(detached.extra);
     apply(message.extra, after);
     if (swipeExtra) apply(swipeExtra, after);
     try {
-        if (!await saveChatConditional()) throw new Error(t`The attachment removal could not be saved.`);
+        if (!await saveChatConditional()) throw new Error(t`The change could not be saved, so the image was kept.`);
     } catch (error) {
         if (unchanged() && JSON.stringify(pick(message.extra)) === JSON.stringify(after)) {
             apply(message.extra, before);
             if (swipeExtra && JSON.stringify(pick(swipeExtra)) === JSON.stringify(after)) apply(swipeExtra, swipeBefore);
             appendMediaToMessage(message, messageBlock, SCROLL_BEHAVIOR.KEEP);
         }
-        toastr.error(error.message, t`Attachment kept`, { escapeHtml: true }); return;
+        // The message may be another error's text, which the localiser still translates, so only the title is marked.
+        final(toastr.error(error.message, translate('Image kept', 'scoped.prompt_media.RMV-04'), { escapeHtml: true }), '.toast-title'); return;
     }
     if (!unchanged()) return;
     appendMediaToMessage(message, messageBlock, SCROLL_BEHAVIOR.KEEP);
@@ -1101,9 +1104,9 @@ async function deleteMessageMedia(messageId, mediaIndex, messageBlock) {
         try {
             const result = await deleteMediaFromServer(url, true, origin.account);
             if (result === false) throw new Error('Image file retained');
-            if (result?.retained) toastr.info(t`Attachment removed. Its saved copy is kept because other chats may use it.`);
+            if (result?.retained) final(toastr.info(t`Image removed from the message. Its compatible copy is kept on the server, because other chats may use it.`));
         } catch {
-            toastr.warning(t`Attachment removed, but its saved file could not be deleted.`);
+            final(toastr.warning(t`Image removed from the message, but its file could not be deleted from the server.`));
         }
     }
 }

@@ -245,6 +245,7 @@ import {
 import { registerExtensionCapability } from "../../neconyan-conversation/extension-capabilities.js";
 // Neconyan divergence: translated captions keep names exact.
 import { t, translate } from "../../i18n.js";
+import { bindImageInputRefreshEvents, bindImageInputRefreshPage } from "./lib/image-input-refresh.js";
 
 // Artist lists for random selection
 const ARTISTS_NATURAL = ["a1 (initial-g)", "abubu", "afrobull", "aiue oka", "akairiot", "akamatsu ken", "alex ahad", "alzi xiaomi", "amazuyu tatsuki", "aoi nagisa (metalder)", "ask (askzy)", "atdan", "awa", "ayami kojima", "azasuke", "azto dio", "bkub", "blade (galaxist)", "boris (noborhys)", "bow (bhp)", "butcha-u", "chouzuki maryou", "ciloranko", "circle anco", "crote", "dagasi", "dairi", "dino (dinoartforame)", "dishwasher1910", "drawfag", "dsmile", "ebifurya", "eroquis", "fkey", "fuzichoco", "gomennasai", "hammer (sunset beach)", "hana kazari", "hara (harayutaka)", "haruyama kazunori", "hews", "hiroki (yyqw7151)", "hiten", "hoshi (snacherubi)", "inoino", "itomugi-kun", "ixy", "kagami hirotaka", "kanon (kurogane knights)", "kantoku", "kawacy", "ke-ta", "kou hiyoyo", "kouji (campus life)", "kuavera", "kuon (kwonchan)", "lack", "lm7", "lolita channel", "m-da s-tarou", "matsunaga kouyou", "mika pikazo", "mikeinel", "mizuki hitoshi", "mizumizuni", "morikura en", "naga u", "nardack", "neco", "nel-zel formula", "neocoill", "nian", "nixeu", "nyamota", "nyantcha", "ojipon", "onikobe rin", "piromizu", "pochi (pochi-goya)", "qp:flapper", "rebecca (keinelove)", "redjuice", "rei (sanbonzakura)", "rurudo", "ruu (tksymkw)", "shirataki", "sincos", "sky-freedom", "tofuubear", "tony taka", "tukiwani", "wanke", "yaegashi nan", "yamakaze", "yoko juusuke", "yoshiaki", "yuuki tatsuya"];
@@ -3115,17 +3116,70 @@ function currentImageInputPreference(settings = getSettings()) {
     return generatedImageInputPreference(settings, conversationState.conversationWorkspaceOpen);
 }
 
+// toast-lines.js builds the two-line toasts below. It is fetched the first time one is needed, so it is not part of the cold start.
+// Whoever raises a toast reads its sentence and reason first and passes them in, so each toast keeps its own words however long the
+// module takes to arrive. Toasts raised while it loads wait on the one promise, so they show in the order they were raised.
+let toastLinesModule = null;
+function loadToastLines() {
+    toastLinesModule ??= import("../../toast-lines.js").catch((error) => { toastLinesModule = null; throw error; });
+    return toastLinesModule;
+}
+
+// Shows `sentence` with `reason` under it (reason is optional). It never throws: if the module cannot be loaded the failure is
+// logged and the same words are shown as plain text, so the person is still told. With { escapeHtml: false } the options mark the
+// two-line HTML as safe; the plain text is always escaped.
+async function showTwoLineToast(severity, sentence, reason, options) {
+    try {
+        const { twoLineToastHtml } = await loadToastLines();
+        qigToast[severity](twoLineToastHtml(sentence, reason), "", options);
+    } catch (error) {
+        // Not a caption: a message built here would join the interface catalogue as a new key.
+        log(error?.message || String(error));
+        const detail = String(reason ?? "").trim();
+        qigToast[severity](detail ? `${sentence} ${translate(detail)}` : sentence, "", { ...options, escapeHtml: true });
+    }
+}
+
+// A refusal for image input (QIG-19) keeps its own sentence and the server's reason apart (prompt-media-client.js). The sentence already
+// explains that the image was not inserted, so it is shown as it is, with the reason under it and without the QIG-20 prefix.
+// Any other error fills the scoped QIG-20 template; its detail is a whole message, looked up exactly before it fills the hole.
+// This reads everything the toast will say from the error, so it is called before the toast module is awaited.
+function insertFailureLines(error) {
+    if (error.sentence) return { sentence: error.sentence, reason: error.reason };
+    return { sentence: translate('Could not insert the image: ${0}', 'scoped.prompt_media.QIG-20').replace('${0}', () => translate(String(error.message))), reason: "" };
+}
+
+function showInsertFailure(error) {
+    const { sentence, reason } = insertFailureLines(error);
+    void showTwoLineToast("error", sentence, reason, { finalText: true, escapeHtml: false });
+}
+
+// The select edits the Roleplay choice or the Conversation choice, whichever workspace is open, so the line under it names the one shown.
+function workspaceImageInputNote() {
+    return conversationState.conversationWorkspaceOpen
+        ? t`Applies to images you insert from now on. Roleplay and Conversation keep separate settings; this is the Conversation one.`
+        : t`Applies to images you insert from now on. Roleplay and Conversation keep separate settings; this is the Roleplay one.`;
+}
+
 async function refreshPromptImageEffectiveState() {
     const select = document.getElementById('qig-chat-image-input');
     if (select) select.value = currentImageInputPreference();
+    const workspaceNote = document.getElementById('qig-chat-image-input-workspace');
+    if (workspaceNote) { workspaceNote.textContent = workspaceImageInputNote(); workspaceNote.setAttribute('data-i18n-ignore', ''); }
     const state = await effectiveBrowserPromptMediaContext();
-    const text = state.account === 'display-only' ? 'Effective input: Show only, controlled by the account setting.'
-        : state.chat === 'display-only' ? 'Effective input: Show only, controlled by this chat setting.'
-        : !state.inlineImages ? 'Image files are disabled by the connection. Description choices and existing automatic description settings remain separate.'
-        : 'Individual image choices apply. Sending an image also requires a compatible vision connection.';
+    const text = state.account === 'display-only' ? t`Right now: not sent, because 'Don't send chat images to the model' is on.`
+        : state.chat === 'display-only' ? t`Right now: not sent, because this chat's images are not sent to the model.`
+        : !state.inlineImages ? t`Right now: images are not sent, because this connection does not send them. Use Chat Completion with 'Send inline media' turned on. Descriptions are still sent.`
+        : t`Right now: each image's own choice applies. To use sent images, the model must be able to see images.`;
     for (const id of ['qig-image-input-effective', 'qig-context-image-input-effective']) {
-        const node = document.getElementById(id); if (node) node.textContent = text;
+        const node = document.getElementById(id);
+        if (node) { node.textContent = text; node.setAttribute('data-i18n-ignore', ''); }
     }
+}
+
+// Every trigger for the 'Right now' line (lib/image-input-refresh.js) runs this: the line is read again, never polled.
+function refreshPromptImageEffectiveStateSoon() {
+    void refreshPromptImageEffectiveState().catch(error => log(error.message));
 }
 
 function normalizeContextMediaSettings(settings) {
@@ -10380,7 +10434,7 @@ async function insertImageIntoMessage(entryOrUrl, targetMessageIndex = null, opt
     if (!isChatIdentitySnapshotCurrent(chatIdentity, { requireMetadata: true })) throw new DOMException("Image insertion chat changed", "AbortError");
 
     if (typeof ctx.appendMediaToMessage !== 'function') {
-        throw new Error('This app version cannot preserve image input choices. The generated image remains in the gallery; update the app before inserting it.');
+        throw new Error(t`This version of Neconyan cannot insert images with their image choices. Update Neconyan; the image stays in the gallery.`);
     }
     const hadExtra = Object.prototype.hasOwnProperty.call(message, "extra");
     if (!message.extra || typeof message.extra !== 'object') {
@@ -10719,7 +10773,8 @@ async function autoInsertInjectImage(entryOrUrl, { messageIndex, insertMode, com
 
 // Reached once per matched tag from the inject loops, so both arms are throttled:
 // a multi-tag reply reports its insert outcome once rather than once per image.
-function reportAutoInsertOutcome(insertedCount, failedResults) {
+// firstReason is the first failure's own message. It is shown as a second line of the failure toast, so a refusal for image input says what to choose.
+function reportAutoInsertOutcome(insertedCount, failedResults, firstReason = "") {
     if (insertedCount > 0) {
         const insertedLabel = insertedCount === 1 ? "Image inserted into the chat." : `${insertedCount} images inserted into the chat.`;
         if (insertedCount === 1 && hasChatInsertUndo()) {
@@ -10735,8 +10790,8 @@ function reportAutoInsertOutcome(insertedCount, failedResults) {
         }
     }
     if (!failedResults.length) return;
-    qigToast.warning(`${failedResults.length === 1 ? "One image" : `${failedResults.length} images`} could not be inserted and remain available in the result viewer.`, "", {
-        throttleKey: "auto-insert-failed",
+    void showTwoLineToast("warning", `${failedResults.length === 1 ? "One image" : `${failedResults.length} images`} could not be inserted and remain available in the result viewer.`, firstReason, {
+        throttleKey: "auto-insert-failed", escapeHtml: false,
     });
     if (failedResults.length === 1) displayImage(failedResults[0]);
     else displayBatchResults(failedResults);
@@ -10758,6 +10813,7 @@ async function deliverInjectResults(results, { settings, sourceMessageIndex, tar
 async function deliverInjectResultsSingle(entry, { settings, sourceMessageIndex, targetSnapshot, run } = {}) {
     let inserted = 0;
     const failed = [];
+    let firstReason = "";
     const insertMode = settings.insertAsHiddenReply ? "hidden" : settings.injectInsertMode;
     void addToGallery(entry);
     try {
@@ -10774,8 +10830,9 @@ async function deliverInjectResultsSingle(entry, { settings, sourceMessageIndex,
         if (error.name === "AbortError") throw error;
         log(`Inject: Auto-insert failed: ${error.message}`);
         failed.push(entry);
+        firstReason = error.message;
     }
-    reportAutoInsertOutcome(inserted, failed);
+    reportAutoInsertOutcome(inserted, failed, firstReason);
     return { inserted, failed };
 }
 
@@ -10947,8 +11004,8 @@ async function insertContextMedia(media, {
     let attachment = createContextMediaAttachment(media);
     if (attachment.type === 'image') {
         attachment = generatedImagePromptPolicy(attachment, imageInput);
-        if (imageInput === 'caption' && !String(attachment.title ?? '').trim()) throw new Error('This library image has no saved description. Choose Show only or add a description first.');
-        attachment.url = await preflightImageInput(attachment.url, imageInput);
+        if (imageInput === 'caption' && !String(attachment.title ?? '').trim()) throw new Error(t`This library image has no saved description. Under 'Library images in replies', choose Send the image or Show only.`);
+        attachment.url = await preflightImageInput(attachment.url, imageInput, { library: true });
         attachment = generatedImagePromptPolicy(attachment, imageInput);
     }
     if (attachment.type === "video" && typeof ctx.appendMediaToMessage !== "function") {
@@ -11728,7 +11785,8 @@ function scheduleContextMediaJob(snapshot, delayMs) {
                 log(`Context Media: ${error.message}`);
                 // This job self-reschedules every 250 ms while generation is busy,
                 // so a persistent failure must not toast on every retry.
-                qigToast.warning(`Context Media: ${error.message}`, "Quick Image Gen", { throttleKey: "context-media-job" });
+                qigToast.warning(translate('Context Media could not insert an image: ${0}', 'scoped.prompt_media.QIG-23').replace('${0}', () => translate(String(error.message))),
+                    "Quick Image Gen", { throttleKey: "context-media-job", finalText: true });
             }
         } finally {
             if (_contextMediaController === snapshot.controller) _contextMediaController = null;
@@ -12156,7 +12214,7 @@ function installLifecycleCleanup() {
         teardownQuickImageGen();
     });
     pageLifecycleScope.listen(window, "unload", teardownQuickImageGen);
-    pageLifecycleScope.listen(window, "sb:conversation-workspace-state-changed", () => { requestAnimationFrame(() => { void refreshPromptImageEffectiveState().catch(error => log(error.message)); }); });
+    bindImageInputRefreshPage(pageLifecycleScope, { window, document }, refreshPromptImageEffectiveStateSoon);
 }
 
 function renderOpenGallery() {
@@ -12428,7 +12486,7 @@ function displayImage(entryOrUrl, skipGallery, returnFocusElement = null) {
                 announceChatInsert("Image inserted into the chat.");
             } catch (err) {
                 console.error("[Quick Image Gen] Insert failed:", err);
-                qigToast.error("Failed to insert image: " + err.message);
+                showInsertFailure(err);
             }
         };
         document.getElementById("qig-background-btn").onclick = async (e) => {
@@ -12693,7 +12751,7 @@ function displayBatchResults(results, returnFocusElement = null) {
                 announceChatInsert("Image inserted into the chat.");
             } catch (err) {
                 console.error("[Quick Image Gen] Insert failed:", err);
-                qigToast.error("Failed to insert image: " + err.message);
+                showInsertFailure(err);
             } finally {
                 insertOneButton.disabled = false;
             }
@@ -19550,11 +19608,11 @@ function createUI() {
                             <div class="qig-field"><label for="qig-context-media-confidence">Minimum confidence</label><input id="qig-context-media-confidence" type="number" value="${esc(s.contextMediaConfidence)}" min="0" max="100"></div>
                             <div class="qig-field"><label for="qig-context-media-insert-mode">Insert as</label><select id="qig-context-media-insert-mode"><option value="replace" ${s.contextMediaInsertMode === "replace" ? "selected" : ""}>Attachment on reply</option><option value="new" ${s.contextMediaInsertMode === "new" ? "selected" : ""}>New assistant message</option><option value="hidden" ${s.contextMediaInsertMode === "hidden" ? "selected" : ""}>Hidden reply</option></select></div>
                         </div>
-                        <div class="qig-field"><label for="qig-context-image-input">Library images in future chat replies</label><select id="qig-context-image-input">
-                            <option value="include" ${s.contextMediaImageInput === 'include' ? 'selected' : ''}>Send the image</option>
-                            <option value="display-only" ${s.contextMediaImageInput === 'display-only' ? 'selected' : ''}>Show only</option>
-                            <option value="caption" ${s.contextMediaImageInput === 'caption' ? 'selected' : ''}>Use its saved description</option>
-                        </select><small id="qig-context-image-input-effective"></small></div>
+                        <div class="qig-field"><label for="qig-context-image-input" data-i18n="Library images in replies">Library images in replies</label><select id="qig-context-image-input">
+                            <option value="include" data-i18n="scoped.prompt_media.QIG-03" ${s.contextMediaImageInput === 'include' ? 'selected' : ''}>Send the image</option>
+                            <option value="display-only" data-i18n="scoped.prompt_media.QIG-02" ${s.contextMediaImageInput === 'display-only' ? 'selected' : ''}>Show only</option>
+                            <option value="caption" data-i18n="scoped.prompt_media.QIG-04" ${s.contextMediaImageInput === 'caption' ? 'selected' : ''}>Use a description</option>
+                        </select><small data-i18n="Use a description sends the library image's saved description, as text. Images without one are not inserted.">Use a description sends the library image's saved description, as text. Images without one are not inserted.</small><small id="qig-context-image-input-effective"></small></div>
                         <small class="qig-muted">Runs independently from image generation. Classification uses Text AI; GIFs are images and MP4/WebM are videos.</small>
                     </div>
                     <div class="qig-filter-panel">
@@ -19710,13 +19768,14 @@ function createUI() {
                 </label>
                 <div class="qig-control-grid">
                     <div class="qig-field">
-                        <label for="qig-chat-image-input">Use in future chat replies</label>
+                        <label for="qig-chat-image-input" data-i18n="Generated images in replies">Generated images in replies</label>
                         <select id="qig-chat-image-input">
-                            <option value="display-only" ${currentImageInputPreference(s) === 'display-only' ? "selected" : ""}>Show only</option>
-                            <option value="caption" ${currentImageInputPreference(s) === "caption" ? "selected" : ""}>Use the generation prompt as a description</option>
-                            <option value="include" ${currentImageInputPreference(s) === "include" ? "selected" : ""}>Send the image</option>
+                            <option value="display-only" data-i18n="scoped.prompt_media.QIG-02" ${currentImageInputPreference(s) === 'display-only' ? "selected" : ""}>Show only</option>
+                            <option value="caption" data-i18n="scoped.prompt_media.QIG-04" ${currentImageInputPreference(s) === "caption" ? "selected" : ""}>Use a description</option>
+                            <option value="include" data-i18n="scoped.prompt_media.QIG-03" ${currentImageInputPreference(s) === "include" ? "selected" : ""}>Send the image</option>
                         </select>
-                        <small>Show only keeps the picture visible without sending its file or attachment description to the chat model. Account and chat display-only settings take priority.</small><small id="qig-image-input-effective"></small>
+                        <small id="qig-chat-image-input-workspace"></small>
+                        <small data-i18n="Show only keeps the image in the chat but sends the model neither the image nor its description. If images are not sent for all chats, or for the open chat, that setting takes priority.">Show only keeps the image in the chat but sends the model neither the image nor its description. If images are not sent for all chats, or for the open chat, that setting takes priority.</small><small data-i18n="Use a description sends the prompt that made the image, as text.">Use a description sends the prompt that made the image, as text.</small><small id="qig-image-input-effective"></small>
                         <label>Chat insert output</label>
                         <select id="qig-output-mode">
                             <option value="inline" ${normalizeOutputMode(s.outputMode) === "inline" ? "selected" : ""}>Inline data URL</option>
@@ -19736,8 +19795,9 @@ function createUI() {
                 </div>
                 <label class="checkbox_label" style="margin-left:16px;opacity:${s.autoInsert ? "1" : "0.6"};">
                     <input id="qig-insert-hidden-reply" type="checkbox" ${s.insertAsHiddenReply ? "checked" : ""} ${s.autoInsert ? "" : "disabled"}>
-                    <span>Insert as a hidden reply</span>
+                    <span data-i18n="Insert as a hidden reply">Insert as a hidden reply</span>
                 </label>
+                <small style="margin-left:16px;" data-i18n="Hidden replies show the image to you but are never sent to the model.">Hidden replies show the image to you but are never sent to the model.</small>
                 <label class="checkbox_label" style="margin-top:4px;">
                     <input id="qig-save-to-server" type="checkbox" ${s.saveToServer ? "checked" : ""}>
                     <span>Save images to Neconyan server (persistent)</span>
@@ -21687,6 +21747,7 @@ async function generateImageFromPlainDescription() {
         if (results.length > 0 && s.autoInsert) {
             let insertedCount = 0;
             const failedResults = [];
+            let firstReason = "";
             for (const r of results) {
                 void addToGallery(r);
                 try {
@@ -21704,9 +21765,10 @@ async function generateImageFromPlainDescription() {
                     if (err.name === "AbortError") throw err;
                     console.error("[Quick Image Gen] Auto-insert failed:", err);
                     failedResults.push(r);
+                    firstReason ||= err.message;
                 }
             }
-            reportAutoInsertOutcome(insertedCount, failedResults);
+            reportAutoInsertOutcome(insertedCount, failedResults, firstReason);
         } else if (results.length === 1) {
             displayImage(results[0]);
         } else if (results.length > 1) {
@@ -21932,6 +21994,7 @@ async function generateImage() {
                 } else {
                     let insertedCount = 0;
                     const failedResults = [];
+                    let firstReason = "";
                                         for (const r of results) {
                         void addToGallery(r);
                                                 try {
@@ -21962,9 +22025,10 @@ async function generateImage() {
                             if (err.name === "AbortError" && run.signal?.aborted) throw err;
                             console.error("[Quick Image Gen] Auto-insert failed:", err);
                             failedResults.push(r);
+                            firstReason ||= err.message;
                         }
                     }
-                    reportAutoInsertOutcome(insertedCount, failedResults);
+                    reportAutoInsertOutcome(insertedCount, failedResults, firstReason);
                 }
             } else if (results.length === 1) {
                 displayImage(results[0]);
@@ -22954,6 +23018,7 @@ function bindHostEventHandlers(eventSource, eventTypes) {
         lifecycle.subscribe(eventSource, eventTypes.CHAT_COMPLETION_PROMPT_READY, onChatCompletionPromptReady);
     }
     lifecycle.subscribe(eventSource, eventTypes.CHAT_CHANGED, handleHostChatChanged);
+    bindImageInputRefreshEvents(lifecycle, eventSource, eventTypes, refreshPromptImageEffectiveStateSoon);
     hostEventLifecycleScope = lifecycle;
 }
 

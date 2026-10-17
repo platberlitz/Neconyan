@@ -87,7 +87,7 @@ for (const position of [32, 33]) test(`Conversation validates derivative at posi
     const call = () => buildConversationPromptMessages([...ordinary, f.message], 'Reply', 'Nova', {
         userDirectories: f.scope.directories, mediaPolicy: createPromptMediaContext({}),
     });
-    if (position === 32) await assert.rejects(call(), /original image changed or is missing/);
+    if (position === 32) await assert.rejects(call(), /original file changed or is missing/);
     else assert.equal((await call()).flatMap(row => Array.isArray(row.content) ? row.content : []).filter(part => part.type === 'image_url').length, 32);
 });
 test('aggregate byte exhaustion does not validate a later unread image', async () => {
@@ -104,7 +104,7 @@ test('an empty ordinary image cannot displace derivative validation', async t =>
     f.message.extra.media.unshift({ type: 'image', url: '' });
     await assert.rejects(buildConversationPromptMessages([f.message], 'Reply', 'Nova', {
         userDirectories: f.scope.directories, mediaPolicy: createPromptMediaContext({}),
-    }), /original image changed or is missing/);
+    }), /original file changed or is missing/);
 });
 test('Conversation accepts a legacy image without dereferencing modern media fields', async () => {
     const result = await buildConversationPromptMessages([{ id: 'legacy', role: 'user', mes: 'Look',

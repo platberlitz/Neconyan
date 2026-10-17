@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { parse } from 'acorn';
-import { beforeEach, expect, jest, test } from '@jest/globals';
+import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { event_types, eventSource } from '../public/scripts/events.js';
 
 let account = 'alice';
@@ -1059,4 +1059,167 @@ test('returning replaces a suspended discovery request even when it ignores canc
     releaseStale([{ id: 'stale', type: 'media.roleplay-workflow', state: 'running' }]);
     await settle();
     expect(observers.has('stale')).toBe(false);
+});
+
+// An image refusal raises one event, which prompt-media-ui.js turns into the one actionable notice; the generic toast is not shown too.
+describe('an image refusal on the solo and group routes', () => {
+    const refusalEvents = () => globalThis.dispatchEvent.mock.calls.map(([event]) => event).filter(event => event.type === 'neconyan:image-input-refused');
+    // Where each refusal came from: the chat the request or job was for and the account it ran under (never the chat open when it arrives).
+    const soloOrigin = { workspace: 'roleplay', account: 'alice', locator: { group: false, chat: 'roleplay', avatar: 'nova.png' } };
+    const groupOrigin = { workspace: 'roleplay', account: 'alice', locator: { group: true, chat: 'roleplay' } };
+    // A refusal at submission is a saved image the server cannot read (world-info.js adds the issue to an error of any code).
+    // GEN-S01 is not one of these: it is raised inside the reply job, which keeps only its message, code and status (see the job test below).
+    const issue = { reason: 'unsupported-image', index: 1, mediaIndex: 0, actions: ['review', 'display-only', 'caption', 'replace'] };
+    const words = 'The saved Roleplay image location is invalid.';
+    const connectionWords = 'This chat\'s connection cannot receive images. Set them to Show only or Use a description, or switch to a connection that accepts images.';
+    beforeEach(() => { globalThis.dispatchEvent.mockClear(); });
+
+    test('a solo refusal with an imageIssue dispatches once, with the message, and shows no generic toast', async () => {
+        submitHandler = async () => response(409, { error: words, code: 'ROLEPLAY_INVALID', imageIssue: issue });
+        expect(await workflows.runNativeRoleplayGeneration('normal')).toMatchObject({ native: true, state: 'refused', refused: true });
+        expect(refusalEvents()).toHaveLength(1);
+        expect(refusalEvents()[0].detail).toEqual({ ...issue, message: words, origin: soloOrigin });
+        expect(globalThis.toastr.error).not.toHaveBeenCalled();
+    });
+
+    test('a solo refusal with the code alone is an image issue too', async () => {
+        submitHandler = async () => response(409, { error: 'An image description changed while the reply was starting. Try again.', code: 'ROLEPLAY_IMAGE_INPUT' });
+        await workflows.runNativeRoleplayGeneration('normal');
+        expect(refusalEvents().map(event => event.detail)).toEqual([{ message: 'An image description changed while the reply was starting. Try again.', origin: soloOrigin }]);
+        expect(globalThis.toastr.error).not.toHaveBeenCalled();
+    });
+
+    test('any other solo refusal keeps its generic toast and raises no image event', async () => {
+        for (const body of [{ error: 'Refused' }, { error: 'Busy', code: 'ROLEPLAY_INVALID' }, { error: 'Odd', imageIssue: null, code: null }]) {
+            globalThis.toastr.error.mockClear();
+            submitHandler = async () => response(400, body);
+            expect(await workflows.runNativeRoleplayGeneration('normal')).toMatchObject({ state: 'refused', refused: true });
+            expect(globalThis.toastr.error).toHaveBeenCalledTimes(1);
+            expect(globalThis.toastr.error).toHaveBeenCalledWith(body.error, 'Nothing was generated');
+        }
+        expect(refusalEvents()).toHaveLength(0);
+        // A refusal that sends no JSON at all still says something.
+        globalThis.toastr.error.mockClear();
+        submitHandler = async () => ({ ok: false, status: 502, json: async () => { throw new Error('not json'); } });
+        await workflows.runNativeRoleplayGeneration('normal');
+        expect(globalThis.toastr.error).toHaveBeenCalledWith(expect.stringContaining('refused (502)'), 'Nothing was generated');
+        expect(refusalEvents()).toHaveLength(0);
+    });
+
+    test('a group turn refused for an image dispatches once through the same function, and the error still carries the reply for the caller', async () => {
+        submitHandler = async () => response(409, { error: words, code: 'ROLEPLAY_INVALID', imageIssue: issue });
+        const failure = await workflows.submitRoleplayGroupTurn({ groupId: 'group-1', forcedAvatars: ['nova.png'], generationId: 1 }).catch(error => error);
+        expect(failure).toBeInstanceOf(Error);
+        expect(failure.message).toBe(words);
+        expect(failure.body.imageIssue).toEqual(issue);
+        expect(refusalEvents()).toHaveLength(1);
+        expect(refusalEvents()[0].detail).toEqual({ ...issue, message: words, origin: groupOrigin });
+        expect(requests.at(-1).url.endsWith('/group/submit')).toBe(true);
+    });
+
+    test('a group turn refused for any other reason raises no image event', async () => {
+        submitHandler = async () => response(400, { error: 'Refused' });
+        const failure = await workflows.submitRoleplayGroupTurn({ groupId: 'group-1', forcedAvatars: ['nova.png'], generationId: 1 }).catch(error => error);
+        expect(failure.message).toBe('Refused');
+        expect(refusalEvents()).toHaveLength(0);
+    });
+
+    test('a reply job that fails for an image raises the one event instead of the Reply stopped toast; other failures keep it', async () => {
+        const pending = workflows.runNativeRoleplayGeneration('normal');
+        await settle();
+        await observers.get('job-1').onSnapshot({ state: 'failed', error: { message: 'An image description changed while the reply was starting. Try again.', code: 'ROLEPLAY_IMAGE_INPUT', status: 409 } });
+        await pending;
+        expect(refusalEvents().map(event => event.detail)).toEqual([{ message: 'An image description changed while the reply was starting. Try again.', origin: soloOrigin }]);
+        expect(globalThis.toastr.error).not.toHaveBeenCalled();
+        observers.clear();
+        const second = workflows.runNativeRoleplayGeneration('normal');
+        await settle();
+        await observers.get('job-1').onSnapshot({ state: 'failed', error: { message: 'The connection to your model provider closed.', code: 'JOB_FAILED', status: 500 } });
+        await second;
+        expect(globalThis.toastr.error).toHaveBeenCalledTimes(1);
+        expect(globalThis.toastr.error).toHaveBeenCalledWith('The connection to your model provider closed.', 'Reply stopped');
+        expect(refusalEvents()).toHaveLength(1);
+    });
+
+    // GEN-S01 fails inside the reply job. The job keeps { message, code, status }; tests/roleplay-world-info.node.js asserts that this
+    // exact shape is what the runner stores for it (code ROLEPLAY_IMAGE_INPUT), and for an ordinary invalid reply (code ROLEPLAY_INVALID).
+    test('a reply job that fails with GEN-S01 raises the notice with its reason, and another ROLEPLAY_INVALID failure still shows Reply stopped', async () => {
+        const pending = workflows.runNativeRoleplayGeneration('normal');
+        await settle();
+        await observers.get('job-1').onSnapshot({ state: 'failed', error: { message: connectionWords, code: 'ROLEPLAY_IMAGE_INPUT', status: 409 } });
+        await pending;
+        expect(refusalEvents().map(event => event.detail)).toEqual([{ message: connectionWords, origin: soloOrigin }]);
+        expect(globalThis.toastr.error).not.toHaveBeenCalled();
+        observers.clear();
+        const second = workflows.runNativeRoleplayGeneration('normal');
+        await settle();
+        await observers.get('job-1').onSnapshot({ state: 'failed', error: { message: 'The saved image detail setting is invalid.', code: 'ROLEPLAY_INVALID', status: 409 } });
+        await second;
+        expect(globalThis.toastr.error).toHaveBeenCalledTimes(1);
+        expect(globalThis.toastr.error).toHaveBeenCalledWith('The saved image detail setting is invalid.', 'Reply stopped');
+        expect(refusalEvents()).toHaveLength(1);
+    });
+});
+
+// The notice opens the review for the chat that was refused, so every refusal carries the chat of its own request or job, never the chat that is
+// open when the refusal arrives. Each test moves the open chat after the request started (a slow send, a job still running, a job found on load).
+describe('the origin an image refusal carries', () => {
+    const refusalEvents = () => globalThis.dispatchEvent.mock.calls.map(([event]) => event).filter(event => event.type === 'neconyan:image-input-refused');
+    const words = 'The saved Roleplay image location is invalid.';
+    const imageFailure = { message: words, code: 'ROLEPLAY_IMAGE_INPUT', status: 409 };
+    const soloOrigin = { workspace: 'roleplay', account: 'alice', locator: { group: false, chat: 'roleplay', avatar: 'nova.png' } };
+    const openAnotherChat = () => { currentChatId = 'another-chat'; currentAvatar = 'other.png'; };
+    beforeEach(() => { globalThis.dispatchEvent.mockClear(); });
+
+    test('a solo refusal at submission carries the chat the request was made for, not the chat open when the answer arrives', async () => {
+        submitHandler = async () => { openAnotherChat(); return response(409, { error: words, code: 'ROLEPLAY_IMAGE_INPUT' }); };
+        await workflows.runNativeRoleplayGeneration('normal');
+        expect(requests.at(-1).body.source.locator).toEqual({ chat: 'roleplay', avatar: 'nova.png', group: false });
+        expect(refusalEvents().map(event => event.detail)).toEqual([{ message: words, origin: soloOrigin }]);
+    });
+
+    test('a group refusal at submission carries the group chat, with the locator the review takes and no group id', async () => {
+        submitHandler = async () => { openAnotherChat(); return response(409, { error: words, code: 'ROLEPLAY_IMAGE_INPUT' }); };
+        await workflows.submitRoleplayGroupTurn({ groupId: 'group-1', forcedAvatars: ['nova.png'], generationId: 1 }).catch(() => {});
+        expect(requests.at(-1).body.source.locator).toEqual({ chat: 'roleplay', group: true, groupId: 'group-1' });
+        expect(refusalEvents().map(event => event.detail.origin)).toEqual([{ workspace: 'roleplay', account: 'alice', locator: { group: true, chat: 'roleplay' } }]);
+    });
+
+    test('a reply job that fails for an image after the person moved to another chat carries the chat it was for', async () => {
+        const pending = workflows.runNativeRoleplayGeneration('normal');
+        await settle();
+        openAnotherChat();
+        await observers.get('job-1').onSnapshot({ state: 'failed', error: imageFailure });
+        await pending;
+        expect(refusalEvents().map(event => event.detail)).toEqual([{ message: words, origin: soloOrigin }]);
+        expect(globalThis.toastr.error).not.toHaveBeenCalled();
+    });
+
+    test('a group job that fails for an image carries its group chat', async () => {
+        const pending = workflows.submitRoleplayGroupTurn({ groupId: 'group-1', forcedAvatars: ['nova.png'], generationId: 2 }).catch(error => error);
+        await settle();
+        openAnotherChat();
+        await observers.get('job-1').onSnapshot({ state: 'failed', error: imageFailure });
+        await pending;
+        expect(refusalEvents().map(event => event.detail.origin)).toEqual([{ workspace: 'roleplay', account: 'alice', locator: { group: true, chat: 'roleplay' } }]);
+    });
+
+    test('a job found when the page loaded carries the chat its record names', async () => {
+        listJobs.mockResolvedValueOnce([{
+            id: 'found-on-load', type: 'media.roleplay-workflow', state: 'running',
+            intent: { media: { operationKey: 'key-found' }, source: { locator: { chat: 'roleplay', avatar: 'nova.png', group: false }, message: { index: 1 } },
+                request: { named: { name: 'roleplay.reply' } } },
+        }]);
+        await workflows.resumeNativeRoleplayWorkflowObservation();
+        expect(observers.has('found-on-load')).toBe(true);
+        openAnotherChat();
+        await observers.get('found-on-load').onSnapshot({ state: 'failed', error: imageFailure });
+        expect(refusalEvents().map(event => event.detail)).toEqual([{ message: words, origin: soloOrigin }]);
+    });
+
+    test('the account in the origin is the one the request ran under', async () => {
+        submitHandler = async () => response(409, { error: words, code: 'ROLEPLAY_IMAGE_INPUT' });
+        await workflows.runNativeRoleplayGeneration('normal');
+        expect(refusalEvents()[0].detail.origin.account).toBe('alice');
+    });
 });

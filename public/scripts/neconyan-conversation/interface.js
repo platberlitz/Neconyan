@@ -1,5 +1,6 @@
 import { online_status } from '../../script.js';
 import { t, translate } from '../i18n.js';
+import { imageInputIssueDetail, isImageInputIssue } from '../prompt-media-policy.js';
 import { setConversationInterfaceActive } from './chrome.js';
 import { CHROME_IDS, DEFAULT_BRANCH_ID, DEFAULT_SETTINGS, SETTINGS_FIELDS } from './constants.js';
 import {
@@ -15,7 +16,7 @@ import {
     parsePositiveInt,
     saveGroupConversationSettings,
 } from './context.js';
-import { submitConversationRewrite } from './generation.js';
+import { conversationRequestOrigin, submitConversationRewrite } from './generation.js';
 import { getConversationDisplayLabel, getConversationParticipants, getEffectiveConversationStatus, renderConversationParticipantStack } from './media.js';
 import {
     clearUnreadCount,
@@ -623,6 +624,8 @@ export async function handleCharacterMessagePolish(messageId, buttonElement) {
     if (!branchId) {
         return;
     }
+    // The thread and branch this polish is for, read now. A refusal that arrives after the person has moved on still belongs to it.
+    const origin = conversationRequestOrigin({ avatar, groupId, personaId, branchId });
     const thread = getConversationThread(avatar, { branchId, create: false, groupId, personaId });
     const msg = thread.find(m => String(m.id) === String(messageId));
     if (!msg || !msg.mes) {
@@ -654,6 +657,11 @@ export async function handleCharacterMessagePolish(messageId, buttonElement) {
         globalThis.toastr?.success?.('Reply rewritten.');
     } catch (error) {
         console.error('Character prose polishing error:', error);
+        // An image refusal gets the one actionable notice (showImageChoiceNotice in prompt-media-ui.js) instead of this toast.
+        if (isImageInputIssue(error)) {
+            globalThis.dispatchEvent(new CustomEvent('neconyan:image-input-refused', { detail: imageInputIssueDetail(error, origin) }));
+            return;
+        }
         const detail = String(error?.message || '').trim();
         globalThis.toastr?.error?.(detail.startsWith('Could not') ? detail : `Could not rewrite the reply. ${detail || 'Try again.'}`);
     } finally {

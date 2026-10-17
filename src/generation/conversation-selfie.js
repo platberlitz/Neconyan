@@ -2,6 +2,7 @@ import { DEFAULT_SETTINGS } from '../../public/scripts/neconyan-conversation/con
 import { formatPromptText } from '../../public/scripts/neconyan-conversation/shared-helpers.js';
 import { buildSelfieImagePromptTemplate, normalizeConversationOutputText } from '../../public/scripts/neconyan-conversation/generation-utils.js';
 import { isConversationGroupSpeakerEligible, stripSpeakerPrefixText } from '../../public/scripts/neconyan-conversation/partners-utils.js';
+import { imageInputFields } from '../../public/scripts/prompt-media-policy.js';
 import { runChatProfile, validateActiveGenerationContext } from './service.js';
 import { resolveGenerationProfile } from './profiles.js';
 import { normalizeBindingRequest, normalizeSubmissionAnchors, preflightConversationBindings } from './conversation-jobs.js';
@@ -103,7 +104,7 @@ async function finalizeSelfieSubmission(request, job, preparedSnapshot) {
     } catch (error) {
         updateJob(request.user.directories, job.id, {
             state: 'failed', stage: null, finishedAt: Date.now(),
-            error: { message: error?.message || 'The selfie request could not be prepared.', code: error?.code || 'SELFIE_PREPARE_FAILED' },
+            error: { message: error?.message || 'The selfie request could not be prepared.', code: error?.code || 'SELFIE_PREPARE_FAILED', ...imageInputFields(error) },
             recoverability: 'needs-retry',
         });
         return getJob(request.user.directories, job.id);

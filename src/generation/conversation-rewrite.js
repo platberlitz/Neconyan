@@ -3,6 +3,7 @@ import {
     getCharacterReplyCommandMetadata,
     normalizeConversationOutputText,
 } from '../../public/scripts/neconyan-conversation/generation-utils.js';
+import { imageInputFields } from '../../public/scripts/prompt-media-policy.js';
 import { runChatProfile, validateActiveGenerationContext } from './service.js';
 import { resolveGenerationProfile } from './profiles.js';
 import {
@@ -101,7 +102,7 @@ async function finalizeRewriteSubmission(request, job, preparedSnapshot) {
     } catch (error) {
         updateJob(request.user.directories, job.id, {
             state: 'failed', stage: null, finishedAt: Date.now(),
-            error: { message: error?.message || 'The rewrite request could not be prepared.', code: error?.code || 'REWRITE_PREPARE_FAILED' },
+            error: { message: error?.message || 'The rewrite request could not be prepared.', code: error?.code || 'REWRITE_PREPARE_FAILED', ...imageInputFields(error) },
             recoverability: 'needs-retry',
         });
         return getJob(request.user.directories, job.id);

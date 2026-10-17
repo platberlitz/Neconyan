@@ -23,8 +23,10 @@ import { getCurrentCharAvatar } from './context.js';
 import { getRoleplaySourceMessageRevision } from './roleplay-source.js';
 import { beginRoleplayReplacement } from './roleplay-replacement.js';
 import { withAbortSignal } from '../abort.js';
+import { imageInputIssueDetail, isImageInputIssue, roleplayImageOrigin } from '../prompt-media-policy.js';
 
 const WORKFLOW_EVENT = 'neconyan:roleplay-workflow-finished';
+const IMAGE_REFUSED_EVENT = 'neconyan:image-input-refused';
 const RECONNECT_REASON = Symbol('roleplay-receipt-reconnect');
 const STORY_RULES_KEY = 'sbstory_rules';
 const STORY_DIRECTION_KEY = 'sbstory_direction';
@@ -310,7 +312,9 @@ async function postSubmission(payload, account, url = '/api/roleplay/workflow/su
     });
     const body = await response.json().catch(() => null);
     if (account !== getCurrentUserHandle()) throw new Error('account_changed');
-    if (!response.ok && body?.imageIssue) globalThis.dispatchEvent(new CustomEvent('neconyan:image-input-refused', { detail: body.imageIssue }));
+    // One notice for an image refusal, whichever route asked (see showImageChoiceNotice in prompt-media-ui.js); callers show no second toast.
+    // Its origin is the chat this request was for (payload.source.locator), not the chat open when the refusal arrives.
+    if (!response.ok && isImageInputIssue(body)) globalThis.dispatchEvent(new CustomEvent(IMAGE_REFUSED_EVENT, { detail: imageInputIssueDetail(body, roleplayImageOrigin(payload.source?.locator, account)) }));
     if (!response.ok) throw Object.assign(new Error(body?.error || `The ${payload.name} workflow was refused (${response.status}).`), { status: response.status, body });
     return body;
 }
@@ -480,7 +484,9 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
         if (ended) return;
         if (value.state !== 'completed') {
             const message = typeof value.error === 'string' ? value.error : value.error?.message;
-            if (message) globalThis.toastr?.error?.(message, 'Reply stopped');
+            // The origin is the workflow's own chat and account, as given when it was accepted or found in the job record.
+            if (isImageInputIssue(value.error)) globalThis.dispatchEvent(new CustomEvent(IMAGE_REFUSED_EVENT, { detail: imageInputIssueDetail(value.error, roleplayImageOrigin(locator, account)) }));
+            else if (message) globalThis.toastr?.error?.(message, 'Reply stopped');
             stop(value.state);
         } else stop('done');
     };
@@ -746,7 +752,8 @@ export async function runNativeRoleplayGeneration(type, { committed = false, pag
         return { native: true, name, key: accepted.key ?? null, jobId: accepted.jobId ?? null,
             state: receipt?.state ?? null, result: receipt?.result ?? null, created: accepted.created !== false };
     } catch (error) {
-        globalThis.toastr?.error?.(error?.message || 'The Roleplay workflow could not be started.', 'Nothing was generated');
+        // An image refusal has already raised its own notice (postSubmission), so it gets no second, generic toast.
+        if (!isImageInputIssue(error)) globalThis.toastr?.error?.(error?.message || 'The Roleplay workflow could not be started.', 'Nothing was generated');
         return { native: true, name, key: null, jobId: null, state: 'refused', result: null, refused: true };
     } finally {
         busyName = null;

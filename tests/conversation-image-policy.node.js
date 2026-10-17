@@ -32,17 +32,17 @@ test('direct and group reply references cannot reintroduce an excluded title', a
         assert.equal(JSON.stringify(result).includes('PRIVATE_IMAGE_PROMPT'), false);
         assert.match(JSON.stringify(result), /explicit reply to Nova/);
     }
-    await assert.rejects(compose([reply]), /original message is unavailable/);
+    await assert.rejects(compose([reply]), /cannot be checked against its original message/);
 });
 
 test('mixed old attachment text requires a source-bound reviewed choice', async () => {
     const message = structuredClone(image);
     message.extra.conversation_attachment_context = 'PRIVATE_IMAGE_PROMPT and document text';
-    await assert.rejects(compose([message]), /Review this message/);
+    await assert.rejects(compose([message]), /older message saved image descriptions and file text together/);
     message.extra.neconyan_image_context = { version: 1, mode: 'omit', source_hash: hash([message.extra.conversation_attachment_context, null]) };
     assert.equal(JSON.stringify(await compose([message])).includes('PRIVATE_IMAGE_PROMPT'), false);
     message.extra.conversation_attachment_context += ' changed';
-    await assert.rejects(compose([message]), /Review this message/);
+    await assert.rejects(compose([message]), /older message saved image descriptions and file text together/);
 });
 
 test('new context provenance preserves extracted file text while removing image summaries', async () => {
@@ -89,9 +89,23 @@ test('edited sources or quotes need review instead of rewriting preserved quoted
     const reply = { id: 'quote', role: 'user', name: 'User', mes: 'Continue', extra: { conversation_reply_to: reference } };
     assert.match(JSON.stringify(await compose([source, reply])), /Original authored prose/);
     source.mes = 'Edited after the reply.';
-    await assert.rejects(compose([source, reply]), /quote provenance/);
+    await assert.rejects(compose([source, reply]), /cannot be checked against its original message/);
     assert.equal(reference.text, 'Original authored prose.');
     source.mes = 'Original authored prose.';
     reference.text = 'An independently edited quotation.';
-    await assert.rejects(compose([source, reply]), /quote provenance/);
+    await assert.rejects(compose([source, reply]), /cannot be checked against its original message/);
+});
+
+test('each Conversation refusal says what is wrong and where to choose again, with the same error shape', async () => {
+    const message = structuredClone(image);
+    message.extra.conversation_attachment_context = 'PRIVATE_IMAGE_PROMPT and document text';
+    const contextHash = hash([message.extra.conversation_attachment_context, null]);
+    const mixed = 'An older message saved image descriptions and file text together. Before Show only can apply, choose what the model receives for it in Review chat images.';
+    const damaged = 'A message\'s reviewed attachment text is damaged. Choose again in Review chat images.';
+    const quoted = 'A reply contains a quote that cannot be checked against its original message. Your image settings require you to review the quote before continuing. Choose what the model receives in Review chat images.';
+    await assert.rejects(compose([message]), { message: mixed, code: 'ROLEPLAY_IMAGE_INPUT', imageIssue: { reason: 'mixed-attachment-context', index: 0, mediaIndex: -1, actions: ['review', 'display-only', 'caption'] } });
+    message.extra.neconyan_image_context = { version: 1, mode: 'replace', text: 7, source_hash: contextHash };
+    await assert.rejects(compose([message]), { message: damaged, code: 'ROLEPLAY_IMAGE_INPUT', imageIssue: { reason: 'mixed-attachment-context', index: 0, mediaIndex: -1, actions: ['review', 'display-only', 'caption'] } });
+    const reply = { id: 'reply', role: 'user', name: 'User', mes: 'Continue', extra: { conversation_reply_to: { messageId: 'picture', name: 'Nova', text: 'PRIVATE_IMAGE_PROMPT', attachmentSummary: 'PRIVATE_IMAGE_PROMPT' } } };
+    await assert.rejects(compose([reply]), { message: quoted, code: 'ROLEPLAY_IMAGE_INPUT', imageIssue: { reason: 'mixed-reply-context', index: 0, mediaIndex: -1, actions: ['review', 'display-only', 'caption'] } });
 });

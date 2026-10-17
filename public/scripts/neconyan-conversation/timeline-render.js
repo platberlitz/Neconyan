@@ -11,6 +11,7 @@ import { user_avatar } from '../personas.js';
 import { updateMessageTokenCounts } from '../message-token-counts.js';
 import { revealUi } from '../ui-motion.js';
 import { getCurrentUserHandle } from '../user.js';
+import { conversationImageOrigin } from '../prompt-media-policy.js';
 import { timestampToMoment } from '../utils.js';
 import { world_names } from '../world-info.js';
 import {
@@ -1480,6 +1481,10 @@ export async function regenerateConversationMessage(messageId) {
         return;
     }
 
+    // The thread and branch this regeneration is for, read now. An image refusal that arrives after the person has moved on still belongs to it.
+    const originBranch = getConversationThreadStore(context.avatar, { create: false, groupId: context.groupId, personaId: context.personaId })?.branches?.[context.branchId];
+    const origin = conversationImageOrigin({ avatar: context.avatar, groupId: context.groupId, personaId: context.personaId, branchId: context.branchId,
+        lifetimeSeed: originBranch?.lifetimeSeed, createdAt: originBranch?.createdAt }, getCurrentUserHandle());
     const sourceMessages = context.messages.slice(0, index + 1);
     const assistantContext = { character: getCharacterForAvatar(speakerAvatar), messages: sourceMessages.slice(0, -1).map(message => ({ role: message.role, mes: message.mes })) };
     regenerationBusyKeys.add(operationKey);
@@ -1520,7 +1525,7 @@ export async function regenerateConversationMessage(messageId) {
         }
         globalThis.toastr?.success?.('Message regenerated.');
     } catch (error) {
-        reportConversationGenerationError('regenerate', error, { level: 'warning' });
+        reportConversationGenerationError('regenerate', error, { level: 'warning', origin });
     } finally {
         regenerationBusyKeys.delete(operationKey);
         endConversationGenerationOperation(operation);

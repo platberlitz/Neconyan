@@ -1,5 +1,9 @@
 /* global globalThis */
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
+import { assembleLocaleData } from '../public/scripts/locale-assembly.js';
+import { promptMediaError } from '../public/scripts/prompt-media-policy.js';
+import { localizeString } from '../public/scripts/ui-localization.js';
 
 const appendConversationMessage = jest.fn();
 const addConversationReminder = jest.fn();
@@ -69,16 +73,18 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/typing.j
 
 // Behaves like the real t over a test dictionary (exact keys only), and like localizeMessage for a whole message.
 const dictionary = new Map();
+let localizer = text => dictionary.get(text) ?? text;
 await jest.unstable_mockModule('../public/scripts/i18n.js', () => ({
     t: (strings, ...values) => {
         const key = strings.reduce((text, part, index) => text + part + (index < values.length ? `\${${index}}` : ''), '');
         return (dictionary.get(key) ?? key).replace(/\$\{(\d+)\}/g, (_, index) => values[index]);
     },
-    localizeMessage: text => dictionary.get(text) ?? text,
+    localizeMessage: text => localizer(text),
 }));
 
 const {
     editConversationMessage,
+    getConversationErrorDetail,
     reportConversationGenerationError,
     requestConversationSelfie,
 } = await import('../public/scripts/neconyan-conversation/generation.js');
@@ -224,6 +230,109 @@ describe('Conversation core generated reply regressions', () => {
             reportConversationGenerationError('summary', new Error('The summary service is busy.'));
 
             expect(toastr.error).toHaveBeenCalledWith('Conversation summary failed: The summary service is busy.', '', { escapeHtml: true });
+        });
+    });
+
+    describe('an image refusal gets the one actionable notice; an error whose text is already localized is shown as given', () => {
+        const marks = [];
+        const toast = { find: selector => ({ attr: (name, value) => marks.push([selector, name, value]) }) };
+        const toastr = { warning: jest.fn(() => toast), error: jest.fn(() => toast) };
+        const realFiles = name => JSON.parse(readFileSync(new URL(`../public/locales/${name}.json`, import.meta.url), 'utf8'));
+        const portuguese = assembleLocaleData({ base: realFiles('pt-pt'), supplement: realFiles('neconyan/pt-pt'), catalogue: realFiles('neconyan/en') }).dictionary;
+        // The old wording of GEN-C01 starts with a pattern verb, so it is the case the dictionary would capture.
+        const captured = 'Reload the page, then try again.';
+        let dispatched;
+        let warn;
+        let error;
+
+        beforeEach(() => {
+            toastr.warning.mockClear();
+            toastr.error.mockClear();
+            marks.length = 0;
+            globalThis.toastr = toastr;
+            dispatched = jest.fn();
+            globalThis.dispatchEvent = dispatched;
+            warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+            error = jest.spyOn(console, 'error').mockImplementation(() => {});
+            localizer = text => localizeString(text, portuguese);
+        });
+
+        afterEach(() => {
+            localizer = text => dictionary.get(text) ?? text;
+            warn.mockRestore();
+            error.mockRestore();
+            delete globalThis.toastr;
+            delete globalThis.dispatchEvent;
+        });
+
+        const events = () => dispatched.mock.calls.map(([event]) => event).filter(event => event.type === 'neconyan:image-input-refused');
+
+        test('the real Portuguese dictionary does hold the pattern that captures a leading verb', () => {
+            expect(portuguese['Reload ${0}']).toBeTruthy();
+            expect(localizeString(captured, portuguese)).not.toBe(captured);
+        });
+
+        test('an error with the image-issue code or fields raises one event with its message and shows no toast', () => {
+            const policy = promptMediaError('invalid-policy', -1, -1, 'This branch\'s saved setting for sending images is damaged. Turn \'Don\'t send this branch\'s images to the model\' off and on again in Review chat images.');
+            reportConversationGenerationError('regenerate', policy, { level: 'warning' });
+            expect(toastr.warning).not.toHaveBeenCalled();
+            expect(toastr.error).not.toHaveBeenCalled();
+            expect(events()).toHaveLength(1);
+            expect(events()[0].detail).toEqual({ ...policy.imageIssue, message: policy.message });
+            // The failure is still logged for the console.
+            expect(warn).toHaveBeenCalledWith(`Conversation regenerate failed: ${policy.message.slice(0, 180)}`, policy);
+            // A job error carries a code and a message and no imageIssue.
+            reportConversationGenerationError('selfie', { message: 'An image description changed while the reply was starting. Try again.', code: 'ROLEPLAY_IMAGE_INPUT' });
+            expect(events()).toHaveLength(2);
+            expect(events()[1].detail).toEqual({ message: 'An image description changed while the reply was starting. Try again.' });
+            expect(toastr.error).not.toHaveBeenCalled();
+        });
+
+        test('with toast: false an image refusal raises nothing, as before', () => {
+            reportConversationGenerationError('roleplay aside event', promptMediaError('invalid-policy', -1, -1, 'Words.'), { toast: false });
+            expect(events()).toHaveLength(0);
+            expect(toastr.error).not.toHaveBeenCalled();
+        });
+
+        test('any other failure keeps its generic toast and raises no image event', () => {
+            // This test is about the toast being kept; the lookup has its own tests.
+            localizer = text => text;
+            reportConversationGenerationError('regenerate', new Error('The provider is busy.'), { level: 'warning' });
+            expect(toastr.warning).toHaveBeenLastCalledWith('Conversation regenerate failed: The provider is busy.', '', { escapeHtml: true });
+            reportConversationGenerationError('selfie', Object.assign(new Error('Settings are out of date.'), { status: 409, body: { code: 'roleplay_settings_ack_required' } }), { level: 'warning' });
+            expect(toastr.warning).toHaveBeenLastCalledWith('Conversation selfie failed: Settings are out of date.', '', { escapeHtml: true });
+            reportConversationGenerationError('summary', new Error('The summary service is busy.'));
+            expect(toastr.error).toHaveBeenLastCalledWith('Conversation summary failed: The summary service is busy.', '', { escapeHtml: true });
+            reportConversationGenerationError('regenerate', { code: 5, imageIssue: null }, { level: 'warning' });
+            expect(toastr.warning).toHaveBeenCalledTimes(3);
+            expect(events()).toHaveLength(0);
+            // An ordinary toast is not marked.
+            expect(marks).toEqual([]);
+        });
+
+        test('a localized error is shown exactly as given, whole, and its toast is marked; an ordinary error still goes through the lookup', () => {
+            // The same words as an ordinary error are captured by 'Reload ${0}'.
+            reportConversationGenerationError('regenerate', new Error(captured), { level: 'warning' });
+            const ordinary = toastr.warning.mock.calls.at(-1)[0];
+            expect(ordinary).toBe(`Conversation regenerate failed: ${localizeString(captured, portuguese)}`);
+            expect(ordinary).not.toContain(captured);
+            expect(marks).toEqual([]);
+            // Marked as already localized, they are untouched, and the toast is marked in the same task.
+            reportConversationGenerationError('regenerate', Object.assign(new Error(captured), { localized: true }), { level: 'warning' });
+            expect(toastr.warning).toHaveBeenLastCalledWith(`Conversation regenerate failed: ${captured}`, '', { escapeHtml: true });
+            expect(marks).toEqual([['.toast-message', 'data-i18n-ignore', '']]);
+            // Every context, both levels, and a text longer than the limit.
+            marks.length = 0;
+            const long = `${captured} ${'Detalhe longo. '.repeat(20)}`.trim();
+            reportConversationGenerationError('selfie', Object.assign(new Error(long), { localized: true }), { level: 'warning' });
+            expect(toastr.warning).toHaveBeenLastCalledWith(`Conversation selfie failed: ${long}`, '', { escapeHtml: true });
+            reportConversationGenerationError('summary', Object.assign(new Error('Reload it, then try again.'), { localized: true }));
+            expect(toastr.error).toHaveBeenLastCalledWith('Conversation summary failed: Reload it, then try again.', '', { escapeHtml: true });
+            expect(marks).toHaveLength(2);
+            expect(long.length).toBeGreaterThan(180);
+            // The text the detail function returns is the message with its whitespace collapsed, and nothing else.
+            expect(getConversationErrorDetail(Object.assign(new Error(`  ${captured}\n `), { localized: true }), { localize: true })).toBe(captured);
+            expect(getConversationErrorDetail(new Error(captured), { localize: true })).toBe(localizeString(captured, portuguese));
         });
     });
 

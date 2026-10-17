@@ -1,6 +1,7 @@
 import { roleplayError, roleplayHash } from '../roleplay-store.js';
 import { isDeepStrictEqual } from 'node:util';
 import { promptMediaText, selectPromptMedia, projectPromptMediaRecords } from '../../public/scripts/prompt-media-policy.js';
+import { uiText } from '../../public/scripts/ui-text.js';
 import Handlebars from 'handlebars';
 import { AGENT_REGEX_PLACEMENT, applyRegexScriptList } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { selectToolHistoryReasoning } from '../../public/scripts/chat-input-capabilities.js';
@@ -515,7 +516,7 @@ export function buildRoleplaySavedHistory(records, options) {
     if (options?.mediaPolicy) {
         const projection = selectPromptMedia(records, options.mediaPolicy, { hash: roleplayHash });
         if (options.captionTexts && !isDeepStrictEqual(options.captionTexts, projection.captionTexts.filter(item => !item.composed))) {
-            throw roleplayError('ROLEPLAY_IMAGE_INPUT', 'The saved image description evidence changed.');
+            throw roleplayError('ROLEPLAY_IMAGE_INPUT', uiText('An image description changed while the reply was starting. Try again.'));
         }
         records = projection.records.map((record, index) => index && options.preparedContent === undefined
             ? { ...record, mes: promptMediaText(record, index - 1, projection) } : record);
