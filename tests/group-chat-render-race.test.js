@@ -25,7 +25,7 @@ for (const lifecycle of [false, true]) for (const peek of [false, true]) {
         let held = false;
         const gate = new Promise(resolve => { release = resolve; });
         const paused = new Promise(resolve => { reached = resolve; });
-        const documentRef = { createDocumentFragment: () => ({ children: [], appendChild(node) { this.children.push(node); } }) };
+        const documentRef = { createDocumentFragment: () => ({ children: [], appendChild(node) { this.children.push(node); } }), dispatchEvent() {} };
         const chain = { removeClass() { return this; }, filter() { return this; }, nextAll() { return this; },
             addBack() { return this; }, remove() { rows = []; return this; } };
         const no = () => {};

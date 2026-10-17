@@ -700,6 +700,9 @@ let streamingVisibleWriteBuffer = null;
 let chatMessageResizeObserver = null;
 let mobileChatViewportObserver = null;
 const chatMessageResizeStates = new Map();
+// A saved-message change that preserved the reader's place must not let the
+// resize observer pin the chat to the bottom afterwards.
+const readerPreservingResizeBlocks = new WeakSet();
 
 let dialogueResolve = null;
 let dialogueCloseStop = false;
@@ -1029,6 +1032,8 @@ export let online_status = 'no_connection';
 
 export let is_send_press = false; //Send generation
 let activeRoleplayJob = null;
+// Monotonic start marker: a readback hold distinguishes its running job from a new Send.
+let chatSendStartRevision = 0;
 export const isGenerating = () => (is_send_press || is_group_generating);
 
 let this_del_mes = -1;
@@ -2672,20 +2677,38 @@ function captureVisibleChatMessageAnchor() {
 }
 
 function restoreVisibleChatMessageAnchor(anchor) {
-    restoreVisibleMessageAnchor(chatElement[0], anchor);
+    return restoreVisibleMessageAnchor(chatElement[0], anchor);
 }
 
 let chatReloadReadingAnchor = null;
+let chatReloadReadingAnchorHoldToken = 0;
+let chatReloadReadingAnchorHoldActive = false;
+let chatReloadReadingAnchorHoldRestore = null;
+let chatReloadReadingAnchorHoldIsCurrent = null;
+let chatReloadReadingAnchorHoldSendStarted = null;
+let chatReloadReadingAnchorHoldCleanup = null;
+
+function normalizeChatReloadReadingAnchor(anchor) {
+    if (!anchor || !Number.isFinite(anchor.offsetTop)) return null;
+    const fallback = anchor.fallback && Number.isFinite(anchor.fallback.offsetTop)
+        ? { messageId: String(anchor.fallback.messageId), offsetTop: anchor.fallback.offsetTop }
+        : null;
+    return {
+        messageId: String(anchor.messageId),
+        offsetTop: anchor.offsetTop,
+        ...(typeof anchor.part === 'string' && anchor.part ? { part: anchor.part } : {}),
+        fallback,
+        chatId: getCurrentChatId(),
+    };
+}
 
 /**
  * Keep the reader's place through the next rebuild of this chat, instead of landing at the newest message.
  * A finished reply is saved and the chat rebuilt, and that rebuild must not move the page.
- * @param {{messageId: string|number, offsetTop: number}|null} anchor Message and its offset from the top of the chat.
+ * @param {{messageId: string|number, offsetTop: number, part?: string, fallback?: {messageId: string|number, offsetTop: number}|null}|null} anchor Message, its offset from the top of the chat, the part to measure, and a fallback row.
  */
 export function keepChatReadingPositionOnNextLoad(anchor) {
-    chatReloadReadingAnchor = anchor && Number.isFinite(anchor.offsetTop)
-        ? { messageId: String(anchor.messageId), offsetTop: anchor.offsetTop, chatId: getCurrentChatId() }
-        : null;
+    chatReloadReadingAnchor = normalizeChatReloadReadingAnchor(anchor);
 }
 
 function takeChatReloadReadingAnchor() {
@@ -2694,24 +2717,70 @@ function takeChatReloadReadingAnchor() {
     return anchor && anchor.chatId === getCurrentChatId() ? anchor : null;
 }
 
+function stopChatReloadReadingAnchorHold() {
+    chatReloadReadingAnchorHoldToken += 1;
+    chatReloadReadingAnchorHoldActive = false;
+    chatReloadReadingAnchorHoldRestore = null;
+    chatReloadReadingAnchorHoldIsCurrent = null;
+    chatReloadReadingAnchorHoldSendStarted = null;
+    const cleanup = chatReloadReadingAnchorHoldCleanup;
+    chatReloadReadingAnchorHoldCleanup = null;
+    cleanup?.();
+}
+
+/**
+ * Distinguishes the generation already running when the hold started from a
+ * new Send. A readback keeps `is_send_press` true, so only an idle-to-send
+ * transition (or a new start revision) releases the reader's place.
+ */
+function createChatSendReleaseGuard(sendRevision, sendActive = is_send_press) {
+    let sawIdle = !sendActive;
+    return () => {
+        if (!is_send_press) sawIdle = true;
+        return chatSendStartRevision !== sendRevision || (is_send_press && sawIdle);
+    };
+}
+
 function holdChatReloadReadingAnchor(anchor, isCurrent) {
     const chatNode = chatElement[0];
-    if (!isCurrent() || !chatNode?.querySelector(`.mes[mesid="${anchor.messageId}"]`)) return false;
+    if (!isCurrent() || !chatNode) return false;
+    // A newer hold owns the viewport from here on; an older release must not
+    // remove the newer listeners or stop its frames.
+    stopChatReloadReadingAnchorHold();
+    if (!restoreVisibleChatMessageAnchor(anchor)) return false;
     clearChatLoadBottomLock();
     mobileChatBottomPinUntil = 0;
-    restoreVisibleChatMessageAnchor(anchor);
     // Companion cards and media settle after the rebuild; hold the place until the reader moves or sends.
     const inputs = ['wheel', 'touchstart', 'pointerdown', 'keydown'];
+    const token = chatReloadReadingAnchorHoldToken;
+    const sendStarted = createChatSendReleaseGuard(chatSendStartRevision);
     let released = false;
     const release = () => {
         if (released) return;
         released = true;
         for (const type of inputs) chatNode.removeEventListener(type, release);
+        if (token !== chatReloadReadingAnchorHoldToken) return;
+        chatReloadReadingAnchorHoldActive = false;
+        chatReloadReadingAnchorHoldRestore = null;
+        chatReloadReadingAnchorHoldIsCurrent = null;
+        chatReloadReadingAnchorHoldSendStarted = null;
+        if (chatReloadReadingAnchorHoldCleanup === release) chatReloadReadingAnchorHoldCleanup = null;
     };
+    const restore = () => {
+        if (released || !chatReloadReadingAnchorHoldActive || token !== chatReloadReadingAnchorHoldToken) return false;
+        if (chatReloadReadingAnchorHoldIsCurrent && !chatReloadReadingAnchorHoldIsCurrent()) return false;
+        if (sendStarted()) return false;
+        return restoreVisibleChatMessageAnchor(anchor);
+    };
+    chatReloadReadingAnchorHoldActive = true;
+    chatReloadReadingAnchorHoldRestore = restore;
+    chatReloadReadingAnchorHoldIsCurrent = isCurrent;
+    chatReloadReadingAnchorHoldSendStarted = sendStarted;
+    chatReloadReadingAnchorHoldCleanup = release;
     const hold = () => {
-        if (released) return;
-        if (!isCurrent() || is_send_press || isChatLoadBottomLockActive()) { release(); return; }
-        restoreVisibleChatMessageAnchor(anchor);
+        if (released || token !== chatReloadReadingAnchorHoldToken) return;
+        if (!isCurrent() || sendStarted() || isChatLoadBottomLockActive()) { release(); return; }
+        restore();
     };
     for (const type of inputs) chatNode.addEventListener(type, release, { passive: true });
     let frames = 8;
@@ -2722,6 +2791,23 @@ function holdChatReloadReadingAnchor(anchor, isCurrent) {
     return true;
 }
 
+/** Reapply the active reload place before a resize can lay out around it. */
+function restoreHeldChatReadingPosition() {
+    if (!chatReloadReadingAnchorHoldActive) return false;
+    // A callback from an older chat must not move a row with the same id in the new one.
+    if (typeof chatReloadReadingAnchorHoldIsCurrent === 'function' && !chatReloadReadingAnchorHoldIsCurrent()) {
+        stopChatReloadReadingAnchorHold();
+        return false;
+    }
+    // A Send started after this hold owns the bottom, including one that began
+    // and finished between hold ticks.
+    if (chatReloadReadingAnchorHoldSendStarted?.()) {
+        stopChatReloadReadingAnchorHold();
+        return false;
+    }
+    return chatReloadReadingAnchorHoldRestore?.() === true;
+}
+
 async function settleVisibleChatMessageAnchor(anchor, frames = 8, isCurrent = () => true) {
     const scrollVersion = chatScrollVersion;
     await settleVisibleMessageAnchor(chatElement[0], anchor, {
@@ -2729,6 +2815,68 @@ async function settleVisibleChatMessageAnchor(anchor, frames = 8, isCurrent = ()
         requestAnimationFrameRef: requestAnimationFrame,
         isCurrent: () => isCurrent() && scrollVersion === chatScrollVersion && !isChatLoadBottomLockActive(),
     });
+}
+
+function getMessageElementList(elements) {
+    if (!elements) return [];
+    if (elements.jquery && typeof elements.toArray === 'function') return elements.toArray();
+    if (typeof elements === 'object' && typeof elements[Symbol.iterator] === 'function') return [...elements];
+    return [elements];
+}
+
+function markReaderPreservingResizeBlock(messageBlock) {
+    readerPreservingResizeBlocks.add(messageBlock);
+    const metadata = chatMessageResizeStates.get(messageBlock);
+    if (metadata) metadata.growthBelowReader = true;
+}
+
+/**
+ * Run a synchronous whole-chat change and keep the reader's place once. All
+ * connected block heights are read before the writes and compared after one
+ * restore, so opening a chat with many notes does not force a layout per note.
+ * Detached rows are left alone: they cannot move the live viewport.
+ * @template T
+ * @param {Element|JQuery<HTMLElement>|Iterable<Element>} elements Message rows whose blocks change.
+ * @param {() => T} mutate Change to apply.
+ * @returns {T} The change's result.
+ */
+export function changeMessagesBelowReader(elements, mutate) {
+    if (typeof mutate !== 'function') return undefined;
+    const blocks = [...new Set(getMessageElementList(elements)
+        .map(getMessageBlockElement)
+        .filter(messageBlock => messageBlock?.isConnected))];
+    if (!blocks.length) return mutate();
+    const anchor = captureVisibleChatMessageAnchor();
+    const heights = blocks.map(messageBlock => getObservedElementHeight(messageBlock));
+    try {
+        return mutate();
+    } finally {
+        restoreVisibleChatMessageAnchor(anchor);
+        let grew = false;
+        blocks.forEach((messageBlock, index) => {
+            if (getObservedElementHeight(messageBlock) > heights[index] + 0.5) {
+                markReaderPreservingResizeBlock(messageBlock);
+                grew = true;
+            }
+        });
+        // Every observed block shared the old near-bottom baseline. A later late
+        // media growth on an older row must judge against the restored viewport,
+        // not pin to the bottom from stale per-block state.
+        if (grew) refreshObservedChatMessageResizeViewportStates();
+    }
+}
+
+/**
+ * Run a synchronous change that adds content below the reader and keep the
+ * visible message where it is. The matching resize callback must refresh its
+ * state rather than treating the change as late media and pinning the bottom.
+ * @template T
+ * @param {Element|JQuery<HTMLElement>} messageElement Message whose block changes.
+ * @param {() => T} mutate Change to apply.
+ * @returns {T} The change's result.
+ */
+export function changeMessageBelowReader(messageElement, mutate) {
+    return changeMessagesBelowReader(messageElement, mutate);
 }
 
 function getMessageUpdateQueue() {
@@ -2847,6 +2995,15 @@ function refreshObservedChatMessageResizeViewportStates() {
     }
 }
 
+/**
+ * Refresh the shared resize baseline after an extension changed its own
+ * preview DOM. Only the viewport anchor and near-bottom flag are replaced;
+ * pending growth markers stay on their blocks.
+ */
+export function refreshChatViewportBaseline() {
+    refreshObservedChatMessageResizeViewportStates();
+}
+
 function isActiveStreamingMessageResizeBlock(element) {
     if (!streamingProcessor || streamingProcessor.isFinished) {
         return false;
@@ -2861,6 +3018,25 @@ function isActiveStreamingMessageResizeBlock(element) {
 
 async function applyChatMessageResizeAction(element, entry, metadata) {
     if (!isChatRenderLifecycleRolloutEnabled(CHAT_RENDER_LIFECYCLE_ROUTE.MEDIA_RESIZE)) {
+        return;
+    }
+
+    // A saved-message mutation already restored the reader's place. Consume the
+    // marker before any height check so a zero-height batch cannot leave it behind.
+    // While a reload hold is active, reapply its place now: a late card above the
+    // held text must not wait for the next timed hold tick to be corrected.
+    const readerPreserved = metadata?.growthBelowReader === true || readerPreservingResizeBlocks.has(element);
+    if (metadata?.growthBelowReader) metadata.growthBelowReader = false;
+    if (readerPreservingResizeBlocks.has(element)) readerPreservingResizeBlocks.delete(element);
+    if (chatReloadReadingAnchorHoldActive) {
+        restoreHeldChatReadingPosition();
+        if (chatReloadReadingAnchorHoldActive) {
+            refreshChatMessageResizeState(element, metadata, entry);
+            return;
+        }
+    }
+    if (readerPreserved) {
+        refreshChatMessageResizeState(element, metadata, entry);
         return;
     }
 
@@ -3002,6 +3178,9 @@ function observeChatMessageResize(messageElement) {
         unobserveChatMessageResizeBlock(messageBlock);
 
         const metadata = captureChatMessageResizeState(messageBlock);
+        if (readerPreservingResizeBlocks.has(messageBlock)) {
+            metadata.growthBelowReader = true;
+        }
         if (observer.observe(messageBlock, metadata)) {
             chatMessageResizeStates.set(messageBlock, metadata);
         }
@@ -3758,6 +3937,9 @@ export async function redisplayChat({ targetChat = chat, startIndex = 0, fade = 
         if (atomic) {
             // Keep the current reply visible across the mobile renderer's frame yields.
             const insertedElements = [...pending.children];
+            // Extension decorators must run before the rows replace the visible
+            // chat, so a saved reply and its notes arrive at the same height.
+            document.dispatchEvent(new CustomEvent('neconyan:chat-rows-prepared', { detail: { elements: insertedElements } }));
             removePreviousMessages();
             removeChatHistoryWindowControls();
             chatElement[0].appendChild(pending);
@@ -11978,6 +12160,8 @@ export function activateSendButtons({ emitGenerationEnded = true } = {}) {
  * A function mainly used to switch 'generating' state - setting it to true and deactivating the buttons
  */
 export function deactivateSendButtons({ markBodyGenerating = true } = {}) {
+    // A new generation starts only from idle; repeated locks keep the same start.
+    if (!is_send_press && markBodyGenerating) chatSendStartRevision += 1;
     const lockState = resolveGenerationUiLockState({ isGenerating: true, markBodyGenerating });
     if (lockState.shouldShowStopButton) {
         showStopButton();
@@ -11997,6 +12181,8 @@ export function setRoleplayJobControls(jobId, stop = null) {
     const previous = activeRoleplayJob;
     activeRoleplayJob = jobId ? { id: jobId, stop } : null;
     if (activeRoleplayJob) {
+        // A different server job is a new Send even while the old lock is still true.
+        if (!previous || previous.id !== activeRoleplayJob.id) chatSendStartRevision += 1;
         is_send_press = true;
         deactivateSendButtons();
     } else if (previous) {

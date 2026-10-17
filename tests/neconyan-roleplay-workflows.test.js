@@ -262,6 +262,139 @@ test('a finished reply hands the reader\'s place to the reload and clears it aft
     expect(reloads).toEqual([2]);
 });
 
+test('a finished reply anchors its own text and keeps the message above as a fallback', () => {
+    const previewText = { getBoundingClientRect: () => ({ top: 360, bottom: 520 }) };
+    const preview = {
+        getBoundingClientRect: () => ({ top: 320, bottom: 640 }),
+        querySelector: selector => selector === '.mes_text' ? previewText : null,
+        previousElementSibling: null,
+    };
+    const above = {
+        matches: selector => selector === '.mes[mesid]',
+        getAttribute: () => '0',
+        getBoundingClientRect: () => ({ top: 180, bottom: 300 }),
+        previousElementSibling: null,
+    };
+    const marker = {
+        matches: () => false,
+        dataset: { roleplayReplacement: '1' },
+        previousElementSibling: above,
+    };
+    preview.previousElementSibling = marker;
+    const chatNode = {
+        getBoundingClientRect: () => ({ top: 100 }),
+        querySelector: selector => selector === '#neconyan-roleplay-preview' ? preview
+            : selector === '[data-roleplay-replacement]' ? marker : null,
+    };
+    const original = globalThis.document.querySelector;
+    globalThis.document.querySelector = selector => selector === '#chat' ? chatNode : null;
+    try {
+        expect(workflows.finishedReplyReadingAnchor()).toEqual({
+            messageId: 1,
+            offsetTop: 260,
+            part: '.mes_text',
+            fallback: { messageId: '0', offsetTop: 80 },
+        });
+    } finally {
+        globalThis.document.querySelector = original;
+    }
+});
+
+function installFinishedReplyDom({ previewChild = 'last-speaker-child', withFallback = true } = {}) {
+    const previewText = { getBoundingClientRect: () => ({ top: 360, bottom: 520 }) };
+    const above = withFallback ? {
+        matches: selector => selector === '.mes[mesid]',
+        getAttribute: () => '0',
+        getBoundingClientRect: () => ({ top: 180, bottom: 300 }),
+        previousElementSibling: null,
+    } : null;
+    const preview = {
+        dataset: previewChild ? { roleplayChild: previewChild } : {},
+        getBoundingClientRect: () => ({ top: 320, bottom: 640 }),
+        querySelector: selector => selector === '.mes_text' ? previewText : null,
+        previousElementSibling: above,
+    };
+    const chatNode = {
+        getBoundingClientRect: () => ({ top: 100 }),
+        querySelector: selector => selector === '#neconyan-roleplay-preview' ? preview : null,
+    };
+    const original = globalThis.document.querySelector;
+    globalThis.document.querySelector = selector => selector === '#chat' ? chatNode : null;
+    return {
+        preview,
+        restore() { globalThis.document.querySelector = original; },
+    };
+}
+
+const twoSpeakerReceipt = { result: { childJobId: 'last-speaker-child', speakers: [{}, {}] } };
+const precedingFallback = { messageId: '0', offsetTop: 80, part: null, fallback: null };
+
+test('a finished group reply anchors its final saved speaker when the preview child matches', () => {
+    const dom = installFinishedReplyDom();
+    try {
+        expect(workflows.finishedReplyReadingAnchor(twoSpeakerReceipt)).toEqual({
+            messageId: 3,
+            offsetTop: 260,
+            part: '.mes_text',
+            fallback: { messageId: '0', offsetTop: 80 },
+        });
+    } finally {
+        dom.restore();
+    }
+});
+
+test('a group preview and saved child mismatch falls back to the preceding row', () => {
+    const dom = installFinishedReplyDom();
+    try {
+        dom.preview.dataset.roleplayChild = 'unsaved-partial-child';
+        expect(workflows.finishedReplyReadingAnchor(twoSpeakerReceipt)).toEqual(precedingFallback);
+    } finally {
+        dom.restore();
+    }
+});
+
+test('a group handover with a missing child identity falls back to the preceding row', () => {
+    const dom = installFinishedReplyDom();
+    try {
+        delete dom.preview.dataset.roleplayChild;
+        expect(workflows.finishedReplyReadingAnchor(twoSpeakerReceipt)).toEqual(precedingFallback);
+
+        dom.preview.dataset.roleplayChild = 'last-speaker-child';
+        expect(workflows.finishedReplyReadingAnchor({ result: { speakers: [{}, {}] } })).toEqual(precedingFallback);
+    } finally {
+        dom.restore();
+    }
+});
+
+test('a mismatched group handover with no preceding row has no anchor', () => {
+    const dom = installFinishedReplyDom({ previewChild: 'unsaved-partial-child', withFallback: false });
+    try {
+        expect(workflows.finishedReplyReadingAnchor(twoSpeakerReceipt)).toBeNull();
+    } finally {
+        dom.restore();
+    }
+});
+
+test('a solo reply keeps the reply anchor without group speakers', () => {
+    const dom = installFinishedReplyDom({ previewChild: '' });
+    try {
+        expect(workflows.finishedReplyReadingAnchor({ result: { childJobId: 'single-child' } })).toEqual({
+            messageId: 2,
+            offsetTop: 260,
+            part: '.mes_text',
+            fallback: { messageId: '0', offsetTop: 80 },
+        });
+        expect(workflows.finishedReplyReadingAnchor()).toEqual({
+            messageId: 2,
+            offsetTop: 260,
+            part: '.mes_text',
+            fallback: { messageId: '0', offsetTop: 80 },
+        });
+    } finally {
+        dom.restore();
+    }
+});
+
 test('a reply anchors the whole chat, so the user message just written is the one the server answers', async () => {
     chat.push({ name: 'User', is_user: true, mes: 'Where are you?' });
     const pending = workflows.runNativeRoleplayGeneration('normal');

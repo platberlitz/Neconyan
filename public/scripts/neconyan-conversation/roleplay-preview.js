@@ -1,4 +1,4 @@
-import { chat as messages, formatGenerationTimer, getRequestHeaders, getThumbnailUrl, scrollChatToBottom, updateMessageElement } from '../../script.js';
+import { chat as messages, formatGenerationTimer, getRequestHeaders, getThumbnailUrl, refreshChatViewportBaseline, scrollChatToBottom, updateMessageElement } from '../../script.js';
 import { beginRoleplayReplacement } from './roleplay-replacement.js';
 import { withAbortSignal } from '../abort.js';
 import { power_user } from '../power-user.js';
@@ -63,8 +63,14 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             return;
         }
         // Follow the reply while it is written; Agent and Companion output added after
-        // that lands below the reader instead of pulling the page down to it.
-        const nearBottom = FOLLOWED_STAGES.has(latest.stage || 'preparing')
+        // that lands below the reader instead of pulling the page down to it. Once
+        // Companion notes exist, even the Agents stage stops following, because its
+        // concurrent notes can grow the same reply while it is still streaming.
+        const companionResults = latest.inChatAgentCompanionResults;
+        const hasCompanionResults = Boolean(companionResults) && typeof companionResults === 'object'
+            && Object.keys(companionResults).length > 0;
+        const nearBottom = !hasCompanionResults
+            && FOLLOWED_STAGES.has(latest.stage || 'preparing')
             && chat.scrollHeight - chat.scrollTop - chat.clientHeight < 120;
         if (childId !== latest.childId) {
             remove();
@@ -98,6 +104,9 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             else chat.append(node);
         }
         node.querySelector('[role="status"]').textContent = labels[latest.stage] || labels.preparing;
+        // The saved receipt names the final child job. Keep the preview's own
+        // child identity for the handover to match a completed group speaker.
+        node.dataset.roleplayChild = String(latest.childId ?? '');
         // Display-only decorators run before the browser paints. Saved-message
         // events would incorrectly treat this draft as part of the chat history.
         document.dispatchEvent(new CustomEvent('neconyan:roleplay-preview-rendered', { detail: { message, element: node } }));
@@ -105,6 +114,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         // A live bottom landing must supersede resize anchors for older positions,
         // and honour the same automatic/manual scrolling policy as saved replies.
         if (nearBottom) scrollChatToBottom({ isNearBottom: nearBottom });
+        else refreshChatViewportBaseline();
     };
     // Draw at the reader's streaming cadence (with the phone's conservative floors)
     // aligned to the next animation frame, instead of rebuilding the growing

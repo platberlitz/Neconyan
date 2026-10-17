@@ -603,12 +603,75 @@ describe('chat render lifecycle script wiring', () => {
         expect(source).toContain('refreshChatMessageResizeState(element, metadata, entry);');
     });
 
+    test('saved-message growth preserves the reader and the reload hold owns the viewport', () => {
+        const batchSource = getSource(findExportedFunction('changeMessagesBelowReader'));
+        expect(batchSource).toContain('const anchor = captureVisibleChatMessageAnchor();');
+        expect(batchSource).toContain('restoreVisibleChatMessageAnchor(anchor);');
+        expect(batchSource).toContain('markReaderPreservingResizeBlock(messageBlock);');
+        expect(batchSource).toContain('messageBlock?.isConnected');
+        expect(batchSource).toContain('if (grew) refreshObservedChatMessageResizeViewportStates();');
+        const markSource = getSource(findFunctionDeclaration('markReaderPreservingResizeBlock'));
+        expect(markSource).toContain('readerPreservingResizeBlocks.add(messageBlock);');
+        expect(markSource).toContain('metadata.growthBelowReader = true;');
+        const baselineSource = getSource(findExportedFunction('refreshChatViewportBaseline'));
+        expect(baselineSource).toContain('refreshObservedChatMessageResizeViewportStates();');
+
+        const singleSource = getSource(findExportedFunction('changeMessageBelowReader'));
+        expect(singleSource).toContain('return changeMessagesBelowReader(messageElement, mutate);');
+
+        const applySource = getSource(findFunctionDeclaration('applyChatMessageResizeAction'));
+        expect(applySource).toContain('metadata?.growthBelowReader');
+        expect(applySource).toContain('restoreHeldChatReadingPosition();');
+        expect(applySource).toContain('chatReloadReadingAnchorHoldActive');
+        expect(applySource.indexOf('metadata?.growthBelowReader')).toBeLessThan(applySource.indexOf('const nextHeight ='));
+
+        const holdSource = getSource(findFunctionDeclaration('holdChatReloadReadingAnchor'));
+        expect(holdSource).toContain('stopChatReloadReadingAnchorHold();');
+        expect(holdSource).toContain('const token = chatReloadReadingAnchorHoldToken;');
+        expect(holdSource).toContain('token !== chatReloadReadingAnchorHoldToken');
+        expect(holdSource).toContain('chatReloadReadingAnchorHoldRestore = restore;');
+        expect(holdSource).toContain('chatReloadReadingAnchorHoldIsCurrent = isCurrent;');
+        expect(holdSource).toContain('createChatSendReleaseGuard(chatSendStartRevision)');
+        expect(holdSource).toContain('chatReloadReadingAnchorHoldSendStarted = sendStarted;');
+        expect(holdSource).toContain('sendStarted()');
+        expect(holdSource).toContain('Math.max(...CHAT_LOAD_SCROLL_SETTLE_DELAYS_MS) + 1');
+
+        const guardSource = getSource(findFunctionDeclaration('createChatSendReleaseGuard'));
+        expect(guardSource).toContain('let sawIdle = !sendActive;');
+        expect(guardSource).toContain('chatSendStartRevision !== sendRevision');
+        expect(guardSource).toContain('is_send_press && sawIdle');
+
+        const deactivateSource = getSource(findExportedFunction('deactivateSendButtons'));
+        expect(deactivateSource).toContain('if (!is_send_press && markBodyGenerating) chatSendStartRevision += 1;');
+        const roleplayJobSource = getSource(findExportedFunction('setRoleplayJobControls'));
+        expect(roleplayJobSource).toContain('previous.id !== activeRoleplayJob.id) chatSendStartRevision += 1;');
+
+        const restoreHoldSource = getSource(findFunctionDeclaration('restoreHeldChatReadingPosition'));
+        expect(restoreHoldSource).toContain('stopChatReloadReadingAnchorHold();');
+        expect(restoreHoldSource).toContain('chatReloadReadingAnchorHoldIsCurrent');
+        expect(restoreHoldSource).toContain('chatReloadReadingAnchorHoldSendStarted?.()');
+        expect(restoreHoldSource).not.toContain('if (is_send_press)');
+        expect(restoreHoldSource).toContain('chatReloadReadingAnchorHoldRestore?.()');
+
+        const keepSource = getSource(findExportedFunction('keepChatReadingPositionOnNextLoad'));
+        expect(keepSource).toContain('normalizeChatReloadReadingAnchor(anchor)');
+        const normalizeSource = getSource(findFunctionDeclaration('normalizeChatReloadReadingAnchor'));
+        expect(normalizeSource).toContain('anchor.part');
+        expect(normalizeSource).toContain('anchor.fallback');
+
+        const redisplaySource = getSource(findExportedFunction('redisplayChat'));
+        expect(redisplaySource).toContain('neconyan:chat-rows-prepared');
+        expect(redisplaySource.indexOf('neconyan:chat-rows-prepared')).toBeLessThan(redisplaySource.indexOf('chatElement[0].appendChild(pending);'));
+    });
+
     test('native Roleplay previews use shared bottom scrolling to retire stale resize anchors', () => {
         const previewSource = readFileSync(path.join(repoRoot, 'public/scripts/neconyan-conversation/roleplay-preview.js'), 'utf8');
         const previewAst = parse(previewSource, { ecmaVersion: 'latest', sourceType: 'module' });
         const coreImport = previewAst.body.find(node => node.type === 'ImportDeclaration' && node.source.value === '../../script.js');
         expect(coreImport.specifiers.some(node => node.imported?.name === 'scrollChatToBottom')).toBe(true);
+        expect(coreImport.specifiers.some(node => node.imported?.name === 'refreshChatViewportBaseline')).toBe(true);
         expect(previewSource).toContain('if (nearBottom) scrollChatToBottom({ isNearBottom: nearBottom });');
+        expect(previewSource).toContain('else refreshChatViewportBaseline();');
         expect(findNode(previewAst, node => node.type === 'AssignmentExpression'
             && node.left.type === 'MemberExpression' && node.left.property.name === 'scrollTop')).toBeNull();
     });

@@ -253,6 +253,8 @@ export async function openReadyChat(page, { chatSaveDelayMs = 0, selectCharacter
     }
     await dismissOpenDialogIfPresent(page);
     await waitForChatRenderIdle(page);
+    const skipTour = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
+    if (await skipTour.isVisible()) await skipTour.click();
 }
 
 async function quietChatForSmoke(page) {

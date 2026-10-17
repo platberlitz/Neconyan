@@ -7,9 +7,10 @@ import {
 } from '../public/scripts/chat-render-lifecycle/anchor.js';
 
 class FakeMessageElement {
-    constructor(messageId, rect) {
+    constructor(messageId, rect, parts = {}) {
         this.messageId = String(messageId);
         this.rect = rect;
+        this.parts = parts;
     }
 
     getAttribute(attribute) {
@@ -18,6 +19,10 @@ class FakeMessageElement {
 
     getBoundingClientRect() {
         return this.rect;
+    }
+
+    querySelector(selector) {
+        return this.parts[selector] ?? null;
     }
 }
 
@@ -60,6 +65,49 @@ describe('chat render lifecycle anchor helpers', () => {
         restoreVisibleMessageAnchor(scrollElement, anchor);
 
         expect(scrollElement.scrollTop).toBe(72);
+    });
+
+    test('measures the requested part of the anchor row', () => {
+        const text = { rect: { top: 140, bottom: 260 }, getBoundingClientRect() { return this.rect; } };
+        const message = new FakeMessageElement(5, { top: 100, bottom: 300 }, { '.mes_text': text });
+        const scrollElement = new FakeScrollElement([message]);
+        const anchor = { messageId: '5', offsetTop: 140, part: '.mes_text' };
+
+        message.rect = { top: 140, bottom: 340 };
+        text.rect = { top: 180, bottom: 300 };
+        expect(restoreVisibleMessageAnchor(scrollElement, anchor)).toBe(true);
+
+        expect(scrollElement.scrollTop).toBe(40);
+    });
+
+    test('uses the fallback row when the anchored reply has not rendered', () => {
+        const previous = new FakeMessageElement(4, { top: 60, bottom: 100 });
+        const scrollElement = new FakeScrollElement([previous]);
+        const anchor = { messageId: '5', offsetTop: 140, part: '.mes_text', fallback: { messageId: '4', offsetTop: 60 } };
+
+        previous.rect = { top: 75, bottom: 115 };
+        expect(restoreVisibleMessageAnchor(scrollElement, anchor)).toBe(true);
+
+        expect(scrollElement.scrollTop).toBe(15);
+    });
+
+    test('falls back to the row when the requested part is missing', () => {
+        const message = new FakeMessageElement(5, { top: 100, bottom: 300 });
+        const scrollElement = new FakeScrollElement([message]);
+        const anchor = { messageId: '5', offsetTop: 100, part: '.mes_text' };
+
+        message.rect = { top: 125, bottom: 325 };
+        restoreVisibleMessageAnchor(scrollElement, anchor);
+
+        expect(scrollElement.scrollTop).toBe(25);
+    });
+
+    test('reports false when neither the anchor row nor its fallback exists', () => {
+        const scrollElement = new FakeScrollElement([]);
+        const anchor = { messageId: '5', offsetTop: 140, part: '.mes_text', fallback: { messageId: '4', offsetTop: 60 } };
+
+        expect(restoreVisibleMessageAnchor(scrollElement, anchor)).toBe(false);
+        expect(scrollElement.scrollTop).toBe(0);
     });
 
     test('preserves viewport-relative anchors during top, middle, and tail replacements', () => {
