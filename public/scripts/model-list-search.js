@@ -1,7 +1,6 @@
 import { t } from './i18n.js';
 import { groupByModelFamily } from './model-family.js';
 
-const MAX_ROWS = 50;
 const VALUE_CHECK_MS = 400;
 const lists = new WeakMap();
 const attached = new Set();
@@ -199,23 +198,17 @@ export function attachModelListSearch(select, options = {}) {
             ? t`Connect to load models, or enter a model ID above.`
             : !matches.length
                 ? t`No models match. Try another name or model ID.`
-                : matches.length > MAX_ROWS
-                    ? t`${matches.length} models found. Showing the first 50; search to narrow the list.`
-                    : t`${matches.length} of ${available.length} models`;
+                : t`${matches.length} of ${available.length} models`;
 
         const fragment = document.createDocumentFragment();
-        let shown = 0;
         for (const group of buildGroups(matches)) {
-            if (shown >= MAX_ROWS) break;
-            const items = group.items.slice(0, MAX_ROWS - shown);
             if (group.label) {
                 const heading = document.createElement('div');
                 heading.className = 'nn-model-list-group';
                 heading.textContent = group.label;
                 fragment.append(heading);
             }
-            for (const option of items) fragment.append(createRow(option));
-            shown += items.length;
+            for (const option of group.items) fragment.append(createRow(option));
         }
         results.replaceChildren(fragment);
         if (focusedValue !== null && focusedValue !== undefined) {
