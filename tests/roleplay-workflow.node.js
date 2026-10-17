@@ -6,7 +6,7 @@ import { fixture, png } from './roleplay-transactions-fixture.js';
 
 const { write: writeCard } = await import('../src/character-card-parser.js');
 const { captureChatProfile } = await import('../src/generation/profiles.js');
-const { captureRoleplaySource } = await import('../src/generation/roleplay-source.js');
+const { captureRoleplaySource, readRoleplayChat } = await import('../src/generation/roleplay-source.js');
 const { runRoleplayReplyJob } = await import('../src/generation/roleplay-execution.js');
 const { runAssistantToolJob } = await import('../src/generation/assistant-tool-jobs.js');
 const { runPathfinderNotebookJob } = await import('../src/generation/pathfinder-notebook-jobs.js');
@@ -19,16 +19,23 @@ const { readNativeMediaJobResult, readNativeMediaJobResultForOwner } = await imp
 const { releaseStoppedRoleplayWorkflow } = await import('../src/generation/roleplay-workflow-cancellation.js');
 const { requestRoleplayAgentStop } = await import('../src/generation/roleplay-agent-stop.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
+const { enableMewmoryHiding } = await import('./mewmory-hiding-fixture.js');
 
 const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', system_prompt: true },
     { identifier: 'chatHistory', marker: true, system_prompt: true }],
 prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }],
 function_calling: true };
 
-function prepared(t, effect = 'append', { assistant = false, pathfinder = false, agents = false, autoSwipe = false, autoContinue = false, continueTarget = 30, bundledMacros = null } = {}) {
+function prepared(t, effect = 'append', { assistant = false, pathfinder = false, agents = false, autoSwipe = false, autoContinue = false, continueTarget = 30, bundledMacros = null, history = 0 } = {}) {
     const f = fixture(t);
     const dirs = f.scope.directories;
     f.records[1].extra = {};
+    if (history) {
+        f.records.splice(1, 0, ...Array.from({ length: history }, (_, index) => ({
+            name: index % 2 === 0 ? 'User' : 'Nova', is_user: index % 2 === 0,
+            mes: 'history ' + index + ' ' + 'lorem ipsum dolor sit amet '.repeat(20), extra: {},
+        })));
+    }
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     if (assistant) fs.writeFileSync(path.join(dirs.characters, 'Nova.png'), writeCard(png, JSON.stringify({
         name: 'Nova', description: 'Assistant', data: { name: 'Nova', description: 'Assistant',
@@ -469,6 +476,37 @@ test('multiple tool calls in one model reply advance only their owned book chang
     assert.equal((await runRoleplayWorkflowJob(f.context())).result.status, 'completed');
     assert.equal(f.records().at(-1).mes, 'The ordered tools completed.');
     assert.equal(calls.count, 2);
+});
+
+test('a native workflow reply clears older history at the Mewmory trigger in its single protected publication and survives a restart', async t => {
+    const f = prepared(t, 'append', { history: 20 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const reply = 'Workflow reply ' + 'detail '.repeat(120);
+    await f.candidate(reply, { count: 0 });
+    const destination = { ...f.f.locator, chat: 'Workflow renamed' };
+    const { commitRoleplayLifecycleLocked } = await import('../src/roleplay-lifecycle.js');
+    const { withRoleplayAccount } = await import('../src/roleplay-store.js');
+    withRoleplayAccount(f.f.scope, f.account, lease => commitRoleplayLifecycleLocked(lease, {
+        operationKey: 'workflow-hiding-rename', action: 'chat-rename', intent: { destination },
+        steps: [{ op: 'move', kind: 'chat', locator: f.f.locator, destination }],
+    }));
+    enableMewmoryHiding(f.dirs, destination, { autoHideTokens: 1024 });
+    await assert.rejects(runRoleplayWorkflowJob(f.context(), { beforePublication: () => {
+        throw new Error('Lost parent acknowledgement after the hidden write');
+    } }), /Lost parent acknowledgement/);
+    const saved = readRoleplayChat(f.f.scope, destination).records;
+    assert.equal(saved.at(-1).mes, reply);
+    assert.ok(!saved.at(-1).is_system);
+    const rows = saved.slice(1);
+    const firstVisible = rows.findIndex(row => !row.is_system);
+    assert.equal(firstVisible, rows.length - 1, 'every older visible message is cleared in one pass');
+    assert.ok(rows.slice(0, firstVisible).every(row => row.is_system && row.extra?.mewmoryKeepHidden === true));
+    assert.ok(rows.slice(firstVisible).every(row => !row.is_system));
+    const completed = await runRoleplayWorkflowJob(f.context());
+    assert.equal(completed.result.status, 'completed');
+    assert.deepEqual(await runRoleplayWorkflowJob(f.context()), completed);
+    assert.deepEqual(readRoleplayChat(f.f.scope, destination).records, saved);
 });
 
 test('a final chat write can resume from its owned proof after losing only the parent acknowledgement', async t => {

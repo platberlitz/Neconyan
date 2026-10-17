@@ -141,42 +141,48 @@ function getConverter(type) {
 const messageVisibilityOperations = new WeakMap();
 
 /**
- * Mark a range of messages as hidden ("is_system") or not.
- * @param {number} start Starting message ID
- * @param {number} end Ending message ID (inclusive)
- * @param {boolean} unhide If true, unhide the messages instead.
- * @param {string} nameFitler Optional name filter
- * @param {{ keepInMewmory?: boolean }} [options] keepInMewmory hides from prompts only; Mewmory still reads the messages.
+ * Mark ranges of messages as hidden ("is_system") or not in one saved write.
+ * Overlapping ranges are applied once, and a refused save restores every row.
+ * @param {Array<[number, number]>} ranges Inclusive start/end message IDs
+ * @param {{ unhide?: boolean, nameFitler?: string|null, keepInMewmory?: boolean }} [options]
+ * keepInMewmory hides from prompts only; Mewmory still reads the messages.
  * @returns {Promise<boolean>} Whether the change was saved in the original chat.
  */
-export async function hideChatMessageRange(start, end, unhide, nameFitler = null, { keepInMewmory = false } = {}) {
-    start = Number(start);
-    end = end === undefined || end === null ? start : Number(end);
-    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start) return false;
-    end = Math.min(end, chat.length - 1);
+export async function hideChatMessageRanges(ranges, { unhide = false, nameFitler = null, keepInMewmory = false } = {}) {
+    if (!Array.isArray(ranges) || !ranges.length) return false;
+    const normalized = [];
+    for (const range of ranges) {
+        const start = Number(range?.[0]);
+        const end = range?.[1] === undefined || range?.[1] === null ? start : Number(range[1]);
+        if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start) return false;
+        normalized.push([start, Math.min(end, chat.length - 1)]);
+    }
     const hide = !unhide;
     const originId = getCurrentChatId();
     const originMetadata = chat_metadata;
     const operation = {};
-    const changed = [];
+    const changed = new Map();
     const isCurrent = () => getCurrentChatId() === originId && chat_metadata === originMetadata
-        && changed.every(({ messageId, message }) => chat[messageId] === message);
+        && [...changed.values()].every(({ messageId, message }) => chat[messageId] === message);
 
-    for (let messageId = start; messageId <= end; messageId++) {
-        const message = chat[messageId];
-        if (!message) continue;
-        if (nameFitler && message.name !== nameFitler) continue;
+    for (const [start, end] of normalized) {
+        for (let messageId = start; messageId <= end; messageId++) {
+            const message = chat[messageId];
+            if (!message) continue;
+            if (nameFitler && message.name !== nameFitler) continue;
+            if (!changed.has(messageId)) {
+                changed.set(messageId, { messageId, message, previous: message.is_system, previousKeep: message.extra?.mewmoryKeepHidden });
+            }
+            messageVisibilityOperations.set(message, operation);
+            message.is_system = hide;
+            if (hide && keepInMewmory) (message.extra ??= {}).mewmoryKeepHidden = true;
+            else if (message.extra) delete message.extra.mewmoryKeepHidden;
 
-        changed.push({ messageId, message, previous: message.is_system, previousKeep: message.extra?.mewmoryKeepHidden });
-        messageVisibilityOperations.set(message, operation);
-        message.is_system = hide;
-        if (hide && keepInMewmory) (message.extra ??= {}).mewmoryKeepHidden = true;
-        else if (message.extra) delete message.extra.mewmoryKeepHidden;
-
-        // Also toggle "hidden" state for all visible messages
-        const messageBlock = $(`.mes[mesid="${messageId}"]`);
-        if (!messageBlock.length) continue;
-        messageBlock.attr('is_system', String(hide));
+            // Also toggle "hidden" state for all visible messages
+            const messageBlock = $(`.mes[mesid="${messageId}"]`);
+            if (!messageBlock.length) continue;
+            messageBlock.attr('is_system', String(hide));
+        }
     }
 
     // Reload swipes. Useful when a last message is hidden.
@@ -189,13 +195,16 @@ export async function hideChatMessageRange(start, end, unhide, nameFitler = null
         console.error('Could not save message visibility.', error);
     }
     const sameChat = isCurrent();
-    for (const { messageId, message, previous, previousKeep } of changed) {
+    for (const { messageId, message, previous, previousKeep } of changed.values()) {
         if (messageVisibilityOperations.get(message) !== operation) continue;
         messageVisibilityOperations.delete(message);
         if (!saved && message.is_system === hide) {
             message.is_system = previous;
             if (previousKeep) (message.extra ??= {}).mewmoryKeepHidden = true;
-            else if (message.extra) delete message.extra.mewmoryKeepHidden;
+            else if (message.extra) {
+                delete message.extra.mewmoryKeepHidden;
+                if (!Object.keys(message.extra).length) delete message.extra;
+            }
             if (sameChat) $(`.mes[mesid="${messageId}"]`).attr('is_system', String(Boolean(previous)));
         }
     }
@@ -207,8 +216,21 @@ export async function hideChatMessageRange(start, end, unhide, nameFitler = null
     }
     // Neconyan: keep chat listeners in sync after range-hiding messages so the
     // shell and footer controls can refresh immediately.
-    await eventSource.emit(event_types.MESSAGE_UPDATED, start);
+    await eventSource.emit(event_types.MESSAGE_UPDATED, normalized[0][0]);
     return isCurrent();
+}
+
+/**
+ * Mark a range of messages as hidden ("is_system") or not.
+ * @param {number} start Starting message ID
+ * @param {number} end Ending message ID (inclusive)
+ * @param {boolean} unhide If true, unhide the messages instead.
+ * @param {string} nameFitler Optional name filter
+ * @param {{ keepInMewmory?: boolean }} [options] keepInMewmory hides from prompts only; Mewmory still reads the messages.
+ * @returns {Promise<boolean>} Whether the change was saved in the original chat.
+ */
+export async function hideChatMessageRange(start, end, unhide, nameFitler = null, { keepInMewmory = false } = {}) {
+    return hideChatMessageRanges([[start, end]], { unhide: Boolean(unhide), nameFitler, keepInMewmory });
 }
 
 /**

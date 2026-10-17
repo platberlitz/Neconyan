@@ -144,7 +144,7 @@ describe('message visibility save ownership', () => {
             event_types: { MESSAGE_UPDATED: 'updated' }, eventSource: { emit: jest.fn() },
             toastr: { error: jest.fn() }, t: strings => strings.join(''),
         });
-        load(ctx, 'scripts/chats.js', ['messageVisibilityOperations', 'hideChatMessageRange']);
+        load(ctx, 'scripts/chats.js', ['messageVisibilityOperations', 'hideChatMessageRanges', 'hideChatMessageRange']);
         return ctx;
     }
 
@@ -182,5 +182,40 @@ describe('message visibility save ownership', () => {
         release(false);
         await expect(first).resolves.toBe(false);
         expect(ctx.chat[0].is_system).toBe(true);
+    });
+
+    test('several hide ranges save once, keep Mewmory markers and refresh listeners once', async () => {
+        const ctx = visibilityRuntime();
+        ctx.chat.splice(0, ctx.chat.length, { mes: 'one' }, { mes: 'two' }, { mes: 'three' }, { mes: 'four' });
+        await expect(ctx.hideChatMessageRanges([[0, 1], [3, 3]], { keepInMewmory: true })).resolves.toBe(true);
+        expect(ctx.saveChatConditional).toHaveBeenCalledTimes(1);
+        expect(ctx.chat.map(message => message.is_system)).toEqual([true, true, undefined, true]);
+        expect(ctx.chat.map(message => message.extra?.mewmoryKeepHidden)).toEqual([true, true, undefined, true]);
+        expect(ctx.eventSource.emit).toHaveBeenCalledTimes(1);
+        expect(ctx.eventSource.emit).toHaveBeenCalledWith('updated', 0);
+    });
+
+    test('a refused bulk save restores every row and every previous Mewmory marker', async () => {
+        const ctx = visibilityRuntime();
+        ctx.chat.splice(0, ctx.chat.length, { mes: 'one', is_system: false },
+            { mes: 'two', is_system: true, extra: { mewmoryKeepHidden: true } }, { mes: 'three' }, { mes: 'four' });
+        ctx.saveChatConditional.mockImplementationOnce(async () => false);
+        await expect(ctx.hideChatMessageRanges([[0, 3]])).resolves.toBe(false);
+        expect(ctx.chat.map(message => Boolean(message.is_system))).toEqual([false, true, false, false]);
+        expect(ctx.chat[1].extra.mewmoryKeepHidden).toBe(true);
+        expect(ctx.chat[0].extra).toBeUndefined();
+        expect(ctx.eventSource.emit).not.toHaveBeenCalled();
+    });
+
+    test('overlapping bulk ranges apply each row once and still roll back cleanly', async () => {
+        const ctx = visibilityRuntime();
+        ctx.chat.splice(0, ctx.chat.length, { mes: 'one' }, { mes: 'two' }, { mes: 'three' });
+        ctx.saveChatConditional.mockImplementationOnce(async () => {
+            throw new Error('Save unavailable');
+        });
+        await expect(ctx.hideChatMessageRanges([[0, 1], [1, 2]], { keepInMewmory: true })).resolves.toBe(false);
+        expect(ctx.chat.map(message => Boolean(message.is_system))).toEqual([false, false, false]);
+        expect(ctx.chat.every(message => !message.extra)).toBe(true);
+        expect(ctx.toastr.error).toHaveBeenCalledTimes(1);
     });
 });
