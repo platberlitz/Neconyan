@@ -46,17 +46,24 @@ export function initCustomModelSearch(select) {
             button.className = 'nn-custom-model-result';
             button.dataset.modelId = option.value;
             button.setAttribute('aria-pressed', String(select.value === option.value));
+            const label = document.createElement('span');
+            label.className = 'nn-custom-model-result-label';
             const name = document.createElement('span');
             name.textContent = option.textContent.trim() || option.value;
-            button.append(name);
+            label.append(name);
             if (name.textContent !== option.value) {
                 const id = document.createElement('small');
                 id.textContent = option.value;
-                button.append(id);
+                label.append(id);
             }
+            button.append(label);
             if (option.dataset.favorite === 'true') {
-                const favourite = document.createElement('small');
-                favourite.textContent = t`Favourite`;
+                const favourite = document.createElement('i');
+                favourite.className = 'fa-solid fa-star nn-custom-model-result-favourite';
+                favourite.dataset.modelFavourite = '';
+                favourite.setAttribute('role', 'img');
+                favourite.setAttribute('aria-label', t`Favourite`);
+                favourite.title = t`Favourite`;
                 button.append(favourite);
             }
             fragment.append(button);
