@@ -19,7 +19,7 @@ test('German dictionaries have no duplicate keys that silently override reviewed
 });
 
 test('the interface catalogue collects captions from helpers, fallbacks, templates and arrays', () => {
-    const run = spawnSync(process.execPath, ['scripts/build-interface-locales.js', '--list'], { cwd: root, encoding: 'utf8', env: { ...process.env, NECONYAN_TRANSLATION_COMMAND: '' } });
+    const run = spawnSync(process.execPath, ['scripts/build-interface-locales.js', '--list'], { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, NECONYAN_TRANSLATION_COMMAND: '' } });
     assert.equal(run.status, 0, run.stderr);
     const keys = new Set(JSON.parse(run.stdout));
     // Helper argument inside an exported function, folder fallback, Home speaker, template, tab array,
@@ -93,7 +93,7 @@ test('the catalogue can be written and listed without a translator, and one lang
         assert.ok(Object.keys(catalogue).length > 10000);
         assert.ok(!Object.values(catalogue).some(value => value.includes('�')), 'replacement character in a catalogue value');
         assert.ok(!existsSync(join(supplements, 'en.json.tmp')), 'temporary file left behind');
-        const listed = spawnSync(process.execPath, [script, '--list'], { cwd: scratch, encoding: 'utf8', env });
+        const listed = spawnSync(process.execPath, [script, '--list'], { cwd: scratch, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env });
         assert.equal(listed.status, 0, listed.stderr);
         assert.deepEqual(JSON.parse(listed.stdout), Object.keys(catalogue).sort());
         assert.deepEqual(calls(), [], 'the translator was invoked by a catalogue-only run');
