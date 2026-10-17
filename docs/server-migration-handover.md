@@ -69,6 +69,112 @@ the PR against staging and validate the resulting APK on the reporting device.
 
 ## Release preparation: 1.0.0
 
+### 18 October: 1.3.5 release, staging starts 1.3.6
+
+I audited PRs #200-209 and fixed the release blockers before promoting main.
+Finished Roleplay replies now survive failed optional helpers and server restarts,
+without repeating the paid main request. The upgrade protects replies retained by
+1.3.4.1 before cleanup, saves a verified result once when its chat still matches,
+and preserves conflicting or unverifiable copies. Explicit cancellation and
+dismissal remain final. The old recovery card isn't restored.
+
+The audit also fixed malformed caption inputs that could hang or stop the server,
+updated five dependency versions in both lockfiles, and changed speech startup to
+load only the selected provider. A later browser failure exposed a real counter
+bug: the final streaming chunk could cancel a delayed recount, leaving the
+completed reply's token count stale until Companions finished. The completed
+preview is now recounted before helpers start; urgent text publication, final
+post-transformation counts and cancellation checks remain intact.
+
+The release commit is `bfad3a15bb179850c45808405d8b624a125fb853`. Main was
+fast-forwarded to that exact staging commit after the required checks passed.
+The running personal instance wasn't deployed as part of this release.
+
+The official handbook is published from `neconyan-docs` commit
+`311f8e0d9b16d4660e7147c4b53e79e9581db6e7`, through Pages run `39040247142`.
+Strict build, 53-page site checks, all-page phone checks and desktop browser
+checks passed. The earlier guide refresh at `823032a` was also published and
+verified. The final three changed live guides passed both 393x852 and 1280x900
+checks, eight anchor checks and 54 internal-link targets. Historical snapshots
+remain historical. Assistant knowledge revision 39 passed source anchors, full
+topic-size checks and retrieval across all nine assistants, then both phone and
+desktop browser checks.
+
+The root and test dependencies were installed afresh from their exact lockfiles:
+905 root and 364 test package versions matched. The fresh unit run passed 512
+suites and failed two timing-sensitive tests in the unchanged jobs-client suite.
+That suite passed all 13 tests alone, giving combined coverage of 513 suites and
+7,100 passing tests, with three existing Windows-only skips. This was an unchanged
+timing retry, not a test correction. The full server run passed 2,781 tests before
+the final migration refinements; those refinements passed focused migration,
+jobs, workflow, endpoint and optional-helper checks. The final counter correction
+passed another 128 focused server tests. The explicit Mewmory script passed 96
+tests. Root/test lint, frontend budgets and the production build passed. Test lint
+retains 841 warnings and no errors. The unchanged character-colours module remains
+unminified because the minification step doesn't accept its top-level await.
+
+All 16 browser groups have passing coverage: 1,840 passing tests and 21 existing
+skips. Passing groups were retained by exact commit and scope:
+
+- Run `39037860334` at `b43571c9`: groups 1-6, 8-10, 12 and 13.
+- Run `39041460339` at `dd278d86`: corrected server-status and translation
+  fixtures, groups 7 and 11.
+- Run `39043006140` at the release commit: affected Roleplay groups 14-16,
+  including the completed-preview counter fix. Group 16 had also passed in
+  `39040171048` at `059dad82` after correcting the speech fixture.
+
+The browser failures were resolved with corrections, not unchanged retries:
+initial Companion fixtures lacked search state; preview measurements ran before
+the throttled note had rendered; the speech fixture counted greeting narration;
+a background update request could consume the status fixture's intended failure;
+and delayed composer auto-focus could close the translation menu before submission.
+Startup exceeded its unchanged request budget until lazy speech loading reduced
+the measured default from 1,004 requests to 978. The stale completed-preview count
+was an application defect, verified before and after while a Companion was held.
+No assertion was weakened or skip added. The duplicate main browser run
+`39046879145` was cancelled only after the retained coverage had been verified.
+
+Existing browser skips cover three WebKit screenshot cases under Chromium,
+eight separately configured Mewmory fixtures, two credential-gated login cases,
+two explicit before-screenshot cases and six opt-in Termux environments. Focused
+restart checks used real process termination with all browser pages closed and
+verified one main request, one optional request and one saved reply across two
+restarts. Phone results are browser emulation, not physical-iPhone verification.
+The deliberately populated latency fixture passed both execution orders; the
+last local observations showed pending cards after 219/239 ms and the first
+Companion request after 1,347/1,414 ms. These are individual local measurements,
+not general performance guarantees.
+
+The production dependency audit retains 15 affected dependency entries. The
+reachable caption-parser path is protected by the tested input guard; the other
+findings were reviewed against actual callers. The audit isn't claimed clean,
+and incompatible major upgrades weren't forced to remove advisory counts.
+
+Android run `39046878168` passed on the release commit without retries: signed
+build, WebView fixture and Android 11, 13 and 15 lifecycle/native checks. The
+optional historical native comparison wasn't requested and remains skipped.
+These are emulator results, not physical-phone tests.
+
+All nine build files passed independent verification: eight listed checksums,
+both APK signatures against the existing official certificate, native 16 KiB
+ELF/ZIP alignment, embedded commit/frontend files and matching provenance.
+Independent Android manifest inspection confirmed the existing application ID,
+version `1.3.5`, code `1030500`, minimum API 30 and target API 36 in both APKs.
+Every one of the 4,118 source ZIP files matches `git archive` of the release
+commit, including configured line endings.
+
+The annotated tag `v1.3.5` resolves to the exact verified release commit and has
+message 'Neconyan 1.3.5'. The release is public, stable and latest, with all nine
+verified assets, at https://github.com/platberlitz/Neconyan/releases/tag/v1.3.5.
+All nine published files were downloaded again and matched the verified build
+files byte for byte. Their GitHub SHA-256 digests also matched, and the complete
+signature, checksum, payload, alignment and source comparison passed again.
+
+Staging starts `1.3.6` with the root package version, both root lockfile version
+entries and the project-boundary expectations updated together. All six boundary
+tests and focused lint passed on Node 24. Main and the published tag retain the
+verified `1.3.5` release commit.
+
 ### 17 October: 1.3.4.1 reply hotfix, staging returns to 1.3.5
 
 I fixed the server-run Roleplay regression in PR #198. Reopening a running chat
