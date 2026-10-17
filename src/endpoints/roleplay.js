@@ -38,7 +38,7 @@ function scope(request) {
 }
 
 function fail(response, error) {
-    return response.status(error.status ?? 500).json({ error: error.message, code: error.code ?? error.apiError ?? null, ...(error.imageIssue ? { imageIssue: { reason: error.imageIssue.reason, index: error.imageIssue.index, mediaIndex: error.imageIssue.mediaIndex, actions: error.imageIssue.actions } } : {}) });
+    return response.status(error.status ?? 500).json({ error: error.message, code: error.code ?? error.apiError ?? null, ...(error.integrity === true ? { integrity: true } : {}), ...(error.imageIssue ? { imageIssue: { reason: error.imageIssue.reason, index: error.imageIssue.index, mediaIndex: error.imageIssue.mediaIndex, actions: error.imageIssue.actions } } : {}) });
 }
 
 router.post('/workflow/submit', async (request, response) => {

@@ -105,7 +105,7 @@ test('the real tree no longer collects the four scoped English texts, and still 
     const keys = new Set(JSON.parse(run.stdout));
     const catalogue = JSON.parse(readFileSync(join(root, 'public/locales/neconyan/en.json'), 'utf8'));
     const scoped = Object.entries(catalogue).filter(([key]) => key.startsWith('scoped.'));
-    assert.equal(scoped.length, 7);
+    assert.equal(scoped.length, 51);
     for (const [key, english] of scoped) {
         assert.ok(keys.has(key), `scoped key not collected: ${key}`);
         // No other use of these words sits outside a scoped key today, so none of them is an exact key.
@@ -147,7 +147,8 @@ test('after a catalogue write and a simulated machine fill, no scoped string rea
         assert.equal(written.status, 0, written.stderr);
         const catalogue = JSON.parse(readFileSync(join(scratch, 'public', 'locales', 'neconyan', 'en.json'), 'utf8'));
         const scopedKeys = Object.keys(catalogue).filter(key => key.startsWith('scoped.'));
-        assert.equal(scopedKeys.length, 7, 'the freshly written catalogue holds the seven scoped keys');
+        // E1's seven plus the 44 of the review dialogs (E2-D 43, and CNV-28 added by the E2 fix pass).
+        assert.equal(scopedKeys.length, 51, 'the freshly written catalogue holds the fifty-one scoped keys');
 
         // 3. Fill pt-pt with a stand-in translator. The command is set for that child process only.
         const translator = join(scratch, 'fake-translator.cjs');
@@ -171,7 +172,7 @@ test('after a catalogue write and a simulated machine fill, no scoped string rea
         const base = read('pt-pt.json');
         const { dictionary, scoped } = assembleLocaleData({ base, supplement, catalogue: filledCatalogue });
         const scopedEntries = Object.entries(filledCatalogue).filter(([key]) => key.startsWith('scoped.'));
-        assert.equal(scopedEntries.length, 7);
+        assert.equal(scopedEntries.length, 51);
 
         // 5. The scoped strings are filled, in the scoped table only, and leave nothing behind in the matching dictionary.
         for (const [key, english] of scopedEntries) {

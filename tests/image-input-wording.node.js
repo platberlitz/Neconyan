@@ -412,7 +412,9 @@ test('the review dialogs look their choice names up by scoped key and mark them 
     for (const [key, english] of [['QIG-03', 'Send the image'], ['QIG-02', 'Show only'], ['QIG-04', 'Use a description']]) {
         assert.ok(source.includes(`translate('${english}', 'scoped.prompt_media.${key}')`), key);
     }
-    assert.ok(source.includes('if (mode !== \'detach\') final(option);'), 'only the looked-up names are final');
+    // E2 (RVW-47): the removal name is looked up by its key as well, so no name is left out. That every option is final after its lookup is a
+    // behaviour, and prompt-media-review-dialog.test.js checks it on the options the dialog builds.
+    assert.ok(source.includes('translate(\'Remove from message\', \'scoped.prompt_media.RVW-47\')'), 'the removal name is looked up by its scoped key');
     assert.equal(source.split('select.append(choiceOption(mode))').length - 1, 2, 'both dialogs build their options the same way');
     for (const id of ['RVW-04', 'RVW-05', 'RVW-06', 'RVW-07', 'RVW-23', 'RVW-24', 'CNV-05']) {
         assert.ok(source.includes(`t\`${WORDING[id]}\``), `prompt-media-ui.js does not say ${id}`);
@@ -454,9 +456,10 @@ const REPLACED = [
     'while the image was being inserted, so it was not inserted. It stays in the gallery.',
     // QIG-19 repeated the insertion failure under a toast that already says so (reworded 16 October).
     'The image cannot be sent as it is, so it was not inserted.', 'The library image cannot be sent as it is, so it was not inserted.',
-    // The final wording of 16 October replaced the notice's action line, NTC-01, QIG-05 and GEN-CV3.
-    'Open Review chat images to choose Show only, Use a description, or a compatible copy.', 'is no longer available. Its image review cannot be opened.',
-    'or for the open chat, that always wins.', 'A reply quotes an image\'s description',
+    // The shared refusal notice, QIG-05 and GEN-CV3 were reworded on 16 October (Peter's final wording), and so was NTC-01.
+    'Open Review chat images to choose Show only, Use a description, or a compatible copy.', 'that always wins.',
+    'A reply quotes an image\'s description, and the quote cannot be checked against its original message.',
+    'is no longer available. Its image review cannot be opened.',
 ];
 const REPLACED_WHOLE = ['Attachment kept', 'The account changed.', 'Image input needs attention', 'Reload the page, then try again.', 'An image needs your choice'];
 

@@ -927,7 +927,7 @@ for (const damage of ['missing-root', 'missing-record', 'changed-image', 'change
         fs.mkdirSync(folder, { recursive: true }); fs.writeFileSync(path.join(folder, 'authored.png'), png);
     }
     const accepted = await accept(p, `managed-${damage}`);
-    await assert.rejects(runOperation(accepted.context), /image|Image|PNG|copy|folder/i);
+    await assert.rejects(runOperation(accepted.context), /image|Image|PNG|copy|copies|folder/i);
     assert.equal(fs.existsSync(path.join(p.base.directories.chats, 'Nova/Managed.jsonl')), false);
     assert.equal(fs.existsSync(path.join(p.base.directories.root, 'settings.json')), false);
 });
@@ -971,5 +971,5 @@ test('reserved namespace path aliases refuse during capture before staging', asy
     const filename = path.join(p.sourceRoot, 'aliased.zip');
     await zipFile(filename, [['settings.json', '{}'], ['user/images/Neconyan-Repaired./anything.png', png]]);
     const upload = await retainUploadedArchive(p.base, p.f.scope, 'aliased-images', filename);
-    await assert.rejects(captureZipImport(upload), /ambiguous protected image path/);
+    await assert.rejects(captureZipImport(upload), /compatible-copy path that could be read two ways/);
 });

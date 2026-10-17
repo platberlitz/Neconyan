@@ -134,23 +134,42 @@ describe('the notice for an image that needs a choice', () => {
         expect(toastr.warning).toHaveBeenCalledTimes(1);
         expect(toastr.error).not.toHaveBeenCalled();
         const [message, title, options] = toastr.warning.mock.calls[0];
-        expect(title).toBe('Review needed before replying');
-        expect(message).toBe('<span data-i18n-ignore>This chat&#39;s connection cannot receive images.</span><br>Open Review chat images to choose what the model receives.');
+        expect(title).toBe(noticeTitle);
+        expect(message).toBe(`<span data-i18n-ignore>This chat&#39;s connection cannot receive images.</span><br>${action}`);
         // The reason is the first line and the action line the only other one.
-        expect(message.split('<br>')).toEqual(['<span data-i18n-ignore>This chat&#39;s connection cannot receive images.</span>', 'Open Review chat images to choose what the model receives.']);
+        expect(message.split('<br>')).toEqual(['<span data-i18n-ignore>This chat&#39;s connection cannot receive images.</span>', action]);
         expect(options).toMatchObject({ escapeHtml: false, timeOut: 12000 });
         expect(typeof options.onclick).toBe('function');
         // Marked in the same task as the toast is made, title and message both.
         expect(marks).toEqual([['.toast-message, .toast-title', 'data-i18n-ignore', '']]);
     });
 
+    test('the title and the action line are the final wording, with the reason first and none of the old wording left', () => {
+        const reason = 'A reply contains a quote that cannot be checked against its original message.';
+        expect(ui.showImageChoiceNotice({ reason: 'mixed-reply-context', message: reason })).toBe(true);
+        const [message, title] = toastr.warning.mock.calls[0];
+        expect(title).toBe('Review needed before replying');
+        expect(message).toBe(`<span data-i18n-ignore>${reason}</span><br>Open Review chat images to choose what the model receives.`);
+        // The reason line is first and the action line second, in that order and nothing else between them.
+        expect(message.indexOf(reason)).toBeLessThan(message.indexOf('Open Review chat images'));
+        expect(message.split('<br>')).toHaveLength(2);
+        // Neither string carries the old wording, which named choices that do not apply to a quote.
+        for (const old of ['An image needs your choice', 'Show only', 'Use a description', 'a compatible copy']) {
+            expect(message).not.toContain(old);
+            expect(title).not.toContain(old);
+        }
+        // Both are looked up by their own English (t``), and neither is a reason lookup.
+        expect(lookups).toContainEqual(['Review needed before replying', null]);
+        expect(lookups).toContainEqual(['Open Review chat images to choose what the model receives.', null]);
+    });
+
     test('the sentences go through t``, and the reason through the exact lookup, so a translation reaches the page', () => {
-        dictionary.set(noticeTitle, 'Revisão necessária antes de responder');
+        dictionary.set(noticeTitle, 'É preciso rever antes de responder');
         dictionary.set(action, 'Abra Rever imagens do chat para escolher o que o modelo recebe.');
         dictionary.set('The file is too large.', 'O ficheiro é demasiado grande.');
         ui.showImageChoiceNotice({ message: 'The file is too large.' });
         const [message, title] = toastr.warning.mock.calls[0];
-        expect(title).toBe('Revisão necessária antes de responder');
+        expect(title).toBe('É preciso rever antes de responder');
         expect(message).toBe('<span data-i18n-ignore>O ficheiro é demasiado grande.</span><br>Abra Rever imagens do chat para escolher o que o modelo recebe.');
         expect(lookups).toContainEqual(['The file is too large.', null]);
     });
@@ -177,21 +196,21 @@ describe('the notice for an image that needs a choice', () => {
         await settle();
         expect(shownPanels).toHaveLength(1);
         expect(shownPanels[0].id).toBe('prompt-media-review');
-        expect(shownPanels[0].children[0].textContent).toBe('Images in replies');
+        expect(shownPanels[0].children[0].textContent).toBe('Chat images');
         // Conversation open.
         body.classes.add('neconyan-conversation-active');
         ui.showImageChoiceNotice({ message: 'Second.' });
         toastr.warning.mock.calls[1][2].onclick();
         await settle();
         expect(shownPanels).toHaveLength(2);
-        expect(shownPanels[1].children[0].textContent).toBe('Images in this Conversation');
+        expect(shownPanels[1].children[0].textContent).toBe('Conversation images');
         expect(toastr.error).not.toHaveBeenCalled();
         // A review that cannot open says why.
         state.branch = null;
         ui.showImageChoiceNotice({ message: 'Third.' });
         toastr.warning.mock.calls[2][2].onclick();
         await settle();
-        expect(toastr.error).toHaveBeenCalledWith('Open a Conversation chat to review its image input.');
+        expect(toastr.error).toHaveBeenCalledWith('Open a Conversation chat to review its images.');
     });
 
     test('one refusal shows one notice: the same reason again within a few seconds is not shown twice, a different one is', () => {
@@ -268,9 +287,9 @@ describe('clicking the notice opens the review for the chat that was refused', (
             state.chatId = 'chat-b.jsonl';
             await click(roleplayOrigin('chat-a'));
             expect(shownPanels).toHaveLength(1);
-            expect(dialogTitle()).toBe('Images in replies');
+            expect(dialogTitle()).toBe('Chat images');
             expect(scanned()).toEqual([{ group: false, chat: 'chat-a', avatar: 'nova.png' }]);
-            expect(navigationButtons()).toEqual(['Current chat', 'Choose chats', 'Recovery history']);
+            expect(navigationButtons()).toEqual(['Current chat', 'Choose chats', 'Change history']);
             // The view is the origin chat's: its name is the heading.
             expect(dialog().children.at(-1).children[0].textContent).toBe('chat-a');
             const current = navigation().children[0];
@@ -285,7 +304,7 @@ describe('clicking the notice opens the review for the chat that was refused', (
             conversation.open = { avatar: 'ava.png', groupId: '' };
             await click(roleplayOrigin('chat-a'));
             expect(shownPanels).toHaveLength(1);
-            expect(dialogTitle()).toBe('Images in replies');
+            expect(dialogTitle()).toBe('Chat images');
             expect(scanned()).toEqual([{ group: false, chat: 'chat-a', avatar: 'nova.png' }]);
             expect(selectConversationThread).not.toHaveBeenCalled();
         });
@@ -293,8 +312,8 @@ describe('clicking the notice opens the review for the chat that was refused', (
         test('has no Current chat button when no chat is open', async () => {
             state.chatId = null;
             await click(roleplayOrigin('chat-a'));
-            expect(dialogTitle()).toBe('Images in replies');
-            expect(navigationButtons()).toEqual(['Choose chats', 'Recovery history']);
+            expect(dialogTitle()).toBe('Chat images');
+            expect(navigationButtons()).toEqual(['Choose chats', 'Change history']);
             expect(scanned()).toEqual([{ group: false, chat: 'chat-a', avatar: 'nova.png' }]);
         });
 
@@ -351,7 +370,7 @@ describe('clicking the notice opens the review for the chat that was refused', (
                 issues: [{ index: 8, swipe: null, mediaIndex: 0, identity: 'new', status: 'saved-reference', mode: 'include', actions: ['display-only', 'caption', 'include', 'detach'], title: '' }], next: null }) });
             await click(roleplayOrigin('chat-a'));
             expect(shownPanels).toHaveLength(1);
-            expect(dialogTitle()).toBe('Images in replies');
+            expect(dialogTitle()).toBe('Chat images');
             expect(scanned()).toEqual([{ group: false, chat: 'chat-a', avatar: 'nova.png' }]);
             expect(toastr.info).not.toHaveBeenCalled();
             expect(toastr.error).not.toHaveBeenCalled();
@@ -362,7 +381,7 @@ describe('clicking the notice opens the review for the chat that was refused', (
             chat.push({ name: 'Nova', mes: 'A message that arrived after the refusal.' });
             try {
                 await click(roleplayOrigin('chat-a'));
-                expect(dialogTitle()).toBe('Images in replies');
+                expect(dialogTitle()).toBe('Chat images');
                 expect(scanned()).toEqual([{ group: false, chat: 'chat-a', avatar: 'nova.png' }]);
                 expect(toastr.info).not.toHaveBeenCalled();
             } finally { chat.length = 0; }
@@ -384,7 +403,7 @@ describe('clicking the notice opens the review for the chat that was refused', (
             expect(selectConversationThread).toHaveBeenCalledWith('ava.png', { groupId: null, showToast: false });
             expect(conversation.open).toEqual({ avatar: 'ava.png', groupId: '' });
             expect(shownPanels).toHaveLength(1);
-            expect(dialogTitle()).toBe('Images in this Conversation');
+            expect(dialogTitle()).toBe('Conversation images');
             expect(toastr.info).not.toHaveBeenCalled();
         });
 
@@ -392,7 +411,7 @@ describe('clicking the notice opens the review for the chat that was refused', (
             state.chatId = 'chat-b.jsonl';
             await click(conversationOrigin());
             expect(selectConversationThread).toHaveBeenCalledWith('ava.png', { groupId: null, showToast: false });
-            expect(dialogTitle()).toBe('Images in this Conversation');
+            expect(dialogTitle()).toBe('Conversation images');
             expect(scanned()).toEqual([]);
         });
 
@@ -400,7 +419,7 @@ describe('clicking the notice opens the review for the chat that was refused', (
             conversation.groups.add('g-1');
             await click(conversationOrigin({ groupId: 'g-1', branchId: 'br_1', lifetimeSeed: 'seed-g', createdAt: '333' }));
             expect(selectConversationThread).toHaveBeenCalledWith('ava.png', { groupId: 'g-1', showToast: false });
-            expect(dialogTitle()).toBe('Images in this Conversation');
+            expect(dialogTitle()).toBe('Conversation images');
         });
 
         test('when the origin is the open thread and its branch is still active, opens the dialog without switching', async () => {
@@ -408,7 +427,7 @@ describe('clicking the notice opens the review for the chat that was refused', (
             conversation.open = { avatar: 'ava.png', groupId: '' };
             await click(conversationOrigin());
             expect(selectConversationThread).not.toHaveBeenCalled();
-            expect(dialogTitle()).toBe('Images in this Conversation');
+            expect(dialogTitle()).toBe('Conversation images');
         });
 
         test.each([
@@ -506,7 +525,7 @@ describe('clicking the notice opens the review for the chat that was refused', (
                 messages: [{ id: 'm1', role: 'user', mes: 'First, edited afterwards.' }, { id: 'm2', role: 'assistant', mes: 'Arrived after the refusal.' }] });
             await click(origin);
             expect(selectConversationThread).toHaveBeenCalledWith('ava.png', { groupId: null, showToast: false });
-            expect(dialogTitle()).toBe('Images in this Conversation');
+            expect(dialogTitle()).toBe('Conversation images');
             expect(toastr.info).not.toHaveBeenCalled();
             expect(toastr.error).not.toHaveBeenCalled();
         });
@@ -517,13 +536,13 @@ describe('clicking the notice opens the review for the chat that was refused', (
             conversation.branches['ava.png|'].messages.push({ id: 'm9', role: 'assistant', mes: 'Another message.' });
             await click(conversationOrigin());
             expect(selectConversationThread).not.toHaveBeenCalled();
-            expect(dialogTitle()).toBe('Images in this Conversation');
+            expect(dialogTitle()).toBe('Conversation images');
             expect(toastr.info).not.toHaveBeenCalled();
         });
 
         test('a branch that is the same one by its createdAt alone is accepted when the origin knows no lifetimeSeed', async () => {
             await click(conversationOrigin({ lifetimeSeed: undefined }));
-            expect(dialogTitle()).toBe('Images in this Conversation');
+            expect(dialogTitle()).toBe('Conversation images');
             expect(toastr.info).not.toHaveBeenCalled();
         });
 
@@ -589,7 +608,8 @@ describe('clicking the notice opens the review for the chat that was refused', (
             expect(lookups).toContainEqual([sentenceGone, null]);
             expect(lookups).toContainEqual([sentenceAccount, null]);
             expect(lookups).toContainEqual([sentenceBranch, null]);
-            expect(marks.filter(([selector]) => selector === '.toast-message').length).toBe(3);
+            // Each of the three notices and each of the three explanations marks its text final, title and message together.
+            expect(marks.filter(([selector]) => selector === '.toast-message, .toast-title').length).toBe(6);
         });
 
         test('no dialog opens for either, and the error toast stays unused', async () => {
@@ -604,12 +624,12 @@ describe('clicking the notice opens the review for the chat that was refused', (
         test('opens the review for whatever is open, as before', async () => {
             state.chatId = 'chat-b.jsonl';
             await click(undefined);
-            expect(dialogTitle()).toBe('Images in replies');
+            expect(dialogTitle()).toBe('Chat images');
             expect(scanned()).toEqual([{ group: false, chat: 'chat-b', avatar: 'nova.png' }]);
             body.classes.add('neconyan-conversation-active');
             conversation.branches['nova.png|'] = { id: 'main', lifetimeSeed: 's', createdAt: 1, messages: [] };
             await click({ workspace: 'elsewhere' });
-            expect(dialogTitle()).toBe('Images in this Conversation');
+            expect(dialogTitle()).toBe('Conversation images');
             expect(toastr.info).not.toHaveBeenCalled();
         });
     });
@@ -729,7 +749,7 @@ describe('the Conversation dialog announces a saved branch choice', () => {
         expect(branch.neconyan_prompt_media).toEqual({ version: 1, images: 'display-only' });
         expect(flushConversationStore).toHaveBeenCalledTimes(2);
         expect(settingsEvents()).toHaveLength(1);
-        expect(toastr.success).toHaveBeenCalledWith('Image input choice saved.');
+        expect(toastr.success).toHaveBeenCalledWith('Choice saved.');
         // A save that does not reach the server restores the branch and announces nothing.
         flushConversationStore.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
         input.checked = false;
@@ -737,7 +757,7 @@ describe('the Conversation dialog announces a saved branch choice', () => {
         await input.listeners.change[0]();
         expect(settingsEvents()).toHaveLength(0);
         expect(branch.neconyan_prompt_media).toEqual({ version: 1, images: 'display-only' });
-        expect(toastr.error).toHaveBeenCalledWith('The Conversation choice was not saved.');
+        expect(toastr.error).toHaveBeenCalledWith('Your choice was not saved. Try again.');
     });
 
     test('the account checkbox in the Conversation dialog goes through the same announcement', async () => {
