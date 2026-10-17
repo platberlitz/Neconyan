@@ -209,4 +209,9 @@ export const refreshedKnowledgeCases = [
     ['Where is Redo cleanup in Character Expressions now?', 'images.expression-generation', 'Under More image tools, Redo cleanup'],
     ['Where is Show expressions in phone chat under Display and choices?', 'images.expression-phone', 'Display and choices and enable Show expressions in phone chat'],
     ['Can my character description expand another backgroundInstructions placeholder?', 'images.expression-prompts', 'macro text inside a character card is never expanded again'],
+    ['How do I search the Companion panel for a note?', 'agents.companion-panel', 'Search companions and notes'],
+    ['Can I filter companions by their latest note?', 'agents.companion-panel', 'name and latest note'],
+    ['Does searching the Companion panel keep my unfinished draft?', 'agents.companion-panel', 'only hides rows'],
+    ['Do Companion notes move my place in the chat?', 'agents.companion-progress', 'without pulling the chat to the bottom'],
+    ['Why does the preview show pending Companion cards before their notes exist?', 'agents.companion-progress', 'pending Companion cards name the Companions about to run'],
 ];
