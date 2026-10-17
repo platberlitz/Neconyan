@@ -252,7 +252,11 @@ function readStore(directories, { mutable = false } = {}) {
 
 const finishedCleanly = job => ['completed', 'cancelled'].includes(job.state);
 const unresolvedFailure = job => isTerminal(job) && !finishedCleanly(job) && !job.dismissed;
-const failureExpired = (job, at = now()) => unresolvedFailure(job)
+// `retainedReply` only marks records from releases that showed the Recovered
+// reply card; new jobs never set it. An old record is neither expired nor
+// evicted, so no ordinary ledger write can discard the last copy of a paid
+// reply before the upgrade migration has claimed it.
+const failureExpired = (job, at = now()) => unresolvedFailure(job) && !job.retainedReply
     && (job.finishedAt ?? job.updatedAt ?? 0) <= at - JOB_FAILURE_RETENTION_MS;
 const baseRemovable = job => finishedCleanly(job) || (isTerminal(job) && (job.dismissed || failureExpired(job)));
 
@@ -275,7 +279,8 @@ function familyLocked(job, jobs) {
 const removable = (job, jobs = {}) => !pruneHolds.has(job.owner) && baseRemovable(job) && !familyLocked(job, jobs);
 // Last resort when the ledger is over a limit: a recent unresolved failure may
 // go so new work is never refused because of old mistakes.
-const evictableFailure = (job, jobs = {}) => !pruneHolds.has(job.owner) && unresolvedFailure(job) && !familyLocked(job, jobs);
+const evictableFailure = (job, jobs = {}) => !pruneHolds.has(job.owner) && unresolvedFailure(job)
+    && !job.retainedReply && !familyLocked(job, jobs);
 
 function pruneJobs(jobs, protectedId) {
     const entries = Object.entries(jobs);
@@ -315,6 +320,10 @@ function dismissExpiredFailures(jobs) {
 }
 
 function writeStore(directories, store, protectedId, previousKeys = Object.keys(store.jobs)) {
+    // The server accepts requests before startup recovery runs, and any write
+    // here expires and prunes. Claim old Recovered copies on this ledger's first
+    // write before that race can discard the last saved reply.
+    ensureRetainedReplyProtection(directories, store);
     dismissExpiredFailures(store.jobs);
     const ordered = { ...store, jobs: pruneJobs(store.jobs, protectedId) };
     ordered.revision += 1;
@@ -738,6 +747,7 @@ export function dismissJob(directories, id) {
         const job = store.jobs[jobKey(id)];
         if (!job) throw fail(404, 'JOB_NOT_FOUND', 'This job no longer exists.');
         job.dismissed = true;
+        job.dismissedReason = 'user';
         job.updatedAt = now();
         // The client only ever sees the root, so dismissing it must also dismiss
         // the participants that would otherwise keep the family in the ledger.
@@ -745,6 +755,7 @@ export function dismissJob(directories, id) {
             const child = store.jobs[jobKey(childId)];
             if (!child) continue;
             child.dismissed = true;
+            child.dismissedReason = 'user';
             child.updatedAt = now();
         }
         return { job };
@@ -886,6 +897,338 @@ function hasSavedProviderResult(directories, job, step = job.recoveryStep) {
     }
 }
 
+const LEGACY_REPLY_UPGRADE = 'retainedReplyUpgrade';
+const RETAINED_REPLY_MIGRATION = 1;
+const LEGACY_ARTIFACT_MAX_BYTES = 16 * 1024 * 1024;
+const LEGACY_REPLY_MISSING = 'The finished reply from the previous version was kept in job history, but its saved model result is missing, so it was not sent again.';
+const LEGACY_REPLY_CONFLICT = 'Another step of this saved reply needs recovery, so the finished reply was kept in job history and was not written to the chat.';
+const SAVED_PROVIDER_STEP = /^provider:[a-f0-9]{64}$/;
+const retryableDismissal = reason => reason === 'restart' || reason === 'expired';
+
+function readStoredArtifact(directories, id, name) {
+    const filename = path.join(stateDir(directories), 'artifacts', jobKey(id), jobKey(name) + '.json');
+    try {
+        if (fs.statSync(filename).size > LEGACY_ARTIFACT_MAX_BYTES) return undefined;
+        return JSON.parse(fs.readFileSync(filename, 'utf8'));
+    } catch {
+        return undefined;
+    }
+}
+
+/** The one startup migration that must add evidence uses the same artifact shape. */
+function writeStoredArtifact(directories, id, name, value) {
+    const filename = path.join(stateDir(directories), 'artifacts', jobKey(id), jobKey(name) + '.json');
+    fs.mkdirSync(path.dirname(filename), { recursive: true, mode: 0o700 });
+    writeFileAtomicSync(filename, JSON.stringify(value), { mode: 0o600 });
+}
+
+function storedIntentHash(value) {
+    return crypto.createHash('sha256').update(canonical(value)).digest('hex');
+}
+
+const completedLegacyPreview = value => Boolean(value && typeof value === 'object' && !Array.isArray(value)
+    && !['preparing', 'generating'].includes(value.stage) && (value.text || value.reasoning));
+
+/**
+ * The Recovered reply card wrote a finished display copy beside the workflow
+ * root. `retainedReply` alone is also evidence: a crash can leave the flag
+ * without its artifact, and that copy must still survive the upgrade.
+ */
+function legacyRoleplayReply(directories, job, { previewOnly = false } = {}) {
+    if (job?.type !== 'media.roleplay-workflow' || job.parentId) return null;
+    // Only the one-time upgrade scan treats a completed display copy as legacy
+    // by itself. Every later pass requires the durable flag that scan writes.
+    if (!previewOnly && !job.retainedReply) return null;
+    const recovery = readStoredArtifact(directories, job.id, 'roleplay-recovery');
+    if (completedLegacyPreview(recovery)) return recovery;
+    const preview = readStoredArtifact(directories, job.id, 'roleplay-preview');
+    if (completedLegacyPreview(preview)) return preview;
+    return job.retainedReply ? { missing: true } : null;
+}
+
+/**
+ * Claim every old retained reply before failure expiry or pruning can dismiss
+ * it. This is the only place that writes `retainedReply`, and it only finds
+ * terminal records the old Recovered reply card left behind.
+ */
+function protectLegacyRoleplayReplies(directories, jobs, { previewOnly = false } = {}) {
+    let changed = false;
+    for (const job of Object.values(jobs)) {
+        if (!isTerminal(job) || job.state === 'completed') continue;
+        if (!legacyRoleplayReply(directories, job, { previewOnly })) continue;
+        if (!job.retainedReply) {
+            job.retainedReply = true;
+            changed = true;
+        }
+        // Old start-up code un-dismissed these two automatic reasons; an explicit
+        // user dismissal or a cleared history stays final.
+        if (job.dismissed && retryableDismissal(job.dismissedReason)) {
+            job.dismissed = false;
+            delete job.dismissedReason;
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+/** Claim old replies once, before this ledger's first expiry or prune, and persist that fact. */
+function ensureRetainedReplyProtection(directories, store) {
+    if (store.retainedReplyMigration === RETAINED_REPLY_MIGRATION) return false;
+    // An absent ledger must stay absent until real work is accepted.
+    if (Object.keys(store.jobs).length === 0) return false;
+    protectLegacyRoleplayReplies(directories, store.jobs, { previewOnly: true });
+    store.retainedReplyMigration = RETAINED_REPLY_MIGRATION;
+    return true;
+}
+
+const savedReplyResult = value => value && typeof value === 'object' && !Array.isArray(value)
+    && typeof value.text === 'string';
+
+function savedLegacyProviderResult(directories, job, reference) {
+    if (!reference || typeof reference !== 'object' || Array.isArray(reference)
+        || typeof reference.intentHash !== 'string' || !/^[a-f0-9]{64}$/.test(reference.intentHash)
+        || typeof reference.step !== 'string' || !SAVED_PROVIDER_STEP.test(reference.step)) return false;
+    const completed = readStoredArtifact(directories, job.id, reference.step);
+    // A Horde result replaces the staging value with the paid payload under its
+    // own artifact. Missing that payload must never fall through to a new call.
+    if (job.intent?.request?.binding?.backend === 'horde' && completed && typeof completed === 'object'
+        && !Array.isArray(completed) && completed.id) {
+        return savedReplyResult(readStoredArtifact(directories, job.id, 'horde-result:' + reference.step.slice(9)));
+    }
+    return savedReplyResult(completed);
+}
+
+function hasSavedLegacyMainResult(directories, job) {
+    // A saved output is replayed before any provider reference is considered.
+    // A damaged value still stops early in the execution path instead of
+    // sending a new main request.
+    if (readStoredArtifact(directories, job.id, 'roleplay-output') !== undefined) return true;
+    return savedLegacyProviderResult(directories, job,
+        readStoredArtifact(directories, job.id, 'roleplay-main-provider'));
+}
+
+const HELPER_REPLY_RECOVERY = 'helperReplyRecovery';
+
+/**
+ * A restart can leave a workflow child interrupted because a post-reply Agent,
+ * translation or speech request has no saved answer, while the main reply
+ * itself is complete. The paid main result is provable. Record the same failure
+ * stop that a live failed Agent pass writes, then release the child through the
+ * normal save path. The stop prevents Agent work; the retained unknown steps
+ * also stop every optional translation or speech request before dispatch. A
+ * genuinely unknown main result never reaches this branch.
+ */
+function recoverUnknownHelperReplies(directories, jobs, { hold = false } = {}) {
+    if (hold) return false;
+    let changed = false;
+    const postMainProviderStep = step => SAVED_PROVIDER_STEP.test(step)
+        || step.startsWith('provider:translation:')
+        || step.startsWith('provider:speech:');
+    for (const child of Object.values(jobs)) {
+        if (child.type !== 'roleplay.candidate' || !child.parentId) continue;
+        if (!['interrupted', 'failed'].includes(child.state)) continue;
+        // A queued retry is allowed to continue across another restart, but a
+        // failed migrated attempt stops here and stays visible for the owner.
+        if (child[HELPER_REPLY_RECOVERY] === 'queued' && child.state !== 'interrupted') continue;
+        if (child.cancellation?.requested
+            || child.dismissed && !retryableDismissal(child.dismissedReason)) continue;
+        const request = child.intent?.request;
+        const worldInfo = request?.worldInfo;
+        // Optional work also runs without Agents, so either feature is enough.
+        if (!worldInfo?.agents && !worldInfo?.translation && !worldInfo?.speech) continue;
+        const parent = jobs[jobKey(child.parentId)];
+        if (!parent || parent.type !== 'media.roleplay-workflow' || parent.owner !== child.owner
+            || !(parent.children ?? []).includes(child.id) || !parent.intent?.media || !parent.intent?.source
+            || parent.cancellation?.requested || parent.state === 'completed'
+            || parent.dismissed && !retryableDismissal(parent.dismissedReason)) continue;
+        // Post-main uncertainty is plain Agent steps plus outgoing translation
+        // and speech. Captions and other pre-main named steps stay excluded.
+        const missing = providerRecoverySteps(child).filter(step => !hasSavedProviderResult(directories, child, step));
+        if (!missing.length || missing.some(step => !postMainProviderStep(step))) continue;
+        if (missing.some(step => step.startsWith('provider:translation:')) && !worldInfo.translation) continue;
+        if (missing.some(step => step.startsWith('provider:speech:')) && !worldInfo.speech) continue;
+        const intentHash = storedIntentHash(child.intent);
+        const main = readStoredArtifact(directories, child.id, 'roleplay-main-provider');
+        if (!main || main.intentHash !== intentHash || !savedLegacyProviderResult(directories, child, main)
+            || missing.includes(main.step)) continue;
+        const candidates = (parent.children ?? []).map(id => jobs[jobKey(id)])
+            .filter(candidate => candidate?.type === 'roleplay.candidate');
+        if (candidates.some(candidate => candidate.id !== child.id && candidate.state !== 'completed')) continue;
+        const stop = readStoredArtifact(directories, child.id, 'roleplay-agent-stop');
+        if (stop !== undefined && (stop?.reason !== 'failed' || stop?.intentHash !== intentHash)) continue;
+        try {
+            if (stop === undefined) {
+                writeStoredArtifact(directories, child.id, 'roleplay-agent-stop', { intentHash, reason: 'failed' });
+            }
+        } catch {
+            continue;
+        }
+        if (child.dismissed) {
+            child.dismissed = false;
+            delete child.dismissedReason;
+        }
+        if (parent.dismissed) {
+            parent.dismissed = false;
+            delete parent.dismissedReason;
+        }
+        child[HELPER_REPLY_RECOVERY] = 'queued';
+        child.state = 'queued';
+        child.stage = null;
+        child.finishedAt = null;
+        child.result = null;
+        child.error = null;
+        // Deliberately keep the unknown post-main steps: they stay blocked if
+        // any later path tries the helper or optional work before the stop is read.
+        parent.state = 'waiting';
+        parent.stage = 'children';
+        parent.finishedAt = null;
+        parent.error = null;
+        changed = true;
+    }
+    return changed;
+}
+
+/**
+ * Finish old Recovered replies through the current workflow and save path.
+ * Only already-paid work is released: a missing or unknown main result is
+ * preserved and reported instead, because the upgrade must never send the
+ * main request again. The marker makes a failed attempt terminal; the owner's
+ * normal Retry stays available and the reason remains on the job.
+ */
+function upgradeLegacyRoleplayReplies(directories, jobs, { hold = false } = {}) {
+    let changed = false;
+    const mark = (job, status) => {
+        job[LEGACY_REPLY_UPGRADE] = status;
+        changed = true;
+    };
+    const preserve = (job, message = null) => {
+        mark(job, 'preserved');
+        if (!message) return;
+        if (!isTerminal(job)) {
+            job.state = 'interrupted';
+            job.finishedAt = now();
+        }
+        job.stage = 'child-needs-recovery';
+        job.error = { code: 'ROLEPLAY_REPLY_PRESERVED', message };
+        job.recoverability = 'needs-retry';
+    };
+    for (const job of Object.values(jobs)) {
+        const reply = legacyRoleplayReply(directories, job);
+        if (!reply) continue;
+        if (job.state === 'completed') continue;
+        const status = job[LEGACY_REPLY_UPGRADE];
+        if (status === 'queued' || status === 'preserved') continue;
+        // A restart or expiry dismissal is automatic, even when the one-time
+        // scan has already marked this ledger. Only a real owner dismissal is final.
+        if (job.dismissed && retryableDismissal(job.dismissedReason)) {
+            job.dismissed = false;
+            delete job.dismissedReason;
+            changed = true;
+        }
+        if (job.state === 'cancelled' || job.cancellation?.requested || job.dismissed) {
+            // The owner stopped or dismissed this reply; keep the record, never
+            // schedule a write they already refused.
+            mark(job, 'preserved');
+            continue;
+        }
+        if (hold) {
+            if (status === 'paused') continue;
+            mark(job, 'paused');
+            if (!isTerminal(job)) {
+                job.state = 'interrupted';
+                job.stage = null;
+                job.finishedAt = now();
+            }
+            job.error = { code: 'SAFE_START',
+                message: 'Neconyan restarted in safe mode, so this saved reply was left untouched. Start normally to finish saving it.' };
+            continue;
+        }
+        if (reply.missing) {
+            preserve(job, LEGACY_REPLY_MISSING);
+            continue;
+        }
+        const childId = reply.childId;
+        const child = typeof childId === 'string' ? jobs[jobKey(childId)] : null;
+        if (!child || child.parentId !== job.id || !(job.children ?? []).includes(child.id)
+            || child.owner !== job.owner || child.type !== 'roleplay.candidate'
+            || !job.intent?.media || !job.intent?.source) {
+            preserve(job, LEGACY_REPLY_MISSING);
+            continue;
+        }
+        if (child.cancellation?.requested || child.state === 'cancelled') {
+            mark(job, 'preserved');
+            continue;
+        }
+        if (child.dismissed) {
+            if (!retryableDismissal(child.dismissedReason)) {
+                mark(job, 'preserved');
+                continue;
+            }
+            child.dismissed = false;
+            delete child.dismissedReason;
+            changed = true;
+        }
+        const candidates = (job.children ?? []).map(id => jobs[jobKey(id)])
+            .filter(candidate => candidate?.type === 'roleplay.candidate');
+        const otherFailed = candidates.find(candidate => candidate.id !== child.id
+            && ['failed', 'interrupted', 'conflict', 'cancelled'].includes(candidate.state));
+        if (otherFailed) {
+            preserve(job, LEGACY_REPLY_CONFLICT);
+            continue;
+        }
+        if (child.state === 'completed') {
+            const active = candidates.find(candidate => candidate.id !== child.id && candidate.state !== 'completed');
+            if (active) {
+                job.state = 'waiting';
+                job.stage = 'children';
+                job.finishedAt = null;
+                job.error = null;
+            } else {
+                job.state = 'queued';
+                job.stage = 'children-completed';
+                job.finishedAt = null;
+                job.error = null;
+            }
+            mark(job, 'queued');
+            continue;
+        }
+        if (!['failed', 'interrupted', 'conflict'].includes(child.state)) {
+            // The existing waiting resolver owns this transition once the child
+            // reaches a terminal state.
+            job.state = 'waiting';
+            job.stage = 'children';
+            job.finishedAt = null;
+            job.error = null;
+            mark(job, 'queued');
+            continue;
+        }
+        if (child.error?.code === 'ROLEPLAY_SOURCE_CHANGED') {
+            mark(job, 'preserved');
+            continue;
+        }
+        if (!hasSavedLegacyMainResult(directories, child)) {
+            preserve(job, LEGACY_REPLY_MISSING);
+            continue;
+        }
+        // Release only the one paid child through the ordinary execution path.
+        // Its saved prompt and provider result are verified there again before
+        // any Agent work, and a changed chat still refuses the write. Automatic
+        // upgrade must not call explicitRetryRecovery: clearing saved
+        // uncertainty here could dispatch another optional or Agent request.
+        child.state = 'queued';
+        child.stage = null;
+        child.finishedAt = null;
+        child.result = null;
+        child.error = null;
+        job.state = 'waiting';
+        job.stage = 'children';
+        job.finishedAt = null;
+        job.error = null;
+        mark(job, 'queued');
+    }
+    return changed;
+}
+
 /**
  * Start-up reconciliation. Work that was queued but never started is recovered
  * and returned for dispatch. Work that was running when the process stopped is
@@ -895,7 +1238,10 @@ function hasSavedProviderResult(directories, job, step = job.recoveryStep) {
 export function recoverJobs(directories, { startedAt = PROCESS_STARTED_AT, hold = false } = {}) {
     return mutateJobs(directories, store => {
         const recoverable = [];
-        let changed = false;
+        // Claim old Recovered replies once, in the same mutation that would
+        // otherwise expire or prune them, before any state below can dismiss
+        // the root. The marker rides the same atomic ledger write.
+        let changed = ensureRetainedReplyProtection(directories, store);
         // Safe start: work that would run again on its own is paused for a
         // deliberate retry, because replaying it may be what stopped the server.
         const pause = job => {
@@ -909,7 +1255,7 @@ export function recoverJobs(directories, { startedAt = PROCESS_STARTED_AT, hold 
         for (const job of Object.values(store.jobs)) {
             // Failures from before this start are cleared away; work this very
             // restart interrupts below stays visible so it can still be retried.
-            if (unresolvedFailure(job) && (job.finishedAt ?? job.updatedAt ?? 0) < startedAt) {
+            if (unresolvedFailure(job) && !job.retainedReply && (job.finishedAt ?? job.updatedAt ?? 0) < startedAt) {
                 changed = true;
                 job.dismissed = true;
                 job.dismissedReason = 'restart';
@@ -953,6 +1299,13 @@ export function recoverJobs(directories, { startedAt = PROCESS_STARTED_AT, hold 
                 job.recoverability = 'needs-retry';
             }
         }
+        // Recovery has settled ordinary states. A paid main reply whose only
+        // lost step is a post-reply helper is released first, so the legacy
+        // pass sees it as already queued rather than releasing it again.
+        if (recoverUnknownHelperReplies(directories, store.jobs, { hold })) changed = true;
+        // Old retained replies now join that same flow, or keep their copy with
+        // a visible reason.
+        if (upgradeLegacyRoleplayReplies(directories, store.jobs, { hold })) changed = true;
         return { recoverable, changed };
     });
 }
