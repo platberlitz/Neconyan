@@ -47,7 +47,7 @@ function createHost() {
         resolveGenerationUiLockState, resolveGenerationUnblockState, resolveStopGenerationState,
         limitGenerationProse, isGenerationLengthFinish,
         buildAssistantKnowledge, getAssistantKnowledgeBudget,
-        activeGenerationRun: null, activeRoleplayJob: null, agentGenerationContextProvider: null, abortController: null,
+        activeGenerationRun: null, activeRoleplayJob: null, chatSendStartRevision: 0, agentGenerationContextProvider: null, abortController: null,
         generationChatFilter: null,
         chatId: 'chat-a', chatGeneration: 0, agentRunId: 0, cancelRevision: 0,
         chat: [], chat_metadata: {}, characters: [{ name: 'Assistant', data: { extensions: {} } }],
