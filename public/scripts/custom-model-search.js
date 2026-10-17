@@ -16,7 +16,6 @@ export function initCustomModelSearch(select) {
         select.value = value;
         select.dispatchEvent(new Event('change', { bubbles: true }));
         render();
-        input.focus({ preventScroll: true });
     }
 
     function render() {

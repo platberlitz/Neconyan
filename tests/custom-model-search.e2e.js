@@ -38,6 +38,8 @@ for (const width of [393, 1280]) {
             expect(await chosen()).toBe('aurora-chat');
             await results.locator('button').click();
             await expect.poll(chosen).toBe('aurora-think');
+            // Picking a model must not move focus back to the search box (that raises the phone keyboard).
+            await expect(search).not.toBeFocused();
             await expect(page.locator('#custom_model_id')).toHaveValue('aurora-think');
             await search.fill('unknown model');
             await expect(results.locator('button')).toHaveCount(0);
