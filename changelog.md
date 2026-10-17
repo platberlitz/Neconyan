@@ -8,6 +8,7 @@
 - PR #202 (2026-10-17) `fix(roleplay): retry failed Agents and keep the finished reply`
 - PR #203 (2026-10-17) `fix(i18n): stop collecting header names as captions`
 - PR #204 (2026-10-17) `fix(images): clarify image choices and make controls translatable`
+- PR #205 (2026-10-17) `fix(images): make image review and change history clear and translatable`
 
 ## v1.3.4.1
 
