@@ -1,5 +1,5 @@
 import { DOMPurify, showdown } from '../../../../lib.js';
-import { chat, saveChatDebounced, substituteParams, substituteParamsExtended } from '../../../../script.js';
+import { chat, changeMessageBelowReader, changeMessagesBelowReader, saveChatDebounced, substituteParams, substituteParamsExtended } from '../../../../script.js';
 import { encodeStyleTags, decodeStyleTags } from '../../../chats.js';
 import { eventSource, event_types } from '../../../events.js';
 import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../popup.js';
@@ -592,13 +592,7 @@ function buildCompanionCard(agentId, result, message, isPreview = false) {
     `;
 }
 
-export function renderCompanionResultsForMessage(messageIndex, preview = null) {
-    const message = preview?.message ?? chat[messageIndex];
-    const messageElement = preview ? $(preview.element) : $(`.mes[mesid="${messageIndex}"]`);
-
-    if (!messageElement.length) {
-        return;
-    }
+function renderCompanionResultsForRow(message, messageElement, messageIndex, preview) {
     const textElement = messageElement.find('.mes_text').first();
     decorateStyledChoiceRows(textElement[0]);
 
@@ -624,12 +618,43 @@ export function renderCompanionResultsForMessage(messageIndex, preview = null) {
         () => preview ? preview.element.isConnected : isMessageTargetCurrent(message, target, messageIndex, { text: false, revision: false }));
 }
 
-function renderAllCompanionResults() {
-    // Older messages receive their notes when the host loads that page.
-    for (const element of document.querySelectorAll('#chat > .mes[mesid]')) {
-        const index = Number(element.getAttribute('mesid'));
-        if (Number.isInteger(index) && index >= 0) renderCompanionResultsForMessage(index);
+export function renderCompanionResultsForMessage(messageIndex, preview = null, { element: rowElement = null } = {}) {
+    const message = preview?.message ?? chat[messageIndex];
+    if (!message) {
+        return;
     }
+    const messageElement = rowElement ? $(rowElement) : preview ? $(preview.element) : $(`.mes[mesid="${messageIndex}"]`);
+
+    if (!messageElement.length) {
+        return;
+    }
+
+    const applyResults = () => renderCompanionResultsForRow(message, messageElement, messageIndex, preview);
+
+    // A saved note grows the reply below the reader. Preserve the visible
+    // message instead of letting the resize observer pin the chat to the
+    // bottom; the preview keeps its own streaming scroll policy. Prepared rows
+    // are detached, so they cannot move the live viewport and need no scan.
+    if (preview || !messageElement[0]?.isConnected) applyResults();
+    else changeMessageBelowReader(messageElement, applyResults);
+}
+
+function renderAllCompanionResults() {
+    const rows = [...document.querySelectorAll('#chat > .mes[mesid]')]
+        .map(element => ({ element, messageIndex: Number(element.getAttribute('mesid')) }))
+        .filter(row => Number.isInteger(row.messageIndex) && row.messageIndex >= 0 && chat[row.messageIndex]);
+
+    if (rows.length === 0) {
+        return;
+    }
+
+    // One anchor read and one restore for the whole chat. Wrapping each note
+    // separately forces a full layout for every row on chat open and reload.
+    changeMessagesBelowReader(rows.map(row => row.element), () => {
+        for (const { messageIndex } of rows) {
+            renderCompanionResultsForRow(chat[messageIndex], $(`.mes[mesid="${messageIndex}"]`), messageIndex, null);
+        }
+    });
 }
 
 function hasRunnableCompanionAgents() {
@@ -989,6 +1014,18 @@ export function initCompanionCardUi() {
         if (previewResults.get(detail.element) === signature) return;
         previewResults.set(detail.element, signature);
         renderCompanionResultsForMessage(null, detail);
+    });
+    // The saved reply replaces the preview in one DOM update. Render its notes
+    // while the new rows are still detached, so they arrive at their final
+    // height instead of growing the chat after it has been scrolled.
+    document.addEventListener('neconyan:chat-rows-prepared', ({ detail }) => {
+        const elements = Array.isArray(detail?.elements) ? detail.elements : [];
+        for (const element of elements) {
+            const messageIndex = Number(element?.getAttribute?.('mesid'));
+            if (Number.isInteger(messageIndex) && messageIndex >= 0) {
+                renderCompanionResultsForMessage(messageIndex, null, { element });
+            }
+        }
     });
     $(document).on('click', '.mes_run_companions', async function () {
         const messageIndex = getMessageIndexFromElement(this);

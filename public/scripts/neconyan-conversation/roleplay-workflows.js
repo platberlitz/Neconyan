@@ -373,23 +373,42 @@ function readback(key, name, options) {
 
 /**
  * Where the live reply sits on screen, so saving it does not move the page.
- * The saved message just above the reply keeps its place through the save, whether
- * the reply is new, a swipe or a continuation, so it holds the view.
- * @returns {{messageId: string|number, offsetTop: number}|null}
+ * The saved reply's own text keeps its place, so a taller saved header cannot
+ * shift it; the row above remains a fallback for a window that does not render
+ * the reply yet. A group receipt names the final saved speaker, so its last
+ * row is anchored only when the preview still shows that same child. An
+ * incomplete group preview falls back to the preceding row instead of
+ * applying unsaved preview text to the first saved speaker.
+ * @param {{result?: {childJobId?: string, speakers?: Array<object>}|null}|null} [receipt] Saved workflow receipt, when one is available.
+ * @returns {{messageId: string|number, offsetTop: number, part: string|null, fallback: {messageId: string|number, offsetTop: number}|null}|null}
  */
-export function finishedReplyReadingAnchor() {
+export function finishedReplyReadingAnchor(receipt = null) {
     const chatNode = globalThis.document?.querySelector?.('#chat');
     const preview = chatNode?.querySelector('#neconyan-roleplay-preview');
     if (!preview) return null;
     const chatTop = chatNode.getBoundingClientRect().top;
+    const previewText = preview.querySelector?.('.mes_text');
+    const previewTop = preview.getBoundingClientRect().top - chatTop;
+    const offsetTop = previewText ? previewText.getBoundingClientRect().top - chatTop : previewTop;
+    const part = previewText ? '.mes_text' : null;
     let above = preview.previousElementSibling;
     while (above && !above.matches('.mes[mesid]')) above = above.previousElementSibling;
-    if (above) {
-        return { messageId: above.getAttribute('mesid'), offsetTop: above.getBoundingClientRect().top - chatTop };
-    }
+    const fallback = above
+        ? { messageId: above.getAttribute('mesid'), offsetTop: above.getBoundingClientRect().top - chatTop }
+        : null;
     const replacement = chatNode.querySelector('[data-roleplay-replacement]');
+    const speakers = receipt?.result?.speakers;
+    if (!replacement && Array.isArray(speakers) && speakers.length > 0) {
+        const savedChild = receipt?.result?.childJobId;
+        const previewChild = preview.dataset?.roleplayChild;
+        if (previewChild && savedChild !== null && savedChild !== undefined
+            && String(previewChild) === String(savedChild)) {
+            return { messageId: chat.length + speakers.length - 1, offsetTop, part, fallback };
+        }
+        return fallback ? { ...fallback, part: null, fallback: null } : null;
+    }
     const messageId = replacement ? Number(replacement.dataset.roleplayReplacement) : chat.length;
-    return { messageId, offsetTop: preview.getBoundingClientRect().top - chatTop };
+    return { messageId, offsetTop, part, fallback };
 }
 
 async function readbackReceipt(key, name, shared, id) {
@@ -435,7 +454,7 @@ async function readbackReceipt(key, name, shared, id) {
                 }
                 activeReload = Promise.resolve()
                     .then(() => {
-                        keepChatReadingPositionOnNextLoad(finishedReplyReadingAnchor());
+                        keepChatReadingPositionOnNextLoad(finishedReplyReadingAnchor(receipt));
                         return refreshCurrentChatFromSaved({ signal: controller.signal });
                     })
                     .finally(() => {

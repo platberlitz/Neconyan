@@ -20,9 +20,10 @@ for (const lifecycle of [false, true]) for (const outcome of ['complete', 'navig
         let reached;
         const gate = new Promise(resolve => { release = resolve; });
         const paused = new Promise(resolve => { reached = resolve; });
+        const dispatched = [];
         const documentRef = { createDocumentFragment: () => ({ children: [], appendChild(node) {
             this.children.push(...(node.children ?? [node]));
-        } }) };
+        } }), dispatchEvent(event) { dispatched.push(event); } };
         const tags = jest.fn();
         const removed = jest.fn();
         const controls = jest.fn();
@@ -30,6 +31,7 @@ for (const lifecycle of [false, true]) for (const outcome of ['complete', 'navig
         const committed = jest.fn();
         const runtime = vm.createContext({
             console: { info: no }, performance, document: documentRef,
+            CustomEvent: class { constructor(type, options = {}) { this.type = type; this.detail = options.detail; } },
             chat: Array.from({ length: 17 }, (_, index) => ({ mes: `Saved ${index}` })),
             captureChatRenderValidity: () => () => current,
             chatElement: { 0: { appendChild: fragment => rows.push(...fragment.children) }, find: () => {
@@ -73,5 +75,7 @@ for (const lifecycle of [false, true]) for (const outcome of ['complete', 'navig
         expect(controls).toHaveBeenCalledTimes(outcome === 'complete' ? 1 : 0);
         expect(observed).toHaveBeenCalledTimes(outcome === 'complete' ? 17 : 0);
         expect(committed).toHaveBeenCalledTimes(outcome === 'complete' ? 1 : 0);
+        expect(dispatched.map(event => event.type)).toEqual(outcome === 'complete' ? ['neconyan:chat-rows-prepared'] : []);
+        expect(dispatched[0]?.detail.elements.length ?? 0).toBe(outcome === 'complete' ? 17 : 0);
     });
 }

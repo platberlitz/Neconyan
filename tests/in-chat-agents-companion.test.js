@@ -37,6 +37,7 @@ describe('companion card ui', () => {
     let decodeStyleTags;
     let jqueryObject;
     let powerUser;
+    let batchReaderChange;
 
     async function importCompanionUi() {
         jest.resetModules();
@@ -67,6 +68,8 @@ describe('companion card ui', () => {
 
         await jest.unstable_mockModule('../public/script.js', () => ({
             chat,
+            changeMessageBelowReader: jest.fn((_element, mutate) => mutate()),
+            changeMessagesBelowReader: (batchReaderChange = jest.fn((_elements, mutate) => mutate())),
             saveChatDebounced: jest.fn(),
             substituteParams: jest.fn((value, options = {}) => String(value ?? '')
                 .replaceAll('{{user}}', 'Traveler')
@@ -741,6 +744,7 @@ describe('companion card ui', () => {
         globalThis.document.querySelectorAll.mockReturnValue([0, 1].map(index => ({ getAttribute: () => String(index) })));
 
         initCompanionCardUi();
+        batchReaderChange.mockClear();
         globalThis.$.mockClear();
 
         await eventSource.emit('message_deleted', 5);
@@ -748,5 +752,7 @@ describe('companion card ui', () => {
         const selectors = globalThis.$.mock.calls.map(([selector]) => selector);
         expect(selectors).toEqual(expect.arrayContaining(['.mes[mesid="0"]', '.mes[mesid="1"]']));
         expect(selectors).not.toContain('.mes[mesid="5"]');
+        expect(batchReaderChange).toHaveBeenCalledTimes(1);
+        expect(batchReaderChange.mock.calls[0][0]).toHaveLength(2);
     });
 });
