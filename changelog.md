@@ -6,6 +6,7 @@
 - PR #200 (2026-10-17) `fix(model-search): show favourites as a star and keep the keyboard down`
 - PR #201 (2026-10-17) `feat(models): searchable, auto-grouped model lists for every backend`
 - PR #202 (2026-10-17) `fix(roleplay): retry failed Agents and keep the finished reply`
+- PR #203 (2026-10-17) `fix(i18n): stop collecting header names as captions`
 
 ## v1.3.4.1
 
