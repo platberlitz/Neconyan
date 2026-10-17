@@ -38,6 +38,8 @@ for (const width of [393, 1280]) {
             expect(await chosen()).toBe('aurora-chat');
             await results.locator('button').click();
             await expect.poll(chosen).toBe('aurora-think');
+            // Picking a model must not move focus back to the search box (that raises the phone keyboard).
+            await expect(search).not.toBeFocused();
             await expect(page.locator('#custom_model_id')).toHaveValue('aurora-think');
             await search.fill('unknown model');
             await expect(results.locator('button')).toHaveCount(0);
@@ -64,14 +66,25 @@ for (const width of [393, 1280]) {
             await expect(results.locator('button')).toHaveCount(5);
             expect((await search.boundingBox()).height).toBeGreaterThanOrEqual(44);
             expect(await results.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
-            for (const button of await results.locator('button').all()) expect((await button.boundingBox()).height).toBeGreaterThanOrEqual(44);
+            for (const button of await results.locator('button').all()) {
+                expect((await button.boundingBox()).height).toBeGreaterThanOrEqual(44);
+                // Each row grows to fit its name and ID instead of spilling into the next row.
+                expect(await button.evaluate(element => element.scrollHeight <= element.clientHeight + 1)).toBe(true);
+            }
 
             // A manual ID remains valid even when the provider does not advertise it.
             await page.locator('#custom_model_id').fill('private/unlisted');
             await expect.poll(chosen).toBe('private/unlisted');
             await expect(results.locator('[aria-pressed="true"]')).toHaveAttribute('data-model-id', 'private/unlisted');
             await page.locator('[data-sb-model-id-favorite-source="custom"]').click();
-            await expect(results.locator('[data-model-id="private/unlisted"]')).toContainText('Favourite');
+            const favouriteRow = results.locator('[data-model-id="private/unlisted"]');
+            const star = favouriteRow.locator('[data-model-favourite]');
+            await expect(star).toHaveAttribute('aria-label', 'Favourite');
+            await expect(favouriteRow).not.toContainText('Favourite');
+            const [rowBox, starBox] = await Promise.all([favouriteRow.boundingBox(), star.boundingBox()]);
+            expect(rowBox.x + rowBox.width - (starBox.x + starBox.width)).toBeLessThanOrEqual(16);
+            expect(starBox.y).toBeGreaterThanOrEqual(rowBox.y);
+            expect(starBox.y + starBox.height).toBeLessThanOrEqual(rowBox.y + rowBox.height);
 
             // Large catalogues stay bounded, and models beyond the first page are searchable.
             models = Array.from({ length: 80 }, (_, index) => ({ id: `catalogue-${index}`, name: `Catalogue ${index}` }));
