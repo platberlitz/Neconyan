@@ -94,6 +94,7 @@ for (const phone of [false, true]) for (const stage of ['translation', 'speech']
     const viewport = phone ? 'phone' : 'desktop';
     const route = stage === 'translation' ? '/translate' : '/audio/speech';
     const heldModel = stage === 'translation' ? undefined : 'tts-1';
+    const optionalSettings = { autoMode: stage === 'translation' ? 'responses' : 'none', automaticSpeech: stage === 'speech' };
     const fixtureReply = body => body.q
         ? { translatedText: `FR: ${body.q}` }
         : { choices: [{ message: { role: 'assistant', content: answer } }] };
@@ -104,14 +105,17 @@ for (const phone of [false, true]) for (const stage of ['translation', 'speech']
             saved.extension_settings.inChatAgents = { globalSettings: { enabled: false } };
             saved.extension_settings.translate = { provider: 'libre', target_language: 'fr', internal_language: 'en',
                 auto_mode: 'none' };
+            saved.extension_settings.tts = { ...saved.extension_settings.tts, auto_generation: false };
         } });
         await account.post('/api/secrets/write', { key: 'libre_url', value: app.provider.url + '/translate' });
         const page = await openRoleplay(account);
         // The fixture's new-character greeting must finish before the paid reply's optional work is held.
-        await page.evaluate(async autoMode => {
+        expect(app.provider.calls.filter(call => call.url.endsWith(route))).toHaveLength(0);
+        await page.evaluate(async ({ autoMode, automaticSpeech }) => {
             const { extension_settings } = await import('/scripts/extensions.js');
             extension_settings.translate.auto_mode = autoMode;
-        }, stage === 'translation' ? 'responses' : 'none');
+            extension_settings.tts.auto_generation = automaticSpeech;
+        }, optionalSettings);
         await acknowledgeActiveSettings(page);
         app.provider.mode.hold = [heldModel];
         const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/workflow/submit') && response.status() !== 409);
