@@ -558,6 +558,135 @@ test('an Agent that fails twice still saves the reply and keeps translation', as
     await f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') });
 });
 
+test('an Agent edited while it runs then fails still saves the reply with its accepted definitions', async t => {
+    const f = prepared(t, [{ id: 'rewrite', phase: 'post', prompt: 'REWRITE', postProcess: {
+        enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64,
+    } }]);
+    const file = path.join(f.directories.inChatAgents, 'rewrite.json');
+    let mainCalls = 0, agentCalls = 0;
+    await f.run({ generate: paid('main', () => { mainCalls++; return 'Raw answer'; }), generateAgent: paid('rewrite', () => {
+        agentCalls++;
+        if (agentCalls === 1) {
+            const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+            raw.prompt = 'EDITED WHILE RUNNING';
+            fs.writeFileSync(file + '.tmp', JSON.stringify(raw));
+            fs.renameSync(file + '.tmp', file);
+        }
+        throw new Error('Agent provider is down');
+    }) });
+    assert.equal(mainCalls, 1);
+    assert.equal(agentCalls, 1, 'the changed setup blocks the retry before another paid Agent request');
+    const saved = f.saved();
+    assert.equal(saved.length, 4);
+    assert.equal(saved.at(-1).mes, 'Raw answer');
+    await f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') });
+    assert.deepEqual(f.saved(), saved);
+});
+
+test('settings saved while Agents run do not discard the reply when translation cannot run', async t => {
+    const f = prepared(t, [{ id: 'rewrite', phase: 'post', prompt: 'REWRITE', postProcess: {
+        enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64,
+    } }], { translation: true });
+    const file = path.join(f.directories.root, 'settings.json');
+    let agentCalls = 0, translationCalls = 0;
+    await f.run({ generate: paid('main', () => 'Raw answer'), generateAgent: paid('rewrite', () => {
+        agentCalls++;
+        if (agentCalls === 1) {
+            const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+            raw.active_character = 'Other.png';
+            fs.writeFileSync(file + '.tmp', JSON.stringify(raw));
+            fs.renameSync(file + '.tmp', file);
+        }
+        throw new Error('Agent provider is down');
+    }), translationFetch: async () => {
+        translationCalls++;
+        return new Response(JSON.stringify({ translatedText: 'Réponse brute' }));
+    } });
+    assert.equal(agentCalls, 1);
+    assert.equal(translationCalls, 0, 'changed settings are refused before any translation request');
+    const saved = f.saved();
+    assert.equal(saved.length, 4);
+    assert.equal(saved.at(-1).mes, 'Raw answer');
+    assert.equal(saved.at(-1).extra.display_text, undefined);
+    await f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') });
+    assert.deepEqual(f.saved(), saved);
+});
+
+test('a translation failure after Agents keeps the finished rewrite', async t => {
+    const f = prepared(t, [{ id: 'rewrite', phase: 'post', prompt: 'REWRITE', postProcess: {
+        enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64,
+    } }], { translation: true });
+    let agentCalls = 0, translationCalls = 0;
+    await f.run({ generate: paid('main', () => 'Raw answer'), generateAgent: paid('rewrite', () => {
+        agentCalls++;
+        return 'Polished answer';
+    }), translationFetch: async () => {
+        translationCalls++;
+        throw new Error('Translation provider is down');
+    } });
+    assert.equal(agentCalls, 1);
+    assert.equal(translationCalls, 1);
+    const saved = f.saved();
+    assert.equal(saved.length, 4);
+    assert.equal(saved.at(-1).mes, 'Polished answer');
+    assert.equal(saved.at(-1).extra.display_text, undefined);
+    await f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') });
+    assert.deepEqual(f.saved(), saved);
+});
+
+test('a restarted reply survives an Agent edit made before finalisation', async t => {
+    const f = prepared(t, [{ id: 'rewrite', phase: 'post', prompt: 'REWRITE', postProcess: {
+        enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64,
+    } }]);
+    const file = path.join(f.directories.inChatAgents, 'rewrite.json');
+    const crash = new AbortController();
+    await assert.rejects(f.run({ signal: crash.signal, generate: paid('main', () => 'Raw answer'), generateAgent: () => {
+        crash.abort(new Error('process stopped'));
+        throw new Error('process stopped');
+    } }), /process stopped/);
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    raw.prompt = 'EDITED AFTER RESTART';
+    fs.writeFileSync(file + '.tmp', JSON.stringify(raw));
+    fs.renameSync(file + '.tmp', file);
+
+    let mainCalls = 0, agentCalls = 0;
+    await f.run({ generate: () => { mainCalls++; assert.fail('main repeated'); },
+        generateAgent: paid('rewrite', () => { agentCalls++; return 'x'; }) });
+    assert.equal(mainCalls, 0);
+    assert.equal(agentCalls, 0, 'the changed Agent is never dispatched again');
+    const saved = f.saved();
+    assert.equal(saved.length, 4);
+    assert.equal(saved.at(-1).mes, 'Raw answer');
+    assert.equal(readArtifact(f.directories, f.jobId, 'roleplay-output').agentProof, undefined);
+    assert.deepEqual(readArtifact(f.directories, f.jobId, 'roleplay-agent-stop'),
+        { intentHash: roleplayHash(f.context().job.intent), reason: 'failed' });
+    await f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') });
+    assert.deepEqual(f.saved(), saved);
+});
+
+test('an owner Agent stop does not authorise a reply without Agent proof', async t => {
+    const f = prepared(t, [{ id: 'rewrite', phase: 'post', prompt: 'REWRITE', postProcess: {
+        enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64,
+    } }]);
+    const file = path.join(f.directories.inChatAgents, 'rewrite.json');
+    const crash = new AbortController();
+    await assert.rejects(f.run({ signal: crash.signal, generate: paid('main', () => 'Raw answer'), generateAgent: () => {
+        crash.abort(new Error('process stopped'));
+        throw new Error('process stopped');
+    } }), /process stopped/);
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    raw.prompt = 'EDITED AFTER RESTART';
+    fs.writeFileSync(file, JSON.stringify(raw));
+    writeArtifact(f.directories, f.jobId, 'roleplay-agent-stop', { intentHash: roleplayHash(f.context().job.intent) });
+
+    let mainCalls = 0, agentCalls = 0;
+    await assert.rejects(f.run({ generate: () => { mainCalls++; assert.fail('main repeated'); },
+        generateAgent: paid('rewrite', () => { agentCalls++; return 'x'; }) }), { code: 'ROLEPLAY_AGENT_RECOVERY' });
+    assert.equal(mainCalls, 0);
+    assert.equal(agentCalls, 0);
+    assert.equal(f.saved().length, 3, 'the owner Stop path still requires its completed Agent proof');
+});
+
 test('cancelling while Agents run still cancels the job instead of saving the reply', async t => {
     const f = prepared(t, [{ id: 'rewrite', phase: 'post', prompt: 'REWRITE', postProcess: {
         enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64,

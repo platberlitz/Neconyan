@@ -130,11 +130,11 @@ test('continuation translation uses the protected original message plus the gene
     assert.equal(original.extra.display_text, 'FR(Answer again)');
 });
 
-test('changed saved translation settings or secret refuse before any translation provider request', async t => {
+test('changed saved translation settings or secret skip translation but keep the finished reply', async t => {
     for (const change of ['settings', 'secret']) {
         const { f, run, settings } = prepared(t);
         let calls = 0;
-        await assert.rejects(run({
+        await run({
             generate: async ({ beforeDispatch }) => {
                 beforeDispatch();
                 if (change === 'settings') {
@@ -144,13 +144,15 @@ test('changed saved translation settings or secret refuse before any translation
                 return { text: 'Hello' };
             },
             translationFetch: () => { calls++; return assert.fail('Translation sent after source change'); },
-        }));
+        });
         assert.equal(calls, 0);
-        assert.equal(chat(f).length, 3);
+        assert.equal(chat(f).length, 4);
+        assert.equal(chat(f).at(-1).mes, 'Hello');
+        assert.equal(chat(f).at(-1).extra.display_text, undefined);
     }
 });
 
-test('an unknown paid translation result interrupts without repeating the saved main reply', async t => {
+test('an unknown paid translation result keeps the finished reply and never repeats either request', async t => {
     const { f, jobId, run } = prepared(t);
     const directories = f.scope.directories;
     updateJob(directories, jobId, { state: 'running' });
@@ -165,27 +167,27 @@ test('an unknown paid translation result interrupts without repeating the saved 
             return { text: 'Hello' };
         });
     };
-    await assert.rejects(run({ generate: main, translationFetch: async () => {
+    await run({ generate: main, translationFetch: async () => {
         translationCalls++;
         throw new Error('unknown provider result');
-    } }));
+    } });
     assert.equal(mainCalls, 1);
     assert.equal(translationCalls, 1);
-    assert.equal(getJob(directories, jobId).recoverability, 'unknown-outcome');
-    recoverJobs(directories);
-    assert.equal(getJob(directories, jobId).state, 'interrupted');
-    await assert.rejects(run({ generate: () => assert.fail('Main provider repeated'),
-        translationFetch: () => assert.fail('Translation repeated') }));
+    const saved = chat(f);
+    assert.equal(saved.length, 4);
+    assert.equal(saved.at(-1).mes, 'Hello');
+    assert.equal(saved.at(-1).extra.display_text, undefined);
+    await run({ generate: () => assert.fail('Main provider repeated'),
+        translationFetch: () => assert.fail('Translation repeated') });
     assert.equal(mainCalls, 1);
     assert.equal(translationCalls, 1);
-    assert.equal(chat(f).length, 3);
+    assert.deepEqual(chat(f), saved);
 });
 
-test('completed translation chunks resume from saved results after a known source refusal', async t => {
+test('a source change during outgoing translation keeps the finished reply and never repeats paid chunks', async t => {
     const { f, jobId, run, settings } = prepared(t, { provider: 'deeplx' });
     const directories = f.scope.directories;
     updateJob(directories, jobId, { state: 'running' });
-    const originalSettings = JSON.stringify(settings);
     const longReply = 'a'.repeat(3100);
     let mainCalls = 0;
     let chunks = 0;
@@ -207,17 +209,34 @@ test('completed translation chunks resume from saved results after a known sourc
         }
         return response({ data: `FR(${body.text.length})` });
     };
-    await assert.rejects(run({ generate: main, translationFetch: translate }));
+    await run({ generate: main, translationFetch: translate });
     assert.equal(chunks, 1);
     assert.equal(mainCalls, 1);
     assert.ok(readArtifact(directories, jobId, 'provider:translation:display_text:0:0'));
-    assert.notEqual(getJob(directories, jobId).recoverability, 'unknown-outcome');
-    fs.writeFileSync(`${directories.root}/settings.json`, originalSettings);
-    recoverJobs(directories);
+    const saved = chat(f);
+    assert.equal(saved.length, 4);
+    assert.equal(saved.at(-1).mes, longReply);
+    assert.equal(saved.at(-1).extra.display_text, undefined);
     await run({ generate: () => assert.fail('Main provider repeated'), translationFetch: translate });
     assert.equal(mainCalls, 1);
-    assert.equal(chunks, 3);
-    assert.equal(chat(f).at(-1).extra.display_text, 'FR(1500)FR(1500)FR(100)');
+    assert.equal(chunks, 1);
+    assert.deepEqual(chat(f), saved);
+});
+
+test('an edited chat during translation is refused instead of overwritten', async t => {
+    const { f, run } = prepared(t);
+    await assert.rejects(run({
+        generate: async ({ beforeDispatch }) => { beforeDispatch(); return { text: 'Hello' }; },
+        translationFetch: async () => {
+            const current = chat(f);
+            current[2].mes = 'Independent edit';
+            fs.writeFileSync(f.filename, current.map(record => JSON.stringify(record)).join('\n'));
+            return response({ translatedText: 'Bonjour' });
+        },
+    }), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    const saved = chat(f);
+    assert.equal(saved.length, 3);
+    assert.equal(saved[2].mes, 'Independent edit');
 });
 
 test('new user input is translated before lore and the main prompt, then saved with its original display text', async t => {

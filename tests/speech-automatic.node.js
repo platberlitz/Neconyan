@@ -179,24 +179,41 @@ test('Roleplay continuation speech reads the complete protected message instead 
     assert.equal(readChat(f)[2].extra.server_narration.status, 'ready');
 });
 
-test('Roleplay keeps the old reply when paid speech is unknown and resumes a saved main response without paying it again', async t => {
+test('Roleplay saves the finished reply when paid speech is unknown and never repeats either request', async t => {
     const f = roleplayFixture(t);
     updateJob(f.directories, f.jobId, { state: 'running' });
     let main = 0, speech = 0;
-    await assert.rejects(f.run({ generate: savedMain('Hello.', () => main++), speechDependencies: { fetchImpl: async () => {
+    await f.run({ generate: savedMain('Hello.', () => main++), speechDependencies: { fetchImpl: async () => {
         speech++; throw new Error('connection lost');
-    } } }), { code: 'TTS_PROVIDER' });
-    assert.equal(readChat(f).length, 3);
-    assert.equal(readArtifact(f.directories, f.jobId, 'roleplay-output'), undefined);
-    recoverJobs(f.directories);
-    assert.equal(getJob(f.directories, f.jobId).state, 'interrupted');
-    await assert.rejects(f.run({ generate: () => assert.fail('main repeated after speech interruption'),
-        speechDependencies: { fetchImpl: () => assert.fail('speech repeated after interruption') } }), { code: 'TTS_RESULT_RECOVERY' });
+    } } });
     assert.equal(main, 1);
     assert.equal(speech, 1);
+    const saved = readChat(f);
+    assert.equal(saved.length, 4);
+    assert.equal(saved.at(-1).mes, 'Hello.');
+    assert.equal(saved.at(-1).extra.server_narration, undefined);
+    assert.ok(readArtifact(f.directories, f.jobId, 'roleplay-output'));
+    await f.run({ generate: () => assert.fail('main repeated after speech interruption'),
+        speechDependencies: { fetchImpl: () => assert.fail('speech repeated after interruption') } });
+    assert.equal(main, 1);
+    assert.equal(speech, 1);
+    assert.deepEqual(readChat(f), saved);
 });
 
-test('Roleplay resumes completed voice parts after a known settings refusal without replaying the model or completed audio', async t => {
+test('an edited chat during speech synthesis is refused instead of overwritten', async t => {
+    const f = roleplayFixture(t);
+    await assert.rejects(f.run({ generate: savedMain('Hello.'), speechDependencies: { fetchImpl: async () => {
+        const current = readChat(f);
+        current[2].mes = 'Independent edit';
+        fs.writeFileSync(f.filename, current.map(record => JSON.stringify(record)).join('\n'));
+        return audio();
+    } } }), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    const saved = readChat(f);
+    assert.equal(saved.length, 3);
+    assert.equal(saved[2].mes, 'Independent edit');
+});
+
+test('Roleplay saves the finished reply after a speech settings change without replaying the model or completed audio', async t => {
     const f = roleplayFixture(t, { multiVoice: true });
     let main = 0;
     const bodies = [];
@@ -209,13 +226,16 @@ test('Roleplay resumes completed voice parts after a known settings refusal with
         }
         return audio();
     };
-    await assert.rejects(f.run({ generate: savedMain('*waves* "Hello." Then smiles.', () => main++),
-        speechDependencies: { fetchImpl: synthesize } }), { code: 'TTS_SOURCE_CHANGED' });
+    await f.run({ generate: savedMain('*waves* "Hello." Then smiles.', () => main++),
+        speechDependencies: { fetchImpl: synthesize } });
     assert.equal(bodies.length, 1);
-    assert.equal(readChat(f).length, 3);
-    f.save(f.settings);
+    assert.equal(main, 1);
+    const saved = readChat(f);
+    assert.equal(saved.length, 4);
+    assert.equal(saved.at(-1).mes, '*waves* "Hello." Then smiles.');
+    assert.equal(saved.at(-1).extra.server_narration, undefined);
     await f.run({ generate: () => assert.fail('saved main result was not reused'), speechDependencies: { fetchImpl: synthesize } });
     assert.equal(main, 1);
-    assert.deepEqual(bodies.map(body => body.voice), ['alloy', 'nova', 'echo']);
-    assert.equal(readChat(f).at(-1).extra.server_narration.artifacts.length, 3);
+    assert.equal(bodies.length, 1);
+    assert.deepEqual(readChat(f), saved);
 });

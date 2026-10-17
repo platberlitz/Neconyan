@@ -158,8 +158,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 || result?.response?.candidates?.some?.(candidate => candidate.content?.parts?.some(part => part.functionCall))) {
             throw roleplayError('ROLEPLAY_TOOLS_PENDING', 'The saved provider result needs the native tool workflow before a reply can be written.', 409);
         }
-        const output = replyOutput(result, effect, request.characterName, result.generation);
-        const reply = output.message ?? output.messages?.[0] ?? output;
+        let output = replyOutput(result, effect, request.characterName, result.generation);
+        let reply = output.message ?? output.messages?.[0] ?? output;
         // Tell the reader the main reply finished before macro hashing, token
         // counting or any Agent preparation takes the event loop. Pending cards
         // are a display prediction built from the same eligibility rule the run
@@ -228,6 +228,11 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             }
         }
         if (request.worldInfo?.agents) {
+            // A restart can arrive without the verified definitions that this
+            // process normally keeps for the save-only pass. Keep the untouched
+            // main output so that exceptional pass can still leave the paid
+            // reply deliverable instead of discarding it.
+            const mainOutput = structuredClone(output);
             // The main reply is already paid for, so an Agent failure must never
             // discard it. One automatic retry releases the uncertain provider
             // steps first; then the reply is kept with the saved Agent work and
@@ -239,7 +244,15 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 assertSource();
                 assertRoleplayWorldInfoCurrent(base, request.worldInfo);
             });
-            const runAgents = async (republish = false, announce = true) => {
+            // A verified read reproduces the accepted Agent policy. Keep those
+            // definitions for the final save-only pass: an edit discovered by
+            // the retry must block another paid request, not lose the finished
+            // reply when there is nothing left to dispatch.
+            const acceptedAgents = new Map();
+            const rememberAcceptedAgents = () => {
+                for (const [key, value] of agentCache) acceptedAgents.set(key, value);
+            };
+            const runAgents = async (republish = false, announce = true, cache = agentCache) => {
                 const current = assertSource();
                 let records = selectRoleplayPromptRecords(current.records, source, effect);
                 if (output.captions) records = applyCaptionRecords(records, request.worldInfo.captions.items, output.captions);
@@ -260,7 +273,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 });
                 const mewmory = request.serverPrompt ? withRoleplayAccount(base, account, () => readArtifact(directories, job.id, 'roleplay-mewmory')) ?? null : null;
                 const options = { base, snapshot: request.worldInfo, records, metadataRecords: current.records, binding: request.binding, mewmory,
-                    activeLore: roleplayAgentLoreText(selection), agentCache,
+                    activeLore: roleplayAgentLoreText(selection), agentCache: cache,
                     macros: savedRoleplayMacroSnapshot(request.worldInfo, records), generationType: request.worldInfo.global.trigger,
                     assistantName: request.characterName, assertCurrent: () => freshness(), generate: generateAgent };
                 // The fresh path already announced cards before its first check.
@@ -316,6 +329,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 if (signal.aborted) throw error;
                 console.warn('[Agents] Post-reply Agents failed; retrying once.', error?.message ?? error);
                 updateJob(directories, job.id, current => explicitRetryRecovery(current));
+                rememberAcceptedAgents();
                 agentCache.clear();
                 try {
                     agentResult = await runAgents(true);
@@ -329,28 +343,55 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                     // announcing them again; the final Companion notification
                     // restores any completed notes.
                     publishRoleplayPreview(context, { inChatAgentCompanionResults: {} });
+                    rememberAcceptedAgents();
                     agentCache.clear();
-                    agentResult = await runAgents(false, false);
+                    try {
+                        agentResult = await runAgents(false, false, new Map(acceptedAgents));
+                    } catch (finalError) {
+                        // This happens when a restarted job no longer has the
+                        // verified definitions the retry already refused. No
+                        // paid request is left to make; keep the original main
+                        // reply and let the saved failure stop authorise its
+                        // delivery without Agent proof.
+                        if (signal.aborted) throw finalError;
+                        console.warn('[Agents] The reply will be saved without the remaining Agent changes.', finalError?.message ?? finalError);
+                        output = structuredClone(mainOutput);
+                        reply = output.message ?? output.messages?.[0] ?? output;
+                        publishRoleplayPreview(context, { inChatAgentCompanionResults: {} });
+                    }
                 }
             }
             if (agentResult?.waiting) return agentResult;
         }
         if (request.worldInfo?.translation && !roleplayAgentsStoppedByOwner(context)) {
             publishRoleplayPreview(context, { stage: 'translating' });
-            await translateIncomingRoleplayOutput(context, { base, snapshot: request.worldInfo,
-                effect: { type: effect }, output, assertSource, fetchImpl: translationFetch ?? fetch });
+            try {
+                await translateIncomingRoleplayOutput(context, { base, snapshot: request.worldInfo,
+                    effect: { type: effect }, output, assertSource, fetchImpl: translationFetch ?? fetch });
+            } catch (error) {
+                // The main reply is already paid for. Translation is an optional
+                // presentation layer, so its failure must not discard it.
+                if (signal.aborted) throw error;
+                console.warn('[Roleplay] Translation failed after the reply finished; saving the reply without it.', error?.message ?? error);
+            }
         }
         if (request.worldInfo?.speech && !roleplayAgentsStoppedByOwner(context)) {
             publishRoleplayPreview(context, { stage: 'speech' });
-            const speechRecords = assertSource().records;
-            const message = output.message ?? output.messages?.[0] ?? output;
-            const text = effect === 'continue' ? output.continuedText ?? String(speechRecords[source.message.index + 1].mes ?? '') + output.text : message.mes ?? output.text;
-            const narration = await generateSavedSpeech(context, { effectId: 'roleplay', policy: request.worldInfo.speech, account,
-                text, displayText: message.extra?.display_text || '', speaker: { name: request.characterName, avatar: request.worldInfo.avatar },
-                snapshot: { macros: savedRoleplayMacroSnapshot(request.worldInfo, selectRoleplayPromptRecords(speechRecords, source, effect)) },
-                assertSourceLocked: lease => assertRoleplaySourceLocked(lease, source, { effect }),
-            }, speechDependencies);
-            if (narration) message.extra = { ...message.extra, server_narration: narration };
+            try {
+                const speechRecords = assertSource().records;
+                const message = output.message ?? output.messages?.[0] ?? output;
+                const text = effect === 'continue' ? output.continuedText ?? String(speechRecords[source.message.index + 1].mes ?? '') + output.text : message.mes ?? output.text;
+                const narration = await generateSavedSpeech(context, { effectId: 'roleplay', policy: request.worldInfo.speech, account,
+                    text, displayText: message.extra?.display_text || '', speaker: { name: request.characterName, avatar: request.worldInfo.avatar },
+                    snapshot: { macros: savedRoleplayMacroSnapshot(request.worldInfo, selectRoleplayPromptRecords(speechRecords, source, effect)) },
+                    assertSourceLocked: lease => assertRoleplaySourceLocked(lease, source, { effect }),
+                }, speechDependencies);
+                if (narration) message.extra = { ...message.extra, server_narration: narration };
+            } catch (error) {
+                // Speech is optional too; a failed narration keeps the reply.
+                if (signal.aborted) throw error;
+                console.warn('[Roleplay] Speech failed after the reply finished; saving the reply without it.', error?.message ?? error);
+            }
         }
         if (selection && roleplayHash({ sticky: {}, cooldown: {}, ...request.worldInfo.metadata.timedWorldInfo }) !== roleplayHash(selection.timedWorldInfo)) {
             output.timedWorldInfo = selection.timedWorldInfo;

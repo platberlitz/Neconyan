@@ -12,11 +12,18 @@ function proof(directories, job, name, expected) {
     return data;
 }
 
+/** Only a saved automatic Agent failure stop may deliver a reply without Agent proof. */
+function failedAgentStop(directories, job) {
+    const stop = readArtifact(directories, job.id, 'roleplay-agent-stop');
+    return stop?.reason === 'failed' && stop.intentHash === roleplayHash(job.intent);
+}
+
 /** Only the saved native post-pass may change tracker metadata or replace a continued message. */
 export function applyAgentCompletionRecords(directories, job, records, output, baselineRecords = records) {
     const { request, source, effect } = job.intent;
     if (!output?.agentProof) {
-        if (request?.worldInfo?.agents || output?.continuedText !== undefined) throw failure();
+        if (output?.continuedText !== undefined) throw failure();
+        if (request?.worldInfo?.agents && !failedAgentStop(directories, job)) throw failure();
         return;
     }
     if (!request?.worldInfo?.agents) throw failure();
