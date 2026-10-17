@@ -42,27 +42,66 @@ export function readRoleplayPreview({ owner, directories, job }) {
     return value;
 }
 
-/** Count with the accepted reply's tokenizer, at most twice a second, including a paused stream's last chunk. */
+const TEXT_INTERVAL_MS = 33;
+const COUNT_INTERVAL_MS = 500;
+
+/**
+ * Publish stream text on a ~33ms leading/trailing limit, independent of token
+ * counting. Counts run with the accepted reply's tokenizer at most every 500ms,
+ * stretch proportionally when the tokenizer measures slow on this server,
+ * recount only fields whose CONTENT changed (a same-length rewrite still moves
+ * token counts), and include a paused stream's last chunk. Stop ends every
+ * publication and timer.
+ */
 export function createRoleplayStreamPreview(context, count) {
     let latest;
-    let timer;
-    let countedAt = 0;
-    const flush = () => {
-        clearTimeout(timer);
-        timer = null;
-        if (!latest || context.signal.aborted) return;
-        countedAt = Date.now();
+    let stopped = false;
+    let textTimer = null;
+    let countTimer = null;
+    let lastTextAt = 0;
+    let lastCountAt = 0;
+    let countInterval = COUNT_INTERVAL_MS;
+    const counted = { text: null, reasoning: null, token_count: 0, reasoning_tokens: 0 };
+    const publishText = () => {
+        clearTimeout(textTimer);
+        textTimer = null;
+        if (!latest || stopped || context.signal.aborted) return;
+        lastTextAt = Date.now();
+        publishRoleplayPreview(context, { ...latest, stage: 'generating' });
+    };
+    const publishCounts = () => {
+        clearTimeout(countTimer);
+        countTimer = null;
+        if (!latest || stopped || context.signal.aborted) return;
+        const started = Date.now();
+        if (latest.text !== counted.text) { counted.text = latest.text; counted.token_count = count(latest.text || ''); }
+        if (latest.reasoning !== counted.reasoning) { counted.reasoning = latest.reasoning; counted.reasoning_tokens = count(latest.reasoning || ''); }
+        lastCountAt = Date.now();
+        // A slow tokenizer shares the small server with the stream itself: back
+        // off proportionally, but never count more often than the 500ms cap.
+        countInterval = Math.max(COUNT_INTERVAL_MS, 10 * (lastCountAt - started));
         publishRoleplayPreview(context, { ...latest, stage: 'generating',
-            token_count: count(latest.text || ''), reasoning_tokens: count(latest.reasoning || '') });
+            token_count: counted.token_count, reasoning_tokens: counted.reasoning_tokens });
     };
     return {
         publish(value) {
+            if (stopped) return;
             latest = value;
-            const remaining = 500 - (Date.now() - countedAt);
-            if (remaining <= 0) flush();
-            else if (!timer) timer = setTimeout(flush, remaining);
+            const textRemaining = TEXT_INTERVAL_MS - (Date.now() - lastTextAt);
+            if (textRemaining <= 0) publishText();
+            else if (!textTimer) textTimer = setTimeout(publishText, textRemaining);
+            const countRemaining = countInterval - (Date.now() - lastCountAt);
+            if (countRemaining <= 0) publishCounts();
+            else if (!countTimer) countTimer = setTimeout(publishCounts, countRemaining);
         },
-        stop() { clearTimeout(timer); latest = null; },
+        stop() {
+            stopped = true;
+            clearTimeout(textTimer);
+            clearTimeout(countTimer);
+            textTimer = null;
+            countTimer = null;
+            latest = null;
+        },
     };
 }
 
