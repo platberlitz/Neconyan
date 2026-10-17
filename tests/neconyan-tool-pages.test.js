@@ -293,7 +293,8 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
         }
         expect(steps.find(step => step.id === 'connection').open).toBe('#mewmory-role-extractor');
         expect(steps.find(step => step.id === 'embeddings').open).toBe('#mewmory-role-embedding');
-        expect(steps.find(step => step.id === 'save').body).toContain('does not press Save');
+        expect(steps.find(step => step.id === 'save').body).toContain('does not edit settings');
+        expect(steps.find(step => step.id === 'save').body).toContain('Settings save automatically');
         const source = read('../public/scripts/neconyan-tool-tour.js');
         expect(source).toContain('new MutationObserver(refreshTourTarget)');
         expect(source).toContain('\'mewmory-tab-settings\': \'settings\'');
