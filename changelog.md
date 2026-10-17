@@ -5,10 +5,13 @@
 ### Highlights
 - Every single-choice model menu is now a searchable list on phones and desktop. Type part of a name or model ID, press Enter for the first match, or scroll the full catalogue; lists are no longer cut off at 50 models. Favourites sit in their own group with a star at the right edge, and the rest are grouped by family worked out from the model ID, so a new release lands in the right group without an update. OpenRouter, ElectronHub and AIMLAPI keep their own vendor groups, and NanoGPT names start with the source that hosts the model.
 - Added search to the Companion panel. It filters by companion name and latest note, says how many companions match, and leaves unfinished drafts and expanded notes alone. Escape clears the search first, then closes the panel.
-- A failed Agent or Companion no longer throws away a finished Roleplay reply. The server retries the failed Agents once, keeps the ones that already finished, and adds the reply anyway if they fail again. You do not need to regenerate.
+- A failed Agent, Companion, translation or automatic speech step no longer throws away a finished Roleplay reply. Completed Agent changes are kept when they can be applied; if an Agent changed after a restart before the final save, the reply is saved as the model wrote it, without those edits. The main request is never repeated to repair a helper failure. You do not need to regenerate.
+- Replies kept by 1.3.4.1's **Recovered reply** card are saved automatically on the first normal start after updating, using the reply that was already paid for. If the chat changed or the saved result can't be verified, the old copy stays in job history instead of overwriting your edit. There's no new recovery card or restore button, and the main model isn't asked again.
 - Post-reply Agents start as soon as the main reply finishes, with pending Companion cards naming what is about to run. A finished note grows its message without moving your place in the chat, and opening a chat still lands on its newest reply.
 - Server-written replies now follow **Screen updates per second** instead of redrawing twice a second, so long replies scroll more smoothly. Lower that setting if a phone struggles.
 - Reworded the image input and repair screens. **Don't send chat images to the model** covers every picture in your chats, **Review chat images** opens the right chat after a refusal, and **Change history** uses **Prepare a converted copy**, **Save a copy as it is**, **Finish this change** and **Undo change**. The screens can be translated now.
+- Rejected non-image input and truncated PNG/TIFF headers before caption decoding, fixing cases that could hang or stop the server.
+- Only the selected speech provider loads at startup, reducing background requests while keeping speech available in Roleplay and Conversation.
 
 ### Merged Staging PRs
 - PR #200 (2026-10-17) `fix(model-search): show favourites as a star and keep the keyboard down`
@@ -17,6 +20,10 @@
 - PR #203 (2026-10-17) `fix(i18n): stop collecting header names as captions`
 - PR #204 (2026-10-17) `fix(images): clarify image choices and make controls translatable`
 - PR #205 (2026-10-17) `fix(images): make image review and change history clear and translatable`
+- PR #206 (2026-10-17) `perf(roleplay): smooth server-owned reply streaming`
+- PR #207 (2026-10-17) `fix(models): show complete provider model lists`
+- PR #208 (2026-10-17) `fix(chat): preserve reading position through companion updates`
+- PR #209 (2026-10-17) `perf(generation): start post-reply agents sooner`
 
 ## v1.3.4.1
 
