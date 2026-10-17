@@ -19,10 +19,13 @@ async function openPreview(app, phone) {
         const originalFetch = window.fetch;
         window.fetch = (input, options) => {
             if (!String(input).includes('/api/jobs/live-preview-fixture/preview')) return originalFetch(input, options);
+            window.previewFramesQuery = new URL(String(input), 'http://preview.local').searchParams.get('frames');
             let heartbeat;
             const stream = new ReadableStream({
                 start(controller) {
+                    window.previewConnections = (window.previewConnections || 0) + 1;
                     window.sendLivePreview = (preview, serverTime = Date.now()) => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ preview, serverTime })}\n\n`));
+                    window.sendLivePreviewDelta = (delta, serverTime = Date.now()) => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ delta, serverTime })}\n\n`));
                     // Match the real endpoint while slow browsers prepare the synthetic chat.
                     heartbeat = setInterval(() => controller.enqueue(new TextEncoder().encode(': heartbeat\n\n')), 1000);
                 },
@@ -71,6 +74,50 @@ for (const phone of [true, false]) {
         await page.waitForTimeout(1200);
         await expect(timer).toHaveText('5.0s');
         expect(await page.evaluate(async text => (await import('/script.js')).chat.some(message => message.mes === text), reply)).toBe(false);
+        await page.evaluate(() => window.stopLivePreview());
+    });
+
+    test(`streaming deltas reconstruct the reply and draw at the reader cadence on ${viewport}`, async ({ app }) => {
+        const page = await openPreview(app, phone);
+        await page.evaluate(() => {
+            window.drawCount = 0;
+            document.addEventListener('neconyan:roleplay-preview-rendered', () => { window.drawCount++; });
+            window.sendLivePreview({ childId: 'reply', stage: 'generating', text: 'Start', gen_started: new Date().toISOString() });
+        });
+        const preview = page.locator('#neconyan-roleplay-preview');
+        await expect(preview).toContainText('Start');
+        // Two seconds of 100ms appends, delivered as the server's delta frames.
+        await page.evaluate(async () => {
+            for (let index = 0; index < 20; index++) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+                window.sendLivePreviewDelta({ text: ` token${index}`, set: { updatedAt: Date.now() } });
+            }
+        });
+        await expect(preview).toContainText('token19');
+        await expect(preview).toContainText('token9 token10', { timeout: 2000 });
+        const draws = await page.evaluate(() => window.drawCount);
+        expect(draws, `full redraws over 2s of 100ms updates: ${draws}`).toBeGreaterThanOrEqual(phone ? 5 : 8);
+        // The phone's conservative streaming floor must hold: deltas redraw on the
+        // cadence, not once per arriving append.
+        expect(draws, `full redraws over 2s of 100ms updates: ${draws}`).toBeLessThanOrEqual(phone ? 14 : Infinity);
+        const connections = await page.evaluate(() => window.previewConnections);
+        expect(connections, 'appended deltas never force a reconnect').toBe(1);
+        expect(await page.evaluate(() => window.previewFramesQuery), 'the observer opts into delta frames').toBe('delta');
+        await page.evaluate(() => window.stopLivePreview());
+    });
+
+    test(`a delta without a base reconnects for a full snapshot on ${viewport}`, async ({ app }) => {
+        const page = await openPreview(app, phone);
+        await page.evaluate(() => {
+            window.sendLivePreviewDelta({ text: 'orphan', set: { stage: 'generating', childId: 'reply' } });
+        });
+        await expect.poll(() => page.evaluate(() => window.previewConnections || 0), { timeout: 10000 }).toBeGreaterThan(1);
+        await page.evaluate(() => {
+            window.sendLivePreview({ childId: 'reply', stage: 'generating', text: 'Recovered whole reply', gen_started: new Date().toISOString() });
+        });
+        const preview = page.locator('#neconyan-roleplay-preview');
+        await expect(preview).toContainText('Recovered whole reply');
+        await expect(preview).not.toContainText('orphan');
         await page.evaluate(() => window.stopLivePreview());
     });
 

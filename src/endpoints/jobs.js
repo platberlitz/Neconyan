@@ -13,6 +13,7 @@ import { closeUnstartedRoleplayWorkflow } from '../generation/roleplay-workflow-
 import { requestRoleplayAgentStop } from '../generation/roleplay-agent-stop.js';
 import { readRoleplayPreview, subscribeRoleplayPreview } from '../generation/roleplay-preview.js';
 import { readConversationPreview, subscribeConversationPreview } from '../generation/conversation-preview.js';
+import { applyRoleplayPreviewFrame, buildRoleplayPreviewFrame } from '../../public/scripts/neconyan-conversation/roleplay-preview-frames.js';
 import { subscribeJobsChanged } from '../jobs/notifications.js';
 import { getDiagnosticJobActivity } from '../diagnostic-activity.js';
 import { assertScratchpadImageRetry } from '../scratchpad/images.js';
@@ -120,6 +121,12 @@ router.get('/:id/preview', (request, response) => {
         const job = getJob(directories, request.params.id);
         if (!job || job.owner !== owner || !['media.roleplay-workflow', 'conversation.reply', 'conversation.rewrite'].includes(job.type)) return response.sendStatus(404);
         const conversation = ['conversation.reply', 'conversation.rewrite'].includes(job.type);
+        // An already-open older browser reads only `preview` frames, and any frame
+        // resets its silence timer, so unreadable deltas would leave it on the
+        // opening snapshot forever. Only readers that opt in with ?frames=delta
+        // get diffs; every other Roleplay reader keeps the full snapshots and the
+        // previous 250ms cadence, the same data budget as before.
+        const deltas = !conversation && request.query?.frames === 'delta';
         const base = { owner, directories };
         const account = job.intent.media;
         const initial = conversation ? readConversationPreview(owner, job.id) : withRoleplayAccount(base, account, () => readRoleplayPreview({ ...base, job }));
@@ -132,20 +139,82 @@ router.get('/:id/preview', (request, response) => {
             // The client clock may differ, and the retained preview can be old.
             try { response.write(`data: ${JSON.stringify({ ...value, serverTime: Date.now() })}\n\n`); response.flush?.(); } catch { response.end(); }
         };
-        // Each frame carries the whole reply so far. The Roleplay preview redraws twice a
-        // second, so faster frames only cost the reader's data and battery.
-        const previewInterval = conversation ? 50 : 250;
+        // Roleplay frames are diffs against what this connection actually wrote, so a
+        // growing reply travels as small appends instead of a repeated full snapshot.
+        // Opted-in writes happen at most once per 100ms (leading and trailing); stage,
+        // candidate and Companion-result changes are progress the reader waits for and
+        // skip the limit. Non-opted-in Roleplay keeps full snapshots at 250ms, and
+        // Conversation its unchanged full snapshots every 50ms.
+        const previewInterval = 50;
+        const roleplayInterval = deltas ? 100 : 250;
         let nextPreview = null, previewTimer = null;
+        let baseline = null, queued = null, draining = false, lastWrite = 0;
+        function bypassesTiming(preview) {
+            return !baseline
+                || baseline.stage !== preview.stage
+                || baseline.childId !== preview.childId
+                || baseline.inChatAgentCompanionResults !== preview.inChatAgentCompanionResults;
+        }
+        function onDrain() {
+            draining = false;
+            const preview = queued;
+            queued = null;
+            if (preview) deliver(preview);
+        }
+        function writePreview(preview) {
+            if (response.destroyed || response.writableEnded) return;
+            // A slow/disconnected reader must never hold up the generation worker.
+            if (response.writableLength > 1024 * 1024) { response.end(); return; }
+            const frame = deltas ? buildRoleplayPreviewFrame(baseline, preview) : { preview };
+            try {
+                // 'drain' only follows a write() that reported the buffer full, so the
+                // pause starts from that false; a length guess alone could wait forever.
+                const flushed = response.write(`data: ${JSON.stringify({ ...frame, serverTime: Date.now() })}\n\n`);
+                response.flush?.();
+                if (flushed === false && !draining) { draining = true; response.once('drain', onDrain); }
+            } catch { response.end(); return; }
+            // The baseline mirrors what the reader holds, including this final frame.
+            baseline = frame.delta ? applyRoleplayPreviewFrame(baseline, frame) : preview;
+            lastWrite = Date.now();
+        }
+        function deliver(preview) {
+            if (response.destroyed || response.writableEnded) return;
+            if (bypassesTiming(preview)) {
+                clearTimeout(previewTimer);
+                previewTimer = null;
+                if (draining) { queued = preview; return; }
+                queued = null;
+                return writePreview(preview);
+            }
+            // While the socket drains or the limit window is open, only the newest
+            // preview is kept; a burst coalesces into a single write.
+            if (draining || previewTimer) { queued = preview; return; }
+            const remaining = roleplayInterval - (Date.now() - lastWrite);
+            if (remaining <= 0) return writePreview(preview);
+            queued = preview;
+            previewTimer = setTimeout(() => {
+                previewTimer = null;
+                const pending = queued;
+                queued = null;
+                if (pending) deliver(pending);
+            }, remaining);
+        }
         const subscribe = conversation ? subscribeConversationPreview : subscribeRoleplayPreview;
         const unsubscribe = subscribe(owner, job.id, preview => {
             nextPreview = preview;
+            if (!conversation) return deliver(preview);
             if (previewTimer) return;
             previewTimer = setTimeout(() => {
                 previewTimer = null;
                 send({ preview: nextPreview });
             }, previewInterval);
         });
-        send({ preview: initial ?? { stage: 'preparing', text: '', name: job.intent.request.worldInfo?.speakerNames?.character } });
+        // A Conversation preview always reads back an object; only Roleplay needs
+        // a full opening frame when nothing is retained yet.
+        const opening = conversation ? initial
+            : initial ?? { stage: 'preparing', text: '', name: job.intent.request.worldInfo?.speakerNames?.character };
+        send({ preview: opening });
+        if (!conversation) baseline = opening;
         const terminal = new Set(['completed', 'cancelled', 'failed', 'interrupted', 'conflict']);
         // Reading the job and the protected account blocks the server while it runs, so
         // re-read only after a job change, with a slow fallback, and send a cheap
@@ -158,7 +227,10 @@ router.get('/:id/preview', (request, response) => {
             try {
                 const current = conversation ? getJob(directories, job.id) : withRoleplayAccount(base, account, () => getJob(directories, job.id));
                 if (!current || terminal.has(current.state)) {
-                    if (nextPreview) send({ preview: nextPreview });
+                    if (nextPreview) {
+                        if (conversation) send({ preview: nextPreview });
+                        else { clearTimeout(previewTimer); previewTimer = null; queued = null; writePreview(nextPreview); }
+                    }
                     send({ state: current?.state ?? 'missing', error: current?.error?.message ?? null });
                     response.end();
                 } else response.write(': keepalive\n\n');
@@ -174,7 +246,9 @@ router.get('/:id/preview', (request, response) => {
         const cleanup = () => {
             if (cleaned) return;
             cleaned = true;
-            clearInterval(timer); clearTimeout(previewTimer); unsubscribe(); unsubscribeJobs();
+            clearInterval(timer); clearTimeout(previewTimer); previewTimer = null; queued = null;
+            response.off('drain', onDrain);
+            unsubscribe(); unsubscribeJobs();
         };
         request.once('aborted', cleanup);
         response.once('finish', cleanup);

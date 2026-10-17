@@ -422,7 +422,9 @@ for (const phone of [false, true]) {
             window.silencePreviews = () => { for (const connection of open) connection.silent = true; };
             window.fetch = async (input, init = {}) => {
                 const url = typeof input === 'string' ? input : input.url;
-                if (!/\/api\/jobs\/[^/]+\/preview$/.test(url)) return original(input, init);
+                // Match on the parsed pathname: the observer appends its frames query,
+                // and a raw-URL suffix match would miss the connection silently.
+                if (!/\/api\/jobs\/[^/]+\/preview$/.test(new URL(url, window.location.href).pathname)) return original(input, init);
                 window.previewAttempts += 1;
                 const response = await original(input, init);
                 if (!response.ok || !response.body) return response;
@@ -471,6 +473,10 @@ for (const phone of [false, true]) {
         try {
             await expect(preview).toContainText('First words', { timeout: 60000 });
             await expect(status).toHaveText('Writing reply…');
+            // The wrapper must be tracking the live connection right now; otherwise
+            // every "no connection is open" check below would pass vacuously when a
+            // matcher misses the preview request.
+            await expect.poll(() => page.evaluate(() => window.previewLive()), { timeout: 5000 }).toBe(1);
             await page.evaluate(() => window.silencePreviews());
             await setVisibility('hidden');
             // A hidden page closes the preview stream and opens no new one, so a phone
@@ -491,7 +497,9 @@ for (const phone of [false, true]) {
             // Without a tab change, silence alone reconnects, and a refused
             // reconnection is retried instead of ending the preview for good.
             let refusals = 0;
-            await page.route('**/api/jobs/*/preview', route => { refusals += 1; return route.fulfill({ status: 502, body: 'Bad gateway' }); }, { times: 1 });
+            // A pathname predicate, not a glob: a glob ending at the path would miss
+            // the observer's ?frames=delta query and never refuse the reconnection.
+            await page.route(routeUrl => /\/api\/jobs\/[^/]+\/preview$/.test(routeUrl.pathname), route => { refusals += 1; return route.fulfill({ status: 502, body: 'Bad gateway' }); }, { times: 1 });
             const attempts = await page.evaluate(() => window.previewAttempts);
             await page.evaluate(() => window.silencePreviews());
             await expect.poll(() => page.evaluate(() => window.previewLive()), { timeout: 15000 }).toBe(1);

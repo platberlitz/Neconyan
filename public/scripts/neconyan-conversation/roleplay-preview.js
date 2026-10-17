@@ -1,6 +1,9 @@
 import { chat as messages, formatGenerationTimer, getRequestHeaders, getThumbnailUrl, scrollChatToBottom, updateMessageElement } from '../../script.js';
 import { beginRoleplayReplacement } from './roleplay-replacement.js';
 import { withAbortSignal } from '../abort.js';
+import { power_user } from '../power-user.js';
+import { getStreamingUpdateInterval } from '../mobile-streaming.js';
+import { applyRoleplayPreviewFrame } from './roleplay-preview-frames.js';
 
 const labels = {
     preparing: 'Preparing reply…', generating: 'Writing reply…', agents: 'Running Agents…',
@@ -103,8 +106,43 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         // and honour the same automatic/manual scrolling policy as saved replies.
         if (nearBottom) scrollChatToBottom({ isNearBottom: nearBottom });
     };
+    // Draw at the reader's streaming cadence (with the phone's conservative floors)
+    // aligned to the next animation frame, instead of rebuilding the growing
+    // Markdown reply for every arriving append. Stage and candidate changes are
+    // progress the reader waits for and skip the wait to the next frame.
+    let drawTimer = null;
+    let drawRaf = null;
+    let lastDrawAt = 0;
+    const minDrawInterval = () => getStreamingUpdateInterval(1000 / power_user.streaming_fps, {
+        iosEnabled: power_user.ios_webkit_conservative_streaming,
+        androidEnabled: power_user.android_conservative_streaming,
+    });
+    const cancelPendingDraws = () => {
+        if (drawTimer !== null) { clearTimeout(drawTimer); drawTimer = null; }
+        if (drawRaf !== null) { cancelAnimationFrame(drawRaf); drawRaf = null; }
+    };
+    const paint = () => { drawRaf = null; lastDrawAt = performance.now(); render(); };
+    const requestDraw = urgent => {
+        if (stopped || frozen) return;
+        if (urgent) {
+            if (drawTimer !== null) { clearTimeout(drawTimer); drawTimer = null; }
+            if (drawRaf === null) drawRaf = requestAnimationFrame(paint);
+            return;
+        }
+        if (drawTimer !== null || drawRaf !== null) return;
+        const remaining = minDrawInterval() - (performance.now() - lastDrawAt);
+        if (remaining <= 0) drawRaf = requestAnimationFrame(paint);
+        else drawTimer = setTimeout(() => { drawTimer = null; drawRaf = requestAnimationFrame(paint); }, remaining);
+    };
     const hidden = () => document.visibilityState === 'hidden';
-    let timer = hidden() ? null : setInterval(render, 500);
+    // The clock timer keeps a quiet stream's badge alive and backs up any text a
+    // dropped draw left undisplayed; a scheduled draw already covers new text.
+    const onClockTick = () => {
+        if (frozen || stopped) return;
+        if (latest && latest !== rendered) { requestDraw(false); return; }
+        render();
+    };
+    let timer = hidden() ? null : setInterval(onClockTick, 500);
     let attempt = null;
     let wake = null;
     let reconnectRequested = false;
@@ -123,10 +161,11 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     const onVisible = () => {
         if (hidden()) {
             clearInterval(timer); timer = null;
+            cancelPendingDraws();
             reconnect();
             return;
         }
-        if (!timer && !frozen && !stopped) timer = setInterval(render, 500);
+        if (!timer && !frozen && !stopped) timer = setInterval(onClockTick, 500);
         reconnect();
     };
     document.addEventListener('visibilitychange', onVisible);
@@ -145,7 +184,10 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             const heard = () => { clearTimeout(silence); silence = setTimeout(() => current.abort(), PREVIEW_SILENCE_MS); };
             try {
                 heard();
-                const response = await withAbortSignal(fetch(`/api/jobs/${encodeURIComponent(jobId)}/preview`, {
+                // The query opts this reader into delta frames. A server that does
+                // not know it ignores the parameter and sends full snapshots, which
+                // the frame decoder below still accepts.
+                const response = await withAbortSignal(fetch(`/api/jobs/${encodeURIComponent(jobId)}/preview?frames=delta`, {
                     headers: { ...getRequestHeaders(), 'X-Neconyan-Account': account },
                     credentials: 'same-origin', signal: current.signal,
                 }), current.signal);
@@ -170,16 +212,29 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                             const value = JSON.parse(event.slice(6));
                             // Use the regular display formatter at a bounded cadence, rather
                             // than rebuilding a growing Markdown message for every token.
-                            if (value.preview) {
-                                latest = value.preview; receivedAt = Date.now();
-                                receivedMonotonic = performance.now();
-                                serverTime = Number.isFinite(value.serverTime) ? value.serverTime : null;
-                                if (latest.stage !== diagnosticStage && isCurrent()) {
-                                    diagnosticStage = latest.stage;
-                                    diagnostic(({ preparing: 'preparing', generating: 'generating', agents: 'post-agents', companions: 'companions', review: 'waiting-review', saving: 'saving' })[diagnosticStage] || 'unknown');
+                            if (value.preview || value.delta) {
+                                const previous = latest;
+                                // A full snapshot replaces the base; a delta extends it. Every
+                                // connection opens with a full snapshot, so a delta without a
+                                // base means this stream desynchronised: reconnect for one.
+                                const applied = applyRoleplayPreviewFrame(previous, value);
+                                if (!applied && value.delta) { reconnect(); break; }
+                                if (applied) {
+                                    latest = applied; receivedAt = Date.now();
+                                    receivedMonotonic = performance.now();
+                                    serverTime = Number.isFinite(value.serverTime) ? value.serverTime : null;
+                                    if (latest.stage !== diagnosticStage && isCurrent()) {
+                                        diagnosticStage = latest.stage;
+                                        diagnostic(({ preparing: 'preparing', generating: 'generating', agents: 'post-agents', companions: 'companions', review: 'waiting-review', saving: 'saving' })[diagnosticStage] || 'unknown');
+                                    }
+                                    const immediate = firstSnapshot || !node;
+                                    firstSnapshot = false;
+                                    // The first snapshot's bottom landing must supersede
+                                    // any resize still settling an older reading position.
+                                    if (immediate) {
+                                        if (!stopped && !frozen) { cancelPendingDraws(); paint(); }
+                                    } else requestDraw(previous.childId !== latest.childId || previous.stage !== latest.stage);
                                 }
-                                if (firstSnapshot || !node) render();
-                                firstSnapshot = false;
                             }
                             if (value.state) { diagnostic(null); onTerminal(value); return; }
                         }
@@ -203,6 +258,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     const stop = () => {
         stopped = true;
         diagnostic(null);
+        cancelPendingDraws();
         attempt?.abort();
         wake?.(); wake = null;
         document.removeEventListener('visibilitychange', onVisible);
@@ -213,6 +269,6 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     // The finished reply is about to be saved and the chat rebuilt. Stop redrawing,
     // so the preview stays where the reader sees it and cannot reappear in the
     // emptied chat ahead of the saved messages.
-    stop.freeze = () => { render(); frozen = true; clearInterval(timer); };
+    stop.freeze = () => { cancelPendingDraws(); render(); frozen = true; clearInterval(timer); timer = null; };
     return stop;
 }

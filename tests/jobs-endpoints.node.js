@@ -19,6 +19,7 @@ const { router: jobsRouter } = await import('../src/endpoints/jobs.js');
 const { JOB_INTENT_LIMIT_BYTES, JOB_INTENT_MAX_BYTES, acceptJob, attachOwnedChild, getJob, setJobState, updateJob } = await import('../src/jobs/store.js');
 const { roleplayHash, roleplayAccountStamp, initialiseRoleplayAccount, roleplayStoreDirectory } = await import('../src/roleplay-store.js');
 const { publishRoleplayPreview, subscribeRoleplayPreview } = await import('../src/generation/roleplay-preview.js');
+const { publishConversationPreview } = await import('../src/generation/conversation-preview.js');
 const { registerHandler, setDirectoriesResolver, abortJob, testExports: runner } = await import('../src/jobs/runner.js');
 const { writeArtifact } = await import('../src/jobs/artifacts.js');
 const { pcmWave } = await import('../src/jobs/audio-artifacts.js');
@@ -67,6 +68,35 @@ function request(method, pathname, { account: who = 'alice', body, headers = {} 
 
 function submit(owner, { key = 'h1', intent = { operation: 'roleplay' } } = {}) {
     return request('POST', '/api/jobs/submit', { account: owner, body: { type: 'roleplay', submissionKey: key, intent } });
+}
+
+/** Reads `data:` frames from a fetched event stream, skipping keepalives. */
+function sseReader(response) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    return {
+        reader,
+        async nextFrame() {
+            for (;;) {
+                const boundary = buffer.indexOf('\n\n');
+                if (boundary >= 0) {
+                    const event = buffer.slice(0, boundary);
+                    buffer = buffer.slice(boundary + 2);
+                    if (event.startsWith('data: ')) return JSON.parse(event.slice(6));
+                    continue;
+                }
+                const chunk = await reader.read();
+                if (chunk.done) return null;
+                buffer += decoder.decode(chunk.value, { stream: true });
+            }
+        },
+    };
+}
+
+function roleplayStreamContext(parentJobId, childId) {
+    return { owner: 'alice', directories: aliceDirs, job: { id: childId,
+        intent: { request: { characterName: 'Nova', workflowCandidate: { parentJobId } } } } };
 }
 
 test('native Conversation, Roleplay and media work cannot bypass its own acceptance endpoint', async () => {
@@ -213,6 +243,181 @@ test('live reply previews are account-scoped and disconnecting never cancels the
     assert.match(new TextDecoder().decode((await reopenedReader.read()).value), /Completed main reply/);
     await reopenedReader.cancel();
     assert.equal(getJob(aliceDirs, job.id).cancellation.requested, false);
+});
+
+test('a roleplay preview opens full and then sends only appended deltas', async () => {
+    const base = { owner: 'alice', directories: aliceDirs };
+    initialiseRoleplayAccount(base);
+    const { job } = acceptJob(aliceDirs, { owner: 'alice', type: 'media.roleplay-workflow', submissionKey: 'delta-frames',
+        intent: { media: roleplayAccountStamp(base), request: {} } });
+    const context = roleplayStreamContext(job.id, 'delta-child');
+    const controller = new AbortController();
+    const response = await fetch(`${url}/api/jobs/${job.id}/preview?frames=delta`, { headers: { 'X-Account': 'alice' }, signal: controller.signal });
+    const stream = sseReader(response);
+    try {
+        const initial = await stream.nextFrame();
+        assert.equal(initial.preview.stage, 'preparing', 'every connection opens with a full snapshot');
+        assert.equal(initial.delta, undefined);
+        publishRoleplayPreview(context, { stage: 'generating', text: 'Hello' });
+        const first = await stream.nextFrame();
+        assert.equal(first.preview?.text, 'Hello', 'a candidate and stage change is a full snapshot, written at once');
+        assert.equal(first.delta, undefined);
+        // A measurable moment later, so the snapshot's own timestamp has moved.
+        await new Promise(resolve => setTimeout(resolve, 5));
+        publishRoleplayPreview(context, { text: 'Hello world' });
+        const second = await stream.nextFrame();
+        assert.equal(second.preview, undefined);
+        assert.equal(second.delta.text, ' world', 'growth arrives as the appended suffix only');
+        assert.ok(Number.isFinite(second.serverTime));
+        assert.equal(second.delta.set?.stage, undefined, 'unchanged metadata is omitted');
+        assert.ok(second.delta.set?.updatedAt, 'changed metadata rides along');
+        publishRoleplayPreview(context, { stage: 'agents', text: 'Hello world!' });
+        const third = await stream.nextFrame();
+        assert.equal(third.delta.text, '!');
+        assert.equal(third.delta.set.stage, 'agents', 'a stage change bypasses the write limit');
+        // The finished job writes its final frame against this connection's
+        // baseline, then the terminal state, and closes.
+        setJobState(aliceDirs, job.id, 'completed');
+        notifyJobsChanged({ owner: 'alice', id: job.id });
+        const finalFrame = await stream.nextFrame();
+        assert.equal(finalFrame.state, undefined, 'the retained preview is written before the state');
+        assert.deepEqual(finalFrame.delta, {}, 'the final frame carries nothing the reader is missing');
+        const stateFrame = await stream.nextFrame();
+        assert.equal(stateFrame.state, 'completed');
+    } finally { controller.abort(); stream.reader.releaseLock(); }
+});
+
+test('a roleplay preview without the delta opt-in keeps receiving full snapshots', async () => {
+    const base = { owner: 'alice', directories: aliceDirs };
+    const { job } = acceptJob(aliceDirs, { owner: 'alice', type: 'media.roleplay-workflow', submissionKey: 'full-frames-compat',
+        intent: { media: roleplayAccountStamp(base), request: {} } });
+    const context = roleplayStreamContext(job.id, 'compat-child');
+    const controller = new AbortController();
+    // An already-open older reader uses exactly this URL and parses only `preview`.
+    const response = await fetch(`${url}/api/jobs/${job.id}/preview`, { headers: { 'X-Account': 'alice' }, signal: controller.signal });
+    const stream = sseReader(response);
+    try {
+        const initial = await stream.nextFrame();
+        assert.equal(initial.preview.stage, 'preparing');
+        assert.equal(initial.delta, undefined);
+        publishRoleplayPreview(context, { stage: 'generating', text: 'Hello' });
+        const first = await stream.nextFrame();
+        assert.equal(first.preview?.text, 'Hello');
+        assert.equal(first.delta, undefined);
+        publishRoleplayPreview(context, { text: 'Hello again' });
+        const second = await stream.nextFrame();
+        assert.equal(second.preview?.text, 'Hello again', 'growth is still a complete snapshot');
+        assert.equal(second.delta, undefined);
+        publishRoleplayPreview(context, { stage: 'agents', text: 'Hello again!' });
+        const third = await stream.nextFrame();
+        assert.equal(third.preview?.text, 'Hello again!');
+        assert.equal(third.preview?.stage, 'agents');
+        assert.equal(third.delta, undefined);
+        // The finished job still writes the whole reply and then the state.
+        setJobState(aliceDirs, job.id, 'completed');
+        notifyJobsChanged({ owner: 'alice', id: job.id });
+        let frame = await stream.nextFrame();
+        while (frame && !frame.state) {
+            assert.equal(frame.delta, undefined, 'every frame before the state is a full snapshot');
+            assert.equal(frame.preview.text, 'Hello again!', 'the terminal frame repeats the whole reply');
+            frame = await stream.nextFrame();
+        }
+        assert.equal(frame?.state, 'completed');
+    } finally { controller.abort(); stream.reader.releaseLock(); }
+});
+
+test('a burst of roleplay publishes coalesces into a single trailing delta frame', async () => {
+    const base = { owner: 'alice', directories: aliceDirs };
+    const { job } = acceptJob(aliceDirs, { owner: 'alice', type: 'media.roleplay-workflow', submissionKey: 'delta-burst',
+        intent: { media: roleplayAccountStamp(base), request: {} } });
+    const context = roleplayStreamContext(job.id, 'burst-child');
+    const controller = new AbortController();
+    const response = await fetch(`${url}/api/jobs/${job.id}/preview?frames=delta`, { headers: { 'X-Account': 'alice' }, signal: controller.signal });
+    const stream = sseReader(response);
+    try {
+        await stream.nextFrame();
+        publishRoleplayPreview(context, { stage: 'generating', text: 'one' });
+        const first = await stream.nextFrame();
+        assert.equal(first.preview?.text, 'one');
+        for (let index = 2; index <= 20; index++) publishRoleplayPreview(context, { text: 'one' + 'x'.repeat(index * 3) });
+        const frame = await stream.nextFrame();
+        assert.equal(frame.delta.text, 'x'.repeat(60), 'the whole burst arrives as one appended suffix');
+        const raced = await Promise.race([
+            stream.nextFrame().then(received => (received ? 'frame' : 'closed')).catch(() => 'aborted'),
+            new Promise(resolve => setTimeout(() => resolve('quiet'), 300)),
+        ]);
+        assert.equal(raced, 'quiet', 'a coalesced burst writes exactly one delta');
+    } finally { controller.abort(); stream.reader.releaseLock(); }
+});
+
+test('roleplay preview writes pause on backpressure, coalesce while draining and keep one drain listener', async () => {
+    const base = { owner: 'alice', directories: aliceDirs };
+    const { job } = acceptJob(aliceDirs, { owner: 'alice', type: 'media.roleplay-workflow', submissionKey: 'preview-backpressure',
+        intent: { media: roleplayAccountStamp(base), request: {} } });
+    const request = Object.assign(new EventEmitter(), {
+        user: { profile: { handle: 'alice' }, directories: aliceDirs }, params: { id: job.id }, get: () => 'alice',
+        query: { frames: 'delta' },
+    });
+    const writes = [];
+    let flow = true;
+    const response = Object.assign(new EventEmitter(), {
+        set: () => response, flushHeaders() {}, writableLength: 0,
+        write: value => { writes.push(value); return flow; },
+        end() { this.writableEnded = true; },
+    });
+    const context = roleplayStreamContext(job.id, 'pressure-child');
+    try {
+        jobsRouter.stack.find(layer => layer.route?.path === '/:id/preview').route.stack[0].handle(request, response);
+        flow = false;
+        publishRoleplayPreview(context, { stage: 'generating', text: 'first' });
+        const afterFirst = writes.length;
+        assert.equal(response.listenerCount('drain'), 1, 'a full socket buffer arms exactly one drain listener');
+        publishRoleplayPreview(context, { text: 'first second' });
+        publishRoleplayPreview(context, { text: 'first second third' });
+        assert.equal(writes.length, afterFirst, 'nothing is written while the socket drains');
+        await new Promise(resolve => setTimeout(resolve, 150));
+        assert.equal(writes.length, afterFirst, 'the throttle keeps coalescing while draining');
+        flow = true;
+        response.emit('drain');
+        assert.equal(writes.length, afterFirst + 1, 'the coalesced latest preview is written once after drain');
+        const frame = JSON.parse(writes[writes.length - 1].slice('data: '.length).split('\n\n')[0]);
+        assert.equal(frame.delta.text, ' second third');
+        assert.equal(response.listenerCount('drain'), 0, 'the drain listener is consumed and not re-armed while flowing');
+        // A reader that never drains hits the byte cutoff instead of growing forever.
+        response.writableLength = 2 * 1024 * 1024;
+        publishRoleplayPreview(context, { stage: 'agents', text: 'too much' });
+        assert.equal(response.writableEnded, true, 'the byte cutoff ends the stream');
+        const finalWrites = writes.length;
+        response.emit('close');
+        publishRoleplayPreview(context, { text: 'after close' });
+        await new Promise(resolve => setTimeout(resolve, 150));
+        assert.equal(writes.length, finalWrites, 'cleanup unsubscribes the abandoned stream');
+    } finally {
+        response.emit('close');
+    }
+});
+
+test('conversation previews keep sending unchanged full snapshots', async () => {
+    const { job } = acceptJob(aliceDirs, { owner: 'alice', type: 'conversation.reply', submissionKey: 'conversation-full-frames', intent: {} });
+    const controller = new AbortController();
+    const response = await fetch(`${url}/api/jobs/${job.id}/preview`, { headers: { 'X-Account': 'alice' }, signal: controller.signal });
+    const stream = sseReader(response);
+    const speaker = { owner: 'alice', job: { id: 'speaker-a', parentId: job.id } };
+    const snapshot = { target: { avatar: 'one.png', branchId: 'main' }, speaker: { avatar: 'one.png', name: 'One' } };
+    try {
+        const initial = await stream.nextFrame();
+        assert.deepEqual(initial.preview, { participants: [] });
+        publishConversationPreview(speaker, snapshot, { text: 'Hello', token_count: 1 });
+        const first = await stream.nextFrame();
+        assert.equal(first.preview.participants[0].text, 'Hello');
+        assert.equal(first.delta, undefined);
+        await new Promise(resolve => setTimeout(resolve, 80));
+        publishConversationPreview(speaker, snapshot, { text: 'Hello there', token_count: 2 });
+        const second = await stream.nextFrame();
+        assert.equal(second.preview.participants[0].text, 'Hello there', 'conversation growth is still a full snapshot');
+        assert.equal(second.delta, undefined, 'the conversation protocol is unchanged');
+        publishConversationPreview(speaker, snapshot, null);
+    } finally { controller.abort(); stream.reader.releaseLock(); }
 });
 
 for (const routePath of ['/events', '/:id/preview']) {
