@@ -39,13 +39,15 @@ import { generateSavedSpeech } from './speech-jobs.js';
 import { prepareRoleplayCaptions } from './roleplay-captions.js';
 import { applyCaptionRecords } from './caption-records.js';
 import { prepareRoleplayAgentContributions, runRoleplayAgentInterceptors, runRoleplayAgentPostprocessing, roleplayAgentLoreText, roleplayAgentOutputBaseline, roleplayAgentDisplaySnapshot } from './roleplay-agent-processing.js';
-import { runRoleplayCompanions } from './roleplay-companions.js';
+import { runRoleplayCompanions, planRoleplayCompanionStart, roleplayCompanionPlaceholders } from './roleplay-companions.js';
+import { readRoleplayAgents } from './roleplay-agents-source.js';
+import { createFreshnessGate } from './roleplay-freshness-gate.js';
 import { createProviderScope } from '../jobs/artifacts.js';
 import { stageBoundModelToolCalls } from './roleplay-tool-dispatch.js';
 import { createRoleplayStreamPreview, publishRoleplayPreview } from './roleplay-preview.js';
 import { applyRoleplayVectorFiles, prepareRoleplayVectors } from './roleplay-vectors.js';
 import { prepareRoleplayNoteContext, prepareRoleplayNotebooks } from '../notebooks/context.js';
-import { markRoleplayAgentsFailed, roleplayAgentsStoppedByOwner } from './roleplay-agent-stop.js';
+import { markRoleplayAgentsFailed, roleplayAgentsStopped, roleplayAgentsStoppedByOwner } from './roleplay-agent-stop.js';
 import { assertRoleplayBundledMacrosCaptured } from './roleplay-bundled-macros.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
@@ -98,10 +100,15 @@ function replyOutput(result, effect, name, material) {
 /** A private worker for a fully admitted, paused Roleplay job; browser cutover is a later stage. */
 export async function runRoleplayReplyJob(context, { generate = runChatProfile, host = roleplayNativeHost,
     worldInfoHooks, modelCatalogue, contextLimit = getChatProfileContextLimit, promptBackend = resolveGenerationProfile,
-    generatePathfinder, translationFetch, captionFetch, localCaption, captionWait, speechDependencies, generateAgent, agentRandom } = {}) {
+    generatePathfinder, translationFetch, captionFetch, localCaption, captionWait, speechDependencies, generateAgent, agentRandom,
+    freshnessGate = createFreshnessGate } = {}) {
     const { job, directories, owner, signal } = context;
     const { roleplay, effect, source, request } = job.intent ?? {};
     const base = { owner, directories };
+    // One fully checked Agent read per run; cleared before the retry-once pass.
+    const agentCache = new Map();
+    let displayRecords;
+    let inChatAgents;
     const account = roleplay && { accountId: roleplay.accountId, dataEpoch: roleplay.dataEpoch };
     if (!account || !source || !request || typeof roleplay.operationKey !== 'string') {
         throw roleplayError('ROLEPLAY_INVALID', 'The accepted Roleplay request is missing.', 409);
@@ -152,15 +159,49 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             throw roleplayError('ROLEPLAY_TOOLS_PENDING', 'The saved provider result needs the native tool workflow before a reply can be written.', 409);
         }
         const output = replyOutput(result, effect, request.characterName, result.generation);
+        const reply = output.message ?? output.messages?.[0] ?? output;
+        // Tell the reader the main reply finished before macro hashing, token
+        // counting or any Agent preparation takes the event loop. Pending cards
+        // are a display prediction built from the same eligibility rule the run
+        // uses; every real dispatch still checks freshness and replaces them.
+        // A Companion that already has a durable result for this job is never
+        // shown as running again on a resumed or retried pass.
+        let pendingCardsPublished = false;
+        const publishPendingCompanions = (recordsForPlan, valueForPlan) => {
+            if (!request.worldInfo?.agents || roleplayAgentsStopped(context)) return false;
+            try {
+                const pre = readArtifact(directories, job.id, 'roleplay-agents-pre');
+                if (!pre?.activeIds) return false;
+                const agents = readRoleplayAgents(base, request.worldInfo, agentCache);
+                const plan = planRoleplayCompanionStart({ agents, snapshot: request.worldInfo, pre, records: recordsForPlan,
+                    value: valueForPlan, effect, assistantName: request.characterName });
+                const pending = plan.pending.filter(agent =>
+                    readArtifact(directories, job.id, `roleplay-companion:${agent.id}`) === undefined);
+                if (!pending.length && !Object.keys(plan.hostResults).length) return false;
+                publishRoleplayPreview(context, { inChatAgentCompanionResults: roleplayCompanionPlaceholders({ hostResults: plan.hostResults, pending }) });
+                return true;
+            } catch { return false; }
+        };
+        publishRoleplayPreview(context, { text: result.text, reasoning: reply.extra.reasoning ?? '', generation: result.generation,
+            gen_started: reply.gen_started, gen_finished: reply.gen_finished,
+            reasoning_duration: reply.extra.reasoning_duration, reasoning_finished: true, stage: 'agents',
+            ...(inChatAgents ? { inChatAgents } : {}) });
+        if (displayRecords) {
+            const displayValue = effect === 'continue'
+                ? String(displayRecords[source.message.index + 1]?.mes ?? '') + output.text
+                : reply.mes ?? output.text;
+            pendingCardsPublished = publishPendingCompanions(displayRecords, displayValue);
+        }
+        // Yield once so the stream frames can leave before synchronous checks and hashing run.
+        await new Promise(resolve => setImmediate(resolve));
         const macroCommit = roleplayMacroCommitHash(directories, job);
         if (macroCommit) output.macroCommit = macroCommit;
-        const reply = output.message ?? output.messages?.[0] ?? output;
-        const { count } = await getCounter(request.worldInfo?.tokenizer);
-        const publishTextPreview = (text, update) => publishRoleplayPreview(context, { ...update, text,
-            token_count: count(text), reasoning_tokens: count(reply.extra.reasoning ?? '') });
-        publishTextPreview(result.text, { reasoning: reply.extra.reasoning ?? '', generation: result.generation,
-            gen_started: reply.gen_started, gen_finished: reply.gen_finished,
-            reasoning_duration: reply.extra.reasoning_duration, reasoning_finished: true, stage: 'agents' });
+        let counterPromise;
+        const count = async text => {
+            counterPromise ??= getCounter(request.worldInfo?.tokenizer);
+            return (await counterPromise).count(text);
+        };
+        const publishTextPreview = (text, update) => publishRoleplayPreview(context, { ...update, text });
         if (request.worldInfo?.captions?.persist) {
             const { hash, ...captions } = readArtifact(directories, job.id, 'roleplay-captions') ?? {};
             if (hash !== roleplayHash(captions) || !Array.isArray(captions.results)) {
@@ -191,7 +232,14 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             // discard it. One automatic retry releases the uncertain provider
             // steps first; then the reply is kept with the saved Agent work and
             // anything unfinished skipped, exactly like the owner's Stop.
-            const runAgents = async () => {
+            // Parallel post-reply steps share one check per event-loop turn. Each
+            // transport still asks immediately before its own request, so a later
+            // edit schedules and receives a new check.
+            const freshness = freshnessGate(() => {
+                assertSource();
+                assertRoleplayWorldInfoCurrent(base, request.worldInfo);
+            });
+            const runAgents = async (republish = false, announce = true) => {
                 const current = assertSource();
                 let records = selectRoleplayPromptRecords(current.records, source, effect);
                 if (output.captions) records = applyCaptionRecords(records, request.worldInfo.captions.items, output.captions);
@@ -212,12 +260,21 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 });
                 const mewmory = request.serverPrompt ? withRoleplayAccount(base, account, () => readArtifact(directories, job.id, 'roleplay-mewmory')) ?? null : null;
                 const options = { base, snapshot: request.worldInfo, records, metadataRecords: current.records, binding: request.binding, mewmory,
-                    activeLore: roleplayAgentLoreText(selection),
+                    activeLore: roleplayAgentLoreText(selection), agentCache,
                     macros: savedRoleplayMacroSnapshot(request.worldInfo, records), generationType: request.worldInfo.global.trigger,
-                    assistantName: request.characterName, assertCurrent: () => { assertSource(); assertRoleplayWorldInfoCurrent(base, request.worldInfo); }, generate: generateAgent };
+                    assistantName: request.characterName, assertCurrent: () => freshness(), generate: generateAgent };
+                // The fresh path already announced cards before its first check.
+                // A resumed, reviewed or retried pass builds them before any
+                // reviewed interceptor can delay the post-reply work. If those
+                // interceptors pause for a new review, the branch below clears
+                // the cards because nothing is writing yet.
+                if (announce && (republish || !pendingCardsPublished)) {
+                    pendingCardsPublished = publishPendingCompanions(records, value);
+                }
                 const intercepted = await runRoleplayAgentInterceptors(context, { ...options, value, timing: 'post-main-generation', format: 'text' });
                 if (intercepted.waiting) {
-                    publishRoleplayPreview(context, { stage: 'review' });
+                    pendingCardsPublished = false;
+                    publishRoleplayPreview(context, { stage: 'review', inChatAgentCompanionResults: {} });
                     return { waiting: true, approval: intercepted.approval };
                 }
                 const pre = readArtifact(directories, job.id, 'roleplay-agents-pre');
@@ -259,14 +316,21 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 if (signal.aborted) throw error;
                 console.warn('[Agents] Post-reply Agents failed; retrying once.', error?.message ?? error);
                 updateJob(directories, job.id, current => explicitRetryRecovery(current));
+                agentCache.clear();
                 try {
-                    agentResult = await runAgents();
+                    agentResult = await runAgents(true);
                 } catch (retryError) {
                     if (signal.aborted) throw retryError;
                     console.warn('[Agents] Post-reply Agents failed twice; saving the reply without the remaining Agent changes.', retryError?.message ?? retryError);
                     markRoleplayAgentsFailed(context);
                     updateJob(directories, job.id, current => explicitRetryRecovery(current));
-                    agentResult = await runAgents();
+                    // This pass only saves the reply with whatever Agent work was
+                    // already paid for. Clear the unfinished cards without
+                    // announcing them again; the final Companion notification
+                    // restores any completed notes.
+                    publishRoleplayPreview(context, { inChatAgentCompanionResults: {} });
+                    agentCache.clear();
+                    agentResult = await runAgents(false, false);
                 }
             }
             if (agentResult?.waiting) return agentResult;
@@ -296,8 +360,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         const finalText = effect === 'continue'
             ? output.continuedText ?? String(assertSource().records[source.message.index + 1].mes ?? '') + output.text
             : reply.mes ?? output.text;
-        reply.extra.token_count = count(finalText);
-        if (reply.extra.reasoning) reply.extra.reasoning_tokens = count(reply.extra.reasoning);
+        reply.extra.token_count = await count(finalText);
+        if (reply.extra.reasoning) reply.extra.reasoning_tokens = await count(reply.extra.reasoning);
         publishRoleplayPreview(context, { text: finalText, token_count: reply.extra.token_count,
             reasoning_tokens: reply.extra.reasoning_tokens, stage: 'saving' });
         if (job.type === 'roleplay.candidate') return saveCandidate('text', { output });
@@ -406,6 +470,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     let acceptedMacros = request.macros || {};
     let preparedHistory;
     let worldInfo;
+    let preparedWorldInfoNow = false;
     if (request.worldInfo) {
         const limit = contextLimit(directories, request.binding);
         if (!Number.isSafeInteger(limit) || limit <= request.maxTokens
@@ -420,7 +485,13 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             || request.worldInfo.global?.trigger !== roleplayEffectTrigger(effect)) {
             throw roleplayError('ROLEPLAY_INVALID', 'World Info must belong to the admitted Roleplay source.', 409);
         }
-        assertRoleplayWorldInfoCurrent(base, request.worldInfo);
+        // A saved scan is validated again below, and any optional stage that can
+        // spend first performs its own check. When preparation will start with
+        // prepareRoleplayWorldInfo, that function checks at its own opening.
+        const savedWorldInfo = readArtifact(directories, job.id, 'roleplay-world-info');
+        if (savedWorldInfo !== undefined || request.worldInfo.captions || request.worldInfo.inputTranslation || request.worldInfo.vectors) {
+            assertRoleplayWorldInfoCurrent(base, request.worldInfo);
+        }
         if (request.serverPrompt) characterScope = withRoleplayAccount(base, account, lease => {
             assertRoleplaySourceLocked(lease, source, { effect });
             const character = readRoleplayEntityLocked(lease, 'character', request.worldInfo.avatar);
@@ -479,7 +550,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             if (request.worldInfo.agents) {
                 agentPre = prepareRoleplayAgentContributions(context, { base, snapshot: request.worldInfo, records: initialRecords,
                     policyRecords: initialSource.records, macros: acceptedMacros, generationType: request.worldInfo.global.trigger, random: agentRandom,
-                    assertCurrent: () => { assertSource(); assertRoleplayWorldInfoCurrent(base, request.worldInfo); } });
+                    agentCache, assertCurrent: () => { assertSource(); assertRoleplayWorldInfoCurrent(base, request.worldInfo); } });
                 const keys = new Set(contributions.extensions.map(item => item.key));
                 if (agentPre.extensions.some(item => keys.has(item.key))) throw roleplayError('ROLEPLAY_INVALID', 'An Agent prompt key conflicts with an existing contributor.', 409);
                 contributions = { ...contributions, extensions: [...contributions.extensions, ...agentPre.extensions] };
@@ -535,11 +606,12 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             acceptedMacros = { ...boundMacroSnapshot(savedRoleplayMacroSnapshot({ ...request.worldInfo, global: data.global, characterExamples: data.characterExamples }, initialRecords)), variables: data.macroState.variables,
                 extra: { ...acceptedMacros.extra, chatMetadata: data.macroState.chatMetadata, bannedWords: data.macroState.bannedWords } };
         }
-        worldInfo = readArtifact(directories, job.id, 'roleplay-world-info');
+        worldInfo = savedWorldInfo;
         if (worldInfo === undefined) {
             worldInfo = await prepareRoleplayWorldInfo(base, request.worldInfo, { ...worldInfoHooks, macros: acceptedMacros,
                 promptChat: preparedHistory?.promptChat, promptGlobal: preparedHistory?.global, promptInjections: scanContributions,
                 vectorEntries: vectors?.projection.worldInfo ?? [] });
+            preparedWorldInfoNow = true;
             writeArtifact(directories, job.id, 'roleplay-world-info', worldInfo);
         }
         if (!worldInfo || typeof worldInfo !== 'object' || Array.isArray(worldInfo)) {
@@ -578,7 +650,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 || !entry.entry || typeof entry.entry !== 'object')) {
             throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'This saved World Info scan predates its server macro result.', 503);
         }
-        assertRoleplayWorldInfoCurrent(base, request.worldInfo);
+        // A scan prepared in this run already ended with its own fresh check.
+        if (!preparedWorldInfoNow) assertRoleplayWorldInfoCurrent(base, request.worldInfo);
         if (worldInfo.hookEvents.actions.length) {
             if (!request.serverPrompt) throw roleplayError('ROLEPLAY_INVALID', 'This World Info entry needs a native Quick Reply action.', 409);
             quickReply = prepareRoleplayQuickReplies(context, { base, snapshot: request.worldInfo, source, worldInfo });
@@ -948,7 +1021,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         if (previous !== undefined && roleplayHash(previous) !== roleplayHash(prepared)) throw roleplayError('ROLEPLAY_AGENT_RECOVERY', 'The saved Agent-modified prompt changed.', 409);
         if (previous === undefined) writeArtifact(directories, job.id, 'roleplay-prompt', prepared);
     }
-    const inChatAgents = roleplayAgentDisplaySnapshot(context, { base, snapshot: request.worldInfo, generationType: request.worldInfo?.global.trigger });
+    inChatAgents = roleplayAgentDisplaySnapshot(context, { base, snapshot: request.worldInfo, generationType: request.worldInfo?.global.trigger, agentCache });
+    displayRecords = initialRecords;
     publishRoleplayPreview(context, { stage: 'generating', inChatAgents });
     const { count: countPreview } = await getCounter(request.worldInfo?.tokenizer);
     const preview = createRoleplayStreamPreview(context, countPreview);
@@ -983,7 +1057,6 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 size = Math.max(await (countText ?? count)(text), payload.negative_prompt ? await (countText ?? count)(payload.negative_prompt) : 0);
             }
             if (size > budget) throw roleplayError('ROLEPLAY_INVALID', 'The formatted Roleplay request exceeds its bound context budget.', 409);
-            beforeDispatch();
         } : undefined,
         beforeDispatch,
         modelOverride: request.modelOverride || '', overridePayload, stream: request.stream === true && !functionTools.length })).finally(preview.stop);

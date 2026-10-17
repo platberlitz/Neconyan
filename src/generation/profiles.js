@@ -5,7 +5,7 @@ import { readSecret, secretIdExists, SecretManager, SECRET_KEYS } from '../endpo
 import { getSettingsRevision } from '../settings-version.js';
 import { applyGenerationRequestControls } from '../../public/scripts/generation-request-controls.js';
 import { fail, hash } from '../mewmory/core.js';
-import { readJson } from '../mewmory/store.js';
+import { readJson, readJsonShared } from '../mewmory/store.js';
 import { buildChatPresetPayload, createChatRequestData } from '../../public/scripts/chat-preset-request.js';
 import { resolveProfileProxy, resolveProfileRequestOverrides, resolveProfileServiceTier } from '../../public/scripts/connection-profile-request.js';
 import { textgen_types } from '../../public/scripts/text-provider-parameters.js';
@@ -97,7 +97,7 @@ function readTextProfile(directories, profile, settings, source, activeBinding =
 
 function readProfile(directories, profileId, presetOverride) {
     if (typeof profileId !== 'string' || !profileId || profileId.length > 256) fail('Choose a saved connection profile.', 400);
-    const settings = readJson(path.join(directories.root, 'settings.json'), {});
+    const settings = readJsonShared(path.join(directories.root, 'settings.json'), {});
     if (settings.extension_settings?.disabledExtensions?.includes('connection-manager')) fail('Connection Manager is disabled.', 409);
     const profiles = settings.extension_settings?.connectionManager?.profiles;
     let profile = profiles?.find(item => item.id === profileId);
@@ -159,7 +159,7 @@ function readChatProfile(directories, profile, settings, source, activeBinding =
 }
 
 function readActiveConnection(directories) {
-    const settings = readJson(path.join(directories.root, 'settings.json'), {});
+    const settings = readJsonShared(path.join(directories.root, 'settings.json'), {});
     const selection = settings.active_generation;
     if (!selection || selection.api !== settings.main_api) fail('Save the active connection settings before generating a reply.', 409);
     if (['kobold', 'novel', 'koboldhorde'].includes(settings.main_api)) {

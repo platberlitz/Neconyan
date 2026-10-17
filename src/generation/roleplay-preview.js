@@ -23,13 +23,16 @@ export function publishRoleplayPreview(context, update) {
     previews.delete(key);
     previews.set(key, value);
     while (previews.size > 128) previews.delete(previews.keys().next().value);
-    // Completed model text survives a browser or server reconnect. Token updates
-    // stay in memory so a disk flush cannot delay each incoming token.
-    if ((update.stage && update.stage !== 'generating') || update.inChatAgentCompanionResults) {
-        try { writeArtifact(directories, id, 'roleplay-preview', value); } catch { /* A display failure cannot invalidate a paid reply. */ }
-    }
+    // Tell every connected viewer before touching the disk. The stage label and
+    // pending Companion cards are what the reader is waiting for, and a slow or
+    // failed display write must never delay or invalidate that frame.
     for (const listener of listeners.get(key) ?? []) {
         try { listener(value); } catch { /* A disconnected viewer does not own the job. */ }
+    }
+    // Completed model text survives a browser or server reconnect. The write is
+    // display-only and not fsynced: a crash may lose this frame, never a paid result.
+    if ((update.stage && update.stage !== 'generating') || update.inChatAgentCompanionResults) {
+        try { writeArtifact(directories, id, 'roleplay-preview', value, { durable: false }); } catch { /* A display failure cannot invalidate a paid reply. */ }
     }
 }
 

@@ -15,7 +15,11 @@ const { releaseJob, getJob, updateJob } = await import('../src/jobs/store.js');
 const { readArtifact, providerStep } = await import('../src/jobs/artifacts.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
 const { runRoleplayReplyJob } = await import('../src/generation/roleplay-execution.js');
-const { runRoleplayCompanions } = await import('../src/generation/roleplay-companions.js');
+const { runRoleplayCompanions, planRoleplayCompanionStart, pendingRoleplayCompanionCards } = await import('../src/generation/roleplay-companions.js');
+const { prepareRoleplayAgentContributions } = await import('../src/generation/roleplay-agent-processing.js');
+const { subscribeRoleplayPreview } = await import('../src/generation/roleplay-preview.js');
+const { createFreshnessGate } = await import('../src/generation/roleplay-freshness-gate.js');
+const { requestRoleplayAgentStop } = await import('../src/generation/roleplay-agent-stop.js');
 const { savedRoleplayMacroSnapshot } = await import('../src/generation/roleplay-prompt.js');
 const { getRegexScriptRevision } = await import('../public/scripts/extensions/in-chat-agents/regex-snapshot-store.js');
 const { MEMORY_SHARD_TEMPLATE_ID } = await import('../public/scripts/extensions/in-chat-agents/companion/companion-shared.js');
@@ -27,7 +31,7 @@ const controls = { prompts: [{ identifier: 'main', role: 'system', system_prompt
 prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'worldInfoBefore', enabled: true }, { identifier: 'chatHistory', enabled: true }] }] };
 const companion = (id, options = {}) => ({ id, name: id.toUpperCase(), enabled: true, category: 'companion', execution: 'companion',
     phase: 'pre', prompt: `TASK_${id.toUpperCase()}`, companion: { includeWorldInfo: false, ...options } });
-function prepared(t, agents, { global = {}, effect = 'append', changeRecords, extraCard = false, imagePolicy = false } = {}) {
+function prepared(t, agents, { global = {}, effect = 'append', changeRecords, extraCard = false, imagePolicy = false, previewParent = null } = {}) {
     const f = fixture(t), directories = f.scope.directories;
     directories.worlds = path.join(directories.root, 'worlds');
     directories.inChatAgents = path.join(directories.root, 'InChatAgents');
@@ -51,7 +55,8 @@ function prepared(t, agents, { global = {}, effect = 'append', changeRecords, ex
     const anchored = ['continue', 'swipe'].includes(effect);
     const source = captureRoleplaySource(f.scope, { locator: f.locator, ...(anchored ? { message: f.records.length - 2 } : {}) });
     const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 4000, serverPrompt: true, ...(imagePolicy ? { mediaPolicyVersion: 1 } : {}), trigger: anchored ? effect : 'normal' });
-    const request = { binding: { kind: 'profile', ...captureChatProfile(directories, 'main') }, maxTokens: 32, characterName: 'Nova', worldInfo, serverPrompt: true, messages: [] };
+    const request = { binding: { kind: 'profile', ...captureChatProfile(directories, 'main') }, maxTokens: 32, characterName: 'Nova', worldInfo, serverPrompt: true, messages: [],
+        ...(previewParent ? { workflowCandidate: { version: 1, parentJobId: previewParent } } : {}) };
     const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'companions-native', source, effect, request });
     releaseJob(directories, jobId);
     updateJob(directories, jobId, { state: 'running' });
@@ -603,4 +608,172 @@ test('versioned show-only broken images survive companion lore recapture without
     assert.equal(calls, 1);
     assert.equal(f.rows().at(-1).extra.inChatAgentCompanionResults.side.content, 'Companion note');
     assert.match(f.rows()[1].extra.media[0].url, /BROKEN/);
+});
+
+function companionPlans() {
+    const base = { includeWorldInfo: false, trigger: 'auto', minContextTokens: 0, format: 'text' };
+    const agent = (id, companion = {}) => ({
+        id, name: id.toUpperCase(), enabled: true, category: 'companion', execution: 'companion', phase: 'pre', prompt: `TASK_${id.toUpperCase()}`,
+        companion: { ...base, ...companion },
+    });
+    return { agent };
+}
+
+test('the early Companion plan uses the real eligibility rule and never lists hidden, manual or under-sized work', () => {
+    const { agent } = companionPlans();
+    const snapshot = { agents: { hiddenIds: ['hidden'] }, mediaPolicy: null };
+    const agents = [agent('auto'), agent('hidden'), agent('manual', { trigger: 'manual' }), agent('too-small', { minContextTokens: 100000 }), agent('keyword-off')];
+    const plan = planRoleplayCompanionStart({ agents, snapshot, pre: { activeIds: ['auto', 'hidden', 'manual', 'too-small'] },
+        records: [], value: 'A short reply', effect: 'append', assistantName: 'Nova' });
+    assert.deepEqual(plan.pending.map(item => item.id), ['auto']);
+});
+
+test('the finished reply announces Agents and pending Companions before the first post-reply Agent call', { timeout: 20000 }, async t => {
+    const parent = 'preview-parent';
+    const f = prepared(t, [companion('side'), { id: 'edit', name: 'Edit', enabled: true, phase: 'post', prompt: 'EDIT_REPLY',
+        postProcess: { enabled: true, promptTransformEnabled: true } }], { previewParent: parent, global: { companionConcurrentWithPostGen: false } });
+    const events = [];
+    const unsubscribe = subscribeRoleplayPreview(f.scope.owner, parent, preview => events.push({ kind: 'preview',
+        stage: preview.stage, status: preview.inChatAgentCompanionResults?.side?.status, text: preview.text }));
+    t.after(unsubscribe);
+    let releaseEdit;
+    const editHeld = new Promise(resolve => { releaseEdit = resolve; });
+    let editEntered;
+    const editStarted = new Promise(resolve => { editEntered = resolve; });
+    let sideCalls = 0;
+    const generateAgent = paid('agent', async options => {
+        const text = JSON.stringify(options.messages);
+        if (text.includes('EDIT_REPLY')) {
+            events.push({ kind: 'call', agent: 'edit' });
+            editEntered();
+            await editHeld;
+            return { text: 'Edited reply' };
+        }
+        events.push({ kind: 'call', agent: 'side' });
+        sideCalls++;
+        return { text: 'Side note' };
+    });
+    const running = f.run({ generate: paid('main', 'Raw reply'), generateAgent,
+        freshnessGate: check => createFreshnessGate(() => { events.push({ kind: 'check' }); check(); }) });
+    await editStarted;
+    const announced = events.findIndex(event => event.kind === 'preview' && event.stage === 'agents' && event.status === 'pending');
+    const editCall = events.findIndex(event => event.kind === 'call' && event.agent === 'edit');
+    const firstCheck = events.findIndex(event => event.kind === 'check');
+    assert.ok(announced >= 0, 'a pending Companion card is published with the finished reply');
+    assert.ok(announced < firstCheck, 'the card is visible before the first post-reply freshness check');
+    assert.ok(firstCheck < editCall, 'the first Agent call follows its freshness check');
+    assert.equal(sideCalls, 0, 'one-at-a-time Companion work waits for the post-reply Agent');
+    releaseEdit();
+    await running;
+    const sideCall = events.findIndex(event => event.kind === 'call' && event.agent === 'side');
+    assert.ok(sideCall > editCall, 'the Companion request follows the post-reply Agent');
+    assert.equal(f.rows().at(-1).mes, 'Edited reply');
+    assert.equal(f.rows().at(-1).extra.inChatAgentCompanionResults.side.content, 'Side note');
+});
+
+function directCompanionRun(f, generateAgent, value = 'Main reply') {
+    const agentCache = new Map();
+    const options = { base: f.scope, snapshot: f.worldInfo, records: f.records, policyRecords: f.records,
+        macros: savedRoleplayMacroSnapshot(f.worldInfo, f.records), generationType: 'normal', agentCache, assertCurrent: () => {} };
+    prepareRoleplayAgentContributions(f.context(), options);
+    return { ...options, value, effect: 'append', assistantName: 'Nova', binding: f.request.binding, generate: generateAgent };
+}
+
+test('a Companion without World Info sends before a broken World Info scan and its saved result is reused', async t => {
+    const build = () => prepared(t, [companion('fast'), companion('wi', { includeWorldInfo: true })]);
+    const fastMessages = [];
+    const broken = build();
+    fs.rmSync(path.join(broken.directories.worlds, 'Bells.json'));
+    const brokenOptions = directCompanionRun(broken, paid('agent', ({ messages }) => {
+        const text = JSON.stringify(messages);
+        if (text.includes('TASK_FAST')) { fastMessages.push(structuredClone(messages)); return { text: 'Fast note' }; }
+        assert.fail('a World Info Companion cannot send after its scan failed');
+    }), 'The evening-bell rings.');
+    await assert.rejects(runRoleplayCompanions(broken.context(), brokenOptions), error =>
+        ['ROLEPLAY_SOURCE_CHANGED', 'ROLEPLAY_SOURCE_DAMAGED'].includes(error.code));
+    // The broken scan is deterministic, and the first paid note must replay
+    // instead of being bought again on the retry.
+    await assert.rejects(runRoleplayCompanions(broken.context(), brokenOptions), error =>
+        ['ROLEPLAY_SOURCE_CHANGED', 'ROLEPLAY_SOURCE_DAMAGED'].includes(error.code));
+    assert.equal(fastMessages.length, 1, 'the successful Companion provider call happened exactly once');
+    assert.doesNotMatch(JSON.stringify(fastMessages[0]), /THE_COMPANION_BELL_LORE/);
+
+    const workingMessages = [];
+    const working = build();
+    await runRoleplayCompanions(working.context(), directCompanionRun(working, paid('agent', ({ messages }) => {
+        const text = JSON.stringify(messages);
+        if (text.includes('TASK_FAST')) { workingMessages.push(structuredClone(messages)); return { text: 'Fast note' }; }
+        assert.match(text, /THE_COMPANION_BELL_LORE/);
+        return { text: 'Lore note' };
+    }), 'The evening-bell rings.'));
+    assert.deepEqual(fastMessages[0], workingMessages[0], 'the lazily skipped World Info section leaves prompt bytes unchanged');
+});
+
+test('a Companion with no output Agents skips the empty postprocessing phase and saves the same note', async t => {
+    const f = prepared(t, [companion('side')]);
+    await f.run({ generate: paid('main', 'Main reply'), generateAgent: paid('agent', 'Side note') });
+    assert.equal(f.rows().at(-1).extra.inChatAgentCompanionResults.side.content, 'Side note');
+    assert.equal(readArtifact(f.directories, f.jobId, 'roleplay-agent-post:companion:side'), undefined);
+    assert.equal(readArtifact(f.directories, f.jobId, 'roleplay-agent-post:companion:side:plan'), undefined);
+});
+
+test('the owner Stop clears pending Companion cards and still saves the reply', { timeout: 20000 }, async t => {
+    const parent = 'stop-pending-parent';
+    const f = prepared(t, [companion('side')], { previewParent: parent });
+    const previews = [];
+    const unsubscribe = subscribeRoleplayPreview(f.scope.owner, parent, preview => previews.push({
+        stage: preview.stage, results: preview.inChatAgentCompanionResults,
+    }));
+    t.after(unsubscribe);
+    let entered;
+    const started = new Promise(resolve => { entered = resolve; });
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    const running = f.run({ generate: paid('main', 'Main reply'), generateAgent: paid('agent', async options => {
+        entered();
+        await held;
+        options.signal.throwIfAborted();
+        return { text: 'Must not be kept' };
+    }) });
+    await started;
+    assert.equal(requestRoleplayAgentStop(f.context()), true);
+    release();
+    await running;
+    assert.equal(f.rows().at(-1).mes, 'Main reply');
+    assert.equal(f.rows().at(-1).extra.inChatAgentCompanionResults, undefined);
+    const lastCards = previews.filter(preview => preview.results !== undefined).at(-1);
+    assert.ok(lastCards, 'the run published Companion state');
+    assert.ok(Object.values(lastCards.results).every(result => result.status !== 'pending'), 'no stopped Companion keeps a pending card');
+});
+
+test('retry-once republishes pending cards without repeating a completed paid Companion call', { timeout: 20000 }, async t => {
+    const parent = 'retry-pending-parent';
+    const f = prepared(t, [companion('done'), companion('fail')], { previewParent: parent,
+        global: { companionExecutionMode: 'sequential' } });
+    const previews = [];
+    const unsubscribe = subscribeRoleplayPreview(f.scope.owner, parent, preview => {
+        if (preview.inChatAgentCompanionResults) previews.push(structuredClone(preview.inChatAgentCompanionResults));
+    });
+    t.after(unsubscribe);
+    let doneCalls = 0, failCalls = 0;
+    await f.run({ generate: paid('main', 'Main reply'), generateAgent: paid('agent', ({ messages }) => {
+        const text = JSON.stringify(messages);
+        if (text.includes('TASK_DONE')) { doneCalls++; return { text: 'Done note' }; }
+        failCalls++;
+        if (failCalls === 1) throw new Error('transient Companion failure');
+        return { text: 'Fail note' };
+    }) });
+    assert.equal(doneCalls, 1, 'the completed Companion is reused after the retry');
+    assert.equal(failCalls, 2, 'only the failed Companion is asked again');
+    const republished = previews.findLast(results => results.fail?.status === 'pending');
+    assert.ok(republished, 'the retry republishes the unfinished Companion as pending');
+    assert.notEqual(republished.done?.status, 'pending', 'a durable completed Companion is not shown as running again');
+    assert.equal(f.rows().at(-1).extra.inChatAgentCompanionResults.done.content, 'Done note');
+    assert.equal(f.rows().at(-1).extra.inChatAgentCompanionResults.fail.content, 'Fail note');
+});
+
+test('pending cards exclude a saved Companion even when it is listed after an unfinished one', () => {
+    const pending = [{ id: 'held' }, { id: 'saved' }];
+    const cards = pendingRoleplayCompanionCards(pending, agent => agent.id === 'saved');
+    assert.deepEqual(cards.map(agent => agent.id), ['held'], 'a durable result listed later is not shown running');
 });

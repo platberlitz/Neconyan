@@ -112,14 +112,13 @@ async function scannedAgentLoreText(context, options, agents, identity) {
     const name = options.namespace ? `roleplay-agent-lore:${options.namespace}` : 'roleplay-agent-lore';
     const previous = readPhase(context, snapshot.account, name, identity);
     if (previous) return previous.text;
-    await options.assertCurrent?.();
     const captured = captureRoleplayWorldInfo(options.base, snapshot.account, snapshot.source, {
         avatar: snapshot.avatar, tokenizer: snapshot.tokenizer, maxContext: 4096, serverPrompt: true, trigger: snapshot.global?.trigger,
         agentIds: snapshot.agents?.forcedIds ?? [], agentContext: snapshot.agentContext ?? false,
         mediaPolicyVersion: snapshot.mediaPolicyVersion ?? 0, mediaBinding: snapshot.mediaBinding ?? null,
     });
     const pre = readArtifact(context.directories, context.job.id, 'roleplay-agents-pre');
-    const selection = await prepareRoleplayWorldInfo(options.base, captured, { macros: options.macros,
+    const selection = await prepareRoleplayWorldInfo(options.base, captured, { capturedNow: true, macros: options.macros,
         promptChat: (options.records ?? []).filter(message => !message.is_system).map(message => String(message.mes ?? '')).reverse(),
         promptInjections: (pre?.extensions ?? []).filter(extension => extension.scan).map(extension => extension.content) });
     await options.assertCurrent?.();
@@ -131,14 +130,14 @@ function evaluate(environment, text, snapshot) {
 }
 
 /** Freeze activation and pre-prompt contributions before history preparation or World Info scanning. */
-export function prepareRoleplayAgentContributions(context, { base, snapshot, records, policyRecords = records, macros, generationType, assertCurrent, random = Math.random }) {
+export function prepareRoleplayAgentContributions(context, { base, snapshot, records, policyRecords = records, macros, generationType, assertCurrent, random = Math.random, agentCache }) {
     if (!snapshot.agents) return null;
     records = projectPromptMediaRecords(records, snapshot.mediaPolicy, { hash: roleplayHash });
     const identity = roleplayHash({ intent: context.job.intent, agents: snapshot.agents, records, generationType });
     const completed = readPhase(context, snapshot.account, 'roleplay-agents-pre', identity);
     if (completed) return completed;
     assertCurrent();
-    const agents = readRoleplayAgents(base, snapshot);
+    const agents = readRoleplayAgents(base, snapshot, agentCache);
     const decisions = readPhase(context, snapshot.account, 'roleplay-agent-activation', identity)
         ?? savePhase(context, snapshot.account, 'roleplay-agent-activation', { identity,
             decisions: agents.map(agent => ({ id: agent.id, ...activation(agent, records, generationType, random) })) });
@@ -158,12 +157,12 @@ export function prepareRoleplayAgentContributions(context, { base, snapshot, rec
         policyHash: roleplayHash(snapshot.agents), generationType, activeIds, extensions, history, trackerTags: feedback.trackerTags, macroState: environment.captureState() });
 }
 
-function activeAgents(context, base, snapshot) {
+function activeAgents(context, base, snapshot, agentCache) {
     const saved = withRoleplayAccount(base, snapshot.account, () => readArtifact(context.directories, context.job.id, 'roleplay-agents-pre'));
     const { hash, ...data } = saved || {};
     if (hash !== roleplayHash(data) || data.intentHash !== roleplayHash(context.job.intent) || data.policyHash !== roleplayHash(snapshot.agents)
         || !Array.isArray(data.activeIds) || data.activeIds.some(id => !snapshot.agents.agents.some(agent => agent.id === id))) throw fail('The saved Agent activation is unavailable.');
-    return { pre: saved, agents: readRoleplayAgents(base, snapshot).filter(agent => data.activeIds.includes(agent.id)) };
+    return { pre: saved, agents: readRoleplayAgents(base, snapshot, agentCache).filter(agent => data.activeIds.includes(agent.id)) };
 }
 
 function displaySnapshot(pre, agents, generationType) {
@@ -174,9 +173,9 @@ function displaySnapshot(pre, agents, generationType) {
 }
 
 /** Use the accepted activation and bound scripts while the main reply is still streaming. */
-export function roleplayAgentDisplaySnapshot(context, { base, snapshot, generationType }) {
+export function roleplayAgentDisplaySnapshot(context, { base, snapshot, generationType, agentCache }) {
     if (!snapshot?.agents) return undefined;
-    const { pre, agents } = activeAgents(context, base, snapshot);
+    const { pre, agents } = activeAgents(context, base, snapshot, agentCache);
     return displaySnapshot(pre, agents, generationType);
 }
 
@@ -276,7 +275,7 @@ export async function runRoleplayAgentInterceptors(context, options) {
     const name = `roleplay-agent-intercepts:${timing}`;
     const completed = readPhase(context, snapshot.account, name, identity);
     if (completed) return completed;
-    const { agents } = activeAgents(context, base, snapshot);
+    const { agents } = activeAgents(context, base, snapshot, options.agentCache);
     const selected = agents.filter(agent => inline(agent) && ['pre', 'both'].includes(agent.phase) && agent.preProcess.mode === 'intercept'
         && agent.preProcess.interceptTiming === timing && agent.prompt.trim());
     if (selected.length && timing === 'post-main-generation' && snapshot.agents.reviewPostMain && !roleplayAgentsStopped(context)) {
@@ -286,7 +285,7 @@ export async function runRoleplayAgentInterceptors(context, options) {
         if (approval.decision === 'skip') return savePhase(context, snapshot.account, name, { identity, value, runs: [], skipped: true });
     }
     if (selected.some(agent => [TRACKER_STATE_MACRO, SECRETS_TRACKER_MACRO].some(macro => usesAgentMacro(agent.prompt, macro)))) {
-        options = { ...options, agentReference: { ...options.agentReference, agents: readRoleplayAgents(base, snapshot), records: options.metadataRecords ?? options.records } };
+        options = { ...options, agentReference: { ...options.agentReference, agents: readRoleplayAgents(base, snapshot, options.agentCache), records: options.metadataRecords ?? options.records } };
     }
     let current = structuredClone(value);
     const runs = [];
@@ -351,21 +350,25 @@ function postprocessingPlan(context, account, phaseName, identity, selected, mod
 export async function runRoleplayAgentPostprocessing(context, options) {
     const { base, snapshot, records, value, generationType, macros } = options;
     const originalMetadataRecords = options.metadataRecords ?? records;
-    options = { ...options, records: projectPromptMediaRecords(records, snapshot.mediaPolicy, { hash: roleplayHash }),
-        ...(options.metadataRecords ? { metadataRecords: projectPromptMediaRecords(options.metadataRecords, snapshot.mediaPolicy, { hash: roleplayHash }) } : {}) };
     if (!snapshot.agents) return { text: value, extra: {}, metadata: {}, runs: [] };
     const identity = roleplayHash({ intent: context.job.intent, records, value, generationType });
     const phaseName = options.namespace ? `roleplay-agent-post:${options.namespace}` : 'roleplay-agent-post';
     const completed = readPhase(context, snapshot.account, phaseName, identity);
     if (completed) return completed;
-    const active = activeAgents(context, base, snapshot);
+    const active = activeAgents(context, base, snapshot, options.agentCache);
     const pre = active.pre;
     const companionOutput = Boolean(options.companionAgent);
     const targetIds = companionOutput ? [options.companionAgent.id, options.companionAgent.sourceTemplateId].filter(Boolean) : [];
     const manual = Boolean(options.manualAgentIds);
-    const agents = manual ? readRoleplayAgents(base, snapshot).filter(agent => options.manualAgentIds.includes(agent.id) && !isNativeCompanion(agent))
-        : companionOutput ? readRoleplayAgents(base, snapshot).filter(agent => inline(agent) && agent.id !== options.companionAgent.id
-            && agent.conditions.runOnCompanionOutputs && (!agent.conditions.companionOutputTargetAgentIds.length || agent.conditions.companionOutputTargetAgentIds.some(id => targetIds.includes(id)))) : active.agents;
+    const definitions = companionOutput || manual ? readRoleplayAgents(base, snapshot, options.agentCache) : active.agents;
+    const agents = manual ? definitions.filter(agent => options.manualAgentIds.includes(agent.id) && !isNativeCompanion(agent))
+        : companionOutput ? definitions.filter(agent => inline(agent) && agent.id !== options.companionAgent.id
+            && agent.conditions.runOnCompanionOutputs && (!agent.conditions.companionOutputTargetAgentIds.length || agent.conditions.companionOutputTargetAgentIds.some(id => targetIds.includes(id)))) : definitions;
+    // No inline Agent targets this note: there is no regex or transform to run,
+    // so skip the media projection, plan artifact and extra saves entirely.
+    if (companionOutput && !agents.length) return { text: value, extra: {}, metadata: {}, runs: [] };
+    options = { ...options, records: projectPromptMediaRecords(records, snapshot.mediaPolicy, { hash: roleplayHash }),
+        ...(options.metadataRecords ? { metadataRecords: projectPromptMediaRecords(options.metadataRecords, snapshot.mediaPolicy, { hash: roleplayHash }) } : {}) };
     const selected = agents.filter(agent => (manual || inline(agent) && agent.postProcess.promptTransformEnabled
         && (companionOutput || ['post', 'both'].includes(agent.phase)) && agent.prompt.trim()
         && (companionOutput || outputStages.has(generationType) || generationType === 'impersonate' && (agent.conditions.runOnImpersonate || agent.sourceTemplateId === 'tpl-prose-polisher')))
@@ -375,7 +378,7 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     const version = postprocessingPlan(context, snapshot.account, phaseName, identity, selected, modelName);
     const usesTrackers = selected.some(agent => [TRACKER_STATE_MACRO, SECRETS_TRACKER_MACRO].some(macro => usesAgentMacro(agent.prompt, macro)));
     const usesContinuityNotes = selected.some(agent => usesAgentMacro(agent.prompt, CONTINUITY_NOTES_MACRO));
-    const referenceAgents = usesTrackers || usesContinuityNotes ? readRoleplayAgents(base, snapshot) : [];
+    const referenceAgents = usesTrackers || usesContinuityNotes ? readRoleplayAgents(base, snapshot, options.agentCache) : [];
     options = { ...options, agentReference: { lore: options.activeLore ?? await scannedAgentLoreText(context, options, selected, identity),
         agents: usesTrackers ? referenceAgents : [], records: options.metadataRecords ?? options.records,
         continuityNotes: usesContinuityNotes ? latestContinuityNotes(records, referenceAgents) : '' } };

@@ -37,13 +37,48 @@ const STORE_FILE = 'index.json';
 const pruneHolds = new Set();
 
 /**
- * The jobs runner polls every 500 ms per owner, so the ledger text is kept in
- * memory and reused while the file's inode, size and modification time are
- * unchanged. Only the text is shared, never the parsed object, because callers
- * mutate their parsed copy before saving it back.
+ * The jobs runner polls every 500 ms per owner, and every artifact read checks
+ * that its job exists. Keep both the ledger text and its parsed object while
+ * the file identity is unchanged. Accessors hand out clones (or a key check)
+ * so a caller can never mutate the shared store; `mutateJobs` always parses its
+ * own copy before applying a patch.
  */
 const ledgerTextCache = new Map();
-const LEDGER_TEXT_CACHE_MAX_ENTRIES = 16;
+const ledgerStoreCache = new Map();
+const LEDGER_CACHE_MAX_ENTRIES = 16;
+// Parsed stores take roughly 1.5 times their source bytes. Bound them by source
+// bytes as well as accounts so many full ledgers cannot grow unbounded.
+const LEDGER_STORE_CACHE_MAX_BYTES = 32 * 1024 * 1024;
+let ledgerStoreCacheBytes = 0;
+
+function ledgerIdentity(stat) {
+    return { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs };
+}
+
+function sameLedgerIdentity(cached, stat) {
+    return cached.dev === stat.dev && cached.ino === stat.ino && cached.size === stat.size
+        && cached.mtimeMs === stat.mtimeMs && cached.ctimeMs === stat.ctimeMs;
+}
+
+function deleteLedgerStore(filename) {
+    const cached = ledgerStoreCache.get(filename);
+    if (!cached) return;
+    ledgerStoreCache.delete(filename);
+    ledgerStoreCacheBytes -= cached.bytes;
+}
+
+function trimLedgerStore() {
+    while (ledgerStoreCache.size > LEDGER_CACHE_MAX_ENTRIES || ledgerStoreCacheBytes > LEDGER_STORE_CACHE_MAX_BYTES) {
+        const oldest = ledgerStoreCache.keys().next().value;
+        if (oldest === undefined) break;
+        deleteLedgerStore(oldest);
+    }
+}
+
+function invalidateLedger(filename) {
+    ledgerTextCache.delete(filename);
+    deleteLedgerStore(filename);
+}
 
 function readLedgerText(filename) {
     let stat;
@@ -51,7 +86,7 @@ function readLedgerText(filename) {
         stat = fs.statSync(filename);
     } catch (error) {
         if (error.code === 'ENOENT') {
-            ledgerTextCache.delete(filename);
+            invalidateLedger(filename);
             return null;
         }
         throw fail(500, 'JOB_STORE_UNREADABLE', 'Neconyan could not read the saved job list. Try again in a moment.');
@@ -59,8 +94,8 @@ function readLedgerText(filename) {
     if (!stat.isFile()) throw fail(500, 'JOB_STORE_UNREADABLE', 'The saved job list is not a file. Ask the server owner to fix it.');
     if (stat.size > JOB_LEDGER_MAX_BYTES) throw fail(409, 'JOB_STORE_RECOVERABLE', 'The saved job list is damaged and was left untouched, so recent job history cannot be trusted. The server owner needs to repair or remove the saved job list file.');
     const cached = ledgerTextCache.get(filename);
-    if (cached && cached.ino === stat.ino && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
-        return cached.text;
+    if (cached && sameLedgerIdentity(cached, stat)) {
+        return { text: cached.text, identity: cached };
     }
     let text;
     try {
@@ -68,11 +103,12 @@ function readLedgerText(filename) {
     } catch {
         throw fail(409, 'JOB_STORE_RECOVERABLE', 'The saved job list is damaged and was left untouched, so recent job history cannot be trusted. The server owner needs to repair or remove the saved job list file.');
     }
-    ledgerTextCache.set(filename, { ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, text });
-    while (ledgerTextCache.size > LEDGER_TEXT_CACHE_MAX_ENTRIES) {
+    const identity = ledgerIdentity(stat);
+    ledgerTextCache.set(filename, { ...identity, text });
+    while (ledgerTextCache.size > LEDGER_CACHE_MAX_ENTRIES) {
         ledgerTextCache.delete(ledgerTextCache.keys().next().value);
     }
-    return text;
+    return { text, identity };
 }
 
 /** Keep upgrade evidence until the account's durable ownership has been copied. */
@@ -177,7 +213,7 @@ function emptyStore() {
  * left untouched and an actionable error is raised, because silently replacing
  * a ledger with an empty one would drop receipts and permit replay of effects.
  */
-function readStore(directories) {
+function readStore(directories, { mutable = false } = {}) {
     const filename = storePath(directories);
     let raw;
     try {
@@ -187,14 +223,29 @@ function readStore(directories) {
         throw fail(500, 'JOB_STORE_UNREADABLE', 'Neconyan could not read the saved job list. Try again in a moment.');
     }
     if (raw === null) return emptyStore();
+    if (!mutable) {
+        const cached = ledgerStoreCache.get(filename);
+        if (cached && sameLedgerIdentity(cached, raw.identity)) {
+            ledgerStoreCache.delete(filename);
+            ledgerStoreCache.set(filename, cached);
+            return cached.store;
+        }
+    }
     let store;
     try {
-        store = JSON.parse(raw);
+        store = JSON.parse(raw.text);
     } catch {
         throw fail(409, 'JOB_STORE_RECOVERABLE', 'The saved job list is damaged and was left untouched, so recent job history cannot be trusted. The server owner needs to repair or remove the saved job list file.');
     }
     if (!store || store.schema !== JOB_SCHEMA || typeof store.jobs !== 'object' || store.jobs === null || Array.isArray(store.jobs)) {
         throw fail(409, 'JOB_STORE_INCOMPATIBLE', 'The saved job list uses a format this version of Neconyan cannot read.');
+    }
+    if (!mutable) {
+        deleteLedgerStore(filename);
+        const bytes = Number(raw.identity.size);
+        ledgerStoreCache.set(filename, { ...raw.identity, bytes, store });
+        ledgerStoreCacheBytes += bytes;
+        trimLedgerStore();
     }
     return store;
 }
@@ -281,8 +332,19 @@ function writeStore(directories, store, protectedId, previousKeys = Object.keys(
         throw fail(413, 'JOB_STORE_FULL', 'Too many jobs for this account are still unfinished. Wait for some to finish, or use User Settings > Clear job history.');
     }
     fs.mkdirSync(stateDir(directories), { recursive: true, mode: 0o700 });
-    writeFileAtomicSync(storePath(directories), text, { mode: 0o600 });
-    ledgerTextCache.delete(storePath(directories));
+    const filename = storePath(directories);
+    writeFileAtomicSync(filename, text, { mode: 0o600 });
+    // The returned job objects belong to the caller, so never share the written
+    // store. Keep the immutable text; the next reader parses one fresh copy.
+    invalidateLedger(filename);
+    try {
+        const stat = fs.statSync(filename);
+        const identity = ledgerIdentity(stat);
+        ledgerTextCache.set(filename, { ...identity, text });
+        while (ledgerTextCache.size > LEDGER_CACHE_MAX_ENTRIES) {
+            ledgerTextCache.delete(ledgerTextCache.keys().next().value);
+        }
+    } catch { /* The next read reports the real problem. */ }
     // Delete artifacts only after the ledger no longer references their job.
     for (const key of previousKeys) {
         if (ordered.jobs[key]) continue;
@@ -303,7 +365,9 @@ function writeStore(directories, store, protectedId, previousKeys = Object.keys(
 export function mutateJobs(directories, mutate) {
     const release = acquireChatFileLock(storePath(directories));
     try {
-        const store = readStore(directories);
+        // A mutation owns and may rewrite every job object, so it must not use
+        // the shared parsed copy that readers receive.
+        const store = readStore(directories, { mutable: true });
         const previousOwner = Object.values(store.jobs)[0]?.owner;
         const queued = new Set(Object.values(store.jobs).filter(job => job.state === 'queued').map(job => job.id));
         const previousKeys = Object.keys(store.jobs);
@@ -312,7 +376,8 @@ export function mutateJobs(directories, mutate) {
         const written = writeStore(directories, store, result?.job?.id, previousKeys);
         const jobs = Object.values(written.jobs);
         const owner = result?.job?.owner ?? jobs[0]?.owner ?? previousOwner;
-        if (owner) notifyJobsChanged({ owner, queued: jobs.some(job => job.state === 'queued' && !queued.has(job.id)) });
+        if (owner) notifyJobsChanged({ owner, queued: jobs.some(job => job.state === 'queued' && !queued.has(job.id)),
+            ...(result?.job?.id ? { id: result.job.id, state: result.job.state } : {}) });
         return { ...result, revision: written.revision };
     } finally {
         release();
@@ -334,6 +399,7 @@ export function retireJobStore(directories, destination) {
             if (fs.existsSync(source) && !fs.existsSync(target)) fs.renameSync(source, target);
         }
         fsyncDirectorySync(destination);
+        invalidateLedger(storePath(directories));
         for (const name of fs.readdirSync(stateDir(directories))) {
             if (!name.endsWith('.lock')) fs.rmSync(path.join(stateDir(directories), name), { recursive: true, force: true });
         }
@@ -344,11 +410,14 @@ export function retireJobStore(directories, destination) {
 }
 
 export function readJobStore(directories) {
-    return readStore(directories);
+    return structuredClone(readStore(directories));
 }
 
 export function listJobs(directories, { owner, includeDismissed = false } = {}) {
-    const store = readStore(directories);
+    // The runner lists every owner twice per poll. Cloning every job from the
+    // shared cache costs about twice a fresh parse, so this accessor parses its
+    // own isolated copy and skips the clone. getJob and hasJob keep the cache.
+    const store = readStore(directories, { mutable: true });
     return Object.values(store.jobs)
         .filter(job => owner === undefined || job.owner === owner)
         .filter(job => includeDismissed || job.dismissed !== true)
@@ -356,7 +425,13 @@ export function listJobs(directories, { owner, includeDismissed = false } = {}) 
 }
 
 export function getJob(directories, id) {
-    return readStore(directories).jobs[jobKey(id)] ?? null;
+    const job = readStore(directories).jobs[jobKey(id)];
+    return job ? structuredClone(job) : null;
+}
+
+/** Existence-only check for artifact paths; never exposes the shared job object. */
+export function hasJob(directories, id) {
+    return Boolean(readStore(directories).jobs[jobKey(id)]);
 }
 
 /**

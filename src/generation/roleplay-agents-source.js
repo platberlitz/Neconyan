@@ -3,9 +3,10 @@ import { normalizeExtensionBootId } from '../../public/scripts/extension-boot-li
 import { CHATROOM_TEMPLATE_ID, getActiveCompanionResults, getAgentTemplateId } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { companionExtraCharacterAvatars } from '../../public/scripts/extensions/in-chat-agents/companion/companion-prompts.js';
 import { agentCollectionDirectory, readAgentCollection, readAgentRecordLocked } from '../in-chat-agent-storage.js';
-import { readRoleplayFile, roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
+import { roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
 import { readRoleplayEntityLocked } from './roleplay-source.js';
 import { captureChatProfile } from './profiles.js';
+import { readRoleplaySettingsJson } from './settings-cache.js';
 import { MAX_AGENT_FALLBACK_CONNECTIONS, agentNeedsModel, isNativeCompanion, nativeAgentDefinition } from './agent-definition.js';
 
 const fail = message => roleplayError('ROLEPLAY_AGENT_SOURCE_CHANGED', message, 409);
@@ -119,19 +120,35 @@ function captureFallbackBindings(directories, bindings, ids, primaryId) {
 
 export function readRoleplayAgentsLocked(lease, policy) {
     const { scope } = roleplayLease(lease);
-    const filename = path.join(scope.directories.root, 'settings.json');
-    const file = readRoleplayFile(filename, 8 * 1024 * 1024);
     let settings;
-    try { settings = JSON.parse(file?.bytes.toString('utf8')); } catch { throw fail('The saved Agent settings are unreadable.'); }
+    try {
+        settings = readRoleplaySettingsJson(path.join(scope.directories.root, 'settings.json'), { limit: 8 * 1024 * 1024 });
+    } catch (error) {
+        // A protected-file refusal keeps its original recovery error; malformed
+        // JSON or a missing file keep this caller's Agent error.
+        if (error?.code === 'ROLEPLAY_STORE_DAMAGED') throw error;
+        throw fail('The saved Agent settings are unreadable.');
+    }
+    if (!settings) throw fail('The saved Agent settings are unreadable.');
     const current = captureRoleplayAgentSet(lease, settings, { group: policy.group, characterAvatars: policy.characterAvatars ?? [],
         historyAgentIds: policy.historyAgentIds ?? [], hasHistory: policy.hasHistory ?? false, forcedIds: policy.forcedIds ?? [] });
     if (roleplayHash(current.policy) !== roleplayHash(policy)) throw fail('The accepted Agents or their model connections have changed.');
     return current.definitions;
 }
 
-export function readRoleplayAgents(base, snapshot) {
+/**
+ * One fully checked read per job. Later callers in the same run reuse the
+ * definitions captured by that check; an edit after it still blocks every paid
+ * dispatch, because each Agent step re-captures the Agent set in its freshness
+ * gate immediately before the request. Pass a fresh Map for each run and clear
+ * it on the retry-once path.
+ */
+export function readRoleplayAgents(base, snapshot, cache) {
     if (!snapshot.agents) return [];
-    return withRoleplayAccount(base, snapshot.account, lease => readRoleplayAgentsLocked(lease, snapshot.agents));
+    if (cache?.has(snapshot.agents)) return cache.get(snapshot.agents);
+    const agents = withRoleplayAccount(base, snapshot.account, lease => readRoleplayAgentsLocked(lease, snapshot.agents));
+    cache?.set(snapshot.agents, agents);
+    return agents;
 }
 
 export function agentHistorySources(records) {

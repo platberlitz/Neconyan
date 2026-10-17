@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
-import { getJob, jobKey, markProviderSettled, markProviderUncertain, providerRecoverySteps, setJobResume } from './store.js';
+import { getJob, hasJob, jobKey, markProviderSettled, markProviderUncertain, providerRecoverySteps, setJobResume } from './store.js';
 
 const MAX_BYTES = 16 * 1024 * 1024;
 const preDispatchFailures = new WeakSet();
@@ -9,9 +9,9 @@ const providerScopes = new WeakMap();
 
 /** An in-process capability permits distinct concurrent calls, never a replay of an uncertain call. */
 export function createProviderScope({ directories, job }) {
-    if (!getJob(directories, job.id)) throw Object.assign(new Error('No such job.'), { status: 404 });
+    if (!hasJob(directories, job.id)) throw Object.assign(new Error('No such job.'), { status: 404 });
     const scope = Object.freeze({});
-    providerScopes.set(scope, { root: path.resolve(directories.root), id: job.id, active: new Set() });
+    providerScopes.set(scope, { root: path.resolve(directories.root), id: job.id, active: new Set(), refused: new Set(), priorResume: new Map() });
     return scope;
 }
 
@@ -43,7 +43,7 @@ export function providerRefused(error) {
 }
 
 function artifactPath(directories, id, name) {
-    if (!getJob(directories, id)) throw Object.assign(new Error('No such job.'), { status: 404 });
+    if (!hasJob(directories, id)) throw Object.assign(new Error('No such job.'), { status: 404 });
     return path.join(directories.root, 'jobs', 'artifacts', jobKey(id), jobKey(name) + '.json');
 }
 
@@ -66,14 +66,16 @@ export function unresolvedProviderStep(directories, id, { scope, currentStep } =
         && readArtifact(directories, id, step) === undefined && (step === currentStep || !active?.has(step)));
 }
 
-export function writeArtifact(directories, id, name, value) {
+export function writeArtifact(directories, id, name, value, { durable = true } = {}) {
     const filename = artifactPath(directories, id, name);
     const data = JSON.stringify(value);
     if (typeof data !== 'string' || Buffer.byteLength(data) > MAX_BYTES) {
         throw Object.assign(new Error('The result for this job is too large to save.'), { status: 413 });
     }
     fs.mkdirSync(path.dirname(filename), { recursive: true, mode: 0o700 });
-    writeFileAtomicSync(filename, data, { mode: 0o600 });
+    // Display-only artifacts may skip the fsync: a crash can lose the frame, but
+    // never a prompt, proof or chat write, and the browser is told first anyway.
+    writeFileAtomicSync(filename, data, { mode: 0o600, fsync: durable });
     return value;
 }
 
@@ -88,16 +90,45 @@ export async function providerStep({ directories, job, signal, providerScope }, 
         throw Object.assign(new Error('The earlier request to the AI service has an unknown result, so Neconyan will not send it again automatically.'),
             { code: 'PROVIDER_OUTCOME_UNKNOWN', status: 503 });
     }
+    const state = scopeState(directories, job.id, providerScope);
     const previousResume = getJob(directories, job.id)?.resume;
+    // Remember the resume each parallel step replaced, so a refusal can walk
+    // back past active or already-refused provider keys to the ordinary
+    // checkpoint that was there before the group started.
+    state?.priorResume?.set(key, previousResume);
     setJobResume(directories, job.id, key);
     markProviderUncertain(directories, job.id, { step: key });
-    const active = scopeState(directories, job.id, providerScope)?.active;
+    const active = state?.active;
     active?.add(key);
     try {
         let result;
         try { result = await call(); } catch (error) {
             if (preDispatchFailures.has(error)) {
-                setJobResume(directories, job.id, previousResume);
+                // Parallel callers all set `resume` before the shared check runs.
+                // Only the caller that still owns the current resume may restore
+                // it, and never to a sibling that was itself refused or is still
+                // active. Genuinely uncertain siblings stay in recoverySteps.
+                state?.refused?.add(key);
+                if (getJob(directories, job.id)?.resume === key) {
+                    // Walk back over provider keys that this scope is using or
+                    // has refused. A non-provider checkpoint, null, or an older
+                    // settled provider key is restored unchanged. Uncertain
+                    // siblings remain in recoverySteps either way.
+                    const restorableResume = () => {
+                        let candidate = previousResume;
+                        const seen = new Set([key]);
+                        for (let depth = 0; depth < 64; depth++) {
+                            if (typeof candidate !== 'string' || !candidate.startsWith('provider:')) return candidate;
+                            if (candidate === key || seen.has(candidate)) return null;
+                            if (!active?.has(candidate) && !state?.refused?.has(candidate)) return candidate;
+                            seen.add(candidate);
+                            if (!state?.priorResume?.has(candidate)) return null;
+                            candidate = state.priorResume.get(candidate);
+                        }
+                        return null;
+                    };
+                    setJobResume(directories, job.id, restorableResume());
+                }
                 markProviderSettled(directories, job.id, key);
             }
             throw error;

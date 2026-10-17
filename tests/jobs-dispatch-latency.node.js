@@ -79,7 +79,8 @@ test('change hints follow committed writes, never failed or unchanged mutations'
     updateJob(directories, job.id, { state: 'running' });
     mutateJobs(directories, () => ({ changed: false }));
     assert.throws(() => mutateJobs(directories, () => { throw new Error('Refused'); }), /Refused/);
-    assert.deepEqual(changes, [{ owner: 'hint-owner', queued: true, saved: ['queued'] }, { owner: 'hint-owner', queued: false, saved: ['running'] }]);
+    assert.deepEqual(changes, [{ owner: 'hint-owner', queued: true, id: job.id, state: 'queued', saved: ['queued'] },
+        { owner: 'hint-owner', queued: false, id: job.id, state: 'running', saved: ['running'] }]);
     mutateJobs(directories, store => { delete store.jobs[jobKey(job.id)]; });
     assert.deepEqual(changes.at(-1), { owner: 'hint-owner', queued: false, saved: [] });
 });

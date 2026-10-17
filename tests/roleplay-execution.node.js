@@ -380,3 +380,35 @@ test('an unknown provider outcome interrupts a real worker job and is not dispat
         setDirectoriesResolver(null);
     }
 });
+
+test('a Custom pre-dispatch refusal validates the final body once, sends nothing and settles its step', async t => {
+    const f = fixture(t);
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({ _settingsRevision: 1,
+        main_api: 'openai', active_generation: { api: 'openai', source: 'custom', model: 'fixture' },
+        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000', custom_model: 'fixture' },
+        power_user: { custom_stopping_strings: '[]' } }));
+    const binding = captureGenerationBinding(f.scope.directories, { kind: 'active' }, { settingsRevision: 1 });
+    const accepted = acceptJob(f.scope.directories, { owner: f.scope.owner, type: 'custom-predispatch', submissionKey: 'predispatch', intent: {} }).job;
+    const context = { directories: f.scope.directories, owner: f.scope.owner, job: accepted, signal: new AbortController().signal };
+    let checks = 0, validations = 0, transports = 0;
+    const steps = [];
+    await assert.rejects(runChatProfile({ context, jobContext: context, binding, messages: [{ role: 'user', content: 'Hello' }],
+        maxTokens: 32, characterName: 'Nova', userName: 'User', stream: false, generationType: 'normal',
+        validatePrompt: async () => { validations++; },
+        beforeDispatch: async () => {
+            checks++;
+            throw Object.assign(new Error('The saved source changed.'), { code: 'ROLEPLAY_SOURCE_CHANGED', status: 409 });
+        },
+        onProviderStep: step => steps.push(step),
+        fetch: async () => { transports++; return new Response(JSON.stringify({ choices: [{ message: { content: 'Must not arrive' } }] })); },
+    }), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    assert.equal(validations, 1, 'the final serialised body is validated once in the pre-fetch wrapper');
+    assert.equal(checks, 1, 'exactly one pre-dispatch source check ran');
+    assert.equal(transports, 0, 'no transport request was made');
+    assert.equal(steps.length, 1);
+    assert.equal(readArtifact(f.scope.directories, accepted.id, steps[0]), undefined);
+    const after = getJob(f.scope.directories, accepted.id);
+    assert.equal(after.resume, null);
+    assert.deepEqual(after.recoverySteps, []);
+    assert.equal(after.recoverability, 'settled');
+});

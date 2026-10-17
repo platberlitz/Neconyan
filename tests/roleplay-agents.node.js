@@ -6,7 +6,8 @@ import { after, test } from 'node:test';
 import { fixture } from './roleplay-transactions-fixture.js';
 
 const { nativeAgentDefinition } = await import('../src/generation/agent-definition.js');
-const { captureRoleplayAgents, readRoleplayAgentsLocked } = await import('../src/generation/roleplay-agents-source.js');
+const { captureRoleplayAgents, readRoleplayAgents, readRoleplayAgentsLocked } = await import('../src/generation/roleplay-agents-source.js');
+const { readRoleplaySettingsJson } = await import('../src/generation/settings-cache.js');
 const { runAgentModelStep } = await import('../src/generation/agent-model-step.js');
 const { runChatProfile } = await import('../src/generation/service.js');
 const { prepareRoleplayAgentContributions, runRoleplayAgentInterceptors, runRoleplayAgentPostprocessing, roleplayAgentDisplaySnapshot } = await import('../src/generation/roleplay-agent-processing.js');
@@ -57,15 +58,20 @@ test('Agents sharing a connection read it once per capture and still reject late
     const f = prepared(t, Array.from({ length: 12 }, (_, index) => ({ id: `companion-${index}`, enabled: true,
         category: 'companion', prompt: 'Write a note' })), { connectionProfile: 'main' });
     const filename = path.join(f.directories.root, 'settings.json');
-    const original = fs.readFileSync;
-    let reads = 0;
-    t.mock.method(fs, 'readFileSync', function (file, ...args) {
-        if (file === filename) reads++;
+    // Replace settings through a rename so the shared parsed-settings cache is
+    // invalidated before the capture; the spy then sees only this capture.
+    const replacement = filename + '.capture-test';
+    fs.writeFileSync(replacement, JSON.stringify(f.settings));
+    fs.renameSync(replacement, filename);
+    const original = fs.statSync;
+    let stats = 0;
+    t.mock.method(fs, 'statSync', function (file, ...args) {
+        if (file === filename) stats++;
         return original.call(this, file, ...args);
     });
     const policy = f.locked(lease => captureRoleplayAgents(lease, f.settings));
     assert.equal(policy.agents.length, 12);
-    assert.equal(reads, 1, 'one shared connection read rather than a settings-file read per Agent');
+    assert.equal(stats, 1, 'one shared connection read rather than a settings-file read per Agent');
     assert.ok(policy.agents.every(agent => agent.binding.fingerprint === policy.agents[0].binding.fingerprint));
     f.settings.extension_settings.connectionManager.profiles[0].model = 'changed-model';
     fs.writeFileSync(filename, JSON.stringify(f.settings));
@@ -463,4 +469,102 @@ test('a lost Agent result remains unknown after recovery and before entering any
         ...options, generate: () => assert.fail('Unknown results cannot enter a generator'),
     }), { code: 'ROLEPLAY_AGENT_RECOVERY' });
     assert.equal(calls, 1);
+});
+
+test('a fresh Agent step checks freshness only at dispatch and a scoped abort after the wait blocks the request', async t => {
+    const f = prepared(t);
+    const base = { base: f.scope, account: f.account, name: 'single-check', identity: 'single-check', binding: f.binding,
+        maxTokens: 64, macros: { names: { char: 'Nova', user: 'Ari' } }, buildMessages: () => [{ role: 'user', content: 'A task' }] };
+    let checks = 0;
+    const first = await runAgentModelStep(f.context, { ...base, assertCurrent: () => { checks++; }, generate: async ({ onProviderStep, beforeDispatch }) => {
+        onProviderStep(`provider:${createHash('sha256').update('single-check').digest('hex')}`);
+        await beforeDispatch();
+        return { text: 'Checked once' };
+    } });
+    assert.equal(first.text, 'Checked once');
+    assert.equal(checks, 1, 'input creation and dispatch no longer repeat the same check');
+
+    const controller = new AbortController();
+    const context = { ...f.context, signal: controller.signal };
+    let sent = 0;
+    await assert.rejects(runAgentModelStep(context, { ...base, name: 'cancelled-after-gate', identity: 'cancelled-after-gate',
+        assertCurrent: async () => { controller.abort(); }, generate: async ({ onProviderStep, beforeDispatch }) => {
+            onProviderStep(`provider:${createHash('sha256').update('cancelled-after-gate').digest('hex')}`);
+            await beforeDispatch();
+            sent++;
+            return { text: 'Must not be sent' };
+        } }), error => error?.name === 'AbortError' || error?.code === 'ABORT_ERR');
+    assert.equal(sent, 0, 'the caller checks its own signal after the shared gate resolves');
+});
+
+test('a per-run Agent cache reads once and a fresh cache still rejects an edited Agent', t => {
+    const f = prepared(t, [{ id: 'cached', enabled: true, prompt: 'A note' }]);
+    const snapshot = phases(f).snapshot;
+    const cache = new Map();
+    const original = fs.opendirSync;
+    let reads = 0;
+    t.mock.method(fs, 'opendirSync', function (directory, ...args) {
+        if (String(directory).endsWith('InChatAgents')) reads++;
+        return original.call(this, directory, ...args);
+    });
+    const first = readRoleplayAgents(f.scope, snapshot, cache);
+    const second = readRoleplayAgents(f.scope, snapshot, cache);
+    assert.equal(first, second);
+    assert.equal(reads, 1, 'later callers reuse the one checked read in this run');
+    f.settings.extension_settings.inChatAgents.globalSettings.helperPrefillMessages = 'Changed';
+    fs.writeFileSync(path.join(f.directories.root, 'settings.json'), JSON.stringify(f.settings));
+    assert.throws(() => readRoleplayAgents(f.scope, snapshot, new Map()), { code: 'ROLEPLAY_AGENT_SOURCE_CHANGED' });
+});
+
+test('Agent settings keep the protected-file checks and their original size and parse errors', t => {
+    const f = prepared(t, [{ id: 'protected-settings', enabled: true, prompt: 'Write' }]);
+    const filename = path.join(f.directories.root, 'settings.json');
+    const policy = f.locked(lease => captureRoleplayAgents(lease, f.settings));
+    fs.writeFileSync(filename, '{broken');
+    assert.throws(() => f.locked(lease => readRoleplayAgentsLocked(lease, policy)), { code: 'ROLEPLAY_AGENT_SOURCE_CHANGED' });
+    fs.writeFileSync(filename, JSON.stringify(f.settings));
+    fs.writeFileSync(filename, 'x'.repeat(9 * 1024 * 1024));
+    assert.throws(() => f.locked(lease => readRoleplayAgentsLocked(lease, policy)), { code: 'ROLEPLAY_STORE_DAMAGED' });
+    fs.writeFileSync(filename, JSON.stringify(f.settings));
+    const target = filename + '.target';
+    fs.renameSync(filename, target);
+    fs.symlinkSync(target, filename);
+    assert.throws(() => f.locked(lease => readRoleplayAgentsLocked(lease, policy)), { code: 'ROLEPLAY_STORE_DAMAGED' });
+    fs.unlinkSync(filename);
+    fs.renameSync(target, filename);
+    const hard = filename + '.hard';
+    fs.linkSync(filename, hard);
+    assert.throws(() => f.locked(lease => readRoleplayAgentsLocked(lease, policy)), { code: 'ROLEPLAY_STORE_DAMAGED' });
+    fs.unlinkSync(hard);
+    const freeze = value => {
+        if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
+        Object.freeze(value);
+        for (const child of Object.values(value)) freeze(child);
+        return value;
+    };
+    freeze(readRoleplaySettingsJson(filename, { limit: 8 * 1024 * 1024 }));
+    assert.doesNotThrow(() => f.locked(lease => readRoleplayAgentsLocked(lease, policy)),
+        'Agent policy reads never write into the shared protected settings object');
+});
+
+test('source and Agent source refusals never consume fallback connections', async t => {
+    const f = prepared(t);
+    const aux = { kind: 'profile', ...captureChatProfile(f.directories, 'aux') };
+    for (const [code, name] of [['ROLEPLAY_SOURCE_CHANGED', 'blocked-source'], ['ROLEPLAY_AGENT_SOURCE_CHANGED', 'blocked-agent-source']]) {
+        let calls = 0;
+        await assert.rejects(runAgentModelStep(f.context, {
+            base: f.scope, account: f.account, name, identity: name, binding: f.binding, fallbacks: [{ binding: aux, profileLabel: 'Backup' }],
+            maxTokens: 64, macros: { names: { char: 'Nova', user: 'Ari' } },
+            assertCurrent: () => { throw Object.assign(new Error('The saved source changed.'), { code, status: 409 }); },
+            buildMessages: () => [{ role: 'user', content: 'A task' }],
+            generate: async ({ onProviderStep, beforeDispatch }) => {
+                calls++;
+                onProviderStep(`provider:${createHash('sha256').update(name).digest('hex')}`);
+                await beforeDispatch();
+                return { text: 'must not be sent' };
+            },
+        }), { code });
+        assert.equal(calls, 1, `${code} stops before a fallback connection is tried`);
+        assert.equal(readArtifact(f.directories, f.job.id, `agent-model:${name}:fallback:1:failed`), undefined);
+    }
 });

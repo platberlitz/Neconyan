@@ -220,7 +220,17 @@ router.get('/:id/preview', (request, response) => {
         // re-read only after a job change, with a slow fallback, and send a cheap
         // keepalive every second so the reader can tell the stream is still open.
         let changed = false, lastCheck = 0;
-        const unsubscribeJobs = subscribeJobsChanged(change => { if (change.owner === owner && !change.diagnosticOnly) changed = true; });
+        const unsubscribeJobs = subscribeJobsChanged(change => {
+            if (change.owner !== owner || change.diagnosticOnly) return;
+            changed = true;
+            // A terminal state written by this job can be delivered now instead
+            // of on the next one-second tick. The tick stays as a fallback.
+            if (change.id !== job.id || !terminal.has(change.state)) return;
+            setImmediate(() => {
+                if (response.destroyed || response.writableEnded) return;
+                check();
+            });
+        });
         const check = () => {
             changed = false;
             lastCheck = Date.now();
