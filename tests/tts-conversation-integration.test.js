@@ -40,6 +40,26 @@ function evaluateFunction(name, values = {}) {
     return evaluateInContext(name, createTtsContext(values));
 }
 
+function createProviderLoadContext(providers, values = {}) {
+    const appends = [];
+    const settingsRoot = {
+        html: jest.fn(function () { appends.length = 0; return this; }),
+        append: jest.fn(function (value) { appends.push(value); return this; }),
+    };
+    const context = createTtsContext({
+        $: jest.fn(() => settingsRoot),
+        console: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+        extension_settings: { tts: {} },
+        initVoiceMap: jest.fn(async () => {}),
+        ttsProvider: null,
+        ttsProviderName: undefined,
+        ttsProviders: providers,
+        ...values,
+    });
+    evaluateInContext('loadTtsProviderInternal', context);
+    return { appends, context, settingsRoot };
+}
+
 function installCapabilityRegistry(entries) {
     Object.defineProperty(globalThis, capabilityRegistryKey, {
         configurable: true,
@@ -458,6 +478,155 @@ describe('TTS Conversation integration', () => {
 
         await expect(queue('broken')).rejects.toThrow('broken');
         await expect(queue('working')).resolves.toBe('working');
+    });
+
+    test('built-in provider names stay synchronous while their modules load only when selected', async () => {
+        class EdgeProvider {}
+        const imported = [];
+        const context = createTtsContext({
+            TTS_PROVIDER_MODULES: {
+                Edge: async () => { imported.push('Edge'); return EdgeProvider; },
+                'OpenAI Compatible': async () => { imported.push('OpenAI Compatible'); return class OpenAICompatibleProvider {}; },
+                Broken: async () => ({}),
+            },
+            _ttsProviders: null,
+            lazyTtsProviderLoaders: new WeakSet(),
+        });
+        evaluateInContext('createLazyTtsProviderLoader', context);
+        const getTtsProviders = evaluateInContext('getTtsProviders', context);
+        const providers = getTtsProviders();
+
+        expect(Object.keys(providers)).toEqual(['Edge', 'OpenAI Compatible', 'Broken']);
+        expect(imported).toEqual([]);
+        expect(providers.Edge).toEqual(expect.any(Function));
+        await expect(providers.Edge()).resolves.toBe(EdgeProvider);
+        expect(imported).toEqual(['Edge']);
+        await expect(providers.Broken()).rejects.toThrow('TTS provider Broken did not load.');
+    });
+
+    test('selecting a built-in provider awaits only its loader', async () => {
+        class SelectedProvider {
+            settingsHtml = '<div>selected</div>';
+            async loadSettings() {}
+        }
+        const imported = [];
+        const loaders = new WeakSet();
+        const selectedLoader = async () => { imported.push('Selected'); return SelectedProvider; };
+        const otherLoader = async () => { imported.push('Other'); return class OtherProvider {}; };
+        loaders.add(selectedLoader);
+        loaders.add(otherLoader);
+        const { appends, context, settingsRoot } = createProviderLoadContext({
+            Selected: selectedLoader,
+            Other: otherLoader,
+        }, { lazyTtsProviderLoaders: loaders });
+
+        const instance = await context.loadTtsProviderInternal('Selected');
+
+        expect(instance).toBeInstanceOf(SelectedProvider);
+        expect(context.ttsProvider).toBe(instance);
+        expect(context.ttsProviderName).toBe('Selected');
+        expect(imported).toEqual(['Selected']);
+        expect(settingsRoot.html).toHaveBeenCalledWith('');
+        expect(appends).toEqual(['<div>selected</div>']);
+        expect(context.initVoiceMap).toHaveBeenCalledTimes(1);
+    });
+
+    test('a failed provider module load leaves the previous provider intact and can be retried', async () => {
+        class RetryProvider {
+            settingsHtml = '<div>retry</div>';
+            async loadSettings() {}
+        }
+        let attempts = 0;
+        const loaders = new WeakSet();
+        const loader = async () => {
+            attempts += 1;
+            if (attempts === 1) throw new Error('provider module failed');
+            return RetryProvider;
+        };
+        loaders.add(loader);
+        const previousProvider = { dispose: jest.fn() };
+        const { context, settingsRoot } = createProviderLoadContext({ Flaky: loader }, {
+            extension_settings: { tts: { Flaky: {} } },
+            lazyTtsProviderLoaders: loaders,
+            ttsProvider: previousProvider,
+            ttsProviderName: 'Previous',
+        });
+
+        await expect(context.loadTtsProviderInternal('Flaky')).rejects.toThrow('provider module failed');
+        expect(attempts).toBe(1);
+        expect(context.ttsProvider).toBe(previousProvider);
+        expect(context.ttsProviderName).toBe('Previous');
+        expect(previousProvider.dispose).not.toHaveBeenCalled();
+        expect(settingsRoot.html).not.toHaveBeenCalled();
+
+        const instance = await context.loadTtsProviderInternal('Flaky');
+        expect(attempts).toBe(2);
+        expect(instance).toBeInstanceOf(RetryProvider);
+        expect(context.ttsProvider).toBe(instance);
+        expect(context.ttsProviderName).toBe('Flaky');
+        expect(previousProvider.dispose).toHaveBeenCalledTimes(1);
+    });
+
+    test('third-party registration accepts a class, keeps its name synchronous, and rejects collisions', () => {
+        class ThirdPartyProvider {}
+        const appends = [];
+        const option = {
+            textContent: null,
+            value: null,
+            val(value) { this.value = value; return this; },
+            text(value) { this.textContent = value; return this; },
+        };
+        const providerSelect = {
+            append: jest.fn(value => { appends.push(value); return providerSelect; }),
+        };
+        const context = createTtsContext({
+            $: jest.fn(selector => selector === '<option />' ? option : providerSelect),
+            console: { info: jest.fn(), error: jest.fn() },
+            extension_settings: { tts: { currentProvider: 'Third Party' } },
+            loadTtsProvider: jest.fn(async () => {}),
+            ttsProviders: { Edge: async () => class EdgeProvider {} },
+        });
+        const register = evaluateInContext('registerTtsProvider', context);
+
+        expect(() => register('', ThirdPartyProvider)).toThrow('is not a valid string');
+        expect(() => register('Third Party', {})).toThrow('is not a valid provider class');
+        expect(() => register('Edge', ThirdPartyProvider)).toThrow('is already registered');
+        register('Third Party', ThirdPartyProvider);
+        expect(context.ttsProviders['Third Party']).toBe(ThirdPartyProvider);
+        expect(appends.map(entry => [entry.value, entry.textContent])).toEqual([['Third Party', 'Third Party']]);
+        expect(context.loadTtsProvider).toHaveBeenCalledWith('Third Party');
+        expect(() => register('Third Party', ThirdPartyProvider)).toThrow('is already registered');
+    });
+
+    test('lazy imports follow interleaved selections in serialized order', async () => {
+        const imported = [];
+        const context = createTtsContext({ lazyTtsProviderLoaders: new WeakSet() });
+        evaluateInContext('createLazyTtsProviderLoader', context);
+        const loaders = {
+            A: context.createLazyTtsProviderLoader('A', async () => { imported.push('A'); return class AProvider {}; }),
+            B: context.createLazyTtsProviderLoader('B', async () => { imported.push('B'); return class BProvider {}; }),
+        };
+        const createQueue = evaluateInContext('createTtsProviderLoadQueue', context);
+        const queue = createQueue(async provider => (await loaders[provider]()).name);
+
+        const firstA = queue('A');
+        const b = queue('B');
+        const secondA = queue('A');
+
+        await expect(Promise.all([firstA, b, secondA])).resolves.toEqual(['AProvider', 'BProvider', 'AProvider']);
+        expect(imported).toEqual(['A', 'B', 'A']);
+    });
+
+    test('provider modules are not statically imported by the TTS extension entrypoint', () => {
+        const providerModules = [...ttsSource.matchAll(/^\s{4}(?:'([^']+)'|([A-Za-z0-9]+)): \(\) => import\('\.\/([^']+)\.js'\)/gm)];
+        const names = providerModules.map(([, quoted, plain]) => quoted || plain);
+        const files = providerModules.map(([, , , file]) => file);
+
+        expect(names).toHaveLength(27);
+        expect(new Set(names).size).toBe(27);
+        expect(new Set(files).size).toBe(27);
+        expect(names).toEqual(expect.arrayContaining(['Edge', 'ElevenLabs', 'OpenAI', 'OpenAI Compatible', 'System']));
+        expect(ttsSource).not.toMatch(/^import\s+\{[^}]*Provider[^}]*\}\s+from\s+'\.\/(?:edge|elevenlabs|silerotts|gpt-sovits[^']*|system|novel|openai[^']*|xtts|vits|gsvi|sbvits2|alltalk|cosyvoice|speecht5|azure|google-[^']*|chatterbox|kokoro|tts-webui|pollinations|minimax|electronhub|chutes|volcengine)\.js';?$/m);
     });
 
     test('voice-map requests coalesce unrestricted and speaker flags without dropping either', async () => {

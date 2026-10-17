@@ -26,7 +26,7 @@ async function waitForResourceStability(page) {
 }
 
 test.describe('frontend performance smoke', () => {
-    test('mobile shell exposes core performance marks and bounded assets', async ({ page }) => {
+    test('mobile shell exposes core performance marks and bounded assets', async ({ page }, testInfo) => {
         await page.setViewportSize({ width: 390, height: 844 });
         await page.addInitScript(() => globalThis.performance.setResourceTimingBufferSize(2000));
         await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -72,9 +72,13 @@ test.describe('frontend performance smoke', () => {
                 coreAssetBytes,
                 optionalSpeechRequests: resources.filter(entry => /\/tts\/(?:kokoro-worker|lib\/kokoro.web)\.js/.test(entry.name)).length,
                 extensionPrefetches: browserGlobal.document.querySelectorAll('link[rel="prefetch"][href*="/scripts/extensions/"]').length,
+                resources: resources.filter(entry => !new browserGlobal.URL(entry.name).pathname.startsWith('/api/'))
+                    .map(({ name, initiatorType, transferSize, encodedBodySize, decodedBodySize }) =>
+                        ({ name, initiatorType, transferSize, encodedBodySize, decodedBodySize })),
             };
         }, coreAssetPaths);
 
+        await testInfo.attach('startup-resources', { body: JSON.stringify(snapshot, null, 2), contentType: 'application/json' });
         expect(snapshot.title).toBe('Neconyan');
         expect(snapshot.hasShell).toBe(true);
         // Native tools now include more modules than the old Neconyan fixture.
