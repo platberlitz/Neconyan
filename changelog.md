@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.3.5
+
+### Merged Staging PRs
+- PR #200 (2026-10-17) `fix(model-search): show favourites as a star and keep the keyboard down`
+
 ## v1.3.4.1
 
 ### Highlights
