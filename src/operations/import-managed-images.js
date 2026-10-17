@@ -2,17 +2,18 @@ import { parseChatJsonl } from '../chat-recovery.js';
 import { roleplayHash, roleplayLease } from '../roleplay-store.js';
 import { checkManagedImageDestination, decodeCompatibleImage, ensureManagedImageNamespace, publishManagedImage, verifyManagedImage } from '../managed-image-files.js';
 import { operationError, withOperation } from './store.js';
+import { uiText } from '../../public/scripts/ui-text.js';
 
 export const MANAGED_IMAGE_MARKER = '.neconyan-managed-images.json';
 export const MANAGED_IMAGE_PREFIX = 'user/images/neconyan-repaired';
 export const managedImportPath = relative => relative === MANAGED_IMAGE_MARKER || relative === MANAGED_IMAGE_PREFIX || relative.startsWith(MANAGED_IMAGE_PREFIX + '/');
 export function assertManagedImportSpelling(relative) {
     const canonical = relative.split('/').map(part => part.replace(/[. ]+$/, '').toLowerCase()).join('/');
-    if (managedImportPath(canonical) && relative !== canonical) throw operationError('The backup contains an ambiguous protected image path. Keep its original files and correct the path before importing.', 409);
+    if (managedImportPath(canonical) && relative !== canonical) throw operationError(uiText('The backup contains a compatible-copy path that could be read two ways. Keep its original files, correct the path, then import again.'), 409);
 }
 const markerPath = MANAGED_IMAGE_PREFIX + '/' + MANAGED_IMAGE_MARKER;
 const assetPattern = /^([a-f0-9]{64})\.(png|jpg|webp)$/;
-const fail = () => operationError('The backup has incomplete or conflicting saved prompt images. This import cannot continue. Restore the complete image bundle or use a different backup.', 409);
+const fail = () => operationError(uiText('The backup\'s compatible copies are incomplete or conflict with each other, so this import cannot continue. Use a complete backup.'), 409);
 function envelope(bytes) {
     if (bytes.length > 4096) throw fail();
     let parsed;
@@ -67,7 +68,7 @@ export function publishManagedImportLocked(lease, descriptor, input) {
     else if (descriptor.kind !== 'record') throw fail();
 }
 export function assertOrdinaryImportPath(relative) {
-    if (managedImportPath(relative)) throw operationError('This older import contains protected image files. Start a new import so its complete image bundle can be checked before publication.', 409);
+    if (managedImportPath(relative)) throw operationError(uiText('This import was started by an older version and includes compatible copies. Start the import again so they can be checked.'), 409);
 }
 
 /** Missing portable files must not leave newly imported protected references unusable. */

@@ -21,7 +21,9 @@ export const promptAttachmentHash = value => sha256(canonicalPromptMedia(value))
 
 // The review window loads on first use so it stays out of every cold start.
 const promptMediaUi = () => import('./prompt-media-ui.js');
-const openPromptMediaReview = () => { void promptMediaUi().then(ui => ui.showPromptMediaReview()).catch(error => toastr.error(error.message)); };
+// A toast whose text is already final, as the review window shows its own errors: the run-time localiser leaves it alone.
+const finalErrorToast = error => { toastr.error(String(error?.message ?? ''))?.find?.('.toast-message, .toast-title').attr('data-i18n-ignore', ''); };
+const openPromptMediaReview = () => { void promptMediaUi().then(ui => ui.showPromptMediaReview()).catch(finalErrorToast); };
 // A refusal is copied when it is raised, so the chat, account and branch it names are the ones it came from, whatever changes while the
 // review window loads. Notices wait on one chain, so refusals that arrive before the window has loaded are shown one after another, in
 // the order they were raised. One that fails is told, and the next still goes through.
@@ -29,14 +31,14 @@ let refusalNotices = Promise.resolve();
 const refusalSnapshot = detail => { try { return structuredClone(detail); } catch { return detail; } };
 const showRefusalNotice = detail => {
     refusalNotices = refusalNotices.then(promptMediaUi).then(ui => ui.showImageChoiceNotice(detail))
-        .catch(error => toastr.error(error.message)).catch(() => {});
+        .catch(finalErrorToast).catch(() => {});
 };
 
 export function initPromptMediaControls() {
     const input = document.getElementById('prompt-images-account');
     if (input) {
         input.checked = power_user.neconyan_prompt_media?.images === 'display-only'; input.dataset.promptImagesAccount = 'true';
-        input.addEventListener('change', async () => { input.disabled = true; try { await (await promptMediaUi()).setAccountChoice(input.checked); } catch (error) { input.checked = !input.checked; toastr.error(error.message); } finally { input.disabled = false; } });
+        input.addEventListener('change', async () => { input.disabled = true; try { await (await promptMediaUi()).setAccountChoice(input.checked); } catch (error) { input.checked = !input.checked; finalErrorToast(error); } finally { input.disabled = false; } });
     }
     document.getElementById('prompt-images-review')?.addEventListener('click', openPromptMediaReview);
     // Registered here, at startup, so a refusal before the review window has ever loaded is still heard. The notice itself

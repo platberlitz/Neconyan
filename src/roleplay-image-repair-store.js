@@ -2,11 +2,14 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { createRoleplayDirectory, readRoleplayFile, roleplayError, roleplayHash, roleplayLease, roleplayStoreDirectory } from './roleplay-store.js';
 import { tryWriteFileSync } from './util.js';
+import { uiText } from '../public/scripts/ui-text.js';
 
 export const REPAIR_LIMIT = 256 * 1024;
 export const REPAIR_CHAT_LIMIT = 64 * 1024 * 1024;
 const HASH = /^[a-f0-9]{64}$/;
-export const repairFailure = message => roleplayError('ROLEPLAY_IMAGE_RECOVERY', message);
+export const repairFailure = (message, { integrity = false } = {}) => Object.assign(roleplayError('ROLEPLAY_IMAGE_RECOVERY', message), integrity ? { integrity: true } : {});
+// A saved record that is missing, changed or inconsistent. Its English stays as written; the route tags the error so the page can explain it once.
+export const integrityFailure = message => repairFailure(message, { integrity: true });
 export function repairDirectory(scope) { return path.join(roleplayStoreDirectory(scope), 'image-repair'); }
 export function repairPath(scope, id, suffix) {
     if (!HASH.test(id) || (!['plan.json', 'manifest.json', 'candidate.jsonl', 'before.jsonl'].includes(suffix) && !/^image\.(?:0|[1-9]\d{0,2})\.bin$/.test(suffix))) throw repairFailure('Invalid image recovery record.');
@@ -15,18 +18,18 @@ export function repairPath(scope, id, suffix) {
 export function readRepairJson(filename, limit = REPAIR_LIMIT, optional = false) {
     const file = readRoleplayFile(filename, limit, { allowMissingParent: true });
     if (!file && optional) return null;
-    if (!file) throw repairFailure('An image recovery record is missing. Keep its files for recovery.');
+    if (!file) throw integrityFailure('An image recovery record is missing. Keep its files for recovery.');
     let envelope;
-    try { envelope = JSON.parse(file.bytes.toString('utf8')); } catch { throw repairFailure('An image recovery record is unreadable.'); }
-    if (envelope?.hash !== roleplayHash(envelope?.value)) throw repairFailure('An image recovery record changed.');
+    try { envelope = JSON.parse(file.bytes.toString('utf8')); } catch { throw integrityFailure('An image recovery record is unreadable.'); }
+    if (envelope?.hash !== roleplayHash(envelope?.value)) throw integrityFailure('An image recovery record changed.');
     return { file, value: envelope.value };
 }
 export function writeRepairBytes(filename, bytes, limit, expected = null) {
-    if (!Buffer.isBuffer(bytes) || bytes.length > limit) throw repairFailure('The image recovery record exceeds its storage limit.');
+    if (!Buffer.isBuffer(bytes) || bytes.length > limit) throw integrityFailure('The image recovery record exceeds its storage limit.');
     const validateBeforeReplace = () => {
         const current = readRoleplayFile(filename, limit, { allowMissingParent: true });
         if (Boolean(current) !== Boolean(expected) || current && (current.rawHash !== expected.rawHash || !isDeepStrictEqual(current.physical, expected.physical))) {
-            throw repairFailure('Image recovery evidence changed. Its files were kept.');
+            throw integrityFailure('Image recovery evidence changed. Its files were kept.');
         }
     };
     validateBeforeReplace();
@@ -34,7 +37,7 @@ export function writeRepairBytes(filename, bytes, limit, expected = null) {
         ? { replaceFileOnly: true, expectedFileIdentity: { dev: BigInt(expected.physical.dev), ino: BigInt(expected.physical.ino) }, validateBeforeReplace }
         : { expectedFileAbsent: true, durable: true, preserveOnCreateError: true });
     const written = readRoleplayFile(filename, limit, { flush: true });
-    if (!written || !written.bytes.equals(bytes)) throw repairFailure('The image recovery backup could not be verified.');
+    if (!written || !written.bytes.equals(bytes)) throw integrityFailure('The image recovery backup could not be verified.');
     return written;
 }
 export function writeRepairJson(filename, value, limit = REPAIR_LIMIT, expected = null) {
@@ -53,13 +56,13 @@ export function ensureRepairStore(lease, { checkpoint = () => {} } = {}) {
     const validateIntent = () => {
         if (!intent || !['creating', 'ready'].includes(intent.value.phase)
             || !isDeepStrictEqual(intent.value, { ...identity, phase: intent.value.phase })) {
-            throw repairFailure('The image recovery initialisation record changed. Keep its files for recovery.');
+            throw integrityFailure('The image recovery initialisation record changed. Keep its files for recovery.');
         }
     };
     const fs = process.getBuiltinModule('fs');
     if (!intent) {
         // The protected read above verifies directory ancestry before inspecting it.
-        if (fs.existsSync(directory)) throw repairFailure('The image recovery catalogue is missing. Keep the directory for recovery.');
+        if (fs.existsSync(directory)) throw integrityFailure('The image recovery catalogue is missing. Keep the directory for recovery.');
         writeRepairJson(intentPath, { ...identity, phase: 'creating' }, 4096);
         intent = readRepairJson(intentPath, 4096);
         checkpoint('repair-init-intent');
@@ -69,7 +72,7 @@ export function ensureRepairStore(lease, { checkpoint = () => {} } = {}) {
     const pinPath = path.join(directory, 'pins.json'), pin = readRepairJson(pinPath, 16 * 1024, true);
     if (catalogue && !isDeepStrictEqual(catalogue.value, empty) || pin && !isDeepStrictEqual(pin.value, empty)
         || fs.existsSync(directory) && fs.readdirSync(directory).some(name => !['pins.json', 'catalogue.json'].includes(name))) {
-        throw repairFailure('Unfinished image recovery initialisation has unexpected records. Its files were retained.');
+        throw integrityFailure('Unfinished image recovery initialisation has unexpected records. Its files were retained.');
     }
     createRoleplayDirectory(directory, root);
     checkpoint('repair-init-directory');
@@ -85,7 +88,7 @@ export function repairCatalogue(scope) {
     const result = readRepairJson(path.join(repairDirectory(scope), 'catalogue.json'));
     if (result.value?.version !== 1 || !result.value.entries || Object.keys(result.value.entries).length > 1024
         || Object.entries(result.value.entries).some(([id, row]) => !HASH.test(id) || !Number.isSafeInteger(row.bytes) || row.bytes < 0
-            || typeof row.complete !== 'boolean')) throw repairFailure('The image recovery catalogue is damaged.');
+            || typeof row.complete !== 'boolean')) throw integrityFailure('The image recovery catalogue is damaged.');
     return result;
 }
 export function reserveRepair(lease, id, bytes, plan) {
@@ -101,7 +104,7 @@ export function reserveRepair(lease, id, bytes, plan) {
     const entries = Object.values(catalogue.value.entries);
     if (entries.length >= 1024 || entries.filter(item => !item.complete).length >= 8
         || entries.reduce((sum, item) => sum + item.bytes, bytes) > 1024 * 1024 * 1024
-        || bytes > 256 * 1024 * 1024) throw repairFailure('Image recovery storage is full. Export and remove completed backups, or select fewer images.');
+        || bytes > 256 * 1024 * 1024) throw repairFailure(uiText('Change history is full. Download and delete old backups there, or change fewer images at a time.'));
     catalogue.value.entries[id] = { bytes, complete: false, phase: 'staging', planHash,
         accountId: scope.accountId, dataEpoch: scope.dataEpoch, requestHash: plan.requestHash,
         operationKeyHash: plan.native.operationKeyHash, intentHash: plan.native.intentHash,
@@ -113,13 +116,13 @@ export function validateRepairReservation(scope, entry, plan = null) {
         || !['staging', 'prepared', 'aborting', 'aborted'].includes(entry.phase)
         || ![entry.planHash, entry.requestHash, entry.operationKeyHash, entry.intentHash].every(value => HASH.test(value))
         || !entry.locator || (entry.phase === 'aborted' && (!entry.complete || entry.bytes !== 0))) {
-        throw repairFailure('The repair reservation needs recovery. Its files were retained.');
+        throw integrityFailure('The repair reservation needs recovery. Its files were retained.');
     }
     if (plan && (entry.planHash !== roleplayHash(plan) || entry.requestHash !== plan.requestHash
         || entry.operationKeyHash !== plan.native.operationKeyHash || entry.intentHash !== plan.native.intentHash
         || !isDeepStrictEqual(entry.locator, plan.input.source.locator)
         || plan.input.source.accountId !== scope.accountId || plan.input.source.dataEpoch !== scope.dataEpoch)) {
-        throw repairFailure('The repair reservation differs from its saved intent.');
+        throw integrityFailure('The repair reservation differs from its saved intent.');
     }
     return entry;
 }
@@ -128,7 +131,7 @@ export function assertRepairUnstarted(scope, state, id, entry, index = pins(scop
     if (!['staging', 'aborting', 'aborted'].includes(entry.phase) || index.entries[id]
         || Object.values(index.entries).some(pin => pin.operationKeyHash === entry.operationKeyHash)
         || state.submissions[entry.operationKeyHash] || state.pending?.operationKeyHash === entry.operationKeyHash) {
-        throw repairFailure('This repair may have changed the chat. Keep its records for recovery.');
+        throw integrityFailure('This repair may have changed the chat. Keep its records for recovery.');
     }
 }
 export function setRepairPhase(lease, id, phase) {
@@ -141,7 +144,7 @@ export function setRepairPhase(lease, id, phase) {
 }
 function pins(scope) {
     const result = readRepairJson(path.join(repairDirectory(scope), 'pins.json'), 16 * 1024);
-    if (result.value?.version !== 1 || !result.value.entries || Object.keys(result.value.entries).length > 8) throw repairFailure('Image recovery receipt pins are damaged.');
+    if (result.value?.version !== 1 || !result.value.entries || Object.keys(result.value.entries).length > 8) throw integrityFailure('Image recovery receipt pins are damaged.');
     return result;
 }
 export function pinRepair(lease, id, plan) {
@@ -149,17 +152,17 @@ export function pinRepair(lease, id, plan) {
     const index = pins(scope);
     const pin = { accountId: scope.accountId, dataEpoch: scope.dataEpoch, planHash: roleplayHash(plan),
         operationKeyHash: plan.native.operationKeyHash, intentHash: plan.native.intentHash, candidateHash: plan.candidateHash };
-    if (index.value.entries[id] && !isDeepStrictEqual(index.value.entries[id], pin)) throw repairFailure('The repair receipt pin disagrees with its original intent.');
-    if (!index.value.entries[id] && Object.keys(index.value.entries).length >= 8) throw repairFailure('Finish an earlier image repair before starting another.');
+    if (index.value.entries[id] && !isDeepStrictEqual(index.value.entries[id], pin)) throw integrityFailure('The repair receipt pin disagrees with its original intent.');
+    if (!index.value.entries[id] && Object.keys(index.value.entries).length >= 8) throw repairFailure(uiText('Too many image changes in this account need attention. Review them in Change history before trying again.'));
     index.value.entries[id] = pin;
     writeRepairJson(path.join(repairDirectory(scope), 'pins.json'), index.value, 16 * 1024, index.file);
 }
 export function finishRepair(lease, id) {
     const { scope } = roleplayLease(lease);
     const manifest = readRepairJson(repairPath(scope, id, 'manifest.json')).value;
-    if (manifest.stage !== 'committed' || !manifest.result) throw repairFailure('The image repair result has not been saved.');
+    if (manifest.stage !== 'committed' || !manifest.result) throw integrityFailure('The image repair result has not been saved.');
     const catalogue = repairCatalogue(scope);
-    if (!catalogue.value.entries[id] || catalogue.value.entries[id].planHash !== manifest.planHash) throw repairFailure('The repair result does not match its catalogue.');
+    if (!catalogue.value.entries[id] || catalogue.value.entries[id].planHash !== manifest.planHash) throw integrityFailure('The repair result does not match its catalogue.');
     catalogue.value.entries[id].complete = true;
     writeRepairJson(path.join(repairDirectory(scope), 'catalogue.json'), catalogue.value, REPAIR_LIMIT, catalogue.file);
     const index = pins(scope);

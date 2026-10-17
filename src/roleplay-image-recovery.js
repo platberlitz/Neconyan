@@ -11,16 +11,27 @@ import { normaliseRoleplayLocator, roleplayChatPath, captureRoleplayStorageSourc
 import { assertNativeMediaTargetIdle } from './generation/media-receipts.js';
 import { commitSingleChatWriteLocked, roleplayChatWriteIdentity } from './roleplay-lifecycle.js';
 import { attachmentIdentity, PROMPT_MEDIA_MODES, validateImagePreference } from '../public/scripts/prompt-media-policy.js';
-import { REPAIR_LIMIT, REPAIR_CHAT_LIMIT, repairFailure, repairPath, repairDirectory, readRepairJson, writeRepairJson,
+import { uiText } from '../public/scripts/ui-text.js';
+import { REPAIR_LIMIT, REPAIR_CHAT_LIMIT, repairFailure, integrityFailure, repairPath, repairDirectory, readRepairJson, writeRepairJson,
     writeRepairBytes, ensureRepairStore, reserveRepair, pinRepair, finishRepair, repairCatalogue, validateRepairReservation, assertRepairUnstarted, setRepairPhase } from './roleplay-image-repair-store.js';
 
 const hashBytes = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const same = (left, right) => isDeepStrictEqual(left, right);
+/** Every status a scan can give an image. The review dialog keeps one label for each. */
+export const IMAGE_REVIEW_STATUSES = Object.freeze(['saved-reference', 'missing-file', 'needs-compatible-copy', 'unreadable-or-over-limit', 'embedded-image',
+    'external-or-old-location', 'other-media', 'malformed-attachment', 'empty-attachment-list', 'invalid-gallery-selection']);
+/** Every stage that change history reports for a change. */
+export const REPAIR_HISTORY_STAGES = Object.freeze(['committed', 'backup-verified', 'native-write-pending', 'staging-incomplete', 'discarded']);
+/** A saved description is usable when it has text and fits the limit. Choosing it and listing it as available use this one test. */
+const usableDescription = text => typeof text === 'string' && Boolean(text.trim()) && Buffer.byteLength(text) <= 16 * 1024;
 function readChat(scope, locator) {
-    const file = readRoleplayFile(roleplayChatPath(scope, locator), REPAIR_CHAT_LIMIT);
-    const parsed = file && parseChatJsonl(file.bytes);
-    if (parsed?.status !== 'ok') throw repairFailure('This chat needs ordinary chat recovery before its images can be reviewed.');
+    // A chat file, or the folder it was in, that is gone is not a damaged chat. allowMissingParent answers null for both, so no operating
+    // system error (which names a server path) reaches the page.
+    const file = readRoleplayFile(roleplayChatPath(scope, locator), REPAIR_CHAT_LIMIT, { allowMissingParent: true });
+    if (!file) throw repairFailure(uiText('This chat file no longer exists, so its images cannot be listed.'));
+    const parsed = parseChatJsonl(file.bytes);
+    if (parsed?.status !== 'ok') throw repairFailure(uiText('This chat file is damaged, so its images cannot be listed. Recover the chat first.'));
     return { file, records: parsed.records };
 }
 function observation(scope, locator, file) {
@@ -69,7 +80,10 @@ function itemSummary(location) {
         ...(item?.neconyan_prompt?.caption ? { caption: item.neconyan_prompt.caption } : {}),
         ...(typeof item?.url === 'string' && /^https?:/.test(item.url) && item.url.length <= 4096 ? { proposedSource: item.url } : {}),
         title: typeof item?.title === 'string' ? item.title.slice(0, 240) : '',
-        descriptionAvailable: Boolean(item?.title || extra.title), actions: status === 'other-media' ? [] : mediaIndex < 0 ? ['detach'] : ['display-only', 'caption', 'include', 'detach'] };
+        descriptionAvailable: Boolean(item?.title || extra.title),
+        // A legacy single image keeps its title on the message; choosing the image's own description reads that title.
+        sources: { 'media-title': usableDescription(item?.title ?? (extra.media === undefined ? extra.title : undefined)), 'message-title': usableDescription(extra.title) },
+        actions: status === 'other-media' ? [] : mediaIndex < 0 ? ['detach'] : ['display-only', 'caption', 'include', 'detach'] };
 }
 /** Read-only inventory: neither enrols a chat nor fetches an external image. */
 export function scanRoleplayImages(base, input) {
@@ -80,7 +94,7 @@ export function scanRoleplayImages(base, input) {
         const { scope } = roleplayLease(lease);
         const { file, records } = readChat(scope, locator);
         const current = observation(scope, locator, file);
-        if (input.observation && !same(input.observation, current)) throw repairFailure('The chat changed. Scan it again before choosing repairs.');
+        if (input.observation && !same(input.observation, current)) throw repairFailure(uiText('The chat changed while you were reviewing it. List its images again, then choose.'));
         const { locations, total } = attachmentLocations(records);
         const result = { observation: current, total, listed: locations.length, limited: total > 10000, offset,
             chatPreference: records[0].chat_metadata?.neconyan_prompt_media ?? null, issues: [], next: null };
@@ -109,21 +123,21 @@ function assertIdle(lease, source, ownKey = null) {
     for (const id of [source.instanceId, roleplayHash(source.locator)]) assertNativeMediaTargetIdle(lease, { kind: 'chat', id });
     for (const [key, receipt] of Object.entries(state.submissions)) {
         if (key !== ownKey && receipt.targetInstanceId === source.instanceId && !['closed', 'void'].includes(receipt.state)) {
-            throw repairFailure('This chat has unfinished generation work. Finish or resolve it before repairing images.');
+            throw repairFailure(uiText('A reply is still being written in this chat. Wait for it to finish or stop it, then try again.'));
         }
     }
-    if (state.pending && state.pending.operationKeyHash !== ownKey) throw repairFailure('An earlier chat change must finish before image repair.');
+    if (state.pending && state.pending.operationKeyHash !== ownKey) throw repairFailure(uiText('An earlier change to this chat is still being saved. Try again in a moment.'));
 }
 function selectExtra(record, swipe) {
     if (swipe === null) return record.extra;
-    if (!Number.isSafeInteger(swipe) || swipe < 0 || !record.swipe_info?.[swipe]) throw repairFailure('That image alternative no longer exists.');
+    if (!Number.isSafeInteger(swipe) || swipe < 0 || !record.swipe_info?.[swipe]) throw repairFailure(uiText('That alternative reply no longer exists. List the images again.'));
     return record.swipe_info[swipe].extra;
 }
 function normaliseImages(extra) {
     if (extra.media !== undefined) return;
-    if (typeof extra.image !== 'string' && !Array.isArray(extra.image_swipes)) throw repairFailure('This malformed image needs explicit detachment.');
+    if (typeof extra.image !== 'string' && !Array.isArray(extra.image_swipes)) throw repairFailure(uiText('This image attachment is damaged. Choose Remove from message for it.'));
     const urls = extra.image_swipes ?? [extra.image];
-    if (urls.some(url => typeof url !== 'string' || !url)) throw repairFailure('This malformed image needs explicit detachment.');
+    if (urls.some(url => typeof url !== 'string' || !url)) throw repairFailure(uiText('This image attachment is damaged. Choose Remove from message for it.'));
     extra.media = urls.map(url => ({ type: 'image', url, ...(typeof extra.title === 'string' ? { title: extra.title } : {}),
         ...(extra.append_title !== undefined ? { append_title: extra.append_title } : {}) }));
     if (extra.image_swipes) { extra.media_display = 'gallery'; extra.media_index = Math.max(0, urls.indexOf(extra.image)); }
@@ -134,7 +148,7 @@ function normaliseImages(extra) {
 function transform(records, input, scope) {
     const images = [];
     const actions = input.actions ?? [];
-    if (!Array.isArray(actions) || actions.length > 128 || !actions.length && input.chatPreference === undefined) throw repairFailure('Choose between one and 128 image changes.');
+    if (!Array.isArray(actions) || actions.length > 128 || !actions.length && input.chatPreference === undefined) throw repairFailure(uiText('Choose between 1 and 128 images to change at once.'));
     const candidate = structuredClone(records);
     if (input.chatPreference !== undefined) {
         validateImagePreference(input.chatPreference);
@@ -150,9 +164,9 @@ function transform(records, input, scope) {
         const original = records[index + 1];
         if (!Number.isSafeInteger(index) || index < 0 || !original || !Number.isSafeInteger(mediaIndex) || mediaIndex < -1) throw repairFailure('Invalid image coordinates.');
         const sourceExtra = selectExtra(original, swipe);
-        if (!object(sourceExtra)) throw repairFailure('This image changed after it was reviewed.');
+        if (!object(sourceExtra)) throw repairFailure(uiText('This image changed after it was listed. List the images again, then choose.'));
         if (!sourceHashes.has(sourceExtra)) sourceHashes.set(sourceExtra, roleplayHash(sourceExtra));
-        if (action.identity !== roleplayHash([index, swipe, mediaIndex, sourceHashes.get(sourceExtra)])) throw repairFailure('This image changed after it was reviewed.');
+        if (action.identity !== roleplayHash([index, swipe, mediaIndex, sourceHashes.get(sourceExtra)])) throw repairFailure(uiText('This image changed after it was listed. List the images again, then choose.'));
         const coordinate = JSON.stringify([index, swipe, mediaIndex]);
         if (seen.has(coordinate)) throw repairFailure('An image was selected twice.');
         seen.add(coordinate);
@@ -161,10 +175,10 @@ function transform(records, input, scope) {
         if (!PROMPT_MEDIA_MODES.includes(action.mode)) throw repairFailure('Choose how to use this image.');
         normaliseImages(extra);
         const item = extra.media?.[mediaIndex];
-        if (!object(item) || (item.type ?? 'image') !== 'image' || typeof item.url !== 'string') throw repairFailure('This attachment cannot be identified as an image. Detach it explicitly instead.');
+        if (!object(item) || (item.type ?? 'image') !== 'image' || typeof item.url !== 'string') throw repairFailure(uiText('This attachment is not a usable image. Choose Remove from message for it.'));
         if (action.localUrl !== undefined) {
             const file = readRoleplayFile(accountImagePath(scope.directories, action.localUrl), 1024 * 1024);
-            if (!file) throw repairFailure('The proposed local image is missing.');
+            if (!file) throw repairFailure(uiText('The image on this server is missing. Choose another option.'));
             const mime = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' }[imageSize(file.bytes).type];
             decodeCompatibleImage(`data:${mime};base64,${file.bytes.toString('base64')}`);
             item.url = action.localUrl;
@@ -179,29 +193,29 @@ function transform(records, input, scope) {
         if (action.selectGallery === true) { extra.media_display = 'gallery'; extra.media_index = mediaIndex; }
         if (action.mode === 'caption') {
             const caption = action.caption;
-            if (!object(caption) || !['custom', 'media-title', 'message-title'].includes(caption.source)) throw repairFailure('Choose or enter a description.');
+            if (!object(caption) || !['custom', 'media-title', 'message-title'].includes(caption.source)) throw repairFailure(uiText('Choose or type a description.'));
             const text = caption.source === 'custom' ? caption.text : caption.source === 'media-title' ? item.title : extra.title;
-            if (typeof text !== 'string' || !text.trim() || Buffer.byteLength(text) > 16 * 1024) throw repairFailure('Descriptions must contain text and fit within 16 KiB.');
+            if (!usableDescription(text)) throw repairFailure(uiText('A description must contain text and be at most 16 KiB.'));
             descriptionBytes += Buffer.byteLength(text);
-            if (descriptionBytes > 16 * 1024) throw repairFailure('Selected descriptions exceed 16 KiB. Repair fewer images at a time.');
+            if (descriptionBytes > 16 * 1024) throw repairFailure(uiText('Together, the selected descriptions are over 16 KiB. Change fewer images at a time.'));
             policy.caption = caption.source === 'custom' ? { source: 'custom', text } : { source: caption.source };
         }
         if (action.saveCopy === true || input.materialisedImage?.identity === action.identity) {
             let data = item.url;
             if (input.materialisedImage?.identity === action.identity) data = input.materialisedImage.data;
-            else if (!item.url.startsWith('data:')) throw repairFailure('For an external or oversized image, preview and submit one compatible replacement first.');
+            else if (!item.url.startsWith('data:')) throw repairFailure(uiText('This image cannot be copied as it is. Use Prepare a converted copy for it first.'));
             const image = decodeCompatibleImage(data);
-            if (images.reduce((sum, entry) => sum + entry.bytes.length, image.bytes.length) > 64 * 1024 * 1024) throw repairFailure('Select fewer images (maximum 64 MiB of new copies per repair).');
+            if (images.reduce((sum, entry) => sum + entry.bytes.length, image.bytes.length) > 64 * 1024 * 1024) throw repairFailure(uiText('The new copies would exceed 64 MiB in one change. Select fewer images.'));
             policy.image_url = managedImageUrl(image);
             if (item.url.startsWith('/user/images/') && action.adoptCopy !== true) {
                 const original = inspectRoleplayFile(accountImagePath(scope.directories, item.url), REPAIR_CHAT_LIMIT);
-                if (!original) throw repairFailure('The original image is missing. Choose Show only, or explicitly adopt a new source.');
+                if (!original) throw repairFailure(uiText('The original image file is missing. Choose Show only, or tick \'Also show this copy in the chat instead of the original\'.'));
                 policy.original_evidence = { rawHash: original.rawHash };
             }
             images.push(image);
         }
         if (action.adoptCopy === true) {
-            if (!policy.image_url) throw repairFailure('Prepare or select a verified prompt copy before adopting it.');
+            if (!policy.image_url) throw repairFailure(uiText('Prepare a compatible copy first.'));
             if (!images.some(image => managedImageUrl(image) === policy.image_url)) verifyManagedImage(scope.directories, policy.image_url);
             item.url = policy.image_url;
             policy.attachment_hash = roleplayHash(attachmentIdentity(item));
@@ -212,11 +226,11 @@ function transform(records, input, scope) {
     detachments.sort((a, b) => b.mediaIndex - a.mediaIndex).forEach(({ index, swipe, mediaIndex }) => {
         const extra = selectExtra(candidate[index + 1], swipe);
         if (mediaIndex === -1) {
-            if (Array.isArray(extra.media) && extra.media.length) throw repairFailure('Choose an individual attachment to remove.');
+            if (Array.isArray(extra.media) && extra.media.length) throw repairFailure(uiText('Choose a single image to remove.'));
             for (const key of ['media', 'image', 'image_swipes', 'media_index', 'media_display', 'inline_image']) delete extra[key];
         } else {
             normaliseImages(extra);
-            if (!Array.isArray(extra.media) || mediaIndex >= extra.media.length) throw repairFailure('This attachment no longer exists.');
+            if (!Array.isArray(extra.media) || mediaIndex >= extra.media.length) throw repairFailure(uiText('This attachment no longer exists. List the images again.'));
             extra.media.splice(mediaIndex, 1);
             if (!extra.media.length) for (const key of ['media', 'media_index', 'media_display', 'inline_image']) delete extra[key];
             else if (extra.media_index !== undefined) extra.media_index = Math.max(0, Math.min(extra.media.length - 1, Number.isSafeInteger(extra.media_index)
@@ -231,7 +245,7 @@ function transform(records, input, scope) {
         const fields = ['media', 'image', 'image_swipes', 'media_index', 'media_display', 'inline_image'];
         if (original.extra.media === undefined && (typeof original.extra.image === 'string' || Array.isArray(original.extra.image_swipes))) fields.push('append_title');
         if (oldActive?.extra && !same(oldActive.extra, original.extra)) {
-            if (fields.some(key => !same(oldActive.extra[key], original.extra[key]))) throw repairFailure('The active alternative has different attachments. Review it before repair.');
+            if (fields.some(key => !same(oldActive.extra[key], original.extra[key]))) throw repairFailure(uiText('This reply\'s saved data disagrees about its images. Review the alternative reply listed separately first.'));
         }
         if (active?.extra) for (const key of fields) {
             if (Object.hasOwn(record.extra, key)) active.extra[key] = structuredClone(record.extra[key]); else delete active.extra[key];
@@ -241,31 +255,31 @@ function transform(records, input, scope) {
 }
 function savedCandidate(scope, id, plan) {
     const file = readRoleplayFile(repairPath(scope, id, 'candidate.jsonl'), REPAIR_CHAT_LIMIT);
-    if (!file || file.rawHash !== plan.candidateHash) throw repairFailure('The original repair candidate is missing or changed.');
+    if (!file || file.rawHash !== plan.candidateHash) throw integrityFailure('The original repair candidate is missing or changed.');
     const parsed = parseChatJsonl(file.bytes);
-    if (parsed.status !== 'ok') throw repairFailure('The original repair candidate is unreadable.');
+    if (parsed.status !== 'ok') throw integrityFailure('The original repair candidate is unreadable.');
     return parsed.records;
 }
 function execute(lease, id, plan, host, checkpoint) {
     const { scope, state } = roleplayLease(lease);
     const reservation = validateRepairReservation(scope, repairCatalogue(scope).value.entries[id], plan);
     if (reservation.phase !== 'prepared') throw repairFailure(reservation.phase === 'aborted'
-        ? 'This repair was discarded. Choose a new repair explicitly.' : 'This repair did not finish preparation. Discard its unstarted staging before trying again.');
+        ? uiText('This change was discarded. Make the change again if you still want it.') : uiText('This change did not finish preparing. Discard it in Change history, then try again.'));
     let manifest = readRepairJson(repairPath(scope, id, 'manifest.json'));
-    if (manifest.value.planHash !== roleplayHash(plan)) throw repairFailure('The repair manifest does not match its original plan.');
+    if (manifest.value.planHash !== roleplayHash(plan)) throw integrityFailure('The repair manifest does not match its original plan.');
     if (manifest.value.stage === 'committed') {
         finishRepair(lease, id);
         return { id, ...manifest.value.result, replayed: true };
     }
     const before = readRoleplayFile(repairPath(scope, id, 'before.jsonl'), REPAIR_CHAT_LIMIT, { flush: true });
-    if (!before || before.rawHash !== plan.beforeHash) throw repairFailure('The required repair backup is missing or changed.');
+    if (!before || before.rawHash !== plan.beforeHash) throw integrityFailure('The required repair backup is missing or changed.');
     const records = savedCandidate(scope, id, plan);
     const input = { ...plan.input, records };
-    if (!same(roleplayChatWriteIdentity(lease, input), plan.native)) throw repairFailure('The native repair intent changed.');
+    if (!same(roleplayChatWriteIdentity(lease, input), plan.native)) throw integrityFailure('The native repair intent changed.');
     assertIdle(lease, input.source, plan.native.operationKeyHash);
     for (const [index, descriptor] of (plan.images ?? []).entries()) {
         const staged = readRoleplayFile(repairPath(scope, id, `image.${index}.bin`), 1024 * 1024, { flush: true });
-        if (!staged || staged.rawHash !== descriptor.rawHash) throw repairFailure('A prepared image copy is missing or changed.');
+        if (!staged || staged.rawHash !== descriptor.rawHash) throw integrityFailure('A prepared image copy is missing or changed.');
         publishManagedImage(scope.directories, { ...descriptor, bytes: staged.bytes });
     }
     pinRepair(lease, id, plan);
@@ -273,7 +287,7 @@ function execute(lease, id, plan, host, checkpoint) {
     manifest.value.stage = 'native-write-pending';
     manifest.file = writeRepairJson(repairPath(scope, id, 'manifest.json'), manifest.value, REPAIR_LIMIT, manifest.file);
     const receipt = state.submissions[plan.native.operationKeyHash];
-    if (receipt && (receipt.intentHash !== plan.native.intentHash || !['closed', 'void'].includes(receipt.state))) throw repairFailure('The native repair receipt needs recovery.');
+    if (receipt && (receipt.intentHash !== plan.native.intentHash || !['closed', 'void'].includes(receipt.state))) throw integrityFailure('The native repair receipt needs recovery.');
     const result = commitSingleChatWriteLocked(lease, input, host);
     checkpoint('native-committed');
     manifest.value.stage = 'committed';
@@ -290,7 +304,7 @@ function operationId(scope, key) {
 }
 /** One bounded chat transaction, under the native account lease. No provider calls. */
 export function applyRoleplayImageRepair(base, input, host, { checkpoint = () => {} } = {}) {
-    if (!input.account) throw repairFailure('Reload the image review to confirm the account.');
+    if (!input.account) throw repairFailure(uiText('Close this window and open it again to confirm your account.'));
     return withRoleplayAccount(base, input.account, lease => {
         const { scope } = roleplayLease(lease);
         const id = operationId(scope, input.key);
@@ -300,7 +314,7 @@ export function applyRoleplayImageRepair(base, input, host, { checkpoint = () =>
         if (reservation) {
             validateRepairReservation(scope, reservation);
             if (reservation.requestHash !== requestHash) throw repairFailure('This repair ID already has different choices.');
-            if (reservation.phase === 'aborted') throw repairFailure('This repair was discarded. Choose a new repair explicitly.');
+            if (reservation.phase === 'aborted') throw repairFailure(uiText('This change was discarded. Make the change again if you still want it.'));
         }
         const existing = readRepairJson(repairPath(scope, id, 'plan.json'), REPAIR_LIMIT, true);
         if (existing) {
@@ -309,7 +323,7 @@ export function applyRoleplayImageRepair(base, input, host, { checkpoint = () =>
         }
         const locator = normaliseRoleplayLocator(input.observation?.locator);
         const { file, records } = readChat(scope, locator);
-        if (!same(input.observation, observation(scope, locator, file))) throw repairFailure('The chat changed after the scan. Its current contents were kept.');
+        if (!same(input.observation, observation(scope, locator, file))) throw repairFailure(uiText('The chat changed after its images were listed, so nothing was changed. List them again, then choose.'));
         const captured = captureRoleplayStorageSourceLocked(lease, locator);
         if (captured.changed) saveRoleplayAccount(lease);
         assertIdle(lease, captured.source);
@@ -318,13 +332,13 @@ export function applyRoleplayImageRepair(base, input, host, { checkpoint = () =>
             const original = readRepairJson(repairPath(scope, input.undoOf, 'plan.json')).value;
             const prior = readRepairJson(repairPath(scope, input.undoOf, 'manifest.json')).value;
             if (prior.stage !== 'committed' || prior.result.rawHash !== file.rawHash || prior.result.revision !== captured.source.revision
-                || original.input.source.instanceId !== captured.source.instanceId) throw repairFailure('This chat changed after repair. Export its backup instead of overwriting later work.');
+                || original.input.source.instanceId !== captured.source.instanceId) throw repairFailure(uiText('This chat has changed since, so undoing would lose later work. Download the backup instead.'));
             const backup = readRoleplayFile(repairPath(scope, input.undoOf, 'before.jsonl'), REPAIR_CHAT_LIMIT);
-            if (!backup || backup.rawHash !== original.beforeHash) throw repairFailure('The repair backup is unavailable.');
+            if (!backup || backup.rawHash !== original.beforeHash) throw repairFailure(uiText('This change\'s backup is no longer available.'));
             candidate = parseChatJsonl(backup.bytes).records;
         } else ({ candidate, images } = transform(records, input, scope));
         const candidateBytes = Buffer.from(candidate.map(record => JSON.stringify(record)).join('\n'));
-        if (candidateBytes.length > REPAIR_CHAT_LIMIT) throw repairFailure('The repaired chat exceeds the native chat size limit.');
+        if (candidateBytes.length > REPAIR_CHAT_LIMIT) throw repairFailure(uiText('After this change the chat would be too large to save.'));
         const nativeInput = { operationKey: 'image-repair:' + id, mode: 'update', sourceKind: 'storage', source: captured.source, backup: { deferBackup: true } };
         const native = roleplayChatWriteIdentity(lease, { ...nativeInput, records: candidate });
         const plan = { version: 1, requestHash, input: nativeInput, native, beforeHash: file.rawHash, candidateHash: hashBytes(candidateBytes),
@@ -332,7 +346,7 @@ export function applyRoleplayImageRepair(base, input, host, { checkpoint = () =>
         // Reservation precedes every payload and remains authoritative across a partial staging failure.
         const reservedBytes = file.bytes.length + candidateBytes.length + 2 * REPAIR_LIMIT + images.reduce((sum, image) => sum + 2 * image.bytes.length, 0);
         const oldReservation = repairCatalogue(scope).value.entries[id];
-        if (oldReservation) throw repairFailure('This repair stopped before its durable plan was saved. Keep its reserved files for recovery.');
+        if (oldReservation) throw integrityFailure('This repair stopped before its durable plan was saved. Keep its reserved files for recovery.');
         reserveRepair(lease, id, reservedBytes, plan);
         checkpoint('reserved');
         writeRepairJson(repairPath(scope, id, 'plan.json'), plan);
@@ -353,20 +367,20 @@ export function applyRoleplayImageRepair(base, input, host, { checkpoint = () =>
     });
 }
 export function resumeRoleplayImageRepair(base, input, host) {
-    if (!input.account) throw repairFailure('Reload image recovery to confirm the account.');
+    if (!input.account) throw repairFailure(uiText('Close this window and open it again to confirm your account.'));
     return withRoleplayAccount(base, input.account, lease => {
         const { scope } = roleplayLease(lease);
         const entry = validateRepairReservation(scope, repairCatalogue(scope).value.entries[input.id]);
-        if (entry.phase === 'aborted') throw repairFailure('This repair was discarded.');
+        if (entry.phase === 'aborted') throw repairFailure(uiText('This change was discarded.'));
         const plan = readRepairJson(repairPath(scope, input.id, 'plan.json')).value;
-        if (repairCatalogue(scope).value.entries[input.id]?.planHash !== roleplayHash(plan)) throw repairFailure('The saved repair plan differs from its reservation.');
+        if (repairCatalogue(scope).value.entries[input.id]?.planHash !== roleplayHash(plan)) throw integrityFailure('The saved repair plan differs from its reservation.');
         return execute(lease, input.id, plan, host, () => {});
     });
 }
 
 /** Explicitly discard only verified staging that never acquired native write authority. */
 export function discardRoleplayImageRepair(base, input, { checkpoint = () => {} } = {}) {
-    if (!input.account) throw repairFailure('Reload image recovery to confirm the account.');
+    if (!input.account) throw repairFailure(uiText('Close this window and open it again to confirm your account.'));
     return withRoleplayAccount(base, input.account, lease => {
         const { scope, state } = roleplayLease(lease), id = input.id;
         const entry = validateRepairReservation(scope, repairCatalogue(scope).value.entries[id]);
@@ -382,7 +396,7 @@ export function discardRoleplayImageRepair(base, input, { checkpoint = () => {} 
             const manifest = readRepairJson(repairPath(scope, id, 'manifest.json'), REPAIR_LIMIT, true);
             if (manifest) {
                 if (manifest.value.planHash !== entry.planHash || manifest.value.stage !== 'backup-verified' || manifest.value.result) {
-                    throw repairFailure('This repair may have begun a native write. Its files were retained.');
+                    throw repairFailure(uiText('This change may already have started saving the chat, so it cannot be discarded. Use Finish this change instead.'));
                 }
                 expected.set('manifest.json', { hash: manifest.file.rawHash, limit: REPAIR_LIMIT });
             }
@@ -392,10 +406,10 @@ export function discardRoleplayImageRepair(base, input, { checkpoint = () => {} 
         for (const name of fs.readdirSync(repairDirectory(scope))) {
             if (!name.startsWith(id + '.')) continue;
             const suffix = name.slice(id.length + 1), descriptor = expected.get(suffix);
-            if (!descriptor || entry.phase === 'aborted') throw repairFailure('Unexpected repair evidence was retained.');
+            if (!descriptor || entry.phase === 'aborted') throw integrityFailure('Unexpected repair evidence was retained.');
             const filename = repairPath(scope, id, suffix);
             const file = readRoleplayFile(filename, descriptor.limit);
-            if (!file || file.rawHash !== descriptor.hash) throw repairFailure('Changed repair evidence was retained.');
+            if (!file || file.rawHash !== descriptor.hash) throw integrityFailure('Changed repair evidence was retained.');
             payloads.push({ filename, file, limit: descriptor.limit, suffix });
         }
         if (entry.phase === 'aborted') return { id, discarded: true, replayed: true };
@@ -407,7 +421,7 @@ export function discardRoleplayImageRepair(base, input, { checkpoint = () => {} 
             checkpoint(`discarding-${payload.suffix}`);
             const current = readRoleplayFile(payload.filename, payload.limit);
             if (!current || current.rawHash !== payload.file.rawHash || !same(current.physical, payload.file.physical)) {
-                throw repairFailure('Repair evidence changed during discard and was retained.');
+                throw integrityFailure('Repair evidence changed during discard and was retained.');
             }
             fs.unlinkSync(payload.filename);
             fsyncDirectorySync(repairDirectory(scope));
@@ -442,9 +456,9 @@ export function exportRoleplayImageBackup(base, input) {
         const { scope } = roleplayLease(lease);
         const plan = readRepairJson(repairPath(scope, input.id, 'plan.json')).value;
         const manifest = readRepairJson(repairPath(scope, input.id, 'manifest.json')).value;
-        if (manifest.stage !== 'committed' || manifest.backupRemoved) throw repairFailure('This completed backup is unavailable.');
+        if (manifest.stage !== 'committed' || manifest.backupRemoved) throw repairFailure(uiText('This backup is no longer available.'));
         const file = readRoleplayFile(repairPath(scope, input.id, 'before.jsonl'), REPAIR_CHAT_LIMIT);
-        if (!file || file.rawHash !== plan.beforeHash) throw repairFailure('The backup is missing or changed.');
+        if (!file || file.rawHash !== plan.beforeHash) throw integrityFailure('The backup is missing or changed.');
         return file.bytes;
     });
 }
@@ -454,7 +468,7 @@ export function removeRoleplayImageBackup(base, input) {
         const id = input.id;
         const plan = readRepairJson(repairPath(scope, id, 'plan.json')).value;
         const manifest = readRepairJson(repairPath(scope, id, 'manifest.json'));
-        if (manifest.value.stage !== 'committed') throw repairFailure('An unfinished repair backup cannot be removed.');
+        if (manifest.value.stage !== 'committed') throw repairFailure(uiText('An unfinished change\'s backup cannot be deleted. Finish or discard the change first.'));
         finishRepair(lease, id);
         const payloads = [{ suffix: 'before.jsonl', hash: plan.beforeHash, limit: REPAIR_CHAT_LIMIT },
             { suffix: 'candidate.jsonl', hash: plan.candidateHash, limit: REPAIR_CHAT_LIMIT },
@@ -466,7 +480,7 @@ export function removeRoleplayImageBackup(base, input) {
             const filename = repairPath(scope, id, payload.suffix);
             const file = readRoleplayFile(filename, payload.limit);
             if (!file) continue;
-            if (file.rawHash !== payload.hash) throw repairFailure('A backup file changed and was retained.');
+            if (file.rawHash !== payload.hash) throw integrityFailure('A backup file changed and was retained.');
             fs.unlinkSync(filename);
             fsyncDirectorySync(repairDirectory(scope));
         }
@@ -491,7 +505,7 @@ export function listRoleplayImageChats(base, input) {
                 const locator = { group: avatar === null, chat: entry.name.slice(0, -6), ...(avatar ? { avatar } : {}) };
                 try { normaliseRoleplayLocator(locator); } catch { continue; }
                 locators.push(locator);
-                if (locators.length > 10000) throw repairFailure('This collection exceeds 10,000 chats. Review a selected chat instead.');
+                if (locators.length > 10000) throw repairFailure(uiText('You have more than 10,000 chats, too many to list here. Open a chat and review it from Current chat.'));
             }
         };
         readRoleplayFile(path.join(directories.chats, '.image-list-path-check'), 1, { allowMissingParent: true });
@@ -507,16 +521,16 @@ export function readRoleplayImageReviewSource(base, input) {
     return withRoleplayAccount(base, input.account, lease => {
         const { scope } = roleplayLease(lease), locator = normaliseRoleplayLocator(input.observation?.locator);
         const { file, records } = readChat(scope, locator);
-        if (!same(input.observation, observation(scope, locator, file))) throw repairFailure('The chat changed. Review its images again.');
+        if (!same(input.observation, observation(scope, locator, file))) throw repairFailure(uiText('The chat changed. List its images again.'));
         const found = attachmentLocations(records).locations.find(item => item.identity === input.identity);
-        if (!found || typeof found.item?.url !== 'string') throw repairFailure('That image source is unavailable.');
+        if (!found || typeof found.item?.url !== 'string') throw repairFailure(uiText('That image can no longer be found in the chat. List the images again.'));
         const url = found.item.url;
         if (url.startsWith('/user/images/')) {
             const image = readRoleplayFile(accountImagePath(scope.directories, url), 16 * 1024 * 1024);
-            if (!image) throw repairFailure('The source image is missing. Choose a replacement file.');
+            if (!image) throw repairFailure(uiText('The image file is missing. Choose an image file instead.'));
             return { base64: image.bytes.toString('base64'), originalHash: image.rawHash };
         }
-        if (url.length > 4 * Math.ceil(16 * 1024 * 1024 / 3) + 128) throw repairFailure('This image exceeds the 16 MiB conversion limit. Choose a replacement file.');
+        if (url.length > 4 * Math.ceil(16 * 1024 * 1024 / 3) + 128) throw repairFailure(uiText('This image is larger than 16 MiB, too large to convert. Choose an image file instead.'));
         return { url };
     });
 }

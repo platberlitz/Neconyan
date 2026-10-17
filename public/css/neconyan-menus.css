@@ -538,6 +538,10 @@ body.neconyan dialog.language-choice-popup .popup-button-ok {
     overflow-wrap: anywhere;
     text-align: start;
 }
+/* A name or description with no spaces wraps in the headings and in every value the person wrote. */
+#prompt-media-review h3,
+#prompt-media-review h4,
+#prompt-media-review [translate="no"] { overflow-wrap: anywhere; }
 #prompt-media-review p { margin-block: 0; }
 #prompt-media-review input[type="file"],
 #prompt-media-review select,
@@ -545,6 +549,12 @@ body.neconyan dialog.language-choice-popup .popup-button-ok {
     min-inline-size: 0;
     max-inline-size: 100%;
     box-sizing: border-box;
+}
+/* The theme already makes a select as wide as its row. A selected option too long for that row (for example 'no longer available' on a phone)
+   wraps onto a second line inside the closed select instead of being cut off; a short one keeps the theme's minimum height. */
+#prompt-media-review select {
+    white-space: normal;
+    block-size: auto;
 }
 #prompt-media-review .checkbox_label { justify-content: flex-start; }
 #prompt-media-review [hidden] { display: none; }

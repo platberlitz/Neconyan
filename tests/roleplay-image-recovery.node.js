@@ -124,7 +124,7 @@ test('exact embedded save creates an immutable prompt copy and leaves original d
     const { createPromptMediaContext } = await import('../public/scripts/prompt-media-policy.js');
     assert.equal(captureSavedRoleplayImages(f.scope.directories, records, 'list', {}, createPromptMediaContext({}))[0].url, media.url);
     const { assertMutableImagePath, accountImagePath } = await import('../src/managed-image-files.js');
-    assert.throws(() => assertMutableImagePath(f.scope.directories, accountImagePath(f.scope.directories, media.neconyan_prompt.image_url)), /shared and retained/);
+    assert.throws(() => assertMutableImagePath(f.scope.directories, accountImagePath(f.scope.directories, media.neconyan_prompt.image_url)), /may be used by other chats/);
     assert.equal(applyRoleplayImageRepair(f.scope, input, roleplayNativeHost).writeId, result.writeId);
 });
 test('a pre-existing unrelated repair-named folder is not adopted or made immutable', async t => {
@@ -135,7 +135,7 @@ test('a pre-existing unrelated repair-named folder is not adopted or made immuta
     const existing = path.join(folder, 'authored.png');
     fs.writeFileSync(existing, png);
     const { publishManagedImage, decodeCompatibleImage, assertMutableImagePath } = await import('../src/managed-image-files.js');
-    assert.throws(() => publishManagedImage(f.scope.directories, decodeCompatibleImage(`data:image/png;base64,${png.toString('base64')}`)), /already belongs/);
+    assert.throws(() => publishManagedImage(f.scope.directories, decodeCompatibleImage(`data:image/png;base64,${png.toString('base64')}`)), /already holds other files/);
     assert.doesNotThrow(() => assertMutableImagePath(f.scope.directories, existing));
     assert.deepEqual(fs.readFileSync(existing), png);
     assert.deepEqual(fs.readdirSync(folder), ['authored.png']);
@@ -207,7 +207,7 @@ test('a saved derivative survives choice changes and can explicitly become the n
     let scan = scanRoleplayImages(f.scope, { locator: f.locator });
     const data = `data:image/png;base64,${png.toString('base64')}`;
     assert.throws(() => applyRoleplayImageRepair(f.scope, { account, key: 'missing-without-adoption', observation: scan.observation,
-        actions: [{ ...scan.issues[0], mode: 'include' }], materialisedImage: { identity: scan.issues[0].identity, data } }, roleplayNativeHost), /original image is missing/);
+        actions: [{ ...scan.issues[0], mode: 'include' }], materialisedImage: { identity: scan.issues[0].identity, data } }, roleplayNativeHost), /original image file is missing/);
     applyRoleplayImageRepair(f.scope, { account, key: 'explicit-adoption', observation: scan.observation,
         actions: [{ ...scan.issues[0], mode: 'include', adoptCopy: true }], materialisedImage: { identity: scan.issues[0].identity, data } }, roleplayNativeHost);
     let media = JSON.parse(fs.readFileSync(f.filename, 'utf8').split('\n')[1]).extra.media[0];
@@ -245,7 +245,7 @@ test('aggregate description limit refuses before staging or changing the chat', 
     fs.writeFileSync(f.filename, f.records.map(JSON.stringify).join('\n'));
     const before = fs.readFileSync(f.filename), scan = scanRoleplayImages(f.scope, { locator: f.locator });
     assert.throws(() => applyRoleplayImageRepair(f.scope, { ...f.input, observation: scan.observation,
-        actions: scan.issues.map(issue => ({ ...issue, mode: 'caption', caption: { source: 'custom', text: 'A'.repeat(9000) } })) }, roleplayNativeHost), /Selected descriptions exceed/);
+        actions: scan.issues.map(issue => ({ ...issue, mode: 'caption', caption: { source: 'custom', text: 'A'.repeat(9000) } })) }, roleplayNativeHost), /selected descriptions are over 16 KiB/);
     assert.deepEqual(fs.readFileSync(f.filename), before);
 });
 
@@ -254,7 +254,7 @@ for (const phase of ['namespace-intent', 'namespace-directory', 'namespace-marke
     directories.userImages = path.join(directories.root, 'user/images'); fs.mkdirSync(directories.userImages, { recursive: true });
     const { ensureManagedImageNamespace, publishManagedImage, decodeCompatibleImage, assertMutableImagePath, checkManagedImageDestination } = await import('../src/managed-image-files.js');
     assert.throws(() => ensureManagedImageNamespace(directories, { checkpoint(value) { if (value === phase) throw new Error('crash'); } }), /crash/);
-    assert.throws(() => assertMutableImagePath(directories, path.join(directories.userImages, 'neconyan-repaired/a.png')), /namespace|shared/i);
+    assert.throws(() => assertMutableImagePath(directories, path.join(directories.userImages, 'neconyan-repaired/a.png')), /namespace|used by other chats/i);
     assert.doesNotThrow(() => checkManagedImageDestination(directories));
     ensureManagedImageNamespace(directories);
     assert.match(publishManagedImage(directories, decodeCompatibleImage(`data:image/png;base64,${png.toString('base64')}`)), /neconyan-repaired/);
@@ -347,7 +347,7 @@ for (const quota of ['pending', 'records', 'bytes']) test(`repair ${quota} quota
     }]));
     writeRepairJson(filename, { version: 1, entries }, undefined, old.file);
     const names = fs.readdirSync(repairDirectory(f.scope)).sort();
-    assert.throws(() => applyRoleplayImageRepair(f.scope, f.input, roleplayNativeHost), /storage is full/);
+    assert.throws(() => applyRoleplayImageRepair(f.scope, f.input, roleplayNativeHost), /Change history is full/);
     assert.deepEqual(fs.readdirSync(repairDirectory(f.scope)).sort(), names);
     assert.deepEqual(fs.readFileSync(f.filename), before);
 });
