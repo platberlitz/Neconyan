@@ -6,6 +6,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 
 import {
+    createForegroundRefreshCoalescer,
     MOBILE_SHELL_VIEWPORT_SYNC_STEP,
     shouldBlockMobileDocumentPan,
 } from '../public/scripts/mobile-shell-lifecycle/index.js';
@@ -727,10 +728,10 @@ describe('mobile shell lifecycle wiring', () => {
         expect(closeShellSource).toContain('syncMobileShellDrawerBounds();');
         expect(closeShellSource).toContain('queueMobileShellDrawerBoundsSync();');
         expect(syncMobileViewportStateSource).toContain('syncMobileShellDrawerBounds();');
-        expect(tabsSource).toContain('window.visualViewport?.addEventListener(\'resize\', queueMobileViewportStateSync, { passive: true });');
-        expect(tabsSource).toContain('window.visualViewport?.addEventListener(\'scroll\', queueMobileViewportStateSync, { passive: true });');
-        expect(tabsSource).toContain('window.addEventListener(\'resize\', queueMobileViewportStateSync, { passive: true });');
-        expect(tabsSource).toContain('window.visualViewport?.addEventListener(\'resize\', syncDesktopShellSizing, { passive: true });');
+        expect(tabsSource).toContain('window.visualViewport?.addEventListener(\'resize\', handleMobileShellViewportResize, { passive: true });');
+        expect(tabsSource).toContain('window.visualViewport?.addEventListener(\'scroll\', handleMobileShellViewportResize, { passive: true });');
+        expect(tabsSource).toContain('window.addEventListener(\'resize\', handleMobileShellViewportResize, { passive: true });');
+        expect(tabsSource).toContain('window.visualViewport?.addEventListener(\'resize\', syncDesktopShellSizingAfterWidthChange, { passive: true });');
         expect(tabsSource).toContain('window.addEventListener(\'orientationchange\', queueMobileViewportStateSync);');
         expect(mobileShellCssSource).toMatch(/#left-nav-panel\.openDrawer,[\s\S]*#right-nav-panel\.openDrawer\s*\{[\s\S]*top:\s*calc\(var\(--sb-shell-measured-top-offset,[\s\S]*bottom:\s*auto\s*!important;[\s\S]*box-sizing:\s*border-box\s*!important;[\s\S]*height:\s*calc\(var\(--sb-shell-available-height/);
         expect(mobileShellCssSource.lastIndexOf('bottom: auto !important;')).toBeGreaterThan(
@@ -762,18 +763,90 @@ describe('mobile shell lifecycle wiring', () => {
 
     test('routes mobile viewport sync planning through the lifecycle seam', () => {
         const syncMobileViewportStateSource = getFunctionSource('syncMobileViewportState');
+        const queueMobileViewportStateSyncSource = getFunctionSource('queueMobileViewportStateSync');
         const queueMobileShellDrawerBoundsSyncSource = getFunctionSource('queueMobileShellDrawerBoundsSync');
+        const readMobileShellLayoutMetricsSource = getFunctionSource('readMobileShellLayoutMetrics');
 
         expect(syncMobileViewportStateSource).toContain('nnMobileShellLifecycle.viewportSync.resolveSyncPlan({');
+        expect(syncMobileViewportStateSource).toContain('kind,');
         expect(syncMobileViewportStateSource).toContain('[viewportSyncStep.SYNC_MOBILE_SHELL_DRAWER_BOUNDS]: () => {');
         expect(syncMobileViewportStateSource).toContain('syncMobileShellDrawerBounds();');
         expect(syncMobileViewportStateSource).toContain('[viewportSyncStep.SCHEDULE_TOPBAR_CONTEXT_REFRESH]: () => scheduleTopbarContextRefresh(0),');
+        expect(syncMobileViewportStateSource).toContain('syncIOSKeyboardBottomInset();');
+        expect(syncMobileViewportStateSource).toContain('nnMobileViewportStateSyncBaseline = readMobileShellLayoutMetrics();');
         expect(queueMobileShellDrawerBoundsSyncSource).toContain('nnMobileShellLifecycle.viewportSync.resolveDrawerBoundsSchedule({');
         expect(queueMobileShellDrawerBoundsSyncSource).toContain('followupDelayMs: NN_MOBILE_VIEWPORT_RESET_FOLLOWUP_MS,');
         expect(queueMobileShellDrawerBoundsSyncSource).toContain('nnMobileShellDrawerBoundsFollowupId = window.setTimeout(() => {');
+        expect(queueMobileViewportStateSyncSource).toContain('nnMobileShellLifecycle.viewportSync.resolvePendingKind({');
+        expect(queueMobileViewportStateSyncSource).toContain('nnMobileShellLifecycle.viewportSync.shouldRunFullSync({');
+        expect(queueMobileViewportStateSyncSource).toContain('nnMobileViewportStatePendingKind');
+        expect(queueMobileViewportStateSyncSource).toContain('window.cancelAnimationFrame(nnMobileViewportStateFrameId);');
+        // The decision compares the last completed sync and the frame baseline,
+        // never the width read at the request itself.
+        expect(queueMobileViewportStateSyncSource).toContain('before: nnMobileViewportStateSyncBaseline,');
+        expect(queueMobileViewportStateSyncSource).toContain('before: frameBaseline,');
+        // The layout viewport decides structural refreshes; pinch zoom can move
+        // window.innerWidth on iOS without reflowing the shell.
+        expect(readMobileShellLayoutMetricsSource).toContain('documentElement?.clientWidth');
+        expect(readMobileShellLayoutMetricsSource).toContain('getLayoutViewportSize().width');
+        expect(readMobileShellLayoutMetricsSource).not.toContain('getVisualViewportSize(');
         expect(syncMobileViewportStateSource).not.toContain('if (!isMobileViewport()) {');
         expect(queueMobileShellDrawerBoundsSyncSource).not.toContain('if (!isMobileViewport()) {');
         expect(queueMobileShellDrawerBoundsSyncSource).not.toContain('if (typeof window.requestAnimationFrame === \'function\') {');
+    });
+
+    test('treats keyboard and focus viewport movement as geometry-only work', () => {
+        const handleComposerKeyboardFocusInSource = getFunctionSource('handleComposerKeyboardFocusIn');
+        const handleMobileKeyboardFocusOutSource = getFunctionSource('handleMobileKeyboardFocusOut');
+        const handleMobileShellViewportResizeSource = getFunctionSource('handleMobileShellViewportResize');
+        const syncDesktopShellSizingAfterWidthChangeSource = getFunctionSource('syncDesktopShellSizingAfterWidthChange');
+
+        expect(handleMobileShellViewportResizeSource).toContain('queueMobileViewportStateSync(nnMobileShellLifecycle.viewportSync.kind.GEOMETRY);');
+        expect(handleComposerKeyboardFocusInSource).toContain('queueMobileViewportStateSync(nnMobileShellLifecycle.viewportSync.kind.GEOMETRY);');
+        expect(handleMobileKeyboardFocusOutSource).toContain('queueMobileViewportStateSync(nnMobileShellLifecycle.viewportSync.kind.GEOMETRY);');
+        expect(syncDesktopShellSizingAfterWidthChangeSource).toContain('if (nnDesktopShellSizingWidth === layoutMetrics.width) {');
+        expect(tabsSource).toContain('document.addEventListener(\'focusin\', handleMobileShellViewportResize);');
+        expect(tabsSource).toContain('document.addEventListener(\'focusout\', handleMobileShellViewportResize);');
+    });
+
+    test('coalesces foreground resume refreshes for the chatbar and the top bar', () => {
+        const bindChatbarWindowEventsSource = getFunctionSource('bindChatbarWindowEvents');
+        const bindTopBarBrandWindowEventsSource = getFunctionSource('bindTopBarBrandWindowEvents');
+
+        for (const source of [bindChatbarWindowEventsSource, bindTopBarBrandWindowEventsSource]) {
+            expect(source).toContain('nnMobileShellLifecycle.foreground.createRefreshCoalescer({');
+            expect(source).toContain('coalesceMs: NN_FOREGROUND_REFRESH_COALESCE_MS,');
+            expect(source).toContain('isActive: () => !document.hidden,');
+            expect(source).toContain('window.addEventListener(\'pageshow\', requestForegroundRefresh, { passive: true });');
+            expect(source).toContain('window.addEventListener(\'focus\', requestForegroundRefresh, { passive: true });');
+            expect(source).toContain('if (!document.hidden) {');
+            expect(source).toContain('requestForegroundRefresh();');
+            expect(source).not.toContain('window.addEventListener(\'focus\', refreshWithContext, { passive: true });');
+        }
+
+        expect(tabsSource).toContain('const NN_FOREGROUND_REFRESH_COALESCE_MS = 500;');
+        // The chatbar visibility step moved out of the geometry plan, so keyboard
+        // and visualViewport movement no longer fetches the chat list; the full
+        // plan and the foreground coalescer keep it current.
+        expect(getFunctionSource('syncChatbarVisibilityState')).toContain('setChatbarVisible(getChatbarState().visible, { persist: false });');
+    });
+
+    test('keeps one pending keyboard frame and settle timer per scheduler', () => {
+        const scheduleMobileFocusedInputScrollSource = getFunctionSource('scheduleMobileFocusedInputScroll');
+        const scheduleMobilePopupKeyboardSyncSource = getFunctionSource('scheduleMobilePopupKeyboardSync');
+
+        expect(scheduleMobileFocusedInputScrollSource).toContain('nnMobileFocusedInputScrollFrameId = coalesceMobileKeyboardFrame(nnMobileFocusedInputScrollFrameId, () => {');
+        expect(scheduleMobileFocusedInputScrollSource).toContain('nnMobileFocusedInputScrollFrameId = 0;');
+        expect(scheduleMobileFocusedInputScrollSource).toContain('nnMobileFocusedInputScrollTimer = window.setTimeout(() => {');
+        expect(scheduleMobileFocusedInputScrollSource).toContain('syncScheduledMobileFocusedInput(target);');
+        expect(scheduleMobileFocusedInputScrollSource).toContain('}, 360);');
+        expect(scheduleMobilePopupKeyboardSyncSource).toContain('nnMobilePopupKeyboardSyncFrameId = coalesceMobileKeyboardFrame(nnMobilePopupKeyboardSyncFrameId, () => {');
+        expect(scheduleMobilePopupKeyboardSyncSource).toContain('nnMobilePopupKeyboardSyncFrameId = 0;');
+        expect(scheduleMobilePopupKeyboardSyncSource).toContain('nnMobilePopupKeyboardSyncTimer = window.setTimeout(() => {');
+        expect(scheduleMobilePopupKeyboardSyncSource).toContain('}, 400);');
+        // The settle pass follows the live focus so a field focused after the burst
+        // is not skipped once the keyboard stops moving.
+        expect(getFunctionSource('syncScheduledMobileFocusedInput')).toContain('document.activeElement');
     });
 
     test('refreshes mobile shell layout after tab activation', () => {
@@ -994,5 +1067,216 @@ describe('mobile shell lifecycle wiring', () => {
         tapTab('greetings');
         expect(calls.at(-1)).toEqual(['open', 'greetings']);
         expect(calls.filter(([kind]) => kind === 'reveal')).toHaveLength(1);
+    });
+});
+
+function createWindowEventTarget(listeners) {
+    return {
+        addEventListener(type, listener) {
+            const registered = listeners.get(type) ?? [];
+            registered.push(listener);
+            listeners.set(type, registered);
+        },
+        dispatchEvent(event) {
+            const type = typeof event === 'string' ? event : event?.type;
+            for (const listener of [...(listeners.get(type) ?? [])]) {
+                listener(event);
+            }
+        },
+    };
+}
+
+function createWindowBindersSandbox() {
+    const windowListeners = new Map();
+    const documentListeners = new Map();
+    const frames = [];
+    const calls = [];
+    const state = {
+        width: 390,
+        height: 844,
+        hidden: false,
+        now: 0,
+        chatbar: { windowBindingsAttached: false },
+        topbar: { windowBindingsAttached: false },
+        bottom: { windowBindingsAttached: false, personaBubble: null },
+    };
+    const record = name => calls.push(name);
+    const windowTarget = createWindowEventTarget(windowListeners);
+    const documentTarget = createWindowEventTarget(documentListeners);
+
+    Object.assign(windowTarget, {
+        requestAnimationFrame: callback => {
+            frames.push(callback);
+            return frames.length;
+        },
+    });
+    Object.defineProperty(windowTarget, 'innerWidth', { get: () => state.width });
+    Object.defineProperty(windowTarget, 'innerHeight', { get: () => state.height });
+    Object.defineProperty(documentTarget, 'hidden', { get: () => state.hidden });
+    Object.defineProperty(documentTarget, 'documentElement', { get: () => ({ clientWidth: state.width }) });
+
+    const context = vm.createContext({
+        window: windowTarget,
+        document: documentTarget,
+        Date: { now: () => state.now },
+        nnState: { topbarLabel: state.topbar },
+        nnMobileShellLifecycle: {
+            foreground: {
+                createRefreshCoalescer: options => createForegroundRefreshCoalescer({
+                    ...options,
+                    now: () => state.now,
+                }),
+            },
+        },
+        getChatbarState: () => state.chatbar,
+        getBottomChatBarState: () => state.bottom,
+        bindChatbarEvents: () => record('bindChatbarEvents'),
+        scheduleChatbarRefresh: () => record('scheduleChatbarRefresh'),
+        updateTopBarBrand: () => record('updateTopBarBrand'),
+        scheduleTopbarContextRefresh: () => record('scheduleTopbarContextRefresh'),
+        bindTopBarBrand: () => record('bindTopBarBrand'),
+        syncBottomChatBarSecondaryState: () => record('syncBottomChatBarSecondaryState'),
+        syncBottomChatBarSearchState: () => record('syncBottomChatBarSearchState'),
+        scheduleBottomChatBarRefresh: () => record('scheduleBottomChatBarRefresh'),
+        updatePersonaBubble: () => record('updatePersonaBubble'),
+        bindBottomChatBarEvents: () => record('bindBottomChatBarEvents'),
+        readMobileShellLayoutMetrics: () => ({ width: state.width, isMobileViewport: state.width <= 768 }),
+        NN_FOREGROUND_REFRESH_COALESCE_MS: 500,
+        calls,
+    });
+
+    vm.runInContext([
+        'let nnBottomChatBarLayoutWidth = null;',
+        getFunctionSource('bindChatbarWindowEvents'),
+        getFunctionSource('bindTopBarBrandWindowEvents'),
+        getFunctionSource('bindBottomChatBarWindowEvents'),
+        'globalThis.bindAllWindowEvents = () => { bindChatbarWindowEvents(); bindTopBarBrandWindowEvents(); bindBottomChatBarWindowEvents(); };',
+    ].join('\n'), context);
+
+    return {
+        state,
+        calls,
+        bindAll: () => context.bindAllWindowEvents(),
+        clear: () => { calls.length = 0; },
+        flushFrames: () => {
+            while (frames.length) {
+                frames.shift()();
+            }
+        },
+        dispatchWindow: type => context.window.dispatchEvent({ type }),
+        dispatchDocument: type => context.document.dispatchEvent({ type }),
+        count: name => calls.filter(call => call === name).length,
+        windowListenerCount: type => (windowListeners.get(type) ?? []).length,
+        documentListenerCount: type => (documentListeners.get(type) ?? []).length,
+    };
+}
+
+describe('window event binders', () => {
+    test('attaches each binder once and keeps one bottom bar resize listener', () => {
+        const sandbox = createWindowBindersSandbox();
+
+        sandbox.bindAll();
+        sandbox.bindAll();
+
+        expect(sandbox.state.chatbar.windowBindingsAttached).toBe(true);
+        expect(sandbox.state.topbar.windowBindingsAttached).toBe(true);
+        expect(sandbox.state.bottom.windowBindingsAttached).toBe(true);
+        expect(sandbox.windowListenerCount('focus')).toBe(3);
+        expect(sandbox.windowListenerCount('pageshow')).toBe(3);
+        expect(sandbox.windowListenerCount('resize')).toBe(1);
+        expect(sandbox.documentListenerCount('visibilitychange')).toBe(3);
+    });
+
+    test('a height-only resize reloads no chat list in any binder', () => {
+        const sandbox = createWindowBindersSandbox();
+        sandbox.bindAll();
+        sandbox.clear();
+
+        sandbox.state.height = 500;
+        sandbox.dispatchWindow('resize');
+        sandbox.flushFrames();
+
+        expect(sandbox.calls).toEqual([]);
+    });
+
+    test('the Android resize sequence schedules no chat-list refresh', () => {
+        const sandbox = createWindowBindersSandbox();
+        sandbox.bindAll();
+        sandbox.clear();
+
+        for (const height of [700, 500, 700, 852]) {
+            sandbox.state.height = height;
+            sandbox.dispatchWindow('resize');
+            sandbox.flushFrames();
+        }
+
+        expect(sandbox.count('scheduleBottomChatBarRefresh')).toBe(0);
+        expect(sandbox.count('bindBottomChatBarEvents')).toBe(0);
+        expect(sandbox.calls).toEqual([]);
+    });
+
+    test('a width resize refreshes bottom presentation but never the chat list', () => {
+        const sandbox = createWindowBindersSandbox();
+        sandbox.bindAll();
+        sandbox.clear();
+
+        sandbox.state.width = 500;
+        sandbox.state.height = 500;
+        sandbox.dispatchWindow('resize');
+        sandbox.flushFrames();
+
+        expect(sandbox.calls).toEqual([
+            'syncBottomChatBarSecondaryState',
+            'syncBottomChatBarSearchState',
+            'updatePersonaBubble',
+        ]);
+        expect(sandbox.calls).not.toContain('scheduleBottomChatBarRefresh');
+        expect(sandbox.calls).not.toContain('bindBottomChatBarEvents');
+    });
+
+    test('focus, pageshow and visible visibility share one refresh per binder', () => {
+        const sandbox = createWindowBindersSandbox();
+        sandbox.bindAll();
+        sandbox.clear();
+
+        sandbox.dispatchWindow('focus');
+        sandbox.dispatchWindow('pageshow');
+        sandbox.dispatchDocument('visibilitychange');
+        sandbox.flushFrames();
+
+        expect(sandbox.count('bindChatbarEvents')).toBe(1);
+        expect(sandbox.count('scheduleChatbarRefresh')).toBe(1);
+        expect(sandbox.count('updateTopBarBrand')).toBe(1);
+        expect(sandbox.count('scheduleTopbarContextRefresh')).toBe(1);
+        expect(sandbox.count('bindTopBarBrand')).toBe(1);
+        expect(sandbox.count('syncBottomChatBarSecondaryState')).toBe(1);
+        expect(sandbox.count('syncBottomChatBarSearchState')).toBe(1);
+        expect(sandbox.count('updatePersonaBubble')).toBe(1);
+        expect(sandbox.count('scheduleBottomChatBarRefresh')).toBe(1);
+        expect(sandbox.count('bindBottomChatBarEvents')).toBe(1);
+    });
+
+    test('hidden foreground signals neither refresh nor spend the next resume window', () => {
+        const sandbox = createWindowBindersSandbox();
+        sandbox.bindAll();
+        sandbox.clear();
+
+        sandbox.state.hidden = true;
+        sandbox.dispatchDocument('visibilitychange');
+        sandbox.dispatchWindow('focus');
+        sandbox.flushFrames();
+        expect(sandbox.calls).toEqual([]);
+
+        sandbox.state.hidden = false;
+        sandbox.dispatchDocument('visibilitychange');
+        sandbox.flushFrames();
+        expect(sandbox.count('bindChatbarEvents')).toBe(1);
+        expect(sandbox.count('scheduleBottomChatBarRefresh')).toBe(1);
+
+        sandbox.state.now = 600;
+        sandbox.dispatchWindow('focus');
+        sandbox.flushFrames();
+        expect(sandbox.count('bindChatbarEvents')).toBe(2);
+        expect(sandbox.count('scheduleBottomChatBarRefresh')).toBe(2);
     });
 });

@@ -754,6 +754,162 @@ export const MOBILE_SHELL_VIEWPORT_SYNC_STEP = Object.freeze({
     SYNC_MOBILE_MODAL_STATE: 'sync-mobile-modal-state',
 });
 
+/**
+ * How much of the shell a viewport sync pass has to rebuild.
+ * Geometry only re-measures what the visible viewport moved; the full plan also
+ * refreshes context-dependent shell state (chat list, brand and context label).
+ */
+export const MOBILE_SHELL_VIEWPORT_SYNC_KIND = Object.freeze({
+    FULL: 'full',
+    GEOMETRY: 'geometry',
+});
+
+const MOBILE_GEOMETRY_SYNC_STEPS = Object.freeze([
+    MOBILE_SHELL_VIEWPORT_SYNC_STEP.SYNC_SHELL_VIEWPORT_BOUNDS,
+    MOBILE_SHELL_VIEWPORT_SYNC_STEP.SYNC_MOBILE_SHELL_DRAWER_BOUNDS,
+    MOBILE_SHELL_VIEWPORT_SYNC_STEP.APPLY_TOPBAR_OFFSET,
+]);
+
+const DESKTOP_GEOMETRY_SYNC_STEPS = Object.freeze([
+    MOBILE_SHELL_VIEWPORT_SYNC_STEP.SYNC_SHELL_VIEWPORT_BOUNDS,
+    MOBILE_SHELL_VIEWPORT_SYNC_STEP.SYNC_MOBILE_SHELL_DRAWER_BOUNDS,
+    // The offset is clamped against the window height, so a height-only resize
+    // still has to reapply it on every viewport, desktop included.
+    MOBILE_SHELL_VIEWPORT_SYNC_STEP.APPLY_TOPBAR_OFFSET,
+]);
+
+function normalizeViewportSyncKind(kind) {
+    return kind === MOBILE_SHELL_VIEWPORT_SYNC_KIND.GEOMETRY
+        ? MOBILE_SHELL_VIEWPORT_SYNC_KIND.GEOMETRY
+        : MOBILE_SHELL_VIEWPORT_SYNC_KIND.FULL;
+}
+
+/**
+ * Decides whether a queued viewport sync has to run the full plan.
+ * Only the layout viewport and the mobile breakpoint can change the shell's
+ * structure. visualViewport movement, such as pinch zoom or the keyboard
+ * panning the page, must stay geometry-only.
+ * An unknown baseline always runs the full plan: the queue must not measure the
+ * new size after the browser has already changed it.
+ * @param {object} options Options.
+ * @param {object} [options.before] Layout metrics the shell last synced against.
+ * @param {object} [options.after] Layout metrics read when the sync runs.
+ * @param {string} [options.requestedKind='full'] Kind requested by the caller.
+ * @returns {boolean} Whether the full plan is required.
+ */
+export function shouldRunFullViewportSync({
+    before = null,
+    after = null,
+    requestedKind = MOBILE_SHELL_VIEWPORT_SYNC_KIND.FULL,
+} = {}) {
+    if (normalizeViewportSyncKind(requestedKind) === MOBILE_SHELL_VIEWPORT_SYNC_KIND.FULL) {
+        return true;
+    }
+
+    if (!before || !after) {
+        return true;
+    }
+
+    return Number(before.width) !== Number(after.width)
+        || Boolean(before.isMobileViewport) !== Boolean(after.isMobileViewport);
+}
+
+/**
+ * Resolves which plan kind wins for a frame with more than one pending request.
+ * A full refresh covers the geometry work, so it wins inside one frame.
+ * @param {object} options Options.
+ * @param {string} [options.pendingKind='']
+ * @param {string} [options.requestedKind='full']
+ * @returns {string} The effective plan kind.
+ */
+export function resolvePendingViewportSyncKind({
+    pendingKind = '',
+    requestedKind = MOBILE_SHELL_VIEWPORT_SYNC_KIND.FULL,
+} = {}) {
+    const requested = normalizeViewportSyncKind(requestedKind);
+    const pending = pendingKind === MOBILE_SHELL_VIEWPORT_SYNC_KIND.GEOMETRY
+        ? MOBILE_SHELL_VIEWPORT_SYNC_KIND.GEOMETRY
+        : pendingKind === MOBILE_SHELL_VIEWPORT_SYNC_KIND.FULL
+            ? MOBILE_SHELL_VIEWPORT_SYNC_KIND.FULL
+            : '';
+
+    if (requested === MOBILE_SHELL_VIEWPORT_SYNC_KIND.FULL || pending === MOBILE_SHELL_VIEWPORT_SYNC_KIND.FULL) {
+        return MOBILE_SHELL_VIEWPORT_SYNC_KIND.FULL;
+    }
+
+    return requested;
+}
+
+/**
+ * Creates a coalescer for foreground resume signals (focus, visibilitychange,
+ * pageshow). The first signal of a burst runs immediately so returning to the
+ * app feels instant; repeated signals inside the window are dropped instead of
+ * scheduling another pass. Genuine context changes use their own event paths and
+ * are not gated by this window.
+ * @param {object} options Options.
+ * @param {Function} options.refresh Work to run for a refresh.
+ * @param {number} [options.coalesceMs=500] Window in which repeated signals are dropped.
+ * @param {Function} [options.isActive] Whether the page can refresh now, mainly for hidden tabs.
+ * @param {Function} [options.now] Clock override, mainly for tests.
+ * @param {Function} [options.reportError] Error reporter override, mainly for tests.
+ * @returns {{request: Function, reset: Function, cancel: Function, dispose: Function}}
+ */
+export function createForegroundRefreshCoalescer({
+    refresh,
+    coalesceMs = 500,
+    isActive = () => true,
+    now = () => Date.now(),
+    reportError = error => console.error('[Neconyan] Foreground refresh failed.', error),
+} = {}) {
+    if (typeof refresh !== 'function') {
+        throw new TypeError('createForegroundRefreshCoalescer requires a refresh function');
+    }
+
+    const windowMs = Math.max(0, normalizeNumber(coalesceMs, 500));
+    let lastRunAt = Number.NEGATIVE_INFINITY;
+    let disposed = false;
+
+    const run = () => {
+        lastRunAt = normalizeNumber(now(), 0);
+
+        try {
+            refresh();
+        } catch (error) {
+            reportError(error);
+        }
+    };
+
+    const reset = () => {
+        lastRunAt = Number.NEGATIVE_INFINITY;
+    };
+
+    const request = () => {
+        // A hidden page must not spend the burst window, or the next real resume
+        // would be swallowed before it could refresh anything.
+        if (disposed || !isActive()) {
+            return;
+        }
+
+        if (normalizeNumber(now(), 0) - lastRunAt < windowMs) {
+            return;
+        }
+
+        run();
+    };
+
+    const dispose = () => {
+        reset();
+        disposed = true;
+    };
+
+    return {
+        request,
+        reset,
+        cancel: reset,
+        dispose,
+    };
+}
+
 const MOBILE_DOCUMENT_PAN_BACKGROUND_SELECTOR = [
     'html',
     'body',
@@ -1134,11 +1290,22 @@ export function resolveMobileDrawerBounds({
  * Resolves the ordered viewport sync work without touching shell DOM.
  * @param {object} options Options.
  * @param {boolean} [options.isMobileViewport=false] Whether mobile shell policy is active.
- * @returns {{steps: string[]}}
+ * @param {string} [options.kind='full'] Full plan, or geometry for visualViewport movement only.
+ * @returns {{kind: string, steps: string[]}}
  */
 export function resolveMobileViewportSyncPlan({
     isMobileViewport = false,
+    kind = MOBILE_SHELL_VIEWPORT_SYNC_KIND.FULL,
 } = {}) {
+    const planKind = normalizeViewportSyncKind(kind);
+
+    if (planKind === MOBILE_SHELL_VIEWPORT_SYNC_KIND.GEOMETRY) {
+        return {
+            kind: planKind,
+            steps: [...(isMobileViewport ? MOBILE_GEOMETRY_SYNC_STEPS : DESKTOP_GEOMETRY_SYNC_STEPS)],
+        };
+    }
+
     const steps = [
         MOBILE_SHELL_VIEWPORT_SYNC_STEP.SYNC_SHELL_VIEWPORT_BOUNDS,
         MOBILE_SHELL_VIEWPORT_SYNC_STEP.SYNC_MOBILE_SHELL_DRAWER_BOUNDS,
@@ -1162,7 +1329,7 @@ export function resolveMobileViewportSyncPlan({
         MOBILE_SHELL_VIEWPORT_SYNC_STEP.SYNC_MOBILE_MODAL_STATE,
     );
 
-    return { steps };
+    return { kind: planKind, steps };
 }
 
 /**
@@ -1237,8 +1404,14 @@ export function createMobileShellLifecycle() {
         },
         viewportSync: {
             step: MOBILE_SHELL_VIEWPORT_SYNC_STEP,
+            kind: MOBILE_SHELL_VIEWPORT_SYNC_KIND,
             resolveSyncPlan: resolveMobileViewportSyncPlan,
             resolveDrawerBoundsSchedule: resolveDrawerBoundsSyncSchedule,
+            resolvePendingKind: resolvePendingViewportSyncKind,
+            shouldRunFullSync: shouldRunFullViewportSync,
+        },
+        foreground: {
+            createRefreshCoalescer: createForegroundRefreshCoalescer,
         },
         timings: {
             navOpenGraceMs: MOBILE_SHELL_LIFECYCLE_NAV_OPEN_GRACE_MS,

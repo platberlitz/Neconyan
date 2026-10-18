@@ -434,6 +434,9 @@ bindNnStorageFlushEvents();
 
 const NN_IDLE_BRAND_LABEL = 'Neconyan';
 const NN_MOBILE_MEDIA_QUERY = '(max-width: 768px)';
+// One app resume can fire focus, visibilitychange and pageshow together, so
+// foreground shell refreshes share a single window instead of repeating work.
+const NN_FOREGROUND_REFRESH_COALESCE_MS = 500;
 const NN_SURFACE_TRANSPARENCY = Object.freeze({
     min: 0,
     max: 100,
@@ -3945,10 +3948,13 @@ function handleComposerKeyboardFocusIn(event) {
     if (isChatComposerEditableElement(event.target)) {
         nnComposerKeyboardPreShiftDeadline = Date.now() + MOBILE_COMPOSER_KEYBOARD_PRESHIFT_WINDOW_MS;
         window.clearTimeout(nnComposerKeyboardSettleTimer);
-        nnComposerKeyboardSettleTimer = window.setTimeout(queueMobileViewportStateSync, MOBILE_COMPOSER_KEYBOARD_PRESHIFT_WINDOW_MS + 50);
+        nnComposerKeyboardSettleTimer = window.setTimeout(
+            () => queueMobileViewportStateSync(nnMobileShellLifecycle.viewportSync.kind.GEOMETRY),
+            MOBILE_COMPOSER_KEYBOARD_PRESHIFT_WINDOW_MS + 50,
+        );
     }
 
-    queueMobileViewportStateSync();
+    queueMobileViewportStateSync(nnMobileShellLifecycle.viewportSync.kind.GEOMETRY);
 }
 
 function handleMobileKeyboardFocusOut() {
@@ -3956,7 +3962,7 @@ function handleMobileKeyboardFocusOut() {
         return;
     }
 
-    queueMobileViewportStateSync();
+    queueMobileViewportStateSync(nnMobileShellLifecycle.viewportSync.kind.GEOMETRY);
 }
 
 function syncIOSKeyboardBottomInset() {
@@ -4079,11 +4085,33 @@ function syncMobileFocusedInputScroll(target = document.activeElement) {
 }
 
 let nnMobileFocusedInputScrollTimer = null;
+let nnMobileFocusedInputScrollFrameId = 0;
+
+function coalesceMobileKeyboardFrame(currentFrameId, run) {
+    if (currentFrameId && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(currentFrameId);
+    }
+
+    return window.requestAnimationFrame(() => {
+        run();
+    });
+}
+
+function syncScheduledMobileFocusedInput(target) {
+    // Focus can move between the event and the frame or settle timer, so follow
+    // whichever editable field is current then.
+    const activeTarget = document.activeElement;
+    const nextTarget = activeTarget instanceof HTMLElement && activeTarget !== target
+        ? activeTarget
+        : target;
+    syncMobileFocusedInputScroll(nextTarget);
+}
 
 /**
  * Neconyan: on mobile the body is fixed/clip, so the browser cannot scroll a
  * focused input above the virtual keyboard the way a normal page would. Follow
  * the keyboard's visual viewport updates until Safari finishes its animation.
+ * Only one frame and one settle timer stay pending.
  */
 function scheduleMobileFocusedInputScroll(event) {
     const target = event?.target instanceof HTMLElement && isEditableElement(event.target)
@@ -4094,7 +4122,10 @@ function scheduleMobileFocusedInputScroll(event) {
         return;
     }
 
-    window.requestAnimationFrame(() => syncMobileFocusedInputScroll(target));
+    nnMobileFocusedInputScrollFrameId = coalesceMobileKeyboardFrame(nnMobileFocusedInputScrollFrameId, () => {
+        nnMobileFocusedInputScrollFrameId = 0;
+        syncScheduledMobileFocusedInput(target);
+    });
 
     if (nnMobileFocusedInputScrollTimer !== null) {
         window.clearTimeout(nnMobileFocusedInputScrollTimer);
@@ -4102,7 +4133,12 @@ function scheduleMobileFocusedInputScroll(event) {
 
     nnMobileFocusedInputScrollTimer = window.setTimeout(() => {
         nnMobileFocusedInputScrollTimer = null;
-        syncMobileFocusedInputScroll(target);
+        const timeoutFrameId = nnMobileFocusedInputScrollFrameId;
+        nnMobileFocusedInputScrollFrameId = 0;
+        if (timeoutFrameId && typeof window.cancelAnimationFrame === 'function') {
+            window.cancelAnimationFrame(timeoutFrameId);
+        }
+        syncScheduledMobileFocusedInput(target);
     }, 360);
 }
 
@@ -4213,13 +4249,25 @@ function syncMobilePopupKeyboardShift() {
 }
 
 let nnMobilePopupKeyboardSyncTimer = 0;
+let nnMobilePopupKeyboardSyncFrameId = 0;
 
 function scheduleMobilePopupKeyboardSync() {
-    window.requestAnimationFrame(syncMobilePopupKeyboardShift);
+    nnMobilePopupKeyboardSyncFrameId = coalesceMobileKeyboardFrame(nnMobilePopupKeyboardSyncFrameId, () => {
+        nnMobilePopupKeyboardSyncFrameId = 0;
+        syncMobilePopupKeyboardShift();
+    });
     window.clearTimeout(nnMobilePopupKeyboardSyncTimer);
     // Run again after the keyboard animation / visualViewport resize settles.
     // iOS takes ~300ms to finish raising the keyboard and panning back.
-    nnMobilePopupKeyboardSyncTimer = window.setTimeout(syncMobilePopupKeyboardShift, 400);
+    nnMobilePopupKeyboardSyncTimer = window.setTimeout(() => {
+        nnMobilePopupKeyboardSyncTimer = 0;
+        const timeoutFrameId = nnMobilePopupKeyboardSyncFrameId;
+        nnMobilePopupKeyboardSyncFrameId = 0;
+        if (timeoutFrameId && typeof window.cancelAnimationFrame === 'function') {
+            window.cancelAnimationFrame(timeoutFrameId);
+        }
+        syncMobilePopupKeyboardShift();
+    }, 400);
 }
 
 function getMobileShellBoundDrawers() {
@@ -6173,6 +6221,13 @@ function bindTopBarBrandWindowEvents() {
         scheduleTopbarContextRefresh(0);
         bindTopBarBrand();
     };
+    // Foreground signals arrive in bursts (focus, visibilitychange and pageshow
+    // for one resume). The first runs at once; the rest of the burst are ignored.
+    const requestForegroundRefresh = nnMobileShellLifecycle.foreground.createRefreshCoalescer({
+        refresh: refreshWithContext,
+        coalesceMs: NN_FOREGROUND_REFRESH_COALESCE_MS,
+        isActive: () => !document.hidden,
+    }).request;
 
     document.addEventListener('input', event => {
         const targetId = event.target instanceof HTMLElement ? event.target.id : '';
@@ -6180,11 +6235,11 @@ function bindTopBarBrandWindowEvents() {
             window.requestAnimationFrame(updateTopBarBrand);
         }
     });
-    window.addEventListener('pageshow', refreshWithContext, { passive: true });
-    window.addEventListener('focus', refreshWithContext, { passive: true });
+    window.addEventListener('pageshow', requestForegroundRefresh, { passive: true });
+    window.addEventListener('focus', requestForegroundRefresh, { passive: true });
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) {
-            refreshWithContext();
+            requestForegroundRefresh();
         }
     });
 
@@ -8917,12 +8972,19 @@ function bindChatbarWindowEvents() {
         window.requestAnimationFrame(() => scheduleChatbarRefresh(0));
         bindChatbarEvents();
     };
+    // Refresh at the first foreground signal, without repeating the same chat
+    // list request for the remaining signals in the burst.
+    const requestForegroundRefresh = nnMobileShellLifecycle.foreground.createRefreshCoalescer({
+        refresh: refreshWithContext,
+        coalesceMs: NN_FOREGROUND_REFRESH_COALESCE_MS,
+        isActive: () => !document.hidden,
+    }).request;
 
-    window.addEventListener('pageshow', refreshWithContext, { passive: true });
-    window.addEventListener('focus', refreshWithContext, { passive: true });
+    window.addEventListener('pageshow', requestForegroundRefresh, { passive: true });
+    window.addEventListener('focus', requestForegroundRefresh, { passive: true });
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) {
-            refreshWithContext();
+            requestForegroundRefresh();
         }
     });
 
@@ -19449,10 +19511,12 @@ function applyDefaultDrawerStates() {
     ensureInlineDrawerPersistenceObserver();
 }
 
-function syncMobileViewportState() {
+function syncMobileViewportState({ kind = nnMobileShellLifecycle.viewportSync.kind.FULL } = {}) {
     const viewportSyncStep = nnMobileShellLifecycle.viewportSync.step;
+    const isMobileViewportActive = isMobileViewport();
     const syncPlan = nnMobileShellLifecycle.viewportSync.resolveSyncPlan({
-        isMobileViewport: isMobileViewport(),
+        isMobileViewport: isMobileViewportActive,
+        kind,
     });
     const stepHandlers = {
         [viewportSyncStep.SYNC_SHELL_VIEWPORT_BOUNDS]: () => syncShellViewportBounds(),
@@ -19483,24 +19547,116 @@ function syncMobileViewportState() {
     // bottom inset to move focused bottom fields above the keyboard without
     // locking the document and exposing a blank Safari background.
     syncIOSKeyboardBottomInset();
+
+    // This is the layout the shell is now synced against. The queue compares
+    // later events with it instead of measuring after the browser has already
+    // applied the new width.
+    nnMobileViewportStateSyncBaseline = readMobileShellLayoutMetrics();
+}
+
+function readMobileShellLayoutMetrics() {
+    // Pinch zoom can change window.innerWidth on iOS while the layout viewport
+    // stays put. documentElement.clientWidth is the CSS width the shell reflows
+    // against, so prefer it and fall back where a document is not available.
+    const documentElement = typeof document === 'undefined' ? null : document.documentElement;
+    const clientWidth = Number(documentElement?.clientWidth);
+    const viewportWidth = getLayoutViewportSize().width;
+    const width = Number.isFinite(clientWidth) && clientWidth > 0
+        ? Math.round(clientWidth)
+        : viewportWidth;
+
+    return {
+        width,
+        isMobileViewport: isMobileViewport(),
+    };
 }
 
 let nnMobileViewportStateFrameId = 0;
+let nnMobileViewportStatePendingKind = '';
+let nnMobileViewportStateSyncBaseline = null;
+let nnMobileViewportStateSyncFrameBaseline = null;
 
-function queueMobileViewportStateSync() {
-    if (nnMobileViewportStateFrameId) {
-        return;
-    }
+function queueMobileViewportStateSync(kind = nnMobileShellLifecycle.viewportSync.kind.FULL) {
+    const requestedKind = kind === nnMobileShellLifecycle.viewportSync.kind.GEOMETRY
+        ? nnMobileShellLifecycle.viewportSync.kind.GEOMETRY
+        : nnMobileShellLifecycle.viewportSync.kind.FULL;
+    const baseline = readMobileShellLayoutMetrics();
 
     if (typeof window.requestAnimationFrame !== 'function') {
-        syncMobileViewportState();
+        // Without a frame there is no separate frame baseline; the completed
+        // baseline and the metrics read at the request are all that is available.
+        const shouldRunFull = nnMobileShellLifecycle.viewportSync.shouldRunFullSync({
+            before: nnMobileViewportStateSyncBaseline,
+            after: baseline,
+            requestedKind,
+        });
+        syncMobileViewportState({
+            kind: shouldRunFull
+                ? nnMobileShellLifecycle.viewportSync.kind.FULL
+                : nnMobileShellLifecycle.viewportSync.kind.GEOMETRY,
+        });
         return;
     }
 
-    nnMobileViewportStateFrameId = window.requestAnimationFrame(() => {
-        nnMobileViewportStateFrameId = 0;
-        syncMobileViewportState();
+    nnMobileViewportStatePendingKind = nnMobileShellLifecycle.viewportSync.resolvePendingKind({
+        pendingKind: nnMobileViewportStatePendingKind,
+        requestedKind,
     });
+
+    // One pending frame is enough: the strongest request inside it decides the plan.
+    if (nnMobileViewportStateFrameId) {
+        if (requestedKind === nnMobileShellLifecycle.viewportSync.kind.FULL) {
+            window.cancelAnimationFrame(nnMobileViewportStateFrameId);
+            nnMobileViewportStateFrameId = 0;
+        } else {
+            return;
+        }
+    }
+
+    nnMobileViewportStateSyncFrameBaseline = baseline;
+    nnMobileViewportStateFrameId = window.requestAnimationFrame(() => {
+        const frameBaseline = nnMobileViewportStateSyncFrameBaseline;
+        const pendingKind = nnMobileViewportStatePendingKind;
+        const liveMetrics = readMobileShellLayoutMetrics();
+        // Both baselines matter: the last completed sync is the layout the shell
+        // is actually built for, and the frame baseline catches a change between
+        // queue and animation frame. A missing completed baseline runs full.
+        const shouldRunFull = nnMobileShellLifecycle.viewportSync.shouldRunFullSync({
+            before: nnMobileViewportStateSyncBaseline,
+            after: liveMetrics,
+            requestedKind: pendingKind,
+        }) || nnMobileShellLifecycle.viewportSync.shouldRunFullSync({
+            before: frameBaseline,
+            after: liveMetrics,
+            requestedKind: pendingKind,
+        });
+
+        nnMobileViewportStateFrameId = 0;
+        nnMobileViewportStatePendingKind = '';
+        nnMobileViewportStateSyncFrameBaseline = null;
+        syncMobileViewportState({
+            kind: shouldRunFull
+                ? nnMobileShellLifecycle.viewportSync.kind.FULL
+                : nnMobileShellLifecycle.viewportSync.kind.GEOMETRY,
+        });
+    });
+}
+
+function handleMobileShellViewportResize() {
+    queueMobileViewportStateSync(nnMobileShellLifecycle.viewportSync.kind.GEOMETRY);
+}
+
+let nnDesktopShellSizingWidth = null;
+
+function syncDesktopShellSizingAfterWidthChange() {
+    const layoutMetrics = readMobileShellLayoutMetrics();
+
+    if (nnDesktopShellSizingWidth === layoutMetrics.width) {
+        return;
+    }
+
+    nnDesktopShellSizingWidth = layoutMetrics.width;
+    syncDesktopShellSizing();
 }
 
 function reinitSelect2AfterShell() {
@@ -20013,6 +20169,8 @@ function scheduleBottomChatBarBindingRetry(delay = 240) {
     }, delay);
 }
 
+let nnBottomChatBarLayoutWidth = null;
+
 function bindBottomChatBarWindowEvents() {
     const bottomChatBarState = getBottomChatBarState();
 
@@ -20020,20 +20178,43 @@ function bindBottomChatBarWindowEvents() {
         return;
     }
 
-    const refreshWithContext = () => {
+    const refreshPresentation = () => {
         syncBottomChatBarSecondaryState();
         syncBottomChatBarSearchState();
-        scheduleBottomChatBarRefresh(0);
         window.requestAnimationFrame(() => updatePersonaBubble(bottomChatBarState.personaBubble));
+    };
+    const refreshWithContext = () => {
+        refreshPresentation();
+        scheduleBottomChatBarRefresh(0);
         bindBottomChatBarEvents();
     };
+    // Resizing cannot change the chat list. Width changes only need the
+    // viewport-dependent presentation (secondary row, search, persona sizing);
+    // height-only frames skip it entirely. The list stays current through the
+    // context events below and through foreground resume refreshes.
+    const refreshLayout = () => {
+        const layoutWidth = readMobileShellLayoutMetrics().width;
+        if (nnBottomChatBarLayoutWidth === layoutWidth) {
+            return;
+        }
 
-    window.addEventListener('pageshow', refreshWithContext, { passive: true });
-    window.addEventListener('focus', refreshWithContext, { passive: true });
-    window.addEventListener('resize', refreshWithContext, { passive: true });
+        nnBottomChatBarLayoutWidth = layoutWidth;
+        refreshPresentation();
+    };
+    const requestForegroundRefresh = nnMobileShellLifecycle.foreground.createRefreshCoalescer({
+        refresh: refreshWithContext,
+        coalesceMs: NN_FOREGROUND_REFRESH_COALESCE_MS,
+        isActive: () => !document.hidden,
+    }).request;
+
+    nnBottomChatBarLayoutWidth = readMobileShellLayoutMetrics().width;
+
+    window.addEventListener('pageshow', requestForegroundRefresh, { passive: true });
+    window.addEventListener('focus', requestForegroundRefresh, { passive: true });
+    window.addEventListener('resize', refreshLayout, { passive: true });
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) {
-            refreshWithContext();
+            requestForegroundRefresh();
         }
     });
 
@@ -20682,12 +20863,13 @@ function initAll() {
     syncMobileViewportState();
     scheduleIdlePanelStylesheetWarmup();
 
-    window.addEventListener('resize', queueMobileViewportStateSync, { passive: true });
+    window.addEventListener('resize', handleMobileShellViewportResize, { passive: true });
     window.addEventListener('orientationchange', queueMobileViewportStateSync);
-    window.visualViewport?.addEventListener('resize', queueMobileViewportStateSync, { passive: true });
+    window.visualViewport?.addEventListener('resize', handleMobileShellViewportResize, { passive: true });
     // Neconyan: iOS can move visualViewport.offsetTop without resizing while the keyboard is open.
-    window.visualViewport?.addEventListener('scroll', queueMobileViewportStateSync, { passive: true });
-    window.visualViewport?.addEventListener('resize', syncDesktopShellSizing, { passive: true });
+    window.visualViewport?.addEventListener('scroll', handleMobileShellViewportResize, { passive: true });
+    // Sizing only follows the layout width; pinch zoom resizes the visual viewport alone.
+    window.visualViewport?.addEventListener('resize', syncDesktopShellSizingAfterWidthChange, { passive: true });
 
     // Neconyan: keep focused inputs in mobile settings drawers above the
     // virtual keyboard. The fixed/clipped body blocks native scrolling, so the
@@ -20710,8 +20892,8 @@ function initAll() {
     if (isIOSWebKitPlatform()) {
         document.addEventListener('focusin', syncIOSKeyboardBottomInset);
         document.addEventListener('focusout', syncIOSKeyboardBottomInset);
-        document.addEventListener('focusin', queueMobileViewportStateSync);
-        document.addEventListener('focusout', queueMobileViewportStateSync);
+        document.addEventListener('focusin', handleMobileShellViewportResize);
+        document.addEventListener('focusout', handleMobileShellViewportResize);
     }
 
     if (isLegacyIOSWebKitPlatform()) {

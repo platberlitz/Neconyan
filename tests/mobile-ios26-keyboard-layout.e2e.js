@@ -64,32 +64,46 @@ async function mountFixture(page, { platform = 'iPhone', userAgent = safariUA } 
     const [tabs, lifecycle, sendButton] = await Promise.all([
         'scripts/neconyan-tabs.js', 'scripts/mobile-shell-lifecycle/index.js', 'scripts/mobile-send-button.js',
     ].map(file => fs.readFile(new URL(file, publicRoot), 'utf8')));
-    const bindings = tabs.match(/ {4}window\.addEventListener\('resize', queueMobileViewportStateSync,[\s\S]*?(?= {4}\/\/ \w+: re-sync shell width)/)?.[0];
+    const bindings = tabs.match(/ {4}window\.addEventListener\('resize', handleMobileShellViewportResize,[\s\S]*?(?= {4}\/\/ \w+: re-sync shell width)/)?.[0];
     if (!bindings) throw new Error('Missing production viewport/focus bindings');
     await page.addScriptTag({ content: [
+        'window.__mobileSyncCalls = [];',
         ...['IOS_STABLE_COMPOSER_VIEWPORT_MAJOR'].map(name => extractDeclaration(sendButton, name)),
         ...['isIOSWebKitPlatform', 'isLegacyIOSWebKitPlatform'].map(name => extractFunction(sendButton, name)),
-        ...['MOBILE_SHELL_DRAWER_BOUND_ACTION', 'MOBILE_SHELL_DRAWER_BOUND_STYLE_PROPERTIES', 'MOBILE_SHELL_VIEWPORT_SYNC_STEP'].map(name => extractDeclaration(lifecycle, name)),
-        ...['normalizeNumber', 'clampBoundNumber', 'resolveMobileDrawerBounds', 'resolveMobileViewportSyncPlan'].map(name => extractFunction(lifecycle, name)),
+        ...['MOBILE_SHELL_DRAWER_BOUND_ACTION', 'MOBILE_SHELL_DRAWER_BOUND_STYLE_PROPERTIES', 'MOBILE_SHELL_VIEWPORT_SYNC_STEP',
+            'MOBILE_SHELL_VIEWPORT_SYNC_KIND', 'MOBILE_GEOMETRY_SYNC_STEPS', 'DESKTOP_GEOMETRY_SYNC_STEPS',
+        ].map(name => extractDeclaration(lifecycle, name)),
+        ...['normalizeNumber', 'clampBoundNumber', 'normalizeViewportSyncKind', 'resolveMobileDrawerBounds', 'resolveMobileViewportSyncPlan'].map(name => extractFunction(lifecycle, name)),
+        ...['shouldRunFullViewportSync', 'resolvePendingViewportSyncKind'].map(name => extractFunction(lifecycle, name)),
         ...['NN_MOBILE_MEDIA_QUERY', 'MOBILE_COMPOSER_KEYBOARD_PAN_EPSILON_PX', 'MOBILE_COMPOSER_KEYBOARD_PRESHIFT_WINDOW_MS',
             'MOBILE_IOS_KEYBOARD_MIN_HEIGHT_PX', 'nnLastIOSKeyboardHeight', 'nnComposerKeyboardPreShiftDeadline',
-            'nnComposerKeyboardSettleTimer', 'nnMobileViewportStateFrameId', 'nnIsSyncingRailActions', 'nnMobileFocusedInputScrollTimer',
+            'nnComposerKeyboardSettleTimer', 'nnMobileViewportStateFrameId', 'nnMobileViewportStatePendingKind',
+            'nnMobileViewportStateSyncBaseline', 'nnMobileViewportStateSyncFrameBaseline', 'nnIsSyncingRailActions',
+            'nnMobileFocusedInputScrollTimer', 'nnMobileFocusedInputScrollFrameId', 'nnDesktopShellSizingWidth',
         ].map(name => extractDeclaration(tabs, name)),
         ...['isMobileViewport', 'isTouchOnlyDesktopViewport', 'readFiniteViewportNumber', 'getLayoutViewportSize', 'getVisualViewportSize',
             'isEditableElement', 'isMobileShellPanelEditableElement', 'isChatComposerEditableElement', 'hasOpenMobileShellDrawer',
             'shouldUseStableIOSPanelViewport', 'isVisualViewportKeyboardOpen', 'getComposerKeyboardInset',
             'handleComposerKeyboardFocusIn', 'handleMobileKeyboardFocusOut', 'syncIOSKeyboardBottomInset',
             'getShellViewportSize', 'syncShellViewportBounds', 'getResolvedShellTopbarOffset', 'getMobileShellBoundDrawers',
-            'applyMobileDrawerBoundsDecision', 'syncMobileShellDrawerBounds', 'syncMobileViewportState', 'queueMobileViewportStateSync',
-            'getMobileFocusedInputScroller', 'syncMobileFocusedInputScroll', 'scheduleMobileFocusedInputScroll',
+            'applyMobileDrawerBoundsDecision', 'syncMobileShellDrawerBounds', 'syncMobileViewportState',
+            'readMobileShellLayoutMetrics', 'queueMobileViewportStateSync', 'handleMobileShellViewportResize',
+            'getMobileFocusedInputScroller', 'syncMobileFocusedInputScroll', 'coalesceMobileKeyboardFrame',
+            'syncScheduledMobileFocusedInput', 'scheduleMobileFocusedInputScroll', 'syncDesktopShellSizingAfterWidthChange',
         ].map(name => extractFunction(tabs, name)),
         // Only unrelated navigation, branding, popup and app construction work is stubbed.
         ...['closeMobileNav', 'closeMobileChatTools', 'syncMobileShellRailActions', 'syncDesktopShellSizing', 'applyTopbarOffset',
             'syncChatbarVisibilityState', 'updateTopBarBrand', 'scheduleTopbarContextRefresh', 'syncMobileModalState', 'scheduleMobilePopupKeyboardSync',
-        ].map(name => `function ${name}() {}`),
+        ].map(name => `function ${name}() { (window.__mobileSyncCalls ||= []).push(${JSON.stringify(name)}); }`),
         `const nnMobileShellLifecycle = {
             drawerBounds: { action: MOBILE_SHELL_DRAWER_BOUND_ACTION, resolveBounds: resolveMobileDrawerBounds },
-            viewportSync: { step: MOBILE_SHELL_VIEWPORT_SYNC_STEP, resolveSyncPlan: resolveMobileViewportSyncPlan },
+            viewportSync: {
+                step: MOBILE_SHELL_VIEWPORT_SYNC_STEP,
+                kind: MOBILE_SHELL_VIEWPORT_SYNC_KIND,
+                resolveSyncPlan: resolveMobileViewportSyncPlan,
+                resolvePendingKind: resolvePendingViewportSyncKind,
+                shouldRunFullSync: shouldRunFullViewportSync,
+            },
         };`,
         bindings,
         'syncMobileViewportState();',
@@ -222,3 +236,38 @@ for (const scenario of [
         expect(errors).toEqual([]);
     });
 }
+
+test('a real resize across the mobile breakpoint runs the full shell plan', async ({ page }) => {
+    const errors = await mountFixture(page);
+    await page.evaluate(() => { window.__mobileSyncCalls.length = 0; });
+
+    // The browser applies the new layout width before dispatching resize, so the
+    // queue must compare against the last synced layout, not the new size.
+    await page.setViewportSize({ width: 900, height: 844 });
+
+    await expect.poll(() => page.evaluate(() => window.__mobileSyncCalls.includes('syncMobileModalState'))).toBe(true);
+    const calls = await page.evaluate(() => window.__mobileSyncCalls.slice());
+    expect(calls).toEqual(expect.arrayContaining([
+        'syncChatbarVisibilityState',
+        'syncDesktopShellSizing',
+        'closeMobileNav',
+        'closeMobileChatTools',
+        'syncMobileModalState',
+        'applyTopbarOffset',
+    ]));
+    expect(errors).toEqual([]);
+});
+
+test('a desktop height-only resize reapplies the topbar offset without a context refresh', async ({ page }) => {
+    await page.setViewportSize({ width: 900, height: 844 });
+    const errors = await mountFixture(page);
+    await page.evaluate(() => { window.__mobileSyncCalls.length = 0; });
+
+    await page.setViewportSize({ width: 900, height: 600 });
+
+    await expect.poll(() => page.evaluate(() => window.__mobileSyncCalls.includes('applyTopbarOffset'))).toBe(true);
+    const calls = await page.evaluate(() => window.__mobileSyncCalls.slice());
+    expect(calls).not.toContain('syncChatbarVisibilityState');
+    expect(calls).not.toContain('syncMobileModalState');
+    expect(errors).toEqual([]);
+});

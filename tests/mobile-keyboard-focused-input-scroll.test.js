@@ -75,8 +75,9 @@ describe('mobile keyboard focused-input scroll wiring', () => {
         expect(tabsSource).toContain('window.visualViewport?.addEventListener(\'resize\', scheduleMobileFocusedInputScroll, { passive: true })');
         expect(tabsSource).toContain('window.visualViewport?.addEventListener(\'scroll\', scheduleMobileFocusedInputScroll, { passive: true })');
         expect(tabsSource).toContain('nnMobileFocusedInputScrollTimer = window.setTimeout(() => {');
-        expect(tabsSource).toContain('syncMobileFocusedInputScroll(target);');
+        expect(tabsSource).toContain('syncScheduledMobileFocusedInput(target);');
         expect(tabsSource).toContain('}, 360);');
+        expect(tabsSource).toContain('nnMobileFocusedInputScrollFrameId = coalesceMobileKeyboardFrame(nnMobileFocusedInputScrollFrameId, () => {');
     });
 });
 
