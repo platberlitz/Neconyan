@@ -29,6 +29,8 @@ function_calling: true };
 function prepared(t, effect = 'append', { assistant = false, pathfinder = false, agents = false, autoSwipe = false, autoContinue = false, continueTarget = 30, bundledMacros = null, history = 0 } = {}) {
     const f = fixture(t);
     const dirs = f.scope.directories;
+    // Keep small history budgets elsewhere; assistant lifecycle checks include every tool schema.
+    const maxContext = assistant ? 8192 : 4096;
     f.records[1].extra = {};
     if (history) {
         f.records.splice(1, 0, ...Array.from({ length: history }, (_, index) => ({
@@ -57,7 +59,7 @@ function prepared(t, effect = 'append', { assistant = false, pathfinder = false,
     }
     dirs.openAI_Settings = path.join(dirs.root, 'openai-presets');
     fs.mkdirSync(dirs.openAI_Settings);
-    fs.writeFileSync(path.join(dirs.openAI_Settings, 'Main.json'), JSON.stringify({ openai_max_context: 4096 }));
+    fs.writeFileSync(path.join(dirs.openAI_Settings, 'Main.json'), JSON.stringify({ openai_max_context: maxContext }));
     fs.writeFileSync(path.join(dirs.root, 'settings.json'), JSON.stringify({
         world_info_settings: { world_info: { globalSelect: [] } },
         ...(autoSwipe || autoContinue ? { power_user: { ...(autoSwipe ? { auto_swipe: true,
@@ -80,7 +82,7 @@ function prepared(t, effect = 'append', { assistant = false, pathfinder = false,
     const runChild = (child, { generate, generateAgent, promptControls, pathfinderCalls = { count: 0 } } = {}) => {
         setJobState(dirs, child.id, 'running');
         return runRoleplayReplyJob({ owner: f.scope.owner, directories: dirs, job: getJob(dirs, child.id),
-            signal: new AbortController().signal }, { contextLimit: () => 4096,
+            signal: new AbortController().signal }, { contextLimit: () => maxContext,
             promptBackend: () => ({ backend: 'chat', active: promptControls ?? controls, profile: { model: 'fixture' }, source: 'custom' }),
             ...(generateAgent ? { generateAgent } : {}),
             ...(pathfinder ? { generatePathfinder: async options => {

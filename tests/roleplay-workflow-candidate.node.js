@@ -25,6 +25,8 @@ prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: tr
 function prepared(t, { assistant = false, attach = true } = {}) {
     const f = fixture(t);
     const dirs = f.scope.directories;
+    // Tool-turn lifecycle checks need room for the full official assistant tool list.
+    const maxContext = assistant ? 8192 : 4096;
     f.records[1].extra = {};
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     if (assistant) {
@@ -40,7 +42,7 @@ function prepared(t, { assistant = false, attach = true } = {}) {
     const root = admitNativeMediaJob(f.scope, account, { operationKey: 'workflow-parent', source, kind: 'roleplay-workflow',
         request: { version: 1, avatar: 'Nova.png', capacity: captureRoleplayWorkflowCapacity(f.scope, account, source) },
         target: { kind: 'chat', id: source.instanceId } });
-    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 4000, serverPrompt: true });
+    const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: maxContext - 96, serverPrompt: true });
     const request = { binding: { kind: 'profile', ...captureChatProfile(dirs, 'main') }, worldInfo,
         serverPrompt: true, characterName: 'Nova', maxTokens: 32, messages: [],
         workflowCandidate: { version: 1, parentJobId: root.jobId, parentIntentHash: roleplayHash(getJob(dirs, root.jobId).intent) } };
@@ -52,7 +54,7 @@ function prepared(t, { assistant = false, attach = true } = {}) {
     return { f, dirs, account, source, request, root, jobId, operationKey,
         context: () => ({ owner: f.scope.owner, directories: dirs, job: getJob(dirs, jobId), signal: new AbortController().signal }),
         run: (result, calls) => runRoleplayReplyJob({ owner: f.scope.owner, directories: dirs,
-            job: getJob(dirs, jobId), signal: new AbortController().signal }, { contextLimit: () => 4096,
+            job: getJob(dirs, jobId), signal: new AbortController().signal }, { contextLimit: () => maxContext,
             promptBackend: () => ({ backend: 'chat', active: controls, profile: { model: 'fixture' }, source: 'custom' }),
             generate: async options => {
                 calls.count++;
