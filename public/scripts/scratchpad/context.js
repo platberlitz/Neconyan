@@ -55,6 +55,13 @@ function clipLabel(text) {
     return String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, 200);
 }
 
+/** Only user and character placeholders; no macro can read the hidden story. */
+function substituteSourceNames(text, names) {
+    return String(text ?? '')
+        .replace(/\{\{\s*user\s*\}\}/gi, () => names.user)
+        .replace(/\{\{\s*char\s*\}\}/gi, () => names.character);
+}
+
 function characterByAvatar(avatar) {
     return characters.find(item => item?.avatar === avatar) || null;
 }
@@ -345,14 +352,14 @@ export async function collectLore({ source, settings, scanText = '' }) {
     return { books, entries: listed };
 }
 
-function formatLore(lore, macros) {
+function formatLore(lore, substitute) {
     const lines = [];
     if (lore.books.length) lines.push(`Lorebooks active in this chat: ${lore.books.join(', ')}`);
     for (const entry of lore.entries.filter(item => item.included)) {
         lines.push([
             `### ${entry.title}`,
             `book: ${entry.world} | uid: ${entry.uid}${entry.keys.length ? ` | keys: ${entry.keys.join(', ')}` : ''}${entry.constant ? ' | always active' : ''}`,
-            substituteParams(entry.content, macros),
+            substitute(entry.content),
         ].join('\n'));
     }
     return lines.join('\n\n');
@@ -481,6 +488,11 @@ export async function buildContext({ source, settings, pendingText = '', session
     const people = include.card ? await loadSourceCharacters(source) : sourceCharacters(source);
     const names = { user: sourceUserName(source), character: people.map(item => item.name).filter(Boolean).join(', ') };
     const macros = { name1Override: names.user, name2Override: names.character, replaceCharacterCard: false };
+    // Conversation and General have no scoped chat macro context. Names are
+    // substituted and every other macro stays literal, so a hidden Roleplay
+    // chat cannot leak through the selected Conversation persona or lore.
+    const namesOnly = source.kind !== 'roleplay';
+    const substituteSource = text => namesOnly ? substituteSourceNames(text, names) : substituteParams(text, macros);
     const sections = [];
 
     sections.push([
@@ -492,9 +504,7 @@ export async function buildContext({ source, settings, pendingText = '', session
     if (include.persona) {
         const description = sourcePersonaDescription(source);
         const raw = String(description ?? '').trim();
-        // General may substitute names, never macros that can read the hidden story.
-        const persona = general ? raw.replace(/\{\{\s*user\s*\}\}/gi, () => names.user).replace(/\{\{\s*char\s*\}\}/gi, () => names.character)
-            : substituteParams(raw, macros);
+        const persona = substituteSource(raw);
         if (persona) sections.push(`## ${names.user} (the user's persona)\n${persona}`);
     }
 
@@ -512,7 +522,7 @@ export async function buildContext({ source, settings, pendingText = '', session
     if (include.lore && !general) {
         const scanText = loreScanText({ source, settings, sessionText, pendingText });
         lore = await collectLore({ source, settings, scanText });
-        const text = formatLore(lore, macros);
+        const text = formatLore(lore, substituteSource);
         if (text) sections.push(`## Lorebooks\n${text}`);
     }
 
