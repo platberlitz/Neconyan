@@ -12,6 +12,7 @@
 - PR #222 (2026-10-18) `fix(chat): keep completed replies visible with aggressive unloading`
 - PR #223 (2026-10-18) `fix(conversation): defer automatic summaries awaiting image review`
 - PR #224 (2026-10-18) `fix(generation): recover browser replies after leaving the tab`
+- PR #225 (2026-10-18) `fix(chat): prefer browser replies and show first streamed content`
 
 ## v1.3.5
 
