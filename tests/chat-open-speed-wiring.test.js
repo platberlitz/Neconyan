@@ -48,6 +48,13 @@ describe('opening a chat skips work for panels that are not on screen', () => {
         expect(update).toContain('if (button.style.display !== display) button.style.display = display;');
     });
 
+    test('rerun-agent buttons change display without reading computed styles', () => {
+        const update = functionBody(agentsJs, 'function updateRerunAgentsButtonVisibility(');
+        expect(update).not.toContain('.toggle(');
+        expect(update).toContain('document.querySelectorAll(\'.mes_rerun_agents\')');
+        expect(update).toContain('if (button.style.display !== display) button.style.display = display;');
+    });
+
     test('drawer state is restored only for drawers that changed', () => {
         const queue = functionBody(tabsJs, 'function queueInlineDrawerPersistenceBind(');
         expect(queue).toContain('record.addedNodes');

@@ -199,6 +199,7 @@ beforeAll(async () => {
         getPreGenerationInterceptHistoryForMessage: jest.fn(() => []),
         getPromptTransformHistoryForMessage: jest.fn(() => []),
         refreshRegexSnapshotsForAgent: jest.fn(() => 0),
+        rerunPostGenerationAgentsOnMessage: jest.fn(),
         runAgentOnMessage: jest.fn(),
         runAgentOnTarget: jest.fn(),
         runTrackerFixOnMessage: jest.fn(),

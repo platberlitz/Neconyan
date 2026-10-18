@@ -291,6 +291,7 @@ describe('agent workbench state', () => {
             setGlobalSettings: update => Object.assign(settings, update),
             persistExtensionState() {}, cancelPathfinderSummary() {}, updateAgentOverview() {},
             syncToolAgentRegistrations() {}, updateFixTrackersButtonVisibility() {}, updateCompanionButtonVisibility() {},
+            updateRerunAgentsButtonVisibility() {},
             toastr: { info: text => messages.push(['info', text]), warning: text => messages.push(['warning', text]) },
         });
         vm.runInContext([getFunction('updateGlobalAgentToggle'), getFunction('toggleGlobalAgents')].join('\n'), runtime);

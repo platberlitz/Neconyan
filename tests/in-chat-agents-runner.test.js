@@ -7581,6 +7581,796 @@ describe('in-chat agent post-processing runner', () => {
         expect(runner.isAgentGenerationActive()).toBe(false);
     });
 
+    test('rerun agents starts parallel rewrites on one reply and applies the synthesis once', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'parallel';
+        const releases = [];
+        generateQuietPrompt.mockImplementation(request => {
+            if (request.quietPrompt.includes('Combine parallel edits')) {
+                return Promise.resolve('Combined rerun');
+            }
+            return new Promise(resolve => releases.push(resolve));
+        });
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const run = runner.rerunPostGenerationAgentsOnMessage(0);
+        await waitFor(() => releases.length === 2);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(2);
+        expect(message.mes).toBe('Original reply');
+        for (const [request] of generateQuietPrompt.mock.calls) expect(request.quietPrompt).toContain('Original reply');
+        releases[0]('First rerun');
+        releases[1]('Second rerun');
+        await run;
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(3);
+        expect(generateQuietPrompt.mock.calls[2][0].quietPrompt).toContain('First rerun');
+        expect(generateQuietPrompt.mock.calls[2][0].quietPrompt).toContain('Second rerun');
+        expect(message.mes).toBe('Combined rerun');
+        expect(message.extra.inChatAgentTransformHistory).toHaveLength(1);
+        expect(runner.isAgentGenerationActive()).toBe(false);
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('rerun agents feeds each sequential result to the next agent', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'sequential';
+        generateQuietPrompt.mockImplementation(request =>
+            request.quietPrompt.includes('Rewrite as B') ? 'Second rerun' : 'First rerun');
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await runner.rerunPostGenerationAgentsOnMessage(0);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(2);
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain('Original reply');
+        expect(generateQuietPrompt.mock.calls[1][0].quietPrompt).toContain('First rerun');
+        expect(message.mes).toBe('Second rerun');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('a rerun batch queues between individual manual runs and replaces their earlier output', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'sequential';
+        const responses = [];
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => responses.push(resolve)));
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const first = runner.runAgentOnMessage('agent-manual-a', 0);
+        await waitFor(() => responses.length === 1);
+        const rerun = runner.rerunPostGenerationAgentsOnMessage(0);
+        const last = runner.runAgentOnMessage('agent-manual-b', 0);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        responses.shift()('Manual edit');
+        await first;
+        await waitFor(() => responses.length === 1);
+        expect(generateQuietPrompt.mock.calls[1][0].quietPrompt).toContain('Original reply');
+        responses.shift()('Rerun A');
+        await waitFor(() => responses.length === 1);
+        expect(generateQuietPrompt.mock.calls[2][0].quietPrompt).toContain('Rerun A');
+        responses.shift()('Rerun B');
+        await rerun;
+        await waitFor(() => responses.length === 1);
+        expect(generateQuietPrompt.mock.calls[3][0].quietPrompt).toContain('Rerun B');
+        responses.shift()('Final manual');
+        await expect(last).resolves.toMatchObject({ status: 'changed' });
+        expect(message.mes).toBe('Final manual');
+        expect(runner.isAgentGenerationActive()).toBe(false);
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('rerun agents starts after the last user edit and Undo restores the exact reply shown before', async () => {
+        usePromptTransformPostAgent();
+        const timestamp = new Date().toISOString();
+        const message = {
+            mes: 'Agent B final',
+            is_user: false,
+            is_system: false,
+            extra: {
+                inChatAgentTransformHistory: [
+                    { agentName: 'Manual A', mode: 'rewrite', beforeText: 'Original reply', afterText: 'Agent A edit', timestamp },
+                    { agentName: 'Edited', mode: 'edit', beforeText: 'Agent A edit', afterText: 'User edit', timestamp },
+                    { agentName: 'Manual B', mode: 'rewrite', beforeText: 'User edit', afterText: 'Agent B final', timestamp },
+                ],
+            },
+        };
+        chat.push(message);
+        generateQuietPrompt.mockResolvedValue('Rerun result');
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await runner.rerunPostGenerationAgentsOnMessage(0);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain('User edit');
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).not.toContain('Original reply');
+        expect(message.mes).toBe('Rerun result');
+        expect(runner.getPromptTransformHistoryForMessage(message).at(-1)).toMatchObject({
+            beforeText: 'Agent B final',
+            afterText: 'Rerun result',
+        });
+        await expect(runner.undoPromptTransform(0)).resolves.toBe(true);
+        expect(message.mes).toBe('Agent B final');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('rerun agents replaces earlier agent output when the history has no user edit', async () => {
+        usePromptTransformPostAgent();
+        const timestamp = new Date().toISOString();
+        const message = {
+            mes: 'Agent B final',
+            is_user: false,
+            is_system: false,
+            extra: {
+                inChatAgentTransformHistory: [
+                    { agentName: 'Manual A', mode: 'rewrite', beforeText: 'Original reply', afterText: 'Agent A edit', timestamp },
+                    { agentName: 'Manual B', mode: 'rewrite', beforeText: 'Agent A edit', afterText: 'Agent B final', timestamp },
+                ],
+            },
+        };
+        chat.push(message);
+        generateQuietPrompt.mockResolvedValue('Fresh rerun');
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await runner.rerunPostGenerationAgentsOnMessage(0);
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain('Original reply');
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).not.toContain('Agent B final');
+        expect(message.mes).toBe('Fresh rerun');
+        expect(runner.getPromptTransformHistoryForMessage(message).at(-1)).toMatchObject({
+            beforeText: 'Agent B final',
+            afterText: 'Fresh rerun',
+        });
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('rerun agents starts from the current reply when stored history no longer matches it', async () => {
+        usePromptTransformPostAgent();
+        const message = {
+            mes: 'Unlinked user edit',
+            is_user: false,
+            is_system: false,
+            extra: {
+                inChatAgentTransformHistory: [
+                    { agentName: 'Manual A', mode: 'rewrite', beforeText: 'Original reply', afterText: 'Agent A edit', timestamp: new Date().toISOString() },
+                ],
+            },
+        };
+        chat.push(message);
+        generateQuietPrompt.mockResolvedValue('Rerun after edit');
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await runner.rerunPostGenerationAgentsOnMessage(0);
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain('Unlinked user edit');
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).not.toContain('Original reply');
+        expect(message.mes).toBe('Rerun after edit');
+        expect(runner.getPromptTransformHistoryForMessage(message).at(-1)).toMatchObject({
+            beforeText: 'Unlinked user edit',
+            afterText: 'Rerun after edit',
+        });
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('a failed rerun keeps the exact reply and adds no history', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'sequential';
+        generateQuietPrompt.mockRejectedValue(new Error('No route to the agent provider'));
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await expect(runner.rerunPostGenerationAgentsOnMessage(0)).resolves.toBeNull();
+        expect(message.mes).toBe('Original reply');
+        expect(message.extra.inChatAgentTransformHistory).toBeUndefined();
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith(expect.stringContaining('left unchanged'), 'Rerun agents incomplete');
+        expect(runner.isAgentGenerationActive()).toBe(false);
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('a rerun keeps the whole reply when a later sequential agent fails', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'sequential';
+        generateQuietPrompt.mockImplementation(request => request.quietPrompt.includes('Rewrite as B')
+            ? Promise.reject(new Error('The second agent failed'))
+            : Promise.resolve('First rerun'));
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await expect(runner.rerunPostGenerationAgentsOnMessage(0)).resolves.toBeNull();
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(2);
+        expect(generateQuietPrompt.mock.calls[1][0].quietPrompt).toContain('First rerun');
+        expect(message.mes).toBe('Original reply');
+        expect(message.extra.inChatAgentTransformHistory).toBeUndefined();
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith(expect.stringContaining('left unchanged'), 'Rerun agents incomplete');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('a failed synthesis keeps the exact reply and adds no history', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'parallel';
+        generateQuietPrompt.mockImplementation(request => {
+            if (request.quietPrompt.includes('Combine parallel edits')) {
+                return Promise.reject(new Error('The combined reply failed'));
+            }
+            return Promise.resolve(request.quietPrompt.includes('Rewrite as A') ? 'First rerun' : 'Second rerun');
+        });
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await expect(runner.rerunPostGenerationAgentsOnMessage(0)).resolves.toBeNull();
+        expect(message.mes).toBe('Original reply');
+        expect(message.extra.inChatAgentTransformHistory).toBeUndefined();
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith(expect.stringContaining('left unchanged'), 'Rerun agents incomplete');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('a truncated rerun keeps the exact reply and adds no history', async () => {
+        usePromptTransformPostAgent();
+        enabledAgents[0].connectionProfile = 'profile-cc';
+        connectionManagerRequestService = {
+            getProfile: jest.fn(() => ({ name: 'Example profile', model: 'm' })),
+            sendRequest: jest.fn(async () => ({ content: 'Half a rerun', lengthLimited: true })),
+        };
+        const message = { mes: 'Needs rerun', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await expect(runner.rerunPostGenerationAgentsOnMessage(0)).resolves.toBeNull();
+        expect(message.mes).toBe('Needs rerun');
+        expect(message.extra.inChatAgentTransformHistory).toBeUndefined();
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith(expect.stringContaining('left unchanged'), 'Rerun agents incomplete');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('stopping a held rerun keeps the reply and adds no history', async () => {
+        usePromptTransformPostAgent();
+        const releases = [];
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => releases.push(resolve)));
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const run = runner.rerunPostGenerationAgentsOnMessage(0);
+        await waitFor(() => releases.length === 1);
+        runner.cancelAgentGeneration();
+        releases.shift()('Late rerun');
+        await expect(run).resolves.toBeNull();
+        expect(message.mes).toBe('Original reply');
+        expect(message.extra.inChatAgentTransformHistory).toBeUndefined();
+        expect(runner.isAgentGenerationActive()).toBe(false);
+        expect(globalThis.toastr.warning).not.toHaveBeenCalledWith(expect.any(String), 'Rerun agents skipped');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('stopping a queued rerun cancels it before any request', async () => {
+        useManualTransformAgents();
+        const responses = [];
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => responses.push(resolve)));
+        chat.push({ mes: 'Original reply', is_user: false, is_system: false, extra: {} });
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const first = runner.runAgentOnMessage('agent-manual-a', 0);
+        await waitFor(() => responses.length === 1);
+        const cancelRevision = runner.getAgentGenerationCancelRevision();
+        const rerun = runner.rerunPostGenerationAgentsOnMessage(0, { cancelRevision });
+        runner.cancelAgentGeneration();
+        await expect(rerun).resolves.toBeNull();
+        responses.shift()('Late edit');
+        await first;
+        await expect(runner.rerunPostGenerationAgentsOnMessage(0, { cancelRevision })).resolves.toBeNull();
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(runner.isAgentGenerationActive()).toBe(false);
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test.each(['edit', 'swipe', 'replacement', 'chat'])('a held rerun rejects a %s before writing', async change => {
+        usePromptTransformPostAgent();
+        const releases = [];
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => releases.push(resolve)));
+        const message = { mes: 'Original reply', is_user: false, is_system: false, swipe_id: 0, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const run = runner.rerunPostGenerationAgentsOnMessage(0);
+        await waitFor(() => releases.length === 1);
+        if (change === 'edit') {
+            message.mes = 'User edit';
+            await eventSource.emit(eventTypes.MESSAGE_EDITED, 0);
+        } else if (change === 'swipe') {
+            message.swipe_id = 1;
+        } else if (change === 'replacement') {
+            chat[0] = { ...message, mes: 'Replacement reply' };
+        } else {
+            currentChatId = 'chat-b';
+        }
+        releases.shift()('Late rerun');
+        await expect(run).resolves.toBeNull();
+        const expectedText = change === 'edit' ? 'User edit'
+            : change === 'replacement' ? 'Replacement reply'
+                : 'Original reply';
+        expect(chat[0].mes).toBe(expectedText);
+        expect(chat[0].extra?.inChatAgentTransformHistory).toBeUndefined();
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith('The message changed while Rerun agents was running, so its result was discarded.', 'Rerun agents skipped');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('refuses to rerun agents while the main reply is still generating', async () => {
+        usePromptTransformPostAgent();
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        await expect(runner.rerunPostGenerationAgentsOnMessage(0)).resolves.toBeNull();
+        expect(generateQuietPrompt).not.toHaveBeenCalled();
+        expect(message.mes).toBe('Original reply');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('rerun agents skips companion agents', async () => {
+        usePromptTransformPostAgent();
+        enabledAgents.push(createCompanionAgent({
+            id: 'companion-rerun',
+            name: 'Companion Rerun',
+            prompt: 'Write a companion note.',
+            modelOverride: 'companion-model',
+            postProcess: { promptTransformEnabled: true, promptTransformMode: 'rewrite' },
+        }));
+        generateQuietPrompt.mockResolvedValue('Inline rerun');
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await runner.rerunPostGenerationAgentsOnMessage(0);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain('Rewrite the final reply.');
+        expect(message.mes).toBe('Inline rerun');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('an empty append and an unchanged rewrite are valid rerun no-ops', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'parallel';
+        enabledAgents[0].postProcess.promptTransformMode = 'append';
+        generateQuietPrompt.mockResolvedValue('Original reply');
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await expect(runner.rerunPostGenerationAgentsOnMessage(0)).resolves.toBeNull();
+        expect(message.mes).toBe('Original reply');
+        expect(message.extra.inChatAgentTransformHistory).toBeUndefined();
+        expect(globalThis.toastr.warning).not.toHaveBeenCalled();
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('rerun agents keeps an edited body and replaces its previous appended block', async () => {
+        usePromptTransformPostAgent();
+        enabledAgents[0].postProcess.promptTransformMode = 'append';
+        generateQuietPrompt.mockResolvedValue('Choice C2');
+        const timestamp = new Date().toISOString();
+        const message = {
+            mes: 'Edited body\n\n[CHOICE C1]',
+            is_user: false,
+            is_system: false,
+            extra: {
+                inChatAgentTransformHistory: [
+                    { agentName: 'Append A', mode: 'append', beforeText: 'Original body', afterText: 'Original body\n\n[CHOICE C1]', timestamp },
+                    { agentName: 'Edited', mode: 'edit', beforeText: 'Original body\n\n[CHOICE C1]', afterText: 'Edited body\n\n[CHOICE C1]', timestamp },
+                ],
+            },
+        };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await runner.rerunPostGenerationAgentsOnMessage(0);
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain('Edited body');
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).not.toContain('[CHOICE C1]');
+        expect(message.mes).toBe('Edited body\n\nChoice C2');
+        expect(message.mes).not.toContain('[CHOICE C1]');
+        await expect(runner.undoPromptTransform(0)).resolves.toBe(true);
+        expect(message.mes).toBe('Edited body\n\n[CHOICE C1]');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('rerun agents replaces a known utility block in an edited reply', async () => {
+        usePromptTransformPostAgent();
+        enabledAgents.push({
+            id: 'utility-rerun',
+            name: 'Utility Rerun',
+            phase: 'post',
+            prompt: '',
+            injection: { order: 200 },
+            postProcess: { enabled: true, type: 'append', appendText: '\n[UTILITY C1]' },
+            conditions: { triggerKeywords: [], triggerProbability: 100, generationTypes: ['normal'] },
+        });
+        generateQuietPrompt.mockResolvedValue('Rewritten body');
+        const message = {
+            mes: 'Edited body\n\n[UTILITY C1]',
+            is_user: false,
+            is_system: false,
+            extra: {
+                inChatAgentTransformHistory: [
+                    { agentName: 'Edited', mode: 'edit', beforeText: 'Original body', afterText: 'Edited body\n\n[UTILITY C1]', timestamp: new Date().toISOString() },
+                ],
+            },
+        };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await runner.rerunPostGenerationAgentsOnMessage(0);
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain('Edited body');
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).not.toContain('[UTILITY C1]');
+        expect(message.mes).toBe('Rewritten body\n[UTILITY C1]');
+        expect(message.mes.match(/\[UTILITY C1\]/g)).toHaveLength(1);
+        await expect(runner.undoPromptTransform(0)).resolves.toBe(true);
+        expect(message.mes).toBe('Edited body\n\n[UTILITY C1]');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('rerun agents keeps a repaired tracker as its fixed point', async () => {
+        usePromptTransformPostAgent();
+        generateQuietPrompt.mockResolvedValue('Fresh rewrite');
+        const timestamp = new Date().toISOString();
+        const message = {
+            mes: 'Original reply\n[TRACKER repaired]\n\n[CHOICE C1]',
+            is_user: false,
+            is_system: false,
+            extra: {
+                inChatAgentTransformHistory: [
+                    { agentName: 'Tracker repair', beforeText: 'Original reply\n[TRACKER broken]', afterText: 'Original reply\n[TRACKER repaired]', timestamp },
+                    { agentName: 'Append A', mode: 'append', beforeText: 'Original reply\n[TRACKER repaired]', afterText: 'Original reply\n[TRACKER repaired]\n\n[CHOICE C1]', timestamp },
+                ],
+            },
+        };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await runner.rerunPostGenerationAgentsOnMessage(0);
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain('[TRACKER repaired]');
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).not.toContain('[TRACKER broken]');
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).not.toContain('[CHOICE C1]');
+        expect(message.mes).toBe('Fresh rewrite');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('repeated reruns keep one clean baseline after the history cap trims earlier entries', async () => {
+        usePromptTransformPostAgent();
+        enabledAgents[0].postProcess.promptTransformMode = 'append';
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+
+        for (let index = 0; index < 12; index += 1) {
+            generateQuietPrompt.mockResolvedValueOnce(`Choice ${index}`);
+            await runner.rerunPostGenerationAgentsOnMessage(0);
+            expect(message.mes).toBe(`Original reply\n\nChoice ${index}`);
+            expect(message.mes.match(/Choice/g)).toHaveLength(1);
+        }
+
+        expect(runner.getPromptTransformHistoryForMessage(message)).toHaveLength(10);
+        expect(message.extra.inChatAgentRerunProvenance.baselineText).toBe('Original reply');
+        await expect(runner.undoPromptTransform(0)).resolves.toBe(true);
+        expect(message.mes).toBe('Original reply\n\nChoice 10');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('a user edit after a rerun becomes the baseline for later reruns', async () => {
+        usePromptTransformPostAgent();
+        enabledAgents[0].postProcess.promptTransformMode = 'append';
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+
+        generateQuietPrompt.mockResolvedValueOnce('Choice 0');
+        await runner.rerunPostGenerationAgentsOnMessage(0);
+        expect(message.mes).toBe('Original reply\n\nChoice 0');
+
+        message.mes = 'User edited\n\nChoice 0';
+        await eventSource.emit(eventTypes.MESSAGE_EDITED, 0);
+        expect(message.extra.inChatAgentRerunProvenance.baselineText).toBe('User edited');
+
+        generateQuietPrompt.mockResolvedValueOnce('Choice 1');
+        await runner.rerunPostGenerationAgentsOnMessage(0);
+        expect(generateQuietPrompt.mock.calls[1][0].quietPrompt).toContain('User edited');
+        expect(generateQuietPrompt.mock.calls[1][0].quietPrompt).not.toContain('Choice 0');
+        expect(message.mes).toBe('User edited\n\nChoice 1');
+
+        await expect(runner.undoPromptTransform(0)).resolves.toBe(true);
+        expect(message.mes).toBe('User edited\n\nChoice 0');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('rerun agents ignores provenance from another swipe when the active history does not include it', async () => {
+        usePromptTransformPostAgent();
+        generateQuietPrompt.mockResolvedValue('Swipe one rerun');
+        const message = {
+            mes: 'Swipe one result',
+            is_user: false,
+            is_system: false,
+            extra: {
+                inChatAgentTransformHistory: [
+                    { agentName: 'Swipe automatic', mode: 'rewrite', beforeText: 'Original swipe 1', afterText: 'Swipe one result', timestamp: new Date().toISOString() },
+                ],
+                inChatAgentRerunProvenance: {
+                    baselineText: 'Original swipe 0',
+                    resultText: 'Swipe zero result',
+                    generatedBlocks: [],
+                },
+            },
+        };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await runner.rerunPostGenerationAgentsOnMessage(0);
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain('Original swipe 1');
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).not.toContain('Original swipe 0');
+        expect(message.mes).toBe('Swipe one rerun');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('rerun agents keeps a continued reply when stale provenance does not match its rebuilt history', async () => {
+        usePromptTransformPostAgent();
+        generateQuietPrompt.mockResolvedValue('Fresh result');
+        const message = {
+            mes: 'Final continued result',
+            is_user: false,
+            is_system: false,
+            extra: {
+                inChatAgentTransformHistory: [
+                    { agentName: 'Continue automatic', mode: 'rewrite', beforeText: 'Rerun result plus continuation', afterText: 'Final continued result', timestamp: new Date().toISOString() },
+                ],
+                inChatAgentRerunProvenance: {
+                    baselineText: 'Original reply',
+                    resultText: 'Rerun result',
+                    generatedBlocks: [],
+                },
+            },
+        };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await runner.rerunPostGenerationAgentsOnMessage(0);
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain('Rerun result plus continuation');
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).not.toContain('Original reply');
+        expect(message.mes).toBe('Fresh result');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('undoing an edit does not let its stale provenance reintroduce the edit on rerun', async () => {
+        usePromptTransformPostAgent();
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+
+        generateQuietPrompt.mockResolvedValueOnce('Rerun result');
+        await runner.rerunPostGenerationAgentsOnMessage(0);
+        expect(message.mes).toBe('Rerun result');
+
+        message.mes = 'User edited';
+        await eventSource.emit(eventTypes.MESSAGE_EDITED, 0);
+        expect(message.extra.inChatAgentRerunProvenance.baselineText).toBe('User edited');
+
+        await expect(runner.undoPromptTransform(0)).resolves.toBe(true);
+        expect(message.mes).toBe('Rerun result');
+
+        generateQuietPrompt.mockResolvedValueOnce('Second result');
+        await runner.rerunPostGenerationAgentsOnMessage(0);
+        expect(generateQuietPrompt.mock.calls[1][0].quietPrompt).toContain('Original reply');
+        expect(generateQuietPrompt.mock.calls[1][0].quietPrompt).not.toContain('User edited');
+        expect(message.mes).toBe('Second result');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('a rewrite keeps intentional font and escaped markup intact', async () => {
+        usePromptTransformPostAgent();
+        const output = '<font color="#112233">Hello &lt;literal&gt; &amp; more</font>';
+        generateQuietPrompt.mockResolvedValue(output);
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await runner.rerunPostGenerationAgentsOnMessage(0);
+        expect(message.mes).toBe(output);
+        expect(message.extra.inChatAgentRerunProvenance.resultText).toBe(output);
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('an appended block keeps intentional font and escaped markup intact', async () => {
+        usePromptTransformPostAgent();
+        enabledAgents[0].postProcess.promptTransformMode = 'append';
+        const block = '<font color="#112233">[CHOICE &lt;one&gt; &amp; more]</font>';
+        generateQuietPrompt.mockResolvedValue(block);
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await runner.rerunPostGenerationAgentsOnMessage(0);
+        expect(message.mes).toBe(`Original reply\n\n${block}`);
+        expect(message.extra.inChatAgentRerunProvenance.generatedBlocks).toContain(block);
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('a utility macro failure leaves the reply unchanged before the write', async () => {
+        usePromptTransformPostAgent();
+        enabledAgents.push({
+            id: 'utility-rerun-fail',
+            name: 'Utility Rerun Fail',
+            phase: 'post',
+            prompt: '',
+            injection: { order: 200 },
+            postProcess: { enabled: true, type: 'append', appendText: '{{explode}}' },
+            conditions: { triggerKeywords: [], triggerProbability: 100, generationTypes: ['normal'] },
+        });
+        const scriptModule = await import('../public/script.js');
+        scriptModule.substituteParams.mockImplementation((value, options = {}) => {
+            const text = String(value ?? '');
+            if (text.includes('{{explode}}')) throw new Error('Bad utility macro');
+            return text
+                .replaceAll('{{user}}', 'Traveler')
+                .replaceAll('{{char}}', options.name2Override || 'Assistant')
+                .replaceAll('{{original}}', options.original ?? '');
+        });
+        generateQuietPrompt.mockResolvedValue('Rewritten body');
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await expect(runner.rerunPostGenerationAgentsOnMessage(0)).resolves.toBeNull();
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(message.mes).toBe('Original reply');
+        expect(message.extra.inChatAgentTransformHistory).toBeUndefined();
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith(expect.stringContaining('left unchanged'), 'Rerun agents incomplete');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('a new main generation during a rerun does not discard its accepted result', async () => {
+        usePromptTransformPostAgent();
+        const releases = [];
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => releases.push(resolve)));
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        const run = runner.rerunPostGenerationAgentsOnMessage(0);
+        await waitFor(() => releases.length === 1);
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        releases.shift()('Rerun result');
+        await run;
+        expect(message.mes).toBe('Rerun result');
+        expect(message.extra.inChatAgentTransformHistory).toHaveLength(1);
+        expect(saveChatDebounced).toHaveBeenCalled();
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('a new main generation during token accounting does not stop the save and swipe sync', async () => {
+        usePromptTransformPostAgent();
+        generateQuietPrompt.mockResolvedValue('Rerun result');
+        let resolveAccounting;
+        updateMessageTokenAccounting = jest.fn(() => new Promise(resolve => { resolveAccounting = resolve; }));
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        const run = runner.rerunPostGenerationAgentsOnMessage(0);
+        await waitFor(() => typeof resolveAccounting === 'function');
+        expect(message.mes).toBe('Rerun result');
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        resolveAccounting({ outputTokens: 1, reasoningTokens: 0 });
+        await run;
+        expect(saveChatDebounced).toHaveBeenCalled();
+        expect(message.extra.inChatAgentTransformHistory).toHaveLength(1);
+        expect(message.swipe_info[0].extra.inChatAgentTransformHistory).toHaveLength(1);
+        expect(message.extra.inChatAgentRerunProvenance).toEqual(expect.objectContaining({ baselineText: 'Original reply' }));
+        expect(message.swipe_info[0].extra.inChatAgentRerunProvenance).toEqual(message.extra.inChatAgentRerunProvenance);
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('a queued rerun explains when its message changed before it starts', async () => {
+        useManualTransformAgents();
+        const responses = [];
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => responses.push(resolve)));
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        const first = runner.runAgentOnMessage('agent-manual-a', 0);
+        await waitFor(() => responses.length === 1);
+        const rerun = runner.rerunPostGenerationAgentsOnMessage(0);
+        message.mes = 'User edit';
+        await eventSource.emit(eventTypes.MESSAGE_EDITED, 0);
+        responses.shift()('Late manual edit');
+        await first;
+        await expect(rerun).resolves.toBeNull();
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(message.mes).toBe('User edit');
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith('The message changed before Rerun agents started, so it was skipped.', 'Rerun agents skipped');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('rerun agents refuses while automatic post-processing is still running', async () => {
+        usePromptTransformPostAgent();
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        let release;
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => { release = resolve; }));
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        const context = runner.getAgentGenerationContext();
+        await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length, context);
+        const automatic = eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal', context);
+        await waitFor(() => typeof release === 'function');
+        await expect(runner.rerunPostGenerationAgentsOnMessage(0)).resolves.toBeNull();
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(globalThis.toastr.info).toHaveBeenCalledWith('Agents are already processing this reply. Wait for them to finish, then rerun agents.', 'Rerun agents unavailable');
+        release('Automatic rewrite');
+        await automatic;
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('a truncated sequential rerun stops before the next agent', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'sequential';
+        enabledAgents[0].connectionProfile = 'profile-cc';
+        connectionManagerRequestService = {
+            getProfile: jest.fn(() => ({ name: 'Example profile', model: 'm' })),
+            sendRequest: jest.fn(async () => ({ content: 'Half a rerun', lengthLimited: true })),
+        };
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await expect(runner.rerunPostGenerationAgentsOnMessage(0)).resolves.toBeNull();
+        expect(connectionManagerRequestService.sendRequest).toHaveBeenCalledTimes(1);
+        expect(generateQuietPrompt).not.toHaveBeenCalled();
+        expect(message.mes).toBe('Original reply');
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith(expect.stringContaining('left unchanged'), 'Rerun agents incomplete');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('a truncated parallel rerun does not spend a synthesis request', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'parallel';
+        enabledAgents[0].connectionProfile = 'profile-cc';
+        connectionManagerRequestService = {
+            getProfile: jest.fn(() => ({ name: 'Example profile', model: 'm' })),
+            sendRequest: jest.fn(async () => ({ content: 'Half a rerun', lengthLimited: true })),
+        };
+        generateQuietPrompt.mockResolvedValue('Second rewrite');
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await expect(runner.rerunPostGenerationAgentsOnMessage(0)).resolves.toBeNull();
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(message.mes).toBe('Original reply');
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith(expect.stringContaining('left unchanged'), 'Rerun agents incomplete');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('an empty sequential rerun response stops before the next agent', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'sequential';
+        generateQuietPrompt.mockResolvedValueOnce('').mockResolvedValueOnce('Second rewrite');
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await expect(runner.rerunPostGenerationAgentsOnMessage(0)).resolves.toBeNull();
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(message.mes).toBe('Original reply');
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith(expect.stringContaining('left unchanged'), 'Rerun agents incomplete');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('a refused sequential rerun stops before the next agent', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'sequential';
+        generateQuietPrompt.mockResolvedValueOnce('I\u2019m sorry, but I can\u2019t help with that.').mockResolvedValueOnce('Second rewrite');
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await expect(runner.rerunPostGenerationAgentsOnMessage(0)).resolves.toBeNull();
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(message.mes).toBe('Original reply');
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith(expect.stringContaining('left unchanged'), 'Rerun agents incomplete');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('a colour-only rerun result keeps the visible reply without recording Undo', async () => {
+        usePromptTransformPostAgent();
+        generateQuietPrompt.mockResolvedValue('Hello there');
+        const visibleText = '<font color="#aabbcc">Hello there</font>\n[COLORS:Speaker=#aabbcc]';
+        const message = { mes: visibleText, is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await runner.rerunPostGenerationAgentsOnMessage(0);
+        expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain('Hello there');
+        expect(message.mes).toBe(visibleText);
+        expect(message.extra.inChatAgentTransformHistory).toBeUndefined();
+        expect(globalThis.toastr.info).toHaveBeenCalledWith('No agent changes were needed.', 'Rerun agents checked');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
     test('defers enabled post-processing agents until the main generation is idle', async () => {
         useAppendPostAgent();
 

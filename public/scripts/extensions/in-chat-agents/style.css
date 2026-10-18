@@ -2611,11 +2611,18 @@ button.ica--card-pill--version-update {
     pointer-events: none;
 }
 
+.mes_rerun_agents--running {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
 /* Keep the labelled action still; only its icon indicates activity. */
 .mes_fix_trackers--running.fa-solid::before,
 .mes_fix_trackers--running > i,
 .mes_run_companions--running.fa-solid::before,
-.mes_run_companions--running > i {
+.mes_run_companions--running > i,
+.mes_rerun_agents--running.fa-solid::before,
+.mes_rerun_agents--running > i {
     display: inline-block;
     animation: mes-fix-trackers-spin 1s linear infinite;
 }
@@ -2681,7 +2688,9 @@ button.ica--card-pill--version-update {
     .mes_fix_trackers--running.fa-solid::before,
     .mes_fix_trackers--running > i,
     .mes_run_companions--running.fa-solid::before,
-    .mes_run_companions--running > i {
+    .mes_run_companions--running > i,
+    .mes_rerun_agents--running.fa-solid::before,
+    .mes_rerun_agents--running > i {
         animation: none !important;
     }
 }
