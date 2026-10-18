@@ -11,6 +11,7 @@
 - PR #221 (2026-10-18) `feat(agents): rerun after-reply agents from the message menu`
 - PR #222 (2026-10-18) `fix(chat): keep completed replies visible with aggressive unloading`
 - PR #223 (2026-10-18) `fix(conversation): defer automatic summaries awaiting image review`
+- PR #224 (2026-10-18) `fix(generation): recover browser replies after leaving the tab`
 
 ## v1.3.5
 
