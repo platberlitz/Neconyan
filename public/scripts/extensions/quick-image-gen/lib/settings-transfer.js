@@ -50,7 +50,7 @@ const SETTINGS_NUMBER_BOUNDS = Object.freeze({
     a1111ControlNetGuidanceEnd: [0, 1, false], comfyClipSkip: [1, 12, true],
     comfyDenoise: [0, 1, false], comfyTimeout: [10, 1800, true],
     comfyOutputImageIndex: [-1, 10_000, true], injectDepth: [0, 100, true],
-    llmOverrideMaxTokens: [50, 4096, true],
+    llmOverrideMaxTokens: [50, 64_000, true],
     llmOverrideChatDepth: [0, 1000, true],
     priority: [Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, true],
     seedOverride: [0, 0xffffffff, true, true], sortOrder: [0, Number.MAX_SAFE_INTEGER, true, true],

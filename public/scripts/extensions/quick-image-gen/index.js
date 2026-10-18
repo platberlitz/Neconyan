@@ -325,6 +325,9 @@ function normalizeProviderImageSource(value, { trustedLocalBackend = false, trus
 const DEFAULT_PROXY_CHAT_IMAGE_SYSTEM_PROMPT = "You are a visual image generation assistant. Use the user's text as the image instruction and any attached images as visual references. Return the generated image in the provider's supported image format.";
 const DEFAULT_PROXY_CHAT_IMAGE_MAX_TOKENS = 16384;
 const DEFAULT_PROXY_STANDARD_CHAT_MAX_TOKENS = 4096;
+const LLM_OVERRIDE_MAX_TOKENS_DEFAULT = 32000;
+const LLM_OVERRIDE_MAX_TOKENS_MIN = 50;
+const LLM_OVERRIDE_MAX_TOKENS_MAX = 64000;
 const MAX_DISCOVERY_RESPONSE_BYTES = 5 * 1024 * 1024;
 const PROXY_CHAT_IMAGE_MAX_TOKENS_MIN = 1;
 const PROXY_CHAT_IMAGE_MAX_TOKENS_MAX = 65536;
@@ -1234,7 +1237,7 @@ const defaultSettings = {
     llmOverrideEnabled: false,
     llmOverrideProfileId: "",
     llmOverridePreset: "",
-    llmOverrideMaxTokens: 500,
+    llmOverrideMaxTokens: LLM_OVERRIDE_MAX_TOKENS_DEFAULT,
     llmOverrideChatDepth: 0,
     // ComfyUI Flux/UNET support
     comfySkipNegativePrompt: false,
@@ -1245,6 +1248,7 @@ const defaultSettings = {
     _replacementMapsMigrated: false,
     _legacyTemplatesIgnored: false,
     _configurationMigrationVersion: 0,
+    _llmOverrideMaxTokensDefaultMigrated: false,
     _charSettingsBaseState: null,
     _syncCacheId: "",
     // Backups of localStorage stores (survive browser storage wipes)
@@ -4505,6 +4509,17 @@ async function loadSettings() {
         s.reviewBeforeGenerate = Boolean(saved.llmEditPrompt);
     }
     delete s.llmEditPrompt;
+    // Move installs that still carry the old 500 default or the old 4096 ceiling to the
+    // new default once. Values chosen between those two are deliberate and stay untouched.
+    const llmOverrideMaxTokensNeedsMigration = !!saved
+        && saved._llmOverrideMaxTokensDefaultMigrated !== true
+        && (saved.llmOverrideMaxTokens === undefined
+            || saved.llmOverrideMaxTokens === 500
+            || saved.llmOverrideMaxTokens === 4096);
+    if (llmOverrideMaxTokensNeedsMigration) {
+        s.llmOverrideMaxTokens = LLM_OVERRIDE_MAX_TOKENS_DEFAULT;
+    }
+    s._llmOverrideMaxTokensDefaultMigrated = true;
     const comfyModelLoaderNeedsMigration = !!saved
         && (saved.comfyModelLoader !== normalizedSaved.comfyModelLoader
             || saved.comfyFluxVaeModel !== normalizedSaved.comfyFluxVaeModel
@@ -4591,7 +4606,8 @@ async function loadSettings() {
     });
     let serverSettingsNeedSave = comfyModelLoaderNeedsMigration
         || injectInsertModeNeedsMigration
-        || reviewBeforeGenerateNeedsMigration;
+        || reviewBeforeGenerateNeedsMigration
+        || llmOverrideMaxTokensNeedsMigration;
     if (!savedCacheId) {
         s._syncCacheId = generateUUID();
         serverSettingsNeedSave = true;
@@ -6953,7 +6969,7 @@ function buildOverrideChatHistory(s, ctx) {
 
 async function callOverrideLLM(instruction, systemPrompt = "", signal = null, { assistantPrefill = "", context = null, returnMeta = false, settings = null, role = "default" } = {}) {
     const s = settings || activeGenerationRun?.settings || getSettings();
-    const requestedMaxTokens = s.llmOverrideMaxTokens || 500;
+    const requestedMaxTokens = s.llmOverrideMaxTokens || LLM_OVERRIDE_MAX_TOKENS_DEFAULT;
     const requestContext = context || getContext();
     let CMRS = null;
     try {
@@ -18241,7 +18257,7 @@ function normalizeGenerationNumericSettings(settings) {
     normalize("proxyTimeout", defaultSettings.proxyTimeout, 30, 1800, 1, 30);
     normalize("proxyComfyTimeout", defaultSettings.proxyComfyTimeout, 10, 600, 1, 10);
     normalize("proxyChatImageMaxTokens", defaultSettings.proxyChatImageMaxTokens, PROXY_CHAT_IMAGE_MAX_TOKENS_MIN, PROXY_CHAT_IMAGE_MAX_TOKENS_MAX, 1, PROXY_CHAT_IMAGE_MAX_TOKENS_MIN);
-    normalize("llmOverrideMaxTokens", defaultSettings.llmOverrideMaxTokens, 50, 4096, 1, 50);
+    normalize("llmOverrideMaxTokens", defaultSettings.llmOverrideMaxTokens, LLM_OVERRIDE_MAX_TOKENS_MIN, LLM_OVERRIDE_MAX_TOKENS_MAX, 1, LLM_OVERRIDE_MAX_TOKENS_MIN);
     normalize("llmOverrideChatDepth", defaultSettings.llmOverrideChatDepth, 0, 1000, 1, 0);
     normalize("batchCount", defaultSettings.batchCount, 1, 10, 1, 1);
     normalize("hostedTimeout", defaultSettings.hostedTimeout, 30, 1800, 1, 30);
@@ -19751,7 +19767,7 @@ function createUI() {
                         <label style="font-size: 12px;margin-top:4px;">Completion Preset (optional)</label>
                         <select id="qig-llm-override-preset-select" style="width:100%;"></select>
                         <label style="font-size: 12px;margin-top:4px;">Max Tokens</label>
-                        <input id="qig-llm-override-max" type="number" value="${esc(s.llmOverrideMaxTokens || 500)}" min="50" max="4096" style="width:100%;">
+                        <input id="qig-llm-override-max" type="number" value="${esc(s.llmOverrideMaxTokens || LLM_OVERRIDE_MAX_TOKENS_DEFAULT)}" min="${LLM_OVERRIDE_MAX_TOKENS_MIN}" max="${LLM_OVERRIDE_MAX_TOKENS_MAX}" style="width:100%;">
                         <label style="font-size: 12px;margin-top:4px;">Chat history messages</label>
                         <input id="qig-llm-override-history" type="number" value="${esc(s.llmOverrideChatDepth || 0)}" min="0" max="1000" style="width:100%;">
                         <small>Recent chat messages sent ahead of the request, for instructions that refer to the conversation so far. 0 sends the request on its own.</small>

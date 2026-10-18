@@ -5,10 +5,11 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import * as generation from '../public/scripts/extensions/quick-image-gen/lib/generation.js';
 import { GenerationRunManager, snapshotGenerationRunSettings, snapshotGenerationSettings } from '../public/scripts/extensions/quick-image-gen/lib/generation-run.js';
-import { materializeAndValidateProviderOutput } from '../public/scripts/extensions/quick-image-gen/lib/client-orchestration.js';
+import { materializeAndValidateProviderOutput, readConstrainedNumber } from '../public/scripts/extensions/quick-image-gen/lib/client-orchestration.js';
 import { normalizeProviderResult } from '../public/scripts/extensions/quick-image-gen/lib/provider-contract.js';
 import { buildTextAIRequestMessages } from '../public/scripts/extensions/quick-image-gen/lib/prompt-pipeline.js';
 import { MAX_IMAGE_BYTES } from '../public/scripts/extensions/quick-image-gen/lib/security.js';
+import { coerceSettingsFieldValue } from '../public/scripts/extensions/quick-image-gen/lib/settings-transfer.js';
 
 const capabilityRegistryKey = Symbol.for('neconyan.extensionCapabilities');
 const qigSource = readFileSync(fileURLToPath(new URL('../public/scripts/extensions/quick-image-gen/index.js', import.meta.url)), 'utf8');
@@ -326,6 +327,7 @@ describe('Conversation extension media integration', () => {
             context: scoped,
             profileId: 'scoped-profile',
             signal,
+            maxTokens: 100,
             messages: [
                 { role: 'system', content: 'system context' },
                 { role: 'system', content: 'instruction' },
@@ -334,6 +336,58 @@ describe('Conversation extension media integration', () => {
             ],
         }));
         expect(context.getContext).not.toHaveBeenCalled();
+    });
+
+    test('Text AI override sends 32000 tokens when no limit is saved', async () => {
+        const scoped = { ConnectionManagerRequestService: {}, chat: [] };
+        const context = createQigContext({
+            LLM_OVERRIDE_MAX_TOKENS_DEFAULT: 32000,
+            getContext: jest.fn(),
+            buildOverrideChatHistory: jest.fn(() => []),
+            buildTextAIRequestMessages,
+            sendIsolatedConnectionManagerRequest: jest.fn(async () => 'answer'),
+            runWithInternalLLMRequest: (_label, task) => task(),
+            runSerializedTextAITask: task => task(),
+            extractLLMResponseDetails: text => ({ text }),
+            plural: () => 'chat message',
+            log: jest.fn(),
+        });
+        const callOverride = evaluateInContext('callOverrideLLM', context);
+        await callOverride('instruction', '', new AbortController().signal, {
+            settings: { llmOverrideProfileId: 'scoped-profile' }, context: scoped,
+        });
+        expect(context.sendIsolatedConnectionManagerRequest).toHaveBeenCalledWith(expect.objectContaining({ maxTokens: 32000 }));
+    });
+
+    test('imported Text AI token limits keep values up to 64000', () => {
+        expect(coerceSettingsFieldValue('llmOverrideMaxTokens', 32000)).toBe(32000);
+        expect(coerceSettingsFieldValue('llmOverrideMaxTokens', 64000)).toBe(64000);
+        expect(coerceSettingsFieldValue('llmOverrideMaxTokens', 64001)).toBe(64000);
+        expect(coerceSettingsFieldValue('llmOverrideMaxTokens', 49)).toBe(50);
+    });
+
+    test('saved Text AI token limits survive load normalization up to 64000', () => {
+        const context = createQigContext({
+            readConstrainedNumber,
+            defaultSettings: {
+                width: 512, height: 512, steps: 20, cfgScale: 7, seed: -1,
+                proxySteps: 20, proxyCfg: 7, proxySeed: -1, proxyTimeout: 600,
+                proxyComfyTimeout: 300, proxyChatImageMaxTokens: 16384,
+                llmOverrideMaxTokens: 32000, llmOverrideChatDepth: 0,
+                batchCount: 1, hostedTimeout: 300,
+            },
+            SIZE_MIN: 64, SIZE_MAX: 2048, SIZE_STEP: 64, SEED_MAX: 0xffffffff,
+            PROXY_CHAT_IMAGE_MAX_TOKENS_MIN: 1, PROXY_CHAT_IMAGE_MAX_TOKENS_MAX: 65536,
+            LLM_OVERRIDE_MAX_TOKENS_MIN: 50,
+            LLM_OVERRIDE_MAX_TOKENS_MAX: 64000,
+        });
+        const normalize = evaluateInContext('normalizeGenerationNumericSettings', context);
+        const settings = { llmOverrideMaxTokens: 32000 };
+        normalize(settings);
+        expect(settings.llmOverrideMaxTokens).toBe(32000);
+        settings.llmOverrideMaxTokens = 64001;
+        normalize(settings);
+        expect(settings.llmOverrideMaxTokens).toBe(64000);
     });
 
     test('multi-result finalization handles {images} payloads, picks the first success, and releases extras', async () => {

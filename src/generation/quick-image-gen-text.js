@@ -29,7 +29,7 @@ export function captureQuickImageTextSettings(directories, settings, mainBinding
     const role = settings.llmRequestRole ?? 'default';
     if (!['default', 'user', 'system'].includes(role)) throw fail('The image Text AI request role is invalid.');
     const depth = override ? bounded(settings.llmOverrideChatDepth, 1000, 0) : 0;
-    const maxTokens = override ? bounded(settings.llmOverrideMaxTokens, 64000, 500) || 500 : 1024;
+    const maxTokens = override ? bounded(settings.llmOverrideMaxTokens, 64000, 32000) || 32000 : 1024;
     const selected = records.slice(1, throughIndex === null ? undefined : throughIndex + 2);
     const history = depth ? selected.filter(record => record && !record.is_system && !isGeneratedImageMessage(record))
         .map(record => ({ role: record.is_user ? 'user' : 'assistant', content: `${record.name || (record.is_user ? 'User' : 'Character')}: ${imageSceneMessage(record)}` }))
