@@ -144,9 +144,18 @@ export function sessionAssistants(session) {
 }
 
 export function normaliseMaxTokens(value) {
-    const number = Math.round(Number(value));
-    if (!Number.isFinite(number)) return DEFAULT_MAX_TOKENS;
-    return Math.min(MAX_MAX_TOKENS, Math.max(MIN_MAX_TOKENS, number));
+    const number = numericInput(value);
+    if (number === null) return DEFAULT_MAX_TOKENS;
+    return Math.min(MAX_MAX_TOKENS, Math.max(MIN_MAX_TOKENS, Math.round(number)));
+}
+
+function numericInput(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value === 'string' && value.trim()) {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : null;
+    }
+    return null;
 }
 
 export function defaultSettings() {
@@ -198,8 +207,8 @@ export function normaliseSettings(input, previous = defaultSettings(), { allowIn
         });
     }
     if (source.depth !== undefined) {
-        const depth = Math.round(Number(source.depth));
-        settings.depth = Number.isFinite(depth) ? Math.min(MAX_DEPTH, Math.max(0, depth)) : DEFAULT_DEPTH;
+        const depth = numericInput(source.depth);
+        if (depth !== null) settings.depth = Math.min(MAX_DEPTH, Math.max(0, Math.round(depth)));
     }
     if (source.picked !== undefined) {
         settings.picked = Array.isArray(source.picked)
@@ -230,7 +239,10 @@ export function normaliseSettings(input, previous = defaultSettings(), { allowIn
             }
         }
     }
-    if (source.maxTokens !== undefined) settings.maxTokens = normaliseMaxTokens(source.maxTokens);
+    if (source.maxTokens !== undefined) {
+        const maxTokens = numericInput(source.maxTokens);
+        if (maxTokens !== null) settings.maxTokens = Math.min(MAX_MAX_TOKENS, Math.max(MIN_MAX_TOKENS, Math.round(maxTokens)));
+    }
     if (typeof source.stream === 'boolean') settings.stream = source.stream;
     if (isPlainObject(source.assistantPrompts)) {
         settings.assistantPrompts ??= {};
