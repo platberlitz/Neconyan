@@ -1011,6 +1011,7 @@ function chatInfoInFlightKey(cacheKey, identity) {
 async function parseChatSummary(pathToFile, stats, withMetadata, previewLimit, matcher) {
     const hasMatcher = (typeof matcher === 'function');
     const fileStream = fs.createReadStream(pathToFile);
+    const fileClosed = new Promise(resolve => fileStream.once('close', resolve));
     const rl = readline.createInterface({
         input: fileStream,
         crlfDelay: Infinity,
@@ -1091,6 +1092,12 @@ async function parseChatSummary(pathToFile, stats, withMetadata, previewLimit, m
                 res({ kind: 'corrupt' });
             }
         });
+    }).finally(async () => {
+        // readline finishes before the file descriptor necessarily closes.
+        // Keep the parse slot occupied through close, including read errors.
+        rl.close();
+        fileStream.destroy();
+        await fileClosed;
     });
 }
 
