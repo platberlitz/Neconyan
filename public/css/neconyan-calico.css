@@ -57,7 +57,8 @@
     --neco-pink: color-mix(in oklch, var(--SmartThemeQuoteColor) 55%, #efb0bd);
 }
 
-:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'][data-neconyan-accent='custom'] body.neconyan :is(#neconyan-workspace-rail, #sb-mobile-nav-content) {
+:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'][data-neconyan-accent='custom'] body.neconyan #neconyan-workspace-rail,
+:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'][data-neconyan-accent='custom'] body.neconyan #sb-mobile-nav-content {
     --neco-ginger: color-mix(in oklch, var(--SmartThemeQuoteColor) 72%, #fff);
     --neco-ginger-hover: color-mix(in oklch, var(--SmartThemeUnderlineColor) 40%, #fff);
 }
@@ -105,7 +106,8 @@ body.neconyan ::selection {
 
 :root[data-neconyan-palette='calico'] body.neconyan.neconyan-home-visible #neconyan-home-host,
 :root[data-neconyan-palette='calico'] body.neconyan .sb-shell-panel-scroller,
-:root[data-neconyan-palette='calico'] body.neconyan #right-nav-panel > :is(.scrollableInner, .scrollableInnerFull) {
+:root[data-neconyan-palette='calico'] body.neconyan #right-nav-panel > .scrollableInner,
+:root[data-neconyan-palette='calico'] body.neconyan #right-nav-panel > .scrollableInnerFull {
     background: var(--neco-canvas-gradient);
 }
 /* Settings panels pad 18px, so the top-right paw sits behind a full-width first card instead of poking out beside it. */
@@ -128,7 +130,9 @@ body.neconyan ::selection {
     display: none;
 }
 
-body.neconyan :is(#sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner) { background: transparent; }
+body.neconyan #sb-topbar-stack,
+body.neconyan #sb-topbar-primary,
+body.neconyan #sb-topbar-inner { background: transparent; }
 
 :root[data-neconyan-palette='calico'] body.neconyan :is(.sb-shell-header, .sb-character-shell-header, #sb-mobile-nav-content),
 :root[data-neconyan-palette='calico'] body.neconyan dialog.popup {
@@ -140,7 +144,13 @@ body.neconyan :is(#sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner) { back
     border-color: color-mix(in oklch, var(--neco-border) 80%, var(--neco-ginger));
 }
 
-:root[data-neconyan-palette='calico'] body.neconyan :is(.sb-shell-callout, .sb-theme-card, .sb-settings-group, .sb-admin-card, .sb-agent-card, .sb-character-editor-identity, .sb-character-editor-field-box) {
+:root[data-neconyan-palette='calico'] body.neconyan .sb-shell-callout,
+:root[data-neconyan-palette='calico'] body.neconyan .sb-theme-card,
+:root[data-neconyan-palette='calico'] body.neconyan .sb-settings-group,
+:root[data-neconyan-palette='calico'] body.neconyan .sb-admin-card,
+:root[data-neconyan-palette='calico'] body.neconyan .sb-agent-card,
+:root[data-neconyan-palette='calico'] body.neconyan .sb-character-editor-identity,
+:root[data-neconyan-palette='calico'] body.neconyan .sb-character-editor-field-box {
     background: var(--neco-panel-gradient);
     border-color: color-mix(in oklch, var(--neco-border) 88%, var(--neco-ginger));
 }
@@ -350,7 +360,9 @@ body.neconyan::before {
 :root[data-neconyan-calico-tone='dark'] body.neconyan::before {
     background-image: url('../img/neconyan/kitty-clouds-dark.webp?v=20260923a');
 }
-body.neconyan:not(.sbterm) :is(#sheld, #form_sheld, #neconyan-home-host) {
+body.neconyan:not(.sbterm) #sheld,
+body.neconyan:not(.sbterm) #form_sheld,
+body.neconyan:not(.sbterm) #neconyan-home-host {
     background-color: transparent !important;
 }
 body.neconyan:not(.sbterm) :is(#send_form, #sb-bottom-chat-bar) {
@@ -474,7 +486,8 @@ body.neconyan:not(.sbterm) #right-nav-panel .neconyan-tool-page-intro.neconyan-c
 body.neconyan:not(.sbterm) #right-nav-panel .neconyan-tool-page-intro.neconyan-cat-panel::after {
     display: none;
 }
-body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) {
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > .character_select,
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > .group_select {
     border-color: color-mix(in oklch, var(--neco-pink) 24%, var(--neco-border));
     border-radius: 16px;
     background: color-mix(in srgb, color-mix(in oklch, var(--neco-cream) 8%, var(--neco-surface)) 92%, transparent);
@@ -570,7 +583,8 @@ body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > .sb-she
 body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > .sb-shell-description { display: none; }
 
 /* Entity rows keep identity, metadata and actions in one predictable grid. */
-body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) {
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > .character_select,
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > .group_select {
     display: grid !important;
     flex: 0 0 auto;
     grid-template-columns: 64px minmax(0, 1fr);
@@ -684,7 +698,10 @@ body.neconyan #right-nav-panel #rm_button_bar > select { flex: 1 1 140px; min-wi
 
 /* These panes sit over the 50% cloud canvas. Keep the image visible while
    giving their existing labels a readable surface and ink colour. */
-body.neconyan :is(#world_popup, #SillyTavernImportSection, #sb_character_import_panel, #sb_character_world_info_panel) {
+body.neconyan #world_popup,
+body.neconyan #SillyTavernImportSection,
+body.neconyan #sb_character_import_panel,
+body.neconyan #sb_character_world_info_panel {
     background: color-mix(in srgb, var(--neco-surface) 90%, transparent) !important;
     color: var(--neco-ink) !important;
     border-color: var(--neco-border) !important;

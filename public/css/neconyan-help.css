@@ -13,7 +13,11 @@
     white-space: normal;
 }
 
-#chat .custom-necoHelp :is(p, h3, h4, dl, dd) {
+#chat .custom-necoHelp p,
+#chat .custom-necoHelp h3,
+#chat .custom-necoHelp h4,
+#chat .custom-necoHelp dl,
+#chat .custom-necoHelp dd {
     margin: 0;
 }
 
@@ -86,7 +90,8 @@
     color: var(--neco-muted);
 }
 
-#chat .custom-necoHelp :is(.custom-necoHelpJump, .custom-necoHelpActions) {
+#chat .custom-necoHelp .custom-necoHelpJump,
+#chat .custom-necoHelp .custom-necoHelpActions {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;

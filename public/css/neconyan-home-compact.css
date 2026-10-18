@@ -1,6 +1,7 @@
 /* Compact Home (deferred, opt-in layout): same sections, tighter spacing, small cat beside the title and no explanatory text. */
 body.neconyan .welcomePanel--compact { gap: 14px; }
-body.neconyan .welcomePanel--compact :is(.neconyan-home-intro, .neconyan-assistant-picker) { padding: 14px 16px; box-shadow: none; }
+body.neconyan .welcomePanel--compact .neconyan-home-intro,
+body.neconyan .welcomePanel--compact .neconyan-assistant-picker { padding: 14px 16px; box-shadow: none; }
 body.neconyan .welcomePanel--compact .neconyan-home-intro { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 0 14px; }
 body.neconyan .welcomePanel--compact .neconyan-home-cat { display: contents; }
 .welcomePanel--compact .neconyan-home-cat img { grid-row: span 2; width: 56px; }

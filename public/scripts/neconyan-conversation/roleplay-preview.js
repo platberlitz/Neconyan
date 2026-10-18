@@ -84,7 +84,10 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             const { timerValue, timerTitle } = formatGenerationTimer(latest.gen_started || startedAt, finishedAt,
                 latest.token_count, reasoningDuration, latest.time_to_first_token, latest.reasoning_tokens);
             const timer = node.querySelector('.mes_timer');
-            if (timer) { timer.textContent = timerValue || ''; timer.title = timerTitle || ''; }
+            if (timer) {
+                if (timer.textContent !== (timerValue || '')) timer.textContent = timerValue || '';
+                if (timer.title !== (timerTitle || '')) timer.title = timerTitle || '';
+            }
             return;
         }
         // Follow the reply while it is written; Agent and Companion output added after
@@ -116,10 +119,13 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         const replacement = chat.querySelector('[data-roleplay-replacement]');
         const messageId = replacement ? Number(replacement.dataset.roleplayReplacement) : messages.length;
         const finishDraw = () => {
-            node.querySelector('[role="status"]').textContent = labels[latest.stage] || labels.preparing;
+            const status = node.querySelector('[role="status"]');
+            const label = labels[latest.stage] || labels.preparing;
+            if (status.textContent !== label) status.textContent = label;
             // The saved receipt names the final child job. Keep the preview's own
             // child identity for the handover to match a completed group speaker.
-            node.dataset.roleplayChild = String(latest.childId ?? '');
+            const currentChild = String(latest.childId ?? '');
+            if (node.dataset.roleplayChild !== currentChild) node.dataset.roleplayChild = currentChild;
             // Display-only decorators run before the browser paints. Saved-message
             // events would incorrectly treat this draft as part of the chat history.
             document.dispatchEvent(new CustomEvent('neconyan:roleplay-preview-rendered', { detail: { message, element: node } }));

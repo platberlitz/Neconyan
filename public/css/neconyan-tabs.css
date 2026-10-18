@@ -6543,7 +6543,8 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     background: color-mix(in srgb, var(--color-danger, var(--sb-color-danger, #fb7185)) 14%, transparent);
 }
 
-#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) .sb-group-editor-side-actions :is(#group_favorite_button, #rm_group_scenario) {
+#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) .sb-group-editor-side-actions #group_favorite_button,
+#right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) .sb-group-editor-side-actions #rm_group_scenario {
     width: auto;
     min-width: max(var(--sb-control-icon-physical-size, 40px), 4.5rem);
     height: 40px;
@@ -6728,7 +6729,8 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
         max-height: var(--sb-mobile-touch-target, 44px);
     }
 
-    #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) .sb-group-editor-side-actions :is(#group_favorite_button, #rm_group_scenario),
+    #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) .sb-group-editor-side-actions #group_favorite_button,
+    #right-nav-panel:is([data-menu-type="group_create"], [data-menu-type="group_edit"]) .sb-group-editor-side-actions #rm_group_scenario,
     #right-nav-panel[data-menu-type="group_create"] .sb-group-editor-utility-actions #rm_group_submit {
         flex: 1 1 min(10rem, 100%);
         min-width: min(10rem, 100%);
