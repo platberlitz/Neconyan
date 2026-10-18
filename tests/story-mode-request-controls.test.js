@@ -56,6 +56,7 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
         trigger: jest.fn(),
     };
     const context = vm.createContext({
+        captureRecoveryAnchor: () => ({}), releaseGenerationContext: jest.fn(), scheduleHeldGenerationRecovery: jest.fn(),
         setCardScriptMessageStreaming: jest.fn(),
         scheduleCardScriptReconcile: jest.fn(),
         isChatNavigationBlocked,
@@ -218,6 +219,7 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
     context.reply = 'New prose. ';
     context.reasoning = '';
     context.chunks = [];
+    load(context, 'script.js', ['saveChatWithHeldReply']);
     context.setGenerationContext = jest.fn();
     context.fetchResumable = jest.fn(async (url, init) => {
         const body = JSON.parse(init.body);
@@ -751,7 +753,8 @@ describe('owned host generation flow', () => {
         expect(postAgent).toHaveBeenCalledTimes(1);
         expect(finalise).toHaveBeenCalledTimes(buffer ? 0 : 1);
         expect(intercepted).toEqual(buffer ? ['Existing prose. abcdefgh'] : []);
-        expect(context.saveChatConditional).toHaveBeenCalledTimes(1);
+        expect(context.saveChatConditional).toHaveBeenCalledTimes(2);
+        expect(context.saveChatConditional).toHaveBeenNthCalledWith(1, { throwOnError: true });
         expect(context.getTokenCount).not.toHaveBeenCalled();
         expect(eventSource.emit.mock.calls.some(([name]) => name === event_types.GENERATION_STOPPED)).toBe(false);
         expect(context.streamingProcessor).toBeNull();
@@ -797,7 +800,8 @@ describe('owned host generation flow', () => {
         expect(processor.isStopped).toBe(true);
         expect(processor.abortController.signal.aborted).toBe(true);
         expect(processor.requestAbortController.signal.aborted).toBe(true);
-        expect(context.saveChatConditional).not.toHaveBeenCalled();
+        expect(context.saveChatConditional).toHaveBeenCalledTimes(1);
+        expect(context.saveChatConditional).toHaveBeenCalledWith({ throwOnError: true });
         expect(received).not.toHaveBeenCalled();
         expect(context.chat[0].mes).toBe(buffer ? 'Existing prose. ' : 'Existing prose. abcd');
     });

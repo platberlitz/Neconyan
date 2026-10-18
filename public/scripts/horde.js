@@ -240,12 +240,17 @@ export async function generateHorde(prompt, params, signal, reportProgress) {
     }
 
     const taskId = responseJson.id;
+    return waitForHordeTask(taskId, signal, reportProgress);
+}
+
+/** Reattach to an existing Horde task without submitting or paying for another request. */
+export async function waitForHordeTask(taskId, signal, reportProgress = false, cancelOnAbort = true) {
     let queue_position_first = null;
     console.log(`Horde task id = ${taskId}`);
 
     for (let retryNumber = 0; retryNumber < MAX_RETRIES; retryNumber++) {
         if (signal.aborted) {
-            cancelTask(taskId);
+            if (cancelOnAbort) cancelTask(taskId);
             throw new Error('Request aborted');
         }
 
@@ -480,4 +485,3 @@ export function initHorde() {
         });
     }
 }
-

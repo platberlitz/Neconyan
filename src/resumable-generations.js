@@ -268,12 +268,13 @@ export class ResumableGeneration {
      * @returns {boolean} Whether there was anything left to cancel
      */
     cancel() {
+        // Stop can arrive after the last provider byte but before the chat is saved.
+        this.context = null;
         if (this.cancelled || this.done) {
             return false;
         }
         this.cancelled = true;
         // A reply the user stopped on purpose must not come back as a recovered message.
-        this.context = null;
         const hooks = [...this.cancelHooks];
         this.cancelHooks.clear();
         for (const hook of hooks) {
@@ -535,11 +536,11 @@ function attachResponse(request, response, generation) {
         }
         generation.captureHeaders(this);
         generation.write(chunk, encoding);
-        if (this.writableEnded) {
+        if (!generation.attached || this.destroyed || this.writableEnded) {
             if (typeof callback === 'function') {
                 callback();
             }
-            return false;
+            return true;
         }
         try {
             return write.call(this, chunk, encoding, callback);
@@ -560,14 +561,15 @@ function attachResponse(request, response, generation) {
         }
         generation.captureHeaders(this);
         generation.write(chunk, encoding);
-        if (this.writableEnded) {
+        generation.end();
+        const connected = generation.attached && !this.destroyed && !this.writableEnded;
+        detach();
+        if (!connected) {
             if (typeof callback === 'function') {
                 callback();
             }
             return this;
         }
-        generation.end();
-        detach();
         try {
             return end.call(this, chunk, encoding, callback);
         } catch (error) {

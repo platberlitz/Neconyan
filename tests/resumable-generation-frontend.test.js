@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 
-const { fetchResumable, reconnectStaleGenerations, setGenerationContext, listRecoverableGenerations, openHeldGeneration } = await import('../public/scripts/resumable-generation.js');
+const { fetchResumable, reconnectStaleGenerations, setGenerationContext, releaseGenerationContext, listRecoverableGenerations, openHeldGeneration, discardGeneration } = await import('../public/scripts/resumable-generation.js');
 const customRequestSource = readFileSync(new URL('../public/scripts/custom-request.js', import.meta.url), 'utf8');
 
 const RESUME_URL = '/api/resumable-generations/resume';
@@ -203,7 +203,7 @@ describe('held generation context', () => {
     const DISCARD_URL = '/api/resumable-generations/discard';
     const LIST_URL = '/api/resumable-generations/list';
 
-    test('tags the request with the encoded context and discards the job once the body is read', async () => {
+    test('retains the reply through parsing and saving, then accepts an explicit acknowledgement', async () => {
         fetchMock.mockImplementation(async (url) => {
             if (url === DISCARD_URL) return new Response(null, { status: 204 });
             return new Response(bodyFrom(['data: a\n\n']), { status: 200 });
@@ -219,10 +219,30 @@ describe('held generation context', () => {
         const init = fetchMock.mock.calls[0][1];
         const decoded = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(init.headers['X-Generation-Context']), c => c.charCodeAt(0))));
         expect(decoded).toEqual(context);
+        expect(context.id).toBe(init.headers['X-Generation-Id']);
+        expect(callsTo(DISCARD_URL)).toHaveLength(0);
+        fetchMock.mockImplementation(async (url) => url === LIST_URL
+            ? Response.json({ jobs: [{ id: context.id, status: 'finished' }] })
+            : new Response(null, { status: 204 }));
+        expect(await listRecoverableGenerations({})).toEqual([]);
+        releaseGenerationContext(context);
+        expect(await listRecoverableGenerations({})).toEqual([{ id: context.id, status: 'finished' }]);
+        await discardGeneration(context.id, { 'X-CSRF-Token': 'csrf' });
         const discardCalls = callsTo(DISCARD_URL);
         expect(discardCalls).toHaveLength(1);
         expect(JSON.parse(discardCalls[0][1].body)).toEqual({ id: init.headers['X-Generation-Id'] });
         expect(discardCalls[0][1].headers['X-CSRF-Token']).toBe('csrf');
+    });
+
+    test('Stop still cancels a received reply while the chat save is pending', async () => {
+        fetchMock.mockResolvedValue(new Response('reply'));
+        const controller = new AbortController();
+        const context = { v: 2 };
+        setGenerationContext(controller.signal, context);
+        await (await fetchResumable('/generate', { signal: controller.signal })).text();
+        controller.abort();
+        expect(callsTo(CANCEL_URL)).toHaveLength(1);
+        expect(JSON.parse(callsTo(CANCEL_URL)[0][1].body)).toEqual({ id: context.id });
     });
 
     test('sends no context header and no discard when none was set', async () => {
@@ -232,6 +252,11 @@ describe('held generation context', () => {
         await new Promise(resolve => setTimeout(resolve, 0));
         expect(fetchMock.mock.calls[0][1].headers['X-Generation-Context']).toBeUndefined();
         expect(callsTo(DISCARD_URL)).toHaveLength(0);
+    });
+
+    test('surfaces a temporary lookup failure so recovery can retry', async () => {
+        fetchMock.mockResolvedValueOnce(new Response(null, { status: 503 }));
+        await expect(listRecoverableGenerations({})).rejects.toThrow('Held reply lookup failed (503)');
     });
 
     test('lists held jobs minus the ones this tab is still streaming', async () => {
