@@ -2,25 +2,16 @@ name: 🐯 Miso Merge Check
 
 on:
   workflow_dispatch: # Allow to manually call this workflow
-  # PR events and workflow_run only reach this workflow once it is on the
-  # default branch, so every staging push sweeps the open pull requests instead.
-  # Remove this once the bot has been released to main.
+  # Push runs come from the pushed branch, so every staging merge sweeps pull
+  # requests whose own branch predates the bot.
   push:
     branches: [staging]
-  pull_request_target:
+  # Pull request runs use the pull request head, so they work before this file
+  # reaches main. Forks are skipped below because their token is read-only.
+  pull_request:
     types: [opened, reopened, synchronize, edited, ready_for_review, labeled, unlabeled]
   pull_request_review:
     types: [submitted, dismissed]
-  # Re-check once the workflows that report on pull requests have finished
-  workflow_run:
-    workflows:
-      - ✅ Pull Request Checks
-      - 🧾 PR Metadata
-      - 🔀 Pull Request Manager
-      - ⚔️ Check Merge Conflicts
-      - Release E2E Validation
-      - README Mirror
-    types: [completed]
 
 permissions:
   checks: read
@@ -29,13 +20,15 @@ permissions:
   pull-requests: write
   statuses: read
 
-# Every run checks all open pull requests, so one queued run is enough
+# Every run checks all open pull requests, so a newer event replaces a stale wait
 concurrency:
   group: miso-merge-check
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   miso:
+    # Fork pull requests get a read-only token and could not comment anyway
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     # Keep in sync with OWN_CHECK_NAMES in .github/miso/merge-bot.cjs
     name: 🐯 Miso merge check
     runs-on: ubuntu-latest
@@ -56,14 +49,12 @@ jobs:
         # GitHub Script
         # https://github.com/marketplace/actions/github-script
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
-        env:
-          # workflow_run already fires when a check finishes, every other event
-          # waits here instead because GitHub ignores it on non-default branches
-          MISO_SETTLE_CHECKS: ${{ github.event_name == 'workflow_run' && 'false' || 'true' }}
         with:
           script: |
             const miso = require(`${process.env.GITHUB_WORKSPACE}/.github/miso/merge-bot.cjs`);
-            const results = await miso.run({ github, context, core, settleChecks: process.env.MISO_SETTLE_CHECKS === 'true' });
+            // Wait for checks here because GitHub only wakes workflow_run on
+            // the default branch, which this bot does not reach until a release
+            const results = await miso.run({ github, context, core, settleChecks: true });
             core.summary.addHeading('Miso merge check').addTable([
               [{ data: 'Pull request', header: true }, { data: 'State', header: true }],
               ...Object.entries(results).map(([number, state]) => [`#${number}`, state]),

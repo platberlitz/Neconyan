@@ -308,11 +308,12 @@ test('the workflow job name matches the check Miso ignores', () => {
     const workflow = fs.readFileSync(new URL('../.github/workflows/pr-miso.yml', import.meta.url), 'utf8');
     assert.match(workflow, /name: 🐯 Miso merge check\n/);
     assert.match(workflow, /sparse-checkout: \.github\/miso/);
-    assert.match(workflow, /pull_request_target:/);
     assert.match(workflow, /push:\n\s{4}branches: \[staging\]/);
+    assert.match(workflow, /pull_request:\n\s{4}types: \[[^\]]*opened[^\]]*synchronize/);
+    assert.doesNotMatch(workflow, /pull_request_target:|workflow_run:/);
+    assert.match(workflow, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
     assert.match(workflow, /ref: \$\{\{ github\.event\.pull_request\.base\.ref \|\| github\.ref \}\}/);
     assert.match(workflow, /timeout-minutes: 20/);
-    assert.match(workflow, /MISO_SETTLE_CHECKS:/);
-    assert.match(workflow, /settleChecks: process\.env\.MISO_SETTLE_CHECKS === 'true'/);
-    assert.match(workflow, /workflow_run:/);
+    assert.match(workflow, /cancel-in-progress: true/);
+    assert.match(workflow, /settleChecks: true/);
 });
