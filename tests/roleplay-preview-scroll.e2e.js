@@ -304,16 +304,37 @@ async function finishReply(page, text) {
     return { ...finished, savedTop };
 }
 
+// Remove existing controls before preview measurement, then hold new controls
+// until the saved-copy handover has established its exact reading anchor.
+async function deferSwipeNavigation(page) {
+    return page.evaluate(async () => {
+        const { extension_settings } = await import('/scripts/extensions.js');
+        const { EXTENSION_NAME, getSettings } = await import('/scripts/extensions/third-party/Neconyan-Deep-Swipe/config.js');
+        const { removeAllDeepSwipeUI } = await import('/scripts/extensions/third-party/Neconyan-Deep-Swipe/ui.js');
+        const settings = getSettings();
+        extension_settings[EXTENSION_NAME] = { ...settings, swipeNavigation: false };
+        removeAllDeepSwipeUI();
+        return { enabled: settings.swipeNavigation };
+    });
+}
+
 // Uses the real saved-copy handover: the server read replaces the preview in the
 // same atomic render that saves the reply, with its Companion notes already on it.
-async function finishSavedReply(page, messageId, { clearJob = true } = {}) {
-    const finished = await page.evaluate(async ({ clearJob: shouldClearJob }) => {
+async function finishSavedReply(page, messageId, { clearJob = true, deferredNavigation = null } = {}) {
+    const finished = await page.evaluate(async ({ clearJob: shouldClearJob, deferredNavigation: deferredControls, messageId: savedId }) => {
         const chat = document.querySelector('#chat');
         const preview = chat.querySelector('#neconyan-roleplay-preview');
         if (!preview) throw new Error('No live preview to save.');
         const previewTextTop = (preview.querySelector('.mes_text') || preview).getBoundingClientRect().top - chat.getBoundingClientRect().top;
         const { keepChatReadingPositionOnNextLoad, refreshCurrentChatFromSaved, setRoleplayJobControls } = await import('/script.js');
         const { finishedReplyReadingAnchor } = await import('/scripts/neconyan-conversation/roleplay-workflows.js');
+        const { getSettings } = await import('/scripts/extensions/third-party/Neconyan-Deep-Swipe/config.js');
+        const { addUiToAllMessages } = await import('/scripts/extensions/third-party/Neconyan-Deep-Swipe/ui.js');
+        const settings = getSettings();
+        const navigationEnabled = deferredControls ? deferredControls.enabled : settings.swipeNavigation;
+        let navigation = null;
+        // Hold control insertion until after readback so the whole-chat batch
+        // deterministically changes row padding while the saved anchor is held.
         // The server owns Send/Stop until the saved readback has finished, so a
         // real handover starts its hold while is_send_press is still true.
         setRoleplayJobControls('scroll-regression', () => {});
@@ -321,13 +342,41 @@ async function finishSavedReply(page, messageId, { clearJob = true } = {}) {
         keepChatReadingPositionOnNextLoad(finishedReplyReadingAnchor());
         try {
             await refreshCurrentChatFromSaved();
+            if (deferredControls) {
+                const text = chat.querySelector(`.mes[mesid="${savedId}"] .mes_text`);
+                const before = text.getBoundingClientRect().top - chat.getBoundingClientRect().top;
+                const controlsBefore = chat.querySelectorAll('.deep-swipe-right').length;
+                const firstRowAboveViewport = chat.querySelector('.mes[mesid]').getBoundingClientRect().bottom < chat.getBoundingClientRect().top;
+                settings.swipeNavigation = navigationEnabled;
+                addUiToAllMessages();
+                navigation = {
+                    before,
+                    after: text.getBoundingClientRect().top - chat.getBoundingClientRect().top,
+                    controlsBefore,
+                    controlsAfter: chat.querySelectorAll('.deep-swipe-right').length,
+                    firstRowAboveViewport,
+                };
+            }
         } finally {
+            settings.swipeNavigation = navigationEnabled;
             keepChatReadingPositionOnNextLoad(null);
             if (shouldClearJob) setRoleplayJobControls(null);
             window.stopScrollPreview();
         }
-        return { previewTextTop };
-    }, { clearJob });
+        return { previewTextTop, navigation };
+    }, { clearJob, deferredNavigation, messageId });
+    if (deferredNavigation) {
+        await test.info().attach('late-navigation-anchor', {
+            body: JSON.stringify(finished),
+            contentType: 'application/json',
+        });
+        expect(finished.navigation.controlsBefore).toBe(0);
+        expect(finished.navigation.controlsAfter).toBeGreaterThan(10);
+        expect(finished.navigation.firstRowAboveViewport).toBe(true);
+        // The hold owns the original preview offset, not an intermediate position
+        // produced by another readback decoration that has not settled yet.
+        expect(Math.abs(finished.navigation.after - finished.previewTextTop)).toBeLessThanOrEqual(0.5);
+    }
     // Outlast every chat-load settle pin and the reading-anchor hold.
     // eslint-disable-next-line playwright/no-wait-for-timeout
     await page.waitForTimeout(3000);
@@ -502,6 +551,7 @@ for (const phone of [false, true]) {
         });
 
         test('saving a reply through the server handover keeps its text and notes in place', async ({ page }) => {
+            const deferredNavigation = await deferSwipeNavigation(page);
             await startActiveSavedReply(page);
             await updatePreview(page, { stage: 'agents', lines: 12 });
             await updatePreview(page, { stage: 'agents', lines: 18, companionResults: companionNote('pending') });
@@ -514,7 +564,7 @@ for (const phone of [false, true]) {
             });
             await recordScrollFrames(page);
             await startMarkerPostPaint(page, messageId);
-            const finished = await finishSavedReply(page, messageId);
+            const finished = await finishSavedReply(page, messageId, { deferredNavigation });
             const marker = await stopMarkerPostPaint(page);
             const frames = await stopScrollFrames(page);
             await test.info().attach('handover-reply-raw-scroll', {

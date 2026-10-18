@@ -10,6 +10,7 @@ export function createPendingNavigationQueue({
     getSettings,
     findElement,
     addNavigation,
+    afterFlush,
 } = {}) {
     const pending = new Map();
     let timer = null;
@@ -27,14 +28,18 @@ export function createPendingNavigationQueue({
         const entries = Array.from(pending.values());
         pending.clear();
         if (!settings?.enabled || !settings.swipeNavigation) return;
-        for (const entry of entries) {
-            if (!entry.chat || context?.chat !== entry.chat) continue;
-            const currentChatId = context?.chatId ?? context?.chat_id ?? null;
-            if (entry.chatId !== null && currentChatId !== entry.chatId) continue;
-            const element = entry.element ?? findElement(entry.messageId);
-            if (!element?.isConnected) continue;
-            if (entry.element && findElement(entry.messageId) !== entry.element) continue;
-            addNavigation(entry.messageId, { chat: entry.chat, element });
+        try {
+            for (const entry of entries) {
+                if (!entry.chat || context?.chat !== entry.chat) continue;
+                const currentChatId = context?.chatId ?? context?.chat_id ?? null;
+                if (entry.chatId !== null && currentChatId !== entry.chatId) continue;
+                const element = entry.element ?? findElement(entry.messageId);
+                if (!element?.isConnected) continue;
+                if (entry.element && findElement(entry.messageId) !== entry.element) continue;
+                addNavigation(entry.messageId, { chat: entry.chat, element });
+            }
+        } finally {
+            afterFlush?.();
         }
     }
 

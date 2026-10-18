@@ -2826,8 +2826,8 @@ function holdChatReloadReadingAnchor(anchor, isCurrent) {
     return true;
 }
 
-/** Reapply the active reload place before a resize can lay out around it. */
-function restoreHeldChatReadingPosition() {
+/** Reapply the active reload place after a row mutation, before the next paint. */
+export function restoreHeldChatReadingPosition() {
     if (!chatReloadReadingAnchorHoldActive) return false;
     // A callback from an older chat must not move a row with the same id in the new one.
     if (typeof chatReloadReadingAnchorHoldIsCurrent === 'function' && !chatReloadReadingAnchorHoldIsCurrent()) {

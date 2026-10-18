@@ -28,7 +28,7 @@ function createScheduler() {
     };
 }
 
-function setup({ enabled = true, swipeNavigation = true } = {}) {
+function setup({ enabled = true, swipeNavigation = true, afterFlush } = {}) {
     const scheduler = createScheduler();
     const context = { chat: [] };
     const settings = { enabled, swipeNavigation };
@@ -42,6 +42,7 @@ function setup({ enabled = true, swipeNavigation = true } = {}) {
         getSettings: () => settings,
         findElement: id => elements.get(id) ?? null,
         addNavigation,
+        afterFlush,
     });
     return { scheduler, context, settings, elements, addNavigation, queue };
 }
@@ -149,6 +150,23 @@ describe('Deep Swipe pending navigation queue', () => {
         navigation.settings.swipeNavigation = false;
         await navigation.scheduler.advance(100);
         expect(navigation.addNavigation).not.toHaveBeenCalled();
+    });
+
+    test('restores the held reading position once after all queued insertions', async () => {
+        const afterFlush = jest.fn();
+        const { scheduler, context, elements, addNavigation, queue } = setup({ afterFlush });
+        context.chat = [{}, {}];
+        elements.set(0, element(0));
+        elements.set(1, element(1));
+        queue.schedule(0, elements.get(0));
+        queue.schedule(1, elements.get(1));
+
+        await scheduler.advance(100);
+
+        expect(afterFlush).toHaveBeenCalledTimes(1);
+        expect(addNavigation).toHaveBeenCalledTimes(2);
+        expect(afterFlush.mock.invocationCallOrder[0])
+            .toBeGreaterThan(addNavigation.mock.invocationCallOrder.at(-1));
     });
 
     test('cancel clears the queue and its timer', async () => {

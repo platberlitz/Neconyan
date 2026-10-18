@@ -8,7 +8,7 @@
  */
 
 import { getContext } from '../../../extensions.js';
-import { isGenerating } from '../../../../script.js';
+import { isGenerating, restoreHeldChatReadingPosition } from '../../../../script.js';
 import { EXTENSION_NAME, getSettings } from './config.js';
 import { createPendingNavigationQueue } from './pending-navigation-queue.js';
 import {
@@ -81,7 +81,8 @@ const navigationQueue = createPendingNavigationQueue({
     getContext,
     getSettings,
     findElement: findMessageElement,
-    addNavigation: (messageId, scope) => addSwipeNavigationToMessage(messageId, scope),
+    addNavigation: (messageId, scope) => addSwipeNavigationToMessage(messageId, { ...scope, preserveScroll: false }),
+    afterFlush: restoreHeldChatReadingPosition,
 });
 
 let chatChangedBinding = null;
@@ -516,6 +517,9 @@ export function addSwipeNavigationToMessage(messageId, scope = {}) {
         navContainer.appendChild(rightBlock);
         messageElement.appendChild(navContainer);
     }
+    // Adding the arrow enables a footer reservation on .mes, outside the
+    // observed .mes_block. Restore the exact held reading position before paint.
+    if (scope.preserveScroll !== false) restoreHeldChatReadingPosition();
 }
 
 /**
@@ -847,12 +851,16 @@ export function addUiToAllMessages(retryCount = 0) {
         return;
     }
 
-    rendered.forEach((element) => {
-        const messageId = parseInt(element.getAttribute('mesid'), 10);
-        if (!isNaN(messageId)) {
-            addSwipeNavigationToMessage(messageId);
-        }
-    });
+    try {
+        rendered.forEach((element) => {
+            const messageId = parseInt(element.getAttribute('mesid'), 10);
+            if (!isNaN(messageId)) {
+                addSwipeNavigationToMessage(messageId, { preserveScroll: false });
+            }
+        });
+    } finally {
+        restoreHeldChatReadingPosition();
+    }
 }
 
 /**
