@@ -221,19 +221,74 @@ describe('chat summary cache', () => {
         const originalCreateReadStream = fs.createReadStream;
         let active = 0;
         let maximum = 0;
+        let ended = 0;
+        let releaseCloses = false;
+        let batchRead;
+        const firstBatchRead = new Promise(resolve => { batchRead = resolve; });
+        const pendingCloses = [];
+        // Keep the first batch's descriptors open after readline has consumed
+        // their contents. A parse slot must include this asynchronous close.
+        jest.spyOn(fs.promises, 'stat').mockImplementation(async file => fs.statSync(file));
         const streamSpy = jest.spyOn(fs, 'createReadStream').mockImplementation((...args) => {
             active++;
             maximum = Math.max(maximum, active);
             const stream = originalCreateReadStream(...args);
+            const destroy = stream._destroy;
+            stream._destroy = function (error, callback) {
+                const close = () => destroy.call(this, error, callback);
+                if (releaseCloses) close();
+                else pendingCloses.push(close);
+            };
+            stream.once('end', () => { if (++ended === 8) batchRead(); });
             stream.once('close', () => { active--; });
             return stream;
         });
 
-        const results = await Promise.all(files.map(file => getChatInfo(file)));
+        const pendingResults = Promise.all(files.map(file => getChatInfo(file)));
+        try {
+            await firstBatchRead;
+            await new Promise(resolve => setImmediate(resolve));
+            expect(maximum).toBeLessThanOrEqual(8);
+        } finally {
+            releaseCloses = true;
+            for (const close of pendingCloses) close();
+            await pendingResults;
+        }
+        const results = await pendingResults;
         expect(results).toHaveLength(24);
         expect(results.every(result => result.chat_items === 1)).toBe(true);
         expect(streamSpy).toHaveBeenCalledTimes(24);
         expect(maximum).toBeLessThanOrEqual(8);
+        expect(active).toBe(0);
+    });
+
+    test('closes failed reads before releasing their slots to queued chats', async () => {
+        const files = Array.from({ length: 10 }, (_, index) => writeChat(
+            path.join(directories.chats, 'Nova', `Read ${index}.jsonl`),
+            {},
+            [{ name: 'Nova', mes: `message ${index}` }],
+        ));
+        const failedFiles = new Set(files.slice(0, 8));
+        const originalCreateReadStream = fs.createReadStream;
+        let active = 0;
+        let maximum = 0;
+        const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+        jest.spyOn(fs, 'createReadStream').mockImplementation((...args) => {
+            const stream = originalCreateReadStream(...args);
+            maximum = Math.max(maximum, ++active);
+            stream.once('close', () => { active--; });
+            if (failedFiles.has(args[0])) {
+                stream.once('open', () => stream.destroy(new Error('Fixture read failure')));
+            }
+            return stream;
+        });
+
+        const results = await Promise.all(files.map(file => getChatInfo(file)));
+        expect(results.slice(0, 8)).toEqual(Array.from({ length: 8 }, () => ({})));
+        expect(results.slice(8).map(result => result.mes)).toEqual(['message 8', 'message 9']);
+        expect(errorSpy).toHaveBeenCalledTimes(8);
+        expect(maximum).toBeLessThanOrEqual(8);
+        expect(active).toBe(0);
     });
 
     test('does not reuse a summary after rename, delete or recreate', async () => {
