@@ -1,9 +1,10 @@
 /**
  * Submit, observe and read back the server's named Roleplay workflows.
  *
- * The browser's Roleplay controls no longer assemble a prompt or call a provider.
- * Each control names one server workflow, hands over only what the user typed or
- * what a saved extension had already written down, and then observes the accepted
+ * Ordinary replies use browser generation. Controls that require a saved-message
+ * transaction, or an explicit background caller, name one server workflow and
+ * hand over only what the user typed or what a saved extension had already written
+ * down, and then observe the accepted
  * job. The durable write is the server's; the browser reloads the chat it wrote
  * and adopts the result facts it needs for its own bookkeeping.
  *

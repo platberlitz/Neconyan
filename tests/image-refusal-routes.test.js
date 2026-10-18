@@ -149,7 +149,7 @@ describe('the other routes that submit a named workflow', () => {
             return stand;
         };
         const submit = vm.runInNewContext(`(${cutFunction(guidedSource, 'submitGuidedWorkflow')})`, host, { importModuleDynamically });
-        const handled = await submit('guided-response', { text: 'Go on.' });
+        const handled = await submit('guided.correction', { text: 'Correct this.' });
         return { handled, toasts, logged };
     };
 

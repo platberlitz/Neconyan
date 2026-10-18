@@ -11,6 +11,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { startNativeReply } from './native-roleplay-helpers.js';
 import { setConfigFilePath } from '../src/util.js';
 import { USER_DIRECTORY_TEMPLATE } from '../src/constants.js';
 
@@ -135,7 +136,7 @@ for (const phone of [false, true]) {
         expect(instruction).toContain('[Dialogue Colors');
         const submitted = page.waitForResponse(acceptedSubmission);
         await page.locator('#send_textarea').fill('Colour this reply.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const response = await submitted;
         const accepted = await response.json();
         const request = response.request().postDataJSON();
@@ -181,7 +182,7 @@ test('the settings-proof retry replays the captured instruction after the page s
     });
     const submitted = page.waitForResponse(response => response.url().endsWith('/workflow/submit') && response.status() === 202);
     await page.locator('#send_textarea').fill('Keep the captured instruction.');
-    await page.locator('#send_textarea').press('Enter');
+    await startNativeReply(page);
     const accepted = await (await submitted).json();
     expect(seen).toHaveLength(2);
     expect(seen[0]).toEqual({ dialoguecolors: first });
@@ -205,7 +206,7 @@ for (const [label, change] of EMPTY_CASES) {
         expect(await setDialogueColorsState(page, change)).toBe('');
         const submitted = page.waitForResponse(acceptedSubmission);
         await page.locator('#send_textarea').fill('Colour nothing.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const response = await submitted;
         const accepted = await response.json();
         expect(response.request().postDataJSON().bundledMacros).toEqual({ dialoguecolors: '' });
@@ -229,7 +230,7 @@ test('a held reply finishes on the server after every page closes and reopens wi
     app.provider.mode.hold = ['conversation-fixture', 'unused-named-model'];
     const submitted = page.waitForResponse(acceptedSubmission);
     await page.locator('#send_textarea').fill('Finish this while I am away.');
-    await page.locator('#send_textarea').press('Enter');
+    await startNativeReply(page);
     const response = await submitted;
     const accepted = await response.json();
     // The accepted request carries the capture, so the closed page is not needed to finish it.
@@ -285,7 +286,7 @@ test('both speakers of a two-speaker group turn receive the same captured instru
         promptMode: 'macro', themeMode: 'dark', colorTheme: 'neon' });
     const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit') && response.status() === 202);
     await page.locator('#send_textarea').fill('Everyone, please answer.');
-    await page.locator('#send_textarea').press('Enter');
+    await startNativeReply(page);
     const accepted = await (await submitted).json();
     await expect.poll(() => app.provider.calls.length, { timeout: 60000 }).toBe(2);
     for (const call of app.provider.calls) {

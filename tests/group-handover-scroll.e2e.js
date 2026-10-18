@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { acknowledgeActiveSettings, test } from './neconyan-conversation-durable-fixture.js';
+import { startNativeReply } from './native-roleplay-helpers.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 
 for (const phone of [false, true]) {
@@ -58,7 +59,7 @@ for (const phone of [false, true]) {
 
         const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit') && response.status() === 202);
         await page.locator('#send_textarea').fill('Everyone, please reply in turn.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const { jobId } = await (await submitted).json();
 
         for (let call = 1; call <= 3; call++) {

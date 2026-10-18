@@ -920,6 +920,12 @@ router.post('/import/cancel', route(({ lease, body }) => ({ status: 'success', c
 
 /* ---------- context (scoped reference and pinned notes) ---------- */
 
+// A routing probe reads policies only, without preparing notebooks or exposing notes.
+router.post('/reply-requirements', route(({ lease, body }) => {
+    const scopes = Array.isArray(body.scopes) ? body.scopes.slice(0, 200) : [];
+    return { required: scopes.some(scope => context.noteContextNotebookIdsLocked(lease, scope).length > 0) };
+}));
+
 router.post('/context/preview', route(({ lease, body }) => ({ status: 'success', ...context.collectNoteContextLocked(lease, { scope: body.scope, budgetTokens: body.budgetTokens, query: body.query }) })));
 
 router.post('/context/inspect', route(({ lease, body }) => ({ status: 'success', records: context.readContextRecordsLocked(lease, { chat: body.chat, limit: body.limit }) })));

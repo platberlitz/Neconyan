@@ -62,10 +62,10 @@ function isGroupChat() {
 }
 
 /**
- * Neconyan Stage 9: a guided generation is one named server workflow, so the
- * browser no longer injects a prompt and triggers a browser generation. Returns
- * false when the server cannot own this call (a group turn, or no protected
- * Roleplay account), and the caller then keeps its own path.
+ * Responses and swipes use the browser unless scoped Notebook context needs the server.
+ * Replacements still need the server's atomic write: their browser fallback
+ * temporarily removes the target or following messages and can save that shortened
+ * chat if the page closes. Returns false when no protected server workflow exists.
  */
 async function submitGuidedWorkflow(name, prompt) {
     if (isGroupChat()) {
@@ -76,10 +76,18 @@ async function submitGuidedWorkflow(name, prompt) {
         const current = getContext();
         return current?.chat === chat && current?.chatId === chatId && current?.groupId === groupId;
     };
+    let serverRequired = false;
+    if (!['guided.regenerate', 'guided.correction', 'roleplay.correct'].includes(name)) {
+        const { requiresServerReply } = await import('../../../browser-reply-routing.js');
+        serverRequired = await requiresServerReply();
+        if (!isCurrent()) return true;
+        if (!serverRequired) return false;
+    }
     const workflows = await import('../../../neconyan-conversation/roleplay-workflows.js').catch(() => null);
     // Treat a chat switch as handled so no caller falls back into the new chat.
     if (!isCurrent()) return true;
     if (!workflows?.isNativeRoleplayWorkflowReady?.()) {
+        if (serverRequired) throw new Error('The selected Notebook context needs a server reply. Please reload and try again.');
         return false;
     }
     // Macros resolve in the page exactly as the injected guide would have, and a
@@ -88,6 +96,7 @@ async function submitGuidedWorkflow(name, prompt) {
     const page = await workflows.capturePagePrompts(name);
     if (!isCurrent()) return true;
     if ((prompt !== undefined && !text) || !page) {
+        if (serverRequired) throw new Error('The selected Notebook context cannot be combined with these page prompts. Nothing was generated.');
         return false;
     }
     debugLog('[Guided] Submitting named workflow', name);

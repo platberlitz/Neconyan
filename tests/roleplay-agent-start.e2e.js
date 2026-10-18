@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { startNativeReply } from './native-roleplay-helpers.js';
 
 const mainReply = 'The main reply is finished. The next Agents are preparing.';
 const lore = 'Nova keeps a silver compass in her coat.';
@@ -49,7 +50,7 @@ for (const phone of [true, false]) for (const concurrent of [false, true]) {
         }, account.avatar);
         const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/workflow/submit') && response.status() !== 409);
         await page.locator('#send_textarea').fill('Show the next Agents as soon as the main reply finishes.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const { jobId } = await (await submitted).json();
         const preview = page.locator('#neconyan-roleplay-preview');
         try {

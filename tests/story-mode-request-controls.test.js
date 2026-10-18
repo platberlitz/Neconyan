@@ -760,6 +760,33 @@ describe('owned host generation flow', () => {
         expect(context.streamingProcessor).toBeNull();
     });
 
+    test('renders the first reasoning and prose chunks without waiting for a later provider event', async () => {
+        const { context, StreamingProcessor } = makeRuntime({ api: 'textgenerationwebui', stream: true });
+        load(context, 'scripts/utils.js', ['Stopwatch']);
+        context.power_user.streaming_fps = 0.001;
+        const processor = new StreamingProcessor('continue', false, new Date(), '', {}, {});
+        context.streamingProcessor = processor;
+        processor.messageId = await processor.onStartStreaming('');
+        const rendered = [];
+        const checkpoints = [];
+        processor.onProgressStreaming = async () => { rendered.push({ text: processor.result, reasoning: processor.pendingReasoning }); };
+        processor.generator = async function* () {
+            yield { text: '', state: {} };
+            checkpoints.push(rendered.length);
+            yield { text: '\n', state: { reasoning: ' ' } };
+            checkpoints.push(rendered.length);
+            yield { text: '', state: { reasoning: 'Thinking.' } };
+            checkpoints.push(rendered.length);
+            yield { text: 'First words', state: { reasoning: 'Thinking.' } };
+            checkpoints.push(rendered.length);
+            yield { text: 'First words and more', state: { reasoning: 'Thinking.' } };
+            checkpoints.push(rendered.length);
+        };
+        await processor.generate();
+        expect(checkpoints).toEqual([0, 0, 1, 2, 2]);
+        expect(rendered).toEqual([{ text: '', reasoning: 'Thinking.' }, { text: 'First words', reasoning: 'Thinking.' }]);
+    });
+
     test.each([false, true])('inline thinking and repeated text do not consume the stream budget (buffer: %s)', async buffer => {
         const { context, StreamingProcessor } = makeRuntime({ api: 'textgenerationwebui', stream: true, buffer });
         const processor = new StreamingProcessor('continue', false, new Date(), '', {}, { maxOutputTokens: 2 });

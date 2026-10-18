@@ -19,6 +19,22 @@ const op = label => `endpoint:${label}:${++counter}`;
 
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360f8cf0000000301010018dd8db40000000049454e44ae426082', 'hex');
 
+test('reply requirements expose only matching owner policies and respect account identity', async t => {
+    const { post } = await server(t, 'reply-requirements-owner');
+    const other = await server(t, 'reply-requirements-other');
+    const notebookId = (await post('/list', {})).body.notebooks[0].id;
+    const { noteId } = (await post('/notes/create', { notebookId, operationId: op('routing-note'), title: 'Private note', text: 'Private fountain context.' })).body;
+    const input = { scopes: [{ chat: 'Nova.png:Saved chat' }] };
+    assert.deepEqual((await post('/reply-requirements', input)).body, { required: false });
+    assert.equal((await post('/policies/update', { notebookId, patch: {
+        notes: { [noteId]: { context: { mode: 'pinned', scopes: [{ kind: 'chat', id: input.scopes[0].chat }] } } },
+    } })).http, 200);
+    assert.deepEqual((await post('/reply-requirements', input)).body, { required: true });
+    assert.deepEqual((await post('/reply-requirements', { scopes: [{ chat: 'Another chat' }] })).body, { required: false });
+    assert.deepEqual((await other.post('/reply-requirements', input)).body, { required: false });
+    assert.equal((await post('/reply-requirements', input, { 'X-Neconyan-Account': 'wrong' })).http, 409);
+});
+
 test('optional sync owner routes never start on a read and reconcile exact files without granting AI access or publishing lore', async t => {
     let endpoint;
     let notebookId;

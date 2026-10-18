@@ -28,7 +28,7 @@ describe('Guided Correction generation wiring', () => {
     });
 
     test('carries the companion rewrite target through group generation only', () => {
-        expect(scriptSource).toContain('generateGroupWrapper(false, type, { quiet_prompt, force_chid, signal, quietImage, jsonSchema, cacheScope: resolvedCacheScope, preserveLastMessage, companionHistoryTarget: companionFeedbackTarget, ...requestControls })');
+        expect(scriptSource).toContain('generateGroupWrapper(false, type, { quiet_prompt, force_chid, signal, quietImage, jsonSchema, skipNativeRoleplay, cacheScope: resolvedCacheScope, preserveLastMessage, companionHistoryTarget: companionFeedbackTarget, ...requestControls })');
         expect(groupChatsSource).toContain('Generate(generateType, { automatic_trigger: byAutoMode, ...mergedParams })');
         expect(groupChatsSource).toContain('Generate(\'continue\', { automatic_trigger: byAutoMode, ...mergedParams, companionHistoryTarget: undefined })');
     });

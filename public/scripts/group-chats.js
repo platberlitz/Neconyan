@@ -1905,9 +1905,12 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             return Promise.resolve();
         }
 
-        // An ordinary group turn runs on the server: the speakers chosen above are
-        // handed over in order, and the server writes every reply even if the page closes.
-        if (!['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && !params?.quiet_prompt && getCurrentChatId()) {
+        // Use the server only for an explicit background call or scoped Notebook context.
+        const ordinaryTurn = !['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && !params?.quiet_prompt && getCurrentChatId();
+        const serverRequired = ordinaryTurn && params?.skipNativeRoleplay === undefined
+            && await (await import('./browser-reply-routing.js')).requiresServerReply(activatedMembers);
+        throwIfAborted();
+        if ((params?.skipNativeRoleplay === false || serverRequired) && ordinaryTurn) {
             const workflows = await import('./neconyan-conversation/roleplay-workflows.js');
             const { roleplayAccountStamp } = await import('./roleplay-save-chain.js');
             let ready = true;
@@ -1929,6 +1932,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
                 }
                 return Promise.resolve(textResult);
             }
+            if (serverRequired) throw new Error('The selected Notebook context needs a server reply. Please reload and try again.');
         }
 
         await unshallowGroupMembers(selected_group);
