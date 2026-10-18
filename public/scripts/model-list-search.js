@@ -1,20 +1,7 @@
 import { t } from './i18n.js';
 import { groupByModelFamily } from './model-family.js';
 
-const VALUE_CHECK_MS = 400;
 const lists = new WeakMap();
-const attached = new Set();
-let valueTimer = 0;
-
-function watchValues() {
-    if (valueTimer) return;
-    valueTimer = window.setInterval(() => {
-        if (document.visibilityState === 'hidden') return;
-        for (const list of attached) {
-            if (list.select.value !== list.value) list.syncPressed();
-        }
-    }, VALUE_CHECK_MS);
-}
 
 /**
  * @typedef {object} ModelListOptions
@@ -78,7 +65,11 @@ export function attachModelListSearch(select, options = {}) {
 
     const list = { select, root, input, results, options: { ...options }, value: select.value, render, focus, syncPressed };
     lists.set(select, list);
-    attached.add(list);
+
+    // Programmatic .val() calls do not fire a change event. Sync before the
+    // first interaction so the highlighted row is always the current value.
+    root.addEventListener('focusin', syncPressed);
+    root.addEventListener('pointerdown', syncPressed, { passive: true });
 
     function choose(value) {
         select.value = value;
@@ -274,11 +265,15 @@ export function attachModelListSearch(select, options = {}) {
             else buttons[Math.min(next, buttons.length - 1)]?.focus();
         }
     });
-    // jQuery's trigger('change') does not reach plain listeners, and .val() fires nothing at all.
+    // jQuery's trigger('change'/'input') does not reach plain listeners, and
+    // .val() fires nothing at all. The explicit sync export covers silent .val()
+    // calls; no polling timer is needed.
     const jQuery = globalThis.jQuery;
-    if (typeof jQuery === 'function') jQuery(select).on('change', syncPressed);
-    else select.addEventListener('change', syncPressed);
-    watchValues();
+    if (typeof jQuery === 'function') jQuery(select).on('change input', syncPressed);
+    else {
+        select.addEventListener('change', syncPressed);
+        select.addEventListener('input', syncPressed);
+    }
     new MutationObserver(render).observe(select, {
         childList: true,
         subtree: true,
@@ -293,6 +288,15 @@ export function attachModelListSearch(select, options = {}) {
 /** @param {HTMLSelectElement | null} select */
 export function hasModelListSearch(select) {
     return Boolean(select && lists.has(select));
+}
+
+/**
+ * Updates the highlighted row after a silent programmatic value change.
+ * @param {HTMLSelectElement | null} select
+ */
+export function syncModelListSearchValue(select) {
+    const list = select ? lists.get(select) : null;
+    list?.syncPressed();
 }
 
 /**

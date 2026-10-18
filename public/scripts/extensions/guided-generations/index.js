@@ -51,7 +51,10 @@ const defaultSettings = {
 
 let qrObserver;
 let qrPollTimer;
+let flushGuideUpdateTimer;
 let flushGuidePollTimer;
+let flushGuideUpdatesStarted = false;
+const FLUSH_GUIDE_POLL_INTERVAL_MS = 2000;
 
 function isLegacySystemPromptPreset(value) {
     return typeof value === 'string' && legacySystemPromptPresetNames.has(value.trim());
@@ -321,7 +324,17 @@ function createActionButton(id, title, iconClass, actionFunc) {
     button.setAttribute('aria-label', title);
     button.addEventListener('click', event => {
         event.preventDefault();
-        actionFunc();
+        try {
+            const result = actionFunc();
+            if (result && typeof result.finally === 'function') {
+                result.finally(scheduleFlushGuideButtonUpdate);
+            } else {
+                scheduleFlushGuideButtonUpdate();
+            }
+        } catch (error) {
+            scheduleFlushGuideButtonUpdate();
+            throw error;
+        }
     });
     return button;
 }
@@ -371,12 +384,54 @@ function createFlushGuidesButton() {
     return button;
 }
 
-function startFlushGuideButtonUpdates() {
+function scheduleFlushGuideButtonUpdate() {
+    if (flushGuideUpdateTimer) return;
+    flushGuideUpdateTimer = window.setTimeout(() => {
+        flushGuideUpdateTimer = null;
+        updateFlushGuideButton();
+    }, 0);
+}
+
+function startFlushGuidePolling() {
+    if (flushGuidePollTimer || document.visibilityState === 'hidden') return;
+    flushGuidePollTimer = window.setInterval(updateFlushGuideButton, FLUSH_GUIDE_POLL_INTERVAL_MS);
+}
+
+function stopFlushGuidePolling() {
     if (flushGuidePollTimer) {
+        window.clearInterval(flushGuidePollTimer);
+        flushGuidePollTimer = null;
+    }
+}
+
+function startFlushGuideButtonUpdates() {
+    if (flushGuideUpdatesStarted) {
         return;
     }
+    flushGuideUpdatesStarted = true;
 
-    flushGuidePollTimer = window.setInterval(updateFlushGuideButton, 500);
+    const refresh = () => scheduleFlushGuideButtonUpdate();
+    const events = [
+        event_types.CHAT_CHANGED,
+        event_types.MESSAGE_SENT,
+        event_types.MESSAGE_RECEIVED,
+        event_types.GENERATION_AFTER_COMMANDS,
+        event_types.GENERATION_ENDED,
+        event_types.SETTINGS_UPDATED,
+    ].filter(Boolean);
+    for (const event of new Set(events)) eventSource.on(event, refresh);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            refresh();
+            startFlushGuidePolling();
+        } else {
+            stopFlushGuidePolling();
+        }
+    });
+    window.addEventListener('focus', refresh);
+    window.addEventListener('pageshow', refresh);
+    startFlushGuidePolling();
+    refresh();
 }
 
 function ensureButtonContainer() {

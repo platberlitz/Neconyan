@@ -33,7 +33,8 @@ describe('Group chat bulk actions', () => {
         expect(tabsSource).not.toContain('Bulk edit for groups is not available yet');
         expect(tabsCssSource).not.toContain('[data-menu-type="groups"] #bulkSelectAllButton');
         expect(tabsCssSource).not.toContain('[data-menu-type="groups"] #bulkDeleteButton');
-        expect(overlayCssSource).toContain(':is(.character_select, .group_select).character_selected');
+        expect(overlayCssSource).toContain('.character_select.character_selected,');
+        expect(overlayCssSource).toContain('.group_select.character_selected {');
         expect(overlayCssSource).not.toContain('.bogus_folder_select,\n#rm_print_characters_block.group_overlay_mode_select .group_select');
         expect(mobileCssSource).toContain('#rm_print_characters_block.bulk_select > :is(.character_select, .group_select)');
         expect(tabsCssSource).toContain('#rm_print_characters_block.bulk_select:not(.group_overlay_mode_select) > :is(.character_select, .group_select) > .bulk_select_checkbox');

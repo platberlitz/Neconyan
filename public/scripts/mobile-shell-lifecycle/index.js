@@ -786,9 +786,12 @@ function normalizeViewportSyncKind(kind) {
 
 /**
  * Decides whether a queued viewport sync has to run the full plan.
- * Only the layout viewport and the mobile breakpoint can change the shell's
- * structure. visualViewport movement, such as pinch zoom or the keyboard
- * panning the page, must stay geometry-only.
+ * The mobile breakpoint changes the shell's structure, so crossing it always
+ * runs the full plan. A width change inside mobile keeps the existing full
+ * rebuild for the phone layout. A width change inside desktop is geometry-only:
+ * panel bounds and the topbar offset still update, but the chat list, rail
+ * actions, brand and modal context are untouched. A height-only change, such as
+ * a desktop window resize or the phone keyboard, also stays geometry-only.
  * An unknown baseline always runs the full plan: the queue must not measure the
  * new size after the browser has already changed it.
  * @param {object} options Options.
@@ -810,8 +813,16 @@ export function shouldRunFullViewportSync({
         return true;
     }
 
-    return Number(before.width) !== Number(after.width)
-        || Boolean(before.isMobileViewport) !== Boolean(after.isMobileViewport);
+    const beforeMobile = Boolean(before.isMobileViewport);
+    const afterMobile = Boolean(after.isMobileViewport);
+
+    if (beforeMobile !== afterMobile) {
+        return true;
+    }
+
+    // Preserve the existing full rebuild for a width change inside the phone
+    // layout. A desktop width change needs geometry, not a shell/context reload.
+    return afterMobile && Number(before.width) !== Number(after.width);
 }
 
 /**

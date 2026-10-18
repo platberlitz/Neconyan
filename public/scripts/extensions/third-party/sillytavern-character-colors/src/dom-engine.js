@@ -2865,17 +2865,24 @@ export function queueObservedMessageDecoration(mesElement) {
     }, effectiveDelay);
 }
 
+function mutationInsideRoleplayDraft(mutation) {
+    const target = mutation.target?.nodeType === Node.ELEMENT_NODE ? mutation.target : mutation.target?.parentElement;
+    return Boolean(target?.closest?.('[data-roleplay-draft]'));
+}
+
 export function collectMutatedMessageElements(mutation) {
     const elements = [];
     const pushClosestMessage = node => {
         if (!node) return;
         const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+        if (element?.closest?.('[data-roleplay-draft]')) return;
         const direct = element?.matches?.('.mes[mesid]') ? element : element?.closest?.('.mes[mesid]');
         if (direct) elements.push(direct);
     };
     const pushAddedMessages = node => {
         if (!node) return;
         const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+        if (element?.closest?.('[data-roleplay-draft]')) return;
         pushClosestMessage(element);
         element?.querySelectorAll?.('.mes[mesid]')?.forEach(mesElement => elements.push(mesElement));
     };
@@ -2900,6 +2907,10 @@ export function setupChatObserver() {
         const observed = new Set();
         const fontTargets = new Set();
         for (const mutation of mutations) {
+            // A streamed preview is painted by its own event and is not a saved
+            // chat message. Reloading its subtree on every token would re-enter
+            // this observer for work that cannot change saved-message colour.
+            if (mutationInsideRoleplayDraft(mutation)) continue;
             if (mutation.type === 'attributes' && mutation.attributeName === 'class'
                 && mutation.target?.matches?.('[data-dc-colored], font[data-dc-gradient]')) {
                 continue;
@@ -2922,6 +2933,20 @@ export function setupChatObserver() {
     runtimeState.chatObserver.observe(chatEl, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'mesid'] });
 }
 
+const CARD_STYLE_CONTAINER_SELECTOR = '#rm_print_characters_block, #rm_group_members, .character_select_container';
+
+function mutationTouchesCharacterCards(mutations) {
+    return mutations.some(mutation => {
+        if (mutation.type !== 'childList' || mutationInsideRoleplayDraft(mutation)) return false;
+        const target = mutation.target?.nodeType === Node.ELEMENT_NODE ? mutation.target : mutation.target?.parentElement;
+        if (target?.closest?.(CARD_STYLE_CONTAINER_SELECTOR)) return true;
+        return Array.from(mutation.addedNodes || []).concat(Array.from(mutation.removedNodes || []))
+            .some(node => node?.nodeType === Node.ELEMENT_NODE && (node.matches?.('.character_select, .group_member')
+                || node.matches?.('.character_select_container') || node.id === 'rm_print_characters_block'
+                || node.id === 'rm_group_members' || node.id === 'right-nav-panel'));
+    });
+}
+
 export function setupChatRootObserver() {
     if (runtimeState.chatRootObserver || !document.body) return;
     const mutationTouchesChatRoot = mutations => {
@@ -2931,13 +2956,15 @@ export function setupChatRootObserver() {
             return !!element && (element.id === 'chat' || !!element.querySelector?.('#chat'));
         };
         return mutations.some(mutation => {
-            if (mutation.target === runtimeState.chatObserverTarget) return false;
+            if (mutation.target === runtimeState.chatObserverTarget || mutationInsideRoleplayDraft(mutation)) return false;
             return Array.from(mutation.addedNodes || []).some(hasChatNode)
                 || Array.from(mutation.removedNodes || []).some(hasChatNode);
         });
     };
     runtimeState.chatRootObserver = new MutationObserver(mutations => {
-        scheduleCardStyle(100);
+        // Character cards are unrelated to chat streaming. Styling the whole card
+        // list for every message or preview mutation forced a restyle on every draw.
+        if (mutationTouchesCharacterCards(mutations)) scheduleCardStyle(100);
         if (!mutationTouchesChatRoot(mutations)) return;
         if (runtimeState.chatRootObserverTimer) clearTimeout(runtimeState.chatRootObserverTimer);
         runtimeState.chatRootObserverTimer = setTimeout(() => {
