@@ -4914,7 +4914,11 @@ async function adoptSavedChatTail(signal) {
     const { renderedMessageCount, firstMessageId, lastMessageId } = getRenderedChatMessageWindow();
     const windowSize = getChatRenderWindowSize();
     const wasShowingTail = pendingRedraw?.wasShowingTail ?? lastMessageId === chat.length - 1;
-    const followSavedTail = wasNearBottom && wasShowingTail
+    // Reading a long preview can be far from the bottom. Include its saved row
+    // in the bounded window so restoring that reading position can find it.
+    const wasReadingSavedTail = readingAnchor && Number(readingAnchor.messageId) === saved.length - 1
+        && readingAnchor.offsetTop < chatElement[0].clientHeight;
+    const followSavedTail = (wasNearBottom || wasReadingSavedTail) && wasShowingTail
         && (Boolean(pendingRedraw) || saved.length > Math.max(first, firstMessageId) + windowSize);
     const rebuildWindow = Boolean(pendingRedraw) || followSavedTail || saved.length < chat.length || !renderedMessageCount
         || !Number.isInteger(firstMessageId) || !Number.isInteger(lastMessageId)

@@ -127,6 +127,40 @@ test.each([true, false])('a full window follows the saved tail only while readin
     expect(redraw).toHaveBeenCalledWith(expect.objectContaining({ startIndex: nearBottom ? 1 : 0, replaceRenderedWindow: nearBottom, atomic: true }));
 });
 
+test.each([1, 5, 50])('a %s-message window includes the finished reply while reading above its bottom', async windowSize => {
+    const { runtime, read, redraw, chat } = fixture();
+    chat.splice(0, chat.length, ...Array.from({ length: 60 }, (_, index) => ({ mes: `Reply ${index}.` })));
+    runtime.getRenderedChatMessageWindow = () => ({ renderedMessageCount: windowSize, firstMessageId: 60 - windowSize, lastMessageId: 59 });
+    runtime.getChatRenderWindowSize = () => windowSize;
+    runtime.chatElement[0].clientHeight = 700;
+    runtime.isChatScrolledNearBottom = () => false;
+    const anchor = { messageId: '60', offsetTop: -200 };
+    runtime.takeChatReloadReadingAnchor = () => anchor;
+    runtime.holdChatReloadReadingAnchor = jest.fn(() => true);
+    runtime.scrollLoadedChatToBottomThroughLifecycle = jest.fn();
+    // Earlier metadata changes require redrawing more than just the appended row.
+    read.mockResolvedValue({ records: [{}, ...chat.map(message => ({ ...message, extra: {} })), { mes: 'Completed reply.' }], evidence: {} });
+    await runtime.refreshCurrentChatFromSaved();
+    expect(redraw).toHaveBeenCalledWith(expect.objectContaining({ startIndex: 61 - windowSize, replaceRenderedWindow: true, atomic: true }));
+    expect(runtime.holdChatReloadReadingAnchor).toHaveBeenCalledWith(anchor, expect.any(Function));
+    expect(runtime.scrollLoadedChatToBottomThroughLifecycle).not.toHaveBeenCalled();
+});
+
+test.each(['preview below viewport', 'older history', 'append only'])('saved readback preserves %s instead of rebuilding the tail unnecessarily', async scenario => {
+    const { runtime, read, redraw, chat } = fixture();
+    chat.splice(0, chat.length, ...Array.from({ length: 30 }, (_, index) => ({ mes: `Reply ${index}.` })));
+    const older = scenario === 'older history';
+    runtime.getRenderedChatMessageWindow = () => ({ renderedMessageCount: 5, firstMessageId: older ? 10 : 25, lastMessageId: older ? 14 : 29 });
+    runtime.getChatRenderWindowSize = () => 5;
+    runtime.chatElement[0].clientHeight = 700;
+    runtime.isChatScrolledNearBottom = () => false;
+    runtime.takeChatReloadReadingAnchor = () => ({ messageId: '30', offsetTop: scenario === 'preview below viewport' ? 900 : 20 });
+    const saved = scenario === 'append only' ? [...chat] : chat.map(message => ({ ...message, extra: {} }));
+    read.mockResolvedValue({ records: [{}, ...saved, { mes: 'Completed reply.' }], evidence: {} });
+    await runtime.refreshCurrentChatFromSaved();
+    expect(redraw).toHaveBeenCalledWith(expect.objectContaining({ startIndex: older ? 10 : scenario === 'append only' ? 30 : 25, replaceRenderedWindow: false }));
+});
+
 test('a failed redraw leaves the preview available and the next readback retries the redraw', async () => {
     const { runtime, read, redraw, remove, chat } = fixture();
     const previous = [...chat];

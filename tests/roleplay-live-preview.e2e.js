@@ -1,4 +1,4 @@
-/* global window, document, requestAnimationFrame */
+/* global window, document, requestAnimationFrame, getComputedStyle */
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { installSyntheticLongChat } from './chat-scroll-regression-helpers.js';
@@ -168,5 +168,57 @@ for (const phone of [true, false]) {
         expect(counts.every(count => count === 1), `Visible reply copies by frame: ${counts}`).toBe(true);
         await expect(page.locator('#chat .mes[mesid]').last()).toContainText(reply);
         await expect(page.locator('#neconyan-roleplay-preview')).toHaveCount(0);
+    });
+
+    test(`aggressive unloading keeps the finished reply at the reading position on ${viewport}`, async ({ app }) => {
+        const page = await openPreview(app, phone);
+        await page.evaluate(() => {
+            const settings = window.SillyTavern.getContext().powerUserSettings;
+            settings.aggressive_dom_unload = true;
+            settings.aggressive_dom_window_size = 5;
+        });
+        await installSyntheticLongChat(page, { messageCount: 30, visibleCount: 5 });
+        const text = `${reply}\n\n${'A long reply should stay where I am reading it.\n\n'.repeat(40)}`;
+        await page.evaluate(text => window.sendLivePreview({ childId: 'reply', stage: 'saving', text }), text);
+        await expect(page.locator('#neconyan-roleplay-preview')).toContainText(reply);
+        const saved = await page.evaluate(async text => {
+            const core = await import('/script.js');
+            return [{ chat_metadata: core.chat_metadata }, ...core.chat.map(message => ({ ...message, extra: { ...message.extra, refreshed: true } })),
+                { name: 'Durable Nova', is_user: false, mes: text, extra: {} }];
+        }, text);
+        await page.route('**/api/chats/get', async route => {
+            const response = await route.fetch();
+            await route.fulfill({ response, json: saved });
+        });
+        const before = await page.evaluate(async () => {
+            const chat = document.querySelector('#chat');
+            const preview = document.querySelector('#neconyan-roleplay-preview .mes_text');
+            chat.dispatchEvent(new Event('touchstart', { bubbles: true }));
+            chat.dispatchEvent(new Event('wheel', { bubbles: true }));
+            chat.scrollTop += preview.getBoundingClientRect().top - chat.getBoundingClientRect().top - 20;
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            const { finishedReplyReadingAnchor } = await import('/scripts/neconyan-conversation/roleplay-workflows.js');
+            const { keepChatReadingPositionOnNextLoad, refreshCurrentChatFromSaved } = await import('/script.js');
+            const anchor = finishedReplyReadingAnchor();
+            const distanceFromBottom = chat.scrollHeight - chat.clientHeight - chat.scrollTop;
+            window.stopLivePreview.freeze();
+            keepChatReadingPositionOnNextLoad(anchor);
+            await refreshCurrentChatFromSaved();
+            window.stopLivePreview();
+            return { offsetTop: anchor.offsetTop, distanceFromBottom };
+        });
+        await page.screenshot({ path: `../screenshots/completed-reply-${viewport}-${process.env.NECONYAN_SCREENSHOT_PHASE || 'after'}.png`, scale: 'css' });
+        expect(before.distanceFromBottom).toBeGreaterThan(500);
+        await expect(page.locator('#chat .mes[mesid="30"]')).toContainText(reply);
+        await expect(page.locator('#chat .mes[mesid]')).toHaveCount(5);
+        await expect(page.locator('#neconyan-roleplay-preview, #show_newer_messages')).toHaveCount(0);
+        const after = await page.locator('#chat .mes[mesid="30"] .mes_text').evaluate(element => {
+            const chat = document.querySelector('#chat');
+            return { offsetTop: element.getBoundingClientRect().top - chat.getBoundingClientRect().top,
+                display: getComputedStyle(element).display, height: element.getBoundingClientRect().height };
+        });
+        expect(Math.abs(after.offsetTop - before.offsetTop)).toBeLessThan(3);
+        expect(after.display).not.toBe('none');
+        expect(after.height).toBeGreaterThan(500);
     });
 }
