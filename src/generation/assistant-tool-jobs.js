@@ -18,7 +18,7 @@ import { requireJobApproval } from './job-approvals.js';
 import { planAssistantCharacter, executeApprovedCharacterAction, assertApprovedCharacterEffectLocked } from './assistant-character-actions.js';
 
 const invalid = message => roleplayError('ASSISTANT_TOOL_SOURCE_CHANGED', message, 409);
-const EDITABLE_FILE_KINDS = new Set(['lorebook', 'agent', 'preset', 'character', 'notebook']);
+const EDITABLE_FILE_KINDS = new Set(['lorebook', 'agent', 'preset', 'character', 'notebook', 'browser-macro']);
 const RESULT_LIMIT = 128 * 1024;
 
 /** Bind one selected assistant card, chat, exact input, and every edited resource before work. */
@@ -212,6 +212,34 @@ async function runNoteProposalJob(context, request) {
     return finishNativeMediaJob(context, { tool: request.name, callId: request.callId, result: visible });
 }
 
+/**
+ * A browser macro is reviewed and saved by the page, never by a server file
+ * writer. The durable approval is the handshake: the page only allows it after
+ * its own review and localStorage write succeeded.
+ */
+async function runBrowserMacroJob(context, request) {
+    const { job } = context;
+    if (request.resource?.kind !== 'browser-macro' || !request.change?.name) throw invalid('The browser macro request is incomplete.');
+    const account = { accountId: job.intent.media.accountId, dataEpoch: job.intent.media.dataEpoch };
+    const approval = requireJobApproval(context, { account, key: `assistant:${request.callId}`,
+        proposal: { kind: 'neconyan-browser-macro', tool: request.name, arguments: request.args,
+            resource: request.resource },
+        choices: ['allow', 'deny'],
+        assertSourceLocked: lease => {
+            const current = captureAssistantToolSourceLocked(lease, job.intent.source,
+                { avatar: request.avatar, name: request.name, args: request.args, callId: request.callId });
+            if (roleplayHash(current) !== roleplayHash(request)) throw invalid('The browser macro draft changed before review.');
+        } });
+    if (approval.decision === null) return { waiting: true, approval };
+    if (approval.decision === 'deny') return finishNativeMediaJob(context,
+        { tool: request.name, callId: request.callId, result: { status: 'denied', committed: false,
+            message: 'Not saved. The browser macro review was declined.' } });
+    return finishNativeMediaJob(context, { tool: request.name, callId: request.callId, result: {
+        status: 'success', committed: true, name: request.change.name, scope: 'browser',
+        message: 'The browser reported that the macro was saved on this device. The server cannot read the browser macro library, so reopen Macros to use it.',
+    } });
+}
+
 /** One durable function-tool result; Stage 8 consumes it before the next model turn. */
 export async function runAssistantToolJob(context, { beforePublish, afterCommit, fetchImpl } = {}) {
     const { job, directories, signal } = context;
@@ -225,6 +253,7 @@ export async function runAssistantToolJob(context, { beforePublish, afterCommit,
         return finishNativeMediaJob(context, { tool: request.name, callId: request.callId, result: request.response });
     }
     if (request.proposal) return runNoteProposalJob(context, request);
+    if (request.tool === 'browser-macro') return runBrowserMacroJob(context, request);
     const plan = plannedChange(context, request);
     const account = { accountId: job.intent.media.accountId, dataEpoch: job.intent.media.dataEpoch };
     const approval = requireJobApproval(context, { account, key: `assistant:${request.callId}`,

@@ -17,6 +17,8 @@ import { activeGenerationInterceptors, extension_settings } from '../extensions.
 import { COMPANION_HISTORY_PROMPT_KEY_PREFIX } from '../extensions/in-chat-agents/companion/companion-shared.js';
 import { selected_group } from '../group-chats.js';
 import { cancelJob, listJobs, observeJob, TERMINAL } from '../jobs.js';
+import { MacroRegistry } from '../macros/engine/MacroRegistry.js';
+import { readBrowserMacros } from '../extensions/third-party/MacroEnhanced/src/custom/browser-store.js';
 import { roleplayAccountStamp } from '../roleplay-save-chain.js';
 import { getCurrentUserHandle } from '../user.js';
 import { getCurrentCharAvatar } from './context.js';
@@ -282,6 +284,39 @@ async function loadedDialogueColorsMacro() {
 /** The optional page-captured bundled macros that travel with one submission. */
 export async function captureBundledMacros() {
     return { dialoguecolors: await loadedDialogueColorsMacro() };
+}
+
+const BROWSER_MACRO_NAME = /^[a-zA-Z][\w-]*$/;
+const MAX_BROWSER_MACRO_NAME_LENGTH = 512;
+const MAX_BROWSER_MACROS = 512;
+
+/**
+ * The names of stored browser macros and custom macros currently registered.
+ * The registry lists primaries and their `me-` aliases as separate entries, so a
+ * name the prompt can use is a name the server must refuse. Only names travel:
+ * a template or its output would be page-private text and never leaves here.
+ * Reading the pure storage module also covers a disabled experimental parser,
+ * without loading any extension UI or DOM code.
+ */
+export function captureBrowserMacros() {
+    const names = [];
+    const seen = new Set();
+    const add = value => {
+        if (typeof value !== 'string') return;
+        const name = value.trim().toLowerCase();
+        if (!name || name.length > MAX_BROWSER_MACRO_NAME_LENGTH || !BROWSER_MACRO_NAME.test(name) || seen.has(name) || names.length >= MAX_BROWSER_MACROS) return;
+        seen.add(name);
+        names.push(name);
+    };
+    for (const macro of readBrowserMacros({ account: getCurrentUserHandle() })) {
+        if (macro.enabled === false) continue;
+        add(macro.name);
+        add(`me-${macro.name}`);
+    }
+    for (const macro of MacroRegistry.getAllMacros()) {
+        if (macro?.category === 'enhanced-custom') add(macro.name);
+    }
+    return names;
 }
 
 /** The one place that turns a generation type into the named workflow the server owns. */
@@ -622,12 +657,14 @@ async function submitRoleplayWorkflowRequest({ name, intent, locator, anchorInde
     const stamp = roleplayAccountStamp().account;
     const signature = JSON.stringify([account, name, intent, anchorIndex, chosen, maxTokens, locator, stamp]);
     const known = pending.get(account);
+    const browserMacros = captureBrowserMacros();
     let payload = known?.signature === signature ? known.payload : {
         key: createKey(name),
         name,
         intent,
         // An uncertain submission reuses its capture and key, even if the page changed.
         bundledMacros: await captureBundledMacros(),
+        ...(browserMacros.length ? { browserMacros } : {}),
         source: { locator },
         anchor: { messageIndex: anchorIndex, chosen },
         messageRevision: messageRevisionAt(anchorIndex),
@@ -677,6 +714,7 @@ export async function submitRoleplayGroupTurn({ groupId, forcedAvatars, generati
     const locator = { chat: chatName, group: true, groupId: String(groupId) };
     // Captured once, so the settings-proof retry replays the same instruction.
     const bundledMacros = await captureBundledMacros();
+    const browserMacros = captureBrowserMacros();
     const stamp = roleplayAccountStamp().account;
     const payload = {
         key: createKey('group.reply'),
@@ -685,6 +723,7 @@ export async function submitRoleplayGroupTurn({ groupId, forcedAvatars, generati
         forcedAvatars,
         generationId,
         bundledMacros,
+        ...(browserMacros.length ? { browserMacros } : {}),
         account: stamp,
     };
     const finished = awaitFinished(payload.key);

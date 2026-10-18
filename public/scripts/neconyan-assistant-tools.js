@@ -34,8 +34,10 @@ import { saveCharacterDraft } from './neconyan-character-create.js';
 import { isNeconyanAssistant } from './neconyan-assistant-knowledge.js';
 import { ASK_FIRST, CONFIRM_PROTOCOL, CREATE_CHARACTER_GUIDE, USER_CONFIRMED_DESCRIPTION } from './neconyan-assistant-tool-guidance.js';
 import { CREATE_AGENT_GUIDE, CREATE_AGENT_SCHEMA, buildAssistantAgent, assistantAgentCreated } from './neconyan-assistant-agent.js';
+import { BROWSER_MACRO_TOOL, normaliseBrowserMacroDraft } from './neconyan-assistant-macro-schema.js';
 
 const TOOL_PREFIX = 'Neconyan_Assistant_';
+const SAVE_BROWSER_MACRO_GUIDE = 'Draft the macro with the user, show the exact name, template and arguments in chat, and end that message by asking whether to make the tool call now. Call only after the user confirms.';
 const registeredTools = new Set();
 const editableCharacterFields = Object.freeze([
     'name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example',
@@ -175,6 +177,12 @@ function parseUid(value) {
 
 function valuesEqual(left, right) {
     return JSON.stringify(left) === JSON.stringify(right);
+}
+
+const browserMacroFields = Object.freeze(['name', 'template', 'description', 'args', 'expectedTemplate']);
+function browserMacroInput(input) {
+    if (!isPlainObject(input)) return input;
+    return Object.fromEntries(browserMacroFields.filter(field => Object.hasOwn(input, field)).map(field => [field, input[field]]));
 }
 
 function reviewValue(value) {
@@ -321,6 +329,39 @@ function noteTool(kind) {
         }
         return postNotebook('/assistant/decide', { proposalId: result.proposalId, proposalHash: proposal.proposalHash, decision: 'allow' });
     };
+}
+
+async function saveBrowserMacro(input, guard) {
+    guard.assert();
+    const draft = normaliseBrowserMacroDraft(browserMacroInput(input));
+    guard.assert();
+    const invocation = guard.invocation ?? {};
+    const proposalId = `browser:${shortHash(`${invocation.account}:${invocation.chatId}`)}:${invocation.generation ?? 0}:${guard.callId}`;
+    let result;
+    try {
+        const { reviewAndSaveBrowserMacro } = await import('./neconyan-assistant-macros.js');
+        result = await reviewAndSaveBrowserMacro(draft, { account: invocation.account, isCurrent: () => guard.isCurrent(), proposalId });
+    } catch (error) {
+        return { status: 'failure', committed: false, error: error instanceof Error ? error.message : String(error),
+            message: 'The browser macro library failed before it reported a save. Check My macros before retrying.' };
+    }
+    if (result?.status === 'success' && result.committed === true) {
+        return { status: 'success', committed: true, name: result.name ?? draft.name, scope: 'browser',
+            message: result.message ?? `Saved {{${result.name ?? draft.name}}} in this browser account. It is not synced to the server.` };
+    }
+    if (result?.status === 'success') {
+        return { status: 'failure', committed: false,
+            message: 'The browser did not confirm that the macro was saved. Check My macros before retrying.' };
+    }
+    if (result?.status === 'cancelled') {
+        return { status: 'cancelled', committed: false,
+            message: result.message ?? (result.declined === true ? 'Not saved. The macro review was declined.' : 'Not saved. The request changed before it could save.') };
+    }
+    if (result?.status === 'conflict') {
+        return { status: 'conflict', committed: false, message: result.message ?? 'The macro library changed. Nothing was saved.' };
+    }
+    return { status: 'failure', committed: false, error: result?.message ?? 'The browser macro library could not save this macro.',
+        message: result?.message ?? 'The browser macro library could not save this macro. Nothing was saved.' };
 }
 
 function bookNames() {
@@ -801,6 +842,10 @@ function registerAll(registration) {
     for (const [name, definition] of Object.entries(NOTE_TOOL_DEFINITIONS)) {
         register(`${TOOL_PREFIX}${name}`, definition.displayName, definition.description, definition.schema, registration, noteTool(definition.kind));
     }
+    // The shared description and parameters are the native durable definition's
+    // source of truth too; the same guide applies before either call path.
+    register(BROWSER_MACRO_TOOL.name, BROWSER_MACRO_TOOL.displayName, BROWSER_MACRO_TOOL.description,
+        BROWSER_MACRO_TOOL.parameters, registration, saveBrowserMacro, SAVE_BROWSER_MACRO_GUIDE);
 }
 
 export function unregisterNeconyanAssistantTools() {

@@ -97,6 +97,60 @@ test('the assistant reads only named safe fields from bound saved resources', as
     assert.equal(JSON.parse(fs.readFileSync(path.join(f.dirs.worlds, 'Manual.json'))).entries[12].content, 'Old note');
 });
 
+test('a browser macro is validated, reviewed in the browser and never written to account settings', async t => {
+    const f = prepared(t);
+    const settingsFile = path.join(f.dirs.root, 'settings.json');
+    const settingsBefore = fs.readFileSync(settingsFile);
+    const args = { name: 'SceneMover', template: 'Move the scene to {{target}}.',
+        description: 'Move the scene somewhere new.', args: [{ name: 'target', description: 'Where to move.' }],
+        userConfirmed: true };
+    const request = f.capture('SaveBrowserMacro', args, 'browser-macro-1');
+    assert.equal(request.tool, 'browser-macro');
+    assert.equal(request.mutating, true);
+    assert.deepEqual(request.resource, { kind: 'browser-macro', id: 'SceneMover' });
+    assert.equal(request.change.name, 'SceneMover');
+    assert.equal(request.change.template, args.template);
+    assert.equal(Object.hasOwn(request.change, 'userConfirmed'), false);
+    assert.deepEqual(f.capture('SaveBrowserMacro', args, 'browser-macro-1'), request);
+    assert.equal(f.capture('SaveBrowserMacro', { name: 'SceneMover', template: 'Changed.',
+        expectedTemplate: args.template, userConfirmed: true }, 'browser-replace').change.expectedTemplate, args.template);
+    const { context } = f.admit(request);
+    const pending = await runAssistantToolJob(context());
+    assert.equal(pending.waiting, true);
+    assert.equal(getJob(f.dirs, context().job.id).state, 'waiting');
+    const savedApproval = readJobApproval(context(), pending.approval.id);
+    assert.equal(savedApproval.proposal.kind, 'neconyan-browser-macro');
+    assert.equal(savedApproval.proposal.arguments.template, args.template);
+    assert.deepEqual(savedApproval.proposal.resource, { kind: 'browser-macro', id: 'SceneMover' });
+    assert.deepEqual(fs.readFileSync(settingsFile), settingsBefore);
+    decideJobApproval(context(), { id: pending.approval.id, proposalHash: pending.approval.proposalHash, decision: 'allow' });
+    const finished = await runAssistantToolJob(context());
+    assert.deepEqual(finished.result.result, { status: 'success', committed: true, name: 'SceneMover', scope: 'browser',
+        message: 'The browser reported that the macro was saved on this device. The server cannot read the browser macro library, so reopen Macros to use it.' });
+    assert.deepEqual(fs.readFileSync(settingsFile), settingsBefore);
+    assert.deepEqual(await runAssistantToolJob(context()), finished);
+    assert.deepEqual(fs.readFileSync(settingsFile), settingsBefore);
+});
+
+test('a browser macro needs chat confirmation, valid fields and its own review decision', async t => {
+    const f = prepared(t);
+    assert.equal((await runAssistantToolJob(f.admit(f.capture('SaveBrowserMacro',
+        { name: 'NoConfirmation', template: 'Text' }, 'browser-ask')).context())).result.result.status, 'needs_confirmation');
+    assert.throws(() => f.capture('SaveBrowserMacro', { name: 'Bad name', template: 'Text', userConfirmed: true }), { code: 'ASSISTANT_TOOL_INVALID' });
+    assert.throws(() => f.capture('SaveBrowserMacro', { name: 'Empty', template: '   ', userConfirmed: true }), { code: 'ASSISTANT_TOOL_INVALID' });
+    assert.throws(() => f.capture('SaveBrowserMacro', { name: 'BadArg', template: 'Text', args: [{ name: 'user' }],
+        userConfirmed: true }), { code: 'ASSISTANT_TOOL_INVALID' });
+    const declined = f.capture('SaveBrowserMacro', { name: 'Declined', template: 'Text', userConfirmed: true }, 'browser-deny');
+    const denied = f.admit(declined);
+    const pending = await runAssistantToolJob(denied.context());
+    decideJobApproval(denied.context(), { id: pending.approval.id, proposalHash: pending.approval.proposalHash, decision: 'deny' });
+    const finished = await runAssistantToolJob(denied.context());
+    assert.equal(finished.result.result.status, 'denied');
+    assert.equal(finished.result.result.committed, false);
+    const settings = JSON.parse(fs.readFileSync(path.join(f.dirs.root, 'settings.json')));
+    assert.equal(settings.extension_settings?.MacroEnhanced?.customMacros, undefined);
+});
+
 test('the assistant cannot treat model confirmation as approval for an Agent edit', async t => {
     const f = prepared(t);
     const args = { id: 'tool-agent', field: 'prompt', value: 'After', userConfirmed: true };

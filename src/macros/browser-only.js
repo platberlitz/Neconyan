@@ -32,6 +32,45 @@ export function capturedBrowserMacros(settings, character, metadata) {
     }))];
 }
 
+/** The engine's macro identifier shape, and a bound for names the page hands over. */
+export const MAX_BROWSER_MACRO_NAME_LENGTH = 512;
+export const MAX_BROWSER_MACROS = 512;
+const BROWSER_MACRO_NAME = /^[a-zA-Z][\w-]*$/;
+
+/**
+ * The optional browser-local names a page sends with a workflow. Only names
+ * travel: an entry's template never leaves the browser. Values are trimmed and
+ * lower-cased because the refusal boundary compares lower-cased macro names,
+ * then deduplicated case-insensitively. Null means the field is malformed.
+ */
+export function normalizeBrowserMacroNames(value) {
+    if (!Array.isArray(value) || value.length > MAX_BROWSER_MACROS) return null;
+    const names = [];
+    const seen = new Set();
+    for (const item of value) {
+        const name = typeof item === 'string' ? item.trim().toLowerCase() : '';
+        if (!name || name.length > MAX_BROWSER_MACRO_NAME_LENGTH || !BROWSER_MACRO_NAME.test(name)) return null;
+        if (seen.has(name)) continue;
+        seen.add(name);
+        names.push(name);
+    }
+    return names;
+}
+
+/** Add page-local names to the vocabulary the server already reads from saved data. */
+export function mergeBrowserMacros(captured, submitted) {
+    if (!submitted?.length) return captured;
+    const merged = [...captured];
+    const seen = new Set(captured.map(name => name.toLowerCase()));
+    for (const item of submitted) {
+        const name = String(item).trim().toLowerCase();
+        if (!name || seen.has(name)) continue;
+        seen.add(name);
+        merged.push(name);
+    }
+    return merged;
+}
+
 // Macros a loaded page extension delivers: they resolve only when the page
 // captured their text with the reply. Only a Roleplay execution snapshot that
 // opts in refuses a missing capture; elsewhere they stay literal, as any unknown

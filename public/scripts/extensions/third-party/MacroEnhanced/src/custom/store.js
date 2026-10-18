@@ -2,12 +2,18 @@ import { MODULE_NAME, getSettings, saveSettings } from '../settings.js';
 import { FALLBACK_PREFIX, RESERVED_NAMES } from '../registration.js';
 import { getChatState, peekChatState, touchChatState } from '../chat-state.js';
 import { notifyMacroDataChanged } from '../data-events.js';
+import {
+    getBrowserDefs as readBrowserDefs,
+    getBrowserStoreProblem,
+    writeBrowserDefs,
+} from './browser-store.js';
 
 // Mirrors MACRO_IDENTIFIER_PATTERN in the engine's MacroLexer.js (not imported to
 // avoid deep imports into Neconyan internals).
 export const NAME_PATTERN = /^[a-zA-Z][\w-]*$/;
 
 export const SCOPE_GLOBAL = 'global';
+export const SCOPE_BROWSER = 'browser';
 export const SCOPE_CHARACTER = 'character';
 export const SCOPE_CHAT = 'chat';
 
@@ -40,9 +46,9 @@ export function createDef(partial = {}) {
  * @param {object} options
  * @param {CustomMacroDef[]} options.siblings - Other defs in the same scope (for uniqueness).
  * @param {object|null} options.registry - Engine registry, to refuse names owned by others.
- * @param {string[]} options.customNames - Lowercased names of custom defs in BOTH scopes.
+ * @param {string[]} options.customNames - Lowercased names of custom defs in every scope.
  *        A registry entry we own is only acceptable when it is one of these (an edit of
- *        this def, or the char-overrides-global case). otherwise it is a built-in macro
+ *        this def, or the more-specific-scope case). otherwise it is a built-in macro
  *        of this extension and taking the name would clobber it.
  * @returns {string[]} Human-readable problems; empty when valid.
  */
@@ -104,12 +110,81 @@ export function validateDef(def, { siblings = [], registry = null, customNames =
 
 /** Lowercased names of every custom def in all scopes, for validateDef's customNames. */
 export function getAllCustomNames() {
-    return [...getGlobalDefs(), ...getCharacterDefs(), ...getChatDefs()]
+    return [...getGlobalDefs(), ...safeBrowserDefs(), ...getCharacterDefs(), ...getChatDefs()]
         .map(def => String(def.name ?? '').toLowerCase())
         .filter(Boolean);
 }
 
+function safeBrowserDefs() {
+    try {
+        return readBrowserDefs();
+    } catch (error) {
+        // A blocked or absent localStorage is an expected state on some hosts;
+        // the My macros panel and save errors say so in plain language.
+        if (error?.code !== 'BROWSER_MACRO_STORAGE') {
+            console.warn('[Macro Enhanced] Browser macros could not be read.', error);
+        }
+        return [];
+    }
+}
+
 // ---------- persistence ----------
+
+/** Browser macros are read from this browser's localStorage for the signed-in account. */
+export function getBrowserDefs(options = {}) {
+    return readBrowserDefs(options);
+}
+
+/** Browser macros are saved only in this browser's localStorage for the signed-in account. */
+export function saveBrowserDefs(defs, options = {}) {
+    writeBrowserDefs(defs, options);
+    notifyMacroDataChanged('macros');
+}
+
+export { getBrowserStoreProblem };
+
+/** The stored list for a scope. Callers that write should use saveDefsForScope. */
+export function getDefsForScope(scope) {
+    if (scope === SCOPE_BROWSER) {
+        return getBrowserDefs();
+    }
+    if (scope === SCOPE_CHARACTER) {
+        return getCharacterDefs();
+    }
+    if (scope === SCOPE_CHAT) {
+        return getChatDefs();
+    }
+    return getGlobalDefs();
+}
+
+/**
+ * Persists a scope through its one storage path. Character cards save
+ * asynchronously; the other scopes settle during the call.
+ *
+ * @param {string} scope
+ * @param {CustomMacroDef[]} defs
+ * @param {object} [options] - storage and account injection for browser tests.
+ * @returns {Promise<void>}
+ */
+export async function saveDefsForScope(scope, defs, options = {}) {
+    if (scope === SCOPE_BROWSER) {
+        saveBrowserDefs(defs, options);
+        return;
+    }
+    if (scope === SCOPE_CHARACTER) {
+        await saveCharacterDefs(defs);
+        return;
+    }
+    if (scope === SCOPE_CHAT) {
+        saveChatDefs(defs);
+        return;
+    }
+    if (scope === SCOPE_GLOBAL) {
+        saveGlobalDefs(defs);
+        return;
+    }
+    throw new Error(`Unknown macro scope "${scope}".`);
+}
 
 export function getGlobalDefs() {
     return getSettings().customMacros;
@@ -159,9 +234,9 @@ export function saveChatDefs(defs) {
 }
 
 /**
- * The definitions that should currently be registered: enabled globals, with
- * enabled character defs overriding same-named globals, and enabled chat defs
- * overriding both (most specific wins).
+ * The definitions that should currently be registered: enabled globals, then
+ * this browser's defs, then character defs, then chat defs. The most specific
+ * scope wins a shared name.
  *
  * @returns {{def: CustomMacroDef, scope: string}[]}
  */
@@ -169,6 +244,7 @@ export function getEffectiveDefs() {
     const byName = new Map();
     const layers = [
         [getGlobalDefs(), SCOPE_GLOBAL],
+        [safeBrowserDefs(), SCOPE_BROWSER],
         [getCharacterDefs(), SCOPE_CHARACTER],
         [getChatDefs(), SCOPE_CHAT],
     ];

@@ -8,38 +8,24 @@ import { createEditorDraft, renderMacroEditor } from '../custom/editor-ui.js';
 import { renderTemplateGallery } from '../custom/gallery-ui.js';
 import { syncRegistrations } from '../custom/registrar.js';
 import {
+    SCOPE_BROWSER,
     SCOPE_CHARACTER,
     SCOPE_CHAT,
     SCOPE_GLOBAL,
-    getCharacterDefs,
-    getChatDefs,
-    getGlobalDefs,
-    saveCharacterDefs,
-    saveChatDefs,
-    saveGlobalDefs,
+    getBrowserStoreProblem,
+    getDefsForScope,
+    saveDefsForScope,
 } from '../custom/store.js';
+import { SCOPE_COPY, snapshotContext, validateScopeForSave } from '../custom/scopes.js';
 import { renderMacroText } from './macro-text.js';
 import { uiState } from './ui-state.js';
 
-function defsForScope(scope) {
-    if (scope === SCOPE_CHARACTER) {
-        return getCharacterDefs();
-    }
-    return scope === SCOPE_CHAT ? getChatDefs() : getGlobalDefs();
-}
-
 function scopeName(scope) {
-    return scope === SCOPE_GLOBAL ? 'Everywhere' : scope === SCOPE_CHARACTER ? 'This character' : 'This chat';
+    return SCOPE_COPY[scope]?.title ?? 'that scope';
 }
 
 async function persistScope(scope, defs) {
-    if (scope === SCOPE_CHARACTER) {
-        await saveCharacterDefs(defs);
-    } else if (scope === SCOPE_CHAT) {
-        saveChatDefs(defs);
-    } else {
-        saveGlobalDefs(defs);
-    }
+    await saveDefsForScope(scope, defs);
     syncRegistrations();
 }
 
@@ -129,7 +115,11 @@ export function createMyMacrosPanel({ onTry, announce = defaultAnnounce } = {}) 
     }
 
     function findCurrentDef(def, scope) {
-        return defsForScope(scope).find(candidate => candidate.id === def.id) ?? null;
+        try {
+            return getDefsForScope(scope).find(candidate => candidate.id === def.id) ?? null;
+        } catch {
+            return null;
+        }
     }
 
     function renderCard(def, scope) {
@@ -151,16 +141,26 @@ export function createMyMacrosPanel({ onTry, announce = defaultAnnounce } = {}) 
         enabled.checked = def.enabled !== false;
         enabled.setAttribute('aria-label', `Use {{${def.name}}}`);
         enabled.addEventListener('change', async () => {
-            const current = findCurrentDef(def, scope);
+            // Read the list once: the browser scope parses a new array on every
+            // read, so a mutation on a separately read copy would not be saved.
+            let defs;
+            try {
+                defs = getDefsForScope(scope);
+            } catch (error) {
+                enabled.checked = def.enabled !== false;
+                announceError(`Could not read this scope to change {{${def.name}}}: ${error?.message ?? error}`);
+                return;
+            }
+            const current = defs.find(candidate => candidate.id === def.id);
             if (!current) {
                 enabled.checked = def.enabled !== false;
-                announceError('That macro belongs to another character or chat. Open it again to change it.');
+                announceError('That macro belongs to another character, chat or account. Open it again to change it.');
                 return;
             }
             const previous = current.enabled;
             current.enabled = enabled.checked;
             try {
-                await persistScope(scope, defsForScope(scope));
+                await persistScope(scope, defs);
                 announce(`${enabled.checked ? 'Turned on' : 'Turned off'} {{${def.name}}}.`);
                 focusSwitch(def.id);
             } catch (error) {
@@ -186,11 +186,9 @@ export function createMyMacrosPanel({ onTry, announce = defaultAnnounce } = {}) 
     }
 
     async function deleteMacro(def, scope) {
-        const current = findCurrentDef(def, scope);
-        if (!current) {
-            announceError('That macro belongs to another character or chat. Open it again to delete it.');
-            return;
-        }
+        // Capture the open target before the popup. The account, chat or card can
+        // change while it is up, and the confirmed click must not follow it.
+        const snapshot = snapshotContext();
         const cards = [...listHost.querySelectorAll('[data-me-def-id]')];
         const index = cards.findIndex(card => card.dataset.meDefId === def.id);
         const nextId = cards[index + 1]?.dataset.meDefId ?? cards[index - 1]?.dataset.meDefId ?? null;
@@ -202,8 +200,17 @@ export function createMyMacrosPanel({ onTry, announce = defaultAnnounce } = {}) 
         if (!confirmed) {
             return;
         }
+        const problem = validateScopeForSave({ scope, persistedScope: scope, snapshot });
+        if (problem) {
+            announceError(problem);
+            return;
+        }
+        if (!findCurrentDef(def, scope)) {
+            announceError('That macro belongs to another character, chat or account. Open it again to delete it.');
+            return;
+        }
         try {
-            await persistScope(scope, defsForScope(scope).filter(other => other.id !== def.id));
+            await persistScope(scope, getDefsForScope(scope).filter(other => other.id !== def.id));
             announce(`Deleted {{${def.name}}}.`);
             renderList();
             gallery.refresh();
@@ -215,10 +222,21 @@ export function createMyMacrosPanel({ onTry, announce = defaultAnnounce } = {}) 
 
     function renderList() {
         listHost.replaceChildren();
+        let browserDefs = [];
+        let browserProblem = getBrowserStoreProblem();
+        try {
+            browserDefs = getDefsForScope(SCOPE_BROWSER);
+        } catch (error) {
+            browserProblem = browserProblem || error?.message || String(error);
+        }
+        if (browserProblem) {
+            listHost.appendChild(el('p', 'me-form-problem', browserProblem));
+        }
         const groups = [
-            [SCOPE_GLOBAL, getGlobalDefs()],
-            [SCOPE_CHARACTER, getCharacterDefs()],
-            [SCOPE_CHAT, getChatDefs()],
+            [SCOPE_GLOBAL, getDefsForScope(SCOPE_GLOBAL)],
+            [SCOPE_BROWSER, browserDefs],
+            [SCOPE_CHARACTER, getDefsForScope(SCOPE_CHARACTER)],
+            [SCOPE_CHAT, getDefsForScope(SCOPE_CHAT)],
         ];
         let any = false;
         for (const [scope, defs] of groups) {

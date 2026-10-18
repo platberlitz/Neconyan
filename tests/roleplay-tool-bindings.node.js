@@ -101,7 +101,7 @@ test('a previously accepted prompt keeps its original source and tool definition
     assert.equal(JSON.stringify(again), golden);
     assert.equal(roleplayHash(again), goldenHash);
     assert.doesNotThrow(() => assertRoleplayWorldInfoCurrent(f.f.scope, legacy));
-    assert.ok(f.snapshot.nativeBindingVersion === 1 && f.snapshot.tools.definitions.length === 26);
+    assert.ok(f.snapshot.nativeBindingVersion === 1 && f.snapshot.tools.definitions.length === 27);
     const request = { binding: { kind: 'profile', ...captureChatProfile(f.dirs, 'main') }, worldInfo: legacy,
         serverPrompt: true, characterName: 'Nova', maxTokens: 32, messages: [] };
     const { jobId } = admitRoleplayJob(f.f.scope, legacy.account,
@@ -138,7 +138,7 @@ test('the private Roleplay model receives only the definitions frozen under its 
     releaseJob(f.dirs, jobId);
     let calls = 0;
     await runRoleplayReplyJob({ owner: f.f.scope.owner, directories: f.dirs, job: getJob(f.dirs, jobId),
-        signal: new AbortController().signal }, { contextLimit: () => 4096,
+        signal: new AbortController().signal }, { contextLimit: () => 8192,
         promptBackend: () => ({ backend: 'chat', active: { prompts: [{ identifier: 'main', role: 'system', content: 'Hi' },
             { identifier: 'chatHistory', marker: true, system_prompt: true }], prompt_order: [{ character_id: 100001,
             order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }], function_calling: true },
@@ -163,7 +163,7 @@ test('a saved model function call admits one native assistant child with its own
     const context = () => ({ owner: f.f.scope.owner, directories: f.dirs, job: getJob(f.dirs, jobId),
         signal: new AbortController().signal });
     const mainStep = roleplayHash(['saved-tool-main', jobId]);
-    await assert.rejects(runRoleplayReplyJob(context(), { contextLimit: () => 4096,
+    await assert.rejects(runRoleplayReplyJob(context(), { contextLimit: () => 8192,
         promptBackend: () => ({ backend: 'chat', active: { prompts: [{ identifier: 'main', role: 'system', content: 'Hi' },
             { identifier: 'chatHistory', marker: true, system_prompt: true }], prompt_order: [{ character_id: 100001,
             order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }], function_calling: true },

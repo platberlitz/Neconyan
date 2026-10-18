@@ -6,21 +6,19 @@
  */
 import { announce, announceError, button, el } from '../dom.js';
 import {
+    SCOPE_BROWSER,
     SCOPE_CHARACTER,
     SCOPE_CHAT,
     SCOPE_GLOBAL,
     createDef,
     getAllCustomNames,
-    getCharacterDefs,
-    getChatDefs,
-    getGlobalDefs,
-    saveCharacterDefs,
-    saveChatDefs,
-    saveGlobalDefs,
+    getDefsForScope,
+    saveDefsForScope,
     validateDef,
 } from './store.js';
+import { getBrowserIdentity } from './browser-store.js';
 import { syncRegistrations } from './registrar.js';
-import { scopeAvailability, snapshotContext, validateScopeForSave } from './scopes.js';
+import { SCOPE_COPY, scopeAvailability, snapshotContext, validateScopeForSave } from './scopes.js';
 import { createSaveGate, moveMacroBetweenScopes, MoveMacroError } from './scope-move.js';
 import { renderMacroText } from '../ui/macro-text.js';
 
@@ -28,6 +26,7 @@ const VALIDATE_DEBOUNCE_MS = 250;
 
 const SCOPE_LABELS = Object.freeze({
     [SCOPE_GLOBAL]: 'Everywhere',
+    [SCOPE_BROWSER]: 'This browser',
     [SCOPE_CHARACTER]: 'This character',
     [SCOPE_CHAT]: 'This chat',
 });
@@ -41,6 +40,13 @@ function currentScopeIdentity(scope) {
     if (scope === SCOPE_GLOBAL) {
         return 'global';
     }
+    if (scope === SCOPE_BROWSER) {
+        try {
+            return getBrowserIdentity({ ctx });
+        } catch {
+            return null;
+        }
+    }
     if (scope === SCOPE_CHARACTER) {
         return ctx.characters?.[ctx.characterId]?.avatar ?? null;
     }
@@ -50,21 +56,8 @@ function currentScopeIdentity(scope) {
     return null;
 }
 
-function defsForScope(scope) {
-    if (scope === SCOPE_CHARACTER) {
-        return getCharacterDefs();
-    }
-    return scope === SCOPE_CHAT ? getChatDefs() : getGlobalDefs();
-}
-
 async function persist(scope, defs) {
-    if (scope === SCOPE_CHARACTER) {
-        await saveCharacterDefs(defs);
-    } else if (scope === SCOPE_CHAT) {
-        saveChatDefs(defs);
-    } else {
-        saveGlobalDefs(defs);
-    }
+    await saveDefsForScope(scope, defs);
     syncRegistrations();
 }
 
@@ -164,7 +157,7 @@ export function renderMacroEditor(container, draft, { onClose, onSaved } = {}) {
     const scopeWarning = el('p', 'me-form-problem');
     scopeWarning.hidden = true;
 
-    for (const scope of [SCOPE_GLOBAL, SCOPE_CHARACTER, SCOPE_CHAT]) {
+    for (const scope of [SCOPE_GLOBAL, SCOPE_BROWSER, SCOPE_CHARACTER, SCOPE_CHAT]) {
         const row = el('label', 'me-radio-row');
         const input = document.createElement('input');
         input.type = 'radio';
@@ -182,11 +175,9 @@ export function renderMacroEditor(container, draft, { onClose, onSaved } = {}) {
         scopeInputs.set(scope, input);
         row.appendChild(input);
         const copy = el('span', 'me-radio-copy');
-        const title = el('span', 'me-radio-title', scope === SCOPE_GLOBAL ? 'Everywhere' : scope === SCOPE_CHARACTER ? 'This character' : 'This chat');
+        const title = el('span', 'me-radio-title', SCOPE_COPY[scope].title);
         copy.appendChild(title);
-        const hint = el('span', 'me-radio-hint', scope === SCOPE_GLOBAL
-            ? 'Available in every character and chat.'
-            : scope === SCOPE_CHARACTER ? 'Travels with the character card when you share it.' : 'Stored in this chat file only.');
+        const hint = el('span', 'me-radio-hint', SCOPE_COPY[scope].hint);
         copy.appendChild(hint);
         const reason = el('span', 'me-radio-reason');
         reason.hidden = true;
@@ -265,12 +256,18 @@ export function renderMacroEditor(container, draft, { onClose, onSaved } = {}) {
     function validate({ saving = false } = {}) {
         const ctx = SillyTavern.getContext();
         const candidateDef = candidate();
-        const siblings = defsForScope(draft.scope).filter(other => other.id !== def.id);
-        const messages = validateDef(candidateDef, {
+        const messages = [];
+        let siblings = [];
+        try {
+            siblings = getDefsForScope(draft.scope).filter(other => other.id !== def.id);
+        } catch (error) {
+            messages.push(`Could not read ${scopeLabel(draft.scope)} macros: ${error?.message ?? error}`);
+        }
+        messages.push(...validateDef(candidateDef, {
             siblings,
             registry: ctx.macros?.registry,
             customNames: getAllCustomNames(),
-        });
+        }));
         if (saving) {
             const scopeProblem = validateScopeForSave({
                 scope: draft.scope,
@@ -421,12 +418,30 @@ export function renderMacroEditor(container, draft, { onClose, onSaved } = {}) {
         const targetScope = draft.scope;
         const movingFrom = draft.persistedScope && draft.persistedScope !== targetScope ? draft.persistedScope : null;
         const savedDef = structuredClone(def);
-        const targetDefs = defsForScope(targetScope)
-            .filter(other => other.id !== savedDef.id)
-            .concat(savedDef);
-        const sourceDefs = movingFrom
-            ? defsForScope(movingFrom).filter(other => other.id !== savedDef.id)
-            : null;
+        let targetDefs;
+        let sourceDefs = null;
+        try {
+            targetDefs = getDefsForScope(targetScope)
+                .filter(other => other.id !== savedDef.id)
+                .concat(savedDef);
+        } catch (error) {
+            const message = `Could not read ${scopeLabel(targetScope)} macros: ${error?.message ?? error}`;
+            showProblems([message]);
+            announceError(message);
+            updateScopeAvailability();
+            return false;
+        }
+        try {
+            sourceDefs = movingFrom
+                ? getDefsForScope(movingFrom).filter(other => other.id !== savedDef.id)
+                : null;
+        } catch (error) {
+            const message = `Could not read ${scopeLabel(movingFrom)} macros: ${error?.message ?? error}`;
+            showProblems([message]);
+            announceError(message);
+            updateScopeAvailability();
+            return false;
+        }
 
         let gateResult;
         try {
@@ -441,7 +456,7 @@ export function renderMacroEditor(container, draft, { onClose, onSaved } = {}) {
                             sourceDefs,
                             targetDefs,
                             identityFor: currentScopeIdentity,
-                            readDefs: defsForScope,
+                            readDefs: getDefsForScope,
                             persist,
                         });
                     }

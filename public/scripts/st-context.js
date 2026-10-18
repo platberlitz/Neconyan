@@ -112,6 +112,7 @@ import { getTextGenServer, textgenerationwebui_settings } from './textgen-settin
 import { tokenizers, getTextTokens, getTokenCount, getTokenCountAsync, getTokenizerModel } from './tokenizers.js';
 import { ToolManager } from './tool-calling.js';
 import { accountStorage } from './util/AccountStorage.js';
+import { getCurrentUserHandle } from './user.js';
 import { timestampToMoment, uuidv4, importFromExternalUrl } from './utils.js';
 import { addGlobalVariable, addLocalVariable, decrementGlobalVariable, decrementLocalVariable, deleteGlobalVariable, deleteLocalVariable, existsGlobalVariable, existsLocalVariable, getGlobalVariable, getLocalVariable, incrementGlobalVariable, incrementLocalVariable, setGlobalVariable, setLocalVariable } from './variables.js';
 import { charUpdateAddAuxWorld, convertCharacterBook, createNewWorldInfo, createWorldInfoEntry, getWorldInfoLoadedRevision, getWorldInfoPrompt, loadWorldInfo, reloadEditor, saveWorldInfo, syncWIOriginalDataEntry, updateWorldInfoList, world_info, world_names } from './world-info.js';
@@ -124,6 +125,11 @@ import { macros } from './macros/macro-system.js';
 export function getContext() {
     return {
         accountStorage,
+        /** The signed-in account handle; browser-local data uses it as its owner. */
+        getCurrentUserHandle,
+        get currentUserHandle() {
+            return getCurrentUserHandle();
+        },
         chat,
         characters,
         groups,

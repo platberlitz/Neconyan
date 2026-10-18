@@ -2,12 +2,17 @@
  * Scope rules shared by the macro editor, the template gallery and the slash
  * commands. Pure data and plain checks: no DOM, no Neconyan imports.
  */
-import { SCOPE_CHARACTER, SCOPE_CHAT, SCOPE_GLOBAL } from './store.js';
+import { SCOPE_BROWSER, SCOPE_CHARACTER, SCOPE_CHAT, SCOPE_GLOBAL } from './store.js';
+import { browserScopeAvailability, getBrowserIdentity } from './browser-store.js';
 
 export const SCOPE_COPY = Object.freeze({
     [SCOPE_GLOBAL]: {
         title: 'Everywhere',
         hint: 'Available in every character and chat.',
+    },
+    [SCOPE_BROWSER]: {
+        title: 'This browser',
+        hint: 'Kept on this device for this account. Not synced or backed up. Export to move it.',
     },
     [SCOPE_CHARACTER]: {
         title: 'This character',
@@ -19,6 +24,18 @@ export const SCOPE_COPY = Object.freeze({
     },
 });
 
+function currentBrowserAccount(ctx = SillyTavern.getContext()) {
+    try {
+        return getBrowserIdentity({ ctx });
+    } catch {
+        return null;
+    }
+}
+
+function browserScopeState(ctx = SillyTavern.getContext()) {
+    return browserScopeAvailability({ ctx });
+}
+
 /** A stable description of where the editor was opened. */
 export function snapshotContext(ctx = SillyTavern.getContext()) {
     const character = ctx.characters?.[ctx.characterId];
@@ -28,6 +45,7 @@ export function snapshotContext(ctx = SillyTavern.getContext()) {
         groupId: ctx.groupId ?? null,
         chatId: ctx.chatId ?? null,
         chatKey: `${ctx.groupId ?? ''}:${ctx.chatId ?? ''}`,
+        browserAccount: currentBrowserAccount(ctx),
         userAvatar: ctx.userAvatar ?? null,
     };
 }
@@ -59,10 +77,12 @@ export function chatScopeAvailable(ctx = SillyTavern.getContext()) {
  * @returns {Record<string, {available: boolean, reason: string, title: string, hint: string}>}
  */
 export function scopeAvailability(ctx = SillyTavern.getContext()) {
+    const browser = browserScopeState(ctx);
     const character = characterScopeAvailable(ctx);
     const chat = chatScopeAvailable(ctx);
     return {
         [SCOPE_GLOBAL]: { ...SCOPE_COPY[SCOPE_GLOBAL], available: true, reason: '' },
+        [SCOPE_BROWSER]: { ...SCOPE_COPY[SCOPE_BROWSER], ...browser },
         [SCOPE_CHARACTER]: { ...SCOPE_COPY[SCOPE_CHARACTER], ...character },
         [SCOPE_CHAT]: { ...SCOPE_COPY[SCOPE_CHAT], ...chat },
     };
@@ -75,6 +95,12 @@ export function validateScopeForSave({ scope, persistedScope = null, snapshot, c
         return availability[scope]?.reason || 'That scope is not available right now.';
     }
 
+    if (persistedScope === SCOPE_BROWSER) {
+        const account = currentBrowserAccount(ctx);
+        if (!account || snapshot.browserAccount !== account) {
+            return 'This macro was saved for a different account. Sign back into that account to move it; your draft is still here.';
+        }
+    }
     if (persistedScope === SCOPE_CHARACTER) {
         if (snapshot.groupId !== (ctx.groupId ?? null)
             || snapshot.characterAvatar !== currentCharacterAvatar(ctx)
@@ -86,6 +112,9 @@ export function validateScopeForSave({ scope, persistedScope = null, snapshot, c
         if (snapshot.chatKey !== `${ctx.groupId ?? ''}:${ctx.chatId ?? ''}`) {
             return 'This macro was saved for a different chat. Open that chat again to move it; your draft is still here.';
         }
+    }
+    if (scope === SCOPE_BROWSER && snapshot.browserAccount !== currentBrowserAccount(ctx)) {
+        return 'The account changed while you were editing. Sign back into the account you started in to save this draft there.';
     }
     if (scope === SCOPE_CHARACTER
         && (snapshot.groupId !== (ctx.groupId ?? null) || snapshot.characterAvatar !== currentCharacterAvatar(ctx))) {

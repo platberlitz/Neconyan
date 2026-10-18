@@ -4,10 +4,13 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const originals = { document: globalThis.document, fetch: globalThis.fetch, CustomEvent: globalThis.CustomEvent, dispatchEvent: globalThis.dispatchEvent, getComputedStyle: globalThis.getComputedStyle, location: globalThis.location };
+const reviewAndSaveBrowserMacro = jest.fn();
 afterEach(() => { Object.assign(globalThis, originals); delete globalThis[Symbol.for('neconyan.extensionCapabilities')]; jest.resetModules(); });
 
 async function runtime({ assistant = 'miso-male', group = null } = {}) {
     jest.resetModules();
+    reviewAndSaveBrowserMacro.mockReset();
+    reviewAndSaveBrowserMacro.mockImplementation(async args => ({ status: 'success', committed: true, name: args.name, scope: 'browser' }));
     const toolSource = readFileSync(new URL('../public/scripts/tool-calling.js', import.meta.url), 'utf8');
     const toolContext = vm.createContext({ console: { error() {}, log() {}, warn() {} }, Error, toastr: { info() {}, clear() {} }, stringify: JSON.stringify });
     vm.runInContext(toolSource.slice(toolSource.indexOf('class ToolDefinition {')).replace('export class ToolManager', 'class ToolManager') + '\nthis.ToolManager = ToolManager;', toolContext);
@@ -107,6 +110,7 @@ async function runtime({ assistant = 'miso-male', group = null } = {}) {
     jest.unstable_mockModule('../public/scripts/preset-manager.js', () => ({ getPresetManager: () => presetManager }));
     jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => context.account }));
     jest.unstable_mockModule('../public/scripts/utils.js', () => ({ uuidv4: () => globalThis.crypto.randomUUID() }));
+    jest.unstable_mockModule('../public/scripts/neconyan-assistant-macros.js', () => ({ reviewAndSaveBrowserMacro }));
     const tools = await import('../public/scripts/neconyan-assistant-tools.js');
     tools.syncNeconyanAssistantTools();
     const invoke = async (name, input = {}, options) => JSON.parse(await manager.invokeFunctionTool(`Neconyan_Assistant_${name}`, JSON.stringify(input), options));
@@ -116,7 +120,7 @@ async function runtime({ assistant = 'miso-male', group = null } = {}) {
 test('only supported active individual-chat assistant metadata registers tools', async () => {
     for (const options of [{}, { assistant: 'ordinary' }, { group: 'group' }]) {
         const { manager } = await runtime(options);
-        expect(manager.tools.length).toBe(Object.keys(options).length ? 0 : 26);
+        expect(manager.tools.length).toBe(Object.keys(options).length ? 0 : 27);
     }
 });
 
@@ -128,6 +132,45 @@ test('native assistant definitions keep the browser descriptions and argument co
         return JSON.parse(JSON.stringify({ type: definition.type, function: definition.function }));
     });
     expect(nativeToolDefinitions(ASSISTANT_TOOL_NAMES)).toEqual(browser);
+});
+
+test('the browser macro tool uses the shared schema and keeps userConfirmed out of its base arguments', async () => {
+    const { invoke } = await runtime();
+    const { BROWSER_MACRO_TOOL, normaliseBrowserMacroDraft } = await import('../public/scripts/neconyan-assistant-macro-schema.js');
+    const { ASSISTANT_TOOL_NAMES, nativeToolDefinitions } = await import('../src/generation/native-tool-definitions.js');
+    expect(ASSISTANT_TOOL_NAMES).toContain(BROWSER_MACRO_TOOL.name);
+    const native = nativeToolDefinitions([BROWSER_MACRO_TOOL.name])[0].function;
+    expect(native.description).toContain(BROWSER_MACRO_TOOL.description);
+    expect(native.parameters.properties.userConfirmed).toBeDefined();
+    expect(BROWSER_MACRO_TOOL.parameters.properties.userConfirmed).toBeUndefined();
+    const args = { name: 'SceneMood', template: 'Mood: {{mood}}', args: [{ name: 'mood', description: 'Current mood.' }] };
+    const expected = normaliseBrowserMacroDraft(args);
+    expect(await invoke('SaveBrowserMacro', { ...args, userConfirmed: true }, { callId: 'macro-call' }))
+        .toMatchObject({ status: 'success', committed: true, name: 'SceneMood', scope: 'browser' });
+    expect(reviewAndSaveBrowserMacro).toHaveBeenCalledWith(expected,
+        { account: 'one', isCurrent: expect.any(Function), proposalId: expect.stringContaining(':macro-call') });
+    const firstProposal = reviewAndSaveBrowserMacro.mock.calls[0][1].proposalId;
+    await invoke('SaveBrowserMacro', { ...args, userConfirmed: true }, { callId: 'macro-call' });
+    expect(reviewAndSaveBrowserMacro.mock.calls[1][1].proposalId).toBe(firstProposal);
+});
+
+test('the browser macro tool reports cancel, conflict and extension refusal without claiming a save', async () => {
+    const { invoke } = await runtime();
+    const args = { name: 'SceneMood', template: 'Mood: {{mood}}', userConfirmed: true };
+    reviewAndSaveBrowserMacro.mockResolvedValueOnce({ status: 'cancelled', committed: false, declined: true, message: 'Nothing was saved.' });
+    expect(await invoke('SaveBrowserMacro', args)).toMatchObject({ status: 'cancelled', committed: false, message: 'Nothing was saved.' });
+    reviewAndSaveBrowserMacro.mockResolvedValueOnce({ status: 'cancelled', committed: false, declined: false, message: 'The request changed.' });
+    expect(await invoke('SaveBrowserMacro', args)).toMatchObject({ status: 'cancelled', committed: false, message: 'The request changed.' });
+    reviewAndSaveBrowserMacro.mockResolvedValueOnce({ status: 'conflict', committed: false, message: 'This macro changed while you were reviewing it.' });
+    expect(await invoke('SaveBrowserMacro', args)).toMatchObject({ status: 'conflict', committed: false,
+        message: 'This macro changed while you were reviewing it.' });
+    reviewAndSaveBrowserMacro.mockResolvedValueOnce({ status: 'success', committed: false, name: 'SceneMood', scope: 'browser' });
+    expect(await invoke('SaveBrowserMacro', args)).toMatchObject({ status: 'failure', committed: false,
+        message: 'The browser did not confirm that the macro was saved. Check My macros before retrying.' });
+    reviewAndSaveBrowserMacro.mockResolvedValueOnce({ status: 'error', committed: false,
+        message: 'Enable Macro Enhanced and the experimental macro parser in Advanced Formatting first.' });
+    expect(await invoke('SaveBrowserMacro', args)).toMatchObject({ status: 'failure', committed: false,
+        message: 'Enable Macro Enhanced and the experimental macro parser in Advanced Formatting first.' });
 });
 
 test('real ToolManager list/read actions keep exact names and omit inaccessible fields', async () => {
@@ -170,6 +213,7 @@ test('write tools refuse to act until the user confirmed the call in chat', asyn
         ['EditLorebookEntry', { book: ' Notes', uid: 0, field: 'content', value: 'Changed' }],
         ['EditAgent', { id: 'agent', field: 'prompt', value: 'Changed' }],
         ['EditModelPreset', { apiId: 'openai', name: ' Saved', field: 'temperature', value: 0.7 }],
+        ['SaveBrowserMacro', { name: 'SceneMood', template: 'Mood: {{mood}}' }],
     ]) {
         expect(await invoke(name, input)).toMatchObject({ status: 'needs_confirmation', askFirst: expect.stringContaining('tool call now') });
         expect(await invoke(name, { ...input, userConfirmed: 'yes' })).toMatchObject({ status: 'needs_confirmation' });

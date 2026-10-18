@@ -118,6 +118,7 @@ function deferred() {
 
 const constants = {
     SCOPE_GLOBAL: 'global',
+    SCOPE_BROWSER: 'browser',
     SCOPE_CHARACTER: 'character',
     SCOPE_CHAT: 'chat',
 };
@@ -127,6 +128,8 @@ const storeCalls = {
     chats: [],
     globals: [],
 };
+
+let defsForScopeOverride = null;
 
 const storeMocks = {
     ...constants,
@@ -151,6 +154,24 @@ const storeMocks = {
     saveCharacterDefs: jest.fn(async defs => {
         storeCalls.characters.push(defs);
     }),
+    getDefsForScope: scope => {
+        if (defsForScopeOverride) {
+            return defsForScopeOverride(scope);
+        }
+        if (scope === constants.SCOPE_CHARACTER) {
+            return storeMocks.getCharacterDefs();
+        }
+        return scope === constants.SCOPE_CHAT ? storeMocks.getChatDefs() : storeMocks.getGlobalDefs();
+    },
+    saveDefsForScope: async (scope, defs) => {
+        if (scope === constants.SCOPE_CHARACTER) {
+            return storeMocks.saveCharacterDefs(defs);
+        }
+        if (scope === constants.SCOPE_CHAT) {
+            return storeMocks.saveChatDefs(defs);
+        }
+        return storeMocks.saveGlobalDefs(defs);
+    },
     validateDef: () => [],
 };
 
@@ -276,5 +297,33 @@ describe('Macro Enhanced editor save races', () => {
         expect(host.textContent).toContain('Move incomplete');
         expect(host.textContent).toContain('still in This character');
         expect(storeCalls.chats.at(-1).map(def => def.id)).toEqual([]);
+    });
+
+    test('a scope read failure while preparing a save stays in the editor form', async () => {
+        let reads = 0;
+        defsForScopeOverride = () => {
+            reads += 1;
+            if (reads > 1) {
+                throw new Error('browser storage is blocked');
+            }
+            return [];
+        };
+        try {
+            const draft = createEditorDraft();
+            const host = new FakeNode();
+            renderMacroEditor(host, draft, { onSaved, onClose: () => {} });
+
+            findByText(host, 'Save').dispatch('click');
+            await Promise.resolve();
+            await Promise.resolve();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(host.textContent).toContain('Could not read Everywhere macros');
+            expect(host.textContent).toContain('browser storage is blocked');
+            expect(onSaved).not.toHaveBeenCalled();
+            expect(storeCalls.globals).toHaveLength(0);
+        } finally {
+            defsForScopeOverride = null;
+        }
     });
 });

@@ -22,9 +22,13 @@ const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', 
 prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }] };
 
 function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disabled = [], strategy = 1,
-    autoSwipe = false, autoContinue = false, pathfinder = false, bundledMacros = null, history = 0 } = {}) {
+    autoSwipe = false, autoContinue = false, pathfinder = false, bundledMacros = null, browserMacros = null,
+    description = null, history = 0 } = {}) {
     const f = fixture(t, true);
     const dirs = f.scope.directories;
+    if (description !== null) {
+        fs.writeFileSync(path.join(dirs.characters, 'Nova.png'), writeCard(png, JSON.stringify({ name: 'Nova', description })));
+    }
     f.records[1].extra = {};
     if (history) {
         f.records.splice(1, 0, ...Array.from({ length: history }, (_, index) => ({
@@ -67,7 +71,8 @@ function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disable
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
     const source = captureRoleplaySource(f.scope, { locator: f.locator, groupId: 'group' });
     const request = captureRoleplayWorkflowRequest(f.scope, account, source, { binding: { kind: 'profile',
-        ...captureChatProfile(dirs, 'main') }, maxTokens: 32, effect: 'append', forcedAvatars, generationId: 47, bundledMacros });
+        ...captureChatProfile(dirs, 'main') }, maxTokens: 32, effect: 'append', forcedAvatars, generationId: 47,
+    bundledMacros, browserMacros });
     const { jobId } = admitRoleplayWorkflowJob(f.scope, account, { operationKey: 'group-workflow', source, request });
     releaseJob(dirs, jobId);
     const context = () => ({ owner: f.scope.owner, directories: dirs, job: getJob(dirs, jobId), signal: new AbortController().signal });
@@ -161,11 +166,16 @@ test('group speakers keep their owned identities while clearing older history be
     assert.equal(count.value, 2);
 });
 
-test('a captured page instruction reaches every initial group speaker and its next lineage', async t => {
-    const f = prepared(t, { bundledMacros: { dialoguecolors: 'Colour the group dialogue.' } });
+test('a captured page instruction and browser-local names reach every initial group speaker and its next lineage', async t => {
+    const f = prepared(t, { bundledMacros: { dialoguecolors: 'Colour the group dialogue.' },
+        browserMacros: ['PrivateGreeting', 'me-PrivateGreeting'] });
+    const browserMacros = ['privategreeting', 'me-privategreeting'];
     assert.deepEqual(f.request.worldInfo.bundledMacros, { dialoguecolors: 'Colour the group dialogue.' });
+    assert.deepEqual(f.request.worldInfo.browserMacros, browserMacros);
     assert.deepEqual(f.request.group.speakers.map(speaker => speaker.worldInfo.bundledMacros),
         Array.from({ length: 2 }, () => ({ dialoguecolors: 'Colour the group dialogue.' })));
+    assert.deepEqual(f.request.group.speakers.map(speaker => speaker.worldInfo.browserMacros),
+        Array.from({ length: 2 }, () => browserMacros));
     updateJob(f.dirs, f.jobId, { state: 'running' });
     await runRoleplayWorkflowJob(f.context());
     const count = { value: 0 };
@@ -173,8 +183,24 @@ test('a captured page instruction reaches every initial group speaker and its ne
     await runRoleplayWorkflowJob(f.context());
     const lineage = readArtifact(f.dirs, f.jobId, 'roleplay-workflow-group-lineage:1');
     assert.deepEqual(lineage.worldInfo.bundledMacros, { dialoguecolors: 'Colour the group dialogue.' });
+    assert.deepEqual(lineage.worldInfo.browserMacros, browserMacros);
     const next = getJob(f.dirs, readArtifact(f.dirs, f.jobId, 'roleplay-workflow-child:1').jobId);
     assert.deepEqual(next.intent.request.worldInfo.bundledMacros, { dialoguecolors: 'Colour the group dialogue.' });
+    assert.deepEqual(next.intent.request.worldInfo.browserMacros, browserMacros);
+});
+
+test('a group speaker refuses a browser-local custom macro before dispatch', async t => {
+    const f = prepared(t, { browserMacros: ['PrivateGreeting', 'me-PrivateGreeting'],
+        description: 'Nova speaks {{me-PrivateGreeting}}.' });
+    assert.deepEqual(f.request.worldInfo.browserMacros, ['privategreeting', 'me-privategreeting']);
+    assert.deepEqual(f.request.group.speakers.map(speaker => speaker.worldInfo.browserMacros),
+        [['privategreeting', 'me-privategreeting'], ['privategreeting', 'me-privategreeting']]);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const count = { value: 0 };
+    await assert.rejects(f.completeCandidate(0, { avatar: 'Nova.png', name: 'Nova', modelOverride: '',
+        reply: 'This must never be generated.' }, count), { code: 'MACRO_BROWSER_ONLY', status: 409 });
+    assert.equal(count.value, 0);
 });
 
 test('stopping post-reply work in a group saves the current speaker and never starts the next one after recovery', async t => {

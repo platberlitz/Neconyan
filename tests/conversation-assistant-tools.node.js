@@ -105,7 +105,8 @@ test('a read tool resumes with its saved result without repeating the provider o
         return prompts.length === 1 ? tool('ReadLorebookEntry', { book: 'Manual', uid: 12 }) : { text: 'Found the old note.' };
     };
     assert.equal(await f.run(generate), null);
-    assert.equal(prompts[0].functionTools.length, 26);
+    assert.equal(prompts[0].functionTools.length, 27);
+    assert.equal(prompts[0].functionTools.some(tool => tool.function.name === 'Neconyan_Assistant_SaveBrowserMacro'), true);
     assert.equal(f.child().state, 'queued');
     assert.equal(await f.run(generate), null);
     assert.equal(prompts.length, 1);

@@ -99,7 +99,7 @@ export const NECONYAN_NATIVE_EXTENSIONS = Object.freeze([
     {
         directory: 'MacroEnhanced',
         displayName: 'Macro Enhanced',
-        version: '0.3.0',
+        version: '0.4.0',
         entry: 'index.js',
         style: 'style.css',
         sourceUrl: null,

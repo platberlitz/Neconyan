@@ -41,7 +41,8 @@ const companionTurnLimit = (group, automatic) => automatic?.swipe?.enabled || au
     ? MAX_TURNS : group?.speakers?.length ?? 1;
 
 export function captureRoleplayWorkflowRequest(base, account, source, { avatar, binding, maxTokens = 128,
-    effect = 'append', named = null, forcedAvatars, selectedSpeakerAvatar, random, generationId, bundledMacros = null } = {}) {
+    effect = 'append', named = null, forcedAvatars, selectedSpeakerAvatar, random, generationId,
+    bundledMacros = null, browserMacros = null } = {}) {
     if (named) {
         assertRoleplayNamedWorkflow(named);
         effect = named.effect;
@@ -65,8 +66,9 @@ export function captureRoleplayWorkflowRequest(base, account, source, { avatar, 
     const options = { maxContext: contextLimit - maxTokens, trigger: roleplayEffectTrigger(effect),
         promptEffect: effect, serverPrompt: true, mediaPolicyVersion: 1, mediaBinding: binding };
     const speakers = group?.speakers.map(speaker => ({ ...speaker,
-        worldInfo: captureRoleplayWorldInfo(base, account, source, { ...options, avatar: speaker.avatar, bundledMacros }) }));
-    const worldInfo = speakers?.[0]?.worldInfo ?? captureRoleplayWorldInfo(base, account, source, { ...options, avatar: selectedAvatar, bundledMacros });
+        worldInfo: captureRoleplayWorldInfo(base, account, source, { ...options, avatar: speaker.avatar, bundledMacros, browserMacros }) }));
+    const worldInfo = speakers?.[0]?.worldInfo ?? captureRoleplayWorldInfo(base, account, source,
+        { ...options, avatar: selectedAvatar, bundledMacros, browserMacros });
     // Story, Guided and Deep Swipe ask for one specific generation, so only the plain
     // controls capture the automatic policy that keeps a whole turn running.
     const automatic = named && !ROLEPLAY_WORKFLOW_NAMES[named.name].automatic ? null
@@ -622,6 +624,7 @@ function nextGroupLineage(context, job, previous, index) {
         maxContext: job.intent.request.worldInfo.maxContext, tokenizer: job.intent.request.worldInfo.tokenizer,
         trigger: job.intent.request.worldInfo.global.trigger, serverPrompt: true,
         bundledMacros: job.intent.request.worldInfo.bundledMacros ?? null,
+        browserMacros: job.intent.request.worldInfo.browserMacros ?? null,
         nativeBindingVersion: job.intent.request.worldInfo.nativeBindingVersion,
         mediaPolicyVersion: job.intent.request.worldInfo.mediaPolicyVersion ?? 0, mediaBinding: job.intent.request.worldInfo.mediaBinding ?? null });
     const record = { parentIntentHash: roleplayHash(job.intent), previousHash: previous.hash, index,

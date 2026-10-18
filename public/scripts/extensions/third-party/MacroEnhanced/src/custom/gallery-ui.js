@@ -7,40 +7,25 @@ import { button, el } from '../dom.js';
 import { TEMPLATE_PACKS } from '../templates/index.js';
 import { exportPack, parsePack } from './pack.js';
 import {
+    SCOPE_BROWSER,
     SCOPE_CHARACTER,
     SCOPE_CHAT,
     SCOPE_GLOBAL,
     createDef,
     getAllCustomNames,
-    getCharacterDefs,
-    getChatDefs,
-    getGlobalDefs,
-    saveCharacterDefs,
-    saveChatDefs,
-    saveGlobalDefs,
+    getBrowserStoreProblem,
+    getDefsForScope,
+    saveDefsForScope,
     validateDef,
 } from './store.js';
 import { syncRegistrations } from './registrar.js';
 import { renderMacroText } from '../ui/macro-text.js';
-import { scopeAvailability, snapshotContext, validateScopeForSave } from './scopes.js';
+import { SCOPE_COPY, scopeAvailability, snapshotContext, validateScopeForSave } from './scopes.js';
 
 const MAX_RENAME_SUFFIX = 9;
 
-function defsForScope(scope) {
-    if (scope === SCOPE_CHARACTER) {
-        return getCharacterDefs();
-    }
-    return scope === SCOPE_CHAT ? getChatDefs() : getGlobalDefs();
-}
-
 async function persistScope(scope, defs) {
-    if (scope === SCOPE_CHARACTER) {
-        await saveCharacterDefs(defs);
-    } else if (scope === SCOPE_CHAT) {
-        saveChatDefs(defs);
-    } else {
-        saveGlobalDefs(defs);
-    }
+    await saveDefsForScope(scope, defs);
     syncRegistrations();
 }
 
@@ -54,7 +39,7 @@ export async function installMacros(scope, partials) {
     const registry = SillyTavern.getContext().macros?.registry;
     const installed = [];
     const skipped = [];
-    const nextDefs = [...defsForScope(scope)];
+    const nextDefs = [...getDefsForScope(scope)];
 
     for (const partial of partials) {
         let chosen = null;
@@ -89,7 +74,7 @@ export async function installMacros(scope, partials) {
 export function formatInstallStatus({ installed, skipped }, scope, { problems = [] } = {}) {
     const parts = [...problems];
     if (installed.length) {
-        parts.push(`Installed ${installed.map(name => `{{${name}}}`).join(', ')} (${scope}).`);
+        parts.push(`Installed ${installed.map(name => `{{${name}}}`).join(', ')} (${SCOPE_COPY[scope]?.title ?? scope}).`);
     }
     parts.push(...skipped);
     return parts.join(' ') || 'Nothing to install.';
@@ -120,8 +105,21 @@ export function renderTemplateGallery(container, { onInstalled, announce } = {})
     scopeSelect.className = 'text_pole';
     scopeRow.appendChild(scopeSelect);
     container.appendChild(scopeRow);
+    const scopeHint = el('p', 'me-section-note me-gallery-scope-hint');
+    scopeHint.hidden = true;
+    container.appendChild(scopeHint);
+
+    function refreshScopeHint() {
+        const hint = scopeSelect.value === SCOPE_BROWSER ? SCOPE_COPY[SCOPE_BROWSER].hint : '';
+        scopeHint.textContent = hint;
+        scopeHint.hidden = !hint;
+    }
+
+    scopeSelect.addEventListener('change', refreshScopeHint);
 
     const status = el('p', 'me-gallery-status');
+    const exportProblem = el('p', 'me-form-problem me-gallery-problem');
+    exportProblem.hidden = true;
     const exportRow = el('div', 'me-export-row');
     const importInput = document.createElement('input');
     importInput.type = 'file';
@@ -139,10 +137,10 @@ export function renderTemplateGallery(container, { onInstalled, announce } = {})
         const availability = scopeAvailability();
         const previous = scopeSelect.value;
         scopeSelect.replaceChildren();
-        for (const scope of [SCOPE_GLOBAL, SCOPE_CHARACTER, SCOPE_CHAT]) {
+        for (const scope of [SCOPE_GLOBAL, SCOPE_BROWSER, SCOPE_CHARACTER, SCOPE_CHAT]) {
             const option = document.createElement('option');
             option.value = scope;
-            option.textContent = scope === SCOPE_GLOBAL ? 'Everywhere' : scope === SCOPE_CHARACTER ? 'This character' : 'This chat';
+            option.textContent = SCOPE_COPY[scope].title;
             const state = availability[scope];
             option.disabled = !state.available;
             if (!state.available) {
@@ -150,10 +148,11 @@ export function renderTemplateGallery(container, { onInstalled, announce } = {})
             }
             scopeSelect.appendChild(option);
         }
-        if ([SCOPE_GLOBAL, SCOPE_CHARACTER, SCOPE_CHAT].includes(previous)
+        if ([SCOPE_GLOBAL, SCOPE_BROWSER, SCOPE_CHARACTER, SCOPE_CHAT].includes(previous)
             && !scopeSelect.querySelector(`option[value="${previous}"]`)?.disabled) {
             scopeSelect.value = previous;
         }
+        refreshScopeHint();
     }
 
     async function runInstall(partials, { problems = [] } = {}) {
@@ -217,23 +216,40 @@ export function renderTemplateGallery(container, { onInstalled, announce } = {})
         container.appendChild(packBox);
     }
 
+    container.appendChild(exportProblem);
     container.appendChild(exportRow);
     container.appendChild(importInput);
     container.appendChild(status);
 
     function refreshExport() {
         exportRow.replaceChildren();
-        for (const scope of [SCOPE_GLOBAL, SCOPE_CHARACTER, SCOPE_CHAT]) {
-            const defs = defsForScope(scope);
+        const problems = [];
+        for (const scope of [SCOPE_GLOBAL, SCOPE_BROWSER, SCOPE_CHARACTER, SCOPE_CHAT]) {
+            if (scope === SCOPE_BROWSER) {
+                const problem = getBrowserStoreProblem();
+                if (problem) {
+                    problems.push(problem);
+                    continue;
+                }
+            }
+            let defs;
+            try {
+                defs = getDefsForScope(scope);
+            } catch (error) {
+                problems.push(`Could not read ${SCOPE_COPY[scope].title} macros: ${error?.message ?? error}`);
+                continue;
+            }
             if (!defs.length) {
                 continue;
             }
-            const label = scope === SCOPE_GLOBAL ? 'Everywhere' : scope === SCOPE_CHARACTER ? 'This character' : 'This chat';
+            const label = SCOPE_COPY[scope].title;
             exportRow.appendChild(button('menu_button', `Export ${label} (${defs.length})`, () => {
                 const stamp = new Date().toISOString().slice(0, 10);
                 downloadJson(`macro-enhanced-${scope}-${stamp}.json`, exportPack(defs, { exportedAt: new Date().toISOString() }));
             }));
         }
+        exportProblem.textContent = problems.join(' ');
+        exportProblem.hidden = problems.length === 0;
     }
 
     importInput.addEventListener('change', () => {

@@ -3,6 +3,7 @@ import { ASK_FIRST, CONFIRM_PROTOCOL, CREATE_CHARACTER_GUIDE, USER_CONFIRMED_DES
 import { EDITABLE_AGENT_FIELDS, EDITABLE_CHARACTER_FIELDS } from './assistant-tool-data.js';
 import { NOTE_TOOL_DEFINITIONS } from '../../public/scripts/notebooks/assistant-note-tools.js';
 import { CREATE_AGENT_GUIDE, CREATE_AGENT_SCHEMA } from '../../public/scripts/neconyan-assistant-agent.js';
+import { BROWSER_MACRO_TOOL } from '../../public/scripts/neconyan-assistant-macro-schema.js';
 
 const invalid = message => roleplayError('ROLEPLAY_TOOL_INVALID', message, 409);
 const string = { type: 'string' };
@@ -44,6 +45,7 @@ const assistant = Object.freeze({
         ['avatar', 'field', 'value'], { avatar: avatarName, field: { type: 'string', enum: EDITABLE_CHARACTER_FIELDS }, value: string }))],
     ...Object.fromEntries(Object.entries(NOTE_TOOL_DEFINITIONS)
         .map(([name, definition]) => [`Neconyan_Assistant_${name}`, [definition.description, definition.schema]])),
+    [BROWSER_MACRO_TOOL.name]: [BROWSER_MACRO_TOOL.description, reviewed(BROWSER_MACRO_TOOL.parameters)],
 });
 
 const assistantGuides = Object.freeze({
@@ -53,6 +55,9 @@ const assistantGuides = Object.freeze({
     Neconyan_Assistant_EditModelPreset: ASK_FIRST.editModelPreset,
     Neconyan_Assistant_CreateCharacter: ASK_FIRST.createCharacter,
     Neconyan_Assistant_EditCharacter: ASK_FIRST.editCharacter,
+    // The saved browser macro is reviewed in chat and then again in the macro
+    // library, so the shared confirmation protocol applies before the call.
+    [BROWSER_MACRO_TOOL.name]: 'Draft the macro with the user, show the exact name, template and arguments in chat, and end that message by asking whether to make the tool call now. Call only after the user confirms.',
 });
 
 const pathfinder = Object.freeze({

@@ -1,5 +1,6 @@
 import { ctxOf } from '../host.js';
 import { stableStringify } from '../message-content.js';
+import { readBrowserMacros } from '../../../MacroEnhanced/src/custom/browser-store.js';
 
 /**
  * Reads the Macro Enhanced extension's configuration.
@@ -7,7 +8,7 @@ import { stableStringify } from '../message-content.js';
  * Recorded only, never applied. A test case notes what the macro configuration
  * was when a prompt was built, so that a later difference can be explained
  * ("the macro pack changed between these two runs"). Applying it would mean
- * writing to three separate stores the user owns, and a crash part way through
+ * writing to several separate stores the user owns, and a crash part way through
  * would leave their own macros in a state they never chose.
  */
 
@@ -65,6 +66,7 @@ export function readMacroEnhanced(hostRef) {
         fixImportedSyntax: Boolean(settings.fixImportedSyntax),
         manualCachingAtDepth: settings.auditor?.manualCachingAtDepth ?? null,
         globalMacros: customMacroFingerprint(settings.customMacros),
+        browserMacros: customMacroFingerprint(readBrowserMacros({ ctx: context })),
         characterMacros: customMacroFingerprint(characterSettings?.customMacros),
         chatMacros: customMacroFingerprint(chatState?.customMacros),
         // Stored values that make a macro return the same thing twice; a change
@@ -95,7 +97,7 @@ export function macroConfigDiffers(a, b) {
     const right = { ...b };
     // Older saved cases did not record these fields. Compare them only when
     // both runs know the value, without ignoring missing established fields.
-    for (const key of ['fixImportedSyntax', 'personaPronounsHash', 'characterPronounsHash']) {
+    for (const key of ['fixImportedSyntax', 'browserMacros', 'personaPronounsHash', 'characterPronounsHash']) {
         if (!Object.hasOwn(a, key) || !Object.hasOwn(b, key)) {
             delete left[key];
             delete right[key];
