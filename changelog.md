@@ -8,6 +8,7 @@
 - PR #218 (2026-10-18) `ci(github): post Miso merge verdicts from staging`
 - PR #219 (2026-10-18) `ci(github): trigger Miso from staging pushes`
 - PR #220 (2026-10-18) `ci(github): run Miso on pull request events`
+- PR #221 (2026-10-18) `feat(agents): rerun after-reply agents from the message menu`
 
 ## v1.3.5
 
