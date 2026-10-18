@@ -88,7 +88,7 @@ for (const links of [false, true]) for (const resume of [false, true]) test(`exp
 
 test('foreground history, null history state, explicit Home and a second-context resume remain independent', async ({ app, browser }) => {
     const account = await app.account();
-    const { a, b, nav } = await roleplayFixtures(app, account);
+    const { a, b, nav, folder } = await roleplayFixtures(app, account);
     const page = await account.open({ workspace: false });
     await ready(page);
     await preferences(page, { links: true, resume: true });
@@ -114,6 +114,22 @@ test('foreground history, null history state, explicit Home and a second-context
         await ready(page);
         await page.unroute('**/api/chats/recent');
         await expect(page.locator('body')).toHaveClass(/neconyan-home-visible/);
+        await test.step('Home refresh sees imported and externally updated chats without a page event', async () => {
+            const filename = path.join(folder, 'Nav Imported.jsonl');
+            const records = [
+                { user_name: 'User', character_name: 'Durable Nova', chat_metadata: { tainted: true } },
+                { name: 'Durable Nova', is_user: false, mes: 'Imported while Home was open.', send_date: new Date().toISOString() },
+            ];
+            const refresh = () => page.evaluate(async () => (await import('/scripts/welcome-screen.js')).openWelcomeScreen({ force: true }));
+            const preview = page.locator('#welcome-recent-chat-list [data-file="Nav Imported"] .chatMessage');
+            await fs.writeFile(filename, records.map(row => JSON.stringify(row)).join('\n'));
+            await refresh();
+            await expect(preview).toHaveText('Imported while Home was open.');
+            records[1].mes = 'Updated outside this browser page.';
+            await fs.writeFile(filename, records.map(row => JSON.stringify(row)).join('\n'));
+            await refresh();
+            await expect(preview).toHaveText('Updated outside this browser page.');
+        });
         await page.reload();
         await ready(page);
         await expect(page.locator('body')).toHaveClass(/neconyan-home-visible/);

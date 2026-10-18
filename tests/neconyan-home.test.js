@@ -406,7 +406,10 @@ describe('assistant shortcuts without shipped characters', () => {
                 eventSource: { on: (key, handler) => handlers.set(key, handler), makeFirst() {} },
                 event_types: { APP_READY: 'ready' }, getCurrentChatId: () => activeChat ? 'existing' : undefined, chat: [],
                 openWelcomeScreen: async () => { homeOpened = true; }, scheduleNeconyanRailRefresh() {},
+                refreshNeconyanRail: async () => { },
                 invalidateRecentChats() {},
+                createForegroundRefreshCoalescer: () => ({ request() { } }),
+                document: { hidden: false, addEventListener() { }, body: { classList: { contains: () => false } } },
                 syncNeconyanAssistantTools: () => { toolsSynced = true; },
                 resumeTutorial: () => { tourResumed = true; },
             });

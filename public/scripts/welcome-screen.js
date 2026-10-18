@@ -15,6 +15,7 @@ import { accountStorage } from './util/AccountStorage.js';
 import { getAssistantGender, getAssistantTourSrc, setAssistantGender } from './neconyan-assistant-art.js';
 import { clamp, flashHighlight, getSortableDelay, isElementInViewport, sortMoments, timestampToMoment } from './utils.js';
 import { revealChat, revealUi } from './ui-motion.js';
+import { createForegroundRefreshCoalescer } from './mobile-shell-lifecycle/index.js';
 
 const assistantAvatarKey = 'assistant';
 const assistantVariantKey = 'neconyanAssistantVariant';
@@ -31,13 +32,10 @@ let welcomeRequestId = 0;
 let assistantCatalogPromise = null;
 let assistantSelectionPending = false;
 
-// Home and the rail ask for the same recent list during startup. Keep one raw
-// response per account/options tuple and one in-flight request; chat mutations
-// invalidate both explicitly. No time-based expiry is used.
-let recentChatsDataCache = null;
+// Home and the rail can ask for the same recent list during startup. Share only
+// the request already in flight; once it completes, the next consumer fetches
+// fresh data. No completed browser cache and no time-based expiry.
 let recentChatsInFlight = null;
-let recentChatsGeneration = 0;
-let recentChatsRequestSequence = 0;
 
 const AGENT_MESSAGE_EXTRA_KEY = 'inChatAgents';
 const AGENT_PROMPT_TRANSFORM_HISTORY_KEY = 'inChatAgentTransformHistory';
@@ -1003,6 +1001,10 @@ async function handleWelcomeAction(button) {
  * @returns {Promise<void>}
  */
 export async function openWelcomeScreen({ force = false, expand = false } = {}) {
+    if (force) {
+        // An explicit Home open must not join an older request.
+        invalidateRecentChats();
+    }
     const requestId = ++welcomeRequestId;
     const currentChatId = getCurrentChatId();
     const hasActiveChat = currentChatId !== undefined || chat.length > 0;
@@ -1955,7 +1957,10 @@ async function refreshNeconyanRail({ force = false } = {}) {
     }
 }
 
-function scheduleNeconyanRailRefresh() {
+function scheduleNeconyanRailRefresh({ invalidate = true } = {}) {
+    if (invalidate) {
+        invalidateRecentChats();
+    }
     window.clearTimeout(neconyanRailRefreshTimer);
     neconyanRailRefreshTimer = window.setTimeout(() => {
         neconyanRailRefreshTimer = 0;
@@ -2491,8 +2496,9 @@ async function refreshWelcomeScreen({ flashChat = null } = {}) {
     const recentChatFilter = currentPanel instanceof HTMLElement ? currentPanel.dataset.recentChatFilter || 'all' : 'all';
     const expandedRecentChatFilters = currentPanel instanceof HTMLElement ? currentPanel.dataset.expandedRecentChatFilters || '' : '';
 
-    await openWelcomeScreen({ force: true });
-    scheduleNeconyanRailRefresh();
+    const homePromise = openWelcomeScreen({ force: true });
+    void refreshNeconyanRail();
+    await homePromise;
 
     const nextPanel = getWelcomeHost()?.querySelector('.welcomePanel');
     if (nextPanel instanceof HTMLElement) {
@@ -2628,24 +2634,20 @@ function isAgentRecentChat(chatData) {
 }
 
 /**
- * Drops the recent-chat response and any request that started before this
- * point. Events that can change the list call this explicitly; there is no
- * time-based expiry.
+ * Drops the request currently in flight. Completed responses are never kept, so
+ * there is no permanent cache to expire and no time-based TTL.
  */
 function invalidateRecentChats() {
-    recentChatsGeneration++;
-    recentChatsDataCache = null;
     recentChatsInFlight = null;
 }
 
 /**
- * A cached response is valid only for the same account and the exact server
- * request shape. Pinned chats change the server's balancing order, so their
- * keys are part of the request identity.
+ * Identifies one server request shape. Account and option changes must not join
+ * an older in-flight request.
  * @param {{maxDisplayed: number}} settings
  * @returns {string}
  */
-function getRecentChatsCacheKey(settings) {
+function getRecentChatsRequestKey(settings) {
     const pinnedKey = PinnedChatsManager.getAll()
         .map(pinnedChat => PinnedChatsManager.getKey(pinnedChat))
         .sort()
@@ -2703,38 +2705,25 @@ async function fetchRecentChatsData(settings) {
 }
 
 /**
- * Returns the shared response or joins the request already in flight. A
- * response is cached only if no invalidation or newer request happened while
- * it was loading.
+ * Joins the request already in flight for the same account and option shape.
+ * Once it completes the next consumer starts a fresh request.
  * @param {{maxDisplayed: number}} settings
- * @param {string} cacheKey
+ * @param {string} requestKey
  * @returns {Promise<Array | null>}
  */
-function requestRecentChatsData(settings, cacheKey) {
-    const cached = recentChatsDataCache;
-    if (cached?.key === cacheKey && cached.generation === recentChatsGeneration) {
-        return Promise.resolve(cached.data);
-    }
-
+function requestRecentChatsData(settings, requestKey) {
     const inFlight = recentChatsInFlight;
-    if (inFlight?.key === cacheKey && inFlight.generation === recentChatsGeneration) {
-        return inFlight.promise;
+    if (inFlight?.key === requestKey) {
+        return inFlight.promise.then(data => Array.isArray(data) ? structuredClone(data) : data);
     }
 
-    const generation = recentChatsGeneration;
-    const sequence = ++recentChatsRequestSequence;
-    const promise = fetchRecentChatsData(settings).then(data => {
-        if (data !== null && generation === recentChatsGeneration && sequence === recentChatsRequestSequence) {
-            recentChatsDataCache = { key: cacheKey, generation, data };
-        }
-        return data;
-    }).finally(() => {
+    const promise = fetchRecentChatsData(settings).finally(() => {
         if (recentChatsInFlight?.promise === promise) {
             recentChatsInFlight = null;
         }
     });
-    recentChatsInFlight = { key: cacheKey, generation, promise };
-    return promise;
+    recentChatsInFlight = { key: requestKey, promise };
+    return promise.then(data => Array.isArray(data) ? structuredClone(data) : data);
 }
 
 async function getRecentChats() {
@@ -2747,7 +2736,7 @@ async function getRecentChats() {
             pinned: PinnedChatsManager.isPinned(recentChat),
         }));
 
-    const data = await requestRecentChatsData(settings, getRecentChatsCacheKey(settings));
+    const data = await requestRecentChatsData(settings, getRecentChatsRequestKey(settings));
     if (!Array.isArray(data) || data.length === 0) {
         return finalizeRecentChats(await getRecentConversationChats(settings));
     }
@@ -2930,18 +2919,46 @@ export function initWelcomeScreen() {
     ensureNeconyanRail();
     installChatNoteCapture();
     window.addEventListener('sb:conversation-workspace-state-changed', concealWelcomeHome);
+    // One resume can fire focus, visibilitychange and pageshow together. Refresh
+    // the recent list once per burst so another device or a server job is seen
+    // without a permanent cache.
+    const requestForegroundRefresh = createForegroundRefreshCoalescer({
+        refresh: () => {
+            if (document.body.classList.contains('neconyan-home-visible')) {
+                void refreshWelcomeScreen();
+                return;
+            }
+            invalidateRecentChats();
+            void refreshNeconyanRail();
+        },
+        coalesceMs: 500,
+        isActive: () => !document.hidden,
+    }).request;
+    window.addEventListener('pageshow', requestForegroundRefresh, { passive: true });
+    window.addEventListener('focus', requestForegroundRefresh, { passive: true });
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            requestForegroundRefresh();
+        }
+    });
     eventSource.on(event_types.APP_READY, async () => {
         resumeTutorial();
-        if (getCurrentChatId() === undefined && chat.length === 0) {
-            await openWelcomeScreen({ force: true });
+        const opensHome = getCurrentChatId() === undefined && chat.length === 0;
+        const homePromise = opensHome ? openWelcomeScreen() : null;
+        // Start the rail read while Home is starting so both share one request.
+        const railRefresh = refreshNeconyanRail();
+        if (homePromise) {
+            await homePromise;
         }
         syncAssistantTools();
-        scheduleNeconyanRailRefresh();
+        void railRefresh;
     });
-    // Chat change opens Home through makeFirst below; invalidate before that
-    // listener so the shared response cannot survive into the new chat state.
-    eventSource.on(event_types.CHAT_CHANGED, invalidateRecentChats);
-    eventSource.makeFirst(event_types.CHAT_CHANGED, openWelcomeScreen);
+    // Chat change opens Home through makeFirst. The wrapper invalidates before
+    // openWelcomeScreen runs, matching the awaited listener order.
+    eventSource.makeFirst(event_types.CHAT_CHANGED, async (...args) => {
+        invalidateRecentChats();
+        await openWelcomeScreen(...args);
+    });
     const syncAssistantTools = syncNeconyanAssistantTools;
     eventSource.on(event_types.CHAT_CHANGED, syncAssistantTools);
     eventSource.on(event_types.CHAT_LOADED, syncAssistantTools);
@@ -2958,21 +2975,6 @@ export function initWelcomeScreen() {
     ].filter(Boolean);
     for (const eventName of new Set(railRefreshEvents)) {
         eventSource.on(eventName, scheduleNeconyanRailRefresh);
-    }
-    const recentChatsInvalidationEvents = [
-        ...railRefreshEvents.filter(eventName => eventName !== event_types.CHAT_CHANGED),
-        event_types.CHAT_RENAMED,
-        event_types.MESSAGE_RECEIVED, event_types.MESSAGE_UPDATED, event_types.MESSAGE_EDITED,
-        event_types.MESSAGE_DELETED, event_types.MESSAGE_SWIPED, event_types.MESSAGE_SWIPE_DELETED,
-        event_types.CHARACTER_EDITED,
-        event_types.PERSONA_CHANGED, event_types.PERSONA_CREATED, event_types.PERSONA_UPDATED,
-        event_types.PERSONA_RENAMED, event_types.PERSONA_DELETED,
-    ].filter(Boolean);
-    for (const eventName of new Set(recentChatsInvalidationEvents)) {
-        eventSource.on(eventName, invalidateRecentChats);
-    }
-    for (const eventName of ['sb:conversation-workspace-state-changed', 'neconyan:hopper-state-changed', 'neconyan:story-state-changed']) {
-        window.addEventListener(eventName, invalidateRecentChats);
     }
     eventSource.on(event_types.CHARACTER_MANAGEMENT_DROPDOWN, target => {
         if (target === 'set_as_assistant') assignCharacterAsAssistant(this_chid);
@@ -2992,7 +2994,6 @@ export function initWelcomeScreen() {
     });
     eventSource.on(event_types.CHAT_RENAMED, async ({ avatarId, groupId, oldFileName, newFileName }) => {
         PinnedChatsManager.rename({ avatar: avatarId, group: groupId, file_name: oldFileName }, newFileName);
-        invalidateRecentChats();
         scheduleNeconyanRailRefresh();
     });
 }

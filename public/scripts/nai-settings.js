@@ -21,7 +21,7 @@ import {
 } from './utils.js';
 import { BIAS_CACHE, createNewLogitBiasEntry, displayLogitBias, getLogitBiasListResult } from './logit-bias.js';
 import { SECRET_KEYS, secret_state, writeSecret } from './secrets.js';
-import { attachModelListSearch } from './model-list-search.js';
+import { attachModelListSearch, syncModelListSearchValue } from './model-list-search.js';
 
 const default_preamble = '[ Style: chat, complex, sensory, visceral ]';
 const default_order = [1, 5, 0, 2, 3, 4];
@@ -262,8 +262,11 @@ export function loadNovelSettings(data, settings) {
 
     //load the rest of the Novel settings without any checks
     nai_settings.model_novel = settings.model_novel;
+    // .val() and prop('selected') change the native selectedness without a
+    // change event or attribute mutation, so sync the searchable list directly.
     $('#model_novel_select').val(nai_settings.model_novel);
     $(`#model_novel_select option[value=${nai_settings.model_novel}]`).prop('selected', true);
+    syncModelListSearchValue(document.querySelector('#model_novel_select'));
 
     if (settings.nai_preamble !== undefined) {
         nai_settings.preamble = settings.nai_preamble;

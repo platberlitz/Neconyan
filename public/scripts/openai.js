@@ -6709,6 +6709,13 @@ function loadOpenAISettings(data, settings) {
         }
     }
 
+    // The loop above set every provider select silently. Native selectedness
+    // changes do not emit change or mutate a watched attribute, so sync all
+    // searchable model lists once settings have loaded.
+    for (const selector of MODEL_LIST_SEARCH_SELECTS) {
+        syncModelListSearchValue(document.querySelector(selector));
+    }
+
     applyToolCallRecurseLimit(oai_settings.tool_call_recurse_limit);
     syncMaxContextUnlockedControl(oai_settings);
 
@@ -8148,6 +8155,7 @@ async function onModelChange() {
         if (value) {
             oai_settings.ai21_model = value;
             $('#model_ai21_select').val(value);
+            syncModelListSearchValue(document.querySelector('#model_ai21_select'));
         }
     }
     if ($(this).is('#cohere_model_id')) {
@@ -8220,6 +8228,7 @@ async function onModelChange() {
         if (value === '' || value.startsWith('j2-')) {
             value = 'jamba-large';
             $('#model_ai21_select').val(value);
+            syncModelListSearchValue(document.querySelector('#model_ai21_select'));
         }
 
         console.log('AI21 model changed to', value);
@@ -9507,6 +9516,7 @@ async function setCustomEndpointPreset(name, url, key, model, { secretId = '', w
     }
     $('#custom_model_id').val(oai_settings.custom_model).trigger('input');
     $('#model_custom_select').val(oai_settings.custom_model);
+    syncModelListSearchValue(document.querySelector('#model_custom_select'));
     refreshModelIdSearchControlsForSource(chat_completion_sources.CUSTOM);
 
     // Neconyan: clear typed key text before rotating; rotation reconnects, and Connect would otherwise bind that text to this profile.
@@ -9783,6 +9793,7 @@ function runEnumChatCompletionSettingCallback(commandName, settingName, selector
 
         oai_settings[settingName] = getSlashCommandEnumValue(stringValue, validValues, commandName);
         $(selector).val(oai_settings[settingName]);
+        syncModelListSearchValue(document.querySelector(selector));
         onChange?.(args);
         saveSettingsDebounced();
         return getSlashCommandStringValue(oai_settings[settingName]);
@@ -9802,6 +9813,7 @@ function runStringChatCompletionSettingCallback(commandName, settingName, select
 
         oai_settings[settingName] = stringValue;
         $(selector).val(oai_settings[settingName]);
+        syncModelListSearchValue(document.querySelector(selector));
         onChange?.(args);
         saveSettingsDebounced();
         return getSlashCommandStringValue(oai_settings[settingName]);
