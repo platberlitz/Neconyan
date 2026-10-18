@@ -43,8 +43,9 @@ import { sameSourceBucket, sameSourceContext } from './source.js';
 import { observeJob, TERMINAL } from '../jobs.js';
 import * as images from './images.js';
 import { integerSettingValue, reflectSavedValue, reflectedSettingValue } from './setting-input.js';
+import { renderWebSearchSettings, renderWebSearchSources, setWebSearchToggle } from './web-search.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261013e-scratchpad-images';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261018d-scratchpad-web-search';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -104,6 +105,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     participants: ['miso', 'taro', 'nori'],
     maxTokens: 32000,
     stream: true,
+    webSearch: false,
 });
 
 const app = {
@@ -135,6 +137,12 @@ const app = {
     imageErrors: new Map(),
     imageAvailability: { image: false, reason: '' },
     imageCheck: 0,
+    webSearch: null,
+    webSearchCheck: 0,
+    webSearchSaving: false,
+    webSearchDraft: null,
+    webSearchLoad: null,
+    webSearchOwner: '',
     pickLimit: PICK_PAGE,
     sessionQuery: '',
     contextKey: '',
@@ -401,6 +409,9 @@ function build() {
     for (const event of [event_types.PRESET_CHANGED, event_types.MAIN_API_CHANGED, event_types.OAI_PRESET_CHANGED_AFTER]) {
         eventSource.on(event, () => app.open && render());
     }
+    for (const event of [event_types.SECRET_WRITTEN, event_types.SECRET_DELETED, event_types.SECRET_ROTATED, event_types.SECRET_EDITED]) {
+        eventSource.on(event, () => app.open && void refreshWebSearchConfig({ quiet: true }));
+    }
     globalThis.addEventListener('sb:conversation-workspace-state-changed', () => app.open && checkSource());
     wireHomeSourceEvents();
     globalThis.addEventListener('neconyan:assistant-gender-changed', () => app.open && render());
@@ -439,6 +450,8 @@ function buildChatPanel() {
         oninput: fitComposer,
     });
     el.send = iconButton(t`Send`, () => onSendButton(), { icon: 'fa-paper-plane', className: 'scratchpad-send', primary: true });
+    el.webSearch = iconButton(t`Web`, () => void toggleWebSearch(),
+        { icon: 'fa-globe', className: 'scratchpad-web-toggle', title: t`Search the web for this message`, pressed: false });
     el.overviewToggle = h('button', {
         type: 'button',
         class: 'scratchpad-overview-toggle',
@@ -463,7 +476,7 @@ function buildChatPanel() {
         el.overviewBar,
         el.overview,
         el.messages,
-        h('div', { class: 'scratchpad-compose' }, el.quick, h('div', { class: 'scratchpad-compose-row' }, el.composer, el.send)),
+        h('div', { class: 'scratchpad-compose' }, el.quick, h('div', { class: 'scratchpad-compose-row' }, el.webSearch, el.composer, el.send)),
     ]);
 }
 
@@ -699,6 +712,106 @@ async function refreshImageAvailability() {
         app.imageAvailability = result;
         if (app.open) renderHeader();
     } catch { app.imageAvailability = { image: false, reason: t`Quick Image Gen availability could not be checked.` }; }
+}
+
+/** Account-wide provider choice and whether the selected key or address is ready. */
+async function loadWebSearchConfig({ quiet = true, rerenderContext = true } = {}) {
+    const owner = getCurrentUserHandle();
+    if (app.webSearchOwner && app.webSearchOwner !== owner) {
+        app.webSearchDraft = null;
+        app.webSearch = null;
+    }
+    app.webSearchOwner = owner;
+    const ticket = ++app.webSearchCheck;
+    try {
+        const result = await api.readWebSearch();
+        if (owner !== getCurrentUserHandle() || ticket !== app.webSearchCheck) return null;
+        app.webSearch = { config: result.webSearch, readiness: result.readiness };
+        if (app.open) {
+            renderComposer();
+            if (rerenderContext && app.tab === 'context') renderContext({ force: true });
+        }
+        return result;
+    } catch (error) {
+        if (owner !== getCurrentUserHandle() || ticket !== app.webSearchCheck) return null;
+        app.webSearch = { config: null, readiness: null, error: error?.message || t`Web search settings could not be loaded.` };
+        if (!quiet) reportError(error, t`Web search settings could not be loaded.`);
+        if (app.open) {
+            renderComposer();
+            if (rerenderContext && app.tab === 'context') renderContext({ force: true });
+        }
+        return null;
+    }
+}
+
+/** Share one read across rapid callers, and never let a stale read overwrite a save. */
+async function refreshWebSearchConfig(options = {}) {
+    if (app.webSearchSaving) return null;
+    if (app.webSearchLoad) return app.webSearchLoad;
+    const load = loadWebSearchConfig(options);
+    app.webSearchLoad = load;
+    try {
+        return await load;
+    } finally {
+        if (app.webSearchLoad === load) app.webSearchLoad = null;
+    }
+}
+
+function openWebSearchSettings(message = '') {
+    selectTab('context');
+    renderContext({ force: true });
+    const section = document.getElementById('scratchpad-web-search-settings');
+    section?.scrollIntoView?.({ block: 'nearest' });
+    document.getElementById('scratchpad-web-search-provider')?.focus?.({ preventScroll: true });
+    if (message) toastr.info(message);
+}
+
+async function toggleWebSearch() {
+    if (!app.source || app.sending || pendingReply() || app.webSearchSaving) return;
+    if (app.webSearchLoad) await app.webSearchLoad;
+    else if (!app.webSearch?.config) await refreshWebSearchConfig({ quiet: true });
+    const enabled = currentSettings().webSearch === true;
+    if (!enabled && !app.webSearch?.readiness?.configured) {
+        openWebSearchSettings(app.webSearch?.error
+            ? t`Web search settings could not be loaded. Check them in Context.`
+            : app.webSearch?.readiness?.missing === 'off' ? t`Choose a web search provider in Context first.` : t`Finish setting up web search in Context first.`);
+        return;
+    }
+    await updateSettings({ webSearch: !enabled });
+    if (app.open) renderComposer();
+}
+
+async function saveWebSearchSettings(values) {
+    if (!app.webSearch) await refreshWebSearchConfig({ quiet: false });
+    const draft = values ?? app.webSearchDraft ?? app.webSearch?.config;
+    if (!app.webSearch?.config || !draft) {
+        reportError(new Error(app.webSearch?.error || t`Web search settings could not be loaded.`), t`Web search settings could not be saved.`);
+        return;
+    }
+    const expectedRevision = app.webSearch.config.revision ?? 0;
+    app.webSearchCheck += 1;
+    app.webSearchSaving = true;
+    app.webSearchDraft = { provider: draft.provider, searxngUrl: draft.searxngUrl ?? '', results: draft.results };
+    const submittedDraft = { ...app.webSearchDraft };
+    const owner = getCurrentUserHandle();
+    if (app.tab === 'context') renderContext({ force: true });
+    try {
+        const result = await api.updateWebSearch(submittedDraft, expectedRevision);
+        if (owner !== getCurrentUserHandle()) throw new Error(t`The signed-in account changed. Reload the page before saving web search settings.`);
+        app.webSearch = { config: result.webSearch, readiness: result.readiness };
+        if (JSON.stringify(app.webSearchDraft) === JSON.stringify(submittedDraft)) app.webSearchDraft = null;
+        app.webSearchSaving = false;
+        if (app.tab === 'context') renderContext({ force: true });
+        renderComposer();
+        toastr.success(t`Web search settings saved.`);
+    } catch (error) {
+        app.webSearchSaving = false;
+        if (owner !== getCurrentUserHandle()) return;
+        if (error?.code === 'SCRATCHPAD_WEB_SEARCH_CHANGED') await refreshWebSearchConfig({ quiet: true });
+        if (app.webSearch) app.webSearch = { ...app.webSearch, error: error?.message || t`Web search settings could not be saved.` };
+        reportError(error, t`Web search settings could not be saved.`);
+        if (app.tab === 'context') renderContext({ force: true });
+    }
 }
 
 /** Blank or non-finite fields keep their saved value; the server's clamp is shown after saving. */
@@ -1028,6 +1141,7 @@ function renderMessages() {
 function stageLabel(preview) {
     if (preview?.stage === 'done') return t`Reply saved`;
     if (preview?.stage === 'failed') return preview.error || t`This reply did not finish.`;
+    if (preview?.stage === 'searching') return t`Searching the web…`;
     if (!preview || preview.stage === 'queued') return t`Waiting for the model...`;
     if (!preview.text && preview.reasoning) return t`Thinking...`;
     return t`Writing...`;
@@ -1094,6 +1208,8 @@ function renderMessage(session, message, { latest }) {
                 h('p', { class: 'scratchpad-plain', text: message.reasoning })));
         }
         if (message.text) article.append(renderReply(session, message));
+        const sources = message.role === 'assistant' ? renderWebSearchSources(message) : null;
+        if (sources) article.append(sources);
         if (message.state === 'failed') {
             article.append(h('p', { class: 'scratchpad-error', role: 'status', text: message.error || t`This reply did not finish.` }));
         }
@@ -1480,6 +1596,8 @@ function renderComposer() {
     el.send.querySelector('span').textContent = pending ? (activeSession()?.settings.roundTable && !randomReplyEnabled() ? t`Stop all` : t`Stop`)
         : (app.sending ? t`Sending...` : count > 1 || randomReplyEnabled() ? t`Ask ${count}` : t`Send`);
     el.send.querySelector('i').className = `fa-solid ${pending ? 'fa-stop' : 'fa-paper-plane'}`;
+    setWebSearchToggle(el.webSearch, { enabled: currentSettings().webSearch === true, configured: app.webSearch?.readiness?.configured === true });
+    el.webSearch.disabled = !app.source || !app.bucket || app.sending || Boolean(pending);
     for (const chip of el.quick.querySelectorAll('button')) chip.disabled = !app.source;
 }
 
@@ -1606,6 +1724,16 @@ function renderContext({ force = true } = {}) {
         h('h3', { class: 'scratchpad-section-title', text: t`Global user instructions` }),
         h('p', { class: 'scratchpad-muted', text: t`Your preferences across all Scratchpads, for all assistants or just the ones you choose.` }),
         iconButton(t`Edit user instructions`, () => void editUserInstructions(), { icon: 'fa-pen' })));
+    panel.append(renderWebSearchSettings({
+        config: app.webSearch?.config ?? null,
+        draft: app.webSearchDraft,
+        readiness: app.webSearch?.readiness ?? null,
+        error: app.webSearch?.error || '',
+        saving: app.webSearchSaving,
+        onSave: values => void saveWebSearchSettings(values),
+        onRefresh: () => void refreshWebSearchConfig({ quiet: false }),
+        onDraft: draft => { app.webSearchDraft = draft; },
+    }));
     if (!app.source) {
         panel.append(h('p', { class: 'scratchpad-empty', text: t`Open a chat to choose what Scratchpad reads.` }));
         return;
@@ -2098,6 +2226,16 @@ function renderSessions() {
 
 export async function openScratchpad({ tab = '', note = null } = {}) {
     const owner = getCurrentUserHandle();
+    // Only a different account discards the form draft; a same-account reopen
+    // keeps it until a successful save.
+    if (app.webSearchOwner !== owner) {
+        app.webSearch = null;
+        app.webSearchDraft = null;
+        app.webSearchSaving = false;
+        app.webSearchLoad = null;
+        app.webSearchCheck += 1;
+    }
+    app.webSearchOwner = owner;
     // A library that cannot be read only hides saved assistants; Scratchpad still opens with the included ones.
     const [library] = await Promise.all([
         api.readAssistants().then(result => result.library, error => {
@@ -2141,6 +2279,7 @@ export async function openScratchpad({ tab = '', note = null } = {}) {
     }
     if (!isPhone()) app.el.composer.focus({ preventScroll: true });
     void refreshImageAvailability();
+    void refreshWebSearchConfig({ quiet: true });
 }
 
 export function hideScratchpad() {

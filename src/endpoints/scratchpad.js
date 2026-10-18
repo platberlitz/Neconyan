@@ -30,6 +30,7 @@ import { notebookContextLocked, withNotebookPreparation, prepareNotebookProposal
     projectNotebookProposalsLocked, notifyScratchpadNotebookResult } from '../scratchpad/notebooks.js';
 import { acceptScratchpadImage, readScratchpadImageAvailability, prepareScratchpadAvatarReview } from '../scratchpad/images.js';
 import { captureImageTargetsLocked } from '../scratchpad/image-targets.js';
+import { updateWebSearchLocked, webSearchState, webSearchStateLocked } from '../scratchpad/web-search.js';
 
 export const router = express.Router();
 
@@ -138,6 +139,26 @@ router.post('/instructions/update', (request, response) => {
         const instructions = withScratchpad(scratchpadAccountBase(request), lease =>
             updateInstructionsLocked(lease, request.body?.instructions, request.body?.expectedRevision));
         response.json({ instructions });
+    } catch (error) {
+        sendError(response, error);
+    }
+});
+
+router.post('/web-search', (request, response) => {
+    try {
+        const base = scratchpadAccountBase(request);
+        response.json(withScratchpad(base, lease => webSearchStateLocked(lease)));
+    } catch (error) {
+        sendError(response, error);
+    }
+});
+
+router.post('/web-search/update', (request, response) => {
+    try {
+        const base = scratchpadAccountBase(request);
+        const config = withScratchpad(base, lease => updateWebSearchLocked(lease, request.body?.webSearch,
+            request.body?.expectedRevision, { admin: request.user?.profile?.admin === true }));
+        response.json(webSearchState(config, base.directories));
     } catch (error) {
         sendError(response, error);
     }

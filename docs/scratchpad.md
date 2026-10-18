@@ -68,6 +68,22 @@ Each message has a few buttons:
 
 When you ask how something in Neconyan works, the assistant also gets the same help reference that assistant chats use.
 
+## Web search
+
+Turn on **Web** beside the message box to search the web before the assistant answers. I've kept it off by default; your choice is saved per session. The search service receives only the message you're sending, with extra whitespace removed and a limit of 400 characters. It doesn't receive your chat, character cards, persona, saved notes or earlier Scratchpad messages. Scratchpad uses your message directly as the search query.
+
+Set the account-wide provider under **Context → Web search**:
+
+- **Brave Search** uses a Brave Search API key. Press **Manage Brave Search key** and add it with the same key manager as your other API keys.
+- **SearXNG** uses your own instance. Enter its base address, including any path such as `https://search.example.com/searxng`. Enable JSON output, the machine-readable search results, in its `search.formats` setting. A 403 error means SearXNG refused the request, often because JSON output is off or this server isn't allowed to use it. A private or local address also needs to be in the server's private address whitelist, its list of allowed local addresses. Only an administrator can save one.
+- **NanoGPT (Linkup)** uses the saved NanoGPT API key and the direct web search endpoint with Linkup at standard depth. It works even when your Scratchpad assistant uses another chat provider.
+
+**Results to read** sets how many results to keep, from 1 to 10 with 5 as the default. If Web is on but the provider or key is missing, sending stops before any job starts and tells you what to set up.
+
+Scratchpad searches once per message, or once for a whole round table, and waits up to 20 seconds. The assistant is told to cite the numbered results it uses as `[n]` and treat their contents as reference material. If search fails, the assistant can still answer, with a visible failure note and no sources. **Stop** cancels the reply, including while it's searching.
+
+Finished replies keep a collapsible **Sources** list with the exact query and numbered links. Links open in a new tab without sending the page your Scratchpad address. The saved reply keeps the provider, query, source titles and addresses, but doesn't retain the result snippets. Session exports remain text-only and don't include these search records, so imported text can't become a verified source list.
+
 ## What Scratchpad reads
 
 Scratchpad rebuilds the reference material every time you send. With a visible chat it reads that chat as it is now. General shares no story messages, swipes, chat metadata, Author's Note, preset or lorebook text. Your active persona can be shared; a deliberately selected card without a chat can also be shared. Home includes no hidden character card. A Conversation card without a branch uses its Conversation persona, never the underlying Roleplay card. **Character cards** and **Your persona** still control those optional references, and **Show preview** shows exactly what will go with your next message.

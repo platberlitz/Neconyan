@@ -4,7 +4,7 @@ import { createMessageTokenCounter } from '../generation/message-token-counts.js
 import { captureGenerationBinding, resolveGenerationProfile } from '../generation/profiles.js';
 import { extractProviderReasoning } from '../../public/scripts/generation-format.js';
 import { hash } from '../mewmory/core.js';
-import { createProviderScope, readArtifact, writeArtifact } from '../jobs/artifacts.js';
+import { createProviderScope, providerStep, readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { acceptJob, canonical, getJob, listJobs, releaseJob, requestCancellation, updateJob } from '../jobs/store.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { roleplayAccountBase } from '../roleplay-store.js';
@@ -40,6 +40,7 @@ import { sameSourceContext } from '../../public/scripts/scratchpad/source.js';
 import { captureImageTargetsLocked, imagePersonaIdLocked, normaliseImageTargets } from './image-targets.js';
 import { hasPendingImages } from './image-state.js';
 import { readScratchpadImageAvailability } from './images.js';
+import { WEB_SEARCH_PLACEHOLDER, buildWebSearchPrompt, performWebSearch, planWebSearch, readWebSearchLocked, webSearchAcknowledgement, webSearchFailure, webSearchHistoryLine, webSearchMetadata } from './web-search.js';
 
 export const SCRATCHPAD_JOB_TYPE = 'scratchpad.reply';
 const MAX_CONTEXT_BYTES = 1536 * 1024;
@@ -121,7 +122,8 @@ function historyFrom(messages) {
         const images = Object.entries(usable[index].images ?? {}).map(([proposal, image]) =>
             `[Server image status: ${image.target === 'avatar' ? `portrait for ${image.characterName || 'shared character'}` : 'image'}; ${image.state === 'done'
                 ? usable[index].proposals?.[proposal] === 'applied' ? 'image saved and avatar replacement approved' : 'image saved; no avatar replacement performed' : image.state}.]`).join('\n');
-        history.unshift({ role: usable[index].role, text: [text, images].filter(Boolean).join('\n'), ...(usable[index].assistant ? { assistant: usable[index].assistant, assistantName: usable[index].assistantName } : {}) });
+        const webSources = usable[index].role === 'assistant' && usable[index].state === 'done' ? webSearchHistoryLine(usable[index].webSearch) : '';
+        history.unshift({ role: usable[index].role, text: [text, webSources, images].filter(Boolean).join('\n'), ...(usable[index].assistant ? { assistant: usable[index].assistant, assistantName: usable[index].assistantName } : {}) });
     }
     while (history.length && history[0].role !== 'user') history.shift();
     return history;
@@ -185,6 +187,9 @@ export async function acceptScratchpadReply(request, body = {}) {
         projectPending(bucket, id => getJob(directories, id));
         const session = findSession(bucket, input.sessionId);
         const plan = planReply(session, input);
+        // Web search uses only the current message. Its settings and selected key
+        // id are snapshotted here; the key value is read only when the job runs.
+        const webSearch = session.settings.webSearch ? planWebSearch(base.directories, readWebSearchLocked(lease), plan.prompt) : null;
         // Target checking only runs when images are available, so a stale or renamed shared card cannot fail a text reply.
         const targets = images ? captureImageTargetsLocked(lease, bucket.source, input.targets, { shared: session.settings.include.card }) : [];
         const notebook = notebookContextLocked(lease, session.settings);
@@ -192,7 +197,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         const library = readAssistantsLocked(lease);
         const snapshots = refreshSessionAssistants(session, library);
         writeBucketLocked(lease, bucket);
-        return { ...plan, targets, imagePersonaId: imagePersonaIdLocked(lease, bucket.source), notebook, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens, stream: session.settings.stream !== false,
+        return { ...plan, targets, imagePersonaId: imagePersonaIdLocked(lease, bucket.source), notebook, webSearch, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens, stream: session.settings.stream !== false,
             instructionsRevision: instructions.revision,
             assistantsRevision: library.revision,
             assistantNames: Object.fromEntries(Object.entries(snapshots).map(([id, profile]) => [id, profile.name])),
@@ -208,16 +213,18 @@ export async function acceptScratchpadReply(request, body = {}) {
         const selection = profileId ? { kind: 'profile', profileId } : { kind: 'active' };
         const binding = captureGenerationBinding(directories, selection, body.acknowledgement);
         const system = buildScratchpadSystemPrompt({ ...speaker, assistantNames: planned.assistantNames, userName: input.names.user, participants: planned.participants, randomReply: planned.randomReply,
-            characterName: input.names.character, sourceKind: input.source.kind,
+            characterName: input.names.character, sourceKind: input.source.kind, webSearch: Boolean(planned.webSearch),
             capabilities: { ...input.capabilities, image: Boolean(images), avatar: Boolean(images && planned.targets.length), notebook: Boolean(planned.notebook.text) }, help: input.help });
-        const messages = buildScratchpadMessages({ system: system.text, context: input.context, notebookContext: planned.notebook.text, history: planned.history, text: planned.prompt, assistant: speaker.assistant, assistantNames: planned.assistantNames });
+        const messages = buildScratchpadMessages({ system: system.text, context: input.context, notebookContext: planned.notebook.text, history: planned.history, text: planned.prompt, assistant: speaker.assistant, assistantNames: planned.assistantNames,
+            webSearchPlaceholder: planned.webSearch ? WEB_SEARCH_PLACEHOLDER : '' });
         const rawOptions = binding.kind === 'active' ? { trimNames: false } : {};
         const preparedMessages = !binding.backend || binding.backend === 'chat';
         const names = { user: input.names.user, char: system.persona.name };
         await validateActiveGenerationContext(resolveGenerationProfile(directories, binding), scratchpadMacroEnvironment(names, messages),
             messages, rawOptions, { maxTokens: planned.maxTokens, preparedMessages });
         return { replyId: newScratchpadId(), assistant: speaker.assistant, gender: speaker.gender, binding, messages, maxTokens: planned.maxTokens,
-            userName: names.user, characterName: names.char, rawOptions, preparedMessages, stream: planned.stream,
+            userName: names.user, characterName: names.char, rawOptions, preparedMessages, stream: planned.stream, webSearch: planned.webSearch,
+            searchIndex: planned.webSearch ? messages.length - 2 : -1,
             functionTools: preparedMessages ? scratchpadCharacterTools() : [] };
     }));
     const { job, created } = acceptJob(directories, {
@@ -319,20 +326,54 @@ function reasoningFrom({ response, generation } = {}, streamed) {
     return typeof value === 'string' ? clipBytes(value, MAX_REASONING_BYTES) : '';
 }
 
-async function runScratchpadReply(context, { generate }) {
+function publishSearchStage(context, request) {
+    const { job } = context;
+    const update = { stage: 'searching', text: '', reasoning: '' };
+    if (request.replies) {
+        for (const reply of request.replies) publishScratchpadPreview(job.owner, job.id, { ...update, replyId: reply.replyId });
+    } else {
+        publishScratchpadPreview(job.owner, job.id, update);
+    }
+}
+
+/** One search per job, shared by every round-table participant. */
+async function resolveWebSearch(context, request, { searchFetch } = {}) {
+    const plan = request.webSearch ?? request.replies?.find(reply => reply.webSearch)?.webSearch;
+    if (!plan) return null;
+    const { directories, job } = context;
+    const saved = readArtifact(directories, job.id, 'web-search');
+    if (saved !== undefined) return saved;
+    publishSearchStage(context, request);
+    // A search failure is recorded as this provider step's result, so the next
+    // model step is not refused as an unresolved call. Cancellation is rethrown
+    // and a genuine crash before the result stays unknown and is never replayed.
+    const result = await providerStep(context, 'web-search', async () => {
+        try {
+            return await performWebSearch(plan, { directories, signal: context.signal, fetch: searchFetch });
+        } catch (error) {
+            if (context.signal?.aborted || getJob(directories, job.id)?.cancellation?.requested) throw error;
+            return { ok: false, provider: plan.provider, query: plan.query, error: webSearchFailure(error) };
+        }
+    });
+    writeArtifact(directories, job.id, 'web-search', result);
+    return result;
+}
+
+async function runScratchpadReply(context, { generate, searchFetch }) {
     const { directories, job } = context;
     const request = readArtifact(directories, job.id, 'request');
     if (!request) throw fail('SCRATCHPAD_REQUEST_MISSING', 'The saved Scratchpad request is missing.', 409);
     const saved = readArtifact(directories, job.id, 'result');
     if (saved) return { artifact: true };
     try {
+        const scoped = request.replies || request.webSearch ? { ...context, providerScope: createProviderScope(context) } : context;
+        const webSearchResult = await resolveWebSearch(scoped, request, { searchFetch });
         if (!request.replies) {
-            await runParticipant(context, request, { generate });
+            await runParticipant(scoped, request, { generate, webSearchResult });
             writeArtifact(directories, job.id, 'result', { replyId: request.replyId, sessionId: request.sessionId });
         } else {
-            const scoped = { ...context, providerScope: createProviderScope(context) };
             const results = await Promise.allSettled(request.replies.map(reply => runParticipant(scoped,
-                { source: request.source, sessionId: request.sessionId, ...reply }, { generate, grouped: true })));
+                { source: request.source, sessionId: request.sessionId, ...reply }, { generate, grouped: true, webSearchResult })));
             const failed = results.find(result => result.status === 'rejected');
             if (failed) throw failed.reason;
             writeArtifact(directories, job.id, 'result', { replyIds: request.replies.map(reply => reply.replyId), sessionId: request.sessionId });
@@ -343,17 +384,30 @@ async function runScratchpadReply(context, { generate }) {
     }
 }
 
-async function runParticipant(context, request, { generate, grouped = false }) {
+async function runParticipant(context, request, { generate, grouped = false, webSearchResult = null }) {
     const { directories, job, signal } = context;
     const artifact = grouped ? `reply:${request.replyId}` : 'reply';
     const outcome = grouped ? `outcome:${request.replyId}` : 'outcome';
     const publish = patch => publishScratchpadPreview(job.owner, job.id, { ...patch, ...(grouped ? { replyId: request.replyId } : {}) });
+    // Replace the prepared reservation before the macro environment is built, so
+    // fetched {{macros}} inside web text stay literal in the provider prompt.
+    if (request.webSearch && !(Number.isInteger(request.searchIndex) && request.searchIndex >= 0)) {
+        throw fail('SCRATCHPAD_REQUEST_MISSING', 'The saved web search position is missing. Send the message again.', 409);
+    }
     const counter = await createMessageTokenCounter(publish, { signal });
     let streamedReasoning = '';
     const stopped = () => signal?.aborted || getJob(directories, job.id)?.cancellation?.requested;
     const requireRunning = () => {
         if (stopped()) throw fail('SCRATCHPAD_STOPPED', 'Stopped before it finished.', 409);
     };
+    const messages = request.webSearch ? (() => {
+        const value = [...request.messages];
+        value.splice(request.searchIndex, 1,
+            { role: 'user', content: buildWebSearchPrompt(request.webSearch, webSearchResult ?? { ok: false, error: 'No web results are available.' }) },
+            { role: 'assistant', content: webSearchAcknowledgement(webSearchResult) });
+        return value;
+    })() : request.messages;
+    const webMetadata = request.webSearch ? webSearchMetadata(request.webSearch, webSearchResult ?? { ok: false, error: 'No web results are available.' }) : null;
     try {
         requireRunning();
         const failure = readArtifact(directories, job.id, outcome);
@@ -367,9 +421,9 @@ async function runParticipant(context, request, { generate, grouped = false }) {
             const response = await generate({
                 binding: request.binding,
                 generationType: 'quiet',
-                messages: request.messages,
+                messages,
                 maxTokens: request.maxTokens,
-                macroEnvironment: scratchpadMacroEnvironment({ user: request.userName, char: request.characterName }, request.messages),
+                macroEnvironment: scratchpadMacroEnvironment({ user: request.userName, char: request.characterName }, messages),
                 userName: request.userName,
                 characterName: request.characterName,
                 groupNames: [],
@@ -399,7 +453,7 @@ async function runParticipant(context, request, { generate, grouped = false }) {
         requireRunning();
         counter.stop();
         const counts = counter.counts(reply.text, reply.reasoning);
-        if (!await settleReply(context, request, { state: 'done', text: reply.text, reasoning: reply.reasoning, ...counts })) {
+        if (!await settleReply(context, request, { state: 'done', text: reply.text, reasoning: reply.reasoning, ...counts, ...(webMetadata ? { webSearch: webMetadata } : {}) })) {
             throw fail('SCRATCHPAD_CHANGED', 'The saved reply changed before this result could be saved.', 409);
         }
         publish({ stage: 'done', text: reply.text, reasoning: reply.reasoning, ...counts });
@@ -407,7 +461,7 @@ async function runParticipant(context, request, { generate, grouped = false }) {
         const cancelled = stopped();
         const message = cancelled ? 'Stopped before it finished.' : (error?.message || 'The reply failed.');
         try {
-            await settleReply(context, request, { state: 'failed', error: message });
+            await settleReply(context, request, { state: 'failed', error: message, ...(webMetadata ? { webSearch: webMetadata } : {}) });
             writeArtifact(directories, job.id, outcome, { error: message });
         } catch {
             // The job state still reports the failure if the session file cannot be updated.
@@ -435,10 +489,10 @@ export function finalizeScratchpadSubmission(context) {
     return true;
 }
 
-export function registerScratchpadJobs({ generate = runChatProfile } = {}) {
-    registerHandler(SCRATCHPAD_JOB_TYPE, context => runScratchpadReply(context, { generate }));
+export function registerScratchpadJobs({ generate = runChatProfile, searchFetch } = {}) {
+    registerHandler(SCRATCHPAD_JOB_TYPE, context => runScratchpadReply(context, { generate, searchFetch }));
 }
 
 registerScratchpadJobs();
 
-export const testExports = { historyFrom, planReply, normaliseReplyRequest, runScratchpadReply, settleReply, reasoningFrom };
+export const testExports = { historyFrom, planReply, normaliseReplyRequest, runScratchpadReply, resolveWebSearch, settleReply, reasoningFrom };
