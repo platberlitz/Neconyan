@@ -10,7 +10,7 @@
  * chat state instead, so the two never collide.
  */
 import { safeRegister as defaultRegister } from './registration.js';
-import { getChatState, touchChatState } from './chat-state.js';
+import { resolveMacroState, touchChatState } from './chat-state.js';
 import {
     CHAT_VAR_ENTRIES_WARN_AT,
     addChatVarValue,
@@ -45,30 +45,21 @@ export function resetChatVarRecursion() {
     looping.clear();
 }
 
-/** Sandboxed state (Workbench overlay) when present, else the real chat state. */
-function resolveState(env) {
-    const sandboxState = env?.extra?.meSandboxState;
-    if (sandboxState) {
-        return { state: sandboxState, sandboxed: true };
-    }
-    return { state: getChatState(), sandboxed: false };
-}
-
 /** The chatVars map to read/write, or null when there is nowhere to persist. */
-function resolveVars(env) {
-    const { state, sandboxed } = resolveState(env);
+function resolveVars(env, { write = false } = {}) {
+    const { state, mode } = resolveMacroState(env, { write });
     if (!state) {
-        return { vars: null, sandboxed };
+        return { vars: null, mode };
     }
     if (!state.chatVars || typeof state.chatVars !== 'object') {
         state.chatVars = {};
     }
-    return { vars: state.chatVars, sandboxed };
+    return { vars: state.chatVars, mode };
 }
 
-function persist(sandboxed) {
-    if (!sandboxed) {
-        touchChatState();
+function persist(mode) {
+    if (mode === 'live') {
+        touchChatState('values');
     }
 }
 
@@ -102,7 +93,7 @@ export function registerChatVarMacros(safeRegister = defaultRegister) {
             if (!key) {
                 return '';
             }
-            const { vars, sandboxed } = resolveVars(ctx.env);
+            const { vars, mode } = resolveVars(ctx.env, { write: true });
             if (!vars) {
                 ctx.warn('{{setchatvar}}: no chat is loaded, so there is nowhere to store it.');
                 return '';
@@ -115,7 +106,7 @@ export function registerChatVarMacros(safeRegister = defaultRegister) {
             if (Object.keys(vars).length > CHAT_VAR_ENTRIES_WARN_AT) {
                 ctx.warn(`This chat now has over ${CHAT_VAR_ENTRIES_WARN_AT} chat variables.`);
             }
-            persist(sandboxed);
+            persist(mode);
             return '';
         },
     });
@@ -173,10 +164,12 @@ export function registerChatVarMacros(safeRegister = defaultRegister) {
             if (!key) {
                 return '';
             }
-            const { vars, sandboxed } = resolveVars(ctx.env);
+            const { vars, mode } = resolveVars(ctx.env);
             if (vars && Object.hasOwn(vars, key)) {
                 delete vars[key];
-                persist(sandboxed);
+                if (mode === 'live') {
+                    persist(mode);
+                }
             }
             return '';
         },
@@ -197,14 +190,14 @@ export function registerChatVarMacros(safeRegister = defaultRegister) {
             if (!key) {
                 return '';
             }
-            const { vars, sandboxed } = resolveVars(ctx.env);
+            const { vars, mode } = resolveVars(ctx.env, { write: true });
             if (!vars) {
                 ctx.warn('{{addchatvar}}: no chat is loaded, so there is nowhere to store it.');
                 return '';
             }
             const next = addChatVarValue(Object.hasOwn(vars, key) ? vars[key] : '', rawValue);
             vars[key] = capChatVarValue(next).value;
-            persist(sandboxed);
+            persist(mode);
             return '';
         },
     });
@@ -234,7 +227,7 @@ export function registerChatVarMacros(safeRegister = defaultRegister) {
                 return '';
             }
 
-            const guardKey = `${prefix} ${alias}`;
+            const guardKey = `${prefix}\u0000${alias}`;
             if (looping.has(guardKey)) {
                 ctx.warn(`{{foreachChatVar}}: the "${prefix}" block loops itself; expansion stopped.`);
                 return '';

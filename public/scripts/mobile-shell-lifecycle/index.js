@@ -806,6 +806,8 @@ const MOBILE_DOCUMENT_PAN_HORIZONTAL_SCROLL_SELECTOR = [
     '.group_speaker_list',
     '.ica--agent-tabs',
     '.ica--category-chips',
+    '.me-tabs',
+    '.me-ref-chips',
     '.world_info_view_filters',
     '.ica--editor-tabs',
     '.sb-conversation-settings-nav',

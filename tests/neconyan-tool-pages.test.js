@@ -202,6 +202,7 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
         server: 'taro',
         'console-logs': 'taro',
         agents: 'taro',
+        'macro-enhanced': 'nori',
     };
 
     test('every page has an intro, an invite and a tour that starts and ends on the page chrome', () => {
@@ -234,6 +235,17 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
         expect(shell).toMatch(/NECONYAN_TOOL_PAGE_ROUTES = Object\.freeze\(\{[^}]*'sillytavern-character-colors': 'dialogue-colors'/);
         expect(rail).toContain('shell?.openIncludedTool?.(\'sillytavern-character-colors\')');
         expect(css).toContain('[data-tool-page=\'dialogue-colors\'] #dc-panel-toggle');
+    });
+
+    test('Macro Enhanced resolves its bundled id and opens each workbench tab in the tour', () => {
+        expect(getToolPageKey('third-party/MacroEnhanced')).toBe('macro-enhanced');
+        expect(getToolPageKey('MacroEnhanced')).toBe('macro-enhanced');
+        const steps = getToolTourSteps('macro-enhanced', { isShown: () => true });
+        for (const tab of ['playground', 'reference', 'macros', 'chat', 'setup']) {
+            expect(steps.find(step => step.id === tab).tab).toBe(`[data-me-tab="${tab}"]`);
+        }
+        expect(getToolTourSteps('macro-enhanced', { isShown: () => false }).map(step => step.id))
+            .toEqual(['welcome', 'boundary', 'done']);
     });
 
     test('the persona tour switches the phone Browse and Edit tabs instead of skipping steps', () => {

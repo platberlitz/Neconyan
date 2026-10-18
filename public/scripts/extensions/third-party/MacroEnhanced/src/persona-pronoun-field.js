@@ -66,7 +66,7 @@ function renderField(container) {
     container.appendChild(el('h4', 'persona-section-header', 'Pronouns'));
 
     if (!hasSelectedPersona()) {
-        container.appendChild(el('div', 'me-drawer-hint', 'Select a persona to give it pronouns.'));
+        container.appendChild(el('div', 'me-drawer-hint', 'Select a named persona to give it pronouns.'));
         return;
     }
 
@@ -93,16 +93,21 @@ function renderField(container) {
 
     function refreshPreview() {
         const set = parsePronounSet(input.value);
-        preview.textContent = set ? `${set.spec}. ${previewSentence(set)}` : '';
+        preview.textContent = set ? previewSentence(set) : '';
         if (set) {
             problem.hidden = true;
+        }
+        for (const chip of presets.querySelectorAll('.me-chip')) {
+            chip.setAttribute('aria-pressed', String(chip.textContent === input.value.trim()));
         }
         return set;
     }
 
-    const presets = el('div', 'me-pronoun-presets');
+    const presets = el('div', 'me-pronoun-presets me-chip-row');
+    presets.setAttribute('role', 'group');
+    presets.setAttribute('aria-label', 'Persona pronoun presets');
     for (const key of Object.keys(PRESETS)) {
-        presets.appendChild(button('menu_button me-custom-button', key, () => {
+        presets.appendChild(button('me-chip', key, () => {
             input.value = key;
             refreshPreview();
             cancelPendingSave();
@@ -143,15 +148,15 @@ function renderField(container) {
 
     container.appendChild(el('div', 'me-drawer-hint',
         'Used by {{sub}}, {{obj}}, {{poss}}, {{poss_p}}, {{ref}} and {{pverb}}. '
-        + 'Same setting as Macro Enhanced → Pronouns; changing either changes both. Empty means they/them.'));
+        + 'Same setting as Macro Enhanced, Setup tab; changing either changes both. Empty means they/them.'));
 
     // A {{setpronouns}} override outranks the saved value in this chat, so say
     // so rather than leaving someone editing a value that has no effect here.
     if (override) {
         const notice = el('div', 'me-drawer-warning');
         notice.appendChild(document.createTextNode(
-            `This chat is overriding the setting with ${override}. set by {{setpronouns}}. `));
-        notice.appendChild(button('menu_button me-custom-button', 'Use the saved setting', () => {
+            `This chat is overriding the setting with ${override}, set by {{setpronouns}}. `));
+        notice.appendChild(button('menu_button', 'Use the saved setting', () => {
             clearOverride(SUBJECTS.user);
         }));
         container.appendChild(notice);
@@ -176,9 +181,9 @@ export function renderPersonaPronounField() {
     }
 
     // Keep what someone is typing. Their own saves already match storage, and
-    // anything else redraws once they leave the field.
+    // an external write must not wipe a half-typed value either.
     const input = container.querySelector(`#${INPUT_ID}`);
-    if (input && document.activeElement === input && input.value.trim() === getPersonaSpec()) {
+    if (input && document.activeElement === input) {
         return;
     }
 

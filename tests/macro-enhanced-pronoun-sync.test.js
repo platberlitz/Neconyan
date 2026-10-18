@@ -71,6 +71,18 @@ describe('Macro Enhanced pronoun change notices', () => {
         expect(heard).toEqual([['char', 'drawer']]);
     });
 
+    test('a captured character id writes that card even after a switch', async () => {
+        context.characters.push({ name: 'Iris', data: { extensions: { MacroEnhanced: { customMacros: ['iris-kept'] } } } });
+        context.characterId = 0;
+
+        await pronouns.saveCharacterSpec('he/him', { source: 'setup', characterId: 1 });
+
+        expect(context.writeExtensionField).toHaveBeenCalledWith(1, 'MacroEnhanced', {
+            customMacros: ['iris-kept'],
+            pronouns: 'he/him',
+        });
+    });
+
     test('clearing a chat override announces it', () => {
         const heard = [];
         pronouns.onPronounsChanged(({ subject }) => heard.push(subject));

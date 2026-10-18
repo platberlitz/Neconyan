@@ -240,11 +240,11 @@
                 <dt><code>&lcub;&lcub;sub&rcub;&rcub;</code> <code>&lcub;&lcub;obj&rcub;&rcub;</code> <code>&lcub;&lcub;poss&rcub;&rcub;</code> <code>&lcub;&lcub;ref&rcub;&rcub;</code></dt>
                 <dd>Your persona's pronouns, like she, her, her and herself. Add char in front for the character's, like <code>&lcub;&lcub;charsub&rcub;&rcub;</code>. A capital letter, like <code>&lcub;&lcub;Sub&rcub;&rcub;</code>, capitalises the result.</dd>
                 <dt><code>&lcub;&lcub;pverb::is::are&rcub;&rcub;</code></dt>
-                <dd>Picks the verb that fits the pronouns. Set pronouns in Macro Enhanced's settings, or for one chat with <code>&lcub;&lcub;setpronouns::he/him&rcub;&rcub;</code>. Until you do, it's they and them.</dd>
+                <dd>Picks the verb that fits the pronouns. Save persona and character pronouns in Macro Enhanced's Setup tab, or set them for one chat with <code>&lcub;&lcub;setpronouns::he/him&rcub;&rcub;</code>. Until you do, it's they and them.</dd>
             </dl>
 
             <h4 class="necoHelpHeading">Your own macros</h4>
-            <p>Make one in Extensions, under Macro Enhanced, then Your custom macros, or type it out:</p>
+            <p>Open Fine-tuning → Macro Enhanced → My macros to make one, or type it out:</p>
             <dl class="necoHelpList">
                 <dt><code>/me-define name=greet args=who Hello &lcub;&lcub;who&rcub;&rcub;, good &lcub;&lcub;timeofday&rcub;&rcub;!</code></dt>
                 <dd>Now <code>&lcub;&lcub;greet::Alice&rcub;&rcub;</code> writes a greeting for Alice. A macro can belong to everything, one character or one chat; the narrowest one wins.</dd>
@@ -252,7 +252,7 @@
             <p class="necoHelpTip">If a macro name clashes with another extension, Macro Enhanced's version is still there with <code>me-</code> in front, like <code>&lcub;&lcub;me-upper::hi&rcub;&rcub;</code>. <code>/me-macros</code> lists everything it added.</p>
 
             <h4 class="necoHelpHeading">Macro Workbench</h4>
-            <p>The Workbench is a practice area. Try macros in the Playground without touching your real variables, look things up in the Reference tab, and check caching in the Cache Audit tab. <code>/me-workbench</code> opens it too.</p>
+            <p>Fine-tuning → Macro Enhanced opens the Workbench. Try macros in Playground without touching saved variables or sending a model request. Reference has searchable help and examples; My macros holds your own macros, templates, import and export. This chat shows saved values and the cache audit. Setup holds saved pronouns and syntax switches. Nori's Tour walks through the page, and <code>/me-workbench</code> opens it too.</p>
             <div class="necoHelpActions">
                 <button type="button" class="necoHelpChip necoHelpChip--primary" data-neconyan-help-action="workbench"><i class="fa-solid fa-flask" aria-hidden="true"></i><span>Open Macro Workbench</span></button>
             </div>
