@@ -1,0 +1,200 @@
+{
+    "ready": {
+        "miso": {
+            "sunburst": [
+                {
+                    "id": "miso-ready-1-sunburst",
+                    "url": "https://github.com/user-attachments/assets/48b0ae4d-7a2f-4c46-ba83-f59e84ff700a",
+                    "alt": "Miso lifting her sweater to show off her tummy with a big smile"
+                },
+                {
+                    "id": "miso-ready-2-sunburst",
+                    "url": "https://github.com/user-attachments/assets/bc74a0db-84c5-458e-91a5-9dcf9b3a5649",
+                    "alt": "Miso patting her round tummy with her eyes closed happily"
+                },
+                {
+                    "id": "miso-ready-3-sunburst",
+                    "url": "https://github.com/user-attachments/assets/8dd3d67d-c4a0-43ca-93a9-09a926ea3073",
+                    "alt": "Miso showing her tummy with a wink and a thumbs up"
+                }
+            ],
+            "flare": [
+                {
+                    "id": "miso-ready-1-flare",
+                    "url": "https://github.com/user-attachments/assets/3609e87e-5a92-40df-af49-fd8423deef1c",
+                    "alt": "Miso lifting her sweater to show off her tummy with a big smile"
+                },
+                {
+                    "id": "miso-ready-2-flare",
+                    "url": "https://github.com/user-attachments/assets/6374fb3c-bc19-4bb1-a14c-d8aac6d27b38",
+                    "alt": "Miso patting her round tummy with her eyes closed happily"
+                },
+                {
+                    "id": "miso-ready-3-flare",
+                    "url": "https://github.com/user-attachments/assets/081c65cd-0fd7-4e80-bb79-b6f6f35ae2ec",
+                    "alt": "Miso showing her tummy with a wink and a thumbs up"
+                }
+            ]
+        },
+        "taro": {
+            "sunburst": [
+                {
+                    "id": "taro-ready-1-sunburst",
+                    "url": "https://github.com/user-attachments/assets/fe210ad2-f03d-4df4-a14f-f87b358ab269",
+                    "alt": "Taro giving a slow, dry round of applause with a satisfied smirk"
+                },
+                {
+                    "id": "taro-ready-2-sunburst",
+                    "url": "https://github.com/user-attachments/assets/39c0fe95-0220-4898-a1c0-f2808504af7c",
+                    "alt": "Taro clapping with a rare proud half-smile"
+                }
+            ],
+            "flare": [
+                {
+                    "id": "taro-ready-1-flare",
+                    "url": "https://github.com/user-attachments/assets/1c699ee6-56ab-4611-ba64-b99609c0aee4",
+                    "alt": "Taro giving a slow, dry round of applause with a satisfied smirk"
+                },
+                {
+                    "id": "taro-ready-2-flare",
+                    "url": "https://github.com/user-attachments/assets/0746d41e-0137-408b-b333-38bc8b1686b6",
+                    "alt": "Taro clapping with a rare proud half-smile"
+                }
+            ]
+        },
+        "nori": {
+            "sunburst": [
+                {
+                    "id": "nori-ready-1-sunburst",
+                    "url": "https://github.com/user-attachments/assets/501431b4-356c-425e-aadf-884e587c1759",
+                    "alt": "Nori looking extremely smug, pointing a finger gun at you"
+                },
+                {
+                    "id": "nori-ready-2-sunburst",
+                    "url": "https://github.com/user-attachments/assets/e3b46cfa-48e2-4980-8bc3-0e09ce58049e",
+                    "alt": "Nori leaning back with his hands behind his head and a cocky wink"
+                }
+            ],
+            "flare": [
+                {
+                    "id": "nori-ready-1-flare",
+                    "url": "https://github.com/user-attachments/assets/e0bb6e58-6df3-49a4-86be-6139388d1aa5",
+                    "alt": "Nori looking extremely smug, pointing a finger gun at you"
+                },
+                {
+                    "id": "nori-ready-2-flare",
+                    "url": "https://github.com/user-attachments/assets/416de77d-42e0-41b9-8e48-e6c454f186a1",
+                    "alt": "Nori leaning back with his hands behind his head and a cocky wink"
+                }
+            ]
+        },
+        "kris": {
+            "sunburst": [
+                {
+                    "id": "kris-ready-1-sunburst",
+                    "url": "https://github.com/user-attachments/assets/a65645f4-282a-48bb-b650-e3093fab6682",
+                    "alt": "Kris as a Yukkuri, a round bouncing head beaming with joy"
+                }
+            ]
+        }
+    },
+    "blocked": {
+        "miso": {
+            "sunburst": [
+                {
+                    "id": "miso-blocked-1-sunburst",
+                    "url": "https://github.com/user-attachments/assets/4ac910c2-d61b-4dd8-bfc7-5845d23d3213",
+                    "alt": "Miso pouting with her arms crossed over her tummy"
+                },
+                {
+                    "id": "miso-blocked-2-sunburst",
+                    "url": "https://github.com/user-attachments/assets/d9e9c4ab-5355-4c55-b530-2b3e40b69265",
+                    "alt": "Miso looking flustered as she holds her cardigan closed"
+                },
+                {
+                    "id": "miso-blocked-3-sunburst",
+                    "url": "https://github.com/user-attachments/assets/b66f7e7e-1e28-4abc-9da5-96467a0f481b",
+                    "alt": "Miso holding up one hand to say stop while covering her tummy"
+                }
+            ],
+            "flare": [
+                {
+                    "id": "miso-blocked-1-flare",
+                    "url": "https://github.com/user-attachments/assets/31c2670f-20c0-46f0-8f43-09f82c8a847f",
+                    "alt": "Miso pouting with her arms crossed over her tummy"
+                },
+                {
+                    "id": "miso-blocked-2-flare",
+                    "url": "https://github.com/user-attachments/assets/91ec39b0-ee43-4256-92b0-9cbacedcffbe",
+                    "alt": "Miso looking flustered as she holds her cardigan closed"
+                },
+                {
+                    "id": "miso-blocked-3-flare",
+                    "url": "https://github.com/user-attachments/assets/ce7ecbea-29bd-4526-a972-22eafb081c55",
+                    "alt": "Miso holding up one hand to say stop while covering her tummy"
+                }
+            ]
+        },
+        "taro": {
+            "sunburst": [
+                {
+                    "id": "taro-blocked-1-sunburst",
+                    "url": "https://github.com/user-attachments/assets/d62e5ae3-7b31-4f15-a836-8a09c59b5a3c",
+                    "alt": "Taro staring at you in cold disapproval with her arms folded"
+                },
+                {
+                    "id": "taro-blocked-2-sunburst",
+                    "url": "https://github.com/user-attachments/assets/847cf1ee-f97d-45f2-bcba-36dea2aae945",
+                    "alt": "Taro pinching the bridge of her nose in disappointed disapproval"
+                }
+            ],
+            "flare": [
+                {
+                    "id": "taro-blocked-1-flare",
+                    "url": "https://github.com/user-attachments/assets/bcd02d21-f01f-41f6-965c-7b1988997b08",
+                    "alt": "Taro staring at you in cold disapproval with her arms folded"
+                },
+                {
+                    "id": "taro-blocked-2-flare",
+                    "url": "https://github.com/user-attachments/assets/5647f343-d870-4833-ab63-22509c7b7f4b",
+                    "alt": "Taro pinching the bridge of her nose in disappointed disapproval"
+                }
+            ]
+        },
+        "nori": {
+            "sunburst": [
+                {
+                    "id": "nori-blocked-1-sunburst",
+                    "url": "https://github.com/user-attachments/assets/4c3c284f-8b46-41d8-8685-e717e51d4310",
+                    "alt": "Nori shaking his head with a smug grin while wagging a finger"
+                },
+                {
+                    "id": "nori-blocked-2-sunburst",
+                    "url": "https://github.com/user-attachments/assets/92ee1a74-c559-4663-b4ea-5e2bf1db0f76",
+                    "alt": "Nori shaking his head and shrugging with a smug, pitying grin"
+                }
+            ],
+            "flare": [
+                {
+                    "id": "nori-blocked-1-flare",
+                    "url": "https://github.com/user-attachments/assets/ff1f49d9-2008-4dd5-9bac-859d1ee4caa3",
+                    "alt": "Nori shaking his head with a smug grin while wagging a finger"
+                },
+                {
+                    "id": "nori-blocked-2-flare",
+                    "url": "https://github.com/user-attachments/assets/e91d5552-e071-4cff-972b-9e4c92d37f89",
+                    "alt": "Nori shaking his head and shrugging with a smug, pitying grin"
+                }
+            ]
+        },
+        "kris": {
+            "sunburst": [
+                {
+                    "id": "kris-blocked-1-sunburst",
+                    "url": "https://github.com/user-attachments/assets/8ce6dbc0-f50d-4b5b-9dff-708b3deb1196",
+                    "alt": "Kris as a Yukkuri, a round head pouting with puffed cheeks under a storm cloud"
+                }
+            ]
+        }
+    }
+}
