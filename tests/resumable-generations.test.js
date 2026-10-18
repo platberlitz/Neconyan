@@ -218,7 +218,7 @@ describe('resumable generation registry', () => {
         expect(testExports.totalBufferedBytes).toBe(0);
     });
 
-    test('cancel runs each hook once and does nothing once the reply finished', () => {
+    test('cancel runs each hook once and removes recovery even after the reply finished', () => {
         const generation = new ResumableGeneration('tester:hooks');
         const hook = jest.fn();
         generation.onCancel(hook);
@@ -228,12 +228,14 @@ describe('resumable generation registry', () => {
         expect(hook).toHaveBeenCalledTimes(1);
 
         const finished = new ResumableGeneration('tester:finished');
+        finished.context = { chatId: 'chat-a' };
         const lateHook = jest.fn();
         finished.end();
         finished.onCancel(lateHook);
 
         expect(finished.cancel()).toBe(false);
         expect(lateHook).not.toHaveBeenCalled();
+        expect(finished.context).toBeNull();
     });
 
     test('sweep drops finished replies after retention and cancels ones that ran too long', () => {
@@ -541,6 +543,29 @@ describe('registry capacity', () => {
 });
 
 describe('resumable generations and the disconnect guards', () => {
+    test('drains a reply whose client disappeared before the provider sent headers', async () => {
+        const { request, response, generation } = registerGeneration('forward-before-headers');
+        response.emit('close');
+        response.socket = null;
+        const upstreamBody = new PassThrough();
+        const collected = collect(generation);
+        await forwardFetchResponse(new Response(upstreamBody), response, request);
+        upstreamBody.end('complete reply');
+        await expect(collected).resolves.toBe('complete reply');
+    });
+
+    test('retains the remaining bytes even when the disconnected response is already ended', async () => {
+        const { request, response, generation } = registerGeneration('forward-ended-client');
+        const upstreamBody = new PassThrough();
+        const collected = collect(generation);
+        await forwardFetchResponse(new Response(upstreamBody), response, request);
+        upstreamBody.write('first ');
+        response.emit('close');
+        Object.defineProperty(response, 'writableEnded', { value: true });
+        upstreamBody.end('last');
+        await expect(collected).resolves.toBe('first last');
+    });
+
     test('forwardFetchResponse keeps draining upstream after the client response closes', async () => {
         const { request, response, generation } = registerGeneration('forward-1');
         const upstreamBody = new PassThrough();

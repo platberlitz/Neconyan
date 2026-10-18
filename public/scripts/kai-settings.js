@@ -273,6 +273,11 @@ export async function generateKoboldWithStreaming(generate_data, signal) {
         tryParseStreamingError(response, await response.text());
         throw new Error(`Got response status ${response.status}`);
     }
+    return readKoboldStream(response);
+}
+
+/** @param {Response} response Live or retained provider response */
+export function readKoboldStream(response) {
     const eventStream = getEventSourceStream();
     response.body.pipeThrough(eventStream);
     const reader = eventStream.readable.getReader();

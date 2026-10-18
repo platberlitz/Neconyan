@@ -898,21 +898,21 @@ function forwardResumableFetchBody(from, to, generation, onDisconnect = null) {
             // Best effort; the upstream stream is going away anyway.
         }
 
-        if (!to.writableEnded) {
+        if (!generation.done) {
             to.end();
         }
     });
 
     const finish = () => {
         unregisterCancel();
-        if (!to.writableEnded) {
+        if (!generation.done) {
             to.end();
         }
     };
 
     from.body.on('data', chunk => {
         finishReason.push(chunk);
-        if (!to.writableEnded) {
+        if (!generation.done) {
             to.write(chunk);
         }
     });
@@ -969,13 +969,13 @@ export async function forwardFetchResponse(from, to, request = null, onDisconnec
         return;
     }
 
-    if (from.body && to.socket) {
-        const resumableGeneration = getResumableGeneration(request);
-        if (resumableGeneration) {
-            forwardResumableFetchBody(from, to, resumableGeneration, onDisconnect);
-            return;
-        }
+    const resumableGeneration = getResumableGeneration(request);
+    if (from.body && resumableGeneration) {
+        forwardResumableFetchBody(from, to, resumableGeneration, onDisconnect);
+        return;
+    }
 
+    if (from.body && to.socket) {
         const stopPolling = pollStreamingRequestConnection(request, to, () => {
             try {
                 const disconnectResult = onDisconnect?.();

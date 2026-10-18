@@ -1302,6 +1302,11 @@ export async function generateTextGenWithStreaming(generate_data, signal) {
         throw new Error(`Got response status ${response.status}`);
     }
 
+    return readTextGenerationStream(response);
+}
+
+/** @param {Response} response Live or retained provider response */
+export function readTextGenerationStream(response) {
     const eventStream = getEventSourceStream();
     response.body.pipeThrough(eventStream);
     const reader = eventStream.readable.getReader();

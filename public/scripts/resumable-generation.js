@@ -21,6 +21,8 @@ const SKIPPED_RESPONSE_HEADERS = new Set(['content-encoding', 'content-length', 
 
 /** @type {Map<string, ResumableRequest>} */
 const activeRequests = new Map();
+/** Replies still being parsed or saved by this page, including after the last byte. */
+const ownedReplies = new Map();
 /**
  * Chat/message-slot descriptions keyed by the abort signal the generation will be sent with.
  * Generate() fills this right before the request goes out; the wrapper reads it once.
@@ -142,6 +144,8 @@ class ResumableRequest {
         const context = this.outerSignal ? pendingContexts.get(this.outerSignal) : null;
         this.hasContext = Boolean(context);
         if (context) {
+            context.id = this.id;
+            ownedReplies.set(this.id, this);
             pendingContexts.delete(this.outerSignal);
             this.requestHeaders[GENERATION_CONTEXT_HEADER] = encodeContext(context);
         }
@@ -230,7 +234,6 @@ class ResumableRequest {
                     }
                     if (result.done) {
                         this.finish();
-                        this.discard();
                         controller.close();
                         return;
                     }
@@ -308,10 +311,12 @@ class ResumableRequest {
      * Stops the generation server-side and drops the connection.
      */
     cancel() {
-        if (this.finished) {
+        if (this.finished && !this.hasContext) {
             return;
         }
         this.finish();
+        this.release();
+        this.hasContext = false;
         this.connection?.abort(abortError(this.outerSignal));
         fetch(CANCEL_URL, {
             method: 'POST',
@@ -321,15 +326,9 @@ class ResumableRequest {
         }).catch(() => undefined);
     }
 
-    /**
-     * The page has the whole reply, so the server copy kept for recovery is no longer needed.
-     */
-    discard() {
-        if (!this.hasContext) {
-            return;
-        }
-        this.hasContext = false;
-        discardGeneration(this.id, this.controlHeaders).catch(() => undefined);
+    release() {
+        ownedReplies.delete(this.id);
+        this.outerSignal?.removeEventListener('abort', this.handleAbort);
     }
 
     finish() {
@@ -338,7 +337,9 @@ class ResumableRequest {
         }
         this.finished = true;
         activeRequests.delete(this.id);
-        this.outerSignal?.removeEventListener('abort', this.handleAbort);
+        if (!this.hasContext) {
+            this.release();
+        }
     }
 
     /**
@@ -386,11 +387,22 @@ function postControl(url, headers, body) {
  */
 export async function listRecoverableGenerations(headers) {
     const response = await postControl(LIST_URL, headers, {});
+    if (response.status >= 500) {
+        throw new Error(`Held reply lookup failed (${response.status})`);
+    }
     if (!response.ok) {
         return [];
     }
     const data = await response.json();
-    return (Array.isArray(data?.jobs) ? data.jobs : []).filter(job => !activeRequests.has(job.id));
+    return (Array.isArray(data?.jobs) ? data.jobs : []).filter(job => !activeRequests.has(job.id) && !ownedReplies.has(job.id));
+}
+
+/**
+ * The caller has finished processing this reply. A failed chat save leaves the server copy available.
+ * @param {Record<string, any>|null} context The context passed to setGenerationContext
+ */
+export function releaseGenerationContext(context) {
+    ownedReplies.get(context?.id)?.release();
 }
 
 /**

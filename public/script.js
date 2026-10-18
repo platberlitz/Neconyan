@@ -28,6 +28,7 @@ import './scripts/neconyan-send-nya.js';
 import { userStatsHandler, statMesProcess, initStats } from './scripts/stats.js';
 import {
     generateKoboldWithStreaming,
+    readKoboldStream,
     kai_settings,
     loadKoboldSettings,
     getKoboldGenerationData,
@@ -41,6 +42,7 @@ import {
     textgenerationwebui_settings as textgen_settings,
     loadTextGenSettings,
     generateTextGenWithStreaming,
+    readTextGenerationStream,
     getTextGenGenerationData,
     textgen_types,
     parseTextgenLogprobs,
@@ -163,6 +165,7 @@ import {
 
 import {
     generateNovelWithStreaming,
+    readNovelStream,
     getNovelGenerationData,
     getKayraMaxContextTokens,
     loadNovelSettings,
@@ -362,7 +365,8 @@ import { compressRequest, setRequestCompressionConfig } from './scripts/request-
 import { canJumpToSwipeForMessage, canOpenSwipePickerForMessage, initSwipePicker } from './scripts/swipe-picker.js';
 import { bindIOSFastTapSendButton, isIOSWebKitPlatform } from './scripts/mobile-send-button.js';
 import { formatMobileStreamingPreview, getMobileStreamingBottomPinBehavior, getStreamingUpdateInterval, isAndroidStreamingPlatform, shouldReduceStreamingDomWork, shouldUsePlainTextStreamingPreview } from './scripts/mobile-streaming.js';
-import { fetchResumable, setGenerationContext, listRecoverableGenerations, openHeldGeneration, discardGeneration } from './scripts/resumable-generation.js';
+import { fetchResumable, setGenerationContext, releaseGenerationContext, listRecoverableGenerations, openHeldGeneration, discardGeneration } from './scripts/resumable-generation.js';
+import { captureRecoveryAnchor, getHeldReplyTarget } from './scripts/held-generation-recovery.js';
 import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse } from './scripts/generation-request-controls.js';
 import { cleanGeneratedText, createRawPrompt as createRawPromptPure, normalizeContentText as normalizeContentTextPure, extractMessageFromData as extractMessageFromDataPure, extractJsonFromData as extractJsonFromDataPure } from './scripts/generation-format.js';
 import { generationSettingsSnapshot } from './scripts/generation-settings.js';
@@ -1357,7 +1361,10 @@ async function firstLoadInit() {
         addShowdownPatch(showdown);
         addDOMPurifyHooks();
         // Neconyan: card script detection - see #94.
-        eventSource.on(event_types.CHAT_CHANGED, () => { recoverHeldGenerations().catch(error => console.warn('Held generation recovery failed', error)); });
+        eventSource.on(event_types.CHAT_CHANGED, scheduleHeldGenerationRecovery);
+        document.addEventListener('visibilitychange', scheduleHeldGenerationRecovery);
+        window.addEventListener('pageshow', scheduleHeldGenerationRecovery);
+        window.addEventListener('online', scheduleHeldGenerationRecovery);
         configureCardScriptRuntime({
             getPowerUser: () => power_user,
             executeSlashCommandsWithOptions,
@@ -8154,13 +8161,13 @@ class StreamingProcessor {
         await this.finalizeIntermediaryMessage(messageId, text, { unlockUI: true });
         if (!this.#isCurrent(messageId)) return;
 
+        await saveChatWithHeldReply(this.recoveryContext, () => this.#isCurrent(messageId));
+        if (!this.#isCurrent(messageId)) return;
+
         const isAborted = this.abortController.signal.aborted;
         if (!isAborted && power_user.auto_swipe && generatedTextFiltered(text)) {
             return await swipe(null, SWIPE_DIRECTION.RIGHT, { source: SWIPE_SOURCE.AUTO_SWIPE, repeated: true, forceMesId: chat.length - 1, generationOptions: this.requestControls });
         }
-        await saveChatConditional();
-        if (!this.#isCurrent(messageId)) return;
-
         playMessageSound();
     }
 
@@ -8901,6 +8908,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
     const cancelRevision = getAgentGenerationContext()?.cancelRevision;
     let agentGenerationContext = null;
     let activeStream = null;
+    let recoveryContext = null;
     let delegatedGeneration = false;
     const run = !dryRun && !isAuxiliaryGeneration ? {
         controller: requestController,
@@ -10310,10 +10318,15 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
 
             console.debug(`pushed prompt bits to itemizedPrompts array. Length is now: ${itemizedPrompts.length}`);
 
-            const recoveryContext = buildRecoveryContext(type, {
+            recoveryContext = buildRecoveryContext(type, {
                 streaming: isStreamingEnabled() && type !== 'quiet',
                 skip: isAuxiliaryGeneration || Boolean(quiet_prompt) || (type === 'regenerate' && preserveLastMessage),
             });
+            if (recoveryContext) {
+                // The recovery anchor must be on disk before the paid request can outlive this page.
+                await saveChatConditional({ throwOnError: true });
+                if (!isCurrent()) return;
+            }
 
             if (isStreamingEnabled() && type !== 'quiet') {
                 let startedSuccessorGeneration = false;
@@ -10322,6 +10335,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                     const activeStreamingProcessor = streamingProcessor = new StreamingProcessor(type, force_name2, generation_started, continue_mag, promptReasoning, requestControls);
                     activeStreamingProcessor.isCurrentGeneration = isCurrent;
                     activeStreamingProcessor.agentGenerationContext = agentGenerationContext;
+                    activeStreamingProcessor.recoveryContext = recoveryContext;
                     activeStream = activeStreamingProcessor;
                     if (isContinue) {
                     // Save reply does add cycle text to the prompt, so it's not needed here
@@ -10438,12 +10452,12 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                             clearStreamingProcessorIfCurrent(activeStreamingProcessor);
 
                             const isAborted = activeStreamingProcessor.abortController.signal.aborted;
+                            await saveChatWithHeldReply(recoveryContext, isCurrent);
+                            if (!isCurrent()) return;
                             if (!isAborted && power_user.auto_swipe && generatedTextFiltered(getMessage)) {
                                 return await swipe(null, SWIPE_DIRECTION.RIGHT, { source: SWIPE_SOURCE.AUTO_SWIPE, repeated: true, forceMesId: chat.length - 1, generationOptions: requestControls });
                             }
 
-                            await saveChatConditional();
-                            if (!isCurrent()) return;
                             playMessageSound();
                             triggerAutoContinue(messageChunk, isImpersonate, requestControls);
                             return Object.defineProperties(new String(getMessage), {
@@ -10639,14 +10653,14 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             }
 
             const isAborted = abortController && abortController.signal.aborted;
+            await saveChatWithHeldReply(recoveryContext, isCurrent);
+            if (!isCurrent()) return;
             if (!isAborted && power_user.auto_swipe && generatedTextFiltered(getMessage)) {
                 is_send_press = false;
                 return await swipe(null, SWIPE_DIRECTION.RIGHT, { source: SWIPE_SOURCE.AUTO_SWIPE, repeated: true, forceMesId: chat.length - 1, generationOptions: requestControls });
             }
 
             console.debug('/api/chats/save called by /Generate');
-            await saveChatConditional();
-            if (!isCurrent()) return;
             unblockGeneration(type);
             streamingProcessor = null;
 
@@ -10682,6 +10696,8 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             throw exception;
         }
     } finally {
+        releaseGenerationContext(recoveryContext);
+        if (recoveryContext) scheduleHeldGenerationRecovery();
         externalSignal?.removeEventListener('abort', onAbort);
         requestController?.signal.removeEventListener('abort', stopStream);
         eventSource.removeListener(event_types.GENERATION_ENDED, onEnded);
@@ -11266,6 +11282,7 @@ function setInContextMessages(msgInContextCount, type, preserveLastMessage = fal
  * @property {number} [maxOutputTokens]
  * @property {number} [responseLength]
  * @property {boolean} [preserveReasoningBudget]
+ * @property {object|null} [recoveryContext]
  */
 
 /**
@@ -11278,8 +11295,8 @@ function setInContextMessages(msgInContextCount, type, preserveLastMessage = fal
  */
 export async function sendGenerationRequest(type, data, options = {}) {
     const signal = options.signal ?? abortController.signal;
+    setGenerationContext(signal, options.recoveryContext ?? null);
     if (main_api === 'openai') {
-        setGenerationContext(signal, options.recoveryContext ?? null);
         return await sendOpenAIRequest(type, data.prompt, signal, options);
     }
 
@@ -11288,7 +11305,6 @@ export async function sendGenerationRequest(type, data, options = {}) {
         return await generateHorde(data.prompt, data, signal, true);
     }
 
-    setGenerationContext(signal, options.recoveryContext ?? null);
     const response = await fetchResumable(getGenerateUrl(main_api), {
         method: 'POST',
         headers: getRequestHeaders(),
@@ -11319,9 +11335,9 @@ export async function sendStreamingRequest(type, data, options = {}) {
     if (main_api !== 'openai') {
         data = applyGenerationRequestControls(data, { model: getGeneratingModel(), ...options });
     }
+    setGenerationContext(streamingProcessor.requestAbortController.signal, options.recoveryContext ?? null);
     switch (main_api) {
         case 'openai':
-            setGenerationContext(streamingProcessor.requestAbortController.signal, options.recoveryContext ?? null);
             return await sendOpenAIRequest(type, data.prompt, streamingProcessor.requestAbortController.signal, options);
         case 'textgenerationwebui':
             return await generateTextGenWithStreaming(data, streamingProcessor.requestAbortController.signal);
@@ -11337,8 +11353,7 @@ export async function sendStreamingRequest(type, data, options = {}) {
 /**
  * Describes a main-chat generation so the server can hold the reply for later
  * if this tab goes away. Returns null when the reply cannot be replayed safely.
- * ponytail: single-character chats only, and streaming only for chat completions;
- * add groups and text-completion streaming when they are asked for.
+ * Group turns use the durable Roleplay workflow instead.
  * @param {string} type Generation type
  * @param {{streaming: boolean, skip: boolean}} options
  * @returns {object|null}
@@ -11347,60 +11362,103 @@ function buildRecoveryContext(type, { streaming, skip }) {
     const kind = type || 'normal';
     if (skip || selected_group || this_chid === undefined || !characters[this_chid]) return null;
     if (!['normal', 'regenerate', 'swipe', 'continue'].includes(kind)) return null;
-    if (streaming && main_api !== 'openai') return null;
     const last = chat[chat.length - 1];
     return {
-        v: 1,
+        v: 2,
         chatId: getCurrentChatId(),
         characterAvatar: characters[this_chid].avatar,
         type: kind,
         chatLength: chat.length,
         lastSendDate: last?.send_date ?? null,
         lastIsUser: Boolean(last?.is_user),
+        anchor: captureRecoveryAnchor(last),
         name2,
         api: main_api,
         source: oai_settings.chat_completion_source,
+        textGenType: textgen_settings.type,
         streaming,
         startedAt: generation_started?.getTime?.() ?? Date.now(),
     };
 }
 
-/**
- * Pulls replies the server finished while this chat was closed and appends them.
- * Runs on every chat change; does nothing when there is nothing held.
- */
+let heldRecoveryTimer;
+let heldRecoveryPromise;
+
+function scheduleHeldGenerationRecovery() {
+    clearTimeout(heldRecoveryTimer);
+    if (document.visibilityState === 'hidden') return;
+    heldRecoveryTimer = setTimeout(() => {
+        recoverHeldGenerations().catch(error => {
+            console.warn('Held generation recovery failed', error);
+            scheduleHeldGenerationRecovery();
+        });
+    }, 2000);
+}
+
+/** A received body is not a saved reply. Acknowledge only after the chat write succeeds. */
+async function saveChatWithHeldReply(context, isCurrent = () => true) {
+    if (!isCurrent()) return false;
+    const message = chat.at(-1);
+    if (context?.id && message && !message.is_user) {
+        message.extra ??= {};
+        message.extra.resumable_generation_id = context.id;
+        syncMesToSwipe(chat.length - 1);
+    }
+    const saved = await saveChatConditional();
+    if (saved && context?.id && isCurrent()) {
+        await discardGeneration(context.id, getRequestHeaders()).catch(error => console.warn('Held reply acknowledgement failed', error));
+    }
+    return saved;
+}
+
+/** Poll unfinished replies too, so returning before the provider finishes does not miss them. */
 export async function recoverHeldGenerations() {
-    if (selected_group || this_chid === undefined || !characters[this_chid]) return;
-    const headers = getRequestHeaders();
-    const jobs = await listRecoverableGenerations(headers).catch(() => []);
-    const chatId = getCurrentChatId();
-    const avatar = characters[this_chid].avatar;
-    for (const job of jobs) {
-        const ctx = job.context;
-        if (!ctx || ctx.v !== 1 || ctx.chatId !== chatId || ctx.characterAvatar !== avatar) continue;
-        if (job.attached || job.status === 'running') continue;
-        if (chatId !== getCurrentChatId()) return;
-        await applyHeldGeneration(job, headers);
+    if (heldRecoveryPromise) {
+        scheduleHeldGenerationRecovery();
+        return heldRecoveryPromise;
+    }
+    heldRecoveryPromise = recoverHeldGenerationPass();
+    try {
+        await heldRecoveryPromise;
+    } finally {
+        heldRecoveryPromise = null;
     }
 }
 
-async function applyHeldGeneration(job, headers) {
+async function recoverHeldGenerationPass() {
+    if (document.visibilityState === 'hidden' || selected_group || this_chid === undefined || !characters[this_chid]) return;
+    const chatId = getCurrentChatId();
+    const avatar = characters[this_chid].avatar;
+    const revision = chatGeneration;
+    const isCurrent = () => !selected_group && getCurrentChatId() === chatId
+        && characters[this_chid]?.avatar === avatar && chatGeneration === revision;
+    const isIdle = () => !is_send_press && !activeGenerationRun;
+    if (!isIdle()) return scheduleHeldGenerationRecovery();
+    const headers = getRequestHeaders();
+    const jobs = await listRecoverableGenerations(headers);
+    for (const job of jobs) {
+        if (!isCurrent()) return scheduleHeldGenerationRecovery();
+        if (!isIdle()) return scheduleHeldGenerationRecovery();
+        const ctx = job.context;
+        if (!ctx || ![1, 2].includes(ctx.v) || ctx.chatId !== chatId || ctx.characterAvatar !== avatar) continue;
+        if (job.attached || job.status === 'running') {
+            scheduleHeldGenerationRecovery();
+            continue;
+        }
+        await applyHeldGeneration(job, headers, () => isCurrent() && isIdle());
+    }
+}
+
+async function applyHeldGeneration(job, headers, isCurrent) {
     const ctx = job.context;
     const discard = () => discardGeneration(job.id, headers);
-    const sameStart = (message) => message?.gen_started && new Date(message.gen_started).getTime() === ctx.startedAt;
-    if (chat.slice(-2).some(sameStart)) return discard();
-
-    const anchor = chat[ctx.chatLength - 1];
-    const anchorMatches = anchor && (anchor.send_date ?? null) === ctx.lastSendDate && Boolean(anchor.is_user) === ctx.lastIsUser;
-    let applyType;
-    if (ctx.type === 'regenerate' && chat.length === ctx.chatLength + 1 && anchorMatches && !chat[chat.length - 1].is_user) {
-        applyType = 'swipe';
-    } else if (chat.length === ctx.chatLength && anchorMatches) {
-        applyType = ctx.type === 'regenerate' ? 'normal' : ctx.type;
-    } else {
-        console.warn('Held reply no longer matches this chat; dropping it', job.id, ctx);
-        toastr.warning(t`A reply that finished in the background no longer matched the chat and was dropped.`);
-        return discard();
+    if (!isCurrent()) return;
+    let target = getHeldReplyTarget(chat, ctx, job.id);
+    if (!target) return;
+    if (target.type === 'saved') {
+        if (await saveChatConditional() && isCurrent()) await discard();
+        else scheduleHeldGenerationRecovery();
+        return;
     }
 
     if (job.status === 'failed') {
@@ -11410,6 +11468,11 @@ async function applyHeldGeneration(job, headers) {
 
     toastr.info(t`Restoring a reply that finished in the background...`);
     const response = await openHeldGeneration(job.id, headers);
+    if (!isCurrent()) {
+        await response.body?.cancel();
+        return;
+    }
+    if (!response.ok) throw new Error(`Held reply failed (${response.status})`);
     let getMessage = '';
     let reasoning = '';
     let imageUrls = [];
@@ -11418,44 +11481,68 @@ async function applyHeldGeneration(job, headers) {
     let title = '';
     if (ctx.streaming) {
         let last = null;
-        for await (const value of readChatCompletionStream(response, { chatCompletionSource: ctx.source })()) {
+        const read = {
+            openai: () => readChatCompletionStream(response, { chatCompletionSource: ctx.source, canMultiSwipe: true }),
+            textgenerationwebui: () => readTextGenerationStream(response),
+            kobold: () => readKoboldStream(response),
+            novel: () => readNovelStream(response),
+        }[ctx.api];
+        if (!read) throw new Error(`Unsupported held reply API: ${ctx.api}`);
+        for await (const value of read()()) {
             last = value;
         }
         getMessage = last?.text ?? '';
         reasoning = last?.state?.reasoning ?? '';
         imageUrls = last?.state?.images ?? [];
         reasoningSignature = last?.state?.signature || null;
+        swipes = last?.swipes ?? [];
     } else {
-        const data = await response.json();
+        let data = await response.json();
+        if (ctx.api === 'koboldhorde' && data.id) {
+            const { waitForHordeTask } = await import('./scripts/horde.js');
+            data = await waitForHordeTask(data.id, { get aborted() { return !isCurrent(); } }, false, false);
+        }
         if (data?.error) {
             toastr.error(t`A reply that ran in the background failed.`);
             return discard();
         }
         getMessage = extractMessageFromData(data, ctx.api);
-        title = extractTitleFromData(data);
-        reasoning = extractReasoningFromData(data);
-        imageUrls = extractImagesFromData(data);
-        reasoningSignature = extractReasoningSignatureFromData(data);
-        swipes = extractMultiSwipes(data, applyType);
+        title = ctx.api === 'koboldhorde' ? data.workerName : '';
+        const extractionOptions = { mainApi: ctx.api, chatCompletionSource: ctx.source, textGenType: ctx.textGenType };
+        reasoning = extractReasoningFromData(data, extractionOptions);
+        imageUrls = extractImagesFromData(data, extractionOptions);
+        reasoningSignature = extractReasoningSignatureFromData(data, extractionOptions);
+        swipes = extractMultiSwipes(data, ctx.type, extractionOptions);
     }
 
-    const isContinue = applyType === 'continue';
+    if (!isCurrent()) return;
+    target = getHeldReplyTarget(chat, ctx, job.id);
+    if (!target || target.type === 'saved') return;
+    const isContinue = ctx.type === 'continue';
     getMessage = cleanUpMessage({ getMessage, isImpersonate: false, isContinue });
     reasoning = getRegexedString(reasoning, regex_placement.REASONING);
-    if (!getMessage.trim()) {
+    if (!getMessage.trim() && !reasoning.trim() && !imageUrls.length) {
         toastr.warning(t`A reply that finished in the background had no text to restore.`);
         return discard();
     }
 
     generation_started = new Date(ctx.startedAt);
-    if (applyType === 'swipe') {
+    if (target.type === 'swipe') {
         const target = chat[chat.length - 1];
         target.swipes = Array.isArray(target.swipes) ? target.swipes : [target.mes];
         target.swipe_id = target.swipes.length;
     }
-    await saveReply({ type: applyType, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature });
-    await saveChatConditional();
-    await discard();
+    if (target.type === 'appendFinal') {
+        chat.at(-1).extra ??= {};
+        chat.at(-1).extra.reasoning = target.reasoningPrefix ?? '';
+        getMessage = (target.prefix ?? '') + getMessage;
+    }
+    await saveReply({ type: target.type, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, isCurrent });
+    if (!isCurrent()) return;
+    if (!await saveChatWithHeldReply({ id: job.id }, isCurrent)) {
+        scheduleHeldGenerationRecovery();
+        return;
+    }
     playMessageSound();
 }
 
@@ -11622,9 +11709,10 @@ export function extractJsonFromData(data, { mainApi = null, chatCompletionSource
  * Extracts multiswipe swipes from the response data.
  * @param {Object} data Response data
  * @param {string} type Type of generation
+ * @param {{mainApi?: string, textGenType?: string}} [options] Provider used for this reply
  * @returns {string[]} Array of extra swipes
  */
-function extractMultiSwipes(data, type) {
+function extractMultiSwipes(data, type, { mainApi = main_api, textGenType = textgen_settings.type } = {}) {
     const swipes = [];
 
     if (!data) {
@@ -11635,7 +11723,7 @@ function extractMultiSwipes(data, type) {
         return swipes;
     }
 
-    if (main_api === 'textgenerationwebui' && textgen_settings.type === textgen_types.LLAMACPP) {
+    if (mainApi === 'textgenerationwebui' && textGenType === textgen_types.LLAMACPP) {
         if (!Array.isArray(data)) {
             return swipes;
         }
@@ -11651,7 +11739,7 @@ function extractMultiSwipes(data, type) {
         }
     }
 
-    if (main_api === 'openai' || (main_api === 'textgenerationwebui' && [textgen_types.MANCER, textgen_types.VLLM, textgen_types.APHRODITE, textgen_types.TABBY, textgen_types.INFERMATICAI].includes(textgen_settings.type))) {
+    if (mainApi === 'openai' || (mainApi === 'textgenerationwebui' && [textgen_types.MANCER, textgen_types.VLLM, textgen_types.APHRODITE, textgen_types.TABBY, textgen_types.INFERMATICAI].includes(textGenType))) {
         if (!Array.isArray(data.choices)) {
             return swipes;
         }

@@ -787,6 +787,11 @@ export async function generateNovelWithStreaming(generate_data, signal) {
         tryParseStreamingError(response, await response.text());
         throw new Error(`Got response status ${response.status}`);
     }
+    return readNovelStream(response);
+}
+
+/** @param {Response} response Live or retained provider response */
+export function readNovelStream(response) {
     const eventStream = getEventSourceStream();
     response.body.pipeThrough(eventStream);
     const reader = eventStream.readable.getReader();

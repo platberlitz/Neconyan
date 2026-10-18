@@ -9,6 +9,7 @@ import { limitGenerationProse, isGenerationLengthFinish } from '../public/script
 import { buildAssistantKnowledge, getAssistantKnowledgeBudget } from '../public/scripts/neconyan-assistant-knowledge.js';
 import { isChatNavigationBlocked } from '../public/scripts/chat-navigation-flight.js';
 import { isSlashCommandText } from '../public/scripts/slash-commands/SlashCommandRuntimeUtils.js';
+import { captureRecoveryAnchor } from '../public/scripts/held-generation-recovery.js';
 
 await jest.unstable_mockModule('../public/script.js', () => ({ chat: [], getCurrentChatId: () => 'chat-a' }));
 await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-store.js', () => ({ isPathfinderSubmoduleEnabled: () => true }));
@@ -39,6 +40,8 @@ function createHost() {
     const events = new EventEmitter();
     const context = vm.createContext({
         isChatNavigationBlocked, isSlashCommandText,
+        captureRecoveryAnchor, releaseGenerationContext: jest.fn(), scheduleHeldGenerationRecovery: jest.fn(),
+        saveChatWithHeldReply: jest.fn(async () => true), textgen_settings: {},
         // This harness runs the real host generation flow without the Neconyan
         // server lane, so the Stage 9 funnel reports that it has no named workflow.
         nativeRoleplayWorkflowFor: async () => null,
