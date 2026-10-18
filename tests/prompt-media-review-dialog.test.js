@@ -2,13 +2,19 @@
 import { beforeAll, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import { localizeString } from '../public/scripts/ui-localization.js';
-import { loadDialog, scanIssue, scanResult } from './prompt-media-dialog-harness.js';
+import { assembled, loadDialog, scanIssue, scanResult } from './prompt-media-dialog-harness.js';
 import { buttonsNamed, byTag, elements, marked, settle, shielded, textPieces } from './prompt-media-dom-stub.js';
 
 // The Roleplay image review dialog (E2 rows RVW, CPY, BAT, HIS and INT-01). The real prompt-media-ui.js and prompt-media-labels.js run against
 // stand-ins for the app and the browser, with the lookup stand-ins reading the same tables the page's translate() reads. The in-app check
 // happens in stage 4. The Conversation dialog is in prompt-media-conversation-dialog.test.js, and the status and stage maps are in
 // prompt-media-label-maps.test.js.
+
+// What the real pt-pt files show for a string once translated, read straight from the assembled files and never through the lookup under test:
+// a scoped key reads the scoped table, an exact text reads the dictionary, and the English stays only when neither holds an entry.
+const realPt = assembled('pt-pt');
+const shown = (english, key = null) => (key ? realPt.scoped[key] : realPt.dictionary[english]) ?? english;
+const filled = (text, ...values) => text.replace(/\$\{(\d+)\}/g, (_, index) => values[index]);
 
 let env;
 beforeAll(async () => { env = await loadDialog(jest); });
@@ -60,7 +66,7 @@ describe('authored values', () => {
         expect(elements(history, noTranslation).map(node => node.textContent)).toEqual(['Review', expect.any(String)]);
         // The unfinished change has no chat yet: that legend is a word of ours, and it is not marked translate="no".
         const legends = byTag(history, 'legend');
-        expect(legends.map(node => node.textContent)).toEqual(['Review', 'Unfinished change']);
+        expect(legends.map(node => node.textContent)).toEqual(['Review', shown('Unfinished change', 'scoped.prompt_media.HIS-01')]);
         expect(noTranslation(legends[0])).toBe(true);
         expect(noTranslation(legends[1])).toBe(false);
         unreached(panel, 'change history');
@@ -241,7 +247,7 @@ describe('failures shown in the status line', () => {
         env.routes.scan = () => scanResult([scanIssue()], target);
         env.routes.apply = () => ({ failure: { status: 409, body: { error: message } } });
         const { content, status } = await env.open(target);
-        await buttonsNamed(rowsOf(content)[0], 'Save choice')[0].click(); await settle();
+        await buttonsNamed(rowsOf(content)[0], shown('Save choice', 'scoped.prompt_media.RVW-46'))[0].click(); await settle();
         expect(status.textContent).toBe(message);
         expect(status.hasAttribute('data-i18n-ignore')).toBe(true);
         // The lookup was the exact one: the message itself, with no key and no template.
@@ -249,7 +255,7 @@ describe('failures shown in the status line', () => {
         // A message that has an exact entry is translated.
         const [exact, translated] = Object.entries(env.dictionary).find(([key, value]) => key !== value && !key.includes('${') && key.length > 24 && key.length < 70 && /^[A-Z][^.]*\.$/.test(key));
         env.routes.apply = () => ({ failure: { status: 409, body: { error: exact } } });
-        await buttonsNamed(rowsOf(content)[0], 'Save choice')[0].click(); await settle();
+        await buttonsNamed(rowsOf(content)[0], shown('Save choice', 'scoped.prompt_media.RVW-46'))[0].click(); await settle();
         expect(status.textContent).toBe(translated);
     });
 
@@ -356,7 +362,7 @@ describe('removing an image, and using the compatible copy', () => {
         env.routes.scan = () => scanResult([scanIssue({ sources: { 'media-title': true, 'message-title': true } })], target);
         const { content } = await env.open(target);
         const options = byTag(rowsOf(content)[0], 'option');
-        expect(options.map(option => option.textContent)).toEqual(['Show only', 'Use a description', 'Send the image', 'Remove from message', 'Type a description', 'The image\'s saved description', 'The message\'s saved title']);
+        expect(options.map(option => option.textContent)).toEqual([shown('Show only', 'scoped.prompt_media.QIG-02'), shown('Use a description', 'scoped.prompt_media.QIG-04'), shown('Send the image', 'scoped.prompt_media.QIG-03'), shown('Remove from message', 'scoped.prompt_media.RVW-47'), shown('Type a description', 'scoped.prompt_media.RVW-40'), shown('The image\'s saved description'), shown('The message\'s saved title')]);
         for (const option of options) expect(option.hasAttribute('data-i18n-ignore')).toBe(true);
         // The removal name is looked up by its scoped key like the other three.
         expect(env.lookups).toContainEqual(['Remove from message', 'scoped.prompt_media.RVW-47']);
@@ -486,10 +492,10 @@ describe('choose chats and the results of a batch change (BAT-09)', () => {
             : body.observation.locator.chat === 'Third' ? { failure: { status: 500, body: { error: 'Hash <b>mismatch</b>.', integrity: true } } } : {};
         const { content, status } = await library();
         env.confirmations.length = 0;
-        await buttonsNamed(content, 'Stop sending images in selected chats')[0].click(); await settle();
+        await buttonsNamed(content, shown('Stop sending images in selected chats'))[0].click(); await settle();
         // The confirmation counts the chats in a scoped, filled sentence.
-        expect(byTag(env.confirmations[0].content, 'h3')[0].textContent).toBe('Stop sending images in the selected chats?');
-        expect(byTag(env.confirmations[0].content, 'p')[0].textContent).toBe('Chats selected: 3. In new replies, the model will receive neither their images nor the images\' saved descriptions. You can turn this off again for each chat.');
+        expect(byTag(env.confirmations[0].content, 'h3')[0].textContent).toBe(shown('Stop sending images in the selected chats?'));
+        expect(byTag(env.confirmations[0].content, 'p')[0].textContent).toBe(filled(shown('Chats selected: ${0}. In new replies, the model will receive neither their images nor the images\' saved descriptions. You can turn this off again for each chat.', 'scoped.prompt_media.BAT-07'), 3));
         const list = listOf(content);
         const items = itemsOf(list);
         expect(items).toHaveLength(3);
@@ -497,7 +503,7 @@ describe('choose chats and the results of a batch change (BAT-09)', () => {
         expect(items.map(item => [item.children[0].getAttribute('translate'), item.children[0].textContent])).toEqual([['no', 'Review'], ['no', 'Main'], ['no', 'Third']]);
         expect(items.map(item => item.children[2].hasAttribute('data-i18n-ignore'))).toEqual([true, true, true]);
         expect(items[0].children[2].textContent).toBe('Salvo'); // the existing key 'Saved', translated by t``
-        expect(items[1].children[2].textContent).toBe('The chat changed while you were reviewing it. List its images again, then choose.');
+        expect(items[1].children[2].textContent).toBe(shown('The chat changed while you were reviewing it. List its images again, then choose.'));
         expect(items[2].children[2].children.map(child => child.tag)).toEqual(['span', 'br', 'span']);
         expect(items[2].children[2].children[2].textContent).toBe('Hash <b>mismatch</b>.');
         expect(items[2].children[2].children[2].getAttribute('translate')).toBe('no');
