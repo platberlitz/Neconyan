@@ -93,6 +93,31 @@ describe('in-chat agents generation UI wiring', () => {
         expect(extensionStyleSource).toContain('.mes_run_companions--running');
     });
 
+    test('shows Rerun agents for assistant messages when an after-reply prompt agent is runnable', () => {
+        const hasRunnable = getFunctionSource('hasRunnableRerunAgents');
+        expect(hasRunnable).toContain('agent.postProcess?.promptTransformEnabled');
+        expect(hasRunnable).toContain('(agent.phase === \'post\' || agent.phase === \'both\')');
+
+        const update = getFunctionSource('updateRerunAgentsButtonVisibility');
+        expect(update).toContain('document.querySelectorAll(\'.mes_rerun_agents\')');
+        expect(update).toContain('if (button.style.display !== display) button.style.display = display;');
+        expect(update).not.toContain('.toggle(');
+        expect(publicIndexSource).toContain('class="mes_button mes_rerun_agents');
+        expect(publicIndexSource).toContain('data-i18n="[title]Rerun agents"');
+        expect(settingsSource).toContain('automatic after-reply agents and the Rerun agents button');
+    });
+
+    test('queues a message rerun as one manual batch and clears its busy state', () => {
+        const run = getFunctionSource('runRerunAgentsFromButton');
+        expect(run).toContain('rerunPostGenerationAgentsOnMessage(messageIndex, { cancelRevision })');
+        expect(run).toContain('rerunAgentsRunning.has(runKey)');
+        expect(run).toContain('addClass(\'mes_rerun_agents--running\')');
+        expect(run).toContain('refreshGenerationUi();');
+        expect(indexSource).toContain('$(document).on(\'click\', \'.mes_rerun_agents\'');
+        expect(extensionStyleSource).toContain('.mes_rerun_agents--running');
+        expect(indexSource).toContain('event_types.MORE_MESSAGES_LOADED');
+    });
+
     test('wires companion AI Maker in the editor', () => {
         expect(editorTemplateSource).toContain('ica--editor-companion-maker');
         expect(editorTemplateSource).toContain('AI Maker');

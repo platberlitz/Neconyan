@@ -20643,5 +20643,21 @@
   "Web search failed: ${0}": "Web search failed: ${0}",
   "No web results were found for this message.": "No web results were found for this message.",
   "Searching the web…": "Searching the web…",
-  "Web search settings could not be loaded. Check your connection and try again.": "Web search settings could not be loaded. Check your connection and try again."
+  "Web search settings could not be loaded. Check your connection and try again.": "Web search settings could not be loaded. Check your connection and try again.",
+  "Rerun agents": "Rerun agents",
+  "Rerun agents skipped": "Rerun agents skipped",
+  "The message changed before Rerun agents started, so it was skipped.": "The message changed before Rerun agents started, so it was skipped.",
+  "The message changed while Rerun agents was running, so its result was discarded.": "The message changed while Rerun agents was running, so its result was discarded.",
+  "Agents are already processing this reply. Wait for them to finish, then rerun agents.": "Agents are already processing this reply. Wait for them to finish, then rerun agents.",
+  "Rerun agents unavailable": "Rerun agents unavailable",
+  "Agents did not finish, so the reply was left unchanged. Check the connection the agents use, then try again.": "Agents did not finish, so the reply was left unchanged. Check the connection the agents use, then try again.",
+  "Rerun agents incomplete": "Rerun agents incomplete",
+  "The reply is still being generated. Wait for it to finish, then rerun agents.": "The reply is still being generated. Wait for it to finish, then rerun agents.",
+  "No enabled after-reply prompt agents found.": "No enabled after-reply prompt agents found.",
+  "Agents rerun on this reply.": "Agents rerun on this reply.",
+  "No agent changes were needed.": "No agent changes were needed.",
+  "Rerun agents checked": "Rerun agents checked",
+  "No assistant reply selected to rerun agents on.": "No assistant reply selected to rerun agents on.",
+  "Choose how automatic after-reply agents and the Rerun agents button run. Running a single agent by hand still runs one at a time.": "Choose how automatic after-reply agents and the Rerun agents button run. Running a single agent by hand still runs one at a time.",
+  "For automatic runs and Rerun agents, Together sends every after-reply agent the original reply. Different rewrites use one extra combining request on the last rewrite agent's connection. One at a time follows Order. Manually applied single agents always queue in the order you start them, each using the previous result. The Rerun agents button deliberately runs every enabled after-reply agent on the message you pick, whatever its activation chance or generation types.": "For automatic runs and Rerun agents, Together sends every after-reply agent the original reply. Different rewrites use one extra combining request on the last rewrite agent's connection. One at a time follows Order. Manually applied single agents always queue in the order you start them, each using the previous result. The Rerun agents button deliberately runs every enabled after-reply agent on the message you pick, whatever its activation chance or generation types."
 }

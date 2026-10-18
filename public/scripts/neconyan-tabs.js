@@ -515,7 +515,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261018e-desktop-performance';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261018f-rerun-post-gen-agents';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',

@@ -97,6 +97,7 @@ import {
     getPromptTransformHistoryForMessage,
     refreshRegexSnapshotsForAgent,
     requestPromptTransform,
+    rerunPostGenerationAgentsOnMessage,
     runAgentOnMessage,
     runAgentOnTarget,
     runTrackerFixOnMessage,
@@ -174,6 +175,7 @@ async function refreshSavedAgents(ids) {
     syncToolAgentRegistrations();
     refreshCompanionPanel();
     updateCompanionButtonVisibility();
+    updateRerunAgentsButtonVisibility();
 }
 
 async function editSelectedAgents(update, name) {
@@ -608,6 +610,7 @@ let selectModeActive = false;
 const selectedAgentIds = new Set();
 let suppressCardClickUntil = 0;
 let fixTrackersRunning = false;
+const rerunAgentsRunning = new Set();
 let agentSetupOperationBusy = false;
 let selectedAgentSetupId = '';
 let agentSetupListReady = false;
@@ -1242,6 +1245,7 @@ function toggleGlobalAgents() {
     updateGlobalAgentToggle();
     syncToolAgentRegistrations();
     updateFixTrackersButtonVisibility();
+    updateRerunAgentsButtonVisibility();
     updateCompanionButtonVisibility();
     if (enabled && !areAgentsGloballyEnabled()) {
         toastr.warning('Agents are switched on, but the saved setup or library needs recovery. Check Saved setups.');
@@ -3018,6 +3022,57 @@ function setFixTrackersProgressLabel(text) {
     if (label) label.textContent = text || 'Fix trackers';
 }
 
+function hasRunnableRerunAgents() {
+    return areAgentsGloballyEnabled() && getEnabledAgents().some(agent =>
+        !isCompanionAgent(agent) &&
+        (agent.phase === 'post' || agent.phase === 'both') &&
+        agent.postProcess?.promptTransformEnabled &&
+        String(agent.prompt ?? '').trim(),
+    );
+}
+
+function updateRerunAgentsButtonVisibility() {
+    const shouldShow = hasRunnableRerunAgents();
+    // Plain display writes, and only on change: toggle reads the computed
+    // style of every button first and slows down opening a long chat.
+    for (const button of document.querySelectorAll('.mes_rerun_agents')) {
+        const message = button.closest('.mes');
+        const isAssistantMessage = message?.getAttribute('is_system') !== 'true' && message?.getAttribute('is_user') !== 'true';
+        const display = shouldShow && isAssistantMessage ? '' : 'none';
+        if (button.style.display !== display) button.style.display = display;
+    }
+}
+
+async function runRerunAgentsFromButton(messageIndex, button) {
+    const runKey = String(messageIndex);
+    if (rerunAgentsRunning.has(runKey)) return;
+
+    if (!hasRunnableRerunAgents()) {
+        toastr.info('No enabled after-reply prompt agents found.');
+        updateRerunAgentsButtonVisibility();
+        return;
+    }
+
+    const message = chat[messageIndex];
+    if (!message || message.is_user || message.is_system) {
+        toastr.warning('No assistant reply selected to rerun agents on.');
+        return;
+    }
+
+    rerunAgentsRunning.add(runKey);
+    const $button = $(button);
+    $button.prop('disabled', true).addClass('mes_rerun_agents--running');
+    try {
+        const cancelRevision = getAgentGenerationCancelRevision();
+        await rerunPostGenerationAgentsOnMessage(messageIndex, { cancelRevision });
+    } finally {
+        rerunAgentsRunning.delete(runKey);
+        $button.prop('disabled', false).removeClass('mes_rerun_agents--running');
+        updateRerunAgentsButtonVisibility();
+        refreshGenerationUi();
+    }
+}
+
 const AGENT_LIST_TAB_STORAGE_KEY = 'ica--agent-list-tab';
 const AGENT_LIST_TABS = ['all', 'quick', 'pre', 'post', 'companion'];
 
@@ -3291,6 +3346,7 @@ function renderAgentList() {
         container.append(emptyState);
         restoreAgentListScrollState(scrollState);
         updateFixTrackersButtonVisibility();
+        updateRerunAgentsButtonVisibility();
         updateCompanionButtonVisibility();
         updateCompanionPanelHandleVisibility();
         return;
@@ -3583,6 +3639,7 @@ function renderAgentList() {
     updateAgentOverview(allAgents);
     restoreAgentListScrollState(scrollState);
     updateFixTrackersButtonVisibility();
+    updateRerunAgentsButtonVisibility();
     updateUpdateAllButtonVisibility();
     updateCompanionButtonVisibility();
     updateCompanionPanelHandleVisibility();
@@ -6348,6 +6405,7 @@ function renderAgentListWhenShown() {
     agentListRenderPending = true;
     updateCancelGenerationButton();
     updateFixTrackersButtonVisibility();
+    updateRerunAgentsButtonVisibility();
     updateCompanionButtonVisibility();
     updateCompanionPanelHandleVisibility();
 }
@@ -7259,19 +7317,32 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         await runTrackerFixFromButton(messageIndex, this);
     });
 
+    $(document).on('click', '.mes_rerun_agents', async function () {
+        const mesId = $(this).closest('.mes').attr('mesid');
+        const messageIndex = Number(mesId);
+        if (isNaN(messageIndex) || messageIndex < 0) {
+            toastr.warning('Invalid message.');
+            return;
+        }
+        await runRerunAgentsFromButton(messageIndex, this);
+    });
+
     for (const eventName of [
         event_types.CHAT_CHANGED,
+        event_types.MORE_MESSAGES_LOADED,
         event_types.USER_MESSAGE_RENDERED,
         event_types.CHARACTER_MESSAGE_RENDERED,
         event_types.CHAT_COMPLETION_PROMPT_READY,
     ].filter(Boolean)) {
         eventSource.on(eventName, () => {
             updateFixTrackersButtonVisibility();
+            updateRerunAgentsButtonVisibility();
             updateCompanionButtonVisibility();
             updateAgentTokenCounter();
         });
     }
     updateFixTrackersButtonVisibility();
+    updateRerunAgentsButtonVisibility();
     updateCompanionButtonVisibility();
     updateAgentTokenCounter();
 })();

@@ -105,6 +105,7 @@ const POST_PROCESSING_RUNS_EXTRA_KEY = 'inChatAgentPostRuns';
 const PATHFINDER_RETRIEVAL_CACHE_EXTRA_KEY = 'pathfinderRetrievalCache';
 export const PROMPT_RUNS_EXTRA_KEY = 'inChatAgentPromptRuns';
 export const PROMPT_TRANSFORM_HISTORY_KEY = 'inChatAgentTransformHistory';
+const PROMPT_TRANSFORM_RERUN_PROVENANCE_KEY = 'inChatAgentRerunProvenance';
 const PROMPT_TRANSFORM_REDO_KEY = 'inChatAgentTransformRedo';
 export const PRE_GENERATION_INTERCEPT_HISTORY_KEY = 'inChatAgentPreGenerationInterceptHistory';
 const MAX_TRANSFORM_HISTORY = 10;
@@ -3119,6 +3120,14 @@ function linkExternalEditToTransformHistory(message) {
     }
 
     setAgentExtraValue(message, PROMPT_TRANSFORM_HISTORY_KEY, history);
+    const rerunProvenance = getRerunProvenance(message);
+    if (rerunProvenance) {
+        setRerunProvenance(message, {
+            baselineText: getRerunPostGenerationBaselineText(message),
+            resultText: message.mes,
+            generatedBlocks: rerunProvenance.generatedBlocks,
+        });
+    }
     return true;
 }
 
@@ -4291,11 +4300,12 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
  * cleaned of echoed text and duplicates, then joined around the finished body.
  * With Run together every agent request starts together.
  */
-async function runPromptTransformPasses(agents, message, generationType, text, messageIndex = null, { cancelRevision = null, runtimeAgents = [], stopOnFailure = false, isCurrent = () => true, recentChatEndIndex = null, executionMode = getGlobalSettings().appendAgentsExecutionMode } = {}) {
+async function runPromptTransformPasses(agents, message, generationType, text, messageIndex = null, { cancelRevision = null, runtimeAgents = [], stopOnFailure = false, stopOnFailureStatuses = null, isCurrent = () => true, recentChatEndIndex = null, executionMode = getGlobalSettings().appendAgentsExecutionMode } = {}) {
     const promptRuns = [];
     const outcome = { cancelled: false, staleTarget: false, failed: false };
     const initialText = unwrapAssistantResponseWrapper(text);
     const isCancelled = () => (cancelRevision !== null && agentGenerationCancelRevision !== cancelRevision) || !runtimeAgents.every(isAgentRuntimeAllowed);
+    const isFailureStatus = status => status === 'error' || Boolean(stopOnFailureStatuses?.has?.(status));
     const errorRun = (agent, error) => ({
         agentId: agent.id,
         agentName: agent.name,
@@ -4342,7 +4352,7 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
                 outcome.cancelled = true;
                 return { stop: true };
             }
-            if (result.status === 'error') {
+            if (isFailureStatus(result.status)) {
                 outcome.failed = true;
                 if (stopOnFailure) return { stop: true };
             }
@@ -4359,7 +4369,7 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
                 outcome.staleTarget = true;
                 return { stop: true };
             }
-            if (batch.results.some(result => result?.status === 'error')) {
+            if (batch.results.some(result => isFailureStatus(result?.status))) {
                 outcome.failed = true;
                 if (stopOnFailure) return { stop: true };
             }
@@ -6698,6 +6708,488 @@ async function executeTrackerFixOnMessage(submittedTarget, cancelRevision) {
         toastr.success(parts.join(', '), 'Trackers fixed');
     } else {
         toastr.info('No tracker changes were needed.', 'Trackers checked');
+    }
+    return null;
+}
+
+// An eligible agent that did not deliver a usable answer must leave the whole
+// rerun unapplied. Unchanged rewrites and empty append blocks are valid no-ops.
+const RERUN_AGENT_FAILURE_STATUSES = new Set([
+    'cancelled',
+    'empty-response',
+    'error',
+    'refused',
+    'skipped-runtime-filter',
+    'stale-target',
+    'truncated',
+]);
+// Rerun-only: stop before later sequential agents or synthesis once an answer
+// is known to be unusable. Other callers keep the historical error-only stop.
+const RERUN_AGENT_STOP_STATUSES = new Set([
+    'empty-response',
+    'refused',
+    'skipped-runtime-filter',
+    'truncated',
+]);
+const RERUN_SKIPPED_TITLE = 'Rerun agents skipped';
+
+function getRerunProvenance(message) {
+    const value = getAgentExtraValue(message, PROMPT_TRANSFORM_RERUN_PROVENANCE_KEY);
+    if (!value || typeof value !== 'object') {
+        return null;
+    }
+
+    return {
+        baselineText: typeof value.baselineText === 'string' ? value.baselineText : '',
+        resultText: typeof value.resultText === 'string' ? value.resultText : '',
+        generatedBlocks: Array.isArray(value.generatedBlocks)
+            ? value.generatedBlocks.filter(block => typeof block === 'string' && block.trim())
+            : [],
+    };
+}
+
+function setRerunProvenance(message, { baselineText, resultText, generatedBlocks }) {
+    setAgentExtraValue(message, PROMPT_TRANSFORM_RERUN_PROVENANCE_KEY, {
+        baselineText: String(baselineText ?? ''),
+        resultText: String(resultText ?? ''),
+        generatedBlocks: (Array.isArray(generatedBlocks) ? generatedBlocks : [])
+            .map(block => String(block ?? '').trim())
+            .filter(Boolean)
+            .slice(-20),
+    });
+}
+
+function addGeneratedAppendSuffix(beforeText, afterText, add) {
+    if (typeof beforeText !== 'string' || typeof afterText !== 'string') {
+        return;
+    }
+
+    // Stored history is already pre-colour. Keep the data raw so intentional
+    // HTML and escaped characters survive the round trip.
+    const before = beforeText.trim();
+    const after = afterText.trim();
+    if (!before || !after || after.length <= before.length) return;
+
+    const appended = after.startsWith(before) ? after.slice(before.length) : '';
+    const prepended = !appended && after.endsWith(before) ? after.slice(0, after.length - before.length) : '';
+    const added = (appended || prepended).trim();
+    // An append that echoed the whole body added no new block.
+    if (!added || added === before) return;
+    add(added);
+}
+
+// Blocks are only stripped when their exact text was produced by an append run,
+// by this rerun before, or by a static utility append. A user edit inside a block
+// leaves it unmatched, so authored text is never guessed away.
+function collectRerunGeneratedAppendBlocks(message) {
+    const blocks = new Set();
+    const add = (value, { knownAppend = false } = {}) => {
+        const block = String(value ?? '').trim();
+        if (!block) return;
+        if (knownAppend && block.length < 8) return;
+        blocks.add(block);
+    };
+
+    for (const entry of getPromptTransformHistoryForMessage(message)) {
+        if (entry.mode === 'append') addGeneratedAppendSuffix(entry.beforeText, entry.afterText, add);
+    }
+
+    const storedRuns = getAgentExtraValue(message, PROMPT_RUNS_EXTRA_KEY);
+    if (Array.isArray(storedRuns)) {
+        for (const run of storedRuns) {
+            if (run?.mode === 'append') addGeneratedAppendSuffix(run.beforeText, run.nextMessageText, add);
+        }
+    }
+
+    for (const block of getRerunProvenance(message)?.generatedBlocks ?? []) add(block);
+
+    // A configured append is only a safe fallback when it is plain literal text.
+    // Never evaluate macros here: some of them change variables as a side effect.
+    for (const agent of getEnabledAgents()) {
+        if (isCompanionAgent(agent) || !agent?.postProcess?.enabled || agent.postProcess.type !== 'append') continue;
+        const appendText = String(agent.postProcess.appendText ?? '');
+        if (!appendText || appendText.includes('{{') || appendText.includes('<%')) continue;
+        add(appendText, { knownAppend: true });
+    }
+
+    return [...blocks];
+}
+
+function stripGeneratedAppendBlocks(text, blocks) {
+    const originalText = String(text ?? '');
+    let output = originalText;
+    let removed = false;
+
+    for (const block of blocks) {
+        const trimmed = String(block ?? '').trim();
+        if (!trimmed) continue;
+
+        // Match the block only as a standalone passage, never as a fragment
+        // inside an edited sentence.
+        const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const pattern = new RegExp(`(^|(?:\\r?\\n){1,2})[ \\t]*${escaped}[ \\t]*(?=(?:\\r?\\n){1,2}|$)`, 'g');
+        const next = output.replace(pattern, '$1');
+        if (next === output) continue;
+        output = next;
+        removed = true;
+    }
+
+    if (!removed) return originalText;
+    return output.replace(/(?:\r?\n){3,}/g, '\n\n').trim();
+}
+
+function isRerunProvenanceLinkedToCurrentReply(message, history, provenance) {
+    const resultText = getTransformChainText(provenance?.resultText);
+    if (!resultText) return false;
+    if (resultText === getTransformChainText(message?.mes)) return true;
+    return history.some(entry =>
+        getTransformChainText(entry?.afterText) === resultText
+        || getTransformChainText(entry?.beforeText) === resultText);
+}
+
+// Start from the text before earlier generated work, but keep both user edits
+// and an explicit repair (Fix trackers) as fixed points. A rerun may remove
+// generated add-ons from that fixed point, but never edits inside them.
+function getRerunPostGenerationBaselineText(message) {
+    const history = getPromptTransformHistoryForMessage(message);
+    const provenance = getRerunProvenance(message);
+    let source = message.mes;
+
+    if (history.length > 0) {
+        const boundaryEntry = [...history].reverse().find(entry =>
+            entry?.mode === 'edit' || !entry?.mode || entry?.agentName === 'Tracker repair');
+        if (boundaryEntry && typeof boundaryEntry.afterText === 'string') {
+            source = boundaryEntry.afterText;
+        } else if (provenance?.baselineText && isRerunProvenanceLinkedToCurrentReply(message, history, provenance)) {
+            // The capped history eventually forgets the original first beforeText.
+            source = provenance.baselineText;
+        } else if (typeof history[0]?.beforeText === 'string') {
+            source = history[0].beforeText;
+        }
+    }
+
+    return stripGeneratedAppendBlocks(source, collectRerunGeneratedAppendBlocks(message));
+}
+
+function collectRerunAppliedAppendBlocks(promptRuns, utilityBlocks = [], { baselineText = '', finalText = '' } = {}) {
+    const blocks = new Set();
+    const add = value => {
+        const block = String(value ?? '').trim();
+        if (block) blocks.add(block);
+    };
+
+    for (const run of promptRuns) {
+        if (run?.mode === 'append') addGeneratedAppendSuffix(run.beforeText, run.nextMessageText, add);
+    }
+    for (const block of utilityBlocks) add(block);
+    const baseline = getTransformChainText(baselineText);
+    const result = getTransformChainText(finalText);
+    return [...blocks]
+        .filter(block => {
+            const canonicalBlock = getTransformChainText(block);
+            return canonicalBlock && canonicalBlock !== baseline && (!result || result.includes(canonicalBlock));
+        })
+        .slice(-20);
+}
+
+function isPostProcessingInFlightForMessage(message, messageIndex) {
+    const swipeId = Number(message?.swipe_id);
+    return postProcessingInFlightKeys.has(`${Number(messageIndex)}:${Number.isInteger(swipeId) ? swipeId : 0}`);
+}
+
+function warnRerunSkipped(stage) {
+    toastr.warning(stage === 'before'
+        ? 'The message changed before Rerun agents started, so it was skipped.'
+        : 'The message changed while Rerun agents was running, so its result was discarded.', RERUN_SKIPPED_TITLE);
+}
+
+function warnRerunAlreadyProcessing() {
+    toastr.info('Agents are already processing this reply. Wait for them to finish, then rerun agents.', 'Rerun agents unavailable');
+}
+
+function warnRerunIncomplete() {
+    toastr.warning('Agents did not finish, so the reply was left unchanged. Check the connection the agents use, then try again.', 'Rerun agents incomplete');
+}
+
+function getRerunUtilityAgents(enabledAgents) {
+    return enabledAgents.filter(agent =>
+        !isCompanionAgent(agent) &&
+        isAgentRuntimeAllowed(agent) &&
+        agent.postProcess?.enabled &&
+        agent.postProcess.type !== 'regex' &&
+        (
+            agent.phase === 'post' ||
+            agent.phase === 'both' ||
+            agent.postProcess.type === 'extract'
+        ),
+    );
+}
+
+/**
+ * Reruns every enabled after-reply prompt agent on one assistant reply.
+ * The run follows the After-reply agents setting: Run together starts every
+ * request on the same reply, while Run one at a time feeds each result to the
+ * next agent. It is queued as one manual batch, so individual manual runs stay
+ * serial around it.
+ *
+ * @param {number} messageIndex
+ * @param {{ cancelRevision?: number }} [options]
+ * @returns {Promise<null>}
+ */
+export async function rerunPostGenerationAgentsOnMessage(messageIndex, { cancelRevision = agentGenerationCancelRevision } = {}) {
+    if (!areAgentsGloballyEnabled()) {
+        toastr.warning('In-Chat Agents are disabled.');
+        return null;
+    }
+
+    const numericMessageIndex = Number(messageIndex);
+    const message = chat[numericMessageIndex];
+    if (!Number.isInteger(numericMessageIndex) || !message || message.is_user || message.is_system) {
+        return null;
+    }
+    if (isMainGenerationStillActive()) {
+        toastr.info('The reply is still being generated. Wait for it to finish, then rerun agents.');
+        return null;
+    }
+    if (isPostProcessingInFlightForMessage(message, numericMessageIndex)) {
+        warnRerunAlreadyProcessing();
+        return null;
+    }
+    if (getPromptTransformAgents(getEnabledAgents().filter(isAgentRuntimeAllowed)).length === 0) {
+        toastr.info('No enabled after-reply prompt agents found.');
+        return null;
+    }
+
+    const target = { kind: 'message', messageIndex: numericMessageIndex, message, state: captureMessageTargetState(message, numericMessageIndex), isCurrent: () => true };
+    return await enqueueManualOperation(manualAgentRunQueues[0], target, () => executeRerunPostGenerationAgentsOnMessage(target, cancelRevision), cancelRevision);
+}
+
+async function executeRerunPostGenerationAgentsOnMessage(submittedTarget, cancelRevision) {
+    const { message, messageIndex } = submittedTarget;
+    if (!areAgentsGloballyEnabled() || !submittedTarget.isCurrent()) {
+        return null;
+    }
+    if (!isMessageTargetCurrent(message, submittedTarget.state, messageIndex, { text: false })) {
+        warnRerunSkipped('before');
+        return null;
+    }
+    if (agentGenerationCancelRevision !== cancelRevision) return null;
+    if (isMainGenerationStillActive()) {
+        toastr.info('The reply is still being generated. Wait for it to finish, then rerun agents.');
+        return null;
+    }
+    if (isPostProcessingInFlightForMessage(message, messageIndex)) {
+        warnRerunAlreadyProcessing();
+        return null;
+    }
+
+    resetChatBackupSequence();
+    await commitOpenEditorForMessage(messageIndex);
+    if (!message || message.is_user || message.is_system || !areAgentsGloballyEnabled()) return null;
+    if (!isMessageTargetCurrent(message, submittedTarget.state, messageIndex, { text: false, revision: false })) {
+        warnRerunSkipped('before');
+        return null;
+    }
+    if (agentGenerationCancelRevision !== cancelRevision) return null;
+    if (isMainGenerationStillActive()) {
+        toastr.info('The reply is still being generated. Wait for it to finish, then rerun agents.');
+        return null;
+    }
+    if (isPostProcessingInFlightForMessage(message, messageIndex)) {
+        warnRerunAlreadyProcessing();
+        return null;
+    }
+
+    const enabledAgents = getEnabledAgents().filter(isAgentRuntimeAllowed);
+    const promptTransformAgents = getPromptTransformAgents(enabledAgents);
+    if (promptTransformAgents.length === 0) {
+        toastr.info('No enabled after-reply prompt agents found.');
+        return null;
+    }
+
+    const preRerunText = message.mes;
+    const baselineText = getRerunPostGenerationBaselineText(message);
+    const target = captureMessageTargetState(message);
+    const isRerunCancelled = () => agentGenerationCancelRevision !== cancelRevision;
+    const isRerunTargetCurrent = () => !isRerunCancelled() && isMessageTargetCurrent(message, target, messageIndex);
+    const warnIfRerunTargetChanged = stage => {
+        if (isMessageTargetCurrent(message, target, messageIndex)) return false;
+        warnRerunSkipped(stage);
+        return true;
+    };
+    if (!isRerunTargetCurrent()) {
+        warnIfRerunTargetChanged('before');
+        return null;
+    }
+
+    const executionMode = getGlobalSettings().appendAgentsExecutionMode === 'sequential' ? 'sequential' : 'parallel';
+    let promptTransformResult;
+    try {
+        promptTransformResult = await runPromptTransformPasses(promptTransformAgents, message, 'normal', baselineText, messageIndex, {
+            cancelRevision,
+            isCurrent: isRerunTargetCurrent,
+            stopOnFailure: true,
+            stopOnFailureStatuses: RERUN_AGENT_STOP_STATUSES,
+            executionMode,
+        });
+    } catch (error) {
+        if (isRerunCancelled()) {
+            warnIfRerunTargetChanged('during');
+            return null;
+        }
+        if (!isRerunTargetCurrent()) {
+            warnIfRerunTargetChanged('during');
+            return null;
+        }
+        console.warn('[InChatAgents] Rerun agents failed:', error);
+        warnRerunIncomplete();
+        return null;
+    }
+
+    const promptRuns = promptTransformResult.promptRuns;
+    if (isRerunCancelled()) {
+        warnIfRerunTargetChanged('during');
+        return null;
+    }
+    if (promptTransformResult.cancelled) return null;
+    if (!isRerunTargetCurrent() || promptTransformResult.staleTarget) {
+        warnIfRerunTargetChanged('during');
+        return null;
+    }
+    const promptRunsFailed = promptTransformResult.failed
+        || promptRuns.some(run => RERUN_AGENT_FAILURE_STATUSES.has(String(run?.status ?? '')));
+    if (promptRunsFailed) {
+        warnRerunIncomplete();
+        return null;
+    }
+
+    let finalText = promptTransformResult.changed ? promptTransformResult.text : baselineText;
+    const utilityBlocks = [];
+
+    try {
+        for (const agent of getRerunUtilityAgents(enabledAgents)) {
+            if (isRerunCancelled()) {
+                warnIfRerunTargetChanged('during');
+                return null;
+            }
+            if (!isRerunTargetCurrent()) {
+                warnIfRerunTargetChanged('during');
+                return null;
+            }
+            if (!isAgentRuntimeAllowed(agent)) continue;
+            const postProcess = agent.postProcess;
+            switch (postProcess.type) {
+                case 'append': {
+                    if (!postProcess.appendText) break;
+                    const appendedText = substituteParams(postProcess.appendText);
+                    if (appendedText.trim()) {
+                        finalText += appendedText;
+                        utilityBlocks.push(appendedText);
+                    }
+                    break;
+                }
+            }
+        }
+
+        finalText = applyAgentRegexScriptsToText(enabledAgents, finalText, {
+            characterOverride: message.name,
+            includeDisplay: false,
+        });
+    } catch (error) {
+        if (isRerunCancelled()) {
+            warnIfRerunTargetChanged('during');
+            return null;
+        }
+        if (!isRerunTargetCurrent()) {
+            warnIfRerunTargetChanged('during');
+            return null;
+        }
+        console.warn('[InChatAgents] Rerun agents could not apply post-processing:', error);
+        warnRerunIncomplete();
+        return null;
+    }
+
+    if (isRerunCancelled()) {
+        warnIfRerunTargetChanged('during');
+        return null;
+    }
+    if (!isRerunTargetCurrent()) {
+        warnIfRerunTargetChanged('during');
+        return null;
+    }
+
+    // Dialogue Colours may only change font markup. Keep the visible reply and
+    // do not create an Undo step for a colour-only rerun result.
+    if (getTransformChainText(finalText) === getTransformChainText(preRerunText)) {
+        finalText = preRerunText;
+    }
+
+    let chatStateChanged = false;
+    let messageDisplayChanged = false;
+    const textChanged = finalText !== message.mes;
+
+    if (textChanged) {
+        if (!applyManualTargetWrite(submittedTarget, () => setPostProcessingText(message, finalText, getAgentPostProcessingTarget(message)))) {
+            warnIfRerunTargetChanged('during');
+            return null;
+        }
+        target.mes = finalText;
+        chatStateChanged = true;
+        messageDisplayChanged = true;
+    }
+
+    const metadataChanged = reconcileTrackerMetadata(enabledAgents) > 0;
+    const runsChanged = updatePromptTransformRuns(message, promptRuns);
+    if (metadataChanged || runsChanged) chatStateChanged = true;
+
+    // A rerun can also remove earlier agent blocks without any new rewrite
+    // being different from the baseline. Undo still has to restore the exact
+    // reply the user saw before pressing the button.
+    if (finalText !== preRerunText) {
+        const historyRuns = promptRuns.some(run => run?.changed)
+            ? promptRuns
+            : [{ changed: true, agentName: 'Rerun agents', mode: 'rerun' }];
+        if (recordAppliedTransformation(message, preRerunText, historyRuns, 'Rerun agents')) {
+            chatStateChanged = true;
+            messageDisplayChanged = true;
+        }
+    }
+
+    const regexSnapshotChanged = updateMessageRegexSnapshot(message, enabledAgents, 'normal');
+    if (regexSnapshotChanged) {
+        chatStateChanged = true;
+        messageDisplayChanged = true;
+    }
+
+    if (textChanged && !await syncPromptTransformMessageStateAsync(message, messageIndex)) {
+        warnIfRerunTargetChanged('during');
+        return null;
+    }
+    if (!isRerunTargetCurrent()) {
+        warnIfRerunTargetChanged('during');
+        return null;
+    }
+
+    setRerunProvenance(message, {
+        baselineText,
+        resultText: finalText,
+        generatedBlocks: collectRerunAppliedAppendBlocks(promptRuns, utilityBlocks, { baselineText, finalText }),
+    });
+    chatStateChanged = true;
+
+    if (chatStateChanged) {
+        syncAssistantMessageStateToSwipe(message, messageIndex);
+        saveChatDebouncedForAgent({ deferBackup: false });
+    }
+
+    if (messageDisplayChanged) {
+        scheduleMessageRefresh(messageIndex, message, { deferBackup: true });
+    }
+
+    if (finalText !== preRerunText) {
+        toastr.success('Agents rerun on this reply.', 'Rerun agents');
+    } else {
+        toastr.info('No agent changes were needed.', 'Rerun agents checked');
     }
     return null;
 }
