@@ -31,6 +31,13 @@ test('desktop resizing preserves chat choices without reloading their data', asy
     const selected = await page.locator('#sb-bottom-chat-select').inputValue();
     expect(options.length).toBeGreaterThan(0);
     requests.length = 0;
+    await page.evaluate(() => {
+        window.desktopResizeClassWrites = 0;
+        window.desktopResizeObserver = new MutationObserver(records => {
+            window.desktopResizeClassWrites += records.filter(record => record.target.matches('.mes')).length;
+        });
+        window.desktopResizeObserver.observe(document.getElementById('chat'), { subtree: true, attributes: true, attributeFilter: ['class'] });
+    });
 
     for (let index = 0; index < 12; index++) {
         await page.setViewportSize({ width: 1100 + index * 12, height: 900 });
@@ -38,6 +45,11 @@ test('desktop resizing preserves chat choices without reloading their data', asy
     }
     await waitForAnimationFrames(page, 40);
 
+    const classWrites = await page.evaluate(() => {
+        window.desktopResizeObserver.disconnect();
+        return window.desktopResizeClassWrites;
+    });
+    expect(classWrites).toBe(0);
     expect(requests).toEqual([]);
     expect(await page.locator('#sb-bottom-chat-select option').allTextContents()).toEqual(options);
     await expect(page.locator('#sb-bottom-chat-select')).toHaveValue(selected);
