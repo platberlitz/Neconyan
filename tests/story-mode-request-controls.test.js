@@ -769,7 +769,15 @@ describe('owned host generation flow', () => {
         processor.messageId = await processor.onStartStreaming('');
         const rendered = [];
         const checkpoints = [];
-        processor.onProgressStreaming = async () => { rendered.push({ text: processor.result, reasoning: processor.pendingReasoning }); };
+        const renderedReasoning = [];
+        processor.reasoningHandler.updateDom = () => {
+            renderedReasoning.push({ text: processor.reasoningHandler.reasoning, state: processor.reasoningHandler.state });
+        };
+        const onProgress = processor.onProgressStreaming.bind(processor);
+        processor.onProgressStreaming = async (...args) => {
+            await onProgress(...args);
+            rendered.push({ text: processor.result, reasoning: processor.pendingReasoning });
+        };
         processor.generator = async function* () {
             yield { text: '', state: {} };
             checkpoints.push(rendered.length);
@@ -777,6 +785,7 @@ describe('owned host generation flow', () => {
             checkpoints.push(rendered.length);
             yield { text: '', state: { reasoning: 'Thinking.' } };
             checkpoints.push(rendered.length);
+            expect(renderedReasoning).toEqual([{ text: 'Thinking.', state: 'thinking' }]);
             yield { text: 'First words', state: { reasoning: 'Thinking.' } };
             checkpoints.push(rendered.length);
             yield { text: 'First words and more', state: { reasoning: 'Thinking.' } };

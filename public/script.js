@@ -7839,10 +7839,6 @@ class StreamingProcessor {
             // Controlled streams parse inline reasoning once in #applyProseLimit.
             await this.reasoningHandler.process(messageId, false, this.maxOutputTokens ? null : this.promptReasoning);
         }
-        if (!this.#isCurrent(messageId)) return;
-        if (this.reasoningHandler.hasReasoningContent()) {
-            this.reasoningHandler.updateDom(messageId);
-        }
     }
 
     #updateMessageBlockVisibility() {
@@ -7899,6 +7895,9 @@ class StreamingProcessor {
             this.swipeId = this.message.swipe_id;
             await this.#checkDomElements(messageId, continueOnReasoning);
             if (!this.#isCurrent(messageId)) return -1;
+            if (this.reasoningHandler.hasReasoningContent()) {
+                this.reasoningHandler.updateDom(messageId);
+            }
             this.markUIGenStarted();
         }
         hideSwipeButtons({ hideCounters: true });
@@ -7969,6 +7968,9 @@ class StreamingProcessor {
             this.#applyPendingReasoning();
             await this.reasoningHandler.process(messageId, mesChanged, this.maxOutputTokens ? null : this.promptReasoning);
             if (!this.#isCurrent(messageId)) return;
+            if (this.reasoningHandler.hasReasoningContent()) {
+                this.reasoningHandler.updateDom(messageId);
+            }
             processedText = chat[messageId].mes;
 
             // Token count update.
