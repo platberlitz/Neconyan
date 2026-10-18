@@ -171,6 +171,11 @@ test('Hush compensates avatar displacement and paints only suitable crossing car
     await row.evaluate(el => el.classList.remove('lastInContext')); await chat.evaluate(el => el.style.removeProperty('--custom-ChatAvatar'));
     await page.locator('#desktop_response_controls').selectOption('inside', { force: true });
     await page.evaluate(async () => { const c = window.SillyTavern.getContext(); c.chat[4].mes = 'HUSH START\n\n' + 'A real saved reading card continues through the cutoff.\n\n'.repeat(60) + 'HUSH END'; c.chat[4].swipes[1] = c.chat[4].mes; await c.saveChat(); await c.reloadCurrentChat(); });
+    // A real reading gesture releases the reload's temporary bottom pin before
+    // positioning the card. A bare scrollTop assignment can race that pin.
+    const chatBox = await chat.boundingBox();
+    await page.mouse.move(chatBox.x + chatBox.width / 2, chatBox.y + chatBox.height / 2);
+    await page.mouse.wheel(0, -1);
     await row.evaluate(el => { const chat = el.parentElement; chat.scrollTop += el.getBoundingClientRect().top - chat.getBoundingClientRect().top - 40; });
     const wider = await row.evaluate(el => el.getBoundingClientRect().width > document.querySelector('#sb-bottom-chat-bar').getBoundingClientRect().width + 1);
     await expect.poll(() => cap.isVisible()).toBe(wider);
