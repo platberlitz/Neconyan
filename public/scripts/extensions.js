@@ -1138,17 +1138,28 @@ async function addExtensionsButtonAndMenu() {
 
     let popper = Popper.createPopper(button.get(0), dropdown.get(0), {
         placement: 'top-start',
+        // Nothing in a closed menu needs repositioning, and Popper's viewport
+        // listeners read computed styles on every frame. Only an open menu listens.
+        modifiers: [{ name: 'eventListeners', enabled: false }],
     });
 
-    $(button).on('click', function () {
-        if (isDropdownVisible) {
-            setUiVisibility(dropdown.get(0), false, () => dropdown.stop(true, true).hide());
-            isDropdownVisible = false;
-        } else {
+    const setPopperEvents = enabled => {
+        popper.setOptions({ modifiers: [{ name: 'eventListeners', enabled: Boolean(enabled) }] });
+    };
+
+    const setDropdownVisible = visible => {
+        if (visible) {
             setUiVisibility(dropdown.get(0), true, () => dropdown.stop(true, true).show());
-            isDropdownVisible = true;
+        } else {
+            setUiVisibility(dropdown.get(0), false, () => dropdown.stop(true, true).hide());
         }
+        isDropdownVisible = visible;
+        setPopperEvents(visible);
         popper.update();
+    };
+
+    $(button).on('click', function () {
+        setDropdownVisible(!isDropdownVisible);
     });
 
     $('html').on('click', function (e) {
@@ -1156,8 +1167,7 @@ async function addExtensionsButtonAndMenu() {
         const clickTarget = $(e.target);
         const noCloseTargets = ['#sd_gen', '#extensionsMenuButton', '#roll_dice'];
         if (!noCloseTargets.some(id => clickTarget.closest(id).length > 0)) {
-            setUiVisibility(dropdown.get(0), false, () => dropdown.stop(true, true).hide());
-            isDropdownVisible = false;
+            setDropdownVisible(false);
         }
     });
 }

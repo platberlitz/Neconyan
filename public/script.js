@@ -654,13 +654,48 @@ if (document.readyState === 'loading') {
 } else {
     applyNeconyanFrontendIcon();
 }
+// Popper v2 attaches viewport listeners through this modifier. A closed menu
+// must not keep them: every callback reads computed styles on each frame.
+const CLOSED_MENU_POPPER_MODIFIERS = [{ name: 'eventListeners', enabled: false }];
+
 let optionsPopper = Popper.createPopper(document.getElementById('options_button'), document.getElementById('options'), {
     placement: 'top-start',
+    modifiers: CLOSED_MENU_POPPER_MODIFIERS,
 });
 let exportPopper = Popper.createPopper(document.getElementById('export_button'), document.getElementById('export_format_popup'), {
     placement: 'left',
+    modifiers: CLOSED_MENU_POPPER_MODIFIERS,
 });
 let isExportPopupOpen = false;
+
+/**
+ * Turns a menu's Popper viewport listeners on while it is open and off while it
+ * is closed. Positioning still runs through update() on open and close.
+ * @param {object|null} popper Popper instance
+ * @param {boolean} enabled Whether the menu is open
+ */
+export function setPopperEvents(popper, enabled) {
+    if (!popper || typeof popper.setOptions !== 'function') {
+        return;
+    }
+
+    popper.setOptions({ modifiers: [{ name: 'eventListeners', enabled: Boolean(enabled) }] });
+}
+
+// Assigned by the options menu setup so chat cleanup paths can close the menu
+// through the same transition and listener policy as its own button.
+let optionsMenuState = null;
+
+function closeOptionsMenu(immediate = false) {
+    optionsMenuState?.hide(immediate);
+}
+
+function setExportPopupOpen(open) {
+    isExportPopupOpen = Boolean(open);
+    $('#export_format_popup').toggle(isExportPopupOpen);
+    setPopperEvents(exportPopper, isExportPopupOpen);
+    exportPopper.update();
+}
 
 // Saved here for performance reasons
 const messageTemplate = $('#message_template .mes');
@@ -5966,6 +6001,11 @@ export function appendMediaToMessage(mes, messageElement, scrollBehavior = SCROL
 export function addCopyToCodeBlocks(messageElement) {
     const codeBlocks = $(messageElement).find('pre code');
     for (let i = 0; i < codeBlocks.length; i++) {
+        // A morphed draft can keep an existing block between draws. Rebuilding
+        // its control each time would stack duplicate copy buttons.
+        if (codeBlocks.get(i).querySelector('.code-copy')) {
+            continue;
+        }
         hljs.highlightElement(codeBlocks.get(i));
         const copyButton = document.createElement('i');
         copyButton.classList.add('fa-solid', 'fa-copy', 'code-copy', 'interactable');
@@ -6412,6 +6452,69 @@ export function updateMessageElement(mes, { messageId = chat.length - 1, message
         void ensureFirstMessageTokenCount(mes, messageElement);
     }
     return messageElement;
+}
+
+/**
+ * Updates an unsaved preview draft's text and lightweight metadata in place,
+ * without rebuilding avatars, badges, reasoning, media, swipes or actions.
+ * Callers must only use this while the draft's structure (child, stage, name,
+ * avatar, reasoning state, Agent and Companion metadata, model) is unchanged.
+ * @param {JQuery<HTMLElement>|HTMLElement} node Rendered draft element
+ * @param {ChatMessage} message Draft message for the current frame
+ * @param {object} [options] Options
+ * @param {number} [options.messageId=chat.indexOf(message)] Message ID used by formatting
+ * @param {boolean} [options.updateText=true] Whether the draft body changed
+ * @returns {boolean} Whether the draft element accepted the update
+ */
+export function updatePreviewMessageText(node, message, { messageId = chat.indexOf(message), updateText = true } = {}) {
+    const element = node?.jquery ? node[0] : node;
+    if (!(element instanceof HTMLElement)) {
+        return false;
+    }
+
+    const textElement = element.querySelector('.mes_text');
+    if (!textElement) {
+        return false;
+    }
+
+    if (updateText) {
+        const messageHTML = getMessageTextHTML(message, {
+            messageId,
+            updateGreeting: false,
+            messageContext: message,
+            isPreview: true,
+        });
+        applyStreamDomPatch(textElement, messageHTML);
+
+        // Reasoning content and media are untouched here, so only a body that
+        // gained a code block needs its copy control (and highlight) built.
+        if (textElement.querySelector('pre code')) {
+            addCopyToCodeBlocks(element);
+        }
+    }
+
+    const { timerValue, timerTitle } = formatGenerationTimer(message.gen_started, message.gen_finished,
+        message.extra?.token_count, message.extra?.reasoning_duration, message.extra?.time_to_first_token,
+        message.extra?.reasoning_tokens);
+    const timer = element.querySelector('.mes_timer');
+    if (timer) {
+        timer.textContent = timerValue || '';
+        if (timerTitle) timer.title = timerTitle;
+        else timer.removeAttribute('title');
+    }
+
+    const timestamp = element.querySelector('.timestamp');
+    if (timestamp) {
+        timestamp.title = `${message.extra?.api ? message.extra.api + ' - ' : ''}${message.extra?.model ?? ''}`;
+    }
+
+    const idDisplay = element.querySelector('.mesIDDisplay');
+    if (idDisplay && Number.isInteger(messageId)) {
+        idDisplay.textContent = `#${messageId}`;
+    }
+
+    updateMessageMetaBadges(element, message);
+    return true;
 }
 
 const firstMessageTokenCounts = new WeakMap();
@@ -19445,12 +19548,12 @@ jQuery(async function () {
         }
 
         if (fromSlashCommand) {  // When called from `/delchat` command, don't re-open the history view.
-            $('#options').hide();  // Hide option popup menu.
+            closeOptionsMenu(true);  // Hide option popup menu.
             await loaderHandle.hide();
         } else {  // Open the history view again after 2 seconds (delay to avoid edge cases for deleting last chat).
             setTimeout(async function () {
                 $('#option_select_chat').trigger('click');
-                $('#options').hide();  // Hide option popup menu.
+                closeOptionsMenu(true);  // Hide option popup menu.
                 await loaderHandle.hide();
             }, 2000);
         }
@@ -19621,7 +19724,7 @@ jQuery(async function () {
 
         await delay(250);
         $('#option_select_chat').trigger('click');
-        $('#options').hide();
+        closeOptionsMenu(true);
     });
 
     $(document).on('click', '.exportChatButton, .exportRawChatButton', async function (e) {
@@ -19718,17 +19821,48 @@ jQuery(async function () {
         }
     });
 
+    let optionsMenuEventsEnabled = false;
+    const setOptionsMenuEvents = enabled => {
+        if (optionsMenuEventsEnabled === enabled) {
+            return;
+        }
+        optionsMenuEventsEnabled = enabled;
+        setPopperEvents(optionsPopper, enabled);
+    };
+
     function showMenu() {
         showBookmarksButtons();
         setUiVisibility(menu.get(0), true, () => menu.stop(true, true).show());
+        setOptionsMenuEvents(true);
         optionsPopper.update();
         isOptionsMenuVisible = true;
     }
 
-    function hideMenu() {
-        setUiVisibility(menu.get(0), false, () => menu.stop(true, true).hide());
+    function hideMenu(immediate = false) {
+        if (immediate) {
+            menu.stop(true, true).hide();
+        } else {
+            setUiVisibility(menu.get(0), false, () => menu.stop(true, true).hide());
+        }
+        setOptionsMenuEvents(false);
         optionsPopper.update();
         isOptionsMenuVisible = false;
+    }
+
+    optionsMenuState = { show: showMenu, hide: hideMenu };
+
+    // A few older chat tools still hide this menu themselves with jQuery. Notice
+    // that close so a hidden menu cannot keep Popper's viewport listeners.
+    const optionsMenuNode = menu.get(0);
+    if (optionsMenuNode && typeof MutationObserver === 'function') {
+        const observer = new MutationObserver(() => {
+            if (!isOptionsMenuVisible || optionsMenuNode.style.display !== 'none') {
+                return;
+            }
+            isOptionsMenuVisible = false;
+            setOptionsMenuEvents(false);
+        });
+        observer.observe(optionsMenuNode, { attributes: true, attributeFilter: ['style'] });
     }
 
     function isMouseOverButtonOrMenu() {
@@ -20246,9 +20380,7 @@ jQuery(async function () {
     });
 
     $('#export_button').on('click', function () {
-        isExportPopupOpen = !isExportPopupOpen;
-        $('#export_format_popup').toggle(isExportPopupOpen);
-        exportPopper.update();
+        setExportPopupOpen(!isExportPopupOpen);
     });
 
     $(document).on('click', '.export_format', async function () {
@@ -20258,9 +20390,7 @@ jQuery(async function () {
             return;
         }
 
-        $('#export_format_popup').hide();
-        isExportPopupOpen = false;
-        exportPopper.update();
+        setExportPopupOpen(false);
 
         // Save before exporting
         await createOrEditCharacter();
@@ -20431,9 +20561,7 @@ jQuery(async function () {
         if (isExportPopupOpen
             && clickTarget.closest('#export_button').length == 0
             && clickTarget.closest('#export_format_popup').length == 0) {
-            $('#export_format_popup').hide();
-            isExportPopupOpen = false;
-            exportPopper.update();
+            setExportPopupOpen(false);
         }
 
         const forbiddenTargets = [

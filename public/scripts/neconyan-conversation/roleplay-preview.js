@@ -1,4 +1,4 @@
-import { chat as messages, formatGenerationTimer, getRequestHeaders, getThumbnailUrl, refreshChatViewportBaseline, scrollChatToBottom, updateMessageElement } from '../../script.js';
+import { chat as messages, formatGenerationTimer, getRequestHeaders, getThumbnailUrl, refreshChatViewportBaseline, scrollChatToBottom, updateMessageElement, updatePreviewMessageText } from '../../script.js';
 import { beginRoleplayReplacement } from './roleplay-replacement.js';
 import { withAbortSignal } from '../abort.js';
 import { power_user } from '../power-user.js';
@@ -14,6 +14,30 @@ const PREVIEW_SILENCE_MS = 5000;
 // Companion notes share the saved job artifact's 16 MiB limit.
 const MAX_PREVIEW_EVENT_LENGTH = 16 * 1024 * 1024;
 const FOLLOWED_STAGES = new Set(['preparing', 'generating', 'agents']);
+// Everything the full message renderer treats as structure. Frames copy the
+// snapshot and reuse nested metadata references, so an equal reference means
+// that part is unchanged; the growing text is compared separately.
+const PREVIEW_STRUCTURE_FIELDS = Object.freeze([
+    'childId', 'stage', 'name', 'avatar', 'gen_started', 'gen_finished',
+    'reasoning', 'reasoning_finished', 'reasoning_duration',
+    'inChatAgents', 'inChatAgentCompanionResults', 'generation',
+]);
+
+/**
+ * Whether two preview frames need the same message structure. Text, counters
+ * and elapsed time are deliberately excluded: those update without a rebuild.
+ * @param {object|null} previous Frame last drawn in full
+ * @param {object|null} next Current frame
+ * @returns {boolean}
+ */
+export function hasSamePreviewStructure(previous, next) {
+    if (!previous || !next) return false;
+    return PREVIEW_STRUCTURE_FIELDS.every(field => Object.is(previous[field], next[field]));
+}
+
+function hasUnfinishedReasoning(preview) {
+    return Boolean(preview?.reasoning) && !preview?.reasoning_finished;
+}
 
 /** Display only: partial output never enters the chat array or a chat save. */
 export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, name, messageIndex }) {
@@ -23,6 +47,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     let serverTime = null;
     let receivedMonotonic = 0;
     let rendered = null;
+    let renderedMessageId = null;
     let childId = null;
     let startedAt = null;
     let stopped = false;
@@ -36,7 +61,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             node.remove();
             document.dispatchEvent(new CustomEvent('neconyan:roleplay-preview-removed', { detail: { element: node } }));
         }
-        node = null; rendered = null;
+        node = null; rendered = null; renderedMessageId = null;
     };
     const render = () => {
         if (frozen) return;
@@ -89,7 +114,34 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                 time_to_first_token: latest.time_to_first_token, reasoning_duration: reasoningDuration,
                 ...(reasoningDetails && node.classList.contains('reasoning') ? { reasoning_collapsed: !reasoningDetails.open } : {}) } };
         const replacement = chat.querySelector('[data-roleplay-replacement]');
-        const messageElement = updateMessageElement(message, { messageId: replacement ? Number(replacement.dataset.roleplayReplacement) : messages.length, isPreview: true,
+        const messageId = replacement ? Number(replacement.dataset.roleplayReplacement) : messages.length;
+        const finishDraw = () => {
+            node.querySelector('[role="status"]').textContent = labels[latest.stage] || labels.preparing;
+            // The saved receipt names the final child job. Keep the preview's own
+            // child identity for the handover to match a completed group speaker.
+            node.dataset.roleplayChild = String(latest.childId ?? '');
+            // Display-only decorators run before the browser paints. Saved-message
+            // events would incorrectly treat this draft as part of the chat history.
+            document.dispatchEvent(new CustomEvent('neconyan:roleplay-preview-rendered', { detail: { message, element: node } }));
+            rendered = latest;
+            renderedMessageId = messageId;
+            // A live bottom landing must supersede resize anchors for older positions,
+            // and honour the same automatic/manual scrolling policy as saved replies.
+            if (nearBottom) scrollChatToBottom({ isNearBottom: nearBottom });
+            else refreshChatViewportBaseline();
+        };
+        // Streaming text, counters and the clock only need the draft body and its
+        // metadata rewritten. Starting reasoning, a stage, Agent or Companion
+        // change, another child or another model all rebuild through the full
+        // renderer, so decorators keep their normal behaviour.
+        const canUpdateInPlace = node?.isConnected && !thinking && !hasUnfinishedReasoning(rendered)
+            && renderedMessageId === messageId && hasSamePreviewStructure(rendered, latest);
+        if (canUpdateInPlace
+            && updatePreviewMessageText(node, message, { messageId, updateText: rendered?.text !== latest.text })) {
+            finishDraw();
+            return;
+        }
+        const messageElement = updateMessageElement(message, { messageId, isPreview: true,
             ...(node?.isConnected ? { messageElement: globalThis.jQuery(node) } : {}) });
         if (!node?.isConnected) {
             node = messageElement[0];
@@ -103,18 +155,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             if (replacement) replacement.before(node);
             else chat.append(node);
         }
-        node.querySelector('[role="status"]').textContent = labels[latest.stage] || labels.preparing;
-        // The saved receipt names the final child job. Keep the preview's own
-        // child identity for the handover to match a completed group speaker.
-        node.dataset.roleplayChild = String(latest.childId ?? '');
-        // Display-only decorators run before the browser paints. Saved-message
-        // events would incorrectly treat this draft as part of the chat history.
-        document.dispatchEvent(new CustomEvent('neconyan:roleplay-preview-rendered', { detail: { message, element: node } }));
-        rendered = latest;
-        // A live bottom landing must supersede resize anchors for older positions,
-        // and honour the same automatic/manual scrolling policy as saved replies.
-        if (nearBottom) scrollChatToBottom({ isNearBottom: nearBottom });
-        else refreshChatViewportBaseline();
+        finishDraw();
     };
     // Draw at the reader's streaming cadence (with the phone's conservative floors)
     // aligned to the next animation frame, instead of rebuilding the growing
