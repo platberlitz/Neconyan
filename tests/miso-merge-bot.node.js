@@ -309,7 +309,8 @@ test('the workflow job name matches the check Miso ignores', () => {
     assert.match(workflow, /name: 🐯 Miso merge check\n/);
     assert.match(workflow, /sparse-checkout: \.github\/miso/);
     assert.match(workflow, /pull_request_target:/);
-    assert.match(workflow, /github\.event\.pull_request\.base\.ref/);
+    assert.match(workflow, /push:\n\s{4}branches: \[staging\]/);
+    assert.match(workflow, /ref: \$\{\{ github\.event\.pull_request\.base\.ref \|\| github\.ref \}\}/);
     assert.match(workflow, /timeout-minutes: 20/);
     assert.match(workflow, /MISO_SETTLE_CHECKS:/);
     assert.match(workflow, /settleChecks: process\.env\.MISO_SETTLE_CHECKS === 'true'/);
