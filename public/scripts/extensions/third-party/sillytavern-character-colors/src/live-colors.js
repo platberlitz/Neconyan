@@ -11,7 +11,8 @@ import { getNarratorVisual } from './narrator-style.js';
 import { isExcludedSpeakerName } from './speaker-exclusions.js';
 import { applyThemeReadabilityAndBrightness, getBaseColor, getEntryEffectiveColor, invalidateThemeCache, syncAllEffectiveColors } from './palettes.js';
 import { buildExcludedSpeakerPromptRule, buildLLMColorizeRules, buildThoughtSymbolColorPromptRule, filterPromptCharacterEntries, formatColorBlockPair, getEffectivePromptMode, getThoughtDelimiterSymbols, injectPrompt } from './prompts.js';
-import { generateQuietPrompt, getContext } from './st-api.js';
+import { eventSource, event_types, generateQuietPrompt, getContext } from './st-api.js';
+import { bindMessageWorkLifecycle, createMessageWorkController } from './message-work-controller.js';
 import { COLOR_STATE_SAVE_DELAY_MS, LIVE_CHAT_SAVE_DELAY_MS, attributionChatGeneration, characterColors, colorStateSaveTimer, isAutoColorizing, isColorizing, isDomEngine, isRecoloring, lastProcessedMessageSignature, liveChatSaveTimer, pendingColorStateHistory, pendingColorStateInjectPrompt, pendingColorStateSaveData, pendingColorStateUpdateList, setColorStateSaveTimer, setIsAutoColorizing, setIsColorizing, setIsRecoloring, setLastProcessedMessageSignature, setLiveChatSaveTimer, setPendingColorStateHistory, setPendingColorStateInjectPrompt, setPendingColorStateSaveData, setPendingColorStateUpdateList, setPendingLiveChatSave, settings } from './state.js';
 import { getStorageKey, saveData } from './storage.js';
 import { clearAutoColorizeIndicators, hideAutoColorizeIndicator, setColorizeButtonBusy, setRecolorButtonBusy, showAutoColorizeIndicator, updateCharList, updateLegend, updateStorageScopeStatus } from './ui.js';
@@ -21,64 +22,39 @@ import { findHtmlTagRanges, getMessageElementByIndex, hashMessageText, isComposi
 // colorize call is in flight, only the newest would ever be revisited. Keep each
 // unprocessed snapshot and consume it once, even when an earlier target is stale.
 const pendingAutoColorizeRetryTargets = [];
-const pendingNewMessageJobs = [];
-let newMessageFlushTimer = null;
-let dialogueCountSyncTimer = null;
-let dialogueCountSyncChat = null;
-let pendingCharListRefresh = false;
 let chatSaveInFlight = null;
 let colorizeRunSequence = 0;
 let activeColorizeRun = null;
 
-const NEW_MESSAGE_PROCESS_DELAY_MS = 600;
-const DIALOGUE_COUNT_SYNC_DELAY_MS = 100;
+const messageWork = createMessageWorkController({
+    processDelay: 600,
+    countDelay: 100,
+    syncCounts: chat => syncDialogueCounts(chat),
+    refreshList: () => updateCharList(),
+    isEnabled: () => settings.enabled,
+    getChat: () => getContext()?.chat,
+});
 
-/**
- * A chat load renders every message separately. Processing each one on its own
- * timer repeats the same whole-chat recounts and list work, so queue the
- * per-message passes and run them once after the render burst settles.
- */
 function scheduleNewMessageJob(job) {
-    pendingNewMessageJobs.push(job);
-    if (newMessageFlushTimer) clearTimeout(newMessageFlushTimer);
-    newMessageFlushTimer = setTimeout(() => {
-        newMessageFlushTimer = null;
-        const jobs = pendingNewMessageJobs.splice(0);
-        for (const pendingJob of jobs) {
-            try {
-                void Promise.resolve(pendingJob()).catch(error => {
-                    console.error('[Dialogue Colors] New-message processing failed:', error);
-                });
-            } catch (error) {
-                console.error('[Dialogue Colors] New-message processing failed:', error);
-            }
-        }
-    }, NEW_MESSAGE_PROCESS_DELAY_MS);
+    messageWork.schedule(job);
 }
 
-/**
- * Dialogue counts are a whole-chat statistic. A burst of rendered messages
- * recomputes the same tally once per message, so coalesce the refresh and ask
- * for one character-list update afterwards.
- */
 function scheduleDialogueCountSync(chat, { refreshCharList = false } = {}) {
-    if (Array.isArray(chat)) dialogueCountSyncChat = chat;
-    if (refreshCharList) pendingCharListRefresh = true;
-    if (dialogueCountSyncTimer) clearTimeout(dialogueCountSyncTimer);
-    dialogueCountSyncTimer = setTimeout(() => {
-        dialogueCountSyncTimer = null;
-        const targetChat = dialogueCountSyncChat;
-        const refreshList = pendingCharListRefresh;
-        dialogueCountSyncChat = null;
-        pendingCharListRefresh = false;
-        let countsChanged = false;
-        if (targetChat) {
-            if (!settings.enabled || getContext()?.chat !== targetChat) return;
-            countsChanged = syncDialogueCounts(targetChat);
-        }
-        if (settings.enabled && (refreshList || countsChanged)) updateCharList();
-    }, DIALOGUE_COUNT_SYNC_DELAY_MS);
+    messageWork.scheduleCounts(chat, { refreshCharList });
 }
+
+/** Cancel queued and in-flight message work before a chat reset or lifecycle change. */
+export function cancelPendingNewMessageWork() {
+    messageWork.cancel();
+    pendingAutoColorizeRetryTargets.length = 0;
+}
+
+bindMessageWorkLifecycle({
+    eventSource,
+    eventTypes: event_types,
+    isEnabled: () => settings.enabled,
+    cancel: cancelPendingNewMessageWork,
+});
 
 const chatSaveRecords = new Set();
 const CHAT_SAVE_MAX_AUTO_RETRIES = 2;
@@ -2101,6 +2077,7 @@ export function onNewMessage(indexArg = null, messageArg = null, chatArg = null,
         pendingAutoColorizeRetryTargets.length = 0;
         return;
     }
+    const workToken = messageWork.capture();
     const scheduledContext = getContext();
     const scheduledChat = chatArg ?? scheduledContext?.chat;
     const scheduledIndex = Number.isInteger(indexArg) && indexArg >= 0 ? indexArg : null;
@@ -2110,7 +2087,7 @@ export function onNewMessage(indexArg = null, messageArg = null, chatArg = null,
     const scheduledChatGeneration = retryTarget ? retryTarget.chatGeneration : attributionChatGeneration;
     const processMessage = async () => {
         const ctx = getContext();
-        if (!settings.enabled || !settings.autoScanNewMessages
+        if (!messageWork.isCurrent(workToken) || !settings.enabled || !settings.autoScanNewMessages
             || ctx?.chat !== scheduledChat || getStorageKey() !== scheduledStorageKey
             || scheduledChatGeneration !== attributionChatGeneration) return;
         const chat = ctx?.chat || [];
@@ -2139,7 +2116,7 @@ export function onNewMessage(indexArg = null, messageArg = null, chatArg = null,
             chatGeneration: scheduledChatGeneration,
         };
         let expectedText = text;
-        const isNewMessageTargetCurrent = () => settings.enabled && settings.autoScanNewMessages
+        const isNewMessageTargetCurrent = () => messageWork.isCurrent(workToken) && settings.enabled && settings.autoScanNewMessages
             && isCapturedChatBindingCurrent(chatBinding)
             && getStorageKey() === scheduledStorageKey
             && isColorizeMessageCurrent(chat, messageEntry, expectedText);
@@ -2274,12 +2251,11 @@ export function onNewMessage(indexArg = null, messageArg = null, chatArg = null,
                     lastMsg.mes = completion.updatedText;
                     expectedText = lastMsg.mes;
                     setLastProcessedMessageSignature(`${chat.length}|${sigId}|${lastMsg.mes}`);
-                    scheduleDialogueCountSync(chat);
+                    // The list must render after the corrected tally, not before it.
+                    scheduleDialogueCountSync(chat, { refreshCharList: true });
                     await queueCapturedChatSave(chatBinding, { immediate: true });
                     if (!isNewMessageTargetCurrent()) return;
                     await refreshMessageDom(index, lastMsg);
-                    if (!isNewMessageTargetCurrent()) return;
-                    updateCharList();
                 }
             }
         }
@@ -2329,7 +2305,8 @@ export function onNewMessage(indexArg = null, messageArg = null, chatArg = null,
                     }
                     if (preRegisteredCharacters) commit();
                     let autoColorizeCurrency = captureColorizeRunCurrency(true);
-                    const isAutoColorizeTargetCurrent = (expectedText = colorizeInput) => isCapturedChatBindingCurrent(autoColorizeBinding)
+                    const isAutoColorizeTargetCurrent = (expectedText = colorizeInput) => messageWork.isCurrent(workToken)
+                        && isCapturedChatBindingCurrent(autoColorizeBinding)
                         && getStorageKey() === scheduledStorageKey
                         && isColorizeMessageCurrent(capturedChat, autoColorizeEntry, expectedText)
                         && isColorizeRunCurrencyCurrent(autoColorizeCurrency, true);

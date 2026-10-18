@@ -2,6 +2,7 @@
 import { attributeDialogueSegments } from './attribution.js';
 import { ATTRIBUTION_REVIEW_METADATA_KEY, ATTRIBUTION_REVIEW_STATUS, ATTRIBUTION_SOURCE, ATTRIBUTION_VERIFICATION_STATUS, MAX_ATTRIBUTION_OVERRIDE_SEGMENTS, MAX_ATTRIBUTION_OVERRIDE_VARIANTS, createAttributionReviewStore, createAttributionStore, createMessageFingerprint, createSegmentFingerprint, deleteAttributionOverrideRecord, getAttributionConfidenceBand, getAttributionOverrideVariantKey, isAttributionReviewCurrent, isHostSystemOrToolMessage, isLegacyAttributionOverrideEntry, normalizeAttributionConfidence, normalizeAttributionEvidence, normalizeAttributionSource, setAttributionOverrideRecord } from './attribution-store.js';
 import { unregisterGradientAnimationRoot } from './animation-controller.js';
+import { mutationTouchesCharacterCards } from './card-mutations.js';
 import { buildUniqueKnownColorStatsLookup, collectFontColorsFromText, countFontColorOccurrencesFromText, resolveCharacterKeyByNameOrAlias } from './color-blocks.js';
 import { applyCustomFontsToFontTags, applyCustomFontsToMessageElements, clearCustomFontsFromFontTags, loadGoogleFont, scheduleCardStyle, scheduleCustomFontRefresh } from './fonts.js';
 import { applyGradientText, clearGradientText, getVisualRenderState } from './gradient-rendering.js';
@@ -2931,20 +2932,6 @@ export function setupChatObserver() {
         for (const mesElement of observed) queueObservedMessageDecoration(mesElement);
     });
     runtimeState.chatObserver.observe(chatEl, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'mesid'] });
-}
-
-const CARD_STYLE_CONTAINER_SELECTOR = '#rm_print_characters_block, #rm_group_members, .character_select_container';
-
-function mutationTouchesCharacterCards(mutations) {
-    return mutations.some(mutation => {
-        if (mutation.type !== 'childList' || mutationInsideRoleplayDraft(mutation)) return false;
-        const target = mutation.target?.nodeType === Node.ELEMENT_NODE ? mutation.target : mutation.target?.parentElement;
-        if (target?.closest?.(CARD_STYLE_CONTAINER_SELECTOR)) return true;
-        return Array.from(mutation.addedNodes || []).concat(Array.from(mutation.removedNodes || []))
-            .some(node => node?.nodeType === Node.ELEMENT_NODE && (node.matches?.('.character_select, .group_member')
-                || node.matches?.('.character_select_container') || node.id === 'rm_print_characters_block'
-                || node.id === 'rm_group_members' || node.id === 'right-nav-panel'));
-    });
 }
 
 export function setupChatRootObserver() {
