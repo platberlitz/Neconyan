@@ -2,6 +2,11 @@ name: 🐯 Miso Merge Check
 
 on:
   workflow_dispatch: # Allow to manually call this workflow
+  # PR events and workflow_run only reach this workflow once it is on the
+  # default branch, so every staging push sweeps the open pull requests instead.
+  # Remove this once the bot has been released to main.
+  push:
+    branches: [staging]
   pull_request_target:
     types: [opened, reopened, synchronize, edited, ready_for_review, labeled, unlabeled]
   pull_request_review:
@@ -39,11 +44,11 @@ jobs:
     steps:
       - name: Checkout Miso
         # Bot files come from the branch the pull request targets, never from
-        # pull request code. Staging is the base branch for every pull request.
+        # pull request code. Push and manual runs use the ref that started them.
         # https://github.com/marketplace/actions/checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || github.event.pull_request.base.ref || github.event.repository.default_branch }}
+          ref: ${{ github.event.pull_request.base.ref || github.ref }}
           sparse-checkout: .github/miso
           persist-credentials: false
 
