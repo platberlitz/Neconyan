@@ -5,6 +5,7 @@
 ### Merged Staging PRs
 - PR #211 (2026-10-18) `test(i18n): keep image tests valid once translations land`
 - PR #218 (2026-10-18) `ci(github): post Miso merge verdicts from staging`
+- PR #219 (2026-10-18) `ci(github): trigger Miso from staging pushes`
 
 ## v1.3.5
 
