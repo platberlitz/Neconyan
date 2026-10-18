@@ -8,6 +8,7 @@ const read = (...parts) => readFileSync(path.join(repoRoot, ...parts), 'utf8').r
 const welcomeSource = read('public', 'scripts', 'welcome-screen.js');
 const openaiSource = read('public', 'scripts', 'openai.js');
 const modelListSource = read('public', 'scripts', 'model-list-search.js');
+const naiSettingsSource = read('public', 'scripts', 'nai-settings.js');
 
 function welcomeFunction(name) {
     return welcomeSource.match(new RegExp(`^(?:async )?function ${name}\\([\\s\\S]*?^}`, 'm'))?.[0] ?? '';
@@ -43,17 +44,24 @@ describe('desktop startup wiring', () => {
         expect(modelListSource).toMatch(/addEventListener\('pointerdown', syncPressed/);
         expect(modelListSource).toMatch(/export function syncModelListSearchValue/);
         expect(openaiSource).toMatch(/syncModelListSearchValue\(document\.querySelector\('#model_claude_select'\)\)/);
+        expect(openaiSource).toMatch(/for \(const selector of MODEL_LIST_SEARCH_SELECTS\) \{\s*syncModelListSearchValue\(document\.querySelector\(selector\)\)/);
+        expect(openaiSource).toMatch(/syncModelListSearchValue\(document\.querySelector\('#model_ai21_select'\)\)/);
+        expect(openaiSource).toMatch(/syncModelListSearchValue\(document\.querySelector\('#model_custom_select'\)\)/);
+        expect(openaiSource).toMatch(/syncModelListSearchValue\(document\.querySelector\(selector\)\)/);
+        expect(naiSettingsSource).toMatch(/syncModelListSearchValue\(document\.querySelector\('#model_novel_select'\)\)/);
     });
 
-    test('invalidates the shared recent-chat response on chat and pin changes', () => {
-        expect(welcomeSource).toMatch(/let recentChatsDataCache = null/);
-        expect(welcomeSource).toMatch(/function invalidateRecentChats\(\)/);
-        expect(welcomeSource).toMatch(/private static #saveState|static #saveState\(state\) \{[\s\S]*?invalidateRecentChats\(\)/);
-        expect(welcomeSource).toMatch(/event_types\.MESSAGE_RECEIVED/);
-        expect(welcomeSource).toMatch(/event_types\.MESSAGE_SWIPE_DELETED/);
-        expect(welcomeSource).toMatch(/event_types\.PERSONA_CHANGED/);
-        expect(welcomeSource).toMatch(/sb:conversation-workspace-state-changed', 'neconyan:hopper-state-changed', 'neconyan:story-state-changed'\]\) \{\s*window\.addEventListener\(eventName, invalidateRecentChats\)/);
-        expect(welcomeSource).toMatch(/async function refreshWelcomeScreen[\s\S]*?invalidateRecentChats\(\)/);
+    test('shares only an in-flight recent request and fetches fresh afterwards', () => {
+        expect(welcomeSource).toMatch(/let recentChatsInFlight = null/);
+        expect(welcomeSource).not.toMatch(/recentChatsDataCache/);
+        expect(welcomeSource).not.toMatch(/recentChatsGeneration/);
+        expect(welcomeSource).toMatch(/function invalidateRecentChats\(\) \{\s*recentChatsInFlight = null;/);
+        expect(welcomeSource).toMatch(/function requestRecentChatsData\(settings, requestKey\) \{\s*const inFlight = recentChatsInFlight;/);
+        expect(welcomeSource).toMatch(/function scheduleNeconyanRailRefresh\(\{ invalidate = true \} = \{\}\) \{\s*if \(invalidate\) \{\s*invalidateRecentChats\(\);/);
+        expect(welcomeSource).toMatch(/export async function openWelcomeScreen\([^)]*\) \{\s*if \(force\) \{[\s\S]{0,200}?invalidateRecentChats\(\)/);
+        expect(welcomeSource).toMatch(/eventSource\.makeFirst\(event_types\.CHAT_CHANGED, async \(\.\.\.args\) => \{\s*invalidateRecentChats\(\);\s*await openWelcomeScreen\(\.\.\.args\);/);
+        expect(welcomeSource).toMatch(/createForegroundRefreshCoalescer\(\{/);
+        expect(welcomeSource).toMatch(/window\.addEventListener\('pageshow', requestForegroundRefresh/);
         expect(welcomeSource).not.toMatch(/VALUE_CHECK_MS/);
     });
 });
