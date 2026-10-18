@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.3.6
+
+### Merged Staging PRs
+- PR #211 (2026-10-18) `test(i18n): keep image tests valid once translations land`
+
 ## v1.3.5
 
 ### Highlights
