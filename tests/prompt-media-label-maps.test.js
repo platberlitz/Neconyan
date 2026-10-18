@@ -73,9 +73,22 @@ describe('the labels themselves', () => {
         expect(labels.reviewStatusLabel('malformed-attachment')).toBe('Anexo danificado');
         expect(labels.reviewStatusLabel('embedded-image')).toBe('Guardada dentro do ficheiro do chat');
         expect(labels.historyStageLabel({ stage: 'committed', backupAvailable: true })).toBe('Concluída');
+    });
+
+    test('a scoped key missing from the scoped table shows its English, never the value of a dictionary entry with the same English', () => {
+        env.use('pt-pt');
         // The scoped table is read for scoped keys only: the same English as a dictionary entry never gets an entry's value.
+        // The real pt-pt supplement may hold a translation of this key, so the case needs it missing from the scoped table.
+        delete env.scoped['scoped.prompt_media.HIS-02.6'];
         env.dictionary.Discarded = 'Descartado (global)';
         expect(labels.historyStageLabel({ stage: 'discarded' })).toBe('Discarded');
+    });
+
+    test('a scoped key that is present in the scoped table is read from it, not from the dictionary entry with the same English', () => {
+        env.use('pt-pt');
+        env.dictionary.Discarded = 'Descartado (global)';
+        env.scoped['scoped.prompt_media.HIS-02.6'] = 'Descartado (so deste estado)';
+        expect(labels.historyStageLabel({ stage: 'discarded' })).toBe('Descartado (so deste estado)');
     });
 });
 

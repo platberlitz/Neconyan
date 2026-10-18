@@ -150,6 +150,16 @@ test('after a catalogue write and a simulated machine fill, no scoped string rea
         // E1's seven plus the 44 of the review dialogs (E2-D 43, and CNV-28 added by the E2 fix pass).
         assert.equal(scopedKeys.length, 51, 'the freshly written catalogue holds the fifty-one scoped keys');
 
+        // 2b. The scratch copies of the pt-pt files may already hold translated scoped entries (the real ones, once they are translated).
+        //     Remove them from the scratch copies only, so the fill below makes them and the exact XX: checks stay; keep what else the
+        //     supplement held, to check the fill leaves it alone.
+        const scratchLocale = file => join(scratch, 'public', 'locales', file);
+        for (const file of ['pt-pt.json', 'neconyan/pt-pt.json']) {
+            const table = JSON.parse(readFileSync(scratchLocale(file), 'utf8'));
+            writeFileSync(scratchLocale(file), `${JSON.stringify(Object.fromEntries(Object.entries(table).filter(([key]) => !key.startsWith('scoped.'))), null, 2)}\n`);
+        }
+        const supplementBeforeFill = JSON.parse(readFileSync(scratchLocale('neconyan/pt-pt.json'), 'utf8'));
+
         // 3. Fill pt-pt with a stand-in translator. The command is set for that child process only.
         const translator = join(scratch, 'fake-translator.cjs');
         writeFileSync(translator, [
@@ -173,6 +183,10 @@ test('after a catalogue write and a simulated machine fill, no scoped string rea
         const { dictionary, scoped } = assembleLocaleData({ base, supplement, catalogue: filledCatalogue });
         const scopedEntries = Object.entries(filledCatalogue).filter(([key]) => key.startsWith('scoped.'));
         assert.equal(scopedEntries.length, 51);
+        // An entry that held a translation keeps it. An empty entry counts as not translated yet, and the fill is meant to complete it.
+        const translatedBeforeFill = Object.entries(supplementBeforeFill).filter(([, value]) => value !== '');
+        assert.ok(translatedBeforeFill.length > 0, 'the supplement held no translation before the fill, so the check below would prove nothing');
+        for (const [key, value] of translatedBeforeFill) assert.equal(supplement[key], value, `the fill changed the existing supplement entry ${key}`);
 
         // 5. The scoped strings are filled, in the scoped table only, and leave nothing behind in the matching dictionary.
         for (const [key, english] of scopedEntries) {

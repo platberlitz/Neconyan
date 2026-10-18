@@ -22,6 +22,21 @@ function todaysAssembly({ base, supplement, catalogue: source }) {
     return combined;
 }
 
+// The same inputs without any scoped entry, so the old assembly and the new one are compared on what the old one knew. Real
+// translated scoped keys (the image-choice ones) would otherwise be aliased by the old assembly and fail that comparison.
+function stripScoped({ base, supplement, catalogue: source }) {
+    const plain = table => Object.fromEntries(Object.entries(table).filter(([key]) => !isScopedKey(key)));
+    return {
+        base: plain(base),
+        supplement: plain(supplement),
+        catalogue: Object.fromEntries(Object.entries(source).filter(([key, english]) => !isScopedKey(key) && !isScopedKey(english))),
+    };
+}
+
+// The scoped table the new assembly must produce, derived from the files without calling it: the scoped entries of the merged
+// base and supplement, in the order of locale-assembly.js (base keys first with the supplement's value, then supplement-only keys).
+const expectedScoped = ({ base, supplement }) => Object.fromEntries(Object.entries({ ...base, ...supplement }).filter(([key]) => isScopedKey(key)));
+
 // Two synthetic entries: a template with two holes and a short label, each a scoped key with its own English text.
 const SYNTHETIC_ENGLISH = { 'scoped.test.template': 'Message ${0}, image ${1}', 'scoped.test.short': 'Completed' };
 const SYNTHETIC_VALUES = { 'scoped.test.template': 'Mensagem ${0}, imagem ${1}', 'scoped.test.short': 'Concluído' };
@@ -29,12 +44,15 @@ const withSynthetic = ({ base, supplement, catalogue: source }) => ({ base, supp
 const PROBES = ['Message 3, image 1', 'Message 3, alternative 2, image 1', 'Message too long for this model', 'Completed'];
 const render = (dictionary, probes = PROBES) => Object.fromEntries(probes.map(text => [text, localizeString(text, dictionary)]));
 
-test('no real dictionary holds a scoped key yet, and the catalogue holds only the image-choice ones, so the whole assembled dictionary must equal today\'s', () => {
+test('every scoped key in a real dictionary is an image-choice key of the catalogue, and the catalogue holds only the image-choice ones', () => {
     assert.ok(Object.keys(catalogue).length > 10000);
     for (const language of LANGUAGES) {
         const { base, supplement } = files[language];
         for (const [name, table] of [['base', base], ['supplement', supplement]]) {
-            assert.deepEqual(Object.keys(table).filter(isScopedKey), [], `${language} ${name} already holds a scoped key`);
+            for (const key of Object.keys(table).filter(isScopedKey)) {
+                assert.match(key, /^scoped\.prompt_media\./, `${language} ${name} holds a scoped key outside the image choices`);
+                assert.ok(Object.hasOwn(catalogue, key), `${language} ${name}: ${key} is not a key of the catalogue`);
+            }
         }
     }
     // The catalogue carries the English of each scoped key. Only the image-choice work has added any.
@@ -43,14 +61,16 @@ test('no real dictionary holds a scoped key yet, and the catalogue holds only th
     for (const key of catalogued) assert.match(key, /^scoped\.prompt_media\./);
 });
 
-test('the assembled dictionary equals today\'s byte for byte for pt-pt, it-it and de-de, and the scoped table is empty', () => {
+test('the assembled dictionary equals today\'s byte for byte for pt-pt, it-it and de-de, and the scoped table is the files\' scoped entries', () => {
     for (const language of LANGUAGES) {
         const { dictionary, scoped } = assembleLocaleData(files[language]);
-        const reference = todaysAssembly(files[language]);
+        const reference = todaysAssembly(stripScoped(files[language]));
         assert.ok(Object.keys(reference).length > 20000, `${language} reference is too small to mean anything`);
         // Key order is part of the comparison: JSON text keeps it, and deepEqual would not.
         assert.equal(JSON.stringify(dictionary), JSON.stringify(reference), `${language} dictionary differs from today's`);
-        assert.deepEqual(scoped, {});
+        const expected = expectedScoped(files[language]);
+        assert.deepEqual(scoped, expected);
+        assert.equal(JSON.stringify(scoped), JSON.stringify(expected), `${language} scoped table is in another order`);
         // The real catalogue's scoped keys, and the English they carry, stay out of the matching dictionary.
         for (const [key, english] of Object.entries(catalogue).filter(([key]) => isScopedKey(key))) {
             assert.ok(!Object.hasOwn(dictionary, key), `${language}: ${key} is in the dictionary`);
@@ -64,7 +84,7 @@ test('scoped entries land in the scoped table only, and neither the key nor its 
     for (const language of LANGUAGES) {
         const plain = assembleLocaleData(files[language]);
         const { dictionary, scoped } = assembleLocaleData(withSynthetic(files[language]));
-        assert.deepEqual(scoped, SYNTHETIC_VALUES);
+        assert.deepEqual(scoped, { ...expectedScoped(files[language]), ...SYNTHETIC_VALUES });
         for (const [key, english] of Object.entries(SYNTHETIC_ENGLISH)) {
             assert.ok(!Object.hasOwn(dictionary, key), `${language}: ${key} is in the dictionary`);
             assert.ok(!Object.hasOwn(dictionary, english), `${language}: the English alias of ${key} is in the dictionary`);
@@ -86,8 +106,8 @@ test('matching is unaffected: unrelated page text renders exactly as it does wit
 
 test('red-green: with the old assembly the synthetic entries are aliased and the same page text changes', () => {
     for (const language of LANGUAGES) {
-        const without = render(todaysAssembly(files[language]));
-        const aliased = render(todaysAssembly(withSynthetic(files[language])));
+        const without = render(todaysAssembly(stripScoped(files[language])));
+        const aliased = render(todaysAssembly(withSynthetic(stripScoped(files[language]))));
         assert.equal(aliased['Message 3, image 1'], 'Mensagem 3, imagem 1', `${language}: the template alias was not made`);
         assert.equal(aliased['Message 3, alternative 2, image 1'], 'Mensagem 3, alternative 2, imagem 1', `${language}: the hole did not span the extra words`);
         assert.equal(aliased.Completed, 'Concluído', `${language}: the short alias was not made`);

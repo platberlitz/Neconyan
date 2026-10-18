@@ -45,7 +45,10 @@ test('the interface catalogue collects captions from helpers, fallbacks, templat
     const panelCaptions = entries.slice(entries.findIndex(([key]) => key === 'Filter and organise'));
     assert.ok(panelCaptions.length > 70);
     for (const [key, value] of panelCaptions) {
-        assert.deepEqual(slots(value), slots(key), `changed placeholders: ${key}`);
+        // A scoped key is a name, not the caption: its holes are those of its English text in the catalogue.
+        if (key.startsWith('scoped.')) assert.equal(typeof english[key], 'string', `scoped key missing from the catalogue: ${key}`);
+        const caption = key.startsWith('scoped.') ? english[key] : key;
+        assert.deepEqual(slots(value), slots(caption), `changed placeholders: ${key}`);
     }
     for (const key of ['Test keys', 'Unfiled', 'All books', 'Pawspective', 'No automatic agents enabled', 'depth ${0}', 'Order ${0}', 'rewrites reply', 'Snapshot everything now']) {
         assert.ok(german[key] && german[key] !== key, `missing German panel caption: ${key}`);
