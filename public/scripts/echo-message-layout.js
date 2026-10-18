@@ -54,7 +54,9 @@ function write(message, name, value) {
 }
 export function clearEchoMessage(message) {
     if (!message) return;
-    message.classList.remove('nn-echo-layout', 'nn-echo-cutoff');
+    if (message.classList.contains('nn-echo-layout') || message.classList.contains('nn-echo-cutoff')) {
+        message.classList.remove('nn-echo-layout', 'nn-echo-cutoff');
+    }
     for (const name of properties) message.style.removeProperty('--nn-echo-' + name);
     message.querySelector(':scope > .nn-echo-header-plate')?.remove();
     const sentinel = message.querySelector(':scope > .nn-echo-header-bottom');
@@ -63,7 +65,7 @@ export function clearEchoMessage(message) {
     clearEchoFooter(message);
 }
 function clearEchoFooter(message) {
-    message.classList.remove('nn-echo-footer-adjacent');
+    if (message.classList.contains('nn-echo-footer-adjacent')) message.classList.remove('nn-echo-footer-adjacent');
     for (const element of message.querySelectorAll?.('.nn-echo-reading-footer, .nn-echo-footer-joined, .nn-echo-joined-end, .nn-echo-overlay-footer, .nn-echo-reserves-footer') || []) {
         element.classList.remove('nn-echo-reading-footer', 'nn-echo-footer-joined', 'nn-echo-joined-end', 'nn-echo-overlay-footer', 'nn-echo-reserves-footer');
         for (const property of ['footer-space', 'footer-top', 'footer-left', 'footer-width']) element.style.removeProperty('--nn-echo-' + property);
