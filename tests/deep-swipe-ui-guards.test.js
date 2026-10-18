@@ -20,6 +20,7 @@ beforeEach(async () => {
     }));
     await jest.unstable_mockModule('../public/script.js', () => ({
         isGenerating: () => false,
+        restoreHeldChatReadingPosition: jest.fn(),
     }));
 });
 
