@@ -10,10 +10,12 @@ import sanitize from 'sanitize-filename';
 import _ from 'lodash';
 
 import { acquireChatFileLock, withChatFileLocks } from '../chat-file-lock.js';
+import { cachedFilePath, createFileSummaryCache, createLimiter, fileStatIdentity, sameFileStatIdentity } from '../file-summary-cache.js';
+import { collectRecentChatFiles, selectRecentChatFiles } from '../chat-library-inventory.js';
 import validateAvatarUrlMiddleware from '../middleware/validateFileName.js';
 import { renameChatFile } from '../chat-rename.js';
 import { captureBranchMemory, chatMemoryExists, removeChatMemory, renameChatMemory } from '../mewmory/store.js';
-import { confirmRoleplayAccount, readRoleplayFile, readRoleplayWriteJournal, roleplayAvatarOwner, roleplayError, roleplayHash, roleplayLease, roleplayPathKey, saveRoleplayAccount, withRoleplayAccount, withUntrackedRoleplayFiles } from '../roleplay-store.js';
+import { confirmRoleplayAccount, inspectRoleplayFileStat, readRoleplayFile, readRoleplayWriteJournal, roleplayAvatarOwner, roleplayError, roleplayHash, roleplayLease, roleplayPathKey, saveRoleplayAccount, withRoleplayAccount, withUntrackedRoleplayFiles } from '../roleplay-store.js';
 import { normaliseRoleplayLocator, readRoleplayChatLocked, roleplayChatPath, ROLEPLAY_METADATA_KEY } from '../generation/roleplay-source.js';
 import { cleanupRoleplayReceiptsLocked, commitRoleplayLifecycleLocked, commitSingleChatImport, forgetRoleplayReceiptLocked, commitSingleChatWriteLocked, repairSingleChatWriteLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
 import {
@@ -972,6 +974,171 @@ function repairRejectedChatRecoverySnapshot(recoveryTarget, rejectedSnapshotData
  * @property {boolean} [match] - Whether the chat matches the search criteria
  */
 
+// Chat selectors refresh on every message event. A summary is reused while the
+// file's change-detection identity matches, so keep plain listing snapshots and
+// bound both the cache and the number of files parsed at once. This is not a
+// byte hash: a writer that restored every identity field could defeat it.
+const CHAT_INFO_CACHE_MAX_BYTES = 32 * 1024 * 1024;
+const CHAT_INFO_CACHE_MAX_ENTRIES = 4096;
+const CHAT_INFO_PARSE_CONCURRENCY = 8;
+const chatInfoCache = createFileSummaryCache({ maxBytes: CHAT_INFO_CACHE_MAX_BYTES, maxEntries: CHAT_INFO_CACHE_MAX_ENTRIES });
+const chatInfoParseLimit = createLimiter(CHAT_INFO_PARSE_CONCURRENCY);
+
+/** @type {Map<string, Promise<{kind: 'empty' | 'valid' | 'corrupt', parsed?: object}>>} */
+const chatInfoInFlight = new Map();
+
+function chatInfoCacheKey(pathToFile, withMetadata, previewLimit) {
+    // The option tuple is part of the key: a plain listing must never answer a
+    // metadata or preview request.
+    return `${cachedFilePath(pathToFile)}\0${withMetadata ? 'metadata' : 'plain'}\0${previewLimit}`;
+}
+
+function chatInfoInFlightKey(cacheKey, identity) {
+    return `${cacheKey}\0${identity.dev}\0${identity.ino}\0${identity.size}\0${identity.mtimeMs}\0${identity.ctimeMs}`;
+}
+
+/**
+ * Parses one chat file into the fields a listing needs. Matcher results are
+ * deliberately computed by the caller and never stored: they depend on both the
+ * query and the whole message history, not on the file identity alone.
+ * @param {string} pathToFile
+ * @param {import('node:fs').Stats} stats Stat of the bytes being read
+ * @param {boolean} withMetadata
+ * @param {number} previewLimit
+ * @param {ChatMatchFunction|null} matcher
+ * @returns {Promise<{kind: 'empty' | 'valid' | 'corrupt', parsed?: object}>}
+ */
+async function parseChatSummary(pathToFile, stats, withMetadata, previewLimit, matcher) {
+    const hasMatcher = (typeof matcher === 'function');
+    const fileStream = fs.createReadStream(pathToFile);
+    const fileClosed = new Promise(resolve => fileStream.once('close', resolve));
+    const rl = readline.createInterface({
+        input: fileStream,
+        crlfDelay: Infinity,
+    });
+
+    return await new Promise((res, rej) => {
+        let lastLine;
+        let itemCounter = 0;
+        let hasAnyMatch = false;
+        let matchBuffer = [];
+        let messageCharacters = 0;
+        const previewMessages = [];
+        const metadata = {};
+
+        fileStream.once('error', rej);
+        rl.once('error', rej);
+
+        rl.on('line', (line) => {
+            const isMessageLine = itemCounter > 0;
+            let jsonData = null;
+
+            if (withMetadata && !isMessageLine) {
+                jsonData = tryParse(line);
+                if (jsonData && _.isObjectLike(jsonData.chat_metadata)) {
+                    metadata.chat_metadata = jsonData.chat_metadata;
+                }
+            }
+
+            if (isMessageLine) {
+                jsonData = tryParse(line);
+                if (jsonData) {
+                    messageCharacters += String(jsonData.mes ?? '').length;
+
+                    // Skip matching if any match was already found
+                    if (hasMatcher && !hasAnyMatch) {
+                        matchBuffer.push(jsonData.mes || '');
+                        if (matcher(matchBuffer)) {
+                            hasAnyMatch = true;
+                            matchBuffer = [];
+                        }
+                    }
+
+                    if (previewLimit > 0) {
+                        previewMessages.push(jsonData);
+                        if (previewMessages.length > previewLimit) {
+                            previewMessages.shift();
+                        }
+                    }
+                }
+            }
+            itemCounter++;
+            lastLine = line;
+        });
+        rl.on('close', () => {
+            rl.close();
+
+            if (!lastLine) {
+                res({ kind: 'empty' });
+                return;
+            }
+
+            const jsonData = tryParse(lastLine);
+            if (jsonData && (jsonData.name || jsonData.character_name || jsonData.chat_metadata)) {
+                const parsed = {
+                    chat_items: (itemCounter - 1),
+                    // Neconyan: expose a cheap chat length indicator for chat selectors.
+                    token_estimate: Math.round(messageCharacters / 4),
+                    mes: jsonData.mes || '[The message is empty]',
+                    last_mes: jsonData.send_date || new Date(Math.round(stats.mtimeMs)).toISOString(),
+                    match: hasMatcher ? hasAnyMatch : true,
+                    ...metadata,
+                };
+                if (previewLimit > 0) {
+                    parsed.preview_messages = previewMessages;
+                }
+                res({ kind: 'valid', parsed });
+            } else {
+                res({ kind: 'corrupt' });
+            }
+        });
+    }).finally(async () => {
+        // readline finishes before the file descriptor necessarily closes.
+        // Keep the parse slot occupied through close, including read errors.
+        rl.close();
+        fileStream.destroy();
+        await fileClosed;
+    });
+}
+
+/**
+ * A cached summary is stored only when the file still has the change-detection
+ * identity that was statted before the read. A normal write during the read
+ * changes an identity field, so it is not cached; this is not a byte hash.
+ * @param {string} cacheKey
+ * @param {string} pathToFile
+ * @param {import('node:fs').Stats} stats
+ * @param {boolean} withMetadata
+ * @param {number} previewLimit
+ * @returns {Promise<{kind: 'empty' | 'valid' | 'corrupt', parsed?: object}>}
+ */
+async function loadChatSummary(cacheKey, pathToFile, stats, withMetadata, previewLimit) {
+    const identity = fileStatIdentity(stats);
+    const inFlightKey = chatInfoInFlightKey(cacheKey, identity);
+    let pending = chatInfoInFlight.get(inFlightKey);
+    if (!pending) {
+        pending = chatInfoParseLimit(async () => {
+            const outcome = await parseChatSummary(pathToFile, stats, withMetadata, previewLimit, null);
+            try {
+                const after = await fs.promises.stat(pathToFile);
+                if (sameFileStatIdentity(identity, after)) {
+                    chatInfoCache.set(cacheKey, identity, outcome);
+                }
+            } catch {
+                // The read result is still valid for this caller; a file removed
+                // during the read is simply not cached.
+            }
+            return outcome;
+        }).finally(() => {
+            if (chatInfoInFlight.get(inFlightKey) === pending) {
+                chatInfoInFlight.delete(inFlightKey);
+            }
+        });
+        chatInfoInFlight.set(inFlightKey, pending);
+    }
+    return pending;
+}
+
 /**
  * Reads the information from a chat file.
  * @param {string} pathToFile - Path to the chat file
@@ -987,6 +1154,7 @@ export async function getChatInfo(pathToFile, additionalData = {}, withMetadata 
         const parsedPath = path.parse(pathToFile);
         const stats = await fs.promises.stat(pathToFile);
         const hasMatcher = (typeof matcher === 'function');
+        const previewLimit = Math.max(0, Number(previewMessageLimit) || 0);
 
         const chatData = {
             match: false,
@@ -997,6 +1165,8 @@ export async function getChatInfo(pathToFile, additionalData = {}, withMetadata 
             token_estimate: 0,
             mes: '[The chat is empty]',
             last_mes: stats.mtimeMs,
+            // Caller labels are applied per request and never change parsing, so
+            // they are deliberately not part of the cache key.
             ...additionalData,
         };
 
@@ -1004,87 +1174,30 @@ export async function getChatInfo(pathToFile, additionalData = {}, withMetadata 
             return chatData;
         }
 
-        const fileStream = fs.createReadStream(pathToFile);
-        const rl = readline.createInterface({
-            input: fileStream,
-            crlfDelay: Infinity,
-        });
+        const cacheKey = chatInfoCacheKey(pathToFile, withMetadata, previewLimit);
+        let outcome;
+        let privateSnapshot = false;
+        if (!hasMatcher) {
+            outcome = chatInfoCache.get(cacheKey, fileStatIdentity(stats));
+            // The cache returns a private copy, so a caller may mutate it.
+            privateSnapshot = Boolean(outcome);
+        }
+        if (!outcome) {
+            outcome = hasMatcher
+                ? await chatInfoParseLimit(() => parseChatSummary(pathToFile, stats, withMetadata, previewLimit, matcher))
+                : await loadChatSummary(cacheKey, pathToFile, stats, withMetadata, previewLimit);
+        }
 
-        return await new Promise((res, rej) => {
-            let lastLine;
-            let itemCounter = 0;
-            let hasAnyMatch = false;
-            let matchBuffer = [];
-            let messageCharacters = 0;
-            const previewMessages = [];
-            const previewLimit = Math.max(0, Number(previewMessageLimit) || 0);
-
-            fileStream.once('error', rej);
-            rl.once('error', rej);
-
-            rl.on('line', (line) => {
-                const isMessageLine = itemCounter > 0;
-                let jsonData = null;
-
-                if (withMetadata && !isMessageLine) {
-                    jsonData = tryParse(line);
-                    if (jsonData && _.isObjectLike(jsonData.chat_metadata)) {
-                        chatData.chat_metadata = jsonData.chat_metadata;
-                    }
-                }
-
-                if (isMessageLine) {
-                    jsonData = tryParse(line);
-                    if (jsonData) {
-                        messageCharacters += String(jsonData.mes ?? '').length;
-
-                        // Skip matching if any match was already found
-                        if (hasMatcher && !hasAnyMatch) {
-                            matchBuffer.push(jsonData.mes || '');
-                            if (matcher(matchBuffer)) {
-                                hasAnyMatch = true;
-                                matchBuffer = [];
-                            }
-                        }
-
-                        if (previewLimit > 0) {
-                            previewMessages.push(jsonData);
-                            if (previewMessages.length > previewLimit) {
-                                previewMessages.shift();
-                            }
-                        }
-                    }
-                }
-                itemCounter++;
-                lastLine = line;
-            });
-            rl.on('close', () => {
-                rl.close();
-
-                if (!lastLine) {
-                    res(chatData);
-                    return;
-                }
-
-                const jsonData = tryParse(lastLine);
-                if (jsonData && (jsonData.name || jsonData.character_name || jsonData.chat_metadata)) {
-                    chatData.chat_items = (itemCounter - 1);
-                    // Neconyan: expose a cheap chat length indicator for chat selectors.
-                    chatData.token_estimate = Math.round(messageCharacters / 4);
-                    chatData.mes = jsonData.mes || '[The message is empty]';
-                    chatData.last_mes = jsonData.send_date || new Date(Math.round(stats.mtimeMs)).toISOString();
-                    chatData.match = hasMatcher ? hasAnyMatch : true;
-                    if (previewLimit > 0) {
-                        chatData.preview_messages = previewMessages;
-                    }
-
-                    res(chatData);
-                } else {
-                    console.warn('Found an invalid or corrupted chat file:', pathToFile);
-                    res({});
-                }
-            });
-        });
+        if (outcome.kind === 'corrupt') {
+            console.warn('Found an invalid or corrupted chat file:', pathToFile);
+            return {};
+        }
+        if (outcome.kind === 'valid') {
+            // A coalesced miss shares one parsed outcome between concurrent
+            // callers; every caller needs its own nested metadata and previews.
+            Object.assign(chatData, privateSnapshot ? outcome.parsed : structuredClone(outcome.parsed));
+        }
+        return chatData;
     } catch (error) {
         console.error('Failed to read chat info:', pathToFile, error);
         return {};
@@ -1288,7 +1401,9 @@ function loadProtectedChat(request, group) {
             const legacy = loadLegacyChatForEnrolment(lease, target);
             if (legacy.status !== 'ok' && legacy.status !== 'missing') throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'The chat needs recovery.', 422);
         }
-        const file = readRoleplayFile(target.activePath, ROLEPLAY_CHAT_MAX_BYTES, { allowMissingParent: true });
+        // Presence and path safety only. readRoleplayChatLocked re-reads and
+        // verifies the exact bytes, so this probe must not read the file.
+        const file = inspectRoleplayFileStat(target.activePath, ROLEPLAY_CHAT_MAX_BYTES, { allowMissingParent: true });
         if (!file && !slot?.instanceId && request.body.allow_create === true) {
             return { records: [], evidence: { account: currentAccount, locator, vacancy: slot?.generation ?? 0 } };
         }
@@ -2373,131 +2488,13 @@ router.post('/search', validateAvatarUrlMiddleware, async function (request, res
 
 router.post('/recent', async function (request, response) {
     try {
-        /** @typedef {{pngFile?: string, groupId?: string, filePath: string, mtime: number}} ChatFile */
-        /** @type {ChatFile[]} */
-        const allChatFiles = [];
         /** @type {import('../../public/scripts/welcome-screen.js').PinnedChat[]} */
         const pinnedChats = Array.isArray(request.body.pinned) ? request.body.pinned : [];
-
-        const getCharacterChatFiles = async () => {
-            const pngDirents = await fs.promises.readdir(request.user.directories.characters, { withFileTypes: true });
-            const pngFiles = pngDirents.filter(e => e.isFile() && path.extname(e.name) === '.png').map(e => e.name);
-
-            for (const pngFile of pngFiles) {
-                const chatsDirectory = pngFile.replace('.png', '');
-                const pathToChats = path.join(request.user.directories.chats, chatsDirectory);
-                if (!fs.existsSync(pathToChats)) {
-                    continue;
-                }
-                const pathStats = await fs.promises.stat(pathToChats);
-                if (pathStats.isDirectory()) {
-                    const chatFiles = await fs.promises.readdir(pathToChats);
-                    const jsonlFiles = chatFiles.filter(file => path.extname(file) === '.jsonl');
-
-                    for (const file of jsonlFiles) {
-                        const filePath = path.join(pathToChats, file);
-                        const stats = await fs.promises.stat(filePath);
-                        allChatFiles.push({ pngFile, filePath, mtime: stats.mtimeMs });
-                    }
-                }
-            }
-        };
-
-        const getGroupChatFiles = async () => {
-            const groupDirents = await fs.promises.readdir(request.user.directories.groups, { withFileTypes: true });
-            const groups = groupDirents.filter(e => e.isFile() && path.extname(e.name) === '.json').map(e => e.name);
-
-            for (const group of groups) {
-                try {
-                    const groupPath = path.join(request.user.directories.groups, group);
-                    const groupContents = await fs.promises.readFile(groupPath, 'utf8');
-                    const groupData = JSON.parse(groupContents);
-
-                    if (Array.isArray(groupData.chats)) {
-                        for (const chat of groupData.chats) {
-                            const filePath = path.join(request.user.directories.groupChats, `${chat}.jsonl`);
-                            if (!fs.existsSync(filePath)) {
-                                continue;
-                            }
-                            const stats = await fs.promises.stat(filePath);
-                            allChatFiles.push({ groupId: groupData.id, filePath, mtime: stats.mtimeMs });
-                        }
-                    }
-                } catch (error) {
-                    // Skip group files that can't be read or parsed
-                    continue;
-                }
-            }
-        };
-
-        const getRootChatFiles = async () => {
-            const dirents = await fs.promises.readdir(request.user.directories.chats, { withFileTypes: true });
-            const chatFiles = dirents.filter(e => e.isFile() && path.extname(e.name) === '.jsonl').map(e => e.name);
-
-            for (const file of chatFiles) {
-                const filePath = path.join(request.user.directories.chats, file);
-                const stats = await fs.promises.stat(filePath);
-                allChatFiles.push({ filePath, mtime: stats.mtimeMs });
-            }
-        };
-
-        await Promise.allSettled([getCharacterChatFiles(), getGroupChatFiles(), getRootChatFiles()]);
+        const allChatFiles = await collectRecentChatFiles(request.user.directories);
 
         const parsedMax = parseInt(request.body.max ?? Number.MAX_SAFE_INTEGER);
         const max = (Number.isFinite(parsedMax) ? parsedMax : Number.MAX_SAFE_INTEGER) + pinnedChats.length;
-        const isPinned = (/** @type {ChatFile} */ chatFile) => pinnedChats.some(p => p.file_name === path.basename(chatFile.filePath) && (p.avatar === chatFile.pngFile || p.group === chatFile.groupId));
-        const sortRecentChatFiles = (/** @type {ChatFile} */ a, /** @type {ChatFile} */ b) => {
-            const isAPinned = isPinned(a);
-            const isBPinned = isPinned(b);
-
-            if (isAPinned && !isBPinned) return -1;
-            if (!isAPinned && isBPinned) return 1;
-
-            return b.mtime - a.mtime;
-        };
-        /**
-         * Keeps Recent Chats filters populated when one chat category dominates the newest files.
-         * @param {ChatFile[]} sortedChatFiles Chat files sorted by recency
-         * @param {number} limit Maximum number of files to include per recent-chat bucket
-         * @returns {ChatFile[]} Balanced recent chat files
-         */
-        const getBalancedRecentChatFiles = (sortedChatFiles, limit) => {
-            if (limit >= sortedChatFiles.length) {
-                return sortedChatFiles;
-            }
-
-            /** @type {Map<string, ChatFile>} */
-            const selectedChats = new Map();
-            const addChat = (/** @type {ChatFile} */ chatFile) => {
-                selectedChats.set(`${chatFile.groupId || ''}\0${chatFile.pngFile || ''}\0${chatFile.filePath}`, chatFile);
-            };
-
-            sortedChatFiles.slice(0, limit).forEach(addChat);
-
-            // Neconyan: include the same recent depth per filter so Individual does not disappear behind a busy Groups list.
-            let groupCount = 0;
-            let individualCount = 0;
-
-            for (const chatFile of sortedChatFiles) {
-                if (chatFile.groupId) {
-                    if (groupCount < limit) {
-                        addChat(chatFile);
-                        groupCount++;
-                    }
-                } else if (individualCount < limit) {
-                    addChat(chatFile);
-                    individualCount++;
-                }
-
-                if (groupCount >= limit && individualCount >= limit) {
-                    break;
-                }
-            }
-
-            return Array.from(selectedChats.values()).sort(sortRecentChatFiles);
-        };
-        const sortedChatFiles = allChatFiles.sort(sortRecentChatFiles);
-        const recentChats = getBalancedRecentChatFiles(sortedChatFiles, max);
+        const recentChats = selectRecentChatFiles(allChatFiles, { max, pinnedChats });
         const jsonFilesPromise = recentChats.map((file) => {
             const withMetadata = !!request.body.metadata;
             const previewMessageLimit = Math.max(0, Math.min(20, Number(request.body.previewMessages) || 0));

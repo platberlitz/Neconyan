@@ -15,6 +15,7 @@ import { accountStorage } from './util/AccountStorage.js';
 import { getAssistantGender, getAssistantTourSrc, setAssistantGender } from './neconyan-assistant-art.js';
 import { clamp, flashHighlight, getSortableDelay, isElementInViewport, sortMoments, timestampToMoment } from './utils.js';
 import { revealChat, revealUi } from './ui-motion.js';
+import { createForegroundRefreshCoalescer } from './mobile-shell-lifecycle/index.js';
 
 const assistantAvatarKey = 'assistant';
 const assistantVariantKey = 'neconyanAssistantVariant';
@@ -30,6 +31,11 @@ let activeTutorialPanel = null;
 let welcomeRequestId = 0;
 let assistantCatalogPromise = null;
 let assistantSelectionPending = false;
+
+// Home and the rail can ask for the same recent list during startup. Share only
+// the request already in flight; once it completes, the next consumer fetches
+// fresh data. No completed browser cache and no time-based expiry.
+let recentChatsInFlight = null;
 
 const AGENT_MESSAGE_EXTRA_KEY = 'inChatAgents';
 const AGENT_PROMPT_TRANSFORM_HISTORY_KEY = 'inChatAgentTransformHistory';
@@ -83,6 +89,7 @@ function getRecentChatsSettings() {
  */
 function saveRecentChatsSettings(settings) {
     accountStorage.setItem(recentChatsSettingsKey, JSON.stringify(settings));
+    invalidateRecentChats();
 }
 
 /**
@@ -152,6 +159,7 @@ class PinnedChatsManager {
     static #saveState(state) {
         this.#cachedState = state;
         accountStorage.setItem(pinnedChatsKey, JSON.stringify(state));
+        invalidateRecentChats();
     }
 
     /**
@@ -993,6 +1001,10 @@ async function handleWelcomeAction(button) {
  * @returns {Promise<void>}
  */
 export async function openWelcomeScreen({ force = false, expand = false } = {}) {
+    if (force) {
+        // An explicit Home open must not join an older request.
+        invalidateRecentChats();
+    }
     const requestId = ++welcomeRequestId;
     const currentChatId = getCurrentChatId();
     const hasActiveChat = currentChatId !== undefined || chat.length > 0;
@@ -1501,7 +1513,10 @@ function applyNeconyanRailOrder() {
             else button.removeAttribute('aria-keyshortcuts');
         }
         host.classList.toggle('neconyan-rail-reordering', enabled);
-        $(host).sortable('option', 'disabled', !enabled);
+        const group = neconyanRailGroups[name];
+        if (group?.sortableReady) {
+            $(host).sortable('option', 'disabled', !enabled);
+        }
     }
     document.querySelectorAll('[data-sb-rail-reorder-input]').forEach(input => {
         input.checked = enabled;
@@ -1539,7 +1554,8 @@ function initializeNeconyanRailOrder(rail) {
     })) {
         const host = rail.querySelector(selector);
         const buttons = new Map([...host.children].map(button => [button.dataset.neconyanRoute || button.dataset.neconyanChatMode, button]));
-        neconyanRailGroups[name] = { host, buttons };
+        const group = { host, buttons, sortableReady: false };
+        neconyanRailGroups[name] = group;
         let suppressClickUntil = 0;
         const saveOrder = button => {
             neconyanRailOrder[name] = [...host.children].map(child => child.dataset.neconyanRoute || child.dataset.neconyanChatMode);
@@ -1575,20 +1591,39 @@ function initializeNeconyanRailOrder(rail) {
             button.scrollIntoView({ block: 'nearest' });
             saveOrder(button);
         });
-        $(host).sortable({
-            items: '> .neconyan-rail-button', handle: '.neconyan-rail-grip', cancel: '',
-            axis: 'y', containment: 'parent', delay: getSortableDelay(),
-            disabled: true, tolerance: 'pointer',
-            placeholder: 'neconyan-rail-placeholder',
-            start: (_event, ui) => {
-                ui.placeholder.outerHeight(ui.item.outerHeight());
-                suppressClickUntil = Infinity;
-            },
-            stop: (_event, ui) => {
-                suppressClickUntil = Date.now() + 400;
-                saveOrder(ui.item[0]);
-            },
-        });
+        const ensureSortable = () => {
+            // jQuery UI creates its drag machinery, including position
+            // measurement, at construction time. Build it only when a reorder
+            // gesture actually starts, not on every page load.
+            if (!neconyanRailOrder.enabled || group.sortableReady) {
+                return;
+            }
+            $(host).sortable({
+                items: '> .neconyan-rail-button', handle: '.neconyan-rail-grip', cancel: '',
+                axis: 'y', containment: 'parent', delay: getSortableDelay(),
+                disabled: false, tolerance: 'pointer',
+                placeholder: 'neconyan-rail-placeholder',
+                start: (_event, ui) => {
+                    ui.placeholder.outerHeight(ui.item.outerHeight());
+                    suppressClickUntil = Infinity;
+                },
+                stop: (_event, ui) => {
+                    suppressClickUntil = Date.now() + 400;
+                    saveOrder(ui.item[0]);
+                },
+            });
+            group.sortableReady = true;
+        };
+        // Capture runs before jQuery UI's own mousedown listener and before
+        // Touch Punch's synthetic click, so the first drag is not lost.
+        const ensureSortableFromGrip = event => {
+            if (event.target?.closest?.('.neconyan-rail-grip')) {
+                ensureSortable();
+            }
+        };
+        host.addEventListener('pointerdown', ensureSortableFromGrip, true);
+        host.addEventListener('mousedown', ensureSortableFromGrip, true);
+        host.addEventListener('touchstart', ensureSortableFromGrip, { capture: true, passive: true });
     }
     applyNeconyanRailOrder();
 }
@@ -1902,10 +1937,13 @@ function renderNeconyanRailRecentChats(chats) {
     }
 }
 
-async function refreshNeconyanRail() {
+async function refreshNeconyanRail({ force = false } = {}) {
     const rail = document.getElementById('neconyan-workspace-rail');
     if (!(rail instanceof HTMLElement)) {
         return;
+    }
+    if (force) {
+        invalidateRecentChats();
     }
 
     const refreshId = ++neconyanRailRefreshId;
@@ -1919,7 +1957,10 @@ async function refreshNeconyanRail() {
     }
 }
 
-function scheduleNeconyanRailRefresh() {
+function scheduleNeconyanRailRefresh({ invalidate = true } = {}) {
+    if (invalidate) {
+        invalidateRecentChats();
+    }
     window.clearTimeout(neconyanRailRefreshTimer);
     neconyanRailRefreshTimer = window.setTimeout(() => {
         neconyanRailRefreshTimer = 0;
@@ -2057,7 +2098,7 @@ function ensureNeconyanRail() {
     rail.querySelectorAll('[data-neconyan-route="search"], [data-neconyan-route="settings"]').forEach(button => {
         button.addEventListener('click', () => activateNeconyanRailRoute(button.dataset.neconyanRoute));
     });
-    rail.querySelector('[data-neconyan-refresh-recent]').addEventListener('click', () => void refreshNeconyanRail());
+    rail.querySelector('[data-neconyan-refresh-recent]').addEventListener('click', () => void refreshNeconyanRail({ force: true }));
     rail.querySelector('[data-neconyan-open-archive]').addEventListener('click', () => openNeconyanChatArchive());
     rail.querySelector('[data-neconyan-edit-quick-actions]').addEventListener('click', () => globalThis.NeconyanShell?.editQuickActions?.());
     rail.querySelector('#neconyan-sidebar-toggle').addEventListener('click', () => {
@@ -2442,6 +2483,7 @@ async function deleteRecentGroupChat(groupId, fileName) {
  * @returns {Promise<void>}
  */
 async function refreshWelcomeScreen({ flashChat = null } = {}) {
+    invalidateRecentChats();
     const chatElement = getWelcomeHost();
     if (!chatElement) {
         console.error('Chat element not found');
@@ -2454,8 +2496,9 @@ async function refreshWelcomeScreen({ flashChat = null } = {}) {
     const recentChatFilter = currentPanel instanceof HTMLElement ? currentPanel.dataset.recentChatFilter || 'all' : 'all';
     const expandedRecentChatFilters = currentPanel instanceof HTMLElement ? currentPanel.dataset.expandedRecentChatFilters || '' : '';
 
-    await openWelcomeScreen({ force: true });
-    scheduleNeconyanRailRefresh();
+    const homePromise = openWelcomeScreen({ force: true });
+    void refreshNeconyanRail();
+    await homePromise;
 
     const nextPanel = getWelcomeHost()?.querySelector('.welcomePanel');
     if (nextPanel instanceof HTMLElement) {
@@ -2590,6 +2633,99 @@ function isAgentRecentChat(chatData) {
     ));
 }
 
+/**
+ * Drops the request currently in flight. Completed responses are never kept, so
+ * there is no permanent cache to expire and no time-based TTL.
+ */
+function invalidateRecentChats() {
+    recentChatsInFlight = null;
+}
+
+/**
+ * Identifies one server request shape. Account and option changes must not join
+ * an older in-flight request.
+ * @param {{maxDisplayed: number}} settings
+ * @returns {string}
+ */
+function getRecentChatsRequestKey(settings) {
+    const pinnedKey = PinnedChatsManager.getAll()
+        .map(pinnedChat => PinnedChatsManager.getKey(pinnedChat))
+        .sort()
+        .join('\0');
+    return [
+        getCurrentUserHandle(),
+        settings.maxDisplayed,
+        shouldSeparateAgentRecentChats() ? 'agents' : 'plain',
+        pinnedKey,
+    ].join('\u0001');
+}
+
+/**
+ * @param {{maxDisplayed: number}} settings
+ * @returns {Promise<Array>}
+ */
+async function getRecentConversationChats(settings) {
+    try {
+        const conversationModule = await import('./neconyan-conversation.js');
+        return conversationModule.getConversationWelcomeChats?.({ max: settings.maxDisplayed }) || [];
+    } catch (error) {
+        console.warn('Failed to load Conversation Mode recent chats', error);
+        return [];
+    }
+}
+
+/**
+ * Fetches only the server list. Character names, thumbnails, pins and
+ * Conversation entries are rebuilt on every read from current local state, so
+ * this response can be shared safely between Home and the rail.
+ * @param {{maxDisplayed: number}} settings
+ * @returns {Promise<Array | null>}
+ */
+async function fetchRecentChatsData(settings) {
+    try {
+        const response = await fetch('/api/chats/recent', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ max: settings.maxDisplayed, pinned: PinnedChatsManager.getAll(), metadata: shouldSeparateAgentRecentChats(), previewMessages: shouldSeparateAgentRecentChats() ? 8 : 0 }),
+            cache: 'no-cache',
+            signal: AbortSignal.timeout(HOME_REQUEST_TIMEOUT_MS),
+        });
+        if (!response.ok) {
+            console.warn('Failed to fetch recent character chats');
+            return null;
+        }
+        /** @type {RecentChat[]} */
+        const data = await response.json();
+        return Array.isArray(data) ? data : null;
+    } catch (error) {
+        // A slow or dropped request must not keep Home from opening.
+        console.warn('Recent character chats did not load', error);
+        return null;
+    }
+}
+
+/**
+ * Joins the request already in flight for the same account and option shape.
+ * Once it completes the next consumer starts a fresh request.
+ * @param {{maxDisplayed: number}} settings
+ * @param {string} requestKey
+ * @returns {Promise<Array | null>}
+ */
+function requestRecentChatsData(settings, requestKey) {
+    const inFlight = recentChatsInFlight;
+    if (inFlight?.key === requestKey) {
+        return inFlight.promise.then(data => Array.isArray(data) ? structuredClone(data) : data);
+    }
+
+    const promise = fetchRecentChatsData(settings).finally(() => {
+        if (recentChatsInFlight?.promise === promise) {
+            recentChatsInFlight = null;
+        }
+    });
+    recentChatsInFlight = { key: requestKey, promise };
+    return promise.then(data => Array.isArray(data) ? structuredClone(data) : data);
+}
+
 async function getRecentChats() {
     const settings = getRecentChatsSettings();
     const finalizeRecentChats = chats => chats
@@ -2599,45 +2735,23 @@ async function getRecentChats() {
             hidden: index >= settings.collapsedDisplayed,
             pinned: PinnedChatsManager.isPinned(recentChat),
         }));
-    const getConversationChats = async () => {
-        try {
-            const conversationModule = await import('./neconyan-conversation.js');
-            const conversationChats = conversationModule.getConversationWelcomeChats?.({ max: settings.maxDisplayed }) || [];
-            return conversationChats;
-        } catch (error) {
-            console.warn('Failed to load Conversation Mode recent chats', error);
-            return [];
-        }
-    };
-    let response;
-    try {
-        response = await fetch('/api/chats/recent', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({ max: settings.maxDisplayed, pinned: PinnedChatsManager.getAll(), metadata: shouldSeparateAgentRecentChats(), previewMessages: shouldSeparateAgentRecentChats() ? 8 : 0 }),
-            cache: 'no-cache',
-            signal: AbortSignal.timeout(HOME_REQUEST_TIMEOUT_MS),
-        });
-    } catch (error) {
-        // A slow or dropped request must not keep Home from opening.
-        console.warn('Recent character chats did not load', error);
-        return finalizeRecentChats(await getConversationChats());
-    }
 
-    if (!response.ok) {
-        console.warn('Failed to fetch recent character chats');
-        return finalizeRecentChats(await getConversationChats());
-    }
-
-    /** @type {RecentChat[]} */
-    const data = await response.json();
-
+    const data = await requestRecentChatsData(settings, getRecentChatsRequestKey(settings));
     if (!Array.isArray(data) || data.length === 0) {
-        return finalizeRecentChats(await getConversationChats());
+        return finalizeRecentChats(await getRecentConversationChats(settings));
     }
 
     const dataWithEntities = data
-        .map(chat => ({ chat, character: characters.find(x => x.avatar === chat.avatar), group: groups.find(x => x.id === chat.group) }))
+        .map(rawChat => {
+            // Copy before adding display fields so the shared response is never
+            // mutated by a Home or rail read.
+            const chat = { ...rawChat };
+            return {
+                chat,
+                character: characters.find(x => x.avatar === chat.avatar),
+                group: groups.find(x => x.id === chat.group),
+            };
+        })
         .filter(t => t.character || t.group)
         .sort((a, b) => {
             const isAPinned = PinnedChatsManager.isPinned(a.chat);
@@ -2671,7 +2785,7 @@ async function getRecentChats() {
     });
 
     const roleplayChats = dataWithEntities.map(t => t.chat);
-    const conversationChats = await getConversationChats();
+    const conversationChats = await getRecentConversationChats(settings);
     const mergedChats = [...roleplayChats, ...conversationChats].sort((first, second) => {
         const firstPinned = PinnedChatsManager.isPinned(first);
         const secondPinned = PinnedChatsManager.isPinned(second);
@@ -2805,15 +2919,46 @@ export function initWelcomeScreen() {
     ensureNeconyanRail();
     installChatNoteCapture();
     window.addEventListener('sb:conversation-workspace-state-changed', concealWelcomeHome);
+    // One resume can fire focus, visibilitychange and pageshow together. Refresh
+    // the recent list once per burst so another device or a server job is seen
+    // without a permanent cache.
+    const requestForegroundRefresh = createForegroundRefreshCoalescer({
+        refresh: () => {
+            if (document.body.classList.contains('neconyan-home-visible')) {
+                void refreshWelcomeScreen();
+                return;
+            }
+            invalidateRecentChats();
+            void refreshNeconyanRail();
+        },
+        coalesceMs: 500,
+        isActive: () => !document.hidden,
+    }).request;
+    window.addEventListener('pageshow', requestForegroundRefresh, { passive: true });
+    window.addEventListener('focus', requestForegroundRefresh, { passive: true });
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            requestForegroundRefresh();
+        }
+    });
     eventSource.on(event_types.APP_READY, async () => {
         resumeTutorial();
-        if (getCurrentChatId() === undefined && chat.length === 0) {
-            await openWelcomeScreen({ force: true });
+        const opensHome = getCurrentChatId() === undefined && chat.length === 0;
+        const homePromise = opensHome ? openWelcomeScreen() : null;
+        // Start the rail read while Home is starting so both share one request.
+        const railRefresh = refreshNeconyanRail();
+        if (homePromise) {
+            await homePromise;
         }
         syncAssistantTools();
-        scheduleNeconyanRailRefresh();
+        void railRefresh;
     });
-    eventSource.makeFirst(event_types.CHAT_CHANGED, openWelcomeScreen);
+    // Chat change opens Home through makeFirst. The wrapper invalidates before
+    // openWelcomeScreen runs, matching the awaited listener order.
+    eventSource.makeFirst(event_types.CHAT_CHANGED, async (...args) => {
+        invalidateRecentChats();
+        await openWelcomeScreen(...args);
+    });
     const syncAssistantTools = syncNeconyanAssistantTools;
     eventSource.on(event_types.CHAT_CHANGED, syncAssistantTools);
     eventSource.on(event_types.CHAT_LOADED, syncAssistantTools);

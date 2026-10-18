@@ -9,6 +9,11 @@ import path from 'node:path';
 
 import { SETTINGS_FILE } from '../constants.js';
 import { getSettingsVersion, prepareSettingsSave } from '../settings-version.js';
+import {
+    getSettingsFileIdentity,
+    invalidateParsedSettingsFile,
+    sameSettingsFileIdentity,
+} from '../settings-file-cache.js';
 import { tryWriteFileSync } from '../util.js';
 import { CONVERSATION_STORE_KEY } from '../../public/scripts/neconyan-conversation/constants.js';
 import {
@@ -29,16 +34,23 @@ import {
  * milliseconds to pull from disk each time even when it has not changed. Only
  * the text is shared, never the parsed object, because callers mutate their
  * parsed copy before saving it back. A cached copy is reused only while the
- * file still has the same inode, size and modification time.
+ * file identity is unchanged; the identity includes ctime, so a same-size
+ * rewrite is still a miss.
  */
 const jsonTextCache = new Map();
 const JSON_TEXT_CACHE_MAX_ENTRIES = 16;
+// Only snapshots created by readConversationStoreForWrite may stand in for a
+// save-time read, never a caller-built object that merely resembles one.
+const preflightSnapshots = new WeakSet();
 
-function readJsonText(filePath) {
+/**
+ * @returns {{text: string, identity: ReturnType<typeof getSettingsFileIdentity>}|null}
+ */
+function readJsonTextSnapshot(filePath) {
     const key = path.resolve(filePath);
-    let stat;
+    let identity;
     try {
-        stat = fs.statSync(key);
+        identity = getSettingsFileIdentity(key);
     } catch (error) {
         if (error.code === 'ENOENT') {
             jsonTextCache.delete(key);
@@ -46,36 +58,68 @@ function readJsonText(filePath) {
         }
         throw error;
     }
-    if (!stat.isFile()) throw new Error('not a file');
     const cached = jsonTextCache.get(key);
-    if (cached && cached.ino === stat.ino && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
-        return cached.text;
+    if (cached && sameSettingsFileIdentity(cached.identity, identity)) {
+        // Refresh recency so a hot settings file is not evicted before its next scan.
+        jsonTextCache.delete(key);
+        jsonTextCache.set(key, cached);
+        return { text: cached.text, identity: cached.identity };
     }
-    const text = fs.readFileSync(key, 'utf8');
-    jsonTextCache.set(key, { ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, text });
-    while (jsonTextCache.size > JSON_TEXT_CACHE_MAX_ENTRIES) {
-        jsonTextCache.delete(jsonTextCache.keys().next().value);
+    let text;
+    try {
+        text = fs.readFileSync(key, 'utf8');
+    } catch (error) {
+        jsonTextCache.delete(key);
+        throw error;
     }
-    return text;
+    let stableIdentity = null;
+    try {
+        const currentIdentity = getSettingsFileIdentity(key);
+        if (sameSettingsFileIdentity(identity, currentIdentity)) stableIdentity = identity;
+    } catch {
+        // A file removed or replaced during the read is returned once but not cached.
+    }
+    if (stableIdentity) {
+        jsonTextCache.set(key, { identity: stableIdentity, text });
+        while (jsonTextCache.size > JSON_TEXT_CACHE_MAX_ENTRIES) {
+            jsonTextCache.delete(jsonTextCache.keys().next().value);
+        }
+    } else {
+        jsonTextCache.delete(key);
+    }
+    return { text, identity: stableIdentity };
+}
+
+function invalidateJsonTextCache(filePath) {
+    const key = path.resolve(filePath);
+    jsonTextCache.delete(key);
+    storeValidationByPath.delete(key);
 }
 
 /**
  * Read JSON file with error handling
  * Returns { ok, data, missing?, error? }
  */
-export function readJsonFile(filePath, fallback = {}) {
+function readJsonFileSnapshot(filePath, fallback = {}) {
     try {
-        const content = readJsonText(filePath);
-        if (content === null) {
-            return { ok: true, data: fallback, missing: true };
+        const snapshot = readJsonTextSnapshot(filePath);
+        if (snapshot === null) {
+            return { ok: true, data: fallback, missing: true, identity: null, text: null };
         }
 
-        const data = JSON.parse(content);
-        return { ok: true, data, missing: false };
+        const data = JSON.parse(snapshot.text);
+        return { ok: true, data, missing: false, identity: snapshot.identity, text: snapshot.text };
     } catch (error) {
         console.error(`Failed to read or parse JSON file ${filePath}:`, error.message);
         return { ok: false, error: error.message, missing: false };
     }
+}
+
+export function readJsonFile(filePath, fallback = {}) {
+    const result = readJsonFileSnapshot(filePath, fallback);
+    return result.ok
+        ? { ok: true, data: result.data, missing: result.missing }
+        : { ok: false, error: result.error, missing: result.missing };
 }
 
 /**
@@ -111,9 +155,9 @@ export function readUserSettings(request) {
  */
 export function readUserSettingsWithStatus(request) {
     const settingsPath = getSettingsPath(request);
-    const result = readJsonFile(settingsPath, {});
+    const result = readJsonFileSnapshot(settingsPath, {});
     if (!result.ok) {
-        return result;
+        return { ok: false, error: result.error, missing: false };
     }
     if (!isObject(result.data)) {
         return { ok: false, error: 'Settings must contain a JSON object', missing: false };
@@ -127,12 +171,7 @@ export function readUserSettingsWithStatus(request) {
         return { ok: false, error: 'Conversation settings must contain a JSON object', missing: false };
     }
     if (isObject(result.data.extension_settings) && hasOwn(result.data.extension_settings, CONVERSATION_STORE_KEY)) {
-        let content;
-        try {
-            content = readJsonText(settingsPath);
-        } catch {
-            content = null;
-        }
+        const content = result.text;
         const cacheKey = path.resolve(settingsPath);
         const cached = content === null ? undefined : storeValidationByPath.get(cacheKey);
         let storeValidation = cached && cached.text === content ? cached.validation : null;
@@ -149,7 +188,7 @@ export function readUserSettingsWithStatus(request) {
             return { ok: false, error: storeValidation.error, missing: false };
         }
     }
-    return result;
+    return { ok: true, data: result.data, missing: result.missing, identity: result.identity };
 }
 
 /**
@@ -186,6 +225,37 @@ export function validateExpectedSettingsVersion(version) {
         : { valid: false, error: version === undefined ? 'version_required' : 'invalid_version' };
 }
 
+function setOwnProperty(target, key, value) {
+    Object.defineProperty(target, key, { value, enumerable: true, configurable: true, writable: true });
+}
+
+/**
+ * Deep-copy JSON-shaped Conversation data before a caller mutates its writable
+ * store. Plain objects keep this module's prototypes, and `__proto__` is
+ * written as data instead of a prototype.
+ */
+function cloneConversationValue(root) {
+    if (!root || typeof root !== 'object') return root;
+    const copyRoot = Array.isArray(root) ? [] : {};
+    const stack = [[root, copyRoot]];
+    while (stack.length) {
+        const [source, target] = stack.pop();
+        for (const key of Object.keys(source)) {
+            const value = source[key];
+            if (!value || typeof value !== 'object') {
+                if (key === '__proto__') setOwnProperty(target, key, value);
+                else target[key] = value;
+                continue;
+            }
+            const copy = Array.isArray(value) ? [] : {};
+            if (key === '__proto__') setOwnProperty(target, key, copy);
+            else target[key] = copy;
+            stack.push([value, copy]);
+        }
+    }
+    return copyRoot;
+}
+
 /**
  * Read and preflight settings before an expensive mutation.
  */
@@ -208,20 +278,71 @@ export function readConversationStoreForWrite(request, expectedVersion, normaliz
         };
     }
 
+    const settings = settingsResult.data;
+    const settingsPath = getSettingsPath(request);
+    const currentConversation = isObject(settings.extension_settings)
+        ? settings.extension_settings[CONVERSATION_STORE_KEY]
+        : undefined;
+    let writeConversation = currentConversation;
+    let snapshot = settingsResult.identity
+        ? { path: settingsPath, identity: settingsResult.identity, settings }
+        : null;
+    if (snapshot) preflightSnapshots.add(snapshot);
+    if (currentConversation !== undefined) {
+        try {
+            // The caller mutates the writable store, so the snapshot that save
+            // compares against must not share branch or message objects with it.
+            writeConversation = cloneConversationValue(currentConversation);
+        } catch {
+            // Without an isolated copy the snapshot is unsafe; leave save to
+            // re-read the file instead.
+            snapshot = null;
+            writeConversation = currentConversation;
+        }
+    }
+    const writeSettings = { ...settings, extension_settings: { ...getObject(settings.extension_settings) } };
+    if (writeConversation !== undefined) {
+        writeSettings.extension_settings[CONVERSATION_STORE_KEY] = writeConversation;
+    }
+
     return {
         ok: true,
-        settings: settingsResult.data,
-        store: ensureConversationStore(settingsResult.data, normalizeConversationGroupRecord),
+        settings: writeSettings,
+        store: ensureConversationStore(writeSettings, normalizeConversationGroupRecord),
         version: currentVersion,
         missing: settingsResult.missing,
+        snapshot,
     };
+}
+
+/**
+ * A preflight parse may stand in for the save-time read only while it is the
+ * same file, for the same user path, with the exact identity it was read from.
+ * Any write since the preflight makes this false, so save reads fresh and the
+ * existing version check decides the outcome.
+ */
+function isCurrentSettingsSnapshot(request, snapshot) {
+    if (!preflightSnapshots.has(snapshot) || !isObject(snapshot.settings) || typeof snapshot.path !== 'string' || !snapshot.identity) {
+        return false;
+    }
+    const settingsPath = getSettingsPath(request);
+    if (path.resolve(settingsPath) !== path.resolve(snapshot.path)) {
+        return false;
+    }
+    let identity;
+    try {
+        identity = getSettingsFileIdentity(settingsPath);
+    } catch {
+        return false;
+    }
+    return sameSettingsFileIdentity(snapshot.identity, identity);
 }
 
 /**
  * Save Conversation Mode store to disk with version conflict detection
  * Returns { ok, version?, settings?, store?, status?, body? }
  */
-export async function saveConversationStore(request, store, version, { trustedConversationEffects = false, trustedConversationAppend = false, navigationEnrolment = null } = {}) {
+export async function saveConversationStore(request, store, version, { trustedConversationEffects = false, trustedConversationAppend = false, navigationEnrolment = null, settingsSnapshot = null } = {}) {
     const versionValidation = validateExpectedSettingsVersion(version);
     if (!versionValidation.valid) {
         return { ok: false, status: 400, body: { error: versionValidation.error } };
@@ -231,11 +352,16 @@ export async function saveConversationStore(request, store, version, { trustedCo
         return { ok: false, status: 400, body: { error: storeValidation.error } };
     }
 
-    const latestResult = readUserSettingsWithStatus(request);
-    if (!latestResult.ok) {
-        return { ok: false, status: 500, body: { error: 'settings_read_failed' } };
+    let latestSettings;
+    if (isCurrentSettingsSnapshot(request, settingsSnapshot)) {
+        latestSettings = settingsSnapshot.settings;
+    } else {
+        const latestResult = readUserSettingsWithStatus(request);
+        if (!latestResult.ok) {
+            return { ok: false, status: 500, body: { error: 'settings_read_failed' } };
+        }
+        latestSettings = latestResult.data;
     }
-    const latestSettings = latestResult.data;
     const latestVersion = getSettingsVersion(latestSettings);
     if (latestVersion !== versionValidation.version) {
         return {
@@ -265,13 +391,16 @@ export async function saveConversationStore(request, store, version, { trustedCo
         };
     }
 
+    const settingsPath = getSettingsPath(request);
     try {
-        tryWriteFileSync(getSettingsPath(request), JSON.stringify(preparedSave.settings, null, 4));
+        tryWriteFileSync(settingsPath, JSON.stringify(preparedSave.settings, null, 4));
     } catch (error) {
         console.error('Conversation REST API: failed to save settings', error);
         return { ok: false, status: 500, body: { error: 'settings_save_failed' } };
     }
+    invalidateJsonTextCache(settingsPath);
     const handle = request.user?.profile?.handle;
+    invalidateParsedSettingsFile(settingsPath, handle);
     if (handle) {
         try {
             const { triggerAutoSave } = await import('./settings.js');

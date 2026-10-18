@@ -646,7 +646,7 @@ describe('chat render lifecycle script wiring', () => {
         const roleplayJobSource = getSource(findExportedFunction('setRoleplayJobControls'));
         expect(roleplayJobSource).toContain('previous.id !== activeRoleplayJob.id) chatSendStartRevision += 1;');
 
-        const restoreHoldSource = getSource(findFunctionDeclaration('restoreHeldChatReadingPosition'));
+        const restoreHoldSource = getSource(findExportedFunction('restoreHeldChatReadingPosition'));
         expect(restoreHoldSource).toContain('stopChatReloadReadingAnchorHold();');
         expect(restoreHoldSource).toContain('chatReloadReadingAnchorHoldIsCurrent');
         expect(restoreHoldSource).toContain('chatReloadReadingAnchorHoldSendStarted?.()');

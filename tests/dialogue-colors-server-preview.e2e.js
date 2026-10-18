@@ -3,6 +3,14 @@ import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 
+async function skipTour(page) {
+    const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
+    await skip.click();
+    // dismissTutorial awaits saveSettings before it removes the coachmark. Do not
+    // start app work while that save/dismissal is still in flight.
+    await page.waitForFunction(() => !document.querySelector('#neconyan-tour-coachmark'));
+}
+
 const extension = '/scripts/extensions/third-party/sillytavern-character-colors/src';
 const first = 'Nova smiled. "The colours should already be here';
 const rest = ', while I am still speaking."';
@@ -18,7 +26,7 @@ for (const phone of [true, false]) {
             } });
         if (phone) await installIPhoneSafari(account.context);
         const page = await account.open({ workspace: false, skipTour: false });
-        await page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]').click();
+        await skipTour(page);
         await page.evaluate(async ({ avatar, extension }) => {
             const core = await import('/script.js');
             await core.getCharacters();
@@ -79,7 +87,7 @@ test('preview updates preserve gradients, exclusions and display-only state', as
     test.setTimeout(180000);
     const account = await app.account();
     const page = await account.open({ workspace: false, skipTour: false });
-    await page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]').click();
+    await skipTour(page);
     const novaColour = await page.evaluate(async ({ avatar, extension }) => {
         const core = await import('/script.js');
         await core.getCharacters();

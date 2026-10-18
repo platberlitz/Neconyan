@@ -93,7 +93,8 @@ body.neconyan {
     --sb-state-active-bg: var(--sb-shell-tab-active-bg);
     --sb-state-active-border: color-mix(in srgb, var(--neco-accent-secondary) 60%, var(--neco-border));
 }
-:root[data-neconyan-accent='custom'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail, #sb-mobile-nav-content) {
+:root[data-neconyan-accent='custom'] body.neconyan:not(.sbterm) #neconyan-workspace-rail,
+:root[data-neconyan-accent='custom'] body.neconyan:not(.sbterm) #sb-mobile-nav-content {
     --sb-state-active-bg: color-mix(in srgb, var(--neco-accent-secondary) 16%, var(--neco-rail));
 }
 :root[data-neconyan-accent='custom']:not([data-sb-theme='windows-98'], [data-sb-theme='windows-xp']) body.neconyan:not(.sbterm) :is(
@@ -183,15 +184,23 @@ body.neconyan :is(input[type='text'], input[type='number'], input[type='url'], i
 body.neconyan #open_chat_expressions .expression_override_controls {
     display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; margin-block: 6px;
 }
-body.neconyan #open_chat_expressions .expression_override_controls > :is(input, button) {
+body.neconyan #open_chat_expressions .expression_override_controls > input,
+body.neconyan #open_chat_expressions .expression_override_controls > button {
     width: 100%; min-width: 0; height: auto; margin: 0;
 }
-body.neconyan :is(#top-bar, #sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner) {
+body.neconyan #top-bar,
+body.neconyan #sb-topbar-stack,
+body.neconyan #sb-topbar-primary,
+body.neconyan #sb-topbar-inner {
     background: var(--neco-panel-gradient); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 body.neconyan #top-bar { border-bottom: 1px solid var(--neco-border); border-radius: 0; }
-body.neconyan :is(#top-bar, #sb-topbar-inner, #sb-bottom-chat-bar)::before,
-body.neconyan :is(#top-bar, #sb-topbar-inner, #sb-bottom-chat-bar)::after { display: none; }
+body.neconyan #top-bar::before,
+body.neconyan #sb-topbar-inner::before,
+body.neconyan #sb-bottom-chat-bar::before,
+body.neconyan #top-bar::after,
+body.neconyan #sb-topbar-inner::after,
+body.neconyan #sb-bottom-chat-bar::after { display: none; }
 body.neconyan #sb-topbar-inner { grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; padding-inline: 8px; }
 body.neconyan .sb-topbar-brand { justify-content: flex-start; justify-self: stretch; text-align: left; }
 body.neconyan #sb-topbar-title {
@@ -241,7 +250,9 @@ body.neconyan .neconyan-rail-nav { margin-bottom: 24px; }
 body.neconyan .neconyan-rail-scroll {
     min-height: 0; flex: 1; padding-block: 2px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
 }
-body.neconyan :is(.neconyan-rail-brand, .neconyan-rail-new, .neconyan-rail-footer) { flex-shrink: 0; }
+body.neconyan .neconyan-rail-brand,
+body.neconyan .neconyan-rail-new,
+body.neconyan .neconyan-rail-footer { flex-shrink: 0; }
 body.neconyan .neconyan-rail-recent { min-height: 0; }
 body.neconyan :is(.neconyan-rail-section-label, .neconyan-rail-section-heading) {
     margin: 0 10px 8px; color: var(--neco-muted); font-size: 11px; font-weight: 500;
@@ -333,10 +344,18 @@ body.neconyan #left-nav-panel[data-sb-active-tab='agents'] .sb-shell-panel-scrol
     width: 100%; max-width: 1160px; margin-inline: auto;
 }
 
-body.neconyan :is(.sb-shell-frame, .sb-shell-main, .sb-shell-nav, .sb-character-shell-nav, .sb-shell-header) {
+body.neconyan .sb-shell-frame,
+body.neconyan .sb-shell-main,
+body.neconyan .sb-shell-nav,
+body.neconyan .sb-character-shell-nav,
+body.neconyan .sb-shell-header {
     background: var(--neco-rail); box-shadow: none; animation: none !important;
 }
-body.neconyan :is(.sb-shell-root, .sb-shell-main, .sb-shell-nav, .sb-shell-header, .sb-shell-nav-wrapper)::before,
+body.neconyan .sb-shell-root::before,
+body.neconyan .sb-shell-main::before,
+body.neconyan .sb-shell-nav::before,
+body.neconyan .sb-shell-header::before,
+body.neconyan .sb-shell-nav-wrapper::before,
 body.neconyan .sb-shell-nav-wrapper::after { display: none; }
 body.neconyan :is(.sb-shell-nav, .sb-character-shell-nav) {
     justify-content: flex-start; gap: 2px; padding: 6px 10px;
@@ -408,7 +427,8 @@ body.neconyan #UI-language-block { flex: 1; min-width: 180px; gap: 8px; flex-wra
 body.neconyan #UI-language-block select { min-height: 34px; padding-block: 6px; }
 body.neconyan #user-settings-block-content { display: flex !important; flex-direction: column !important; gap: 0 !important; align-items: stretch !important; }
 body.neconyan #user-settings-block-content > div { min-width: 0; }
-body.neconyan :is(.sb-theme-settings-drawer, .inline-drawer) { border-radius: 0; box-shadow: none; }
+body.neconyan .sb-theme-settings-drawer,
+body.neconyan .inline-drawer { border-radius: 0; box-shadow: none; }
 body.neconyan :is(.inline-drawer-header, .sb-theme-settings-drawer > .inline-drawer-header) {
     display: flex; align-items: center; justify-content: space-between; min-height: 46px; margin: 0;
     padding: 10px 4px; border: 0; border-bottom: 1px solid var(--neco-border); border-radius: 0;
@@ -540,7 +560,8 @@ body.neconyan #chat .mes.mes:is([mesid], [data-roleplay-draft]):has(> .neconyan-
     contain: layout style; margin-top: var(--neconyan-sleeper-space, 44px) !important; margin-bottom: 0 !important; overflow: visible;
 }
 body.neconyan #sheld .sb-conversation-message-bubble:has(> .neconyan-message-sleeper),
-body.neconyan #sheld :is(.sbtw-post, .sbtw-reply):has(> .neconyan-message-sleeper) {
+body.neconyan #sheld .sbtw-post:has(> .neconyan-message-sleeper),
+body.neconyan #sheld .sbtw-reply:has(> .neconyan-message-sleeper) {
     position: relative; overflow: visible; margin-top: var(--neconyan-sleeper-space, 44px);
 }
 body.neconyan #sheld .sbtw-list { padding-inline: 18px; }
@@ -616,7 +637,8 @@ body.neconyan #sheld #sb_conversation_pals_rail .sb-conversation-rail-close { di
 body.neconyan .sb-conversation-timeline { padding: 24px max(var(--neco-gutter), calc((100% - var(--neco-reading-width)) / 2)); gap: 24px; }
 body.neconyan .sb-conversation-message-bubble { padding: 8px 0; background: transparent; color: var(--neco-ink); border: 0; border-radius: 0; box-shadow: none; }
 body.neconyan .sb-conversation-message[data-role='user'] .sb-conversation-message-bubble { padding: 12px var(--neco-bubble-pad); background: var(--neco-user); border-radius: 8px; }
-body.neconyan :is(.sb-conversation-message-name, .sb-conversation-message-text) { color: var(--neco-ink); }
+body.neconyan .sb-conversation-message-name,
+body.neconyan .sb-conversation-message-text { color: var(--neco-ink); }
 body.neconyan .sb-conversation-message-text { line-height: var(--neco-line-height); }
 body.neconyan :is(.sb-conversation-message-reply-preview, .sb-conversation-composer-reply-card) { border-inline-start: 0; border-radius: 5px; background: var(--neco-surface); }
 body.neconyan .sb-conversation-message-time { color: var(--neco-muted); }
@@ -640,7 +662,8 @@ body.neconyan .welcomePanel {
     width: 100%; max-width: 900px; margin: 0 auto; padding: 72px 32px 40px; gap: 36px;
     border: 0; border-radius: 0; background: transparent; box-shadow: none; text-shadow: none;
 }
-body.neconyan :is(.welcomePanel, .welcomeRecentShell)::before,
+body.neconyan .welcomePanel::before,
+body.neconyan .welcomeRecentShell::before,
 body.neconyan .welcomePanel::after { display: none; }
 body.neconyan :is(.welcomeHero, .welcomeHeroCopy, .welcomeHeroTitleGroup) { display: flex; flex-direction: column; align-items: stretch; gap: 16px; text-align: left; }
 body.neconyan .welcomeHeroTitleGroup { min-width: 0; gap: 8px; }
@@ -665,7 +688,9 @@ body.neconyan .welcomeRecent .recentChatList .recentChat .chatActions button {
 }
 body.neconyan .recentChat .chatActions { pointer-events: none; }
 body.neconyan .recentChat .chatActions button { pointer-events: auto; }
-body.neconyan :is(.welcomeRecentTabs, .welcomeRecentTab, .welcomeShortcut) { border-radius: 5px; box-shadow: none; background: transparent; }
+body.neconyan .welcomeRecentTabs,
+body.neconyan .welcomeRecentTab,
+body.neconyan .welcomeShortcut { border-radius: 5px; box-shadow: none; background: transparent; }
 body.neconyan .welcomeRecentTab.active { background: var(--neco-raised); color: var(--neco-ink); }
 body.neconyan .welcomeShortcuts { justify-content: flex-start; flex-wrap: wrap; gap: 8px; }
 body.neconyan #neconyan-tour-coachmark {
@@ -1075,7 +1100,8 @@ body.neconyan .neconyan-chat-row-actions .neconyan-current-chat-export[aria-hidd
 
 
 /* Neconyan workspace frame: primary tools occupy the space beside the persistent rail. */
-body.neconyan :is(.sb-topbar-pages, .sb-topbar-cluster-divider) {
+body.neconyan .sb-topbar-pages,
+body.neconyan .sb-topbar-cluster-divider {
     display: none !important;
 }
 /* Empty slots stay out of the row; each displayed one costs a gap at the right edge. */
@@ -1430,7 +1456,10 @@ body.neconyan .sb-settings-layout {
 body.neconyan .sb-extensions-layout {
     grid-template-columns: minmax(0, 1fr);
 }
-body.neconyan :is(.sb-settings-nav-column, .sb-settings-detail, .sb-extensions-master, .sb-extension-detail) {
+body.neconyan .sb-settings-nav-column,
+body.neconyan .sb-settings-detail,
+body.neconyan .sb-extensions-master,
+body.neconyan .sb-extension-detail {
     min-width: 0;
 }
 /* Only the settings navigator sticks: the extensions master sits above the panels and has no
@@ -1547,7 +1576,9 @@ body.neconyan #user-settings-block-content {
     min-width: 0;
     overflow-x: hidden;
 }
-body.neconyan #user-settings-block-content > :is([name='UserSettingsFirstColumn'], [name='UserSettingsSecondColumn'], [name='UserSettingsThirdColumn']) {
+body.neconyan #user-settings-block-content > [name='UserSettingsFirstColumn'],
+body.neconyan #user-settings-block-content > [name='UserSettingsSecondColumn'],
+body.neconyan #user-settings-block-content > [name='UserSettingsThirdColumn'] {
     display: contents !important;
 }
 body.neconyan .sb-settings-layout .inline-drawer[data-settings-tab] {
@@ -2265,7 +2296,8 @@ body.neconyan #right-nav-panel .sb-character-shell-header :is(.sbtw-launch, #sbs
 body.neconyan #right-nav-panel .sb-character-shell-header :is(.sbtw-launch, #sbstory-mode-button) > span { display: inline; }
 body.neconyan #right-nav-panel .sb-character-shell-header :is(.sbtw-launch, #sbstory-mode-button)[aria-pressed='true'] { background: var(--neco-raised); border-color: var(--neco-ginger); }
 body.neconyan #sbstory-mode-button:disabled { opacity: .55; cursor: default; }
-body.neconyan :is(.sbtw-shell, .sbtw-drawer) {
+body.neconyan .sbtw-shell,
+body.neconyan .sbtw-drawer {
     --sbtw-surface: var(--neco-canvas);
     --sbtw-raised: var(--neco-surface);
     --sbtw-nav-surface: var(--neco-surface);
@@ -2544,7 +2576,8 @@ body.neconyan .neconyan-account-action small { color: var(--neco-muted); font-si
 body.neconyan .neconyan-account-danger { border-top-color: color-mix(in oklch, var(--neco-ginger) 42%, var(--neco-border)); }
 body.neconyan .neconyan-account-danger .warning { color: var(--neco-ginger); }
 
-body.neconyan :is(.sb-server-card, .sb-console-log-card) {
+body.neconyan .sb-server-card,
+body.neconyan .sb-console-log-card {
     min-width: 0;
     background: var(--neco-surface) !important;
     color: var(--neco-ink);
@@ -2564,7 +2597,9 @@ body.neconyan .sb-server-source-details summary {
     font-weight: 500;
 }
 body.neconyan .sb-server-source-details .sb-server-grid { padding-top: 8px; }
-body.neconyan :is(.sb-server-note, .sb-server-stat, .sb-console-log-copy-status) {
+body.neconyan .sb-server-note,
+body.neconyan .sb-server-stat,
+body.neconyan .sb-console-log-copy-status {
     color: var(--neco-ink);
     background: var(--neco-surface);
 }
@@ -2788,7 +2823,8 @@ body.neconyan .neconyan-undo-actions {
     align-items: center;
     gap: 6px;
 }
-body.neconyan :is(.neconyan-undo-action, .neconyan-undo-dismiss) {
+body.neconyan .neconyan-undo-action,
+body.neconyan .neconyan-undo-dismiss {
     min-width: 44px;
     min-height: 36px;
     padding: 6px 10px;
@@ -2803,7 +2839,8 @@ body.neconyan :is(.neconyan-undo-action, .neconyan-undo-dismiss) {
     cursor: pointer;
 }
 body.neconyan .neconyan-undo-action { border-color: var(--neco-ginger); color: var(--neco-ink); font-weight: 600; }
-body.neconyan :is(.neconyan-undo-action, .neconyan-undo-dismiss):is(:hover, :focus-visible) {
+body.neconyan .neconyan-undo-action:is(:hover, :focus-visible),
+body.neconyan .neconyan-undo-dismiss:is(:hover, :focus-visible) {
     background: color-mix(in oklch, var(--neco-ginger) 16%, var(--neco-raised));
     color: var(--neco-ink);
 }
@@ -2812,7 +2849,8 @@ body.neconyan .neconyan-undo-action:focus-visible,
 body.neconyan .neconyan-undo-dismiss:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 2px; }
 
 @media (pointer: coarse), (max-width: 768px) {
-    body.neconyan :is(.neconyan-undo-action, .neconyan-undo-dismiss) { min-height: 44px; }
+    body.neconyan .neconyan-undo-action,
+    body.neconyan .neconyan-undo-dismiss { min-height: 44px; }
 }
 
 @media (max-width: 420px) {
@@ -3238,7 +3276,8 @@ body.neconyan #sb-restore-tour-invitations {
 body.neconyan.hushstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) {
     --deep-swipe-arrow-opacity: 1;
     .swipes-counter:not([hidden]) { opacity: 1 !important; }
-    :is(.deep-swipe-left-outer, .deep-swipe-right) { color: var(--neco-ink); }
+    .deep-swipe-left-outer,
+    .deep-swipe-right { color: var(--neco-ink); }
 }
 body.neconyan:is(.whisperstyle, .hushstyle)[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) :is(.swipe_left, .swipe_right, .deep-swipe-left-outer, .deep-swipe-right) {
     align-items: center; justify-content: center; line-height: 1 !important; font-size: 20px;

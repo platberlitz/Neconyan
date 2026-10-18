@@ -122,6 +122,7 @@ function ensureSettings() {
 function bootstrap() {
     ensureSettings();
     injectSettingsPanel();
+    syncSettingsPanel();
     attachPromptEnhancer();
     attachBackgroundEnhancer();
 }
@@ -177,44 +178,65 @@ function watchPromptContainer() {
     });
 }
 
+function isPromptToggleClassMutation(mutation) {
+    return mutation.type === 'attributes'
+        && mutation.attributeName === 'class'
+        && mutation.target instanceof HTMLElement
+        && mutation.target.classList?.contains('prompt-manager-toggle-action');
+}
+
 function attachPromptEnhancer() {
     watchPromptContainer();
 
     const nextPromptList = document.querySelector('#completion_prompt_manager_list');
-    if (!nextPromptList || nextPromptList === promptListElement) {
+    if (!nextPromptList) {
         return;
     }
 
-    promptListElement = nextPromptList;
-    injectPromptToolbar(promptListElement);
+    if (nextPromptList !== promptListElement) {
+        promptListElement = nextPromptList;
+        injectPromptToolbar(promptListElement);
 
-    if (promptListObserver) {
-        promptListObserver.disconnect();
+        if (promptListObserver) {
+            promptListObserver.disconnect();
+        }
+
+        promptListObserver = new MutationObserver((mutations) => {
+            if (isRefreshingPromptSections) {
+                return;
+            }
+
+            // Prompt Manager flips the toggle's class in place for deferred
+            // renders. Refresh counts without watching every class in the list.
+            if (mutations.some(isPromptToggleClassMutation)) {
+                schedulePromptRefresh();
+                return;
+            }
+
+            // Ignore mutations caused by our own section rows and other class
+            // changes. Attribute records have no added or removed nodes.
+            const isOwnMutation = mutations.every(m =>
+                Array.from(m.addedNodes).concat(Array.from(m.removedNodes)).every(n =>
+                    n instanceof HTMLElement && (n.classList?.contains('bpt-section-row') || n.classList?.contains('bpt-divider-row')),
+                ),
+            );
+            if (isOwnMutation) {
+                return;
+            }
+
+            schedulePromptRefresh();
+        });
+
+        promptListObserver.observe(promptListElement, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['class'],
+        });
     }
 
-    promptListObserver = new MutationObserver((mutations) => {
-        if (isRefreshingPromptSections) {
-            return;
-        }
-
-        // Ignore mutations caused by our own section rows
-        const isOwnMutation = mutations.every(m =>
-            Array.from(m.addedNodes).concat(Array.from(m.removedNodes)).every(n =>
-                n instanceof HTMLElement && (n.classList?.contains('bpt-section-row') || n.classList?.contains('bpt-divider-row')),
-            ),
-        );
-        if (isOwnMutation) {
-            return;
-        }
-
-        schedulePromptRefresh();
-    });
-
-    promptListObserver.observe(promptListElement, {
-        childList: true,
-        subtree: true,
-    });
-
+    // Same list node: settings reloads and wake events still need to reconcile
+    // enablePromptSections, divider patterns and saved section state.
     schedulePromptRefresh();
 }
 
@@ -1046,6 +1068,8 @@ function refreshPromptSections() {
             promptListObserver.observe(promptListElement, {
                 childList: true,
                 subtree: true,
+                attributes: true,
+                attributeFilter: ['class'],
             });
         }
 
@@ -1677,5 +1701,20 @@ function syncSettingsPanel() {
 }
 
 bootstrap();
-setInterval(bootstrap, 1000);
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootstrap, { once: true });
+}
+if (event_types.APP_READY) eventSource.on(event_types.APP_READY, bootstrap);
+for (const eventName of [
+    event_types.SETTINGS_LOADED_AFTER,
+    event_types.EXTENSION_SETTINGS_LOADED,
+    event_types.SETTINGS_LOADED,
+]) {
+    if (eventName) eventSource.on(eventName, bootstrap);
+}
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') bootstrap();
+});
+window.addEventListener('focus', bootstrap);
+window.addEventListener('pageshow', bootstrap);
 eventSource.on(event_types.CHAT_CHANGED, scheduleBackgroundSync);

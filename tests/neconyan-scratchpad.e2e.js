@@ -123,9 +123,19 @@ for (const phone of [false, true]) {
         if (phone) await applyIOSOnlyCss(page);
         await page.locator('.scratchpad-composer').fill('Compare the first and third swipes.');
         await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        // The new web-search section loads asynchronously and rerenders Context.
+        // Wait for that render to finish before opening the swipes details.
+        await expect(page.locator('#scratchpad-web-search-settings [role="status"]'))
+            .not.toHaveText('Web search settings are loading.');
         await page.locator('#scratchpad-connection-miso').selectOption('durable');
-        await page.locator('.scratchpad-swipes > summary').click();
-        await expect(page.locator('.scratchpad-swipes')).toContainText('Swipe 2 of 3 (current)');
+        // Selecting the first connection creates the session asynchronously; wait
+        // for that save before opening a Context details section it can rerender.
+        await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0]?.settings.assistantConnections?.miso)
+            .toEqual({ kind: 'profile', profileId: 'durable' });
+        const swipes = page.locator('.scratchpad-swipes');
+        await swipes.locator('summary').click();
+        await expect(swipes).toHaveJSProperty('open', true);
+        await expect(swipes).toContainText('Swipe 2 of 3 (current)');
         await page.getByRole('checkbox', { name: 'Pick message #0, swipe 1', exact: true }).check();
         await page.getByRole('checkbox', { name: 'Pick message #0, swipe 3', exact: true }).check();
         await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0].settings.picked).toEqual(['0:swipe:0', '0:swipe:2']);
@@ -403,11 +413,14 @@ test('Roleplay change cards wait for successful saves and persist message and lo
     const readChat = async () => (await account.post('/api/chats/get', { avatar_url: account.avatar, file_name: chatId })).filter(record => typeof record.mes === 'string');
     const original = await readChat();
     await page.route('**/api/chats/save', route => route.fulfill({ status: 503, json: { error: 'Fixture save failure' } }));
-    await page.locator('.scratchpad-change').first().getByRole('button', { name: 'Review', exact: true }).click();
+    const firstChange = page.locator('.scratchpad-change').first();
+    await firstChange.getByRole('button', { name: 'Review', exact: true }).click();
     const refused = page.waitForResponse('**/api/chats/save');
     await page.getByRole('button', { name: 'Save change', exact: true }).click();
     expect((await refused).status()).toBe(503);
-    // Keep the failure in place until retries settle and the app requests a reload.
+    // The roleplay save chain retries three times before it reports an uncertain
+    // save. Wait for that attempt to settle, then assert its exact message.
+    await expect(firstChange.getByRole('button', { name: 'Review', exact: true })).toBeVisible({ timeout: 30000 });
     await expect(page.getByText('The save could not be confirmed. Keep a copy of your edits before reloading.', { exact: true })).toBeVisible();
     await expect(page.locator('.scratchpad-change.is-applied')).toHaveCount(0);
     const failedBucket = (await account.post('/api/scratchpad/bucket', { source })).bucket;

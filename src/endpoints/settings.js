@@ -7,6 +7,7 @@ import bytes from 'bytes';
 
 import { SETTINGS_FILE } from '../constants.js';
 import { prepareSettingsSave, restoreSettingsSnapshot } from '../settings-version.js';
+import { invalidateParsedSettingsFile, readParsedSettingsFile } from '../settings-file-cache.js';
 import { readAgentCollection } from '../in-chat-agent-storage.js';
 import {
     getConfigValue,
@@ -294,6 +295,7 @@ router.post('/save', function (request, response) {
         }
 
         tryWriteFileSync(pathToSettings, JSON.stringify(preparedSave.settings, null, 4));
+        invalidateParsedSettingsFile(pathToSettings, request.user.profile.handle);
         triggerAutoSave(request.user.profile.handle);
         response.send({ result: 'ok', version: preparedSave.version, settingsRevision: preparedSave.settingsRevision });
     } catch (err) {
@@ -372,12 +374,15 @@ function readSettingsSections(request, sections) {
  * @returns {Record<string, any>} Only the names that exist in the file.
  */
 function readExtensionSettings(request, names) {
-    const text = fs.readFileSync(path.join(request.user.directories.root, SETTINGS_FILE), 'utf8');
-    const source = JSON.parse(text)?.extension_settings;
+    const settingsPath = path.join(request.user.directories.root, SETTINGS_FILE);
+    const settings = readParsedSettingsFile(settingsPath, request.user?.profile?.handle);
+    const source = settings?.extension_settings;
     const result = {};
     if (!source || typeof source !== 'object' || Array.isArray(source)) return result;
     for (const name of names) {
-        if (Object.hasOwn(source, name)) result[name] = source[name];
+        // Extensions mutate what they receive before saving it back, so never
+        // hand out the parsed block that the cache holds.
+        if (Object.hasOwn(source, name)) result[name] = structuredClone(source[name]);
     }
     return result;
 }
@@ -532,6 +537,7 @@ router.post('/restore-snapshot', getFileNameValidationFunction('name'), async (r
         const pathToSettings = path.join(request.user.directories.root, SETTINGS_FILE);
         const restored = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
         restoreSettingsSnapshot(pathToSettings, restored);
+        invalidateParsedSettingsFile(pathToSettings, request.user.profile.handle);
 
         response.sendStatus(204);
     } catch (error) {

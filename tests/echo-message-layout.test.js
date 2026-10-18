@@ -52,9 +52,29 @@ describe('Echo native surface contract', () => {
     test('cleanup removes only owned decoration and leaves avatar/foreign style intact', () => {
         const values = new Map([['--mes-avatar-url', 'portrait'], ['clip-path', 'inset(2px)'], ['--nn-echo-cat-top', '40px']]);
         const plate = { remove: jest.fn() };
-        const row = { classList: { remove: jest.fn() }, style: { removeProperty: key => values.delete(key) }, querySelector: selector => selector.includes('plate') ? plate : null };
+        const row = { classList: { contains: () => true, remove: jest.fn() }, style: { removeProperty: key => values.delete(key) }, querySelector: selector => selector.includes('plate') ? plate : null };
         clearEchoMessage(row);
         expect(values.get('--mes-avatar-url')).toBe('portrait'); expect(values.get('clip-path')).toBe('inset(2px)');
         expect(values.has('--nn-echo-cat-top')).toBe(false); expect(plate.remove).toHaveBeenCalledTimes(1);
+    });
+    test('repeated cleanup leaves a non-Echo row class attribute untouched', () => {
+        const classes = new Set(['mes', 'last_mes']);
+        const remove = jest.fn((...names) => names.forEach(name => classes.delete(name)));
+        const row = {
+            classList: { contains: name => classes.has(name), remove },
+            style: { removeProperty: jest.fn() },
+            querySelector: () => null,
+            querySelectorAll: () => [],
+        };
+        for (let index = 0; index < 10; index++) clearEchoMessage(row);
+        expect(remove).not.toHaveBeenCalled();
+        expect([...classes]).toEqual(['mes', 'last_mes']);
+        classes.add('nn-echo-cutoff');
+        classes.add('nn-echo-footer-adjacent');
+        clearEchoMessage(row);
+        expect([...classes]).toEqual(['mes', 'last_mes']);
+        expect(remove).toHaveBeenCalledTimes(2);
+        clearEchoMessage(row);
+        expect(remove).toHaveBeenCalledTimes(2);
     });
 });

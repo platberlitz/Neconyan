@@ -186,7 +186,7 @@ describe('shell style runtime stylesheets', () => {
 
         const calico = stripCssBlockComments(readSource('public', 'css', 'neconyan-calico.css'));
         expect(calico).toContain('--neco-pink: color-mix(in oklch, var(--SmartThemeQuoteColor) 55%, #efb0bd);');
-        expect(calico).toMatch(/\[data-neconyan-calico-tone='light'\]\[data-neconyan-accent='custom'\] body\.neconyan :is\(#neconyan-workspace-rail, #sb-mobile-nav-content\) \{[^}]*--neco-ginger: color-mix\(in oklch, var\(--SmartThemeQuoteColor\)/);
+        expect(calico).toMatch(/\[data-neconyan-calico-tone='light'\]\[data-neconyan-accent='custom'\] body\.neconyan #neconyan-workspace-rail,[^{]*\{[^}]*--neco-ginger: color-mix\(in oklch, var\(--SmartThemeQuoteColor\)/);
         expect(calico).toMatch(/body\.neconyan ::selection \{[^}]*var\(--neco-ginger\)/);
     });
 

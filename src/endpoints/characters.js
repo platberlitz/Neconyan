@@ -37,6 +37,7 @@ import { serverDirectory } from '../server-directory.js';
 import { forgetSharedScratchpadsLocked, moveSharedScratchpadsLocked } from '../scratchpad/shared-sessions.js';
 import { assertScratchpadAvatarWriteLocked } from '../scratchpad/images.js';
 import { scratchpadAccountBase, withScratchpad } from '../scratchpad/store.js';
+import { createFileSummaryCache, createLimiter, fileStatIdentity } from '../file-summary-cache.js';
 import { decodeServerImage } from '../media-codecs.js';
 import { createEntityDateAdded, ensureEntityDateAdded, prepareEntityDateAddedMove, reconcileEntityDateAdded, removeEntityDateAdded, ENTITY_DATE_ADDED_FILE } from '../entity-date-added.js';
 import { getEntityLastChat, prepareEntityLastChatMove, readEntityLastChats, removeEntityLastChat, setEntityLastChat, ENTITY_LAST_CHAT_FILE } from '../entity-last-chat.js';
@@ -66,6 +67,19 @@ function importRisuSpritesSafely(directories, data) {
 // With 100 MB limit it would take roughly 3000 characters to reach this limit
 const memoryCacheCapacity = getConfigValue('performance.memoryCacheCapacity', '100mb');
 const memoryCache = new MemoryLimitedMap(memoryCacheCapacity);
+
+/**
+ * A shallow card is rebuilt from every avatar whenever the list cache expires.
+ * Keep the card-derived fields while the avatar's change-detection identity is
+ * unchanged; chat statistics are recomputed per listing so a saved chat is never
+ * stale. This is not a byte hash, and the card reader uses the same identity.
+ */
+const shallowCardCache = createFileSummaryCache({ maxBytes: 32 * 1024 * 1024, maxEntries: 4096 });
+// Stats for every character's chats share one bound, so a large library cannot
+// start thousands of file stats at once during a list rebuild.
+const CHARACTER_CHAT_STATS_CONCURRENCY = 32;
+const CHARACTER_CHAT_STATS_PER_DIRECTORY = 8;
+const characterChatStatLimit = createLimiter(CHARACTER_CHAT_STATS_CONCURRENCY);
 
 /**
  * The shallow character list is requested many times per page load (home, search, tags,
@@ -663,14 +677,18 @@ class DiskCache {
 export const diskCache = new DiskCache();
 
 /**
- * Gets the cache key for the specified image file.
+ * Gets the cache key for the specified image file. The key includes the same
+ * change-detection identity used by the shallow-card cache, because a
+ * same-size replacement can restore the modification time. It still does not
+ * prove the bytes are unchanged; it only makes such a replacement miss the
+ * card caches.
  * @param {string} inputFile - Path to the image file
  * @returns {string} - Cache key
  */
 function getCacheKey(inputFile) {
     if (fs.existsSync(inputFile)) {
         const stat = fs.statSync(inputFile);
-        return `${inputFile}-${stat.mtimeMs}`;
+        return `${inputFile}-${stat.dev}-${stat.ino}-${stat.size}-${stat.mtimeMs}-${stat.ctimeMs}`;
     }
 
     return inputFile;
@@ -886,10 +904,9 @@ async function writeCharacterData(inputFile, data, outputFile, request, crop = u
         // Reset the cache only when the card actually changed.
         // Buffer inputs are written under outputImagePath, so match on that path.
         const cachePathPrefix = Buffer.isBuffer(inputFile) ? outputImagePath : inputFile;
-        for (const key of memoryCache.keys()) {
-            if (key.startsWith(cachePathPrefix)) {
+        for (const key of [...memoryCache.keys()]) {
+            if (key === cachePathPrefix || key.startsWith(`${cachePathPrefix}-`)) {
                 memoryCache.delete(key);
-                break;
             }
         }
         invalidateCharacterListCache(request.user.profile.handle);
@@ -1074,23 +1091,48 @@ async function tryReadImage(imgPath, crop) {
 
 /**
  * calculateChatSize - Calculates the total chat size for a given character.
+ * Directory reads and stats are asynchronous and bounded so a large library
+ * does not block the event loop. A chat removed since readdir is skipped; other
+ * errors keep the existing fallback for that character.
  *
  * @param  {string} charDir The directory where the chats are stored.
- * @return { {chatSize: number, dateLastChat: number} }         The total chat size.
+ * @return {Promise<{chatSize: number, dateLastChat: number}>} The total chat size.
  */
-const calculateChatSize = (charDir) => {
+const calculateChatSize = async (charDir) => {
+    let chats;
+    try {
+        chats = await characterChatStatLimit(() => fs.promises.readdir(charDir));
+    } catch (error) {
+        if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') {
+            return { chatSize: 0, dateLastChat: 0 };
+        }
+        throw error;
+    }
+
     let chatSize = 0;
     let dateLastChat = 0;
-
-    if (fs.existsSync(charDir)) {
-        const chats = fs.readdirSync(charDir);
-        if (Array.isArray(chats) && chats.length) {
-            for (const chat of chats) {
-                const chatStat = fs.statSync(path.join(charDir, chat));
-                chatSize += chatStat.size;
-                dateLastChat = Math.max(dateLastChat, chatStat.mtimeMs);
+    let nextIndex = 0;
+    const workers = Array.from({ length: Math.min(CHARACTER_CHAT_STATS_PER_DIRECTORY, chats.length) }, async () => {
+        while (nextIndex < chats.length) {
+            const chat = chats[nextIndex];
+            nextIndex++;
+            let chatStat;
+            try {
+                chatStat = await characterChatStatLimit(() => fs.promises.stat(path.join(charDir, chat)));
+            } catch (error) {
+                if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') {
+                    continue;
+                }
+                throw error;
             }
+            chatSize += chatStat.size;
+            dateLastChat = Math.max(dateLastChat, chatStat.mtimeMs);
         }
+    });
+    const results = await Promise.allSettled(workers);
+    const failed = results.find(result => result.status === 'rejected');
+    if (failed) {
+        throw failed.reason;
     }
 
     return { chatSize, dateLastChat };
@@ -1149,6 +1191,18 @@ const toShallow = (character) => {
 const processCharacter = async (item, directories, { shallow, fileStat }) => {
     try {
         const imgFile = path.join(directories.characters, item);
+        const chatsDirectory = path.join(directories.chats, item.replace('.png', ''));
+        const cardCacheIdentity = shallow && fileStat ? fileStatIdentity(fileStat) : null;
+        if (cardCacheIdentity) {
+            const cached = shallowCardCache.get(imgFile, cardCacheIdentity);
+            if (cached) {
+                const { chatSize, dateLastChat } = await calculateChatSize(chatsDirectory);
+                cached.chat_size = chatSize;
+                cached.date_last_chat = dateLastChat;
+                return cached;
+            }
+        }
+
         const imgData = await readCharacterData(imgFile);
         if (imgData === undefined) throw new Error('Failed to read character file');
 
@@ -1159,13 +1213,18 @@ const processCharacter = async (item, directories, { shallow, fileStat }) => {
         const charStat = fileStat ?? fs.statSync(path.join(directories.characters, item));
         character.date_added = getCharacterDateAddedFallback(charStat);
         character.create_date = jsonObject.create_date || new Date(Math.round(charStat.ctimeMs)).toISOString();
-        const chatsDirectory = path.join(directories.chats, item.replace('.png', ''));
 
-        const { chatSize, dateLastChat } = calculateChatSize(chatsDirectory);
+        const { chatSize, dateLastChat } = await calculateChatSize(chatsDirectory);
         character.chat_size = chatSize;
         character.date_last_chat = dateLastChat;
         character.data_size = calculateDataSize(jsonObject?.data);
-        return shallow ? toShallow(character) : character;
+        const result = shallow ? toShallow(character) : character;
+        if (cardCacheIdentity) {
+            // The cache takes its own copy; /all overlays date_added and the
+            // sidecar chat on the object returned to this caller.
+            shallowCardCache.set(imgFile, cardCacheIdentity, result);
+        }
+        return result;
     } catch (err) {
         console.error(`Could not process character: ${item}`);
 

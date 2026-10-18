@@ -94,6 +94,8 @@ function createHarness({ profile = normalizeCustomEndpointPreset({ name: 'Saved 
         t: strings => strings.join(''),
         toastr: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
         refreshModelIdSearchControlsForSource: jest.fn(),
+        document: { querySelector: jest.fn(() => null) },
+        syncModelListSearchValue: jest.fn(),
         reconnectOpenAi: jest.fn(),
         updateCustomEndpointPresetOption: jest.fn(),
         appendCustomEndpointPresetOption: jest.fn(),
