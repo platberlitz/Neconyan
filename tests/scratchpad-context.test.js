@@ -41,8 +41,9 @@ jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.js', (
     getConversationGroupIdForAvatar: () => groupId, getConversationThreadKey: () => avatar, getCurrentCharAvatar: () => avatar,
     getConversationPersonaId: () => 'persona.png',
 }));
+let conversationPersona = '{{user}} is a Conversation persona with {{char}}.';
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/personas.js', () => ({
-    composeConversationPersonaDescription: () => '{{user}} is a Conversation persona with {{char}}.', getConversationPersonaName: () => 'Conversation user',
+    composeConversationPersonaDescription: () => conversationPersona, getConversationPersonaName: () => 'Conversation user',
 }));
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/settings-store.js', () => ({ getSettings: () => conversationSettings }));
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/state.js', () => ({ conversationState }));
@@ -73,6 +74,7 @@ const settings = { depth: 15, include: { lore: true, card: true, persona: true }
 beforeEach(() => {
     setNotebookSource(null);
     conversationState.conversationWorkspaceOpen = true;
+    conversationPersona = '{{user}} is a Conversation persona with {{char}}.';
     avatar = 'Nova.png';
     Object.defineProperty(conversationState, 'conversationSelectedAvatar', { configurable: true, get: () => avatar });
     home.visible = false;
@@ -95,6 +97,8 @@ beforeEach(() => {
         books.set(name, { entries: { 0: { uid: 0, comment: name, key: ['lighthouse'], content: `${name}: {{char}} and {{user}}.` } } });
     }
     books.set('Empty lore', { entries: {} });
+    books.set('Conversation lore', { entries: { 0: { uid: 0, comment: 'Conversation lore', key: ['lighthouse'],
+        content: 'Conversation lore: {{char}} and {{user}}. Hidden: {{lastMessage}}.' } } });
     loadWorldInfo.mockClear();
 });
 
@@ -218,6 +222,15 @@ describe('Scratchpad source context', () => {
         expect(context.text).toContain('Conversation user is a Conversation persona with Nova.');
         expect(context.text).toContain('Nova lore: Nova and Conversation user.');
         expect(context.text).toContain('### Description [description]\n{{char}} talks to {{user}}.');
+    });
+
+    test('Conversation persona and lore cannot read the hidden Roleplay chat through macros', async () => {
+        chat.push({ name: 'Roleplay', mes: 'HIDDEN-CONVERSATION-MACRO' });
+        conversationPersona = '{{user}} is a Conversation persona with {{char}}. Hidden: {{lastMessage}}.';
+        const context = await buildContext({ source: currentSource(), settings });
+        expect(context.text).toContain('Conversation user is a Conversation persona with Nova. Hidden: {{lastMessage}}.');
+        expect(context.text).toContain('Conversation lore: Nova and Conversation user. Hidden: {{lastMessage}}.');
+        expect(context.text).not.toContain('HIDDEN-CONVERSATION-MACRO');
     });
 
     test('shares every part of a character card whole and exactly as saved', async () => {
