@@ -72,5 +72,9 @@ test('persona pronoun field and Macro Enhanced pronouns edit the same value', as
     await input.fill('');
     await input.blur();
     await expect.poll(async () => (await readState(page)).stored).toBe('');
+    // The saved value updates synchronously, while the settings drawer refresh
+    // is coalesced into the next animation frame. Wait for that DOM completion
+    // before asserting the full state.
+    await expect.poll(async () => (await readState(page)).drawer).toBe('');
     expect(await readState(page)).toEqual({ stored: '', drawer: '', macros: 'They are sure they saw their cat.' });
 });
