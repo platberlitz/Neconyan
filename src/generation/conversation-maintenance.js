@@ -1,4 +1,5 @@
 import { projectConversationImageInput } from '../../public/scripts/neconyan-conversation/prompt-media.js';
+import { isImageInputIssue } from '../../public/scripts/prompt-media-policy.js';
 import { roleplayHash } from '../roleplay-store.js';
 import {
     MEMORY_SUMMARY_INTERVAL_MESSAGES,
@@ -259,7 +260,15 @@ export async function acceptConversationSummary(request, body = {}, { automatic 
     }
     const binding = await captureMaintenanceBinding(request, body, target);
     const intent = { kind: 'summary', target, force, requestHash };
-    const snapshot = await buildSummarySnapshot(request, { intent, credentialRef: binding });
+    let snapshot;
+    try {
+        snapshot = await buildSummarySnapshot(request, { intent, credentialRef: binding });
+    } catch (error) {
+        // Background scans cannot resolve image review. Leave the occurrence unclaimed
+        // so it can resume after review, while manual requests still explain the refusal.
+        if (automatic && isImageInputIssue(error)) return { created: false, skipped: 'image-review-required' };
+        throw error;
+    }
     await validateMaintenanceSnapshot(request, snapshot, 'summary');
     if (automatic) {
         const fresh = readConversationTarget(request, target);

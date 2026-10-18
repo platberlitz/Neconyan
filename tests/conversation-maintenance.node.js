@@ -22,6 +22,7 @@ const { readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js')
 const { scanConversationAutonomy } = await import('../src/generation/conversation-worker.js');
 const { write: writeCard } = await import('../src/character-card-parser.js');
 const { prepareSettingsSave } = await import('../src/settings-version.js');
+const { roleplayHash } = await import('../src/roleplay-store.js');
 
 after(() => cancelAutoSaves());
 
@@ -208,6 +209,96 @@ test('automatic summaries require enabled server ownership and forced summaries 
     store.automation = { mode: 'server' };
     persist();
     assert.equal((await acceptConversationSummary(request, body, { automatic: true })).created, true);
+});
+
+test('automatic summaries wait quietly for image review and resume without consuming their occurrence', async t => {
+    const directories = makeDirectories();
+    t.after(() => fs.rmSync(directories.root, { recursive: true, force: true }));
+    const saved = writeSettings(directories);
+    const store = saved.extension_settings[CONVERSATION_STORE_KEY];
+    store.automation = { mode: 'server' };
+    store.userStatus = 'offline';
+    const thread = store.characters['nova.png'];
+    thread.settings.enabled = true;
+    thread.branches.main.messages = Array.from({ length: 40 }, (_, i) => ({ id: `m${i}`, role: 'user', mes: `Message ${i}` }));
+    const quote = { messageId: 'missing-source', name: 'Nova', text: 'Unreviewed image description' };
+    thread.branches.main.messages.at(-1).extra = { conversation_reply_to: quote };
+    saved.power_user = { neconyan_prompt_media: { version: 1, images: 'display-only' } };
+    const file = path.join(directories.root, SETTINGS_FILE);
+    fs.writeFileSync(file, JSON.stringify(saved));
+    const png = fs.readFileSync(new URL('../default/content/backgrounds/__transparent.png', import.meta.url));
+    fs.writeFileSync(path.join(directories.characters, 'nova.png'), writeCard(png, JSON.stringify({ name: 'Nova' })));
+    const request = { user: { profile: { handle: 'tester' }, directories } };
+    const target = { avatar: 'nova.png', branchId: 'main' };
+    const submissionKey = getConversationSummarySubmissionKey(target, 'm39');
+    const errors = t.mock.method(console, 'error', () => {});
+    const generate = t.mock.fn(async () => ({ text: 'Reviewed memory.' }));
+    setDirectoriesResolver(() => directories);
+    registerConversationMaintenanceJobs({ generate });
+
+    for (const now of [Date.now(), Date.now() + 30000]) {
+        const result = await scanConversationAutonomy({ owners: ['tester'], directoriesFor: () => directories, now });
+        assert.deepEqual(result.accepted, []);
+    }
+    assert.equal(errors.mock.callCount(), 0);
+    assert.deepEqual(await acceptConversationSummary(request, { submissionKey, target }, { automatic: true }), {
+        created: false, skipped: 'image-review-required',
+    });
+    await assert.rejects(acceptConversationSummary(request, { submissionKey: 'manual-review', target, force: true }), {
+        code: 'ROLEPLAY_IMAGE_INPUT', status: 409,
+        imageIssue: { reason: 'mixed-reply-context', index: 39, mediaIndex: -1, actions: ['review', 'display-only', 'caption'] },
+    });
+    assert.equal(generate.mock.callCount(), 0);
+    assert.deepEqual(listJobs(directories, { owner: 'tester', includeDismissed: true }), []);
+    assert.equal(wasConversationAutomaticOccurrenceAccepted(readStore(directories), submissionKey), false);
+    const before = readBranch(directories).branches.main;
+
+    const current = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const reviewed = structuredClone(current);
+    const extra = reviewed.extension_settings[CONVERSATION_STORE_KEY].characters['nova.png'].branches.main.messages.at(-1).extra;
+    extra.neconyan_image_context = {
+        version: 1, mode: 'omit', source_hash: roleplayHash([extra.conversation_attachment_context ?? '', extra.conversation_reply_to]),
+    };
+    const prepared = prepareSettingsSave(reviewed, current, { conversationOnly: true, trustedConversationEffects: true });
+    assert.equal(prepared.ok, true);
+    fs.writeFileSync(file, JSON.stringify(prepared.settings));
+    const result = await scanConversationAutonomy({ owners: ['tester'], directoriesFor: () => directories });
+    assert.equal(result.accepted.length, 1);
+    const job = getJob(directories, result.accepted[0]);
+    assert.equal(job.type, 'conversation.summary');
+    assert.equal(job.submissionKey, submissionKey);
+    assert.equal(buildConversationSummaryPrompt(readArtifact(directories, job.id, 'request')).includes(quote.text), false);
+    await runJob(job);
+    assert.equal(getJob(directories, job.id).state, 'completed');
+    assert.equal(generate.mock.callCount(), 1);
+    const after = readBranch(directories).branches.main;
+    assert.equal(after.memorySummary, 'Reviewed memory.');
+    assert.equal(after.memorySummaryThrough, 'm39');
+    assert.equal(after.memoryMessageCount, 40);
+    assert.deepEqual(after.messages.at(-1).extra.conversation_reply_to, before.messages.at(-1).extra.conversation_reply_to);
+    assert.equal(wasConversationAutomaticOccurrenceAccepted(readStore(directories), submissionKey), true);
+    assert.deepEqual((await scanConversationAutonomy({ owners: ['tester'], directoriesFor: () => directories })).accepted, []);
+    assert.equal(errors.mock.callCount(), 0);
+});
+
+test('automatic summary scans still report connection errors', async t => {
+    const directories = makeDirectories();
+    t.after(() => fs.rmSync(directories.root, { recursive: true, force: true }));
+    const saved = writeSettings(directories);
+    const store = saved.extension_settings[CONVERSATION_STORE_KEY];
+    store.automation = { mode: 'server' };
+    store.userStatus = 'offline';
+    store.characters['nova.png'].settings.enabled = true;
+    store.characters['nova.png'].branches.main.messages = Array.from({ length: 40 }, (_, i) => ({ id: `m${i}`, role: 'user', mes: 'Hello' }));
+    saved.extension_settings.connectionManager.profiles = [];
+    fs.writeFileSync(path.join(directories.root, SETTINGS_FILE), JSON.stringify(saved));
+    const png = fs.readFileSync(new URL('../default/content/backgrounds/__transparent.png', import.meta.url));
+    fs.writeFileSync(path.join(directories.characters, 'nova.png'), writeCard(png, JSON.stringify({ name: 'Nova' })));
+    const errors = t.mock.method(console, 'error', () => {});
+    await scanConversationAutonomy({ owners: ['tester'], directoriesFor: () => directories });
+    assert.equal(errors.mock.callCount(), 1);
+    assert.equal(errors.mock.calls[0].arguments[0], '[Conversation] Could not accept automatic summary:');
+    assert.match(errors.mock.calls[0].arguments[1], /profile/i);
 });
 
 test('accepted summaries cannot overwrite intervening handwritten memory or clear operations', async t => {
