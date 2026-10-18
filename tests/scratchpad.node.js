@@ -619,6 +619,11 @@ test('sharing the current preset starts off, is saved when chosen and carries to
 test('the reply limit defaults to 32000 without replacing saved limits', t => {
     assert.equal(store.normaliseSettings({}).maxTokens, 32000);
     assert.equal(store.normaliseSettings({ maxTokens: 'invalid' }).maxTokens, 32000);
+    const saved = { ...store.defaultSettings(), maxTokens: 16000, depth: 3 };
+    for (const invalid of ['invalid', '', '  ', null]) {
+        assert.equal(store.normaliseSettings({ maxTokens: invalid }, saved).maxTokens, 16000, 'an invalid limit keeps the saved value');
+        assert.equal(store.normaliseSettings({ depth: invalid }, saved).depth, 3, 'an invalid depth keeps the saved value');
+    }
     const a = account(t);
     const session = startSession(a, { maxTokens: 16000 });
     a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { settings: { stream: false } }));

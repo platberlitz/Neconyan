@@ -42,6 +42,7 @@ import { openAssistantLibrary } from './assistants.js';
 import { sameSourceBucket, sameSourceContext } from './source.js';
 import { observeJob, TERMINAL } from '../jobs.js';
 import * as images from './images.js';
+import { integerSettingValue, reflectSavedValue, reflectedSettingValue } from './setting-input.js';
 
 const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261013e-scratchpad-images';
 const PHONE_QUERY = '(max-width: 768px)';
@@ -698,6 +699,27 @@ async function refreshImageAvailability() {
         app.imageAvailability = result;
         if (app.open) renderHeader();
     } catch { app.imageAvailability = { image: false, reason: t`Quick Image Gen availability could not be checked.` }; }
+}
+
+/** Blank or non-finite fields keep their saved value; the server's clamp is shown after saving. */
+async function saveNumberSetting(input, key) {
+    const settings = currentSettings();
+    const limits = app.bucket?.limits ?? { depth: 200, maxTokens: 32000 };
+    const previous = settings[key];
+    const value = integerSettingValue(input.value, key === 'depth'
+        ? { min: 0, max: Number(limits.depth) || 200 }
+        : { min: 64, max: Number(limits.maxTokens) || 32000 });
+    if (value === null) {
+        reflectSavedValue(input, previous);
+        return;
+    }
+    const submitted = input.value;
+    const sessionId = activeSession()?.id;
+    const result = await updateSettings({ [key]: value });
+    const saved = reflectedSettingValue(currentSettings()[key], previous, {
+        sessionId, activeSessionId: activeSession()?.id, succeeded: Boolean(result),
+    });
+    if (input.value === submitted) reflectSavedValue(input, saved);
 }
 
 async function acknowledge() {
@@ -1597,12 +1619,12 @@ function renderContext({ force = true } = {}) {
     const depth = h('input', {
         type: 'number', class: 'text_pole', min: '0', max: String(limits.depth), step: '1', value: String(settings.depth),
         id: 'scratchpad-depth',
-        onchange: event => void updateSettings({ depth: Number(event.currentTarget.value) }),
+        onchange: event => void saveNumberSetting(event.currentTarget, 'depth'),
     });
     const maxTokens = h('input', {
         type: 'number', class: 'text_pole', min: '64', max: String(limits.maxTokens), step: '64', value: String(settings.maxTokens),
         id: 'scratchpad-max-tokens',
-        onchange: event => void updateSettings({ maxTokens: Number(event.currentTarget.value) }),
+        onchange: event => void saveNumberSetting(event.currentTarget, 'maxTokens'),
     });
     const profiles = connectionProfiles();
     const connections = allAssistants().map(assistant => {
