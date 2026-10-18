@@ -17,12 +17,24 @@ const listeners = new Set();
 const sanitizeCache = new Map();
 const SANITIZE_CACHE_LIMIT = 200;
 
+const THEME_SELECT_ID = 'themes';
+// Silent programmatic theme setters can change power_user.theme without firing a
+// control event or mutating a watched attribute. Keep a visible-only safety net
+// at one tenth of the old 500ms poll instead of reading context on hidden pages.
+const FALLBACK_WATCH_MS = 5000;
+const SETTINGS_EVENT_KEYS = ['SETTINGS_LOADED_AFTER', 'EXTENSION_SETTINGS_LOADED', 'SETTINGS_LOADED'];
+
 let loaded = false;
 let contextObserver = null;
 let contextCheckFrame = null;
 let lastContextKey = null;
 let chatHandler = null;
 let wakeHandler = null;
+let themeObserver = null;
+let themeSelectElement = null;
+let themeControlHandler = null;
+let settingsHandlers = [];
+let fallbackTimer = null;
 
 export function getCtx() {
     return globalThis.SillyTavern.getContext();
@@ -282,6 +294,63 @@ function scheduleContextCheck() {
     });
 }
 
+function installThemeObserver() {
+    if (typeof MutationObserver !== 'function') return;
+    const select = document.getElementById(THEME_SELECT_ID);
+    if (!select || (themeObserver && themeSelectElement === select)) return;
+    themeObserver?.disconnect();
+    themeSelectElement = select;
+    themeObserver = new MutationObserver(scheduleContextCheck);
+    themeObserver.observe(select, { childList: true, subtree: true });
+}
+
+function handleThemeControl(event) {
+    const target = event?.target;
+    if (!target) return;
+    if (target.id === THEME_SELECT_ID || target.closest?.(`#${THEME_SELECT_ID}`)) {
+        installThemeObserver();
+        // The host's own select handler writes power_user.theme after capture
+        // listeners run, so read context on the next frame instead of too early.
+        scheduleContextCheck();
+    }
+}
+
+function refreshFromSettings(reason) {
+    // SETTINGS_LOADED_AFTER arrives before extension_settings is replaced.
+    // Reapply the current (old) list without merging or saving, then let the
+    // final events below load the replacement. This avoids writing old
+    // extension settings over the settings file that is still being loaded.
+    if (reason === 'settings_loaded_after') {
+        lastContextKey = contextKey();
+        applyCss();
+        notify(reason);
+        return;
+    }
+    loaded = false;
+    loadSettings();
+    lastContextKey = contextKey();
+    applyCss();
+    notify(reason);
+}
+
+function startFallback() {
+    if (fallbackTimer !== null || document.visibilityState !== 'visible') return;
+    // Safety net for a silent setter that changes power_user.theme while the
+    // theme select's selected option and the root CSS variables stay identical.
+    // It exists only while the page is visible, so hidden pages do no polling.
+    fallbackTimer = setInterval(() => {
+        if (document.visibilityState !== 'visible') return;
+        installThemeObserver();
+        checkContext();
+    }, FALLBACK_WATCH_MS);
+}
+
+function stopFallback() {
+    if (fallbackTimer === null) return;
+    clearInterval(fallbackTimer);
+    fallbackTimer = null;
+}
+
 export function startWatching() {
     stopWatching();
     lastContextKey = contextKey();
@@ -289,6 +358,16 @@ export function startWatching() {
     chatHandler = () => checkContext();
     ctx.eventSource?.on?.(ctx.eventTypes.CHAT_CHANGED, chatHandler);
     ctx.eventSource?.on?.(ctx.eventTypes.SETTINGS_UPDATED, chatHandler);
+
+    settingsHandlers = SETTINGS_EVENT_KEYS
+        .map(key => ctx.eventTypes?.[key])
+        .filter((name, index, list) => typeof name === 'string' && list.indexOf(name) === index)
+        .map(name => {
+            const handler = () => refreshFromSettings(name);
+            ctx.eventSource?.on?.(name, handler);
+            return [name, handler];
+        });
+
     // Theme previews change the root CSS variables before the debounced
     // settings save fires, so watch the two elements themes actually mutate.
     if (typeof MutationObserver === 'function') {
@@ -304,8 +383,22 @@ export function startWatching() {
             });
         }
     }
+
+    installThemeObserver();
+    themeControlHandler = handleThemeControl;
+    document.addEventListener('change', themeControlHandler, true);
+    document.addEventListener('input', themeControlHandler, true);
+
+    startFallback();
+
     wakeHandler = () => {
-        if (document.visibilityState === 'visible') checkContext();
+        if (document.visibilityState !== 'visible') {
+            stopFallback();
+            return;
+        }
+        startFallback();
+        installThemeObserver();
+        checkContext();
     };
     document.addEventListener('visibilitychange', wakeHandler);
     window.addEventListener('focus', wakeHandler);
@@ -317,15 +410,33 @@ export function stopWatching() {
         contextObserver.disconnect();
         contextObserver = null;
     }
+    if (themeObserver) {
+        themeObserver.disconnect();
+        themeObserver = null;
+    }
+    themeSelectElement = null;
     if (contextCheckFrame !== null) {
         cancelAnimationFrame(contextCheckFrame);
         contextCheckFrame = null;
     }
+    stopFallback();
     if (chatHandler) {
         const ctx = getCtx();
         ctx.eventSource?.removeListener?.(ctx.eventTypes.CHAT_CHANGED, chatHandler);
         ctx.eventSource?.removeListener?.(ctx.eventTypes.SETTINGS_UPDATED, chatHandler);
         chatHandler = null;
+    }
+    if (settingsHandlers.length) {
+        const ctx = getCtx();
+        for (const [name, handler] of settingsHandlers) {
+            ctx.eventSource?.removeListener?.(name, handler);
+        }
+        settingsHandlers = [];
+    }
+    if (themeControlHandler) {
+        document.removeEventListener('change', themeControlHandler, true);
+        document.removeEventListener('input', themeControlHandler, true);
+        themeControlHandler = null;
     }
     if (wakeHandler) {
         document.removeEventListener('visibilitychange', wakeHandler);
