@@ -10,6 +10,7 @@
 import { getContext } from '../../../extensions.js';
 import { isGenerating } from '../../../../script.js';
 import { EXTENSION_NAME, getSettings } from './config.js';
+import { createPendingNavigationQueue } from './pending-navigation-queue.js';
 import {
     isValidMessageId,
     isMessageSwipeable,
@@ -75,26 +76,22 @@ function findMessageElement(messageId) {
     return (document.getElementById('chat') ?? document).querySelector(`.mes[mesid="${messageId}"]`);
 }
 
-const pendingSwipeNavigation = new Set();
-let swipeNavigationTimer = null;
+const navigationQueue = createPendingNavigationQueue({
+    delay: 100,
+    getContext,
+    getSettings,
+    findElement: findMessageElement,
+    addNavigation: (messageId, scope) => addSwipeNavigationToMessage(messageId, scope),
+});
 
-/**
- * A chat load adds hundreds of messages in one burst. One timer per message
- * meant hundreds of timers firing together; batch them behind one timer and
- * re-check that each message still exists when it flushes.
- */
-function scheduleSwipeNavigation(messageId) {
-    if (!Number.isInteger(messageId) || messageId < 0) return;
-    pendingSwipeNavigation.add(messageId);
-    if (swipeNavigationTimer) clearTimeout(swipeNavigationTimer);
-    swipeNavigationTimer = setTimeout(() => {
-        swipeNavigationTimer = null;
-        const messageIds = Array.from(pendingSwipeNavigation);
-        pendingSwipeNavigation.clear();
-        for (const id of messageIds) {
-            if (findMessageElement(id)?.isConnected) addSwipeNavigationToMessage(id);
-        }
-    }, 100);
+let chatChangedBinding = null;
+
+function scheduleSwipeNavigation(messageId, element = null) {
+    navigationQueue.schedule(messageId, element);
+}
+
+export function cancelPendingSwipeNavigation() {
+    navigationQueue.cancel();
 }
 
 function mutationInsideRoleplayDraft(mutation) {
@@ -185,9 +182,13 @@ function canSwipeNow() {
  * Add swipe navigation (arrows + counter) to message
  * @param {number} messageId - The message ID to add navigation to
  */
-export function addSwipeNavigationToMessage(messageId) {
+export function addSwipeNavigationToMessage(messageId, scope = {}) {
+    const settings = getSettings();
+    if (!settings?.enabled || !settings.swipeNavigation) return;
+
     const context = getContext();
-    const chat = context.chat;
+    if (scope.chat && context?.chat !== scope.chat) return;
+    const chat = scope.chat ?? context.chat;
     const message = chat[messageId];
 
     if (!message) {
@@ -198,7 +199,8 @@ export function addSwipeNavigationToMessage(messageId) {
         return;
     }
 
-    const messageElement = findMessageElement(messageId);
+    if (scope.element && (!scope.element.isConnected || findMessageElement(messageId) !== scope.element)) return;
+    const messageElement = scope.element ?? findMessageElement(messageId);
     if (!messageElement) {
         return;
     }
@@ -754,6 +756,7 @@ export function removeInlineSwipeOverlay(messageId) {
  * Remove all deep swipe UI components
  */
 export function removeAllDeepSwipeUI() {
+    cancelPendingSwipeNavigation();
     document.querySelectorAll('.deep-swipe-navigation').forEach(nav => nav.remove());
     // Only remove elements with our custom deep-swipe classes, not native swipe elements
     document.querySelectorAll('.deep-swipe-left').forEach(el => el.remove());
@@ -827,6 +830,7 @@ export function removeLatestSwipeHighlight() {
  * @param {number} [retryCount=0] - Current retry count
  */
 export function addUiToAllMessages(retryCount = 0) {
+    cancelPendingSwipeNavigation();
     const settings = getSettings();
     if (!settings?.enabled || !settings.swipeNavigation) return;
 
@@ -892,6 +896,15 @@ export function setupMutationObservers(context, onDeleteClick) {
     const chatElement = document.getElementById('chat');
     if (!chatElement) return;
 
+    if (context?.eventSource && context?.eventTypes?.CHAT_CHANGED) {
+        if (chatChangedBinding) {
+            chatChangedBinding.eventSource?.removeListener?.(chatChangedBinding.eventType, chatChangedBinding.handler);
+        }
+        const handler = () => cancelPendingSwipeNavigation();
+        context.eventSource.on(context.eventTypes.CHAT_CHANGED, handler);
+        chatChangedBinding = { eventSource: context.eventSource, eventType: context.eventTypes.CHAT_CHANGED, handler };
+    }
+
     const observer = new MutationObserver((mutations) => {
         for (const mutation of mutations) {
             if (mutationInsideRoleplayDraft(mutation)) continue;
@@ -902,7 +915,7 @@ export function setupMutationObservers(context, onDeleteClick) {
                         const mesId = node.getAttribute('mesid');
                         if (mesId) {
                             const messageId = parseInt(mesId, 10);
-                            scheduleSwipeNavigation(messageId);
+                            scheduleSwipeNavigation(messageId, node);
 
                             // NOTE: Overlay injection is not needed here.
                             // createSwipeOverlay() creates a fixed-position clone that survives DOM changes.
@@ -916,7 +929,7 @@ export function setupMutationObservers(context, onDeleteClick) {
                 if (target.classList?.contains('mes') && !target.classList.contains('last_mes')) {
                     const mesId = target.getAttribute('mesid');
                     if (mesId && !target.querySelector('.deep-swipe-right')) {
-                        scheduleSwipeNavigation(parseInt(mesId, 10));
+                        scheduleSwipeNavigation(parseInt(mesId, 10), target);
                     }
                 }
             }

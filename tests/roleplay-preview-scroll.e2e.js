@@ -518,7 +518,7 @@ for (const phone of [false, true]) {
             const marker = await stopMarkerPostPaint(page);
             const frames = await stopScrollFrames(page);
             await test.info().attach('handover-reply-raw-scroll', {
-                body: JSON.stringify({ frames, previewTextTop: finished.previewTextTop, savedTextTop: finished.savedTextTop }),
+                body: JSON.stringify({ frames, marker, previewTextTop: finished.previewTextTop, savedTextTop: finished.savedTextTop }),
                 contentType: 'application/json',
             });
 
@@ -554,7 +554,7 @@ for (const phone of [false, true]) {
             const marker = await stopMarkerPostPaint(page);
             const frames = await stopScrollFrames(page);
             await test.info().attach('handover-notes-raw-scroll', {
-                body: JSON.stringify({ frames, previewTextTop: finished.previewTextTop, savedTextTop: finished.savedTextTop }),
+                body: JSON.stringify({ frames, marker, previewTextTop: finished.previewTextTop, savedTextTop: finished.savedTextTop }),
                 contentType: 'application/json',
             });
 
