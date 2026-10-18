@@ -1,5 +1,6 @@
 import { MODULE_NAME } from '../settings.js';
 import { safeRegister, safeUnregister } from '../registration.js';
+import { notifyMacroDataChanged } from '../data-events.js';
 import { CATEGORY_CUSTOM, compileDef } from './compile.js';
 import { getEffectiveDefs } from './store.js';
 
@@ -21,6 +22,7 @@ export function syncRegistrations() {
         return;
     }
 
+    let changed = false;
     const desired = new Map();
     for (const { def, scope } of getEffectiveDefs()) {
         desired.set(def.name.toLowerCase(), { def, scope });
@@ -31,6 +33,7 @@ export function syncRegistrations() {
         if (!want || fingerprint(want.def, want.scope) !== registered.get(nameKey)) {
             safeUnregister(nameKey);
             registered.delete(nameKey);
+            changed = true;
         }
     }
 
@@ -44,13 +47,20 @@ export function syncRegistrations() {
         if (existing
             && String(existing.source?.name ?? '').toLowerCase() === MODULE_NAME.toLowerCase()
             && existing.category !== CATEGORY_CUSTOM) {
-            console.warn(`[Macro Enhanced] Custom macro "{{${def.name}}}" collides with a built-in Macro Enhanced macro and was not registered. Rename it in the settings drawer.`);
+            console.warn(`[Macro Enhanced] Custom macro "{{${def.name}}}" collides with a built-in Macro Enhanced macro and was not registered. Rename it on the My macros tab.`);
             continue;
         }
         const actualName = safeRegister(def.name, compileDef(def, { engine }));
         if (actualName) {
             registered.set(nameKey, fingerprint(def, scope));
+            changed = true;
         }
+    }
+
+    // Writers notify before they call us. Announce again after the registry and
+    // catalogue are in step, so the Reference rebuilds from the new macros.
+    if (changed) {
+        notifyMacroDataChanged('macros');
     }
 }
 

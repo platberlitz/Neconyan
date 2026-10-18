@@ -12,13 +12,13 @@ export default {
         },
         {
             name: 'skillcheck',
-            description: 'Rolls a d20 against a difficulty and prints success or failure. Re-rolls every evaluation. volatile by nature.',
+            description: 'Rolls a d20 against a difficulty and prints success or failure. It re-rolls every evaluation and is volatile by nature.',
             template: '{{if {{gte::{{roll::d20}}::{{difficulty}}}}}}success{{else}}failure{{/if}}',
             args: [{ name: 'difficulty' }],
         },
         {
             name: 'coinflip',
-            description: 'Heads or tails. Re-flips every evaluation. cache-volatile on purpose.',
+            description: 'Heads or tails. It re-flips every evaluation and is cache-volatile on purpose.',
             template: '{{random::heads::tails}}',
             args: [],
         },

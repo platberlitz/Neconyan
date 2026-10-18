@@ -69,7 +69,7 @@ function stripExtension(fileName) {
 export function computePrewarmNames(ctx) {
     const names = new Set();
 
-    const chatBook = ctx.chatMetadata?.['world_info'];
+    const chatBook = ctx.chatMetadata?.world_info;
     if (typeof chatBook === 'string' && chatBook) {
         names.add(chatBook);
     }
@@ -103,7 +103,7 @@ export function computePrewarmNames(ctx) {
 
 /**
  * Loads a single book into the cache in the background. Safe to call repeatedly:
- * a failed load is remembered so per-evaluation lookups don't hammer the server —
+ * a failed load is remembered so per-evaluation lookups don't hammer the server  -
  * the next prewarm (chat change, World Info settings change) retries.
  */
 export function warmBook(ctx, name) {
@@ -147,7 +147,7 @@ export function getSearchOrder(ctx) {
         }
     };
 
-    push(ctx.chatMetadata?.['world_info']);
+    push(ctx.chatMetadata?.world_info);
 
     const character = ctx.characters?.[ctx.characterId];
     push(character?.data?.extensions?.world);

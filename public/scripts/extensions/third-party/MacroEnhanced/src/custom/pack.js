@@ -73,7 +73,7 @@ export function parsePack(jsonText) {
         };
         const label = `Macro #${index + 1}${candidate.name ? ` ("${candidate.name}")` : ''}`;
         if (seenNames.has(candidate.name.toLowerCase())) {
-            problems.push(`${label}: appears twice in the pack. the first copy wins.`);
+            problems.push(`${label}: appears twice in the pack. The first copy wins.`);
             return;
         }
         const errors = validateDef(candidate, {});
@@ -82,7 +82,8 @@ export function parsePack(jsonText) {
             return;
         }
         seenNames.add(candidate.name.toLowerCase());
-        const { id, ...partial } = candidate;
+        const partial = { ...candidate };
+        delete partial.id;
         macros.push(partial);
     });
     return { macros, problems };

@@ -1,5 +1,5 @@
 /**
- * Pure implementations for the chat-variable macros. No Neconyan imports —
+ * Pure implementations for the chat-variable macros. No Neconyan imports  -
  * everything in this file is directly testable under `node --test`.
  */
 

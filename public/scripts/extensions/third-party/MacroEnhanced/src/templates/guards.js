@@ -6,14 +6,13 @@ export default {
     macros: [
         {
             name: 'replyformat',
-            description: 'A reply-format instruction. Pass a style, or leave it for third person past tense.',
-            template: 'Write in {{default::{{style}}::third person, past tense}}, staying in character as {{char}}.',
+            description: 'A reply-format instruction. Pass a style, or leave it for third person past tense.',            template: 'Write in {{default::{{style}}::third person, past tense}}, staying in character as {{char}}.',
             args: [{ name: 'style', optional: true, defaultValue: '' }],
         },
         {
             name: 'povguard',
             description: 'Keeps the AI from speaking or acting for you.',
-            template: 'Never write {{user}}\'s actions, thoughts or dialogue. leave those to {{user}}.',
+            template: 'Never write {{user}}\'s actions, thoughts or dialogue. Leave those to {{user}}.',
             args: [],
         },
         {

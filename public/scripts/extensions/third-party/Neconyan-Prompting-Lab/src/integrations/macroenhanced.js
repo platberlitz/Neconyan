@@ -56,15 +56,16 @@ export function readMacroEnhanced(hostRef) {
     }
 
     const characterIndex = context?.characterId;
-    const characterMacros = context?.characters?.[characterIndex]?.data?.extensions?.[SETTINGS_KEY]?.customMacros;
+    const characterSettings = context?.characters?.[characterIndex]?.data?.extensions?.[SETTINGS_KEY];
     const chatState = context?.chatMetadata?.[SETTINGS_KEY] ?? null;
 
     return {
         settingsVersion: settings.settingsVersion ?? null,
         compatExpressions: Boolean(settings.compatExpressions),
+        fixImportedSyntax: Boolean(settings.fixImportedSyntax),
         manualCachingAtDepth: settings.auditor?.manualCachingAtDepth ?? null,
         globalMacros: customMacroFingerprint(settings.customMacros),
-        characterMacros: customMacroFingerprint(characterMacros),
+        characterMacros: customMacroFingerprint(characterSettings?.customMacros),
         chatMacros: customMacroFingerprint(chatState?.customMacros),
         // Stored values that make a macro return the same thing twice; a change
         // here explains a prompt difference that no setting accounts for.
@@ -79,7 +80,9 @@ export function readMacroEnhanced(hostRef) {
         rollValues: valueHashes(chatState?.rolls),
         chatVarValues: valueHashes(chatState?.chatVars),
         countersHash: hashValue(chatState?.counters ?? {}),
-        pronounsHash: hashValue(chatState?.pronouns ?? {}),
+        pronounsHash: hashValue({ user: '', char: '', ...chatState?.pronouns }),
+        personaPronounsHash: hashValue(settings.pronouns?.personas?.[context?.userAvatar] ?? ''),
+        characterPronounsHash: hashValue(characterSettings?.pronouns ?? ''),
     };
 }
 
@@ -88,5 +91,15 @@ export function macroConfigDiffers(a, b) {
     if (!a || !b) {
         return Boolean(a) !== Boolean(b);
     }
-    return JSON.stringify(a) !== JSON.stringify(b);
+    const left = { ...a };
+    const right = { ...b };
+    // Older saved cases did not record these fields. Compare them only when
+    // both runs know the value, without ignoring missing established fields.
+    for (const key of ['fixImportedSyntax', 'personaPronounsHash', 'characterPronounsHash']) {
+        if (!Object.hasOwn(a, key) || !Object.hasOwn(b, key)) {
+            delete left[key];
+            delete right[key];
+        }
+    }
+    return stableStringify(left) !== stableStringify(right);
 }

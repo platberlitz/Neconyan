@@ -1,5 +1,5 @@
 import { safeRegister as defaultRegister } from './registration.js';
-import { getChatState, touchChatState } from './chat-state.js';
+import { resolveMacroState, touchChatState } from './chat-state.js';
 import { splitList, truncateText } from './utility-impl.js';
 import {
     FROZEN_ENTRIES_WARN_AT,
@@ -33,18 +33,10 @@ export function resetStateRecursion() {
     expanding.clear();
 }
 
-/** Sandboxed state (Workbench overlay) when present, else the real chat state. */
-function resolveState(env) {
-    const sandboxState = env?.extra?.meSandboxState;
-    if (sandboxState) {
-        return { state: sandboxState, sandboxed: true };
-    }
-    return { state: getChatState(), sandboxed: false };
-}
-
-function persist(sandboxed) {
-    if (!sandboxed) {
-        touchChatState();
+/** Stored values are saved only for a live macro call. */
+function persist(mode) {
+    if (mode === 'live') {
+        touchChatState('values');
     }
 }
 
@@ -97,7 +89,7 @@ export function registerStateMacros(safeRegister = defaultRegister) {
                 ctx.warn(`{{freeze}}: "${key}" is not a valid key. The value was not saved.`);
                 return guardedResolve(ctx, 'freeze', key || '(empty)', rawContent).value;
             }
-            const { state, sandboxed } = resolveState(ctx.env);
+            const { state, mode } = resolveMacroState(ctx.env, { write: true });
             if (!state) {
                 ctx.warn('{{freeze}}: no chat is loaded. The value was not saved.');
                 return guardedResolve(ctx, 'freeze', key, rawContent).value;
@@ -112,7 +104,7 @@ export function registerStateMacros(safeRegister = defaultRegister) {
             }
             const entry = { value, frozenAt: Date.now() };
             storeEntry(ctx, state, 'frozen', key, entry);
-            persist(sandboxed);
+            persist(mode);
             return String(entry.value);
         },
     });
@@ -140,7 +132,7 @@ export function registerStateMacros(safeRegister = defaultRegister) {
                 ctx.warn(`{{sticky}}: "${key}" is not a valid key. The value was not saved.`);
                 return guardedResolve(ctx, 'sticky', key || '(empty)', rawContent).value;
             }
-            const { state, sandboxed } = resolveState(ctx.env);
+            const { state, mode } = resolveMacroState(ctx.env, { write: true });
             if (!state) {
                 ctx.warn('{{sticky}}: no chat is loaded. The value was not saved.');
                 return guardedResolve(ctx, 'sticky', key, rawContent).value;
@@ -156,7 +148,7 @@ export function registerStateMacros(safeRegister = defaultRegister) {
             }
             const next = { value, atUserCount: userCount };
             storeEntry(ctx, state, 'sticky', key, next);
-            persist(sandboxed);
+            persist(mode);
             return String(next.value);
         },
     });
@@ -178,7 +170,7 @@ export function registerStateMacros(safeRegister = defaultRegister) {
                 ctx.warn(`{{daily}}: "${key}" is not a valid key. The value was not saved.`);
                 return guardedResolve(ctx, 'daily', key || '(empty)', rawContent).value;
             }
-            const { state, sandboxed } = resolveState(ctx.env);
+            const { state, mode } = resolveMacroState(ctx.env, { write: true });
             if (!state) {
                 ctx.warn('{{daily}}: no chat is loaded. The value was not saved.');
                 return guardedResolve(ctx, 'daily', key, rawContent).value;
@@ -194,7 +186,7 @@ export function registerStateMacros(safeRegister = defaultRegister) {
             }
             const next = { value, day: today };
             storeEntry(ctx, state, 'daily', key, next);
-            persist(sandboxed);
+            persist(mode);
             return String(next.value);
         },
     });
@@ -222,7 +214,7 @@ export function registerStateMacros(safeRegister = defaultRegister) {
                 ctx.warn(`{{rollonce}}: "${key}" is not a valid key. Rolled without saving.`);
                 return String(rollDice(formula));
             }
-            const { state, sandboxed } = resolveState(ctx.env);
+            const { state, mode } = resolveMacroState(ctx.env, { write: true });
             if (!state) {
                 ctx.warn('{{rollonce}}: no chat is loaded. Rolled without saving.');
                 return String(rollDice(formula));
@@ -232,11 +224,11 @@ export function registerStateMacros(safeRegister = defaultRegister) {
                 return String(entry.value ?? '');
             }
             if (entry) {
-                ctx.warn(`{{rollonce}}: the formula for "${key}" changed (${entry.formula} → ${formulaText}). re-rolled.`);
+                ctx.warn(`{{rollonce}}: the formula for "${key}" changed (${entry.formula} to ${formulaText}). Re-rolled.`);
             }
             const next = { value: String(rollDice(formula)), formula: formulaText };
             storeEntry(ctx, state, 'rolls', key, next);
-            persist(sandboxed);
+            persist(mode);
             return next.value;
         },
     });
@@ -248,7 +240,7 @@ export function registerStateMacros(safeRegister = defaultRegister) {
             { name: 'list', description: 'The items to pick from.' },
             { name: 'separator', optional: true, defaultValue: ',', description: 'The list separator.' },
         ],
-        description: 'Picks one item from a list. always the same one for this chat and key. A cache-friendly {{random}} that needs no storage.',
+        description: 'Picks one item from a list. Always the same one for this chat and key, so it is a cache-friendly {{random}} that needs no storage.',
         returns: 'the picked item',
         exampleUsage: ['{{listpick::weather::sunny, rainy, misty}}'],
         handler: (ctx) => {
@@ -276,7 +268,7 @@ export function registerStateMacros(safeRegister = defaultRegister) {
         unnamedArgs: [
             { name: 'hemisphere', optional: true, defaultValue: 'north', description: 'north (default) or south.' },
         ],
-        description: 'The current season. Changes four times a year. safe for prompt caching.',
+        description: 'The current season. Changes four times a year, so it is safe for prompt caching.',
         returns: 'spring, summer, autumn or winter',
         exampleUsage: ['{{season}}', '{{season::south}}'],
         handler: (ctx) => seasonOf(new Date().getMonth(), ctx.unnamedArgs[0] || 'north'),
@@ -290,12 +282,15 @@ export function registerStateMacros(safeRegister = defaultRegister) {
         exampleUsage: ['{{chatdays}}'],
         handler: (ctx) => {
             const liveCtx = SillyTavern.getContext();
-            const { state } = resolveState(ctx.env);
+            const { state, chatOpen } = resolveMacroState(ctx.env);
             let start = parseTimestamp(liveCtx.chat?.[0]?.send_date);
             if (!Number.isFinite(start)) {
                 start = state?.counters?.firstSeenAt ?? NaN;
             }
             if (!Number.isFinite(start)) {
+                if (chatOpen) {
+                    return '0';
+                }
                 ctx.warn('{{chatdays}}: no chat is loaded.');
                 return '';
             }
@@ -311,8 +306,11 @@ export function registerStateMacros(safeRegister = defaultRegister) {
             returnType: 'integer',
             exampleUsage: [`{{${name}}}`],
             handler: (ctx) => {
-                const { state } = resolveState(ctx.env);
+                const { state, chatOpen } = resolveMacroState(ctx.env);
                 if (!state) {
+                    if (chatOpen) {
+                        return '0';
+                    }
                     ctx.warn(`{{${name}}}: no chat is loaded.`);
                     return '0';
                 }

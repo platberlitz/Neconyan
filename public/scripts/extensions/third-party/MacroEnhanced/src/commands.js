@@ -1,15 +1,18 @@
 import { isEngineAvailable } from './engine-gate.js';
 import { getRegisteredNames } from './registration.js';
-import { getChatState, touchChatState } from './chat-state.js';
+import { getChatState, peekChatState, touchChatState } from './chat-state.js';
 import { findEntry } from './lorebook-cache.js';
 import { truncateText } from './utility-impl.js';
 import { SCOPE_CHARACTER, SCOPE_CHAT, SCOPE_GLOBAL, createDef, getAllCustomNames, getCharacterDefs, getChatDefs, getGlobalDefs, saveCharacterDefs, saveChatDefs, saveGlobalDefs, validateDef } from './custom/store.js';
 import { getRegisteredCustomNames, syncRegistrations } from './custom/registrar.js';
-import { createSandbox } from './workbench/sandbox.js';
+import { resolveDefineArgs } from './custom/define-args.js';
+import { scopeAvailability } from './custom/scopes.js';
+import { createSandbox, applySandboxEnvironment } from './workbench/sandbox.js';
 import { openWorkbench } from './workbench/panel.js';
 import { formatAuditReport, runAudit } from './auditor/audit.js';
 import { exportPack } from './custom/pack.js';
 import { clearCommandDocs, recordCommand } from './catalog.js';
+import { withReadOnlyVariables } from '../../../../variable-read-only.js';
 
 let commandsRegistered = false;
 let extensionActive = true;
@@ -21,9 +24,9 @@ export function setCommandsActive(value) {
 }
 
 const INACTIVE = 'Macro Enhanced is inactive.';
-const ENGINE_OFF = 'Macro Enhanced needs the Experimental Macro Engine enabled (User Settings → Experimental Macro Engine).';
+const ENGINE_OFF = 'Macro Enhanced needs the New macro engine turned on. Open Settings, then Fine-tuning, then New macro engine.';
 
-function evaluateWithEngine(text, dynamicMacros = {}, extra = null) {
+function evaluateWithEngine(text, dynamicMacros = {}, sandbox = null) {
     const ctx = SillyTavern.getContext();
     const env = ctx.macros.envBuilder.buildFromRawEnv({
         content: text,
@@ -31,8 +34,8 @@ function evaluateWithEngine(text, dynamicMacros = {}, extra = null) {
         dynamicMacros,
         postProcessFn: (x) => x,
     });
-    if (extra) {
-        env.extra = { ...(env.extra ?? {}), ...extra };
+    if (sandbox) {
+        applySandboxEnvironment(env, sandbox);
     }
     return ctx.macros.engine.evaluate(text, env);
 }
@@ -87,7 +90,7 @@ export function registerCommands() {
                 openWorkbench();
                 return '';
             },
-            helpString: 'Opens the Macro Workbench: a sandboxed playground to preview macro text without changing real variables.',
+            helpString: 'Opens the Macro Enhanced page at the Playground: a sandboxed preview of macro text that changes no real variables.',
         }));
 
         registerCommand(SlashCommand.fromProps({
@@ -111,11 +114,11 @@ export function registerCommands() {
                 const sandbox = createSandbox({
                     getLocalStore: () => liveCtx.chatMetadata?.variables ?? {},
                     getGlobalStore: () => liveCtx.extensionSettings?.variables?.global ?? {},
-                    getChatState: () => getChatState(),
+                    getChatState: () => peekChatState(),
                 });
-                return sandbox.run(
-                    (input, dynamicMacros) => evaluateWithEngine(input, dynamicMacros, { meSandboxState: sandbox.chatState }),
-                    text);
+                return withReadOnlyVariables(() => sandbox.run(
+                    (input, dynamicMacros) => evaluateWithEngine(input, dynamicMacros, sandbox),
+                    text));
             },
             namedArgumentList: [
                 SlashCommandNamedArgument.fromProps({
@@ -148,7 +151,7 @@ export function registerCommands() {
                 const { entry, missing } = findEntry(liveCtx, entryName, bookName);
                 if (!entry) {
                     return missing.length
-                        ? `Lorebook(s) still loading: ${missing.join(', ')}. try again.`
+                        ? `Lorebook(s) still loading: ${missing.join(', ')}. Try again.`
                         : `No entry named "${entryName}" found.`;
                 }
                 return String(entry.content ?? '');
@@ -174,9 +177,12 @@ export function registerCommands() {
                 if (!extensionActive) {
                     return INACTIVE;
                 }
-                const state = getChatState();
+                const state = peekChatState();
                 if (!state) {
-                    return 'No chat is loaded.';
+                    const live = SillyTavern.getContext();
+                    return live.chatMetadata && live.chatId !== undefined && live.chatId !== null
+                        ? 'Nothing is frozen in this chat.'
+                        : 'No chat is loaded.';
                 }
                 // kind label (user-facing) -> property on the chat state.
                 const kinds = { freeze: 'frozen', sticky: 'sticky', daily: 'daily', roll: 'rolls' };
@@ -213,8 +219,8 @@ export function registerCommands() {
                     }
                 }
                 if (removed) {
-                    touchChatState();
-                    return `Unfroze "${key}". it will re-evaluate next time.`;
+                    touchChatState('values');
+                    return `Unfroze "${key}". It will re-evaluate next time.`;
                 }
                 return `No stored value named "${key}" in this chat.`;
             },
@@ -254,9 +260,12 @@ export function registerCommands() {
                 if (!extensionActive) {
                     return INACTIVE;
                 }
-                const state = getChatState();
+                const state = peekChatState();
                 if (!state) {
-                    return 'No chat is loaded.';
+                    const live = SillyTavern.getContext();
+                    return live.chatMetadata && live.chatId !== undefined && live.chatId !== null
+                        ? 'No chat variables are set in this chat.'
+                        : 'No chat is loaded.';
                 }
                 const vars = state.chatVars ?? {};
                 const key = String(named?.key ?? unnamed ?? '').trim();
@@ -269,7 +278,7 @@ export function registerCommands() {
                         return `No chat variable named "${key}".`;
                     }
                     delete vars[key];
-                    touchChatState();
+                    touchChatState('values');
                     return `Deleted chat variable "${key}".`;
                 }
 
@@ -277,8 +286,12 @@ export function registerCommands() {
                     if (!key) {
                         return 'Name which chat variable to set.';
                     }
-                    vars[key] = String(named.value);
-                    touchChatState();
+                    const live = getChatState();
+                    if (!live) {
+                        return 'No chat is loaded.';
+                    }
+                    live.chatVars[key] = String(named.value);
+                    touchChatState('values');
                     return `Set "${key}" to ${truncateText(String(named.value), 40)}.`;
                 }
 
@@ -343,17 +356,17 @@ export function registerCommands() {
                     const sandbox = createSandbox({
                         getLocalStore: () => liveCtx.chatMetadata?.variables ?? {},
                         getGlobalStore: () => liveCtx.extensionSettings?.variables?.global ?? {},
-                        getChatState: () => getChatState(),
+                        getChatState: () => peekChatState(),
                     });
-                    sandboxEvaluate = (text) => sandbox.run(
-                        (input, dynamicMacros) => evaluateWithEngine(input, dynamicMacros, { meSandboxState: sandbox.chatState }),
-                        text);
+                    sandboxEvaluate = (text) => withReadOnlyVariables(() => sandbox.run(
+                        (input, dynamicMacros) => evaluateWithEngine(input, dynamicMacros, sandbox),
+                        text));
                 }
                 const report = await runAudit({ sandboxEvaluate });
                 return formatAuditReport(report);
             },
             returns: 'a cache-audit report',
-            helpString: 'Scans presets, character card, persona, lorebooks and recent chat for macros that break the prompt-caching discount. Same report as the Workbench\'s Cache Audit tab.',
+            helpString: 'Scans presets, character card, persona, lorebooks and recent chat for macros that break the prompt-caching discount. Same report as the Cache audit card on This chat.',
         }));
 
         registerCommand(SlashCommand.fromProps({
@@ -370,12 +383,17 @@ export function registerCommands() {
                 }
                 const scopeRaw = String(named?.scope ?? SCOPE_GLOBAL).toLowerCase();
                 const scope = [SCOPE_GLOBAL, SCOPE_CHARACTER, SCOPE_CHAT].includes(scopeRaw) ? scopeRaw : SCOPE_GLOBAL;
-                const args = String(named?.args ?? '').split(',').map(part => part.trim()).filter(Boolean)
-                    .map(argName => ({ name: argName, optional: false }));
+                const availability = scopeAvailability(liveCtx);
+                if (!availability[scope].available) {
+                    return availability[scope].reason;
+                }
 
                 const defs = scope === SCOPE_CHARACTER ? getCharacterDefs()
                     : scope === SCOPE_CHAT ? getChatDefs() : getGlobalDefs();
                 const existing = defs.find(def => def.name.toLowerCase() === name.toLowerCase());
+                // Omitting args= updates the template and leaves the saved argument
+                // list alone. Passing args= replaces it.
+                const args = resolveDefineArgs(named?.args, existing?.args);
                 const def = createDef({ ...(existing ?? {}), name, template, args });
 
                 const siblings = defs.filter(other => other.id !== def.id);
@@ -387,14 +405,8 @@ export function registerCommands() {
 
                 const nextDefs = [...siblings, def];
                 if (scope === SCOPE_CHARACTER) {
-                    if (liveCtx.characterId === undefined || liveCtx.characterId === null) {
-                        return 'Open a character chat first to save a character-scoped macro.';
-                    }
                     await saveCharacterDefs(nextDefs);
                 } else if (scope === SCOPE_CHAT) {
-                    if (liveCtx.chatId === undefined || liveCtx.chatId === null) {
-                        return 'Open a chat first to save a chat-scoped macro.';
-                    }
                     saveChatDefs(nextDefs);
                 } else {
                     saveGlobalDefs(nextDefs);
@@ -428,7 +440,7 @@ export function registerCommands() {
                 new SlashCommandArgument('the template the macro expands to', [ARGUMENT_TYPE.STRING], true, false),
             ],
             returns: 'a confirmation message',
-            helpString: 'Creates or updates a custom macro. Example: <code>/me-define name=greet args=who Hello {{who}}, it is {{time}}!</code>',
+            helpString: 'Creates or updates a custom macro. Leaving args= out keeps the saved arguments. Example: <code>/me-define name=greet args=who Hello {{who}}, it is {{time}}!</code>',
         }));
 
         registerCommand(SlashCommand.fromProps({
@@ -492,7 +504,7 @@ export function registerCommands() {
                 }),
             ],
             returns: 'the scope\'s custom macros as shareable pack JSON',
-            helpString: 'Exports custom macros as pack JSON (the drawer has matching file download/upload buttons).',
+            helpString: 'Exports custom macros as pack JSON. The My macros tab has matching file download and upload buttons.',
         }));
 
         registerCommand(SlashCommand.fromProps({

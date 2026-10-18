@@ -13,7 +13,8 @@
  */
 import { safeRegister as defaultRegister } from './registration.js';
 import { MODULE_NAME, getSettings, saveSettings } from './settings.js';
-import { getChatState, touchChatState } from './chat-state.js';
+import { peekChatState, resolveMacroState, touchChatState } from './chat-state.js';
+import { notifyMacroDataChanged } from './data-events.js';
 import { capitalizeText } from './utility-impl.js';
 import { DEFAULT_SPEC, PRONOUN_SLOTS, defaultPronounSet, parsePronounSet } from './pronoun-impl.js';
 
@@ -74,16 +75,7 @@ function notifyPronounsChanged(subject, source) {
 
 // ---------- storage ----------
 
-/** Sandboxed state (Workbench overlay) when present, else the real chat state. */
-function resolveState(env) {
-    const sandboxState = env?.extra?.meSandboxState;
-    if (sandboxState) {
-        return { state: sandboxState, sandboxed: true };
-    }
-    return { state: getChatState(), sandboxed: false };
-}
-
-/** The per-chat override map, created lazily. Null when there is no chat. */
+/** The per-chat override map, created lazily inside the given state. Null when there is no state. */
 function overrides(state) {
     if (!state) {
         return null;
@@ -114,26 +106,39 @@ export function savePersonaSpec(spec, { source, avatarId } = {}) {
         delete personas[avatar];
     }
     saveSettings();
+    notifyMacroDataChanged('pronouns');
     notifyPronounsChanged(SUBJECTS.user.key, source);
 }
 
 /** The spec saved on the active character's card, or '' when none is set. */
 export function getCharacterSpec() {
     const ctx = SillyTavern.getContext();
+    if (ctx.groupId) {
+        return '';
+    }
     const character = ctx.characters?.[ctx.characterId];
     return String(character?.data?.extensions?.[MODULE_NAME]?.pronouns ?? '');
 }
 
-export async function saveCharacterSpec(spec, { source } = {}) {
+export async function saveCharacterSpec(spec, { source, characterId } = {}) {
     const ctx = SillyTavern.getContext();
-    if (ctx.characterId === undefined || ctx.characterId === null) {
+    const id = characterId ?? ctx.characterId;
+    if (id === undefined || id === null) {
         throw new Error('No character selected.');
     }
+    if (characterId === undefined && ctx.groupId) {
+        throw new Error('Group chats have no single character card.');
+    }
+    const character = ctx.characters?.[id];
+    if (!character) {
+        throw new Error('That character is no longer available.');
+    }
     // writeExtensionField replaces the whole MacroEnhanced field, so everything
-    // already on the card has to be carried over. without the spread this wipes
+    // already on the card has to be carried over. Without the spread this wipes
     // the card's custom macros.
-    const existing = ctx.characters?.[ctx.characterId]?.data?.extensions?.[MODULE_NAME] ?? {};
-    await ctx.writeExtensionField(ctx.characterId, MODULE_NAME, { ...existing, pronouns: String(spec ?? '').trim() });
+    const existing = character.data?.extensions?.[MODULE_NAME] ?? {};
+    await ctx.writeExtensionField(id, MODULE_NAME, { ...existing, pronouns: String(spec ?? '').trim() });
+    notifyMacroDataChanged('pronouns');
     notifyPronounsChanged(SUBJECTS.char.key, source);
 }
 
@@ -144,15 +149,15 @@ export function getStoredSpec(subject) {
 
 /** The chat-scoped override for a subject, or '' when there is none. */
 export function getOverrideSpec(subject) {
-    return String(getChatState()?.pronouns?.[subject.key] ?? '').trim();
+    return String(peekChatState()?.pronouns?.[subject.key] ?? '').trim();
 }
 
 /** Clears a chat override, so the saved setting applies again. */
 export function clearOverride(subject, { source } = {}) {
-    const map = overrides(getChatState());
+    const map = overrides(peekChatState());
     if (map) {
         map[subject.key] = '';
-        touchChatState();
+        touchChatState('pronouns');
         notifyPronounsChanged(subject.key, source);
     }
 }
@@ -166,12 +171,12 @@ export function clearOverride(subject, { source } = {}) {
  * and a keyed store. worth it only if someone actually runs into it.
  */
 export function resolveSet(subject, { env, warn } = {}) {
-    const { state } = resolveState(env);
+    const { state } = resolveMacroState(env);
     const override = String(state?.pronouns?.[subject.key] ?? '').trim();
     const spec = override || getStoredSpec(subject).trim();
     const set = parsePronounSet(spec);
     if (!set) {
-        warn?.(`"${spec}" is not a pronoun set. use ${PRESET_HINT}. Falling back to ${DEFAULT_SPEC}.`);
+        warn?.(`"${spec}" is not a pronoun set. Use ${PRESET_HINT}. Falling back to ${DEFAULT_SPEC}.`);
         return defaultPronounSet();
     }
     return set;
@@ -249,10 +254,10 @@ export function registerPronounMacros(safeRegister = defaultRegister) {
             handler: (ctx) => {
                 const spec = String(ctx.unnamedArgs[0] ?? '').trim();
                 if (spec && !parsePronounSet(spec)) {
-                    ctx.warn(`{{${setterName}}}: "${spec}" is not a pronoun set. use ${PRESET_HINT}. Nothing changed.`);
+                    ctx.warn(`{{${setterName}}}: "${spec}" is not a pronoun set. Use ${PRESET_HINT}. Nothing changed.`);
                     return '';
                 }
-                const { state, sandboxed } = resolveState(ctx.env);
+                const { state, mode } = resolveMacroState(ctx.env, { write: true });
                 const map = overrides(state);
                 if (!map) {
                     ctx.warn(`{{${setterName}}}: no chat is loaded, so there is nowhere to store it.`);
@@ -260,8 +265,8 @@ export function registerPronounMacros(safeRegister = defaultRegister) {
                 }
                 const changed = String(map[subject.key] ?? '') !== spec;
                 map[subject.key] = spec;
-                if (!sandboxed) {
-                    touchChatState();
+                if (mode === 'live') {
+                    touchChatState('pronouns');
                     if (changed) {
                         notifyPronounsChanged(subject.key, 'macro');
                     }

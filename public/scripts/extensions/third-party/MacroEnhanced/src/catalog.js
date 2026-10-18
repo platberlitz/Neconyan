@@ -29,7 +29,10 @@ const entries = new Map();
  */
 export function recordMacro({ requested, actual, options = {} }) {
     // `handler` is a closure over engine internals; the catalogue is data only.
-    const { handler, aliases, ...rest } = options;
+    const rest = { ...options };
+    const aliases = options.aliases;
+    delete rest.handler;
+    delete rest.aliases;
     entries.set(String(actual).toLowerCase(), {
         ...rest,
         name: actual,

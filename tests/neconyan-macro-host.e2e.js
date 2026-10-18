@@ -58,7 +58,7 @@ test('Roleplay saves supported variables and reports browser-only prompt macros'
     await expect(page.locator('#chat .mes').last()).toContainText('Durable first reply.', { timeout: 60000 });
     expect(app.provider.calls).toHaveLength(1);
     expect(app.provider.calls[0].messages.some(message => message.content === '1')).toBe(true);
-    await expect.poll(() => page.evaluate(() => window.SillyTavern.getContext().chatMetadata.variables.serverPromptCount)).toBe(1);
+    await expect.poll(() => page.evaluate(() => window.SillyTavern.getContext().chatMetadata.variables?.serverPromptCount)).toBe(1);
     // Force the preview refresh that can run after a reply or settings change.
     // It must not write a second increment over the server's accepted value.
     await page.evaluate(async () => {

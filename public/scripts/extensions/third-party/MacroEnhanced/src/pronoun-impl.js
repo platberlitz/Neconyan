@@ -1,5 +1,5 @@
 /**
- * Pure implementations for the pronoun pack. No Neconyan imports —
+ * Pure implementations for the pronoun pack. No Neconyan imports  -
  * everything in this file is directly testable under `node --test`.
  *
  * A pronoun set is written as a spec string, either a short preset ("she/her")

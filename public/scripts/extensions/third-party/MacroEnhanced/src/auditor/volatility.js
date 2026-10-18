@@ -29,12 +29,12 @@ export const SEVERITY = {
 };
 
 export const CLASS_WHY = {
-    [CLASS_RANDOM]: 'different output on every evaluation',
-    [CLASS_TIME]: 'changes with the clock',
-    [CLASS_CHAT]: 'changes as the chat moves',
-    [CLASS_STATE]: 'variable reads/writes can change between generations',
-    [CLASS_PERIODIC]: 'changes only on coarse boundaries. cache-friendly by design',
-    [CLASS_STABLE]: 'deterministic. cache-safe',
+    [CLASS_RANDOM]: 'Different output on every evaluation',
+    [CLASS_TIME]: 'Changes with the clock',
+    [CLASS_CHAT]: 'Changes as the chat moves',
+    [CLASS_STATE]: 'Variable reads and writes can change between generations',
+    [CLASS_PERIODIC]: 'Changes only on coarse boundaries, so it is cache-friendly by design',
+    [CLASS_STABLE]: 'Deterministic, so it is cache-safe',
 };
 
 /** Extra nuance for names whose class depends on how they are called. */
