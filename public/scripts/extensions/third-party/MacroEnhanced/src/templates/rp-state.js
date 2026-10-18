@@ -42,7 +42,7 @@ export default {
         },
         {
             name: 'statusline',
-            description: 'One line with mood, affinity and outfit. install the other trackers from this pack too.',
+            description: 'One line with mood, affinity and outfit. Install the other trackers from this pack too.',
             template: 'Mood: {{mood}} | Affinity: {{affinity}} | Outfit: {{outfit}}',
             args: [],
         },

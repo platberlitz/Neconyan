@@ -11,21 +11,30 @@ import { disableImportFixes, syncImportFixes } from './src/import-fixes.js';
 import { registerDateMacros } from './src/date-macros.js';
 import { registerLorebookMacros } from './src/lorebook-macros.js';
 import { onPronounsChanged, registerPronounMacros } from './src/pronoun-macros.js';
-import { DRAWER_PRONOUN_SOURCE } from './src/pronoun-ui.js';
 import { mountPersonaPronounField, renderPersonaPronounField, unmountPersonaPronounField } from './src/persona-pronoun-field.js';
 import { clearCache, prewarm, indexBook, setActiveEntries } from './src/lorebook-cache.js';
 import { syncRegistrations, teardownCustomRegistrations } from './src/custom/registrar.js';
 import { registerCommands, setCommandsActive } from './src/commands.js';
 import { removeDrawer, renderDrawer } from './src/drawer-ui.js';
 import { closeWorkbench } from './src/workbench/panel.js';
+import { onMacroDataChanged } from './src/data-events.js';
+import { appChatChanged, appSettingsUpdated, refreshApp } from './src/ui/app.js';
+import { createRefreshQueue } from './src/ui/refresh-queue.js';
 
 const subscriptions = [];
 let initialized = false;
-/** @type {(() => void)|null} stops the drawer following pronoun writes */
+/** @type {(() => void)|null} stops the page following pronoun writes */
 let stopPronounSync = null;
+/** @type {(() => void)|null} stops the page following data writes */
+let stopDataSync = null;
 let macrosRegistered = false;
-/** @type {boolean|null} engine availability at the last drawer render */
+/** @type {boolean|null} engine availability at the last page mount */
 let lastRenderedAvailability = null;
+const appRefreshes = createRefreshQueue(kind => {
+    if (initialized) {
+        refreshApp(kind);
+    }
+});
 
 function renderDrawerTracked() {
     const engineAvailable = isEngineAvailable();
@@ -64,16 +73,19 @@ function activateMacros() {
 }
 
 /**
- * The drawer and the Persona page edit the same persona pronouns. A write from
- * either side (or from {{setpronouns}}) redraws the other.
+ * The page and the Persona page edit the same persona pronouns. A write from
+ * either side (or from {{setpronouns}}) refreshes the other view.
  */
 function startPronounSync() {
     mountPersonaPronounField();
     if (!stopPronounSync) {
-        stopPronounSync = onPronounsChanged(({ source }) => {
-            if (initialized && source !== DRAWER_PRONOUN_SOURCE) {
-                renderDrawerTracked();
-            }
+        stopPronounSync = onPronounsChanged(() => {
+            appRefreshes.push('pronouns');
+        });
+    }
+    if (!stopDataSync) {
+        stopDataSync = onMacroDataChanged(kind => {
+            appRefreshes.push(kind);
         });
     }
 }
@@ -99,14 +111,14 @@ export function init() {
     renderDrawerTracked();
     startPronounSync();
 
-    // The drawer and the Persona page both show the selected persona's pronouns.
+    // The page and the Persona page both show the selected persona's pronouns.
     for (const personaEvent of [events.PERSONA_CHANGED, events.PERSONA_CREATED, events.PERSONA_DELETED]) {
         subscribe(personaEvent, () => {
             if (!initialized) {
                 return;
             }
             renderPersonaPronounField();
-            renderDrawerTracked();
+            appRefreshes.push('persona');
         });
     }
 
@@ -122,9 +134,9 @@ export function init() {
         }
     });
 
-    // Hot-activate when the experimental engine flag is switched on after boot, and
-    // re-render whenever availability changes in either direction (macros stay
-    // registered while the flag is off, so macrosRegistered can't track this).
+    // Hot-activate when the engine flag is switched on after boot, and refresh
+    // whenever availability changes in either direction (macros stay registered
+    // while the flag is off, so macrosRegistered cannot track this).
     subscribe(events.SETTINGS_UPDATED, () => {
         if (!initialized) {
             return;
@@ -136,6 +148,7 @@ export function init() {
         if (available !== lastRenderedAvailability) {
             renderDrawerTracked();
         }
+        appSettingsUpdated();
     });
 
     subscribe(events.CHAT_CHANGED, () => {
@@ -144,19 +157,19 @@ export function init() {
         }
         // A {{setpronouns}} override belongs to one chat, so its notice follows the chat.
         renderPersonaPronounField();
-        if (!macrosRegistered) {
-            return;
+        if (macrosRegistered) {
+            const liveCtx = SillyTavern.getContext();
+            prewarm(liveCtx);
+            // Character-scoped custom macros follow the chat.
+            syncRegistrations();
         }
         closeWorkbench();
-        const liveCtx = SillyTavern.getContext();
-        prewarm(liveCtx);
-        // Character-scoped custom macros follow the chat.
-        syncRegistrations();
-        renderDrawerTracked();
+        appChatChanged();
     });
 
-    // Counters for {{usermsgcount}}/{{sticky}}/etc. — maintained only from events,
-    // never from macro evaluation, so prompt builds and dry runs cannot drift them.
+    // Counters for {{usermsgcount}}/{{sticky}}/etc. are maintained only from
+    // events, never from macro evaluation, so prompt builds and dry runs cannot
+    // drift them.
     subscribe(events.MESSAGE_SENT, () => {
         if (initialized && macrosRegistered) {
             recordUserMessage();
@@ -207,6 +220,7 @@ export function deactivate() {
     initialized = false;
 
     setCommandsActive(false);
+    appRefreshes.clear();
     closeWorkbench();
     // Pre-processors are not swept by unregisterMacrosBySource; they have to go
     // back explicitly or they outlive the disabled extension.
@@ -220,6 +234,8 @@ export function deactivate() {
     removeDrawer();
     stopPronounSync?.();
     stopPronounSync = null;
+    stopDataSync?.();
+    stopDataSync = null;
     unmountPersonaPronounField();
 
     const { eventSource } = SillyTavern.getContext();

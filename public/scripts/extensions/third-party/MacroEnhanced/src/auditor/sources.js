@@ -37,7 +37,7 @@ export function collectSources() {
             }
         }
     } else {
-        notes.push('Preset prompts were skipped. the current API is not Chat Completion.');
+        notes.push('Preset prompts were skipped. The current API is not Chat Completion.');
     }
 
     const character = ctx.characters?.[ctx.characterId];
@@ -51,7 +51,7 @@ export function collectSources() {
         push('card', 'Character: post-history instructions', character.data?.post_history_instructions);
         push('card', 'Character: depth prompt', character.data?.extensions?.depth_prompt?.prompt);
     } else {
-        notes.push('No character is selected. card fields were skipped.');
+        notes.push('No character is selected. Card fields were skipped.');
     }
 
     push('persona', 'Persona description', ctx.powerUserSettings?.persona_description);
@@ -72,7 +72,7 @@ export function collectSources() {
         if (!message || message.is_system) {
             continue;
         }
-        const who = message.is_user ? 'you. baked at send time' : 'AI. re-substituted every generation';
+        const who = message.is_user ? 'you, baked at send time' : 'AI, re-substituted every generation';
         push('chat', `Message #${i} (${who})`, message.mes, { index: i, isUser: !!message.is_user });
     }
 

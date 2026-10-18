@@ -14,24 +14,25 @@ export function el(tag, className, text) {
 }
 
 /**
- * A host-idiom `div.menu_button` that is also keyboard-accessible: focusable,
- * announced as a button, and activatable with Enter/Space.
+ * A real `<button type="button">`, so Enter and Space work without a keyboard
+ * shim. Host `.menu_button` classes are allowed on ordinary buttons; they are
+ * never used on tabs or pressed-filter chips.
  *
  * @param {string} className
  * @param {string} text
  * @param {(event: Event) => void} onActivate
  */
 export function button(className, text, onActivate) {
-    const node = el('div', className, text);
-    node.setAttribute('role', 'button');
-    node.tabIndex = 0;
-    node.addEventListener('click', onActivate);
-    node.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            onActivate(event);
-        }
-    });
+    const node = el('button', className, text);
+    node.type = 'button';
+    if (className.split(/\s+/).includes('menu_button')) {
+        // a11y.js sets this on insertion too; setting it here keeps the legacy
+        // `.me-pronoun-input` parent lookup working before the observer runs.
+        node.setAttribute('role', 'button');
+    }
+    if (onActivate) {
+        node.addEventListener('click', onActivate);
+    }
     return node;
 }
 
@@ -50,6 +51,36 @@ export function helpButton(topicTitle, onActivate) {
 }
 
 /**
+ * Announces polite status text through the app's single live region.
+ * @param {string} text
+ */
+export function announce(text) {
+    const live = document.querySelector('[data-me-live]');
+    if (!live) {
+        return;
+    }
+    live.textContent = '';
+    requestAnimationFrame(() => {
+        live.textContent = String(text ?? '');
+    });
+}
+
+/**
+ * Announces a failure through the app's single alert region.
+ * @param {string} text
+ */
+export function announceError(text) {
+    const alert = document.querySelector('[data-me-alert]');
+    if (!alert) {
+        return;
+    }
+    alert.textContent = '';
+    requestAnimationFrame(() => {
+        alert.textContent = String(text ?? '');
+    });
+}
+
+/**
  * Copies text, falling back to the legacy path when the async clipboard is
  * unavailable (insecure origin, or permission denied).
  *
@@ -63,7 +94,7 @@ export async function copyToClipboard(text) {
             return true;
         }
     } catch {
-        // Insecure origin or permission denied. try the legacy path.
+        // Insecure origin or permission denied. Try the legacy path.
     }
     try {
         const scratch = document.createElement('textarea');
@@ -83,7 +114,7 @@ export async function copyToClipboard(text) {
 /**
  * Briefly swaps a button's label to confirm an action, then puts it back.
  * Re-entrant: a second flash before the first expires still restores the
- * original text.
+ * original text. Also announces the result politely.
  *
  * @param {HTMLElement} node
  * @param {string} text
@@ -96,6 +127,7 @@ export function flashButtonText(node, text, revertMs = 1500) {
         node.dataset.originalText = node.textContent;
     }
     node.textContent = text;
+    announce(text);
     node.dataset.flashTimer = String(setTimeout(() => {
         node.textContent = node.dataset.originalText ?? text;
         delete node.dataset.flashTimer;

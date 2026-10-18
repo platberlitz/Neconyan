@@ -44,7 +44,7 @@ function lookup(entryName, bookName, warn) {
     const { entry, book, missing } = findEntry(ctx, entryName, bookName || undefined);
     if (!entry) {
         if (missing.length) {
-            warn(`Lorebook${missing.length > 1 ? 's' : ''} ${missing.map(name => `"${name}"`).join(', ')} not loaded yet. try again in a moment.`);
+            warn(`Lorebook content from ${missing.map(name => `"${name}"`).join(', ')} has not loaded yet. Try again in a moment.`);
         } else {
             warn(`No lorebook entry named "${entryName}" found${bookName ? ` in "${bookName}"` : ''}.`);
         }
@@ -114,7 +114,7 @@ export function registerLorebookMacros(safeRegister = defaultRegister) {
             const ctx = SillyTavern.getContext();
             const { entry, missing } = findEntry(ctx, entryName, bookName || undefined);
             if (!entry && missing.length) {
-                warn(`Lorebook${missing.length > 1 ? 's' : ''} ${missing.map(name => `"${name}"`).join(', ')} not loaded yet. "false" may be wrong until then.`);
+                warn(`Lorebook content from ${missing.map(name => `"${name}"`).join(', ')} has not loaded yet. 'false' may be wrong until then.`);
             }
             return entry ? 'true' : 'false';
         },
@@ -147,7 +147,7 @@ export function registerLorebookMacros(safeRegister = defaultRegister) {
                 }
                 return String(getEnabledEntries(names).length);
             }
-            warn(`Unknown scope "${scope}". use active, bound or all.`);
+            warn(`Unknown scope "${scope}". Use active, bound or all.`);
             return '';
         },
     });
@@ -186,7 +186,7 @@ export function registerLorebookMacros(safeRegister = defaultRegister) {
         const uncached = names.filter(name => !isBookCached(name));
         uncached.forEach(name => warmBook(ctx, name));
         if (uncached.length) {
-            warn(`Lorebook${uncached.length > 1 ? 's' : ''} ${uncached.map(name => `"${name}"`).join(', ')} not loaded yet. the result only covers loaded books.`);
+            warn(`Lorebook content from ${uncached.map(name => `"${name}"`).join(', ')} has not loaded yet. The result only covers loaded books.`);
         }
         return getEnabledEntries(names);
     };
@@ -223,7 +223,7 @@ export function registerLorebookMacros(safeRegister = defaultRegister) {
         handler: ({ unnamedArgs: [entryName, field, bookName], warn }) => {
             const reader = LORE_FIELDS[String(field ?? '').trim().toLowerCase()];
             if (!reader) {
-                warn(`{{lorefield}}: "${field}" is not a readable field. use one of: ${Object.keys(LORE_FIELDS).join(', ')}.`);
+                warn(`{{lorefield}}: "${field}" is not a readable field. Use one of: ${Object.keys(LORE_FIELDS).join(', ')}.`);
                 return '';
             }
             const found = lookup(entryName, bookName, warn);
@@ -239,7 +239,7 @@ export function registerLorebookMacros(safeRegister = defaultRegister) {
         unnamedArgs: [
             { name: 'scope', optional: true, defaultValue: 'active', description: '"active" (triggered last generation) or "bound" (all enabled entries in this chat\'s books).' },
         ],
-        description: 'A rough token estimate (~4 characters per token) of lorebook content. pairs with {{lorecount}} for budget checks.',
+        description: 'A rough token estimate (~4 characters per token) of lorebook content. Pairs with {{lorecount}} for budget checks.',
         returns: 'an estimated token count',
         returnType: 'integer',
         exampleUsage: ['{{loretokens}}', '{{loretokens::bound}}'],
@@ -253,7 +253,7 @@ export function registerLorebookMacros(safeRegister = defaultRegister) {
                 const entries = enabledEntriesWithWarning(ctx, getSearchOrder(ctx), warn);
                 return String(estimateTokens(entries.map(({ entry }) => String(entry.content ?? '')).join('\n')));
             }
-            warn(`Unknown scope "${scope}". use active or bound.`);
+            warn(`Unknown scope "${scope}". Use active or bound.`);
             return '';
         },
     });
@@ -264,7 +264,7 @@ export function registerLorebookMacros(safeRegister = defaultRegister) {
             { name: 'book', optional: true, defaultValue: '', description: 'A specific lorebook name. Without it, all books bound to this chat.' },
             { name: 'key', optional: true, defaultValue: '', description: 'A label that keeps different picks independent.' },
         ],
-        description: 'Inserts the content of one enabled entry. always the same one for this chat and key. A cache-friendly random story seed.',
+        description: 'Inserts the content of one enabled entry. Always the same one for this chat and key, so it is a cache-friendly random story seed.',
         returns: 'the chosen entry\'s content',
         exampleUsage: ['{{lorepick::Story Seeds}}', '{{lorepick::Story Seeds::second-seed}}'],
         handler: ({ unnamedArgs: [bookName, key], resolve, warn }) => {

@@ -76,7 +76,7 @@ export function registerDateMacros(safeRegister = defaultRegister) {
             { name: 'date', description: 'The date to format. Leave empty for now.' },
             { name: 'format', optional: true, defaultValue: 'YYYY-MM-DD', description: 'The output format (YYYY, MM, DD, HH, mm, ss, dddd, A, [literal], ...).' },
         ],
-        description: 'Formats a date. Note: with an empty date argument this changes every call. that hurts prompt caching, like {{time}}.',
+        description: 'Formats a date. Note: with an empty date argument this changes every call, which hurts prompt caching, like {{time}}.',
         returns: 'the formatted date',
         exampleUsage: ['{{dateformat::2026-08-03::dddd, MMMM D}}'],
         handler: ({ unnamedArgs: [date, format], warn }) => {

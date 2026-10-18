@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const stylesheets = [
+    { name: 'Macro Enhanced', url: new URL('../public/scripts/extensions/third-party/MacroEnhanced/style.css', import.meta.url) },
     { name: 'chat widgets', url: new URL('../public/css/neconyan-chat-widgets.css', import.meta.url) },
     {
         name: 'in-chat agents',

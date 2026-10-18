@@ -7,7 +7,7 @@
  *
  * Done as an engine pre-processor rather than by re-registering {{if}}. The
  * registry stamps ownership from the call stack, so an extension that
- * re-registers the host's {{if}}. even to hand back the host's own handler —
+ * re-registers the host's {{if}}. even to hand back the host's own handler  -
  * marks it as ours, and the disable sweep (unregisterMacrosBySource) would then
  * take {{if}} out of the app entirely. A pre-processor is added and removed with
  * addPreProcessor/removePreProcessor and leaves the registry untouched.
@@ -132,7 +132,7 @@ function collectConditionSpans(text, from, to, out) {
                         wrapped = true;
                     }
                 }
-                // Recorded spans are spliced whole, so never descend into one —
+                // Recorded spans are spliced whole, so never descend into one  -
                 // a nested hit would leave the outer span's offsets stale. The
                 // cost is that an {{if}} written inside another {{if}}'s
                 // condition keeps host truthiness; bodies are unaffected,

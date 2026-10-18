@@ -51,7 +51,7 @@ export function registerCompatMacros(safeRegister = defaultRegister) {
         category: CATEGORY_COMPAT,
         unnamedArgs: [{ name: 'condition', description: 'The condition to work out, e.g. "{{.hp}} > 0".' }],
         list: true,
-        description: 'Works out a condition written the ordinary way, with == != > >= < <= && || ! and brackets. Compare text or numbers; quote values containing spaces. Without this, {{if}} only asks whether the condition is non-empty, so "0 > 0" would count as true.',
+        description: 'Works out a condition written the ordinary way, with == != > >= < <= && ! and brackets. Compare text or numbers; quote values containing spaces. For OR, use {{or::a::b}} because a pipe starts an output filter inside an argument. Compat mode rewrites || inside {{if}} for you. Without this, {{if}} only asks whether the condition is non-empty, so "0 > 0" would count as true.',
         returns: 'true or false',
         returnType: 'boolean',
         exampleUsage: ['{{expr::{{getchatvar::day}} > 3}}', '{{if::{{expr::{{.name}} != "Ren"}}}}Not Ren{{/if}}'],

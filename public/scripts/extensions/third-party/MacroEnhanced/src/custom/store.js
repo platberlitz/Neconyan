@@ -1,6 +1,7 @@
 import { MODULE_NAME, getSettings, saveSettings } from '../settings.js';
 import { FALLBACK_PREFIX, RESERVED_NAMES } from '../registration.js';
-import { getChatState, touchChatState } from '../chat-state.js';
+import { getChatState, peekChatState, touchChatState } from '../chat-state.js';
+import { notifyMacroDataChanged } from '../data-events.js';
 
 // Mirrors MACRO_IDENTIFIER_PATTERN in the engine's MacroLexer.js (not imported to
 // avoid deep imports into Neconyan internals).
@@ -80,7 +81,7 @@ export function validateDef(def, { siblings = [], registry = null, customNames =
     for (const arg of def.args ?? []) {
         const argName = String(arg.name ?? '').trim();
         if (!NAME_PATTERN.test(argName)) {
-            problems.push(`Argument name "${argName}" is invalid. start with a letter, then letters/numbers/hyphens/underscores.`);
+            problems.push(`Argument name "${argName}" is invalid. Start with a letter, then use letters, numbers, hyphens or underscores.`);
         }
         if (argNames.has(argName.toLowerCase())) {
             problems.push(`Duplicate argument name "${argName}".`);
@@ -117,10 +118,14 @@ export function getGlobalDefs() {
 export function saveGlobalDefs(defs) {
     getSettings().customMacros = defs;
     saveSettings();
+    notifyMacroDataChanged('macros');
 }
 
 export function getCharacterDefs() {
     const ctx = SillyTavern.getContext();
+    if (ctx.groupId) {
+        return [];
+    }
     const character = ctx.characters?.[ctx.characterId];
     const defs = character?.data?.extensions?.[MODULE_NAME]?.customMacros;
     return Array.isArray(defs) ? defs : [];
@@ -128,25 +133,29 @@ export function getCharacterDefs() {
 
 export async function saveCharacterDefs(defs) {
     const ctx = SillyTavern.getContext();
+    if (ctx.groupId) {
+        throw new Error('Group chats have no single character card to save a macro on.');
+    }
     if (ctx.characterId === undefined || ctx.characterId === null) {
         throw new Error('No character selected.');
     }
     const existing = ctx.characters?.[ctx.characterId]?.data?.extensions?.[MODULE_NAME] ?? {};
     await ctx.writeExtensionField(ctx.characterId, MODULE_NAME, { ...existing, customMacros: defs });
+    notifyMacroDataChanged('macros');
 }
 
 export function getChatDefs() {
-    return getChatState()?.customMacros ?? [];
+    return peekChatState()?.customMacros ?? [];
 }
 
-/** Synchronous, unlike the character scope. chat metadata saves in the background. */
+/** Synchronous, unlike the character scope. Chat metadata saves in the background. */
 export function saveChatDefs(defs) {
     const state = getChatState();
     if (!state) {
         throw new Error('No chat is loaded.');
     }
     state.customMacros = defs;
-    touchChatState();
+    touchChatState('macros');
 }
 
 /**

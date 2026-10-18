@@ -1,21 +1,28 @@
 /**
- * Sandboxed macro evaluation for the Workbench. Three layers keep previews from
+ * Sandboxed macro evaluation for the Workbench. These layers keep previews from
  * touching real data:
  *
- * Layer A. dynamicMacros overrides. The engine resolves env.dynamicMacros before
- * the registry, so every variable macro (and each of its aliases. lookups are
- * name-keyed) is shadowed with versions that read/write a copy-on-write store.
+ * Layer A. injected variable stores. `applySandboxEnvironment()` puts the
+ * sandbox's copy-on-write local/global stores into env.extra.variables after the
+ * host env builder runs. Registry variable macros and shorthand syntax both read
+ * and write that same surface, so mixed writes stay coherent and the host
+ * variable module is never involved.
  *
- * Layer B. snapshot/restore. Variable shorthand ({{.x = 5}}, {{$y++}}) bypasses
- * the registry entirely and writes the real stores, so evaluation is wrapped in a
- * clone-evaluate-diff-restore cycle. Safe because engine.evaluate is synchronous;
- * documented limitation: another extension's synchronous listener could observe
- * the transient values.
+ * Layer A2. dynamicMacros overrides. Every variable macro is also shadowed with
+ * versions backed by the same stores. This keeps the aliases explicit and works
+ * even if a host definition ignores env.extra.variables.
+ *
+ * Layer B. read-only backstop and snapshot/restore. Callers wrap evaluation in
+ * withReadOnlyVariables(), so a macro that escapes the sandbox and reaches a real
+ * host setter is refused. A clone-evaluate-diff-restore cycle around run() remains
+ * as a last-resort backstop for any untrusted macro that writes a real store
+ * directly. Safe because engine.evaluate is synchronous; documented limitation:
+ * another extension's synchronous listener could observe such a transient value.
  *
  * Layer C. chat-state overlay. Stateful macros ({{freeze}} and friends) resolve
  * their store through env.extra.meSandboxState, which the panel points at this
- * sandbox's cloned chat state. A snapshot/restore backstop around run() catches
- * any future stateful handler that forgets that discipline.
+ * sandbox's cloned chat state. The snapshot/restore backstop catches any future
+ * stateful handler that forgets that discipline.
  */
 import { emptyState } from '../chat-state.js';
 
@@ -40,6 +47,26 @@ export const SHADOWED_GLOBAL = {
 };
 
 const DELETED = Symbol('deleted');
+
+/**
+ * Attaches the sandbox's copy-on-write variable stores and chat-state overlay to
+ * a freshly built macro environment. Apply this after envBuilder returns, at
+ * every evaluator, so registry macros and shorthand syntax read and write the
+ * same throwaway stores. The host variable module is not used for either path,
+ * so no real variable store is created, changed or saved.
+ *
+ * @param {object} env
+ * @param {object} sandbox
+ * @returns {object} The same env, with extra replaced by a new object.
+ */
+export function applySandboxEnvironment(env, sandbox) {
+    env.extra = {
+        ...(env.extra ?? {}),
+        variables: { local: sandbox.local, global: sandbox.global },
+        meSandboxState: sandbox.chatState,
+    };
+    return env;
+}
 
 /**
  * Copy-on-write view over a real variable store. Reads fall through to the real
@@ -217,6 +244,9 @@ export function flattenChatState(state) {
     for (const [key, value] of Object.entries(state?.chatVars ?? {})) {
         flat[`chatvar:${key}`] = String(value ?? '');
     }
+    for (const [key, value] of Object.entries(state?.pronouns ?? {})) {
+        flat[`pronoun:${key}`] = String(value ?? '');
+    }
     for (const [key, value] of Object.entries(state?.counters ?? {})) {
         if (key !== 'firstSeenAt') {
             flat[`counter:${key}`] = String(value);
@@ -265,7 +295,7 @@ export function createSandbox({ getLocalStore, getGlobalStore, getChatState = ()
     /** Layer C overlay: stateful macros write here via env.extra.meSandboxState. */
     const chatState = structuredClone(getChatState() ?? emptyState());
 
-    /** Shorthand writes observed in the last evaluation (Layer B). */
+    /** Real-store writes caught by the fallback (shorthand normally uses the sandbox stores). */
     let shorthandLocal = new Map();
     let shorthandGlobal = new Map();
     /** Real chat-state writes leaked past the overlay in the last evaluation. */
@@ -305,8 +335,8 @@ export function createSandbox({ getLocalStore, getGlobalStore, getChatState = ()
             }
         },
 
-        /** Merged pending changes: Layer A overlay writes + Layer B shorthand diffs
-         *  + Layer C chat-state overlay writes (and any restored leaks). */
+        /** Merged pending changes: sandbox variable stores + fallback real-store diffs
+         *  + chat-state overlay writes. */
         pendingChanges() {
             const merge = (overlayChanges, shorthandChanges) => {
                 const merged = new Map(overlayChanges);

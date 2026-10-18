@@ -117,11 +117,11 @@ export async function runAudit({ sandboxEvaluate, resolveConfig = resolveCaching
 }
 
 const VERDICT_TEXT = {
-    costly: 'inside the cached prefix. costs money every generation',
-    harmless: 'below the cache breakpoints. harmless',
-    'no-caching': 'caching looks off / unknown. would cost money if enabled',
-    baked: 'in one of your messages. already baked in unless literal {{…}} survived',
-    friendly: 'cache-friendly by design',
+    costly: 'Inside the cached prefix, so it costs money every generation.',
+    harmless: 'Below the cache breakpoints, so it is harmless.',
+    'no-caching': 'Caching looks off or unknown. It would cost money if enabled.',
+    baked: 'In one of your messages, so it is already baked in unless literal {{…}} survived.',
+    friendly: 'Cache-friendly by design.',
 };
 
 /** Renders an audit result as a markdown report (for /me-audit). */
@@ -133,20 +133,20 @@ export function formatAuditReport({ config, notes, findings }) {
         configBits.push(`system-prompt cache: ${config.enableSystemPromptCache ? 'on' : 'off'}`);
         configBits.push(`TTL: ${config.extendedTTL ? '1h' : '5m'}`);
     }
-    lines.push(`Cache audit. ${configBits.join(', ')}`);
+    lines.push(`Cache audit: ${configBits.join(', ')}`);
 
     const problems = findings.filter(finding => isVolatileClass(finding.cls));
     const friendly = findings.filter(finding => !isVolatileClass(finding.cls));
     if (!problems.length) {
         lines.push('No cache-breaking macros found. Nice and byte-stable.');
     } else {
-        lines.push('', `${problems.length} cache-breaking finding(s):`);
+        lines.push('', `${problems.length} cache-breaking ${problems.length === 1 ? 'finding' : 'findings'}:`);
         for (const finding of problems) {
-            lines.push(`- ${finding.sourceLabel}: {{${finding.name}}}${finding.count > 1 ? ` ×${finding.count}` : ''} [${finding.cls}]. ${VERDICT_TEXT[finding.verdict] ?? finding.verdict}. (${finding.why})`);
+            lines.push(`- ${finding.sourceLabel}: {{${finding.name}}}${finding.count > 1 ? ` ×${finding.count}` : ''} [${finding.cls}]. ${VERDICT_TEXT[finding.verdict] ?? `${finding.verdict}.`} (${finding.why})`);
         }
     }
     if (friendly.length) {
-        lines.push('', `${friendly.length} cache-friendly-by-design finding(s): ${[...new Set(friendly.map(finding => `{{${finding.name}}}`))].join(', ')}`);
+        lines.push('', `${friendly.length} cache-friendly-by-design ${friendly.length === 1 ? 'finding' : 'findings'}: ${[...new Set(friendly.map(finding => `{{${finding.name}}}`))].join(', ')}`);
     }
     for (const note of notes) {
         lines.push(`Note: ${note}`);

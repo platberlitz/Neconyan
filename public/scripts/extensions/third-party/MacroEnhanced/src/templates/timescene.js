@@ -6,7 +6,7 @@ export default {
     macros: [
         {
             name: 'scenetime',
-            description: 'A cache-friendly scene-time line. changes a few times a day, not every minute.',
+            description: 'A cache-friendly scene-time line. Changes a few times a day, not every minute.',
             template: 'It is {{timeofday}}, in {{season}}.',
             args: [],
         },
@@ -24,7 +24,7 @@ export default {
         },
         {
             name: 'dailyweather',
-            description: 'Picks the day\'s weather once per calendar day. random flavor without cache damage.',
+            description: 'Picks the day\'s weather once per calendar day. Random flavour without cache damage.',
             template: '{{daily::weather::{{random::clear skies::steady rain::rolling fog::harsh wind}}}}',
             args: [],
         },

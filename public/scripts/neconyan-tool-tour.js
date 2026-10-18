@@ -8,6 +8,83 @@ export { TOOL_TOUR_INVITE_PREFIX } from './neconyan-tour-invitations.js';
 const ASSISTANT_NAMES = Object.freeze({ miso: 'Miso', taro: 'Taro', nori: 'Nori' });
 
 const TOOL_PAGES = Object.freeze({
+    'macro-enhanced': {
+        assistant: 'nori',
+        name: 'Macro Enhanced',
+        compactIntro: true,
+        aliases: ['macroenhanced', 'neconyan-macroenhanced'],
+        kicker: 'Prompt macros',
+        description: 'Look up macros, try them without saving changes, and make reusable macros of your own.',
+        invite: 'Nori will show you how to try a macro, find its instructions and save your own.',
+        steps: [
+            {
+                id: 'welcome',
+                targets: ['.neconyan-tool-page-intro'],
+                title: 'Try a macro before you use it',
+                body: 'A **macro** is a short instruction inside double braces, such as **{{char}}**. It becomes text when a prompt is built. This page lets you look up the syntax, try it and keep macros of your own.\nThe **Playground** runs locally. Trying a macro here does not send a model request.',
+                hint: 'Free experiments. Finally, something within my budget.',
+            },
+            {
+                id: 'boundary',
+                targets: ['[data-me-server-boundary]'],
+                title: 'Where these macros work',
+                body: 'Many Macro Enhanced macros are **browser-only**. Neconyan builds Roleplay prompts on the server, which refuses those macros before sending a request.\nThe help button opens **Server prompts and saved variables**, with the supported alternatives. A successful Playground result does not mean the same macro works in a server prompt.',
+                hint: 'I prefer finding that out before paying for the reply.',
+            },
+            {
+                id: 'playground',
+                optional: true,
+                tab: '[data-me-tab="playground"]',
+                targets: ['[data-me-tab="playground"]'],
+                title: 'Playground',
+                body: 'Type macro text and read the result. **Would change (not saved)** shows which values the macro would change; the live chat keeps its own values.\nUse **Start fresh** to reset the trial values. **Time each macro** helps find a slow expansion.',
+                hint: 'I test my brilliant ideas too. Occasionally.',
+            },
+            {
+                id: 'reference',
+                optional: true,
+                tab: '[data-me-tab="reference"]',
+                targets: ['[data-me-tab="reference"]'],
+                title: 'Reference',
+                body: 'Search for a macro or filter by category. Open an entry to see what it does, its arguments and examples.\n**Try it** puts an example in the Playground. **Copy** keeps it ready to paste elsewhere.',
+                hint: 'Read the arguments. Guessing is how perfectly good braces go to waste.',
+            },
+            {
+                id: 'macros',
+                optional: true,
+                tab: '[data-me-tab="macros"]',
+                targets: ['[data-me-tab="macros"]'],
+                title: 'My macros',
+                body: '**New macro** gives reusable text a name. Choose whether to save it **Everywhere**, for **This character**, or for **This chat**. Character and chat choices need a matching chat open.\nStart from a template, or import a pack. Export keeps a copy of your saved macros.',
+                hint: 'Write it once, reuse it. I approve of doing less work.',
+            },
+            {
+                id: 'chat',
+                optional: true,
+                tab: '[data-me-tab="chat"]',
+                targets: ['[data-me-tab="chat"]'],
+                title: 'This chat',
+                body: 'See the values macros remember in the open chat, its variables and pronoun overrides. **Forget** removes a saved value so the macro can choose again.\n**Run cache audit** checks which prompt content may stop repeated requests from reusing cached text. It reports what it finds; it does not rewrite the prompt.',
+                hint: 'Read what is saved before deleting it. Even I manage that.',
+            },
+            {
+                id: 'setup',
+                optional: true,
+                tab: '[data-me-tab="setup"]',
+                targets: ['[data-me-tab="setup"]'],
+                title: 'Setup',
+                body: 'Set pronouns for your persona and the current character. A chat override takes precedence until you clear it.\nThe syntax switches control comparisons in **{{if}}** and repairs for macros written for other apps. Their help buttons explain exactly what changes.',
+                hint: 'Settings you choose once belong here, out of my way.',
+            },
+            {
+                id: 'done',
+                targets: ['.neconyan-tool-tour-button'],
+                title: 'Ready to try one',
+                body: 'Start with an example in **Reference**, then use **Try it** to see its result.\nPress **Tour** whenever you want these steps again.',
+                hint: 'I accept thanks in the form of compliments. And dinner.',
+            },
+        ],
+    },
     pathfinder: {
         assistant: 'taro',
         name: 'Pawthfinder',
@@ -2011,6 +2088,7 @@ export function mountToolPage(id, heading, root, headerHeading = null) {
     heading?.querySelector('.neconyan-tool-tour-invite')?.remove();
     headerHeading?.replaceChildren();
     if (!page || !(heading instanceof HTMLElement)) return false;
+    const introHeading = page.compactIntro ? null : headerHeading;
     const launch = element('button', 'menu_button menu_button_icon neconyan-tool-tour-button');
     launch.type = 'button';
     launch.setAttribute('aria-label', t([`Start ${ASSISTANT_NAMES[page.assistant]}'s ${page.name} tour`]));
@@ -2018,10 +2096,10 @@ export function mountToolPage(id, heading, root, headerHeading = null) {
     const icon = element('i', 'fa-solid fa-paw');
     icon.setAttribute('aria-hidden', 'true');
     launch.append(icon, element('span', '', t`Tour`));
-    launch.addEventListener('click', () => startToolTour(page.key, root, headerHeading));
-    const intro = createPageIntro(page.key, t([page.kicker]), t([page.description]), launch, { header: Boolean(headerHeading) });
-    (headerHeading ?? heading).append(intro);
-    if (headerHeading) headerHeading.dataset.toolPage = page.key;
-    heading.append(buildInvite(page, root, headerHeading));
+    launch.addEventListener('click', () => startToolTour(page.key, root, introHeading));
+    const intro = createPageIntro(page.key, t([page.kicker]), t([page.description]), launch, { header: Boolean(introHeading) });
+    (introHeading ?? heading).append(intro);
+    if (introHeading) introHeading.dataset.toolPage = page.key;
+    if (!page.compactIntro) heading.append(buildInvite(page, root, introHeading));
     return true;
 }
