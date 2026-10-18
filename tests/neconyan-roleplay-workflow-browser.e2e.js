@@ -5,6 +5,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { startNativeReply } from './native-roleplay-helpers.js';
 import { setConfigFilePath } from '../src/util.js';
 import { USER_DIRECTORY_TEMPLATE } from '../src/constants.js';
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
@@ -107,7 +108,7 @@ for (const phone of [false, true]) {
         const beforeAppearance = await appearance();
         const submitted = page.waitForResponse(acceptedSubmission);
         await page.locator('#send_textarea').fill('Keep the chat while reconnecting.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const { jobId } = await (await submitted).json();
         await expect(page.locator('#neconyan-roleplay-preview')).toContainText('The server');
         let reads = 0;
@@ -161,7 +162,7 @@ for (const phone of [false, true]) {
         await openChat(page, locator);
         const submitted = page.waitForResponse(acceptedSubmission);
         await page.locator('#send_textarea').fill('Keep the reply when I stop the Agents.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const { jobId } = await (await submitted).json();
         try {
             await expect.poll(() => typeof app.provider.mode.finishStream).toBe('function');
@@ -264,7 +265,7 @@ for (const phone of [false, true]) {
         const submissions = [];
         page.on('response', response => { if (acceptedSubmission(response)) submissions.push(response); });
         await page.locator('#send_textarea').fill('Start my reply even if I leave immediately.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         try {
             await expect.poll(() => app.provider.calls.length, { timeout: 15000,
                 message: 'The provider starts without a foreground animation frame' }).toBe(1);
@@ -324,7 +325,7 @@ for (const phone of [false, true]) {
         await openChat(page, locator);
         const submitted = page.waitForResponse(acceptedSubmission);
         await page.locator('#send_textarea').fill('Show the reply as it arrives.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const response = await submitted;
         expect(response.status(), await response.text()).toBe(202);
         const { jobId } = await response.json();
@@ -464,7 +465,7 @@ for (const phone of [false, true]) {
         }, state);
         const submitted = page.waitForResponse(acceptedSubmission);
         await page.locator('#send_textarea').fill('Keep writing while I check another tab.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const response = await submitted;
         expect(response.status(), await response.text()).toBe(202);
         const { jobId } = await response.json();
@@ -571,7 +572,7 @@ for (const phone of [false, true]) {
         await openChat(page, locator);
         const submitted = page.waitForResponse(acceptedSubmission);
         await page.locator('#send_textarea').fill('One reply before returning to the tab.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const accepted = await (await submitted).json();
         await account.settled(accepted.jobId);
         await expect(page.locator('#chat .mes').last()).toContainText(ANSWER, { timeout: 30000 });
@@ -605,7 +606,7 @@ for (const phone of [false, true]) {
             });
         }
         expect(app.provider.calls).toHaveLength(1);
-        // Both replacement controls must preserve the saved reply until the server
+        // Both explicit background replacements must preserve the saved reply until the server
         // accepts and completes its replacement, including after a tab resume.
         for (const action of ['regenerate', 'swipe']) {
             let beforeSubmission;
@@ -617,12 +618,7 @@ for (const phone of [false, true]) {
                 return route.continue();
             });
             const replacement = page.waitForResponse(acceptedSubmission);
-            if (action === 'regenerate') {
-                await page.evaluate(() => document.querySelector('#option_regenerate').click());
-            } else {
-                await dismissTour(page);
-                await page.locator('#chat .mes').last().locator('.swipe_right').click();
-            }
+            await startNativeReply(page, action);
             try {
                 await expect(page.locator('#chat [data-roleplay-replacement]')).toHaveCount(1);
                 await expect(page.locator('#chat .mes').filter({ hasText: ANSWER })).toHaveCount(0);
@@ -656,7 +652,7 @@ for (const phone of [false, true]) {
         await openChat(page, locator);
         const submitted = page.waitForResponse(acceptedSubmission);
         await page.locator('#send_textarea').fill('Write the original reply.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         await account.settled((await (await submitted).json()).jobId);
         await expect(page.locator('#chat .mes').last()).toContainText(ANSWER, { timeout: 30000 });
         await expect.poll(() => page.evaluate(async () => (await import('/script.js')).isGenerating())).toBe(false);
@@ -664,7 +660,7 @@ for (const phone of [false, true]) {
         await page.evaluate(async () => { (await import('/scripts/openai.js')).oai_settings.stream_openai = true; });
         app.provider.mode.streamReply = { first: 'Replacement in progress', rest: ' must not be saved.' };
         const replacement = page.waitForResponse(acceptedSubmission);
-        await page.evaluate(() => document.querySelector('#option_regenerate').click());
+        await startNativeReply(page, 'regenerate');
         const { jobId } = await (await replacement).json();
         const preview = page.locator('#neconyan-roleplay-preview');
         try {
@@ -692,7 +688,7 @@ for (const phone of [false, true]) {
         }));
         await dismissTour(page);
         const refused = page.waitForResponse(acceptedSubmission);
-        await page.locator('#chat .mes').last().locator('.swipe_right').click();
+        await startNativeReply(page, 'swipe');
         expect((await refused).status()).toBe(400);
         await expect(page.locator('#chat [data-roleplay-replacement]')).toHaveCount(0);
         await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
@@ -719,7 +715,7 @@ for (const phone of [false, true]) {
         await openChat(page, locator);
         const submitted = page.waitForResponse(acceptedSubmission);
         await page.locator('#send_textarea').fill('Generate with the visible Companions.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const response = await submitted;
         expect(response.status(), await response.text()).toBe(202);
         const accepted = await response.json();
@@ -731,7 +727,7 @@ for (const phone of [false, true]) {
         expect(app.provider.calls).toHaveLength(10);
         await dismissTour(page);
         const swiped = page.waitForResponse(acceptedSubmission);
-        await page.locator('#chat .mes').last().locator('.swipe_right').click();
+        await startNativeReply(page, 'swipe');
         const swipeResponse = await swiped;
         expect(swipeResponse.status(), await swipeResponse.text()).toBe(202);
         const swipeJob = await terminal(account, (await swipeResponse.json()).jobId);
@@ -755,7 +751,7 @@ for (const phone of [false, true]) {
         await openChat(page, locator);
         const submitted = page.waitForResponse(acceptedSubmission);
         await page.locator('#send_textarea').fill('Ask the server one question.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const response = await submitted;
         expect(response.status(), await response.text()).toBe(202);
         const accepted = await response.json();
@@ -807,7 +803,7 @@ for (const phone of [false, true]) {
 
         const submitted = page.waitForResponse(acceptedSubmission);
         await page.locator('#send_textarea').fill('This answer cannot be produced.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const response = await submitted;
         expect(response.ok(), await response.text()).toBe(true);
         const accepted = await response.json();

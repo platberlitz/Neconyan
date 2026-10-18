@@ -1145,7 +1145,7 @@ test('group send submits without awaiting requestAnimationFrame in a hidden tab'
         __saveChainModule: { roleplayAccountStamp: () => ({ account: accountStamp }) },
     });
     vm.runInContext(wrapperCode, runtime);
-    const result = await runtime.generateGroupWrapper(false, 'normal', {});
+    const result = await runtime.generateGroupWrapper(false, 'normal', { skipNativeRoleplay: false });
     expect(rAF).not.toHaveBeenCalled();
     expect(sendMessageAsUser).toHaveBeenCalledTimes(1);
     expect(submitRoleplayGroupTurn).toHaveBeenCalledWith(expect.objectContaining({

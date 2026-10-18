@@ -22,7 +22,7 @@ async function startBrowserReply(page, type = 'normal') {
     const request = page.waitForRequest(request => /\/api\/backends\/(chat|text)-completions\/generate$/.test(request.url()));
     await page.evaluate(async type => {
         const core = await import('/script.js');
-        window.fixtureGeneration = core.Generate(type, { skipNativeRoleplay: true }).catch(error => {
+        window.fixtureGeneration = core.Generate(type).catch(error => {
             window.fixtureGenerationError = error.message;
         });
     }, type);
@@ -77,14 +77,12 @@ for (const phone of [false, true]) {
         app.provider.mode.streamReply = { first, rest: reply.slice(first.length), reasoning: 'Considering the reply.', holdReasoning: true };
         const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
             saved.oai_settings.stream_openai = true;
+            saved.oai_settings.show_thoughts = true;
         } });
         const page = await openChat(account);
         try {
             const id = await startBrowserReply(page);
-            // Separate provider events by a UI update interval; a single immediate chunk
-            // can be held by the ordinary streaming display throttle until the next event.
-            await expect.poll(() => page.evaluate(async () => (await import('/script.js')).streamingProcessor?.pendingReasoning)).toBe('Considering the reply.');
-            await expect.poll(() => Date.now() - app.provider.calls.find(call => call.model === MODEL).firstTokenAt).toBeGreaterThan(250);
+            await expect(page.locator('#chat .mes[mesid]').last().locator('.mes_reasoning')).toHaveText('Considering the reply.');
             app.provider.mode.finishReasoning();
             await expect(page.locator('#chat .mes[mesid]').last().locator('.mes_text')).toHaveText(first);
             expect(await page.evaluate(async () => (await import('/script.js')).saveChatConditional())).toBe(true);
@@ -193,7 +191,7 @@ test('a browser swipe recovers its new slot and preserves the previous reply', a
     await page.evaluate(async () => {
         const core = await import('/script.js');
         const { SWIPE_DIRECTION } = await import('/scripts/constants.js');
-        window.fixtureGeneration = core.swipe(null, SWIPE_DIRECTION.RIGHT, { generationOptions: { skipNativeRoleplay: true } });
+        window.fixtureGeneration = core.swipe(null, SWIPE_DIRECTION.RIGHT);
     });
     const id = (await (await request).allHeaders())['x-generation-id'];
     await expect.poll(() => app.provider.calls.filter(call => call.model === MODEL).length).toBe(2);

@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { startNativeReply } from './native-roleplay-helpers.js';
 
 test.setTimeout(240000);
 
@@ -209,7 +210,7 @@ for (const phone of [false, true]) {
         const page = await openChat(fixture);
         const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/workflow/submit') && response.status() !== 409);
         await page.locator('#send_textarea').fill('Ask about lunar botany.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const response = await submitted;
         expect(response.status(), await response.text()).toBe(202);
         const accepted = await response.json();

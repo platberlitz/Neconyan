@@ -2,6 +2,7 @@
 import { expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { startNativeReply } from './native-roleplay-helpers.js';
 
 test.skip(process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1', 'Requires an owned disposable server.');
 test.setTimeout(180000);
@@ -58,7 +59,8 @@ for (const phone of [false, true]) {
         expect(unchangedWrites).toEqual([]);
     });
 
-    test(`${viewport} long-history first token streams before completion`, async ({ app }, info) => {
+    for (const background of [false, true]) test(`${viewport} ${background ? 'server' : 'browser'} long-history first token streams before completion`, async ({ app }, info) => {
+        const route = background ? 'server' : 'browser';
         app.provider.mode.streamReply = { first: 'First words', rest: ' and the finished reply.' };
         const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
             Object.assign(saved.oai_settings, { stream_openai: true, openai_max_context: 128000, openai_max_tokens: 256 });
@@ -90,25 +92,30 @@ for (const phone of [false, true]) {
         }, { avatar: account.avatar, chatName });
         await expect(page.locator('#send_textarea')).toBeVisible();
         await page.locator('#send_textarea').fill('Continue the journey.', { timeout: 60000 });
-        await page.evaluate(() => {
+        await page.evaluate(background => {
             document.getElementById('send_textarea').addEventListener('keydown', event => {
                 if (event.key === 'Enter') window.performanceSendAt = Date.now();
             }, { once: true });
             const observer = new MutationObserver(() => {
-                if (document.getElementById('neconyan-roleplay-preview')?.textContent.includes('First words')) {
+                const selector = background ? '#neconyan-roleplay-preview' : '#chat .mes.last_mes .mes_text';
+                if (document.querySelector(selector)?.textContent.includes('First words')) {
                     window.performanceFirstTextAt = Date.now();
                     observer.disconnect();
                 }
             });
             observer.observe(document.getElementById('chat').parentElement, { childList: true, subtree: true, characterData: true });
-        });
-        const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/workflow/submit') && response.status() !== 409, { timeout: 90000 });
-        await page.locator('#send_textarea').press('Enter');
-        const response = await submitted;
-        expect(response.status(), await response.text()).toBe(202);
-        const { jobId } = await response.json();
+        }, background);
+        const submitted = page.waitForRequest(request => request.url().endsWith(background
+            ? '/api/roleplay/workflow/submit' : '/api/backends/chat-completions/generate'), { timeout: 90000 });
+        if (background) {
+            await page.evaluate(() => { window.performanceSendAt = Date.now(); });
+            await startNativeReply(page);
+        } else {
+            await page.locator('#send_textarea').press('Enter');
+        }
+        await submitted;
         try {
-            const preview = page.locator('#neconyan-roleplay-preview');
+            const preview = background ? page.locator('#neconyan-roleplay-preview') : page.locator('#chat .mes[mesid]').last();
             await expect(preview).toContainText('First words', { timeout: 90000 });
             await page.waitForFunction(() => window.performanceFirstTextAt > 0);
             expect(app.provider.calls).toHaveLength(1);
@@ -116,7 +123,7 @@ for (const phone of [false, true]) {
             expect(call.completedAt).toBeNull();
             expect(call.messages.length).toBeGreaterThan(100);
             const times = await page.evaluate(() => ({ sentAt: window.performanceSendAt, visibleAt: window.performanceFirstTextAt }));
-            const metrics = { viewport, history: 120, messages: call.messages.length,
+            const metrics = { viewport, route, history: 120, messages: call.messages.length,
                 firstTokenMs: times.visibleAt - times.sentAt,
                 preparationMs: call.startedAt - times.sentAt,
                 deliveryMs: times.visibleAt - call.firstTokenAt };
@@ -126,10 +133,10 @@ for (const phone of [false, true]) {
             expect(box.width).toBeGreaterThan(0);
             expect(box.x + box.width).toBeLessThanOrEqual(phone ? 393 : 1280);
             await page.screenshot({ path: info.outputPath('first-token.png') });
+            await page.screenshot({ path: `../screenshots/browser-first-${viewport}-${route}.png` });
         } finally {
             app.provider.mode.finishStream?.();
         }
-        await account.settled(jobId);
         await expect(page.locator('#chat .mes').last()).toContainText('First words and the finished reply.', { timeout: 30000 });
     });
 }

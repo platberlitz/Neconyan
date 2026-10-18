@@ -7839,10 +7839,6 @@ class StreamingProcessor {
             // Controlled streams parse inline reasoning once in #applyProseLimit.
             await this.reasoningHandler.process(messageId, false, this.maxOutputTokens ? null : this.promptReasoning);
         }
-        if (!this.#isCurrent(messageId)) return;
-        if (this.reasoningHandler.hasReasoningContent()) {
-            this.reasoningHandler.updateDom(messageId);
-        }
     }
 
     #updateMessageBlockVisibility() {
@@ -7899,6 +7895,9 @@ class StreamingProcessor {
             this.swipeId = this.message.swipe_id;
             await this.#checkDomElements(messageId, continueOnReasoning);
             if (!this.#isCurrent(messageId)) return -1;
+            if (this.reasoningHandler.hasReasoningContent()) {
+                this.reasoningHandler.updateDom(messageId);
+            }
             this.markUIGenStarted();
         }
         hideSwipeButtons({ hideCounters: true });
@@ -7969,6 +7968,9 @@ class StreamingProcessor {
             this.#applyPendingReasoning();
             await this.reasoningHandler.process(messageId, mesChanged, this.maxOutputTokens ? null : this.promptReasoning);
             if (!this.#isCurrent(messageId)) return;
+            if (this.reasoningHandler.hasReasoningContent()) {
+                this.reasoningHandler.updateDom(messageId);
+            }
             processedText = chat[messageId].mes;
 
             // Token count update.
@@ -8310,6 +8312,8 @@ class StreamingProcessor {
                 androidEnabled: power_user.android_conservative_streaming,
             }));
             const timestamps = [];
+            let displayedText = false;
+            let displayedReasoning = false;
             for await (const { text, swipes, logprobs, toolCalls, state } of this.generator()) {
                 const now = Date.now();
                 timestamps.push(now);
@@ -8338,7 +8342,22 @@ class StreamingProcessor {
                 this.reasoningTokens = state?.reasoning_tokens ?? 0;
                 await eventSource.emit(event_types.STREAM_TOKEN_RECEIVED, this.result);
                 if (!this.#isCurrent()) { this.isFinished = true; return this.result; }
-                await sw.tick(async () => await this.onProgressStreaming(this.messageId, this.continueMessage + this.result));
+                const hasText = /\S/.test(this.result);
+                const hasReasoning = /\S/.test(this.pendingReasoning ?? '');
+                const firstContent = (!displayedText && hasText) || (!displayedReasoning && hasReasoning);
+                const renderProgress = async () => {
+                    await this.onProgressStreaming(this.messageId, this.continueMessage + this.result);
+                    displayedText ||= hasText;
+                    displayedReasoning ||= hasReasoning;
+                };
+                // The provider may pause after its first words. Show the first prose
+                // and reasoning immediately, then throttle subsequent updates as usual.
+                if (firstContent) {
+                    await renderProgress();
+                    sw.lastAction = Date.now();
+                } else {
+                    await sw.tick(renderProgress);
+                }
                 if (!this.#isCurrent()) { this.isFinished = true; return this.result; }
                 if (reachedLimit && !this.isCancelled && !this.abortController.signal.aborted) {
                     this.finishReason = 'length';
@@ -8751,7 +8770,7 @@ function removeLastMessage(messageId = null) {
  * @property {'main'|'auxiliary'|'none'} [cacheScope] Prompt cache lane for local backends.
  * @property {boolean} [preserveLastMessage] Whether regeneration should retain the last assistant message as context.
  * @property {ChatMessage} [companionHistoryTarget] Rewrite target whose Companion output must stay excluded during recursive tool calls.
- * @property {boolean} [skipNativeRoleplay=false] Keep this call site on the browser's own generation. Only for callers that read the provider response directly.
+ * @property {boolean} [skipNativeRoleplay] Omit for browser-first routing with required server exceptions; true forces browser generation, false requests a background workflow.
  */
 
 /**
@@ -8798,9 +8817,10 @@ async function loadNativeRoleplayWorkflows() {
 }
 
 /**
- * Neconyan Stage 9: can this generation call site be served by one accepted server
- * workflow? The answer is taken once, before the host touches the chat, so the
- * destructive browser steps and the server workflow can never disagree. A call site
+ * Browser replies are the default. A caller that explicitly needs a background
+ * workflow opts in with skipNativeRoleplay: false. The answer is taken once,
+ * before the host touches the chat, so the destructive browser steps and the
+ * server workflow can never disagree. A call site
  * that is refused here keeps the browser's own path in full, options and all.
  *
  * @param {string} type Generation type.
@@ -8814,7 +8834,7 @@ export function willRunNativeRoleplayWorkflow(type, options = {}, collector = nu
         return false;
     };
     if (!['normal', 'continue', 'swipe', 'regenerate'].includes(type)) return refuse('type');
-    if (options.skipNativeRoleplay) return refuse('skip-flag');
+    if (options.skipNativeRoleplay !== false) return refuse('skip-flag');
     if (options.automatic_trigger) return refuse('automatic-trigger');
     if (options.jsonSchema) return refuse('json-schema');
     if (options.force_chid) return refuse('force-chid');
@@ -8825,8 +8845,7 @@ export function willRunNativeRoleplayWorkflow(type, options = {}, collector = nu
     if (options.suppressUserMessage) return refuse('suppress-user-message');
     if (options.preserveLastMessage) return refuse('preserve-last-message');
     if (options.signal?.aborted) return refuse('signal');
-    // A group turn is a family of speakers and stays on the browser path until the
-    // server owns the whole group workflow.
+    // Group background requests are routed by generateGroupWrapper instead.
     if (selected_group) return refuse('group');
     // The built-in helper adds its help reference and its own tools in the page, and
     // the server prompt has neither, so its chats stay on the browser path.
@@ -8847,18 +8866,27 @@ export function willRunNativeRoleplayWorkflow(type, options = {}, collector = nu
 async function nativeRoleplayWorkflowFor(type, options, collector = null) {
     const report = typeof collector === 'function' ? collector
         : reason => console.debug('Roleplay workflow refused', { type, reason });
-    if (!willRunNativeRoleplayWorkflow(type, options, report)) return null;
+    let serverRequired = false;
+    if (options.skipNativeRoleplay === undefined) {
+        if (!willRunNativeRoleplayWorkflow(type, { ...options, skipNativeRoleplay: false }, report)) return null;
+        const { requiresServerReply } = await import('./scripts/browser-reply-routing.js');
+        serverRequired = await requiresServerReply();
+        if (!serverRequired) return null;
+    } else if (!willRunNativeRoleplayWorkflow(type, options, report)) return null;
     const workflows = await loadNativeRoleplayWorkflows();
     const name = workflows?.roleplayWorkflowNameFor?.(type) ?? null;
     if (!workflows || !name) {
         report('workflow-module');
+        if (serverRequired) throw new Error('The selected Notebook context needs a server reply. Please reload and try again.');
         return null;
     }
     // A page prompt addition the server cannot carry faithfully keeps this call on
     // the browser path rather than generating without it. The workflow captures the
     // additions again after the composer's commands have run. A probing caller's
     // collector is passed on, so only the emitting decision point writes the line.
-    return await workflows.capturePagePrompts(name, collector) ? { name, workflows } : null;
+    const page = await workflows.capturePagePrompts(name, collector);
+    if (!page && serverRequired) throw new Error('The selected Notebook context cannot be combined with these page prompts. Nothing was generated.');
+    return page ? { name, workflows } : null;
 }
 
 function consumePendingGeneratedMessageExtra(message) {
@@ -8879,7 +8907,7 @@ function consumePendingUserMessageExtra(message) {
     pendingUserMessageExtra = null;
 }
 
-export async function Generate(type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, jsonSchema = null, depth = 0, suppressUserMessage = false, cacheScope = null, preserveLastMessage = false, companionHistoryTarget = null, suppressAutoContinue = false, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false, skipNativeRoleplay = false, preparedNativeRoleplay = null } = {}, dryRun = false) {
+export async function Generate(type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, jsonSchema = null, depth = 0, suppressUserMessage = false, cacheScope = null, preserveLastMessage = false, companionHistoryTarget = null, suppressAutoContinue = false, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false, skipNativeRoleplay, preparedNativeRoleplay = null } = {}, dryRun = false) {
     if (!dryRun && isChatNavigationBlocked()) return;
     if (!dryRun && signal?.aborted) return;
     // Commands do not own a reply's cancellation controller or generation events.
@@ -9056,7 +9084,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         if (nativeRoleplay) {
             const native = await nativeRoleplay.workflows.runNativeRoleplayGeneration(type, { page: nativeRoleplay.page, committed: nativeReplacement,
                 maxOutputTokens, jsonSchema, force_chid, force_name2, quiet_prompt, depth, cacheScope, suppressUserMessage,
-                preserveLastMessage, signal, skipNativeRoleplay });
+                preserveLastMessage, signal, skipNativeRoleplay: false });
             if (native) return native;
             // A committed replacement never falls back: the message the host would
             // have deleted is still there, so the browser path would generate twice.
@@ -9085,7 +9113,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         if (selected_group && !is_group_generating) {
             if (!dryRun) {
             // Returns the promise that generateGroupWrapper returns; resolves when generation is done
-                return await generateGroupWrapper(false, type, { quiet_prompt, force_chid, signal, quietImage, jsonSchema, cacheScope: resolvedCacheScope, preserveLastMessage, companionHistoryTarget: companionFeedbackTarget, ...requestControls });
+                return await generateGroupWrapper(false, type, { quiet_prompt, force_chid, signal, quietImage, jsonSchema, skipNativeRoleplay, cacheScope: resolvedCacheScope, preserveLastMessage, companionHistoryTarget: companionFeedbackTarget, ...requestControls });
             }
 
             const characterIndexMap = new Map(characters.map((char, index) => [char.avatar, index]));

@@ -141,6 +141,9 @@ describe('Guided Generations steering commands', () => {
             extension_settings: extensionSettings,
             getContext: jest.fn(() => context),
         }));
+        await jest.unstable_mockModule('../public/scripts/browser-reply-routing.js', () => ({
+            requiresServerReply: jest.fn(async () => false),
+        }));
         // The shell's named-workflow module is replaced so these browser-path cases
         // stay deterministic and no real import outlives the test environment.
         await jest.unstable_mockModule('../public/scripts/neconyan-conversation/roleplay-workflows.js', () => ({

@@ -5,6 +5,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { acknowledgeActiveSettings, test } from './neconyan-conversation-durable-fixture.js';
+import { startNativeReply } from './native-roleplay-helpers.js';
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
 test.setTimeout(240000);
@@ -66,6 +67,27 @@ async function closeEveryPage(browser) {
     expect(browser.contexts().flatMap(context => context.pages())).toHaveLength(0);
 }
 
+for (const phone of [false, true]) {
+    test(`ordinary group replies use browser generation on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
+        const fixture = await prepare(app, phone);
+        const page = await openGroup(fixture);
+        const submissions = [];
+        page.on('request', request => {
+            if (/\/api\/roleplay\/(group|workflow)\/submit$/.test(request.url())) submissions.push(request.url());
+        });
+        const generated = page.waitForRequest(request => request.url().endsWith('/api/backends/chat-completions/generate'));
+        await page.locator('#send_textarea').fill('Answer in the open group chat.');
+        await page.locator('#send_textarea').press('Enter');
+        await generated;
+        await expect.poll(() => app.provider.calls.length).toBe(1);
+        await app.release();
+        await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
+        await expect.poll(async () => (await readRows(fixture.file)).filter(row => row.mes === ANSWER).length).toBe(1);
+        expect(submissions).toEqual([]);
+        expect(app.provider.calls).toHaveLength(1);
+    });
+}
+
 for (const [viewport, phone, standalone] of [['desktop', false, false], ['iPhone browser', true, false], ['iPhone home screen', true, true]]) {
     const installPhone = phone ? context => installIPhoneSafari(context, { standalone }) : async () => {};
     const syncPhoneCss = phone ? applyIOSOnlyCss : async () => {};
@@ -98,7 +120,7 @@ for (const [viewport, phone, standalone] of [['desktop', false, false], ['iPhone
         app.provider.mode.streamReply = { first, rest, reasoning: 'Consider the **town square** before replying.' };
         const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit') && response.status() === 202);
         await page.locator('#send_textarea').fill('I enter the town and look around. What happens next?');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const { jobId } = await (await submitted).json();
         await expect.poll(() => app.provider.calls.length, { timeout: 30000 }).toBe(1);
         const preview = page.getByLabel('Reply in progress');
@@ -188,7 +210,7 @@ for (const [viewport, phone] of [['desktop', false], ['phone', true]]) {
         app.provider.mode.disconnect = true;
         const accepted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit') && response.status() === 202);
         await page.locator('#send_textarea').fill('Please answer this group message.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const { jobId } = await (await accepted).json();
         await expect.poll(() => app.provider.calls.length).toBe(1);
         await app.release();
@@ -205,7 +227,7 @@ for (const [viewport, phone] of [['desktop', false], ['phone', true]]) {
         app.provider.mode.streamReply = { first: 'The group reply was written', rest: ' by the server.' };
         const resent = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit'));
         await page.locator('#send_textarea').fill('Please try the group reply again.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const response = await resent;
         expect(response.status(), await response.text()).toBe(202);
         const retry = await response.json();
@@ -252,7 +274,7 @@ for (const [viewport, phone, raceSettings, companionCount] of [
         }
         const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit') && (!raceSettings || response.status() === 202));
         await page.locator('#send_textarea').fill('Tell the group about the moon.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const response = await submitted;
         expect(response.status(), await response.text()).toBe(202);
         const accepted = await response.json();
@@ -282,7 +304,7 @@ for (const [viewport, phone] of [['desktop', false], ['phone', true]]) {
         const page = await openGroup(fixture);
         const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit'));
         await page.locator('#send_textarea').fill('Keep this group chat open while replying.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const response = await submitted;
         expect(response.status(), await response.text()).toBe(202);
         const accepted = await response.json();
@@ -307,7 +329,7 @@ for (const [viewport, phone] of [['desktop', false], ['phone', true]]) {
         });
         const refusal = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit'));
         await page.locator('#send_textarea').fill('This question is saved even if the reply is refused.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         expect((await refusal).status()).toBe(507);
         await expect(page.locator('.toast-error')).toContainText(reason);
         await expect(page.locator('.toast-error .toast-title')).toHaveText('Group reply failed');
@@ -323,7 +345,7 @@ for (const [viewport, phone] of [['desktop', false], ['phone', true]]) {
         await page.unroute('**/api/roleplay/group/submit');
         const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit'));
         await page.locator('#send_textarea').fill('Please answer this new question.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const response = await submitted;
         expect(response.status(), await response.text()).toBe(202);
         const accepted = await response.json();
@@ -349,7 +371,7 @@ test('stopping a group submission does not show a late refusal as a new error', 
     const requested = page.waitForRequest(request => request.url().endsWith('/api/roleplay/group/submit'));
     const response = page.waitForResponse(result => result.url().endsWith('/api/roleplay/group/submit'));
     await page.locator('#send_textarea').fill('Stop before the refusal returns.');
-    await page.locator('#send_textarea').press('Enter');
+    await startNativeReply(page);
     await requested;
     expect(await page.evaluate(async () => (await import('/script.js')).stopGeneration())).toBe(true);
     releaseRefusal();
@@ -369,7 +391,7 @@ test('a native group reply runs its automatic Companion once, not again in the b
     });
     const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit'));
     await page.locator('#send_textarea').fill('Write one reply and one Companion note.');
-    await page.locator('#send_textarea').press('Enter');
+    await startNativeReply(page);
     const response = await submitted;
     expect(response.status(), await response.text()).toBe(202);
     const accepted = await response.json();

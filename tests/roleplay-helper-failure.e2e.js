@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from '@playwright/test';
 import { acknowledgeActiveSettings, MODEL, test } from './neconyan-conversation-durable-fixture.js';
+import { startNativeReply } from './native-roleplay-helpers.js';
 
 const answer = 'The paid main reply survives a failed helper.';
 
@@ -46,7 +47,7 @@ for (const phone of [false, true]) for (const change of ['agent', 'settings', 'a
         await acknowledgeActiveSettings(page);
         const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/workflow/submit') && response.status() !== 409);
         await page.locator('#send_textarea').fill('Keep this finished reply even if the helper fails.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const response = await submitted;
         expect(response.ok(), await response.text()).toBe(true);
         const { jobId } = await response.json();
@@ -120,7 +121,7 @@ for (const phone of [false, true]) for (const stage of ['translation', 'speech']
         app.provider.mode.hold = [heldModel];
         const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/workflow/submit') && response.status() !== 409);
         await page.locator('#send_textarea').fill('Keep this finished reply through the restart.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const response = await submitted;
         expect(response.ok(), await response.text()).toBe(true);
         const { jobId } = await response.json();

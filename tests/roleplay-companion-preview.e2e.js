@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { startNativeReply } from './native-roleplay-helpers.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 
 const completedReply = 'The main reply is finished. You can read it while the Companions work.';
@@ -51,7 +52,7 @@ for (const [phone, stopAfterReturn] of [[true, false], [false, false], [true, tr
         if (phone) await applyIOSOnlyCss(page);
         const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/workflow/submit') && response.status() !== 409);
         await page.locator('#send_textarea').fill('Keep working while I switch tabs.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const { jobId } = await (await submitted).json();
         const preview = page.locator('#neconyan-roleplay-preview');
         try {
@@ -89,7 +90,7 @@ for (const [phone, stopAfterReturn] of [[true, false], [false, false], [true, tr
             await expect(page.locator('#mes_stop')).toBeVisible();
             const length = await page.evaluate(async () => (await import('/script.js')).chat.length);
             await page.locator('#send_textarea').fill('This must wait for the current reply.');
-            await page.locator('#send_textarea').press('Enter');
+            await startNativeReply(page);
             expect(await page.evaluate(async () => (await import('/script.js')).chat.length)).toBe(length);
             await page.locator('#send_textarea').fill('');
             if (stopAfterReturn) {

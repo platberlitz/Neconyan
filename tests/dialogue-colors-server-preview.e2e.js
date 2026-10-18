@@ -1,6 +1,7 @@
 /* global window, document, requestAnimationFrame, getComputedStyle */
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { startNativeReply } from './native-roleplay-helpers.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 
 async function skipTour(page) {
@@ -51,7 +52,7 @@ for (const phone of [true, false]) {
         if (phone) await applyIOSOnlyCss(page);
         const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/workflow/submit') && response.status() !== 409);
         await page.locator('#send_textarea').fill('Please keep talking while I read.');
-        await page.locator('#send_textarea').press('Enter');
+        await startNativeReply(page);
         const { jobId } = await (await submitted).json();
         try {
             const preview = page.locator('#neconyan-roleplay-preview');

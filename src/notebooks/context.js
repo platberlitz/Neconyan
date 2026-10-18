@@ -211,17 +211,22 @@ export function collectNoteContextLocked(lease, { scope = {}, budgetTokens = DEF
     };
 }
 
-/** Only owner-enabled, scope-matching notebooks are prepared for chat context. */
-export async function prepareNoteContextNotebooks(base, scope, { stamp = roleplayAccountStamp(base) } = {}) {
+/** Read only policies when deciding whether a reply needs server-side note context. */
+export function noteContextNotebookIdsLocked(lease, scope) {
     const active = normaliseScope(scope);
-    const ids = withRoleplayAccount(base, stamp, lease => listNotebookIdsLocked(lease).filter(id => {
+    return listNotebookIdsLocked(lease).filter(id => {
         let policies;
         try { policies = readPoliciesLocked(lease, id); } catch { return false; }
         return policies.admitted !== false && Object.keys(policies.notes ?? {}).some(noteId => {
             const policy = contextPolicy(policies, noteId);
             return policy.mode !== 'off' && scopeMatches(policy.scopes, active);
         });
-    }));
+    });
+}
+
+/** Only owner-enabled, scope-matching notebooks are prepared for chat context. */
+export async function prepareNoteContextNotebooks(base, scope, { stamp = roleplayAccountStamp(base) } = {}) {
+    const ids = withRoleplayAccount(base, stamp, lease => noteContextNotebookIdsLocked(lease, scope));
     for (const id of ids) await prepareNotebook(base, id, { stamp });
 }
 

@@ -57,6 +57,22 @@ test('notes are not used in context by default', t => {
     assert.equal(result.usedTokens, 0);
 });
 
+test('reply routing requires only admitted, enabled notes matching the active scope', t => {
+    const { create, policy, run, notebookId } = prepared(t);
+    const noteId = create('Routing pin', 'Do not omit this selected note.');
+    const required = scope => run(lease => context.noteContextNotebookIdsLocked(lease, scope));
+    assert.deepEqual(required(chatA), []);
+    for (const [kind, id] of [['chat', chatA.chat], ['character', chatA.character], ['lorebook', 'Test World'], ['global', undefined]]) {
+        policy({ notes: { [noteId]: { context: { mode: 'pinned', scopes: [{ kind, ...(id ? { id } : {}) }] } } } });
+        assert.deepEqual(required(chatA), [notebookId]);
+        if (kind === 'chat' || kind === 'lorebook') assert.deepEqual(required(chatB), []);
+    }
+    policy({ admitted: false });
+    assert.deepEqual(required(chatA), []);
+    policy({ admitted: true, notes: { [noteId]: { context: { mode: 'off' } } } });
+    assert.deepEqual(required(chatA), []);
+});
+
 test('pinned and reference context never expands embedded notes outside their own explicit scopes', t => {
     const { create, policy, collect } = prepared(t);
     const source = create('Reference source', '# Source\nHarbour healer ![[Private target#Secret]]');
