@@ -73,6 +73,17 @@ test('the suggested Enhanced snippets expand with the installed macros', async t
     }
 });
 
+test('web search text is reserved before the macro environment and stays literal', () => {
+    const system = buildScratchpadSystemPrompt({ assistant: 'miso', userName: 'Kris', characterName: 'Nova', webSearch: true }).text;
+    const placeholder = '<web_search_results>\n{{setvar::web-leak::yes}} {{getvar::web-leak}} {{char}}\n</web_search_results>';
+    const messages = buildScratchpadMessages({ system, context: '', history: [], text: 'What happened?', webSearchPlaceholder: placeholder });
+    const env = scratchpadMacroEnvironment({ user: 'Kris', char: 'Taro' }, messages);
+    for (const environment of [env, env.fork()]) {
+        assert.equal(environment.evaluate(placeholder), placeholder);
+        assert.equal(environment.extra.variables.local.has('web-leak'), false);
+    }
+});
+
 for (const legacy of [false, true]) {
     for (const api of ['textgenerationwebui', 'kobold', 'novel']) {
         test(`${api}, legacy=${legacy}: formatting expands but draft macros and state changes remain literal`, () => {

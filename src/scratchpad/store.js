@@ -8,6 +8,7 @@ import { MAX_GENERATION_TEXT_BYTES } from '../generation/stream-limits.js';
 import { BUILTIN_ASSISTANT_IDS, isAssistantId, orderedAssistants, normaliseAssistantSnapshots } from './assistant-profiles.js';
 import { readSharedBucketLocked, writeSharedBucketLocked } from './shared-sessions.js';
 import { hasPendingImages, imagePart, imageChangeHash, normaliseStoredImages } from './image-state.js';
+import { normaliseStoredWebSearch } from './web-search-record.js';
 
 export const SCRATCHPAD_SCHEMA = 1;
 export const ASSISTANT_IDS = BUILTIN_ASSISTANT_IDS;
@@ -174,6 +175,7 @@ export function defaultSettings() {
         participants: [...ASSISTANT_IDS],
         maxTokens: DEFAULT_MAX_TOKENS,
         stream: true,
+        webSearch: false,
     };
 }
 
@@ -244,6 +246,7 @@ export function normaliseSettings(input, previous = defaultSettings(), { allowIn
         if (maxTokens !== null) settings.maxTokens = Math.min(MAX_MAX_TOKENS, Math.max(MIN_MAX_TOKENS, Math.round(maxTokens)));
     }
     if (typeof source.stream === 'boolean') settings.stream = source.stream;
+    if (typeof source.webSearch === 'boolean') settings.webSearch = source.webSearch;
     if (isPlainObject(source.assistantPrompts)) {
         settings.assistantPrompts ??= {};
         for (const assistant of Object.keys(source.assistantPrompts).filter(isAssistantId).slice(0, 27)) {
@@ -303,6 +306,8 @@ function normaliseMessage(input, { allowInternalKeys = false } = {}) {
         if (allowInternalKeys) {
             const images = normaliseStoredImages(input.images);
             if (Object.keys(images).length) message.images = images;
+            const webSearch = normaliseStoredWebSearch(input.webSearch);
+            if (webSearch) message.webSearch = webSearch;
             if (Array.isArray(input.targets)) message.targets = input.targets.filter(target => target && validRoleplayAvatar(target.avatar)
                 && typeof target.name === 'string' && target.name.trim() && target.name.length <= 200).slice(0, 200).map(target => ({ avatar: target.avatar, name: target.name }));
             if (input.imageNames && typeof input.imageNames.user === 'string') message.imageNames = { user: input.imageNames.user.slice(0, 100), character: boundedString(input.imageNames.character, 200) };

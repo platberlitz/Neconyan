@@ -631,6 +631,17 @@ test('the reply limit defaults to 32000 without replacing saved limits', t => {
     assert.equal(a.mutate(SOURCE, bucket => store.createSession(bucket)).settings.maxTokens, 16000);
 });
 
+test('the web search switch starts off, is saved and carries to new sessions', t => {
+    assert.equal(store.normaliseSettings({}).webSearch, false);
+    const a = account(t);
+    const session = startSession(a, { webSearch: true });
+    assert.equal(a.read(SOURCE).sessions[0].settings.webSearch, true);
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { settings: { webSearch: false } }));
+    assert.equal(a.read(SOURCE).sessions[0].settings.webSearch, false);
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { settings: { webSearch: true } }));
+    assert.equal(a.mutate(SOURCE, bucket => store.createSession(bucket)).settings.webSearch, true);
+});
+
 test('long replies fit with room to spare and a full Scratchpad file explains what to do', t => {
     const a = account(t);
     const session = startSession(a);
@@ -1398,6 +1409,19 @@ test('the endpoint checks the account and answers with the saved Scratchpad', as
     assert.equal((await post('/instructions/update', payload)).status, 409);
     assert.equal((await post('/instructions', {}, 'someone-else')).status, 409);
     assert.equal((await post('/instructions/update', payload, 'someone-else')).status, 409);
+    const initialWebSearch = await post('/web-search', {});
+    assert.equal(initialWebSearch.status, 200);
+    const webState = await initialWebSearch.json();
+    assert.equal(webState.webSearch.provider, 'off');
+    assert.equal(webState.readiness.configured, false);
+    const webPayload = { webSearch: { provider: 'searxng', searxngUrl: 'https://search.example.com/searxng', results: 4 }, expectedRevision: webState.webSearch.revision };
+    const savedWebSearch = await post('/web-search/update', webPayload);
+    assert.equal(savedWebSearch.status, 200);
+    assert.equal((await savedWebSearch.json()).webSearch.results, 4);
+    assert.equal((await post('/web-search/update', webPayload)).status, 409);
+    assert.equal((await post('/web-search', {}, 'someone-else')).status, 409);
+    assert.equal((await post('/web-search/update', { webSearch: { provider: 'searxng', searxngUrl: 'http://127.0.0.1:8080' },
+        expectedRevision: 1 })).status, 403, 'a non-admin account cannot point SearXNG at a loopback address');
     const defaults = await (await post('/prompt', { assistant: 'miso' })).json();
     assert.doesNotMatch(defaults.text, /ENDPOINT-GLOBAL/, 'editing a base prompt must not bake in global text');
     const generalPrompt = await (await post('/prompt', { source: GENERAL, assistant: 'miso', capabilities: { chat: true, lore: true } })).json();

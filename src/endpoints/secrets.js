@@ -27,6 +27,7 @@ export const SECRET_KEYS = {
     MAKERSUITE: 'api_key_makersuite',
     VERTEXAI: 'api_key_vertexai',
     SERPAPI: 'api_key_serpapi',
+    BRAVE_SEARCH: 'api_key_brave_search',
     TOGETHERAI: 'api_key_togetherai',
     MISTRALAI: 'api_key_mistralai',
     CUSTOM: 'api_key_custom',
