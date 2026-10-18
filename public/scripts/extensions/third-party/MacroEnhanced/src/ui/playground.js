@@ -3,17 +3,19 @@
  * old Workbench's Playground, Trace and pending-change ledger, with the sandbox
  * opening no live state and the read-only host guard around every evaluation.
  */
-import { announce as defaultAnnounce, button, copyToClipboard, el, flashButtonText } from '../dom.js';
+import { announce as defaultAnnounce, announceError, button, copyToClipboard, el, flashButtonText } from '../dom.js';
 import { peekChatState } from '../chat-state.js';
+import { describeChecked, findUnusedGlobals, removeGlobals } from '../unused-globals.js';
 import { applySandboxEnvironment, createSandbox, findUnshadowedVariableMacros } from '../workbench/sandbox.js';
 import { extractMacroInfos, runTrace } from '../workbench/trace.js';
 import { isImportFixesActive } from '../import-fixes.js';
 import { rewriteMacros } from '../import-fixes-impl.js';
-import { withReadOnlyVariables } from '../../../../../variable-read-only.js';
+import { areVariablesReadOnly, withReadOnlyVariables } from '../../../../../variable-read-only.js';
 import { renderMacroText } from './macro-text.js';
 import { uiState } from './ui-state.js';
 
 const EVAL_DEBOUNCE_MS = 300;
+const REMOVE_UNUSED_LABEL = 'Remove unused';
 const PLACEHOLDER = 'Type text with macros, for example {{upper::{{char}}}} rolled {{roll::d20}}';
 
 function changeText(before, after) {
@@ -182,13 +184,17 @@ export function createPlaygroundPanel({ initialText = '', announce = defaultAnno
         }
     }
 
-    function renderValueList(title, values) {
+    function renderValueList(title, values, { open = false, actions } = {}) {
         const details = el('details', 'me-disclosure');
+        details.open = open;
         const names = Object.keys(values ?? {}).sort();
         details.appendChild(el('summary', 'me-disclosure-summary', `${title} (${names.length})`));
         if (!names.length) {
             details.appendChild(el('p', 'me-section-note', 'None yet.'));
             return details;
+        }
+        if (actions) {
+            details.appendChild(actions);
         }
         const list = el('dl', 'me-value-list');
         for (const name of names) {
@@ -199,11 +205,93 @@ export function createPlaygroundPanel({ initialText = '', announce = defaultAnno
         return details;
     }
 
+    function confirmRemoval(ctx, text, detail) {
+        const confirmFn = ctx.Popup?.show?.confirm;
+        if (confirmFn) {
+            return Promise.resolve(confirmFn(text, detail)).then(Boolean);
+        }
+        return Promise.resolve(globalThis.confirm(`${text}\n\n${detail}`));
+    }
+
+    let checkingGlobals = false;
+    let globalsStatus = '';
+
+    function reportGlobals(text, { error = false } = {}) {
+        globalsStatus = text;
+        const status = variables.querySelector('[data-me-globals-status]');
+        if (status) {
+            status.textContent = text;
+        }
+        if (error) {
+            announceError(text);
+        } else {
+            announce(text);
+        }
+    }
+
+    async function removeUnusedGlobals(trigger) {
+        if (checkingGlobals) {
+            return;
+        }
+        const ctx = currentContext();
+        if (areVariablesReadOnly()) {
+            reportGlobals('Variables are read-only right now, so nothing was removed.', { error: true });
+            return;
+        }
+        checkingGlobals = true;
+        trigger.disabled = true;
+        trigger.textContent = 'Checking…';
+        try {
+            const result = await findUnusedGlobals(ctx);
+            const looked = describeChecked(result.checked);
+            if (!result.unused.length) {
+                reportGlobals(`Every global variable is still used somewhere. Checked ${looked}.`);
+                return;
+            }
+            const count = result.unused.length;
+            const skipped = result.unreadable
+                ? ` ${result.unreadable} file${result.unreadable === 1 ? '' : 's'} could not be read and were skipped.`
+                : '';
+            const confirmed = await confirmRemoval(ctx,
+                `Remove ${count} unused global variable${count === 1 ? '' : 's'}?`,
+                `Nothing refers to these any more (checked ${looked}).${skipped} Removing them cannot be undone: ${result.unused.join(', ')}`);
+            if (!confirmed) {
+                reportGlobals('Nothing was removed.');
+                return;
+            }
+            const removed = removeGlobals(ctx, result.unused);
+            globalsStatus = '';
+            renderVariables();
+            reportGlobals(`Removed ${removed.length} unused global variable${removed.length === 1 ? '' : 's'}.`);
+        } catch (error) {
+            reportGlobals(`Could not check global variables: ${error?.message ?? error}`, { error: true });
+        } finally {
+            checkingGlobals = false;
+            if (trigger.isConnected) {
+                trigger.disabled = false;
+                trigger.textContent = REMOVE_UNUSED_LABEL;
+            }
+        }
+    }
+
+    function globalActions() {
+        const actions = el('div', 'me-actions me-value-actions');
+        const removeButton = button('menu_button', REMOVE_UNUSED_LABEL, () => removeUnusedGlobals(removeButton));
+        removeButton.title = 'Finds global variables that no preset, character, lorebook, Quick Reply, Agent, chat or setting refers to, and asks before removing them';
+        const status = el('span', 'me-section-note me-value-status', globalsStatus);
+        status.dataset.meGlobalsStatus = '';
+        actions.append(removeButton, status);
+        return actions;
+    }
+
     function renderVariables() {
         const ctx = currentContext();
+        const globalsOpen = variables.querySelector('[data-me-globals]')?.open ?? false;
         variables.replaceChildren();
         variables.appendChild(renderValueList('Variables in this chat', ctx.chatMetadata?.variables ?? {}));
-        variables.appendChild(renderValueList('Global variables', ctx.extensionSettings?.variables?.global ?? {}));
+        const globals = renderValueList('Global variables', ctx.extensionSettings?.variables?.global ?? {}, { open: globalsOpen, actions: globalActions() });
+        globals.dataset.meGlobals = '';
+        variables.appendChild(globals);
 
         warningHost.replaceChildren();
         const unshadowed = findUnshadowedVariableMacros(ctx.macros?.registry);

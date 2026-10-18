@@ -645,6 +645,10 @@ body.neconyan :is(#left-nav-panel, #user-settings-block, #right-nav-panel) .neco
     font-size: 12px;
 }
 
+.me-value-actions {
+    margin-bottom: 8px;
+}
+
 .me-value-name {
     margin: 0;
     color: var(--me-muted);
