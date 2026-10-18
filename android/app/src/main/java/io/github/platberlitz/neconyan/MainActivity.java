@@ -22,6 +22,10 @@ import java.util.concurrent.*;
 
 public final class MainActivity extends Activity {
     private static final int MIN_WEBVIEW_MAJOR = 124;
+    private static final String STARTUP_LOG_TAG = "NeconyanStartup";
+    // Suppress foreground reconnects while a just-requested page load is recent,
+    // but never let a stalled load block retries indefinitely.
+    private static final long PAGE_LOAD_RETRY_MS = 30000;
     private WebView web;
     private ApkUpdater apkUpdater;
     private final BridgeCallerGate bridgeGate = new BridgeCallerGate();
@@ -55,6 +59,12 @@ public final class MainActivity extends Activity {
     private boolean safeNoticeShown;
     private boolean resumed;
     private boolean backupKeys;
+    private long activityCreatedAt;
+    private volatile boolean workspaceRequested;
+    private volatile long workspaceRequestedAt;
+    private volatile String shownStatus = "";
+    private boolean loggedMarkerSeen;
+    private boolean loggedPageFinished;
     private final NeconyanDiagnostics diagnosticsBridge = new NeconyanDiagnostics();
     private long navigationGeneration;
     private CrashReport.Entry pendingReport, visibleReport;
@@ -65,6 +75,8 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        activityCreatedAt = SystemClock.elapsedRealtime();
+        logStartup("activity created");
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.rgb(22, 23, 22));
@@ -73,7 +85,7 @@ public final class MainActivity extends Activity {
             return insets.consumeSystemWindowInsets();
         });
         status = new TextView(this);
-        status.setText("Starting Neconyan on your phone…\nYour chats stay on this device.");
+        setStatusText("Starting Neconyan on your phone…\nYour chats stay on this device.");
         status.setTextColor(Color.rgb(246, 242, 232));
         status.setTextSize(18);
         status.setPadding(24, 32, 24, 32);
@@ -91,8 +103,9 @@ public final class MainActivity extends Activity {
             autoRestarted = false;
             healthySince = 0;
             serverStartedAt = 0;
+            workspaceRequested = false;
             actions.setVisibility(View.GONE);
-            status.setText("Starting Neconyan on your phone…\nYour chats stay on this device.");
+            setStatusText("Starting Neconyan on your phone…\nYour chats stay on this device.");
             connect();
         });
         addAction("Save a backup of my data", view -> offerBackup());
@@ -100,12 +113,26 @@ public final class MainActivity extends Activity {
         addAction("Saved crash reports", view -> showCrashReports());
         addAction("Close Neconyan", view -> { ActivityBreadcrumbs.state("closed"); stopService(new Intent(this, ServerService.class)); finish(); });
         root.addView(actions);
+        // Cookie policy must be ready before the connection worker signs the page in.
+        CookieManager.getInstance().setAcceptCookie(true);
+        // Start the local server before constructing the WebView so both start in parallel.
+        // The first page load is posted to the main thread, so it runs after construction.
+        try {
+            credentials = ServerService.credentials(this);
+            origin = "http://127.0.0.1:" + credentials.getInt("port");
+            connect();
+        } catch (Exception error) {
+            ActivityBreadcrumbs.execute(() -> {
+                CrashDiagnostics.Result report = CrashDiagnostics.recordReport(this, "app", "activity-startup-failure", error, "The Android activity could not initialise.", "unknown", ActivityBreadcrumbs.current());
+                offerCrashReport(report.entry, report.saved);
+            });
+            showFailure("Could not start Neconyan: " + error.getMessage());
+        }
         web = new WebView(this);
         web.setBackgroundColor(Color.rgb(22, 23, 22));
         web.setVisibility(View.GONE);
         root.addView(web, new LinearLayout.LayoutParams(-1, 0, 1));
         if (Build.VERSION.SDK_INT >= 33) registerBackCallback();
-        CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, false);
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -142,15 +169,17 @@ public final class MainActivity extends Activity {
             // instead of leaving WebView's own error page on screen.
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (!request.isForMainFrame() || !local(request.getUrl()) || failed) return;
+                workspaceRequested = false;
                 loadFailed = true;
                 web.setVisibility(View.GONE);
-                status.setText("Reconnecting to your workspace…");
+                setStatusText("Reconnecting to your workspace…");
                 status.setVisibility(View.VISIBLE);
                 if (++loadFailures >= 3) showFailure("Neconyan's page kept failing to load (" + error.getDescription() + ").");
                 else connect();
             }
             @Override public void onPageFinished(WebView view, String url) {
                 if (!local(Uri.parse(url)) || loadFailed || failed) return;
+                workspaceRequested = false;
                 String nonce = UUID.randomUUID().toString();
                 long generation = navigationGeneration;
                 view.evaluateJavascript("window.NeconyanCrashDiagnostics?.getActivity?.()?.snapshot?.pageSessionId || ''", value -> {
@@ -162,6 +191,10 @@ public final class MainActivity extends Activity {
                     } catch (Exception ignored) { }
                 });
                 if (Uri.parse(url).getPath().equals("/login")) { connect(); return; }
+                if (!loggedPageFinished) {
+                    loggedPageFinished = true;
+                    logStartup("page finished");
+                }
                 loadFailures = 0;
                 if (healthySince == 0) healthySince = System.currentTimeMillis();
                 status.setVisibility(View.GONE);
@@ -225,19 +258,9 @@ public final class MainActivity extends Activity {
                 worker.execute(() -> download(url, URLUtil.guessFileName(url, disposition, mime)));
             } else external(Uri.parse(url));
         });
-        try {
-            credentials = ServerService.credentials(this);
-            origin = "http://127.0.0.1:" + credentials.getInt("port");
-            connect();
-            if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED)
-                requestPermissions(new String[] { "android.permission.POST_NOTIFICATIONS" }, 11);
-        } catch (Exception error) {
-            ActivityBreadcrumbs.execute(() -> {
-                CrashDiagnostics.Result report = CrashDiagnostics.recordReport(this, "app", "activity-startup-failure", error, "The Android activity could not initialise.", "unknown", ActivityBreadcrumbs.current());
-                offerCrashReport(report.entry, report.saved);
-            });
-            showFailure("Could not start Neconyan: " + error.getMessage());
-        }
+        logStartup("WebView built");
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED)
+            requestPermissions(new String[] { "android.permission.POST_NOTIFICATIONS" }, 11);
     }
 
     private void recoverCrashReports() {
@@ -326,7 +349,7 @@ public final class MainActivity extends Activity {
             bridgeToken = null;
             web = null;
             failed = true;
-            status.setText("Neconyan's page stopped\n\n" + explanation + "\n\nCrash diagnostics are being saved. Tap Try again to reopen your workspace.");
+            setStatusText("Neconyan's page stopped\n\n" + explanation + "\n\nCrash diagnostics are being saved. Tap Try again to reopen your workspace.");
             status.setVisibility(View.VISIBLE); actions.setVisibility(View.VISIBLE);
         }
         ActivityBreadcrumbs.execute(() -> {
@@ -335,7 +358,7 @@ public final class MainActivity extends Activity {
             runOnUiThread(() -> {
                 if (isFinishing() || isDestroyed()) return;
                 if (mainView) {
-                    status.setText(reportSummary(result.entry, result.saved) + "\n\nTap Try again to reopen your workspace.");
+                    setStatusText(reportSummary(result.entry, result.saved) + "\n\nTap Try again to reopen your workspace.");
                     addAction("Copy report", button -> copyReport(result.entry));
                     addAction("Share report", button -> shareReport(result.entry));
                     addAction("Full details", button -> showCrashReport(result.entry, false, result.saved));
@@ -382,7 +405,7 @@ public final class MainActivity extends Activity {
         int major = 0;
         try { major = Integer.parseInt(version.split("\\.")[0]); } catch (NumberFormatException ignored) { }
         if (major >= MIN_WEBVIEW_MAJOR) return true;
-        status.setText("Update Android System WebView\n\nWebView draws Neconyan's interface. Version " + MIN_WEBVIEW_MAJOR
+        setStatusText("Update Android System WebView\n\nWebView draws Neconyan's interface. Version " + MIN_WEBVIEW_MAJOR
             + " or newer is required. Installed: " + version
             + ".\n\nUpdate your phone's WebView through your app store or system updater, then reopen Neconyan.");
         Button settings = new Button(this);
@@ -417,12 +440,31 @@ public final class MainActivity extends Activity {
         try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); } catch (ActivityNotFoundException error) { Toast.makeText(this, "No app can open this link.", Toast.LENGTH_LONG).show(); }
     }
     private void connect() {
-        if (failed || !connecting.compareAndSet(false, true)) return;
+        if (failed || pageLoadInProgress() || !connecting.compareAndSet(false, true)) return;
+        loggedPageFinished = false;
         worker.execute(() -> {
             try { connectNow(); }
             catch (InterruptedException stopped) { Thread.currentThread().interrupt(); }
             catch (Throwable error) { show("Neconyan is still starting. Open the app again to finish. (" + error.getMessage() + ")"); }
             finally { connecting.set(false); }
+        });
+    }
+    private boolean pageLoadInProgress() {
+        return workspaceRequested && SystemClock.elapsedRealtime() - workspaceRequestedAt < PAGE_LOAD_RETRY_MS;
+    }
+    private void loadWorkspace() {
+        // The UI runnable is posted after onCreate has built the WebView, so the
+        // pending-load path used to live here was unreachable. Mark the request
+        // before posting so a foreground resume cannot start a duplicate login.
+        workspaceRequested = true;
+        workspaceRequestedAt = SystemClock.elapsedRealtime();
+        runOnUiThread(() -> {
+            if (failed || isDestroyed() || web == null) {
+                workspaceRequested = false;
+                return;
+            }
+            loadFailed = false;
+            web.loadUrl(origin);
         });
     }
     // Starts the local server when it is not running, waits for it, and signs the page in.
@@ -438,10 +480,12 @@ public final class MainActivity extends Activity {
                 else if (!restartAfterStop("")) return;
             } else if (serverStartedAt == 0) {
                 serverStartedAt = System.currentTimeMillis();
+                loggedMarkerSeen = false;
                 serverSeen = true;
                 serverSafe = readyMarker().optBoolean("safe", false);
                 // Android can keep an idle :server process cached after its service ended; a
                 // running service ignores this second start.
+                logStartup("server requested");
                 startForegroundService(new Intent(this, ServerService.class).putExtra(ServerService.SAFE, serverSafe));
             }
             stopped = waitForWorkspace();
@@ -451,25 +495,37 @@ public final class MainActivity extends Activity {
     private String waitForWorkspace() throws Exception {
         long startedAt = serverStartedAt;
         long deadline = System.currentTimeMillis() + 300000;
+        long lastProbe = 0;
         Exception last = null;
         while (!isFinishing() && !failed && System.currentTimeMillis() < deadline) {
+            boolean marker = readyMarkerPresent();
+            if (marker) logMarkerSeen();
             try {
+                if (!marker) throw new IOException("The local server is not ready");
                 JSONObject token = new JSONObject(request("/csrf-token", null, null));
                 JSONObject login = new JSONObject().put("username", "neconyan").put("password", credentials.getString("password")).put("remember", true);
                 request("/api/auth/browser/login", login.toString(), token.getString("token"));
                 CookieManager.getInstance().flush();
-                runOnUiThread(() -> { if (web == null || failed || isDestroyed()) return; loadFailed = false; web.loadUrl(origin); });
+                loadWorkspace();
                 return null;
             } catch (Exception error) {
                 last = error;
-                File file = new File(getCacheDir(), "startup-status.txt");
-                String text = file.isFile() ? new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8).trim() : "";
-                boolean fresh = !text.isEmpty();
-                if (fresh && (text.startsWith("Could not start Neconyan:") || text.startsWith("Neconyan stopped"))) return text;
-                if (serverProcessRunning()) serverSeen = true;
-                else if (serverSeen || System.currentTimeMillis() - startedAt > 20000) return "";
-                show(fresh ? text : "Starting your workspace…");
-                Thread.sleep(500);
+                long now = System.currentTimeMillis();
+                // Marker checks stay at 100 ms while the server installs, but disk
+                // reads, process enumeration and UI updates are bounded to twice a second.
+                if (now - lastProbe >= 500) {
+                    lastProbe = now;
+                    File file = new File(getCacheDir(), "startup-status.txt");
+                    String text = file.isFile() ? new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8).trim() : "";
+                    boolean fresh = !text.isEmpty();
+                    if (fresh && (text.startsWith("Could not start Neconyan:") || text.startsWith("Neconyan stopped"))) return text;
+                    if (serverProcessRunning()) serverSeen = true;
+                    else if (serverSeen || now - startedAt > 20000) return "";
+                    show(fresh ? text : "Starting your workspace…");
+                }
+                // The ready marker is written only after the server starts listening.
+                // Poll for it quickly; once present, HTTP failures use the slower interval.
+                Thread.sleep(marker ? 500 : 100);
             }
         }
         if (isFinishing() || failed) return null;
@@ -542,8 +598,10 @@ public final class MainActivity extends Activity {
     private void startServer(boolean safe) {
         serverSafe = safe;
         serverSeen = false;
+        loggedMarkerSeen = false;
         serverStartedAt = System.currentTimeMillis();
         if (firstStartAt == 0) firstStartAt = serverStartedAt;
+        logStartup("server requested");
         new File(getCacheDir(), "startup-status.txt").delete();
         startForegroundService(new Intent(this, ServerService.class).putExtra(ServerService.SAFE, safe));
     }
@@ -558,19 +616,43 @@ public final class MainActivity extends Activity {
         try { return new JSONObject(new String(Files.readAllBytes(new File(getFilesDir(), "android-ready.json").toPath()), StandardCharsets.UTF_8)); }
         catch (Exception error) { return new JSONObject(); }
     }
+    private boolean readyMarkerPresent() {
+        return new File(getFilesDir(), "android-ready.json").isFile();
+    }
+    private void logMarkerSeen() {
+        if (loggedMarkerSeen) return;
+        loggedMarkerSeen = true;
+        logStartup("ready marker seen");
+    }
     // A server that was killed outright leaves its ready marker behind; it must not look alive.
     private void clearStaleMarker() {
         if (!serverProcessRunning()) new File(getFilesDir(), "android-ready.json").delete();
     }
+    private void logStartup(String event) {
+        long elapsed = activityCreatedAt == 0 ? 0 : SystemClock.elapsedRealtime() - activityCreatedAt;
+        android.util.Log.i(STARTUP_LOG_TAG, event + " at +" + elapsed + "ms");
+    }
+    private void setStatusText(String text) {
+        shownStatus = text;
+        status.setText(text);
+    }
     private void show(String text) {
-        runOnUiThread(() -> { if (!failed) status.setText(DiagnosticStore.redact(text)); });
+        String message = DiagnosticStore.redact(text);
+        // Skip the UI post entirely while the visible status has not changed.
+        if (message.equals(shownStatus)) return;
+        shownStatus = message;
+        runOnUiThread(() -> {
+            if (failed) return;
+            shownStatus = message;
+            status.setText(message);
+        });
     }
     private void showFailure(String reason) {
         failed = true;
         String summary = failureSummary(reason);
         runOnUiThread(() -> {
             if (web != null) web.setVisibility(View.GONE);
-            status.setText(summary);
+            setStatusText(summary);
             status.setVisibility(View.VISIBLE);
             actions.setVisibility(View.VISIBLE);
         });
@@ -707,8 +789,9 @@ public final class MainActivity extends Activity {
     };
     private void reconnect() {
         if (failed || web == null || web.getVisibility() != View.VISIBLE) return;
+        workspaceRequested = false;
         web.setVisibility(View.GONE);
-        status.setText("Reconnecting to your workspace…");
+        setStatusText("Reconnecting to your workspace…");
         status.setVisibility(View.VISIBLE);
         connect();
     }

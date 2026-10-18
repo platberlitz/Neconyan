@@ -41,7 +41,7 @@ test('a server killed outright is detected by its process, not trusted from a st
     const loop = block(activity, 'private void connectNow()', 'private String waitForWorkspace()');
     assert.match(loop, /!serverProcessRunning\(\)\) \{\s*clearStaleMarker\(\);/);
     const wait = block(activity, 'private String waitForWorkspace()', 'private boolean restartAfterStop');
-    assert.match(wait, /else if \(serverSeen \|\| System\.currentTimeMillis\(\) - startedAt > 20000\) return "";/);
+    assert.match(wait, /else if \(serverSeen \|\| now - startedAt > 20000\) return "";/);
     assert.match(block(activity, 'private void clearStaleMarker()', 'private void show('), /if \(!serverProcessRunning\(\)\) new File\(getFilesDir\(\), "android-ready\.json"\)\.delete\(\);/);
 });
 
@@ -130,4 +130,69 @@ test('the Android server loads full ICU data so word splitting cannot crash it',
     assert.match(payload, /zipSha256: '982619632b78887f1895b063e96e8c3cc7f99283337c8abbd05aa71635de613c'/);
     assert.match(payload, /sha256: 'd5cf2a40dccbe471781ec7af85693bff542ff12f0b670c9630c4e72d60714b8b'/);
     assert.match(payload, /path\.join\(staging, 'icu', icu\.file\)/);
+});
+
+test('the server starts after the WebView check and before the WebView is built', () => {
+    const check = activity.indexOf('if (!checkWebView(root)) return;');
+    const connect = activity.indexOf('credentials = ServerService.credentials(this);');
+    const build = activity.indexOf('web = new WebView(this);');
+    assert.ok(check !== -1 && connect !== -1 && build !== -1);
+    assert.ok(check < connect, 'the WebView capability check must happen before the server starts');
+    assert.ok(connect < build, 'the server request must overlap WebView construction');
+    // Failure and status callbacks may run before the WebView exists.
+    assert.ok(activity.indexOf('status = new TextView(this);') < connect);
+    assert.ok(activity.indexOf('root.addView(actions);') < connect);
+});
+
+test('an early connection marks the page load before posting and bounds duplicate suppression', () => {
+    const load = block(activity, 'private void loadWorkspace()', 'private void connectNow()');
+    assert.match(load, /workspaceRequested = true;\s*workspaceRequestedAt = SystemClock\.elapsedRealtime\(\);\s*runOnUiThread/);
+    assert.match(load, /web == null\) \{\s*workspaceRequested = false;\s*return;\s*\}/);
+    assert.match(load, /loadFailed = false;\s*web\.loadUrl\(origin\)/);
+    assert.doesNotMatch(activity, /pendingPageLoad|webReady/);
+    assert.match(block(activity, 'private String waitForWorkspace()', 'private boolean restartAfterStop'), /loadWorkspace\(\);/);
+    assert.match(activity, /if \(failed \|\| pageLoadInProgress\(\) \|\| !connecting\.compareAndSet\(false, true\)\) return;/);
+    assert.match(block(activity, 'private boolean pageLoadInProgress()', 'private void loadWorkspace()'), /workspaceRequested && SystemClock\.elapsedRealtime\(\) - workspaceRequestedAt < PAGE_LOAD_RETRY_MS/);
+    assert.match(activity, /PAGE_LOAD_RETRY_MS = 30000/);
+    assert.match(block(activity, 'public void onReceivedError', 'public void onPageFinished'), /workspaceRequested = false;/);
+    assert.match(block(activity, 'public void onPageFinished', '}\n'), /workspaceRequested = false;/);
+    assert.match(activity, /if \(web != null\) web\.setVisibility\(View\.GONE\);/);
+});
+
+test('startup polling checks the marker quickly but throttles disk and process work', () => {
+    const wait = block(activity, 'private String waitForWorkspace()', 'private boolean restartAfterStop');
+    assert.match(wait, /boolean marker = readyMarkerPresent\(\);/);
+    assert.match(wait, /if \(marker\) logMarkerSeen\(\);/);
+    assert.match(wait, /if \(now - lastProbe >= 500\) \{/);
+    assert.match(wait, /else if \(serverSeen \|\| now - startedAt > 20000\) return "";/);
+    assert.match(wait, /Thread\.sleep\(marker \? 500 : 100\);/);
+    assert.match(wait, /ready marker is written only after the server starts listening/);
+    assert.match(block(activity, 'private boolean readyMarkerPresent()', 'private void logMarkerSeen'), /new File\(getFilesDir\(\), "android-ready\.json"\)\.isFile\(\)/);
+    // The comment matches the bootstrap: the marker is written on SERVER_STARTED.
+    assert.match(bootstrap, /serverEvents\.once\(EVENT_NAMES\.SERVER_STARTED[\s\S]*?writeFileAtomicSync\(readyPath/);
+});
+
+test('startup status skips an unchanged UI post and still records direct changes', () => {
+    const set = block(activity, 'private void setStatusText', 'private void show');
+    const show = block(activity, 'private void show(String text)', 'private void showFailure');
+    assert.match(set, /shownStatus = text;\s*status\.setText\(text\);/);
+    assert.match(show, /String message = DiagnosticStore\.redact\(text\);/);
+    const earlyReturn = show.indexOf('if (message.equals(shownStatus)) return;');
+    const post = show.indexOf('runOnUiThread');
+    assert.ok(earlyReturn !== -1 && post !== -1 && earlyReturn < post, 'an unchanged status must not post to the UI thread');
+    assert.match(show, /shownStatus = message;\s*runOnUiThread/);
+    assert.match(show, /status\.setText\(message\)/);
+    assert.doesNotMatch(show, /status\.getText\(\)/);
+});
+
+test('startup duration logs cover each checkpoint without credentials or URLs', () => {
+    for (const event of ['activity created', 'server requested', 'WebView built', 'ready marker seen', 'page finished']) {
+        assert.match(activity, new RegExp(`logStartup\\("${event}"\\)`), event);
+    }
+    const calls = activity.match(/logStartup\([^\n]+\);/g) || [];
+    assert.ok(calls.length >= 5);
+    for (const call of calls) assert.doesNotMatch(call, /origin|password|credential|http|port|getString|getInt/i);
+    const log = block(activity, 'private void logStartup', 'private void show(');
+    assert.match(log, /STARTUP_LOG_TAG/);
+    assert.doesNotMatch(log, /origin|password|credential|http/i);
 });

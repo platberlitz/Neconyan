@@ -9,7 +9,6 @@ import java.io.*;
 import java.net.*;
 import java.nio.file.*;
 import java.security.*;
-import java.util.zip.*;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -135,51 +134,76 @@ public final class ServerService extends Service {
     private File installPayload() throws Exception {
         File runtime = new File(getNoBackupFilesDir(), "runtime-" + BuildConfig.SERVER_SHA256.substring(0, 16));
         SharedPreferences installed = getSharedPreferences("runtime", MODE_PRIVATE);
-        if (new File(runtime, ".complete").isFile()) {
+        // A previous publish may have stopped between moving the live folder aside and
+        // installing the verified tree. Restore it before choosing where to preserve
+        // user extensions from.
+        PayloadInstaller.recover(runtime);
+        if (isInstalled(runtime)) {
             if (!installed.edit().putString("directory", runtime.getName()).commit()) throw new IOException("Cannot record the installed application");
             return runtime;
         }
         File stage = new File(getNoBackupFilesDir(), "runtime-staging");
-        deleteTree(stage);
-        if (!stage.mkdirs()) throw new IOException("Cannot create the private application folder");
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        try (InputStream input = new DigestInputStream(getAssets().open("server.zip"), digest)) { byte[] block = new byte[65536]; while (input.read(block) != -1) { } }
-        StringBuilder hash = new StringBuilder();
-        for (byte value : digest.digest()) hash.append(String.format("%02x", value));
-        if (!hash.toString().equals(BuildConfig.SERVER_SHA256)) throw new IOException("The application package did not verify");
-        long size = 0;
-        byte[] buffer = new byte[65536];
-        String prefix = stage.getCanonicalPath() + File.separator;
-        try (ZipInputStream zip = new ZipInputStream(getAssets().open("server.zip"))) {
-            ZipEntry entry;
-            while ((entry = zip.getNextEntry()) != null) {
-                File target = new File(stage, entry.getName());
-                if (!target.getCanonicalPath().startsWith(prefix)) throw new IOException("Unsafe application package path");
-                if (entry.isDirectory()) { target.mkdirs(); continue; }
-                target.getParentFile().mkdirs();
-                try (OutputStream output = new FileOutputStream(target)) {
-                    int count;
-                    while ((count = zip.read(buffer)) != -1) {
-                        size += count;
-                        if (size > 3L * 1024 * 1024 * 1024) throw new IOException("The application package is too large");
-                        output.write(buffer, 0, count);
-                    }
-                }
-            }
-        }
+        PayloadInstaller.deleteTree(stage);
         String previousName = installed.getString("directory", "");
-        if (previousName.matches("runtime-[a-f0-9]{16}")) preserveExtensions(new File(getNoBackupFilesDir(), previousName), stage);
-        Files.write(new File(stage, ".complete").toPath(), BuildConfig.SERVER_SHA256.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        if (!stage.renameTo(runtime)) throw new IOException("Cannot finish installing the application");
+        File oldRuntime = previousName.matches("runtime-[a-f0-9]{16}") ? new File(getNoBackupFilesDir(), previousName) : null;
+        // An APK update can change the runtime folder name. Recover the previous
+        // version's interrupted publish too, or its extensions stay in .rollback.
+        if (oldRuntime != null) PayloadInstaller.recover(oldRuntime);
+        File source = extensionSource(runtime, oldRuntime);
+        // One asset stream serves both hashing and extraction. PayloadInstaller only
+        // publishes the staged tree after the complete archive checksum matches.
+        try (InputStream archive = getAssets().open("server.zip")) {
+            PayloadInstaller.install(archive, BuildConfig.SERVER_SHA256, stage, runtime, prepared -> {
+                if (source != null) preserveExtensions(source, prepared);
+            });
+        }
         if (!installed.edit().putString("directory", runtime.getName()).commit()) throw new IOException("Cannot record the installed application");
         // User data is in files/data, never inside these replaceable application folders.
+        // Only complete version folders are swept; interrupted publish backups are left
+        // for PayloadInstaller to recover or remove, never deleted blindly by name.
         File[] siblings = getNoBackupFilesDir().listFiles();
         if (siblings != null) for (File old : siblings) {
-            if (old.isDirectory() && old.getName().startsWith("runtime-") && !old.equals(runtime)) {
-                try { deleteTree(old); } catch (IOException error) { android.util.Log.w("Neconyan", "Previous application files could not be removed", error); }
+            if (old.isDirectory() && old.getName().matches("runtime-[a-f0-9]{16}") && !old.equals(runtime)) {
+                try { PayloadInstaller.deleteTree(old); } catch (IOException error) { android.util.Log.w("Neconyan", "Previous application files could not be removed", error); }
             }
         }
         return runtime;
+    }
+
+    private static File extensionSource(File runtime, File oldRuntime) {
+        File[] candidates = { runtime, PayloadInstaller.rollback(runtime), PayloadInstaller.previous(runtime), oldRuntime,
+            oldRuntime == null ? null : PayloadInstaller.rollback(oldRuntime),
+            oldRuntime == null ? null : PayloadInstaller.previous(oldRuntime) };
+        for (File candidate : candidates) {
+            if (hasThirdPartyExtensions(candidate) && hasExtensionManifest(candidate)) return candidate;
+        }
+        // A damaged source still blocks deletion of its backup; preserveExtensions
+        // will fail the install rather than drop extension files.
+        for (File candidate : candidates) {
+            if (hasThirdPartyExtensions(candidate)) return candidate;
+        }
+        return runtime.exists() ? runtime : oldRuntime;
+    }
+
+    private static boolean hasThirdPartyExtensions(File runtime) {
+        if (runtime == null || !runtime.isDirectory()) return false;
+        File[] extensions = new File(runtime, "public/scripts/extensions/third-party").listFiles();
+        return extensions != null && extensions.length > 0;
+    }
+
+    private static boolean hasExtensionManifest(File runtime) {
+        return runtime != null && new File(runtime, "bundled-extensions.json").isFile();
+    }
+
+    private static boolean isInstalled(File runtime) {
+        File marker = new File(runtime, ".complete");
+        if (!marker.isFile()) return false;
+        try {
+            String installedHash = new String(Files.readAllBytes(marker.toPath()), java.nio.charset.StandardCharsets.UTF_8).trim();
+            return installedHash.equalsIgnoreCase(BuildConfig.SERVER_SHA256);
+        } catch (IOException error) {
+            return false;
+        }
     }
 
     private void preserveExtensions(File previous, File stage) throws Exception {
@@ -210,16 +234,6 @@ public final class ServerService extends Service {
             if (children == null) throw new IOException("Cannot inspect a custom extension");
             for (File child : children) copyTree(child, new File(target, child.getName()));
         } else Files.copy(source.toPath(), target.toPath(), LinkOption.NOFOLLOW_LINKS);
-    }
-
-    private static void deleteTree(File file) throws IOException {
-        if (!Files.exists(file.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) return;
-        if (file.isDirectory() && !Files.isSymbolicLink(file.toPath())) {
-            File[] children = file.listFiles();
-            if (children == null) throw new IOException("Cannot inspect the application folder");
-            for (File child : children) deleteTree(child);
-        }
-        Files.delete(file.toPath());
     }
 
     @Override public void onDestroy() {
