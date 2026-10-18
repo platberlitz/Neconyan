@@ -7,7 +7,7 @@ import { setupContextMenu } from './context-menu.js';
 import { DOM_RETRY_REFRESH_DELAYS, POST_MUTATION_DOM_REPAIR_DELAY_MS, clearDecoratedWatchers, clearDialogueCountCache, clearSessionAttributionVerifications, decorateAllMessages, reconcileMessageQuoteOverridesAfterDeletion, scheduleDomRefreshSeries, scheduleDomSettleRefresh, scheduleMessageDomRepair, setupChatObserver, setupChatRootObserver, startDomHealthCheck, stopDomHealthCheck, undecorateAllMessages } from './dom-engine.js';
 import { scheduleCustomFontRefresh } from './fonts.js';
 import { redo, undo } from './history.js';
-import { applyHtmlBreakingSpanRepair, applyOverreachingSpanRepair, applyToolCallMessageRepair, commit, onNewMessage, repaintDomAfterCharacterDataChange, resumePendingChatSave } from './live-colors.js';
+import { applyHtmlBreakingSpanRepair, applyOverreachingSpanRepair, applyToolCallMessageRepair, cancelPendingNewMessageWork, commit, onNewMessage, repaintDomAfterCharacterDataChange, resumePendingChatSave } from './live-colors.js';
 import { consumeMainAiQuietGenerationEnd, populateProfileDropdown } from './llm.js';
 import { detectTheme, getReadableSurfaceSignature, hasMessageSurface, invalidateThemeCache } from './palettes.js';
 import { buildMinimalPromptInstruction, flushPromptInjection, getEffectivePromptMode, injectPrompt } from './prompts.js';
@@ -78,6 +78,7 @@ function startAutomaticRuntime() {
 }
 
 function stopAutomaticRuntime() {
+    cancelPendingNewMessageWork();
     automaticRuntimeActive = false;
     for (const timer of themeRefreshTimers) clearTimeout(timer);
     themeRefreshTimers = [];
@@ -153,6 +154,7 @@ export function registerKeyboardShortcuts() {
 }
 
 export function resetDialogueCountsForNewChat() {
+    cancelPendingNewMessageWork();
     loudGenerationActive = false;
     impersonateGenerationActive = false;
     clearTimeout(runtimeState.dialogueRecountTimer);
@@ -177,6 +179,7 @@ export function resetDialogueCountsForNewChat() {
 }
 
 export function handleChatChanged() {
+    cancelPendingNewMessageWork();
     loudGenerationActive = false;
     impersonateGenerationActive = false;
     clearTimeout(runtimeState.dialogueRecountTimer);
@@ -345,6 +348,7 @@ export function handleMessageUpdated(mesIndex) {
 }
 
 export function handleMessageDeleted() {
+    cancelPendingNewMessageWork();
     if (!settings.enabled || !automaticRuntimeActive) return;
     clearTimeout(runtimeState.dialogueRecountTimer);
     runtimeState.dialogueRecountTimer = null;
@@ -403,6 +407,7 @@ export function registerEventHandlers() {
             if (isDomEngine()) queueAutoAttributionVerificationForRenderedMessages({ delay: 300 });
         },
         generationInterrupted: () => {
+            cancelPendingNewMessageWork();
             loudGenerationActive = false;
             impersonateGenerationActive = false;
             // ponytail: host suppresses GENERATION_ENDED on stop/error, so teardown must run here too.
