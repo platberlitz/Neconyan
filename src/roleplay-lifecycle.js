@@ -9,7 +9,7 @@ import { withChatFileLocks } from './chat-file-lock.js';
 import { clearChatRecoveryState, createCharacterChatTarget, createGroupChatTarget, markChatDeleted, parseChatJsonl,
     rekeyChatRecoveryState, restoreChatSnapshotIfMatches, runChatRecoveryBestEffort } from './chat-recovery.js';
 import { assertRoleplaySourceLocked, assertPendingRoleplayDependencies, captureRoleplayDependenciesLocked, normaliseRoleplayLocator,
-    roleplayChatPath, roleplayContentHash, roleplayPathKey, roleplayGroupContentHash, normaliseRoleplayGroupId,
+    roleplayChatPath, roleplayParsedContentHash, roleplayPathKey, roleplayGroupContentHash, normaliseRoleplayGroupId,
     assertRoleplayGroupData, readRoleplayEntityLocked, readRoleplayChatLocked, roleplayEntityContent } from './generation/roleplay-source.js';
 import { assertRoleplayTransactionCapacity, confirmRoleplayAccount, createRoleplayDirectory, readRoleplayFile, readRoleplayPayload,
     roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, stageRoleplayPayload, withRoleplayAccountLock, ROLEPLAY_LARGEST_PHYSICAL,
@@ -196,7 +196,7 @@ function prunableChatWriteReceipts(state, scope, keepKeyHash) {
 
 function preparedFromPayload(pending, bytes) {
     const parsed = parseChatJsonl(bytes);
-    if (parsed.status !== 'ok' || roleplayContentHash(parsed.records) !== pending.after.contentHash) throw conflict();
+    if (parsed.status !== 'ok' || roleplayParsedContentHash(parsed.records) !== pending.after.contentHash) throw conflict();
     const inputRecords = structuredClone(parsed.records);
     if (pending.before?.integrity) inputRecords[0].chat_metadata.integrity = pending.before.integrity;
     else delete inputRecords[0].chat_metadata.integrity;
@@ -281,7 +281,7 @@ function applyPending(lease, host) {
         });
         file = publishPending(lease, host, filename, file, { filename: null, bytes: file.bytes }, expectedJournal);
     }
-    if (!file || file.rawHash !== pending.after.rawHash || roleplayContentHash(parseChatJsonl(file.bytes).records) !== pending.after.contentHash) throw conflict();
+    if (!file || file.rawHash !== pending.after.rawHash || roleplayParsedContentHash(parseChatJsonl(file.bytes).records) !== pending.after.contentHash) throw conflict();
     pending.phase = 'chat-applied';
     pending.appliedPhysical = file.physical;
     try { saveRoleplayAccount(lease); } catch (error) { throw Object.assign(error, { chatCommitted: true, integrity: pending.after.integrity }); }
@@ -503,7 +503,7 @@ function assertImportedOrigin(lease, records) {
     const saved = readRoleplayChatLocked(lease, resource.locator);
     if (!isDeepStrictEqual(marker, { schema: 1, instanceId: marker.instanceId, revision: resource.revision, writeId: resource.head.writeId })
         || metadata.integrity !== saved.records[0].chat_metadata.integrity
-        || roleplayContentHash(records) !== resource.head.contentHash) throw originChanged();
+        || roleplayParsedContentHash(records) !== resource.head.contentHash) throw originChanged();
 }
 
 function newImportCharacter(lease, character, timestamp) {
@@ -680,7 +680,7 @@ function prepareChatImport(lease, input, host, convert, requestHash, operationKe
         for (const payload of memory.payloads) staged.push({ name: `import.memory.${index}.${payload.name.slice(7)}`, bytes: payload.bytes });
         return { locator: destination.locator, instanceId, expectedVacancy: destination.expectedVacancy,
             after: { revision: 1, rawHash: crypto.createHash('sha256').update(bytes).digest('hex'),
-                contentHash: roleplayContentHash(prepared.records), integrity: prepared.integrity,
+                contentHash: roleplayParsedContentHash(prepared.records), integrity: prepared.integrity,
                 writeId, byteLength: bytes.length, payload: `import.chat.${index}.jsonl` },
             physical: null, memory: memory.plan, memoryPayloads, memoryDone: false };
     });
@@ -730,7 +730,7 @@ function importedOutputFile(lease, output) {
     const file = readRoleplayFile(roleplayChatPath(roleplayLease(lease).scope, output.locator), CHAT_LIMIT, { allowMissingParent: true });
     if (!file || file.rawHash !== output.after.rawHash || (output.physical && !isDeepStrictEqual(file.physical, output.physical))) throw conflict();
     const parsed = parseChatJsonl(file.bytes);
-    if (parsed.status !== 'ok' || roleplayContentHash(parsed.records) !== output.after.contentHash
+    if (parsed.status !== 'ok' || roleplayParsedContentHash(parsed.records) !== output.after.contentHash
         || !isDeepStrictEqual(parsed.records[0].chat_metadata.neconyan_roleplay,
             { schema: 1, instanceId: output.instanceId, revision: 1, writeId: output.after.writeId })) throw conflict();
     return file;
@@ -752,7 +752,7 @@ function applyPendingChatImport(lease, host) {
             if (output.physical) throw conflict();
             const payload = readRoleplayPayload(lease, pending.id, output.after.payload, output.after.rawHash, CHAT_LIMIT);
             const parsed = parseChatJsonl(payload.bytes);
-            if (parsed.status !== 'ok' || roleplayContentHash(parsed.records) !== output.after.contentHash) throw conflict();
+            if (parsed.status !== 'ok' || roleplayParsedContentHash(parsed.records) !== output.after.contentHash) throw conflict();
             const inputRecords = structuredClone(parsed.records);
             delete inputRecords[0].chat_metadata.neconyan_roleplay;
             delete inputRecords[0].chat_metadata.integrity;
@@ -889,7 +889,7 @@ function prepareAndApplyChatWrite(lease, input, host, intent, { source, before, 
     }, { mode });
     const pending = { schema: 1, kind: 'chat-write', id, operationKeyHash, intentHash, accountId: state.accountId,
         dataEpoch: state.dataEpoch, mode, locator, instanceId, source, expectedVacancy, before,
-        after: { revision, rawHash: crypto.createHash('sha256').update(bytes).digest('hex'), contentHash: roleplayContentHash(prepared.records),
+        after: { revision, rawHash: crypto.createHash('sha256').update(bytes).digest('hex'), contentHash: roleplayParsedContentHash(prepared.records),
             integrity: prepared.integrity, writeId: prepared.changed ? id : before.writeId, byteLength: bytes.length, payload: 'chat.after.jsonl' },
         changed: prepared.changed, phase: 'prepared', appliedPhysical: null, memory: memory.plan, repair: null, journal: null,
         backup, allowShrink: input.allowShrink === true, reservedBytes: 16 * 1024, ...(input.force === true ? { force: true } : {}) };
@@ -967,7 +967,7 @@ export function repairSingleChatWriteLocked(lease, { locator: inputLocator, snap
     const snapshot = parseChatJsonl(snapshotBytes);
     if (!damaged || !isDeepStrictEqual(damaged.physical, resource.head.physical) || parseChatJsonl(damaged.bytes).status === 'ok'
         || snapshot.status !== 'ok' || crypto.createHash('sha256').update(snapshotBytes).digest('hex') !== resource.head.rawHash
-        || roleplayContentHash(snapshot.records) !== resource.head.contentHash) throw conflict();
+        || roleplayParsedContentHash(snapshot.records) !== resource.head.contentHash) throw conflict();
     const source = { kind: 'storage', accountId: state.accountId, dataEpoch: state.dataEpoch, instanceId,
         revision: resource.revision, rawHash: resource.head.rawHash, locator, dependencies: [] };
     // Physical identity distinguishes a fresh corruption from an earlier repair at the same logical revision.

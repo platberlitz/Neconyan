@@ -385,7 +385,7 @@ router.post('/store/save', asyncRoute(async (request, response) => {
         },
     };
     const store = ensureConversationStore(incomingSettings, normalizeGroupRecord);
-    const saveResult = await saveConversationStore(request, store, request.body.version);
+    const saveResult = await saveConversationStore(request, store, request.body.version, { settingsSnapshot: context.snapshot });
     return respondSaveResult(response, saveResult, { store: saveResult.store || store });
 }));
 
@@ -430,7 +430,10 @@ router.post('/automation/configure', asyncRoute(async (request, response) => {
             migratedBranches++;
         }
     }
-    const saveResult = await saveConversationStore(request, result.store, result.version, { trustedConversationEffects: true });
+    const saveResult = await saveConversationStore(request, result.store, result.version, {
+        trustedConversationEffects: true,
+        settingsSnapshot: result.snapshot,
+    });
     return respondSaveResult(response, saveResult, { automation: saveResult.store?.automation || result.store.automation, migratedBranches });
 }));
 
@@ -527,7 +530,7 @@ router.post('/group/create', asyncRoute(async (request, response) => {
     }
     context.store.groups.push(group);
 
-    const saveResult = await saveConversationStore(request, context.store, request.body?.version);
+    const saveResult = await saveConversationStore(request, context.store, request.body?.version, { settingsSnapshot: context.snapshot });
     return respondSaveResult(response, saveResult, { group, groups: getConversationGroups(context.store, personaId, normalizeConversationSettings) });
 }));
 
@@ -560,7 +563,7 @@ router.post('/thread/get', asyncRoute(async (request, response) => {
         ? getActiveConversationBranch(context.store, storageTarget.avatar, storageTarget.groupId, { create: false, personaId: storageTarget.personaId })
         : null;
     if (create) {
-        const saveResult = await saveConversationStore(request, context.store, request.body.version);
+        const saveResult = await saveConversationStore(request, context.store, request.body.version, { settingsSnapshot: context.snapshot });
         if (!saveResult.ok) {
             return response.status(saveResult.status || 500).send(saveResult.body || { error: 'save_failed' });
         }
@@ -619,7 +622,7 @@ router.post('/thread/save', asyncRoute(async (request, response) => {
     branch.messages = parsedMessages.messages;
     refreshBranchPreview(branch);
 
-    const saveResult = await saveConversationStore(request, context.store, request.body.version);
+    const saveResult = await saveConversationStore(request, context.store, request.body.version, { settingsSnapshot: context.snapshot });
     return respondSaveResult(response, saveResult, {
         threadKey: getConversationThreadKey(storageTarget.avatar, storageTarget.groupId, storageTarget.personaId),
         branch,
@@ -670,7 +673,10 @@ router.post('/message/append', asyncRoute(async (request, response) => {
         create: false,
         personaId: storageTarget.personaId,
     });
-    const saveResult = await saveConversationStore(request, context.store, request.body.version, { trustedConversationAppend: true });
+    const saveResult = await saveConversationStore(request, context.store, request.body.version, {
+        trustedConversationAppend: true,
+        settingsSnapshot: context.snapshot,
+    });
     return respondSaveResult(response, saveResult, {
         threadKey: getConversationThreadKey(storageTarget.avatar, storageTarget.groupId, storageTarget.personaId),
         message,
@@ -918,7 +924,10 @@ router.post('/message/send', asyncRoute(async (request, response) => {
 
         // Save the user's message before waiting for the provider; keep the old reply during regeneration.
         if (cancellationController.signal.aborted) return;
-        const pendingSave = await saveConversationStore(request, context.store, context.version, { trustedConversationAppend: true });
+        const pendingSave = await saveConversationStore(request, context.store, context.version, {
+            trustedConversationAppend: true,
+            settingsSnapshot: context.snapshot,
+        });
         if (!pendingSave.ok) return response.status(pendingSave.status).send(pendingSave.body);
         const retryState = { version: pendingSave.version, userMessage, reuseLastUser: true };
 

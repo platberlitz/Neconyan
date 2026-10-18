@@ -132,7 +132,14 @@ export function inspectRoleplayFile(filename, limit, { flush = false, allowMissi
     return readProtectedFile(filename, limit, { flush, allowMissingParent, collectBytes: false });
 }
 
-function readProtectedFile(filename, limit, { flush, allowMissingParent, collectBytes }) {
+/**
+ * Recursively validates every ancestor of the parent directory and the file's
+ * regular-file, hard-link and size shape without reading its bytes. Missing
+ * files return null; missing parents follow the same allowMissingParent rules
+ * as readRoleplayFile. Callers that must fail before opening or locking a path
+ * can use this without duplicating the protected path checks.
+ */
+export function inspectRoleplayFileStat(filename, limit = ROLEPLAY_STORE_MAX_BYTES, { allowMissingParent = false } = {}) {
     if (directory(path.dirname(filename), false, allowMissingParent) === false) return null;
     let stat;
     try { stat = fs.lstatSync(filename, { bigint: true }); } catch (error) {
@@ -140,6 +147,12 @@ function readProtectedFile(filename, limit, { flush, allowMissingParent, collect
         throw error;
     }
     if (!stat.isFile() || stat.nlink !== 1n || stat.size > BigInt(limit)) throw damaged();
+    return stat;
+}
+
+function readProtectedFile(filename, limit, { flush, allowMissingParent, collectBytes }) {
+    const stat = inspectRoleplayFileStat(filename, limit, { allowMissingParent });
+    if (!stat) return null;
     const fd = fs.openSync(filename, (flush ? fs.constants.O_RDWR : fs.constants.O_RDONLY)
         | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
     try {

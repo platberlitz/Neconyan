@@ -7,11 +7,31 @@ import { acquireChatFileLock } from '../chat-file-lock.js';
 import { parseChatJsonl } from '../chat-recovery.js';
 import { read as readCharacterCard } from '../character-card-parser.js';
 import { TavernCardValidator } from '../validator/TavernCardValidator.js';
-import { readRoleplayFile, roleplayAvatarOwner, validRoleplayAvatar, roleplayError, roleplayHash, roleplayLease, roleplayPathKey, saveRoleplayAccount, withRoleplayAccountLock } from '../roleplay-store.js';
+import { canonical } from '../jobs/store.js';
+import { inspectRoleplayFileStat, readRoleplayFile, roleplayAvatarOwner, validRoleplayAvatar, roleplayError, roleplayHash, roleplayLease, roleplayPathKey, saveRoleplayAccount, withRoleplayAccountLock } from '../roleplay-store.js';
 
 export { roleplayPathKey } from '../roleplay-store.js';
 
 export const ROLEPLAY_METADATA_KEY = 'neconyan_roleplay';
+
+const CHAT_READ_LIMIT = 64 * 1024 * 1024;
+// A weak map from an already-read chat result to its per-lock marker. This is a
+// same-lock usage check inside trusted server code, not an unforgeable
+// capability: any holder can pass the same object or mutate its records. The
+// account-state checks below still refuse a read from another lock or after the
+// resource changed.
+const CHAT_READ_SNAPSHOTS = new WeakMap();
+const CHAT_READ_TOKENS = new WeakMap();
+const CHAT_CONTENT_HASH = /^[a-f0-9]{64}$/;
+
+function chatReadToken(held) {
+    let token = CHAT_READ_TOKENS.get(held);
+    if (!token) {
+        token = Object.freeze({});
+        CHAT_READ_TOKENS.set(held, token);
+    }
+    return token;
+}
 
 // Reuse decoding only after the protected reader has re-read and hashed the
 // exact file bytes. JSON copies keep callers from changing cached card data.
@@ -81,6 +101,103 @@ export function roleplayContentHash(records) {
     const copy = structuredClone(records);
     delete copy[0].chat_metadata.integrity;
     return roleplayHash(copy);
+}
+
+const isPlainRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+    && Object.getPrototypeOf(value) === Object.prototype;
+
+/**
+ * True only for the values JSON.stringify would round-trip exactly. The parsed
+ * chat path needs this check because the direct canonical hash below would
+ * otherwise hash undefined as null, or turn -0 into 0, where the legacy path
+ * refuses the record outright.
+ */
+function isParsedChatValue(value, ancestors) {
+    if (value === null) return true;
+    switch (typeof value) {
+        case 'string':
+        case 'boolean':
+            return true;
+        case 'number':
+            return Number.isFinite(value) && !Object.is(value, -0);
+        case 'object':
+            break;
+        default:
+            return false;
+    }
+    if (ancestors.has(value)) return false;
+    ancestors.add(value);
+    try {
+        if (Array.isArray(value)) {
+            for (let index = 0; index < value.length; index += 1) {
+                if (!Object.hasOwn(value, index) || !isParsedChatValue(value[index], ancestors)) return false;
+            }
+            for (const key of Object.keys(value)) {
+                if (!/^(?:0|[1-9]\d*)$/.test(key) || Number(key) >= value.length) return false;
+            }
+            return !Object.getOwnPropertySymbols(value).some(symbol => Object.prototype.propertyIsEnumerable.call(value, symbol));
+        }
+        if (Object.getPrototypeOf(value) !== Object.prototype) return false;
+        if (Object.getOwnPropertySymbols(value).some(symbol => Object.prototype.propertyIsEnumerable.call(value, symbol))) return false;
+        for (const key of Object.keys(value)) {
+            if (!isParsedChatValue(value[key], ancestors)) return false;
+        }
+        return true;
+    } finally {
+        ancestors.delete(value);
+    }
+}
+
+function canHashParsedChat(records) {
+    if (!Array.isArray(records) || records.length === 0) return false;
+    const header = records[0];
+    if (!isPlainRecord(header) || !isPlainRecord(header.chat_metadata)) return false;
+    return isParsedChatValue(records, new Set());
+}
+
+/**
+ * The same hash as `roleplayContentHash` for records parsed from JSONL, without
+ * cloning every message or running the JSON round-trip check. Any value that is
+ * not exactly JSON-safe falls back to the legacy path, so -0, undefined, dates,
+ * functions, symbols, bigints, cycles and custom prototypes keep their old
+ * result or refusal. Only pass records that came from `parseChatJsonl` or an
+ * equivalent JSON-only chat payload.
+ */
+export function roleplayParsedContentHash(records) {
+    let safe = false;
+    try {
+        safe = canHashParsedChat(records);
+    } catch {
+        safe = false;
+    }
+    if (!safe) return roleplayContentHash(records);
+    const copy = records.slice();
+    copy[0] = { ...records[0], chat_metadata: { ...records[0].chat_metadata } };
+    delete copy[0].chat_metadata.integrity;
+    return crypto.createHash('sha256').update(canonical(copy)).digest('hex');
+}
+
+/**
+ * The stored content hash for a live chat whose exact bytes and physical
+ * identity still match the enrolled head. The caller must pass the locator and
+ * file observation used for the current read. A missing, invalid or mismatched
+ * hash returns null so the caller recomputes through the exact hash path.
+ */
+export function reusableChatContentHash(state, locator, file) {
+    if (!state || !file) return null;
+    const key = roleplayPathKey(state, 'chat', locator);
+    const instanceId = state.paths?.[key]?.instanceId;
+    const resource = instanceId ? state.resources?.[instanceId] : null;
+    if (!resource || resource.kind !== 'chat' || resource.status !== 'live'
+        || resource.accountId !== state.accountId || resource.dataEpoch !== state.dataEpoch
+        || !isDeepStrictEqual(resource.locator, locator)
+        || resource.head?.rawHash !== file.rawHash
+        || !isDeepStrictEqual(resource.head?.physical, file.physical)
+        || typeof resource.head?.contentHash !== 'string'
+        || !CHAT_CONTENT_HASH.test(resource.head.contentHash)) {
+        return null;
+    }
+    return resource.head.contentHash;
 }
 
 function enrol(lease, kind, locator, file, contentHash, marker = null) {
@@ -291,24 +408,31 @@ export function captureRoleplayDependenciesLocked(lease, locator, groupId) {
 }
 
 export function readRoleplayChatLocked(lease, input, { enrolMissing = true } = {}) {
-    const { scope, state } = roleplayLease(lease);
+    const held = roleplayLease(lease);
+    const { scope, state } = held;
     if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay transaction must be reconciled first.');
     const locator = normaliseRoleplayLocator(input);
     if (!enrolMissing && !state.paths[roleplayPathKey(state, 'chat', locator)]?.instanceId) {
         throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The saved chat is unavailable.', 404);
     }
     const filename = roleplayChatPath(scope, locator);
-    // Reading does not run recovery: only a journalled lifecycle operation may restore tracked bytes.
-    const initial = readRoleplayFile(filename, 64 * 1024 * 1024);
-    if (!initial) throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The saved Roleplay chat does not exist.', 404);
+    // Refuse a missing or linked source before the lock helper can create
+    // directories or a lock file. This runs the same recursive ancestor checks
+    // as readRoleplayFile without reading the chat bytes.
+    if (!inspectRoleplayFileStat(filename, CHAT_READ_LIMIT)) {
+        throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The saved Roleplay chat does not exist.', 404);
+    }
     const release = acquireChatFileLock(filename);
     try {
-        const file = readRoleplayFile(filename, 64 * 1024 * 1024);
+        const file = readRoleplayFile(filename, CHAT_READ_LIMIT);
         if (!file) throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The saved Roleplay chat does not exist.', 404);
         const parsed = parseChatJsonl(file.bytes);
         if (parsed.status !== 'ok') throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'The Roleplay chat needs recovery.');
-        const entry = enrol(lease, 'chat', locator, file, roleplayContentHash(parsed.records), parsed.records[0].chat_metadata[ROLEPLAY_METADATA_KEY]);
-        return { ...descriptor(state, entry), records: parsed.records, changed: entry.changed, filePath: filename };
+        const contentHash = reusableChatContentHash(state, locator, file) ?? roleplayParsedContentHash(parsed.records);
+        const entry = enrol(lease, 'chat', locator, file, contentHash, parsed.records[0].chat_metadata[ROLEPLAY_METADATA_KEY]);
+        const result = { ...descriptor(state, entry), records: parsed.records, changed: entry.changed, filePath: filename };
+        CHAT_READ_SNAPSHOTS.set(result, { token: chatReadToken(held), physical: file.physical });
+        return result;
     } finally { release(); }
 }
 
@@ -343,8 +467,37 @@ export function captureRoleplayRange(records, { start, count }) {
         prefixHash: roleplayHash(messages.slice(0, start)), suffixHash: roleplayHash(messages.slice(start + count)) };
 }
 
-export function captureRoleplaySourceLocked(lease, { locator, groupId, message, range }) {
-    const saved = readRoleplayChatLocked(lease, locator);
+/**
+ * Refuse an observation that does not belong to the live lock and current
+ * account state. This is a trusted internal contract, not a security boundary:
+ * code that already holds the saved object can mutate its records or pass that
+ * exact object to another trusted call. It prevents accidental reuse across
+ * locks or after a state change.
+ */
+function assertCurrentChatSnapshot(lease, saved, locator) {
+    const held = roleplayLease(lease);
+    const { state } = held;
+    if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay transaction must be reconciled first.');
+    const snapshot = saved && typeof saved === 'object' ? CHAT_READ_SNAPSHOTS.get(saved) : undefined;
+    if (!snapshot || CHAT_READ_TOKENS.get(held) !== snapshot.token) {
+        throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved Roleplay source changed before its capture.');
+    }
+    const expectedLocator = normaliseRoleplayLocator(locator);
+    const key = roleplayPathKey(state, 'chat', expectedLocator);
+    const instanceId = state.paths?.[key]?.instanceId;
+    const resource = instanceId ? state.resources?.[instanceId] : null;
+    if (!resource || resource.kind !== 'chat' || resource.status !== 'live'
+        || resource.accountId !== state.accountId || resource.dataEpoch !== state.dataEpoch
+        || saved.accountId !== state.accountId || saved.dataEpoch !== state.dataEpoch
+        || saved.instanceId !== instanceId || resource.revision !== saved.revision
+        || resource.head?.rawHash !== saved.rawHash
+        || !isDeepStrictEqual(resource.head?.physical, snapshot.physical)
+        || !isDeepStrictEqual(saved.locator, expectedLocator)) {
+        throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved Roleplay source changed before its capture.');
+    }
+}
+
+function captureRoleplaySourceFromCurrentChatLocked(lease, saved, { locator, groupId, message, range }) {
     const { dependencies, changed } = captureRoleplayDependenciesLocked(lease, saved.locator, groupId);
     const source = { accountId: saved.accountId, dataEpoch: saved.dataEpoch, instanceId: saved.instanceId,
         revision: saved.revision, rawHash: saved.rawHash, locator: saved.locator,
@@ -353,6 +506,22 @@ export function captureRoleplaySourceLocked(lease, { locator, groupId, message, 
     if (message !== undefined) source.message = captureRoleplayMessage(saved.records, message);
     if (range !== undefined) source.range = captureRoleplayRange(saved.records, range);
     return { source, saved, changed: saved.changed || changed };
+}
+
+export function captureRoleplaySourceLocked(lease, input) {
+    return captureRoleplaySourceFromCurrentChatLocked(lease, readRoleplayChatLocked(lease, input.locator), input);
+}
+
+/**
+ * Capture a source from a chat that was already read in this same lock. The
+ * caller must pass the exact result of `readRoleplayChatLocked`; a result from
+ * an earlier lock or a changed account state is refused rather than reused.
+ * This is a trusted same-lock contract, not a security boundary over code that
+ * already holds the saved object.
+ */
+export function captureRoleplaySourceFromSavedChatLocked(lease, saved, input) {
+    assertCurrentChatSnapshot(lease, saved, input.locator);
+    return captureRoleplaySourceFromCurrentChatLocked(lease, saved, input);
 }
 
 export function captureRoleplaySource(scope, input) {

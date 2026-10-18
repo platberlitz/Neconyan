@@ -18,9 +18,11 @@ const sanitizeCache = new Map();
 const SANITIZE_CACHE_LIMIT = 200;
 
 let loaded = false;
-let watchTimer = null;
+let contextObserver = null;
+let contextCheckFrame = null;
 let lastContextKey = null;
 let chatHandler = null;
+let wakeHandler = null;
 
 export function getCtx() {
     return globalThis.SillyTavern.getContext();
@@ -271,27 +273,65 @@ function checkContext() {
     notify('context');
 }
 
+function scheduleContextCheck() {
+    if (contextCheckFrame !== null) return;
+    contextCheckFrame = requestAnimationFrame(() => {
+        contextCheckFrame = null;
+        if (document.visibilityState === 'hidden') return;
+        checkContext();
+    });
+}
+
 export function startWatching() {
     stopWatching();
     lastContextKey = contextKey();
-    const interval = Math.max(100, Number(getSettings().watchInterval) || 500);
-    watchTimer = setInterval(checkContext, interval);
     const ctx = getCtx();
     chatHandler = () => checkContext();
     ctx.eventSource?.on?.(ctx.eventTypes.CHAT_CHANGED, chatHandler);
     ctx.eventSource?.on?.(ctx.eventTypes.SETTINGS_UPDATED, chatHandler);
+    // Theme previews change the root CSS variables before the debounced
+    // settings save fires, so watch the two elements themes actually mutate.
+    if (typeof MutationObserver === 'function') {
+        contextObserver = new MutationObserver(scheduleContextCheck);
+        contextObserver.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['style', 'class', 'data-theme', 'data-neconyan-ui-theme', 'data-neconyan-palette', 'data-neconyan-accent'],
+        });
+        if (document.body) {
+            contextObserver.observe(document.body, {
+                attributes: true,
+                attributeFilter: ['class', 'data-theme', 'data-neconyan-ui-theme', 'data-neconyan-palette', 'data-neconyan-accent'],
+            });
+        }
+    }
+    wakeHandler = () => {
+        if (document.visibilityState === 'visible') checkContext();
+    };
+    document.addEventListener('visibilitychange', wakeHandler);
+    window.addEventListener('focus', wakeHandler);
+    window.addEventListener('pageshow', wakeHandler);
 }
 
 export function stopWatching() {
-    if (watchTimer !== null) {
-        clearInterval(watchTimer);
-        watchTimer = null;
+    if (contextObserver) {
+        contextObserver.disconnect();
+        contextObserver = null;
+    }
+    if (contextCheckFrame !== null) {
+        cancelAnimationFrame(contextCheckFrame);
+        contextCheckFrame = null;
     }
     if (chatHandler) {
         const ctx = getCtx();
         ctx.eventSource?.removeListener?.(ctx.eventTypes.CHAT_CHANGED, chatHandler);
         ctx.eventSource?.removeListener?.(ctx.eventTypes.SETTINGS_UPDATED, chatHandler);
         chatHandler = null;
+    }
+    if (wakeHandler) {
+        document.removeEventListener('visibilitychange', wakeHandler);
+        window.removeEventListener('focus', wakeHandler);
+        window.removeEventListener('pageshow', wakeHandler);
+        wakeHandler = null;
     }
 }
 

@@ -4,7 +4,7 @@
 @import url(css/popup.css?v=20260911v);
 @import url(css/promptmanager.css?v=20261002b);
 @import url(css/loader.css?v=20260913g);
-@import url(css/character-group-overlay.css);
+@import url(css/character-group-overlay.css?v=20261018b-desktop-css);
 @import url(css/file-form.css);
 @import url(css/logprobs.css);
 @import url(css/accounts.css);
@@ -1506,7 +1506,8 @@ body.swipeAllMessages .mes:not(.last_mes) .swipes-counter {
 }
 
 /* The last swipe must be highlighted */
-.last_swipe :is(.swipes-counter, .swipe_right) {
+.last_swipe .swipes-counter,
+.last_swipe .swipe_right {
     opacity: 0.7;
     /* Doubled opacity needs a longer transition to match a non active arrow. */
     /* (Duration * Active Opacity / Inactive Opacity * 2) */
@@ -1536,7 +1537,8 @@ body:not(.swipeAllMessages) .mes:not(.last_mes) :is(.swipe_left, .swipe_right, .
 /* Only hide swipe_right if it's not visible, and not the last swipe. */
 .mes:not(.swipes_visible, .last_swipe) :is(.swipe_right),
 /* Hide all swipe buttons if .hideAllSwipeButtons. */
-body.hideAllSwipeButtons :is(.swipe_left, .swipe_right),
+body.hideAllSwipeButtons .swipe_left,
+body.hideAllSwipeButtons .swipe_right,
 .swipes-counter[hidden],
 .swipe_right[hidden],
 .swipe_left[hidden] {

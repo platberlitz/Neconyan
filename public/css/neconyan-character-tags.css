@@ -65,7 +65,8 @@ body.neconyan:not(.sbterm) #right-nav-panel #neconyan-character-library #tagList
     display: none;
 }
 
-body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block :is(.character_name_block, .group_name_block) {
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block .character_name_block,
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block .group_name_block {
     display: flex;
     flex-wrap: nowrap;
     align-items: center;
@@ -211,7 +212,8 @@ body.neconyan.charListGrid:not(.sbterm) #right-nav-panel #rm_print_characters_bl
     margin: 0 auto;
 }
 
-body.neconyan.charListGrid:not(.sbterm) #right-nav-panel #rm_print_characters_block :is(.character_select_container, .group_select_container) {
+body.neconyan.charListGrid:not(.sbterm) #right-nav-panel #rm_print_characters_block .character_select_container,
+body.neconyan.charListGrid:not(.sbterm) #right-nav-panel #rm_print_characters_block .group_select_container {
     justify-items: center;
     width: 100%;
     text-align: center;

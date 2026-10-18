@@ -21,9 +21,64 @@ import { findHtmlTagRanges, getMessageElementByIndex, hashMessageText, isComposi
 // colorize call is in flight, only the newest would ever be revisited. Keep each
 // unprocessed snapshot and consume it once, even when an earlier target is stale.
 const pendingAutoColorizeRetryTargets = [];
+const pendingNewMessageJobs = [];
+let newMessageFlushTimer = null;
+let dialogueCountSyncTimer = null;
+let dialogueCountSyncChat = null;
+let pendingCharListRefresh = false;
 let chatSaveInFlight = null;
 let colorizeRunSequence = 0;
 let activeColorizeRun = null;
+
+const NEW_MESSAGE_PROCESS_DELAY_MS = 600;
+const DIALOGUE_COUNT_SYNC_DELAY_MS = 100;
+
+/**
+ * A chat load renders every message separately. Processing each one on its own
+ * timer repeats the same whole-chat recounts and list work, so queue the
+ * per-message passes and run them once after the render burst settles.
+ */
+function scheduleNewMessageJob(job) {
+    pendingNewMessageJobs.push(job);
+    if (newMessageFlushTimer) clearTimeout(newMessageFlushTimer);
+    newMessageFlushTimer = setTimeout(() => {
+        newMessageFlushTimer = null;
+        const jobs = pendingNewMessageJobs.splice(0);
+        for (const pendingJob of jobs) {
+            try {
+                void Promise.resolve(pendingJob()).catch(error => {
+                    console.error('[Dialogue Colors] New-message processing failed:', error);
+                });
+            } catch (error) {
+                console.error('[Dialogue Colors] New-message processing failed:', error);
+            }
+        }
+    }, NEW_MESSAGE_PROCESS_DELAY_MS);
+}
+
+/**
+ * Dialogue counts are a whole-chat statistic. A burst of rendered messages
+ * recomputes the same tally once per message, so coalesce the refresh and ask
+ * for one character-list update afterwards.
+ */
+function scheduleDialogueCountSync(chat, { refreshCharList = false } = {}) {
+    if (Array.isArray(chat)) dialogueCountSyncChat = chat;
+    if (refreshCharList) pendingCharListRefresh = true;
+    if (dialogueCountSyncTimer) clearTimeout(dialogueCountSyncTimer);
+    dialogueCountSyncTimer = setTimeout(() => {
+        dialogueCountSyncTimer = null;
+        const targetChat = dialogueCountSyncChat;
+        const refreshList = pendingCharListRefresh;
+        dialogueCountSyncChat = null;
+        pendingCharListRefresh = false;
+        let countsChanged = false;
+        if (targetChat) {
+            if (!settings.enabled || getContext()?.chat !== targetChat) return;
+            countsChanged = syncDialogueCounts(targetChat);
+        }
+        if (settings.enabled && (refreshList || countsChanged)) updateCharList();
+    }, DIALOGUE_COUNT_SYNC_DELAY_MS);
+}
 
 const chatSaveRecords = new Set();
 const CHAT_SAVE_MAX_AUTO_RETRIES = 2;
@@ -2112,12 +2167,15 @@ export function onNewMessage(indexArg = null, messageArg = null, chatArg = null,
             return;
         }
         setLastProcessedMessageSignature(signature);
-        const registryBeforeIngest = getPersistentRegistryFingerprint();
+        // No trailing [COLORS] block means the ingest cannot touch the registry.
+        // Avoid serialising every tracked character twice for ordinary messages.
+        const mayIngestColorBlock = /(^|\r\n?|\n)[ \t]*\[COLORS?:/i.test(text);
+        const registryBeforeIngest = mayIngestColorBlock ? getPersistentRegistryFingerprint() : null;
         const colorStats = processColorBlocksInText(text);
         // The tally is recomputed from the chat rather than added to: this pass is
         // followed by local completion and auto-colorize, both of which add more
         // font tags to the same message, and an added-up total would miss them.
-        syncDialogueCounts(chat);
+        scheduleDialogueCountSync(chat);
         const foundColorBlock = colorStats.foundColorBlock;
         // A trailing metadata block does not colour dialogue by itself. Basing the
         // auto-colorize decision on the block alone leaves profile-mode replies that
@@ -2125,8 +2183,8 @@ export function onNewMessage(indexArg = null, messageArg = null, chatArg = null,
         const hasActualColorSpans = collectFontColorsFromText(text).size > 0;
         const hadRemapping = colorStats.hadRemapping;
         const remappedAssignments = colorStats.remappedAssignments;
-        if (registryBeforeIngest !== getPersistentRegistryFingerprint()) saveData();
-        updateCharList(); injectPrompt();
+        if (registryBeforeIngest !== null && registryBeforeIngest !== getPersistentRegistryFingerprint()) saveData();
+        scheduleDialogueCountSync(chat, { refreshCharList: true }); injectPrompt();
 
         let latestRemapChanged = false;
         if (remappedAssignments.length) {
@@ -2162,7 +2220,7 @@ export function onNewMessage(indexArg = null, messageArg = null, chatArg = null,
                     void queueCapturedChatSave(chatBinding);
                 }
                 updateVisibleMessageColors(index, remapReplacements);
-                if (syncDialogueCounts(chat)) updateCharList();
+                scheduleDialogueCountSync(chat, { refreshCharList: true });
             }
         }
         stripColorBlockFromElement(getMessageElementByIndex(index)?.querySelector('.mes_text'));
@@ -2216,7 +2274,7 @@ export function onNewMessage(indexArg = null, messageArg = null, chatArg = null,
                     lastMsg.mes = completion.updatedText;
                     expectedText = lastMsg.mes;
                     setLastProcessedMessageSignature(`${chat.length}|${sigId}|${lastMsg.mes}`);
-                    syncDialogueCounts(chat);
+                    scheduleDialogueCountSync(chat);
                     await queueCapturedChatSave(chatBinding, { immediate: true });
                     if (!isNewMessageTargetCurrent()) return;
                     await refreshMessageDom(index, lastMsg);
@@ -2302,7 +2360,7 @@ export function onNewMessage(indexArg = null, messageArg = null, chatArg = null,
                         if (!isAutoColorizeTargetCurrent()) return;
                         lastMsg.mes = result.updatedText;
                         setLastProcessedMessageSignature(`${capturedChat.length}|${sigId}|${lastMsg.mes}`);
-                        if (syncDialogueCounts(capturedChat)) updateCharList();
+                        scheduleDialogueCountSync(capturedChat, { refreshCharList: true });
                         const saveConfirmed = await queueCapturedChatSave(autoColorizeBinding, { immediate: true });
                         if (!isAutoColorizeTargetCurrent(result.updatedText)) return;
                         await refreshMessageDom(mesIndex, lastMsg);
@@ -2318,16 +2376,14 @@ export function onNewMessage(indexArg = null, messageArg = null, chatArg = null,
             }
         }
     };
-    setTimeout(() => {
-        void processMessage().catch(error => {
-            console.error('[Dialogue Colors] New-message processing failed:', error);
-        }).finally(() => {
-            // All exits advance the queue, including stale and ineligible targets.
-            // A busy callback leaves it to the active request instead of requeuing.
-            if (!isAutoColorizing && pendingAutoColorizeRetryTargets.length) {
-                const next = pendingAutoColorizeRetryTargets.shift();
-                onNewMessage(next.msgIndex, next.message, next.chat, next);
-            }
-        });
-    }, 600);
+    scheduleNewMessageJob(() => processMessage().catch(error => {
+        console.error('[Dialogue Colors] New-message processing failed:', error);
+    }).finally(() => {
+        // All exits advance the queue, including stale and ineligible targets.
+        // A busy callback leaves it to the active request instead of requeuing.
+        if (!isAutoColorizing && pendingAutoColorizeRetryTargets.length) {
+            const next = pendingAutoColorizeRetryTargets.shift();
+            onNewMessage(next.msgIndex, next.message, next.chat, next);
+        }
+    }));
 }

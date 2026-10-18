@@ -281,27 +281,43 @@ describe('mobile shell viewport sync lifecycle', () => {
         expect(steps).not.toContain(MOBILE_SHELL_VIEWPORT_SYNC_STEP.SYNC_MOBILE_MODAL_STATE);
     });
 
-    test('promotes a queued geometry sync when the layout width or mobile state changed', () => {
+    test('promotes a queued geometry sync only across the breakpoint or within mobile', () => {
         const geometry = MOBILE_SHELL_VIEWPORT_SYNC_KIND.GEOMETRY;
-        const base = { width: 390, isMobileViewport: true };
+        const mobile = { width: 390, isMobileViewport: true };
+        const desktop = { width: 900, isMobileViewport: false };
 
         expect(shouldRunFullViewportSync({
-            before: base,
-            after: { ...base },
+            before: mobile,
+            after: { ...mobile },
             requestedKind: geometry,
         })).toBe(false);
         expect(shouldRunFullViewportSync({
-            before: base,
+            before: mobile,
             after: { width: 391, isMobileViewport: true },
             requestedKind: geometry,
         })).toBe(true);
         expect(shouldRunFullViewportSync({
-            before: base,
+            before: mobile,
             after: { width: 390, isMobileViewport: false },
             requestedKind: geometry,
         })).toBe(true);
         expect(shouldRunFullViewportSync({
-            before: base,
+            before: desktop,
+            after: { ...desktop },
+            requestedKind: geometry,
+        })).toBe(false);
+        expect(shouldRunFullViewportSync({
+            before: desktop,
+            after: { width: 1000, isMobileViewport: false },
+            requestedKind: geometry,
+        })).toBe(false);
+        expect(shouldRunFullViewportSync({
+            before: desktop,
+            after: { width: 390, isMobileViewport: true },
+            requestedKind: geometry,
+        })).toBe(true);
+        expect(shouldRunFullViewportSync({
+            before: mobile,
             after: { width: 900, isMobileViewport: false },
             requestedKind: MOBILE_SHELL_VIEWPORT_SYNC_KIND.FULL,
         })).toBe(true);
@@ -310,7 +326,7 @@ describe('mobile shell viewport sync lifecycle', () => {
         // already applied the new width by the time a resize event arrives.
         expect(shouldRunFullViewportSync({
             before: null,
-            after: base,
+            after: mobile,
             requestedKind: geometry,
         })).toBe(true);
         expect(shouldRunFullViewportSync({ requestedKind: geometry })).toBe(true);
@@ -602,6 +618,28 @@ describe('queued mobile viewport sync', () => {
             'syncIOSKeyboardBottomInset',
         ]);
         expect(sandbox.calls).not.toContain('syncChatbarVisibilityState');
+        expect(sandbox.calls).not.toContain('syncMobileModalState');
+    });
+
+    test('keeps a desktop width change geometry-only and skips shell-context refreshes', () => {
+        const sandbox = createViewportSyncSandbox({ width: 900, isMobile: false });
+        sandbox.syncNow();
+        sandbox.resetCalls();
+
+        sandbox.setLayoutWidth(1000, false);
+        sandbox.queueSync(MOBILE_SHELL_VIEWPORT_SYNC_KIND.GEOMETRY);
+        sandbox.runNextFrame();
+
+        expect(sandbox.calls).toEqual([
+            'syncShellViewportBounds',
+            'syncMobileShellDrawerBounds',
+            'applyTopbarOffset',
+            'syncIOSKeyboardBottomInset',
+        ]);
+        expect(sandbox.calls).not.toContain('syncChatbarVisibilityState');
+        expect(sandbox.calls).not.toContain('syncMobileShellRailActions');
+        expect(sandbox.calls).not.toContain('updateTopBarBrand');
+        expect(sandbox.calls).not.toContain('scheduleTopbarContextRefresh');
         expect(sandbox.calls).not.toContain('syncMobileModalState');
     });
 

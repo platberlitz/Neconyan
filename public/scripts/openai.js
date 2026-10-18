@@ -90,7 +90,7 @@ import { renderTemplateAsync } from './templates.js';
 import { SlashCommandEnumValue } from './slash-commands/SlashCommandEnumValue.js';
 import { callGenericPopup, Popup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
 import { t } from './i18n.js';
-import { attachModelListSearch, focusModelListSearch } from './model-list-search.js';
+import { attachModelListSearch, focusModelListSearch, syncModelListSearchValue } from './model-list-search.js';
 import { formatModelLabelWithSource } from './model-family.js';
 import { extension_settings } from './extensions.js';
 import { ToolManager } from './tool-calling.js';
@@ -317,7 +317,8 @@ const INLINE_SELECT_PICKER_CONTROLS = [
 // Keep mobile OpenRouter/API selects backed by native values while rendering an inline list.
 const modelIdSearchControlState = new Map();
 let modelSelectPickerDocumentListenerBound = false;
-let inlineSelectPickerObserverBound = false;
+let inlineSelectPickerBodyObserver = null;
+let inlineSelectPickerReplacementsObserver = null;
 
 const character_names_behavior = {
     NONE: -1,
@@ -2643,15 +2644,44 @@ function bindInlineSelectPickerControl(control) {
     document.querySelectorAll(control.select).forEach(select => bindInlineSelectPickerSelect(select, control));
 }
 
+function inlineSelectPickerTargetsBound() {
+    return INLINE_SELECT_PICKER_CONTROLS.every(control => {
+        const select = document.querySelector(control.select);
+        return select instanceof HTMLSelectElement && select.dataset.sbInlineSelectPickerBound === 'true';
+    });
+}
+
+function observeInlineSelectPickerReplacements() {
+    if (inlineSelectPickerReplacementsObserver || !(document.body instanceof HTMLElement)) {
+        return;
+    }
+    // The eight inline picker selects are static in the settings panel. Watch
+    // that panel for replacements instead of every body mutation during chat.
+    const container = document.getElementById('left-nav-panel') ?? document.getElementById('openai_settings');
+    if (!(container instanceof HTMLElement)) {
+        return;
+    }
+    inlineSelectPickerReplacementsObserver = new MutationObserver(() => {
+        bindInlineSelectPickerControls();
+    });
+    inlineSelectPickerReplacementsObserver.observe(container, { childList: true, subtree: true });
+}
+
 function bindInlineSelectPickerControls() {
     INLINE_SELECT_PICKER_CONTROLS.forEach(bindInlineSelectPickerControl);
 
-    if (!inlineSelectPickerObserverBound && document.body instanceof HTMLElement) {
-        const observer = new MutationObserver(() => {
-            INLINE_SELECT_PICKER_CONTROLS.forEach(bindInlineSelectPickerControl);
+    if (inlineSelectPickerTargetsBound()) {
+        inlineSelectPickerBodyObserver?.disconnect();
+        inlineSelectPickerBodyObserver = null;
+        observeInlineSelectPickerReplacements();
+        return;
+    }
+
+    if (!inlineSelectPickerBodyObserver && document.body instanceof HTMLElement) {
+        inlineSelectPickerBodyObserver = new MutationObserver(() => {
+            bindInlineSelectPickerControls();
         });
-        observer.observe(document.body, { childList: true, subtree: true });
-        inlineSelectPickerObserverBound = true;
+        inlineSelectPickerBodyObserver.observe(document.body, { childList: true, subtree: true });
     }
 }
 
@@ -2853,6 +2883,7 @@ function toggleOpenAIModelFavorite() {
     setModelFavoritesForSource(chat_completion_sources.OPENAI, favorites);
     rebuildOpenAIModelSelect();
     $('#model_openai_select').val(modelId).trigger('change.select2');
+    syncModelListSearchValue(document.querySelector('#model_openai_select'));
     updateOpenAIModelFavoriteButton();
     saveSettingsDebounced();
 }
@@ -8110,6 +8141,7 @@ async function onModelChange() {
         if (value) {
             oai_settings.claude_model = value;
             $('#model_claude_select').val(value);
+            syncModelListSearchValue(document.querySelector('#model_claude_select'));
         }
     }
     if ($(this).is('#ai21_model_id')) {
@@ -8122,30 +8154,35 @@ async function onModelChange() {
         if (value) {
             oai_settings.cohere_model = value;
             $('#model_cohere_select').val(value);
+            syncModelListSearchValue(document.querySelector('#model_cohere_select'));
         }
     }
     if ($(this).is('#perplexity_model_id')) {
         if (value) {
             oai_settings.perplexity_model = value;
             $('#model_perplexity_select').val(value);
+            syncModelListSearchValue(document.querySelector('#model_perplexity_select'));
         }
     }
     if ($(this).is('#zai_model_id')) {
         if (value) {
             oai_settings.zai_model = value;
             $('#model_zai_select').val(value);
+            syncModelListSearchValue(document.querySelector('#model_zai_select'));
         }
     }
     if ($(this).is('#linkapi_model_id')) {
         if (value) {
             oai_settings.linkapi_model = value;
             $('#model_linkapi_select').val(value);
+            syncModelListSearchValue(document.querySelector('#model_linkapi_select'));
         }
     }
     if ($(this).is('#vertexai_model_id')) {
         if (value) {
             oai_settings.vertexai_model = value;
             $('#model_vertexai_select').val(value);
+            syncModelListSearchValue(document.querySelector('#model_vertexai_select'));
         }
     }
 
@@ -8158,6 +8195,7 @@ async function onModelChange() {
         console.log('Claude model changed to', value);
         oai_settings.claude_model = value;
         $('#model_claude_select').val(oai_settings.claude_model);
+        syncModelListSearchValue(document.querySelector('#model_claude_select'));
         $('#claude_model_id').val(value);
     }
 
@@ -8214,6 +8252,7 @@ async function onModelChange() {
         console.log('MistralAI model changed to', value);
         oai_settings.mistralai_model = value;
         $('#model_mistralai_select').val(oai_settings.mistralai_model);
+        syncModelListSearchValue(document.querySelector('#model_mistralai_select'));
     }
 
     if ($(this).is('#model_cohere_select')) {

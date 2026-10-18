@@ -757,7 +757,8 @@ describe('mobile shell lifecycle wiring', () => {
         expect(getShellViewportSizeSource).toContain('return layoutViewport;');
         expect(getShellViewportSizeSource).toContain('const composerKeyboardInset = getComposerKeyboardInset(layoutViewport, visualViewportSize);');
         expect(getShellViewportSizeSource).toContain('return { ...layoutViewport, height, bottom: height };');
-        expect(syncShellViewportBoundsSource).toContain('root.classList.toggle(\'sb-ios-composer-keyboard-inset-active\', composerKeyboardInset > 0);');
+        expect(syncShellViewportBoundsSource).toContain('const keyboardInsetActive = composerKeyboardInset > 0;');
+        expect(syncShellViewportBoundsSource).toContain('root.classList.toggle(\'sb-ios-composer-keyboard-inset-active\', keyboardInsetActive);');
         expect(tabsSource).toContain('if (isLegacyIOSWebKitPlatform()) {');
         expect(tabsSource).toContain('document.addEventListener(\'focusin\', handleComposerKeyboardFocusIn);');
         expect(tabsSource).toContain('document.addEventListener(\'focusout\', handleMobileKeyboardFocusOut);');
@@ -804,9 +805,12 @@ describe('mobile shell lifecycle wiring', () => {
         const syncDesktopShellSizingAfterWidthChangeSource = getFunctionSource('syncDesktopShellSizingAfterWidthChange');
 
         expect(handleMobileShellViewportResizeSource).toContain('queueMobileViewportStateSync(nnMobileShellLifecycle.viewportSync.kind.GEOMETRY);');
+        expect(handleMobileShellViewportResizeSource).toContain('if (!isMobileViewport()) {');
+        expect(handleMobileShellViewportResizeSource).toContain('syncDesktopShellSizingAfterWidthChange();');
         expect(handleComposerKeyboardFocusInSource).toContain('queueMobileViewportStateSync(nnMobileShellLifecycle.viewportSync.kind.GEOMETRY);');
         expect(handleMobileKeyboardFocusOutSource).toContain('queueMobileViewportStateSync(nnMobileShellLifecycle.viewportSync.kind.GEOMETRY);');
         expect(syncDesktopShellSizingAfterWidthChangeSource).toContain('if (nnDesktopShellSizingWidth === layoutMetrics.width) {');
+        expect(getFunctionSource('syncDesktopShellSizing')).toContain('nnDesktopShellSizingWidth = readMobileShellLayoutMetrics().width;');
         expect(tabsSource).toContain('document.addEventListener(\'focusin\', handleMobileShellViewportResize);');
         expect(tabsSource).toContain('document.addEventListener(\'focusout\', handleMobileShellViewportResize);');
     });
@@ -827,10 +831,11 @@ describe('mobile shell lifecycle wiring', () => {
         }
 
         expect(tabsSource).toContain('const NN_FOREGROUND_REFRESH_COALESCE_MS = 500;');
-        // The chatbar visibility step moved out of the geometry plan, so keyboard
-        // and visualViewport movement no longer fetches the chat list; the full
-        // plan and the foreground coalescer keep it current.
-        expect(getFunctionSource('syncChatbarVisibilityState')).toContain('setChatbarVisible(getChatbarState().visible, { persist: false });');
+        // A pure placement sync repaints visibility without fetching the chat
+        // list. Chat events and explicit actions still schedule their refreshes.
+        const syncChatbarVisibilityStateSource = getFunctionSource('syncChatbarVisibilityState');
+        expect(syncChatbarVisibilityStateSource).toContain('applyChatbarVisibility(getChatbarState().visible, { persist: false, syncChrome });');
+        expect(syncChatbarVisibilityStateSource).not.toContain('scheduleChatbarRefresh');
     });
 
     test('keeps one pending keyboard frame and settle timer per scheduler', () => {
@@ -1280,5 +1285,79 @@ describe('window event binders', () => {
         sandbox.flushFrames();
         expect(sandbox.count('bindChatbarEvents')).toBe(2);
         expect(sandbox.count('scheduleBottomChatBarRefresh')).toBe(2);
+    });
+});
+
+describe('chatbar placement refresh', () => {
+    function createChatbarVisibilitySandbox({ visible = true, hidden = false } = {}) {
+        const calls = [];
+        const state = { visible, connectionStripOpen: true };
+        const classes = new Set(hidden ? ['sb-chatbar-hidden'] : []);
+        const context = vm.createContext({
+            document: {
+                body: {
+                    classList: {
+                        contains: name => classes.has(name),
+                        toggle: (name, force) => {
+                            if (force) classes.add(name);
+                            else classes.delete(name);
+                        },
+                    },
+                },
+            },
+            getChatbarState: () => state,
+            setConnectionStripOpenState: () => {
+                state.connectionStripOpen = false;
+                calls.push('strip');
+            },
+            safeSetItem: () => calls.push('persist'),
+            updateTopbarUtilityButtons: () => calls.push('buttons'),
+            syncTopbarLayoutState: () => calls.push('layout'),
+            scheduleChatbarRefresh: () => calls.push('chat-list'),
+            NN_STORAGE_KEYS: { chatbarVisible: 'chatbarVisible' },
+        });
+        vm.runInContext([
+            getFunctionSource('applyChatbarVisibility'),
+            getFunctionSource('setChatbarVisible'),
+            getFunctionSource('syncChatbarVisibilityState'),
+            'globalThis.setVisible = setChatbarVisible;',
+            'globalThis.syncVisible = syncChatbarVisibilityState;',
+        ].join('\n'), context);
+        return {
+            calls,
+            classes,
+            setVisible: (...args) => context.setVisible(...args),
+            syncVisible: (options = {}) => context.syncVisible(options),
+            reset: () => { calls.length = 0; },
+        };
+    }
+
+    test('a pure placement sync never fetches the chat list', () => {
+        const sandbox = createChatbarVisibilitySandbox({ visible: true, hidden: false });
+        sandbox.syncVisible();
+        expect(sandbox.calls).toEqual([]);
+        expect(sandbox.classes.has('sb-chatbar-hidden')).toBe(false);
+
+        sandbox.syncVisible({ syncChrome: true });
+        expect(sandbox.calls).toEqual(['buttons', 'layout']);
+        expect(sandbox.calls).not.toContain('chat-list');
+    });
+
+    test('an explicit visibility change refreshes once, and a repeat does not', () => {
+        const sandbox = createChatbarVisibilitySandbox({ visible: true, hidden: false });
+        sandbox.setVisible(false);
+        expect(sandbox.calls).toEqual(['strip', 'persist', 'buttons', 'layout', 'chat-list']);
+        expect(sandbox.classes.has('sb-chatbar-hidden')).toBe(true);
+
+        sandbox.reset();
+        sandbox.setVisible(false);
+        expect(sandbox.calls).toEqual([]);
+    });
+
+    test('a mismatched placement repairs without a chat list fetch', () => {
+        const sandbox = createChatbarVisibilitySandbox({ visible: true, hidden: true });
+        sandbox.syncVisible();
+        expect(sandbox.calls).toEqual(['buttons', 'layout']);
+        expect(sandbox.classes.has('sb-chatbar-hidden')).toBe(false);
     });
 });

@@ -75,6 +75,33 @@ function findMessageElement(messageId) {
     return (document.getElementById('chat') ?? document).querySelector(`.mes[mesid="${messageId}"]`);
 }
 
+const pendingSwipeNavigation = new Set();
+let swipeNavigationTimer = null;
+
+/**
+ * A chat load adds hundreds of messages in one burst. One timer per message
+ * meant hundreds of timers firing together; batch them behind one timer and
+ * re-check that each message still exists when it flushes.
+ */
+function scheduleSwipeNavigation(messageId) {
+    if (!Number.isInteger(messageId) || messageId < 0) return;
+    pendingSwipeNavigation.add(messageId);
+    if (swipeNavigationTimer) clearTimeout(swipeNavigationTimer);
+    swipeNavigationTimer = setTimeout(() => {
+        swipeNavigationTimer = null;
+        const messageIds = Array.from(pendingSwipeNavigation);
+        pendingSwipeNavigation.clear();
+        for (const id of messageIds) {
+            if (findMessageElement(id)?.isConnected) addSwipeNavigationToMessage(id);
+        }
+    }, 100);
+}
+
+function mutationInsideRoleplayDraft(mutation) {
+    const target = mutation.target?.nodeType === Node.ELEMENT_NODE ? mutation.target : mutation.target?.parentElement;
+    return Boolean(target?.closest?.('[data-roleplay-draft]'));
+}
+
 /**
  * Update swipe UI for a message (counter, arrow states)
  * @param {number} messageId - The message ID to update
@@ -867,13 +894,15 @@ export function setupMutationObservers(context, onDeleteClick) {
 
     const observer = new MutationObserver((mutations) => {
         for (const mutation of mutations) {
+            if (mutationInsideRoleplayDraft(mutation)) continue;
             if (mutation.type === 'childList') {
                 for (const node of mutation.addedNodes) {
-                    if (node.nodeType === Node.ELEMENT_NODE && node.classList?.contains('mes')) {
+                    if (node.nodeType === Node.ELEMENT_NODE && node.classList?.contains('mes')
+                        && !node.closest?.('[data-roleplay-draft]')) {
                         const mesId = node.getAttribute('mesid');
                         if (mesId) {
                             const messageId = parseInt(mesId, 10);
-                            setTimeout(() => addSwipeNavigationToMessage(messageId), 100);
+                            scheduleSwipeNavigation(messageId);
 
                             // NOTE: Overlay injection is not needed here.
                             // createSwipeOverlay() creates a fixed-position clone that survives DOM changes.
@@ -887,7 +916,7 @@ export function setupMutationObservers(context, onDeleteClick) {
                 if (target.classList?.contains('mes') && !target.classList.contains('last_mes')) {
                     const mesId = target.getAttribute('mesid');
                     if (mesId && !target.querySelector('.deep-swipe-right')) {
-                        setTimeout(() => addSwipeNavigationToMessage(parseInt(mesId, 10)), 100);
+                        scheduleSwipeNavigation(parseInt(mesId, 10));
                     }
                 }
             }
@@ -899,6 +928,7 @@ export function setupMutationObservers(context, onDeleteClick) {
     // Monitor for edit mode changes - track which message is being edited
     const editObserver = new MutationObserver((mutations) => {
         for (const mutation of mutations) {
+            if (mutationInsideRoleplayDraft(mutation)) continue;
             if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
                 const target = mutation.target;
                 if (target.classList?.contains('mes')) {

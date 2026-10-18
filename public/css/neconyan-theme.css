@@ -181,7 +181,8 @@ input[type="submit"] {
     z-index: calc(var(--sb-z-modal-content) + 5) !important;
 }
 
-.zoomed_avatar > :is(.zoomed_avatar_container, .avatar_zoom_container) {
+.zoomed_avatar > .zoomed_avatar_container,
+.zoomed_avatar > .avatar_zoom_container {
     position: relative;
     z-index: 0 !important;
 }
@@ -481,7 +482,10 @@ h3:not(.popup h3):not(#chat h3) {
     gap: var(--sb-row-gap);
 }
 
-.title_restorable > :is(.flex-container, .menu_button, .menu_button_icon, .right_menu_button),
+.title_restorable > .flex-container,
+.title_restorable > .menu_button,
+.title_restorable > .menu_button_icon,
+.title_restorable > .right_menu_button,
 .openai_restorable > :is(.flex-container, .menu_button, .menu_button_icon, .right_menu_button),
 .range-block-title > :is(.flex-container, .menu_button, .menu_button_icon, .right_menu_button) {
     flex: 0 0 auto;
@@ -671,7 +675,8 @@ h3:not(.popup h3):not(#chat h3) {
 
 /* Chat Completion Tabs relocates the grouped drawers into #openai-tab-content-parameters.
    Keep the same intrinsic-width protections there as the legacy #range_block_openai host. */
-:is(#openai_settings, #openai-tab-content-parameters) {
+#openai_settings,
+#openai-tab-content-parameters {
     container-type: inline-size;
     min-width: 0;
     max-width: 100%;
@@ -788,7 +793,9 @@ body.neconyan #ai_response_configuration > #neconyan-model-presets-workspace {
     transition: transform 100ms var(--sb-ease-out);
 }
 
-:is(.menu_button, .menu_button_icon, .right_menu_button):is(.is-active, .active, .selected, .is-selected, .is-current, [aria-pressed='true'], [aria-selected='true'], [aria-current]):not(.disabled):not(.is-disabled):not([disabled]):not(:where(.menu_button_primary, .popup-button-ok)) {
+.menu_button:is(.is-active, .active, .selected, .is-selected, .is-current, [aria-pressed='true'], [aria-selected='true'], [aria-current]):not(.disabled):not(.is-disabled):not([disabled]):not(:where(.menu_button_primary, .popup-button-ok)),
+.menu_button_icon:is(.is-active, .active, .selected, .is-selected, .is-current, [aria-pressed='true'], [aria-selected='true'], [aria-current]):not(.disabled):not(.is-disabled):not([disabled]):not(:where(.menu_button_primary, .popup-button-ok)),
+.right_menu_button:is(.is-active, .active, .selected, .is-selected, .is-current, [aria-pressed='true'], [aria-selected='true'], [aria-current]):not(.disabled):not(.is-disabled):not([disabled]):not(:where(.menu_button_primary, .popup-button-ok)) {
     position: relative;
     background: var(--sb-state-active-bg);
     border-color: var(--sb-state-active-border);
@@ -817,7 +824,8 @@ body.neconyan #ai_response_configuration > #neconyan-model-presets-workspace {
     pointer-events: none;
 }
 
-:is(.menu_button, .menu_button_icon, .right_menu_button):is(.is-busy, [aria-busy='true']) {
+:is(.menu_button, .menu_button_icon, .right_menu_button).is-busy,
+:is(.menu_button, .menu_button_icon, .right_menu_button)[aria-busy='true'] {
     position: relative;
     opacity: 0.82;
     background: var(--sb-state-busy-bg);
@@ -827,7 +835,8 @@ body.neconyan #ai_response_configuration > #neconyan-model-presets-workspace {
         inset 0 -2px 0 color-mix(in srgb, var(--sb-color-warning) 42%, transparent);
 }
 
-:is(.menu_button, .menu_button_icon, .right_menu_button):is(.is-busy, [aria-busy='true'])::after {
+:is(.menu_button, .menu_button_icon, .right_menu_button).is-busy::after,
+:is(.menu_button, .menu_button_icon, .right_menu_button)[aria-busy='true']::after {
     content: '';
     position: absolute;
     right: 7px;
@@ -848,7 +857,9 @@ body.neconyan #ai_response_configuration > #neconyan-model-presets-workspace {
         0 0 0 1px color-mix(in srgb, var(--SmartThemeShadowColor) 20%, transparent);
 }
 
-:is(.menu_button, .menu_button_icon, .right_menu_button):is(.disabled, .is-disabled, [disabled]):not(.is-busy):not([aria-busy='true'])::after {
+.menu_button:is(.disabled, .is-disabled, [disabled]):not(.is-busy):not([aria-busy='true'])::after,
+.menu_button_icon:is(.disabled, .is-disabled, [disabled]):not(.is-busy):not([aria-busy='true'])::after,
+.right_menu_button:is(.disabled, .is-disabled, [disabled]):not(.is-busy):not([aria-busy='true'])::after {
     display: none;
 }
 
@@ -1600,7 +1611,8 @@ body.bubblechat #chat .mes[is_user='true']:has(.reasoning_edit_textarea)::before
     align-items: center;
 }
 
-#chat .mes :is(.swipe_left, .swipe_right) {
+#chat .mes .swipe_left,
+#chat .mes .swipe_right {
     inline-size: var(--sb-message-icon-size);
     block-size: var(--sb-message-icon-size);
     border-radius: 8px;
@@ -1785,7 +1797,8 @@ body.bubblechat .mes[is_user='true'] .mes_block {
 
     #chat .mes .mes_button,
     #chat .mes .extraMesButtons > div,
-    #chat .mes :is(.swipe_left, .swipe_right) {
+    #chat .mes .swipe_left,
+    #chat .mes .swipe_right {
         border-radius: 8px;
     }
 

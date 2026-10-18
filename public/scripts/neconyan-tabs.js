@@ -515,7 +515,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261018c-assistant-macros';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261018d-desktop-performance';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -2259,15 +2259,24 @@ function getRenderedTopbarOffset() {
 function applyTopbarOffset() {
     const dragSurface = document.getElementById('sb-chatbar-layer');
     const renderedOffset = getRenderedTopbarOffset();
-
-    getChatbarState().renderedTopbarOffset = renderedOffset;
+    const state = getChatbarState();
+    const previousOffset = state.renderedTopbarOffset;
+    state.renderedTopbarOffset = renderedOffset;
 
     if (!(dragSurface instanceof HTMLElement)) {
         return;
     }
 
-    dragSurface.style.setProperty('--sb-topbar-offset-x', `${renderedOffset.x}px`);
-    dragSurface.style.setProperty('--sb-topbar-offset-y', `${renderedOffset.y}px`);
+    const x = `${renderedOffset.x}px`;
+    const y = `${renderedOffset.y}px`;
+    if (previousOffset?.x === renderedOffset.x && previousOffset?.y === renderedOffset.y
+        && dragSurface.style.getPropertyValue('--sb-topbar-offset-x') === x
+        && dragSurface.style.getPropertyValue('--sb-topbar-offset-y') === y) {
+        return;
+    }
+
+    dragSurface.style.setProperty('--sb-topbar-offset-x', x);
+    dragSurface.style.setProperty('--sb-topbar-offset-y', y);
 }
 
 function setTopbarOffset(offset, { persist = true } = {}) {
@@ -4037,7 +4046,10 @@ function syncShellViewportBounds() {
 
     // Neconyan: browser-fixes.js may reset document scroll mid-edit once the
     // legacy shell has moved the focused composer above the keyboard.
-    root.classList.toggle('sb-ios-composer-keyboard-inset-active', composerKeyboardInset > 0);
+    const keyboardInsetActive = composerKeyboardInset > 0;
+    if (root.classList.contains('sb-ios-composer-keyboard-inset-active') !== keyboardInsetActive) {
+        root.classList.toggle('sb-ios-composer-keyboard-inset-active', keyboardInsetActive);
+    }
 }
 
 function getMobileFocusedInputScroller(target) {
@@ -4750,6 +4762,8 @@ function clearDesktopShellSize(root) {
     delete root.dataset.sbShellInlineSize;
 }
 
+let nnDesktopShellSizingWidth = null;
+
 function syncDesktopShellSizing() {
     if (nnIsSyncingRailActions) {
         return;
@@ -4819,6 +4833,7 @@ function syncDesktopShellSizing() {
     }
 
     syncCharacterDrawerLockPosition();
+    nnDesktopShellSizingWidth = readMobileShellLayoutMetrics().width;
 }
 
 function getResizableShellRoot(shellKey) {
@@ -6729,32 +6744,47 @@ function syncTopbarLayoutState() {
     document.body.classList.toggle('sb-topbar-compact', !hasVisibleChatbar);
 }
 
-function setChatbarVisible(shouldShow, { persist = true } = {}) {
+function applyChatbarVisibility(shouldShow, { persist = true, syncChrome = true } = {}) {
     const nextVisible = Boolean(shouldShow);
     const state = getChatbarState();
-    state.visible = nextVisible;
-
-    document.body.classList.toggle('sb-chatbar-hidden', !nextVisible);
-
-    if (!nextVisible) {
+    const wasHidden = document.body.classList.contains('sb-chatbar-hidden');
+    if (!nextVisible && state.connectionStripOpen) {
         setConnectionStripOpenState(false);
     }
 
-    if (persist) {
-        safeSetItem(NN_STORAGE_KEYS.chatbarVisible, String(nextVisible));
+    const changed = state.visible !== nextVisible || wasHidden !== !nextVisible;
+    if (changed) {
+        state.visible = nextVisible;
+        document.body.classList.toggle('sb-chatbar-hidden', !nextVisible);
+
+        if (persist) {
+            safeSetItem(NN_STORAGE_KEYS.chatbarVisible, String(nextVisible));
+        }
     }
 
-    updateTopbarUtilityButtons();
-    syncTopbarLayoutState();
-    scheduleChatbarRefresh(0);
+    if (changed || syncChrome) {
+        updateTopbarUtilityButtons();
+        syncTopbarLayoutState();
+    }
+}
+
+function setChatbarVisible(shouldShow, { persist = true } = {}) {
+    const visibilityChanged = getChatbarState().visible !== Boolean(shouldShow);
+    applyChatbarVisibility(shouldShow, { persist, syncChrome: visibilityChanged });
+    if (visibilityChanged) {
+        scheduleChatbarRefresh(0);
+    }
 }
 
 function toggleChatbarVisibility() {
     setChatbarVisible(!getChatbarState().visible);
 }
 
-function syncChatbarVisibilityState() {
-    setChatbarVisible(getChatbarState().visible, { persist: false });
+// A pure placement sync: repaint the stored visibility without fetching the
+// chat list or refreshing topbar chrome. The full plan opts into the chrome
+// update it needs when the viewport mode changes.
+function syncChatbarVisibilityState({ syncChrome = false } = {}) {
+    applyChatbarVisibility(getChatbarState().visible, { persist: false, syncChrome });
 }
 
 function getTopbarDragKey(event) {
@@ -19528,7 +19558,7 @@ function syncMobileViewportState({ kind = nnMobileShellLifecycle.viewportSync.ki
         [viewportSyncStep.SYNC_MOBILE_SHELL_RAIL_ACTIONS]: () => syncMobileShellRailActions(),
         [viewportSyncStep.SYNC_DESKTOP_SHELL_SIZING]: () => syncDesktopShellSizing(),
         [viewportSyncStep.APPLY_TOPBAR_OFFSET]: () => applyTopbarOffset(),
-        [viewportSyncStep.SYNC_CHATBAR_VISIBILITY_STATE]: () => syncChatbarVisibilityState(),
+        [viewportSyncStep.SYNC_CHATBAR_VISIBILITY_STATE]: () => syncChatbarVisibilityState({ syncChrome: true }),
         [viewportSyncStep.UPDATE_TOP_BAR_BRAND]: () => updateTopBarBrand(),
         [viewportSyncStep.SCHEDULE_TOPBAR_CONTEXT_REFRESH]: () => scheduleTopbarContextRefresh(0),
         [viewportSyncStep.SYNC_MOBILE_MODAL_STATE]: () => syncMobileModalState(),
@@ -19644,9 +19674,13 @@ function queueMobileViewportStateSync(kind = nnMobileShellLifecycle.viewportSync
 
 function handleMobileShellViewportResize() {
     queueMobileViewportStateSync(nnMobileShellLifecycle.viewportSync.kind.GEOMETRY);
+    // Desktop panel widths depend on the layout width. This check is a no-op
+    // for height-only movement and visualViewport scroll/pinch, where the
+    // layout width is unchanged.
+    if (!isMobileViewport()) {
+        syncDesktopShellSizingAfterWidthChange();
+    }
 }
-
-let nnDesktopShellSizingWidth = null;
 
 function syncDesktopShellSizingAfterWidthChange() {
     const layoutMetrics = readMobileShellLayoutMetrics();

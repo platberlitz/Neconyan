@@ -293,6 +293,14 @@ describe('Roleplay preview rendering', () => {
         stream.send({ preview: base });
         await waitForFirstDraw();
         expect(updatePreviewMessageText).not.toHaveBeenCalled();
+        const node = renderedEvents.at(-1).element;
+        const status = node.querySelector('[role="status"]');
+        let statusText = status.textContent;
+        const writeStatus = jest.fn(value => { statusText = value; });
+        Object.defineProperty(status, 'textContent', { get: () => statusText, set: writeStatus });
+        let child = node.dataset.roleplayChild;
+        const writeChild = jest.fn(value => { child = value; });
+        Object.defineProperty(node.dataset, 'roleplayChild', { get: () => child, set: writeChild });
 
         stream.send({ delta: { text: ' world', set: { updatedAt: 2 } } });
         await waitFor(() => updatePreviewMessageText.mock.calls.length >= 1);
@@ -308,10 +316,15 @@ describe('Roleplay preview rendering', () => {
         await waitFor(() => updatePreviewMessageText.mock.calls.length >= 2);
         expect(updateMessageElement).toHaveBeenCalledTimes(1);
         expect(updatePreviewMessageText.mock.calls[1][2]).toMatchObject({ updateText: false });
+        expect(writeStatus).not.toHaveBeenCalled();
+        expect(writeChild).not.toHaveBeenCalled();
 
         stream.send({ delta: { text: ' again', set: { stage: 'companions' } } });
         await waitFor(() => updateMessageElement.mock.calls.length >= 2);
         expect(updatePreviewMessageText).toHaveBeenCalledTimes(2);
+        expect(writeStatus).toHaveBeenCalledTimes(1);
+        expect(status.textContent).toBe('Running Companions…');
+        expect(writeChild).not.toHaveBeenCalled();
 
         stream.send({ delta: { set: { name: 'Miso' } } });
         await waitFor(() => updateMessageElement.mock.calls.length >= 3);

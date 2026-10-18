@@ -1677,5 +1677,14 @@ function syncSettingsPanel() {
 }
 
 bootstrap();
-setInterval(bootstrap, 1000);
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootstrap, { once: true });
+}
+if (event_types.APP_READY) eventSource.on(event_types.APP_READY, bootstrap);
+if (event_types.SETTINGS_LOADED_AFTER) eventSource.on(event_types.SETTINGS_LOADED_AFTER, bootstrap);
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') bootstrap();
+});
+window.addEventListener('focus', bootstrap);
+window.addEventListener('pageshow', bootstrap);
 eventSource.on(event_types.CHAT_CHANGED, scheduleBackgroundSync);

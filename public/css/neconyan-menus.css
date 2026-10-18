@@ -2,7 +2,8 @@
    Loaded as a deferred sheet after the core ones, so the ids plus body.neconyan beat
    the upstream rules in style.css without !important. Terminal UI keeps its own look. */
 
-body.neconyan :is(#neconyan-chat-route, #neconyan-chat-link-settings) {
+body.neconyan #neconyan-chat-route,
+body.neconyan #neconyan-chat-link-settings {
     width: min(460px, calc(100vw - 32px));
     max-height: calc(100dvh - 48px);
     padding: 24px;
@@ -13,7 +14,8 @@ body.neconyan :is(#neconyan-chat-route, #neconyan-chat-link-settings) {
     overflow: auto;
 }
 
-body.neconyan :is(#neconyan-chat-route, #neconyan-chat-link-settings)::backdrop {
+body.neconyan #neconyan-chat-route::backdrop,
+body.neconyan #neconyan-chat-link-settings::backdrop {
     background: rgb(0 0 0 / 65%);
 }
 

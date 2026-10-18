@@ -69,7 +69,7 @@ describe('Neconyan workspace frame', () => {
     });
 
     test('keeps Advanced content controls without reopening the legacy icon strip', () => {
-        expect(cssSource).toContain('.sb-topbar-pages, .sb-topbar-cluster-divider');
+        expect(cssSource).toContain('body.neconyan .sb-topbar-pages,\nbody.neconyan .sb-topbar-cluster-divider {\n    display: none !important;\n}');
         expect(cssSource).toContain('/* The shell toggle ghosts stay hidden while the real controls live in the rail and sheets. */');
         expect(tabsSource).not.toContain('function setTopbarIconsOnly(');
         expect(tabsSource).toContain('const NN_NECONYAN_MOBILE_NAV_CLOSED_ICON = \'fa-bars\';');

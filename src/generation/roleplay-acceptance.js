@@ -17,7 +17,7 @@ import sanitize from 'sanitize-filename';
 import { normalizeLocator, readJson } from '../mewmory/store.js';
 import { roleplayAccountBase, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
 import { getJob, releaseJob } from '../jobs/store.js';
-import { captureRoleplaySourceLocked, readRoleplayChatLocked } from './roleplay-source.js';
+import { captureRoleplaySourceFromSavedChatLocked, readRoleplayChatLocked } from './roleplay-source.js';
 import { captureGenerationBinding, getChatProfileContextLimit } from './profiles.js';
 import { readNativeMediaJobResultForOwner } from './media-jobs.js';
 import { captureRoleplayNamedWorkflow, ROLEPLAY_WORKFLOW_NAMES } from './roleplay-workflow-named.js';
@@ -244,7 +244,7 @@ function captureWorkflowSource(base, account, submission) {
             throw changed('The saved Roleplay message changed after this workflow was captured.', 'roleplay_workflow_changed');
         }
         // An append anchors the whole chat, so its source carries no message anchor.
-        const captured = captureRoleplaySourceLocked(lease, { locator,
+        const captured = captureRoleplaySourceFromSavedChatLocked(lease, saved, { locator,
             ...(submission.named.effect === 'append' ? {}
                 : submission.named.effect === 'replace'
                     ? { range: { start: index, count: 1 } } : { message: index }) });
@@ -331,7 +331,7 @@ export async function acceptRoleplayGroupTurn(request, body = {}) {
         if (saved.records.length - 1 !== submission.messageCount) {
             throw changed('The saved group chat moved on after this turn was captured.', 'roleplay_workflow_anchor');
         }
-        const captured = captureRoleplaySourceLocked(lease, { locator: submission.locator, groupId: submission.groupId });
+        const captured = captureRoleplaySourceFromSavedChatLocked(lease, saved, { locator: submission.locator, groupId: submission.groupId });
         if (saved.changed || captured.changed) saveRoleplayAccount(lease);
         return captured.source;
     });

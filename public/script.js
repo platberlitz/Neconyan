@@ -6498,19 +6498,22 @@ export function updatePreviewMessageText(node, message, { messageId = chat.index
         message.extra?.reasoning_tokens);
     const timer = element.querySelector('.mes_timer');
     if (timer) {
-        timer.textContent = timerValue || '';
-        if (timerTitle) timer.title = timerTitle;
-        else timer.removeAttribute('title');
+        if (timer.textContent !== (timerValue || '')) timer.textContent = timerValue || '';
+        if (timerTitle) {
+            if (timer.title !== timerTitle) timer.title = timerTitle;
+        } else if (timer.hasAttribute('title')) timer.removeAttribute('title');
     }
 
     const timestamp = element.querySelector('.timestamp');
     if (timestamp) {
-        timestamp.title = `${message.extra?.api ? message.extra.api + ' - ' : ''}${message.extra?.model ?? ''}`;
+        const title = `${message.extra?.api ? message.extra.api + ' - ' : ''}${message.extra?.model ?? ''}`;
+        if (timestamp.title !== title) timestamp.title = title;
     }
 
     const idDisplay = element.querySelector('.mesIDDisplay');
     if (idDisplay && Number.isInteger(messageId)) {
-        idDisplay.textContent = `#${messageId}`;
+        const label = `#${messageId}`;
+        if (idDisplay.textContent !== label) idDisplay.textContent = label;
     }
 
     updateMessageMetaBadges(element, message);
@@ -6560,7 +6563,8 @@ export function updateMessageMetaBadges(messageElement, message) {
         return;
     }
 
-    $tokenCounter.text(formatTokenCounterText(message?.extra?.token_count));
+    const tokenText = formatTokenCounterText(message?.extra?.token_count);
+    if ($tokenCounter.text() !== tokenText) $tokenCounter.text(tokenText);
 
     const messageId = Number($messageElement.attr('mesid'));
     const liveStreamingProcessor = Number.isInteger(messageId) && streamingProcessor && Number(streamingProcessor.messageId) === messageId
@@ -6575,7 +6579,8 @@ export function updateMessageMetaBadges(messageElement, message) {
             badge = $('<span class="reasoning-tokens-badge" title="Thought tokens"></span>');
             $tokenCounter.after(badge);
         }
-        badge.html(`<i class="fa-solid fa-brain" aria-hidden="true"></i><span class="reasoning-tokens-count">${reasoningTokens}</span>`);
+        const badgeHTML = `<i class="fa-solid fa-brain" aria-hidden="true"></i><span class="reasoning-tokens-count">${reasoningTokens}</span>`;
+        if (badge.html() !== badgeHTML) badge.html(badgeHTML);
     } else {
         $messageElement.find('.reasoning-tokens-badge').remove();
     }
