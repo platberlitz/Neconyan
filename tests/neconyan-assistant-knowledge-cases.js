@@ -1,5 +1,8 @@
 // Questions and distinguishing facts shared by Node and real-browser retrieval checks.
 export const refreshedKnowledgeCases = [
+    ['Can Miso save browser macros for me?', 'tools.browser-macro-authoring', 'complete definition and an isolated preview'],
+    ['Do AI custom macros sync to my other browser?', 'tools.browser-macro-authoring', 'do not sync or enter account backups'],
+    ['What does macro expectedTemplate mean?', 'tools.browser-macro-authoring', 'exact current template as expectedTemplate'],
     ['Does Mewmory save configuration automatically?', 'mewmory.autosave', 'number fields, model roles and credentials automatically'],
     ['Does Mewmory hide accumulated history every 30000 tokens?', 'mewmory.hide-overflow', 'hiding repeats when visible history reaches the threshold again'],
     ['Does the Mewmory hiding threshold keep 30000 tokens visible?', 'mewmory.hide-overflow', 'It does not retain a 30,000-token window'],

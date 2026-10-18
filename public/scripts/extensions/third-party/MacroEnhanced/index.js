@@ -14,6 +14,7 @@ import { onPronounsChanged, registerPronounMacros } from './src/pronoun-macros.j
 import { mountPersonaPronounField, renderPersonaPronounField, unmountPersonaPronounField } from './src/persona-pronoun-field.js';
 import { clearCache, prewarm, indexBook, setActiveEntries } from './src/lorebook-cache.js';
 import { syncRegistrations, teardownCustomRegistrations } from './src/custom/registrar.js';
+import { isBrowserStoreKey } from './src/custom/browser-store.js';
 import { registerCommands, setCommandsActive } from './src/commands.js';
 import { removeDrawer, renderDrawer } from './src/drawer-ui.js';
 import { closeWorkbench } from './src/workbench/panel.js';
@@ -27,6 +28,8 @@ let initialized = false;
 let stopPronounSync = null;
 /** @type {(() => void)|null} stops the page following data writes */
 let stopDataSync = null;
+/** @type {(() => void)|null} stops the page following other tabs' browser macros */
+let stopBrowserStoreSync = null;
 let macrosRegistered = false;
 /** @type {boolean|null} engine availability at the last page mount */
 let lastRenderedAvailability = null;
@@ -73,6 +76,35 @@ function activateMacros() {
 }
 
 /**
+ * Browser-scoped macros belong to this browser, not the server. A write in
+ * another tab arrives as a storage event; the registry and the page have to
+ * follow it the same way an editor save does.
+ */
+function startBrowserStoreSync() {
+    if (stopBrowserStoreSync) {
+        return;
+    }
+    const win = globalThis.window;
+    if (typeof win?.addEventListener !== 'function') {
+        return;
+    }
+    const onStorage = event => {
+        if (!initialized) {
+            return;
+        }
+        if (event?.key !== null && !isBrowserStoreKey(event.key)) {
+            return;
+        }
+        if (macrosRegistered) {
+            syncRegistrations();
+        }
+        appRefreshes.push('macros');
+    };
+    win.addEventListener('storage', onStorage);
+    stopBrowserStoreSync = () => win.removeEventListener('storage', onStorage);
+}
+
+/**
  * The page and the Persona page edit the same persona pronouns. A write from
  * either side (or from {{setpronouns}}) refreshes the other view.
  */
@@ -97,6 +129,7 @@ export function init() {
         registerCommands();
         renderDrawerTracked();
         startPronounSync();
+        startBrowserStoreSync();
         return;
     }
 
@@ -110,6 +143,7 @@ export function init() {
     registerCommands();
     renderDrawerTracked();
     startPronounSync();
+    startBrowserStoreSync();
 
     // The page and the Persona page both show the selected persona's pronouns.
     for (const personaEvent of [events.PERSONA_CHANGED, events.PERSONA_CREATED, events.PERSONA_DELETED]) {
@@ -130,6 +164,9 @@ export function init() {
         registerCommands();
         renderDrawerTracked();
         if (macrosRegistered) {
+            // The account handle is final by APP_READY, so the browser layer can
+            // switch to that account's definitions without reloading the page.
+            syncRegistrations();
             prewarm(SillyTavern.getContext());
         }
     });
@@ -147,6 +184,11 @@ export function init() {
         }
         if (available !== lastRenderedAvailability) {
             renderDrawerTracked();
+        }
+        if (macrosRegistered) {
+            // A settings load or account refresh can change which handle owns the
+            // browser scope. Re-read it instead of serving the previous account.
+            syncRegistrations();
         }
         appSettingsUpdated();
     });
@@ -236,6 +278,8 @@ export function deactivate() {
     stopPronounSync = null;
     stopDataSync?.();
     stopDataSync = null;
+    stopBrowserStoreSync?.();
+    stopBrowserStoreSync = null;
     unmountPersonaPronounField();
 
     const { eventSource } = SillyTavern.getContext();

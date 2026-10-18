@@ -97,9 +97,20 @@ export const TOPICS = Object.freeze([
         id: 'scopes',
         title: 'Where custom macros are saved',
         body: [
-            'Every custom macro is saved in one of three places. Global macros are available everywhere. Character macros exist only while that character is open, and travel with the character card when you share it. Chat macros exist only inside one chat, stored in the chat file itself.',
-            'When the same name exists in more than one scope, the most specific wins: chat beats character, character beats global. That is how you override one global macro for a single scene without touching it everywhere else.',
+            'Every custom macro is saved in one of four places. Global macros are available everywhere. Browser macros are kept in this browser for this account, are not synced or backed up, and need an export to move to another device or account. Character macros exist only while that character is open, and travel with the character card when you share it. Chat macros exist only inside one chat, stored in the chat file itself.',
+            'When the same name exists in more than one scope, the most specific wins: chat beats character, character beats browser, browser beats global. That is how you override one global macro for a single scene without touching it everywhere else.',
             'Names are checked as you type. You cannot take a name belonging to another extension, one of this extension\'s built-ins, or anything starting with "me-". That prefix is reserved.',
+        ],
+        see: [],
+    },
+    {
+        id: 'assistant-browser-macros',
+        title: 'Ask an assistant to save a browser macro',
+        body: [
+            'Miso, Taro and Nori can propose a custom macro through their Save browser macro tool in Conversation or a solo assistant Roleplay chat. Ask for a name, template and any arguments. Enable Macro Enhanced and experimental macros first.',
+            'The review shows the full definition and an isolated preview. Required arguments use [name] examples, optional arguments use their defaults, and trial variable changes are discarded. Approve to save it in this browser, or decline to leave your macros alone.',
+            'For an edit, share the current template so the assistant can include it as expectedTemplate. If the macro changes during review, the save is refused rather than overwriting your newer edit.',
+            'Approved macros appear under My macros in the browser scope. They survive a reload for this account, but clearing site data removes them. They are not synced or included in account backups. Use Export to keep a copy or move them elsewhere. Server-built prompts cannot expand browser macros.',
         ],
         see: [],
     },
@@ -162,7 +173,8 @@ export const TOPICS = Object.freeze([
         id: 'packs-and-gallery',
         title: 'Template gallery and sharing',
         body: [
-            'The template gallery ships four starter packs: RP state trackers, dice and game mechanics, prompt-style guards, and time and scene helpers. Installing one copies its macros into whichever scope you pick, where they become ordinary custom macros you can open and edit.',
+            'The template gallery ships five starter packs: RP state trackers, dice and game mechanics, prompt-style guards, time and scene helpers, and Miso, Taro & Nori. Installing one copies its macros into whichever scope you pick, where they become ordinary custom macros you can open and edit.',
+            'The assistant pack has eleven macros: misohello, misostarter, misocheer, tarodebug, tarocheck, tarotrim, taropun, noritwist, noriprank, norisense and noridare. Most random choices stay fixed for the chat. Only noriprank refreshes after a user message, and it stays fixed across swipes. tarotrim gives a word-budget instruction; it does not rewrite the text itself.',
             'Nothing is ever overwritten. A name that already exists gets a -2 suffix instead.',
             'Custom macros can be exported per scope as a small JSON pack file and imported on another machine or shared with someone else. /me-export scope=chat prints the same JSON for scripting.',
         ],

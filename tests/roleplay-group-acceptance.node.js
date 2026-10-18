@@ -49,6 +49,24 @@ test('a whole group turn is accepted once with the speakers the page chose, in o
     assert.equal(second.created, false);
 });
 
+test('a group turn carries only bounded browser-local macro names to every speaker', async t => {
+    const s = saved(t);
+    const rejected = ['privateGreeting', [1], [null], [''], [' private greeting '], ['1private'],
+        ['{{privateGreeting}}'], ['a'.repeat(513)], Array.from({ length: 513 }, (_, index) => `macro${index}`)];
+    for (const [index, browserMacros] of rejected.entries()) {
+        await assert.rejects(acceptRoleplayGroupTurn(s.request(), s.body({ key: `bad-browser-${index}`, browserMacros })),
+            error => error.status === 400 && error.apiError === 'roleplay_workflow_invalid', String(browserMacros).slice(0, 40));
+    }
+    const accepted = await acceptRoleplayGroupTurn(s.request(), s.body({
+        key: 'browser-names', browserMacros: [' PrivateGreeting ', 'privategreeting', 'ME-PrivateGreeting'],
+    }));
+    const job = getJob(s.dirs, accepted.jobId);
+    assert.deepEqual(job.intent.request.worldInfo.browserMacros, ['privategreeting', 'me-privategreeting']);
+    for (const speaker of job.intent.request.group.speakers) {
+        assert.deepEqual(speaker.worldInfo.browserMacros, ['privategreeting', 'me-privategreeting']);
+    }
+});
+
 test('a group turn is refused when the chat moved on or a chosen speaker is disabled', async t => {
     const s = saved(t, { disabled: ['Other.png'] });
     await assert.rejects(acceptRoleplayGroupTurn(s.request(), s.body({ key: 'moved', messageCount: 1 })),

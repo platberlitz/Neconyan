@@ -4,6 +4,8 @@ import vm from 'node:vm';
 import { parse } from 'acorn';
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { event_types, eventSource } from '../public/scripts/events.js';
+import { MacroRegistry } from '../public/scripts/macros/engine/MacroRegistry.js';
+import { getBrowserStoreKey } from '../public/scripts/extensions/third-party/MacroEnhanced/src/custom/browser-store.js';
 
 let account = 'alice';
 const chat = [];
@@ -171,6 +173,69 @@ beforeEach(() => {
 });
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
+test('stored browser macros are refused by name even without runtime registration', async () => {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+    const data = new Map([
+        [getBrowserStoreKey('alice'), JSON.stringify({ version: 1, macros: [
+            { id: 'one', name: 'MisoHello', template: 'SECRET PRIVATE TEMPLATE' },
+            { id: 'two', name: 'disabled', template: 'disabled', enabled: false },
+        ] })],
+        [getBrowserStoreKey('bob'), JSON.stringify({ version: 1, macros: [{ id: 'other', name: 'bobOnly', template: 'private' }] })],
+    ]);
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: key => data.get(key) ?? null } });
+    try {
+        expect(workflows.captureBrowserMacros()).toEqual(['misohello', 'me-misohello']);
+        const pending = workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' });
+        await settle();
+        const submit = requests.find(entry => entry.url.endsWith('/workflow/submit'));
+        expect(submit.body.browserMacros).toEqual(['misohello', 'me-misohello']);
+        expect(JSON.stringify(submit.body.browserMacros)).not.toContain('SECRET');
+        await observers.get('job-1').onStop('done');
+        await pending;
+        account = 'bob';
+        expect(workflows.captureBrowserMacros()).toEqual(['bobonly', 'me-bobonly']);
+    } finally {
+        if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
+        else delete globalThis.localStorage;
+    }
+});
+
+test('browser-local custom macro names travel as names only, with their me alias', async () => {
+    MacroRegistry.registerMacro('browserLocalProbe', { category: 'enhanced-custom', description: 'A private template.',
+        handler: () => 'SECRET TEMPLATE OUTPUT' });
+    MacroRegistry.registerMacroAlias('browserLocalProbe', 'me-browserLocalProbe', { visible: false });
+    try {
+        expect(workflows.captureBrowserMacros()).toEqual(['browserlocalprobe', 'me-browserlocalprobe']);
+        const pending = workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' });
+        await settle();
+        const submit = requests.find(entry => entry.url.endsWith('/workflow/submit'));
+        expect(submit.body.browserMacros).toEqual(['browserlocalprobe', 'me-browserlocalprobe']);
+        expect(JSON.stringify(submit.body.browserMacros)).not.toContain('SECRET');
+        await observers.get('job-1').onStop('done');
+        await pending;
+    } finally {
+        MacroRegistry.unregisterMacro('browserLocalProbe');
+        MacroRegistry.unregisterMacro('me-browserLocalProbe');
+    }
+});
+
+test('a group turn submits browser-local custom macro names only', async () => {
+    MacroRegistry.registerMacro('groupBrowserProbe', { category: 'enhanced-custom', description: 'A private template.',
+        handler: () => 'SECRET TEMPLATE OUTPUT' });
+    try {
+        const pending = workflows.submitRoleplayGroupTurn({ groupId: 'group-1', forcedAvatars: ['nova.png'], generationId: 'turn-3' })
+            .catch(error => error);
+        await settle();
+        const submit = requests.filter(entry => entry.url.endsWith('/group/submit')).at(-1);
+        expect(submit.body.browserMacros).toEqual(['groupbrowserprobe']);
+        expect(JSON.stringify(submit.body.browserMacros)).not.toContain('SECRET');
+        await observers.get('job-1').onStop('done');
+        expect(await pending).toMatchObject({ accepted: true, state: 'closed' });
+    } finally {
+        MacroRegistry.unregisterMacro('groupBrowserProbe');
+    }
+});
 
 test.each(['roleplay.swipe', 'roleplay.correct', 'guided.swipe', 'guided.regenerate', 'guided.correction'])('%s clears the display before saving and restores it after cancellation', async name => {
     const pending = workflows.submitRoleplayWorkflow({ name });

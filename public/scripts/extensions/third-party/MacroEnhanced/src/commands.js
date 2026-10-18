@@ -3,7 +3,7 @@ import { getRegisteredNames } from './registration.js';
 import { getChatState, peekChatState, touchChatState } from './chat-state.js';
 import { findEntry } from './lorebook-cache.js';
 import { truncateText } from './utility-impl.js';
-import { SCOPE_CHARACTER, SCOPE_CHAT, SCOPE_GLOBAL, createDef, getAllCustomNames, getCharacterDefs, getChatDefs, getGlobalDefs, saveCharacterDefs, saveChatDefs, saveGlobalDefs, validateDef } from './custom/store.js';
+import { SCOPE_BROWSER, SCOPE_CHARACTER, SCOPE_CHAT, SCOPE_GLOBAL, createDef, getAllCustomNames, getBrowserStoreProblem, getDefsForScope, saveDefsForScope, validateDef } from './custom/store.js';
 import { getRegisteredCustomNames, syncRegistrations } from './custom/registrar.js';
 import { resolveDefineArgs } from './custom/define-args.js';
 import { scopeAvailability } from './custom/scopes.js';
@@ -379,17 +379,16 @@ export function registerCommands() {
                 const name = String(named?.name ?? '').trim();
                 const template = String(unnamed ?? '');
                 if (!name || !template) {
-                    return 'Usage: /me-define name=mymacro [args=a,b] [scope=global|character|chat] the template text';
+                    return 'Usage: /me-define name=mymacro [args=a,b] [scope=global|browser|character|chat] the template text';
                 }
                 const scopeRaw = String(named?.scope ?? SCOPE_GLOBAL).toLowerCase();
-                const scope = [SCOPE_GLOBAL, SCOPE_CHARACTER, SCOPE_CHAT].includes(scopeRaw) ? scopeRaw : SCOPE_GLOBAL;
+                const scope = [SCOPE_GLOBAL, SCOPE_BROWSER, SCOPE_CHARACTER, SCOPE_CHAT].includes(scopeRaw) ? scopeRaw : SCOPE_GLOBAL;
                 const availability = scopeAvailability(liveCtx);
                 if (!availability[scope].available) {
                     return availability[scope].reason;
                 }
 
-                const defs = scope === SCOPE_CHARACTER ? getCharacterDefs()
-                    : scope === SCOPE_CHAT ? getChatDefs() : getGlobalDefs();
+                const defs = getDefsForScope(scope);
                 const existing = defs.find(def => def.name.toLowerCase() === name.toLowerCase());
                 // Omitting args= updates the template and leaves the saved argument
                 // list alone. Passing args= replaces it.
@@ -404,12 +403,10 @@ export function registerCommands() {
                 }
 
                 const nextDefs = [...siblings, def];
-                if (scope === SCOPE_CHARACTER) {
-                    await saveCharacterDefs(nextDefs);
-                } else if (scope === SCOPE_CHAT) {
-                    saveChatDefs(nextDefs);
-                } else {
-                    saveGlobalDefs(nextDefs);
+                try {
+                    await saveDefsForScope(scope, nextDefs);
+                } catch (error) {
+                    return `Could not save {{${name}}}: ${error?.message ?? error}`;
                 }
                 syncRegistrations();
                 return `Macro {{${name}}} ${existing ? 'updated' : 'created'} (${scope}).`;
@@ -429,10 +426,10 @@ export function registerCommands() {
                 }),
                 SlashCommandNamedArgument.fromProps({
                     name: 'scope',
-                    description: 'global (default), character, or chat (this chat only).',
+                    description: 'global (default), browser (this device and account), character, or chat (this chat only).',
                     typeList: [ARGUMENT_TYPE.STRING],
                     defaultValue: SCOPE_GLOBAL,
-                    enumList: [SCOPE_GLOBAL, SCOPE_CHARACTER, SCOPE_CHAT],
+                    enumList: [SCOPE_GLOBAL, SCOPE_BROWSER, SCOPE_CHARACTER, SCOPE_CHAT],
                     isRequired: false,
                 }),
             ],
@@ -453,24 +450,31 @@ export function registerCommands() {
                 if (!name) {
                     return 'Usage: /me-undefine name';
                 }
-                const globals = getGlobalDefs();
-                const characterDefs = getCharacterDefs();
-                const chatDefs = getChatDefs();
                 let removed = false;
-                if (globals.some(def => def.name.toLowerCase() === name)) {
-                    saveGlobalDefs(globals.filter(def => def.name.toLowerCase() !== name));
-                    removed = true;
-                }
-                if (characterDefs.some(def => def.name.toLowerCase() === name)) {
-                    await saveCharacterDefs(characterDefs.filter(def => def.name.toLowerCase() !== name));
-                    removed = true;
-                }
-                if (chatDefs.some(def => def.name.toLowerCase() === name)) {
-                    saveChatDefs(chatDefs.filter(def => def.name.toLowerCase() !== name));
+                let browserProblem = getBrowserStoreProblem();
+                for (const scope of [SCOPE_GLOBAL, SCOPE_BROWSER, SCOPE_CHARACTER, SCOPE_CHAT]) {
+                    let defs;
+                    try {
+                        defs = getDefsForScope(scope);
+                    } catch (error) {
+                        if (scope === SCOPE_BROWSER) {
+                            browserProblem = error?.message ?? String(error);
+                        }
+                        continue;
+                    }
+                    if (!defs.some(def => def.name.toLowerCase() === name)) {
+                        continue;
+                    }
+                    await saveDefsForScope(scope, defs.filter(def => def.name.toLowerCase() !== name));
                     removed = true;
                 }
                 syncRegistrations();
-                return removed ? `Macro {{${name}}} removed.` : `No custom macro named {{${name}}}.`;
+                if (removed) {
+                    return browserProblem
+                        ? `Macro {{${name}}} removed from the readable scopes. ${browserProblem}`
+                        : `Macro {{${name}}} removed.`;
+                }
+                return browserProblem || `No custom macro named {{${name}}}.`;
             },
             unnamedArgumentList: [
                 new SlashCommandArgument('the macro name to remove', [ARGUMENT_TYPE.STRING], true, false),
@@ -486,20 +490,31 @@ export function registerCommands() {
                     return INACTIVE;
                 }
                 const scopeRaw = String(named?.scope ?? SCOPE_GLOBAL).toLowerCase();
-                const defs = scopeRaw === SCOPE_CHARACTER ? getCharacterDefs()
-                    : scopeRaw === SCOPE_CHAT ? getChatDefs() : getGlobalDefs();
+                const scope = [SCOPE_GLOBAL, SCOPE_BROWSER, SCOPE_CHARACTER, SCOPE_CHAT].includes(scopeRaw) ? scopeRaw : SCOPE_GLOBAL;
+                if (scope === SCOPE_BROWSER) {
+                    const problem = getBrowserStoreProblem();
+                    if (problem) {
+                        return `Could not read This browser macros: ${problem}`;
+                    }
+                }
+                let defs;
+                try {
+                    defs = getDefsForScope(scope);
+                } catch (error) {
+                    return `Could not read the ${scope} scope: ${error?.message ?? error}`;
+                }
                 if (!defs.length) {
-                    return `No custom macros in the ${scopeRaw} scope.`;
+                    return `No custom macros in the ${scope} scope.`;
                 }
                 return JSON.stringify(exportPack(defs, { exportedAt: new Date().toISOString() }), null, 2);
             },
             namedArgumentList: [
                 SlashCommandNamedArgument.fromProps({
                     name: 'scope',
-                    description: 'global (default), character, or chat.',
+                    description: 'global (default), browser, character, or chat.',
                     typeList: [ARGUMENT_TYPE.STRING],
                     defaultValue: SCOPE_GLOBAL,
-                    enumList: [SCOPE_GLOBAL, SCOPE_CHARACTER, SCOPE_CHAT],
+                    enumList: [SCOPE_GLOBAL, SCOPE_BROWSER, SCOPE_CHARACTER, SCOPE_CHAT],
                     isRequired: false,
                 }),
             ],

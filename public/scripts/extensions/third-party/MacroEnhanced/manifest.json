@@ -1,8 +1,8 @@
 {
     "display_name": "Macro Enhanced",
     "author": "platberlitz",
-    "version": "0.3.0",
-    "description": "Enhances the macro engine with utility, lorebook, pronoun, custom, and sandboxed workbench tools.",
+    "version": "0.4.0",
+    "description": "Prompt macros, editable assistant templates and browser-local macros with reviewed AI authoring.",
     "requires": [],
     "optional": [],
     "js": "index.js",

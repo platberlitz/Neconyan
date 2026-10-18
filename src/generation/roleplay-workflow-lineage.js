@@ -99,6 +99,7 @@ export function captureWorkflowToolLineage(context, { parent, candidate, turn, i
         maxContext: admitted.maxContext, tokenizer: admitted.tokenizer,
         trigger: admitted.global.trigger, serverPrompt: true,
         bundledMacros: admitted.bundledMacros ?? null,
+        browserMacros: admitted.browserMacros ?? null,
         nativeBindingVersion: admitted.nativeBindingVersion, mediaPolicyVersion: admitted.mediaPolicyVersion ?? 0, mediaBinding: admitted.mediaBinding ?? null });
     const record = { identity, beforeSourceHash: roleplayHash(previousSource), source, worldInfo, account,
         effectsHash: roleplayHash(files), ...(index === null ? {} : { index }) };

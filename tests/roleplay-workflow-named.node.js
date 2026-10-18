@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { fixture } from './roleplay-transactions-fixture.js';
+import { fixture, png } from './roleplay-transactions-fixture.js';
 
+const { write: writeCard } = await import('../src/character-card-parser.js');
 const { captureChatProfile } = await import('../src/generation/profiles.js');
 const { captureRoleplaySource } = await import('../src/generation/roleplay-source.js');
 const { runRoleplayReplyJob } = await import('../src/generation/roleplay-execution.js');
@@ -23,9 +24,12 @@ prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: tr
 function_calling: true };
 
 /** Every named workflow here uses a saved active connection, because that is what a browser names. */
-function saved(t, { settingsRevision = 7, powerUser = null, mutate = null } = {}) {
+function saved(t, { settingsRevision = 7, powerUser = null, mutate = null, description = null, extensionSettings = null } = {}) {
     const f = fixture(t);
     const dirs = f.scope.directories;
+    if (description !== null) {
+        fs.writeFileSync(path.join(dirs.characters, 'Nova.png'), writeCard(png, JSON.stringify({ name: 'Nova', description })));
+    }
     f.records[1].extra = {};
     mutate?.(f.records);
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
@@ -41,7 +45,7 @@ function saved(t, { settingsRevision = 7, powerUser = null, mutate = null } = {}
         oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1',
             openai_max_context: 4096, openai_max_tokens: 512, function_calling: true },
         extension_settings: { connectionManager: { profiles: [{ id: 'active', api: 'custom', model: 'fixture',
-            preset: 'Main', 'api-url': 'http://127.0.0.1:18000/v1' }] } },
+            preset: 'Main', 'api-url': 'http://127.0.0.1:18000/v1' }] }, ...(extensionSettings ?? {}) },
     }));
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
     const records = () => fs.readFileSync(f.filename, 'utf8').trim().split('\n').map(line => JSON.parse(line));
@@ -485,4 +489,48 @@ test('the same key replays an identical capture and conflicts on a changed one',
     await assert.rejects(acceptRoleplayNamedWorkflow(f.request(),
         f.body('roleplay.reply', { key: 'same-key', bundledMacros: { dialoguecolors: 'CHANGED' } })),
     { code: 'MEDIA_INTENT_CONFLICT' });
+});
+
+test('browser-local macro names are bounded, normalised, deduplicated and refused when malformed', async t => {
+    const f = saved(t);
+    const rejected = ['privateGreeting', [1], [null], [''], [' private greeting '], ['1private'],
+        ['{{privateGreeting}}'], ['privateGreeting::arg'], ['a'.repeat(513)],
+        Array.from({ length: 513 }, (_, index) => `macro${index}`)];
+    for (const [index, browserMacros] of rejected.entries()) {
+        await assert.rejects(acceptRoleplayNamedWorkflow(f.request(),
+            f.body('roleplay.reply', { key: `bad-browser-${index}`, browserMacros })),
+        { apiError: 'roleplay_workflow_invalid', status: 400 }, String(browserMacros).slice(0, 40));
+    }
+    assert.equal(f.records().length, 3);
+    const accepted = await acceptRoleplayNamedWorkflow(f.request(), f.body('roleplay.reply', {
+        key: 'browser-names', browserMacros: [' PrivateGreeting ', 'privategreeting', 'ME-PrivateGreeting'],
+    }));
+    assert.deepEqual(getJob(f.dirs, accepted.jobId).intent.request.worldInfo.browserMacros,
+        ['privategreeting', 'me-privategreeting']);
+});
+
+test('an accepted browser-local name and its me alias refuse a server prompt', async t => {
+    for (const [name, macro] of [['privategreeting', '{{PrivateGreeting}}'], ['me-privategreeting', '{{me-PrivateGreeting}}']]) {
+        const f = saved(t, { description: `Nova speaks ${macro}.` });
+        const calls = { count: 0, prompts: [] };
+        await assert.rejects(f.run('roleplay.reply', { key: `browser-only-${name}`, browserMacros: [name], calls }),
+            { code: 'MACRO_BROWSER_ONLY', status: 409 }, name);
+        assert.equal(calls.count, 0);
+    }
+});
+
+test('an absent browser-local macro list keeps the captured vocabulary and snapshot hash unchanged', async t => {
+    const f = saved(t, { extensionSettings: { MacroEnhanced: { customMacros: [{ name: 'SavedMacro', enabled: true }] } } });
+    const profile = { kind: 'profile', ...captureChatProfile(f.dirs, 'active') };
+    const named = captureRoleplayNamedWorkflow('roleplay.reply');
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const options = { avatar: 'Nova.png', binding: profile, maxTokens: 32, named };
+    const absent = captureRoleplayWorkflowRequest(f.scope, f.account, source, options);
+    const empty = captureRoleplayWorkflowRequest(f.scope, f.account, source, { ...options, browserMacros: [] });
+    assert.equal(Object.hasOwn(absent, 'browserMacros'), false);
+    assert.deepEqual(absent.worldInfo.browserMacros, ['savedmacro', 'me-savedmacro']);
+    assert.equal(roleplayHash(absent), roleplayHash(empty));
+    const accepted = await acceptRoleplayNamedWorkflow(f.request(), f.body('roleplay.reply', { key: 'absent-browser-names' }));
+    assert.deepEqual(getJob(f.dirs, accepted.jobId).intent.request.worldInfo.browserMacros,
+        ['savedmacro', 'me-savedmacro']);
 });

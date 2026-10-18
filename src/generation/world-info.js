@@ -13,7 +13,7 @@ import { readRoleplayFile, roleplayError, roleplayHash, roleplaySettingsHash, sa
 import { assertRoleplaySourceLocked, readRoleplayEntityLocked } from './roleplay-source.js';
 import { prepareWorldInfoEntries } from '../../public/scripts/world-info-scan-core.js';
 import { createMacroEnvironment } from '../macros/index.js';
-import { capturedBrowserMacros } from '../macros/browser-only.js';
+import { capturedBrowserMacros, mergeBrowserMacros } from '../macros/browser-only.js';
 import { applyRegexScriptList, AGENT_REGEX_PLACEMENT } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { scanWorldInfo, worldInfoScanWindow } from './world-info-scan.js';
 import { normalizeExtensionBootId } from '../../public/scripts/extension-boot-lifecycle/index.js';
@@ -300,7 +300,8 @@ function selectedBooks(settings, saved, character, avatar, personaLorebook) {
 
 /** Capture the actual saved book selection before private job admission. */
 export function captureRoleplayWorldInfo(base, account, source, { avatar, maxContext, tokenizer = 'o200k_base', trigger = 'normal', serverPrompt = false,
-    agentIds = [], agentContext = false, nativeBindingVersion = 1, promptEffect = null, mediaPolicyVersion = 0, mediaBinding = null, bundledMacros = null }) {
+    agentIds = [], agentContext = false, nativeBindingVersion = 1, promptEffect = null, mediaPolicyVersion = 0, mediaBinding = null,
+    bundledMacros = null, browserMacros = null }) {
     if (![0, 1].includes(mediaPolicyVersion)) throw roleplayError('ROLEPLAY_INVALID', uiText('The page and the server are running different versions. Reload the page, then try again.'), 409);
     if (!['normal', 'continue', 'swipe', 'regenerate'].includes(trigger) || typeof serverPrompt !== 'boolean'
         || ![0, 1].includes(nativeBindingVersion) || nativeBindingVersion === 0 && agentIds.length
@@ -447,7 +448,11 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             ...(bundledMacros ? { bundledMacros: structuredClone(bundledMacros) } : {}),
             ...(mediaPolicy ? { mediaPolicyVersion, mediaPolicy, mediaBinding, captionTexts: mediaProjection.captionTexts.filter(item => !item.composed) } : {}),
             macroPolicyVersion: serverPrompt ? 1 : 0,
-            browserMacros: capturedBrowserMacros(settings.extension_settings, character.data?.data?.extensions ?? character.data?.extensions, saved.records[0].chat_metadata),
+            // Browser-local custom macros travel by name from the active page
+            // registry. Merging keeps the saved vocabulary and adds only names the
+            // server could not read from account data; an absent list is a no-op.
+            browserMacros: mergeBrowserMacros(capturedBrowserMacros(settings.extension_settings,
+                character.data?.data?.extensions ?? character.data?.extensions, saved.records[0].chat_metadata), browserMacros),
             browserMacroSyntax: { compatExpressions: enhancedMacros && Boolean(extensions.MacroEnhanced?.compatExpressions),
                 fixImportedSyntax: enhancedMacros && Boolean(extensions.MacroEnhanced?.fixImportedSyntax) },
             ...(serverPrompt && nativeBindingVersion ? { nativeBindingVersion } : {}),
@@ -551,6 +556,9 @@ export function assertRoleplayWorldInfoCurrent(base, snapshot) {
         // Re-assert the captured page macro text that was accepted, never whatever
         // the current extension settings would resolve to now.
         bundledMacros: Object.hasOwn(snapshot, 'bundledMacros') ? snapshot.bundledMacros : null,
+        // The accepted vocabulary already includes browser-local names, so replaying
+        // it through the merge reproduces the same snapshot for old and new jobs.
+        browserMacros: snapshot.browserMacros ?? null,
         nativeBindingVersion: Object.hasOwn(snapshot, 'nativeBindingVersion') ? snapshot.nativeBindingVersion : 0,
         mediaPolicyVersion: snapshot.mediaPolicyVersion ?? 0, mediaBinding: snapshot.mediaBinding ?? null,
     });

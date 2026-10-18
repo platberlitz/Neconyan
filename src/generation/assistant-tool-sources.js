@@ -16,6 +16,7 @@ import { captureNoteToolLocked, isNoteTool } from '../notebooks/assistant.js';
 import { NotebookError } from '../notebooks/paths.js';
 import { formatDiff } from '../../public/scripts/notebooks/line-diff.js';
 import { buildAssistantAgent } from '../../public/scripts/neconyan-assistant-agent.js';
+import { normaliseBrowserMacroDraft } from '../../public/scripts/neconyan-assistant-macro-schema.js';
 import { EDITABLE_AGENT_FIELDS, EDITABLE_CHARACTER_FIELDS, PRESET_FIELDS, assistantToolMutates, assistantToolName,
     projectAssistantAgent, projectAssistantCharacter, projectAssistantPreset, validateAssistantPresetValue } from './assistant-tool-data.js';
 
@@ -26,6 +27,11 @@ const requireText = (value, name, nonempty = true) => {
     return value;
 };
 const relative = (dirs, filename) => path.relative(dirs.root, filename);
+const BROWSER_MACRO_FIELDS = Object.freeze(['name', 'template', 'description', 'args', 'expectedTemplate']);
+const browserMacroInput = input => {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) return input;
+    return Object.fromEntries(BROWSER_MACRO_FIELDS.filter(field => Object.hasOwn(input, field)).map(field => [field, input[field]]));
+};
 const toResult = result => {
     const value = { status: 'success', ...result };
     if (Buffer.byteLength(JSON.stringify(value)) > MAX_RESULT) throw invalid('The complete assistant tool result exceeds its reserved capacity.');
@@ -208,7 +214,16 @@ export function captureAssistantToolSourceLocked(lease, source, { avatar, name, 
         args: structuredClone(args), mutating: assistantToolMutates(tool) };
     if (isNoteTool(tool)) return captureNoteSource(lease, source, result);
     let resource = null, response = null, change = null;
-    if (tool === 'lorebooks') response = toResult({ books: lorebooks(lease).map(item => ({ name: item.name })) });
+    if (tool === 'browser-macro') {
+        try {
+            change = normaliseBrowserMacroDraft(browserMacroInput(args));
+        } catch (error) {
+            throw invalid(error instanceof Error ? error.message : 'The browser macro draft is invalid.');
+        }
+        // The definition itself lives only in the browser. This request carries
+        // the reviewed draft to the browser, never to account settings or cards.
+        resource = { kind: 'browser-macro', id: change.name };
+    } else if (tool === 'lorebooks') response = toResult({ books: lorebooks(lease).map(item => ({ name: item.name })) });
     else if (tool === 'lorebook-entries' || tool === 'lorebook-entry' || tool === 'edit-lorebook-entry') {
         const bookName = requireText(args.book, 'lorebook name');
         const selected = bookResource(lease, bookName);
