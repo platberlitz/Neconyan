@@ -9,6 +9,7 @@
 - PR #219 (2026-10-18) `ci(github): trigger Miso from staging pushes`
 - PR #220 (2026-10-18) `ci(github): run Miso on pull request events`
 - PR #221 (2026-10-18) `feat(agents): rerun after-reply agents from the message menu`
+- PR #222 (2026-10-18) `fix(chat): keep completed replies visible with aggressive unloading`
 
 ## v1.3.5
 
