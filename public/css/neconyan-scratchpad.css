@@ -1038,7 +1038,7 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     border-left: 1px solid var(--neco-border);
 }
 
-.scratchpad-segment-choice.is-selected {
+#neconyan-scratchpad .scratchpad-segment-choice.is-selected {
     background: var(--neco-ginger);
     color: var(--neco-on-accent);
     font-weight: 700;
