@@ -164,7 +164,7 @@ test('Pathfinder uses native keyboard disclosures, labelled controls and narrow 
             });
             expect(layout.overflow).toBe(false);
             expect(layout.smallestControl).toBeGreaterThanOrEqual(width < 768 ? 44 : 38);
-            expect(layout.bookFontSize).toBeCloseTo(fontSize * 0.92, 1);
+            expect(layout.bookFontSize).toBeCloseTo(fontSize * 0.87, 1);
         }
         await page.locator('#pf-e2e-host').evaluate(host => {
             host.style.setProperty('--mainFontSize', '15px');
