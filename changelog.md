@@ -18,6 +18,7 @@
 - PR #228 (2026-10-19) `feat(regex): draft rules with a connection profile on a neconyan-style page`
 - PR #229 (2026-10-19) `fix(theme): revive Calico Light and fix custom CSS tone selectors`
 - PR #230 (2026-10-19) `fix(scratchpad): tidy the Context tab and add more web search options`
+- PR #231 (2026-10-19) `fix(chat): keep the echo user header as narrow as the character's`
 
 ## v1.3.5
 
