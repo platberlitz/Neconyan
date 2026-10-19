@@ -69,6 +69,111 @@ the PR against staging and validate the resulting APK on the reporting device.
 
 ## Release preparation: 1.0.0
 
+### 19 October: 1.3.6 release, staging starts 1.3.7
+
+I audited PRs #210-232 against the assistant help, the handbook and the browser
+suite before promoting main. The biggest change is browser-first replies:
+ordinary Roleplay replies now build their prompts in the browser, so Macro
+Enhanced macros work in them, while Conversation replies, selected Notebook
+context, protected Guided corrections, Deep Swipe replacements and background
+requests still build on the server. In-app Macro Enhanced help, the tool tour
+and the assistant help still said Roleplay prompts refuse browser macros; they
+were corrected, and a real browser probe confirmed that an ordinary reply sent
+the expanded macro text to the provider.
+
+The audit found and fixed two application defects. Editing or hiding a message
+with automatic translation off asked the translation extension to clear a saved
+translation that didn't exist, which saved and reloaded the chat a second time
+and sent a server translation operation; Mewmory's new automatic hiding made it
+happen after replies. Clearing now only runs when a saved translation exists.
+An opened **Swipes** list in Scratchpad **Context** snapped shut whenever Context
+redrew in the background; its open state is now remembered per message. Both
+fixes have browser tests that fail on the old code and pass on the new.
+
+Startup had grown to 1,004 files against the unchanged 1,000-file budget, mostly
+from the rebuilt Macro Enhanced page. That page now loads when it's first shown,
+bringing the measured cold start to 982 files (1.3.5 measured 980). Three
+browser tests were corrected for the new reply routing: the server-boundary
+macro check now sends through the server workflow, the slash-command test
+restores the macro engine it switches off, and the eleven-Companion preview
+wait matches the existing 15-second wait in the same file. The preview delay
+measured 3.9-4.3 s against 4.1-4.5 s on 1.3.5, so it isn't a regression. The
+changelog bot had missed PRs #210 and #212-217; they were added by hand.
+
+The release commit is `b1e5d7a230e37ccc0f03b2037e514e722c5385d1`. Main was
+fast-forwarded to that exact staging commit through PR #233, without a merge
+commit. The running personal instance wasn't deployed as part of this release.
+
+The official handbook is published from `neconyan-docs` commit `9fbb4c8`,
+through Pages run `39208990014`. It covers Scratchpad web search, **Rerun
+agents**, Mewmory autosave, the Macro Enhanced page, the Regexes **Draft rule**
+card and update reloads, and rewrites every passage that said Roleplay prompts
+are built on the server. Strict build, 53-page site checks and the phone and
+desktop browser checks passed; nine changed live pages were checked for their
+new text. Assistant knowledge revision 44 passed source anchors, topic budgets
+and retrieval across all nine assistants, then both phone and desktop browser
+checks.
+
+The root and test dependencies were installed afresh from their exact lockfiles:
+905 root and 365 test packages. At `b1e5d7a2` the unit run passed 555 suites and
+7,610 tests with three existing Windows-only skips, and the server run passed
+2,886 tests. The explicit Mewmory script passed 100 tests at `56228549`; later
+commits only changed Scratchpad and changelog lines. Root/test lint, frontend
+budgets and the production build passed. Test lint retains 860 warnings and no
+errors. The character-colours module remains unminified because of its
+top-level await.
+
+All 16 browser groups have passing coverage: 1,925 passing tests and 26 existing
+skips. Passing groups were retained by exact commit and scope:
+
+- Run `39219259861` at `e18912a2`: groups 1-8, 10-13 and 16.
+- Run `39229117842` at the release commit: groups 9, 14 and 15, every group with
+  a Scratchpad test, after the Swipes fix. Group test lists were compared and
+  are identical between the two commits.
+
+The first full run `39201504627` at `2ef0fd4d` found the startup budget and the
+three outdated tests. PR #231 then added a browser test file, which changes how
+Playwright splits tests across groups, so the second full run `39208733122` at
+`104f489a` was needed; it surfaced the translation double save through the
+Mewmory hiding test run locally. Two failures were judged intermittent rather
+than corrected: a phone parallel-reply race in the server Agents suite (6/6
+local passes) and the phone Notes hand-off (10/10 local passes). Neither was
+retried on its own; the later full run covered both groups. The translation fix
+and PR #232 changed group membership again, so `39219259861` reran all 16. No
+assertion was weakened or skip added. The duplicate PR and main browser runs
+`39236594651` and `39237624693` were cancelled after the retained coverage had
+been verified. Pull Request Checks run `39236594488` passed all six jobs. The
+Miso merge check failed because main didn't yet contain `.github/miso`; it
+resolves now that main has the files.
+
+The five extra skips since 1.3.5 are new Mewmory browser tests that need their
+own disposable server. They were run locally against one, with the fixture
+provider: settings switches 7, main 3 and history hiding 2, all passing. Phone
+results are browser emulation, not physical-iPhone verification.
+
+Android run `39237709034` passed on the release commit without retries: signed
+build, WebView fixture and Android 11, 13 and 15 lifecycle/native checks. The
+optional historical native comparison wasn't requested and remains skipped.
+These are emulator results, not physical-phone tests.
+
+All nine build files passed independent verification: eight listed checksums,
+both APK signatures against the existing official certificate, native 16 KiB
+alignment, embedded commit/frontend files and matching provenance. Android
+manifest inspection confirmed the existing application ID, version `1.3.6`,
+code `1030600`, minimum API 30 and target API 36 in both APKs. Every one of the
+4,230 source ZIP files matches `git archive` of the release commit.
+
+The annotated tag `v1.3.6` resolves to the exact verified release commit and has
+message 'Neconyan 1.3.6'. The release is public, stable and latest, with all nine
+verified assets, at https://github.com/platberlitz/Neconyan/releases/tag/v1.3.6.
+All nine published files were downloaded again and matched the verified build
+files byte for byte, and their GitHub SHA-256 digests matched.
+
+Staging starts `1.3.7` with the root package version, both root lockfile version
+entries and the project-boundary expectations updated together. All six boundary
+tests and focused lint passed on Node 24. Main and the published tag retain the
+verified `1.3.6` release commit.
+
 ### 18 October: 1.3.5 release, staging starts 1.3.6
 
 I audited PRs #200-209 and fixed the release blockers before promoting main.
