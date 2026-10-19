@@ -309,7 +309,9 @@ for (const [viewport, phone] of [['desktop', false], ['phone', true]]) {
         expect(response.status(), await response.text()).toBe(202);
         const accepted = await response.json();
         await expect.poll(() => app.provider.calls.length).toBe(1);
-        await expect(page.getByLabel('Reply in progress')).toBeVisible();
+        // The server prepares eleven Companions before it answers the preview
+        // module and stream; locally that takes about four seconds, as in 1.3.5.
+        await expect(page.getByLabel('Reply in progress')).toBeVisible({ timeout: 15000 });
         await app.release();
         await fixture.account.settled(accepted.jobId);
         await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
