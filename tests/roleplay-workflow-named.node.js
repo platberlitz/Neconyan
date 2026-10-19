@@ -443,11 +443,12 @@ test('a routine page save after acceptance keeps the reply, and a real settings 
     const f = saved(t);
     const file = path.join(f.dirs.root, 'settings.json');
     const edit = change => fs.writeFileSync(file, JSON.stringify(change(JSON.parse(fs.readFileSync(file, 'utf8')))));
-    // Input history, the save counters and the Conversation store change on ordinary page saves.
+    // Input history, the save counters, the Conversation store and dialogue colour counts change on ordinary page saves.
     const { result } = await f.run('roleplay.reply', { text: 'Kept through a page save.', beforeTurn: () => edit(settings => ({
         ...settings, _version: 11, _settingsRevision: settings._settingsRevision + 1,
         accountStorage: { 'st--inputHistory': '["Where are you?"]' },
-        extension_settings: { ...settings.extension_settings, neconyan_conversation: { characters: { nova: { branches: {} } } } },
+        extension_settings: { ...settings.extension_settings, neconyan_conversation: { characters: { nova: { branches: {} } } },
+            'dialogue-colors': { sequence: 4, colorData: { nova: { colors: { nova: { dialogueCount: 3 } } } } } },
     })) });
     assert.equal(result.status, 'completed');
     assert.equal(f.records().at(-1).mes, 'Kept through a page save.');

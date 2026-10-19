@@ -1605,6 +1605,22 @@ test('the account captures saved books and refuses a changed book before the pro
     await assert.rejects(prepareRoleplayWorldInfo(f.scope, snapshot), { code: 'ROLEPLAY_SOURCE_CHANGED' });
 });
 
+test('dialogue colour counts saved while a reply streams keep the post-reply Agent check current', t => {
+    const f = fixture(t);
+    const file = path.join(f.scope.directories.root, 'settings.json');
+    const write = colours => fs.writeFileSync(file, JSON.stringify({ _settingsRevision: 1,
+        power_user: { auto_continue: { enabled: false } },
+        extension_settings: { 'dialogue-colors': colours, other: { kept: true } } }));
+    write({ sequence: 2, colorData: { nova: { colors: { nova: { dialogueCount: 1 } } } } });
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, f.source(), { avatar: 'Nova.png', maxContext: 100 });
+    write({ sequence: 4, colorData: { nova: { colors: { nova: { dialogueCount: 3 } } } } });
+    assert.doesNotThrow(() => assertRoleplayWorldInfoCurrent(f.scope, snapshot));
+    fs.writeFileSync(file, JSON.stringify({ _settingsRevision: 2, power_user: { auto_continue: { enabled: true } },
+        extension_settings: { 'dialogue-colors': {}, other: { kept: true } } }));
+    assert.throws(() => assertRoleplayWorldInfoCurrent(f.scope, snapshot), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+});
+
 test('a saved lore book cannot follow an alias or exchange its physical identity after admission', t => {
     const f = fixture(t);
     f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');

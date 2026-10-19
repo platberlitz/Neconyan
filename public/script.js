@@ -301,6 +301,7 @@ import {
     getInstructStoppingSequences,
 } from './scripts/instruct-mode.js';
 import { initLocales, showLanguageChoicePrompt, t } from './scripts/i18n.js';
+import { hasServedCodeChanged } from './scripts/server-restart-monitor.js';
 import { getFriendlyTokenizerName, getTokenCount, getTokenCountAsync, initTokenizers, saveTokenCache } from './scripts/tokenizers.js';
 import {
     user_avatar,
@@ -572,6 +573,7 @@ export let isChatSaving = false;
 export let firstRun = false;
 export let settingsReady = false;
 let currentVersion = '0.0.0';
+let loadedServerVersion = null;
 
 export let displayVersion = 'Neconyan';
 
@@ -978,6 +980,7 @@ async function getClientVersion() {
         const response = await fetch('/version');
         if (!response.ok) throw new Error(`Version request failed: ${response.status}`);
         const data = await response.json();
+        loadedServerVersion = data;
         CLIENT_VERSION = data.agent;
         currentVersion = data.pkgVersion;
         displayVersion = `Neconyan v${currentVersion}`;
@@ -987,6 +990,42 @@ async function getClientVersion() {
     } catch (err) {
         console.error('Couldn\'t get client version', err);
     }
+}
+
+let servedCodeCheck = null;
+let servedCodeToastShown = false;
+
+function canReloadForServedCode() {
+    return !isGenerating() && (!streamingProcessor || streamingProcessor.isFinished)
+        && this_edit_mes_id === undefined && !isChatSaving && !hasPendingChatSave()
+        && !String($('#send_textarea').val() ?? '').trim();
+}
+
+/**
+ * Reload a returning tab that still runs code from before a server update. An idle
+ * page reloads at once (held replies are recovered after the reload); a busy one
+ * offers the reload instead of discarding a draft, an edit or a running reply.
+ */
+function checkServedCodeIsCurrent() {
+    if (document.visibilityState === 'hidden' || !loadedServerVersion || servedCodeCheck) return;
+    servedCodeCheck = (async () => {
+        const response = await fetch('/version', { cache: 'no-store' });
+        if (!response.ok || !hasServedCodeChanged(loadedServerVersion, await response.json())) return;
+        if (canReloadForServedCode()) {
+            cancelDebounce(saveSettingsDebounced);
+            if (await saveSettings(0, { returnResult: true }) !== false && canReloadForServedCode()) {
+                location.reload();
+                return;
+            }
+        }
+        if (servedCodeToastShown) return;
+        servedCodeToastShown = true;
+        toastr.info(t`Neconyan was updated. Tap here to load the new version.`, t`Update ready`, {
+            timeOut: 0, extendedTimeOut: 0, tapToDismiss: true,
+            onclick: () => location.reload(),
+            onHidden: () => { servedCodeToastShown = false; },
+        });
+    })().catch(() => {}).finally(() => { servedCodeCheck = null; });
 }
 
 export function reloadMarkdownProcessor() {
@@ -1365,6 +1404,9 @@ async function firstLoadInit() {
         document.addEventListener('visibilitychange', scheduleHeldGenerationRecovery);
         window.addEventListener('pageshow', scheduleHeldGenerationRecovery);
         window.addEventListener('online', scheduleHeldGenerationRecovery);
+        document.addEventListener('visibilitychange', checkServedCodeIsCurrent);
+        window.addEventListener('pageshow', checkServedCodeIsCurrent);
+        window.addEventListener('online', checkServedCodeIsCurrent);
         configureCardScriptRuntime({
             getPowerUser: () => power_user,
             executeSlashCommandsWithOptions,
