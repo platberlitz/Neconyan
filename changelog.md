@@ -4,6 +4,7 @@
 
 ### Merged Staging PRs
 - PR #234 (2026-10-19) `fix(chat): give tide messages a readable card on desktop and tablet`
+- PR #235 (2026-10-19) `fix(composer): keep the phone composer visible after app switching`
 
 ## v1.3.6
 
