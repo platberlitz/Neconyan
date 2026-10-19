@@ -11,6 +11,8 @@ import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './i
 test.setTimeout(240000);
 
 const ANSWER = 'The group reply was written by the server.';
+// getByLabel scans every element's label on each poll, which blocks a busy group chat for seconds.
+const PREVIEW = '#neconyan-roleplay-preview[aria-label="Reply in progress"]';
 
 async function prepare(app, phone, companionCount = 0, companionTrigger = 'manual', stream = false, contextOptions = {}) {
     app.provider.mode.hold = ['conversation-fixture'];
@@ -123,8 +125,7 @@ for (const [viewport, phone, standalone] of [['desktop', false, false], ['iPhone
         await startNativeReply(page);
         const { jobId } = await (await submitted).json();
         await expect.poll(() => app.provider.calls.length, { timeout: 30000 }).toBe(1);
-        const preview = page.getByLabel('Reply in progress');
-        // The first preview module is loaded on demand in a fresh disposable account.
+        const preview = page.locator(PREVIEW);
         await expect(preview).toBeVisible({ timeout: 15000 });
         await expect(preview).toHaveClass(/\bmes\b/);
         await app.release();
@@ -302,20 +303,29 @@ for (const [viewport, phone] of [['desktop', false], ['phone', true]]) {
     test(`${viewport} group reply with eleven Companions appears without reopening the chat`, async ({ app }) => {
         const fixture = await prepare(app, phone, 11);
         const page = await openGroup(fixture);
+        const saves = [];
+        page.on('request', request => {
+            if (request.method() === 'POST' && request.url().endsWith('/api/chats/group/save')) {
+                // Integrity tokens and the save chain's receipt of the previous write change on every save.
+                const volatile = (key, value) => key === 'integrity' || key === 'operationKey' || (key === 'source' && value?.instanceId) ? undefined : value;
+                saves.push(JSON.stringify(JSON.parse(request.postData() ?? 'null'), volatile));
+            }
+        });
         const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit'));
         await page.locator('#send_textarea').fill('Keep this group chat open while replying.');
         await startNativeReply(page);
         const response = await submitted;
         expect(response.status(), await response.text()).toBe(202);
         const accepted = await response.json();
+        // Each save before the submission must carry something new; a repeat only delays the reply.
+        expect(saves.length).toBeGreaterThan(0);
+        expect(new Set(saves).size).toBe(saves.length);
         await expect.poll(() => app.provider.calls.length).toBe(1);
-        // The server prepares eleven Companions before it answers the preview
-        // module and stream; locally that takes about four seconds, as in 1.3.5.
-        await expect(page.getByLabel('Reply in progress')).toBeVisible({ timeout: 15000 });
+        await expect(page.locator(PREVIEW)).toBeVisible({ timeout: 15000 });
         await app.release();
         await fixture.account.settled(accepted.jobId);
         await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
-        await expect(page.getByLabel('Reply in progress')).toHaveCount(0);
+        await expect(page.locator(PREVIEW)).toHaveCount(0);
         expect((await readRows(fixture.file)).at(-1).mes).toBe(ANSWER);
         expect(app.provider.calls).toHaveLength(1);
     });

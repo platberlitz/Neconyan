@@ -37,8 +37,9 @@ function saveContext(group = false) {
         getCurrentChatId: () => 'story',
         chatGeneration: 1, getChatGeneration: () => 1,
         getChatBackupSaveOptions, getQueuedChatSaveAbortReason, uuidv4: randomUUID,
+        latestChatSave: null,
     });
-    load(context, 'script.js', ['saveChatConditional', 'saveMetadata']);
+    load(context, 'script.js', ['chatSaveFingerprint', 'saveChatConditional', 'saveMetadata']);
     return context;
 }
 
@@ -303,5 +304,67 @@ describe('strict host extension field writes', () => {
         expect(character.data.extensions.story.enabled).toBe(false);
         expect(state.characters[0].data.extensions).toEqual({});
         expect(form.val).not.toHaveBeenCalled();
+    });
+});
+
+describe('repeated chat saves', () => {
+    function reuseContext(group = false) {
+        const context = saveContext(group);
+        Object.assign(context, {
+            chat: [{ mes: 'Hello' }], chat_metadata: { integrity: 'one' }, this_chid: group ? undefined : 0,
+            groups: [{ id: 'group', members: [], date_last_chat: 1 }], getCurrentUserHandle: () => 'story-test',
+        });
+        return context;
+    }
+    const helperOf = (context, group) => group ? context.saveGroupChat : context.saveChat;
+
+    test.each([false, true])('reuses the previous compared save when nothing changed (group: %s)', async group => {
+        const context = reuseContext(group);
+        await expect(context.saveChatConditional({ throwOnError: true, skipUnchanged: true })).resolves.toBe(true);
+        // A new integrity token alone is the server's receipt, not a change to write.
+        context.chat_metadata.integrity = 'two';
+        await expect(context.saveChatConditional({ throwOnError: true, skipUnchanged: true })).resolves.toBe(true);
+        expect(helperOf(context, group)).toHaveBeenCalledTimes(1);
+        expect(context.saveTokenCache).toHaveBeenCalledTimes(1);
+    });
+
+    test('waits for a save still in progress and reuses it', async () => {
+        const context = reuseContext();
+        let finish;
+        context.saveChat.mockImplementationOnce(() => new Promise(resolve => finish = resolve));
+        const first = context.saveChatConditional({ skipUnchanged: true });
+        const second = context.saveChatConditional({ skipUnchanged: true });
+        await Promise.resolve();
+        finish(true);
+        await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
+        expect(context.saveChat).toHaveBeenCalledTimes(1);
+    });
+
+    test('writes again after a change, a plain save or a failed save', async () => {
+        const context = reuseContext();
+        await context.saveChatConditional({ skipUnchanged: true });
+        context.chat.push({ mes: 'Changed' });
+        await context.saveChatConditional({ skipUnchanged: true });
+        expect(context.saveChat).toHaveBeenCalledTimes(2);
+
+        await context.saveChatConditional();
+        await context.saveChatConditional({ skipUnchanged: true });
+        expect(context.saveChat).toHaveBeenCalledTimes(4);
+
+        context.saveChat.mockResolvedValueOnce(false);
+        context.chat.push({ mes: 'Refused' });
+        await expect(context.saveChatConditional({ skipUnchanged: true })).resolves.toBe(false);
+        await expect(context.saveChatConditional({ skipUnchanged: true })).resolves.toBe(true);
+        expect(context.saveChat).toHaveBeenCalledTimes(6);
+    });
+
+    test('never reuses a save for another chat or a save of explicit data', async () => {
+        const context = reuseContext();
+        await context.saveChatConditional({ skipUnchanged: true });
+        context.getCurrentChatId = () => 'other';
+        await context.saveChatConditional({ skipUnchanged: true });
+        await context.saveChatConditional({ skipUnchanged: true, chatName: 'other', chatData: [] });
+        await context.saveChatConditional({ skipUnchanged: true, chatName: 'other', chatData: [] });
+        expect(context.saveChat).toHaveBeenCalledTimes(4);
     });
 });
