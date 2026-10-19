@@ -165,8 +165,10 @@ describe('Regexes opens as a page led by Taro', () => {
         expect(page.assistant).toBe('taro');
         expect(page.name).toBe('Regexes');
         const steps = getToolTourSteps('regex', { isShown: () => true });
-        expect(steps.map(step => step.id)).toEqual(['welcome', 'new', 'editor', 'filter', 'bulk', 'presets', 'global', 'preset', 'scoped', 'done']);
+        expect(steps.map(step => step.id)).toEqual(['welcome', 'draft', 'new', 'editor', 'filter', 'bulk', 'global', 'preset', 'scoped', 'presets', 'done']);
         expect(steps.find(step => step.id === 'editor').body).toContain('Start from a recipe');
+        expect(steps.find(step => step.id === 'draft').targets).toEqual(['.regex_ai_page']);
+        expect(steps.find(step => step.id === 'draft').body).toContain('**Connections** page');
     });
 
     test('the rail item and the tool definition both open the page under one name', () => {
@@ -180,6 +182,22 @@ describe('Regexes opens as a page led by Taro', () => {
         expect(dropdown).toContain('regex_toolbar');
         expect(css).toContain('[data-tool-page=\'regex\'] .regex_settings > .inline-drawer > .inline-drawer-header');
         expect(css).toContain('#global_scripts_block');
+    });
+
+    test('the page leads with drafting a rule through a connection profile, and keeps presets last', () => {
+        const draftCard = dropdown.indexOf('class="regex_ai_page"');
+        expect(draftCard).toBeGreaterThan(-1);
+        expect(draftCard).toBeLessThan(dropdown.indexOf('regex_toolbar'));
+        expect(dropdown).toContain('id="regex_ai_page_profile"');
+        expect(dropdown).toContain('id="regex_ai_page_run"');
+        for (const scope of ['global', 'preset', 'scoped']) {
+            expect(dropdown).toContain(`data-regex-scope="${scope}"`);
+        }
+        expect(dropdown.indexOf('id="regex_presets_block"')).toBeGreaterThan(dropdown.indexOf('id="scoped_scripts_block"'));
+        for (const id of ['open_regex_editor', 'open_preset_editor', 'open_scoped_editor', 'import_regex', 'regex_bulk_edit', 'open_regex_debugger', 'saved_regex_scripts', 'saved_preset_scripts', 'saved_scoped_scripts']) {
+            expect(dropdown).toContain(`id="${id}"`);
+        }
+        expect(css).toContain('.regex_ai_page');
     });
 });
 

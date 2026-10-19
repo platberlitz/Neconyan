@@ -7,32 +7,80 @@
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content">
-            <div class="flex-container regex_toolbar">
-                <div id="open_regex_editor" class="menu_button menu_button_icon" data-i18n="[title]ext_regex_new_global_script_desc" title="New global regex script">
-                    <i class="fa-solid fa-pen-to-square"></i>
-                    <small data-i18n="ext_regex_new_global_script">+ Global</small>
+            <section class="regex_ai_page" aria-labelledby="regex_ai_page_title">
+                <div class="regex_ai_page_head">
+                    <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+                    <div>
+                        <strong id="regex_ai_page_title" data-i18n="Draft a rule with a model">Draft a rule with a model</strong>
+                        <small data-i18n="regex_ai_page_desc">Say what should change in plain words. A model writes the pattern, then you test it in the editor before saving.</small>
+                    </div>
                 </div>
-                <div id="open_preset_editor" class="menu_button menu_button_icon" data-i18n="[title]ext_regex_new_preset_script_desc" title="New preset regex script">
-                    <i class="fa-solid fa-sliders"></i>
-                    <small data-i18n="ext_regex_new_preset_script">+ Preset</small>
+                <textarea id="regex_ai_page_request" class="text_pole" rows="2" aria-labelledby="regex_ai_page_title" data-i18n="[placeholder]regex_ai_request_placeholder" placeholder="For example: hide anything between asterisks, or turn lines starting with OOC: into small grey text"></textarea>
+                <div class="regex_ai_page_options">
+                    <div class="regex_ai_page_scope" role="group" aria-label="Save the rule to" data-i18n="[aria-label]Save the rule to">
+                        <small data-i18n="Save to">Save to</small>
+                        <div class="regex_ai_scope_pills">
+                            <button type="button" class="menu_button regex_ai_scope" data-regex-scope="global" aria-pressed="true" data-i18n="[title]regex_scope_global_desc" title="Runs in every chat">
+                                <i class="fa-solid fa-globe" aria-hidden="true"></i>
+                                <span data-i18n="Global">Global</span>
+                            </button>
+                            <button type="button" class="menu_button regex_ai_scope" data-regex-scope="preset" aria-pressed="false" data-i18n="[title]regex_scope_preset_desc" title="Belongs to the current chat preset">
+                                <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                                <span data-i18n="Preset">Preset</span>
+                            </button>
+                            <button type="button" class="menu_button regex_ai_scope" data-regex-scope="scoped" aria-pressed="false" data-i18n="[title]regex_scope_character_desc" title="Belongs to this character and travels with its card">
+                                <i class="fa-solid fa-address-card" aria-hidden="true"></i>
+                                <span data-i18n="Character">Character</span>
+                            </button>
+                        </div>
+                    </div>
+                    <label class="regex_ai_page_profile_label" for="regex_ai_page_profile">
+                        <small data-i18n="Connection">Connection</small>
+                        <select id="regex_ai_page_profile" class="text_pole"></select>
+                    </label>
+                    <button type="button" id="regex_ai_page_run" class="menu_button menu_button_primary menu_button_icon">
+                        <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+                        <span data-i18n="Draft rule">Draft rule</span>
+                    </button>
                 </div>
-                <div id="open_scoped_editor" class="menu_button menu_button_icon" data-i18n="[title]ext_regex_new_scoped_script_desc" title="New scoped regex script">
-                    <i class="fa-solid fa-address-card"></i>
-                    <small data-i18n="ext_regex_new_scoped_script">+ Scoped</small>
+                <small id="regex_ai_page_hint" class="regex_ai_page_hint" aria-live="polite"></small>
+            </section>
+            <div class="flex-container regex_toolbar" role="toolbar" aria-label="Rule tools" data-i18n="[aria-label]Rule tools">
+                <div class="regex_toolbar_group">
+                    <small class="regex_toolbar_label" data-i18n="Write a rule yourself">Write a rule yourself</small>
+                    <div class="regex_toolbar_buttons">
+                        <div id="open_regex_editor" class="menu_button menu_button_icon" role="button" tabindex="0" data-i18n="[title]regex_new_global_desc" title="New rule that runs in every chat">
+                            <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                            <span data-i18n="Global">Global</span>
+                        </div>
+                        <div id="open_preset_editor" class="menu_button menu_button_icon" role="button" tabindex="0" data-i18n="[title]regex_new_preset_desc" title="New rule for the current chat preset">
+                            <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                            <span data-i18n="Preset">Preset</span>
+                        </div>
+                        <div id="open_scoped_editor" class="menu_button menu_button_icon" role="button" tabindex="0" data-i18n="[title]regex_new_character_desc" title="New rule for this character">
+                            <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                            <span data-i18n="Character">Character</span>
+                        </div>
+                    </div>
                 </div>
-                <div id="import_regex" class="menu_button menu_button_icon">
-                    <i class="fa-solid fa-file-import"></i>
-                    <small data-i18n="ext_regex_import_script">Import</small>
-                </div>
-                <input type="file" id="import_regex_file" hidden accept="*.json" multiple />
-                <label for="regex_bulk_edit" class="menu_button menu_button_icon">
-                    <input id="regex_bulk_edit" type="checkbox" class="displayNone" />
-                    <i class="fa-solid fa-edit"></i>
-                    <small data-i18n="ext_regex_bulk_edit">Bulk Edit</small>
-                </label>
-                <div id="open_regex_debugger" class="menu_button menu_button_icon" data-i18n="[title]ext_regex_debugger_desc" title="Advanced Regex Debugger">
-                    <i class="fa-solid fa-bug-slash"></i>
-                    <small data-i18n="ext_regex_debugger">Debugger</small>
+                <div class="regex_toolbar_group">
+                    <small class="regex_toolbar_label" data-i18n="Manage">Manage</small>
+                    <div class="regex_toolbar_buttons">
+                        <div id="import_regex" class="menu_button menu_button_icon" role="button" tabindex="0">
+                            <i class="fa-solid fa-file-import" aria-hidden="true"></i>
+                            <span data-i18n="ext_regex_import_script">Import</span>
+                        </div>
+                        <input type="file" id="import_regex_file" hidden accept="*.json" multiple />
+                        <label for="regex_bulk_edit" class="menu_button menu_button_icon">
+                            <input id="regex_bulk_edit" type="checkbox" class="displayNone" />
+                            <i class="fa-solid fa-list-check" aria-hidden="true"></i>
+                            <span data-i18n="Select several">Select several</span>
+                        </label>
+                        <div id="open_regex_debugger" class="menu_button menu_button_icon" role="button" tabindex="0" data-i18n="[title]ext_regex_debugger_desc" title="Advanced Regex Debugger">
+                            <i class="fa-solid fa-bug-slash" aria-hidden="true"></i>
+                            <span data-i18n="ext_regex_debugger">Debugger</span>
+                        </div>
+                    </div>
                 </div>
             </div>
             <hr class="regex_bulk_operations_hr" />
@@ -71,8 +119,48 @@
             </div>
             <label class="regex_script_filter_row flex-container alignItemsCenter" for="regex_script_filter">
                 <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-                <input id="regex_script_filter" class="text_pole flex1" type="search" autocomplete="off" data-i18n="[placeholder]Find a script by name" placeholder="Find a script by name" />
+                <input id="regex_script_filter" class="text_pole flex1" type="search" autocomplete="off" aria-label="Find a rule by name" data-i18n="[placeholder]Find a rule by name;[aria-label]Find a rule by name" placeholder="Find a rule by name" />
             </label>
+            <hr />
+            <div id="global_scripts_block">
+                <div class="regex_block_head">
+                    <i class="fa-solid fa-globe" aria-hidden="true"></i>
+                    <strong data-i18n="Global rules">Global rules</strong>
+                    <span class="regex_block_count" data-regex-count-for="saved_regex_scripts"></span>
+                </div>
+                <small data-i18n="regex_global_rules_desc">Run in every chat, whoever you talk to.</small>
+                <div id="saved_regex_scripts" data-empty-text="No rules here yet" data-i18n="[data-empty-text]No rules here yet" class="flex-container regex-script-container flexFlowColumn"></div>
+            </div>
+            <hr />
+            <div id="preset_scripts_block">
+                <div class="regex_block_head">
+                    <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                    <strong data-i18n="Preset rules">Preset rules</strong>
+                    <span class="regex_block_count" data-regex-count-for="saved_preset_scripts"></span>
+                    <label id="toggle_preset_regex" class="checkbox flex-container" for="regex_preset_toggle">
+                        <input type="checkbox" id="regex_preset_toggle" class="enable_scoped" />
+                        <span class="regex-toggle-on fa-solid fa-toggle-on fa-lg" data-i18n="[title]ext_regex_disallow_preset" title="Disallow using preset regex"></span>
+                        <span class="regex-toggle-off fa-solid fa-toggle-off fa-lg" data-i18n="[title]ext_regex_allow_preset" title="Allow using preset regex"></span>
+                    </label>
+                </div>
+                <small data-i18n="regex_preset_rules_desc">Belong to the current chat preset and switch with it.</small>
+                <div id="saved_preset_scripts" data-empty-text="No rules here yet" data-i18n="[data-empty-text]No rules here yet" class="flex-container regex-script-container flexFlowColumn"></div>
+            </div>
+            <hr />
+            <div id="scoped_scripts_block">
+                <div class="regex_block_head">
+                    <i class="fa-solid fa-address-card" aria-hidden="true"></i>
+                    <strong data-i18n="Character rules">Character rules</strong>
+                    <span class="regex_block_count" data-regex-count-for="saved_scoped_scripts"></span>
+                    <label id="toggle_scoped_regex" class="checkbox flex-container" for="regex_scoped_toggle">
+                        <input type="checkbox" id="regex_scoped_toggle" class="enable_scoped" />
+                        <span class="regex-toggle-on fa-solid fa-toggle-on fa-lg" data-i18n="[title]ext_regex_disallow_scoped" title="Disallow using scoped regex"></span>
+                        <span class="regex-toggle-off fa-solid fa-toggle-off fa-lg" data-i18n="[title]ext_regex_allow_scoped" title="Allow using scoped regex"></span>
+                    </label>
+                </div>
+                <small data-i18n="regex_character_rules_desc">Belong to this character and travel with its card.</small>
+                <div id="saved_scoped_scripts" data-empty-text="No rules here yet" data-i18n="[data-empty-text]No rules here yet" class="flex-container regex-script-container flexFlowColumn"></div>
+            </div>
             <hr />
             <div id="regex_presets_block">
                 <div class="flex-container alignItemsBaseline">
@@ -88,46 +176,6 @@
                     <div id="regex_preset_apply" class="menu_button fa-solid fa-recycle" data-i18n="[title]ext_regex_preset_apply" title="Re-apply current preset"></div>
                     <div id="regex_preset_delete" class="menu_button fa-solid fa-trash" data-i18n="[title]ext_regex_preset_delete" title="Delete current preset"></div>
                 </div>
-            </div>
-            <hr />
-            <div id="global_scripts_block">
-                <div>
-                    <strong data-i18n="ext_regex_global_scripts">Global Scripts</strong>
-                </div>
-                <small data-i18n="ext_regex_global_scripts_desc">
-                    Available for all characters. Saved to local settings.
-                </small>
-                <div id="saved_regex_scripts" no-scripts-text="No scripts found" data-i18n="[no-scripts-text]No scripts found" class="flex-container regex-script-container flexFlowColumn"></div>
-            </div>
-            <hr />
-            <div id="preset_scripts_block">
-                <div class="flex-container alignItemsBaseline">
-                    <strong class="flex1" data-i18n="ext_regex_preset_scripts">Preset Scripts</strong>
-                    <label id="toggle_preset_regex" class="checkbox flex-container" for="regex_preset_toggle">
-                        <input type="checkbox" id="regex_preset_toggle" class="enable_scoped" />
-                        <span class="regex-toggle-on fa-solid fa-toggle-on fa-lg" data-i18n="[title]ext_regex_disallow_preset" title="Disallow using preset regex"></span>
-                        <span class="regex-toggle-off fa-solid fa-toggle-off fa-lg" data-i18n="[title]ext_regex_allow_preset" title="Allow using preset regex"></span>
-                    </label>
-                </div>
-                <small data-i18n="ext_regex_preset_scripts_desc">
-                    Only available for this preset. Saved to the preset data.
-                </small>
-                <div id="saved_preset_scripts" no-scripts-text="No scripts found" data-i18n="[no-scripts-text]No scripts found" class="flex-container regex-script-container flexFlowColumn"></div>
-            </div>
-            <hr />
-            <div id="scoped_scripts_block">
-                <div class="flex-container alignItemsBaseline">
-                    <strong class="flex1" data-i18n="ext_regex_scoped_scripts">Scoped Scripts</strong>
-                    <label id="toggle_scoped_regex" class="checkbox flex-container" for="regex_scoped_toggle">
-                        <input type="checkbox" id="regex_scoped_toggle" class="enable_scoped" />
-                        <span class="regex-toggle-on fa-solid fa-toggle-on fa-lg" data-i18n="[title]ext_regex_disallow_scoped" title="Disallow using scoped regex"></span>
-                        <span class="regex-toggle-off fa-solid fa-toggle-off fa-lg" data-i18n="[title]ext_regex_allow_scoped" title="Allow using scoped regex"></span>
-                    </label>
-                </div>
-                <small data-i18n="ext_regex_scoped_scripts_desc">
-                    Only available for this character. Saved to the card data.
-                </small>
-                <div id="saved_scoped_scripts" no-scripts-text="No scripts found" data-i18n="[no-scripts-text]No scripts found" class="flex-container regex-script-container flexFlowColumn"></div>
             </div>
         </div>
     </div>
