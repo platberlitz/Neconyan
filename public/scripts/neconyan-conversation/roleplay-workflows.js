@@ -273,10 +273,26 @@ async function dialogueColorsReady() {
     return true;
 }
 
+let dialogueColorsModule = null;
+
+function loadDialogueColorsModule() {
+    dialogueColorsModule ??= import('../extensions/third-party/sillytavern-character-colors/src/main.js').catch(error => {
+        dialogueColorsModule = null;
+        throw error;
+    });
+    return dialogueColorsModule;
+}
+
+/** Resolve the already-running extension's module early; a busy page can delay a fresh import by a few hundred milliseconds at send time. */
+function prewarmDialogueColorsModule() {
+    if (!globalThis.__dialogueColorsRuntime_v1?.initialized) return;
+    void loadDialogueColorsModule().catch(() => {});
+}
+
 /** Capture the loaded extension's real macro, after its saved settings are ready. */
 async function loadedDialogueColorsMacro() {
     if (!await dialogueColorsReady()) return '';
-    const { resolveDialogueColorsMacro } = await import('../extensions/third-party/sillytavern-character-colors/src/main.js');
+    const { resolveDialogueColorsMacro } = await loadDialogueColorsModule();
     const value = resolveDialogueColorsMacro();
     if (typeof value !== 'string') throw new Error('Dialogue Colors could not prepare its prompt instruction.');
     return value;
@@ -654,7 +670,13 @@ export async function submitRoleplayWorkflow({ name, intent: named = {}, page = 
     }
 }
 
+// The preview card waits for this module, so fetch it while the chat is still saving.
+function preloadRoleplayPreview() {
+    void import('./roleplay-preview.js').catch(() => {});
+}
+
 async function submitRoleplayWorkflowRequest({ name, intent, locator, anchorIndex, chosen, maxTokens, account }) {
+    preloadRoleplayPreview();
     const stamp = roleplayAccountStamp().account;
     const signature = JSON.stringify([account, name, intent, anchorIndex, chosen, maxTokens, locator, stamp]);
     const known = pending.get(account);
@@ -677,7 +699,7 @@ async function submitRoleplayWorkflowRequest({ name, intent, locator, anchorInde
     // Registered before the request, so a workflow that finishes before the
     // response is read still resolves the caller's wait.
     const finished = awaitFinished(payload.key);
-    await saveChatConditional({ throwOnError: true, account });
+    await saveChatConditional({ throwOnError: true, account, skipUnchanged: true });
     let accepted;
     try {
         accepted = await postSubmission(payload, account);
@@ -712,6 +734,7 @@ async function submitRoleplayWorkflowRequest({ name, intent, locator, anchorInde
 export async function submitRoleplayGroupTurn({ groupId, forcedAvatars, generationId, signal = null, account = getCurrentUserHandle() }) {
     const chatName = String(getCurrentChatId() || '').replace(/\.jsonl$/, '');
     if (!chatName || !groupId) throw new Error('Open a saved group chat before generating.');
+    preloadRoleplayPreview();
     const locator = { chat: chatName, group: true, groupId: String(groupId) };
     // Captured once, so the settings-proof retry replays the same instruction.
     const bundledMacros = await captureBundledMacros();
@@ -728,7 +751,7 @@ export async function submitRoleplayGroupTurn({ groupId, forcedAvatars, generati
         account: stamp,
     };
     const finished = awaitFinished(payload.key);
-    await saveChatConditional({ throwOnError: true, account });
+    await saveChatConditional({ throwOnError: true, account, skipUnchanged: true });
     // Chat-save listeners may change settings, so confirm them after that write.
     payload.acknowledgement = { account, settingsRevision: await acknowledgedSettingsRevision() };
     let accepted;
@@ -932,7 +955,9 @@ export function initNativeRoleplayWorkflows() {
     globalThis.addEventListener?.('online', reconnect);
     // The account binding arrives after the first paint, so discovery retries then.
     globalThis.addEventListener?.('sb:roleplay-account-bound', resume);
+    prewarmDialogueColorsModule();
     eventSource.on(event_types.CHAT_CHANGED, () => {
+        prewarmDialogueColorsModule();
         syncJobControls();
         if (isVisible() && getCurrentChatId() && !busyName && !isGenerating() && !activeReload) {
             void resumeNativeRoleplayWorkflowObservation({ attachOnly: true });

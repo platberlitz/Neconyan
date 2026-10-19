@@ -17500,7 +17500,57 @@ export async function saveMetadata(options = {}) {
     return await saveChatConditional(options);
 }
 
+/** @type {{ fingerprint: string, written: Promise<boolean> } | null} */
+let latestChatSave = null;
+
+/**
+ * Describes everything a plain chat save writes, so an identical save can reuse the previous one.
+ * @param {object} options Save options
+ * @returns {string|null} Fingerprint, or null when the save cannot be compared
+ */
+function chatSaveFingerprint(options) {
+    if (options.chatName !== undefined || options.withMetadata !== undefined || options.mesId !== undefined || options.chatData !== undefined) {
+        return null;
+    }
+    try {
+        const group = selected_group ? groups.find(x => x.id == selected_group) : null;
+        return JSON.stringify([
+            options.account ?? getCurrentUserHandle(),
+            selected_group ?? null,
+            this_chid ?? null,
+            getCurrentChatId() ?? null,
+            chatGeneration,
+            Boolean(options.deferBackup),
+            Boolean(options.allowShrink),
+            group ? { ...group, date_last_chat: undefined } : null,
+            { ...chat_metadata, integrity: undefined },
+            chat,
+        ]);
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Saves the current chat, then its token cache and prompt itemisation.
+ * @param {object} [options] Save options
+ * @param {boolean} [options.skipUnchanged] Reuse the previous save when it wrote this exact chat to the server
+ * @returns {Promise<boolean>}
+ */
 export async function saveChatConditional(options = {}) {
+    const fingerprint = options.skipUnchanged ? chatSaveFingerprint(options) : null;
+    const latest = latestChatSave;
+    if (fingerprint !== null && latest?.fingerprint === fingerprint) {
+        // The Conversation aside and the Roleplay submission both save before a reply starts;
+        // when nothing changed in between, the second write would only repeat the first.
+        if (await latest.written) return true;
+        return await saveChatConditional({ ...options, skipUnchanged: false });
+    }
+    /** @type {(written: boolean) => void} */
+    let markWritten = () => {};
+    const written = new Promise(resolve => markWritten = resolve);
+    // Any other save may write something newer, so only a compared save is remembered.
+    latestChatSave = fingerprint === null ? null : { fingerprint, written };
     try {
         cancelDebouncedChatSave();
         // This save already captures the current metadata; do not repeat it when its timer fires.
@@ -17520,6 +17570,8 @@ export async function saveChatConditional(options = {}) {
             return false;
         }
 
+        // The server copy is current; the browser caches below don't change what it reads.
+        markWritten(true);
         // Save token and prompts cache to IndexedDB storage
         await saveTokenCache();
         await saveItemizedPrompts(getCurrentChatId(), { throwOnError: options.throwOnPromptError === true });
@@ -17531,6 +17583,7 @@ export async function saveChatConditional(options = {}) {
         }
         return false;
     } finally {
+        markWritten(false);
         setChatSaveActive(false);
     }
 }
