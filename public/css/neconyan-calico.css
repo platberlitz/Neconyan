@@ -57,12 +57,6 @@
     --neco-pink: color-mix(in oklch, var(--SmartThemeQuoteColor) 55%, #efb0bd);
 }
 
-:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'][data-neconyan-accent='custom'] body.neconyan #neconyan-workspace-rail,
-:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'][data-neconyan-accent='custom'] body.neconyan #sb-mobile-nav-content {
-    --neco-ginger: color-mix(in oklch, var(--SmartThemeQuoteColor) 72%, #fff);
-    --neco-ginger-hover: color-mix(in oklch, var(--SmartThemeUnderlineColor) 40%, #fff);
-}
-
 /* Accent touches every shell style shares: the current page, section labels, top bar edge and selected text. */
 body.neconyan #neconyan-workspace-rail button:is([aria-current='page'], .is-active) {
     background: color-mix(in oklch, var(--neco-ginger) 18%, var(--neco-raised));
@@ -84,28 +78,6 @@ body.neconyan #top-bar {
 body.neconyan ::selection {
     background: color-mix(in srgb, var(--neco-ginger) 38%, transparent);
     color: inherit;
-}
-
-:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan #neconyan-workspace-rail,
-:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan #sb-mobile-nav-content {
-    --neco-rail: #343735;
-    --neco-ink: #fff3d9;
-    --neco-muted: #d6cbbb;
-    --neco-border: #615f54;
-    --neco-raised: #54564a;
-    --neco-ginger: #e0ae78;
-    --neco-ginger-hover: #f3e6d1;
-    color: var(--neco-ink);
-}
-
-:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan .neconyan-rail-footer kbd {
-    background: var(--neco-raised);
-}
-
-:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan #sb-mobile-nav-content .sb-nav-item {
-    --sb-card-bg: var(--neco-raised);
-    background: var(--neco-raised);
-    color: var(--neco-ink);
 }
 
 :root[data-neconyan-palette='calico'] body.neconyan.neconyan-home-visible #neconyan-home-host,
@@ -720,7 +692,7 @@ body.neconyan :is(#world_popup, #SillyTavernImportSection, #sb_character_import_
 }
 
 /* The inner Settings navigator follows the light surface, including its
-   labels and icons. The outer rail keeps its existing dark treatment. */
+   labels and icons. */
 :root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan :is(.sb-settings-nav-column, .sb-settings-tabs-nav) {
     background: color-mix(in srgb, var(--neco-surface) 92%, transparent) !important;
     color: var(--neco-ink) !important;

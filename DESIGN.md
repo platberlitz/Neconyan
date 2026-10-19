@@ -22,7 +22,7 @@ All colours flow from a small token set on `body.neconyan`. Themes only change S
 | `--neco-canvas` | Page background behind everything | `#161716` | `#f6f2e8` |
 | `--neco-surface` | Panels, sheets, cards, the bottom bar box | `#242420` | `#fffaf0` |
 | `--neco-raised` | Hover and active fills, chips | `#302e29` | mix of surface and ink |
-| `--neco-rail` | Workspace sidebar and phone drawer | `#1b1c1a` | `#343735` (the rail stays dark) |
+| `--neco-rail` | Workspace sidebar and phone drawer | `#1b1c1a` | `#fffaf0` (a light rail, tinted with a little ginger) |
 | `--neco-ink` | Body text | `#f6edda` | `#303331` |
 | `--neco-muted` | Secondary text, hints, icons at rest | `#ddd0bf` | `#66675f` |
 | `--neco-ginger` | Accent: active tab, focus ring, Send, links | `#d69270` | `#8f4f22` |

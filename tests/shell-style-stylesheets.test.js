@@ -186,7 +186,8 @@ describe('shell style runtime stylesheets', () => {
 
         const calico = stripCssBlockComments(readSource('public', 'css', 'neconyan-calico.css'));
         expect(calico).toContain('--neco-pink: color-mix(in oklch, var(--SmartThemeQuoteColor) 55%, #efb0bd);');
-        expect(calico).toMatch(/\[data-neconyan-calico-tone='light'\]\[data-neconyan-accent='custom'\] body\.neconyan #neconyan-workspace-rail,[^{]*\{[^}]*--neco-ginger: color-mix\(in oklch, var\(--SmartThemeQuoteColor\)/);
+        // Calico Light keeps a light rail, so a picked accent is not lightened there.
+        expect(calico).not.toMatch(/\[data-neconyan-calico-tone='light'\][^{]*#neconyan-workspace-rail[^{]*\{[^}]*--neco-(?:rail|ink|ginger):/);
         expect(calico).toMatch(/body\.neconyan ::selection \{[^}]*var\(--neco-ginger\)/);
     });
 

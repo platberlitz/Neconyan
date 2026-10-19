@@ -113,7 +113,7 @@ describe('Neconyan accent color profiles', () => {
         expect(css).toContain(':root[data-neconyan-accent=\'custom\'] body.neconyan { --neco-accent-secondary: var(--SmartThemeUnderlineColor); }');
         expect(css.match(/--neco-accent-gradient: ([^;]+);/)[1]).toContain('var(--neco-accent-secondary)');
         expect(calico).toContain('box-shadow: inset 3px 0 0 var(--neco-accent-secondary);');
-        expect(calico).toContain('--neco-ginger-hover: color-mix(in oklch, var(--SmartThemeUnderlineColor) 40%, #fff);');
+        expect(calico).not.toContain('--neco-ginger-hover: color-mix(in oklch, var(--SmartThemeUnderlineColor) 40%, #fff);');
     });
 
     test('gives custom secondary accents selected navigation surfaces without changing primary actions', () => {
