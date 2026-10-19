@@ -128,6 +128,7 @@ const app = {
     draftKey: '',
     previews: new Map(),
     foldedThinking: new Set(),
+    openLorebooks: new Set(),
     watchers: new Map(),
     imageWatchers: new Map(),
     imageJobSignatures: new Map(),
@@ -1959,8 +1960,26 @@ function renderLore(settings) {
             list.append(h('p', { class: 'scratchpad-muted', text: lore.books.length ? t`The active lorebooks have no entries Scratchpad can read.` : t`No lorebooks are active in this chat.` }));
             return;
         }
-        list.append(h('p', { class: 'scratchpad-muted', text: t`Active lorebooks: ${lore.books.join(', ')}` }));
-        for (const entry of lore.entries) list.append(renderLoreEntry(entry));
+        const byBook = new Map(lore.books.map(book => [book, []]));
+        for (const entry of lore.entries) {
+            if (!byBook.has(entry.world)) byBook.set(entry.world, []);
+            byBook.get(entry.world).push(entry);
+        }
+        for (const book of byBook.keys()) {
+            const entries = byBook.get(book);
+            const shared = entries.filter(entry => entry.included).length;
+            list.append(h('details', {
+                class: 'scratchpad-lore-book',
+                open: app.openLorebooks.has(book),
+                ontoggle: event => app.openLorebooks[event.currentTarget.open ? 'add' : 'delete'](book),
+            },
+            h('summary', {},
+                h('span', { class: 'scratchpad-lore-book-name', text: book, 'data-i18n-ignore': '' }),
+                h('span', { class: 'scratchpad-lore-book-count', text: t`${shared} of ${entries.length} shared` })),
+            entries.length
+                ? h('div', { class: 'scratchpad-lore-book-entries' }, entries.map(renderLoreEntry))
+                : h('p', { class: 'scratchpad-muted', text: t`This lorebook has no entries Scratchpad can read.` })));
+        }
     }).catch(error => {
         if (!list.isConnected) return;
         clear(list);
@@ -1994,7 +2013,7 @@ function renderLoreEntry(entry) {
     return h('div', { class: `scratchpad-lore-entry${entry.included ? ' is-included' : ''}` },
         h('div', { class: 'scratchpad-lore-head' },
             h('strong', { text: entry.title || t`Untitled entry` }),
-            h('small', { text: `${entry.world} · ${status}` })),
+            h('small', { text: status })),
         choices);
 }
 

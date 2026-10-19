@@ -4,6 +4,8 @@ import { expect } from '@playwright/test';
 import { MODEL, test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 
+const LONG_LORE_TITLE = 'Nightshade_by_the_garden_gate_with_a_very_long_unbroken_entry_title';
+
 async function openScratchpad(page) {
     await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
     await expect(page.getByRole('textbox', { name: 'Message for Scratchpad', exact: true })).toBeEnabled();
@@ -248,6 +250,7 @@ for (const phone of [false, true]) {
         if (phone) await installIPhoneSafari(account.context, { standalone: true });
         await account.post('/api/worldinfo/edit', { name: 'Scratchpad Garden', data: { entries: {
             0: { uid: 0, comment: 'Moonflower', key: ['moonflower'], content: 'Moonflowers only bloom at midnight.' },
+            1: { uid: 1, comment: LONG_LORE_TITLE, key: ['nightshade'], content: 'Nightshade grows by the gate.' },
         } } });
         app.provider.mode.streamReply = { first: 'A streamed Scratchpad ', rest: 'fixture reply.' };
         const page = await account.open();
@@ -270,6 +273,35 @@ for (const phone of [false, true]) {
         }).toEqual([[1, 512]]);
         await page.getByRole('tab', { name: 'Context', exact: true }).click();
         await expect(page.locator('.scratchpad-lore')).toContainText('Shared: keyword found');
+        const book = page.locator('.scratchpad-lore-book', { hasText: 'Scratchpad Garden' });
+        await expect(book.locator('summary')).toContainText('1 of 2 shared');
+        await expect(book).not.toHaveAttribute('open');
+        await expect(book.locator('.scratchpad-lore-entry').first()).toBeHidden();
+        await book.locator('summary').click();
+        const longChoices = page.getByRole('group', { name: `Share ${LONG_LORE_TITLE}` });
+        await longChoices.getByRole('button', { name: 'Always', exact: true }).click();
+        await expect(longChoices.getByRole('button', { name: 'Always', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        await expect(book).toHaveAttribute('open', '');
+        await expect(book.locator('summary')).toContainText('2 of 2 shared');
+        const contextLayout = await page.locator('.scratchpad-panel-context').evaluate(panel => {
+            panel.scrollLeft = 200;
+            const selected = window.getComputedStyle(panel.querySelector('.scratchpad-segment-choice.is-selected'));
+            const resolve = value => {
+                const probe = document.createElement('span');
+                probe.style.color = value;
+                panel.append(probe);
+                const color = window.getComputedStyle(probe).color;
+                probe.remove();
+                return color;
+            };
+            const ginger = resolve('var(--neco-ginger)');
+            const onAccent = resolve('var(--neco-on-accent)');
+            return { scrollLeft: panel.scrollLeft, overflow: panel.scrollWidth - panel.clientWidth, background: selected.backgroundColor, color: selected.color, ginger, onAccent };
+        });
+        expect(contextLayout.scrollLeft).toBe(0);
+        expect(contextLayout.overflow).toBe(0);
+        expect(contextLayout.background).toBe(contextLayout.ginger);
+        expect(contextLayout.color).toBe(contextLayout.onAccent);
         await page.getByRole('button', { name: 'Show preview', exact: true }).click();
         await expect(page.locator('.scratchpad-preview-text')).toContainText('Moonflowers only bloom at midnight.');
         const preview = await page.locator('.scratchpad-preview-text').textContent();

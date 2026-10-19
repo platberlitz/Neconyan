@@ -990,6 +990,60 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     gap: 6px;
 }
 
+.scratchpad-lore-book {
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+}
+
+.scratchpad-lore-book > summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 8px 12px;
+    list-style: none;
+    cursor: pointer;
+}
+
+.scratchpad-lore-book > summary::-webkit-details-marker {
+    display: none;
+}
+
+.scratchpad-lore-book > summary::before {
+    content: '';
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    rotate: -45deg;
+}
+
+.scratchpad-lore-book[open] > summary::before {
+    rotate: 45deg;
+}
+
+.scratchpad-lore-book-name {
+    flex: 1;
+    min-width: 0;
+    font-weight: 700;
+}
+
+.scratchpad-lore-book-count {
+    flex: none;
+    color: var(--neco-muted);
+    font-size: 0.85rem;
+}
+
+.scratchpad-lore-book-entries,
+.scratchpad-lore-book > .scratchpad-muted {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0 8px 8px;
+}
+
 .scratchpad-lore-entry {
     display: flex;
     flex-wrap: wrap;
