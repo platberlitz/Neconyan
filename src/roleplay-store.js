@@ -153,37 +153,56 @@ export function inspectRoleplayFileStat(filename, limit = ROLEPLAY_STORE_MAX_BYT
     return stat;
 }
 
+function sameFileStat(left, right) {
+    return left.isFile() && right.isFile() && left.nlink === 1n && right.nlink === 1n
+        && ['dev', 'ino', 'birthtimeNs', 'size', 'mtimeNs', 'ctimeNs'].every(key => left[key] === right[key]);
+}
+
+function readProtectedHandle(filename, limit, fd, { flush, collectBytes }, stat = inspectRoleplayFileStat(filename, limit)) {
+    const current = fs.fstatSync(fd, { bigint: true });
+    if (!stat || !sameFileStat(current, stat)) throw damaged();
+    const size = Number(stat.size);
+    const bytes = Buffer.alloc(collectBytes ? size : Math.min(size, 64 * 1024));
+    const hash = crypto.createHash('sha256');
+    let offset = 0;
+    while (offset < size) {
+        const start = collectBytes ? offset : 0;
+        const read = fs.readSync(fd, bytes, start, Math.min(bytes.length - start, size - offset), offset);
+        if (!read) break;
+        hash.update(bytes.subarray(start, start + read));
+        offset += read;
+    }
+    if (flush) {
+        fs.fsyncSync(fd);
+        fsyncDirectorySync(path.dirname(filename));
+    }
+    const after = fs.fstatSync(fd, { bigint: true });
+    if (!sameFileStat(after, stat) || offset !== size) throw damaged();
+    const finalPath = inspectRoleplayFileStat(filename, limit);
+    if (!finalPath || !sameFileStat(finalPath, after)) throw damaged();
+    return { ...(collectBytes ? { bytes } : { size }), rawHash: hash.digest('hex'),
+        physical: { dev: String(after.dev), ino: String(after.ino), birthtimeNs: String(after.birthtimeNs) } };
+}
+
 function readProtectedFile(filename, limit, { flush, allowMissingParent, collectBytes }) {
     const stat = inspectRoleplayFileStat(filename, limit, { allowMissingParent });
     if (!stat) return null;
     const fd = fs.openSync(filename, (flush ? fs.constants.O_RDWR : fs.constants.O_RDONLY)
         | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
     try {
-        const current = fs.fstatSync(fd, { bigint: true });
-        if (!current.isFile() || current.dev !== stat.dev || current.ino !== stat.ino || current.size !== stat.size) throw damaged();
-        const size = Number(stat.size);
-        const bytes = Buffer.alloc(collectBytes ? size : Math.min(size, 64 * 1024));
-        const hash = crypto.createHash('sha256');
-        let offset = 0;
-        while (offset < size) {
-            const start = collectBytes ? offset : 0;
-            const read = fs.readSync(fd, bytes, start, Math.min(bytes.length - start, size - offset), offset);
-            if (!read) break;
-            hash.update(bytes.subarray(start, start + read));
-            offset += read;
-        }
-        if (flush) {
-            fs.fsyncSync(fd);
-            fsyncDirectorySync(path.dirname(filename));
-        }
-        const after = fs.fstatSync(fd, { bigint: true });
-        if (after.size !== stat.size || after.mtimeNs !== stat.mtimeNs || after.ctimeNs !== stat.ctimeNs
-            || after.nlink !== 1n || offset !== Number(stat.size)) throw damaged();
-        const finalPath = fs.lstatSync(filename, { bigint: true });
-        if (!finalPath.isFile() || finalPath.nlink !== 1n || finalPath.dev !== after.dev || finalPath.ino !== after.ino
-            || finalPath.size !== after.size || finalPath.mtimeNs !== after.mtimeNs || finalPath.ctimeNs !== after.ctimeNs) throw damaged();
-        return { ...(collectBytes ? { bytes } : { size }), rawHash: hash.digest('hex'),
-            physical: { dev: String(after.dev), ino: String(after.ino), birthtimeNs: String(after.birthtimeNs) } };
+        return readProtectedHandle(filename, limit, fd, { flush, collectBytes }, stat);
+    } finally { fs.closeSync(fd); }
+}
+
+/** Synchronous publication proof: keep this exact file open until the callback returns. */
+export function withRoleplayFileHandle(filename, limit, callback) {
+    const stat = inspectRoleplayFileStat(filename, limit);
+    if (!stat) throw damaged();
+    const fd = fs.openSync(filename, fs.constants.O_RDWR | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
+    try {
+        const initial = readProtectedHandle(filename, limit, fd, { flush: true, collectBytes: false }, stat);
+        // Explicit-position reads also work after the same descriptor has followed a rename.
+        return callback(initial, target => readProtectedHandle(target, limit, fd, { flush: false, collectBytes: false }));
     } finally { fs.closeSync(fd); }
 }
 

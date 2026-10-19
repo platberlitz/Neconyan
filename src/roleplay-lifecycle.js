@@ -11,7 +11,7 @@ import { clearChatRecoveryState, createCharacterChatTarget, createGroupChatTarge
 import { assertRoleplaySourceLocked, assertPendingRoleplayDependencies, captureRoleplayDependenciesLocked, normaliseRoleplayLocator,
     roleplayChatPath, roleplayParsedContentHash, roleplayPathKey, roleplayGroupContentHash, normaliseRoleplayGroupId,
     assertRoleplayGroupData, readRoleplayEntityLocked, readRoleplayChatLocked, roleplayEntityContent } from './generation/roleplay-source.js';
-import { assertRoleplayTransactionCapacity, confirmRoleplayAccount, createRoleplayDirectory, readRoleplayFile, readRoleplayPayload,
+import { assertRoleplayTransactionCapacity, confirmRoleplayAccount, createRoleplayDirectory, readRoleplayFile, readRoleplayPayload, withRoleplayFileHandle,
     roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, stageRoleplayPayload, withRoleplayAccountLock, ROLEPLAY_LARGEST_PHYSICAL,
     largestRoleplayJournal, roleplayPayloadDirectory, initialiseRoleplayAccount, readRoleplayWriteJournal, roleplayAvatarOwner,
     validRoleplayAvatar, ROLEPLAY_IMPORT_MAX_OUTPUTS, ROLEPLAY_LIFECYCLE_MAX_STEPS, roleplayImportPlan, settleRoleplayAccountReset } from './roleplay-store.js';
@@ -1131,14 +1131,26 @@ function publishThroughTemporary(lease, filename, bytes, tag, before, getPhysica
         setPhysical(physical);
         saveRoleplayAccount(lease);
     }
-    if (!sameObservation(readRoleplayFile(temporary, CHAT_LIMIT), { rawHash, physical })) throw conflict();
-    current = readRoleplayFile(filename, CHAT_LIMIT, { allowMissingParent: true });
-    if (before ? !sameObservation(current, before) : Boolean(current)) throw conflict();
-    fs.renameSync(temporary, filename);
-    fsyncDirectorySync(path.dirname(filename));
-    const published = readRoleplayFile(filename, CHAT_LIMIT, { flush: true });
-    if (!sameObservation(published, { rawHash, physical })) throw conflict();
-    return published;
+    return withRoleplayFileHandle(temporary, CHAT_LIMIT, (staged, readHeld) => {
+        if (!sameObservation(staged, { rawHash, physical }) || staged.size !== bytes.length) throw conflict();
+        current = readRoleplayFile(filename, CHAT_LIMIT, { allowMissingParent: true });
+        if (before ? !sameObservation(current, before) : Boolean(current)) throw conflict();
+        if (!sameObservation(readHeld(temporary), { rawHash, physical })) throw conflict();
+        fs.renameSync(temporary, filename);
+        fsyncDirectorySync(path.dirname(filename));
+        const renamed = readHeld(filename);
+        if (renamed.rawHash !== rawHash || renamed.size !== bytes.length
+            || renamed.physical.dev !== physical.dev || renamed.physical.birthtimeNs !== physical.birthtimeNs) throw conflict();
+        const published = readRoleplayFile(filename, CHAT_LIMIT, { flush: true });
+        if (!sameObservation(published, renamed) || !published.bytes.equals(bytes)
+            || !sameObservation(readHeld(filename), renamed)) throw conflict();
+        if (!isDeepStrictEqual(physical, renamed.physical)) {
+            // Only this live, successful rename can prove an inode transition. Replay stays exact.
+            setPhysical(renamed.physical);
+            saveRoleplayAccount(lease);
+        }
+        return published;
+    });
 }
 
 function writeLifecycleContents(lease, pending, step) {
