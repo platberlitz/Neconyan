@@ -1,4 +1,5 @@
 /* global globalThis */
+import fs from 'node:fs';
 import { describe, expect, jest, test } from '@jest/globals';
 
 async function importHelper({ resolvedProfileId = 'profile-1', result = { applied: true, customCss: '.done {}', previousVersion: 3, previousSettingsRevision: 8, version: 4, settingsRevision: 9 } } = {}) {
@@ -91,6 +92,20 @@ describe('Neconyan Custom CSS AI helper', () => {
         for (const hook of ['data-sb-theme', 'windows-aero', '#sb-mobile-nav-content', '#neconyan-workspace-rail', '#sb-bottom-chat-bar', '#chat .mes', '.sb-conversation-message-text', ':focus-visible', ':not(.reduced-motion)', '44px', '--neco-on-accent', '--sb-font-display', '--mainFontSize', '.custom-example', 'Append or Replace']) {
             expect(system.content).toContain(hook);
         }
+    });
+
+    test('points light and dark rules at the tone attributes every UI theme sets', async () => {
+        const { helper } = await importHelper();
+        const [system] = helper.buildCustomCssAIMessages({ instruction: 'Softer dark panels', mode: 'append' });
+        const powerUser = fs.readFileSync(new URL('../public/scripts/power-user.js', import.meta.url), 'utf8');
+
+        expect(system.content).toContain(':root[data-sb-surface-tone="light"]');
+        expect(system.content).toMatch(/data-neconyan-calico-tone="light"\] or "dark" matches only the stock Calico/);
+        expect(system.content).not.toContain('custom accents use data-neconyan-accent="custom"');
+        expect(powerUser).toMatch(/dataset\.sbSurfaceTone = isLightSurface \? 'light' : 'dark'/);
+        expect(powerUser).toMatch(/dataset\.sbTextTone = /);
+        expect(powerUser).toMatch(/dataset\.neconyanCalicoTone = isDarkCalico \? 'dark' : isLightCalico \? 'light' : 'custom'/);
+        expect(powerUser).toMatch(/dataset\.neconyanAccent = isThemeAccent \? 'theme' : 'custom'/);
     });
 
     test('submits one retained server job and adopts its settings write', async () => {
