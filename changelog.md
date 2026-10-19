@@ -20,8 +20,14 @@
 - Less repeated work on desktop and phones: resizing the window no longer reloads the chat list, large character libraries rebuild much faster, and scrolling, closed menus, extension work and Android startup do less in the background.
 
 ### Merged Staging PRs
+- PR #210 (2026-10-17) `fix(mewmory): autosave settings and honour the hiding threshold`
 - PR #211 (2026-10-18) `test(i18n): keep image tests valid once translations land`
+- PR #212 (2026-10-18) `feat(macros): rebuild the native macro workbench`
+- PR #213 (2026-10-18) `perf(mobile): reduce Android and iOS rendering and startup work`
 - PR #214 (2026-10-18) `perf(desktop): reduce rendering and library loading work`
+- PR #215 (2026-10-18) `feat(macroenhanced): add assistant packs and browser authoring`
+- PR #216 (2026-10-18) `fix(quick-image-gen): raise Text AI max tokens default`
+- PR #217 (2026-10-18) `feat(scratchpad): add web search with saved sources`
 - PR #218 (2026-10-18) `ci(github): post Miso merge verdicts from staging`
 - PR #219 (2026-10-18) `ci(github): trigger Miso from staging pushes`
 - PR #220 (2026-10-18) `ci(github): run Miso on pull request events`
