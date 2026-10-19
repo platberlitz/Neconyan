@@ -1,7 +1,27 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, jest, test } from '@jest/globals';
 import { isEchoMessage, resolveEchoSurface, clearEchoMessage } from '../public/scripts/echo-message-layout.js';
 
+const testDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(testDir, '..');
+const read = relativePath => readFileSync(path.join(repoRoot, relativePath), 'utf8');
+
 const rect = (top, bottom) => ({ left: 20, right: 620, top, bottom, toJSON() { return { left: this.left, right: this.right, top: this.top, bottom: this.bottom }; } });
+describe('Echo user header width', () => {
+    test('stacks the user header in a column so it shrink-wraps like the assistant header', () => {
+        const css = read('public/css/neconyan.css');
+        // Desktop only: the 769-1000px card and the phone share the same header rules as before.
+        const desktop = css.slice(css.indexOf('@media (min-width: 1001px)', css.indexOf('body.neconyan.echostyle')));
+        expect(desktop).toContain('body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout[is_user=\'true\'] .ch_name { flex-direction: column; align-items: flex-end; }');
+        // The rule stays on the user row: the assistant header is untouched.
+        expect(desktop).not.toContain('.mes.nn-echo-layout .ch_name { flex-direction: column');
+        expect(desktop).not.toContain('.mes.nn-echo-layout[is_user=\'true\'] .ch_name .mes_buttons');
+        // The core button width is what the column shrink-wraps around.
+        expect(css).toMatch(/body\.neconyan #chat \.mes_buttons \{\n {4}width: 100%;/);
+    });
+});
 describe('Echo native surface contract', () => {
     test('enrols only actual desktop/tablet Roleplay, never notices or other shell modes', () => {
         const row = { matches: jest.fn(() => true) };

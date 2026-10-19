@@ -3348,6 +3348,9 @@ body.neconyan:is(.whisperstyle, .hushstyle)[data-neconyan-chat-mode='roleplay']:
     body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout[is_user='true'] > .mesAvatarWrapper { right: 0; }
     body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout > .mes_block { padding-top: 12px; }
     body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout .ch_name { width: fit-content; max-width: calc(100% - var(--custom-echo-avatar) - var(--moonlit-sb-stats-room, 0px) - 18px); }
+    /* Echo mirrors the user's message, so their header stacks the name row above the buttons like the
+       assistant's: the column shrink-wraps to the wider of the two instead of summing them. */
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout[is_user='true'] .ch_name { flex-direction: column; align-items: flex-end; }
     body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout .mes_reasoning_details { clear: both; width: fit-content; max-width: 100%; margin-inline-start: calc(var(--custom-echo-avatar) + var(--moonlit-sb-stats-room, 0px) + 8px); }
     body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout[is_user='true'] .mes_reasoning_details { margin-inline-start: auto; margin-inline-end: calc(var(--custom-echo-avatar) + var(--moonlit-sb-stats-room, 0px) + 13px); }
     body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout .mes_reasoning_summary { left: auto; }
