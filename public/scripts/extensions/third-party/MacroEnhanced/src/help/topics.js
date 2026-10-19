@@ -16,7 +16,7 @@ export const TOPICS = Object.freeze([
         id: 'getting-started',
         title: 'Getting started',
         body: [
-            'Macro Enhanced adds browser-side macros to Neconyan. The Playground and browser tools can evaluate them, but most are unavailable in server-built Roleplay prompts. Read the Server prompts and saved variables guide before using them in a preset, card, lorebook or message.',
+            'Macro Enhanced adds browser-side macros to Neconyan. Ordinary Roleplay replies build their prompts in the browser, so these macros work there, but most are unavailable in the prompts Neconyan still builds on the server. Read the Server prompts and saved variables guide before using them in a card, preset or lorebook you also use with those replies.',
             'Everything on this page can be tried without consequences. Open the Playground tab, type a macro, and the result appears as you type. Nothing you do there touches a real variable or a saved value.',
             'Three places to look: this reference for what exists, the Playground for trying it, and the Cache Audit card on This chat for finding macros that are quietly costing you money.',
         ],
@@ -26,7 +26,7 @@ export const TOPICS = Object.freeze([
         id: 'server-prompts',
         title: 'Server prompts and saved variables',
         body: [
-            'Roleplay builds its prompts on the server, so replies can finish after you close the page. Most Macro Enhanced definitions are browser-only: switch, chat variables, counters, pronouns, cached values and custom macros. A server prompt using one stops with a named error before the model request. Browser-only condition and imported-syntax settings are refused too when the prompt relies on them.',
+            'Ordinary Roleplay replies, swipes, regenerations, continues, group turns, Guided Response and Guided Swipe build their prompts in the browser, where Macro Enhanced macros work. Conversation replies and a few Roleplay requests still build their prompts on the server: replies using a selected Notebook context, protected Guided corrections, Deep Swipe replacements and background requests. Most Macro Enhanced definitions are browser-only: switch, chat variables, counters, pronouns, cached values and custom macros. A server prompt using one stops with a named error before the model request. Browser-only condition and imported-syntax settings are refused too when the prompt relies on them.',
             'Core macros such as {{user}}, {{char}}, {{getvar}} and {{setvar}} are supported. History message bodies are expanded for the prompt; the original messages stay unchanged. Local variable writes from prompt preparation and provider formatting are saved together with an accepted reply. A failed request does not save those writes, and recovering a completed request does not repeat them.',
             'World Info scanning is read-only. Put variable writes in a preset prompt or history message, rather than a lorebook entry or activation key. Global variable reads are supported, but global writes are refused because they cannot be saved together with a chat reply. Macro Enhanced chat variables are a separate store from core local variables; changing the macro name does not migrate existing values.',
             'The existing server lore helpers can read captured active or bound books during final prompt assembly. They do not give the server access to browser-only caches or arbitrary books.',

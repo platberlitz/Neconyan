@@ -28,7 +28,7 @@ const TOOL_PAGES = Object.freeze({
                 id: 'boundary',
                 targets: ['[data-me-server-boundary]'],
                 title: 'Where these macros work',
-                body: 'Many Macro Enhanced macros are **browser-only**. Neconyan builds Roleplay prompts on the server, which refuses those macros before sending a request.\nThe help button opens **Server prompts and saved variables**, with the supported alternatives. A successful Playground result does not mean the same macro works in a server prompt.',
+                body: 'Many Macro Enhanced macros are **browser-only**. Ordinary Roleplay replies build their prompts in the browser, so they work there. Conversation replies and a few Roleplay requests, such as Deep Swipe or a selected Notebook context, build their prompts on the server, which refuses those macros before sending a request.\nThe help button opens **Server prompts and saved variables**, with the supported alternatives. A successful Playground result does not mean the same macro works in a server prompt.',
                 hint: 'I prefer finding that out before paying for the reply.',
             },
             {

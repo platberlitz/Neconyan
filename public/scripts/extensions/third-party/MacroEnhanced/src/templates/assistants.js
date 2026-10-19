@@ -2,7 +2,7 @@
 export default {
     id: 'assistants',
     name: 'Miso, Taro & Nori',
-    description: 'Small macros inspired by the assistants: greetings, scene starters, checks, trims, puns and writing nudges. They install as ordinary custom macros, so they need experimental macros turned on in User Settings and a prompt built in the browser. Server-built Roleplay prompts refuse custom macros.',
+    description: 'Small macros inspired by the assistants: greetings, scene starters, checks, trims, puns and writing nudges. They install as ordinary custom macros, so they need experimental macros turned on in User Settings and a prompt built in the browser, as ordinary Roleplay replies are. Prompts built on the server refuse custom macros.',
     macros: [
         {
             name: 'misohello',
