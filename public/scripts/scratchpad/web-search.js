@@ -6,6 +6,9 @@ const PROVIDERS = [
     ['brave', 'Brave Search'],
     ['searxng', 'SearXNG'],
     ['nanogpt', 'NanoGPT (Linkup)'],
+    ['exa', 'Exa'],
+    ['tavily', 'Tavily'],
+    ['custom', 'Custom address'],
 ];
 
 const MISSING = {
@@ -13,6 +16,9 @@ const MISSING = {
     'brave-key': () => t`Add a Brave Search API key, save, then turn on Web beside the message box.`,
     'searxng-url': () => t`Add your SearXNG address, save, then turn on Web beside the message box.`,
     'nanogpt-key': () => t`Add a NanoGPT API key, save, then turn on Web beside the message box.`,
+    'exa-key': () => t`Add an Exa API key, save, then turn on Web beside the message box.`,
+    'tavily-key': () => t`Add a Tavily API key, save, then turn on Web beside the message box.`,
+    'custom-url': () => t`Add your custom search address, save, then turn on Web beside the message box.`,
 };
 
 export function setWebSearchToggle(button, { enabled = false, configured = false } = {}) {
@@ -45,7 +51,7 @@ function providerStatus(config, readiness, error) {
  * A draft survives background refreshes and failed saves until a save succeeds.
  */
 export function renderWebSearchSettings({ config, draft, readiness, error = '', saving = false, onSave, onRefresh, onDraft }) {
-    const saved = config ?? { provider: 'off', searxngUrl: '', results: 5 };
+    const saved = config ?? { provider: 'off', searxngUrl: '', customUrl: '', customHeader: '', results: 5 };
     const value = draft ?? saved;
     const status = h('p', { class: `scratchpad-muted scratchpad-web-status${error ? ' scratchpad-error' : ''}`, role: 'status' });
     const provider = h('select', {
@@ -60,6 +66,28 @@ export function renderWebSearchSettings({ config, draft, readiness, error = '', 
     const nanoKey = h('div', { class: 'scratchpad-web-key' },
         keyButton('api_key_nanogpt', t`Manage NanoGPT key`),
         h('small', { text: t`The same NanoGPT key is used for chat and web search.` }));
+    const exaKey = h('div', { class: 'scratchpad-web-key' },
+        keyButton('api_key_exa', t`Manage Exa key`),
+        h('small', { text: t`Saved with the same key manager as your other API keys.` }));
+    const tavilyKey = h('div', { class: 'scratchpad-web-key' },
+        keyButton('api_key_tavily', t`Manage Tavily key`),
+        h('small', { text: t`Saved with the same key manager as your other API keys.` }));
+    const customInput = h('input', { type: 'url', class: 'text_pole', id: 'scratchpad-web-search-custom', value: value.customUrl ?? '',
+        placeholder: 'https://search.example.com/api?q={query}&limit={count}', oninput: () => { updateStatus(); emitDraft(); } });
+    const customHeaderInput = h('input', { type: 'text', class: 'text_pole', id: 'scratchpad-web-search-custom-header', value: value.customHeader ?? '',
+        placeholder: 'Authorization', autocomplete: 'off', spellcheck: 'false', oninput: () => { updateStatus(); emitDraft(); } });
+    const customFields = h('div', { class: 'scratchpad-web-custom' },
+        h('div', { class: 'scratchpad-field' },
+            h('label', { for: 'scratchpad-web-search-custom', text: t`Custom search address` }),
+            customInput,
+            h('small', { text: t`Put {query} where the search words go and {count} where the number of results goes. The address must return JSON with a url and title for each result.` })),
+        h('div', { class: 'scratchpad-web-key' },
+            keyButton('api_key_custom_search', t`Manage custom search key`),
+            h('small', { text: t`Optional. Leave it empty if the service needs no key.` })),
+        h('div', { class: 'scratchpad-field' },
+            h('label', { for: 'scratchpad-web-search-custom-header', text: t`Key header` }),
+            customHeaderInput,
+            h('small', { text: t`Authorization sends the key as Bearer. Any other header, such as X-API-Key, sends the key as it is.` })));
     const urlInput = h('input', { type: 'url', class: 'text_pole', id: 'scratchpad-web-search-searxng', value: value.searxngUrl,
         placeholder: 'https://search.example.com/searxng', oninput: () => { updateStatus(); emitDraft(); } });
     const urlField = h('div', { class: 'scratchpad-field' },
@@ -70,7 +98,13 @@ export function renderWebSearchSettings({ config, draft, readiness, error = '', 
         onchange: () => { updateStatus(); emitDraft(); } },
     Array.from({ length: 10 }, (_, index) => h('option', { value: String(index + 1), text: String(index + 1) })));
     results.value = String(value.results || 5);
-    const readDraft = () => ({ provider: provider.value, searxngUrl: urlInput.value.trim(), results: Number(results.value) });
+    const readDraft = () => ({
+        provider: provider.value,
+        searxngUrl: urlInput.value.trim(),
+        customUrl: customInput.value.trim(),
+        customHeader: customHeaderInput.value.trim(),
+        results: Number(results.value),
+    });
     const emitDraft = () => onDraft?.(readDraft());
     const save = h('button', {
         type: 'button',
@@ -92,7 +126,11 @@ export function renderWebSearchSettings({ config, draft, readiness, error = '', 
     }, h('i', { class: 'fa-solid fa-rotate', 'aria-hidden': 'true' }), h('span', { text: t`Check again` }));
 
     function isDirty() {
-        return provider.value !== saved.provider || urlInput.value.trim() !== saved.searxngUrl || Number(results.value) !== Number(saved.results || 5);
+        return provider.value !== saved.provider
+            || urlInput.value.trim() !== (saved.searxngUrl ?? '')
+            || customInput.value.trim() !== (saved.customUrl ?? '')
+            || customHeaderInput.value.trim() !== (saved.customHeader ?? '')
+            || Number(results.value) !== Number(saved.results || 5);
     }
     function statusText() {
         if (error) return error;
@@ -109,6 +147,9 @@ export function renderWebSearchSettings({ config, draft, readiness, error = '', 
         urlField.hidden = current !== 'searxng';
         braveKey.hidden = current !== 'brave';
         nanoKey.hidden = current !== 'nanogpt';
+        exaKey.hidden = current !== 'exa';
+        tavilyKey.hidden = current !== 'tavily';
+        customFields.hidden = current !== 'custom';
         updateStatus();
     }
     updateProvider();
@@ -120,7 +161,10 @@ export function renderWebSearchSettings({ config, draft, readiness, error = '', 
         h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-web-search-provider', text: t`Provider` }), provider),
         braveKey,
         nanoKey,
+        exaKey,
+        tavilyKey,
         urlField,
+        customFields,
         h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-web-search-results', text: t`Results to read` }), results,
             h('small', { text: t`Between 1 and 10. Five is the default.` })),
         status,

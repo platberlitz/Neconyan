@@ -792,7 +792,13 @@ async function saveWebSearchSettings(values) {
     const expectedRevision = app.webSearch.config.revision ?? 0;
     app.webSearchCheck += 1;
     app.webSearchSaving = true;
-    app.webSearchDraft = { provider: draft.provider, searxngUrl: draft.searxngUrl ?? '', results: draft.results };
+    app.webSearchDraft = {
+        provider: draft.provider,
+        searxngUrl: draft.searxngUrl ?? '',
+        customUrl: draft.customUrl ?? '',
+        customHeader: draft.customHeader ?? '',
+        results: draft.results,
+    };
     const submittedDraft = { ...app.webSearchDraft };
     const owner = getCurrentUserHandle();
     if (app.tab === 'context') renderContext({ force: true });

@@ -253,6 +253,165 @@ test('SearXNG keeps its base path and NanoGPT sends the Linkup standard request'
     assert.equal(nanoResult.results[0].title, 'Nano result');
 });
 
+test('Exa and Tavily need their saved keys and send the documented requests', async t => {
+    const a = account(t);
+    updateConfig(a, { provider: 'exa', results: 6 });
+    assert.equal(state(a).readiness.missing, 'exa-key');
+    assert.equal(web.webSearchReadiness(a.directories, state(a).webSearch).message, 'Add an Exa API key in Context.');
+    assert.throws(() => web.planWebSearch(a.directories, state(a).webSearch, 'A question'),
+        { code: 'SCRATCHPAD_WEB_SEARCH_UNCONFIGURED' });
+    writeSecret(a.directories, SECRET_KEYS.EXA, 'exa-secret');
+    assert.equal(state(a).readiness.configured, true);
+    const exa = web.planWebSearch(a.directories, state(a).webSearch, 'Exa question');
+    assert.ok(!JSON.stringify(exa).includes('exa-secret'));
+    let captured;
+    const exaResult = await web.performWebSearch(exa, {
+        directories: a.directories,
+        fetch: async (url, options) => {
+            captured = { url, options };
+            return response({ requestId: 'r1', results: [
+                { title: 'Exa one', url: 'https://example.com/exa', highlights: ['First highlight.', 'Second highlight.'] },
+                { title: 'Exa two', url: 'https://example.com/exa-two', text: 'Plain text body' },
+            ] });
+        },
+    });
+    assert.equal(captured.url, 'https://api.exa.ai/search');
+    assert.equal(captured.options.method, 'POST');
+    assert.equal(captured.options.redirect, 'error');
+    assert.equal(captured.options.headers['x-api-key'], 'exa-secret');
+    const exaBody = JSON.parse(captured.options.body);
+    assert.equal(exaBody.query, 'Exa question');
+    assert.equal(exaBody.numResults, 6);
+    assert.equal(exaBody.type, 'auto');
+    assert.ok(exaBody.contents.highlights.maxCharacters > 0);
+    assert.deepEqual(exaResult.results.map(item => item.url), ['https://example.com/exa', 'https://example.com/exa-two']);
+    assert.match(exaResult.results[0].snippet, /First highlight\. Second highlight\./);
+    assert.equal(exaResult.results[1].snippet, 'Plain text body');
+
+    updateConfig(a, { provider: 'tavily', results: 4 });
+    assert.equal(state(a).readiness.missing, 'tavily-key');
+    writeSecret(a.directories, SECRET_KEYS.TAVILY, 'tvly-secret');
+    assert.equal(state(a).readiness.configured, true);
+    const tavily = web.planWebSearch(a.directories, state(a).webSearch, 'Tavily question');
+    const tavilyResult = await web.performWebSearch(tavily, {
+        directories: a.directories,
+        fetch: async (url, options) => {
+            captured = { url, options };
+            return response({ query: 'Tavily question', results: [
+                { title: 'Tavily one', url: 'https://example.com/tavily', content: 'Tavily body', score: 0.9 },
+            ] });
+        },
+    });
+    assert.equal(captured.url, 'https://api.tavily.com/search');
+    assert.equal(captured.options.method, 'POST');
+    assert.equal(captured.options.redirect, 'error');
+    assert.equal(captured.options.headers.Authorization, 'Bearer tvly-secret');
+    assert.deepEqual(JSON.parse(captured.options.body), { query: 'Tavily question', max_results: 4, search_depth: 'basic' });
+    assert.equal(tavilyResult.results[0].title, 'Tavily one');
+    assert.equal(tavilyResult.results[0].snippet, 'Tavily body');
+
+    for (const [status, pattern] of [[401, /Tavily rejected the API key/], [432, /Tavily usage limit/], [433, /Tavily usage limit/]]) {
+        await assert.rejects(web.performWebSearch(tavily, { directories: a.directories, fetch: async () => response('{}', status) }), pattern);
+    }
+    await assert.rejects(web.performWebSearch(exa, { directories: a.directories, fetch: async () => response('{}', 402) }),
+        /Exa has no credit left/);
+});
+
+test('a custom address needs {query}, a plain web address and an administrator for private hosts', t => {
+    const a = account(t);
+    for (const [value, pattern] of [
+        ['https://search.example.com/api', /\{query\}/],
+        ['search.example.com/api?q={query}', /http:\/\/ or https:\/\//],
+        ['ftp://search.example.com/?q={query}', /http:\/\/ or https:\/\//],
+        ['https://user:pass@search.example.com/?q={query}', /sign-in details/],
+        ['https://search.example.com/?q={query}#top', /fragment/],
+        ['https://{query}.example.com/', /after the host name/],
+    ]) {
+        assert.throws(() => updateConfig(a, { provider: 'custom', customUrl: value }), error => {
+            assert.equal(error.code, 'SCRATCHPAD_WEB_SEARCH_URL', value);
+            assert.match(error.message, pattern, value);
+            return true;
+        });
+    }
+    assert.throws(() => updateConfig(a, { provider: 'custom', customUrl: 'http://127.0.0.1:9000/?q={query}' }, { admin: false }),
+        { code: 'SCRATCHPAD_WEB_SEARCH_PRIVATE', status: 403 });
+    assert.equal(updateConfig(a, { provider: 'custom', customUrl: 'http://127.0.0.1:9000/?q={query}' }, { admin: true }).customUrl,
+        'http://127.0.0.1:9000/?q={query}');
+    for (const header of ['X API Key', 'Cookie', 'host', 'x'.repeat(65)]) {
+        assert.throws(() => updateConfig(a, { provider: 'custom', customHeader: header }), { code: 'SCRATCHPAD_WEB_SEARCH_HEADER' }, header);
+    }
+    assert.equal(updateConfig(a, { provider: 'custom', customHeader: ' X-API-Key ' }).customHeader, 'X-API-Key');
+    updateConfig(a, { provider: 'custom', customUrl: '' });
+    assert.equal(state(a).readiness.missing, 'custom-url');
+    assert.throws(() => web.planWebSearch(a.directories, state(a).webSearch, 'A question'),
+        { code: 'SCRATCHPAD_WEB_SEARCH_UNCONFIGURED' });
+});
+
+test('a custom address works without a key and sends a saved key in the chosen header', async t => {
+    const a = account(t);
+    updateConfig(a, { provider: 'custom', customUrl: 'https://search.example.com/v1/find?q={query}&limit={count}', results: 3 });
+    assert.equal(state(a).readiness.configured, true, 'a custom address without a key is ready');
+    const keyless = web.planWebSearch(a.directories, state(a).webSearch, 'Nova & friends?');
+    let captured;
+    const result = await web.performWebSearch(keyless, {
+        directories: a.directories,
+        fetch: async (url, options) => {
+            captured = { url, options };
+            return response({ hits: { items: [{ name: 'Custom one', link: 'https://example.com/custom', snippet: 'Custom body' }] } });
+        },
+    });
+    const url = new URL(captured.url);
+    assert.equal(url.origin, 'https://search.example.com');
+    assert.equal(url.pathname, '/v1/find');
+    assert.equal(url.searchParams.get('q'), 'Nova & friends?');
+    assert.equal(url.searchParams.get('limit'), '3');
+    assert.equal(captured.options.method, 'GET');
+    assert.equal(captured.options.redirect, 'error');
+    assert.equal(captured.options.headers.Authorization, undefined);
+    assert.equal(result.results[0].url, 'https://example.com/custom');
+    assert.equal(result.results[0].title, 'Custom one');
+
+    writeSecret(a.directories, SECRET_KEYS.CUSTOM_SEARCH, 'custom-secret');
+    const bearer = web.planWebSearch(a.directories, state(a).webSearch, 'With a key');
+    assert.ok(!JSON.stringify(bearer).includes('custom-secret'));
+    await web.performWebSearch(bearer, { directories: a.directories, fetch: async (target, options) => {
+        captured = { url: target, options };
+        return response({ results: [] });
+    } });
+    assert.equal(captured.options.headers.Authorization, 'Bearer custom-secret');
+
+    updateConfig(a, { provider: 'custom', customHeader: 'X-API-Key' });
+    const raw = web.planWebSearch(a.directories, state(a).webSearch, 'Raw key');
+    await web.performWebSearch(raw, { directories: a.directories, fetch: async (target, options) => {
+        captured = { url: target, options };
+        return response({ results: [] });
+    } });
+    assert.equal(captured.options.headers['X-API-Key'], 'custom-secret');
+    assert.equal(captured.options.headers.Authorization, undefined);
+
+    await assert.rejects(web.performWebSearch(raw, { directories: a.directories, fetch: async () => {
+        const html = response('<html><body>Search</body></html>');
+        html.headers.set('content-type', 'text/html');
+        return html;
+    } }), /web page instead of JSON/);
+    await assert.rejects(web.performWebSearch(raw, { directories: a.directories, fetch: async () => response('{}', 401) }),
+        /custom search service rejected the API key/i);
+});
+
+test('settings saved before the custom provider existed still load', t => {
+    const a = account(t);
+    updateConfig(a, { provider: 'searxng', searxngUrl: 'https://search.example.com' });
+    const file = path.join(a.directories.root, 'scratchpad', 'web-search.json');
+    const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+    delete stored.customUrl;
+    delete stored.customHeader;
+    fs.writeFileSync(file, JSON.stringify(stored));
+    const loaded = state(a).webSearch;
+    assert.equal(loaded.provider, 'searxng');
+    assert.equal(loaded.customUrl, '');
+    assert.equal(loaded.customHeader, '');
+});
+
 test('search errors, timeouts, cancellation and oversized responses are bounded', async t => {
     const a = account(t);
     braveKey(a);

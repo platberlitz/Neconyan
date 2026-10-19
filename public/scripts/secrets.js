@@ -81,6 +81,8 @@ export const SECRET_KEYS = {
     VOLCENGINE_ACCESS_KEY: 'volcengine_access_key',
     WORKERS_AI: 'api_key_workers_ai',
     LINKAPI: 'api_key_linkapi',
+    EXA: 'api_key_exa',
+    CUSTOM_SEARCH: 'api_key_custom_search',
 };
 
 const FRIENDLY_NAMES = {
@@ -148,6 +150,8 @@ const FRIENDLY_NAMES = {
     [SECRET_KEYS.VOLCENGINE_ACCESS_KEY]: 'Volcengine Access Key',
     [SECRET_KEYS.WORKERS_AI]: 'Cloudflare Workers AI',
     [SECRET_KEYS.LINKAPI]: 'LinkAPI',
+    [SECRET_KEYS.EXA]: 'Exa',
+    [SECRET_KEYS.CUSTOM_SEARCH]: 'Custom web search',
 };
 
 const INPUT_MAP = {
