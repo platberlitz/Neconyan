@@ -144,3 +144,53 @@ test('Echo preserves native structure, cutoff exemptions, tablet paint and actua
     await page.locator('#chat_display').selectOption('0', { force: true });
     await expect(message).not.toHaveClass(/nn-echo-layout/); await expect(cap).toBeHidden();
 });
+
+test('Echo stacks the user header like the assistant header on desktop', async ({ app }, info) => {
+    test.setTimeout(120000);
+    const account = await app.account(), page = await account.open({ workspace: false });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.evaluate(async avatar => {
+        const context = window.SillyTavern.getContext();
+        await context.getCharacters();
+        await context.selectCharacterById(context.characters.findIndex(character => character.avatar === avatar));
+        const date = '2026-10-18T00:00:00Z';
+        const user = 'Brian took off his coat and hung it on the chair.\n\n"Then I will wait here a while. It is warmer than the bus stop."';
+        context.chat.splice(0, context.chat.length,
+            { name: 'Nova', is_user: false, is_system: false, send_date: date, mes: 'Nova set the ledger on the counter.', swipes: ['Nova set the ledger on the counter.'], extra: {} },
+            { name: 'Brian', is_user: true, is_system: false, send_date: date, mes: user, swipes: [user, user + ' He checked the door.'], swipe_id: 0,
+                swipe_info: [{ send_date: date, extra: {} }, { send_date: date, extra: {} }], extra: {} });
+        await context.saveChat();
+        await context.reloadCurrentChat();
+    }, account.avatar);
+    await page.locator('#chat_display').selectOption('3', { force: true });
+    const headers = () => page.evaluate(() => [...document.querySelectorAll('#chat > .mes')].map(row => {
+        const name = row.querySelector('.ch_name'), buttons = row.querySelector('.mes_buttons');
+        return {
+            id: row.getAttribute('mesid'), isUser: row.getAttribute('is_user') === 'true',
+            width: name.getBoundingClientRect().width, direction: getComputedStyle(name).flexDirection,
+            rowWidth: row.getBoundingClientRect().width, buttonsWidth: buttons.getBoundingClientRect().width,
+            buttonsText: buttons.textContent.replace(/\s+/g, ' ').trim(),
+        };
+    }));
+    await expect.poll(async () => (await headers()).length).toBe(2);
+    const desktop = await headers();
+    const assistant = desktop.find(entry => !entry.isUser), user = desktop.find(entry => entry.isUser);
+    // The user header stacks like the assistant's instead of summing the name row and the buttons.
+    expect(user.direction).toBe('column');
+    expect(assistant.direction).toBe('column');
+    expect(user.buttonsText).toBe(assistant.buttonsText);
+    expect(Math.abs(user.width - assistant.width), JSON.stringify({ assistant, user })).toBeLessThanOrEqual(10);
+    expect(user.width, 'user header hugs its content').toBeLessThan(user.rowWidth / 2);
+    // The buttons keep the core full width inside the column, so they never wrap into a narrow box.
+    expect(user.buttonsWidth).toBeGreaterThanOrEqual(user.width - 1);
+    await info.attach('Echo header widths', { body: Buffer.from(JSON.stringify(desktop)), contentType: 'application/json' });
+    // The tablet card and the phone keep their existing header layout.
+    for (const [width, height] of [[900, 900], [393, 852]]) {
+        await page.setViewportSize({ width, height });
+        await expect.poll(async () => (await headers()).length).toBe(2);
+        const sizes = await headers();
+        const smaller = sizes.find(entry => !entry.isUser), larger = sizes.find(entry => entry.isUser);
+        expect(Math.abs(larger.width - smaller.width), `${width} headers still match`).toBeLessThanOrEqual(10);
+        expect(larger.width, `${width} header inside its row`).toBeLessThanOrEqual(larger.rowWidth);
+    }
+});
