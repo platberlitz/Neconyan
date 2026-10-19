@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
+import { accessibleTheme } from '../public/scripts/theme-contrast.js';
 import { DEFAULTS, DEFAULT_TONE, DEFAULT_IMAGE_INSTRUCTIONS, buildRefreshMessages } from '../public/scripts/extensions/third-party/Neconyan-Hopper/src/core.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -61,7 +62,7 @@ const themeColorKeys = [
     'border_color',
 ];
 
-function createPaletteRuntime(powerUserOverrides = {}, useDarkTheme = true) {
+function createPaletteRuntime(powerUserOverrides = {}, useDarkTheme = true, contrastTheme = theme => theme) {
     const styleWrites = [];
     const themeSelectWrites = [];
     const accentRefresh = { colours: [], profiles: 0 };
@@ -74,7 +75,7 @@ function createPaletteRuntime(powerUserOverrides = {}, useDarkTheme = true) {
         ...powerUserOverrides,
     };
     const context = vm.createContext({
-        accessibleTheme: theme => theme,
+        accessibleTheme: contrastTheme,
         applyGoogleFont: () => undefined,
         power_user: powerUser,
         themes: [{ name: calicoTheme.name, main_text_color: 'user-edited value' }, calicoDarkTheme],
@@ -117,6 +118,7 @@ function createPaletteRuntime(powerUserOverrides = {}, useDarkTheme = true) {
         console: { log: () => undefined, debug: () => undefined },
     });
     vm.runInContext([
+        getFunctionSource('normalizeThemeValue'),
         getFunctionSource('themeValuesEqual'),
         getFunctionSource('getLegacyThemeValueKeys'),
         getFunctionSource('themeValuesMatch'),
@@ -289,6 +291,39 @@ describe('Neconyan Calico defaults', () => {
         expect(lightRuntime.context.document.documentElement.dataset.neconyanPalette).toBe('calico');
         expect(lightRuntime.context.document.documentElement.dataset.neconyanCalicoTone).toBe('light');
         expect(lightRuntime.context.document.documentElement.dataset.neconyanAccent).toBe('theme');
+    });
+
+    test('recognises stock Calico Light after the contrast pass repaints it', () => {
+        // Picking the theme or reloading stores accessibleTheme() output, never the raw theme file.
+        const appliedLight = accessibleTheme(calicoTheme);
+        expect(appliedLight.user_mes_blur_tint_color).not.toBe(calicoTheme.user_mes_blur_tint_color);
+        const appliedValues = Object.fromEntries([...themeColorKeys, 'blur_strength', 'shadow_width', 'custom_css'].map(key => [key, appliedLight[key]]));
+        const dataset = runtime => runtime.context.document.documentElement.dataset;
+
+        const lightRuntime = createPaletteRuntime(appliedValues, false, accessibleTheme);
+        lightRuntime.context.syncNeconyanPaletteAttribute();
+        expect(dataset(lightRuntime)).toMatchObject({ neconyanPalette: 'calico', neconyanCalicoTone: 'light', neconyanAccent: 'theme' });
+
+        // The colour pickers write the same colours back as 'rgba(r, g, b, 1)'.
+        const pickerValues = Object.fromEntries(Object.entries(appliedValues)
+            .map(([key, value]) => [key, typeof value === 'string' ? value.replace(/^rgb\((.*)\)$/, 'rgba($1, 1)') : value]));
+        expect(pickerValues.border_color).toMatch(/^rgba\(.*, 1\)$/);
+        const pickerRuntime = createPaletteRuntime(pickerValues, false, accessibleTheme);
+        pickerRuntime.context.syncNeconyanPaletteAttribute();
+        expect(dataset(pickerRuntime)).toMatchObject({ neconyanPalette: 'calico', neconyanCalicoTone: 'light', neconyanAccent: 'theme' });
+
+        lightRuntime.context.applyAccentColors('rgba(4, 5, 6, 1)', 'rgba(7, 8, 9, 1)');
+        expect(dataset(lightRuntime)).toMatchObject({ neconyanPalette: 'calico', neconyanCalicoTone: 'light', neconyanAccent: 'custom' });
+        lightRuntime.context.applyAccentColors(calicoTheme.quote_text_color, calicoTheme.underline_text_color);
+        expect(dataset(lightRuntime)).toMatchObject({ neconyanPalette: 'calico', neconyanCalicoTone: 'light', neconyanAccent: 'theme' });
+
+        const editedRuntime = createPaletteRuntime({ ...appliedValues, custom_css: 'body { color: red; }' }, false, accessibleTheme);
+        editedRuntime.context.syncNeconyanPaletteAttribute();
+        expect(dataset(editedRuntime)).toMatchObject({ neconyanPalette: 'custom', neconyanCalicoTone: 'custom' });
+
+        const darkRuntime = createPaletteRuntime({}, true, accessibleTheme);
+        darkRuntime.context.syncNeconyanPaletteAttribute();
+        expect(dataset(darkRuntime)).toMatchObject({ neconyanPalette: 'calico', neconyanCalicoTone: 'dark', neconyanAccent: 'theme' });
     });
 
     test('marks manually edited Calico colours and CSS as custom', () => {
