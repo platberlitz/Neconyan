@@ -30,14 +30,14 @@
     --neco-raised: #ebe1d0;
     --neco-ink: #303331;
     --neco-muted: #504c45;
-    --neco-ginger: #b86b32;
-    --neco-ginger-hover: #d3935c;
-    --neco-border: #d5cec0;
+    --neco-ginger: #8f4f22;
+    --neco-ginger-hover: #7a4320;
+    --neco-border: #857e72;
     --neco-user: #f7e2c3;
     --neco-cream: #f3e6d1;
     --neco-charcoal: #303331;
     --neco-pink: #d88e9f;
-    --neco-on-accent: #303331;
+    --neco-on-accent: #fffaf0;
     --neco-canvas-gradient:
         url('../img/neconyan/paw-cream.webp') right 14px top 18px / 88px 88px no-repeat,
         url('../img/neconyan/paw-pink.webp') 92% 24% / 48px 48px no-repeat,
@@ -96,6 +96,10 @@ body.neconyan ::selection {
     --neco-ginger: #e0ae78;
     --neco-ginger-hover: #f3e6d1;
     color: var(--neco-ink);
+}
+
+:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan .neconyan-rail-footer kbd {
+    background: var(--neco-raised);
 }
 
 :root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan #sb-mobile-nav-content .sb-nav-item {
