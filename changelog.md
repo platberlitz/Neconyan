@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.3.7
+
+### Merged Staging PRs
+- PR #234 (2026-10-19) `fix(chat): give tide messages a readable card on desktop and tablet`
+
 ## v1.3.6
 
 ### Highlights
