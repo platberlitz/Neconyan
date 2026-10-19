@@ -21,7 +21,7 @@
         > .mes_block > .ica--companion-ledger { margin-inline: auto; }
     }
     /* Equal slots remove native/extension width drift; translate preserves reserved space. */
-    body.neconyan:is(.whisperstyle, .hushstyle, .ripplestyle)[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) .nn-response-controls {
+    body.neconyan:is(.whisperstyle, .hushstyle, .ripplestyle, .tidestyle)[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) .nn-response-controls {
         translate: 0 -4px;
         .swipeRightBlock {
             gap: 4px !important;
@@ -34,7 +34,7 @@
         }
     }
     /* The absent or hidden left arrow still has one slot in each detached track. */
-    body.neconyan:is(.hushstyle, .ripplestyle)[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes.nn-response-controls-below > .nn-response-controls {
+    body.neconyan:is(.hushstyle, .ripplestyle, .tidestyle)[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes.nn-response-controls-below > .nn-response-controls {
         box-sizing: border-box; width: 138px; height: 44px;
     }
     /* Ripple retains its existing inside flow while placing the same controls at the card edge. */
@@ -152,6 +152,152 @@
     body.neconyan #chat .mes .nn-response-controls .swipes-counter::after {
         content: none;
     }
+
+    /* Tide keeps the manager's controls in flow inside the container: no pill of their own, hugging
+       the cluster instead of the reading column, aligned to the row's outer side. */
+    body.neconyan.tidestyle #chat .mes.nn-tide-layout > .mes_block > .nn-response-controls {
+        width: max-content;
+        margin-inline-end: auto;
+        justify-content: flex-start;
+    }
+
+    /* A user row's bubbles are right-floated inside .mes_text, whose own right padding is
+       calc(var(--mes-right-spacing) - 6px) (style.css:1718). The wrapper carries the same end
+       margin, so its right edge - and the cluster's - lands on the bubbles' right edge. Without it
+       both auto margins share the free space and the controls sit centred. */
+    body.neconyan.tidestyle #chat .mes.nn-tide-layout[is_user='true'] > .mes_block > .nn-response-controls {
+        width: max-content;
+        margin-inline-start: auto;
+        margin-inline-end: calc(var(--mes-right-spacing) - 6px);
+        justify-content: flex-end;
+    }
+
+    /* The last-message counter carries a 1.5px letter-spacing on the wallpaper; the bars want none. */
+    body.neconyan.tidestyle[data-neconyan-chat-mode='roleplay']:not(.sbterm):not(.sbstory) #chat .mes .nn-response-controls .swipes-counter {
+        letter-spacing: 0;
+    }
+
+    /* A detached bar lines up with the reading column: assistant left, user right. */
+    body.neconyan.tidestyle #chat .mes.nn-response-controls-below > .nn-response-controls {
+        left: 0;
+        right: auto;
+    }
+
+    body.neconyan.tidestyle #chat .mes[is_user='true'].nn-response-controls-below > .nn-response-controls {
+        left: auto;
+        right: 0;
+    }
+}
+
+/* Owner redesign R7, round-3 fix A: at tablet width Tide uses the same manager-owned wrapper as the
+   desktop, with the same 36/44/4 slots. Duplicated rather than widened so no other style's tablet
+   layout changes. */
+@media screen and (min-width: 769px) and (max-width: 1000px) {
+    body.neconyan.tidestyle #chat .mes.nn-tide-layout .nn-response-controls {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        flex-wrap: nowrap;
+        gap: 4px;
+        clear: both;
+        width: max-content;
+        margin-inline-end: auto;
+        min-height: 36px;
+        margin-top: 8px;
+        color: var(--neco-ink);
+    }
+
+    body.neconyan.tidestyle #chat .mes.nn-tide-layout[is_user='true'] .nn-response-controls {
+        width: max-content;
+        margin-inline-start: auto;
+        margin-inline-end: calc(var(--mes-right-spacing) - 6px);
+        justify-content: flex-end;
+    }
+
+    body.neconyan.tidestyle #chat .mes.nn-tide-layout .nn-response-controls .swipeRightBlock {
+        position: static !important;
+        flex-direction: row-reverse !important;
+        align-items: center;
+        flex-wrap: nowrap;
+        gap: 4px;
+        width: auto !important;
+        inline-size: auto !important;
+        min-inline-size: 0;
+        max-inline-size: none;
+        order: 2;
+    }
+
+    body.neconyan.tidestyle #chat .mes.nn-tide-layout .nn-response-controls :is(.swipe_left, .swipe_right, .deep-swipe-left-outer, .deep-swipe-right) {
+        position: static !important;
+        inset: auto !important;
+        transform: none !important;
+        margin: 0 !important;
+        flex: 0 0 36px;
+        width: 36px;
+        height: 36px;
+        inline-size: 36px;
+        block-size: 36px;
+        min-width: 36px;
+        line-height: 36px;
+        text-align: center;
+        color: var(--neco-ink);
+        opacity: 1;
+    }
+
+    body.neconyan.tidestyle #chat .mes.nn-tide-layout .nn-response-controls > .assistant-swipe-arrow {
+        order: 3;
+    }
+
+    body.neconyan.tidestyle #chat .mes.nn-tide-layout .nn-response-controls:has(.deep-swipe-right-block) > .swipeRightBlock:not(.deep-swipe-right-block),
+    body.neconyan.tidestyle #chat .mes.nn-tide-layout .nn-response-controls:has(> .assistant-swipe-arrow) .swipe_right,
+    body.neconyan.tidestyle #chat .mes.nn-tide-layout .nn-response-controls:has(> .deep-swipe-left-outer) > .swipe_left {
+        display: none;
+    }
+
+    body.neconyan.tidestyle #chat .mes.nn-tide-layout .nn-response-controls .swipes-counter {
+        flex: 0 0 auto;
+        width: auto !important;
+        inline-size: auto;
+        min-width: 44px;
+        max-width: none;
+        height: 36px;
+        block-size: 36px;
+        margin: 0 !important;
+        letter-spacing: 0;
+        color: var(--neco-ink);
+        opacity: 1;
+    }
+
+    body.neconyan.tidestyle #chat .mes.nn-tide-layout .nn-response-controls .swipes-counter::after {
+        content: none;
+    }
+}
+
+/* Every Tide row keeps 12px under its members for the container, in flow and 'below' alike. */
+@media screen and (min-width: 769px) {
+    body.neconyan.tidestyle[data-neconyan-chat-mode='roleplay']:not(.sbterm):not(.sbstory) #chat .mes.nn-tide-layout {
+        padding-bottom: 12px !important;
+    }
+}
+
+/* Tide changes only control paint and alignment; its reading bubbles stay native. */
+body.neconyan.tidestyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) {
+    --deep-swipe-arrow-opacity: 1;
+    /* Restored extension styles and native idle states need the same available paint.
+       Inline important opacity still owns genuinely disabled controls. */
+    &:not(body.hideAllSwipeButtons *):not(.is_editing):not(:has(.edit_textarea, .reasoning_edit_textarea)) {
+        :is(.deep-swipe-left-outer, .deep-swipe-right):not(.disabled, [hidden], [aria-disabled='true'], [style*='pointer-events: none']),
+        &.swipes_visible .swipe_left:not(.disabled, [hidden], [aria-disabled='true']),
+        &:is(.swipes_visible, .last_swipe) .swipe_right:not(.disabled, [hidden], [aria-disabled='true']) { opacity: 1 !important; }
+        /* The extension updater keeps an existing single-alternative left arrow visible. */
+        .deep-swipe-left-outer[style*='pointer-events: none']:not(.disabled, [hidden]) { opacity: 0.3 !important; pointer-events: none !important; }
+    }
+    .swipes-counter:not([hidden]) { opacity: 1 !important; }
+    &:not(.deep-swipe-loading) .swipes-counter { color: var(--neco-ink) !important; }
+    :is(.swipe_left, .swipe_right, .deep-swipe-left-outer, .deep-swipe-right) {
+        align-items: center; justify-content: center; line-height: 1 !important;
+        font-size: 20px; color: var(--neco-ink);
+    }
 }
 
 /* Ripple changes only control paint and alignment; its reading grid stays native. */
@@ -194,6 +340,32 @@ body.neconyan.ripplestyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbst
             block-size: var(--moonlit-sb-swipe-control-size); justify-content: center;
             > .swipe_right { display: none; }
         }
+    }
+    /* Tide mirrors Ripple's narrow slots: the all-width cluster rules supply paint, these the sizes. */
+    body.neconyan.tidestyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) {
+        .swipes-counter {
+            box-sizing: border-box; flex: 0 0 var(--moonlit-sb-swipe-counter-width);
+            width: var(--moonlit-sb-swipe-counter-width) !important;
+            min-width: var(--moonlit-sb-swipe-counter-width) !important;
+            max-width: var(--moonlit-sb-swipe-counter-width) !important;
+            inline-size: var(--moonlit-sb-swipe-counter-width) !important;
+            min-inline-size: var(--moonlit-sb-swipe-counter-width) !important;
+            max-inline-size: var(--moonlit-sb-swipe-counter-width) !important;
+            height: var(--moonlit-sb-swipe-control-size);
+            block-size: var(--moonlit-sb-swipe-control-size);
+            padding: 0; margin: 0 !important;
+        }
+        .swipeRightBlock { gap: 4px !important; align-items: center; flex-direction: row-reverse !important; }
+        :is(.swipe_right, .deep-swipe-right) { flex: 0 0 var(--moonlit-sb-swipe-control-size); }
+        > :is(.swipeRightBlock, .swipe_left, .deep-swipe-left-outer, .assistant-swipe-arrow) { translate: 0; }
+        &:not(.last_mes):has(> .deep-swipe-right) > .swipeRightBlock:not(.deep-swipe-right-block) {
+            block-size: var(--moonlit-sb-swipe-control-size); justify-content: center;
+            > .swipe_right { display: none; }
+        }
+    }
+    /* The shared all-message counter rule raises and insets non-last counters; their slot owns that space. */
+    body.neconyan.tidestyle.swipeAllMessages #chat .mes:not(.last_mes) .swipes-counter {
+        margin: 0 !important;
     }
 }
 

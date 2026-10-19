@@ -1,4 +1,4 @@
-import { resolveEchoSurface, disposeEchoLayout } from './echo-message-layout.js';
+import { resolveEchoSurface, disposeEchoLayout, resolveTideSurface, disposeTideLayout } from './echo-message-layout.js';
 
 function isOpaqueColour(colour) {
     const match = /^(rgba?|color)\((.+)\)$/i.exec(colour || '');
@@ -107,8 +107,9 @@ export function createBubblesBottomBoundary({ chat, toolbar, getMode, documentRe
         const body = documentRef.body;
         const sheld = documentRef.getElementById('sheld');
         const echo = body.classList?.contains('echostyle') === true;
+        const tide = !echo && body.classList?.contains('tidestyle') === true;
         const cardStyle = !echo && ['whisperstyle', 'hushstyle', 'ripplestyle'].find(name => body.classList?.contains(name));
-        if (windowRef.innerWidth <= 768 || !body.matches(echo ? '.neconyan.echostyle:not(.sbterm):not(.sbstory)' : cardStyle ? `.neconyan.${cardStyle}:not(.sbterm):not(.sbstory)` : '.neconyan.bubblechat:not(.sbterm):not(.sbstory)')
+        if (windowRef.innerWidth <= 768 || !body.matches(echo ? '.neconyan.echostyle:not(.sbterm):not(.sbstory)' : tide ? '.neconyan.tidestyle:not(.sbterm):not(.sbstory)' : cardStyle ? `.neconyan.${cardStyle}:not(.sbterm):not(.sbstory)` : '.neconyan.bubblechat:not(.sbterm):not(.sbstory)')
             || getMode() !== 'roleplay' || sheld?.dataset.sbtwMode === 'on' || sheld?.dataset.sbConversationMode === 'on'
             || windowRef.getComputedStyle(chat).clipPath !== 'none') {
             setRow(null); return;
@@ -131,17 +132,23 @@ export function createBubblesBottomBoundary({ chat, toolbar, getMode, documentRe
             }
             if (row) break;
         }
-        const descriptor = row && echo ? resolveEchoSurface(row, y, windowRef) : null;
+        const descriptor = row && echo ? resolveEchoSurface(row, y, windowRef) : row && tide ? resolveTideSurface(row, y, windowRef) : null;
         setRow(row, descriptor?.targets, descriptor?.paint || row);
-        if (!row || (!echo && !cardStyle && row.querySelector('.edit_textarea, .reasoning_edit_textarea'))) return;
+        if (!row || (!echo && !cardStyle && !tide && row.querySelector('.edit_textarea, .reasoning_edit_textarea'))) return;
         if (cardStyle && row.matches('.smallSysMes, [is_system="true"]')) return;
-        if (echo && !descriptor) return;
+        if ((echo || tide) && !descriptor) return;
         const box = descriptor?.box || row.getBoundingClientRect(), style = windowRef.getComputedStyle(descriptor?.paint || row);
         const corners = descriptor ? windowRef.getComputedStyle(descriptor.radius) : style;
         const underlay = descriptor?.underlay ? windowRef.getComputedStyle(descriptor.underlay) : style;
         const paint = echo ? descriptor.underlay ? { background: style.background, opacity: style.opacity, display: 'block' }
-            : { background: 'none', opacity: '1', display: 'none' } : cardStyle ? { background: 'none', opacity: '1', display: 'none' } : windowRef.getComputedStyle(row, '::before');
+            : { background: 'none', opacity: '1', display: 'none' } : tide ? { background: underlay.background, opacity: underlay.opacity, display: 'block' }
+            : cardStyle ? { background: 'none', opacity: '1', display: 'none' } : windowRef.getComputedStyle(row, '::before');
+        // Echo and the card styles clear the edge by width. A Tide bubble is offset left or right, so
+        // it only clears when it lies inside the bottom bar horizontally: a narrower bubble that
+        // sticks out past either bar edge keeps its rounded cap.
+        const insideBar = box.left >= bar.left - 1 && box.right <= bar.right + 1;
         if ((echo || cardStyle) && box.right - box.left <= bar.width + 1) return;
+        if (tide && insideBar) return;
         const bottom = bar.top + 4;
         const height = Math.max(4, parseFloat(corners.borderBottomLeftRadius) || 0, parseFloat(corners.borderBottomRightRadius) || 0);
         const top = bottom - height;
@@ -153,7 +160,7 @@ export function createBubblesBottomBoundary({ chat, toolbar, getMode, documentRe
         previousClip = chat.style.getPropertyValue('clip-path');
         previousPriority = chat.style.getPropertyPriority('clip-path');
         let lane = null;
-        const editors = cardStyle ? [...row.querySelectorAll('.edit_textarea, .reasoning_edit_textarea')] : [echo && row.querySelector('.mes_text .edit_textarea')];
+        const editors = cardStyle || tide ? [...row.querySelectorAll('.edit_textarea, .reasoning_edit_textarea')] : [echo && row.querySelector('.mes_text .edit_textarea')];
         for (const editor of editors) {
             if (!editor || editor.scrollHeight <= editor.clientHeight) continue;
             const editorBox = editor.getBoundingClientRect(), editorStyle = windowRef.getComputedStyle(editor);
@@ -214,6 +221,7 @@ export function createBubblesBottomBoundary({ chat, toolbar, getMode, documentRe
         if (frame) windowRef.cancelAnimationFrame(frame);
         clear(); resize.disconnect(); observer.disconnect(); cap.remove();
         disposeEchoLayout(chat);
+        disposeTideLayout(chat);
         chat.removeEventListener('scroll', onScroll); windowRef.removeEventListener('resize', onScroll);
         documentRef.removeEventListener('load', onStylesheet, true); documentRef.removeEventListener('error', onStylesheet, true);
         for (const type of ['transitionrun', 'transitionend', 'transitioncancel']) chat.removeEventListener(type, onTransition);
