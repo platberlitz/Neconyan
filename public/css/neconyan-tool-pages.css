@@ -328,32 +328,9 @@ body.neconyan-tool-tour-active #neconyan-tour-coachmark {
     visibility: hidden;
 }
 
-/* Pawthfinder: swap its generic palette for the Neconyan one. */
+/* Pawthfinder: its own sheet already reads the Neconyan tokens; the page only sets the gap. */
 .neconyan-included-tool-page[data-tool-page='pathfinder'] .pf--settings {
-    --pf-accent: var(--neco-ginger);
-    --pf-on-accent: var(--neco-on-accent);
-    --pf-surface: var(--neco-surface);
-    --pf-surface-strong: var(--neco-raised, var(--neco-surface));
-    --pf-surface-soft: color-mix(in srgb, var(--neco-ginger) 6%, var(--neco-surface));
-    --pf-surface-hover: color-mix(in srgb, var(--neco-ginger) 12%, var(--neco-raised, var(--neco-surface)));
-    --pf-border: var(--neco-border);
-    --pf-text: var(--neco-ink);
-    --pf-text-muted: var(--neco-muted);
-    --pf-radius-sm: 10px;
-    --pf-radius-md: 14px;
-    --pf-radius-lg: 18px;
-    gap: 16px;
-}
-
-.neconyan-included-tool-page[data-tool-page='pathfinder'] .pf--settings :is(.pf--section-header strong, .pf--quickstart-title strong) {
-    font-family: var(--sb-font-display, inherit);
-    font-weight: 400;
-    letter-spacing: 0.01em;
-}
-
-.neconyan-included-tool-page[data-tool-page='pathfinder'] .pf--settings .pf--step-badge {
-    background: var(--neco-ginger);
-    color: var(--neco-on-accent);
+    gap: 12px;
 }
 
 /* Quick Image Gen: the page header already names it, so drop the drawer title and use Neconyan colours. */
@@ -727,6 +704,11 @@ body.neconyan-tool-tour-active #neconyan-tour-coachmark {
     .neconyan-included-tool-page[data-tool-page]:not([data-tool-page='']) {
         gap: 12px;
         padding: 12px 12px 20px;
+    }
+
+    /* Pawthfinder's sections are cards already; a second inset squeezes them on a phone. */
+    .neconyan-included-tool-page[data-tool-page='pathfinder']:not([data-tool-page='']) {
+        padding-inline: 0;
     }
 
     .neconyan-tool-page-intro {

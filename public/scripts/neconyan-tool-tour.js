@@ -101,18 +101,18 @@ const TOOL_PAGES = Object.freeze({
                 hint: 'I read all my notes before I act. I expect the same from the model.',
             },
             {
-                id: 'status',
-                targets: ['#pf--status-banner'],
-                title: 'The status line',
-                body: 'This line says whether Pawthfinder is ready. **Not configured** means no lorebook is chosen yet. **Pawthfinder is off** names the switch that is still off.\nLook here first whenever lore stops turning up.',
-                hint: 'Read the sign before you knock. It saves us both time.',
-            },
-            {
                 id: 'switch',
                 targets: ['.pf--master-section'],
                 title: 'The main switch',
                 body: '**Enable Pawthfinder for all chats** is the same switch as the Pawthfinder card in the Agents list. Changing other settings never flips it, so it stays where you left it.',
                 hint: 'One switch. On or off. I like things that know what they are.',
+            },
+            {
+                id: 'status',
+                targets: ['#pf--status-banner'],
+                title: 'The status line',
+                body: 'This line says whether Pawthfinder is ready. **Not configured** means no lorebook is chosen yet. **Pawthfinder is off** names the switch that is still off.\nLook here first whenever lore stops turning up.',
+                hint: 'Read the sign before you knock. It saves us both time.',
             },
             {
                 id: 'lorebooks',

@@ -1,25 +1,29 @@
 <div id="pf--settings" class="pf--settings">
-    <!-- Status Banner -->
-    <div id="pf--status-banner" class="pf--status-banner pf--status-disabled" role="status" aria-live="polite">
-        <div class="pf--status-icon" aria-hidden="true"><i class="fa-solid fa-circle-xmark"></i></div>
-        <div class="pf--status-text">
-            <strong>Pawthfinder is not configured</strong>
-            <span>Select at least one lorebook below to get started</span>
+    <!-- Main switch and status -->
+    <div class="pf--overview">
+        <div class="pf--section pf--master-section">
+            <div class="pf--master-toggle">
+                <label class="checkbox_label">
+                    <input type="checkbox" id="pf--master-enable" />
+                    <span id="pf--master-scope">Enable Pawthfinder for all chats</span>
+                </label>
+                <div class="pf--setting-help">This is the same switch as the Pawthfinder card in the Agents list. Saving settings does not change it.</div>
+            </div>
         </div>
-    </div>
 
-    <div class="pf--save-state">
-        <span id="pf--settings-save-status" class="pf--prompt-status" role="status" aria-live="polite"></span>
-        <button type="button" id="pf--settings-retry" class="menu_button" style="display: none;">Retry</button>
-    </div>
+        <div class="pf--overview-status">
+            <div id="pf--status-banner" class="pf--status-banner pf--status-disabled" role="status" aria-live="polite">
+                <div class="pf--status-icon" aria-hidden="true"><i class="fa-solid fa-circle-xmark"></i></div>
+                <div class="pf--status-text">
+                    <strong>Pawthfinder is not configured</strong>
+                    <span>Select at least one lorebook below to get started</span>
+                </div>
+            </div>
 
-    <div class="pf--section pf--master-section">
-        <div class="pf--master-toggle">
-            <label class="checkbox_label">
-                <input type="checkbox" id="pf--master-enable" />
-                <span id="pf--master-scope">Enable Pawthfinder for all chats</span>
-            </label>
-            <div class="pf--setting-help">This is the same switch as the Pawthfinder card in the Agents list. Saving settings does not change it.</div>
+            <div class="pf--save-state">
+                <span id="pf--settings-save-status" class="pf--prompt-status" role="status" aria-live="polite"></span>
+                <button type="button" id="pf--settings-retry" class="menu_button" style="display: none;">Retry</button>
+            </div>
         </div>
     </div>
 
@@ -407,35 +411,42 @@
 
 <style>
 .pf--settings {
-    --pf-accent: var(--color-primary, var(--sb-accent, var(--SmartThemeQuoteColor, oklch(79% 0.035 99))));
-    --pf-on-accent: var(--sb-on-solid-accent, oklch(22% 0.012 100));
-    --pf-surface: var(--color-surface, var(--sb-card-bg, var(--SmartThemeBlurTintColor, oklch(25% 0.012 260 / 0.94))));
-    --pf-surface-strong: var(--color-surface-strong, var(--sb-surface-elevated, oklch(29% 0.012 260 / 0.96)));
-    --pf-surface-soft: var(--sb-surface-elevated-soft, color-mix(in srgb, var(--pf-surface) 94%, var(--pf-accent) 6%));
-    --pf-surface-hover: var(--color-surface-hover, var(--sb-surface-hover, oklch(34% 0.012 260 / 0.96)));
-    --pf-control-bg: color-mix(in srgb, var(--pf-surface-strong) 92%, var(--pf-accent) 8%);
-    --pf-border: var(--sb-shell-border, color-mix(in srgb, var(--SmartThemeBorderColor, oklch(78% 0.01 100 / 0.24)) 78%, transparent));
-    --pf-border-strong: color-mix(in srgb, var(--pf-accent) 48%, var(--pf-border));
-    --pf-text: var(--SmartThemeBodyColor, oklch(84% 0.012 100));
-    --pf-text-muted: var(--sb-muted-fg, color-mix(in srgb, var(--pf-text) 68%, transparent));
-    --pf-muted-bg: var(--sb-muted-bg, color-mix(in srgb, var(--pf-surface-strong) 78%, var(--pf-text) 5%));
-    --pf-positive: var(--sb-positive-fg, oklch(78% 0.065 112));
-    --pf-positive-bg: var(--sb-positive-bg, color-mix(in srgb, var(--pf-positive) 14%, var(--pf-surface)));
-    --pf-warning: var(--sb-warning-fg, oklch(82% 0.08 88));
-    --pf-warning-bg: var(--sb-warning-bg, color-mix(in srgb, var(--pf-warning) 14%, var(--pf-surface)));
-    --pf-danger: var(--sb-danger-fg, oklch(74% 0.13 18));
-    --pf-danger-bg: var(--sb-danger-bg, color-mix(in srgb, var(--pf-danger) 12%, var(--pf-surface)));
-    --pf-radius-sm: var(--sb-radius-sm, 10px);
-    --pf-radius-md: var(--sb-radius-md, 14px);
-    --pf-radius-lg: var(--sb-radius-lg, 18px);
+    --pf-accent: var(--neco-ginger, var(--color-primary, var(--sb-accent, var(--SmartThemeQuoteColor, oklch(79% 0.035 99)))));
+    --pf-on-accent: var(--neco-on-accent, var(--sb-on-solid-accent, oklch(22% 0.012 100)));
+    --pf-surface: var(--neco-surface, var(--color-surface, var(--sb-card-bg, var(--SmartThemeBlurTintColor, oklch(25% 0.012 260 / 0.94)))));
+    --pf-surface-strong: var(--neco-raised, var(--color-surface-strong, var(--sb-surface-elevated, oklch(29% 0.012 260 / 0.96))));
+    --pf-surface-soft: color-mix(in srgb, var(--pf-accent) 7%, var(--pf-surface));
+    --pf-surface-hover: color-mix(in srgb, var(--pf-accent) 10%, var(--pf-surface-strong));
+    --pf-control-bg: var(--pf-surface-strong);
+    --pf-border: var(--neco-border, var(--sb-shell-border, color-mix(in srgb, var(--SmartThemeBorderColor, oklch(78% 0.01 100 / 0.24)) 78%, transparent)));
+    --pf-border-strong: color-mix(in srgb, var(--pf-accent) 55%, var(--pf-border));
+    --pf-text: var(--neco-ink, var(--SmartThemeBodyColor, oklch(84% 0.012 100)));
+    /* A touch of ink keeps muted text readable on the tinted rows. */
+    --pf-text-muted: color-mix(in srgb, var(--neco-muted, var(--sb-muted-fg, var(--pf-text))) 72%, var(--pf-text));
+    --pf-text-soft: color-mix(in srgb, var(--neco-muted, var(--sb-muted-fg, var(--pf-text))) 45%, var(--pf-text));
+    --pf-muted-bg: color-mix(in srgb, var(--pf-text) 6%, var(--pf-surface-strong));
+    --pf-positive: var(--sb-positive-fg, oklch(72% 0.11 150));
+    --pf-positive-bg: color-mix(in srgb, var(--pf-positive) 14%, var(--pf-surface));
+    --pf-warning: var(--sb-warning-fg, oklch(78% 0.11 80));
+    --pf-warning-bg: color-mix(in srgb, var(--pf-warning) 12%, var(--pf-surface));
+    --pf-danger: var(--sb-danger-fg, oklch(68% 0.15 25));
+    --pf-danger-bg: color-mix(in srgb, var(--pf-danger) 12%, var(--pf-surface));
+    --pf-radius-sm: 6px;
+    --pf-radius-md: 8px;
+    --pf-radius-lg: 12px;
+    --pf-pad: 16px 18px;
     --pf-control-size: max(38px, var(--sb-control-min-height, 38px));
-    --pf-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --pf-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --pf-font-body: calc(var(--mainFontSize, 15px) * 1);
+    --pf-font-control: calc(var(--mainFontSize, 15px) * 0.87);
+    --pf-font-label: calc(var(--mainFontSize, 15px) * 0.8);
+    --pf-font-meta: calc(var(--mainFontSize, 15px) * 0.74);
 }
 
 .pf--settings {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
     padding: 8px 0 10px;
     max-height: calc(100vh - 200px);
     max-height: calc(100dvh - 200px);
@@ -445,7 +456,7 @@
     -webkit-overflow-scrolling: touch;
     text-align: left;
     color: var(--pf-text);
-    font-size: var(--mainFontSize);
+    font-size: var(--pf-font-body);
     line-height: 1.5;
     min-width: 0;
     overflow-wrap: anywhere;
@@ -471,41 +482,79 @@
     font-size: inherit;
 }
 
+.pf--settings :is(select, input:not([type="checkbox"]), textarea) {
+    border-radius: var(--pf-radius-sm);
+}
+
 .pf--settings button {
     white-space: normal;
 }
 
+.pf--settings .menu_button {
+    margin: 0;
+    font-size: var(--pf-font-control);
+    font-weight: 500;
+}
+
 .pf--settings :is(button, input, select, textarea, [tabindex]):focus-visible {
-    outline: 2px solid var(--sb-focus-ring, var(--pf-accent));
+    outline: 2px solid var(--pf-accent);
     outline-offset: 2px;
 }
 
-.pf--save-state {
+/* Main switch and status */
+.pf--overview {
+    display: flex;
+    flex-direction: column;
+    background: var(--pf-surface);
+    border: 1px solid var(--pf-border);
+    border-radius: var(--pf-radius-lg);
+    min-width: 0;
+    flex-shrink: 0;
+}
+
+.pf--overview .pf--master-section {
+    padding: 10px 18px 14px;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+}
+
+.pf--master-toggle .checkbox_label {
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    font-weight: 600;
+}
+
+
+.pf--overview-status {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: 8px 12px;
+    padding: 12px 18px;
+    border-top: 1px solid var(--pf-border);
+    background: var(--pf-surface-soft);
+    border-radius: 0 0 var(--pf-radius-lg) var(--pf-radius-lg);
 }
 
-.pf--save-state .pf--prompt-status {
-    margin: 0;
-}
-
-/* Status Banner */
 .pf--status-banner {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 12px 14px;
-    border-radius: var(--pf-radius-md);
-    border: 1px solid var(--pf-border);
-    background: var(--pf-surface-strong);
-    text-align: left;
+    gap: 10px;
+    flex: 1 1 16rem;
+    min-width: 0;
 }
 
-.pf--status-disabled {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--pf-muted-bg) 95%, var(--pf-accent) 5%), var(--pf-surface));
-    border-color: color-mix(in srgb, var(--pf-border) 72%, var(--pf-accent) 18%);
+.pf--status-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    font-size: var(--pf-font-control);
 }
 
 .pf--status-disabled .pf--status-icon {
@@ -513,61 +562,54 @@
     background: var(--pf-muted-bg);
 }
 
-.pf--status-ready {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--pf-positive-bg) 92%, var(--pf-accent) 8%), var(--pf-surface));
-    border-color: color-mix(in srgb, var(--pf-positive) 42%, var(--pf-border));
-}
-
 .pf--status-ready .pf--status-icon {
     color: var(--pf-positive);
-    background: color-mix(in srgb, var(--pf-positive-bg) 86%, transparent);
-}
-
-.pf--status-icon {
-    font-size: calc(var(--mainFontSize) * 1.2);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    width: 36px;
-    height: 36px;
-    border-radius: 999px;
+    background: var(--pf-positive-bg);
 }
 
 .pf--status-text {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 1px;
     min-width: 0;
 }
 
 .pf--status-text strong {
-    font-size: calc(var(--mainFontSize) * 0.92);
-    line-height: 1.2;
+    font-size: var(--pf-font-control);
+    font-weight: 600;
+    line-height: 1.3;
 }
 
 .pf--status-text span {
-    font-size: calc(var(--mainFontSize) * 0.84);
+    font-size: var(--pf-font-label);
     color: var(--pf-text-muted);
+    line-height: 1.4;
 }
 
-/* Master enable */
-.pf--master-section {
-    padding: 12px 14px;
-}
-
-.pf--master-toggle .checkbox_label {
+.pf--save-state {
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.pf--save-state .pf--prompt-status {
     margin: 0;
 }
 
+.pf--save-state .pf--prompt-status:empty {
+    display: none;
+}
+
+/* Checkboxes */
 .pf--settings .checkbox_label {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     min-height: var(--pf-control-size);
     min-width: 0;
+    padding-block: 4px;
     line-height: 1.35;
 }
 
@@ -582,16 +624,18 @@
     overflow-wrap: anywhere;
 }
 
-.pf--master-toggle input[type="checkbox"] {
-    flex-shrink: 0;
+.pf--settings .checkbox_label + .pf--setting-help {
+    margin-top: 0;
+    padding-left: 25px;
 }
 
 /* Quick Start */
 .pf--quickstart {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--pf-surface-strong) 92%, var(--pf-accent) 8%), var(--pf-surface));
-    border: 1px solid color-mix(in srgb, var(--pf-border) 76%, var(--pf-accent) 18%);
+    background: var(--pf-surface-soft);
+    border: 1px solid color-mix(in srgb, var(--pf-accent) 28%, var(--pf-border));
     border-radius: var(--pf-radius-lg);
-    overflow: hidden;
+    padding: 12px 18px 16px;
+    flex-shrink: 0;
 }
 
 .pf--quickstart-header {
@@ -599,16 +643,13 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 10px 14px;
-    background: color-mix(in srgb, var(--pf-surface-strong) 92%, var(--pf-accent) 8%);
-    border-bottom: 1px solid color-mix(in srgb, var(--pf-border) 70%, transparent);
-    font-size: calc(var(--mainFontSize) * 0.92);
+    margin-bottom: 6px;
 }
 
 .pf--quickstart-title {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     min-width: 0;
 }
 
@@ -623,31 +664,35 @@
     flex: 0 0 auto;
     width: var(--pf-control-size);
     height: var(--pf-control-size);
-    margin: 0;
-    border: 1px solid color-mix(in srgb, var(--pf-border) 72%, transparent);
-    border-radius: var(--pf-radius-sm);
-    background: color-mix(in srgb, var(--pf-surface-strong) 88%, var(--pf-text) 4%);
+    margin: 0 -8px 0 0;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--pf-radius-md);
+    background: transparent;
     color: var(--pf-text-muted);
     cursor: pointer;
-    transition: background 0.18s var(--pf-ease), border-color 0.18s var(--pf-ease), color 0.18s var(--pf-ease);
 }
 
 .pf--quickstart-close:hover,
 .pf--quickstart-close:focus-visible {
     background: var(--pf-surface-hover);
-    border-color: color-mix(in srgb, var(--pf-border) 66%, var(--pf-accent) 20%);
+    border-color: color-mix(in srgb, var(--pf-accent) 40%, var(--pf-border));
     color: var(--pf-text);
 }
 
 .pf--quickstart-body {
-    padding: 12px 14px;
-    font-size: var(--mainFontSize);
-    line-height: 1.5;
+    font-size: var(--pf-font-control);
+    line-height: 1.55;
     color: var(--pf-text-muted);
 }
 
+.pf--quickstart-body b {
+    color: var(--pf-text);
+    font-weight: 600;
+}
+
 .pf--quickstart-body p {
-    margin: 0 0 10px 0;
+    margin: 0 0 8px 0;
 }
 
 .pf--quickstart-body ol {
@@ -656,7 +701,12 @@
 }
 
 .pf--quickstart-body li {
-    margin-bottom: 6px;
+    margin-bottom: 4px;
+}
+
+.pf--quickstart-body li::marker {
+    color: var(--pf-accent);
+    font-weight: 600;
 }
 
 /* Sections */
@@ -664,98 +714,470 @@
     background: var(--pf-surface);
     border: 1px solid var(--pf-border);
     border-radius: var(--pf-radius-lg);
-    padding: 14px;
+    padding: var(--pf-pad);
     min-width: 0;
     flex-shrink: 0;
-}
-
-.pf--section-primary {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--pf-accent) 8%, var(--pf-surface-strong)), var(--pf-surface));
-    border-color: var(--pf-border-strong);
 }
 
 .pf--section-header {
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    flex-wrap: wrap;
-    gap: 6px;
+    flex-wrap: nowrap;
+    gap: 6px 10px;
     margin-bottom: 10px;
-    font-size: calc(var(--mainFontSize) * 0.92);
     line-height: 1.25;
     text-align: left;
 }
 
+.pf--section-header > * {
+    flex: 0 0 auto;
+}
+
+.pf--section-header > strong {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.pf--section-header strong,
+.pf--quickstart-title strong {
+    font-family: var(--sb-font-display, inherit);
+    font-size: calc(var(--mainFontSize, 15px) * 1.1);
+    font-weight: 400;
+    letter-spacing: 0.01em;
+    color: var(--pf-text);
+}
+
 .pf--collapsible-header {
+    position: relative;
     cursor: pointer;
     -webkit-user-select: none;
     user-select: none;
-    width: 100%;
-    padding: 4px 0;
+    width: calc(100% + 16px);
+    margin: -4px -8px 0;
+    padding: 6px calc(8px + 1.75em) 6px 8px;
     border: 0;
+    border-radius: var(--pf-radius-md);
     background: transparent;
     color: inherit;
     font-family: inherit;
 }
 
+.pf--section-collapsible > .pf--collapsible-header {
+    margin-bottom: -4px;
+}
+
 .pf--collapsible-header:hover {
-    color: var(--pf-accent);
+    background: var(--pf-surface-hover);
 }
 
 .pf--chevron {
-    transition: transform 0.2s;
-    font-size: calc(var(--mainFontSize) * 0.84);
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    translate: 0 -50%;
     width: 1em;
-    flex: 0 0 auto;
+    text-align: center;
+    color: var(--pf-text-muted);
+    font-size: var(--pf-font-label);
+}
+
+.pf--collapsible-header:hover .pf--chevron {
+    color: var(--pf-accent);
 }
 
 .pf--section-collapsible .pf--section-body {
-    margin-top: 12px;
+    margin-top: 14px;
 }
 
 .pf--step-badge {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
     background: var(--pf-accent);
     color: var(--pf-on-accent);
-    border-radius: 50%;
-    font-size: calc(var(--mainFontSize) * 0.84);
-    font-weight: bold;
+    border-radius: 999px;
+    font-size: var(--pf-font-label);
+    font-weight: 700;
+    line-height: 1;
     flex: 0 0 auto;
 }
 
 .pf--required {
-    color: var(--pf-danger);
-    font-size: calc(var(--mainFontSize) * 0.84);
+    color: var(--pf-text-muted);
+    font-size: var(--pf-font-label);
 }
 
 .pf--badge {
-    background: color-mix(in srgb, var(--pf-accent) 82%, var(--pf-surface-strong));
-    color: var(--pf-on-accent);
-    padding: 1px 6px;
-    border-radius: 8px;
-    font-size: calc(var(--mainFontSize) * 0.72);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 8px;
+    border: 1px solid color-mix(in srgb, var(--pf-accent) 40%, var(--pf-border));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--pf-accent) 12%, var(--pf-surface));
+    color: var(--pf-text);
+    font-size: var(--pf-font-meta);
+    font-weight: 600;
+    line-height: 1.6;
 }
 
 .pf--section-desc {
-    font-size: calc(var(--mainFontSize) * 0.92);
+    font-size: var(--pf-font-control);
     color: var(--pf-text-muted);
     margin-bottom: 12px;
-    line-height: 1.4;
+    line-height: 1.45;
 }
 
-.pf--log-actions {
+.pf--section-body {
+    text-align: left;
+}
+
+.pf--section-body button {
+    text-align: center;
+}
+
+/* Lorebook List */
+.pf--lorebook-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+    align-content: start;
+    gap: 8px;
+    max-height: 280px;
+    overflow-y: auto;
+    margin-bottom: 12px;
+    padding: 2px;
+}
+
+.pf--lorebook-list:has(> .pf--empty-state) {
+    grid-template-columns: 1fr;
+}
+
+.pf--lorebook-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: var(--pf-control-bg);
+    border: 1px solid var(--pf-border);
+    border-radius: var(--pf-radius-md);
+    cursor: pointer;
+    min-height: var(--pf-control-size);
+    min-width: 0;
+}
+
+.pf--lorebook-item:hover {
+    background: var(--pf-surface-hover);
+    border-color: color-mix(in srgb, var(--pf-accent) 35%, var(--pf-border));
+}
+
+.pf--lorebook-item.selected {
+    background: color-mix(in srgb, var(--pf-accent) 12%, var(--pf-surface-strong));
+    border-color: var(--pf-border-strong);
+}
+
+.pf--lorebook-item input[type="checkbox"] {
+    margin: 0;
+    flex: 0 0 auto;
+}
+
+.pf--lorebook-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.pf--lorebook-name {
+    font-weight: 600;
+    font-size: var(--pf-font-control);
+    line-height: 1.3;
+}
+
+.pf--lorebook-meta {
+    font-size: var(--pf-font-meta);
+    color: var(--pf-text-soft);
+}
+
+.pf--lorebook-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 10px;
 }
 
+.pf--section-body > .pf--lorebook-toggle {
+    margin: 0 0 10px;
+}
+
+.pf--empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 20px;
+    border: 1px dashed var(--pf-border);
+    border-radius: var(--pf-radius-md);
+    text-align: center;
+    color: var(--pf-text-muted);
+    font-size: var(--pf-font-control);
+}
+
+.pf--empty-state * {
+    text-align: center;
+}
+
+.pf--empty-state i {
+    font-size: calc(var(--mainFontSize, 15px) * 1.5);
+    color: var(--pf-accent);
+    opacity: 0.8;
+}
+
+/* Mode Cards */
+.pf--mode-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16em), 1fr));
+    gap: 12px;
+}
+
+.pf--mode-card {
+    display: flex;
+    flex-direction: column;
+    background: var(--pf-surface-strong);
+    border: 1px solid var(--pf-border);
+    border-radius: var(--pf-radius-md);
+    min-width: 0;
+}
+
+.pf--mode-card:hover {
+    border-color: color-mix(in srgb, var(--pf-accent) 35%, var(--pf-border));
+}
+
+.pf--mode-card.active {
+    background: color-mix(in srgb, var(--pf-accent) 9%, var(--pf-surface-strong));
+    border-color: var(--pf-border-strong);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pf-accent) 45%, transparent);
+}
+
+.pf--mode-card-header {
+    padding: 8px 14px 0;
+}
+
+.pf--mode-card-header .checkbox_label {
+    font-weight: 600;
+}
+
+.pf--mode-card-header i {
+    margin-right: 6px;
+    color: var(--pf-accent);
+}
+
+.pf--mode-card-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    padding: 2px 14px 14px;
+    font-size: var(--pf-font-control);
+}
+
+.pf--mode-card-body p {
+    margin: 0 0 8px 0;
+    line-height: 1.45;
+    color: var(--pf-text-muted);
+}
+
+.pf--mode-card-body p b {
+    color: var(--pf-text);
+    font-weight: 600;
+}
+
+.pf--mode-card-body ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.pf--mode-card-body li {
+    padding: 3px 0;
+}
+
+.pf--mode-card-body li i {
+    width: 16px;
+    margin-right: 8px;
+    color: var(--pf-accent);
+    text-align: center;
+}
+
+.pf--mode-requirement,
+.pf--mode-info {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-top: auto;
+    padding: 8px 10px;
+    border-radius: var(--pf-radius-sm);
+    background: var(--pf-muted-bg);
+    color: var(--pf-text-soft);
+    font-size: var(--pf-font-label);
+    line-height: 1.45;
+}
+
+.pf--mode-card-body ul + :is(.pf--mode-requirement, .pf--mode-info) {
+    margin-top: 10px;
+}
+
+.pf--mode-requirement i {
+    color: var(--pf-warning);
+}
+
+.pf--mode-info i {
+    color: var(--pf-accent);
+}
+
+/* Dual mode warning */
+.pf--dual-mode-warning {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--pf-warning-bg);
+    border: 1px solid color-mix(in srgb, var(--pf-warning) 34%, var(--pf-border));
+    border-radius: var(--pf-radius-md);
+    color: var(--pf-text);
+    font-size: var(--pf-font-control);
+    margin-bottom: 12px;
+}
+
+.pf--dual-mode-warning i {
+    flex-shrink: 0;
+    color: var(--pf-warning);
+}
+
+/* Settings */
+.pf--setting-group {
+    margin-bottom: 16px;
+}
+
+.pf--setting-group:last-child {
+    margin-bottom: 0;
+}
+
+.pf--setting-label {
+    display: block;
+    font-size: var(--pf-font-control);
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.pf--setting-help {
+    font-size: var(--pf-font-label);
+    color: var(--pf-text-muted);
+    margin-top: 4px;
+    line-height: 1.45;
+}
+
+.pf--setting-help code {
+    background: var(--pf-muted-bg);
+    border: 1px solid var(--pf-border);
+    padding: 1px 5px;
+    border-radius: var(--pf-radius-sm);
+    font-size: inherit;
+}
+
+.pf--setting-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 16px;
+    margin-bottom: 16px;
+}
+
+.pf--setting-row:last-child {
+    margin-bottom: 0;
+}
+
+.pf--setting-row .pf--setting-group {
+    flex: 1 1 180px;
+    min-width: 0;
+    margin-bottom: 0;
+}
+
+/* Summaries */
+.pf--summary-editor-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 10px;
+    margin-bottom: 6px;
+}
+
+.pf--summary-editor-header .pf--setting-label {
+    margin-bottom: 0;
+}
+
+.pf--summary-indicator {
+    border-radius: 999px;
+    font-size: var(--pf-font-meta);
+    font-weight: 600;
+    padding: 2px 10px;
+    white-space: normal;
+}
+
+.pf--summary-indicator-injected {
+    background: var(--pf-positive-bg);
+    border: 1px solid color-mix(in srgb, var(--pf-positive) 34%, var(--pf-border));
+    color: var(--pf-text);
+}
+
+.pf--summary-indicator-not-injected {
+    background: var(--pf-warning-bg);
+    border: 1px solid color-mix(in srgb, var(--pf-warning) 34%, var(--pf-border));
+    color: var(--pf-text);
+}
+
+.pf--summary-indicator-missing {
+    background: var(--pf-muted-bg);
+    border: 1px solid var(--pf-border);
+    color: var(--pf-text-muted);
+}
+
+.pf--summary-meta {
+    font-size: var(--pf-font-meta);
+    color: var(--pf-text-muted);
+    margin-top: 6px;
+}
+
+/* Action rows */
+:is(.pf--summary-actions, .pf--prompt-actions, .pf--log-actions, .pf--diagnostics-actions) {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.pf--summary-actions,
+.pf--prompt-actions {
+    margin-top: 10px;
+}
+
+.pf--log-actions {
+    margin-bottom: 12px;
+}
+
+:is(.pf--summary-actions, .pf--prompt-actions, .pf--log-actions, .pf--diagnostics-actions) .menu_button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: auto;
+    max-width: 100%;
+    white-space: normal;
+}
+
+/* Logs and diagnostics */
 .pf--log-mode-row {
     display: flex;
     justify-content: flex-start;
@@ -771,6 +1193,7 @@
     gap: 8px;
     max-width: 100%;
     min-height: var(--pf-control-size);
+    font-size: var(--pf-font-control);
 }
 
 .pf--log-mode-control span {
@@ -785,13 +1208,15 @@
 
 .pf--retrieval-log-output,
 .pf--diagnostics-output {
+    box-sizing: border-box;
+    width: 100%;
     white-space: pre-wrap;
     line-height: 1.55;
-    font-size: calc(var(--mainFontSize) * 0.84);
-    padding: 12px;
+    font-size: var(--pf-font-label);
+    padding: 12px 14px;
     border-radius: var(--pf-radius-md);
-    background: color-mix(in srgb, var(--pf-surface-strong) 88%, var(--pf-text) 3%);
-    border: 1px solid color-mix(in srgb, var(--pf-border) 84%, transparent);
+    background: var(--pf-surface-strong);
+    border: 1px solid var(--pf-border);
     max-height: 320px;
     overflow: auto;
     tab-size: 2;
@@ -802,318 +1227,45 @@
     font-family: var(--mainFontFamily, inherit);
 }
 
-/* Lorebook List */
-.pf--lorebook-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    max-height: 200px;
-    overflow-y: auto;
-    margin-bottom: 10px;
-}
-
-.pf--lorebook-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    background: var(--pf-control-bg);
-    border: 1px solid color-mix(in srgb, var(--pf-border) 74%, transparent);
-    border-radius: var(--pf-radius-md);
-    cursor: pointer;
-    min-height: var(--pf-control-size);
-    min-width: 0;
-    flex-shrink: 0;
-    transition: background 0.18s var(--pf-ease), border-color 0.18s var(--pf-ease), transform 0.18s var(--pf-ease);
-}
-
-.pf--lorebook-item:hover {
-    background: var(--pf-surface-hover);
-    border-color: color-mix(in srgb, var(--pf-border) 68%, var(--pf-accent) 16%);
-}
-
-.pf--lorebook-item.selected {
-    background: color-mix(in srgb, var(--pf-accent) 18%, var(--pf-surface-strong));
-    border-color: color-mix(in srgb, var(--pf-accent) 62%, var(--pf-border));
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pf-accent) 18%, transparent);
-}
-
-.pf--lorebook-item input[type="checkbox"] {
-    margin: 0;
-    flex: 0 0 auto;
-}
-
-.pf--lorebook-info {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-    overflow-wrap: anywhere;
-}
-
-.pf--lorebook-name {
-    font-weight: 500;
-    font-size: calc(var(--mainFontSize) * 0.92);
-}
-
-.pf--lorebook-meta {
-    font-size: calc(var(--mainFontSize) * 0.84);
-    color: var(--pf-text-muted);
-}
-
-.pf--lorebook-toggle {
-    margin-top: 10px;
-}
-
-.pf--empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    padding: 20px;
-    text-align: center;
-    color: var(--pf-text-muted);
-}
-
-.pf--empty-state i {
-    font-size: calc(var(--mainFontSize) * 1.6);
-}
-
-/* Mode Cards */
-.pf--mode-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16em), 1fr));
-    gap: 12px;
-}
-
-.pf--mode-card {
-    background: var(--pf-surface-strong);
-    border: 1px solid color-mix(in srgb, var(--pf-border) 72%, transparent);
-    border-radius: var(--pf-radius-lg);
-    overflow: hidden;
-    min-width: 0;
-    transition: background 0.18s var(--pf-ease), border-color 0.18s var(--pf-ease);
-}
-
-.pf--mode-card:hover {
-    background: var(--pf-surface-hover);
-    border-color: color-mix(in srgb, var(--pf-border) 70%, var(--pf-accent) 18%);
-}
-
-.pf--mode-card.active {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--pf-accent) 30%, var(--pf-surface-strong)), color-mix(in srgb, var(--pf-accent) 16%, var(--pf-surface)));
-    border-color: color-mix(in srgb, var(--pf-accent) 72%, var(--pf-border));
-}
-
-.pf--mode-card-header {
-    padding: 10px 12px;
-    background: color-mix(in srgb, var(--pf-surface) 72%, var(--pf-text) 4%);
-    border-bottom: 1px solid color-mix(in srgb, var(--pf-border) 70%, transparent);
-}
-
-.pf--mode-card.active .pf--mode-card-header {
-    background: color-mix(in srgb, var(--pf-accent) 24%, var(--pf-surface-strong));
-    border-bottom-color: color-mix(in srgb, var(--pf-accent) 34%, transparent);
-}
-
-.pf--mode-card-header .checkbox_label {
-    font-weight: 600;
-    font-size: calc(var(--mainFontSize) * 0.92);
-}
-
-.pf--mode-card-header i {
-    margin-right: 6px;
-    color: var(--pf-accent);
-}
-
-.pf--mode-card.active .pf--mode-card-header i {
-    color: var(--pf-on-accent);
-}
-
-.pf--mode-card-body {
-    padding: 12px;
-    font-size: calc(var(--mainFontSize) * 0.92);
-}
-
-.pf--mode-card-body p {
-    margin: 0 0 10px 0;
-    line-height: 1.4;
-    color: var(--pf-text-muted);
-}
-
-.pf--mode-card-body ul {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-}
-
-.pf--mode-card-body li {
-    padding: 4px 0;
-}
-
-.pf--mode-card-body li i {
-    width: 16px;
-    margin-right: 6px;
-    color: var(--pf-accent);
-}
-
-.pf--mode-requirement,
-.pf--mode-info {
-    margin-top: 10px;
-    padding: 8px 10px;
-    border-radius: var(--pf-radius-sm);
-    font-size: calc(var(--mainFontSize) * 0.84);
-    display: flex;
-    align-items: flex-start;
-    gap: 6px;
-}
-
-.pf--mode-requirement {
-    background: var(--pf-danger-bg);
-    color: var(--pf-danger);
-}
-
-.pf--mode-info {
-    background: color-mix(in srgb, var(--pf-accent) 12%, var(--pf-surface));
-    color: var(--pf-accent);
-}
-
-/* Dual mode warning */
-.pf--dual-mode-warning {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    background: var(--pf-warning-bg);
-    border: 1px solid color-mix(in srgb, var(--pf-warning) 34%, var(--pf-border));
-    border-radius: var(--pf-radius-md);
-    color: var(--pf-warning);
-    font-size: calc(var(--mainFontSize) * 0.84);
+.pf--diagnostics-output {
+    font-family: var(--monoFontFamily, ui-monospace, monospace);
+    max-height: 240px;
     margin-bottom: 12px;
 }
 
-.pf--dual-mode-warning i {
-    flex-shrink: 0;
-}
-
-/* Settings */
-.pf--setting-group {
-    margin-bottom: 14px;
-}
-
-.pf--setting-group:last-child {
-    margin-bottom: 0;
-}
-
-.pf--setting-label {
-    display: block;
-    font-size: calc(var(--mainFontSize) * 0.92);
-    font-weight: 500;
-    margin-bottom: 6px;
-}
-
-.pf--setting-help {
-    font-size: calc(var(--mainFontSize) * 0.84);
-    color: var(--pf-text-muted);
-    margin-top: 4px;
-}
-
-.pf--setting-help code {
-    background: var(--pf-muted-bg);
-    border: 1px solid color-mix(in srgb, var(--pf-border) 80%, transparent);
-    padding: 1px 5px;
-    border-radius: 5px;
-    font-size: inherit;
-}
-
-.pf--setting-row {
+.pf--diagnostics-panel {
     display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-}
-
-.pf--setting-row .pf--setting-group {
-    flex: 1 1 180px;
-    min-width: 0;
-    margin-bottom: 0;
-}
-
-
-.pf--summary-editor-header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-}
-
-.pf--summary-indicator {
-    border-radius: 999px;
-    font-size: calc(var(--mainFontSize) * 0.84);
-    padding: 3px 8px;
-    white-space: normal;
-}
-
-.pf--summary-indicator-injected {
-    background: var(--pf-positive-bg);
-    border: 1px solid color-mix(in srgb, var(--pf-positive) 34%, var(--pf-border));
-    color: var(--pf-positive);
-}
-
-.pf--summary-indicator-not-injected {
-    background: var(--pf-warning-bg);
-    border: 1px solid color-mix(in srgb, var(--pf-warning) 34%, var(--pf-border));
-    color: var(--pf-warning);
-}
-
-.pf--summary-indicator-missing {
-    background: var(--pf-muted-bg);
-    border: 1px solid color-mix(in srgb, var(--pf-border) 86%, transparent);
-    color: var(--pf-text-muted);
-}
-
-.pf--summary-meta {
-    font-size: calc(var(--mainFontSize) * 0.84);
-    color: var(--pf-text-muted);
-    margin-top: 5px;
-}
-
-.pf--summary-actions {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-top: 8px;
-}
-
-.pf--summary-actions .menu_button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    max-width: 100%;
-    white-space: normal;
+    flex-direction: column;
+    align-items: stretch;
 }
 
 /* Tool List */
 .pf--tool-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+    gap: 8px;
+}
+
+.pf--tool-list > .pf--empty-state {
+    grid-column: 1 / -1;
 }
 
 .pf--tool-list .checkbox_label {
-    display: grid;
-    grid-template-columns: max-content minmax(0, 1fr);
-    align-items: center;
-    padding: 7px 10px;
+    margin: 0;
+    padding: 8px 12px;
     background: var(--pf-control-bg);
-    border: 1px solid color-mix(in srgb, var(--pf-border) 76%, transparent);
-    border-radius: var(--pf-radius-sm);
-    column-gap: 10px;
+    border: 1px solid var(--pf-border);
+    border-radius: var(--pf-radius-md);
+    font-size: var(--pf-font-control);
+    cursor: pointer;
 }
 
+.pf--tool-list .checkbox_label:has(input:checked) {
+    background: color-mix(in srgb, var(--pf-accent) 10%, var(--pf-surface-strong));
+    border-color: color-mix(in srgb, var(--pf-accent) 45%, var(--pf-border));
+}
+
+/* Permissions */
 .pf--permission-matrix {
     display: flex;
     flex-direction: column;
@@ -1123,21 +1275,26 @@
 
 .pf--permission-row {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr) repeat(3, minmax(5.5rem, auto));
     align-items: center;
-    gap: 10px;
-    padding: 10px;
+    gap: 8px;
+    padding: 8px 8px 8px 14px;
     background: var(--pf-control-bg);
-    border: 1px solid color-mix(in srgb, var(--pf-border) 78%, transparent);
+    border: 1px solid var(--pf-border);
     border-radius: var(--pf-radius-md);
 }
 
 .pf--permission-book {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 8px;
     min-width: 0;
-    grid-column: 1 / -1;
+}
+
+.pf--permission-book strong {
+    font-size: var(--pf-font-control);
+    font-weight: 600;
 }
 
 .pf--permission-book strong,
@@ -1146,27 +1303,32 @@
 }
 
 .pf--permission-book span {
-    font-size: calc(var(--mainFontSize) * 0.84);
+    font-size: var(--pf-font-meta);
     color: var(--pf-text-muted);
 }
 
 .pf--permission-row .checkbox_label {
+    justify-content: center;
+    gap: 8px;
     margin: 0;
-    padding: 6px;
+    padding: 4px 12px;
     min-height: var(--pf-control-size);
+    border: 1px solid var(--pf-border);
+    border-radius: var(--pf-radius-sm);
+    background: var(--pf-surface);
+    font-size: var(--pf-font-control);
+    cursor: pointer;
 }
 
-/* Prompt Editor */
-.pf--prompt-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 10px;
-    margin-top: 10px;
+.pf--permission-row .checkbox_label:has(input:checked) {
+    background: color-mix(in srgb, var(--pf-accent) 12%, var(--pf-surface));
+    border-color: color-mix(in srgb, var(--pf-accent) 50%, var(--pf-border));
 }
 
+/* Status text */
 .pf--prompt-status {
-    font-size: calc(var(--mainFontSize) * 0.84);
+    font-size: var(--pf-font-label);
+    color: var(--pf-text-muted);
     margin-left: auto;
     min-width: 0;
     overflow-wrap: anywhere;
@@ -1180,62 +1342,11 @@
     color: var(--pf-danger);
 }
 
-/* Diagnostics */
-.pf--diagnostics-output {
-    background: color-mix(in srgb, var(--pf-surface-strong) 84%, var(--pf-text) 4%);
-    border-radius: var(--pf-radius-md);
-    padding: 12px;
-    font-family: monospace;
-    font-size: calc(var(--mainFontSize) * 0.84);
-    white-space: pre-wrap;
-    max-height: 200px;
-    overflow-y: auto;
-    margin-bottom: 10px;
-    text-align: left !important;
-    width: 100%;
-    box-sizing: border-box;
-    margin-right: auto;
-}
-
-.pf--diagnostics-panel {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    text-align: left !important;
-}
-
-.pf--diagnostics-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-#pf--run-diagnostics,
-#pf--copy-diagnostics {
-    display: inline-flex;
-    align-self: flex-start;
-    width: fit-content;
-    inline-size: fit-content;
-    max-inline-size: 100%;
-    min-inline-size: var(--pf-control-size);
-    white-space: normal;
-    margin-left: 0;
-    margin-right: auto;
-}
-
-#pf--run-diagnostics span,
-#pf--copy-diagnostics span {
-    min-width: 0;
-    overflow-wrap: anywhere;
-    text-align: center;
-}
-
-.pf--section-body {
-    text-align: left !important;
-}
-
-.pf--section-body button {
-    text-align: center;
+/* Motion */
+@media (prefers-reduced-motion: no-preference) {
+    :is(.pf--quickstart-close, .pf--collapsible-header, .pf--lorebook-item, .pf--mode-card, .pf--tool-list .checkbox_label, .pf--permission-row .checkbox_label) {
+        transition: background-color 0.16s var(--pf-ease), border-color 0.16s var(--pf-ease), color 0.16s var(--pf-ease);
+    }
 }
 
 /* Responsive */
@@ -1247,7 +1358,20 @@
 
 @media (max-width: 600px) {
     .pf--settings {
+        --pf-pad: 14px;
         max-height: calc(100dvh - 120px);
+    }
+
+    .pf--overview .pf--master-section {
+        padding: 8px 14px 12px;
+    }
+
+    .pf--overview-status {
+        padding: 12px 14px;
+    }
+
+    .pf--quickstart {
+        padding: 10px 14px 14px;
     }
 
     .pf--mode-cards {
@@ -1256,7 +1380,7 @@
 
     .pf--setting-row {
         flex-direction: column;
-        gap: 10px;
+        gap: 12px;
     }
 
     .pf--setting-row .pf--setting-group {
@@ -1264,12 +1388,8 @@
         width: 100%;
     }
 
-    .pf--summary-actions {
-        align-items: stretch;
-    }
-
     .pf--summary-actions .menu_button {
-        flex: 1 1 160px;
+        flex: 1 1 140px;
     }
 
     .pf--prompt-status {
@@ -1277,9 +1397,22 @@
         margin-left: 0;
     }
 
+    .pf--save-state .pf--prompt-status {
+        flex: 0 1 auto;
+    }
+
     .pf--permission-row {
-        grid-template-columns: 1fr;
-        align-items: flex-start;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        padding: 10px;
+    }
+
+    .pf--permission-book {
+        grid-column: 1 / -1;
+        padding: 0 2px 2px;
+    }
+
+    .pf--permission-row .checkbox_label {
+        padding: 4px 8px;
     }
 }
 </style>
