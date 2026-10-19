@@ -1,6 +1,6 @@
 /* global document, getComputedStyle, localStorage, requestAnimationFrame, window */
 import { expect, test } from '@playwright/test';
-import { openQuietChatForSmoke, selectSampleCharacter, waitForAnimationFrames } from './chat-scroll-regression-helpers.js';
+import { isolateSettingsSaves, openQuietChatForSmoke, selectSampleCharacter, waitForAnimationFrames } from './chat-scroll-regression-helpers.js';
 
 // Mobile shell smoke pack: pins the current open/close contracts of the
 // Neconyan mobile shell (drawers, hamburger nav, chat tools, character
@@ -839,6 +839,102 @@ test.describe('mobile shell smoke at iPhone 390x844', () => {
         }).toBe(true);
 
         await expectNoDocumentOverflow(page);
+    });
+});
+
+test.describe('shell visual viewport mismatch', () => {
+    // Synthetic browser geometry: keep the layout fixed while the visible area
+    // changes, as observed after app switching in Android Firefox Nightly.
+    async function prepareViewport(page, movingUI) {
+        await page.addInitScript(() => {
+            const viewport = new window.EventTarget();
+            let height;
+            Object.assign(viewport, {
+                offsetTop: 0, offsetLeft: 0, pageTop: 0, pageLeft: 0, scale: 1,
+            });
+            Object.defineProperties(viewport, {
+                width: { get: () => window.innerWidth },
+                height: { get: () => height ?? window.innerHeight, set: value => { height = value; } },
+            });
+            Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport });
+        });
+        await isolateSettingsSaves(page, settings => {
+            settings.power_user.movingUI = movingUI;
+        });
+        await openQuietChatForSmoke(page);
+        await page.evaluate(() => document.querySelector('#neconyan-tour-coachmark [data-tour-coach-skip]')?.click());
+        await expect.poll(() => page.evaluate(() => document.body.classList.contains('movingUI'))).toBe(movingUI);
+        await page.locator('#send_textarea').fill('Unsent viewport regression draft');
+    }
+
+    async function changeVisibleHeight(page, height) {
+        await page.evaluate(height => {
+            window.visualViewport.height = height;
+            window.visualViewport.dispatchEvent(new window.Event('resize'));
+        }, height);
+        await expect.poll(() => page.evaluate(() => document.documentElement.style.getPropertyValue('--sb-shell-viewport-height'))).toBe(`${height}px`);
+    }
+
+    function geometry(page) {
+        return page.evaluate(() => ({
+            layoutHeight: window.innerHeight,
+            visibleHeight: window.visualViewport.height,
+            surfaces: ['form_sheld', 'sb-bottom-chat-bar'].map(id => {
+                const element = document.getElementById(id);
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                return {
+                    id, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height,
+                    visible: style.display !== 'none' && style.visibility === 'visible' && Number(style.opacity) > 0,
+                };
+            }),
+        }));
+    }
+
+    test.describe('phone at 393x852', () => {
+        test.use({ viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true });
+
+        for (const movingUI of [true, false]) {
+            test(`composer follows the visible height with movingUI ${movingUI}`, async ({ page }, testInfo) => {
+                await prepareViewport(page, movingUI);
+                for (const height of [500, 709]) {
+                    await changeVisibleHeight(page, height);
+                    await expect.poll(async () => {
+                        const bounds = await geometry(page);
+                        return bounds.surfaces.every(surface => surface.visible && surface.width > 0 && surface.height > 0
+                            && surface.top >= 0 && surface.bottom <= height + 1);
+                    }).toBe(true);
+                    const bounds = await geometry(page);
+                    expect(bounds.layoutHeight).toBe(852);
+                    expect(bounds.visibleHeight).toBe(height);
+                    expect(bounds.layoutHeight).toBeGreaterThan(bounds.visibleHeight);
+                    await expect(page.locator('#send_textarea')).toHaveValue('Unsent viewport regression draft');
+                    await testInfo.attach(`viewport-${height}.json`, { body: JSON.stringify(bounds, null, 2), contentType: 'application/json' });
+                }
+                await captureCheckpoint(page, testInfo, 'composer-restored-visible-viewport');
+            });
+        }
+    });
+
+    test.describe('desktop at 1280x900', () => {
+        test.use({ viewport: { width: 1280, height: 900 } });
+
+        test('phone height rule leaves desktop MovingUI geometry unchanged', async ({ page }) => {
+            await prepareViewport(page, true);
+            const original = await geometry(page);
+            await changeVisibleHeight(page, 600);
+            await waitForAnimationFrames(page, 2);
+            const current = await geometry(page);
+            expect(current.layoutHeight).toBe(900);
+            expect(current.visibleHeight).toBe(600);
+            expect(current.surfaces).toEqual(original.surfaces);
+            for (const surface of current.surfaces) {
+                expect(surface.visible).toBe(true);
+                expect(surface.height).toBeGreaterThan(0);
+                expect(surface.bottom).toBeLessThanOrEqual(901);
+            }
+            await expect(page.locator('#send_textarea')).toHaveValue('Unsent viewport regression draft');
+        });
     });
 });
 
