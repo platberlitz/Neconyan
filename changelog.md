@@ -16,6 +16,8 @@
 - Pawthfinder's settings page has the Neconyan look, with the on/off switch above its status line and compact Read / Write / Delete permission rows on phones.
 - Completed replies no longer vanish with aggressive message unloading on, and your reading place holds while controls appear.
 - Automatic Conversation summaries wait quietly while saved images or quotes need review, instead of logging the same error every 30 seconds.
+- **Review chat images** fits on phones: long and translated button labels wrap instead of running off the edge, choosing a replacement file has a proper **Import** button, and closing the file picker no longer closes the whole review.
+- Editing or hiding a message with automatic translation off no longer saves and reloads the chat a second time. Mewmory's automatic hiding had been setting it off after replies.
 - Quick Image Gen's separate Text AI now defaults to 32,000 tokens and accepts up to 64,000, so long image prompts aren't cut off. Installs still on the old 500 default move to the new one; values you chose yourself are kept.
 - Less repeated work on desktop and phones: resizing the window no longer reloads the chat list, large character libraries rebuild much faster, and scrolling, closed menus, extension work and Android startup do less in the background.
 
