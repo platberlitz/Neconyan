@@ -15,6 +15,7 @@
 - PR #225 (2026-10-18) `fix(chat): prefer browser replies and show first streamed content`
 - PR #226 (2026-10-19) `fix: keep server replies' agents running and reload stale pages after updates`
 - PR #227 (2026-10-19) `feat(pawthfinder): give the settings page a Neconyan look`
+- PR #228 (2026-10-19) `feat(regex): draft rules with a connection profile on a neconyan-style page`
 
 ## v1.3.5
 
