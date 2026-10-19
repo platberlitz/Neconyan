@@ -559,4 +559,8 @@ body.neconyan dialog.language-choice-popup .popup-button-ok {
     block-size: auto;
 }
 #prompt-media-review .checkbox_label { justify-content: flex-start; }
+/* Long translated labels wrap inside the button instead of being cropped on phones. */
+#prompt-media-review .menu_button { white-space: normal; }
+/* The line under a button is small description text in the emphasis colour, which every bundled theme keeps readable. */
+#prompt-media-review .prompt-media-note { font-size: smaller; color: var(--SmartThemeEmColor); }
 #prompt-media-review [hidden] { display: none; }

@@ -3,7 +3,7 @@ import { beforeAll, beforeEach, describe, expect, jest, test } from '@jest/globa
 import { readFileSync } from 'node:fs';
 import { localizeString } from '../public/scripts/ui-localization.js';
 import { assembled, loadDialog, scanIssue, scanResult } from './prompt-media-dialog-harness.js';
-import { buttonsNamed, byTag, elements, marked, settle, shielded, textPieces } from './prompt-media-dom-stub.js';
+import { buttonsNamed, byTag, elements, marked, settle, shielded, textPieces, walk } from './prompt-media-dom-stub.js';
 
 // The Roleplay image review dialog (E2 rows RVW, CPY, BAT, HIS and INT-01). The real prompt-media-ui.js and prompt-media-labels.js run against
 // stand-ins for the app and the browser, with the lookup stand-ins reading the same tables the page's translate() reads. The in-app check
@@ -406,11 +406,11 @@ describe('removing an image, and using the compatible copy', () => {
         const { content, status } = await env.open(target);
         await buttonsNamed(content, 'Save choices for selected images')[0].click(); await settle();
         expect(status.textContent).toBe('Select at least one image.');
-        await buttonsNamed(content, 'Save copies of selected images stored in the chat')[0].click(); await settle();
+        await buttonsNamed(content, 'Save copies of selected images')[0].click(); await settle();
         expect(status.textContent).toBe('Select at least one image stored in the chat.');
         const box = byTag(rowsOf(content)[0], 'input')[0];
         box.checked = true; await box.listeners.change[0]();
-        await buttonsNamed(content, 'Save copies of selected images stored in the chat')[0].click(); await settle();
+        await buttonsNamed(content, 'Save copies of selected images')[0].click(); await settle();
         expect(status.textContent).toBe('Select only images stored in the chat. Other images need a converted copy, prepared one at a time.');
     });
 
@@ -519,7 +519,7 @@ describe('choose chats and the results of a batch change (BAT-09)', () => {
         env.routes.apply = () => ({});
         const { content } = await library();
         env.confirmations.length = 0;
-        await buttonsNamed(content, 'Save copies of images stored in selected chats')[0].click(); await settle();
+        await buttonsNamed(content, 'Save copies in selected chats')[0].click(); await settle();
         expect(byTag(env.confirmations[0].content, 'h3')[0].textContent).toBe('Save copies of images stored in the selected chats?');
         const items = rowsOfList(content);
         expect(items.map(item => item.children[2].textContent)).toEqual([
@@ -534,7 +534,7 @@ describe('choose chats and the results of a batch change (BAT-09)', () => {
         await buttonsNamed(content, 'Stop sending images in selected chats')[0].click(); await settle();
         const list = listOf(content);
         expect(itemsOf(list).map(item => item.children[2].textContent)).toEqual(['Saved', 'Saved', 'Saved']);
-        await buttonsNamed(content, 'Save copies of images stored in selected chats')[0].click(); await settle();
+        await buttonsNamed(content, 'Save copies in selected chats')[0].click(); await settle();
         expect(itemsOf(list).map(item => item.children[2].textContent)).toEqual(['Compatible copies saved: 1', 'Compatible copies saved: 1', 'Compatible copies saved: 1']);
     });
 
@@ -545,7 +545,7 @@ describe('choose chats and the results of a batch change (BAT-09)', () => {
         expect(env.requests.map(request => request.action)).not.toContain('apply');
         expect(itemsOf(listOf(content))).toHaveLength(0);
         for (const label of elements(content, node => node.tag === 'label')) { const box = byTag(label, 'input')[0]; box.checked = false; await box.listeners.change[0](); }
-        await buttonsNamed(content, 'Save copies of images stored in selected chats')[0].click(); await settle();
+        await buttonsNamed(content, 'Save copies in selected chats')[0].click(); await settle();
         expect(status.textContent).toBe('Select at least one chat.');
     });
 });
@@ -695,7 +695,195 @@ describe('the status line once a list has loaded (D-1)', () => {
     });
 });
 
-describe('the dialog\'s style rules (D-5, D-6)', () => {
+// A button with a line directly beneath it (the two Save copies buttons, and the Import button of each image row). The wrapper of a node is read
+// through walk()'s path, because the stub has no parentNode.
+const wrapperOf = (root, node) => [...walk(root)].find(entry => entry.node === node).path.at(-1);
+// One button with this exact name, in a wrapper of exactly [button, line] that sits directly in the parent, and the line it points to.
+const checkPair = (root, parent, label, text) => {
+    const buttons = buttonsNamed(parent, label);
+    expect(buttons).toHaveLength(1);
+    const [button] = buttons;
+    const wrapper = wrapperOf(root, button);
+    expect(wrapper.tag).toBe('div');
+    expect(parent.children).toContain(wrapper);
+    expect(wrapper.children.map(child => child.tag)).toEqual(['button', 'p']);
+    expect(wrapper.children[0]).toBe(button);
+    const line = wrapper.children[1];
+    expect(line.textContent).toBe(text);
+    expect(line.hasAttribute('data-i18n-ignore')).toBe(true);
+    // The line is a paragraph with the class that gives it the app's small description style.
+    expect(line.className).toBe('prompt-media-note');
+    expect(line.id).toMatch(/^prompt-media-note-\d+$/);
+    expect(button.getAttribute('aria-describedby')).toBe(line.id);
+    expect(elements(root, node => node.id === line.id)).toHaveLength(1);
+    return { button, line, wrapper };
+};
+
+describe('the two Save copies buttons: a short label with one line beneath it (CPY-16, BAT-10)', () => {
+    const OLD = ['Save copies of selected images stored in the chat', 'Save copies of images stored in selected chats'];
+    const LINE = 'Only images stored in the chat.';
+    const chats = [{ group: false, chat: 'Review', avatar: 'Group.png' }, { group: true, chat: 'Main' }];
+    const checkSave = (root, view, label) => {
+        const pair = checkPair(root, view, label, LINE);
+        for (const old of OLD) expect(buttonsNamed(view, old)).toHaveLength(0);
+        return pair;
+    };
+
+    test('CPY-16: under the image list, the short label has the line beneath it, and the old long label is gone', async () => {
+        env.routes.scan = () => scanResult([scanIssue({ status: 'embedded-image' })], target);
+        const { panel, content } = await env.open(target);
+        checkSave(panel, content, 'Save copies of selected images');
+        // The line belongs to this button only: the Save choices button above it has no description.
+        expect(buttonsNamed(content, 'Save choices for selected images')[0].getAttribute('aria-describedby')).toBeNull();
+        unreached(panel, 'chat with the split button');
+        expect(env.lookups).toContainEqual(['Save copies of selected images', null]);
+        expect(env.lookups).toContainEqual([LINE, null]);
+    });
+
+    test('BAT-10: in Choose chats, the short label has the same line beneath it, and the old long label is gone', async () => {
+        env.routes.chats = () => ({ chats, next: null });
+        const dialog = await env.open(null);
+        await byTag(dialog.navigation, 'button')[0].click(); await settle();
+        const content = dialog.panel.children.at(-1);
+        checkSave(dialog.panel, content, 'Save copies in selected chats');
+        // Stop sending images in selected chats stays a plain button.
+        expect(buttonsNamed(content, 'Stop sending images in selected chats')[0].getAttribute('aria-describedby')).toBeNull();
+        unreached(dialog.panel, 'choose chats with the split button');
+    });
+
+    test('a translation reaches both the label and the line, and the description still points at the line', async () => {
+        env.dictionary['Save copies of selected images'] = 'Guardar cópias das imagens selecionadas';
+        env.dictionary[LINE] = 'Só imagens guardadas no chat.';
+        env.routes.scan = () => scanResult([scanIssue({ status: 'embedded-image' })], target);
+        const { panel, content } = await env.open(target);
+        const [button] = buttonsNamed(content, 'Guardar cópias das imagens selecionadas');
+        expect(button).toBeDefined();
+        const line = wrapperOf(panel, button).children[1];
+        expect(line.textContent).toBe('Só imagens guardadas no chat.');
+        expect(button.getAttribute('aria-describedby')).toBe(line.id);
+        unreached(panel, 'translated split button');
+    });
+
+    test('inside its wrapper the button is still disabled with the rest while a change is saved', async () => {
+        env.routes.scan = () => scanResult([scanIssue({ status: 'embedded-image' })], target);
+        const { panel, content } = await env.open(target);
+        const [button] = buttonsNamed(content, 'Save copies of selected images');
+        let disabledWhileSaving = null;
+        env.routes.apply = () => { disabledWhileSaving = button.disabled; return {}; };
+        const box = byTag(rowsOf(content)[0], 'input')[0];
+        box.checked = true; await box.listeners.change[0]();
+        await button.click(); await settle();
+        expect(env.requests.some(request => request.action === 'apply' && request.body.actions[0].saveCopy === true)).toBe(true);
+        expect(disabledWhileSaving).toBe(true);
+        expect(byTag(panel, 'button').every(node => !node.disabled)).toBe(true);
+    });
+});
+
+describe('the file picker is an Import button with a line beneath it (SIDE-ISSUES 14, revisions 6 and 7)', () => {
+    const IMPORT = 'Import';
+    const LINE = 'Or choose an image file to use as the compatible copy';
+    const png = () => new Blob(['x'], { type: 'image/png' });
+    // The row of the first image, its picker input (the only file input in it), and its Import button.
+    const pickerRow = async (overrides = {}) => {
+        env.routes.scan = () => scanResult([scanIssue(overrides)], target);
+        const dialog = await env.open(target);
+        const row = rowsOf(dialog.content)[0];
+        const input = byTag(row, 'input').find(node => node.type === 'file');
+        return { ...dialog, row, input };
+    };
+
+    test('a row that offers a converted copy has one Import button with the sentence beneath it, no label element, and one file input after the pair', async () => {
+        const { panel, row, input } = await pickerRow();
+        const { button, wrapper } = checkPair(panel, row, IMPORT, LINE);
+        expect(button.type).toBe('button');
+        expect(button.className).toBe('menu_button');
+        expect(button.hasAttribute('data-i18n-ignore')).toBe(true);
+        expect(elements(row, node => node.tag === 'label' && node.textContent.includes(LINE))).toHaveLength(0);
+        expect(byTag(row, 'input').filter(node => node.type === 'file')).toHaveLength(1);
+        expect(input.accept).toBe('image/png,image/jpeg,image/webp');
+        // The input is not inside the wrapper (which holds exactly the button and the line), and it follows the wrapper directly in the row.
+        expect([...walk(row)].find(entry => entry.node === input).path).not.toContain(wrapper);
+        expect(row.children.indexOf(input)).toBe(row.children.indexOf(wrapper) + 1);
+        // The row's buttons: Import is the last one, and the others are where they were.
+        expect(byTag(row, 'button').map(node => node.textContent)).toEqual(['Save choice', 'Prepare a converted copy', IMPORT]);
+        unreached(panel, 'chat with the Import button');
+    });
+
+    test('pressing Import opens the picker at once, outside run(): nothing is disabled and nothing is requested', async () => {
+        const { row, input, status } = await pickerRow();
+        input.click = jest.fn();
+        const buttons = buttonsNamed(row, IMPORT); expect(buttons).toHaveLength(1); const [button] = buttons;
+        await button.click();
+        expect(input.click).toHaveBeenCalledTimes(1);
+        expect(button.disabled).toBe(false);
+        expect(status.textContent).toBe('Images listed.');
+        expect(env.requests.map(request => request.action)).toEqual(['scan']);
+    });
+
+    test('a chosen file goes to the preview as it did through the label, without asking the server for the image', async () => {
+        env.popupResult = false; // cancel the preview; saving is covered by the server tests
+        env.workerAnswer = { blob: png(), width: 10, height: 20, originalWidth: 30, originalHeight: 40 };
+        const { input } = await pickerRow();
+        input.files = [png()];
+        await input.listeners.change[0](); await settle();
+        const preview = env.popups.find(popup => popup.type === 'confirm');
+        expect(byTag(preview.content, 'h3')[0].textContent).toBe('Save this compatible copy?');
+        expect(env.requests.map(request => request.action)).not.toContain('source');
+    });
+
+    test('with no file chosen the change does nothing', async () => {
+        const { input } = await pickerRow();
+        input.files = [];
+        await input.listeners.change[0](); await settle();
+        expect(env.popups.filter(popup => popup.type === 'confirm')).toHaveLength(0);
+        expect(env.requests.map(request => request.action)).toEqual(['scan']);
+    });
+
+    test('the input is emptied once its file is read, so the same file can be chosen again', async () => {
+        env.popupResult = false;
+        env.workerAnswer = { blob: png(), width: 10, height: 20, originalWidth: 30, originalHeight: 40 };
+        const { input } = await pickerRow();
+        input.value = 'C:\\fakepath\\probe.png';
+        input.files = [png()];
+        await input.listeners.change[0](); await settle();
+        expect(input.value).toBe('');
+        // The file was read before the input was emptied, so the preview still opened.
+        expect(env.popups.find(popup => popup.type === 'confirm')).toBeDefined();
+    });
+
+    test('the input\'s cancel event stops at the input, so dismissing the picker does not close the whole review', async () => {
+        const { input } = await pickerRow();
+        expect(input.listeners.cancel).toHaveLength(1);
+        const event = { stopPropagation: jest.fn() };
+        input.listeners.cancel[0](event);
+        expect(event.stopPropagation).toHaveBeenCalledTimes(1);
+    });
+
+    test('while a change is saved, Import is disabled with the others', async () => {
+        const { row, content } = await pickerRow({ status: 'embedded-image' });
+        const buttons = buttonsNamed(row, IMPORT); expect(buttons).toHaveLength(1); const [button] = buttons;
+        let disabledWhileSaving = null;
+        env.routes.apply = () => { disabledWhileSaving = button.disabled; return {}; };
+        await buttonsNamed(row, 'Save a copy as it is')[0].click(); await settle();
+        expect(disabledWhileSaving).toBe(true);
+        expect(byTag(content, 'button').every(node => !node.disabled)).toBe(true);
+    });
+
+    test('the label and the sentence are both looked up: a translation reaches the button and the line, and the description still points at the line', async () => {
+        env.dictionary[IMPORT] = 'Importar';
+        env.dictionary[LINE] = 'Ou escolha um ficheiro de imagem como cópia compatível';
+        const { panel, row } = await pickerRow();
+        const buttons = buttonsNamed(row, 'Importar'); expect(buttons).toHaveLength(1);
+        const line = wrapperOf(panel, buttons[0]).children[1];
+        expect(line.textContent).toBe('Ou escolha um ficheiro de imagem como cópia compatível');
+        expect(buttons[0].getAttribute('aria-describedby')).toBe(line.id);
+        expect(env.lookups).toContainEqual([IMPORT, null]);
+        expect(env.lookups).toContainEqual([LINE, null]);
+        unreached(panel, 'translated Import button');
+    });
+});
+
+describe('the dialog\'s style rules (D-5 to D-8)', () => {
     // The rules of public/css/neconyan-menus.css that apply to the dialog, as { selectors, declarations } pairs. The real layout is measured in the browser.
     const rules = readFileSync(new URL('../public/css/neconyan-menus.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
         .split('}').map(block => block.split('{')).filter(([selectors, body]) => body !== undefined && selectors.includes('#prompt-media-review'))
@@ -714,5 +902,18 @@ describe('the dialog\'s style rules (D-5, D-6)', () => {
         const wraps = declaring('overflow-wrap: anywhere');
         for (const selector of ['#prompt-media-review h3', '#prompt-media-review h4', '#prompt-media-review [translate="no"]',
             '#prompt-media-review p', '#prompt-media-review label', '#prompt-media-review legend']) expect({ selector, wraps: wraps(selector) }).toEqual({ selector, wraps: true });
+    });
+
+    test('D-7: a button label that does not fit wraps inside its button instead of being cropped on a phone', () => {
+        expect(declaring('white-space: normal')('#prompt-media-review .menu_button')).toBe(true);
+    });
+
+    test('D-8: the line under a button is small description text in the emphasis colour, with no opacity', () => {
+        const selector = '#prompt-media-review .prompt-media-note';
+        for (const declaration of ['font-size: smaller', 'color: var(--SmartThemeEmColor)']) expect({ declaration, found: declaring(declaration)(selector) }).toEqual({ declaration, found: true });
+        // declaring() only shows that a declaration is there, so 'no opacity' is read from every rule of the selector. At least one such rule must exist.
+        const own = rules.filter(rule => rule.selectors.includes(selector));
+        expect(own.length).toBeGreaterThan(0);
+        expect(own.flatMap(rule => rule.declarations).filter(declaration => declaration.startsWith('opacity'))).toEqual([]);
     });
 });

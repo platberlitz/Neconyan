@@ -63,7 +63,8 @@ const EXACT = [
     ['CPY-12', 'Make this the gallery\'s chosen image'],
     ['CPY-13', 'Use the copy already on this server'],
     ['CPY-14', 'Use the image already on this server?'],
-    ['CPY-16', 'Save copies of selected images stored in the chat'],
+    ['CPY-16', 'Save copies of selected images'],
+    ['CPY-16', 'Only images stored in the chat.'],
     ['CPY-17', 'Select only images stored in the chat. Other images need a converted copy, prepared one at a time.'],
     ['CPY-18', 'Select at least one image stored in the chat.'],
     ['CPY-19', 'To remove the image, use Save choice. To prepare a copy, first choose Send the image, Show only or Use a description.'],
@@ -90,7 +91,7 @@ const EXACT = [
     ['BAT-06', 'Stop sending images in the selected chats?'],
     ['BAT-08', 'The open chat could not be saved.'],
     ['BAT-09', 'No images stored in the chat'],
-    ['BAT-10', 'Save copies of images stored in selected chats'],
+    ['BAT-10', 'Save copies in selected chats'],
     ['BAT-11', 'Save copies of images stored in the selected chats?'],
     ['BAT-12', 'Images stored inside each chat file are saved as compatible copies, as they are. The chat keeps showing the originals, and your choices are kept. Each chat is backed up separately. A chat with more than 128 such images, or with images that need converting, must be reviewed on its own.'],
     ['BAT-13', 'This chat has too many attachments to change with others. Review it on its own.'],
@@ -171,8 +172,8 @@ const SCOPED = {
     'scoped.prompt_media.CNV-28': 'Message ${0}, quote from another message',
     'scoped.prompt_media.RVW-36.11': 'Saved description',
 };
-// Existing keys these dialogs share with other features (the meaning check is the translation Checker's). Group chat and Cancel are existing keys these dialogs use as they are.
-const SHARED = ['Current chat', 'Close', 'Review', 'Saved', 'Delete backup', 'More changes', 'Group chat', 'Cancel'];
+// Existing keys these dialogs share with other features (the meaning check is the translation Checker's). Group chat, Cancel and Import are existing keys these dialogs use as they are (Import is the file picker's button).
+const SHARED = ['Current chat', 'Close', 'Review', 'Saved', 'Delete backup', 'More changes', 'Group chat', 'Cancel', 'Import'];
 
 // The same two files hold E1's choice names and refusal sentences. They are E1's keys and are checked by tests/image-input-wording.node.js.
 const E1_EXACT = [
@@ -200,9 +201,9 @@ const calls = (file, name) => collect(file, 'CallExpression').filter(node => nod
 const literalText = node => node?.type === 'Literal' && typeof node.value === 'string' ? node.value : null;
 const taggedKey = node => node.quasi.quasis.map((part, index) => part.value.cooked + (index < node.quasi.expressions.length ? '${' + index + '}' : '')).join('');
 
-test('the pinned key list is the whole list: 110 new exact keys and 44 scoped keys, none twice', () => {
-    assert.equal(EXACT.length, 110);
-    assert.equal(new Set(EXACT.map(([, key]) => key)).size, 110);
+test('the pinned key list is the whole list: 111 new exact keys and 44 scoped keys, none twice', () => {
+    assert.equal(EXACT.length, 111);
+    assert.equal(new Set(EXACT.map(([, key]) => key)).size, 111);
     assert.equal(Object.keys(SCOPED).length, 44);
     for (const key of Object.keys(SCOPED)) assert.match(key, /^scoped\.prompt_media\.[A-Z]+-\d+(?:\.\d+)?$/);
     for (const [, key] of EXACT) assert.ok(!key.startsWith('scoped.'), key);
@@ -219,7 +220,9 @@ test('every key is collected by the builder, and the fragment key it used to col
     for (const key of SHARED) assert.ok(listed.has(key), `not collected: ${key}`);
     assert.ok(!listed.has('Message ${0}${1}${2}'), 'the adjacent-hole key is still collected');
     // The retired wording is no longer in the files that were changed.
-    for (const old of ['Images in replies', 'Recovery history', 'Detach this attachment?', 'Resume saved repair', 'Select for batch change', 'Review ready.', 'Next images']) {
+    // The two long button labels of 18 October are gone too: each is now a short label with a line beneath it.
+    for (const old of ['Images in replies', 'Recovery history', 'Detach this attachment?', 'Resume saved repair', 'Select for batch change', 'Review ready.', 'Next images',
+        'Save copies of selected images stored in the chat', 'Save copies of images stored in selected chats']) {
         for (const file of FILES) assert.ok(!read(file).includes(old), `${file} still says: ${old}`);
     }
 });
@@ -254,7 +257,7 @@ test('the dialogs build every exact string with t``, and use nothing else of the
 test('no sentence reaches the page unlooked-up: the builders of elements, buttons, confirmations, toasts and errors never take a literal', () => {
     const ui = 'public/scripts/prompt-media-ui.js';
     const words = value => typeof value === 'string' && /[A-Za-z]{2}/.test(value);
-    for (const [name, positions] of [['element', [1]], ['button', [0]], ['checkbox', [0]], ['confirmChange', [0, 1]], ['toast', [1]], ['say', [0]], ['showFailure', [1]]]) {
+    for (const [name, positions] of [['element', [1]], ['button', [0]], ['checkbox', [0]], ['confirmChange', [0, 1]], ['toast', [1]], ['say', [0]], ['showFailure', [1]], ['buttonWithNote', [0, 1]]]) {
         for (const call of calls(ui, name)) {
             for (const position of positions) {
                 const value = literalText(call.arguments[position]);
@@ -311,4 +314,11 @@ test('the quote-only keys are in the catalogue with their English, and the keys 
     // Rows with saved attachment text keep their wording.
     for (const row of ['CNV-19', 'CNV-22', 'CNV-26', 'CNV-27']) assert.ok(EXACT.some(([id, key]) => id === row && catalogue[key] === key), row);
     assert.equal(catalogue['scoped.prompt_media.CNV-18'], 'Message ${0}, saved attachment text');
+});
+
+// The wording of 18 October: the two long Save copies buttons are a short label each, with one line beneath that serves both.
+test('the two short Save copies labels and their line are in the catalogue with their English, and the two long labels they replace are not', () => {
+    const catalogue = JSON.parse(read('public/locales/neconyan/en.json'));
+    for (const key of ['Save copies of selected images', 'Save copies in selected chats', 'Only images stored in the chat.']) assert.equal(catalogue[key], key);
+    for (const old of ['Save copies of selected images stored in the chat', 'Save copies of images stored in selected chats']) assert.ok(!(old in catalogue), `the catalogue still has: ${old}`);
 });

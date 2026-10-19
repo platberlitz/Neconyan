@@ -46,6 +46,15 @@ function choiceOption(mode) {
 function button(text, action) {
     const node = element('button', text, 'menu_button'); node.type = 'button'; node.addEventListener('click', action); return node;
 }
+// A button with a short label and, directly beneath it, one brief line that is its accessible description. The caller looks up both texts. The block
+// wrapper keeps the dialog's column gap between pairs, not inside one.
+let noteCounter = 0;
+function buttonWithNote(text, note, action) {
+    const node = button(text, action), line = element('p', note, 'prompt-media-note'), id = `prompt-media-note-${++noteCounter}`;
+    line.id = id; node.setAttribute('aria-describedby', id);
+    const pair = element('div'); pair.append(node, line);
+    return pair;
+}
 function locator() {
     const name = getCurrentChatId();
     if (!name) return null;
@@ -316,9 +325,14 @@ async function showRoleplayPromptMediaReview(initialLocator, { fromOrigin = fals
             }
             if (issue.mediaIndex >= 0) {
                 row.append(button(t`Prepare a converted copy`, () => run(() => prepare(action()))));
-                const uploadLabel = element('label', t`Or choose an image file to use as the compatible copy`);
                 const upload = document.createElement('input'); upload.type = 'file'; upload.accept = 'image/png,image/jpeg,image/webp';
-                upload.addEventListener('change', () => { if (upload.files[0]) void run(() => prepare(action(), upload.files[0])); }); uploadLabel.append(upload); row.append(uploadLabel);
+                // Dismissing the picker fires 'cancel' at the input. It bubbles, and the dialog would take it for its own cancel and close the whole review.
+                upload.addEventListener('cancel', event => event.stopPropagation());
+                // The file is read first and the input emptied, so choosing the same file again fires 'change' again.
+                upload.addEventListener('change', () => { const file = upload.files[0]; upload.value = ''; if (file) void run(() => prepare(action(), file)); });
+                // Import opens the hidden input's picker; the existing sentence is its line. The handler stays synchronous and outside run(): a picker opens only inside the
+                // person's own click or key press. The input follows the pair, so the pair holds only the button and its line.
+                row.append(buttonWithNote(t`Import`, t`Or choose an image file to use as the compatible copy`, () => upload.click()), upload);
             }
             content.append(row);
         }
@@ -328,7 +342,7 @@ async function showRoleplayPromptMediaReview(initialLocator, { fromOrigin = fals
             if (actions.some(action => action.mode === 'detach') && !await confirmChange(t`Remove the selected images from their messages?`, t`Their files stay on the server.`)) return;
             await apply(actions);
         })));
-        content.append(button(t`Save copies of selected images stored in the chat`, () => run(async () => {
+        content.append(buttonWithNote(t`Save copies of selected images`, t`Only images stored in the chat.`, () => run(async () => {
             const actions = [...chosen.entries()].map(([identity, action]) => {
                 if (next.issues.find(issue => issue.identity === identity)?.status !== 'embedded-image') throw new Error(t`Select only images stored in the chat. Other images need a converted copy, prepared one at a time.`);
                 return { ...action(), saveCopy: true };
@@ -378,7 +392,7 @@ async function showRoleplayPromptMediaReview(initialLocator, { fromOrigin = fals
             say('');
             announceSettingsChanged();
         })));
-        content.append(button(t`Save copies of images stored in selected chats`, () => run(async () => {
+        content.append(buttonWithNote(t`Save copies in selected chats`, t`Only images stored in the chat.`, () => run(async () => {
             if (!chosen.size) throw new Error(t`Select at least one chat.`);
             if (!await confirmChange(t`Save copies of images stored in the selected chats?`, t`Images stored inside each chat file are saved as compatible copies, as they are. The chat keeps showing the originals, and your choices are kept. Each chat is backed up separately. A chat with more than 128 such images, or with images that need converting, must be reviewed on its own.`)) return;
             outcomes.replaceChildren();
