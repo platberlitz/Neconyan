@@ -3,6 +3,7 @@ import { expect } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { test, acknowledgeActiveSettings } from './neconyan-conversation-durable-fixture.js';
+import { startNativeReply } from './native-roleplay-helpers.js';
 
 test.skip(process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1', 'Requires an owned disposable server.');
 test.setTimeout(180000);
@@ -54,7 +55,7 @@ test('Roleplay saves supported variables and reports browser-only prompt macros'
     const page = await account.open({ workspace: false });
     await selectCharacter(page, account.avatar);
     await page.locator('#send_textarea').fill('Test saved variables');
-    await page.locator('#send_but').click();
+    await startNativeReply(page);
     await expect(page.locator('#chat .mes').last()).toContainText('Durable first reply.', { timeout: 60000 });
     expect(app.provider.calls).toHaveLength(1);
     expect(app.provider.calls[0].messages.some(message => message.content === '1')).toBe(true);
@@ -77,8 +78,14 @@ test('Roleplay saves supported variables and reports browser-only prompt macros'
     await acknowledgeActiveSettings(page);
     await page.evaluate(() => window.toastr?.remove());
     await page.locator('#send_textarea').fill('Test unsupported macro');
-    await page.locator('#send_but').click();
+    await startNativeReply(page);
     await expect(page.locator('#toast-container')).toContainText('browser-only', { timeout: 60000 });
     expect(app.provider.calls).toHaveLength(1);
     expect(await page.evaluate(() => window.SillyTavern.getContext().chatMetadata.variables.serverPromptCount)).toBe(1);
+    // An ordinary send builds the prompt in the browser, where the same macro is supported.
+    await page.evaluate(() => window.toastr?.remove());
+    await page.locator('#send_textarea').fill('Test browser macro');
+    await page.locator('#send_but').click();
+    await expect.poll(() => app.provider.calls.length, { timeout: 60000 }).toBe(2);
+    await expect(page.locator('#toast-container', { hasText: 'browser-only' })).toHaveCount(0);
 });
