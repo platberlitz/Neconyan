@@ -19,7 +19,7 @@ import { registerCommands, setCommandsActive } from './src/commands.js';
 import { removeDrawer, renderDrawer } from './src/drawer-ui.js';
 import { closeWorkbench } from './src/workbench/panel.js';
 import { onMacroDataChanged } from './src/data-events.js';
-import { appChatChanged, appSettingsUpdated, refreshApp } from './src/ui/app.js';
+import { appChatChanged, appSettingsUpdated, refreshApp } from './src/ui/app-loader.js';
 import { createRefreshQueue } from './src/ui/refresh-queue.js';
 
 const subscriptions = [];

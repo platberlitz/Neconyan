@@ -32,6 +32,9 @@ test('persona pronoun field and Macro Enhanced pronouns edit the same value', as
     await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route, ++settingsVersion));
     await openQuietChatForSmoke(page, { selectCharacter: false });
     await page.waitForFunction(() => document.getElementById('me-persona-pronouns') && document.getElementById('me-settings-drawer'));
+    expect(await page.evaluate(() => document.querySelector('#me-settings-drawer [data-me-app]'))).toBeNull();
+    await page.evaluate(() => window.NeconyanShell.openIncludedTool('MacroEnhanced'));
+    await page.waitForFunction(() => document.querySelector('#me-settings-drawer .me-pronoun-input'));
     await page.evaluate(() => {
         const ctx = SillyTavern.getContext();
         delete ctx.extensionSettings.MacroEnhanced.pronouns.personas[ctx.userAvatar];

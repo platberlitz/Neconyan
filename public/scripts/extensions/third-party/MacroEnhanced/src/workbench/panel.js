@@ -1,10 +1,7 @@
 import { isEngineAvailable } from '../engine-gate.js';
 import { button, el } from '../dom.js';
-import { isAppMounted } from '../ui/app.js';
+import { isAppMounted } from '../ui/app-loader.js';
 import { requestWorkbench, consumeWorkbenchRequest } from '../ui/workbench-request.js';
-import { createPlaygroundPanel } from '../ui/playground.js';
-import { createTabs } from '../ui/tabs.js';
-import { renderReferenceTab } from '../help/reference-ui.js';
 
 const ENGINE_OFF_NOTICE = 'The macro workbench needs the New macro engine. Open Settings, then Fine-tuning, and turn it on.';
 const TAB_KEYS = Object.freeze({
@@ -95,6 +92,14 @@ export async function openWorkbench({ initialText = '', tab = 'Playground', topi
  */
 async function openFallbackPopup(request) {
     const ctx = SillyTavern.getContext();
+    if (openPopup) {
+        return;
+    }
+    const [{ createPlaygroundPanel }, { createTabs }, { renderReferenceTab }] = await Promise.all([
+        import('../ui/playground.js'),
+        import('../ui/tabs.js'),
+        import('../help/reference-ui.js'),
+    ]);
     if (openPopup) {
         return;
     }

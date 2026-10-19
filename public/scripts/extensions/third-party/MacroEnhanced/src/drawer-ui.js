@@ -4,7 +4,7 @@
  * tool page and back, so the app inside keeps its DOM and state.
  */
 import { el } from './dom.js';
-import { mountApp, unmountApp } from './ui/app.js';
+import { mountAppWhenShown, unmountApp } from './ui/app-loader.js';
 
 const DRAWER_ID = 'me-settings-drawer';
 
@@ -50,7 +50,7 @@ export function renderDrawer({ engineAvailable }) {
     if (!(content instanceof HTMLElement)) {
         return;
     }
-    mountApp(content, { engineAvailable });
+    mountAppWhenShown(content, { engineAvailable });
 }
 
 export function removeDrawer() {
