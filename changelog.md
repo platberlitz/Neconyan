@@ -42,6 +42,7 @@
 - PR #229 (2026-10-19) `fix(theme): revive Calico Light and fix custom CSS tone selectors`
 - PR #230 (2026-10-19) `fix(scratchpad): tidy the Context tab and add more web search options`
 - PR #231 (2026-10-19) `fix(chat): keep the echo user header as narrow as the character's`
+- PR #232 (2026-10-19) `fix(ui): keep image review buttons readable on phones`
 
 ## v1.3.5
 
