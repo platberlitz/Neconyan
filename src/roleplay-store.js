@@ -20,6 +20,7 @@ export const ROLEPLAY_IMPORT_MAX_OUTPUTS = 64;
 const IMPORT_RESULT_MAX_BYTES = 32 * 1024;
 const DEFER_SEQUENCE_MAX_LENGTH = 256;
 const RESERVED_IDENTIFIERS = new Set(['.', '..', '__proto__', 'constructor', 'prototype']);
+const ROLEPLAY_UNBOUND_EXTENSION_SETTINGS = Object.freeze(['neconyan_conversation', 'dialogue-colors']);
 const leases = new WeakMap();
 const observedAccounts = new Map();
 const activeAccountLeases = new Map();
@@ -38,9 +39,11 @@ export function roleplayHash(value) {
 
 /**
  * Bind saved settings without the page's own bookkeeping. The save counters, the
- * page's mirrored browser storage and the Conversation store change on routine page
- * saves (input history, Conversation sync), and no server generation reads them, so
- * a reply accepted a moment earlier must not be refused because of them.
+ * page's mirrored browser storage, the Conversation store and the dialogue colour
+ * counts change on routine page saves (input history, Conversation sync, a reply
+ * being shown while it streams), and no server generation reads them (dialogue
+ * colours reach the prompt through the captured macro), so a reply accepted a
+ * moment earlier must not be refused because of them.
  */
 export function roleplaySettingsHash(settings) {
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return roleplayHash(settings ?? null);
@@ -48,9 +51,9 @@ export function roleplaySettingsHash(settings) {
     for (const key of ['_version', '_settingsRevision', 'accountStorage']) delete bound[key];
     const extensions = bound.extension_settings;
     if (extensions && typeof extensions === 'object' && !Array.isArray(extensions)
-        && Object.hasOwn(extensions, 'neconyan_conversation')) {
+        && ROLEPLAY_UNBOUND_EXTENSION_SETTINGS.some(key => Object.hasOwn(extensions, key))) {
         bound.extension_settings = { ...extensions };
-        delete bound.extension_settings.neconyan_conversation;
+        for (const key of ROLEPLAY_UNBOUND_EXTENSION_SETTINGS) delete bound.extension_settings[key];
     }
     return roleplayHash(bound);
 }
