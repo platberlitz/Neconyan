@@ -16,6 +16,7 @@
 - PR #226 (2026-10-19) `fix: keep server replies' agents running and reload stale pages after updates`
 - PR #227 (2026-10-19) `feat(pawthfinder): give the settings page a Neconyan look`
 - PR #228 (2026-10-19) `feat(regex): draft rules with a connection profile on a neconyan-style page`
+- PR #229 (2026-10-19) `fix(theme): revive Calico Light and fix custom CSS tone selectors`
 
 ## v1.3.5
 
