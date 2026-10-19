@@ -1,5 +1,5 @@
-import { characters, chat, eventSource, event_types, getCurrentChatId, messageFormatting, reloadCurrentChat, saveSettingsDebounced, this_chid } from '../../../script.js';
-import { extension_settings, renderExtensionTemplateAsync } from '../../extensions.js';
+import { characters, chat, eventSource, event_types, generateRaw, getCurrentChatId, messageFormatting, reloadCurrentChat, saveSettingsDebounced, this_chid } from '../../../script.js';
+import { extension_settings, getContext, renderExtensionTemplateAsync } from '../../extensions.js';
 import { selected_group } from '../../group-chats.js';
 import { callGenericPopup, Popup, POPUP_TYPE } from '../../popup.js';
 import { SlashCommand } from '../../slash-commands/SlashCommand.js';
@@ -9,10 +9,11 @@ import { SlashCommandEnumValue, enumTypes } from '../../slash-commands/SlashComm
 import { SlashCommandParser } from '../../slash-commands/SlashCommandParser.js';
 import { download, equalsIgnoreCaseAndAccents, escapeHtml, getFileText, getSortableDelay, isFalseBoolean, isTrueBoolean, regexFromString, setInfoBlock, uuidv4 } from '../../utils.js';
 import { allowPresetScripts, allowScopedScripts, disallowPresetScripts, disallowScopedScripts, getCurrentPresetAPI, getCurrentPresetName, getRegexScripts, getScriptsByType, isPresetScriptsAllowed, isScopedScriptsAllowed, regex_placement, RegexProvider, runRegexScript, saveScriptsByType, SCRIPT_TYPE_UNKNOWN, SCRIPT_TYPES, substitute_find_regex } from './engine.js';
-import { t } from '../../i18n.js';
+import { t, translate } from '../../i18n.js';
 import { accountStorage } from '../../util/AccountStorage.js';
 import { getPresetManager } from '../../preset-manager.js';
-import { filterRegexScriptRows, setupRegexEditorHelpers } from './helpers.js';
+import { countRegexMatches, filterRegexScriptRows, setupRegexEditorHelpers } from './helpers.js';
+import { CURRENT_CONNECTION_ID, listRegexDraftProfiles, requestRegexDraft, resolveRegexDraftProfileId, trimRegexDraftSample } from './ai-draft.js';
 
 // Re-exports for legacy extensions
 export { getRegexScripts };
@@ -754,6 +755,16 @@ async function loadRegexScripts() {
 
     setMoveButtonsVisibility();
     applyRegexScriptFilter();
+    updateRegexBlockCounts();
+}
+
+function updateRegexBlockCounts() {
+    document.querySelectorAll('.regex_block_count[data-regex-count-for]').forEach((badge) => {
+        const list = document.getElementById(badge.getAttribute('data-regex-count-for'));
+        const count = list?.querySelectorAll('.regex-script-label').length ?? 0;
+        badge.textContent = String(count);
+        badge.classList.toggle('is-empty', count === 0);
+    });
 }
 
 function applyRegexScriptFilter() {
@@ -763,12 +774,313 @@ function applyRegexScriptFilter() {
 }
 
 /**
+ * Remembered choices for drafting rules with a model. Kept apart from `extension_settings.regex`, which is the list of global rules.
+ * @returns {{ profileId: string }}
+ */
+function getRegexDraftSettings() {
+    const settings = extension_settings.regex_draft;
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+        extension_settings.regex_draft = { profileId: CURRENT_CONNECTION_ID };
+    }
+    return extension_settings.regex_draft;
+}
+
+function getRegexDraftService() {
+    try {
+        return getContext()?.ConnectionManagerRequestService ?? null;
+    } catch {
+        return null;
+    }
+}
+
+function getLastChatReply() {
+    return [...chat].reverse().find((message) => !message?.is_system && message?.mes)?.mes ?? '';
+}
+
+/**
+ * Fills a connection select with 'Current connection' and the saved connection profiles.
+ * @param {HTMLSelectElement} select Select to fill
+ * @param {string} selectedId Profile to select when it still exists
+ * @returns {number} How many profiles were listed
+ */
+function fillRegexDraftProfiles(select, selectedId) {
+    const profiles = listRegexDraftProfiles(getRegexDraftService());
+    select.replaceChildren(new Option(t`Current connection`, CURRENT_CONNECTION_ID));
+    const groups = new Map();
+    for (const profile of profiles) {
+        let group = groups.get(profile.mode);
+        if (!group) {
+            group = document.createElement('optgroup');
+            group.label = translate(profile.mode);
+            groups.set(profile.mode, group);
+            select.append(group);
+        }
+        group.append(new Option(profile.name, profile.id));
+    }
+    select.value = resolveRegexDraftProfileId(profiles, selectedId);
+    return profiles.length;
+}
+
+/**
+ * Puts a drafted rule into the editor fields.
+ * @param {HTMLElement} root Editor root
+ * @param {object} draft Parsed draft from `requestRegexDraft`
+ */
+function applyRegexDraft(root, draft) {
+    const name = /** @type {HTMLInputElement} */ (root.querySelector('.regex_script_name'));
+    const find = /** @type {HTMLInputElement} */ (root.querySelector('.find_regex'));
+    if (name && !name.value.trim()) {
+        name.value = draft.name;
+    }
+    find.value = draft.find;
+    /** @type {HTMLTextAreaElement} */ (root.querySelector('.regex_replace_string')).value = draft.replace;
+    /** @type {HTMLTextAreaElement} */ (root.querySelector('.regex_trim_strings')).value = draft.trim.join('\n');
+    root.querySelectorAll('input[name="replace_position"]').forEach((/** @type {HTMLInputElement} */ input) => {
+        input.checked = draft.placement.includes(Number(input.value));
+    });
+    /** @type {HTMLInputElement} */ (root.querySelector('input[name="only_format_display"]')).checked = draft.markdownOnly;
+    /** @type {HTMLInputElement} */ (root.querySelector('input[name="only_format_prompt"]')).checked = draft.promptOnly;
+    find.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/**
+ * Wires the 'Describe it and let a model write it' panel in the regex editor.
+ * @param {JQuery<HTMLElement>} editorHtml Editor
+ * @param {object} options
+ * @param {{ request?: string, profileId?: string } | null} options.draft Request to run as soon as the editor opens
+ * @returns {() => void} Stops a request that is still running
+ */
+function setupRegexAiDraft(editorHtml, { draft }) {
+    const root = editorHtml.get(0);
+    const section = root.querySelector('.regex_ai_draft');
+    if (!section) {
+        return () => { };
+    }
+    const request = /** @type {HTMLTextAreaElement} */ (section.querySelector('.regex_ai_request'));
+    const profile = /** @type {HTMLSelectElement} */ (section.querySelector('.regex_ai_profile'));
+    const useSample = /** @type {HTMLInputElement} */ (section.querySelector('.regex_ai_use_sample'));
+    const run = /** @type {HTMLButtonElement} */ (section.querySelector('.regex_ai_run'));
+    const runLabel = section.querySelector('.regex_ai_run_label');
+    const status = section.querySelector('.regex_ai_status');
+    const explanation = section.querySelector('.regex_ai_explanation');
+    const find = /** @type {HTMLInputElement} */ (root.querySelector('.find_regex'));
+    const testInput = /** @type {HTMLTextAreaElement} */ (root.querySelector('#regex_test_input'));
+    const settings = getRegexDraftSettings();
+    const lastReply = getLastChatReply();
+    /** @type {AbortController|null} */
+    let controller = null;
+
+    fillRegexDraftProfiles(profile, draft?.profileId ?? settings.profileId);
+    useSample.checked = Boolean(lastReply);
+    useSample.disabled = !lastReply;
+    if (draft?.request) {
+        request.value = draft.request;
+    }
+
+    const refreshLabel = () => {
+        runLabel.textContent = find.value.trim() ? t`Improve rule` : t`Draft rule`;
+    };
+    refreshLabel();
+    find.addEventListener('input', refreshLabel);
+
+    profile.addEventListener('change', () => {
+        settings.profileId = profile.value;
+        saveSettingsDebounced();
+    });
+
+    const setBusy = (busy) => {
+        run.disabled = busy;
+        run.classList.toggle('disabled', busy);
+        run.setAttribute('aria-busy', String(busy));
+        section.classList.toggle('is-drafting', busy);
+    };
+
+    async function draftRule() {
+        const text = request.value.trim();
+        if (!text) {
+            status.textContent = t`Say what the rule should do first.`;
+            request.focus();
+            return;
+        }
+        controller?.abort();
+        const ownController = new AbortController();
+        controller = ownController;
+        const typedSample = testInput.value.trim();
+        const sample = typedSample || (useSample.checked ? lastReply : '');
+        const current = find.value.trim() ? {
+            name: String(editorHtml.find('.regex_script_name').val()),
+            find: find.value,
+            replace: String(editorHtml.find('.regex_replace_string').val()),
+        } : null;
+
+        setBusy(true);
+        status.textContent = t`Asking the model...`;
+        explanation.classList.add('displayNone');
+        try {
+            const result = await requestRegexDraft({
+                service: getRegexDraftService(),
+                generateRaw,
+                profileId: profile.value,
+                request: text,
+                sample: trimRegexDraftSample(sample),
+                current,
+                signal: ownController.signal,
+            });
+            if (ownController.signal.aborted) {
+                return;
+            }
+            if (!result.ok) {
+                status.textContent = translate(result.error);
+                return;
+            }
+            applyRegexDraft(root, result.draft);
+            if (!typedSample) {
+                const matchesSample = sample && countRegexMatches(result.draft.find, sample) > 0;
+                testInput.value = matchesSample ? sample : (result.draft.example || sample);
+            }
+            editorHtml.find('#regex_test_mode').removeClass('displayNone');
+            // Refreshes both the test output and the match count under it.
+            testInput.dispatchEvent(new Event('input', { bubbles: true }));
+            status.textContent = t`Rule drafted. Check the test below, then save.`;
+            if (result.draft.explanation) {
+                explanation.textContent = result.draft.explanation;
+                explanation.classList.remove('displayNone');
+            }
+        } catch (error) {
+            if (ownController.signal.aborted) {
+                return;
+            }
+            console.warn('[Regex] Drafting a rule failed', error);
+            const reason = String(error?.cause?.message || error?.message || '').trim();
+            status.textContent = reason
+                ? t`The model could not draft a rule: ${reason}`
+                : t`The model could not draft a rule. Check the connection and try again.`;
+        } finally {
+            if (controller === ownController) {
+                controller = null;
+                setBusy(false);
+            }
+        }
+    }
+
+    run.addEventListener('click', () => void draftRule());
+    request.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault();
+            void draftRule();
+        }
+    });
+
+    if (draft?.request) {
+        void draftRule();
+    }
+
+    return () => controller?.abort();
+}
+
+/**
+ * Character rules need one selected character outside a group chat.
+ * @returns {boolean} Whether character rules can be edited now
+ */
+function canEditScopedScripts() {
+    if (this_chid === undefined) {
+        toastr.error(t`No character selected.`);
+        return false;
+    }
+
+    if (selected_group) {
+        toastr.error(t`Cannot edit scoped scripts in group chats.`);
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * Wires the 'Draft a rule with a model' card at the top of the Regexes page.
+ */
+function setupRegexPageDraft() {
+    const request = /** @type {HTMLTextAreaElement} */ (document.getElementById('regex_ai_page_request'));
+    const profile = /** @type {HTMLSelectElement} */ (document.getElementById('regex_ai_page_profile'));
+    const run = document.getElementById('regex_ai_page_run');
+    const hint = document.getElementById('regex_ai_page_hint');
+    const scopes = [...document.querySelectorAll('.regex_ai_scope[data-regex-scope]')];
+    if (!request || !profile || !run) {
+        return;
+    }
+
+    const settings = getRegexDraftSettings();
+    const refreshProfiles = () => {
+        if (document.activeElement === profile) {
+            return;
+        }
+        const count = fillRegexDraftProfiles(profile, settings.profileId);
+        if (hint) {
+            hint.textContent = count
+                ? ''
+                : t`Save a connection profile in Connections to use a different model here.`;
+        }
+    };
+    refreshProfiles();
+    profile.addEventListener('pointerdown', refreshProfiles);
+    profile.addEventListener('keydown', refreshProfiles);
+    request.addEventListener('focus', refreshProfiles);
+    profile.addEventListener('change', () => {
+        settings.profileId = profile.value;
+        saveSettingsDebounced();
+    });
+
+    for (const scope of scopes) {
+        scope.addEventListener('click', () => {
+            for (const other of scopes) {
+                other.setAttribute('aria-pressed', String(other === scope));
+            }
+        });
+    }
+
+    const start = () => {
+        const text = request.value.trim();
+        if (!text) {
+            if (hint) {
+                hint.textContent = t`Say what the rule should do first.`;
+            }
+            request.focus();
+            return;
+        }
+
+        const scope = scopes.find((button) => button.getAttribute('aria-pressed') === 'true')?.getAttribute('data-regex-scope') ?? 'global';
+        const scriptType = {
+            global: SCRIPT_TYPES.GLOBAL,
+            preset: SCRIPT_TYPES.PRESET,
+            scoped: SCRIPT_TYPES.SCOPED,
+        }[scope] ?? SCRIPT_TYPES.GLOBAL;
+        if (scriptType === SCRIPT_TYPES.SCOPED && !canEditScopedScripts()) {
+            return;
+        }
+
+        if (hint) {
+            hint.textContent = '';
+        }
+        void onRegexEditorOpenClick(false, scriptType, { request: text, profileId: profile.value });
+    };
+
+    run.addEventListener('click', start);
+    request.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault();
+            start();
+        }
+    });
+}
+
+/**
  * Opens the regex editor.
  * @param {string|boolean} existingId Existing ID
  * @param {SCRIPT_TYPES} scriptType Type of the script
+ * @param {{ request?: string, profileId?: string } | null} [draft] Request for a model to draft the rule as soon as the editor opens
  * @returns {Promise<void>}
  */
-async function onRegexEditorOpenClick(existingId, scriptType) {
+async function onRegexEditorOpenClick(existingId, scriptType, draft = null) {
     const editorHtml = $(await renderExtensionTemplateAsync('regex', 'editor'));
     const array = getScriptsByType(scriptType);
 
@@ -851,10 +1163,12 @@ async function onRegexEditorOpenClick(existingId, scriptType) {
     editorHtml.find('input, textarea, select').on('input', updateTestResult);
     updateInfoBlock(editorHtml);
     setupRegexEditorHelpers(editorHtml.get(0), {
-        getSampleText: () => [...chat].reverse().find((message) => !message?.is_system && message?.mes)?.mes ?? '',
+        getSampleText: getLastChatReply,
     });
+    const stopDraft = setupRegexAiDraft(editorHtml, { draft });
 
     const popupResult = await callGenericPopup(editorHtml, POPUP_TYPE.CONFIRM, '', { okButton: t`Save`, cancelButton: t`Cancel`, allowVerticalScrolling: true });
+    stopDraft();
     if (popupResult) {
         const newRegexScript = {
             id: existingId ? String(existingId) : uuidv4(),
@@ -1744,13 +2058,7 @@ export async function init() {
     $('#open_regex_debugger').on('click', onRegexDebuggerOpenClick);
     $('#regex_script_filter').on('input', applyRegexScriptFilter);
     $('#open_scoped_editor').on('click', function () {
-        if (this_chid === undefined) {
-            toastr.error(t`No character selected.`);
-            return;
-        }
-
-        if (selected_group) {
-            toastr.error(t`Cannot edit scoped scripts in group chats.`);
+        if (!canEditScopedScripts()) {
             return;
         }
 
@@ -1759,6 +2067,13 @@ export async function init() {
     $('#open_preset_editor').on('click', function () {
         onRegexEditorOpenClick(false, SCRIPT_TYPES.PRESET);
     });
+    $('#open_regex_editor, #open_preset_editor, #open_scoped_editor, #import_regex, #open_regex_debugger').on('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            $(this).trigger('click');
+        }
+    });
+    setupRegexPageDraft();
     $('#import_regex_file').on('change', async function () {
         let target = SCRIPT_TYPES.GLOBAL;
         const template = $(await renderExtensionTemplateAsync('regex', 'importTarget'));

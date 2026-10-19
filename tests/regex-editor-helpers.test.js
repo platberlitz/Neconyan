@@ -107,7 +107,7 @@ describe('regex editor wiring', () => {
 
     test('the editor popup sets the helpers up', () => {
         const index = read('../public/scripts/extensions/regex/index.js');
-        expect(index).toContain('import { filterRegexScriptRows, setupRegexEditorHelpers } from \'./helpers.js\';');
+        expect(index).toMatch(/import \{[^}]*\bfilterRegexScriptRows\b[^}]*\bsetupRegexEditorHelpers\b[^}]*\} from '\.\/helpers\.js';/);
         expect(index).toContain('setupRegexEditorHelpers(editorHtml.get(0)');
     });
 

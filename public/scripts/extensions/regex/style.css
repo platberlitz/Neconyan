@@ -17,7 +17,7 @@
 }
 
 .regex-script-container:empty::after {
-    content: attr(no-scripts-text);
+    content: attr(data-empty-text);
     font-size: 0.95em;
     opacity: 0.7;
     display: block;
@@ -165,6 +165,117 @@ input.enable_scoped {
     margin-top: 6px;
 }
 
+.regex_ai_draft {
+    display: grid;
+    gap: 8px;
+    margin: 10px 0 4px;
+    padding: 12px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 9%, var(--neco-raised, transparent));
+    text-align: left;
+}
+
+.regex_ai_draft_head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--neco-ink, inherit);
+}
+
+.regex_ai_draft_head > i {
+    color: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 60%, var(--neco-ink, var(--SmartThemeBodyColor)));
+}
+
+.regex_ai_draft_head strong {
+    font-family: var(--sb-font-display, inherit);
+    font-size: 16px;
+    font-weight: 400;
+}
+
+.regex_ai_draft .regex_ai_request {
+    min-height: 6em;
+    min-height: calc(3lh + 28px);
+    margin: 0;
+    resize: vertical;
+}
+
+.regex_ai_draft_row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 8px 12px;
+}
+
+.regex_ai_profile_label {
+    display: grid;
+    flex: 1 1 14em;
+    gap: 2px;
+    min-width: 0;
+}
+
+.regex_ai_profile_label > small {
+    color: var(--neco-muted, inherit);
+    font-size: 12px;
+}
+
+.regex_ai_profile_label .regex_ai_profile {
+    margin: 0;
+}
+
+.regex_ai_use_sample_label {
+    flex: 0 1 auto;
+    min-height: 32px;
+    font-size: 13px;
+}
+
+.regex_ai_draft .regex_ai_run {
+    flex: 0 0 auto;
+    width: max-content;
+    max-width: 100%;
+    margin: 0;
+}
+
+.regex_ai_draft.is-drafting .regex_ai_run > i {
+    animation: regex-ai-wiggle 1.2s ease-out infinite;
+}
+
+.regex_ai_status:empty,
+.regex_ai_explanation:empty {
+    display: none;
+}
+
+.regex_ai_status {
+    color: var(--neco-muted, inherit);
+    font-size: 12px;
+}
+
+.regex_ai_explanation {
+    margin: 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--neco-surface, transparent) 70%, transparent);
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+@keyframes regex-ai-wiggle {
+    0%, 100% { rotate: 0deg; }
+    30% { rotate: -14deg; }
+    60% { rotate: 10deg; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .regex_ai_draft.is-drafting .regex_ai_run > i {
+        animation: none;
+    }
+
+    #scoped_scripts_block,
+    #preset_scripts_block,
+    .regex-toggle-off {
+        transition: none;
+    }
+}
+
 .regex_helpers {
     display: grid;
     gap: 8px;
@@ -268,6 +379,17 @@ input.enable_scoped {
 @media (max-width: 768px) {
     .regex_helper_chip {
         min-height: 44px;
+    }
+
+    .regex_ai_draft .regex_ai_run,
+    .regex_ai_use_sample_label {
+        min-height: 44px;
+    }
+
+    .regex_ai_draft .regex_ai_run {
+        flex: 1 1 100%;
+        width: 100%;
+        justify-content: center;
     }
 
     .regex_helpers_row > small {
