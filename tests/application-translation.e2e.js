@@ -7,7 +7,7 @@ import { test } from './neconyan-conversation-durable-fixture.js';
 
 test.setTimeout(240000);
 
-async function prepare(app, phone) {
+async function prepare(app, phone, { translatedQuestion = false } = {}) {
     app.provider.mode.reply = body => ({ translatedText: `FR: ${body.q}` });
     app.provider.mode.hold = [undefined];
     const account = await app.account({ phone, configureSettings(saved) {
@@ -22,7 +22,7 @@ async function prepare(app, phone) {
     const records = [{ user_name: 'User', character_name: 'Durable Nova', chat_metadata: {} },
         { name: 'Durable Nova', is_user: false, mes: 'Original answer.', extra: { reasoning: 'Original reasoning.' },
             swipes: ['Original answer.', 'Another answer.'], swipe_id: 0, swipe_info: [{ extra: { reasoning: 'Original reasoning.' } }, { extra: {} }] },
-        { name: 'User', is_user: true, mes: 'Original question.', extra: {} }];
+        { name: 'User', is_user: true, mes: 'Original question.', extra: translatedQuestion ? { display_text: 'FR: Original question.' } : {} }];
     await account.post('/api/chats/save', { ...fields, chat: records,
         roleplay: { account: vacancy.account, vacancy: vacancy.vacancy, operationKey: randomUUID() } });
     const filename = path.join(app.directory, 'data/default-user/chats', account.avatar.replace(/\.png$/i, ''), fields.file_name + '.jsonl');
@@ -110,5 +110,30 @@ for (const phone of [false, true]) {
         expect(rows[1].swipes).toEqual(fixture.records[1].swipes);
         expect(app.provider.calls).toHaveLength(1);
         await expect(container.getByRole('status')).toContainText('Translation stopped.');
+    });
+
+    test(`${viewport} hiding a message clears a translation only when it has one`, async ({ app }) => {
+        const fixture = await prepare(app, phone, { translatedQuestion: true });
+        const page = await openChat(fixture.account, fixture.fields);
+        const requests = [];
+        page.on('request', request => {
+            const url = new URL(request.url()).pathname;
+            if (url === '/api/chats/save') requests.push('save');
+            if (url === '/api/operations/submit' && request.postDataJSON()?.kind === 'translation') requests.push('translation');
+        });
+        const hide = index => page.evaluate(async value => (await import('/scripts/chats.js')).hideChatMessageRanges([[value, value]]), index);
+
+        expect(await hide(0)).toBe(true);
+        await expect.poll(async () => (await fixture.read())[1].is_system).toBe(true);
+        // The unwanted clear followed the visibility save by a fraction of a second.
+        // eslint-disable-next-line playwright/no-wait-for-timeout
+        await page.waitForTimeout(1500);
+        expect(requests).toEqual(['save']);
+
+        requests.length = 0;
+        expect(await hide(1)).toBe(true);
+        await expect.poll(async () => (await fixture.read())[2].extra?.display_text, { timeout: 60000 }).toBeUndefined();
+        expect(requests).toContain('translation');
+        expect(app.provider.calls).toHaveLength(0);
     });
 }

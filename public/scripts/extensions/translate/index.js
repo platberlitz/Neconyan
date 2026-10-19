@@ -294,8 +294,9 @@ async function translateMessageEdit(messageId) {
     if (isTranslationRefresh()) return;
     const message = getContext().chat[messageId];
     if (!message) return;
-    if (message.is_system || (extension_settings.translate.auto_mode == autoModeOptions.NONE && message.extra?.display_text)) {
-        await translateSaved({ mode: 'clear', index: Number(messageId), fields: ['body'] }, { automatic: true });
+    if (message.is_system || extension_settings.translate.auto_mode == autoModeOptions.NONE) {
+        // Clearing saves and reloads the chat, so hiding an untranslated message must not ask for it.
+        if (message.extra?.display_text) await translateSaved({ mode: 'clear', index: Number(messageId), fields: ['body'] }, { automatic: true });
     } else if ((message.is_user && shouldTranslate(outgoingTypes)) || (!message.is_user && shouldTranslate(incomingTypes))) {
         await translateIncomingMessage(messageId);
     }
@@ -305,8 +306,8 @@ async function translateMessageReasoningEdit(messageId) {
     if (isTranslationRefresh()) return;
     const message = getContext().chat[messageId];
     if (!message) return;
-    if (message.is_system || (extension_settings.translate.auto_mode == autoModeOptions.NONE && message.extra?.reasoning_display_text)) {
-        await translateSaved({ mode: 'clear', index: Number(messageId), fields: ['reasoning'] }, { automatic: true });
+    if (message.is_system || extension_settings.translate.auto_mode == autoModeOptions.NONE) {
+        if (message.extra?.reasoning_display_text) await translateSaved({ mode: 'clear', index: Number(messageId), fields: ['reasoning'] }, { automatic: true });
     } else if ((message.is_user && shouldTranslate(outgoingTypes)) || (!message.is_user && shouldTranslate(incomingTypes))) {
         await translateIncomingMessageReasoning(messageId);
     }
