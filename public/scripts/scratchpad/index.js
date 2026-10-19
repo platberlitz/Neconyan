@@ -45,7 +45,7 @@ import * as images from './images.js';
 import { integerSettingValue, reflectSavedValue, reflectedSettingValue } from './setting-input.js';
 import { renderWebSearchSettings, renderWebSearchSources, setWebSearchToggle } from './web-search.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261018f-rerun-post-gen-agents';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261019e-scratchpad-context';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;

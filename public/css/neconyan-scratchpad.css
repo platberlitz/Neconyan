@@ -271,6 +271,13 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
 .scratchpad-panel-sessions {
     gap: 12px;
     padding: 14px;
+    overflow-x: hidden;
+    overflow-wrap: anywhere;
+}
+
+.scratchpad-panel-context > *,
+.scratchpad-panel-sessions > * {
+    min-width: 0;
 }
 
 .scratchpad-chat-top {
