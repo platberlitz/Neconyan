@@ -129,6 +129,7 @@ const app = {
     previews: new Map(),
     foldedThinking: new Set(),
     openLorebooks: new Set(),
+    openSwipes: new Set(),
     watchers: new Map(),
     imageWatchers: new Map(),
     imageJobSignatures: new Map(),
@@ -565,6 +566,7 @@ function checkSource() {
     app.bucket = null;
     app.editing = '';
     app.pickLimit = PICK_PAGE;
+    app.openSwipes.clear();
     app.contextKey = '';
     render();
     void reload();
@@ -1936,9 +1938,13 @@ function renderPicks(settings) {
     for (const item of latestFirst.slice(0, app.pickLimit)) {
         const row = h('li', {}, pick(item));
         if (item.swipes?.length > 1) {
-            row.append(h('details', { class: 'scratchpad-swipes', open: item.swipes.some(swipe => picked.has(swipe.ref)) },
-                h('summary', { text: t`Swipes (${item.swipes.length})` }),
-                h('ul', { class: 'scratchpad-picks' }, item.swipes.map(swipe => h('li', {}, pick(swipe))))));
+            row.append(h('details', {
+                class: 'scratchpad-swipes',
+                open: app.openSwipes.has(item.ref) || item.swipes.some(swipe => picked.has(swipe.ref)),
+                ontoggle: event => app.openSwipes[event.currentTarget.open ? 'add' : 'delete'](item.ref),
+            },
+            h('summary', { text: t`Swipes (${item.swipes.length})` }),
+            h('ul', { class: 'scratchpad-picks' }, item.swipes.map(swipe => h('li', {}, pick(swipe))))));
         }
         list.append(row);
     }

@@ -76,7 +76,7 @@ function imageJobFixture({ markers = [], card } = {}) {
     const reload = jest.fn(async () => {});
     const approveImagePrompt = jest.fn();
     const app = {
-        open: true, foldedThinking: new Set(), watchers: new Map(), previews: new Map(), imageWatchers: new Map(),
+        open: true, foldedThinking: new Set(), openSwipes: new Set(), watchers: new Map(), previews: new Map(), imageWatchers: new Map(),
         imageJobs: new Map(), imageJobSignatures: new Map(), imageAutoReviews: new Set(markers),
         bucket: { sessions: [{ messages: [{ role: 'assistant', state: 'done', images: { 0: { state: 'pending', jobId: 'image-job' } } }] }] },
     };
@@ -152,7 +152,7 @@ describe('Scratchpad Context refresh lifecycle', () => {
         const general = { kind: 'general', key: 'general', personaId: 'User.png' };
         const chat = { kind: 'roleplay', key: 'chat' };
         const bucket = (source, id) => ({ source, activeSessionId: id, sessions: [{ id, messages: [] }] });
-        const app = { source: general, bucket: bucket(general, 'general-session'), ticket: 0, contextKey: '', tab: 'chat',
+        const app = { source: general, bucket: bucket(general, 'general-session'), ticket: 0, contextKey: '', tab: 'chat', openSwipes: new Set(),
             drafts: new Map(), draftKey: JSON.stringify(['general', 'general', 'general-session']), el: { composer: { value: 'GENERAL-DRAFT' } } };
         let live = general;
         const requests = [];

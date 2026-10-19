@@ -138,6 +138,13 @@ for (const phone of [false, true]) {
         await swipes.locator('summary').click();
         await expect(swipes).toHaveJSProperty('open', true);
         await expect(swipes).toContainText('Swipe 2 of 3 (current)');
+        // A background web-search refresh redraws Context; the open fold must survive it.
+        await swipes.evaluate(element => { element.dataset.beforeRefresh = '1'; });
+        await page.evaluate(() => {
+            const { eventSource, eventTypes } = window.SillyTavern.getContext();
+            eventSource.emit(eventTypes.SECRET_WRITTEN);
+        });
+        await expect(page.locator('.scratchpad-swipes:not([data-before-refresh])')).toHaveJSProperty('open', true);
         await page.getByRole('checkbox', { name: 'Pick message #0, swipe 1', exact: true }).check();
         await page.getByRole('checkbox', { name: 'Pick message #0, swipe 3', exact: true }).check();
         await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0].settings.picked).toEqual(['0:swipe:0', '0:swipe:2']);
