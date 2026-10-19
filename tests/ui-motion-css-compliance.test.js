@@ -35,6 +35,10 @@ const stylesheets = [
         url: new URL('../public/scripts/extensions/input-history/style.css', import.meta.url),
     },
     {
+        name: 'regex',
+        url: new URL('../public/scripts/extensions/regex/style.css', import.meta.url),
+    },
+    {
         name: 'CSS snippets',
         url: new URL('../public/scripts/extensions/css-snippets/style.css', import.meta.url),
     },

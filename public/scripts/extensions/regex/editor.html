@@ -14,6 +14,29 @@
         <small class="flex-container extensions_info" data-i18n="ext_regex_desc">
             Regex is a tool to find/replace strings using regular expressions. If you want to learn more, click on the ? next to the title.
         </small>
+        <section class="regex_ai_draft" aria-label="Draft with a model" data-i18n="[aria-label]Draft with a model">
+            <div class="regex_ai_draft_head">
+                <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+                <strong data-i18n="Describe it and let a model write it">Describe it and let a model write it</strong>
+            </div>
+            <textarea class="regex_ai_request text_pole textarea_compact" rows="2" aria-label="What should the rule do?" data-i18n="[placeholder]regex_ai_request_placeholder;[aria-label]What should the rule do?" placeholder="For example: hide anything between asterisks, or turn lines starting with OOC: into small grey text"></textarea>
+            <div class="regex_ai_draft_row">
+                <label class="regex_ai_profile_label">
+                    <small data-i18n="Connection">Connection</small>
+                    <select class="regex_ai_profile text_pole textarea_compact"></select>
+                </label>
+                <label class="checkbox_label regex_ai_use_sample_label">
+                    <input type="checkbox" class="regex_ai_use_sample" />
+                    <span data-i18n="Show it my last reply">Show it my last reply</span>
+                </label>
+                <button type="button" class="menu_button menu_button_primary menu_button_icon regex_ai_run">
+                    <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+                    <span class="regex_ai_run_label" data-i18n="Draft rule">Draft rule</span>
+                </button>
+            </div>
+            <small class="regex_ai_status" aria-live="polite"></small>
+            <p class="regex_ai_explanation displayNone"></p>
+        </section>
         <label class="regex_recipe flex-container alignItemsCenter">
             <small data-i18n="Start from a recipe">Start from a recipe</small>
             <select class="regex_recipe_select text_pole textarea_compact flex1"></select>
