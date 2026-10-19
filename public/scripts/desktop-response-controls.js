@@ -3,12 +3,17 @@ import { hasChangedAttributeValue } from './util/attribute-mutations.js';
 // Keep the original controls and event handlers; restore their exact locations on narrow screens.
 const controlSelector = ':scope > :is(.swipe_left, .deep-swipe-left-outer, .swipeRightBlock, .assistant-swipe-arrow)';
 const managed = new Map();
-let desktop;
+let desktop, tablet;
 let observer;
 let pending = false;
 
 export function normaliseDesktopResponseControls(value) {
     return value === 'below' ? 'below' : 'inside';
+}
+
+/** The wrapper's gate: every style from 1001px, and only Tide rows from 769 to 1000px. */
+export function managesResponseControls(wide, tablet, row) {
+    return wide || tablet && !!row.matches('.nn-tide-layout');
 }
 
 function restore(message, state) {
@@ -26,9 +31,10 @@ function restore(message, state) {
 function refresh() {
     pending = false;
     const chat = document.getElementById('chat');
-    const enabled = desktop.matches && !document.body.matches('.sbterm, .sbstory');
+    const wide = desktop.matches, tabletNow = tablet.matches;
+    const enabled = (wide || tabletNow) && !document.body.matches('.sbterm, .sbstory');
     const messages = enabled && chat ? [...chat.querySelectorAll('.mes:not(.smallSysMes, [is_system="true"])')]
-        .filter(message => message.matches('.last_mes, :has(.deep-swipe-right)') || document.body.classList.contains('swipeAllMessages')) : [];
+        .filter(message => managesResponseControls(wide, tabletNow, message) && (message.matches('.last_mes, :has(.deep-swipe-right)') || document.body.classList.contains('swipeAllMessages'))) : [];
     const wanted = new Set(messages);
     for (const [message, state] of managed) {
         if (!wanted.has(message) || !state.footer.isConnected) restore(message, state);
@@ -64,7 +70,8 @@ function refresh() {
                 state.controls.delete(control);
             }
         }
-        const below = document.body.dataset.desktopResponseControls === 'below';
+        // At tablet width Tide is always 'inside': the desktop placement only applies from 1001px.
+        const below = wide && document.body.dataset.desktopResponseControls === 'below';
         const rippleInside = !below && document.body.matches('.neconyan.ripplestyle[data-neconyan-chat-mode="roleplay"]:not(.sbterm, .sbstory)');
         if (rippleInside) {
             if (!state.spacer) {
@@ -100,7 +107,9 @@ export function applyDesktopResponseControls(value) {
     if (select) select.value = position;
     if (!desktop) {
         desktop = window.matchMedia('(min-width: 1001px)');
+        tablet = window.matchMedia('(min-width: 769px) and (max-width: 1000px)');
         desktop.addEventListener('change', queueRefresh);
+        tablet.addEventListener('change', queueRefresh);
         observer = new MutationObserver(records => {
             const relevant = records.filter(record => record.type === 'attributes'
                 ? record.target === document.body || record.target.matches?.('#chat .mes')

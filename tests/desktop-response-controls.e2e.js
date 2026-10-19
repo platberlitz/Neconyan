@@ -70,6 +70,21 @@ test('desktop response placement persists, preserves swipe actions, and restores
         }
     }
 
+    // Tide's detached bar is one fixed slot on user and assistant rows alike.
+    await page.locator('#chat_display').selectOption('7', { force: true });
+    await preference.selectOption('below', { force: true });
+    await expect.poll(() => footer.evaluate(element => {
+        const box = element.getBoundingClientRect();
+        return `${Math.round(box.width)}x${Math.round(box.height)}`;
+    })).toBe('138x44');
+    await preference.selectOption('inside', { force: true });
+    // R7: the controls sit in flow in the row, with no pill of their own.
+    await expect.poll(() => footer.evaluate(element => element.parentElement.classList.contains('mes_block'))).toBe(true);
+    await expect(footer).not.toHaveClass(/nn-tide-overlay-footer|nn-tide-reserves-footer/);
+    expect(await footer.evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+    // Leave the placement the rest of this test expects: it saves and reloads as 'below'.
+    await preference.selectOption('below', { force: true });
+
     await page.evaluate(async () => {
         if (!await (await import('/script.js')).saveSettings(0, { returnResult: true })) throw new Error('Settings were not saved');
     });
@@ -85,12 +100,18 @@ test('desktop response placement persists, preserves swipe actions, and restores
     await expect(footer).toHaveCount(1);
 
     // Save references, then cross the breakpoint repeatedly: no clones, lost listeners or duplicate groups.
+    // R7 fix B: Tide keeps the wrapper at tablet width too; every other style still starts at 1001px.
     await message.evaluate(element => { window.responseControl = element.querySelector('.swipe_right'); });
     for (const width of [1000, 393, 1001, 1280, 768, 1280]) {
         await page.setViewportSize({ width, height: 900 });
-        await expect(footer).toHaveCount(width > 1000 ? 1 : 0);
+        await expect(footer).toHaveCount(width >= 769 ? 1 : 0);
         expect(await message.evaluate(element => element.querySelector('.swipe_right') === window.responseControl)).toBe(true);
     }
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await page.locator('#chat_display').selectOption('0', { force: true });
+    await expect(footer).toHaveCount(0);
+    await page.locator('#chat_display').selectOption('7', { force: true });
+    await expect(footer).toHaveCount(1);
     await preference.selectOption('inside', { force: true });
     await expect(message.locator('.mes_block > .nn-response-controls')).toHaveCount(1);
 

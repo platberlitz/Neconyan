@@ -931,7 +931,6 @@ body.tidestyle #chat {
             padding: 0;
             overflow: visible;
             position: relative;
-            transform: translateY(calc(var(--custom-ChatAvatar) * (-1 + 0.325))) !important;
             background-color: unset !important;
             box-shadow: none !important;
 
@@ -949,7 +948,7 @@ body.tidestyle #chat {
             padding-bottom: 0 !important;
             max-width: 74%;
 
-            p {
+            > p {
                 display: block;
                 width: fit-content;
                 margin: 0;
@@ -1013,7 +1012,7 @@ body.tidestyle #chat {
                 text-align: right;
             }
 
-            p {
+            & .mes_text > p {
                 background: var(--moonlit-sb-user-message-bg);
                 border-radius: 18px;
             }
@@ -1120,7 +1119,7 @@ body.ripplestyle {
 
 }
 body.tidestyle {
-    #chat .mes_text p {
+    #chat .mes_text > p {
         border: 1px solid color-mix(in srgb, var(--SmartThemeBodyColor) 10%, transparent) !important;
     }
 }
@@ -1154,8 +1153,7 @@ body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle, .tidestyle) #chat .
 }
 body.echostyle,
 body.whisperstyle,
-body.hushstyle,
-body.tidestyle {
+body.hushstyle {
     #chat .lastInContext .mes_block {
         transform: translateY(calc(var(--custom-ChatAvatar) * (-1 + 0.17))) !important;
     }
@@ -1207,7 +1205,7 @@ body.tidestyle {
         }
     }
 }
-body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes .ch_name .flex-container {
+body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:where(:not(.nn-tide-layout)) .ch_name .flex-container {
     @media screen and (max-width: 1000px) {
         margin-bottom: 0 !important;
     }
@@ -1466,11 +1464,11 @@ body.ripplestyle.swipeAllMessages #chat .mes:not(.smallSysMes):has(> .mes_block 
 }
 
 @media screen and (max-width: 1000px) {
-    body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle, .tidestyle) #chat .last_mes {
+    body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle, .tidestyle) #chat .last_mes:where(:not(.nn-tide-layout)) {
         position: relative !important;
     }
 
-    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes) .mesAvatarWrapper {
+    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes):where(:not(.nn-tide-layout)) .mesAvatarWrapper {
         align-content: flex-start;
         align-items: center;
         gap: 4px 6px;
@@ -1479,12 +1477,12 @@ body.ripplestyle.swipeAllMessages #chat .mes:not(.smallSysMes):has(> .mes_block 
         padding-bottom: 0 !important;
     }
 
-    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .last_mes:not(.smallSysMes) .mesAvatarWrapper {
+    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .last_mes:not(.smallSysMes):where(:not(.nn-tide-layout)) .mesAvatarWrapper {
         padding-bottom: 0 !important;
     }
 
-    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes) .mes_block,
-    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .lastInContext .mes_block {
+    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes):where(:not(.nn-tide-layout)) .mes_block,
+    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .lastInContext:where(:not(.nn-tide-layout)) .mes_block {
         margin-top: 0 !important;
         transform: none !important;
     }
@@ -1499,7 +1497,7 @@ body.ripplestyle.swipeAllMessages #chat .mes:not(.smallSysMes):has(> .mes_block 
         white-space: normal;
     }
 
-    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes) {
+    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes):where(:not(.nn-tide-layout)) {
         align-items: start;
         column-gap: 10px;
         display: grid !important;
@@ -1507,7 +1505,7 @@ body.ripplestyle.swipeAllMessages #chat .mes:not(.smallSysMes):has(> .mes_block 
         row-gap: 0;
     }
 
-    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes) .mesAvatarWrapper {
+    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes):where(:not(.nn-tide-layout)) .mesAvatarWrapper {
         align-self: start !important;
         display: flex !important;
         flex-direction: column !important;
@@ -1520,11 +1518,11 @@ body.ripplestyle.swipeAllMessages #chat .mes:not(.smallSysMes):has(> .mes_block 
         width: var(--moonlit-sb-avatar-column-width);
     }
 
-    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes) .mesAvatarWrapper .avatar {
+    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes):where(:not(.nn-tide-layout)) .mesAvatarWrapper .avatar {
         margin: 0 !important;
     }
 
-    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes) .mes_block {
+    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes):where(:not(.nn-tide-layout)) .mes_block {
         clear: none !important;
         float: none !important;
         grid-column: 2;
@@ -1535,7 +1533,7 @@ body.ripplestyle.swipeAllMessages #chat .mes:not(.smallSysMes):has(> .mes_block 
         width: 100% !important;
     }
 
-    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes) .ch_name {
+    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes):where(:not(.nn-tide-layout)) .ch_name {
         clear: none !important;
         float: none !important;
         margin: 0 0 6px 0 !important;
@@ -1543,11 +1541,11 @@ body.ripplestyle.swipeAllMessages #chat .mes:not(.smallSysMes):has(> .mes_block 
         width: auto !important;
     }
 
-    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes) .ch_name .flex-container {
+    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes):where(:not(.nn-tide-layout)) .ch_name .flex-container {
         margin: 0 !important;
     }
 
-    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes) .mes_text {
+    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes):where(:not(.nn-tide-layout)) .mes_text {
         clear: none !important;
         float: none !important;
         left: auto !important;
@@ -1558,12 +1556,12 @@ body.ripplestyle.swipeAllMessages #chat .mes:not(.smallSysMes):has(> .mes_block 
         width: 100% !important;
     }
 
-    body.tidestyle #chat .mes:not(.smallSysMes) .mes_text {
+    body.tidestyle #chat .mes:not(.smallSysMes):where(:not(.nn-tide-layout)) .mes_text {
         align-items: stretch;
         display: block;
     }
 
-    body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle, .tidestyle) #chat .last_mes .swipeRightBlock {
+    body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle) #chat .last_mes .swipeRightBlock {
         align-items: center;
         bottom: var(--moonlit-sb-swipe-edge-offset) !important;
         display: flex;
@@ -1579,14 +1577,14 @@ body.ripplestyle.swipeAllMessages #chat .mes:not(.smallSysMes):has(> .mes_block 
         right: var(--moonlit-sb-swipe-inline-offset) !important;
     }
 
-    body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle, .tidestyle) #chat .last_mes .swipe_left {
+    body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle) #chat .last_mes .swipe_left {
         bottom: var(--moonlit-sb-swipe-edge-offset) !important;
         left: auto !important;
         position: absolute !important;
         right: calc(var(--moonlit-sb-swipe-inline-offset) + var(--moonlit-sb-swipe-control-size) + var(--moonlit-sb-swipe-counter-width) + (var(--moonlit-sb-swipe-gap) * 2)) !important;
     }
 
-    body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle, .tidestyle) #chat .last_mes :is(.swipe_left, .swipe_right) {
+    body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle) #chat .last_mes :is(.swipe_left, .swipe_right) {
         align-items: center;
         display: inline-flex;
         height: var(--moonlit-sb-swipe-control-size);
@@ -1598,7 +1596,7 @@ body.ripplestyle.swipeAllMessages #chat .mes:not(.smallSysMes):has(> .mes_block 
         transform: none !important;
     }
 
-    body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle, .tidestyle) #chat .last_mes .swipes-counter {
+    body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle) #chat .last_mes .swipes-counter {
         letter-spacing: 0;
         margin: 0;
         max-width: var(--moonlit-sb-swipe-counter-width);
@@ -2021,5 +2019,206 @@ body.neconyan.flatchat.nnchat:not(.sbterm):not(.sbstory) #chat .mes:is([mesid], 
     /* Justified lines open wide gaps between words in a phone-width column. */
     body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes .mes_text {
         text-align: start;
+    }
+}
+
+/* --- Neconyan chat style: Tide reading layout --- */
+/* Tide keeps its per-paragraph bubbles above 768px, gathers its header into one rounded plate and
+   dresses every top-level block in the same bubble paint. Nothing in this section is marked
+   important: the sheet sits at its ratchet cap, so the rules win on specificity instead. */
+
+/* Showdown parks empty paragraphs around block content; they must paint nothing at every width. */
+body.neconyan.tidestyle #chat .mes .mes_text > p:is(:empty, [data-nn-tide-empty]) {
+    display: none;
+}
+
+/* A bare break between two block bubbles is Showdown's separator, never line content. */
+body.neconyan.tidestyle #chat .mes .mes_text > :is(details, blockquote, pre, ul, ol, table, dl) + br,
+body.neconyan.tidestyle #chat .mes .mes_text > br:has(+ :is(details, blockquote, pre, ul, ol, table, dl)) {
+    display: none;
+}
+
+body.tidestyle #chat .mes .mes_text > :is(details, blockquote, pre, ul, ol, table, dl) {
+    background: var(--moonlit-sb-bot-message-bg);
+    border: 1px solid color-mix(in srgb, var(--SmartThemeBodyColor) 10%, transparent);
+    border-radius: 18px;
+    margin: 0 0 8px;
+    padding: 5px 11px;
+    width: fit-content;
+    max-width: 100%;
+}
+
+body.tidestyle #chat .mes[is_user="true"] .mes_text > :is(details, blockquote, pre, ul, ol, table, dl) {
+    background: var(--moonlit-sb-user-message-bg);
+}
+
+/* Outside list markers need their own room: the bubble keeps 11px on the other sides, and the text
+   starts at the same inset a paragraph pill uses (11px plus the marker column). */
+body.tidestyle #chat .mes .mes_text > :is(ul, ol) {
+    padding-inline-start: calc(11px + 1.4em);
+}
+
+body.tidestyle #chat .mes .mes_text > pre {
+    padding: 8px 12px;
+    overflow-x: auto;
+}
+
+body.tidestyle #chat .mes:not(.smallSysMes) .ica--companion-ledger > .ica--companion-card {
+    border-radius: 18px;
+    border: 1px solid color-mix(in srgb, var(--SmartThemeBodyColor) 10%, transparent);
+    width: fit-content;
+    max-width: 100%;
+    margin: 0 0 8px;
+}
+
+@media screen and (min-width: 769px) {
+    body.neconyan.tidestyle:not(.sbterm) #chat .mes.nn-tide-layout {
+        --nn-tide-inset: 22px;
+        padding-inline: var(--nn-tide-inset);
+        isolation: isolate;
+
+        /* One tinted container per message: it straddles the header plate, wraps every bubble and the
+           controls, and is the only surface the lower-edge painter caps. Inert, painted behind them. */
+        > .nn-tide-container {
+            position: absolute;
+            pointer-events: none;
+            z-index: -2;
+            top: var(--nn-tide-box-top);
+            left: var(--nn-tide-box-left);
+            width: var(--nn-tide-box-width);
+            height: var(--nn-tide-box-height);
+            border: 1px solid color-mix(in srgb, var(--neco-border) 70%, transparent);
+            border-radius: 22px;
+            background: color-mix(in srgb, var(--neco-surface) 55%, transparent);
+        }
+
+        > .mesAvatarWrapper {
+            position: absolute;
+            top: 12px;
+            z-index: 1;
+            flex: 0 0 auto;
+            inline-size: auto;
+            min-inline-size: 0;
+            width: auto;
+        }
+
+        &[is_user='true'] > .mesAvatarWrapper {
+            right: var(--nn-tide-inset);
+            padding-left: 0;
+        }
+
+        &[is_user='false'] > .mesAvatarWrapper {
+            flex-direction: row;
+        }
+
+        > .mes_block {
+            padding-top: 12px;
+        }
+
+        .mesAvatarWrapper > .mes_stats {
+            inline-size: calc(var(--mainFontSize) * 3.4);
+            margin-inline: 2px;
+        }
+
+        &:has(> .mesAvatarWrapper > .mes_stats > :is(body:not(.no-mesIDDisplay) .mesIDDisplay, body:not(.no-timer) .mes_timer, body:not(.no-tokenCount) .tokenCounterDisplay, .reasoning-tokens-badge, .agent-transform-badge):not(:empty)) {
+            --moonlit-sb-stats-room: calc(var(--mainFontSize) * 3.4 + 4px);
+        }
+
+        &:not([is_user='true']) .mes_block .ch_name {
+            align-items: flex-start;
+        }
+
+        .ch_name {
+            float: none;
+            clear: none;
+            width: fit-content;
+            max-width: calc(100% - var(--custom-echo-avatar) - var(--moonlit-sb-stats-room, 0px) - 18px);
+            margin-left: calc(var(--custom-echo-avatar) + 8px + var(--moonlit-sb-stats-room, 0px));
+        }
+
+        &[is_user='true'] .ch_name {
+            flex-direction: column;
+            align-items: flex-end;
+            margin-left: auto;
+            margin-right: calc(var(--custom-echo-avatar) + 5px + 8px + var(--moonlit-sb-stats-room, 0px));
+        }
+
+        &[is_user='true'] .ch_name .mes_buttons {
+            width: auto;
+        }
+
+        .mes_reasoning_details {
+            clear: both;
+            width: fit-content;
+            max-width: 100%;
+            margin-inline-start: calc(var(--custom-echo-avatar) + var(--moonlit-sb-stats-room, 0px) + 8px);
+        }
+
+        &[is_user='true'] .mes_reasoning_details {
+            margin-inline-start: auto;
+            margin-inline-end: calc(var(--custom-echo-avatar) + var(--moonlit-sb-stats-room, 0px) + 13px);
+        }
+
+        .mes_reasoning_summary {
+            left: auto;
+        }
+
+        .mes_text {
+            margin-top: var(--nn-tide-clearance, 8px);
+        }
+
+        :is(.mes_timer, .mesIDDisplay, .tokenCounterDisplay) {
+            transform: none;
+        }
+
+        .ch_name .alignItemsBaseline {
+            background: transparent;
+            padding: 0;
+        }
+
+        .mes_buttons .neconyan-message-action:not(:hover, :focus-visible) {
+            background: transparent;
+        }
+
+        > .nn-tide-header-plate {
+            position: absolute;
+            pointer-events: none;
+            z-index: -1;
+            top: var(--nn-tide-plate-top);
+            left: var(--nn-tide-plate-left);
+            width: var(--nn-tide-plate-width);
+            height: var(--nn-tide-plate-height);
+            border: 1px solid var(--neco-border);
+            border-radius: 18px;
+            background: var(--neco-surface);
+        }
+
+        > .neconyan-message-sleeper {
+            top: var(--nn-tide-cat-top);
+            left: var(--nn-tide-cat-left);
+            right: auto;
+        }
+    }
+
+    /* Big avatars shift the name 18px clear of the plate's avatar, not the default 8px. */
+    body.neconyan.big-avatars.tidestyle:not(.hideChatAvatars):not(.sbterm) #chat .mes.nn-tide-layout:not([is_user='true']) .ch_name {
+        margin-left: calc(var(--custom-echo-avatar) + 18px + var(--moonlit-sb-stats-room, 0px));
+    }
+
+    /* Owner Preview Gate decision (Option B): the header never hides at the bottom bar. Assistant and
+       user headers stay visible and scroll behind it like every other Tide bubble, so the sheet has no
+       cutoff class, no sentinel element and no header observer. */
+
+    body.neconyan.tidestyle:not(.sbterm) #chat .sb-message-screenshot-surface .mes.nn-tide-layout :is(.mesAvatarWrapper, .ch_name, .mes_reasoning_details, .nn-tide-header-plate, .neconyan-message-sleeper) {
+        visibility: visible;
+    }
+}
+
+/* Tablet and phone share one cluster size; the all-width cluster rules at the top of the sheet
+   then build the arrows and counter from these custom properties. */
+@media screen and (max-width: 1000px) {
+    body.tidestyle {
+        --moonlit-sb-swipe-control-size: 36px;
+        --moonlit-sb-swipe-counter-width: 44px;
     }
 }

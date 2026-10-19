@@ -23,7 +23,7 @@ import { isChatNavigationBlocked, setChatNavigationBlocked } from './scripts/cha
 import { readMessageExpression, writeMessageExpression, renderMessageExpression } from './scripts/expression-history.js';
 import './scripts/neconyan-message-sleepers.js';
 import { dressSleeper } from './scripts/neconyan-sleeper-coats.js';
-import { measureEchoMessage } from './scripts/echo-message-layout.js';
+import { measureEchoMessage, measureTideMessage } from './scripts/echo-message-layout.js';
 import './scripts/neconyan-send-nya.js';
 import { userStatsHandler, statMesProcess, initStats } from './scripts/stats.js';
 import {
@@ -3166,6 +3166,7 @@ async function applyChatMessageResizeAction(element, entry, metadata) {
 
 function updateMessageSleeperPosition(message) {
     measureEchoMessage(message);
+    measureTideMessage(message);
     const text = message?.querySelector('.mes_text');
     if (text) {
         message.style.setProperty('--neconyan-sleeper-text-top', `${text.getBoundingClientRect().top - message.getBoundingClientRect().top - message.clientTop}px`);
@@ -3181,6 +3182,7 @@ function flushMessageSleeperPositions() {
     for (const message of pendingMessageSleeperPositions) {
         if (!message.isConnected) continue;
         measureEchoMessage(message);
+        measureTideMessage(message);
         const text = message.querySelector('.mes_text');
         if (text) {
             positions.push([message, `${text.getBoundingClientRect().top - message.getBoundingClientRect().top - message.clientTop}px`]);
@@ -14998,6 +15000,30 @@ async function renderMessageScreenshotCanvas(startId, endId) {
                     if (plate) for (const axis of ['top', 'left', 'width', 'height']) plate.style[axis] = `var(--nn-echo-plate-${axis})`;
                     const cat = message.querySelector('.neconyan-message-sleeper');
                     if (cat) { cat.style.top = 'var(--nn-echo-cat-top)'; cat.style.left = 'var(--nn-echo-cat-left)'; }
+                    updateMessageSleeperPosition(message);
+                    // The first pass changes header clearance; the second reads its settled text/cat positions.
+                    updateMessageSleeperPosition(message);
+                }
+                // Tide's inert plate and cat follow the sanitised, naturally sized header.
+                for (const message of clonedSurface.querySelectorAll('.mes.nn-tide-layout:has(> .nn-tide-header-plate)')) {
+                    // html2canvas copies inherited variables onto descendants; let the row's new measurements inherit again.
+                    for (const descendant of message.querySelectorAll('*')) {
+                        for (const property of [...descendant.style]) if (property.startsWith('--nn-tide-')) descendant.style.removeProperty(property);
+                    }
+                    for (const header of message.querySelectorAll('.ch_name, .ch_name .alignItemsBaseline, .mes_reasoning_details, .mes_reasoning_summary, .mes_reasoning_header')) header.style.width = 'fit-content';
+                    for (const label of message.querySelectorAll('.name_text, .timestamp, .mes_reasoning_header_title')) {
+                        Object.assign(label.style, { width: 'auto', maxWidth: '100%', minWidth: '0', whiteSpace: 'normal', overflowWrap: 'anywhere' });
+                    }
+                    const caption = message.querySelector('.ch_name .alignItemsBaseline');
+                    if (caption) Object.assign(caption.style, { maxWidth: '100%', minWidth: '0', flexWrap: 'wrap' });
+                    const text = message.querySelector('.mes_text');
+                    text.style.marginTop = 'var(--nn-tide-clearance, 8px)';
+                    const plate = message.querySelector('.nn-tide-header-plate');
+                    if (plate) for (const axis of ['top', 'left', 'width', 'height']) plate.style[axis] = `var(--nn-tide-plate-${axis})`;
+                    const container = message.querySelector('.nn-tide-container');
+                    if (container) for (const axis of ['top', 'left', 'width', 'height']) container.style[axis] = `var(--nn-tide-box-${axis})`;
+                    const cat = message.querySelector('.neconyan-message-sleeper');
+                    if (cat) { cat.style.top = 'var(--nn-tide-cat-top)'; cat.style.left = 'var(--nn-tide-cat-left)'; }
                     updateMessageSleeperPosition(message);
                     // The first pass changes header clearance; the second reads its settled text/cat positions.
                     updateMessageSleeperPosition(message);
