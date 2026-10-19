@@ -49,7 +49,22 @@ const PRIVATE_IP_RANGES = new Set(['unspecified', 'loopback', 'linkLocal', 'uniq
 const PROVIDER_KEY = {
     brave: () => SECRET_KEYS.BRAVE_SEARCH,
     nanogpt: () => SECRET_KEYS.NANOGPT,
+    exa: () => SECRET_KEYS.EXA,
+    tavily: () => SECRET_KEYS.TAVILY,
+    custom: () => SECRET_KEYS.CUSTOM_SEARCH,
 };
+
+const PROVIDER_NAME = {
+    brave: 'Brave Search',
+    searxng: 'SearXNG',
+    nanogpt: 'NanoGPT',
+    exa: 'Exa',
+    tavily: 'Tavily',
+    custom: 'The custom search service',
+};
+
+const BLOCKED_CUSTOM_HEADERS = new Set(['host', 'content-length', 'content-type', 'connection', 'transfer-encoding', 'cookie', 'accept']);
+const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}$/;
 
 const fail = (code, message, status = 400) => new ScratchpadError(code, message, status);
 
@@ -75,7 +90,60 @@ function promptText(value, limit) {
 }
 
 export function defaultWebSearchConfig() {
-    return { version: 1, revision: 0, provider: 'off', searxngUrl: '', results: DEFAULT_WEB_SEARCH_RESULTS };
+    return { version: 1, revision: 0, provider: 'off', searxngUrl: '', customUrl: '', customHeader: '', results: DEFAULT_WEB_SEARCH_RESULTS };
+}
+
+function fillCustomTemplate(template, query, count) {
+    return template.replaceAll('{query}', encodeURIComponent(query)).replaceAll('{count}', String(count));
+}
+
+/**
+ * A custom address is stored as typed. {query} must sit after the host, so a
+ * search can never change which server receives it.
+ */
+function normaliseCustomUrl(value) {
+    const text = String(value ?? '').trim();
+    if (!text) return '';
+    if (text.length > MAX_SEARCH_URL_CHARS) throw fail('SCRATCHPAD_WEB_SEARCH_URL', 'The custom search address is too long.', 413);
+    if (!text.includes('{query}')) {
+        throw fail('SCRATCHPAD_WEB_SEARCH_URL', 'Put {query} in the custom search address where the search words belong.');
+    }
+    let first;
+    let second;
+    try {
+        first = new URL(fillCustomTemplate(text, 'a', 1));
+        second = new URL(fillCustomTemplate(text, 'b', 2));
+    } catch {
+        throw fail('SCRATCHPAD_WEB_SEARCH_URL', 'Enter the full custom search address, starting with http:// or https://.');
+    }
+    if (!['http:', 'https:'].includes(first.protocol)) {
+        throw fail('SCRATCHPAD_WEB_SEARCH_URL', 'Enter the full custom search address, starting with http:// or https://.');
+    }
+    if (first.username || first.password || first.hash || first.origin !== second.origin) {
+        throw fail('SCRATCHPAD_WEB_SEARCH_URL', 'Enter a custom search address without sign-in details or a fragment, with {query} after the host name.');
+    }
+    return text;
+}
+
+export function customSearchUrl(template, query, count) {
+    return new URL(fillCustomTemplate(template, query, count));
+}
+
+function normaliseCustomHeader(value) {
+    const text = String(value ?? '').trim();
+    if (!text) return '';
+    if (!HEADER_NAME.test(text) || BLOCKED_CUSTOM_HEADERS.has(text.toLowerCase())) {
+        throw fail('SCRATCHPAD_WEB_SEARCH_HEADER', 'Enter a plain header name for the key, such as Authorization or X-API-Key.');
+    }
+    return text;
+}
+
+function customAddressIsPrivate(template) {
+    try {
+        return searxngAddressIsPrivate(customSearchUrl(template, 'a', 1).href);
+    } catch {
+        return false;
+    }
 }
 
 function normaliseSearxngUrl(value) {
@@ -137,11 +205,14 @@ function configFile(lease) {
 function validateStoredConfig(input) {
     if (input?.version !== 1 || !Number.isSafeInteger(input.revision) || input.revision < 0
         || !WEB_SEARCH_PROVIDERS.includes(input.provider) || typeof input.searxngUrl !== 'string'
-        || !Number.isInteger(input.results) || input.results < 1 || input.results > MAX_WEB_SEARCH_RESULTS) {
+        || !Number.isInteger(input.results) || input.results < 1 || input.results > MAX_WEB_SEARCH_RESULTS
+        || !['string', 'undefined'].includes(typeof input.customUrl) || !['string', 'undefined'].includes(typeof input.customHeader)) {
         throw new Error('Invalid web search settings.');
     }
     const searxngUrl = normaliseSearxngUrl(input.searxngUrl);
-    return { version: 1, revision: input.revision, provider: input.provider, searxngUrl, results: input.results };
+    const customUrl = normaliseCustomUrl(input.customUrl);
+    const customHeader = normaliseCustomHeader(input.customHeader);
+    return { version: 1, revision: input.revision, provider: input.provider, searxngUrl, customUrl, customHeader, results: input.results };
 }
 
 export function readWebSearchLocked(lease) {
@@ -158,16 +229,18 @@ function normaliseConfigInput(input, previous) {
     const source = isPlainObject(input) ? input : {};
     const provider = source.provider === undefined ? previous.provider : source.provider;
     if (!WEB_SEARCH_PROVIDERS.includes(provider)) {
-        throw fail('SCRATCHPAD_WEB_SEARCH_PROVIDER', 'Choose Brave Search, SearXNG, NanoGPT or turn web search off.');
+        throw fail('SCRATCHPAD_WEB_SEARCH_PROVIDER', 'Choose Brave Search, SearXNG, NanoGPT, Exa, Tavily, a custom address or turn web search off.');
     }
     const searxngUrl = source.searxngUrl === undefined ? previous.searxngUrl : normaliseSearxngUrl(source.searxngUrl);
+    const customUrl = source.customUrl === undefined ? previous.customUrl : normaliseCustomUrl(source.customUrl);
+    const customHeader = source.customHeader === undefined ? previous.customHeader : normaliseCustomHeader(source.customHeader);
     let results = previous.results;
     if (source.results !== undefined) {
         const text = String(source.results ?? '').trim();
         const value = Math.round(Number(text));
         if (text && Number.isFinite(value)) results = Math.min(MAX_WEB_SEARCH_RESULTS, Math.max(1, value));
     }
-    return { provider, searxngUrl, results };
+    return { provider, searxngUrl, customUrl, customHeader, results };
 }
 
 export function updateWebSearchLocked(lease, input, expectedRevision, { admin = false } = {}) {
@@ -176,7 +249,9 @@ export function updateWebSearchLocked(lease, input, expectedRevision, { admin = 
         throw fail('SCRATCHPAD_WEB_SEARCH_CHANGED', 'Web search settings changed elsewhere. Reopen Context to see the saved version.', 409);
     }
     const next = normaliseConfigInput(input, previous);
-    if (next.searxngUrl && searxngAddressIsPrivate(next.searxngUrl) && !admin) {
+    const privateAddress = (next.searxngUrl && searxngAddressIsPrivate(next.searxngUrl))
+        || (next.customUrl && customAddressIsPrivate(next.customUrl));
+    if (privateAddress && !admin) {
         throw fail('SCRATCHPAD_WEB_SEARCH_PRIVATE', 'Only an administrator can point web search at a private or local address.', 403);
     }
     const config = { version: 1, revision: previous.revision + 1, ...next };
@@ -198,6 +273,9 @@ export function webSearchReadiness(directories, config) {
             ? { provider: 'searxng', configured: true, missing: '', message: '' }
             : { provider: 'searxng', configured: false, missing: 'searxng-url', message: 'Add the address of your SearXNG instance in Context.' };
     }
+    if (config.provider === 'custom' && !config.customUrl) {
+        return { provider: 'custom', configured: false, missing: 'custom-url', message: 'Add your custom search address in Context.' };
+    }
     const key = PROVIDER_KEY[config.provider]?.();
     const state = key ? new SecretManager(directories).getSecretState()[key] : null;
     const active = Array.isArray(state) ? (state.find(secret => secret.active) ?? state[0]) : null;
@@ -205,9 +283,9 @@ export function webSearchReadiness(directories, config) {
     if (key && keyId && usableKey(readSecret(directories, key, keyId))) {
         return { provider: config.provider, configured: true, missing: '', message: '', keyId };
     }
-    return config.provider === 'brave'
-        ? { provider: 'brave', configured: false, missing: 'brave-key', message: 'Add a Brave Search API key in Context.' }
-        : { provider: 'nanogpt', configured: false, missing: 'nanogpt-key', message: 'Add a NanoGPT API key in Context.' };
+    if (config.provider === 'custom') return { provider: 'custom', configured: true, missing: '', message: '' };
+    const name = PROVIDER_NAME[config.provider] ?? 'web search';
+    return { provider: config.provider, configured: false, missing: `${config.provider}-key`, message: `Add ${/^[AEIOU]/.test(name) ? 'an' : 'a'} ${name} API key in Context.` };
 }
 
 export function webSearchState(config, directories) {
@@ -239,6 +317,7 @@ export function planWebSearch(directories, config, text) {
         query,
         results: config.results,
         ...(config.provider === 'searxng' ? { searxngUrl: config.searxngUrl } : {}),
+        ...(config.provider === 'custom' ? { customUrl: config.customUrl, customHeader: config.customHeader } : {}),
         ...(readiness.keyId ? { keyId: readiness.keyId } : {}),
     };
 }
@@ -322,6 +401,13 @@ function httpError(provider, status) {
         else if (status === 402) message = 'NanoGPT has no credit for web search.';
         else if (status === 429) message = 'NanoGPT rate limit reached. Try again later.';
         else if (status === 503 || status === 504) message = 'NanoGPT web search is unavailable right now.';
+    } else if (provider === 'exa' || provider === 'tavily' || provider === 'custom') {
+        const name = PROVIDER_NAME[provider];
+        if (status === 401 || status === 403) message = `${name} rejected the API key. Check the saved key.`;
+        else if (status === 402) message = `${name} has no credit left for web search.`;
+        else if (status === 429) message = `${name} rate limit reached. Try again later.`;
+        else if (provider === 'tavily' && (status === 432 || status === 433)) message = 'Tavily usage limit reached for this key or plan.';
+        else if (status === 503 || status === 504) message = `${name} is unavailable right now.`;
     }
     const error = new WebSearchError(message, 'SCRATCHPAD_WEB_SEARCH_FAILED', { status, definite });
     return definite ? providerRefused(error) : error;
@@ -406,7 +492,7 @@ function collectResultCandidates(value, depth = 0, budget = { nodes: 0 }) {
     if (!isPlainObject(value)) return [];
     if (looksLikeResult(value)) return [value];
     const candidates = [];
-    for (const key of ['results', 'sources', 'items', 'data', 'output', 'web', 'entries']) {
+    for (const key of ['results', 'sources', 'items', 'data', 'output', 'web', 'entries', 'hits', 'organic', 'documents']) {
         if (key in value) candidates.push(...collectResultCandidates(value[key], depth + 1, budget));
     }
     return candidates;
@@ -433,7 +519,14 @@ export function normaliseWebSearchResults(items, count) {
 
 function providerBody(provider, payload) {
     if (provider === 'brave') return payload?.web?.results;
-    if (provider === 'searxng') return payload?.results;
+    if (provider === 'searxng' || provider === 'tavily') return payload?.results;
+    if (provider === 'exa') {
+        return (Array.isArray(payload?.results) ? payload.results : []).map(item => ({
+            ...item,
+            snippet: Array.isArray(item?.highlights) && item.highlights.length ? item.highlights.join(' ') : (item?.summary ?? item?.text ?? ''),
+        }));
+    }
+    if (provider === 'custom') return collectResultCandidates(payload);
     return collectResultCandidates(payload?.data ?? payload?.results);
 }
 
@@ -443,12 +536,12 @@ function providerBody(provider, payload) {
  */
 export async function performWebSearch(plan, { directories, signal, fetch: fetchImpl = fetch, timeoutMs = WEB_SEARCH_TIMEOUT_MS } = {}) {
     const provider = plan?.provider;
-    if (!['brave', 'searxng', 'nanogpt'].includes(provider)) throw localRefusal('Choose a web search provider in Context.');
+    if (!WEB_SEARCH_PROVIDERS.includes(provider) || provider === 'off') throw localRefusal('Choose a web search provider in Context.');
     let key = '';
-    if (provider !== 'searxng') {
+    if (provider !== 'searxng' && (provider !== 'custom' || plan.keyId)) {
         const secretKey = PROVIDER_KEY[provider]();
         key = plan.keyId ? usableKey(readSecret(directories, secretKey, plan.keyId)) : '';
-        if (!key) throw localRefusal(provider === 'brave' ? 'The saved Brave Search key is no longer available.' : 'The saved NanoGPT key is no longer available.');
+        if (!key) throw localRefusal(`The saved ${provider === 'custom' ? 'custom search' : PROVIDER_NAME[provider]} key is no longer available.`);
     }
     const timeoutSignal = AbortSignal.timeout(timeoutMs);
     const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
@@ -469,6 +562,32 @@ export async function performWebSearch(plan, { directories, signal, fetch: fetch
         url.searchParams.set('q', plan.query);
         url.searchParams.set('format', 'json');
         options = { method: 'GET', headers: { Accept: 'application/json' } };
+    } else if (provider === 'exa') {
+        url = new URL('https://api.exa.ai/search');
+        options = {
+            method: 'POST',
+            headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'x-api-key': key },
+            body: JSON.stringify({ query: plan.query, numResults: plan.results, type: 'auto', contents: { highlights: { maxCharacters: MAX_WEB_SEARCH_SNIPPET_CHARS } } }),
+        };
+    } else if (provider === 'tavily') {
+        url = new URL('https://api.tavily.com/search');
+        options = {
+            method: 'POST',
+            headers: { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+            body: JSON.stringify({ query: plan.query, max_results: plan.results, search_depth: 'basic' }),
+        };
+    } else if (provider === 'custom') {
+        try {
+            url = customSearchUrl(normaliseCustomUrl(plan.customUrl), plan.query, plan.results);
+        } catch {
+            throw localRefusal('The saved custom search address is missing or invalid.');
+        }
+        const headers = { Accept: 'application/json' };
+        if (key) {
+            const header = plan.customHeader || 'Authorization';
+            headers[header] = header.toLowerCase() === 'authorization' ? `Bearer ${key}` : key;
+        }
+        options = { method: 'GET', headers };
     } else {
         url = new URL('https://api.nano-gpt.com/api/web');
         options = {
@@ -493,11 +612,12 @@ export async function performWebSearch(plan, { directories, signal, fetch: fetch
         try { response.body?.destroy?.(); } catch { /* the status error still wins */ }
         throw httpError(provider, response.status);
     }
-    if (provider === 'searxng' && /text\/html/i.test(String(response.headers?.get?.('content-type') || ''))) {
+    if ((provider === 'searxng' || provider === 'custom') && /text\/html/i.test(String(response.headers?.get?.('content-type') || ''))) {
         try { response.body?.destroy?.(); } catch { /* the response error still wins */ }
-        throw providerRefused(new WebSearchError(
-            'SearXNG returned a web page instead of JSON. Enable JSON output in its settings and check the saved address.',
-            'SCRATCHPAD_WEB_SEARCH_RESPONSE', { definite: true }));
+        throw providerRefused(new WebSearchError(provider === 'searxng'
+            ? 'SearXNG returned a web page instead of JSON. Enable JSON output in its settings and check the saved address.'
+            : 'The custom search service returned a web page instead of JSON. Check that the address points at a JSON search API.',
+        'SCRATCHPAD_WEB_SEARCH_RESPONSE', { definite: true }));
     }
     let payload;
     try {
@@ -524,4 +644,4 @@ export function webSearchFailure(error, timeoutMs = WEB_SEARCH_TIMEOUT_MS) {
     return 'The web search could not be completed.';
 }
 
-export const testExports = { collectResultCandidates, normaliseSearxngUrl, providerBody, readBoundedText };
+export const testExports = { collectResultCandidates, normaliseCustomHeader, normaliseCustomUrl, normaliseSearxngUrl, providerBody, readBoundedText };

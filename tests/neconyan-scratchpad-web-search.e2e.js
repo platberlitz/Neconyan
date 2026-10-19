@@ -90,6 +90,13 @@ for (const phone of [false, true]) {
         await expect(page.locator('#scratchpad-web-search-settings .manage-api-keys[data-key="api_key_brave_search"]')).toBeVisible();
         await page.locator('#scratchpad-web-search-provider').selectOption('nanogpt');
         await expect(page.locator('#scratchpad-web-search-settings .manage-api-keys[data-key="api_key_nanogpt"]')).toBeVisible();
+        await page.locator('#scratchpad-web-search-provider').selectOption('custom');
+        await expect(page.locator('#scratchpad-web-search-custom')).toBeVisible();
+        await expect(page.locator('#scratchpad-web-search-settings .manage-api-keys[data-key="api_key_custom_search"]')).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(phone ? 393 : 1280);
+        await page.evaluate(() => window.toastr?.remove());
+        await page.locator('#scratchpad-web-search-settings').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `../screenshots/scratchpad-web-search-custom-${size}-after.png`, scale: 'css' });
         await configureSearch(page, search.url);
         expect((await account.post('/api/scratchpad/web-search', {})).webSearch).toMatchObject({ provider: 'searxng', searxngUrl: search.url, results: 5 });
         await page.evaluate(() => window.toastr?.remove());
@@ -256,25 +263,67 @@ test('failed saves and background refreshes preserve the web search form draft',
     expect((await account.post('/api/scratchpad/web-search', {})).webSearch).toMatchObject({ provider: 'searxng', searxngUrl: search.url, results: 7 });
 });
 
-test('Brave and NanoGPT keys can be added through Scratchpad and saved without exposing their values', async ({ app }) => {
-    test.setTimeout(120000);
+async function addKey(page, key, label, value) {
+    await page.locator(`#scratchpad-web-search-settings .manage-api-keys[data-key="${key}"]`).click();
+    const manager = page.locator('dialog[open]').filter({ has: page.locator('.secretKeyManager') });
+    await expect(manager.locator('.secretKeyManagerInfo')).toContainText(label);
+    await manager.locator('[data-action="add-secret"]').click();
+    const entry = page.locator('dialog[open]').last();
+    await entry.locator('.popup-input').fill(value);
+    await entry.locator('#newSecretLabel').fill(`Scratchpad ${label} fixture`);
+    await entry.locator('.popup-button-ok').click();
+    await expect(manager.locator('.secretKeyManagerList')).toContainText(`Scratchpad ${label} fixture`);
+    await manager.locator('.popup-button-ok').click();
+}
+
+test('a custom address searches the chosen service and sends its key in the chosen header', async ({ app, search }) => {
+    test.setTimeout(150000);
     const account = await app.account();
     const page = await account.open();
     await openScratchpad(page);
     await page.getByRole('tab', { name: 'Context', exact: true }).click();
-    for (const [provider, key] of [['brave', 'api_key_brave_search'], ['nanogpt', 'api_key_nanogpt']]) {
+    await page.locator('#scratchpad-connection-miso').selectOption('durable');
+    await page.getByRole('checkbox', { name: 'Stream replies' }).uncheck();
+    await page.locator('#scratchpad-web-search-provider').selectOption('custom');
+    await expect(page.locator('#scratchpad-web-search-searxng')).toBeHidden();
+    await page.locator('#scratchpad-web-search-custom').fill(`${search.url}/custom?q={query}&n={count}`);
+    await page.locator('#scratchpad-web-search-custom-header').fill('X-Fixture-Key');
+    const dummyKey = 'scratchpad-browser-fixture-custom-not-a-real-key';
+    await addKey(page, 'api_key_custom_search', 'Custom web search', dummyKey);
+    await expect(page.locator('#scratchpad-web-search-custom')).toHaveValue(`${search.url}/custom?q={query}&n={count}`);
+    const saving = page.waitForResponse('**/api/scratchpad/web-search/update');
+    await page.locator('#scratchpad-web-search-save').click();
+    const response = await saving;
+    expect(response.ok(), await response.text()).toBe(true);
+    expect(JSON.stringify(await response.json())).not.toContain(dummyKey);
+    await expect(page.locator('.scratchpad-web-status')).toContainText('Ready.');
+    expect((await account.post('/api/scratchpad/web-search', {})).webSearch).toMatchObject({
+        provider: 'custom', customUrl: `${search.url}/custom?q={query}&n={count}`, customHeader: 'X-Fixture-Key', results: 5,
+    });
+
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+    await page.locator('.scratchpad-web-toggle').click();
+    app.provider.mode.reply = { choices: [{ message: { content: 'The library archive describes early public libraries. [1]' } }] };
+    const question = 'Find public library history through the custom service.';
+    const accepted = await send(page, question);
+    await account.settled(accepted.job.id);
+    expect(search.calls.at(-1)).toMatchObject({ method: 'GET', path: '/search-services/custom', query: question, count: '5', key: dummyKey });
+    await expect(page.locator('.scratchpad-web-sources summary')).toHaveText('Sources (2)');
+    const calls = app.provider.calls.filter(call => call.messages?.at(-1)?.content === question);
+    expect(JSON.stringify(calls[0].messages)).toContain('https://example.org/library-history');
+});
+
+test('Brave, NanoGPT, Exa and Tavily keys can be added through Scratchpad and saved without exposing their values', async ({ app }) => {
+    test.setTimeout(180000);
+    const account = await app.account();
+    const page = await account.open();
+    await openScratchpad(page);
+    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    const providers = [['brave', 'api_key_brave_search', 'Brave Search'], ['nanogpt', 'api_key_nanogpt', 'NanoGPT'], ['exa', 'api_key_exa', 'Exa'], ['tavily', 'api_key_tavily', 'Tavily']];
+    for (const [provider, key, label] of providers) {
         await page.locator('#scratchpad-web-search-provider').selectOption(provider);
-        await page.locator(`#scratchpad-web-search-settings .manage-api-keys[data-key="${key}"]`).click();
-        const manager = page.locator('dialog[open]').filter({ has: page.locator('.secretKeyManager') });
-        await expect(manager.locator('.secretKeyManagerInfo')).toContainText(provider === 'brave' ? 'Brave Search' : 'NanoGPT');
-        await manager.locator('[data-action="add-secret"]').click();
-        const entry = page.locator('dialog[open]').last();
         const dummyKey = `scratchpad-browser-fixture-${provider}-not-a-real-key`;
-        await entry.locator('.popup-input').fill(dummyKey);
-        await entry.locator('#newSecretLabel').fill(`Scratchpad ${provider} fixture`);
-        await entry.locator('.popup-button-ok').click();
-        await expect(manager.locator('.secretKeyManagerList')).toContainText(`Scratchpad ${provider} fixture`);
-        await manager.locator('.popup-button-ok').click();
+        await addKey(page, key, label, dummyKey);
         await expect(page.locator('#scratchpad-web-search-provider')).toHaveValue(provider);
         const saving = page.waitForResponse('**/api/scratchpad/web-search/update');
         await page.locator('#scratchpad-web-search-save').click();

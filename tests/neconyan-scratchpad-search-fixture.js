@@ -15,7 +15,7 @@ export const test = base.extend({
         const mode = { status: 200, hold: false, results: SEARCH_RESULTS, malformed: false, stallBody: false };
         const server = http.createServer((request, response) => {
             const url = new URL(request.url, 'http://localhost');
-            const call = { method: request.method, path: url.pathname, query: url.searchParams.get('q'), format: url.searchParams.get('format'), aborted: false };
+            const call = { method: request.method, path: url.pathname, query: url.searchParams.get('q'), format: url.searchParams.get('format'), count: url.searchParams.get('n'), key: request.headers['x-fixture-key'] ?? null, aborted: false };
             calls.push(call);
             const finish = () => {
                 pending.delete(finish);

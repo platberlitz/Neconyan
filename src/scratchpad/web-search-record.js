@@ -1,6 +1,6 @@
 import { decode } from 'html-entities';
 
-export const WEB_SEARCH_PROVIDERS = Object.freeze(['off', 'brave', 'searxng', 'nanogpt']);
+export const WEB_SEARCH_PROVIDERS = Object.freeze(['off', 'brave', 'searxng', 'nanogpt', 'exa', 'tavily', 'custom']);
 export const MAX_WEB_SEARCH_RESULTS = 10;
 export const MAX_WEB_SEARCH_QUERY_CHARS = 400;
 export const MAX_WEB_SEARCH_TITLE_CHARS = 200;
