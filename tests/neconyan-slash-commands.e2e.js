@@ -50,10 +50,16 @@ for (const phone of [false, true]) {
         const audit = await page.evaluate(async () => {
             const { executeSlashCommandsWithOptions: run } = await import('/scripts/slash-commands.js');
             const { power_user } = await import('/scripts/power-user.js');
+            const engine = power_user.experimental_macro_engine;
             power_user.experimental_macro_engine = false;
-            const indexed = await run('/let key=items ["first","second"] | /pass {{var::items::1}}');
-            const invalid = await run('/not-a-real-neconyan-command');
-            return { indexed: indexed.pipe, invalidIsError: invalid.isError };
+            try {
+                const indexed = await run('/let key=items ["first","second"] | /pass {{var::items::1}}');
+                const invalid = await run('/not-a-real-neconyan-command');
+                return { indexed: indexed.pipe, invalidIsError: invalid.isError };
+            } finally {
+                // Browser-built replies would otherwise open the one-time engine prompt over the composer.
+                power_user.experimental_macro_engine = engine;
+            }
         });
         expect(audit).toEqual({ indexed: 'second', invalidIsError: true });
         await submit('/not-a-real-neconyan-command <img id="slash-error-html">');
