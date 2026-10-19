@@ -2,6 +2,23 @@
 
 ## v1.3.6
 
+### Highlights
+- Ordinary Roleplay, Story, group, regenerate, continue and swipe replies now run in the browser again, including Guided Response and Guided Swipe. The first words and reasoning show as soon as they arrive, instead of waiting for the provider's next chunk. Conversation mode, protected corrections, Deep Swipe, background calls and replies that need Notebook context still run on the server.
+- If you leave the tab while a browser reply is running, even before the first words arrive, the server keeps reading the response and the chat collects the finished reply when you come back. The server keeps its copy until the chat confirms the save, so a failed save doesn't mean paying for the reply again. **Stop** still cancels everything.
+- A tab left open across a server update now notices when you come back to it. If nothing is happening it saves your settings and reloads itself; if you're generating, editing or typing, an **Update ready** toast waits for you to tap it.
+- Added **Rerun agents** to a reply's **More** menu. It repeats the after-reply Agent pass without generating another reply, follows your **Run together** or **Run one at a time** choice, keeps your own edits and replaces the old generated blocks instead of stacking new ones. **Undo** restores the reply from before the rerun.
+- Fixed server replies that streamed in correctly, then saved as raw tracker placeholders with no Agents run. The dialogue colours extension saving its counts mid-reply made the reply think your account data had changed.
+- Scratchpad can search the web before answering. Turn on **Web** beside the message box (off by default, saved per session) and pick **Brave Search**, **SearXNG**, **NanoGPT (Linkup)**, **Exa**, **Tavily** or your own **Custom address** under **Context → Web search**. Only the message you're sending goes to the search service, trimmed to 400 characters, and the reply cites its numbered sources. Lorebook entries now fold under each lorebook, and Context and Sessions no longer slide sideways on phones.
+- **Macro Enhanced** is now a full page with **Playground**, **Reference**, **My macros**, **This chat** and **Setup** tabs. Playground expands text without a model request, and My macros builds reusable macros with named arguments for everywhere, this browser, a character or one chat. Miso, Taro and Nori can write a macro for you, which you review and preview before it's saved in this browser, and there's an editable template pack of eleven greetings, scene starters, checks and writing nudges.
+- The Regexes page has the Neconyan look, and you can describe a rule in plain words and let a connection profile draft it. The editor opens with the rule filled in and **Test Mode** running on an example, so you can check it before saving, and **Improve rule** fixes one you already have. Nothing is overwritten if the model's answer isn't a usable rule.
+- Mewmory settings save automatically, including number fields, model roles and credentials, and a failed save keeps your edits for a retry. **Hide old messages automatically** now hides older history each time visible history reaches the configured trigger.
+- Calico Light finally looks like Calico Light again, with a light workspace rail and a darker accent and border for contrast. Since 16 September the stock theme had been treated as a custom one. AI Custom CSS now writes light and dark rules that apply on every theme, not only stock Calico.
+- Pawthfinder's settings page has the Neconyan look, with the on/off switch above its status line and compact Read / Write / Delete permission rows on phones.
+- Completed replies no longer vanish with aggressive message unloading on, and your reading place holds while controls appear.
+- Automatic Conversation summaries wait quietly while saved images or quotes need review, instead of logging the same error every 30 seconds.
+- Quick Image Gen's separate Text AI now defaults to 32,000 tokens and accepts up to 64,000, so long image prompts aren't cut off. Installs still on the old 500 default move to the new one; values you chose yourself are kept.
+- Less repeated work on desktop and phones: resizing the window no longer reloads the chat list, large character libraries rebuild much faster, and scrolling, closed menus, extension work and Android startup do less in the background.
+
 ### Merged Staging PRs
 - PR #211 (2026-10-18) `test(i18n): keep image tests valid once translations land`
 - PR #214 (2026-10-18) `perf(desktop): reduce rendering and library loading work`
