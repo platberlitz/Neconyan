@@ -13,6 +13,7 @@
 - PR #223 (2026-10-18) `fix(conversation): defer automatic summaries awaiting image review`
 - PR #224 (2026-10-18) `fix(generation): recover browser replies after leaving the tab`
 - PR #225 (2026-10-18) `fix(chat): prefer browser replies and show first streamed content`
+- PR #226 (2026-10-19) `fix: keep server replies' agents running and reload stale pages after updates`
 
 ## v1.3.5
 
