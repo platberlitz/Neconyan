@@ -30,14 +30,14 @@
     --neco-raised: #ebe1d0;
     --neco-ink: #303331;
     --neco-muted: #504c45;
-    --neco-ginger: #b86b32;
-    --neco-ginger-hover: #d3935c;
-    --neco-border: #d5cec0;
+    --neco-ginger: #8f4f22;
+    --neco-ginger-hover: #7a4320;
+    --neco-border: #857e72;
     --neco-user: #f7e2c3;
     --neco-cream: #f3e6d1;
     --neco-charcoal: #303331;
     --neco-pink: #d88e9f;
-    --neco-on-accent: #303331;
+    --neco-on-accent: #fffaf0;
     --neco-canvas-gradient:
         url('../img/neconyan/paw-cream.webp') right 14px top 18px / 88px 88px no-repeat,
         url('../img/neconyan/paw-pink.webp') 92% 24% / 48px 48px no-repeat,
@@ -55,12 +55,6 @@
     --neco-on-accent: var(--neco-accent-ink, var(--neco-charcoal));
     --neco-action-gradient: var(--neco-accent-gradient);
     --neco-pink: color-mix(in oklch, var(--SmartThemeQuoteColor) 55%, #efb0bd);
-}
-
-:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'][data-neconyan-accent='custom'] body.neconyan #neconyan-workspace-rail,
-:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'][data-neconyan-accent='custom'] body.neconyan #sb-mobile-nav-content {
-    --neco-ginger: color-mix(in oklch, var(--SmartThemeQuoteColor) 72%, #fff);
-    --neco-ginger-hover: color-mix(in oklch, var(--SmartThemeUnderlineColor) 40%, #fff);
 }
 
 /* Accent touches every shell style shares: the current page, section labels, top bar edge and selected text. */
@@ -84,24 +78,6 @@ body.neconyan #top-bar {
 body.neconyan ::selection {
     background: color-mix(in srgb, var(--neco-ginger) 38%, transparent);
     color: inherit;
-}
-
-:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan #neconyan-workspace-rail,
-:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan #sb-mobile-nav-content {
-    --neco-rail: #343735;
-    --neco-ink: #fff3d9;
-    --neco-muted: #d6cbbb;
-    --neco-border: #615f54;
-    --neco-raised: #54564a;
-    --neco-ginger: #e0ae78;
-    --neco-ginger-hover: #f3e6d1;
-    color: var(--neco-ink);
-}
-
-:root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan #sb-mobile-nav-content .sb-nav-item {
-    --sb-card-bg: var(--neco-raised);
-    background: var(--neco-raised);
-    color: var(--neco-ink);
 }
 
 :root[data-neconyan-palette='calico'] body.neconyan.neconyan-home-visible #neconyan-home-host,
@@ -716,7 +692,7 @@ body.neconyan :is(#world_popup, #SillyTavernImportSection, #sb_character_import_
 }
 
 /* The inner Settings navigator follows the light surface, including its
-   labels and icons. The outer rail keeps its existing dark treatment. */
+   labels and icons. */
 :root[data-neconyan-palette='calico'][data-neconyan-calico-tone='light'] body.neconyan :is(.sb-settings-nav-column, .sb-settings-tabs-nav) {
     background: color-mix(in srgb, var(--neco-surface) 92%, transparent) !important;
     color: var(--neco-ink) !important;

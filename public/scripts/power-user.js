@@ -1869,9 +1869,16 @@ function applyThemeColor(type) {
     syncNeconyanPaletteAttribute();
 }
 
+// The colour pickers store 'rgba(r, g, b, 1)' while accessibleTheme() writes 'rgb(r, g, b)'.
+function normalizeThemeValue(value) {
+    const text = String(value ?? '').trim();
+    const channels = text.match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/i);
+    return channels ? `rgba(${channels.slice(1, 4).map(Number).join(', ')}, ${Number(channels[4] ?? 1)})` : text;
+}
+
 function themeValuesEqual(left, right) {
     if (typeof left === 'string' || typeof right === 'string') {
-        return String(left ?? '').trim() === String(right ?? '').trim();
+        return normalizeThemeValue(left) === normalizeThemeValue(right);
     }
 
     return Object.is(left, right);
@@ -1895,13 +1902,18 @@ function syncNeconyanPaletteAttribute() {
     // (paw prints, gradients) and flags data-neconyan-accent='custom' so the CSS recolours from it.
     const accentKeys = ['quote_text_color', 'underline_text_color'];
     const activeThemeName = String(power_user.theme ?? '');
+    // applyTheme() and settings load store accessibleTheme() output, which repaints Calico Light, so compare against that.
+    const appliedDarkCalico = accessibleTheme(NECONYAN_CALICO_DARK_THEME_FALLBACK);
+    const appliedLightCalico = accessibleTheme(NECONYAN_CALICO_THEME_FALLBACK);
     const isDarkCalico = activeThemeName === NECONYAN_DARK_THEME_NAME
-        && themeValuesMatch(NECONYAN_CALICO_DARK_THEME_FALLBACK, power_user, accentKeys);
+        && themeValuesMatch(appliedDarkCalico, power_user, accentKeys);
     const isLightCalico = activeThemeName === NECONYAN_THEME_NAME
-        && themeValuesMatch(NECONYAN_CALICO_THEME_FALLBACK, power_user, accentKeys);
+        && themeValuesMatch(appliedLightCalico, power_user, accentKeys);
     const isCalico = isDarkCalico || isLightCalico;
-    const calicoFallback = isDarkCalico ? NECONYAN_CALICO_DARK_THEME_FALLBACK : NECONYAN_CALICO_THEME_FALLBACK;
-    const isThemeAccent = isCalico && accentKeys.every(key => themeValuesEqual(power_user[key], calicoFallback[key]));
+    const calicoAccents = isDarkCalico
+        ? [appliedDarkCalico, NECONYAN_CALICO_DARK_THEME_FALLBACK]
+        : [appliedLightCalico, NECONYAN_CALICO_THEME_FALLBACK];
+    const isThemeAccent = isCalico && calicoAccents.some(theme => accentKeys.every(key => themeValuesEqual(power_user[key], theme[key])));
     document.documentElement.dataset.neconyanPalette = isCalico ? 'calico' : 'custom';
     document.documentElement.dataset.neconyanCalicoTone = isDarkCalico ? 'dark' : isLightCalico ? 'light' : 'custom';
     document.documentElement.dataset.neconyanAccent = isThemeAccent ? 'theme' : 'custom';
