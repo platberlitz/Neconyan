@@ -3,6 +3,7 @@ import { describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { normalizeAgentExpressionLabel, resolveExpressionsAgentProfile } from '../public/scripts/extensions/expressions/expressions-agent-utils.js';
+import { personaExpressionFolder, personaExpressionSelection } from '../public/scripts/extensions/expressions/persona-expressions.js';
 
 const index = readFileSync(new URL('../public/scripts/extensions/expressions/index.js', import.meta.url), 'utf8');
 const bridge = readFileSync(new URL('../public/scripts/extensions/expressions/expressions-agent.js', import.meta.url), 'utf8');
@@ -55,6 +56,151 @@ function setup() {
     };
     return { runtime, agent, store, settings, chat, add };
 }
+
+function setupPersona() {
+    const state = setup();
+    const { runtime, agent, chat } = state;
+    agent.companion.maxTokens = 64000;
+    agent.prompt = 'Read the latest assistant reply. Choose from {{availableExpressions}}. Sprites: {{availableSprites}}.';
+    const runner = {
+        getAutomaticCompanionAgents: jest.fn(() => agent.enabled ? [agent] : []),
+        getAgentGenerationCancelRevision: () => 7,
+        buildCompanionPromptMessages: jest.fn(async scoped => [{ role: 'system', content: scoped.prompt }]),
+        requestPromptTransform: jest.fn(async () => ({ output: 'joy' })),
+    };
+    Object.assign(runtime, {
+        getPersonaExpressionRunner: async () => runner,
+        RESET_SPRITE_LABEL: '#reset',
+        getMessageExpressionAvatar: message => message?.is_user && message.force_avatar ? `persona:${message.force_avatar}` : message?.original_avatar,
+        personaExpressionFolder, personaExpressionSelection, personaExpressionRequests: new WeakSet(),
+        power_user: { persona_descriptions: { 'robin.png': { description: 'A green coat.' } } },
+        getSavedMessageExpression: message => message?.extra?.neconyanExpression,
+        getSpritesList: jest.fn(async folder => ['joy', 'neutral'].map(label => ({ label, files: [{ imageSrc: `/characters/${folder}/${label}.png` }] }))),
+        recordMessageExpression: jest.fn(async (target, src) => {
+            if (!runtime.isExpressionTargetCurrent(target)) return false;
+            target.message.extra.neconyanExpression = { avatar: target.avatar, src };
+            return true;
+        }),
+    });
+    load(runtime, bridge, ['classifyPersonaExpression']);
+    load(runtime, index, ['applyPersonaExpression', 'applyPersonaAgentExpression', 'chooseSpriteForExpression']);
+    const pending = [];
+    const apply = runtime.applyPersonaAgentExpression;
+    runtime.applyPersonaAgentExpression = (...args) => {
+        const promise = apply(...args);
+        pending.push(promise);
+        return promise;
+    };
+    const addPersona = (avatar = 'robin.png', text = 'I am delighted!') => {
+        const message = { name: 'Robin', force_avatar: avatar, is_user: true, mes: text, extra: {} };
+        chat.push(message);
+        return message;
+    };
+    return { ...state, runner, addPersona, finish: () => Promise.all(pending) };
+}
+
+describe('Expressions Agent persona classification', () => {
+    test('uses the recorded persona, its available labels and the saved agent without changing its configuration', async () => {
+        const { runtime, runner, agent, addPersona, finish } = setupPersona();
+        const before = structuredClone(agent);
+        const message = addPersona();
+        await runtime.applyPersonaExpression(0);
+        await finish();
+        const folder = await personaExpressionFolder('robin.png');
+        expect(message.extra.neconyanExpression).toEqual({ avatar: 'persona:robin.png', src: `/characters/${folder}/joy.png` });
+        const [scoped, index, type, options] = runner.buildCompanionPromptMessages.mock.calls[0];
+        expect(index).toBe(0);
+        expect(type).toBe('normal');
+        expect(scoped.prompt).toContain('joy, neutral');
+        expect(scoped.prompt).not.toContain('{{available');
+        expect(scoped.prompt).toContain('persona\'s user-authored message');
+        expect(scoped.companion).toMatchObject({ includePersona: false, includeCharacterCard: false, includeHistory: false });
+        expect(options.extraContextSections[0].content).toContain('A green coat.');
+        expect(options.extraContextSections[0].content).toContain(message.mes);
+        expect(runner.requestPromptTransform).toHaveBeenCalledWith(expect.objectContaining({ connectionProfile: 'independent' }), expect.any(Array), 64000, expect.objectContaining({ cancelRevision: 7 }));
+        expect(agent).toEqual(before);
+        expect(runtime.sendExpressionCall).not.toHaveBeenCalled();
+    });
+
+    test('does not hold Send while the model is pending, and ignores duplicate render events', async () => {
+        const { runtime, runner, addPersona, finish } = setupPersona();
+        let release;
+        const response = new Promise(resolve => { release = resolve; });
+        runner.requestPromptTransform.mockReturnValue(response);
+        addPersona();
+        await runtime.applyPersonaExpression(0);
+        await runtime.applyPersonaExpression(0);
+        release({ output: 'joy' });
+        await finish();
+        expect(runner.requestPromptTransform).toHaveBeenCalledTimes(1);
+        expect(runtime.recordMessageExpression).toHaveBeenCalledTimes(1);
+    });
+
+    test.each(['disabled', 'hidden', 'manual', 'inline', 'global-off', 'none', 'extension-off', 'no-sprites', 'empty', 'unrecorded', 'history'])('does not request a persona classification for %s', async kind => {
+        const { runtime, runner, agent, settings, addPersona, finish } = setupPersona();
+        const message = addPersona();
+        if (kind === 'disabled') agent.enabled = false;
+        if (kind === 'hidden') agent.hidden = true;
+        if (kind === 'manual') agent.companion.trigger = 'manual';
+        if (kind === 'inline') agent.execution = 'inline';
+        if (kind === 'global-off') runner.getAutomaticCompanionAgents.mockReturnValue([]);
+        if (kind === 'none') settings.expressions.api = 99;
+        if (kind === 'extension-off') settings.disabledExtensions = ['expressions'];
+        if (kind === 'no-sprites') runtime.getSpritesList.mockResolvedValue([]);
+        if (kind === 'empty') message.mes = '';
+        if (kind === 'unrecorded') delete message.force_avatar;
+        if (kind === 'history') message.extra.neconyanExpression = { avatar: 'persona:robin.png', src: '/saved.png' };
+        await runtime.applyPersonaExpression(0);
+        await finish();
+        expect(runner.requestPromptTransform).not.toHaveBeenCalled();
+        expect(runtime.recordMessageExpression).not.toHaveBeenCalled();
+    });
+
+    test.each(['navigation', 'edit', 'delete', 'manual-selection', 'mode-change', 'disable-agent'])('discards a late result after %s', async change => {
+        const { runtime, runner, agent, settings, chat, addPersona, finish } = setupPersona();
+        const message = addPersona();
+        runner.requestPromptTransform.mockImplementation(async () => {
+            if (change === 'navigation') runtime.generation++;
+            if (change === 'edit') message.mes = 'Changed';
+            if (change === 'delete') chat.length = 0;
+            if (change === 'manual-selection') runtime.captureExpressionTarget(message);
+            if (change === 'mode-change') settings.expressions.api = 99;
+            if (change === 'disable-agent') agent.enabled = false;
+            return { output: 'joy' };
+        });
+        await runtime.applyPersonaExpression(0);
+        await finish();
+        expect(runner.requestPromptTransform).toHaveBeenCalledTimes(1);
+        expect(runtime.recordMessageExpression).not.toHaveBeenCalled();
+    });
+
+    test('same-name personas keep separate sets when responses finish out of order', async () => {
+        const { runtime, runner, addPersona, finish } = setupPersona();
+        const first = addPersona();
+        const second = addPersona('robin-alt.png', 'I feel calm.');
+        let release;
+        const response = new Promise(resolve => { release = resolve; });
+        runner.requestPromptTransform.mockImplementationOnce(() => response).mockResolvedValueOnce({ output: 'neutral' });
+        await runtime.applyPersonaExpression(0);
+        await runtime.applyPersonaExpression(1);
+        release({ output: 'joy' });
+        await finish();
+        expect(first.extra.neconyanExpression.src).toBe(`/characters/${await personaExpressionFolder('robin.png')}/joy.png`);
+        expect(second.extra.neconyanExpression.src).toBe(`/characters/${await personaExpressionFolder('robin-alt.png')}/neutral.png`);
+    });
+
+    test('an invalid response preserves the manual default', async () => {
+        const { runtime, runner, settings, addPersona, finish } = setupPersona();
+        const src = `/characters/${await personaExpressionFolder('robin.png')}/neutral.png`;
+        settings.expressions.personaSelections = { 'robin.png': src };
+        runner.requestPromptTransform.mockResolvedValue({ output: 'anger' });
+        const message = addPersona();
+        await runtime.applyPersonaExpression(0);
+        await finish();
+        expect(message.extra.neconyanExpression.src).toBe(src);
+        expect(runtime.recordMessageExpression).toHaveBeenCalledTimes(1);
+    });
+});
 
 describe('Expressions Agent lifecycle', () => {
     test('QIG sharing resolves the current profile without overwriting the independent profile', async () => {

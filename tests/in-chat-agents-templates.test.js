@@ -420,7 +420,7 @@ describe('in-chat agent bundled templates', () => {
             expect(catalog.find(item => item.id === template.id).version).toBe(template.version);
         }
         const expressions = catalog.find(template => template.id === 'tpl-expressions-agent');
-        expect(expressions.version).toBe(1);
+        expect(expressions.version).toBe(2);
         expect(expressions.prompt).toContain('{{availableExpressions}}');
     });
 

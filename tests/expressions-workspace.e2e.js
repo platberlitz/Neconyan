@@ -103,6 +103,77 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
         test.use({ serviceWorkers: 'block', viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 },
             hasTouch: phone, isMobile: phone, reducedMotion: 'reduce' });
         test.setTimeout(120000);
+        test('Expressions Agent chooses each persona from its own set without delaying Send', async ({ page }) => {
+            const state = await fixture(page);
+            const folders = await page.evaluate(async () => {
+                const { personaExpressionFolder } = await import('/scripts/extensions/expressions/persona-expressions.js');
+                return Promise.all(['robin.png', 'robin-alt.png', 'no-set.png'].map(personaExpressionFolder));
+            });
+            await page.route('**/api/sprites/get?**', route => {
+                const folder = new URL(route.request().url()).searchParams.get('name');
+                const labels = folder === folders[0] ? ['joy', 'neutral'] : folder === folders[1] ? ['love'] : folder === folders[2] ? [] : ['anger'];
+                return route.fulfill({ json: labels.map(label => ({ label, path: `/characters/${folder}/${label}.png` })) });
+            });
+            await page.evaluate(async () => {
+                const context = window.SillyTavern.getContext();
+                const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                const template = await (await fetch('/scripts/extensions/in-chat-agents/templates/expressions-agent-companion.json')).json();
+                store.setGlobalSettings({ enabled: true });
+                await store.saveAgent({ ...template, id: 'persona-expression-test', sourceTemplateId: template.id, enabled: true, connectionProfile: 'expression-fixture', modelOverride: 'expression-model' });
+                context.extensionSettings.expressions.api = 4;
+                context.extensionSettings.expressions.agentUseQigLlmProfile = false;
+                window.personaExpressionCalls = [];
+                window.personaExpressionResolvers = [];
+                context.ConnectionManagerRequestService.sendRequest = (profile, messages, maxTokens, options) => {
+                    window.personaExpressionCalls.push({ profile, messages, maxTokens, model: options.modelOverride });
+                    return new Promise(resolve => window.personaExpressionResolvers.push(resolve));
+                };
+            });
+            await page.getByRole('button', { name: 'Close Settings', exact: true }).click({ timeout: 10000 });
+            await page.evaluate(async () => {
+                const core = await import('/script.js');
+                await core.sendMessageAsUser('I am delighted to see you!', '', null, false, 'Robin', 'robin.png');
+                await core.sendMessageAsUser('I love being here with you.', '', null, false, 'Robin', 'robin-alt.png');
+                await core.sendMessageAsUser('No expression set for this persona.', '', null, false, 'Robin', 'no-set.png');
+            });
+            await expect.poll(() => page.evaluate(() => window.personaExpressionCalls.length)).toBe(2);
+            const calls = await page.evaluate(() => window.personaExpressionCalls);
+            expect(calls[0]).toMatchObject({ profile: 'expression-fixture', maxTokens: 64000, model: 'expression-model' });
+            expect(calls[0].messages[0].content).toContain('joy, neutral');
+            expect(calls[0].messages[0].content).not.toContain('anger');
+            expect(calls[0].messages[1].content).toContain('Blue eyes and a green coat.');
+            expect(calls[1].messages[1].content).toContain('Red hair and a blue jacket.');
+            expect(calls[0].messages[1].content).not.toContain('Mira has silver hair');
+            await expect(page.locator('#chat .mes[is_user="true"] .neconyan-expression-avatar')).toHaveCount(0);
+            await page.screenshot({ path: `../screenshots/expressions-agent-persona-${name}-pending.png`, animations: 'disabled' });
+            await page.evaluate(() => {
+                window.personaExpressionResolvers[1]('love');
+                window.personaExpressionResolvers[0]('joy');
+            });
+            await expect(page.locator('#chat .mes[is_user="true"] .neconyan-expression-avatar')).toHaveCount(2);
+            const expressions = await page.evaluate(() => window.SillyTavern.getContext().chat.filter(message => message.is_user).map(message => message.extra.neconyanExpression));
+            expect(expressions[0]).toEqual({ avatar: 'persona:robin.png', src: `/characters/${folders[0]}/joy.png` });
+            expect(expressions[1]).toEqual({ avatar: 'persona:robin-alt.png', src: `/characters/${folders[1]}/love.png` });
+            expect(expressions[2]).toBeUndefined();
+            const portrait = page.locator('#chat .mes[is_user="true"] .neconyan-expression-avatar').first();
+            await portrait.scrollIntoViewIfNeeded();
+            const geometry = await portrait.evaluate(element => {
+                const box = element.getBoundingClientRect();
+                return { width: box.width, height: box.height, left: box.left, right: box.right, viewport: window.innerWidth, display: getComputedStyle(element).display };
+            });
+            expect(geometry.width).toBeGreaterThan(0);
+            expect(geometry.height).toBeGreaterThan(0);
+            expect(geometry.left).toBeGreaterThanOrEqual(0);
+            expect(geometry.right).toBeLessThanOrEqual(geometry.viewport);
+            expect(geometry.display).not.toBe('none');
+            await page.screenshot({ path: `../screenshots/expressions-agent-persona-${name}-after.png`, animations: 'disabled' });
+            await page.reload();
+            await page.waitForFunction(() => window.SillyTavern?.getContext().characters.length);
+            await page.evaluate(() => window.SillyTavern.getContext().selectCharacterById(0, { switchMenu: false }));
+            await expect(page.locator('#chat .mes[is_user="true"] .neconyan-expression-avatar')).toHaveCount(2);
+            expect(state.errors).toEqual([]);
+        });
+
         test('expression workspace', async ({ page }) => {
             const state = await fixture(page);
             await expect(page.locator('#image_list .expression_list_item').first()).toBeVisible();
