@@ -81,6 +81,11 @@ describe('Guided Correction', () => {
         await jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({
             is_group_generating: false,
         }));
+        // Guided Correction asks the client module whether a refusal was already reported; the real module would load the
+        // browser library stack this suite does not provide, and every error here is an ordinary one.
+        await jest.unstable_mockModule('../public/scripts/prompt-media-client.js', () => ({
+            isReportedImageRefusal: () => false,
+        }));
         await jest.unstable_mockModule('../public/scripts/extensions.js', () => ({
             extension_settings: extensionSettings,
             getContext: jest.fn(() => context),

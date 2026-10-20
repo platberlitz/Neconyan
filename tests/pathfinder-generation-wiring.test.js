@@ -116,6 +116,9 @@ function createHost() {
         context[name] = jest.fn();
     }
     context.getCurrentChatId = () => context.chatId;
+    context.getCurrentUserHandle = () => 'test-user';
+    context.reportBrowserImageRefusal = () => false;
+    context.isReportedImageRefusal = () => false;
     context.clearStreamingProcessorIfCurrent = processor => { if (context.streamingProcessor === processor) context.streamingProcessor = null; };
     context.setExtensionPrompt = jest.fn((key, value) => { context.extension_prompts[key] = { value }; });
     context.getExtensionPrompt = async () => context.extension_prompts.pathfinder_pipeline_retrieval?.value ?? '';

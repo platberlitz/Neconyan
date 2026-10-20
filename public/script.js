@@ -1,4 +1,4 @@
-import { initPromptMediaControls, projectBrowserPromptMedia, validatePromptImageCopies } from './scripts/prompt-media-client.js';
+import { initPromptMediaControls, projectBrowserPromptMedia, validatePromptImageCopies, reportBrowserImageRefusal, isReportedImageRefusal } from './scripts/prompt-media-client.js';
 import { promptMediaText, promptImageCopyDescriptor } from './scripts/prompt-media-policy.js';
 import { formatRoleplayTextMessage, combineRoleplayTextPrompt } from './scripts/roleplay-text-format.js';
 import { roleplayLoadErrorMessage } from './scripts/roleplay-load-error.js';
@@ -5064,7 +5064,12 @@ export async function sendTextareaMessage() {
         await newAssistantChat({ temporary: false });
     }
 
-    let generation = await Generate(generateType);
+    let generation;
+    try {
+        generation = await Generate(generateType);
+    } catch (error) {
+        if (!isReportedImageRefusal(error)) throw error;
+    }
     showSwipeButtons();
     return generation;
 }
@@ -8984,6 +8989,8 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
     }
     const requestController = dryRun ? null : abortController;
     const originChatId = getCurrentChatId();
+    const refusalLocator = { group: Boolean(selected_group), chat: String(originChatId ?? ''), ...(!selected_group ? { avatar: characters[this_chid]?.avatar } : {}) };
+    const refusalAccount = getCurrentUserHandle();
     const originChatGeneration = chatGeneration;
     const getAgentGenerationContext = agentGenerationContextProvider ?? (() => null);
     const cancelRevision = getAgentGenerationContext()?.cancelRevision;
@@ -10776,6 +10783,9 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             console.log(exception);
             throw exception;
         }
+    } catch (error) {
+        if (!dryRun && type !== 'quiet') reportBrowserImageRefusal(error, refusalLocator, refusalAccount);
+        throw error;
     } finally {
         releaseGenerationContext(recoveryContext);
         if (recoveryContext) scheduleHeldGenerationRecovery();

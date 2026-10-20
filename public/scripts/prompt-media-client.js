@@ -6,7 +6,7 @@ import { chat_metadata, main_api, getRequestHeaders } from '../script.js';
 import { power_user } from './power-user.js';
 import { oai_settings } from './openai.js';
 import { extension_settings } from './extensions.js';
-import { attachmentIdentity, canonicalPromptMedia, createPromptMediaContext, selectPromptMedia } from './prompt-media-policy.js';
+import { attachmentIdentity, canonicalPromptMedia, createPromptMediaContext, imageInputIssueDetail, roleplayImageOrigin, selectPromptMedia } from './prompt-media-policy.js';
 import { t, translate } from './i18n.js';
 
 /**
@@ -18,6 +18,18 @@ import { t, translate } from './i18n.js';
 export const localizedError = message => Object.assign(new Error(message), { localized: true });
 
 export const promptAttachmentHash = value => sha256(canonicalPromptMedia(value));
+
+// A refusal the browser raised is reported once per error object. A server reply was already reported by the route that read it, so its
+// error carries the code only on error.body and is left alone here.
+const reportedImageRefusals = new WeakSet();
+export function reportBrowserImageRefusal(error, locator, account) {
+    if (error === null || typeof error !== 'object' || error.code !== 'ROLEPLAY_IMAGE_INPUT' || reportedImageRefusals.has(error)) return false;
+    reportedImageRefusals.add(error);
+    globalThis.dispatchEvent(new CustomEvent('neconyan:image-input-refused', { detail: imageInputIssueDetail(error, roleplayImageOrigin(locator, account)) }));
+    return true;
+}
+/** Whether this page already reported this refusal, so a caller may treat it as shown. */
+export const isReportedImageRefusal = error => error !== null && typeof error === 'object' && reportedImageRefusals.has(error);
 
 // The review window loads on first use so it stays out of every cold start.
 const promptMediaUi = () => import('./prompt-media-ui.js');
