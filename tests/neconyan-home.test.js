@@ -306,19 +306,24 @@ describe('Neconyan Home', () => {
         const defaults = JSON.parse(readFileSync(new URL('../default/content/settings.json', import.meta.url), 'utf8'));
         const values = new Map(Object.entries(defaults.accountStorage));
         let opens = 0;
+        const asks = [];
         const context = vm.createContext({
             tutorialStatusKey: 'NeconyanTutorialStatus.v1', tutorialHiddenKey: 'NeconyanTutorialHidden.v1',
             getWelcomeUiPreference: key => values.get(key) ?? null,
-            showTutorialCoachmark: () => { opens++; },
+            getSimpleModePreference: () => values.get('NeconyanSimpleMode.v1') ?? 'off',
+            showTutorialCoachmark: options => { opens++; asks.push(options.askSimpleMode); },
         });
         vm.runInContext(read('scripts/welcome-screen.js').match(/^function resumeTutorial\(\) {[\s\S]*?^}/m)[0], context);
         context.resumeTutorial();
         expect(opens).toBe(1);
+        expect(asks).toEqual([true]);
+        values.set('NeconyanSimpleMode.v1', 'on');
         for (const status of ['', 'pending']) {
             values.set('NeconyanTutorialStatus.v1', status);
             context.resumeTutorial();
         }
         expect(opens).toBe(3);
+        expect(asks).toEqual([true, false, false]);
         for (const status of ['completed', 'skipped', null]) {
             values.set('NeconyanTutorialStatus.v1', status);
             context.resumeTutorial();
@@ -400,7 +405,7 @@ describe('assistant shortcuts without shipped characters', () => {
             let toolsSynced = false;
             let tourResumed = false;
             const context = vm.createContext({
-                releaseChromeAfterBootSkeleton() {}, PinnedChatsManager: { init() {} }, ensureNeconyanRail() {},
+                releaseChromeAfterBootSkeleton() {}, applySimpleMode() {}, SIMPLE_MODE_EVENT: 'simple', PinnedChatsManager: { init() {} }, ensureNeconyanRail() {},
                 installChatNoteCapture() {},
                 window: { addEventListener() {} }, concealWelcomeHome() {},
                 eventSource: { on: (key, handler) => handlers.set(key, handler), makeFirst() {} },

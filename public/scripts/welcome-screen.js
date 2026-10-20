@@ -16,6 +16,7 @@ import { getAssistantGender, getAssistantTourSrc, setAssistantGender } from './n
 import { clamp, flashHighlight, getSortableDelay, isElementInViewport, sortMoments, timestampToMoment } from './utils.js';
 import { revealChat, revealUi } from './ui-motion.js';
 import { createForegroundRefreshCoalescer } from './mobile-shell-lifecycle/index.js';
+import { applySimpleMode, getSimpleModePreference, isSimpleModeEnabled, setSimpleModeEnabled, SIMPLE_MODE_EVENT } from './neconyan-simple-mode.js';
 
 const assistantAvatarKey = 'assistant';
 const assistantVariantKey = 'neconyanAssistantVariant';
@@ -51,6 +52,26 @@ const WELCOME_TUTORIAL_STEPS = Object.freeze([
     { speaker: 'Taro', image: 'img/neconyan/tour/tour-08-taro-sampling.webp?v=20260916-assistants', title: 'Find it, then fine-tune it', body: 'Change one setting, then look at what happened before you change the next. Search finds a control by name, and Sampling shows which settings your provider and model will actually accept.', hint: 'Turning every slider at once is a poor experiment, however satisfying, because you learn nothing about which one helped. Your saved sampler values stay put when you switch models.', actions: [{ label: 'Search settings', type: 'open-global-search' }, { label: 'Open sampling', type: 'open-tab', value: 'left:sampling' }] },
     { speaker: 'Miso, Taro and Nori', title: 'We’re here to help!', body: 'You can replay the tour any time from Home → Home layout, and if you have any questions, come chat with any of us. We’re purr-eaty much available 24/7!', ending: true, actions: [] },
 ]);
+
+// Simple Mode keeps only the steps whose destinations stay visible.
+const SIMPLE_TUTORIAL_STEPS = Object.freeze([
+    WELCOME_TUTORIAL_STEPS[0],
+    WELCOME_TUTORIAL_STEPS[1],
+    WELCOME_TUTORIAL_STEPS[6],
+    { speaker: 'Miso, Taro and Nori', title: 'That’s all you need!', body: 'Connect, pick a character, chat. That’s the whole recipe. You can replay the tour any time from Home → Home layout.\nWhen you feel like exploring, press **Show all features** in the sidebar, or turn off Simple Mode in Settings → Appearance. Everything is still there, just napping.', ending: true, actions: [] },
+]);
+
+const SIMPLE_MODE_QUESTION_STEP = Object.freeze({
+    speaker: 'Nori',
+    image: 'img/neconyan/tour/tour-06-nori-extensions.webp?v=20260916-assistants',
+    title: 'Want to keep things simple?',
+    body: 'Neconyan has a lot of buttons. Like, a lot. **Simple Mode** keeps just the chat, your characters and your connection.',
+    hint: 'Change your mind any time in Settings → Appearance.',
+});
+
+function getActiveTutorialSteps() {
+    return isSimpleModeEnabled() ? SIMPLE_TUTORIAL_STEPS : WELCOME_TUTORIAL_STEPS;
+}
 
 const WELCOME_PANEL_MODES = Object.freeze({
     full: 'full',
@@ -680,7 +701,7 @@ function setTutorialUiState(panel, index, expanded, { persist = true } = {}) {
         return;
     }
 
-    const safeIndex = clamp(Number.parseInt(index, 10) || 0, 0, WELCOME_TUTORIAL_STEPS.length - 1);
+    const safeIndex = clamp(Number.parseInt(index, 10) || 0, 0, getActiveTutorialSteps().length - 1);
     panel.dataset.tutorialIndex = String(safeIndex);
     panel.dataset.tutorialExpanded = String(expanded);
     if (persist) {
@@ -734,11 +755,14 @@ function syncTutorialCoachmark(panel) {
         return;
     }
 
-    const index = Number.parseInt(panel.dataset.tutorialIndex || '0', 10) || 0;
-    const count = WELCOME_TUTORIAL_STEPS.length;
-    const step = WELCOME_TUTORIAL_STEPS[index];
+    const asking = panel.dataset.tutorialAskSimpleMode === 'true';
+    const steps = getActiveTutorialSteps();
+    const index = clamp(Number.parseInt(panel.dataset.tutorialIndex || '0', 10) || 0, 0, steps.length - 1);
+    const count = steps.length;
+    const step = asking ? SIMPLE_MODE_QUESTION_STEP : steps[index];
     coachmark.classList.toggle('neconyan-tour-ending', Boolean(step.ending));
-    coachmark.querySelector('[data-tour-coach-step]').textContent = t`Step ${index + 1} of ${count}`;
+    coachmark.classList.toggle('neconyan-tour-asking', asking);
+    coachmark.querySelector('[data-tour-coach-step]').textContent = asking ? t`Before we start` : t`Step ${index + 1} of ${count}`;
     coachmark.querySelector('[data-tour-coach-title]').textContent = t([step.title]);
     renderTourCopy(coachmark.querySelector('[data-tour-coach-body]'), step.body);
     const hint = coachmark.querySelector('[data-tour-coach-hint]');
@@ -760,7 +784,18 @@ function syncTutorialCoachmark(panel) {
     bindTourImageFallbacks(coachmark);
     coachmark.querySelector('[data-tour-paw-stamp]').hidden = !step.ending;
     const actionHost = coachmark.querySelector('[data-tour-coach-actions]');
-    if (actionHost instanceof HTMLElement) {
+    if (actionHost instanceof HTMLElement && asking) {
+        actionHost.replaceChildren();
+        for (const [label, enabled] of [['Yes, keep it simple', true], ['No, show me everything', false]]) {
+            const answer = document.createElement('button');
+            answer.type = 'button';
+            answer.className = enabled ? 'menu_button menu_button_primary' : 'menu_button';
+            answer.textContent = t([label]);
+            answer.dataset.tourSimpleModeAnswer = enabled ? 'on' : 'off';
+            answer.addEventListener('click', () => answerSimpleModeQuestion(panel, enabled));
+            actionHost.append(answer);
+        }
+    } else if (actionHost instanceof HTMLElement) {
         actionHost.replaceChildren();
         step.actions.forEach((definition) => {
             const action = document.createElement('button');
@@ -784,10 +819,12 @@ function syncTutorialCoachmark(panel) {
     const next = coachmark.querySelector('[data-tour-coach-next]');
     if (next instanceof HTMLButtonElement) {
         next.textContent = index >= count - 1 ? t`Finish` : t`Next`;
+        next.hidden = asking;
     }
     const back = coachmark.querySelector('[data-tour-coach-back]');
     if (back instanceof HTMLButtonElement) {
         back.disabled = index === 0;
+        back.hidden = asking;
     }
     coachmark.querySelector('[data-tour-content]').scrollTop = 0;
 }
@@ -798,7 +835,13 @@ window.addEventListener('neconyan:assistant-gender-changed', () => {
     });
 });
 
-function showTutorialCoachmark() {
+function answerSimpleModeQuestion(panel, enabled) {
+    setSimpleModeEnabled(enabled);
+    delete panel.dataset.tutorialAskSimpleMode;
+    setTutorialUiState(panel, 0, true);
+}
+
+function showTutorialCoachmark({ askSimpleMode = false } = {}) {
     let coachmark = document.getElementById('neconyan-tour-coachmark');
     if (!(coachmark instanceof HTMLElement)) {
         coachmark = document.createElement('aside');
@@ -832,7 +875,7 @@ function showTutorialCoachmark() {
         coachmark.querySelector('[data-tour-coach-next]')?.addEventListener('click', () => {
             if (!activeTutorialPanel) return;
             const index = Number.parseInt(activeTutorialPanel.dataset.tutorialIndex || '0', 10) || 0;
-            const lastIndex = WELCOME_TUTORIAL_STEPS.length - 1;
+            const lastIndex = getActiveTutorialSteps().length - 1;
             if (index >= lastIndex) {
                 dismissTutorial(activeTutorialPanel, 'completed');
                 return;
@@ -848,13 +891,20 @@ function showTutorialCoachmark() {
     }
     activeTutorialPanel = coachmark;
     document.body.classList.add('neconyan-tour-active');
-    setTutorialUiState(coachmark, getWelcomeUiPreference(tutorialIndexKey) || 0, true, { persist: false });
+    const savedIndex = getWelcomeUiPreference(tutorialIndexKey) || 0;
+    if (askSimpleMode && (Number.parseInt(savedIndex, 10) || 0) === 0) {
+        coachmark.dataset.tutorialAskSimpleMode = 'true';
+    } else {
+        delete coachmark.dataset.tutorialAskSimpleMode;
+    }
+    setTutorialUiState(coachmark, savedIndex, true, { persist: false });
 }
 
 function resumeTutorial() {
     const status = getWelcomeUiPreference(tutorialStatusKey);
     if (status !== null && !['completed', 'skipped'].includes(status) && getWelcomeUiPreference(tutorialHiddenKey) !== 'true') {
-        showTutorialCoachmark();
+        // Only the automatic first-run tour asks; Replay goes straight to the steps.
+        showTutorialCoachmark({ askSimpleMode: getSimpleModePreference() === 'ask' });
     }
 }
 
@@ -1993,6 +2043,7 @@ function ensureNeconyanRail() {
             <nav class="neconyan-rail-nav" aria-label="Workspace">
                 <div class="neconyan-rail-section-label">Workspace</div>
                 <div data-neconyan-primary-nav></div>
+                <div class="neconyan-rail-simple-exit" data-neconyan-simple-exit></div>
                 <section class="neconyan-rail-advanced" aria-labelledby="neconyan-rail-advanced-title">
                     <div id="neconyan-rail-advanced-title" class="neconyan-rail-section-heading"><span>Fine-tuning</span></div>
                     <div data-neconyan-advanced-nav></div>
@@ -2039,6 +2090,18 @@ function ensureNeconyanRail() {
         ['chat-archive', 'Chat Archive', 'fa-box-archive'],
         ['extensions', 'Extensions', 'fa-cubes'],
     ]);
+
+    const simpleExit = createNeconyanRailButton({
+        label: 'Show all features',
+        icon: 'fa-layer-group',
+        onClick: () => {
+            setSimpleModeEnabled(false);
+            toastr.info(t`Simple Mode is off. Turn it back on from Settings → Appearance → Simple Mode.`);
+        },
+    });
+    delete simpleExit.dataset.neconyanRoute;
+    simpleExit.title = t`Simple Mode is on. Show every feature again.`;
+    rail.querySelector('[data-neconyan-simple-exit]')?.append(simpleExit);
 
     const modeNav = rail.querySelector('[data-neconyan-mode-nav]');
     if (modeNav instanceof HTMLElement) {
@@ -2915,9 +2978,14 @@ function installChatNoteCapture() {
 
 export function initWelcomeScreen() {
     releaseChromeAfterBootSkeleton();
+    applySimpleMode();
     PinnedChatsManager.init();
     ensureNeconyanRail();
     installChatNoteCapture();
+    // The tour shows fewer steps in Simple Mode, so redraw an open tour when the choice changes.
+    window.addEventListener(SIMPLE_MODE_EVENT, () => {
+        if (activeTutorialPanel) setTutorialUiState(activeTutorialPanel, activeTutorialPanel.dataset.tutorialIndex, true, { persist: false });
+    });
     window.addEventListener('sb:conversation-workspace-state-changed', concealWelcomeHome);
     // One resume can fire focus, visibilitychange and pageshow together. Refresh
     // the recent list once per burst so another device or a server job is seen

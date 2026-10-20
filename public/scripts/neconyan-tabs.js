@@ -41,6 +41,7 @@ import { extension_settings, extensionNames, findExtension, getExtensionManifest
 import { getCurrentUserHandle } from './user.js';
 import { bindClearJobHistoryButton } from './job-history-cleanup.js';
 import { getAssistantIconSrc } from './neconyan-assistant-art.js';
+import { isSimpleModeEnabled, setSimpleModeEnabled, SIMPLE_MODE_EVENT } from './neconyan-simple-mode.js';
 import { getSleeperCoat, getSleeperCoatPair, setSleeperCoat, setSleeperCoatPair, SLEEPER_COAT_CHANGE_EVENT, SLEEPER_COAT_GROUPS, SLEEPER_COAT_PAIRS, SLEEPER_COATS, sleeperCoatArt } from './neconyan-sleeper-coats.js';
 import { t, translate } from './i18n.js';
 import {
@@ -16318,9 +16319,26 @@ function injectThemePicker() {
             text: 'Restore page-tour invitations you hid or already tried.',
         }), restoreTourInvites, tourInviteStatus],
     });
+    const simpleModeChoice = createMobileNavChoice({
+        id: 'sb-simple-mode-input',
+        type: 'checkbox',
+        value: 'simple-mode',
+        label: 'Simple Mode',
+        icon: 'fa-seedling',
+        onChange: input => setSimpleModeEnabled(input.checked),
+    });
+    const simpleModeSettingsGroup = createThemeSettingsDrawer({
+        id: 'sb-simple-mode-drawer',
+        title: 'Simple Mode',
+        content: [simpleModeChoice, createElement('p', {
+            className: 'sb-theme-slider-caption',
+            text: 'Shows only what you need to chat: characters, connections and settings. Power tools such as Agents, Lorebooks, Extensions and Fine-tuning stay tucked away until you turn this off.',
+        })],
+    });
 
     getMessageStyleSelect()?.addEventListener('change', updateThemePickerUi);
     document.addEventListener('sb:chat-style-updated', updateThemePickerUi);
+    window.addEventListener(SIMPLE_MODE_EVENT, updateThemePickerUi);
 
     if (desktopSettingsOutlet instanceof HTMLElement) {
         desktopSettingsOutlet.replaceChildren(
@@ -16348,7 +16366,7 @@ function injectThemePicker() {
         );
     }
 
-    const themeSettingsDrawers = [shellStyleSettingsGroup, interfaceSettingsGroup, topbarLabelSettingsGroup, shortcutSettingsGroup, tourSettingsGroup];
+    const themeSettingsDrawers = [simpleModeSettingsGroup, shellStyleSettingsGroup, interfaceSettingsGroup, topbarLabelSettingsGroup, shortcutSettingsGroup, tourSettingsGroup];
     if (!(desktopSettingsOutlet instanceof HTMLElement)) {
         card.append(
             desktopNavLayoutSettingsGroup,
@@ -16390,6 +16408,7 @@ function placeThemeSettingsDrawers(themeBlock, card, drawers) {
         return;
     }
     const icons = {
+        'sb-simple-mode-drawer': 'fa-seedling',
         'sb-shell-style-drawer': 'fa-paw',
         'sb-interface-drawer': 'fa-sliders',
         'sb-topbar-label-drawer': 'fa-heading',
@@ -16661,6 +16680,13 @@ function updateThemePickerUi() {
     if (hideTourButtonsInput instanceof HTMLInputElement) {
         hideTourButtonsInput.checked = nnState.tourButtonsHidden;
         hideTourButtonsInput.closest('.sb-mobile-nav-choice')?.classList.toggle('is-selected', nnState.tourButtonsHidden);
+    }
+
+    const simpleModeInput = document.getElementById('sb-simple-mode-input');
+    if (simpleModeInput instanceof HTMLInputElement) {
+        const simpleModeOn = isSimpleModeEnabled();
+        simpleModeInput.checked = simpleModeOn;
+        simpleModeInput.closest('.sb-mobile-nav-choice')?.classList.toggle('is-selected', simpleModeOn);
     }
 
     const kittylessInput = document.getElementById('sb-kittyless-enabled-input');
