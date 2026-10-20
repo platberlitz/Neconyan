@@ -2,17 +2,41 @@
 
 ## v1.3.7
 
+### Highlights
+- Added opt-in **Simple Mode**, offered by Nori before a new account's first tour. It keeps chat, characters, connections, Presets, Lorebooks, Agents, Notebooks and Scratchpad visible, while hiding Mewmory, Chat Archive, Extensions and the other Fine-tuning pages. Nothing is deleted or disabled. **Show all features** brings the full layout back, and existing accounts keep their current layout.
+- Added **Position Tracker** and **Visual Map** Companions. Position Tracker groups people by place, with their exact spot, activity and distance from you; Visual Map draws nearby places around your location, with character pins, a travel trail and a compass. Both carry the previous note forward and start disabled, so you choose whether to run them.
+- **Expressions Agent** now classifies new persona messages using the persona's own expression set and saves the chosen portrait with the message. Classification runs in the background instead of delaying the character's reply.
+- **Tide** messages have readable cards on desktop and tablets, with tighter headers, stable spacing and reply controls that fit the layout. The collapsed desktop sidebar and its headings line up properly too.
+- The iPhone composer stays inside the visible screen after switching apps, including with **MovingUI** enabled. The chat shell also follows the visible area's bottom edge when Safari changes its controls.
+- A **Thinking...** label appears while a streamed reply has no text or visible reasoning yet. Tool calls keep their own thinking when a provider sends reasoning between calls, instead of mixing it across the chain.
+- Server-run replies do less preparation: the repeated chat save is gone, preview details load alongside the save, and dialogue colours are resolved earlier. Character libraries read card text without decoding the whole image, and unchanged operation records are reused when listing jobs.
+- Mewmory waits 30 seconds before its first background scan, reuses unchanged chat and Story archives correctly, and gives page requests time to run during long catch-ups. Scene matching also avoids repeatedly splitting the same text.
+- Image refusals now show the review notice on browser sends, open the correct review without a stale save, and avoid a second Deep Swipe error toast. Prompt Manager no longer reports a hidden error when an image is refused. The image controls and refusal notices have updated German, Italian and Portuguese translations.
+- Scratchpad character drafts recover notes and alternate greetings when a model puts them inside the character object or uses the saved-card spelling. You still review the card before creation; conflicting or invalid values are rejected.
+- Fixed character saves on exFAT drives, file-picker cancellation closing its parent popup, and Notes list editing with unfinished frontmatter. Connection profile **Edit selected** and **Delete selected** now scroll with the desktop page.
+
 ### Merged Staging PRs
 - PR #234 (2026-10-19) `fix(chat): give tide messages a readable card on desktop and tablet`
 - PR #235 (2026-10-19) `fix(composer): keep the phone composer visible after app switching`
+- PR #236 (2026-10-19) `perf(roleplay): show server-run replies sooner`
 - PR #237 (2026-10-19) `fix(character): keep exFAT saves working after temp-file rename`
+- PR #238 (2026-10-20) `perf(mewmory): keep startup responsive while memories catch up`
+- PR #239 (2026-10-20) `fix(composer): keep the full-height iOS shell when MovingUI is on`
+- PR #240 (2026-10-20) `perf(characters): speed up the first page load on small servers`
+- PR #241 (2026-10-20) `fix(composer): end the iOS shell at the bottom of the visible area`
+- PR #242 (2026-10-20) `fix(chat): show thinking while waiting for streamed output`
+- PR #243 (2026-10-20) `feat(shell): add opt-in Simple Mode offered by Nori to new users`
+- PR #244 (2026-10-20) `docs(readme): refresh screenshots and add Simple Mode`
+- PR #245 (2026-10-20) `fix(expressions): classify persona messages with their own sets`
 - PR #246 (2026-10-20) `fix(connection-profiles): let edit and delete selected scroll on desktop`
 - PR #247 (2026-10-20) `fix(popup): keep file picker cancel from closing parent popup`
 - PR #248 (2026-10-20) `fix(deep-swipe): suppress second toast on image refusal`
 - PR #249 (2026-10-20) `fix(prompt-media): open refusal review without a stale chat save`
 - PR #250 (2026-10-20) `fix(notes): keep list editing with unclosed frontmatter`
 - PR #251 (2026-10-20) `fix(quick-image-gen): translate image refusal toast prefixes`
+- PR #252 (2026-10-20) `feat(agents): add Position Tracker companion`
 - PR #253 (2026-10-20) `feat(agents): add Visual Map companion`
+- PR #254 (2026-10-20) `fix(chat): keep each tool call's own thinking in interleaved reasoning`
 - PR #255 (2026-10-20) `fix(i18n): translate the image features into Portuguese`
 - PR #256 (2026-10-20) `fix(i18n): translate the image features into Italian`
 - PR #257 (2026-10-20) `fix(i18n): translate the image features into German`
