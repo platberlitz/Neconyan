@@ -89,9 +89,12 @@
         touch-action: pan-y;
     }
 
-    /* Use the visible height through keyboard and app switches on Android.
-       The desktop MovingUI preference must not exclude this phone rule. */
-    body.neconyan #sheld {
+    /* Use the visible height through keyboard and app switches on Android,
+       whatever the desktop MovingUI preference says. On iOS this height only
+       pairs with the panned top in the iOS block below, which MovingUI turns
+       off, so Safari keeps the full-height shell when MovingUI is on. */
+    body:not(.movingUI) #sheld,
+    body.neconyan:not(:where(.safari)) #sheld {
         height: calc(var(--sb-shell-viewport-height, 100dvh) - var(--sb-topbar-layout-offset, var(--topBarBlockSize)) - 1px) !important;
         max-height: calc(var(--sb-shell-viewport-height, 100dvh) - var(--sb-topbar-layout-offset, var(--topBarBlockSize)) - 1px) !important;
     }
