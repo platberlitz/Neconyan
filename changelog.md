@@ -19,6 +19,7 @@
 - PR #258 (2026-10-20) `fix(scratchpad): recover misplaced character notes and greetings`
 - PR #259 (2026-10-20) `fix(chat): show the image refusal notice on browser sends`
 - PR #260 (2026-10-20) `fix(prompt-manager): stop a hidden error when images are refused`
+- PR #263 (2026-10-20) `fix(sidebar): align the collapsed desktop rail and its headings`
 
 ## v1.3.6
 
