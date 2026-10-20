@@ -17,6 +17,7 @@
 - PR #256 (2026-10-20) `fix(i18n): translate the image features into Italian`
 - PR #257 (2026-10-20) `fix(i18n): translate the image features into German`
 - PR #258 (2026-10-20) `fix(scratchpad): recover misplaced character notes and greetings`
+- PR #259 (2026-10-20) `fix(chat): show the image refusal notice on browser sends`
 
 ## v1.3.6
 
