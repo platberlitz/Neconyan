@@ -18,6 +18,7 @@
 - PR #257 (2026-10-20) `fix(i18n): translate the image features into German`
 - PR #258 (2026-10-20) `fix(scratchpad): recover misplaced character notes and greetings`
 - PR #259 (2026-10-20) `fix(chat): show the image refusal notice on browser sends`
+- PR #260 (2026-10-20) `fix(prompt-manager): stop a hidden error when images are refused`
 
 ## v1.3.6
 
