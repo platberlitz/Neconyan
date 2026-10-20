@@ -554,6 +554,8 @@ export class Popup {
 
         // Bind dialog listeners manually, so we can be sure context is preserved
         const cancelListener = async (evt) => {
+            // A file input's cancel bubbles here when its picker is dismissed; it must not close the whole popup.
+            if (evt.target !== this.dlg) return;
             if (!this.#allowEscapeClose) {
                 evt.preventDefault();
                 evt.stopPropagation();
