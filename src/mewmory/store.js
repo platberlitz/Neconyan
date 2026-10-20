@@ -50,19 +50,74 @@ export function buildMemoryRecoveryGuard(state) {
 
 function writeState(directories, state) {
     state.locator = normalizeLocator(state.locator);
-    if (Buffer.byteLength(JSON.stringify(state)) > MAX_ARCHIVE_BYTES) fail('This chat’s memory file has reached the 256 MiB size limit.', 413);
+    // Archives reach several megabytes; serialise once for both the size check and the write.
+    const serialized = JSON.stringify(state);
+    if (Buffer.byteLength(serialized) > MAX_ARCHIVE_BYTES) fail('This chat’s memory file has reached the 256 MiB size limit.', 413);
     const guard = buildMemoryRecoveryGuard(state);
     // Persist rejection counters before prose. A failed archive write can only make recovery stricter.
     const filename = recoveryPath(directories, state.locator);
     const previous = fs.existsSync(filename) ? fs.readFileSync(filename) : null;
     writeJson(filename, guard);
+    const archive = statePath(directories, state.locator);
     try {
-        writeJson(statePath(directories, state.locator), state);
+        writeSerializedJson(archive, serialized);
     } catch (error) {
         if (previous) writeFileAtomicSync(filename, previous, { mode: 0o600 });
         else fs.rmSync(filename, { force: true });
         throw error;
     }
+    // The story list and the next change both start from what was just written, not a fresh read of it.
+    const stat = fs.statSync(archive);
+    rememberWrittenState(archive, serialized, statIdentity(stat));
+    rememberStorySummary(path.resolve(archive), stat, state);
+}
+
+/**
+ * The text of recently saved archives, so the next change to the same chat can tell whether
+ * anything changed without serialising the whole archive again. An entry counts only while
+ * the file still has the device, inode, size and times it had straight after the save.
+ */
+const writtenStates = new Map();
+const WRITTEN_STATE_MAX_CHARS = 32 * 1024 * 1024;
+let writtenStateChars = 0;
+
+const statIdentity = stat => [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs].join(':');
+
+function fileIdentity(filename) {
+    try {
+        return statIdentity(fs.statSync(filename));
+    } catch {
+        return null;
+    }
+}
+
+function forgetWrittenState(filename) {
+    const written = writtenStates.get(filename);
+    if (!written) return;
+    writtenStates.delete(filename);
+    writtenStateChars -= written.serialized.length;
+}
+
+function rememberWrittenState(filename, serialized, identity = fileIdentity(filename)) {
+    forgetWrittenState(filename);
+    if (!identity || serialized.length > WRITTEN_STATE_MAX_CHARS) return;
+    writtenStates.set(filename, { identity, serialized });
+    writtenStateChars += serialized.length;
+    while (writtenStateChars > WRITTEN_STATE_MAX_CHARS) forgetWrittenState(writtenStates.keys().next().value);
+}
+
+/**
+ * The serialised form of an unmodified archive read from filename while it had identity. The text
+ * is remembered when the file did not change during the read, so repeated checks of an unchanged
+ * chat serialise it once.
+ */
+function serializedArchive(filename, identity, shared) {
+    const written = writtenStates.get(filename);
+    if (identity && written?.identity === identity) return written.serialized;
+    const serialized = JSON.stringify(shared);
+    if (identity && fileIdentity(filename) === identity) rememberWrittenState(filename, serialized, identity);
+    else forgetWrittenState(filename);
+    return serialized;
 }
 
 /** Recover only source revisions independently vouched for by the saved, prose-free ledger. */
@@ -231,7 +286,7 @@ export function readChatShared(directories, locator) {
     removeCachedChat(key);
     const result = readChatJsonlStrict(key, { recover: false });
     const source = chatSourceFromResult(result, filename);
-    const entry = { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, bytes: stat.size, source };
+    const entry = { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, bytes: stat.size, source };
     chatReadCache.set(key, entry);
     chatReadCacheBytes += entry.bytes;
     while (chatReadCacheBytes > CHAT_READ_CACHE_MAX_BYTES && chatReadCache.size > 1) {
@@ -291,17 +346,26 @@ function readStorySummary(directories, filename) {
         storySummaryCache.delete(key);
         return null;
     }
+    return cloneStorySummary(rememberStorySummary(key, stat, state));
+}
+
+// The entry must carry every field sameCachedFileStat compares, or no listing ever reuses it.
+function rememberStorySummary(key, stat, state) {
     const summary = {
-        locator: state.locator, storyId: state.storyId, branchId: state.branchId, enabled: state.enabled,
+        locator: { ...state.locator }, storyId: state.storyId, branchId: state.branchId, enabled: state.enabled,
         updatedAt: state.updatedAt, processing: state.processing ? { status: state.processing.status, automatic: state.processing.automatic } : null,
     };
-    storySummaryCache.set(key, { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, summary });
+    storySummaryCache.delete(key);
+    storySummaryCache.set(key, { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, summary });
     while (storySummaryCache.size > STORY_SUMMARY_CACHE_MAX_ENTRIES) storySummaryCache.delete(storySummaryCache.keys().next().value);
-    return cloneStorySummary(summary);
+    return summary;
 }
 
 export function writeJson(filename, value) {
-    const serialized = JSON.stringify(value);
+    writeSerializedJson(filename, JSON.stringify(value));
+}
+
+function writeSerializedJson(filename, serialized) {
     if (Buffer.byteLength(serialized) > MAX_ARCHIVE_BYTES) fail('This chat’s memory file has reached the 256 MiB size limit. Export it and start a new chat before adding more memories.', 413);
     fs.mkdirSync(path.dirname(filename), { recursive: true });
     writeFileAtomicSync(filename, serialized, { encoding: 'utf8', mode: 0o600 });
@@ -346,13 +410,16 @@ export function mutateState(directories, locator, mutate, expectedRevision, { ex
     const release = acquireChatFileLock(filename);
     try {
         if (existingOnly && !fs.existsSync(filename)) return null;
-        const state = readState(directories, locator);
+        const identity = fileIdentity(filename);
+        const shared = readStateShared(directories, locator);
+        const state = structuredClone(shared);
         if (expectedRevision !== undefined && state.revision !== expectedRevision) {
             fail('Mewmory changed while this was running. Reload Mewmory and try again.', 409);
         }
-        const before = hash(state);
+        // Compare serialised text directly; hashing both copies of a large archive cost more than the comparison.
+        const before = serializedArchive(filename, identity, shared);
         const result = mutate(state) || state;
-        if (hash(result) !== before || !fs.existsSync(filename)) {
+        if (JSON.stringify(result) !== before || !fs.existsSync(filename)) {
             result.revision = state.revision + 1;
             result.updatedAt = Date.now();
             writeState(directories, result);
@@ -429,7 +496,8 @@ export function buildBranchMemoryState(parent, locator, messages) {
     return child;
 }
 
-export function listStories(directories) {
+/** Lists the saved stories one file per step, so a caller can pause between files. */
+function* storyListing(directories) {
     if (!directories.root) {
         storySummaryCache.clear();
         return [];
@@ -447,11 +515,30 @@ export function listStories(directories) {
         seen.add(path.resolve(filename));
         const summary = readStorySummary(directories, filename);
         if (summary) stories.push(summary);
+        yield;
     }
     for (const key of storySummaryCache.keys()) {
         if (key.startsWith(path.resolve(directory) + path.sep) && !seen.has(key)) storySummaryCache.delete(key);
     }
     return stories;
+}
+
+export function listStories(directories) {
+    const listing = storyListing(directories);
+    for (;;) {
+        const step = listing.next();
+        if (step.done) return step.value;
+    }
+}
+
+/** The first listing after a start reads every story's whole memory file; let page requests run between files. */
+export async function listStoriesGradually(directories) {
+    const listing = storyListing(directories);
+    for (;;) {
+        const step = listing.next();
+        if (step.done) return step.value;
+        await new Promise(resolve => setImmediate(resolve));
+    }
 }
 
 export function removeChatMemory(directories, locator) {

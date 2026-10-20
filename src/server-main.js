@@ -798,7 +798,8 @@ async function postSetupTasks(result) {
         await pauseInterruptedProcessing(getUserDirectoriesList).catch(error => console.warn('Safe start could not pause Mewmory processing.', error));
     } else {
         void runDeferredStartupTasks();
-        startMewmoryWorker(getUserDirectoriesList);
+        // Catching up many chats' memories kept small servers busy while the first page was loading.
+        startMewmoryWorker(getUserDirectoriesList, undefined, { firstScanDelayMs: 30_000 });
     }
     await import('./generation/roleplay-execution.js');
     await import('./generation/sprite-jobs.js');

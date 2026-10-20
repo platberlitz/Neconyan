@@ -59,24 +59,27 @@ function knowledgeForTime(state, id, asOf) {
         .sort((a, b) => b.asOf - a.asOf || b.createdAt - a.createdAt)[0];
 }
 
-function matchScore(text, query) {
-    const terms = new Set(String(query).toLocaleLowerCase().match(/[\p{L}\p{N}_-]{2,}/gu) || []);
-    return (String(text).toLocaleLowerCase().match(/[\p{L}\p{N}_-]{2,}/gu) || []).reduce((sum, term) => sum + Number(terms.has(term)), 0);
+const matchTerms = text => String(text).toLocaleLowerCase().match(/[\p{L}\p{N}_-]{2,}/gu) || [];
+
+/** Splits the scene into words once; scoring every lorebook entry and memory against it re-split the scene each time. */
+function matchScorer(query) {
+    const terms = new Set(matchTerms(query));
+    return text => matchTerms(text).reduce((sum, term) => sum + Number(terms.has(term)), 0);
 }
 
 export function extractionInput(state, refs, asOf, checkpoint) {
     const scene = refs.map(ref => ({ ...ref, type: 'chat', ...sourceAt(state, ref) }));
-    const query = scene.map(source => source.text).join('\n');
+    const matchScore = matchScorer(scene.map(source => source.text).join('\n'));
     const context = state.contextSources.filter(ref => sourceEligible(state, ref))
         .map(ref => ({ ...ref, type: state.sources[ref.id].type, ...sourceAt(state, ref) }));
     const lore = context.filter(source => source.type === 'lore')
-        .map(source => ({ source, score: matchScore(source.text, query) }))
+        .map(source => ({ source, score: matchScore(source.text) }))
         .filter(item => item.score > 0).sort((a, b) => b.score - a.score).slice(0, 16).map(item => item.source);
     const sources = [...scene, ...context.filter(source => source.type === 'character'), ...lore];
     const records = eligibleRecords(state, { asOf }).filter(record => objectiveKinds.includes(record.kind));
     const reference = currentRecords(records.filter(record => ['entity', 'state'].includes(record.kind)), record => record.kind + ':' + record.entityId);
     const relevant = records.filter(record => !['entity', 'state'].includes(record.kind))
-        .map(record => ({ record, score: matchScore(record.text, query) }))
+        .map(record => ({ record, score: matchScore(record.text) }))
         .sort((a, b) => b.score - a.score || b.record.asOf - a.record.asOf).slice(0, 40).map(item => item.record);
     return {
         policy: POLICY_VERSION, mode: checkpoint ? 'preservation_checkpoint' : 'live_update', asOf,
@@ -301,6 +304,8 @@ async function runBatch(directories, locator, options, call) {
         current.jobs.push({ id: jobId, status: 'processing', checkpoint: Boolean(options.checkpoint),
             from: sourceAt(current, refs[0]).sequence, through: asOf, startedAt: Date.now(), policy });
     }, state.revision);
+    // Loading and saving a large story is synchronous; let waiting page requests run before building the request.
+    await new Promise(resolve => setImmediate(resolve));
     // Extraction reads only up to its newest message, so later replies (and agents rewriting them) cannot make it stale.
     const sourceCount = Math.min(state.timeline.length, asOf + 1);
     const snapshotFingerprint = processingFingerprint(state, sourceCount);
