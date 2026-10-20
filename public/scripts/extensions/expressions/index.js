@@ -30,6 +30,7 @@ import {
     LEGACY_DEFAULT_EXPRESSION_SPRITE_PROMPT,
     getAgentExpressionLabel,
     getAgentExpressionState,
+    classifyPersonaExpression,
     getExpressionsAgentStatus,
     getExpressionSpritePromptContext,
     getPersonaExpressionSpritePromptContext,
@@ -134,6 +135,7 @@ let expressionsList = null;
 let processedExpressions = new WeakMap();
 let managedPersonaAvatar = '';
 const personaTargets = new Map();
+const personaExpressionRequests = new WeakSet();
 
 function getManagedPersona() {
     return personaTargets.get(managedPersonaAvatar);
@@ -180,12 +182,34 @@ async function selectPersonaExpression(src) {
 async function applyPersonaExpression(messageId) {
     const message = getContext().chat[messageId];
     const identity = getMessageExpressionAvatar(message);
-    if (!message?.is_user || !identity?.startsWith('persona:') || getSavedMessageExpression(message)) return;
+    if (!message?.is_user || !identity?.startsWith('persona:') || getSavedMessageExpression(message) || personaExpressionRequests.has(message)) return;
+    personaExpressionRequests.add(message);
     const target = captureExpressionTarget(message);
     const avatar = identity.slice('persona:'.length);
     const folder = await personaExpressionFolder(avatar);
     const src = personaExpressionSelection(extension_settings.expressions.personaSelections, avatar, folder);
     if (src !== undefined && isExpressionTargetCurrent(target)) await recordMessageExpression(target, src);
+    // USER_MESSAGE_RENDERED is awaited by Send. Classification must not delay the reply.
+    void applyPersonaAgentExpression(target, avatar, folder).catch(error => {
+        if (error?.name !== 'AbortError') console.error('Expressions: could not classify the persona message', error);
+    });
+}
+
+async function applyPersonaAgentExpression(target, avatar, folder) {
+    const isCurrent = () => isExpressionTargetCurrent(target)
+        && extension_settings.expressions.api === EXPRESSION_API.agent
+        && !extension_settings.disabledExtensions?.includes(MODULE_NAME);
+    if (!isCurrent() || !target.text?.trim()) return;
+    const description = power_user.persona_descriptions?.[avatar]?.description || '';
+    const sprites = spriteCache[folder] ?? await getSpritesList(folder);
+    if (!isCurrent()) return;
+    spriteCache[folder] = sprites;
+    const labels = sprites.filter(sprite => sprite.files?.length).map(sprite => sprite.label);
+    if (!labels.length) return;
+    const label = await classifyPersonaExpression(target, labels, description, isCurrent);
+    if (!label || !isCurrent()) return;
+    const sprite = chooseSpriteForExpression(folder, label, { prevExpressionSrc: getSavedMessageExpression(target.message)?.src });
+    if (sprite?.imageSrc) await recordMessageExpression(target, sprite.imageSrc);
 }
 
 function getExpressionClassificationSnapshot(message, swipe = message.swipe_id ?? 0) {

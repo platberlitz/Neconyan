@@ -6,9 +6,8 @@
  *
  * The expressions agent is a bundled companion template (`tpl-expressions-agent`).
  * After each assistant reply the companion classifies the emotional tone and stores the
- * result in `message.extra.inChatAgentCompanionResults`. The expressions extension reads
- * that result here and falls back to the configured fallback expression when the agent
- * is unavailable or has not finished yet.
+ * result in `message.extra.inChatAgentCompanionResults`. New persona messages with a
+ * sprite set use the same agent connection in the background and save their own portrait.
  */
 
 import { getContext, extension_settings } from '../../extensions.js';
@@ -46,13 +45,30 @@ export { DEFAULT_EXPRESSION_SPRITE_PROMPT, TRANSPARENT_DEFAULT_EXPRESSION_SPRITE
 /**
  * Cached import handles for the companion subsystem. Populated lazily because the
  * in-chat-agents extension loads after expressions (loading_order 20 vs 6).
- * @type {{agentStore?: object, companionShared?: object, qigBridge?: object}}
+ * @type {{agentStore?: object, companionShared?: object, qigBridge?: object, personaRunner?: object}}
  */
 const moduleCache = {
     agentStore: null,
     companionShared: null,
     qigBridge: null,
+    personaRunner: null,
 };
+
+async function getPersonaExpressionRunner() {
+    if (!moduleCache.personaRunner) {
+        const [runner, companion] = await Promise.all([
+            import('../in-chat-agents/agent-runner.js'),
+            import('../in-chat-agents/companion/companion-runner.js'),
+        ]);
+        moduleCache.personaRunner = {
+            requestPromptTransform: runner.requestPromptTransform,
+            getAgentGenerationCancelRevision: runner.getAgentGenerationCancelRevision,
+            buildCompanionPromptMessages: companion.buildCompanionPromptMessages,
+            getAutomaticCompanionAgents: companion.getAutomaticCompanionAgents,
+        };
+    }
+    return moduleCache.personaRunner;
+}
 
 /**
  * Lazily load the in-chat-agents store. Failure is non-fatal and returns null so the
@@ -325,6 +341,41 @@ export async function getAgentExpressionState(context, allowedExpressions, targe
  */
 export async function getAgentExpressionLabel(context, allowedExpressions, target = null) {
     return (await getAgentExpressionState(context, allowedExpressions, target)).label;
+}
+
+/** Classify a new persona message using the Expressions Agent's connection and rules. */
+export async function classifyPersonaExpression(target, allowedExpressions, description, isCurrent) {
+    if (!allowedExpressions.length || !isCurrent()) return null;
+    const { status, agent } = await getExpressionsAgentStatus();
+    if (status !== 'ready') return null;
+    const runner = await getPersonaExpressionRunner();
+    const companion = (await getAgentStore()).getCompanionConfig(agent);
+    const canRun = () => isCurrent() && runner.getAutomaticCompanionAgents(target.index).some(item => item.id === agent.id);
+    if (!canRun()) return null;
+    const cancelRevision = runner.getAgentGenerationCancelRevision();
+    const labels = allowedExpressions.join(', ');
+    // Scope macros before normal expansion: their global values belong to the chat character.
+    // Keep saved/custom prompts intact, including older assistant-only template wording.
+    const scopedAgent = {
+        ...agent,
+        prompt: [
+            String(agent.prompt ?? '').replace(/{{\s*(?:availableExpressions|availableSprites)\s*}}/gi, () => labels),
+            'Classification target for this request: the persona\'s user-authored message below. Apply the emotion rules above to this persona, even if they refer to an assistant or character.',
+            `Return exactly one label from this persona's own expression set: ${labels}.`,
+        ].join('\n\n'),
+        companion: { ...companion, includeCharacterCard: false, includePersona: false, includeHistory: false },
+    };
+    const messages = await runner.buildCompanionPromptMessages(scopedAgent, target.index, 'normal', {
+        extraContextSections: [{
+            title: 'Persona to classify',
+            content: [`Name: ${target.name}`, description && `Description: ${description}`, `Message: ${target.text}`].filter(Boolean).join('\n'),
+        }],
+    });
+    if (!canRun()) return null;
+    const response = await runner.requestPromptTransform(scopedAgent, messages, companion.maxTokens, {
+        cancelRevision, isCurrent: canRun,
+    });
+    return canRun() ? normalizeAgentExpressionLabel(response?.output, allowedExpressions) : null;
 }
 
 /**
