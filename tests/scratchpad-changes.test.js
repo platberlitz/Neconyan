@@ -134,6 +134,24 @@ describe('Scratchpad reviewed saves', () => {
         expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     });
 
+    test('recovers nested draft fields for review and revalidates conflicts before saving', async () => {
+        const plan = await prepareChange({ type: 'character', action: 'create', character: { name: 'New Nova',
+            characterNote: '  Keep this note.\n', alternate_greetings: ['  Keep this greeting.\n'] } }, source);
+        const edited = JSON.parse(plan.after);
+        expect(edited).toEqual({ character: { name: 'New Nova' }, characterNote: '  Keep this note.\n',
+            alternateGreetings: ['  Keep this greeting.\n'], avatarPrompt: '' });
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+        edited.character.characterNote = 'Conflicting note.';
+        await expect(plan.commit(JSON.stringify(edited))).rejects.toThrow('Conflicting values');
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+        delete edited.character.characterNote;
+        globalThis.fetch.mockResolvedValueOnce({ ok: true, text: async () => 'New Nova.png' });
+        await plan.commit(JSON.stringify(edited));
+        const [, options] = globalThis.fetch.mock.calls[0];
+        expect(options.body.get('depth_prompt_prompt')).toBe(edited.characterNote);
+        expect(options.body.getAll('alternate_greetings')).toEqual(edited.alternateGreetings);
+    });
+
     test('two saves started together on one review create the character once', async () => {
         const plan = await prepareChange({ type: 'character', action: 'create', character: { name: 'New Nova' } }, source);
         globalThis.fetch.mockResolvedValueOnce({ ok: true, text: async () => 'New Nova.png' });

@@ -12,6 +12,27 @@ import {
 const fence = value => `\`\`\`scratchpad-change\n${JSON.stringify(value)}\n\`\`\``;
 
 describe('Scratchpad reply parsing', () => {
+    test.each(['alternateGreetings', 'alternate_greetings'])('recovers nested creation fields from a fenced draft with %s', key => {
+        const parts = splitReply(fence({ type: 'character', action: 'create', character: { name: 'New Nova',
+            characterNote: '  Keep this note.\n', [key]: ['  Keep this greeting.\n'] } }));
+        expect(parts[0]).toMatchObject({ error: '', change: { type: 'character', action: 'create', character: { name: 'New Nova' },
+            characterNote: '  Keep this note.\n', alternateGreetings: ['  Keep this greeting.\n'], avatarPrompt: '' } });
+        expect(Object.keys(parts[0].change.character)).toEqual(['name']);
+    });
+
+    test.each([
+        { characterNote: 'Different note.' },
+        { alternateGreetings: ['Different greeting.'] },
+        { alternate_greetings: ['Different greeting.'] },
+        { characterNote: 42 },
+        { avatarPrompt: 'A paid portrait.' },
+    ])('keeps malformed fenced creations unavailable for review: %j', extra => {
+        const [part] = splitReply(fence({ type: 'character', action: 'create', character: { name: 'New Nova', ...extra },
+            characterNote: 'Canonical note.', alternateGreetings: ['Canonical greeting.'] }));
+        expect(part.change).toBeNull();
+        expect(part.error).not.toBe('');
+    });
+
     test('accepts image and avatar suggestions while removing model URLs, credentials and settings', () => {
         expect(normaliseChange({ type: 'image', action: 'generate', target: 'image', prompt: '  An observatory. ', url: 'https://bad.invalid/pic.png', settings: { key: 'secret' } }))
             .toEqual({ type: 'image', action: 'generate', target: 'image', prompt: 'An observatory.', negative: '', reason: '' });
