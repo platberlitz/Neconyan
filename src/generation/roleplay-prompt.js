@@ -414,8 +414,8 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
                 throw roleplayError('ROLEPLAY_INVALID', 'This saved tool history needs a bound tool-capable connection.', 409);
             }
             const thought = sameProvider(record) && index > lastUser && ['active_chain', 'since_last_user'].includes(signaturePolicy?.reasoning)
-                ? selectToolHistoryReasoning(reasoningMessages, index, lastUser, signaturePolicy.reasoning)
-                    || calls.find(call => call.reasoning)?.reasoning : '';
+                ? calls.find(call => call.reasoning)?.reasoning
+                    || selectToolHistoryReasoning(reasoningMessages, index, lastUser, signaturePolicy.reasoning) : '';
             return [{ role: 'assistant', tool_calls: calls.map(call => ({ id: call.id, type: 'function',
                 function: { name: call.name, arguments: call.parameters },
                 ...(signaturePolicy?.include && sameProvider(record) && call.signature ? { signature: call.signature } : {}) })),
