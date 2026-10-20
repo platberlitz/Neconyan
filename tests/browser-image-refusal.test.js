@@ -5,9 +5,9 @@ import { parse } from 'acorn';
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { promptMediaError } from '../public/scripts/prompt-media-policy.js';
 
-// M10: a browser Roleplay refusal must show its notice once and leave Send usable. These tests load the real startup module with
+// A browser Roleplay refusal must show its notice once and leave Send usable. These tests load the real startup module with
 // stand-ins for everything it imports, then run the Send funnel as it is cut out of script.js. The source-shape checks pin where the
-// report sits in Generate and the one second-toast gate this milestone may change.
+// report sits in Generate and the one second-toast gate this change touches.
 const GEN_P14 = 'A message would send more than four images. Set some to Show only, or show them as a gallery so only one is sent.';
 const REFUSED = 'neconyan:image-input-refused';
 const tag = (strings, ...values) => strings.reduce((text, part, index) => text + part + (index < values.length ? values[index] : ''), '');
@@ -60,8 +60,8 @@ afterEach(() => {
     delete globalThis.dispatchEvent;
 });
 
-describe('@m10 browser image refusal', () => {
-    test('@m10 AC 1 the helper reports a client refusal once, with the account and the chat it came from', () => {
+describe('browser image refusal notice', () => {
+    test('the helper reports a client refusal once, with the account and the chat it came from', () => {
         expect(typeof client.reportBrowserImageRefusal).toBe('function');
         expect(typeof client.isReportedImageRefusal).toBe('function');
         const error = promptMediaError('too-many-images', 1, -1, GEN_P14);
@@ -79,10 +79,10 @@ describe('@m10 browser image refusal', () => {
         expect(events[1].origin.locator).not.toHaveProperty('avatar');
     });
 
-    test('@m10 AC 2 only an error carrying its own code is reported, and no origin is invented for a nameless chat', () => {
+    test('only an error carrying its own code is reported, and no origin is invented for a nameless chat', () => {
         expect(typeof client.reportBrowserImageRefusal).toBe('function');
         expect(typeof client.isReportedImageRefusal).toBe('function');
-        // A fresh client refusal has its own code, so the helper would report it; AC 2's point is that it has not been reported yet.
+        // A fresh client refusal has its own code, so the helper would report it; this checks it has not been reported yet.
         expect(client.isReportedImageRefusal(promptMediaError('too-many-images', 1, -1, GEN_P14))).toBe(false);
         const errors = [new Error('Other.'), ...serverRefusals(), null, undefined, 'x'];
         for (const error of errors) {
@@ -132,7 +132,7 @@ describe('@m10 browser image refusal', () => {
         isReportedImageRefusal: reported.isReportedImageRefusal,
     });
 
-    test('@m10 AC 3 a reported refusal resolves and shows the swipe buttons again, any other error is rethrown untouched', async () => {
+    test('a reported refusal resolves and shows the swipe buttons again, any other error is rethrown untouched', async () => {
         // (a) The refusal the notice already covers.
         const reported = reportedSet();
         const refusal = promptMediaError('too-many-images', 1, -1, GEN_P14);
@@ -156,7 +156,7 @@ describe('@m10 browser image refusal', () => {
         expect(success.showSwipeButtons).toHaveBeenCalledTimes(1);
     });
 
-    test('@m10 AC 4 Generate reports the refusal at its one releaseGenerationContext catch, from the locator taken at entry', () => {
+    test('Generate reports the refusal at its one releaseGenerationContext catch, from the locator taken at entry', () => {
         const generate = syntax(scriptSource).body.map(row => row.declaration ?? row).find(row => row.id?.name === 'Generate');
         expect(generate).toBeTruthy();
         const tries = nodesOf(generate).filter(node => node.type === 'TryStatement' && node.finalizer
@@ -202,10 +202,10 @@ describe('@m10 browser image refusal', () => {
     });
 });
 
-describe('@m10 guided correction second toast', () => {
+describe('guided correction second toast', () => {
     const guidedSource = read('public/scripts/extensions/guided-generations/scripts/guidedCorrection.js');
 
-    test('@m10 AC 16 the Guided browser catch keeps its generic toast only for an unreported error', () => {
+    test('the Guided browser catch keeps its generic toast only for an unreported error', () => {
         const guarded = nodesOf(syntax(guidedSource)).filter(node => node.type === 'IfStatement'
             && text(guidedSource, node.test) === '!isReportedImageRefusal(error)');
         expect(guarded).toHaveLength(1);

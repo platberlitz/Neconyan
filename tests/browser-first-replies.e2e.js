@@ -128,22 +128,22 @@ test('scoped Notebook context selects the server only while the note is enabled'
     expect(JSON.stringify(app.provider.calls[1].messages)).not.toContain('The selected note says the fountain is purple.');
 });
 
-// M10: a browser image refusal shows its one notice, leaves Send usable, and raises no uncaught error. Every title starts with
-// '@m10 AC ' so each commit-alone run can select exactly these tests.
-const M10_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
-const M10_TOO_MANY = 'A message would send more than four images. Set some to Show only, or show them as a gallery so only one is sent.';
-const M10_STALE = 'An image changed after its choice was saved. Choose again for it in Review chat images.';
-const M10_NOTICE = 'Review needed before replying';
-const M10_ACTION = 'Open Review chat images to choose what the model receives.';
-const M10_PROVIDER_FAILURE = 'Fixture provider failure.';
-// Step 0 on unchanged staging recorded these for AC 14's provider-failure control (step0-state-ac14-desktop.json):
-// the settled generation raises one page error ('Got response status 500') and shows the generic Chat Completion API toast.
-const M10_PROVIDER_PAGE_ERRORS = 1;
-const M10_PROVIDER_GENERIC_TOAST = true;
+// A browser image refusal shows its one notice, leaves Send usable, and raises no uncaught error. The tests share one describe so
+// they run one after another, and each title names the behaviour it checks.
+const FIXTURE_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
+const TOO_MANY_IMAGES_TEXT = 'A message would send more than four images. Set some to Show only, or show them as a gallery so only one is sent.';
+const STALE_CHOICE_TEXT = 'An image changed after its choice was saved. Choose again for it in Review chat images.';
+const NOTICE_TITLE = 'Review needed before replying';
+const NOTICE_ACTION = 'Open Review chat images to choose what the model receives.';
+const PROVIDER_FAILURE_TEXT = 'Fixture provider failure.';
+// On unchanged staging this provider-failure control produced one page error ('Got response status 500') and the generic
+// Chat Completion API toast.
+const PROVIDER_FAILURE_PAGE_ERRORS = 1;
+const PROVIDER_FAILURE_GENERIC_TOAST = true;
 // The server group route saves, acknowledges settings and submits before it answers; its refusal event can arrive well after a browser refusal.
-const M10_REFUSAL_EVENT_TIMEOUT_MS = 30000;
+const REFUSAL_EVENT_TIMEOUT_MS = 30000;
 
-const m10Account = async (app, phone) => {
+const createRefusalAccount = async (app, phone) => {
     const account = await app.account({ phone, activeConnection: true,
         contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {},
         configureSettings(saved) {
@@ -169,7 +169,7 @@ const collectPageErrors = context => {
     return errors;
 };
 
-const openM10Page = async (account, phone) => {
+const openRefusalPage = async (account, phone) => {
     const page = await account.open({ workspace: false });
     if (phone) await applyIOSOnlyCss(page);
     return page;
@@ -195,7 +195,7 @@ const seedImages = (page, media, mes) => page.evaluate(async ({ data, media, mes
     core.chat.push({ name: 'User', is_user: true, is_system: false, mes,
         extra: { media: media.map((item, index) => ({ type: 'image', url, title: `Picture ${index + 1}`, ...item })), media_display: 'list' } });
     if (!await core.saveChatConditional()) throw new Error('Fixture chat was not saved.');
-}, { data: M10_PNG, media, mes });
+}, { data: FIXTURE_PNG, media, mes });
 
 const settleChat = async page => {
     // Outlast the Prompt Manager's 1000 ms render debounce, its dry run and the prompt build before taking the pre-Send error snapshot.
@@ -212,19 +212,19 @@ const sendWithButton = async (page, phone, text) => {
 
 // 'Exactly one' is counted after a further 1500 ms, so a second event inside that window still fails the count.
 const allowRefusal = async page => {
-    try { await expect.poll(() => page.evaluate(() => window.__refusals.length), { timeout: M10_REFUSAL_EVENT_TIMEOUT_MS }).toBeGreaterThanOrEqual(1); }
+    try { await expect.poll(() => page.evaluate(() => window.__refusals.length), { timeout: REFUSAL_EVENT_TIMEOUT_MS }).toBeGreaterThanOrEqual(1); }
     catch { /* the count assertion at the call site reports the received number */ }
     // eslint-disable-next-line playwright/no-wait-for-timeout
     await page.waitForTimeout(1500);
     return page.evaluate(() => window.__refusals);
 };
 
-const noticeToast = page => page.locator('#toast-container .toast-warning').filter({ hasText: M10_NOTICE });
+const noticeToast = page => page.locator('#toast-container .toast-warning').filter({ hasText: NOTICE_TITLE });
 
 const openNoticeReview = async (page, phone, locator) => {
     await expect(noticeToast(page)).toHaveCount(1);
     await expect(noticeToast(page)).toBeVisible();
-    await expect(noticeToast(page).locator('.toast-title')).toHaveText(M10_NOTICE);
+    await expect(noticeToast(page).locator('.toast-title')).toHaveText(NOTICE_TITLE);
     const scan = page.waitForRequest(request => request.url().endsWith('/api/roleplay/images/scan'));
     if (phone) await noticeToast(page).tap(); else await noticeToast(page).click();
     expect((await scan).postDataJSON().locator).toEqual(locator);
@@ -251,10 +251,10 @@ const stateOf = async (page, { pageErrors, providerCalls, extra = {} }) => {
 
 const saveState = async (info, name, state) => {
     const body = JSON.stringify(state, null, 2);
-    await info.attach(`post-refusal-state-${name}`, { body, contentType: 'application/json' });
-    if (process.env.M10_STATE_DIR) {
-        await fs.mkdir(process.env.M10_STATE_DIR, { recursive: true });
-        await fs.writeFile(path.join(process.env.M10_STATE_DIR, `step0-state-${name}.json`), body);
+    await info.attach(`refusal-state-${name}`, { body, contentType: 'application/json' });
+    if (process.env.REFUSAL_STATE_DIR) {
+        await fs.mkdir(process.env.REFUSAL_STATE_DIR, { recursive: true });
+        await fs.writeFile(path.join(process.env.REFUSAL_STATE_DIR, `refusal-${name}.json`), body);
     }
 };
 
@@ -312,15 +312,15 @@ const openGroup = async (page, group) => {
     });
 };
 
-test.describe('M10 browser image refusal', () => {
+test.describe('browser image refusal notice', () => {
     test.describe.configure({ mode: 'default' });
 
     for (const phone of [false, true]) {
         const viewport = phone ? 'phone' : 'desktop';
-        test(`@m10 AC 6, 7, 10 solo five images (${viewport})`, async ({ app }, info) => {
+        test(`shows one notice when five images are set to be sent (${viewport})`, async ({ app }, info) => {
             test.setTimeout(240000);
             app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: 'Second try answered.' } }] };
-            const account = await m10Account(app, phone);
+            const account = await createRefusalAccount(app, phone);
             await watchRefusals(account.context);
             const { page, pageErrors, chatId } = await openSolo(account, phone);
             await seedImages(page, [{}, {}, {}, {}, {}], 'Five pictures.');
@@ -329,11 +329,11 @@ test.describe('M10 browser image refusal', () => {
             const beforeErrors = [pageErrors.length, await page.evaluate(() => window.__failures.length)];
             await sendWithButton(page, phone, 'Please look.');
             const refusals = await allowRefusal(page);
-            await saveState(info, `ac6-${viewport}`, await stateOf(page, { pageErrors, providerCalls: app.provider.calls.length }));
+            await saveState(info, `solo-five-images-${viewport}`, await stateOf(page, { pageErrors, providerCalls: app.provider.calls.length }));
 
             expect(refusals).toHaveLength(1);
             expect(refusals[0].reason).toBe('too-many-images');
-            expect(refusals[0].message).toBe(M10_TOO_MANY);
+            expect(refusals[0].message).toBe(TOO_MANY_IMAGES_TEXT);
             expect(refusals[0].origin).toEqual({ workspace: 'roleplay', account: 'default-user',
                 locator: { group: false, chat: chatId, avatar: account.avatar } });
             expect(pageErrors).toHaveLength(beforeErrors[0]);
@@ -346,14 +346,14 @@ test.describe('M10 browser image refusal', () => {
             await expect.poll(() => page.evaluate(async () => (await import('/script.js')).is_send_press)).toBe(false);
             await expect(page.locator('#send_but')).toBeVisible();
 
-            // AC 7: the one notice, its wording, and the review for the chat that was refused. Read the wording before the click, because
+            // The one notice, its wording, and the review for the chat that was refused. Read the wording before the click, because
             // a click is also toastr's dismiss.
-            await expect(noticeToast(page).locator('.toast-message')).toContainText(M10_TOO_MANY);
-            await expect(noticeToast(page).locator('.toast-message')).toContainText(M10_ACTION);
+            await expect(noticeToast(page).locator('.toast-message')).toContainText(TOO_MANY_IMAGES_TEXT);
+            await expect(noticeToast(page).locator('.toast-message')).toContainText(NOTICE_ACTION);
             await openNoticeReview(page, phone, { group: false, chat: chatId, avatar: account.avatar });
             await closeNoticeReview(page);
 
-            // AC 10: the same page sends again once the account no longer inlines chat images.
+            // The same page sends again once the account no longer inlines chat images.
             await page.evaluate(async () => {
                 const { power_user } = await import('/scripts/power-user.js');
                 power_user.neconyan_prompt_media = { version: 1, images: 'display-only' };
@@ -365,14 +365,14 @@ test.describe('M10 browser image refusal', () => {
             expect(await page.evaluate(() => window.__refusals.length)).toBe(1);
         });
 
-        test(`@m10 AC 9 group five images (${viewport})`, async ({ app }, info) => {
+        test(`shows one notice in a group chat with five images (${viewport})`, async ({ app }, info) => {
             test.setTimeout(240000);
             app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: 'Group answer.' } }] };
-            const account = await m10Account(app, phone);
+            const account = await createRefusalAccount(app, phone);
             const group = await createGroup(account);
             await watchRefusals(account.context);
             const pageErrors = collectPageErrors(account.context);
-            const page = await openM10Page(account, phone);
+            const page = await openRefusalPage(account, phone);
             await openGroup(page, group);
             const groupChat = await page.evaluate(async () => (await import('/script.js')).getCurrentChatId());
             expect(groupChat).toBe(group.chat_id);
@@ -380,7 +380,7 @@ test.describe('M10 browser image refusal', () => {
 
             // The control: a whole-group address with no images activates both members and makes one provider call each.
             await sendWithButton(page, phone, 'Everyone, say hello.');
-            await captureControlStall(info, `ac9-${viewport}-control-stall`, page, app, pageErrors, async () => {
+            await captureControlStall(info, `group-control-stall-${viewport}`, page, app, pageErrors, async () => {
                 await expect.poll(() => page.evaluate(() => window.__drafts.length), { timeout: 60000 }).toBe(2);
                 await expect.poll(() => app.provider.calls.length, { timeout: 60000 }).toBe(2);
             });
@@ -394,7 +394,7 @@ test.describe('M10 browser image refusal', () => {
             const beforeCalls = app.provider.calls.length;
             await sendWithButton(page, phone, 'Everyone, please look at this.');
             const refusals = await allowRefusal(page);
-            await saveState(info, `ac9-${viewport}`, await stateOf(page, { pageErrors,
+            await saveState(info, `group-five-images-${viewport}`, await stateOf(page, { pageErrors,
                 providerCalls: app.provider.calls.length, extra: { drafts: await page.evaluate(() => window.__drafts.length) } }));
 
             expect(refusals).toHaveLength(1);
@@ -410,15 +410,15 @@ test.describe('M10 browser image refusal', () => {
             await expect(page.locator('#send_textarea')).toHaveValue('');
             await expect.poll(() => page.evaluate(async () => (await import('/script.js')).is_send_press)).toBe(false);
 
-            await expect(noticeToast(page).locator('.toast-message')).toContainText(M10_TOO_MANY);
-            await expect(noticeToast(page).locator('.toast-message')).toContainText(M10_ACTION);
+            await expect(noticeToast(page).locator('.toast-message')).toContainText(TOO_MANY_IMAGES_TEXT);
+            await expect(noticeToast(page).locator('.toast-message')).toContainText(NOTICE_ACTION);
             await openNoticeReview(page, phone, { group: true, chat: group.chat_id });
         });
     }
 
-    test('@m10 AC 8 stale choice', async ({ app }, info) => {
+    test('a stale image choice shows one notice', async ({ app }, info) => {
         test.setTimeout(240000);
-        const account = await m10Account(app, false);
+        const account = await createRefusalAccount(app, false);
         await watchRefusals(account.context);
         const { page, pageErrors, chatId } = await openSolo(account, false);
         await seedImages(page, [{ neconyan_prompt: { version: 1, mode: 'include', attachment_hash: 'c'.repeat(64) } }], 'Stale picture.');
@@ -426,11 +426,11 @@ test.describe('M10 browser image refusal', () => {
         const beforeErrors = [pageErrors.length, await page.evaluate(() => window.__failures.length)];
         await sendWithButton(page, false, 'Stale check.');
         const refusals = await allowRefusal(page);
-        await saveState(info, 'ac8-desktop', await stateOf(page, { pageErrors, providerCalls: app.provider.calls.length }));
+        await saveState(info, 'stale-choice-desktop', await stateOf(page, { pageErrors, providerCalls: app.provider.calls.length }));
 
         expect(refusals).toHaveLength(1);
         expect(refusals[0].reason).toBe('stale-policy');
-        expect(refusals[0].message).toBe(M10_STALE);
+        expect(refusals[0].message).toBe(STALE_CHOICE_TEXT);
         expect(refusals[0].origin).toEqual({ workspace: 'roleplay', account: 'default-user',
             locator: { group: false, chat: chatId, avatar: account.avatar } });
         expect(pageErrors).toHaveLength(beforeErrors[0]);
@@ -441,26 +441,26 @@ test.describe('M10 browser image refusal', () => {
         await expect(page.locator('#send_textarea')).toHaveValue('');
     });
 
-    test('@m10 AC 11 server route solo shows one notice', async ({ app }, info) => {
+    test('the server route still shows one notice (single chat)', async ({ app }, info) => {
         test.setTimeout(240000);
-        const account = await m10Account(app, false);
+        const account = await createRefusalAccount(app, false);
         await watchRefusals(account.context);
         const { page, pageErrors } = await openSolo(account, false);
         await acknowledgeActiveSettings(page);
         await page.route('**/api/roleplay/workflow/submit', route => route.fulfill({ status: 409, contentType: 'application/json',
-            body: JSON.stringify({ error: M10_TOO_MANY, code: 'ROLEPLAY_IMAGE_INPUT',
+            body: JSON.stringify({ error: TOO_MANY_IMAGES_TEXT, code: 'ROLEPLAY_IMAGE_INPUT',
                 imageIssue: { reason: 'too-many-images', index: 1, mediaIndex: -1, actions: ['review', 'display-only', 'caption'] } }) }));
         await startNativeReply(page);
         await allowRefusal(page);
-        await saveState(info, 'ac11-desktop', await stateOf(page, { pageErrors, providerCalls: app.provider.calls.length }));
+        await saveState(info, 'server-single-notice-desktop', await stateOf(page, { pageErrors, providerCalls: app.provider.calls.length }));
         expect(await page.evaluate(() => window.__refusals.length)).toBe(1);
         await expect(noticeToast(page)).toHaveCount(1);
-        await expect(noticeToast(page).locator('.toast-title')).toHaveText(M10_NOTICE);
+        await expect(noticeToast(page).locator('.toast-title')).toHaveText(NOTICE_TITLE);
     });
 
-    test('@m10 AC 12 server route group shows one notice', async ({ app }, info) => {
+    test('the server route still shows one notice (group chat)', async ({ app }, info) => {
         test.setTimeout(240000);
-        const account = await m10Account(app, false);
+        const account = await createRefusalAccount(app, false);
         const group = await createGroup(account);
         await watchRefusals(account.context);
         const pageErrors = collectPageErrors(account.context);
@@ -468,19 +468,19 @@ test.describe('M10 browser image refusal', () => {
         await openGroup(page, group);
         await settleGroupChatSave(page);
         await page.route('**/api/roleplay/group/submit', route => route.fulfill({ status: 409, contentType: 'application/json',
-            body: JSON.stringify({ error: M10_TOO_MANY, code: 'ROLEPLAY_IMAGE_INPUT',
+            body: JSON.stringify({ error: TOO_MANY_IMAGES_TEXT, code: 'ROLEPLAY_IMAGE_INPUT',
                 imageIssue: { reason: 'too-many-images', index: 1, mediaIndex: -1, actions: ['review', 'display-only', 'caption'] } }) }));
         await startNativeReply(page);
         await allowRefusal(page);
-        await saveState(info, 'ac12-desktop', await stateOf(page, { pageErrors, providerCalls: app.provider.calls.length }));
+        await saveState(info, 'server-group-notice-desktop', await stateOf(page, { pageErrors, providerCalls: app.provider.calls.length }));
         expect(await page.evaluate(() => window.__refusals.length)).toBe(1);
         await expect(noticeToast(page)).toHaveCount(1);
-        await expect(noticeToast(page).locator('.toast-title')).toHaveText(M10_NOTICE);
+        await expect(noticeToast(page).locator('.toast-title')).toHaveText(NOTICE_TITLE);
     });
 
-    test('@m10 AC 13 quiet and dry-run calls stay silent', async ({ app }, info) => {
+    test('quiet and dry-run generations stay silent', async ({ app }, info) => {
         test.setTimeout(240000);
-        const account = await m10Account(app, false);
+        const account = await createRefusalAccount(app, false);
         await watchRefusals(account.context);
         const { page, pageErrors } = await openSolo(account, false);
         await seedImages(page, [{}, {}, {}, {}, {}], 'Five pictures.');
@@ -497,7 +497,7 @@ test.describe('M10 browser image refusal', () => {
         });
         // eslint-disable-next-line playwright/no-wait-for-timeout
         await page.waitForTimeout(500);
-        await saveState(info, 'ac13-desktop', await stateOf(page, { pageErrors, providerCalls: app.provider.calls.length }));
+        await saveState(info, 'quiet-dry-run-desktop', await stateOf(page, { pageErrors, providerCalls: app.provider.calls.length }));
         expect(results).toEqual([{ code: 'ROLEPLAY_IMAGE_INPUT', reason: 'too-many-images' },
             { code: 'ROLEPLAY_IMAGE_INPUT', reason: 'too-many-images' }]);
         expect(await page.evaluate(() => window.__refusals.length)).toBe(beforeRefusals);
@@ -506,24 +506,24 @@ test.describe('M10 browser image refusal', () => {
         expect(await page.evaluate(() => window.__failures.length)).toBe(beforeErrors[1]);
     });
 
-    test('@m10 AC 14 provider failure control', async ({ app }, info) => {
+    test('a provider failure shows no image notice', async ({ app }, info) => {
         test.setTimeout(240000);
-        const account = await m10Account(app, false);
+        const account = await createRefusalAccount(app, false);
         await watchRefusals(account.context);
         const { page, pageErrors } = await openSolo(account, false);
         await page.route('**/api/backends/chat-completions/generate', route => route.fulfill({ status: 500, contentType: 'application/json',
-            body: JSON.stringify({ error: { message: M10_PROVIDER_FAILURE } }) }));
+            body: JSON.stringify({ error: { message: PROVIDER_FAILURE_TEXT } }) }));
         await sendWithButton(page, false, 'Provider failure control.');
-        try { await expect.poll(() => pageErrors.length, { timeout: 15000 }).toBe(M10_PROVIDER_PAGE_ERRORS); }
+        try { await expect.poll(() => pageErrors.length, { timeout: 15000 }).toBe(PROVIDER_FAILURE_PAGE_ERRORS); }
         catch { /* the count assertion below reports the recorded value */ }
         await expect.poll(() => page.evaluate(async () => (await import('/script.js')).is_send_press), { timeout: 15000 }).toBe(false);
         // eslint-disable-next-line playwright/no-wait-for-timeout
         await page.waitForTimeout(500);
-        const genericToast = await page.locator('#toast-container .toast-error').filter({ hasText: M10_PROVIDER_FAILURE }).count();
-        await saveState(info, 'ac14-desktop', await stateOf(page, { pageErrors, providerCalls: app.provider.calls.length,
+        const genericToast = await page.locator('#toast-container .toast-error').filter({ hasText: PROVIDER_FAILURE_TEXT }).count();
+        await saveState(info, 'provider-failure-desktop', await stateOf(page, { pageErrors, providerCalls: app.provider.calls.length,
             extra: { genericErrorToast: genericToast > 0 } }));
-        expect(pageErrors).toHaveLength(M10_PROVIDER_PAGE_ERRORS);
-        expect(genericToast > 0).toBe(M10_PROVIDER_GENERIC_TOAST);
+        expect(pageErrors).toHaveLength(PROVIDER_FAILURE_PAGE_ERRORS);
+        expect(genericToast > 0).toBe(PROVIDER_FAILURE_GENERIC_TOAST);
         expect(await page.evaluate(() => window.__refusals.length)).toBe(0);
         await expect(noticeToast(page)).toHaveCount(0);
     });
