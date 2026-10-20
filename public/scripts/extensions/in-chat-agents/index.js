@@ -560,6 +560,7 @@ let autoSeededTemplateIds = new Set();
 
 // Seeded once per account, disabled. The trackers mirror the "Pura's Trackers
 // Only" kit in templates/groups.json; the Ethereality kit stays library-only.
+// Position Tracker is the one companion seeded by default.
 const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-proofreader',
     'tpl-dialogue-humaniser',
@@ -592,6 +593,7 @@ const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-status-tracker',
     'tpl-time-tracker',
     'tpl-world-detail',
+    'tpl-position-tracker-companion',
 ]);
 
 // Internal bundled templates stay available for migrations/settings even when
