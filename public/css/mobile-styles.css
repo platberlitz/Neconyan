@@ -1466,8 +1466,8 @@
     body.PWA #sheld {
         padding-right: max(env(safe-area-inset-right), 2px);
         padding-left: max(env(safe-area-inset-left), 2px);
-        padding-bottom: var(--sb-mobile-safe-area-bottom, max(34px, env(safe-area-inset-bottom, 0px)));
-
+        /* #form_sheld keeps the home-bar space itself; padding here doubled it. */
+        padding-bottom: 0;
     }
 
     #world_popup,
