@@ -9,6 +9,7 @@ import { injectChatPromptDepth } from './chat-prompt-depth.js';
 */
 import { Fuse, DOMPurify } from '../lib.js';
 import { REVERSE_PROXY_SUPPORTED_SOURCES, resolveChatReasoningEffort } from './chat-request-controls.js';
+import { isImageInputIssue } from './prompt-media-policy.js';
 
 import {
     abortStatusCheck,
@@ -815,7 +816,7 @@ function setupChatCompletionPromptManager(openAiSettings) {
 
     promptManager.tryGenerate = () => {
         if (characters[this_chid]) {
-            return Generate('normal', {}, true);
+            return Generate('normal', {}, true).catch(error => { if (!isImageInputIssue(error)) throw error; });
         } else {
             return Promise.resolve();
         }
