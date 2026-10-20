@@ -13,6 +13,7 @@ import { updateReasoningUI, ReasoningType } from '../../../../scripts/reasoning.
 import { getSettings, EXTENSION_NAME, DEFAULT_ASSISTANT_PROMPT } from './config.js';
 import { syncReasoningFromSwipeInfo, error, isValidMessageId } from './utils.js';
 import { updateMessageSwipeUI } from './ui.js';
+import { isImageInputIssue } from '../../../prompt-media-policy.js';
 
 /**
  * Ask the server to add one unselected swipe to the chosen message, if a
@@ -38,7 +39,7 @@ async function submitDeepSwipeWorkflow(name, { instruction, messageId }) {
     try {
         await workflows.submitRoleplayWorkflow({ name, intent: { instruction: text }, page, messageIndex: messageId });
     } catch (submitError) {
-        toastr.error(String(submitError?.message || 'Deep Swipe could not send this request. Try again.'), 'Deep Swipe');
+        if (!isImageInputIssue(submitError)) toastr.error(String(submitError?.message || 'Deep Swipe could not send this request. Try again.'), 'Deep Swipe');
     }
     return true;
 }
