@@ -178,5 +178,50 @@ describe('the other routes that submit a named workflow', () => {
         expect(imports.some(row => row.specifiers.some(item => item.imported?.name === 'isImageInputIssue'))).toBe(true);
     });
 
-    // Deep Swipe has no test here: it is parked for its own review, and this change leaves that file as it was (its diff is empty).
+    // Deep Swipe's workflow catch is guarded here; the rest of the extension stays parked for its own review.
+});
+
+describe('Deep Swipe', () => {
+    // The extension's own submit function, cut out of its source as it stands and run against a workflow stand-in whose submit
+    // refuses with the failure given, so the real catch runs.
+    const deepSwipeSource = read('public/scripts/extensions/third-party/Neconyan-Deep-Swipe/deep-swipe.js');
+    const submitRefused = async failure => {
+        const toasts = [];
+        const workflows = {
+            isNativeRoleplayWorkflowReady: () => true, resolvePageText: text => text, capturePagePrompts: async () => ({ prompts: [] }),
+            submitRoleplayWorkflow: async () => { throw failure; },
+        };
+        const host = { console: { warn: () => {} }, toastr: { error: (...args) => toasts.push(args) }, isImageInputIssue };
+        const importModuleDynamically = async () => {
+            const stand = new vm.SyntheticModule(Object.keys(workflows), function () { for (const [name, value] of Object.entries(workflows)) this.setExport(name, value); });
+            await stand.link(() => {});
+            await stand.evaluate();
+            return stand;
+        };
+        const submit = vm.runInNewContext(`(${cutFunction(deepSwipeSource, 'submitDeepSwipeWorkflow')})`, host, { importModuleDynamically });
+        const handled = await submit('Deep Swipe', { instruction: 'Write this.', messageId: 0 });
+        return { handled, toasts };
+    };
+
+    test('an image refusal shows no second generic toast, and any other failure keeps exactly one', async () => {
+        // A refusal is final either way: the function reports it handled, so no caller falls back into a second paid call.
+        for (const failure of imageRefusals()) {
+            const { handled, toasts } = await submitRefused(failure);
+            expect(handled).toBe(true);
+            expect(toasts).toEqual([]);
+        }
+        const expected = [['The provider is busy.'], ['Deep Swipe could not send this request. Try again.'], ['Deep Swipe could not send this request. Try again.'], ['account_changed']];
+        const failures = [new Error('The provider is busy.'), {}, 'plain failure', new Error('account_changed')];
+        for (const [index, failure] of failures.entries()) {
+            const { handled, toasts } = await submitRefused(failure);
+            expect(handled).toBe(true);
+            expect(toasts).toEqual([[expected[index][0], 'Deep Swipe']]);
+        }
+    });
+
+    test('Deep Swipe takes the image check from the shared policy module', () => {
+        // The run above is given its own isImageInputIssue, so this is the one check that the file imports the real one.
+        const imports = syntax(deepSwipeSource).body.filter(row => row.type === 'ImportDeclaration' && /prompt-media-policy\.js$/.test(row.source.value));
+        expect(imports.some(row => row.specifiers.some(item => item.imported?.name === 'isImageInputIssue'))).toBe(true);
+    });
 });
