@@ -1,6 +1,7 @@
 /* global document, window, navigator, getComputedStyle */
 import fs from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
+import { applyIOSOnlyCss } from './ios-safari-emulation.js';
 
 const publicRoot = new URL('../public/', import.meta.url);
 const safariUA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Mobile/15E148 Safari/604.1';
@@ -23,9 +24,11 @@ test.use({ viewport: { width: 390, height: 844 }, userAgent: safariUA, reducedMo
 
 async function mountFixture(page, { platform = 'iPhone', userAgent = safariUA, movingUI = true } = {}) {
     const errors = [];
+    // browser-fixes.js marks every iOS browser with body.safari.
+    const safari = /iPad|iPhone|iPod|MacIntel/.test(platform);
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/*', route => route.abort());
-    await page.setContent(`<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body class="neconyan${movingUI ? ' movingUI' : ''}">
+    await page.setContent(`<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body class="neconyan${movingUI ? ' movingUI' : ''}${safari ? ' safari' : ''}">
         <div id="sheld"><div id="chat"></div><div id="form_sheld"><form id="send_form">
             <div id="nonQRFormItems"><div id="leftSendForm"></div><textarea id="send_textarea"></textarea><div id="rightSendForm"></div></div>
         </form></div></div>
@@ -126,54 +129,92 @@ async function drawerGeometry(page) {
     });
 }
 
-for (const movingUI of [true, false]) {
-    test(`modern iOS keeps the composer flush with the keyboard while focused, movingUI ${movingUI}`, async ({ page }) => {
-        const session = await page.context().newCDPSession(page);
-        await session.send('Emulation.setSafeAreaInsetsOverride', {
-            insets: { top: 0, right: 0, bottom: 34, left: 0 },
-        });
-        const errors = await mountFixture(page, { movingUI });
-        const root = page.locator('html');
-        const composer = page.locator('#form_sheld');
-        const composerForm = page.locator('#send_form');
-        await page.locator('#send_textarea').focus();
-        await expect(composer).toHaveCSS('padding-bottom', '34px');
-        await expect(root).not.toHaveClass(controlsClass);
-
-        // Chromium does not implement the iOS-only CSS supports block; composer geometry uses offset zero.
-        await setVisualViewport(page, 500);
-        await expect(root).toHaveClass(controlsClass);
-        await expect(composer).toHaveCSS('padding-bottom', '0px');
-        const bounds = await composer.boundingBox();
-        expect(bounds.y + bounds.height).toBeLessThanOrEqual(500);
-        expect(bounds.y + bounds.height).toBeGreaterThanOrEqual(498);
-        const formBounds = await composerForm.boundingBox();
-        expect(formBounds.y + formBounds.height).toBeLessThanOrEqual(500);
-        expect(formBounds.y + formBounds.height).toBeGreaterThanOrEqual(498);
-
-        // No resize or direct sync: both focusout and focusin must use the production queue.
-        await page.locator('#send_textarea').evaluate(textarea => textarea.blur());
-        await expect(root).not.toHaveClass(controlsClass);
-        await expect(composer).toHaveCSS('padding-bottom', '34px');
-        await page.locator('#send_textarea').focus();
-        await expect(composer).toHaveCSS('padding-bottom', '0px');
-        await page.locator('#user-settings-block').evaluate(drawer => drawer.classList.add('openDrawer'));
-        await page.locator('#first-setting').focus();
-        await expect(composer).toHaveCSS('padding-bottom', '34px');
-        await expect(root).not.toHaveClass(controlsClass);
-        await expect(page.locator('.sb-shell-panel-scroller')).toHaveCSS('padding-bottom', '34px');
-        await expect.poll(() => page.evaluate(() => document.documentElement.style.getPropertyValue('--sb-ios-keyboard-bottom-inset'))).toBe('0px');
-        expect(await page.evaluate(() => [window.innerWidth, window.innerHeight, window.visualViewport.height])).toEqual([390, 844, 500]);
-
-        await page.locator('#user-settings-block').evaluate(drawer => drawer.classList.remove('openDrawer'));
-        await page.locator('#send_textarea').focus();
-        await expect(composer).toHaveCSS('padding-bottom', '0px');
-        await setVisualViewport(page, 844);
-        await expect(root).not.toHaveClass(controlsClass);
-        await expect(composer).toHaveCSS('padding-bottom', '34px');
-        expect(errors).toEqual([]);
+// MovingUI keeps Safari's full-height shell on iOS; the panned case below covers it.
+test('modern iOS keeps the composer flush with the keyboard while focused', async ({ page }) => {
+    const session = await page.context().newCDPSession(page);
+    await session.send('Emulation.setSafeAreaInsetsOverride', {
+        insets: { top: 0, right: 0, bottom: 34, left: 0 },
     });
+    const errors = await mountFixture(page, { movingUI: false });
+    const root = page.locator('html');
+    const composer = page.locator('#form_sheld');
+    const composerForm = page.locator('#send_form');
+    await page.locator('#send_textarea').focus();
+    await expect(composer).toHaveCSS('padding-bottom', '34px');
+    await expect(root).not.toHaveClass(controlsClass);
+
+    // Chromium does not implement the iOS-only CSS supports block; composer geometry uses offset zero.
+    await setVisualViewport(page, 500);
+    await expect(root).toHaveClass(controlsClass);
+    await expect(composer).toHaveCSS('padding-bottom', '0px');
+    const bounds = await composer.boundingBox();
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(500);
+    expect(bounds.y + bounds.height).toBeGreaterThanOrEqual(498);
+    const formBounds = await composerForm.boundingBox();
+    expect(formBounds.y + formBounds.height).toBeLessThanOrEqual(500);
+    expect(formBounds.y + formBounds.height).toBeGreaterThanOrEqual(498);
+
+    // No resize or direct sync: both focusout and focusin must use the production queue.
+    await page.locator('#send_textarea').evaluate(textarea => textarea.blur());
+    await expect(root).not.toHaveClass(controlsClass);
+    await expect(composer).toHaveCSS('padding-bottom', '34px');
+    await page.locator('#send_textarea').focus();
+    await expect(composer).toHaveCSS('padding-bottom', '0px');
+    await page.locator('#user-settings-block').evaluate(drawer => drawer.classList.add('openDrawer'));
+    await page.locator('#first-setting').focus();
+    await expect(composer).toHaveCSS('padding-bottom', '34px');
+    await expect(root).not.toHaveClass(controlsClass);
+    await expect(page.locator('.sb-shell-panel-scroller')).toHaveCSS('padding-bottom', '34px');
+    await expect.poll(() => page.evaluate(() => document.documentElement.style.getPropertyValue('--sb-ios-keyboard-bottom-inset'))).toBe('0px');
+    expect(await page.evaluate(() => [window.innerWidth, window.innerHeight, window.visualViewport.height])).toEqual([390, 844, 500]);
+
+    await page.locator('#user-settings-block').evaluate(drawer => drawer.classList.remove('openDrawer'));
+    await page.locator('#send_textarea').focus();
+    await expect(composer).toHaveCSS('padding-bottom', '0px');
+    await setVisualViewport(page, 844);
+    await expect(root).not.toHaveClass(controlsClass);
+    await expect(composer).toHaveCSS('padding-bottom', '34px');
+    expect(errors).toEqual([]);
+});
+
+// Safari keeps the layout viewport and pans the visible part down to the focused composer.
+async function panToFocusedComposer(page, movingUI) {
+    const errors = await mountFixture(page, { movingUI });
+    // The shell measures the real top bar for its panned top offset.
+    await page.evaluate(() => {
+        const topBar = document.createElement('div');
+        topBar.id = 'top-bar';
+        for (const [property, value] of [['position', 'fixed'], ['top', '0'], ['height', 'var(--sb-topbar-layout-offset)'], ['min-height', '0'], ['max-height', 'none'], ['padding', '0'], ['box-sizing', 'border-box']]) {
+            topBar.style.setProperty(property, value, 'important');
+        }
+        document.body.prepend(topBar);
+    });
+    await applyIOSOnlyCss(page);
+    await page.locator('#send_textarea').focus();
+    await setVisualViewport(page, 500, 344);
+    await expect(page.locator('html')).toHaveClass(controlsClass);
+    return errors;
 }
+
+test('modern iOS with MovingUI keeps the full-height shell for Safari to pan to', async ({ page }) => {
+    const errors = await panToFocusedComposer(page, true);
+    await expect.poll(async () => (await page.locator('#sheld').boundingBox()).height).toBeGreaterThan(700);
+    expect((await page.locator('#form_sheld').boundingBox()).y).toBeGreaterThanOrEqual(344);
+    expect(errors).toEqual([]);
+});
+
+test('modern iOS without MovingUI ends the shell at the bottom of the panned view', async ({ page }) => {
+    const errors = await panToFocusedComposer(page, false);
+    const composer = page.locator('#form_sheld');
+    await expect.poll(async () => {
+        const bounds = await composer.boundingBox();
+        return Math.round(bounds.y + bounds.height);
+    }).toBeGreaterThanOrEqual(842);
+    const bounds = await composer.boundingBox();
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(844);
+    expect(bounds.y).toBeGreaterThanOrEqual(344);
+    expect(errors).toEqual([]);
+});
 
 test('settings follow the visual bottom and keep the final field reachable after viewport panning', async ({ page }) => {
     const errors = await mountFixture(page);
