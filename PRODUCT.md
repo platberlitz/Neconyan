@@ -33,7 +33,7 @@ Neconyan is a self-hosted web app for chatting with AI characters. It grew out o
 ## Strategic principles
 
 1. Phone parity. Anything reachable on desktop is reachable on a phone in the same number of taps. Labelled tab rows that scroll sideways beat dropdowns; one tap beats two.
-2. Nothing is 'advanced'. There is no simple/advanced switch. Rare actions live in the Chat tools menu or a Fine-tuning group, but they are always there.
+2. Nothing is 'advanced' by default. Rare actions live in the Chat tools menu or a Fine-tuning group, but they are always there. The one exception is Simple Mode, which people opt into (Nori offers it to new accounts): it hides power features for anyone who finds the full layout overwhelming, deletes and disables nothing, and 'Show all features' brings everything back in one tap.
 3. Readable first. Nunito for everything you read, Fredoka One only for headings and the brand. Solid surfaces over the wallpaper; the paws show through the canvas, never through text.
 4. Cute but honest. Puns in copy, never in error causes. Errors say what went wrong and the first thing to try.
 5. Accessible by default. 44px touch targets, visible focus rings, WCAG 2.2 AA contrast for every bundled theme, reduced-motion respected.

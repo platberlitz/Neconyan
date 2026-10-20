@@ -38,7 +38,7 @@ test.afterEach(() => {
     for (const key of ['errors', 'modelRequests', 'googleFontRequests', 'badAssets', 'unexpected']) expect(safety[key], key).toEqual([]);
 });
 
-async function mockNativeSettings(page, { tone = 'dark', resetTerminal = false, mainFont, tutorialStatus = 'skipped', homePanelMode, firstRun = false } = {}) {
+async function mockNativeSettings(page, { tone = 'dark', resetTerminal = false, mainFont, tutorialStatus = 'skipped', homePanelMode, firstRun = false, simpleMode = 'off' } = {}) {
     let envelopePromise, settings;
     const state = { saves: 0, reads: 0, lastSaved: null, failSaves: false };
     await page.route('**/api/settings/get', async route => {
@@ -51,7 +51,7 @@ async function mockNativeSettings(page, { tone = 'dark', resetTerminal = false, 
             settings.extension_settings.disabledExtensions = [...new Set([
                 ...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine',
             ])];
-            settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': tutorialStatus, 'NeconyanTutorialIndex.v1': '0' };
+            settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': tutorialStatus, 'NeconyanTutorialIndex.v1': '0', 'NeconyanSimpleMode.v1': simpleMode };
             delete settings.accountStorage['NeconyanTutorialHidden.v1'];
             if (homePanelMode) settings.accountStorage.WelcomePage_PanelMode = homePanelMode;
             const { name, ...theme } = JSON.parse(readFileSync(new URL(`../default/content/themes/Neconyan Calico${tone === 'dark' ? ' Dark' : ''}.json`, import.meta.url), 'utf8'));
