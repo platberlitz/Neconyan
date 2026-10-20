@@ -701,6 +701,8 @@ describe('in-chat agent bundled templates', () => {
             'position-tracker-map-close',
         ]);
         expect(readIndexSetBody('BUNDLED_REGEX_POST_DEFAULT_EXCLUDED_TEMPLATE_IDS')).toContain('POSITION_TRACKER_TEMPLATE_ID');
+        expect(readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS')).toContain('\'tpl-position-tracker-companion\'');
+        expect(readIndexSetBody('HIDDEN_TEMPLATE_BROWSER_IDS')).not.toContain('\'tpl-position-tracker-companion\'');
         expect(positionTracker.enabled).toBe(false);
         const companionGroup = JSON.parse(fs.readFileSync(new URL('groups.json', templateDir), 'utf8'))
             .find(group => group.id === 'grp-companions');
