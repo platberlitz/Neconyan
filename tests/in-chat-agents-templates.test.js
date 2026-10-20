@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { parse } from 'acorn';
+import css from '@adobe/css-tools';
 import { describe, expect, jest, test } from '@jest/globals';
 
 await jest.unstable_mockModule('../public/scripts/utils.js', () => ({
@@ -78,6 +79,7 @@ const sourceFilenames = [
     'thought-cabinet.json',
     'time-tracker.json',
     'user-agency-guard.json',
+    'visual-map-companion.json',
     'what-the-town-knows.json',
     'world-detail.json',
 ];
@@ -159,6 +161,13 @@ function findCatalogTemplate(catalog, templateId) {
 function renderPositionTrackerOutput(source) {
     const tracker = readTemplate('position-tracker-companion.json');
     return applyRegexScriptList(source, tracker.regexScripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, {
+        isMarkdown: true,
+    });
+}
+
+function renderVisualMapOutput(source) {
+    const visualMap = readTemplate('visual-map-companion.json');
+    return applyRegexScriptList(source, visualMap.regexScripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, {
         isMarkdown: true,
     });
 }
@@ -708,6 +717,43 @@ describe('in-chat agent bundled templates', () => {
             .find(group => group.id === 'grp-companions');
         expect(companionGroup.agentTemplateIds).toContain('tpl-position-tracker-companion');
 
+        const visualMap = findCatalogTemplate(catalog, 'tpl-visual-map-companion');
+        expect(visualMap).toEqual(expect.objectContaining({
+            category: 'companion',
+            execution: 'companion',
+            phase: 'post',
+            enabled: false,
+            icon: 'fa-map',
+        }));
+        expect(visualMap.companion).toEqual(expect.objectContaining({
+            trigger: 'auto',
+            displayMode: 'panel',
+            format: 'html',
+            rawPrompt: true,
+            includeHistory: true,
+            historyDepth: 1,
+            maxTokens: 64000,
+        }));
+        expect(visualMap.prompt).toContain('place|place name|direction|kind|short detail');
+        expect(visualMap.prompt).toContain('pin|character|exact spot|what they are doing');
+        expect(visualMap.prompt).toContain('tracker-none');
+        expect(visualMap.prompt).toContain('{{user}}');
+        expect(visualMap.regexScripts.map(script => script.id)).toEqual([
+            'visual-map-fence-cleanup',
+            'visual-map-lead-cleanup',
+            'visual-map-tail-cleanup',
+            'visual-map-map-open',
+            'visual-map-place',
+            'visual-map-pin',
+            'visual-map-trail-open',
+            'visual-map-move',
+            'visual-map-map-close',
+        ]);
+        expect(readIndexSetBody('BUNDLED_REGEX_POST_DEFAULT_EXCLUDED_TEMPLATE_IDS')).toContain('VISUAL_MAP_TEMPLATE_ID');
+        expect(readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS')).toContain('\'tpl-visual-map-companion\'');
+        expect(readIndexSetBody('HIDDEN_TEMPLATE_BROWSER_IDS')).not.toContain('\'tpl-visual-map-companion\'');
+        expect(companionGroup.agentTemplateIds).toContain('tpl-visual-map-companion');
+
         const plotCompass = findCatalogTemplate(catalog, 'tpl-plot-compass-companion');
         expect(plotCompass).toEqual(expect.objectContaining({
             category: 'companion',
@@ -738,6 +784,50 @@ describe('in-chat agent bundled templates', () => {
         expect(saved.execution).toBe('companion');
         expect(isCompanionAgent(saved)).toBe(true);
         expect(saved.companion.maxTokens).toBe(64000);
+    });
+
+    test('renders Visual Map lines as a drawn map, tolerating loose fast-model output', () => {
+        const html = renderVisualMapOutput([
+            'Here is the map:',
+            '```text',
+            'map-start|The Gilded Lantern|Late evening, rain',
+            'place|Common room|here|room|Crowded tables',
+            'pin|{{user}}|Bar counter|Waiting for a drink',
+            'pin|Mara|Corner booth|Counting coins',
+            '- PLACE | Kitchen | East | Room | Steam and pans',
+            '* WHO | Old Tobin | By the stove | Stirring',
+            'place|Watchtower|north east|castle|Above the gate',
+            'place|Harbour docks|far|water|Ships unloading',
+            'place|Lost caravan|unknown',
+            'move|Mara|Guest rooms|Common room',
+            'MOVE | Tobin | Cellar | Kitchen',
+            'MAP_END',
+            '```',
+            'Hope that helps!',
+        ].join('\n'));
+
+        expect(html).not.toMatch(/```|map[-_ ]?start|place\s*\||pin\s*\||who\s*\||move\s*\||map[-_ ]?end|Here is the map|Hope that helps/i);
+        expect(html).toContain('<span class="vm-title">The Gilded Lantern</span>');
+        expect(html).toContain('<span class="vm-time">Late evening, rain</span>');
+        expect(html).toContain('data-vm-d="here" data-vm-k="room"');
+        expect(html).toContain('data-vm-d="East" data-vm-k="Room"');
+        expect(html).toContain('data-vm-d="northeast" data-vm-k="castle"');
+        expect(html).toContain('data-vm-d="far" data-vm-k="water"');
+        expect(html).toContain('data-vm-d="unknown"');
+        expect(html.match(/class="vm-place"/g)).toHaveLength(5);
+        expect(html.match(/class="vm-pin"/g)).toHaveLength(3);
+        expect(html).toContain('<div class="vm-who">{{user}}</div>');
+        expect(html).toContain('<span class="vm-marker"><span>O</span></span>');
+        expect(html.match(/class="vm-trail"/g)).toHaveLength(1);
+        expect(html.match(/class="vm-step"/g)).toHaveLength(2);
+        expect(html).toContain('<b>Mara</b><span class="vm-from">Guest rooms</span>');
+        expect(html).toContain('class="vm-rose"');
+        expect(html.match(/<div\b/g).length).toBe(html.match(/<\/div>/g).length);
+
+        const style = html.match(/<style>([\s\S]*?)<\/style>/)[1];
+        const sheet = css.parse(style, { silent: true });
+        expect(sheet.stylesheet.parsingErrors).toEqual([]);
+        expect(style).not.toContain('://');
     });
 
     test('renders Position Tracker lines as a grouped, range-coloured map', () => {
