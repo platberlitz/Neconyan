@@ -17,7 +17,7 @@ globalThis.localStorage = {
 const { accountStorage } = await import('../public/scripts/util/AccountStorage.js');
 const simpleMode = await import('../public/scripts/neconyan-simple-mode.js');
 const {
-    SIMPLE_MODE_CLASS, SIMPLE_MODE_EVENT, SIMPLE_MODE_HIDDEN_SELECTORS, SIMPLE_MODE_KEY,
+    SIMPLE_MODE_CLASS, SIMPLE_MODE_EVENT, SIMPLE_MODE_HIDDEN_SELECTORS, SIMPLE_MODE_KEPT_FINE_TUNING_ROUTE, SIMPLE_MODE_KEY,
     applySimpleMode, buildSimpleModeCss, getSimpleModePreference, isSimpleModeEnabled, setSimpleModeEnabled,
 } = simpleMode;
 
@@ -91,12 +91,27 @@ describe('Simple Mode styles and wiring', () => {
         expect(css).toContain(`html.${SIMPLE_MODE_CLASS} :is(`);
         for (const selector of SIMPLE_MODE_HIDDEN_SELECTORS) expect(css).toContain(selector);
         expect(css).toContain(`html:not(.${SIMPLE_MODE_CLASS}) .neconyan-rail-simple-exit { display: none !important; }`);
-        expect(css).toContain(`html.${SIMPLE_MODE_CLASS} body.neconyan #sb-topbar-inner #sb-shortcut-left { display: none !important; }`);
+        expect(css).toContain(`html.${SIMPLE_MODE_CLASS} #neconyan-workspace-rail .neconyan-rail-fine-tuning > [data-neconyan-advanced-nav][hidden] { display: block !important; }`);
         expect(css).toContain('#neconyan-tour-coachmark.neconyan-tour-asking :is([data-tour-coach-back], [data-tour-coach-next]) { display: none !important; }');
         expect(css).not.toMatch(/transition|animation/);
-        for (const kept of ['"home"', '"characters"', '"model"', 'data-sb-tab="settings"', '#send_but', '#options_button']) {
-            expect(SIMPLE_MODE_HIDDEN_SELECTORS.join(' ')).not.toContain(kept);
+        const kept = [
+            '"home"', '"characters"', '"model"', '"lorebooks"', '"agents"', '"notes"', '"scratchpad"',
+            'data-sb-tab="settings"', '#send_but', '#options_button', '#sb-shortcut-left', '#option_scratchpad', '.sb-bottom-chat-scratchpad',
+        ];
+        for (const item of kept) {
+            expect({ item, hidden: SIMPLE_MODE_HIDDEN_SELECTORS.join(' ').includes(item) }).toEqual({ item, hidden: false });
         }
+    });
+
+    test('keeps Presets from Fine-tuning and hides the rest of that section', () => {
+        expect(SIMPLE_MODE_KEPT_FINE_TUNING_ROUTE).toBe('presets');
+        expect(SIMPLE_MODE_HIDDEN_SELECTORS).toContain('#neconyan-workspace-rail .neconyan-rail-advanced:not(.neconyan-rail-fine-tuning)');
+        expect(SIMPLE_MODE_HIDDEN_SELECTORS).toContain('#neconyan-workspace-rail .neconyan-rail-fine-tuning > .neconyan-rail-section-heading');
+        expect(SIMPLE_MODE_HIDDEN_SELECTORS).toContain('#neconyan-workspace-rail [data-neconyan-advanced-nav] > :not([data-neconyan-route="presets"])');
+        const welcome = read('public/scripts/welcome-screen.js');
+        expect(welcome).toContain('<section class="neconyan-rail-advanced neconyan-rail-fine-tuning" aria-labelledby="neconyan-rail-advanced-title">');
+        expect(welcome).toMatch(/<div data-neconyan-finer-nav><\/div>\s*<\/section>\s*<div class="neconyan-rail-simple-exit" data-neconyan-simple-exit><\/div>/);
+        expect(welcome).toMatch(/const SIMPLE_TUTORIAL_STEPS = Object\.freeze\(\[\s*WELCOME_TUTORIAL_STEPS\[0\],\s*WELCOME_TUTORIAL_STEPS\[1\],\s*WELCOME_TUTORIAL_STEPS\[3\],\s*WELCOME_TUTORIAL_STEPS\[4\],\s*WELCOME_TUTORIAL_STEPS\[6\],/);
     });
 
     test('every hidden id still exists, so a rename cannot silently bring a power tool back', () => {

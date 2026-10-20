@@ -57,15 +57,17 @@ const WELCOME_TUTORIAL_STEPS = Object.freeze([
 const SIMPLE_TUTORIAL_STEPS = Object.freeze([
     WELCOME_TUTORIAL_STEPS[0],
     WELCOME_TUTORIAL_STEPS[1],
+    WELCOME_TUTORIAL_STEPS[3],
+    WELCOME_TUTORIAL_STEPS[4],
     WELCOME_TUTORIAL_STEPS[6],
-    { speaker: 'Miso, Taro and Nori', title: 'That’s all you need!', body: 'Connect, pick a character, chat. That’s the whole recipe. You can replay the tour any time from Home → Home layout.\nWhen you feel like exploring, press **Show all features** in the sidebar, or turn off Simple Mode in Settings → Appearance. Everything is still there, just napping.', ending: true, actions: [] },
+    { speaker: 'Miso, Taro and Nori', title: 'That’s all you need!', body: 'Connect, pick a character, chat. That’s the whole recipe; lorebooks, presets, Agents, Notebooks and the Scratchpad are in the sidebar whenever you want them. You can replay the tour any time from Home → Home layout.\nWhen you feel like exploring, press **Show all features** in the sidebar, or turn off Simple Mode in Settings → Appearance. Everything is still there, just napping.', ending: true, actions: [] },
 ]);
 
 const SIMPLE_MODE_QUESTION_STEP = Object.freeze({
     speaker: 'Nori',
     image: 'img/neconyan/tour/tour-06-nori-extensions.webp?v=20260916-assistants',
     title: 'Want to keep things simple?',
-    body: 'Neconyan has a lot of buttons. Like, a lot. **Simple Mode** keeps just the chat, your characters and your connection.',
+    body: 'Neconyan has a lot of buttons. Like, a lot. **Simple Mode** keeps the chat, your characters, your connection, presets, lorebooks, Agents, Notebooks and the Scratchpad, and tucks the rest away.',
     hint: 'Change your mind any time in Settings → Appearance.',
 });
 
@@ -2043,8 +2045,7 @@ function ensureNeconyanRail() {
             <nav class="neconyan-rail-nav" aria-label="Workspace">
                 <div class="neconyan-rail-section-label">Workspace</div>
                 <div data-neconyan-primary-nav></div>
-                <div class="neconyan-rail-simple-exit" data-neconyan-simple-exit></div>
-                <section class="neconyan-rail-advanced" aria-labelledby="neconyan-rail-advanced-title">
+                <section class="neconyan-rail-advanced neconyan-rail-fine-tuning" aria-labelledby="neconyan-rail-advanced-title">
                     <div id="neconyan-rail-advanced-title" class="neconyan-rail-section-heading"><span>Fine-tuning</span></div>
                     <div data-neconyan-advanced-nav></div>
                 </section>
@@ -2064,6 +2065,7 @@ function ensureNeconyanRail() {
                     <div id="neconyan-rail-finer-title" class="neconyan-rail-section-heading"><span>Troubleshooting</span></div>
                     <div data-neconyan-finer-nav></div>
                 </section>
+                <div class="neconyan-rail-simple-exit" data-neconyan-simple-exit></div>
                 <div class="neconyan-rail-section-label neconyan-rail-modes-label">Modes</div>
                 <div data-neconyan-mode-nav></div>
             </nav>
