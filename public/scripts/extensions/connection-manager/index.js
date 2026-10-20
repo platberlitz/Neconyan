@@ -903,6 +903,7 @@ async function selectConnectionProfilesForDeletion() {
         okButton: t`Delete selected`,
         cancelButton: t`Cancel`,
         wide: true,
+        allowVerticalScrolling: true,
     }).show();
 
     if (result !== POPUP_RESULT.AFFIRMATIVE) {
@@ -1793,6 +1794,7 @@ export async function init() {
         }));
         const template = $(await renderExtensionTemplateAsync(MODULE_NAME, 'edit', { name: profile.name, settings, folders }));
         let newName = await callGenericPopup(template, POPUP_TYPE.INPUT, profile.name, {
+            allowVerticalScrolling: true,
             customButtons: [{
                 text: t`Save and Update`,
                 classes: ['popup-button-ok'],
