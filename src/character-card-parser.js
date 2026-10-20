@@ -1,5 +1,8 @@
 import fs from 'node:fs';
 import { Buffer } from 'node:buffer';
+import zlib from 'node:zlib';
+
+import crc32 from 'crc/crc32';
 
 import encode from './png/encode.js';
 import extractChunks from 'png-chunks-extract';
@@ -15,6 +18,114 @@ function extract(image) {
         offset += length + 12;
     }
     return extractChunks(image);
+}
+
+const PNG_SIGNATURE = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+const PNG_LINE_ENDING_BYTES = new Set([4, 5, 7]);
+const PNG_READ_WINDOW = 64 * 1024;
+const checksum = zlib.crc32 ?? crc32;
+const asBuffer = bytes => Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+/**
+ * Splits a tEXt chunk like png-chunk-text, but leaves the text as bytes until a card needs it:
+ * lorebook-heavy cards carry megabytes of text, twice.
+ * @param {Buffer} data Chunk data
+ * @returns {{ keyword: string, bytes: Buffer }}
+ */
+function textChunk(data) {
+    const separator = data.indexOf(0);
+    if (separator === -1) return { keyword: data.toString('latin1'), bytes: Buffer.alloc(0) };
+    if (data.indexOf(0, separator + 1) !== -1) {
+        throw new Error('Invalid NULL character found. 0x00 character is not permitted in tEXt content');
+    }
+    return { keyword: data.toString('latin1', 0, separator), bytes: data.subarray(separator + 1) };
+}
+
+/**
+ * Lists a PNG's text chunks without copying or checksumming the image data, which is nearly all of a
+ * card's bytes; listing a large library spent most of its time on pixels it never used. Every other
+ * chunk is still bounds-checked and checksummed.
+ * @param {number} size File size in bytes
+ * @param {(offset: number, length: number) => Uint8Array} bytesAt Returns exactly `length` bytes
+ * @returns {{ keyword: string, bytes: Buffer }[]}
+ */
+function readTextChunks(size, bytesAt) {
+    const signature = bytesAt(0, Math.min(8, size));
+    PNG_SIGNATURE.forEach((byte, index) => {
+        if (signature[index] === byte) return;
+        throw new Error(`Invalid .png file header${PNG_LINE_ENDING_BYTES.has(index) ? ': possibly caused by DOS-Unix line ending conversion?' : ''}`);
+    });
+
+    const texts = [];
+    for (let offset = 8, first = true; offset < size; first = false) {
+        if (size - offset < 12) throw new Error('Truncated PNG chunk.');
+        const header = asBuffer(bytesAt(offset, 8));
+        const length = header.readUInt32BE(0);
+        if (length > size - offset - 12) throw new Error('Truncated PNG chunk.');
+        const name = header.toString('latin1', 4, 8);
+        if (first && name !== 'IHDR') throw new Error('IHDR header missing');
+        if (name === 'IEND') return texts;
+        if (name !== 'IDAT') {
+            const chunk = asBuffer(bytesAt(offset + 4, length + 8));
+            if (checksum(chunk.subarray(0, length + 4)) !== chunk.readUInt32BE(length + 4)) {
+                throw new Error(`CRC values for ${name} header do not match, PNG file is likely corrupted`);
+            }
+            if (name === 'tEXt') texts.push(textChunk(chunk.subarray(4, length + 4)));
+        }
+        offset += length + 12;
+    }
+    throw new Error('.png file ended prematurely: no IEND header was found');
+}
+
+/**
+ * Picks the card from a PNG's text chunks. V3 (ccv3) takes precedence over V2 (chara).
+ * @param {{ keyword: string, bytes: Buffer }[]} textChunks
+ * @returns {string} Character data
+ */
+function cardFromTextChunks(textChunks) {
+    if (textChunks.length === 0) {
+        console.error('PNG metadata does not contain any text chunks.');
+        throw new Error('No PNG metadata.');
+    }
+
+    const card = textChunks.find((chunk) => chunk.keyword.toLowerCase() === 'ccv3')
+        ?? textChunks.find((chunk) => chunk.keyword.toLowerCase() === 'chara');
+
+    if (card) {
+        return Buffer.from(card.bytes.toString('latin1'), 'base64').toString('utf8');
+    }
+
+    console.error('PNG metadata does not contain any character data.');
+    throw new Error('No PNG metadata.');
+}
+
+/**
+ * Reads the card from a PNG file, skipping over the image data instead of loading it.
+ * @param {string} filename
+ * @returns {string} Character data
+ */
+function readCardFile(filename) {
+    const fd = fs.openSync(filename, 'r');
+    try {
+        const { size } = fs.fstatSync(fd);
+        let windowStart = 0;
+        let window = Buffer.alloc(0);
+        return cardFromTextChunks(readTextChunks(size, (offset, length) => {
+            if (offset < windowStart || offset + length > windowStart + window.length) {
+                window = Buffer.allocUnsafe(Math.min(Math.max(length, PNG_READ_WINDOW), size - offset));
+                windowStart = offset;
+                let filled = 0;
+                while (filled < window.length) {
+                    const read = fs.readSync(fd, window, filled, window.length - filled, offset + filled);
+                    if (!read) throw new Error('Truncated PNG chunk.');
+                    filled += read;
+                }
+            }
+            return window.subarray(offset - windowStart, offset - windowStart + length);
+        }));
+    } finally {
+        fs.closeSync(fd);
+    }
 }
 
 const MIRRORED_FIELD_MAPPINGS = {
@@ -148,29 +259,8 @@ export const write = (image, data) => {
  * @returns {string} Character data
  */
 export const read = (image) => {
-    const chunks = extract(new Uint8Array(image));
-
-    const textChunks = chunks.filter((chunk) => chunk.name === 'tEXt').map((chunk) => PNGtext.decode(chunk.data));
-
-    if (textChunks.length === 0) {
-        console.error('PNG metadata does not contain any text chunks.');
-        throw new Error('No PNG metadata.');
-    }
-
-    const ccv3Index = textChunks.findIndex((chunk) => chunk.keyword.toLowerCase() === 'ccv3');
-
-    if (ccv3Index > -1) {
-        return Buffer.from(textChunks[ccv3Index].text, 'base64').toString('utf8');
-    }
-
-    const charaIndex = textChunks.findIndex((chunk) => chunk.keyword.toLowerCase() === 'chara');
-
-    if (charaIndex > -1) {
-        return Buffer.from(textChunks[charaIndex].text, 'base64').toString('utf8');
-    }
-
-    console.error('PNG metadata does not contain any character data.');
-    throw new Error('No PNG metadata.');
+    const bytes = image instanceof Uint8Array ? image : new Uint8Array(image);
+    return cardFromTextChunks(readTextChunks(bytes.length, (offset, length) => bytes.subarray(offset, offset + length)));
 };
 
 /**
@@ -183,10 +273,8 @@ export const parse = async (cardUrl, format) => {
     let fileFormat = format === undefined ? 'png' : format;
 
     switch (fileFormat) {
-        case 'png': {
-            const buffer = fs.readFileSync(cardUrl);
-            return read(buffer);
-        }
+        case 'png':
+            return readCardFile(cardUrl);
     }
 
     throw new Error('Unsupported format');
