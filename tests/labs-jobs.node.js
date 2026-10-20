@@ -9,7 +9,7 @@ import { providerSettings, instructSettings } from './fixtures/text-generation-b
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const { acceptLabJob, runLabJob } = await import('../src/labs/jobs.js');
-const { admitLabJob, readLabRecord, finalizeLabSubmission, refuseLabSubmission, LAB_STORE_LIMIT, LAB_RECORD_LIMIT } = await import('../src/labs/store.js');
+const { admitLabJob, readLabRecord, finalizeLabSubmission, refuseLabSubmission, listLabRecords, LAB_STORE_LIMIT, LAB_RECORD_LIMIT } = await import('../src/labs/store.js');
 const { initialiseRoleplayAccount, withRoleplayAccount, roleplayStoreDirectory } = await import('../src/roleplay-store.js');
 const { providerStep, writeArtifact } = await import('../src/jobs/artifacts.js');
 const { runChatProfile } = await import('../src/generation/service.js');
@@ -280,6 +280,21 @@ test('permanent rejection prevents a delayed copy of the same submission from be
     assert.equal(admitted.record.state, 'refused');
     assert.equal(refuseLabSubmission(f.base, f.account, body, 'A later refusal'), false);
     assert.equal(readLabRecord(f.base, body.key).error, 'Missing book');
+});
+
+test('record listings reuse unchanged records and still refuse a damaged one', t => {
+    const f = fixture();
+    for (const key of ['first', 'second']) assert.equal(refuseLabSubmission(f.base, f.account, { key, kind: 'distill', book: key }, 'Missing book'), true);
+    assert.deepEqual(listLabRecords(f.base).map(record => record.key).sort(), ['first', 'second']);
+
+    const directory = path.join(roleplayStoreDirectory(f.base), 'labs');
+    const opens = t.mock.method(fs, 'openSync');
+    assert.deepEqual(listLabRecords(f.base, 'distill').map(record => record.key).sort(), ['first', 'second']);
+    assert.deepEqual(opens.mock.calls.filter(call => path.dirname(String(call.arguments[0])) === directory), []);
+
+    const [damaged] = fs.readdirSync(directory).filter(name => name.endsWith('.json'));
+    fs.writeFileSync(path.join(directory, damaged), JSON.stringify({ version: 1 }));
+    assert.throws(() => listLabRecords(f.base), /damaged/);
 });
 
 async function presetDraft(f, name = 'Moon preset') {
