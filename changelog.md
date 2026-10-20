@@ -16,6 +16,7 @@
 - PR #255 (2026-10-20) `fix(i18n): translate the image features into Portuguese`
 - PR #256 (2026-10-20) `fix(i18n): translate the image features into Italian`
 - PR #257 (2026-10-20) `fix(i18n): translate the image features into German`
+- PR #258 (2026-10-20) `fix(scratchpad): recover misplaced character notes and greetings`
 
 ## v1.3.6
 
