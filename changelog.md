@@ -6,6 +6,7 @@
 - PR #234 (2026-10-19) `fix(chat): give tide messages a readable card on desktop and tablet`
 - PR #235 (2026-10-19) `fix(composer): keep the phone composer visible after app switching`
 - PR #237 (2026-10-19) `fix(character): keep exFAT saves working after temp-file rename`
+- PR #247 (2026-10-20) `fix(popup): keep file picker cancel from closing parent popup`
 - PR #248 (2026-10-20) `fix(deep-swipe): suppress second toast on image refusal`
 - PR #249 (2026-10-20) `fix(prompt-media): open refusal review without a stale chat save`
 - PR #250 (2026-10-20) `fix(notes): keep list editing with unclosed frontmatter`
