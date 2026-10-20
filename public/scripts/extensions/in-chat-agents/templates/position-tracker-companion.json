@@ -1,0 +1,237 @@
+{
+  "id": "tpl-position-tracker-companion",
+  "name": "Position Tracker",
+  "description": "Draws a live map of where every character is, grouped by place with their exact spot, what they are doing and how close they are to you, and carries positions forward between replies",
+  "icon": "fa-map-location-dot",
+  "category": "companion",
+  "tags": [
+    "positions",
+    "map",
+    "locations",
+    "tracker"
+  ],
+  "version": 1,
+  "author": "Neconyan",
+  "prompt": "Track where every character is in the story right now and draw it as a position map. Read the latest assistant reply first, then the recent conversation for anything it leaves out. Your previous notes hold the last map: carry forward anyone who has stayed put, and update anyone the story moved.\n\nInclude {{user}} and each named character who is present, nearby, or recently placed somewhere. Use up to 10 characters and 6 places. Group characters by the place they occupy right now. A place is a room, building, street, vehicle, region, or other location a reader would recognise from the story. Use the story's own names for places and people.\n\nFormat:\nmap-start|scene name|time, weather, or light\nplace|place name|short detail of the place\nwho|character|range|exact spot|what they are doing\nmove|character|from|to\nmap-end\n\nRange says how close the character is to {{user}}:\n- here: in the same space as {{user}} (use here for {{user}} as well)\n- near: within earshot or a short walk away, such as the next room\n- far: somewhere else entirely\n- unknown: whereabouts unclear\n\nGuidelines:\n- Write one item per line, each starting with its keyword. Use / instead of | inside fields.\n- Put every who line under the place line for where that character is now.\n- Exact spot is a concrete position: by the hearth, on the second stair, in the driver's seat. Keep every field short, about 3-8 words.\n- Doing is the visible action or posture right now, in present tense.\n- After the last who line, add one move line for each character who changed place during the latest reply, all together just before map-end. Skip move lines for everyone who stayed put.\n- List the place holding {{user}} first.\n- Put characters with unclear whereabouts under a place named Unknown.\n- Keep every fact faithful to the story. When the story is silent about someone, keep their last known position from your previous notes.\n- When the story has no characters or places yet, output: tracker-none\n\nExample with invented names (use the real characters and places from the story):\nmap-start|The Gilded Lantern|Late evening, rain on the windows\nplace|Common room|Crowded taproom, fire burning low\nwho|{{user}}|here|Bar counter|Haggling with the barkeep\nwho|Mara|here|Corner booth by the hearth|Nursing a cider, watching the door\nplace|Kitchen|Behind the bar, steam and clatter\nwho|Old Tobin|near|Beside the stove|Stirring stew, listening in\nplace|Harbour docks|Two streets west\nwho|Captain Reyes|far|Deck of the Seawitch|Loading crates before the tide\nmove|Mara|Upstairs hallway|Common room\nmap-end",
+  "phase": "post",
+  "execution": "companion",
+  "companion": {
+    "trigger": "auto",
+    "displayMode": "panel",
+    "format": "html",
+    "rawPrompt": true,
+    "contextMessages": 10,
+    "includeCharacterCard": true,
+    "includePersona": true,
+    "includeWorldInfo": true,
+    "includeAuthorsNote": true,
+    "includeSystemPrompt": false,
+    "includeHistory": true,
+    "historyDepth": 1,
+    "feedback": {
+      "enabled": false,
+      "depth": 1
+    },
+    "batch": false,
+    "maxTokens": 64000,
+    "chatHistoryPlacement": "source"
+  },
+  "regexScripts": [
+    {
+      "id": "position-tracker-fence-cleanup",
+      "scriptName": "Position Tracker - code fence cleanup",
+      "findRegex": "/^[ \\t]*```[\\w-]*[ \\t]*$\\n?/gm",
+      "replaceString": "",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "position-tracker-map-open",
+      "scriptName": "Position Tracker - map open",
+      "findRegex": "/^[ \\t]*(?:MAP_START|map-start)\\|([^|\\n]*)\\|?([^|\\n]*?)[ \\t]*$/gm",
+      "replaceString": "<div style=\"margin:10px auto;max-width:520px;padding:12px;border-radius:20px;border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor) 24%, transparent);background:radial-gradient(circle at 12% 0%,color-mix(in srgb,var(--SmartThemeQuoteColor) 14%, transparent),transparent 55%),repeating-linear-gradient(0deg,color-mix(in srgb,var(--SmartThemeBodyColor) 5%, transparent) 0 1px,transparent 1px 22px),repeating-linear-gradient(90deg,color-mix(in srgb,var(--SmartThemeBodyColor) 5%, transparent) 0 1px,transparent 1px 22px),color-mix(in srgb,var(--SmartThemeBlurTintColor) 82%, transparent);box-shadow:0 14px 34px color-mix(in srgb,var(--SmartThemeShadowColor) 24%, transparent);font-family:var(--mainFontFamily, system-ui, sans-serif);color:var(--SmartThemeBodyColor);line-height:1.4\"><div style=\"display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-bottom:9px;border-bottom:1px dashed color-mix(in srgb,var(--SmartThemeQuoteColor) 28%, transparent)\"><span style=\"flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:color-mix(in srgb,var(--SmartThemeQuoteColor) 20%, transparent);border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor) 38%, transparent);color:var(--SmartThemeQuoteColor)\"><i class=\"fa-solid fa-compass\"></i></span><div style=\"min-width:0;flex:1\"><div style=\"font-size:.68em;letter-spacing:.14em;text-transform:uppercase;opacity:.62\">Position map</div><div style=\"font-weight:800;font-size:1.04em;overflow-wrap:anywhere\">$1</div></div><small style=\"flex:none;max-width:42%;text-align:right;opacity:.75;font-size:.76em;overflow-wrap:anywhere\">$2</small></div><div style=\"display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr));gap:9px\"><div style=\"display:none\"><div>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "position-tracker-place",
+      "scriptName": "Position Tracker - place card",
+      "findRegex": "/^[ \\t]*(?:PLACE|place)\\|([^|\\n]+?)[ \\t]*(?:\\|([^|\\n]*?))?[ \\t]*$/gm",
+      "replaceString": "</div></div><div style=\"padding:9px 10px 10px;border-radius:14px;background:color-mix(in srgb,var(--SmartThemeBlurTintColor) 70%, color-mix(in srgb,var(--SmartThemeBodyColor) 6%, transparent));border:1px solid color-mix(in srgb,var(--SmartThemeBodyColor) 12%, transparent);box-shadow:inset 0 1px 0 color-mix(in srgb,var(--SmartThemeBodyColor) 8%, transparent)\"><div style=\"display:flex;align-items:flex-start;gap:8px;margin-bottom:8px\"><i class=\"fa-solid fa-location-dot\" style=\"margin-top:3px;color:var(--SmartThemeQuoteColor)\"></i><div style=\"min-width:0\"><div style=\"font-weight:750;overflow-wrap:anywhere\">$1</div><div style=\"font-size:.76em;opacity:.66;overflow-wrap:anywhere\">$2</div></div></div><div style=\"display:flex;flex-direction:column;gap:6px\">",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "position-tracker-who-here",
+      "scriptName": "Position Tracker - in scene character",
+      "findRegex": "/^[ \\t]*who\\|\\s*((?:\\{\\{)?([^|\\n\\s{])[^|\\n]*?)\\s*\\|\\s*here\\s*\\|([^|\\n]*)(?:\\|([^\\n]*))?$/gim",
+      "replaceString": "<div style=\"display:flex;align-items:flex-start;gap:9px;padding:7px 8px;border-radius:11px;background:color-mix(in srgb,oklch(74% .15 152) 9%, transparent);border-left:3px solid oklch(74% .15 152)\"><span style=\"flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;font-weight:800;font-size:.86em;text-transform:uppercase;color:var(--SmartThemeBodyColor);background:color-mix(in srgb,oklch(74% .15 152) 30%, transparent);box-shadow:0 0 0 2px color-mix(in srgb,oklch(74% .15 152) 60%, transparent)\">$2</span><div style=\"min-width:0;flex:1\"><div style=\"display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 7px\"><b style=\"overflow-wrap:anywhere\">$1</b><small style=\"font-size:.66em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 7px;border-radius:999px;opacity:1;color:color-mix(in oklch,oklch(74% .15 152) 45%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(74% .15 152) 20%, transparent);border:1px solid color-mix(in srgb,oklch(74% .15 152) 45%, transparent)\">In scene</small></div><div style=\"font-size:.8em;opacity:.86;overflow-wrap:anywhere\"><i class=\"fa-solid fa-location-crosshairs\" style=\"opacity:.6;margin-right:4px\"></i>$3</div><div style=\"font-size:.78em;opacity:.7;font-style:italic;overflow-wrap:anywhere\">$4</div></div></div>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "position-tracker-who-near",
+      "scriptName": "Position Tracker - nearby character",
+      "findRegex": "/^[ \\t]*who\\|\\s*((?:\\{\\{)?([^|\\n\\s{])[^|\\n]*?)\\s*\\|\\s*near\\s*\\|([^|\\n]*)(?:\\|([^\\n]*))?$/gim",
+      "replaceString": "<div style=\"display:flex;align-items:flex-start;gap:9px;padding:7px 8px;border-radius:11px;background:color-mix(in srgb,oklch(80% .14 78) 9%, transparent);border-left:3px solid oklch(80% .14 78)\"><span style=\"flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;font-weight:800;font-size:.86em;text-transform:uppercase;color:var(--SmartThemeBodyColor);background:color-mix(in srgb,oklch(80% .14 78) 30%, transparent);box-shadow:0 0 0 2px color-mix(in srgb,oklch(80% .14 78) 60%, transparent)\">$2</span><div style=\"min-width:0;flex:1\"><div style=\"display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 7px\"><b style=\"overflow-wrap:anywhere\">$1</b><small style=\"font-size:.66em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 7px;border-radius:999px;opacity:1;color:color-mix(in oklch,oklch(80% .14 78) 45%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(80% .14 78) 20%, transparent);border:1px solid color-mix(in srgb,oklch(80% .14 78) 45%, transparent)\">Nearby</small></div><div style=\"font-size:.8em;opacity:.86;overflow-wrap:anywhere\"><i class=\"fa-solid fa-location-crosshairs\" style=\"opacity:.6;margin-right:4px\"></i>$3</div><div style=\"font-size:.78em;opacity:.7;font-style:italic;overflow-wrap:anywhere\">$4</div></div></div>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "position-tracker-who-far",
+      "scriptName": "Position Tracker - away character",
+      "findRegex": "/^[ \\t]*who\\|\\s*((?:\\{\\{)?([^|\\n\\s{])[^|\\n]*?)\\s*\\|\\s*far\\s*\\|([^|\\n]*)(?:\\|([^\\n]*))?$/gim",
+      "replaceString": "<div style=\"display:flex;align-items:flex-start;gap:9px;padding:7px 8px;border-radius:11px;background:color-mix(in srgb,oklch(72% .12 245) 9%, transparent);border-left:3px solid oklch(72% .12 245)\"><span style=\"flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;font-weight:800;font-size:.86em;text-transform:uppercase;color:var(--SmartThemeBodyColor);background:color-mix(in srgb,oklch(72% .12 245) 30%, transparent);box-shadow:0 0 0 2px color-mix(in srgb,oklch(72% .12 245) 60%, transparent)\">$2</span><div style=\"min-width:0;flex:1\"><div style=\"display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 7px\"><b style=\"overflow-wrap:anywhere\">$1</b><small style=\"font-size:.66em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 7px;border-radius:999px;opacity:1;color:color-mix(in oklch,oklch(72% .12 245) 45%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(72% .12 245) 20%, transparent);border:1px solid color-mix(in srgb,oklch(72% .12 245) 45%, transparent)\">Away</small></div><div style=\"font-size:.8em;opacity:.86;overflow-wrap:anywhere\"><i class=\"fa-solid fa-location-crosshairs\" style=\"opacity:.6;margin-right:4px\"></i>$3</div><div style=\"font-size:.78em;opacity:.7;font-style:italic;overflow-wrap:anywhere\">$4</div></div></div>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "position-tracker-who-other",
+      "scriptName": "Position Tracker - unknown character",
+      "findRegex": "/^[ \\t]*who\\|\\s*((?:\\{\\{)?([^|\\n\\s{])[^|\\n]*?)\\s*\\|([^|\\n]*)\\|([^|\\n]*)(?:\\|([^\\n]*))?$/gim",
+      "replaceString": "<div style=\"display:flex;align-items:flex-start;gap:9px;padding:7px 8px;border-radius:11px;background:color-mix(in srgb,color-mix(in srgb,var(--SmartThemeBodyColor) 55%, transparent) 9%, transparent);border-left:3px solid color-mix(in srgb,var(--SmartThemeBodyColor) 55%, transparent)\"><span style=\"flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;font-weight:800;font-size:.86em;text-transform:uppercase;color:var(--SmartThemeBodyColor);background:color-mix(in srgb,color-mix(in srgb,var(--SmartThemeBodyColor) 55%, transparent) 30%, transparent);box-shadow:0 0 0 2px color-mix(in srgb,color-mix(in srgb,var(--SmartThemeBodyColor) 55%, transparent) 60%, transparent)\">$2</span><div style=\"min-width:0;flex:1\"><div style=\"display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 7px\"><b style=\"overflow-wrap:anywhere\">$1</b><small style=\"font-size:.66em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 7px;border-radius:999px;opacity:1;color:color-mix(in oklch,color-mix(in srgb,var(--SmartThemeBodyColor) 55%, transparent) 45%, var(--SmartThemeBodyColor));background:color-mix(in srgb,color-mix(in srgb,var(--SmartThemeBodyColor) 55%, transparent) 20%, transparent);border:1px solid color-mix(in srgb,color-mix(in srgb,var(--SmartThemeBodyColor) 55%, transparent) 45%, transparent)\">$3</small></div><div style=\"font-size:.8em;opacity:.86;overflow-wrap:anywhere\"><i class=\"fa-solid fa-location-crosshairs\" style=\"opacity:.6;margin-right:4px\"></i>$4</div><div style=\"font-size:.78em;opacity:.7;font-style:italic;overflow-wrap:anywhere\">$5</div></div></div>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "position-tracker-moves-open",
+      "scriptName": "Position Tracker - recent moves card",
+      "findRegex": "/^(?:[ \\t]*(?:MOVE|move)\\|[^\\n]*(?:\\n|$))+/gm",
+      "replaceString": "</div></div><div style=\"padding:9px 10px 10px;border-radius:14px;background:color-mix(in srgb,var(--SmartThemeBlurTintColor) 80%, color-mix(in srgb,var(--SmartThemeQuoteColor) 5%, transparent));border:1px dashed color-mix(in srgb,var(--SmartThemeQuoteColor) 35%, transparent)\"><div style=\"display:flex;align-items:center;gap:8px;margin-bottom:7px;font-size:.72em;letter-spacing:.1em;text-transform:uppercase;opacity:.75\"><i class=\"fa-solid fa-route\" style=\"color:var(--SmartThemeQuoteColor)\"></i>Recent moves</div><div style=\"display:flex;flex-direction:column;gap:5px\">\n$0",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "position-tracker-move",
+      "scriptName": "Position Tracker - movement trail",
+      "findRegex": "/^[ \\t]*(?:MOVE|move)\\|([^|\\n]+)\\|([^|\\n]*)\\|([^\\n]*)$/gm",
+      "replaceString": "<div style=\"display:flex;align-items:center;flex-wrap:wrap;gap:4px 7px;font-size:.8em;padding:4px 8px;border-radius:9px;background:color-mix(in srgb,var(--SmartThemeBodyColor) 5%, transparent)\"><b style=\"overflow-wrap:anywhere\">$1</b><span style=\"opacity:.7;overflow-wrap:anywhere\">$2</span><i class=\"fa-solid fa-arrow-right-long\" style=\"color:var(--SmartThemeQuoteColor);opacity:.8\"></i><span style=\"overflow-wrap:anywhere\">$3</span></div>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "position-tracker-map-close",
+      "scriptName": "Position Tracker - map close",
+      "findRegex": "/^[ \\t]*(?:MAP_END|map-end)[ \\t]*$/gm",
+      "replaceString": "</div></div></div><div style=\"display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:10px;padding-top:8px;border-top:1px dashed color-mix(in srgb,var(--SmartThemeQuoteColor) 22%, transparent);font-size:.68em;opacity:.72\"><span style=\"display:inline-flex;align-items:center;gap:5px\"><span style=\"width:8px;height:8px;border-radius:50%;background:oklch(74% .15 152)\"></span>In scene</span><span style=\"display:inline-flex;align-items:center;gap:5px\"><span style=\"width:8px;height:8px;border-radius:50%;background:oklch(80% .14 78)\"></span>Nearby</span><span style=\"display:inline-flex;align-items:center;gap:5px\"><span style=\"width:8px;height:8px;border-radius:50%;background:oklch(72% .12 245)\"></span>Away</span><span style=\"display:inline-flex;align-items:center;gap:5px\"><span style=\"width:8px;height:8px;border-radius:50%;background:color-mix(in srgb,var(--SmartThemeBodyColor) 55%, transparent)\"></span>Unknown</span></div></div>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    }
+  ],
+  "injection": {
+    "position": 0,
+    "depth": 4,
+    "role": 0,
+    "order": 113,
+    "scan": false
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "regex",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": ""
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal",
+      "continue"
+    ]
+  }
+}

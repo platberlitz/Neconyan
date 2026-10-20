@@ -58,6 +58,7 @@ const sourceFilenames = [
     'pace-setter.json',
     'parallel-tracker.json',
     'plot-compass-companion.json',
+    'position-tracker-companion.json',
     'proofreader.json',
     'relationship-lens-companion.json',
     'relationship-tracker.json',
@@ -153,6 +154,13 @@ function findCatalogTemplate(catalog, templateId) {
     }
 
     return template;
+}
+
+function renderPositionTrackerOutput(source) {
+    const tracker = readTemplate('position-tracker-companion.json');
+    return applyRegexScriptList(source, tracker.regexScripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, {
+        isMarkdown: true,
+    });
 }
 
 function renderChatroomOutput(source) {
@@ -659,6 +667,45 @@ describe('in-chat agent bundled templates', () => {
             'message-inbox-letter-text-row',
         ]));
 
+        const positionTracker = findCatalogTemplate(catalog, 'tpl-position-tracker-companion');
+        expect(positionTracker).toEqual(expect.objectContaining({
+            category: 'companion',
+            execution: 'companion',
+            phase: 'post',
+            enabled: false,
+            icon: 'fa-map-location-dot',
+        }));
+        expect(positionTracker.companion).toEqual(expect.objectContaining({
+            trigger: 'auto',
+            displayMode: 'panel',
+            format: 'html',
+            rawPrompt: true,
+            includeHistory: true,
+            historyDepth: 1,
+            feedback: { enabled: false, depth: 1 },
+            maxTokens: 64000,
+        }));
+        expect(positionTracker.prompt).toContain('who|character|range|exact spot|what they are doing');
+        expect(positionTracker.prompt).toContain('tracker-none');
+        expect(positionTracker.prompt).toContain('{{user}}');
+        expect(positionTracker.regexScripts.map(script => script.id)).toEqual([
+            'position-tracker-fence-cleanup',
+            'position-tracker-map-open',
+            'position-tracker-place',
+            'position-tracker-who-here',
+            'position-tracker-who-near',
+            'position-tracker-who-far',
+            'position-tracker-who-other',
+            'position-tracker-moves-open',
+            'position-tracker-move',
+            'position-tracker-map-close',
+        ]);
+        expect(readIndexSetBody('BUNDLED_REGEX_POST_DEFAULT_EXCLUDED_TEMPLATE_IDS')).toContain('POSITION_TRACKER_TEMPLATE_ID');
+        expect(positionTracker.enabled).toBe(false);
+        const companionGroup = JSON.parse(fs.readFileSync(new URL('groups.json', templateDir), 'utf8'))
+            .find(group => group.id === 'grp-companions');
+        expect(companionGroup.agentTemplateIds).toContain('tpl-position-tracker-companion');
+
         const plotCompass = findCatalogTemplate(catalog, 'tpl-plot-compass-companion');
         expect(plotCompass).toEqual(expect.objectContaining({
             category: 'companion',
@@ -689,6 +736,55 @@ describe('in-chat agent bundled templates', () => {
         expect(saved.execution).toBe('companion');
         expect(isCompanionAgent(saved)).toBe(true);
         expect(saved.companion.maxTokens).toBe(64000);
+    });
+
+    test('renders Position Tracker lines as a grouped, range-coloured map', () => {
+        const html = renderPositionTrackerOutput([
+            '```text',
+            'map-start|The Gilded Lantern|Late evening, rain',
+            'place|Common room|Crowded taproom',
+            'who|Ash|here|Bar counter|Haggling with the barkeep',
+            'who|Mara|Here|Corner booth|Watching the door',
+            'who|{{user}}|here|By the fire|Drying off',
+            'place|Kitchen|Behind the bar',
+            'who|Tobin|near|Beside the stove|Listening in',
+            'place|Harbour docks|Two streets west',
+            'who|Captain Reyes|far|Deck of the Seawitch|Loading crates',
+            'place|Unknown',
+            'who|The Stranger|unknown|?',
+            'move|Mara|Upstairs hallway|Common room',
+            'move|Tobin|Common room|Kitchen',
+            'map-end',
+            '```',
+        ].join('\n'));
+
+        expect(html).not.toMatch(/```|map-start|place\||who\||move\||map-end/);
+        expect(html).toContain('>The Gilded Lantern</div>');
+        expect(html).toContain('>Late evening, rain</small>');
+        expect(html).toContain('>Common room</div>');
+        expect(html).toContain('>Unknown</div>');
+        expect(html.match(/>In scene<\/small>/g)).toHaveLength(3);
+        expect(html.match(/>Nearby<\/small>/g)).toHaveLength(1);
+        expect(html.match(/>Away<\/small>/g)).toHaveLength(1);
+        expect(html).toContain('>unknown</small>');
+        expect(html).toContain('>A</span>');
+        expect(html).toContain('>C</span>');
+        expect(html).toContain('>u</span>');
+        expect(html).toContain('fa-solid fa-route');
+
+        const [placeHtml, movesHtml] = html.split('Recent moves');
+        expect(html.match(/Recent moves/g)).toHaveLength(1);
+        expect(movesHtml).toContain('<b style="overflow-wrap:anywhere">Mara</b><span style="opacity:.7;overflow-wrap:anywhere">Upstairs hallway</span>');
+        expect(movesHtml).toContain('<b style="overflow-wrap:anywhere">Tobin</b>');
+        expect(movesHtml).not.toContain('fa-location-dot');
+
+        const places = placeHtml.split('fa-solid fa-location-dot').slice(1);
+        expect(places).toHaveLength(4);
+        expect(places.map(place => place.match(/<b style="overflow-wrap:anywhere">/g).length)).toEqual([3, 1, 1, 1]);
+        expect(places[0]).toContain('>Ash</b>');
+        expect(places[1]).not.toContain('Mara');
+        expect(html).toContain('>Position map</div>');
+        expect(html.match(/<div\b/g).length).toBe(html.match(/<\/div>/g).length);
     });
 
     test('renders orphan greentext continuation lines inside the Chatroom interface', () => {

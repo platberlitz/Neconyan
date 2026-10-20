@@ -54,6 +54,7 @@
             "tpl-chatroom-companion",
             "tpl-chat-only-companion",
             "tpl-message-inbox-companion",
+            "tpl-position-tracker-companion",
             "tpl-expressions-agent",
             "tpl-level-up-companion",
             "tpl-user-based-stats-generator"
