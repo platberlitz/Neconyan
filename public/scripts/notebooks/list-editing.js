@@ -19,7 +19,9 @@ export function selectedLines(text, start, end = start) {
 
 /** A marker inside a fenced example or the properties block is not a list. */
 export function literalAt(text, offset) {
-    let frontmatter = /^\uFEFF?---[ \t]*\n/.test(text);
+    const open = /^\uFEFF?---[ \t]*\n/.exec(text);
+    let frontmatter = Boolean(open) && text.slice(open[0].length)
+        .split('\n').some(line => /^(?:---|\.\.\.)[ \t]*$/.test(line));
     let fence = null;
     let from = 0;
     for (const line of text.slice(0, offset).split('\n')) {
