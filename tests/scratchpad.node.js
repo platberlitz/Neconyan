@@ -917,6 +917,36 @@ test('character tools normalise provider formats and reject unsupported or malfo
     assert.throws(() => characterToolReply({ ...response(JSON.stringify(args)), text: '```scratchpad-change\n{}\n```\n'.repeat(24) }, tools), /24 changes/);
 });
 
+test('Scratchpad native character replies recover only unambiguous creation aliases', () => {
+    const tools = scratchpadCharacterTools();
+    const name = tools[0].function.name;
+    const reply = args => characterToolReply({ text: 'A draft for review.', response: { output: [
+        { type: 'function_call', call_id: 'compatibility', name, arguments: JSON.stringify(args) },
+    ] } }, tools);
+    const characterNote = '  Keep this note.\n';
+    const alternateGreetings = ['  Keep this greeting.\n', 'A second greeting.'];
+    for (const key of ['alternateGreetings', 'alternate_greetings']) {
+        const args = { character: { name: 'New Nova', characterNote, [key]: alternateGreetings } };
+        const before = structuredClone(args);
+        const result = reply(args);
+        assert.equal(result.hasTools, true);
+        assert.match(result.text, /^A draft for review\./);
+        const change = splitReply(result.text).find(part => part.type === 'change');
+        assert.equal(change.error, '');
+        assert.deepEqual(change.change, { type: 'character', action: 'create', character: { name: 'New Nova' },
+            characterNote, alternateGreetings, avatarPrompt: '', reason: '' });
+        assert.deepEqual(args, before);
+    }
+    for (const extra of [{ characterNote: 'Conflicting.' }, { characterNote: false },
+        { alternateGreetings: ['Conflicting.'] }, { alternate_greetings: ['Conflicting.'] },
+        { alternate_greetings: ['G'.repeat(100001)] }, { avatarPrompt: 'Do not generate.' }, { extensions: {} }]) {
+        const result = reply({ character: { name: 'New Nova', ...extra }, characterNote, alternateGreetings });
+        assert.equal(result.hasTools, true);
+        assert.match(result.text, /A draft for review\.[\s\S]*A character draft could not be used:/);
+        assert.equal(splitReply(result.text).some(part => part.change), false);
+    }
+});
+
 test('server-built note context reaches the provider and finished suggestions register one shared review without saving', async t => {
     const a = account(t);
     const note = sharedNote(a);

@@ -60,6 +60,7 @@ export const CHARACTER_CREATION_INSTRUCTIONS = [
     `When available, call ${NAME} with the complete character draft. The call becomes a review card and ends your turn; it does not save the character yet.`,
     'Ask only for missing details about the character, format and avatar choice. Use the default picture unless the user wants a generated avatar.',
     'Without function tools, write the same draft in a scratchpad-change fenced JSON block: {"type":"character","action":"create","character":{"name":"Name","description":"Complete description","first_mes":"Opening greeting"},"characterNote":"","alternateGreetings":[],"avatarPrompt":""}.',
+    'Keep characterNote, alternateGreetings and avatarPrompt at the top level, beside character; use alternateGreetings, not alternate_greetings. Only the ordinary card text fields belong inside character.',
     'The owner can edit the draft and press Save change. Never say the character has been saved before that.',
 ].join('\n');
 
