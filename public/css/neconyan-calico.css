@@ -300,6 +300,14 @@ body.neconyan :is(#top-settings-holder, #left-nav-panel, #right-nav-panel, #user
 .neconyan-whiskers .neconyan-cat-head { width: 43px; height: 40px; left: 5px; top: -5px; object-fit: contain; transform: rotate(-10deg); transform-origin: center bottom; }
 .neconyan-whiskers .neconyan-cat-tail { width: 27px; height: 36px; right: 4px; bottom: 4px; object-fit: contain; transform-origin: left bottom; }
 .neconyan-cat-head, .neconyan-cat-tail { transition: transform 160ms ease; }
+@media (min-width: 769px) {
+    :root[data-neconyan-sidebar='closed'] body.neconyan #neconyan-workspace-rail .neconyan-rail-new { --neconyan-cat-padding-inline: 0; }
+    :root[data-neconyan-sidebar='closed'] .neconyan-rail-new .neconyan-cat-head { width: 27px; height: 25px; left: 0; top: -18px; }
+    :root[data-neconyan-sidebar='closed'] .neconyan-rail-new .neconyan-cat-tail { width: 10px; height: 16px; right: -2px; bottom: 0; }
+    :root[data-neconyan-sidebar='closed'] .neconyan-rail-new :is(.neconyan-whisker-left, .neconyan-whisker-right) { width: 10px; height: 14px; top: 6px; }
+    :root[data-neconyan-sidebar='closed'] .neconyan-rail-new .neconyan-whisker-left { left: -5px; }
+    :root[data-neconyan-sidebar='closed'] .neconyan-rail-new .neconyan-whisker-right { right: -5px; }
+}
 .neconyan-cat-control:is(:hover, :focus-visible) :is(.neconyan-whisker-left, .neconyan-whisker-right) { animation: neconyan-whisker-twitch 420ms ease-in-out; }
 .neconyan-cat-control:is(:active, .neconyan-cat-pressed) .neconyan-cat-head { transform: translateY(-5px) rotate(4deg); }
 .neconyan-cat-control:is(:active, .neconyan-cat-pressed) .neconyan-cat-tail { transform: translateY(-5px) rotate(-18deg); }
