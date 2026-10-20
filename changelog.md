@@ -12,6 +12,7 @@
 - PR #249 (2026-10-20) `fix(prompt-media): open refusal review without a stale chat save`
 - PR #250 (2026-10-20) `fix(notes): keep list editing with unclosed frontmatter`
 - PR #251 (2026-10-20) `fix(quick-image-gen): translate image refusal toast prefixes`
+- PR #253 (2026-10-20) `feat(agents): add Visual Map companion`
 - PR #255 (2026-10-20) `fix(i18n): translate the image features into Portuguese`
 - PR #256 (2026-10-20) `fix(i18n): translate the image features into Italian`
 - PR #257 (2026-10-20) `fix(i18n): translate the image features into German`
