@@ -90,7 +90,10 @@ export async function submitConversationAsideEvent(kind, messageId, { account = 
         // A refreshed account is refused before anything is saved, so a stale
         // page can never write a chat that belongs to someone else.
         assertConversationAccount(account);
-        await saveChatConditional({ throwOnError: true, account, skipUnchanged: true });
+        // A rendered reply always changed the chat, and the normal save that follows
+        // does not compare, so this comparison could only add work. A mention's
+        // compared save lets a following server group turn reuse it.
+        await saveChatConditional({ throwOnError: true, account, skipUnchanged: kind === 'mention' });
         return await submitConversationAsideEventRequest(body, account);
     } catch (err) {
         reportConversationGenerationError('roleplay aside event', err, { toast: false });

@@ -1,4 +1,5 @@
-import { describe, expect, jest, test } from '@jest/globals';
+/* global globalThis */
+import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 await jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => 'tester' }));
 const assertConversationAccount = jest.fn();
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/store-sync.js', () => ({
@@ -23,8 +24,19 @@ const reminder = {
 };
 
 const saveChatConditional = jest.fn(async () => true);
-await jest.unstable_mockModule('../public/script.js', () => ({ chat: [{ mes: 'first' }, { mes: 'second', name: 'Aster', avatar: 'char.png' }], getCurrentChatId: () => 'chat', getRequestHeaders: () => ({}), is_send_press: false, name1: 'User', saveChatConditional }));
-await jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({ selected_group: null }));
+const asideRequest = jest.fn(async () => ({ ok: true, json: async () => ({ accepted: true }) }));
+const originalFetch = globalThis.fetch;
+// Jest snapshots a mocked module's exports when it is first evaluated, so a getter
+// would stay at its import-time value. auto-engine only reads String(selected_group),
+// so one object keeps the export live while its string value changes per test.
+const groupSelection = { id: '', toString() { return this.id; } };
+const chat = [
+    { mes: 'first' },
+    { id: 'user-1', mes: '@Aster are you there?', name: 'User', is_user: true },
+    { id: 'char-1', mes: 'second', name: 'Aster', avatar: 'char.png' },
+];
+await jest.unstable_mockModule('../public/script.js', () => ({ chat, getCurrentChatId: () => 'chat', getRequestHeaders: () => ({}), is_send_press: false, name1: 'User', saveChatConditional }));
+await jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({ selected_group: groupSelection }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.js', () => ({
     getActiveConversationBranch: () => null,
     getConversationGroupIdForAvatar: () => '',
@@ -37,7 +49,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.
     getCurrentCharAvatar: () => 'char.png',
     getCurrentCharName: () => 'Aster',
     getRoleplayCurrentCharacter: () => ({ avatar: 'char.png' }),
-    getRoleplayGroupById: () => null,
+    getRoleplayGroupById: () => groupSelection.id ? { id: groupSelection.id, members: ['char.png'], disabled_members: [] } : null,
     parsePositiveInt: (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback,
     persistConversationStore,
 }));
@@ -104,9 +116,37 @@ const { submitConversationAsideEvent } = await import('../public/scripts/neconya
 describe('conversation reminder target identity', () => {
     test('the native aside event refuses a refreshed identity before saving the old chat', async () => {
         assertConversationAccount.mockImplementation(() => { throw new Error('account_changed'); });
-        await expect(submitConversationAsideEvent('rendered', 1, { account: 'tester' })).resolves.toBeNull();
+        await expect(submitConversationAsideEvent('rendered', 2, { account: 'tester' })).resolves.toBeNull();
         expect(assertConversationAccount).toHaveBeenCalledWith('tester');
         expect(saveChatConditional).not.toHaveBeenCalled();
         assertConversationAccount.mockReset();
+    });
+});
+
+describe('native aside save comparison', () => {
+    beforeEach(() => {
+        groupSelection.id = '';
+        assertConversationAccount.mockReset();
+        saveChatConditional.mockClear();
+        asideRequest.mockClear();
+        globalThis.fetch = asideRequest;
+    });
+
+    afterEach(() => {
+        groupSelection.id = '';
+        globalThis.fetch = originalFetch;
+    });
+
+    test('a rendered reply saves without comparing the whole chat', async () => {
+        await expect(submitConversationAsideEvent('rendered', 2, { account: 'tester' })).resolves.toEqual({ accepted: true });
+        expect(saveChatConditional).toHaveBeenCalledTimes(1);
+        expect(saveChatConditional).toHaveBeenCalledWith({ throwOnError: true, account: 'tester', skipUnchanged: false });
+    });
+
+    test('a mention still compares the chat before saving', async () => {
+        groupSelection.id = 'group-1';
+        await expect(submitConversationAsideEvent('mention', 1, { account: 'tester' })).resolves.toEqual({ accepted: true });
+        expect(saveChatConditional).toHaveBeenCalledTimes(1);
+        expect(saveChatConditional).toHaveBeenCalledWith({ throwOnError: true, account: 'tester', skipUnchanged: true });
     });
 });
