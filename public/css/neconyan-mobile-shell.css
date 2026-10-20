@@ -95,8 +95,8 @@
        off, so Safari keeps the full-height shell when MovingUI is on. */
     body:not(.movingUI) #sheld,
     body.neconyan:not(:where(.safari)) #sheld {
-        height: calc(var(--sb-shell-viewport-height, 100dvh) - var(--sb-topbar-layout-offset, var(--topBarBlockSize)) - 1px) !important;
-        max-height: calc(var(--sb-shell-viewport-height, 100dvh) - var(--sb-topbar-layout-offset, var(--topBarBlockSize)) - 1px) !important;
+        height: var(--sb-ios-shell-height, calc(var(--sb-shell-viewport-height, 100dvh) - var(--sb-topbar-layout-offset, var(--topBarBlockSize)) - 1px)) !important;
+        max-height: var(--sb-ios-shell-height, calc(var(--sb-shell-viewport-height, 100dvh) - var(--sb-topbar-layout-offset, var(--topBarBlockSize)) - 1px)) !important;
     }
 
     #form_sheld {
@@ -972,6 +972,11 @@ html body.neconyan .neconyan-rail-drawer-scrim { z-index: calc(var(--sb-z-shell-
                or the parser discards tokens through the next semicolon and silently
                swallows the top: declaration below (regressed the iOS keyboard offset). */
             top: calc(var(--sb-shell-measured-top-offset, var(--sb-topbar-layout-offset)) + var(--sb-shell-viewport-top, 0px)) !important;
+            /* Size from the same measured top, so the shell ends at the bottom
+               of the visible area. Once Safari pans past the top bar the
+               measured offset drops to 0 while the layout offset stays put,
+               which left a gap under the composer. */
+            --sb-ios-shell-height: calc(var(--sb-shell-available-height, calc(var(--sb-shell-viewport-height, 100dvh) - var(--sb-shell-measured-top-offset, var(--sb-topbar-layout-offset)))) - 1px);
             min-height: 100px !important;
             min-width: 0 !important;
             width: 100vw !important;

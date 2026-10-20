@@ -178,17 +178,17 @@ test('modern iOS keeps the composer flush with the keyboard while focused', asyn
 });
 
 // Safari keeps the layout viewport and pans the visible part down to the focused composer.
-async function panToFocusedComposer(page, movingUI) {
+async function panToFocusedComposer(page, movingUI, topBarTop = '0') {
     const errors = await mountFixture(page, { movingUI });
     // The shell measures the real top bar for its panned top offset.
-    await page.evaluate(() => {
+    await page.evaluate((top) => {
         const topBar = document.createElement('div');
         topBar.id = 'top-bar';
-        for (const [property, value] of [['position', 'fixed'], ['top', '0'], ['height', 'var(--sb-topbar-layout-offset)'], ['min-height', '0'], ['max-height', 'none'], ['padding', '0'], ['box-sizing', 'border-box']]) {
+        for (const [property, value] of [['position', 'fixed'], ['top', top], ['height', 'var(--sb-topbar-layout-offset)'], ['min-height', '0'], ['max-height', 'none'], ['padding', '0'], ['box-sizing', 'border-box']]) {
             topBar.style.setProperty(property, value, 'important');
         }
         document.body.prepend(topBar);
-    });
+    }, topBarTop);
     await applyIOSOnlyCss(page);
     await page.locator('#send_textarea').focus();
     await setVisualViewport(page, 500, 344);
@@ -213,6 +213,29 @@ test('modern iOS without MovingUI ends the shell at the bottom of the panned vie
     const bounds = await composer.boundingBox();
     expect(bounds.y + bounds.height).toBeLessThanOrEqual(844);
     expect(bounds.y).toBeGreaterThanOrEqual(344);
+    expect(errors).toEqual([]);
+});
+
+test('iOS 26 without MovingUI ends the shell at the bottom once the top bar is panned out of view', async ({ page }) => {
+    // A real iPhone (iOS 26 Safari tab) reported the top bar at -330..-288 after
+    // panning, so the measured top offset fell to 0 while the layout offset stayed 42.
+    const errors = await panToFocusedComposer(page, false, '-344px');
+    const composer = page.locator('#form_sheld');
+    await expect.poll(async () => {
+        const bounds = await composer.boundingBox();
+        return Math.round(bounds.y + bounds.height);
+    }).toBeGreaterThanOrEqual(842);
+    const bounds = await composer.boundingBox();
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(844);
+    expect(bounds.y).toBeGreaterThanOrEqual(344);
+    expect(errors).toEqual([]);
+});
+
+test('home-screen iOS reserves the home bar once, in the composer', async ({ page }) => {
+    const errors = await mountFixture(page, { movingUI: false });
+    await page.evaluate(() => document.body.classList.add('PWA'));
+    await applyIOSOnlyCss(page);
+    await expect(page.locator('#sheld')).toHaveCSS('padding-bottom', '0px');
     expect(errors).toEqual([]);
 });
 
