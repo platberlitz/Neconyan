@@ -6,7 +6,11 @@ const { StreamingThinkingIndicator } = await import('../public/scripts/streaming
 
 function message() {
     const parent = { children: [] };
-    const details = { checkVisibility: () => false };
+    const details = {
+        visible: false,
+        checkVisibility() { return this.visible; },
+        getClientRects() { return this.visible ? [{ width: 1 }] : []; },
+    };
     const text = { parentElement: parent, before(element) {
         element.parentElement = parent;
         element.isConnected = true;
@@ -44,6 +48,18 @@ describe('stream-owned Thinking label', () => {
         const indicator = new StreamingThinkingIndicator();
         indicator.update(node, true);
         node.details.checkVisibility = () => true;
+        indicator.update(node, true);
+        expect(node.parent.children).toEqual([]);
+    });
+
+    test('falls back to rendered boxes when checkVisibility is missing', () => {
+        const node = message();
+        delete node.details.checkVisibility;
+        const indicator = new StreamingThinkingIndicator();
+        indicator.update(node, true);
+        expect(node.parent.children).toHaveLength(1);
+        expect(node.parent.children[0].textContent).toBe('Thinking...');
+        node.details.visible = true;
         indicator.update(node, true);
         expect(node.parent.children).toEqual([]);
     });

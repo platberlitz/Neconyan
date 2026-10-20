@@ -1,5 +1,17 @@
 import { t } from './i18n.js';
 
+/**
+ * Whether an element has a rendered box, matching what checkVisibility() reports
+ * by default. Safari before 17.4 has no checkVisibility; the layout boxes stand
+ * in for it and still tell a shown header from one hidden by display: none.
+ * @param {HTMLElement|null} element
+ */
+function hasRenderedBox(element) {
+    return typeof element?.checkVisibility === 'function'
+        ? element.checkVisibility()
+        : Boolean(element?.getClientRects().length);
+}
+
 /** A display-only waiting label, owned by one stream rather than saved in chat. */
 export class StreamingThinkingIndicator {
     /** @type {HTMLElement|null} */
@@ -11,7 +23,7 @@ export class StreamingThinkingIndicator {
      * @param {boolean} waiting Whether the stream is still waiting for output
      */
     update(message, waiting) {
-        if (!waiting || !message || message.querySelector('.mes_reasoning_details')?.checkVisibility()) {
+        if (!waiting || !message || hasRenderedBox(message.querySelector('.mes_reasoning_details'))) {
             this.clear();
             return;
         }
