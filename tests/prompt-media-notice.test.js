@@ -102,6 +102,7 @@ beforeEach(() => {
     shownPanels.length = 0;
     toastr.warning.mockClear(); toastr.error.mockClear(); toastr.success.mockClear(); toastr.info.mockClear();
     saveSettings.mockClear(); saveChatConditional.mockClear(); refreshCurrentChatFromSaved.mockClear();
+    saveChatConditional.mockImplementation(async () => true);
     persistConversationStore.mockClear(); flushConversationStore.mockClear();
     state.chatId = null; state.handle = 'alice'; state.saved = true; state.group = null; delete state.branch;
     Object.assign(conversation, { open: null, personaId: 'user.png', branches: null, inactive: {}, switchResult: true, afterSwitch: null });
@@ -317,13 +318,25 @@ describe('clicking the notice opens the review for the chat that was refused', (
             expect(scanned()).toEqual([{ group: false, chat: 'chat-a', avatar: 'nova.png' }]);
         });
 
-        test('opens a group chat on its own locator, and saves the open chat first only when it is the origin', async () => {
+        test('opens a group chat on its own locator, never saves for the refusal origin, and still saves for Current chat', async () => {
             state.chatId = 'chat-b.jsonl';
             await click({ workspace: 'roleplay', account: 'alice', locator: { group: true, chat: 'Group one' } });
             expect(scanned()).toEqual([{ group: true, chat: 'Group one' }]);
+            expect(shownPanels).toHaveLength(1);
             expect(saveChatConditional).not.toHaveBeenCalled();
+            // A refused save would stop the review before its first read, so this proves the origin open does not attempt one.
+            saveChatConditional.mockImplementation(async () => false);
             state.chatId = 'chat-a.jsonl';
             await click(roleplayOrigin('chat-a'));
+            expect(saveChatConditional).not.toHaveBeenCalled();
+            expect(shownPanels).toHaveLength(2);
+            expect(dialogTitle()).toBe('Chat images');
+            expect(scanned().at(-1)).toEqual({ group: false, chat: 'chat-a', avatar: 'nova.png' });
+            // Current chat is an explicit navigation, so it still saves first.
+            saveChatConditional.mockImplementation(async () => true);
+            const current = navigation().children[0];
+            await current.listeners.click[0]();
+            await settle();
             expect(saveChatConditional).toHaveBeenCalledTimes(1);
             expect(scanned().at(-1)).toEqual({ group: false, chat: 'chat-a', avatar: 'nova.png' });
         });
