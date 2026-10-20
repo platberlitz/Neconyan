@@ -56,6 +56,7 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
         trigger: jest.fn(),
     };
     const context = vm.createContext({
+        StreamingThinkingIndicator: class { update() {} clear() {} },
         captureRecoveryAnchor: () => ({}), releaseGenerationContext: jest.fn(), scheduleHeldGenerationRecovery: jest.fn(),
         setCardScriptMessageStreaming: jest.fn(),
         scheduleCardScriptReconcile: jest.fn(),

@@ -4,6 +4,7 @@ import { withAbortSignal } from '../abort.js';
 import { power_user } from '../power-user.js';
 import { getStreamingUpdateInterval } from '../mobile-streaming.js';
 import { applyRoleplayPreviewFrame } from './roleplay-preview-frames.js';
+import { StreamingThinkingIndicator } from '../streaming-thinking.js';
 
 const labels = {
     preparing: 'Preparing reply…', generating: 'Writing reply…', agents: 'Running Agents…',
@@ -52,12 +53,14 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     let startedAt = null;
     let stopped = false;
     let frozen = false;
+    const thinkingIndicator = new StreamingThinkingIndicator();
     const diagnosticHandle = {};
     let diagnosticStage = null;
     const diagnostic = phase => { try { globalThis.NeconyanCrashDiagnostics?.observePhase?.(diagnosticHandle, phase); } catch { /* Optional diagnostics. */ } };
     let restoreReplacement = () => {};
     const remove = () => {
         if (node) {
+            thinkingIndicator.clear();
             node.remove();
             document.dispatchEvent(new CustomEvent('neconyan:roleplay-preview-removed', { detail: { element: node } }));
         }
@@ -122,6 +125,8 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             const status = node.querySelector('[role="status"]');
             const label = labels[latest.stage] || labels.preparing;
             if (status.textContent !== label) status.textContent = label;
+            thinkingIndicator.update(node, latest.stage === 'generating'
+                && !/\S/.test(latest.text || '') && !/\S/.test(latest.reasoning || ''));
             // The saved receipt names the final child job. Keep the preview's own
             // child identity for the handover to match a completed group speaker.
             const currentChild = String(latest.childId ?? '');
@@ -249,7 +254,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                     credentials: 'same-origin', signal: current.signal,
                 }), current.signal);
                 // A missing job has no preview to wait for; other refusals are retried.
-                if (response.status === 404) return;
+                if (response.status === 404) { stop.freeze(); return; }
                 if (!response.ok || !response.body) throw new Error(`Reply preview returned ${response.status}.`);
                 const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
                 try {
@@ -293,7 +298,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                                     } else requestDraw(previous.childId !== latest.childId || previous.stage !== latest.stage);
                                 }
                             }
-                            if (value.state) { diagnostic(null); onTerminal(value); return; }
+                            if (value.state) { stop.freeze(); diagnostic(null); onTerminal(value); return; }
                         }
                     }
                 } finally {
@@ -326,6 +331,6 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     // The finished reply is about to be saved and the chat rebuilt. Stop redrawing,
     // so the preview stays where the reader sees it and cannot reappear in the
     // emptied chat ahead of the saved messages.
-    stop.freeze = () => { cancelPendingDraws(); render(); frozen = true; clearInterval(timer); timer = null; };
+    stop.freeze = () => { cancelPendingDraws(); render(); frozen = true; thinkingIndicator.clear(); clearInterval(timer); timer = null; };
     return stop;
 }

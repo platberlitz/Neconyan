@@ -13,6 +13,7 @@ function replacement() {
 async function stream(type = 'normal') {
     const writes = [];
     const reasoningDomWrite = jest.fn();
+    const thinking = { update: jest.fn(), clear: jest.fn() };
     class Element {
         isConnected = true;
         classList = { toggle() {} };
@@ -22,6 +23,7 @@ async function stream(type = 'normal') {
     const element = new Element();
     const context = vm.createContext({
         console, AbortController, structuredClone,
+        StreamingThinkingIndicator: class { constructor() { return thinking; } },
         chat: [], chatId: 'original', chatGeneration: 1, activeGenerationRun: {}, streamingProcessor: null,
         document: { querySelector: () => element }, HTMLElement: Element,
         power_user: { streaming_fps: 30 }, main_api: 'openai', scrollLock: false, scrollLockImmunityUntil: 0,
@@ -62,10 +64,42 @@ async function stream(type = 'normal') {
     context.streamingProcessor = processor;
     processor.messageId = await processor.onStartStreaming('original');
     processor.generator = async function* () { yield { text: 'stale output', swipes: [], toolCalls: [], state: {} }; };
-    return { context, processor, writes, reasoningDomWrite };
+    return { context, processor, writes, reasoningDomWrite, thinking };
 }
 
 describe('streaming message origin', () => {
+    test('shows a waiting indicator before output and clears it on the first prose', async () => {
+        const { processor, thinking } = await stream();
+        expect(thinking.update).toHaveBeenLastCalledWith(processor.messageDom, true);
+        await processor.onProgressStreaming(0, 'First words', false);
+        expect(thinking.update).toHaveBeenLastCalledWith(processor.messageDom, false);
+    });
+
+    test('keeps waiting through empty chunks and defers to actual reasoning', async () => {
+        const { processor, thinking } = await stream();
+        await processor.onProgressStreaming(0, '  ', false);
+        expect(thinking.update).toHaveBeenLastCalledWith(processor.messageDom, true);
+        processor.reasoningHandler.reasoning = 'Considering the question';
+        await processor.onProgressStreaming(0, '', false);
+        expect(thinking.update).toHaveBeenLastCalledWith(processor.messageDom, false);
+    });
+
+    test.each(['stop', 'error', 'abort', 'empty completion', 'chat switch'])('clears the owned waiting indicator on %s', async action => {
+        const { context, processor, thinking } = await stream();
+        if (action === 'stop') processor.onStopStreaming();
+        if (action === 'error') processor.onErrorStreaming();
+        if (action === 'abort') processor.abortController.abort();
+        if (action === 'empty completion') {
+            processor.generator = async function* () {};
+            await processor.generate();
+        }
+        if (action === 'chat switch') {
+            context.eventSource.emit.mockImplementationOnce(async () => { context.chat = [replacement()]; context.chatGeneration++; });
+            await processor.generate();
+        }
+        expect(thinking.clear).toHaveBeenCalled();
+    });
+
     test('continues updating the original message and swipe through normal stream completion', async () => {
         const { context, processor } = await stream();
         await processor.generate();
