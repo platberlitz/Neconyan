@@ -560,7 +560,7 @@ let autoSeededTemplateIds = new Set();
 
 // Seeded once per account, disabled. The trackers mirror the "Pura's Trackers
 // Only" kit in templates/groups.json; the Ethereality kit stays library-only.
-// Position Tracker is the one companion seeded by default.
+// Position Tracker and Visual Map are the companions seeded by default.
 const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-proofreader',
     'tpl-dialogue-humaniser',
@@ -594,6 +594,7 @@ const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-time-tracker',
     'tpl-world-detail',
     'tpl-position-tracker-companion',
+    'tpl-visual-map-companion',
 ]);
 
 // Internal bundled templates stay available for migrations/settings even when
@@ -637,6 +638,7 @@ const REMOVED_BUNDLED_GROUP_IDS = new Set([
 const CHATROOM_TEMPLATE_ID = 'tpl-chatroom-companion';
 const MESSAGE_INBOX_TEMPLATE_ID = 'tpl-message-inbox-companion';
 const POSITION_TRACKER_TEMPLATE_ID = 'tpl-position-tracker-companion';
+const VISUAL_MAP_TEMPLATE_ID = 'tpl-visual-map-companion';
 const DIRECTORS_COMMENTARY_TEMPLATE_ID = 'tpl-directors-commentary-companion';
 const PLOT_COMPASS_TEMPLATE_ID = 'tpl-plot-compass-companion';
 const LEVEL_UP_COMPANION_TEMPLATE_ID = 'tpl-level-up-companion';
@@ -681,6 +683,7 @@ const BUNDLED_REGEX_POST_DEFAULT_EXCLUDED_TEMPLATE_IDS = new Set([
     CHATROOM_TEMPLATE_ID,
     MESSAGE_INBOX_TEMPLATE_ID,
     POSITION_TRACKER_TEMPLATE_ID,
+    VISUAL_MAP_TEMPLATE_ID,
 ]);
 const BUNDLED_PROMPT_TRANSFORM_IMPERSONATE_TEMPLATE_IDS = new Set([
     'tpl-prose-polisher',
