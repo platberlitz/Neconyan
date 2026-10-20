@@ -472,7 +472,7 @@ async function showRoleplayPromptMediaReview(initialLocator, { fromOrigin = fals
     if (openChat) navigation.append(button(t`Current chat`, () => run(() => showChat(openChat))));
     navigation.append(button(translate('Choose chats', 'scoped.prompt_media.RVW-17'), () => run(() => showLibrary())), button(translate('Change history', 'scoped.prompt_media.RVW-18'), () => run(() => showHistory())));
     if (fromOrigin) {
-        try { await showChat(initialLocator); } catch (error) {
+        try { await showChat(initialLocator, 0, false); } catch (error) {
             // The server answers a missing chat file, a chat folder that is gone and an unreadable file alike (ROLEPLAY_IMAGE_RECOVERY). ENOENT is kept for any other missing path.
             if (!['ROLEPLAY_IMAGE_RECOVERY', 'ENOENT'].includes(error?.code)) throw error;
             explainOriginUnavailable();
