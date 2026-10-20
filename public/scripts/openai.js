@@ -1,5 +1,5 @@
 import { appendAutoAppendReasoningInstruction } from './chat-reasoning-instruction.js';
-import { supportsChatImages, supportsChatVideo, supportsChatAudio, supportsChatSignatures, selectToolHistoryReasoning } from './chat-input-capabilities.js';
+import { supportsChatImages, supportsChatVideo, supportsChatAudio, supportsChatSignatures, selectToolHistoryReasoning, supportsInterleavedToolReasoning } from './chat-input-capabilities.js';
 import { getChatImageTokenCost } from './chat-prompt-tokens.js';
 import { injectChatPromptDepth } from './chat-prompt-depth.js';
 /*
@@ -388,11 +388,6 @@ export const tool_reasoning_modes = {
     SINCE_LAST_USER: 'since_last_user',
     ACTIVE_CHAIN: 'active_chain',
 };
-
-// Providers that support interleaved reasoning forwarding in tool-call chains.
-const interleaved_reasoning_providers = [
-    chat_completion_sources.OPENROUTER,
-];
 
 export const ZAI_ENDPOINT = {
     COMMON: 'common',
@@ -1055,7 +1050,7 @@ async function populateChatHistory(messages, prompts, chatCompletion, type, cycl
     const audioInlining = isAudioInliningSupported();
     const canUseTools = ToolManager.isToolCallingSupported();
     const includeSignature = isReasoningSignatureSupported();
-    const isToolReasoningProvider = interleaved_reasoning_providers.includes(oai_settings.chat_completion_source);
+    const isToolReasoningProvider = supportsInterleavedToolReasoning(oai_settings.chat_completion_source);
     const toolReasoningMode = isToolReasoningProvider
         ? getEffectiveToolReasoningMode()
         : tool_reasoning_modes.DISABLED;
@@ -1175,8 +1170,8 @@ async function populateChatHistory(messages, prompts, chatCompletion, type, cycl
                 const clone = structuredClone(invocation);
                 if (!reasoningIsEligible) {
                     delete clone.reasoning;
-                } else if (previousAssistantReasoning) {
-                    // Prefer currently editable assistant-text reasoning based on forwarding mode over invocation snapshot.
+                } else if (previousAssistantReasoning && !clone.reasoning) {
+                    // Fall back to adjacent assistant-text reasoning only when the invocation has none of its own.
                     clone.reasoning = previousAssistantReasoning;
                 }
                 return clone;

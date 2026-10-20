@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { fixture } from './roleplay-transactions-fixture.js';
-import { supportsChatImages, supportsChatTools, supportsChatSignatures, selectToolHistoryReasoning } from '../public/scripts/chat-input-capabilities.js';
+import { supportsChatImages, supportsChatTools, supportsChatSignatures, selectToolHistoryReasoning, supportsInterleavedToolReasoning } from '../public/scripts/chat-input-capabilities.js';
 
 const { prepareRoleplayCapabilities } = await import('../src/generation/roleplay-capabilities.js');
 const { admitRoleplayJob } = await import('../src/roleplay-jobs.js');
@@ -64,6 +64,24 @@ test('tool reasoning stops at the same chain and user boundaries in browser and 
     assert.equal(selectToolHistoryReasoning(messages, 5, 0, 'active_chain'), '');
     assert.equal(selectToolHistoryReasoning(messages, 5, 0, 'since_last_user'), 'Earlier thought');
     assert.equal(selectToolHistoryReasoning(messages, 5, 4, 'since_last_user'), '');
+});
+
+test('interleaved tool reasoning keeps each tool call on its own thought and covers Custom endpoints', () => {
+    assert.equal(supportsInterleavedToolReasoning('openrouter'), true);
+    assert.equal(supportsInterleavedToolReasoning('custom'), true);
+    assert.equal(supportsInterleavedToolReasoning('openai'), false);
+    const extra = { api: 'custom', model: 'thinker' };
+    const call = (id, reasoning) => ({ id, name: 'lookup', parameters: '{}', result: `Result ${id}`, ...(reasoning ? { reasoning } : {}) });
+    const records = [{ user_name: 'User' }, { name: 'User', is_user: true, mes: 'Question' },
+        { name: 'Bot', is_user: false, mes: 'Let me check', extra: { ...extra, reasoning: 'First thought' } },
+        { name: 'Bot', is_system: true, is_user: false, mes: '', extra: { ...extra, tool_invocations: [call('call-1', 'First thought')] } },
+        { name: 'Bot', is_system: true, is_user: false, mes: '', extra: { ...extra, tool_invocations: [call('call-2', 'Second thought')] } },
+        { name: 'Bot', is_system: true, is_user: false, mes: '', extra: { ...extra, tool_invocations: [call('call-3')] } }];
+    for (const mode of ['active_chain', 'since_last_user']) {
+        const toolCalls = buildRoleplaySavedHistory(records, { toolHistory: true,
+            signaturePolicy: { ...extra, source: 'custom', include: false, reasoning: mode } }).filter(message => message.tool_calls);
+        assert.deepEqual(toolCalls.map(message => message.reasoning), ['First thought', 'Second thought', 'First thought'], mode);
+    }
 });
 
 test('solo saved history honours content names and explicit send-as avatars', () => {

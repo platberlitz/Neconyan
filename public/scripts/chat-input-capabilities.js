@@ -15,6 +15,11 @@ export function supportsChatSignatures(settings) {
         || settings.chat_completion_source === 'openrouter' && /google\/gemini/i.test(settings.openrouter_model);
 }
 
+/** Sources that accept plaintext `reasoning` on past assistant tool-call messages (Interleaved Thinking). */
+export function supportsInterleavedToolReasoning(source) {
+    return ['openrouter', 'custom'].includes(source);
+}
+
 export function validFunctionTools(tools) {
     return Array.isArray(tools) && tools.length <= 128 && new Set(tools.map(tool => tool?.function?.name)).size === tools.length
         && tools.every(tool => tool?.type === 'function' && tool.function && typeof tool.function === 'object'

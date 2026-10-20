@@ -1,6 +1,6 @@
 import { mergeChatPresetSettings } from '../../public/scripts/chat-preset-request.js';
 import { uiText } from '../../public/scripts/ui-text.js';
-import { supportsChatImages, supportsChatTools, supportsChatSignatures } from '../../public/scripts/chat-input-capabilities.js';
+import { supportsChatImages, supportsChatTools, supportsChatSignatures, supportsInterleavedToolReasoning } from '../../public/scripts/chat-input-capabilities.js';
 import { prepareRoleplayCapabilities } from './roleplay-capabilities.js';
 import { getChatImageTokenCost } from '../../public/scripts/chat-prompt-tokens.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
@@ -788,7 +788,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         toolHistory: hasToolHistory, toolSource: namingMaterial?.source, toolModel: namingMaterial?.profile?.model,
         signaturePolicy: request.serverPrompt ? { source: namingMaterial.source,
             model: request.modelOverride || namingMaterial.profile?.model, include: chatInput && supportsChatSignatures(toolControls),
-            reasoning: chatInput && namingMaterial.source === 'openrouter' && (toolControls.show_thoughts || toolControls.auto_append_reasoning_tags)
+            reasoning: chatInput && supportsInterleavedToolReasoning(namingMaterial.source) && (toolControls.show_thoughts || toolControls.auto_append_reasoning_tags)
                 ? toolControls.tool_reasoning_mode : 'disabled' } : undefined,
         characterName: request.characterName, group: source.locator.group, userName,
         namesBehavior: chatInput ? (toolControls.names_behavior ?? 0)

@@ -14,7 +14,7 @@ import { messagesToText } from '../../public/scripts/extensions/third-party/Neco
 import { applyWrap } from '../../public/scripts/extensions/third-party/Neconyan-PromptTags/src/wrap.js';
 import { isTaggablePromptIdentifier } from '../../public/scripts/extensions/third-party/Neconyan-PromptTags/src/sections.js';
 import { createRoleplayLoreMacros } from '../generation/roleplay-lore-macros.js';
-import { supportsChatImages, supportsChatSignatures, supportsChatTools } from '../../public/scripts/chat-input-capabilities.js';
+import { supportsChatImages, supportsChatSignatures, supportsChatTools, supportsInterleavedToolReasoning } from '../../public/scripts/chat-input-capabilities.js';
 
 const emptyLore = () => ({ worldInfoBefore: '', worldInfoAfter: '', EMEntries: [], ANBeforeEntries: [], ANAfterEntries: [], WIDepthEntries: [], outletEntries: {} });
 function testRegex(pattern, text) {
@@ -87,7 +87,7 @@ export async function compilePromptingCapture({ context: plan, material, scene =
         characterName: snapshot.speakerNames.character, reasoningInPrompt: snapshot.reasoningInPrompt, reasoning: snapshot.reasoning,
         companionHostIndex: retained.indexOf(prepared.companionHostIndex), toolHistory, toolSource: material.source, toolModel: material.profile?.model,
         signaturePolicy: { source: material.source, model: material.profile?.model, include: !textBackend && supportsChatSignatures(controls),
-            reasoning: !textBackend && material.source === 'openrouter' && (controls.show_thoughts || controls.auto_append_reasoning_tags)
+            reasoning: !textBackend && supportsInterleavedToolReasoning(material.source) && (controls.show_thoughts || controls.auto_append_reasoning_tags)
                 ? controls.tool_reasoning_mode : 'disabled' },
         namesBehavior: textBackend ? 'provider' : controls.names_behavior ?? 0, mediaDisplay: snapshot.mediaDisplay });
     const evaluate = value => environment.evaluate(String(value ?? ''), { legacy: !snapshot.experimentalMacroEngine, strictCapabilities: true });
