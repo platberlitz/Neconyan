@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { acceptJob, getJob, releaseJob } from './store.js';
-import { readRoleplayFile, roleplayError, roleplayHash, roleplayLease, roleplayStoreDirectory,
+import { inspectRoleplayFileStat, readRoleplayFile, roleplayError, roleplayHash, roleplayLease, roleplayStoreDirectory,
     createRoleplayDirectory, withRoleplayAccount } from '../roleplay-store.js';
 import { tryWriteFileSync } from '../util.js';
 
@@ -48,6 +48,28 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
         return { file, value };
     }
 
+    // Listings only need a few fields, but each one re-read and re-verified every saved result, and a page load lists several times.
+    const summaries = new Map();
+    const statIdentity = stat => [stat.dev, stat.ino, stat.birthtimeNs, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
+    function summarize(filename) {
+        const stat = inspectRoleplayFileStat(filename, maximumRecordBytes, { allowMissingParent: true });
+        const identity = stat && statIdentity(stat);
+        const cached = summaries.get(filename);
+        if (cached && cached.identity === identity) return cached.entry;
+        const { file, value } = read(filename);
+        if (!file) {
+            summaries.delete(filename);
+            return { size: 0, value: null };
+        }
+        const fields = { ...value, plan: Object.freeze({ target: value.plan.target ? Object.freeze({ name: value.plan.target.name }) : undefined,
+            operation: value.plan.operation }) };
+        delete fields.result;
+        const entry = Object.freeze({ size: file.bytes.length, value: Object.freeze(fields) });
+        // A change after the identity check gives the file a new identity, so the next listing reads it again.
+        if (identity) summaries.set(filename, { identity, entry });
+        return entry;
+    }
+
     const open = state => ['preparing', 'accepted'].includes(state);
     function save(filename, value, before, { wasOpen = false } = {}) {
         const bytes = JSON.stringify(value);
@@ -58,9 +80,9 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
             for (const name of fs.readdirSync(path.dirname(filename))) {
                 const other = path.join(path.dirname(filename), name);
                 if (other === filename || !/^[a-f0-9]{64}\.json$/.test(name)) continue;
-                const item = read(other);
-                if (!item.file) throw labError('A saved Labs record is missing.');
-                reserved += open(item.value.state) ? recordLimit(item.value.kind) : item.file.bytes.length;
+                const item = summarize(other);
+                if (!item.value) throw labError('A saved Labs record is missing.');
+                reserved += open(item.value.state) ? recordLimit(item.value.kind) : item.size;
             }
             if (reserved > storeLimit) throw labError('Labs storage is full. Existing records were kept.', 413);
         }
@@ -82,16 +104,19 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
     function records(base) {
         const directory = directoryFor(base);
         readRoleplayFile(path.join(directory, '.path-check'), 1, { allowMissingParent: true });
-        return fs.existsSync(directory) ? fs.readdirSync(directory).filter(name => /^[a-f0-9]{64}\.json$/.test(name))
-            .map(name => read(path.join(directory, name))) : [];
+        const filenames = fs.existsSync(directory) ? fs.readdirSync(directory).filter(name => /^[a-f0-9]{64}\.json$/.test(name))
+            .map(name => path.join(directory, name)) : [];
+        const present = new Set(filenames);
+        for (const filename of summaries.keys()) if (path.dirname(filename) === directory && !present.has(filename)) summaries.delete(filename);
+        return filenames.map(summarize);
     }
 
     function reserve(base, target, account, kind = '') {
         let used = recordLimit(kind);
-        for (const { file, value } of records(base)) {
-            if (!file || !value) throw labError('A saved Labs record is missing.');
+        for (const { size, value } of records(base)) {
+            if (!value) throw labError('A saved Labs record is missing.');
             const open = ['preparing', 'accepted'].includes(value.state);
-            used += open ? recordLimit(value.kind) : file.bytes.length;
+            used += open ? recordLimit(value.kind) : size;
             if (used > storeLimit) throw labError('Labs storage has no room for another result. Existing records were kept.', 413);
             if (open && value.applyTarget && Object.keys(value.effects).length && roleplayHash(value.account) === roleplayHash(stamp(account))
             && roleplayHash(value.applyTarget) === roleplayHash(target)) throw labError('That item has an unfinished reviewed Labs change.');
