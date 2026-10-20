@@ -12722,7 +12722,7 @@ function displayBatchResults(results, returnFocusElement = null) {
                 qigToast.success(`${plural(batchEntries.length, "image")} inserted into the chat.`, "Quick Image Gen");
             } catch (err) {
                 console.error("[Quick Image Gen] Insert all failed:", err);
-                qigToast.warning(`Insert all stopped: ${err.message} Images inserted before the failure were kept; the remaining images are still available in the batch viewer.`, "Quick Image Gen");
+                qigToast.warning(t`Insert all stopped: ${translate(String(err.message))} Images inserted before the failure were kept; the remaining images are still available in the batch viewer.`, "Quick Image Gen", { finalText: true });
             } finally {
                 insertAllButton.disabled = false;
                 if (insertOneButton) insertOneButton.disabled = false;
@@ -12888,7 +12888,7 @@ async function showGallery(returnFocusElement = null) {
                 if (importInput) importInput.value = "";
             } catch (err) {
                 log(`Gallery import failed: ${err.message}`);
-                qigToast.error("Failed to import image URL: " + err.message, "Quick Image Gen", { escapeHtml: true });
+                qigToast.error(`${t`Failed to import image URL:`} ${translate(String(err.message))}`, "Quick Image Gen", { escapeHtml: true, finalText: true });
             }
         };
 

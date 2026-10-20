@@ -5,6 +5,7 @@ import { parse } from 'acorn';
 import { load } from 'cheerio';
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { IMAGE_INPUT_SETTINGS_CHANGED } from '../public/scripts/prompt-media-policy.js';
+import { assembleLocaleData } from '../public/scripts/locale-assembly.js';
 import { createLifecycleScope } from '../public/scripts/extensions/quick-image-gen/lib/lifecycle.js';
 import {
     bindImageInputRefreshEvents, bindImageInputRefreshPage, IMAGE_INPUT_REFRESH_EVENTS, INLINE_MEDIA_CHECKBOX_ID, WORKSPACE_STATE_CHANGED,
@@ -36,6 +37,22 @@ const callsTo = (name, node = syntax, found = []) => {
     }
     return found;
 };
+const realLocaleFile = name => JSON.parse(fs.readFileSync(new URL(`../public/locales/${name}.json`, import.meta.url), 'utf8'));
+const englishCatalogue = realLocaleFile('neconyan/en');
+const portuguese = assembleLocaleData({ base: realLocaleFile('pt-pt'), supplement: realLocaleFile('neconyan/pt-pt'), catalogue: englishCatalogue }).dictionary;
+// The stand-ins follow i18n.js: translate is one exact lookup, and t builds a ${0} key, translates it, then fills the holes.
+const translateInPortuguese = (text, key = null) => portuguese[key || text] ?? text;
+const tInPortuguese = (strings, ...values) => {
+    const key = strings.reduce((result, string, index) => result + string + (values[index] !== undefined ? `\${${index}}` : ''), '');
+    return translateInPortuguese(key).replace(/\$\{(\d+)\}/g, (match, index) => values[index]);
+};
+const qigToastCall = (severity, text) => callsTo(severity).find(call => call.callee.object?.name === 'qigToast'
+    && call.arguments[0] && new RegExp(text).test(source.slice(call.arguments[0].start, call.arguments[0].end)));
+const evaluateToastMessage = (call, err) => vm.runInNewContext(source.slice(call.arguments[0].start, call.arguments[0].end),
+    { err, translate: translateInPortuguese, t: tInPortuguese });
+const evaluateEnglishToastMessage = (call, err) => vm.runInNewContext(source.slice(call.arguments[0].start, call.arguments[0].end),
+    { err, translate: text => text, t: (strings, ...values) => strings.reduce((text, string, index) => text + string + (values[index] !== undefined ? String(values[index]) : ''), '') });
+const optionValue = (call, name) => call.arguments[2]?.properties?.find(property => (property.key.name ?? property.key.value) === name)?.value?.value;
 
 beforeEach(() => { dictionary.clear(); });
 
@@ -378,5 +395,75 @@ describe('toast-lines.js is fetched the first time a refusal toast needs it', ()
         expect(toasts[1][0]).toBe('warning');
         expect(lines(toasts[1][1]).children('span').text()).toBe('Reason.');
         expect(toasts[1][3]).toEqual({ throttleKey: 'auto-insert-failed', escapeHtml: false });
+    });
+});
+
+describe('the two gallery toasts are translated where they are built', () => {
+    const insertKey = 'Insert all stopped: ${0} Images inserted before the failure were kept; the remaining images are still available in the batch viewer.';
+    const importPrefix = 'Failed to import image URL:';
+    const insertCall = () => qigToastCall('warning', 'Insert all stopped:');
+    const importCall = () => qigToastCall('error', 'Failed to import image URL');
+    const assertTranslateHole = hole => {
+        expect(hole.type).toBe('CallExpression');
+        expect(hole.callee.name).toBe('translate');
+        expect(hole.arguments[0].type).toBe('CallExpression');
+        expect(hole.arguments[0].callee.name).toBe('String');
+        expect(hole.arguments[0].arguments[0].type).toBe('MemberExpression');
+    };
+
+    test('the insert-all message is a t-tagged template with a translated hole and its final marker', () => {
+        const call = insertCall();
+        expect(call).toBeTruthy();
+        const message = call.arguments[0];
+        expect(message.type).toBe('TaggedTemplateExpression');
+        expect(message.tag.name).toBe('t');
+        expect(message.quasi.expressions).toHaveLength(1);
+        assertTranslateHole(message.quasi.expressions[0]);
+        const key = message.quasi.quasis.reduce((text, quasi, index) => text + quasi.value.cooked + (index < message.quasi.expressions.length ? '${0}' : ''), '');
+        expect(key).toBe(insertKey);
+        expect(englishCatalogue[insertKey]).toBe(insertKey);
+        expect(optionValue(call, 'finalText')).toBe(true);
+    });
+
+    test('the import message is one template literal: the existing prefix key, then the translated hole', () => {
+        const call = importCall();
+        expect(call).toBeTruthy();
+        const message = call.arguments[0];
+        expect(message.type).toBe('TemplateLiteral');
+        expect(message.quasis.map(quasi => quasi.value.cooked)).toEqual(['', ' ', '']);
+        expect(message.expressions).toHaveLength(2);
+        const [prefix, hole] = message.expressions;
+        expect(prefix.type).toBe('TaggedTemplateExpression');
+        expect(prefix.tag.name).toBe('t');
+        expect(prefix.quasi.expressions).toHaveLength(0);
+        expect(prefix.quasi.quasis[0].value.cooked).toBe(importPrefix);
+        assertTranslateHole(hole);
+        expect(englishCatalogue[importPrefix]).toBe(importPrefix);
+        expect(Object.hasOwn(englishCatalogue, `${importPrefix} \${0}`)).toBe(false);
+        expect(source).not.toContain(`${importPrefix} \${0}`);
+        expect(optionValue(call, 'finalText')).toBe(true);
+        expect(optionValue(call, 'escapeHtml')).toBe(true);
+        expect(call.arguments[1].value).toBe('Quick Image Gen');
+    });
+
+    test('the English text of both toasts is unchanged', () => {
+        expect(evaluateEnglishToastMessage(insertCall(), new Error('X')))
+            .toBe('Insert all stopped: X Images inserted before the failure were kept; the remaining images are still available in the batch viewer.');
+        expect(evaluateEnglishToastMessage(importCall(), new Error('X'))).toBe('Failed to import image URL: X');
+    });
+
+    test('the Portuguese import toast translates its frame and its hole, leaving the English text untouched', () => {
+        expect(evaluateToastMessage(importCall(), new Error('X'))).toBe('Falha ao importar URL da imagem: X');
+        expect(portuguese[importPrefix]).toBe('Falha ao importar URL da imagem:');
+    });
+
+    test('the Portuguese insert-all toast is the sentence the base localiser already showed', () => {
+        expect(evaluateToastMessage(insertCall(), new Error('X')))
+            .toBe('Inserir tudo foi interrompido: X As imagens inseridas antes da falha foram mantidas; as imagens restantes ainda estão disponíveis no visualizador de lote.');
+    });
+
+    test('an inner message that is an exact key is still translated in the hole', () => {
+        expect(evaluateToastMessage(importCall(), new Error('Image unavailable'))).toBe('Falha ao importar URL da imagem: Imagem indisponível');
+        expect(portuguese['Image unavailable']).toBe('Imagem indisponível');
     });
 });
