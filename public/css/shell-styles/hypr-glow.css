@@ -42,7 +42,7 @@
     letter-spacing: -0.01em;
 }
 
-:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) #neconyan-workspace-rail .neconyan-rail-section-label::before {
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) #neconyan-workspace-rail .neconyan-rail-section-toggle > span::before {
     content: '# ';
     color: var(--hypr-a);
 }

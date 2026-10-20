@@ -715,10 +715,32 @@ body.neconyan #neconyan-tour-coachmark button:focus-visible { outline: 2px solid
     body.neconyan :is(.sb-shell-nav, .sb-settings-tabs-nav) { flex-wrap: wrap; overflow-x: hidden; }
     body.neconyan.neconyan-rail-ready { --neco-sidebar-offset: var(--neco-sidebar-width); }
     :root[data-neconyan-sidebar='closed'] body.neconyan { --neco-sidebar-width: 52px; }
-    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail { padding-inline: 7px; }
+    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail {
+        --neco-rail-button: 36px;
+        --neco-rail-lane: 51px;
+        padding-inline: 0;
+    }
     :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail :is(.neconyan-rail-brand > img, .neconyan-rail-brand > span, button > span, button > small, kbd, .neconyan-rail-section-label, .neconyan-rail-section-heading, .neconyan-rail-section-toggle, .neconyan-rail-empty) { display: none; }
-    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail .neconyan-rail-brand { justify-content: center; }
-    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail #neconyan-sidebar-toggle { margin: auto; }
+    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail :is(.neconyan-rail-brand, .neconyan-rail-new, .neconyan-rail-footer) { margin-inline: calc((var(--neco-rail-lane) - var(--neco-rail-button)) / 2) 0; width: var(--neco-rail-button); }
+    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail .neconyan-rail-brand { justify-content: center; margin-bottom: 20px; }
+    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail button {
+        width: var(--neco-rail-button); min-width: 0; height: var(--neco-rail-button); min-height: var(--neco-rail-button);
+        padding: 0; gap: 0; justify-content: center; flex-wrap: nowrap;
+    }
+    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail #neconyan-sidebar-toggle { width: 28px; height: 28px; min-height: 28px; margin: auto; }
+    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail .neconyan-rail-new { margin-bottom: 8px; }
+    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail .neconyan-rail-scroll { --neco-rail-thumb: var(--xp-scroll-thumb, var(--w98-shadow, var(--sb-scrollbar-thumb))); scrollbar-gutter: stable; scrollbar-color: var(--neco-rail-thumb) transparent; }
+    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail .neconyan-rail-scroll::-webkit-scrollbar { width: 6px; }
+    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail .neconyan-rail-scroll::-webkit-scrollbar-track { background: transparent; }
+    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail .neconyan-rail-scroll::-webkit-scrollbar-thumb { background-color: var(--neco-rail-thumb); }
+    @supports selector(::-webkit-scrollbar) {
+        :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail .neconyan-rail-scroll { scrollbar-width: auto; scrollbar-color: auto; }
+    }
+    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail .neconyan-rail-scroll button { margin-inline: calc((var(--neco-rail-lane) - var(--neco-rail-button)) / 2) 0; }
+    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail :is(.neconyan-rail-nav, .neconyan-rail-advanced) { margin-block: 0; }
+    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail :is(.neconyan-rail-advanced:has(> [id^='neconyan-rail-section-']:not([hidden]) > button:not([hidden])), [data-neconyan-mode-nav]:not([hidden]):has(> button:not([hidden])), .neconyan-rail-recent:has([data-neconyan-recent-list]:not([hidden]) > button)) { margin-top: 8px; }
+    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail .neconyan-rail-footer { margin-top: 8px; padding-top: 0; border-top: 0; }
+    :root[data-neconyan-sidebar='closed'][data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) #neconyan-workspace-rail { --neco-rail-button: 32px; --neco-rail-lane: 36px; left: 4px; width: 44px; }
     body.neconyan #top-bar { left: var(--neco-sidebar-offset) !important; right: 0 !important; width: calc(100% - var(--neco-sidebar-offset)) !important; max-width: none !important; padding-inline: 0; }
     body.neconyan #sb-topbar-stack { width: 100%; }
     body.neconyan #sheld {
