@@ -1,5 +1,6 @@
 import { Generate, eventSource, event_types, is_send_press } from '../../../../script.js';
 import { is_group_generating } from '../../../group-chats.js';
+import { isReportedImageRefusal } from '../../../prompt-media-client.js';
 import {
     applyPromptTemplate,
     debugLog,
@@ -256,7 +257,7 @@ async function guidedReplacement(regenerate) {
             }
         }
 
-        toastr.error(String(error?.message || error), label);
+        if (!isReportedImageRefusal(error)) toastr.error(String(error?.message || error), label);
     } finally {
         if (isOriginalChat()) {
             if (browserGenerationAttempted && (!textarea.value || textarea.value === originalInput)) {
