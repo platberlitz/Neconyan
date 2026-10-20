@@ -6,7 +6,7 @@ import { fail, hash, sourceFingerprint } from './core.js';
 import { readConfig } from './models.js';
 import { isStaleSourceError, pendingSources, processBatch, processingVersion } from './processing.js';
 import { loadCurrentState } from './sources.js';
-import { chatPath, listStories, mutateState, readStateShared, statePath } from './store.js';
+import { chatPath, listStories, listStoriesGradually, mutateState, readStateShared, statePath } from './store.js';
 
 const running = new Map();
 const MAX_RUNNING = 4;
@@ -40,6 +40,9 @@ const directoryStamp = directory => {
 const sharedInputs = (directories, config) => hash([config, fileStamp(path.join(directories.root, 'settings.json')),
     ...[directories.characters, directories.groups, directories.worlds, directories.files].map(directoryStamp)]);
 const fingerprint = (state, config) => hash([sourceFingerprint(state), processingVersion(config), config.revision, state.overrides, state.excludedSources]);
+// Reading and saving a large story takes tens of milliseconds each; awaiting a finished promise does not let
+// page requests in, so background work steps aside between those steps.
+const yieldToRequests = () => new Promise(resolve => setImmediate(resolve));
 
 /** Persist intent before starting work; neither the HTTP connection nor the selected chat owns it. */
 export async function startProcessing(directories, locator, { all = false, checkpoint = false, automatic = false } = {}, call) {
@@ -82,6 +85,7 @@ async function run(directories, locator, branchId, job, signal, call) {
     }, undefined, { existingOnly: true });
     try {
         for (let staleRetries = 0; ;) {
+            await yieldToRequests();
             const current = readStateShared(directories, locator);
             if (signal.aborted || current.branchId !== branchId || current.processing?.id !== job.id) return;
             if (!current.enabled || (job.automatic && !readConfig(directories).autoUpdate)) break;
@@ -124,13 +128,13 @@ export async function cancelProcessing(directories, locator) {
 export async function scanProcessing(directories, call, { reconcile = true } = {}) {
     const config = readConfig(directories);
     const shared = reconcile ? sharedInputs(directories, config) : null;
-    const stories = listStories(directories).sort((a, b) => b.updatedAt - a.updatedAt);
+    const stories = (await listStoriesGradually(directories)).sort((a, b) => b.updatedAt - a.updatedAt);
     const seen = new Set();
     for (const [index, story] of stories.entries()) {
         const key = statePath(directories, story.locator);
         seen.add(key);
         // Each story's checks are synchronous; let waiting requests run between them.
-        if (index) await new Promise(resolve => setImmediate(resolve));
+        if (index) await yieldToRequests();
         if (running.has(key)) continue;
         try {
             if (story.processing?.status === 'running' && (!story.enabled || (story.processing.automatic && !config.autoUpdate))) {
@@ -152,6 +156,8 @@ export async function scanProcessing(directories, call, { reconcile = true } = {
             } else {
                 state = readStateShared(directories, story.locator);
             }
+            await yieldToRequests();
+            if (running.has(key) || atCapacity(directories, story.processing?.status !== 'running' || story.processing.automatic)) continue;
             const previous = state.processing;
             let idle = false;
             if (previous?.status === 'running' && (!previous.automatic || config.autoUpdate)) {
@@ -196,7 +202,11 @@ export async function pauseInterruptedProcessing(getDirectories) {
     return paused;
 }
 
-export function startMewmoryWorker(getDirectories, call) {
+/**
+ * firstScanDelayMs holds back the first scan (and the regular ones) so a freshly started server can serve
+ * the page first; a scan that finds many chats to catch up keeps the server busy for a while.
+ */
+export function startMewmoryWorker(getDirectories, call, { firstScanDelayMs = 0 } = {}) {
     let scanning = false;
     let pending = false;
     let scheduled;
@@ -229,10 +239,17 @@ export function startMewmoryWorker(getDirectories, call) {
         });
         scheduled.unref();
     };
-    const timer = setInterval(() => void scan(), 15000);
-    timer.unref();
-    void scan();
+    let timer;
+    const begin = () => {
+        timer = setInterval(() => void scan(), 15000);
+        timer.unref();
+        void scan();
+    };
+    const delay = firstScanDelayMs > 0 ? setTimeout(begin, firstScanDelayMs) : null;
+    if (delay) delay.unref();
+    else begin();
     return () => {
+        clearTimeout(delay);
         clearInterval(timer);
         clearImmediate(scheduled);
         wake = () => {};

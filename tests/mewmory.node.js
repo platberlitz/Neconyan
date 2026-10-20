@@ -20,7 +20,7 @@ const { applyExtraction, applyInterview, extractionInput, interviewInput, pendin
 const { forcedMatches, validateSelection, recall, recallInBackground } = await import('../src/mewmory/retrieval.js');
 const { expandNeighbours, hybridCandidates, lexicalSearch, searchDocuments, splitPassages, updateIndex } = await import('../src/mewmory/search.js');
 const { loadCurrentState } = await import('../src/mewmory/sources.js');
-const { branchParentLocator, buildBranchMemoryState, chatPath, listStories, mutateState, normalizeLocator, readState, renameChatMemory, renameCharacterMemory, renameWorldMemory, removeChatMemory, removeSourceMemory, statePath, writeJson } = await import('../src/mewmory/store.js');
+const { branchParentLocator, buildBranchMemoryState, chatPath, listStories, mutateState, normalizeLocator, readChatShared, readState, renameChatMemory, renameCharacterMemory, renameWorldMemory, removeChatMemory, removeSourceMemory, statePath, writeJson } = await import('../src/mewmory/store.js');
 const { ensureMewmoryMessageIds } = await import('../public/scripts/mewmory/message-identity.js');
 const { getCounter, getTokenizerModel } = await import('../src/mewmory/tokens.js');
 const { inspectState, restoreRecords } = await import('../src/endpoints/mewmory.js');
@@ -547,6 +547,55 @@ test('finished jobs wake the queue and automatic work leaves capacity for a manu
         stop();
         await Promise.all(stories.map(story => waitForProcessing(directories, story)));
     }
+});
+
+test('a delayed worker leaves startup alone, then catches up', async t => {
+    const { directories } = disk(t);
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    config.autoUpdate = true;
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    let calls = 0;
+    const call = async () => {
+        calls++;
+        return { value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role: 'extractor' } };
+    };
+    const stop = startMewmoryWorker(async () => [directories], call, { firstScanDelayMs: 300 });
+    try {
+        await new Promise(resolve => setTimeout(resolve, 150));
+        assert.equal(calls, 0, 'no memory work during the startup grace period');
+        assert.ok(!readState(directories, locator).processing);
+        for (let attempt = 0; attempt < 200 && readState(directories, locator).processing?.status !== 'complete'; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+        assert.equal(readState(directories, locator).processing?.status, 'complete');
+        assert.ok(calls > 0);
+    } finally {
+        stop();
+        await waitForProcessing(directories, locator);
+    }
+});
+
+test('story listings and chat reads reuse files that have not changed', async t => {
+    const { directories } = disk(t);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    const archive = path.resolve(statePath(directories, locator));
+    const chat = path.resolve(chatPath(directories, locator));
+    readChatShared(directories, locator);
+    listStories(directories);
+    const read = t.mock.method(fs, 'readFileSync');
+    const reads = filename => read.mock.calls.filter(call => path.resolve(String(call.arguments[0])) === filename).length;
+    assert.equal(listStories(directories)[0].enabled, true);
+    readChatShared(directories, locator);
+    assert.equal(reads(archive), 0, 'an unchanged memory file is not parsed again');
+    assert.equal(reads(chat), 0, 'an unchanged chat is not parsed again');
+    mutateState(directories, locator, state => { state.enabled = false; });
+    read.mock.resetCalls();
+    assert.equal(listStories(directories)[0].enabled, false);
+    assert.equal(reads(archive), 0, 'a saved change refreshes the listing without reading the file back');
 });
 
 test('connection profiles resolve server-side and retain local-only permissions', async () => {
