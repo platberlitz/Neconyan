@@ -21,7 +21,7 @@ If you want SillyTavern with everything working exactly like upstream, use [Sill
 - **Story memory.** [Mewmory](docs/mewmory.md) keeps track of your story, the NPCs you've met and what they said, so you're not re-explaining everything 200 messages later.
 - **The good stuff comes built in.** Agents, Chat Archive, Quick Image Gen, Guided Generations, BotSearcher and a few more, each with their own settings. [Here's the full list and who made them.](docs/neconyan-native-tools.md)
 - **Somewhere to keep notes.** [Notebooks](docs/notebooks.md) gives you space for character drafts, places, scene plans and session journals, right next to your chats. Notes link to each other and to your lorebooks, and the assistants can edit them if you let them.
-- **Little helpers.** Miso, Taro and Nori can use tool calls to create characters with portraits, edit lorebooks and adjust presets or agents. The short First paws tour walks you through the basics.
+- **Little helpers.** Miso, Taro and Nori can use tool calls to create characters with portraits, edit lorebooks and adjust presets or agents. The short First paws tour walks you through the basics, and [Simple Mode](#simple-mode) keeps the advanced stuff out of the way until you want it.
 - **Someone to talk the story over with.** [Scratchpad](docs/scratchpad.md) is a side chat next to your story where the assistants, your own characters or a whole round table of them can read the scene and give you ideas, without any of it ending up in the chat.
 - **It's cute.** Calico themes, cats napping on your messages and a pixel cat on Home. That was the whole point, really.
 - **Your files are still your files.** It reads the same character cards, chats, lorebooks and presets as SillyTavern, and there's no telemetry.
@@ -40,6 +40,17 @@ Where you land. Pick a character, start a temporary chat, connect a model or say
   <tr>
     <td width="72%"><img src="docs/readme/desktop-home.webp" alt="Home on desktop"></td>
     <td width="28%"><img src="docs/readme/phone-home.webp" alt="Home on a phone"></td>
+  </tr>
+</table>
+
+### Simple Mode
+
+There are a lot of buttons in here, and you don't need most of them on day one. Simple Mode tucks away Mewmory, Chat Archive, Extensions, the mode switcher, most of Fine-tuning and the extra buttons around the message box, and leaves you with characters, connections, presets, lorebooks, Agents, Notebooks and Scratchpad. Nori asks if you want it before the First paws tour starts. Nothing gets turned off, it's only hidden, so press **Show all features** in the sidebar or switch it off in Settings > Appearance whenever you want everything back.
+
+<table>
+  <tr>
+    <td width="72%"><img src="docs/readme/desktop-simple.webp" alt="A Roleplay chat with Simple Mode on, on desktop"></td>
+    <td width="28%"><img src="docs/readme/phone-simple.webp" alt="A Roleplay chat with Simple Mode on, on a phone"></td>
   </tr>
 </table>
 
