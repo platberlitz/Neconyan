@@ -9,6 +9,11 @@ const updatePreviewMessageText = jest.fn(() => true);
 const scrollChatToBottom = jest.fn();
 const refreshChatViewportBaseline = jest.fn();
 const renderedEvents = [];
+const thinking = { update: jest.fn(), clear: jest.fn() };
+
+jest.unstable_mockModule('../public/scripts/streaming-thinking.js', () => ({
+    StreamingThinkingIndicator: class { constructor() { return thinking; } },
+}));
 
 jest.unstable_mockModule('../public/script.js', () => ({
     chat,
@@ -199,6 +204,8 @@ describe('Roleplay preview rendering', () => {
         updatePreviewMessageText.mockClear();
         scrollChatToBottom.mockClear();
         refreshChatViewportBaseline.mockClear();
+        thinking.update.mockClear();
+        thinking.clear.mockClear();
         renderedEvents.length = 0;
         chat.length = 0;
         document = installDom();
@@ -235,6 +242,36 @@ describe('Roleplay preview rendering', () => {
     async function waitForFirstDraw() {
         await waitFor(() => updateMessageElement.mock.calls.length >= 1);
     }
+
+    test.each(['prose', 'reasoning', 'companions'])('waiting clears on %s without saving synthetic reasoning', async end => {
+        const stop = startPreview();
+        stream.send({ preview: { childId: 'reply', stage: 'generating', text: '' } });
+        await waitForFirstDraw();
+        const node = renderedEvents.at(-1).element;
+        expect(thinking.update).toHaveBeenLastCalledWith(node, true);
+        const patch = end === 'prose' ? { text: 'First words' }
+            : end === 'reasoning' ? { reasoning: 'Considering' } : { stage: 'companions' };
+        stream.send({ preview: { childId: 'reply', stage: 'generating', text: '', ...patch } });
+        await waitFor(() => thinking.update.mock.calls.length > 1);
+        expect(thinking.update).toHaveBeenLastCalledWith(node, false);
+        expect(chat).toEqual([]);
+        stop();
+    });
+
+    test.each(['freeze', 'terminal'])('waiting clears on %s and cannot reappear from a queued draw', async end => {
+        const stop = startPreview();
+        stream.send({ preview: { childId: 'reply', stage: 'generating', text: '' } });
+        await waitForFirstDraw();
+        thinking.clear.mockClear();
+        stream.send({ delta: { text: '', set: { updatedAt: 10 } } });
+        if (end === 'freeze') stop.freeze();
+        else stream.send({ state: 'failed' });
+        await waitFor(() => thinking.clear.mock.calls.length > 0);
+        const draws = thinking.update.mock.calls.length;
+        await new Promise(resolve => realSetTimeout(resolve, 25));
+        expect(thinking.update).toHaveBeenCalledTimes(draws);
+        expect(chat).toEqual([]);
+    });
 
     test('the in-place updater uses preview formatting and only adds code controls when code exists', () => {
         const start = scriptSource.indexOf('export function updatePreviewMessageText');

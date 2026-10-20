@@ -42,6 +42,24 @@ async function openPreview(app, phone) {
 
 for (const phone of [true, false]) {
     const viewport = phone ? 'phone' : 'desktop';
+    test(`server preview shows Thinking without traces and clears it on ${viewport}`, async ({ app }) => {
+        const page = await openPreview(app, phone);
+        await page.evaluate(() => window.sendLivePreview({ childId: 'reply', stage: 'generating', text: '' }));
+        const preview = page.locator('#neconyan-roleplay-preview');
+        await expect(preview).toBeVisible();
+        const indicator = preview.locator('.neconyan-streaming-thinking');
+        await expect(indicator).toHaveText('Thinking...');
+        await expect(indicator).toBeVisible();
+        await page.evaluate(() => window.sendLivePreviewDelta({ text: 'The first words.' }));
+        await expect(preview.locator('.mes_text')).toHaveText('The first words.');
+        await expect(indicator).toHaveCount(0);
+        await page.evaluate(() => window.sendLivePreview({ childId: 'next', stage: 'generating', text: '' }));
+        await expect(indicator).toBeVisible();
+        await page.evaluate(() => window.stopLivePreview.freeze());
+        await expect(indicator).toHaveCount(0);
+        await page.evaluate(() => window.stopLivePreview());
+    });
+
     test(`server preview timer tolerates clock skew, ticks between tokens and freezes on ${viewport}`, async ({ app }) => {
         const page = await openPreview(app, phone);
         await page.evaluate(({ text, clockOffset }) => {

@@ -341,6 +341,7 @@ import { initSettingsSearch } from './scripts/setting-search.js';
 import { initBulkEdit } from './scripts/bulk-edit.js';
 import { getContext } from './scripts/st-context.js';
 import { extractReasoningFromData, extractReasoningSignatureFromData, initReasoning, parseReasoningInSwipes, PromptReasoning, ReasoningHandler, removeReasoningFromString, updateReasoningUI } from './scripts/reasoning.js';
+import { StreamingThinkingIndicator } from './scripts/streaming-thinking.js';
 import { accountStorage } from './scripts/util/AccountStorage.js';
 import { getAssistantIconSrc } from './scripts/neconyan-assistant-art.js';
 import { initWelcomeScreen, openPermanentAssistantChat, openPermanentAssistantCard, getPermanentAssistantAvatar } from './scripts/welcome-screen.js';
@@ -7777,7 +7778,9 @@ class StreamingProcessor {
         this.isCancelled = false;
         this.isFinished = false;
         this.generator = this.nullStreamingGeneration;
+        this.thinkingIndicator = new StreamingThinkingIndicator();
         this.abortController = new AbortController();
+        this.abortController.signal.addEventListener('abort', () => this.thinkingIndicator.clear(), { once: true });
         // Neconyan: a prose limit closes the transport, not the generation lifecycle.
         this.requestAbortController = new AbortController();
         this.abortController.signal.addEventListener('abort', () => this.requestAbortController.abort(this.abortController.signal.reason), { once: true });
@@ -7943,6 +7946,7 @@ class StreamingProcessor {
                 this.reasoningHandler.updateDom(messageId);
             }
             this.markUIGenStarted();
+            this.thinkingIndicator.update(this.messageDom, !/\S/.test(this.reasoningHandler.reasoning));
         }
         hideSwipeButtons({ hideCounters: true });
         scrollLock = false;
@@ -8016,6 +8020,8 @@ class StreamingProcessor {
                 this.reasoningHandler.updateDom(messageId);
             }
             processedText = chat[messageId].mes;
+            this.thinkingIndicator.update(this.messageDom, !isFinal && !this.isFinished
+                && !/\S/.test(isContinue ? this.result : processedText) && !/\S/.test(this.reasoningHandler.reasoning));
 
             // Token count update.
             const shouldRefreshTokenCount = isFinal && power_user.message_token_count_enabled;
@@ -8218,6 +8224,7 @@ class StreamingProcessor {
     }
 
     onErrorStreaming() {
+        this.thinkingIndicator.clear();
         if (this.isFinished || !this.#isCurrent(this.messageId, true)) {
             return;
         }
@@ -8342,7 +8349,7 @@ class StreamingProcessor {
                 await delay(1); // delay for message to be rendered
             }
         }
-        if (!this.#isCurrent()) { this.isFinished = true; return this.result; }
+        if (!this.#isCurrent()) { this.thinkingIndicator.clear(); this.isFinished = true; return this.result; }
 
         // Stopping strings are expensive to calculate, especially with macros enabled. To remove stopping strings
         // when streaming, we cache the result of getStoppingStrings instead of calling it once per token.
@@ -8429,6 +8436,8 @@ class StreamingProcessor {
                 this.onErrorStreaming();
             }
             return this.result;
+        } finally {
+            this.thinkingIndicator.clear();
         }
 
         this.#applyProseLimit(null, true);
