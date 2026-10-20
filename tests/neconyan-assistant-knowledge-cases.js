@@ -130,6 +130,8 @@ export const refreshedKnowledgeCases = [
     ['How do I change Home layout to Compact Home?', 'start.home-layout', 'Collapse/Expand'],
     ['How do I start the Taro Agents tour?', 'agents.tour', 'without saving changes, running agents'],
     ['How do I hide all tour buttons?', 'navigation.page-tours', 'Settings → Appearance → Page tours'],
+    ['How do I turn off Simple Mode?', 'start.simple-mode', 'Show all features in the sidebar'],
+    ['Where did the Agents button go? There are too many buttons anyway', 'start.simple-mode', 'Nothing is deleted or disabled'],
     ['Do greetings show a token count?', 'characters.greetings', 'without waiting for a generated reply'],
     ['How do I drag lorebook entries into folders?', 'lorebooks.entry-folders', 'onto a folder heading'],
     ['How do I vectorize all entries in a lorebook?', 'lorebooks.vectorization', 'Entry tools → Vectorize all'],
