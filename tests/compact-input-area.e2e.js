@@ -76,7 +76,7 @@ for (const phone of [
         test('compact input changes the layout immediately and survives reloads', async ({ context, page }) => {
             if (phone.ios) await installIPhoneSafari(context, { standalone: true });
             await prepareChat(page);
-            if (phone.ios) await applyIOSOnlyCss(page);
+            if (phone.ios) await applyIOSOnlyCss(page, { inPlace: true });
             // Use the actual connected state so Send participates in the layout.
             await page.evaluate(async () => (await import('/script.js')).setOnlineStatus('Composer layout fixture connection'));
             await expect(page.locator('#send_but')).toBeVisible();
@@ -102,13 +102,13 @@ for (const phone of [
             await expectPhoneLayout(page, false);
 
             await openReadyChat(page);
-            if (phone.ios) await applyIOSOnlyCss(page);
+            if (phone.ios) await applyIOSOnlyCss(page, { inPlace: true });
             // Reload has no connection; the full-width input must still fit above the tools.
             await expectPhoneLayout(page, false);
             await setCompactInput(page, true);
             await expectPhoneLayout(page, true);
             await openReadyChat(page);
-            if (phone.ios) await applyIOSOnlyCss(page);
+            if (phone.ios) await applyIOSOnlyCss(page, { inPlace: true });
             await expectPhoneLayout(page, true);
         });
     });

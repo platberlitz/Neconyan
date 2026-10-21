@@ -54,14 +54,54 @@ export async function installIPhoneSafari(context, { standalone = false } = {}) 
  * end of <head>. Call it again after late stylesheets load; it replaces its
  * previous copy. Being last in the document, the copies can win ties they
  * would lose on a real iPhone, so double-check any result that hinges on order.
+ *
+ * Pass { inPlace: true } to enable the same conditional blocks where they
+ * already sit in each stylesheet instead. That keeps the original cascade,
+ * nesting and source order, and can be called again after late sheets. Cross-
+ * origin sheets that cannot expose cssRules are reported and skipped.
  * @param {import('playwright').Page} page
- * @returns {Promise<{ rules: number, skippedSheets: string[] }>}
+ * @param {{ inPlace?: boolean }} [options] inPlace: enable rules at their original position instead of appending copies
+ * @returns {Promise<{ rules: number, skippedSheets: string[], inPlace?: true }>} rules: copied rules, or enabled conditional blocks in place mode
  */
-export async function applyIOSOnlyCss(page) {
-    return page.evaluate((pattern) => {
+export async function applyIOSOnlyCss(page, { inPlace = false } = {}) {
+    return page.evaluate(({ pattern, inPlace }) => {
         const matcher = new RegExp(pattern);
-        const collected = [];
         const skippedSheets = [];
+        const skipSheet = sheet => sheet.ownerNode?.id === 'nn-ios-only-css';
+        document.getElementById('nn-ios-only-css')?.remove();
+
+        if (inPlace) {
+            let enabled = 0;
+            const enable = parent => {
+                // Backwards so replacing a rule at its own index cannot skip its neighbours.
+                for (let index = parent.cssRules.length - 1; index >= 0; index -= 1) {
+                    const rule = parent.cssRules[index];
+                    if (rule instanceof CSSSupportsRule && matcher.test(rule.conditionText)) {
+                        // Replace nested WebKit-only blocks before serialising this one.
+                        if (rule.cssRules) enable(rule);
+                        const contents = Array.from(rule.cssRules, inner => inner.cssText).join('\n');
+                        const replacement = `@supports (display: block) { ${contents} }`;
+                        // Insert first: if insertion is refused, the original rule survives.
+                        parent.insertRule(replacement, index);
+                        parent.deleteRule(index + 1);
+                        enabled += 1;
+                    } else if (rule.cssRules) {
+                        enable(rule);
+                    }
+                }
+            };
+            for (const sheet of document.styleSheets) {
+                if (skipSheet(sheet)) continue;
+                try {
+                    enable(sheet);
+                } catch {
+                    skippedSheets.push(sheet.href || 'inline');
+                }
+            }
+            return { rules: enabled, skippedSheets, inPlace: true };
+        }
+
+        const collected = [];
         const walk = (rules) => {
             for (const rule of rules) {
                 if (rule instanceof CSSSupportsRule && matcher.test(rule.conditionText)) {
@@ -72,18 +112,17 @@ export async function applyIOSOnlyCss(page) {
             }
         };
         for (const sheet of document.styleSheets) {
-            if (sheet.ownerNode?.id === 'nn-ios-only-css') continue;
+            if (skipSheet(sheet)) continue;
             try {
                 walk(sheet.cssRules);
             } catch {
                 skippedSheets.push(sheet.href || 'inline');
             }
         }
-        document.getElementById('nn-ios-only-css')?.remove();
         const style = document.createElement('style');
         style.id = 'nn-ios-only-css';
         style.textContent = collected.join('\n');
         document.head.append(style);
         return { rules: collected.length, skippedSheets };
-    }, IOS_ONLY_SUPPORTS_PATTERN.source);
+    }, { pattern: IOS_ONLY_SUPPORTS_PATTERN.source, inPlace });
 }

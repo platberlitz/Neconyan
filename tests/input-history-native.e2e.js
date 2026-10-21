@@ -46,7 +46,7 @@ for (const phone of [false, true]) {
             await expect(trigger).toBeAttached({ timeout: 60000 });
             await expect(page.locator('body')).not.toHaveClass(/neconyan-home-booting/, { timeout: 60000 });
             await page.evaluate(async () => (await import('/scripts/welcome-screen.js')).hideWelcomeHome());
-            if (phone) await applyIOSOnlyCss(page);
+            if (phone) await applyIOSOnlyCss(page, { inPlace: true });
             for (const width of phone ? [320, 360, 768, 393] : [1280]) {
                 await page.setViewportSize({ width, height: phone ? 852 : 900 });
                 const toolbar = await page.locator('#gg-action-button-container').evaluate(element => {
