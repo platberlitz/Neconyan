@@ -65,6 +65,7 @@ import {
     holdsReadableCompanionResults,
     isAssistantMessage,
     isEmptyOutputSentinel,
+    isExpressionsAgent,
     isRetryableCompanionFailure,
     isSuppressedCompanionResult,
     isValidCompanionMessage,
@@ -75,6 +76,7 @@ import {
     TRACKER_EMPTY_OUTPUT_INSTRUCTION,
 } from './companion-shared.js';
 import { resolveCompanionContentMacros } from './companion-macros.js';
+import { getExpressionsAgentCastPrompt } from '../../expressions/expression-sets.js';
 import { markTrackerRepairRunAgent } from '../tracker-repair-run.js';
 import { findTrackerBlocks, getCompanionTrackerAutoRepairPayload, inspectCompanionTrackerOutput, inspectTrackerState, normalizeCompanionTrackerRepairPayload, TRACKER_REPAIR_INSTRUCTION } from '../tracker-state.js';
 
@@ -469,6 +471,10 @@ function getTemplateSettingsPromptBlock(agent = {}, message = null) {
         ].join('\n\n');
     }
 
+    if (isExpressionsAgent(agent)) {
+        return message && !message.is_user ? getExpressionsAgentCastPrompt(getMessageCharacter(message)) : '';
+    }
+
     if (sourceTemplateId === PLOT_COMPASS_TEMPLATE_ID) {
         const objective = normalizePlotCompassObjective(resolveCompanionContentMacros(agent.settings?.plotCompassObjective ?? '', message));
         return `[Plot Compass Objective]\n${objective || 'none set'}`;
@@ -856,6 +862,15 @@ export function getCompanionCoveredMessageIndices(messageIndex, agentId) {
             && (message.swipe_id ?? 0) === entry.swipe && String(message.mes ?? '').length === entry.length
             && getStringHash(getMessageLine(message)) === entry.hash;
     }).map(entry => entry.index).filter((index, position, indices) => indices.indexOf(index) === position).sort((a, b) => a - b);
+}
+
+function getMessageCharacter(message) {
+    const context = getContext();
+    const characters = Array.isArray(context?.characters) ? context.characters : [];
+    const avatar = message?.original_avatar;
+    return (avatar && characters.find(character => character.avatar === avatar))
+        || (!context?.groupId ? characters[context?.characterId] : null)
+        || null;
 }
 
 function getCharacterCardSection(companion, messageIndex) {

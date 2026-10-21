@@ -23,14 +23,36 @@ export function resolveExpressionsAgentProfile(agent, settings = {}) {
  * @returns {string|null}
  */
 export function normalizeAgentExpressionLabel(raw, allowedExpressions) {
-    if (typeof raw !== 'string' || !raw.trim()) return null;
+    return parseAgentExpressionAnswer(raw, allowedExpressions).label;
+}
+
+/**
+ * Read a label, or a `Character: label` answer for a card with several expression sets.
+ * @param {string} raw
+ * @param {string[]} allowedExpressions
+ * @returns {{label: string|null, speaker: string}}
+ */
+export function parseAgentExpressionAnswer(raw, allowedExpressions) {
+    if (typeof raw !== 'string' || !raw.trim()) return { label: null, speaker: '' };
+    let speaker = '';
 
     try {
         const parsed = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, '').trim());
         if (typeof parsed === 'string') raw = parsed;
-        else if (typeof parsed?.emotion === 'string') raw = parsed.emotion;
+        else if (typeof parsed?.emotion === 'string') {
+            raw = parsed.emotion;
+            speaker = typeof parsed.character === 'string' ? parsed.character : '';
+        }
     } catch { /* Plain labels are the normal response. */ }
 
+    const plain = readExpressionLabel(raw, allowedExpressions);
+    if (plain) return { label: plain, speaker: speaker.trim() };
+    const named = raw.replace(/<[^>]+>/g, '').trim().match(/^[*_"'`]*([^:\n]{1,84}?)[*_"'`]*\s*:\s*([\s\S]+)$/);
+    const label = named ? readExpressionLabel(named[2], allowedExpressions) : null;
+    return label ? { label, speaker: named[1].trim() } : { label: null, speaker: '' };
+}
+
+function readExpressionLabel(raw, allowedExpressions) {
     // Strip Markdown, quotes, punctuation and extraneous whitespace.
     let label = raw
         .replace(/<[^>]+>/g, '')

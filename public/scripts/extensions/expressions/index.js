@@ -614,7 +614,7 @@ async function moduleWorker({ newChat = false } = {}) {
     } else {
         target = needsExpression(currentLastMessage) ? captureExpressionTarget(currentLastMessage) : null;
     }
-    let spriteFolderName = getSpriteFolderName(currentLastMessage, currentLastMessage.name);
+    let spriteFolderName = getSpriteFolderName(currentLastMessage, currentLastMessage.name, agentState?.speaker);
 
     // A shared card can change speaker without changing the chat or card avatar.
     await validateImages(spriteFolderName, true);
@@ -753,11 +753,12 @@ function getManagedExpressionCharacter() {
     return getContext().characters.find(character => character.avatar === avatar) ?? getExpressionCharacter();
 }
 
-function getSpriteFolderName(characterMessage = null, characterName = null) {
+function getSpriteFolderName(characterMessage = null, characterName = null, speaker = '') {
     const context = getContext();
     let spriteFolderName = characterName ?? context.name2;
     const message = characterMessage ?? getLastCharacterMessage();
-    const member = resolveExpressionMember(getExpressionCharacter(message), message);
+    const savedSrc = message && !message.is_user ? getSavedMessageExpression(message)?.src : '';
+    const member = resolveExpressionMember(getExpressionCharacter(message), message, { speaker, savedSrc });
     if (member) return member.folder;
     const avatarFileName = getFolderNameByMessage(message);
     const expressionOverride = extension_settings.expressionOverrides.find(e => e.name == avatarFileName);
