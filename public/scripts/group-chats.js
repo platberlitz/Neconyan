@@ -381,12 +381,22 @@ function getGroupEnabledMembers(group) {
 }
 
 let activeGroupAudience = null;
+let activeGroupTurnAudience = null;
 
-export function getGroupMessageAudience() {
-    if (activeGroupAudience) return structuredClone(activeGroupAudience);
+export function getGroupMessageAudience({ forUser = false } = {}) {
+    if (!forUser && (activeGroupAudience || activeGroupTurnAudience)) return structuredClone(activeGroupAudience || activeGroupTurnAudience);
     const group = groups.find(item => item.id === selected_group);
     if (!group || !chat_metadata.group_scene) return null;
-    return groupMessageAudience(readGroupScene(chat_metadata, group.members), group.members);
+    const scene = readGroupScene(chat_metadata, group.members);
+    return groupMessageAudience(scene, group.members, scene.whisper_to);
+}
+
+function beginGroupTurnAudience(type) {
+    const previous = activeGroupTurnAudience;
+    const saved = ['swipe', 'continue'].includes(type)
+        ? chat.at(-1)?.extra?.group_scene || { present: groups.find(item => item.id === selected_group)?.members || [], whisper_to: [] } : null;
+    activeGroupTurnAudience = saved ? structuredClone(saved) : getGroupMessageAudience({ forUser: true });
+    return () => { activeGroupTurnAudience = previous; };
 }
 
 function usesGroupSceneVisibility() {
@@ -395,7 +405,9 @@ function usesGroupSceneVisibility() {
 
 function getGroupScenePrompt(group) {
     if (!chat_metadata.group_scene) return '';
-    return groupScenePrompt(readGroupScene(chat_metadata, group.members), group.members.map(avatar => ({ avatar, name: characters[getCharacterIdByAvatar(avatar)]?.name || avatar })));
+    const prompt = groupScenePrompt(readGroupScene(chat_metadata, group.members), group.members.map(avatar => ({ avatar, name: characters[getCharacterIdByAvatar(avatar)]?.name || avatar })));
+    const targets = getGroupMessageAudience()?.whisper_to || [];
+    return prompt + (targets.length ? `\n[Private whisper between ${name1} and ${targets.map(avatar => characters[getCharacterIdByAvatar(avatar)]?.name || avatar).join(', ')}. Other members cannot hear or react to it. Keep the reply private.]` : '');
 }
 
 async function runWithGroupScene(avatars, callback) {
@@ -2011,6 +2023,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
         return Promise.resolve();
     }
 
+    const restoreAudience = beginGroupTurnAudience(type);
     try {
         throwIfAborted();
         hideSwipeButtons();
@@ -2036,7 +2049,13 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
         }
 
         const activationStrategy = Number(group.activation_strategy ?? group_activation_strategy.NATURAL);
-        const enabledMembers = getGroupEnabledMembers(group);
+        const whisperTargets = getGroupMessageAudience()?.whisper_to || [];
+        const enabledMembers = getGroupEnabledMembers(group).filter(avatar => !whisperTargets.length || whisperTargets.includes(avatar));
+        if ((whisperTargets.length && !enabledMembers.length)
+            || (!['swipe', 'continue'].includes(type) && chat_metadata.group_scene?.whisper_to?.length && !whisperTargets.length)) {
+            toastr.warning(t`Your whisper recipient is unavailable. Choose someone present or switch to everyone.`);
+            return;
+        }
         let activatedMembers = [];
 
         const selectedSpeakerChid = getSelectedGroupSpeakerChid(group);
@@ -2044,7 +2063,9 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
         const isWholeGroupAddress = isAddressedToEntireGroup(activationText);
         let useSceneDirector = false;
         let directorNote = '';
-        if (params && Array.isArray(params.force_chids)) {
+        if (whisperTargets.length && !['swipe', 'continue', 'quiet', 'impersonate'].includes(type)) {
+            activatedMembers = enabledMembers.map(avatar => getCharacterIdByAvatar(avatar)).filter(chid => chid !== -1);
+        } else if (params && Array.isArray(params.force_chids)) {
             activatedMembers = params.force_chids;
         } else if (params && typeof params.force_chid == 'number') {
             activatedMembers = [params.force_chid];
@@ -2221,6 +2242,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             clearSelectedGroupSpeaker();
         }
     } finally {
+        restoreAudience();
         setGroupTypingIndicator('');
         is_group_generating = false;
         setSendButtonState(false);

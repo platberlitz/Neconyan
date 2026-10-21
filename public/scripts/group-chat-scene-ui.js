@@ -30,6 +30,13 @@ export function renderGroupScene() {
     const summary = scene.location || t`Scene`;
     $('#group_scene_summary').text(`${summary} · ${t`${present} of ${group.members.length} present`}`);
     $('#group_scene_location').val(scene.location);
+    const whisper = $('#group_scene_whisper').empty().append($('<option value=""></option>').text(t`To everyone`));
+    for (const avatar of group.members) {
+        const name = characters.find(item => item.avatar === avatar)?.name || avatar;
+        whisper.append($('<option></option>').val(avatar).text(t`Whisper to ${name}`)
+            .prop('disabled', scene.away.includes(avatar) || group.disabled_members?.includes(avatar)));
+    }
+    whisper.val(scene.whisper_to[0] || '');
     const list = $('#group_scene_members').empty();
     for (const avatar of group.members) {
         const character = characters.find(item => item.avatar === avatar);
@@ -52,6 +59,7 @@ export function initGroupSceneControls() {
         $('#group_scene_panel').toggleClass('displayNone', !expanded);
     });
     $('#group_scene_location').on('change', function () { void changeGroupScene({ location: this.value }); });
+    $('#group_scene_whisper').on('change', function () { void changeGroupScene({ whisper_to: this.value ? [this.value] : [] }); });
     $('#group_scene_members').on('click', '[data-avatar]', function () {
         const current = currentGroupScene();
         if (!current) return;

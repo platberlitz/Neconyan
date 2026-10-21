@@ -6669,6 +6669,18 @@ export function updateMessageMetaBadges(messageElement, message) {
     }
 
     $messageElement.find('.mes_view_agent_changes').toggle(hasTransformHistory);
+    const whisperTargets = message?.extra?.group_scene?.whisper_to || [];
+    if (whisperTargets.length) {
+        let badge = $messageElement.find('.group-whisper-badge');
+        if (!badge.length) {
+            badge = $('<span class="group-whisper-badge"></span>');
+            $messageElement.find('.ch_name .name_text').first().after(badge);
+        }
+        const names = whisperTargets.map(avatar => characters.find(character => character.avatar === avatar)?.name || avatar).join(', ');
+        badge.text(t`Whisper to ${names}`);
+    } else {
+        $messageElement.find('.group-whisper-badge').remove();
+    }
 }
 
 function hasPromptTransformHistoryForActiveSwipe(message) {
@@ -11235,7 +11247,7 @@ export async function sendMessageAsUser(messageText, messageBias, insertAt = nul
         mes: substituteParams(messageText),
         extra: {
             isSmallSys: compact,
-            ...(selected_group && getGroupMessageAudience() ? { group_scene: getGroupMessageAudience() } : {}),
+            ...(selected_group && getGroupMessageAudience({ forUser: true }) ? { group_scene: getGroupMessageAudience({ forUser: true }) } : {}),
         },
     };
 
