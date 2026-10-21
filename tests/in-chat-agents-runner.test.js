@@ -10932,6 +10932,46 @@ Helper context.`;
         jest.useRealTimers();
     });
 
+    test('does not rerun agents on a swiped reply when a previous generation left recovery state behind', async () => {
+        jest.useFakeTimers();
+        useAppendPostAgent();
+        chat.push({
+            name: 'Assistant',
+            mes: 'First reply',
+            is_user: false,
+            is_system: false,
+            swipe_id: 0,
+            swipes: ['First reply', '...'],
+            swipe_info: [
+                { send_date: 'one', gen_started: 'one-start', gen_finished: 'one-end', extra: {} },
+                { send_date: 'two', gen_started: '', gen_finished: '', extra: {} },
+            ],
+            send_date: 'one',
+            gen_started: 'one-start',
+            gen_finished: 'one-end',
+            extra: {},
+        });
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
+        await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length);
+        await jest.advanceTimersByTimeAsync(31000);
+
+        switchToSwipe(chat[0], 1);
+        await eventSource.emit(eventTypes.MESSAGE_SWIPED, 0);
+        emitDocumentEvent('visibilitychange');
+        await jest.runOnlyPendingTimersAsync();
+        await jest.runOnlyPendingTimersAsync();
+
+        expect(chat[0].mes).toBe('...');
+        expect(generateQuietPrompt).not.toHaveBeenCalled();
+        expect(saveChatDebounced).not.toHaveBeenCalled();
+        jest.useRealTimers();
+    });
+
     test('flushes deferred post-processing immediately when generation ends in a hidden tab without advancing timers', async () => {
         jest.useFakeTimers();
         useAppendPostAgent();

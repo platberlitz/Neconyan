@@ -96,6 +96,51 @@ for (const phone of [false, true]) {
         await expect(reopened.locator('#chat .mes[mesid]').last()).toContainText('The Companion note is ready.');
         expect(app.provider.calls).toHaveLength(3);
     });
+
+    test(`${viewport} swiping after a failed swipe writes a new reply instead of rerunning Agents`, async ({ app }) => {
+        const answers = { [MODEL]: 0 };
+        app.provider.mode.reply = body => ({ choices: [{ message: { content: body.model === MODEL ? `Main reply ${++answers[MODEL]}.` : 'Post Gen ran.' }, finish_reason: 'stop' }] });
+        const account = await app.account({ phone, activeConnection: true, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings(saved) {
+            saved.extension_settings.connectionManager.profiles.push(
+                { id: 'post', name: 'Post Gen fixture', api: 'custom', mode: 'cc', model: 'post-model', 'api-url': app.provider.url });
+            saved.extension_settings.inChatAgents = { globalSettings: { enabled: true, separateRecentChats: false, connectionProfile: 'post' } };
+        } });
+        const directory = path.join(app.dataRoot, 'default-user', 'InChatAgents');
+        await fs.mkdir(directory, { recursive: true });
+        await fs.writeFile(path.join(directory, 'post.json'), JSON.stringify({ id: 'post', name: 'Post Gen', enabled: true, phase: 'post',
+            prompt: 'Revise the reply.', connectionProfile: 'post', postProcess: { enabled: false, promptTransformEnabled: true } }));
+        if (phone) await installIPhoneSafari(account.context);
+        const page = await openChat(account);
+        if (phone) await applyIOSOnlyCss(page);
+        const sendPressed = () => page.evaluate(async () => (await import('/script.js')).is_send_press);
+        const postCalls = () => app.provider.calls.filter(call => call.model === 'post-model').length;
+        const lastText = page.locator('#chat .mes[mesid]').last().locator('.mes_text');
+        const swipeRight = () => page.evaluate(async () => { await (await import('/script.js')).swipe_right(null, {}); });
+
+        await page.locator('#send_textarea').fill('Tell me about the fountain.');
+        await page.locator('#send_textarea').press('Enter');
+        await expect(lastText).toHaveText('Post Gen ran.', { timeout: 30000 });
+        await expect.poll(sendPressed).toBe(false);
+        expect(postCalls()).toBe(1);
+
+        app.provider.mode.fail = true;
+        const reply = app.provider.mode.reply;
+        app.provider.mode.reply = null;
+        await swipeRight();
+        await expect.poll(() => app.provider.calls.filter(call => call.model === MODEL).length).toBe(2);
+        await expect.poll(sendPressed).toBe(false);
+        await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+        app.provider.mode.fail = false;
+        app.provider.mode.reply = reply;
+
+        await swipeRight();
+        await expect.poll(() => app.provider.calls.filter(call => call.model === MODEL).length, { timeout: 30000 }).toBe(3);
+        await expect(lastText).toHaveText('Post Gen ran.', { timeout: 30000 });
+        await expect.poll(sendPressed).toBe(false);
+        expect(postCalls()).toBe(2);
+        const message = await page.evaluate(async () => (await import('/script.js')).chat.at(-1));
+        expect(message.swipes.filter(text => text === '...')).toEqual([]);
+    });
 }
 
 test('scoped Notebook context selects the server only while the note is enabled', async ({ app }) => {

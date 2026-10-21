@@ -5913,6 +5913,14 @@ async function onMessageSwiped(data) {
     // Real swipe generations are handled later by `MESSAGE_RECEIVED`.
     swipeNavigationPending = true;
     invalidateMessageTarget(chat[Number(data)]);
+    if (!isGenerationInProgress) {
+        // A swipe changes the message revision, so leftover recovery state from an earlier
+        // generation would treat the swiped-to reply as new and run every agent on it.
+        pendingGenerationSnapshot = null;
+        clearLatestAssistantPostProcessingFallback();
+        clearPostGenerationRecoveryCheck();
+        clearDeferredPostProcessing(Number(data));
+    }
     if (reconcileTrackerMetadata()) saveChatDebouncedForAgent();
 }
 
