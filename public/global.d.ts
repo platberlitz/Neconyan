@@ -38,6 +38,7 @@ declare global {
         keep_own_lines?: boolean;
         talk_burst?: number;
         ensemble_replies?: boolean;
+        member_roles?: Record<string, 'character' | 'narrator'>;
         allow_self_responses?: boolean;
         avatar_url?: string;
         hideMutedSprites?: boolean;

@@ -2,6 +2,7 @@ import { characters, chat_metadata, updateChatMetadata, saveMetadata, getThumbna
 import { groups, selected_group, updateGroupSpeakerControls } from './group-chats.js';
 import { readGroupScene } from './group-chat-visibility.js';
 import { t } from './i18n.js';
+import { getGroupMemberRole } from './group-chat-roles.js';
 
 let initialised = false;
 
@@ -45,7 +46,8 @@ export function renderGroupScene() {
         const button = $('<button type="button" class="menu_button group_scene_member"></button>')
             .attr({ 'data-avatar': avatar, 'aria-pressed': String(present), title: present ? t`Mark away` : t`Bring into the scene` });
         button.append($('<img alt="">').attr('src', getThumbnailUrl('avatar', avatar)));
-        button.append($('<span></span>').text(`${character.name} · ${present ? t`Present` : t`Away`}`));
+        const role = getGroupMemberRole(group, character) === 'narrator' ? ` · ${t`Narrator / GM`}` : '';
+        button.append($('<span></span>').text(`${character.name}${role} · ${present ? t`Present` : t`Away`}`));
         list.append(button);
     }
 }

@@ -1140,7 +1140,7 @@ test('group send submits without awaiting requestAnimationFrame in a hidden tab'
         deactivateSendButtons: () => {},
         activateSendButtons: () => {},
         setGroupTypingIndicator: () => {},
-        usesGroupSceneVisibility: () => false,
+        usesGroupSceneVisibility: () => false, getGroupMemberRole: () => 'character',
         beginGroupTurnAudience: () => () => {}, getGroupMessageAudience: () => null,
         activeGroupTalkBurst: null,
         clearSelectedGroupSpeaker: () => {},

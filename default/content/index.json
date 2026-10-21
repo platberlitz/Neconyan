@@ -1,5 +1,9 @@
 [
     {
+        "filename": "characters/Narrator.png",
+        "type": "character"
+    },
+    {
         "filename": "backgrounds/Neconyan - Velvet Moon.jpg",
         "type": "background"
     },

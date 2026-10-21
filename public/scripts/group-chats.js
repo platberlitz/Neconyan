@@ -94,6 +94,7 @@ import {
     generateRawData,
     extractMessageFromData,
     stopGeneration,
+    this_chid,
 } from '../script.js';
 import { getQueuedChatSaveAbortReason } from './chat-save-guard.js';
 import { getChatBackupSaveOptions } from './chat-backup-sequence.js';
@@ -128,6 +129,7 @@ import { beginGroupPromptScope, canGroupMemberSee, groupMessageAudience, groupSc
 import { initGroupSceneControls, renderGroupScene } from './group-chat-scene-ui.js';
 import { getGroupSpeakerPool } from './group-chat-speakers.js';
 import { initGroupSpeakerMenu } from './group-chat-speaker-menu.js';
+import { buildNarratorReminder, getGroupMemberRole } from './group-chat-roles.js';
 
 export {
     selected_group,
@@ -561,6 +563,10 @@ function getSelectedGroupRecord() {
     return selected_group ? groups.find(x => x.id == selected_group) : undefined;
 }
 
+export function isGroupNarratorActive() {
+    return Boolean(selected_group) && getGroupMemberRole(getSelectedGroupRecord(), characters[this_chid]) === 'narrator';
+}
+
 /**
  * Whether reply cleanup should also cut at markdown-styled member names such as `**Mira:**`.
  * @returns {boolean}
@@ -579,7 +585,7 @@ export function shouldTrimGroupMarkdownNames() {
  */
 export function getGroupSpeakerStopStrings(existing, limit, type) {
     const group = getSelectedGroupRecord();
-    if (!group || isGroupEnsembleActive() || !isKeepOwnLinesEnabled(group) || ['quiet', 'impersonate'].includes(type)) {
+    if (!group || isGroupEnsembleActive() || isGroupNarratorActive() || !isKeepOwnLinesEnabled(group) || ['quiet', 'impersonate'].includes(type)) {
         return existing;
     }
     return appendGroupSpeakerStops(existing, getOtherMemberNames(getGroupNames(), name2), limit);
@@ -2179,6 +2185,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             && !['quiet', 'swipe', 'continue', 'impersonate'].includes(type);
         // Scene-specific turns use the browser's prompt and visibility rules.
         const ordinaryTurn = !ensembleTurn && !usesGroupSceneVisibility() && activationStrategy !== group_activation_strategy.DIRECTOR
+            && !activatedMembers.some(chid => getGroupMemberRole(group, characters[chid]) === 'narrator')
             && !['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && !params?.quiet_prompt && getCurrentChatId();
         const serverRequired = ordinaryTurn && params?.skipNativeRoleplay === undefined
             && await (await import('./browser-reply-routing.js')).requiresServerReply(activatedMembers);
@@ -2237,7 +2244,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             // Wait for generation to finish
             const generateType = ['swipe', 'impersonate', 'quiet', 'continue'].includes(type) ? type : 'normal';
             const speakerName = characters[chId]?.name || 'the selected speaker';
-            const contextPrompt = buildContextAwareGroupPrompt(speakerName, {
+            const contextPrompt = getGroupMemberRole(group, characters[chId]) === 'narrator' ? buildNarratorReminder(name1) : buildContextAwareGroupPrompt(speakerName, {
                 targetName: addressedMemberChid === chId ? getMessageSpeakerName(lastMessage) : '',
                 ownLines: isKeepOwnLinesEnabled(group),
                 otherNames: getOtherMemberNames(getGroupNames(), speakerName),
@@ -2416,7 +2423,7 @@ function getGroupDirectorMembers(members) {
             return null;
         }
         const card = character.description || character.personality || '';
-        return { chid, avatar, name: character.name, summary: summariseMemberCard(resolveCardMacros(card, character.name)) };
+        return { chid, avatar, name: character.name, role: getGroupMemberRole(getSelectedGroupRecord(), character), summary: summariseMemberCard(resolveCardMacros(card, character.name)) };
     }).filter(Boolean);
 }
 
