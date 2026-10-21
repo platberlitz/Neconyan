@@ -55,15 +55,15 @@ async function checkAccents(page, phone) {
                         return [...canvas.getImageData(0, 0, 1, 1).data].slice(0, 3);
                     };
                     const style = getComputedStyle(element);
-                    const label = getComputedStyle(element.querySelector('span'));
+                    const label = getComputedStyle(element.querySelector('i'));
                     const rect = element.getBoundingClientRect();
                     return { contrast: contrastRatio(channels(label.color), channels(style.backgroundColor)), height: rect.height, width: rect.width,
                         foreground: label.color, background: style.backgroundColor, pageWidth: document.documentElement.scrollWidth };
                 });
                 measurements.push({ theme, accent, enabled, ...measured });
                 expect(measured.contrast, JSON.stringify(measurements)).toBeGreaterThanOrEqual(4.5);
-                expect(measured.height).toBeGreaterThanOrEqual(phone ? 44 : 36);
-                expect(measured.width).toBeGreaterThanOrEqual(44);
+                expect(measured.height).toBe(44);
+                expect(measured.width).toBe(44);
                 expect(measured.pageWidth).toBe(phone ? 393 : 1280);
                 await page.locator('.scratchpad-web-toggle').click();
             }
@@ -84,6 +84,8 @@ for (const phone of [false, true]) {
         const question = 'Find sources about the first public libraries.';
         await page.locator('.scratchpad-composer').fill(question);
         await expect(page.locator('.scratchpad-web-toggle')).toHaveAttribute('aria-pressed', 'false');
+        await expect(page.locator('.scratchpad-web-toggle')).toHaveAccessibleName('Set up web search in Context');
+        await expect(page.locator('.scratchpad-web-toggle')).toHaveText('');
         await page.locator('.scratchpad-web-toggle').click();
         await expect(page.locator('#scratchpad-web-search-provider')).toBeVisible();
         await page.locator('#scratchpad-web-search-provider').selectOption('brave');
@@ -104,8 +106,10 @@ for (const phone of [false, true]) {
         await page.screenshot({ path: `../screenshots/scratchpad-web-search-settings-${size}-after.png`, scale: 'css' });
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
         await expect(page.locator('.scratchpad-composer')).toHaveValue(question);
+        await expect(page.locator('.scratchpad-web-toggle')).toHaveAccessibleName('Search the web for this message');
         await page.locator('.scratchpad-web-toggle').click();
         await expect(page.locator('.scratchpad-web-toggle')).toHaveAttribute('aria-pressed', 'true');
+        await expect(page.locator('.scratchpad-web-toggle')).toHaveAccessibleName('Web search is on for this session');
         await page.evaluate(() => window.toastr?.remove());
         await page.screenshot({ path: `../screenshots/scratchpad-web-search-${size}-after.png`, scale: 'css' });
 

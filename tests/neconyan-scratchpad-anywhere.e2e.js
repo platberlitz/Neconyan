@@ -155,9 +155,9 @@ for (const phone of [true, false]) {
                         };
                         const composite = (over, under) => over.slice(0, 3).map((channel, index) => Math.round(channel * over[3] / 255 + under[index] * (1 - over[3] / 255)));
                         return { width: document.documentElement.scrollWidth,
-                            buttons: [...element.querySelectorAll('.scratchpad-chip, .scratchpad-send, .scratchpad-close')].map(button => {
+                            buttons: [...element.querySelectorAll('.scratchpad-chip, .scratchpad-send, .scratchpad-web-toggle, .scratchpad-close')].map(button => {
                                 const css = getComputedStyle(button);
-                                const label = getComputedStyle(button.querySelector('span'));
+                                const label = getComputedStyle(button.querySelector('span') || button.querySelector('i'));
                                 const rect = button.getBoundingClientRect();
                                 let backdrop = [255, 255, 255];
                                 const ancestors = [];
@@ -171,7 +171,8 @@ for (const phone of [true, false]) {
                                 const brightness = Number(css.filter.match(/brightness\(([\d.]+)\)/)?.[1] || 1);
                                 const filtered = values => values.slice(0, 3).map(channel => Math.min(255, Math.round(channel * brightness)));
                                 const ink = filtered(channels(label.color));
-                                return { label: button.textContent, prompt: button.classList.contains('scratchpad-chip'), height: rect.height, right: rect.right,
+                                return { label: button.getAttribute('aria-label') || button.textContent, prompt: button.classList.contains('scratchpad-chip'),
+                                    composerAction: button.matches('.scratchpad-send, .scratchpad-web-toggle'), width: rect.width, height: rect.height, right: rect.right,
                                     ink, backgrounds, image, contrast: Math.min(...backgrounds.map(background => contrastRatio(ink, filtered(background)))) };
                             }) };
                     });
@@ -181,6 +182,10 @@ for (const phone of [true, false]) {
                         expect(button.contrast, JSON.stringify({ theme, accent, style, button })).toBeGreaterThanOrEqual(4.5);
                         if (!button.prompt) expect(button.right).toBeLessThanOrEqual(phone ? 393 : 1280);
                         if (phone) expect(button.height).toBeGreaterThanOrEqual(44);
+                    }
+                    for (const button of result.buttons.filter(button => button.composerAction)) {
+                        expect(button.width, JSON.stringify({ theme, accent, style, button })).toBe(44);
+                        expect(button.height, JSON.stringify({ theme, accent, style, button })).toBe(44);
                     }
                 }
             }

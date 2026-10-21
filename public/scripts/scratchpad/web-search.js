@@ -27,6 +27,7 @@ export function setWebSearchToggle(button, { enabled = false, configured = false
     button.classList.toggle('menu_button_primary', Boolean(enabled));
     button.title = enabled ? t`Web search is on for this session`
         : configured ? t`Search the web for this message` : t`Set up web search in Context`;
+    button.setAttribute('aria-label', button.title);
 }
 
 function keyButton(key, label) {

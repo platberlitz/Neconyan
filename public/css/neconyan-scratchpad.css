@@ -732,7 +732,8 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     resize: none;
 }
 
-.scratchpad-app .scratchpad-send {
+.scratchpad-app .scratchpad-send,
+.scratchpad-app .scratchpad-web-toggle {
     --sb-control-icon-physical-size: 44px;
     flex: 0 0 44px;
     width: 44px;
@@ -740,12 +741,6 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     height: 44px;
     min-height: 44px;
     padding: 0;
-}
-
-.scratchpad-app .scratchpad-web-toggle {
-    flex: 0 0 auto;
-    min-height: 44px;
-    border-radius: 12px;
 }
 
 #neconyan-scratchpad .scratchpad-web-toggle[aria-pressed="true"] {
