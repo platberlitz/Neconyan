@@ -264,6 +264,7 @@ router.post('/create', (request, response) => {
             members: body.members ?? [],
             avatar_url: body.avatar_url,
             allow_self_responses: !!body.allow_self_responses,
+            keep_own_lines: body.keep_own_lines !== false,
             activation_strategy: body.activation_strategy ?? 0,
             generation_mode: body.generation_mode ?? 0,
             disabled_members: body.disabled_members ?? [],

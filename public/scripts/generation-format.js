@@ -218,7 +218,7 @@ export function fixGeneratedMarkdown(text) {
 export function cleanGeneratedText(message, {
     power = {}, mainApi, name1 = '', name2 = '', groupNames = [], isImpersonate = false,
     trimNames = true, trimWrongNames = true, displayIncompleteSentences = false,
-    reasoningPrefix = '', trimSentence,
+    reasoningPrefix = '', trimSentence, trimMarkdownNames = false,
 } = {}) {
     if (power.collapse_newlines) message = message.replaceAll(/\n+/g, '\n');
     message = message.replace(/[^\S\r\n]+$/gm, '');
@@ -247,7 +247,8 @@ export function cleanGeneratedText(message, {
     if (!power.disable_group_trimming) {
         for (const name of groupNames) {
             if (name === name2) continue;
-            const match = message.match(new RegExp(`(^|\n)${escape(name)}:`));
+            const pattern = trimMarkdownNames ? `(^|\n)[ \\t]*[*_]{0,2}${escape(name)}[*_]{0,2}:` : `(^|\n)${escape(name)}:`;
+            const match = message.match(new RegExp(pattern));
             if (match) message = message.slice(0, match.index);
         }
     }
