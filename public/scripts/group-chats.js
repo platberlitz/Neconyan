@@ -88,6 +88,8 @@ import {
     syncCharacterMenuActiveEntity,
     incrementChatGeneration,
     getChatGeneration,
+    name1,
+    name2,
 } from '../script.js';
 import { getQueuedChatSaveAbortReason } from './chat-save-guard.js';
 import { getChatBackupSaveOptions } from './chat-backup-sequence.js';
@@ -102,6 +104,7 @@ import { accountStorage } from './util/AccountStorage.js';
 import { fetchWithCsrfRetry } from './csrf-token-refresh.js';
 import { chat_completion_sources, oai_settings } from './openai.js';
 import { getRegexedString, regex_placement } from './extensions/regex/engine.js';
+import { appendGroupSpeakerStops, buildOwnLinesReminder, getOtherMemberNames, isKeepOwnLinesEnabled } from './group-chat-scene.js';
 
 export {
     selected_group,
@@ -481,7 +484,36 @@ async function addSelectedGroupGreeting() {
 function buildContextAwareGroupPrompt(speakerName, options = {}) {
     const targetName = options.targetName || '';
     const targetText = targetName ? ` The immediate call or message is directed at ${speakerName} by ${targetName}; ${speakerName} should answer ${targetName}.` : '';
-    return `[Group context: write only as ${speakerName}. Pay attention to who addressed whom in the recent chat. If the user calls for ${speakerName}, answer the user. If another character calls for ${speakerName}, answer that character. Characters may also talk to each other naturally when the context calls for it.${targetText}]`;
+    const ownLinesText = options.ownLines ? buildOwnLinesReminder(speakerName, options.otherNames, options.userName) : '';
+    return `[Group context: write only as ${speakerName}. Pay attention to who addressed whom in the recent chat. If the user calls for ${speakerName}, answer the user. If another character calls for ${speakerName}, answer that character. Characters may also talk to each other naturally when the context calls for it.${targetText}${ownLinesText}]`;
+}
+
+function getSelectedGroupRecord() {
+    return selected_group ? groups.find(x => x.id == selected_group) : undefined;
+}
+
+/**
+ * Whether reply cleanup should also cut at markdown-styled member names such as `**Mira:**`.
+ * @returns {boolean}
+ */
+export function shouldTrimGroupMarkdownNames() {
+    const group = getSelectedGroupRecord();
+    return Boolean(group) && isKeepOwnLinesEnabled(group);
+}
+
+/**
+ * Add `\nName:` stops for the other members of the open group to a Chat Completion request.
+ * @param {string[]} existing Stop strings the user configured
+ * @param {number} [limit] Provider stop limit
+ * @param {string} [type] Generation type
+ * @returns {string[]}
+ */
+export function getGroupSpeakerStopStrings(existing, limit, type) {
+    const group = getSelectedGroupRecord();
+    if (!group || !isKeepOwnLinesEnabled(group) || ['quiet', 'impersonate'].includes(type)) {
+        return existing;
+    }
+    return appendGroupSpeakerStops(existing, getOtherMemberNames(getGroupNames(), name2), limit);
 }
 
 function findDirectlyAddressedMember(group, text) {
@@ -1958,8 +1990,12 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
 
             // Wait for generation to finish
             const generateType = ['swipe', 'impersonate', 'quiet', 'continue'].includes(type) ? type : 'normal';
-            const contextPrompt = buildContextAwareGroupPrompt(characters[chId]?.name || 'the selected speaker', {
+            const speakerName = characters[chId]?.name || 'the selected speaker';
+            const contextPrompt = buildContextAwareGroupPrompt(speakerName, {
                 targetName: addressedMemberChid === chId ? getMessageSpeakerName(lastMessage) : '',
+                ownLines: isKeepOwnLinesEnabled(group),
+                otherNames: getOtherMemberNames(getGroupNames(), speakerName),
+                userName: name1,
             });
             const mergedParams = { ...(params || {}) };
             mergedParams.quiet_prompt = [mergedParams.quiet_prompt, contextPrompt].filter(Boolean).join('\n');
@@ -2749,6 +2785,14 @@ async function onGroupSelfResponsesClick() {
     }
 }
 
+async function onGroupKeepOwnLinesClick() {
+    if (openGroupId) {
+        const _thisGroup = groups.find((x) => x.id == openGroupId);
+        _thisGroup.keep_own_lines = Boolean($(this).prop('checked'));
+        await editGroup(openGroupId, false, false);
+    }
+}
+
 async function onHideMutedSpritesClick(value) {
     if (openGroupId) {
         let _thisGroup = groups.find((x) => x.id == openGroupId);
@@ -2848,6 +2892,7 @@ function select_group_chats(groupId, skipAnimation) {
         : newGroupMembers.length > 0;
     $('#rm_group_submit').prop('disabled', !groupHasMembers);
     $('#rm_group_allow_self_responses').prop('checked', group && group.allow_self_responses);
+    $('#rm_group_keep_own_lines').prop('checked', group?.keep_own_lines !== false);
     $('#rm_group_hidemutedsprites').prop('checked', group && group.hideMutedSprites);
     $('#rm_group_generation_mode_join_prefix').val(group?.generation_mode_join_prefix ?? '').attr('setting', 'generation_mode_join_prefix');
     $('#rm_group_generation_mode_join_suffix').val(group?.generation_mode_join_suffix ?? '').attr('setting', 'generation_mode_join_suffix');
@@ -3198,6 +3243,7 @@ async function onGroupMemberModelInput() {
 async function createGroup() {
     let name = $('#rm_group_chat_name').val().toString();
     let allowSelfResponses = !!$('#rm_group_allow_self_responses').prop('checked');
+    const keepOwnLines = $('#rm_group_keep_own_lines').prop('checked') !== false;
     let activationStrategy = Number($('#rm_group_activation_strategy').find(':selected').val()) ?? group_activation_strategy.NATURAL;
     let generationMode = Number($('#rm_group_generation_mode').find(':selected').val()) ?? group_generation_mode.SWAP;
     const members = newGroupMembers.filter(onlyUnique);
@@ -3227,6 +3273,7 @@ async function createGroup() {
         members: members,
         avatar_url: isValidImageUrl(avatarUrl) ? avatarUrl : default_avatar,
         allow_self_responses: allowSelfResponses,
+        keep_own_lines: keepOwnLines,
         hideMutedSprites: hideMutedSprites,
         activation_strategy: activationStrategy,
         generation_mode: generationMode,
@@ -3657,6 +3704,7 @@ jQuery(() => {
     $('#rm_group_delete').off().on('click', onDeleteGroupClick);
     $('#group_favorite_button').on('click', onFavoriteGroupClick);
     $('#rm_group_allow_self_responses').on('input', onGroupSelfResponsesClick);
+    $('#rm_group_keep_own_lines').on('input', onGroupKeepOwnLinesClick);
     $('#rm_group_activation_strategy').on('change', onGroupActivationStrategyInput);
     $('#rm_group_generation_mode').on('change', onGroupGenerationModeInput);
     $('#rm_group_generation_mode_join_prefix').on('input', onGroupGenerationModeTemplateInput);

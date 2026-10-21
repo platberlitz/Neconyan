@@ -106,6 +106,7 @@ import {
     getGroupDepthPrompts,
     deleteGroupChatByName,
     waitForQueuedGroupChatSaves,
+    shouldTrimGroupMarkdownNames,
 } from './scripts/group-chats.js';
 
 import {
@@ -12015,7 +12016,7 @@ export function cleanUpMessage({ getMessage, isImpersonate, isContinue, displayI
     const group = selected_group && groups.find(group => group.id == selected_group);
     const groupNames = Array.isArray(group?.members) ? group.members.map(avatar => characters.find(character => character.avatar == avatar)?.name).filter(name => name !== undefined) : [];
     return cleanGeneratedText(getMessage, { power: power_user, mainApi: main_api, name1, name2, groupNames,
-        isImpersonate, trimNames, trimWrongNames, displayIncompleteSentences,
+        trimMarkdownNames: shouldTrimGroupMarkdownNames(), isImpersonate, trimNames, trimWrongNames, displayIncompleteSentences,
         trimSentence: trimToEndSentence, reasoningPrefix: power_user.trim_spaces ? PromptReasoning.getLatestPrefix() : '' });
 }
 

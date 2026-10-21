@@ -41,7 +41,7 @@ import {
     system_message_types,
     this_chid,
 } from '../script.js';
-import { getGroupNames, selected_group } from './group-chats.js';
+import { getGroupNames, getGroupSpeakerStopStrings, selected_group } from './group-chats.js';
 
 import {
     chatCompletionDefaultPrompts,
@@ -5301,7 +5301,7 @@ export async function createGenerationParameters(settings, model, type, messages
         registerTools: data => ToolManager.registerFunctionToolsOpenAI(data),
         reverseProxySources: REVERSE_PROXY_SUPPORTED_SOURCES,
         validateReverseProxy: () => validateReverseProxy(),
-        getStoppingStrings: getCustomStoppingStrings,
+        getStoppingStrings: limit => getGroupSpeakerStopStrings(getCustomStoppingStrings(limit), limit, type),
         getAssistantPrefill: () => type === 'impersonate'
             ? getEffectiveAssistantImpersonationPrefill(settings) : substituteParams(settings.assistant_prefill),
         getServiceTier: () => getNanoGptServiceTier(settings, model),
