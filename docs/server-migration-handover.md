@@ -69,6 +69,112 @@ the PR against staging and validate the resulting APK on the reporting device.
 
 ## Release preparation: 1.0.0
 
+### 21 October: 1.3.7 release, staging starts 1.3.8
+
+I completed the release-readiness review in PR #264 and fast-forwarded staging
+and main to `6e0269d038f9ac59b9e736ec9ba3a29305eb1328`. The annotated tag
+`v1.3.7` points to that exact commit, with message 'Neconyan 1.3.7'. All fourteen
+readiness commits were made locally, with no merge commit or attribution trailer.
+The running personal instance wasn't deployed as part of the release.
+
+The review fixed four application problems. The new Thinking label called a
+visibility method missing from older Safari; streamed replies now have a
+fallback. Completed Conversation reactions no longer compare the whole chat
+when the save is already known to have changed. Message-image exports disable
+transitions in the export copy and reset the copied avatar's bottom position,
+so the measured layout matches the downloaded image and its last lines fit.
+Time Machine now recognises its own published snapshot index during a settings
+save, adopts only its own fields and retries once with a fresh request. Recovery
+has a ten-second limit. Captures keep normal settings saves and replies
+responsive, preserve newer local choices and still reject real external changes.
+The initial proposal to hold all settings saves for the whole capture was
+rejected because it delayed replies and could overwrite local choices.
+
+The changelog includes release highlights and eleven missing merged-PR entries.
+Assistant knowledge revision 46 has 271 retrieval cases; source anchors, topic
+sizes and retrieval passed across all nine assistants, including phone and
+desktop browser checks. The handbook is published from `neconyan-docs` commit
+`510775063070cd099d7429d69fe491960be1e02e`, with the reviewed source stamp
+`6e0269d0`. Pages run `39535159687` passed. Strict build, site and browser checks
+passed, followed by 22 live page/viewport checks covering eleven changed pages
+on phone and desktop. Historical snapshot versions were preserved.
+
+The full unit run on the release application code passed 565 suites and 7,781
+tests, with three existing skips and one snapshot. The earlier full local server
+run passed 2,934 tests at candidate `84bf399d`; the dedicated Mewmory suite passed
+102 there, and twelve disposable-provider browser checks passed at `455ad53f`.
+No server code changed afterwards. PR Checks run `39533353973` passed the server
+suite and every other required job on the exact release commit. Root/test lint,
+frontend budgets and the production build passed. Test lint retains 870 warnings
+and no errors; the existing character-colours module remains unminified. The
+build produced 1,913 assets, of which 1,609 have content-hashed names.
+
+Full browser run `39533367859` passed all sixteen groups at the release commit:
+1,975 passed, zero failures and 26 existing skips. No older browser results are
+needed for this candidate. The earlier full run `39514627515` at `84bf399d`
+finished with 1,957 passes, eleven failures and 26 skips; focused run
+`39519902991` at `e2e9303e` had 596 passes, two failures and eight skips. These
+remain recorded as failed runs. A fresh full run was required after the shared
+settings-save repair. The duplicate main-push run `39539997198` was cancelled
+only after the exact-commit full run had passed.
+
+The browser failures were diagnosed before rerunning. Five rail tests mistook
+the CI server's port for a live-instance identifier; they now require the
+explicit disposable-fixture flag. Two phone suites now enable iOS-only CSS in
+its original stylesheet position instead of appending it out of order.
+Scratchpad waits for round-table controls before switching assistants.
+Page-intro coverage is split by theme, retaining every assertion and the same
+time limit. Ten traced diagnostic repetitions passed but took 113-115 seconds
+against the 120-second limit; the original CI timeout's exact cause was not
+established. All six split cases then passed locally and in CI. Tide cropping
+and the Time Machine same-page conflict were both reproduced before repair.
+No failing assertion was weakened and no new skip was added.
+
+Additional checks passed: 131 focused Time Machine unit tests, eight controlled
+recovery/conflict browser scenarios, three permanent browser regressions, the
+three original audit checks and ten consecutive desktop audit repetitions.
+Twenty focused image-export cases passed, including Linux WebKit; a deliberately
+incomplete export fix failed the new image-boundary assertion. Five rail and
+nine phone/history/Scratchpad checks passed. The Safari fix passed five unit and
+three browser checks; the save-comparison change passed 27 focused checks. Real
+map panels were checked at both viewport sizes and in both palettes. Forty-three
+additional Bun storage, card-parser and process-death checks passed using an
+outside-repository replacement for Bun's missing Node test mock API, without
+changing application code or assertions.
+
+Local setup corrections are distinct from unchanged retries: missing Chromium
+and Firefox downloads were installed, two controlled-probe absent-index
+comparisons were made null-safe, and the permanent direct-recovery test's drawer
+initialisation was moved before its revision checkpoint. The original logs were
+retained. All final browser CI groups passed on corrected code/tests without a
+failed-job retry. Linux WebKit and touch-browser checks infer iPhone behaviour;
+they aren't physical-phone verification. Twelve Mewmory checks covered their
+disposable-provider cases locally; the 26 CI skips remain visible.
+
+Android run `39540016640` passed without retries on the exact release commit:
+signed build, WebView fixture and Android 11, 13 and 15 lifecycle/native checks.
+These are emulator results. The optional historical native comparison wasn't
+requested and remains skipped.
+
+All nine build files passed independent verification: eight listed checksums,
+both APK signatures against the existing official signing identity, all six
+native libraries' 16 KiB alignment, embedded commit/frontend files and matching
+provenance. Both APKs contain version `1.3.7`, code `1030700`, minimum API 30 and
+target API 36. Every one of the 4,258 source ZIP files matches `git archive` of
+the release commit, including configured line endings. The APKs intentionally
+compress native libraries and extract them on installation; the first outside
+verifier wrongly required uncompressed entries. It was corrected to check the
+embedded extraction flag, ZIP alignment and each extracted library's load
+alignment. No build or application change was needed.
+
+The release is public, stable and latest at
+https://github.com/platberlitz/Neconyan/releases/tag/v1.3.7. All nine public files
+were downloaded again, matched the verified build files byte for byte and
+matched GitHub's SHA-256 digests. Main and the tag retain the verified release.
+Staging starts `1.3.8`, with the root package version, both root lockfile entries
+and boundary expectations updated together. All six boundary tests and focused
+lint passed on Node 24.
+
 ### 19 October: 1.3.6 release, staging starts 1.3.7
 
 I audited PRs #210-232 against the assistant help, the handbook and the browser
