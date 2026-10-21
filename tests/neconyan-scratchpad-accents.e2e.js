@@ -26,7 +26,7 @@ for (const phone of [false, true]) {
                 if (accent) await page.locator(`.sb-accent-profile-apply[aria-label="Apply ${accent} accent profile"]`).evaluate(element => element.click());
                 for (const pressed of [true, false]) {
                     await expect(page.locator('.scratchpad-random')).toHaveAttribute('aria-pressed', String(pressed));
-                    for (const selector of ['.scratchpad-random', '.scratchpad-round-table']) {
+                    for (const selector of ['.scratchpad-random', '.scratchpad-round-table', '.scratchpad-send']) {
                         const measured = await page.locator(selector).evaluate(async element => {
                             const { contrastRatio } = await import('/scripts/theme-contrast.js');
                             const canvas = document.createElement('canvas').getContext('2d');
@@ -37,7 +37,7 @@ for (const phone of [false, true]) {
                                 return [...canvas.getImageData(0, 0, 1, 1).data].slice(0, 3);
                             };
                             const style = getComputedStyle(element);
-                            const label = getComputedStyle(element.querySelector('span'));
+                            const label = getComputedStyle(element.querySelector('span, i'));
                             const rect = element.getBoundingClientRect();
                             return { ratio: contrastRatio(channels(label.color), channels(style.backgroundColor)), color: label.color, background: style.backgroundColor,
                                 width: rect.width, height: rect.height };

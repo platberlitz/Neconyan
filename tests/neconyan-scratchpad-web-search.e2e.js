@@ -193,7 +193,7 @@ test('a round table searches once and gives every assistant the same sources', a
     await page.getByRole('tab', { name: 'Chat', exact: true }).click();
     await page.locator('.scratchpad-web-toggle').click();
     await page.locator('.scratchpad-round-table').click();
-    await expect(page.locator('.scratchpad-send')).toHaveText('Ask 3');
+    await expect(page.locator('.scratchpad-send')).toHaveAccessibleName('Ask 3');
     app.provider.mode.reply = { choices: [{ message: { content: 'The first source provides the library history. [1]' } }] };
     const question = 'Find public library histories for all three assistants.';
     const accepted = await send(page, question);

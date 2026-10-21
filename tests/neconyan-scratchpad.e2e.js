@@ -197,12 +197,12 @@ for (const phone of [false, true]) {
         await expect(page.locator('.scratchpad-round-table')).toHaveAttribute('aria-pressed', 'true');
         const people = page.locator('.scratchpad-assistants');
         await people.getByRole('button', { name: 'Nori', exact: true }).click();
-        await expect(page.locator('.scratchpad-send')).toHaveText('Ask 2');
+        await expect(page.locator('.scratchpad-send')).toHaveAccessibleName('Ask 2');
         await people.getByRole('button', { name: 'Taro', exact: true }).click();
         await expect(people.getByRole('button', { name: 'Miso', exact: true })).toBeDisabled();
         await people.getByRole('button', { name: 'Taro', exact: true }).click();
         await people.getByRole('button', { name: 'Nori', exact: true }).click();
-        await expect(page.locator('.scratchpad-send')).toHaveText('Ask 3');
+        await expect(page.locator('.scratchpad-send')).toHaveAccessibleName('Ask 3');
         const controls = await page.locator('.scratchpad-round-table, .scratchpad-assistant').evaluateAll(elements => elements.map(element => {
             const rect = element.getBoundingClientRect();
             return Math.min(rect.width, rect.height);
@@ -215,6 +215,9 @@ for (const phone of [false, true]) {
         expect(response.ok(), await response.text()).toBe(true);
         const result = await response.json();
         await expect(page.locator('.scratchpad-stream')).toHaveCount(3);
+        await expect(page.locator('.scratchpad-send')).toHaveAccessibleName('Stop all');
+        await expect(page.locator('.scratchpad-send')).toHaveAttribute('title', 'Stop all');
+        await expect(page.locator('.scratchpad-send i.fa-stop')).toBeVisible();
         await expect.poll(() => app.provider.calls.filter(call => call.messages?.at(-1)?.content === 'How should I learn another language?').length).toBe(3);
         const calls = app.provider.calls.filter(call => call.messages?.at(-1)?.content === 'How should I learn another language?');
         expect(calls.map(call => call.model).sort()).toEqual(['table-miso', 'table-nori', 'table-taro']);
@@ -386,7 +389,7 @@ test('switching chats during the first send keeps drafts separate and refuses th
         await expect(composer).toHaveValue('');
         await composer.fill('The other chat draft.');
     } finally { release(); }
-    await expect(page.locator('.scratchpad-send')).toHaveText('Send');
+    await expect(page.locator('.scratchpad-send')).toHaveAccessibleName('Send');
     await expect(composer).toHaveValue('The other chat draft.');
     expect((await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0].messages).toEqual([]);
     expect(app.provider.calls.filter(call => call.messages?.at(-1)?.content === 'The original draft.')).toEqual([]);
