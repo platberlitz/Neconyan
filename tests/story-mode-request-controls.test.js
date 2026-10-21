@@ -147,7 +147,7 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
         formatMessageHistoryItem: message => message.mes + '\n',
         getTokenCountAsync: jest.fn(async () => 0),
         getTokenCount: jest.fn(() => { throw new Error('Synchronous token counting is forbidden in controlled streams'); }),
-        getCustomStoppingStrings: () => [], getStoppingStrings: () => [], getGroupNames: () => [], getGroupSpeakerStopStrings: stops => stops, shouldTrimGroupMarkdownNames: () => false,
+        getCustomStoppingStrings: () => [], getStoppingStrings: () => [], getGroupNames: () => [], getGroupSpeakerStopStrings: stops => stops, shouldTrimGroupMarkdownNames: () => false, isGroupEnsembleActive: () => false,
         substituteParams: value => value, baseChatReplace: value => value,
         extractMessageBias: () => '', getEffectivePromptBias: () => '',
         shiftDownByOne: value => value - 1, shiftUpByOne: value => value + 1,

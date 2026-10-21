@@ -218,7 +218,7 @@ export function fixGeneratedMarkdown(text) {
 export function cleanGeneratedText(message, {
     power = {}, mainApi, name1 = '', name2 = '', groupNames = [], isImpersonate = false,
     trimNames = true, trimWrongNames = true, displayIncompleteSentences = false,
-    reasoningPrefix = '', trimSentence, trimMarkdownNames = false,
+    reasoningPrefix = '', trimSentence, trimMarkdownNames = false, preserveGroupNames = false,
 } = {}) {
     if (power.collapse_newlines) message = message.replaceAll(/\n+/g, '\n');
     message = message.replace(/[^\S\r\n]+$/gm, '');
@@ -244,7 +244,7 @@ export function cleanGeneratedText(message, {
         }
     }
     const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (!power.disable_group_trimming) {
+    if (!preserveGroupNames && !power.disable_group_trimming) {
         for (const name of groupNames) {
             if (name === name2) continue;
             const pattern = trimMarkdownNames ? `(^|\n)[ \\t]*[*_]{0,2}${escape(name)}[*_]{0,2}:` : `(^|\n)${escape(name)}:`;
@@ -252,10 +252,10 @@ export function cleanGeneratedText(message, {
             if (match) message = message.slice(0, match.index);
         }
     }
-    if (!power.allow_name2_display) message = message.replace(new RegExp(`(^|\n)${escape(name2)}:\\s*`, 'g'), '$1');
+    if (!preserveGroupNames && !power.allow_name2_display) message = message.replace(new RegExp(`(^|\n)${escape(name2)}:\\s*`, 'g'), '$1');
     if (isImpersonate) message = message.trim();
     if (power.auto_fix_generated_markdown) message = fixGeneratedMarkdown(message);
-    if (trimNames) {
+    if (trimNames && !preserveGroupNames) {
         const name = isImpersonate ? (!power.allow_name1_display ? name1 : '') : (!power.allow_name2_display ? name2 : '');
         if (name && message.startsWith(`${name}:`)) message = message.replace(`${name}:`, '').trimStart();
     }

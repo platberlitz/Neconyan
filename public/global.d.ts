@@ -37,6 +37,7 @@ declare global {
         director_profile?: string;
         keep_own_lines?: boolean;
         talk_burst?: number;
+        ensemble_replies?: boolean;
         allow_self_responses?: boolean;
         avatar_url?: string;
         hideMutedSprites?: boolean;

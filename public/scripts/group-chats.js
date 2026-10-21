@@ -123,6 +123,7 @@ import {
     pickNextListSpeaker,
     summariseMemberCard,
 } from './group-chat-scene.js';
+import { buildEnsemblePrompt, createEnsembleMessages } from './group-chat-ensemble.js';
 
 export {
     selected_group,
@@ -157,6 +158,12 @@ let newGroupMembers = [];
 let groupChatSaveQueue = Promise.resolve();
 /** @type {{groupId: string, chatId: string, remaining: number, cancelled: boolean, controller: AbortController}|null} */
 let activeGroupTalkBurst = null;
+let activeGroupEnsemble = null;
+
+export function isGroupEnsembleActive() {
+    return Boolean(activeGroupEnsemble && activeGroupEnsemble.groupId === selected_group
+        && activeGroupEnsemble.chatId === getCurrentChatId());
+}
 const groupSaveStates = new Map();
 let groupMetadataSaveQueue = Promise.resolve();
 let groupListReadGeneration = 0;
@@ -530,7 +537,7 @@ export function shouldTrimGroupMarkdownNames() {
  */
 export function getGroupSpeakerStopStrings(existing, limit, type) {
     const group = getSelectedGroupRecord();
-    if (!group || !isKeepOwnLinesEnabled(group) || ['quiet', 'impersonate'].includes(type)) {
+    if (!group || isGroupEnsembleActive() || !isKeepOwnLinesEnabled(group) || ['quiet', 'impersonate'].includes(type)) {
         return existing;
     }
     return appendGroupSpeakerStops(existing, getOtherMemberNames(getGroupNames(), name2), limit);
@@ -1340,7 +1347,8 @@ export function getGroupCharacterCardsLazy(groupId, characterId) {
     const group = groups.find(x => x.id === groupId);
 
     // If no group cards should be generated, return null so caller knows to fall back
-    if (!group || !group?.generation_mode || !Array.isArray(group.members) || !group.members.length) {
+    const ensemble = isGroupEnsembleActive() ? activeGroupEnsemble : null;
+    if (!group || (!group?.generation_mode && !ensemble) || !Array.isArray(group.members) || !group.members.length) {
         return null;
     }
 
@@ -1376,7 +1384,7 @@ export function getGroupCharacterCardsLazy(groupId, characterId) {
         const prefix = customTransform(group.generation_mode_join_prefix, fieldName, characterName, false);
         const suffix = customTransform(group.generation_mode_join_suffix, fieldName, characterName, false);
         value = customTransform(value, fieldName, characterName, true);
-        return `${prefix}${value}${suffix}`;
+        return `${ensemble ? `${characterName}:\n` : ''}${prefix}${value}${suffix}`;
     }
 
     /**
@@ -1389,6 +1397,7 @@ export function getGroupCharacterCardsLazy(groupId, characterId) {
     function collectField(fieldName, getter, preprocess = null) {
         const values = [];
         for (const member of group.members) {
+            if (ensemble && !ensemble.members.some(speaker => speaker.avatar === member)) continue;
             const index = characters.findIndex(x => x.avatar === member);
             const character = characters[index];
             if (index === -1 || !character) continue;
@@ -2085,8 +2094,10 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             return Promise.resolve();
         }
 
-        // Use the server only for an explicit background call or scoped Notebook context.
-        const ordinaryTurn = !['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && !params?.quiet_prompt && getCurrentChatId();
+        const ensembleTurn = group.ensemble_replies === true && activatedMembers.length > 1
+            && !['quiet', 'swipe', 'continue', 'impersonate'].includes(type);
+        // Scene-specific turns use the browser's prompt and visibility rules.
+        const ordinaryTurn = !ensembleTurn && !['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && !params?.quiet_prompt && getCurrentChatId();
         const serverRequired = ordinaryTurn && params?.skipNativeRoleplay === undefined
             && await (await import('./browser-reply-routing.js')).requiresServerReply(activatedMembers);
         throwIfAborted();
@@ -2124,6 +2135,11 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             }
         }
         await eventSource.emit(event_types.GROUP_WRAPPER_STARTED, { selected_group, type });
+        if (ensembleTurn) {
+            textResult = await generateGroupEnsemble(group, activatedMembers, { ...params, suppressUserMessage: didRenderUserMessage || params.suppressUserMessage });
+            clearSelectedGroupSpeaker();
+            return textResult;
+        }
         // now the real generation begins: cycle through every activated character
         for (const chId of activatedMembers) {
             throwIfAborted();
@@ -2188,6 +2204,33 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
     }
 
     return Promise.resolve(textResult);
+}
+
+async function generateGroupEnsemble(group, chids, params) {
+    const scope = { groupId: group.id, chatId: getCurrentChatId(), generation: getChatGeneration(),
+        members: chids.map(chid => ({ name: characters[chid].name, avatar: characters[chid].avatar })) };
+    const before = chat.length;
+    activeGroupEnsemble = scope;
+    deactivateSendButtons();
+    setCharacterId(chids[0]);
+    setCharacterName('Narrator');
+    setGroupTypingIndicator(scope.members.map(member => member.name).join(', '));
+    try {
+        await eventSource.emit(event_types.GROUP_MEMBER_DRAFTED, chids[0]);
+        return await Generate('normal', { ...params, skipNativeRoleplay: true, suppressAutoContinue: true, quietToLoud: true,
+            quiet_prompt: [params.quiet_prompt, buildEnsemblePrompt(scope.members.map(member => member.name), name1)].filter(Boolean).join('\n') });
+    } finally {
+        activeGroupEnsemble = null;
+        // Keep completed output even when an after-reply Agent or cancellation interrupts the call.
+        if (selected_group === scope.groupId && getCurrentChatId() === scope.chatId && getChatGeneration() === scope.generation) {
+            const index = chat.findIndex((message, i) => i >= before && !message.is_user && !message.is_system && message.extra?.gen_id === group_generation_id);
+            if (index !== -1 && chat[index].mes) {
+                const messages = createEnsembleMessages(chat[index], scope.members, avatar => getThumbnailUrl('avatar', avatar), system_avatar);
+                chat.splice(index, 1, ...messages);
+                await Promise.all([saveGroupChat(group.id, false, false, true), printMessages()]);
+            }
+        }
+    }
 }
 
 /**
@@ -3194,6 +3237,7 @@ function select_group_chats(groupId, skipAnimation) {
     $('#rm_group_submit').prop('disabled', !groupHasMembers);
     $('#rm_group_allow_self_responses').prop('checked', group && group.allow_self_responses);
     $('#rm_group_keep_own_lines').prop('checked', group?.keep_own_lines !== false);
+    $('#rm_group_ensemble_replies').prop('checked', group?.ensemble_replies === true);
     $('#rm_group_hidemutedsprites').prop('checked', group && group.hideMutedSprites);
     $('#rm_group_generation_mode_join_prefix').val(group?.generation_mode_join_prefix ?? '').attr('setting', 'generation_mode_join_prefix');
     $('#rm_group_generation_mode_join_suffix').val(group?.generation_mode_join_suffix ?? '').attr('setting', 'generation_mode_join_suffix');
@@ -3577,6 +3621,7 @@ async function createGroup() {
         avatar_url: isValidImageUrl(avatarUrl) ? avatarUrl : default_avatar,
         allow_self_responses: allowSelfResponses,
         keep_own_lines: keepOwnLines,
+        ensemble_replies: $('#rm_group_ensemble_replies').prop('checked') === true,
         hideMutedSprites: hideMutedSprites,
         activation_strategy: activationStrategy,
         director_profile: directorProfile,
@@ -4010,6 +4055,13 @@ jQuery(() => {
     $('#group_favorite_button').on('click', onFavoriteGroupClick);
     $('#rm_group_allow_self_responses').on('input', onGroupSelfResponsesClick);
     $('#rm_group_keep_own_lines').on('input', onGroupKeepOwnLinesClick);
+    $('#rm_group_ensemble_replies').on('input', async function () {
+        const group = groups.find(item => item.id === openGroupId);
+        if (group) {
+            group.ensemble_replies = Boolean($(this).prop('checked'));
+            await editGroup(openGroupId, false, false);
+        }
+    });
     $('#rm_group_activation_strategy').on('change', onGroupActivationStrategyInput);
     $('#rm_group_director_profile').on('change', onGroupDirectorProfileInput);
     $('#rm_group_talk_burst').on('change', onGroupTalkBurstInput);
