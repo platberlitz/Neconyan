@@ -27,6 +27,7 @@
 #group_scene_panel {
     padding: 8px;
     background: var(--neco-surface);
+    white-space: normal;
     max-height: 180px;
     overflow-y: auto;
 }
