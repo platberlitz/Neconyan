@@ -7,7 +7,7 @@ export function readGroupScene(metadata, members) {
 
 export function groupMessageAudience(scene, members, whisperTargets = []) {
     const present = members.filter(avatar => !scene.away.includes(avatar));
-    return { present, whisper_to: whisperTargets.filter(avatar => present.includes(avatar)) };
+    return { present, whisper_to: [...whisperTargets] };
 }
 
 /** Missing audience means an older public message, before scene tracking was enabled. */

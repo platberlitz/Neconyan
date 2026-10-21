@@ -40,3 +40,7 @@
 #group_scene_members .group_scene_member[aria-pressed="false"] { border-style: dashed; }
 #group_scene_members img { width: 28px; height: 28px; border-radius: 50%; }
 #group_scene_strip button:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 2px; }
+#group_scene_header { display: flex; align-items: stretch; gap: 6px; }
+#group_scene_header #group_scene_toggle { flex: 1; min-width: 0; width: auto; }
+#group_scene_whisper { width: 40%; max-width: 240px; min-height: 44px; margin: 0; }
+.group-whisper-badge { font-size: 0.75em; font-weight: normal; color: var(--neco-ink); background: color-mix(in srgb, var(--neco-ginger) 15%, var(--neco-surface)); border-radius: 6px; padding: 2px 6px; margin-inline-start: 6px; }
