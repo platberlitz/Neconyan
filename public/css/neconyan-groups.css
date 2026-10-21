@@ -1,0 +1,42 @@
+/* Scene controls load with the group workspace and keep the composer clear. */
+#group_scene_strip {
+    min-width: 0;
+    width: 100%;
+    color: var(--neco-ink);
+    font-family: var(--sb-font-body);
+}
+#group_scene_strip .menu_button {
+    border-color: color-mix(in srgb, var(--neco-ginger) 32%, transparent);
+    color: var(--neco-ink);
+    background: color-mix(in srgb, var(--neco-ginger) 8%, var(--neco-surface));
+}
+#group_scene_strip .menu_button:hover {
+    background: color-mix(in srgb, var(--neco-ginger-hover) 18%, var(--neco-surface));
+}
+#group_scene_toggle {
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+    justify-content: flex-start;
+}
+#group_scene_summary {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#group_scene_panel {
+    padding: 8px;
+    background: var(--neco-surface);
+    max-height: 180px;
+    overflow-y: auto;
+}
+#group_scene_panel label { display: block; }
+#group_scene_members { display: flex; flex-wrap: wrap; gap: 6px; }
+#group_scene_members .group_scene_member {
+    min-height: 44px;
+    margin: 0;
+    gap: 6px;
+}
+#group_scene_members .group_scene_member[aria-pressed="false"] { border-style: dashed; }
+#group_scene_members img { width: 28px; height: 28px; border-radius: 50%; }
+#group_scene_strip button:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 2px; }

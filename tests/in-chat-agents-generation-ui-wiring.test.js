@@ -209,7 +209,8 @@ describe('in-chat agents generation UI wiring', () => {
         expect(coreScriptSource).toContain(').filter(message => !message.extra?.[IGNORE_SYMBOL]);');
         expect(coreScriptSource).toContain('consolidateCompanionChatHistory(companionCandidateMessages, companionChatHistory');
         expect(coreScriptSource).toContain('companionRewriteTarget && !chat.includes(companionRewriteTarget)');
-        expect(coreScriptSource).toContain('policyMessages: companionPolicyMessages');
+        expect(coreScriptSource).toContain('visibleCompanionPolicyMessages = filterGroupPromptMessages(companionPolicyMessages)');
+        expect(coreScriptSource).toContain('policyMessages: visibleCompanionPolicyMessages');
         expect(coreScriptSource.match(/companionHistoryTarget: companionRewriteTarget/g)).toHaveLength(2);
         expect(coreScriptSource).toContain('hasCompanionChatHistoryForHiddenHost(x)');
         expect(coreScriptSource).toContain('consolidateCompanionChatHistory(companionCandidateMessages, companionChatHistory');

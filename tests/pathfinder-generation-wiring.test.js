@@ -54,6 +54,7 @@ function createHost() {
         buildAssistantKnowledge, getAssistantKnowledgeBudget,
         activeGenerationRun: null, activeRoleplayJob: null, chatSendStartRevision: 0, agentGenerationContextProvider: null, abortController: null,
         generationChatFilter: null,
+        filterGroupPromptMessages: messages => messages,
         chatId: 'chat-a', chatGeneration: 0, agentRunId: 0, cancelRevision: 0,
         chat: [], chat_metadata: {}, characters: [{ name: 'Assistant', data: { extensions: {} } }],
         this_chid: 0, selected_group: null, is_group_generating: false, is_send_press: false, streamingProcessor: null,

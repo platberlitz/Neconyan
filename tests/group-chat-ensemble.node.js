@@ -32,13 +32,15 @@ test('ensemble prompt specifies the requested order and protects the user role',
 
 test('ensemble messages retain identities, swipe text and request-wide metadata without duplication', () => {
     const original = { name: 'Narrator', mes: 'Mira: Come in.\nKit (Jr.): Gladly.', mewmory_id: 'first-id',
-        is_user: false, extra: { gen_id: 12, token_count: 20, reasoning: 'Shared reasoning' } };
+        is_user: false, extra: { gen_id: 12, token_count: 20, reasoning: 'Shared reasoning', group_scene: { present: ['mira.png', 'kit.png'], whisper_to: [] } } };
     const result = createEnsembleMessages(original, members, avatar => `/avatar/${avatar}`, '/narrator.png');
     assert.equal(result[0].mewmory_id, 'first-id');
     assert.equal(result[1].mewmory_id, undefined);
     assert.equal(result[0].extra.reasoning, 'Shared reasoning');
     assert.equal(result[1].extra.reasoning, undefined);
     assert.equal(result[1].extra.token_count, undefined);
+    assert.deepEqual(result[1].extra.group_scene, original.extra.group_scene);
+    assert.notEqual(result[1].extra.group_scene, original.extra.group_scene);
     assert.equal(result[1].original_avatar, 'kit.png');
     assert.equal(result[1].force_avatar, '/avatar/kit.png');
     assert.deepEqual(result[1].swipes, ['Gladly.']);
