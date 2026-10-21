@@ -479,7 +479,7 @@ describe('owned host generation flow', () => {
             limitGroupSpeakersForControl: members => members,
             buildContextAwareGroupPrompt: () => '',
             usesGroupSceneVisibility: () => false, getGroupScenePrompt: () => '', runWithGroupScene: (_avatars, task) => task(),
-            beginGroupTurnAudience: () => () => {}, getGroupMessageAudience: () => null,
+            beginGroupTurnAudience: () => () => {}, getGroupMessageAudience: () => null, updateGroupNextUp: () => {},
             isKeepOwnLinesEnabled: () => true, getOtherMemberNames: () => [], name1: 'User',
             runWithGroupMemberModelOverride: (group, avatar, task) => task(),
             setCharacterId: id => { context.this_chid = id; },

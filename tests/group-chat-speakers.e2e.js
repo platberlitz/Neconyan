@@ -1,0 +1,40 @@
+import { expect } from '@playwright/test';
+import { test } from './neconyan-conversation-durable-fixture.js';
+import { createSceneGroup, groupAccount, openSceneGroup, readSceneChat, sendSceneMessage, textReply } from './group-chat-fixture.js';
+
+test.setTimeout(180000);
+
+test('the speaker menu regenerates as another member and each swipe keeps its name and avatar', async ({ app }) => {
+    const account = await groupAccount(app);
+    const group = await createSceneGroup(account);
+    const page = await account.open({ workspace: false });
+    await openSceneGroup(page, group);
+    await expect(page.locator('#group_next_up')).toContainText('Scene Kit');
+    app.provider.mode.reply = () => textReply('Kit opens the door.');
+    await sendSceneMessage(page, 'Kit, open the door.');
+    await expect.poll(() => page.evaluate(async () => (await import('/scripts/group-chats.js')).is_group_generating), { timeout: 30000 }).toBe(false);
+    await expect(page.locator('#chat .mes_text').last()).toContainText('Kit opens the door.', { timeout: 30000 });
+    app.provider.mode.reply = () => textReply('Mira studies the lock.');
+    await page.locator('.group_speaker_avatar').filter({ hasText: 'Scene Mira' }).click({ button: 'right' });
+    await page.getByText('Regenerate last reply as Scene Mira', { exact: true }).click();
+    await expect.poll(async () => (await readSceneChat(page)).at(-1)?.mes, { timeout: 30000 }).toBe('Mira studies the lock.');
+    await expect.poll(() => page.evaluate(async () => (await import('/scripts/group-chats.js')).is_group_generating), { timeout: 30000 }).toBe(false);
+    expect((await readSceneChat(page)).at(-1)).toMatchObject({ name: 'Scene Mira', original_avatar: group.members[1], swipe_id: 1 });
+    await page.evaluate(async () => { const core = await import('/script.js'); await core.swipe(null, 'left', { forceSwipeId: 0, forceDuration: 0 }); });
+    expect((await readSceneChat(page)).at(-1)).toMatchObject({ name: 'Scene Kit', original_avatar: group.members[0], mes: 'Kit opens the door.' });
+    await expect(page.locator('#chat .mes').last().locator('.name_text').first()).toHaveText('Scene Kit');
+    await page.evaluate(async () => { const core = await import('/script.js'); await core.swipe(null, 'right', { forceSwipeId: 1, forceDuration: 0 }); });
+    await expect(page.locator('#chat .mes').last().locator('.name_text').first()).toHaveText('Scene Mira');
+    await expect.poll(() => page.evaluate(async () => (await import('/script.js')).flushPendingChatSaves({ silent: true }))).toBe(true);
+    await page.reload();
+    await expect(page.locator('body')).toHaveClass(/neconyan-rail-ready/, { timeout: 60000 });
+    await openSceneGroup(page, group);
+    expect((await readSceneChat(page)).at(-1)).toMatchObject({ name: 'Scene Mira', original_avatar: group.members[1], swipe_id: 1 });
+    await page.locator('.group_speaker_avatar').filter({ hasText: 'Scene Mira' }).click({ button: 'right' });
+    await page.getByRole('button', { name: 'Mute', exact: true }).click();
+    await expect(page.locator('.group_speaker_avatar').filter({ hasText: 'Scene Mira' })).toHaveCount(0);
+    await page.locator('#group_scene_toggle').click();
+    await page.locator('.group_scene_member').filter({ hasText: 'Scene Mira' }).click({ button: 'right' });
+    await page.getByRole('button', { name: 'Unmute', exact: true }).click();
+    await expect(page.locator('.group_speaker_avatar').filter({ hasText: 'Scene Mira' })).toHaveCount(1);
+});
