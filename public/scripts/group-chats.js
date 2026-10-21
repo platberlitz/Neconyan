@@ -126,6 +126,8 @@ import {
 import { buildEnsemblePrompt, createEnsembleMessages } from './group-chat-ensemble.js';
 import { beginGroupPromptScope, canGroupMemberSee, groupMessageAudience, groupScenePrompt, readGroupScene } from './group-chat-visibility.js';
 import { initGroupSceneControls, renderGroupScene } from './group-chat-scene-ui.js';
+import { getGroupSpeakerPool } from './group-chat-speakers.js';
+import { initGroupSpeakerMenu } from './group-chat-speaker-menu.js';
 
 export {
     selected_group,
@@ -662,6 +664,7 @@ function setGroupSpeakerControlsHidden(hidden) {
 
 function updateGroupSpeakerControls() {
     renderGroupScene();
+    updateGroupNextUp();
     const container = $('#group_speaker_controls');
     if (!container.length) {
         return;
@@ -808,6 +811,7 @@ export async function letGroupMembersTalk() {
 
 function initGroupSpeakerControls() {
     initGroupSceneControls();
+    initGroupSpeakerMenu({ saveGroup: id => editGroup(id, false, false), editMember: openCharacterDefinition });
     if (groupSpeakerControlsInitialized) {
         return;
     }
@@ -844,6 +848,30 @@ function initGroupSpeakerControls() {
     container.on('click', '#group_let_them_talk', letGroupMembersTalk);
     container.on('click', '#group_speaker_hide', () => setGroupSpeakerControlsHidden(true));
     $(document).on('click', '#wand_group_speaker_controls', () => setGroupSpeakerControlsHidden(false));
+    eventSource.on(event_types.MESSAGE_RECEIVED, () => updateGroupNextUp());
+    eventSource.on(event_types.MESSAGE_SENT, () => updateGroupNextUp());
+}
+
+let groupDirectorPreview = null;
+
+function updateGroupNextUp(directed = null) {
+    const group = groups.find(item => item.id === selected_group);
+    if (directed) groupDirectorPreview = { groupId: selected_group, chatId: getCurrentChatId(), ...directed };
+    if (!group) { $('#group_next_up').text('').addClass('displayNone'); return; }
+    const names = avatars => avatars.map(avatar => characters[getCharacterIdByAvatar(avatar)]?.name).filter(Boolean).join(', ');
+    const members = getGroupEnabledMembers(group);
+    const whispers = getGroupMessageAudience()?.whisper_to || [];
+    const strategy = Number(group.activation_strategy);
+    let text = '';
+    if (whispers.length) text = t`Whisper to ${names(whispers)}`;
+    else if (selectedGroupSpeakerAvatar && members.includes(selectedGroupSpeakerAvatar)) text = t`Next up: ${names([selectedGroupSpeakerAvatar])}`;
+    else if (strategy === group_activation_strategy.LIST) text = t`Next up: ${names(members.slice(0, 1))}`;
+    else if (strategy === group_activation_strategy.POOLED) text = t`Next from: ${names(getGroupSpeakerPool(members, chat))}`;
+    else if (strategy === group_activation_strategy.DIRECTOR && groupDirectorPreview?.groupId === selected_group && groupDirectorPreview.chatId === getCurrentChatId()) {
+        const picked = names(groupDirectorPreview.chids.map(chid => characters[chid]?.avatar));
+        text = `${t`Director picked: ${picked}`}${groupDirectorPreview.reason ? ` · ${groupDirectorPreview.reason}` : ''}`;
+    }
+    $('#group_next_up').text(text).toggleClass('displayNone', !text);
 }
 
 export const group_activation_strategy = {
@@ -2138,6 +2166,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             if (directed) {
                 activatedMembers = directed.chids;
                 directorNote = directed.reason;
+                updateGroupNextUp(directed);
             }
         }
 

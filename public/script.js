@@ -111,6 +111,7 @@ import {
     getGroupMessageAudience,
 } from './scripts/group-chats.js';
 import { filterGroupPromptMessages } from './scripts/group-chat-visibility.js';
+import { rememberGroupSpeaker, restoreGroupSpeaker } from './scripts/group-chat-speakers.js';
 
 import {
     collapseNewlines,
@@ -12121,10 +12122,17 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
     let oldMessage = '';
     const generationFinished = new Date();
     if (type === 'swipe') {
+        if (selected_group) rememberGroupSpeaker(lastMessage);
         oldMessage = lastMessage.mes;
         if (!fromStreaming) applyGenerationOutcome(lastMessage, generationOutcome);
         lastMessage.swipes.length++;
         if (lastMessage.swipe_id === lastMessage.swipes.length - 1) {
+            if (selected_group && characters[this_chid]) {
+                lastMessage.name = name2;
+                lastMessage.original_avatar = characters[this_chid].avatar;
+                lastMessage.force_avatar = getThumbnailUrl('avatar', characters[this_chid].avatar);
+                rememberGroupSpeaker(lastMessage);
+            }
             lastMessage.title = title;
             lastMessage.mes = getMessage;
             lastMessage.gen_started = generation_started;
@@ -12239,6 +12247,7 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
             }
             newMessage.force_avatar = isGroupEnsembleActive() ? system_avatar : avatarImg;
             newMessage.original_avatar = isGroupEnsembleActive() ? undefined : characters[this_chid].avatar;
+            rememberGroupSpeaker(newMessage);
             newMessage.extra.gen_id = group_generation_id;
         }
 
@@ -12491,6 +12500,7 @@ export function syncSwipeToMes(messageId = null, swipeId = null, targetMessage =
     targetMessage.gen_started = targetSwipeInfo?.gen_started;
     targetMessage.gen_finished = targetSwipeInfo?.gen_finished;
     targetMessage.extra = structuredClone(targetSwipeInfo?.extra) ?? {};
+    if (targetMessage.extra.group_speaker) restoreGroupSpeaker(targetMessage);
 
     return true;
 }
