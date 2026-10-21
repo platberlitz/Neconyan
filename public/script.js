@@ -14978,8 +14978,18 @@ async function renderMessageScreenshotCanvas(startId, endId) {
             ignoreElements: element => !element.contains(surface) && !surface.contains(element),
             logging: false,
             onclone: (clonedDocument, clonedSurface) => {
+                // html2canvas copies every computed style onto the clone, including transition declarations, after it
+                // has tried to switch transitions off. A transition in the hidden clone iframe never advances, so the
+                // reflow below stays at its start values and the bitmap is measured shorter than the image it renders.
+                // Freezing transitions keeps the measured clone and the painted foreign object at the same layout.
+                clonedSurface.style.setProperty('transition', 'none', 'important');
+                clonedSurface.querySelectorAll('*').forEach(element => element.style.setProperty('transition', 'none', 'important'));
                 clonedDocument.documentElement.style.backgroundColor = 'transparent';
                 clonedDocument.body.style.cssText = 'margin: 0; background: transparent;';
+                // The avatar wrapper is pinned between top and bottom in the live row. Copied into the clone it
+                // stretches with the reflowed row, so the Tide measurement below feeds its own growth back into the
+                // plate and container. It paints nothing; size it to its content for the capture.
+                clonedSurface.querySelectorAll('.mesAvatarWrapper').forEach(wrapper => wrapper.style.bottom = 'auto');
                 clonedSurface.style.position = 'relative';
                 clonedSurface.style.inset = '0';
                 clonedSurface.style.margin = '0';

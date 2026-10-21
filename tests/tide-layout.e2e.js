@@ -962,6 +962,9 @@ test('Tide export shows the container, the header plate and the cat, and hides t
         ].map(element => element.getBoundingClientRect());
         return {
             row: !!row, plate: !!plate, cat: !!cat,
+            surface: document.querySelector('.sb-message-screenshot-surface')?.getBoundingClientRect().toJSON() ?? null,
+            containerBottom: box ? box.bottom : null,
+            coreBottom: core.length ? Math.max(...core.map(entry => entry.bottom)) : null,
             plateTop: plate?.style.top ?? plate?.getAttribute('style'), catTop: cat?.style.top ?? null,
             cutoff: row?.classList.contains('nn-tide-cutoff'), sentinel: !!row?.querySelector('.nn-tide-header-bottom'),
             reserves: row?.querySelectorAll('.nn-tide-reserves-footer').length ?? -1,
@@ -1016,6 +1019,17 @@ test('Tide export shows the container, the header plate and the cat, and hides t
     expect(clone.wrap.bottom, `clone clearance ${JSON.stringify(clone.wrap)}`).toBeGreaterThanOrEqual(11);
     expect(clone.insideRow, `clone container inside its row ${JSON.stringify({ container: clone.container, row: clone.rowBox })}`).toBe(true);
     expect(Math.abs(clone.plateCentre - clone.container.top), `clone plate centre ${clone.plateCentre} vs top ${clone.container.top}`).toBeLessThanOrEqual(1.5);
+    // The download is the self-contained foreign object, so its bitmap must cover the whole
+    // rendered clone: whatever the container wraps, the row's last member has to fit inside the
+    // PNG. A shorter bitmap is the user-visible bug (the last card cut off at the image edge),
+    // and a container-only change cannot satisfy this.
+    expect(clone.surface, JSON.stringify(clone.surface)).not.toBeNull();
+    expect(clone.rowBox).not.toBeNull();
+    const exportScale = png.width / clone.surface.width;
+    expect(exportScale, JSON.stringify({ pngWidth: png.width, surface: clone.surface })).toBeGreaterThan(0);
+    const renderedBottom = Math.max(clone.rowBox.top + clone.rowBox.height, clone.containerBottom, clone.coreBottom);
+    expect(png.height / exportScale, `bitmap ${png.height}px at ${exportScale}x must reach the rendered clone bottom ${renderedBottom}px`)
+        .toBeGreaterThanOrEqual(renderedBottom - 1);
     const liveVars = await assistant.evaluate(row => ['top', 'left', 'width', 'height'].map(axis => `${axis}=${row.style.getPropertyValue(`--nn-tide-box-${axis}`)}`).join(' '));
     await info.attach('Tide export container', { body: Buffer.from(JSON.stringify({ live, liveVars, clone })), contentType: 'application/json' });
     await info.attach('Tide export clone checks', { body: Buffer.from(JSON.stringify({ live, clone })), contentType: 'application/json' });
