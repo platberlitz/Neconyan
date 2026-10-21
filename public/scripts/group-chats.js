@@ -125,6 +125,7 @@ import {
     summariseMemberCard,
 } from './group-chat-scene.js';
 import { buildEnsemblePrompt, createEnsembleMessages } from './group-chat-ensemble.js';
+import { messageAutomaticGenerationSuppressed } from './generation-outcome.js';
 import { beginGroupPromptScope, canGroupMemberSee, groupMessageAudience, groupScenePrompt, readGroupScene } from './group-chat-visibility.js';
 import { initGroupSceneControls, renderGroupScene } from './group-chat-scene-ui.js';
 import { getGroupSpeakerPool } from './group-chat-speakers.js';
@@ -793,12 +794,12 @@ export async function letGroupMembersTalk() {
             }
 
             const before = chat.length;
-            await Generate('normal', { suppressUserMessage: true, suppressAutoContinue: true, signal: burst.controller.signal });
-            const added = chat.slice(before).filter(message => message && !message.is_user && !message.is_system).length;
-            if (added === 0) {
+            const result = await Generate('normal', { suppressUserMessage: true, suppressAutoContinue: true, signal: burst.controller.signal });
+            const added = chat.slice(before).filter(message => message && !message.is_user && !message.is_system);
+            if (result?.generationOutcome || added.some(messageAutomaticGenerationSuppressed) || added.length === 0) {
                 break;
             }
-            burst.remaining -= added;
+            burst.remaining -= added.length;
         }
     } catch (error) {
         if (!burst.cancelled) {

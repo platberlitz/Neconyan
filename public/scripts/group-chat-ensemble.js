@@ -38,6 +38,7 @@ export function createEnsembleMessages(message, members, avatarUrl, narratorAvat
     return passages.map((passage, index) => {
         const extra = index === 0 ? { ...message.extra } : { gen_id: message.extra?.gen_id,
             ...(message.extra?.group_scene ? { group_scene: structuredClone(message.extra.group_scene) } : {}) };
+        if (message.extra?.generation_outcome) extra.generation_outcome = structuredClone(message.extra.generation_outcome);
         extra.group_ensemble = true;
         extra.group_speaker = { name: passage.name, original_avatar: passage.avatar, force_avatar: avatarUrl(passage.avatar) };
         const result = { ...message, name: passage.name, mes: passage.text, original_avatar: passage.avatar,
