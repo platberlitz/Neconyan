@@ -59,7 +59,8 @@ const lastReply = page => page.evaluate(async () => {
 test('the scene director picks who answers and shows why', async ({ app }) => {
     app.provider.mode.reply = body => [speakerReply, directorReply][Number(isDirectorCall(body))];
     const account = await createDirectorAccount(app);
-    const group = await createDirectedGroup(account);
+    const group = await createDirectedGroup(account, { activation_strategy: undefined });
+    expect(group.activation_strategy).toBe(4);
     const page = await account.open({ workspace: false });
     await openGroup(page, group);
     const before = app.provider.calls.length;
@@ -71,7 +72,7 @@ test('the scene director picks who answers and shows why', async ({ app }) => {
     expect(calls).toHaveLength(2);
     expect(isDirectorCall(calls[0])).toBe(true);
     expect(calls[0].model).toBe(MODEL);
-    expect(calls[0].messages[1].content).toContain('- Durable Mira: Mira is a quiet archivist.');
+    expect(calls[0].messages[1].content).toContain('- Durable Mira (character): Mira is a quiet archivist.');
     expect(calls[0].messages[1].content).toContain('Where do we keep the old records?');
     expect(isDirectorCall(calls[1])).toBe(false);
     const indicator = await page.evaluate(() => window.__indicator);
@@ -101,4 +102,17 @@ test('a stuck director model falls back to the usual order within seconds', asyn
     expect(elapsed).toBeLessThan(10000);
     const names = ['Durable Nova', 'Durable Kit', 'Durable Mira'];
     expect(names).toContain((await lastReply(page))?.name);
+});
+
+test('the director can hand the scene back to the user without forcing another reply', async ({ app }) => {
+    app.provider.mode.reply = { choices: [{ message: { content: '{"speakers":[],"reason":"Your choice comes next"}' } }] };
+    const account = await createDirectorAccount(app);
+    const group = await createDirectedGroup(account);
+    const page = await account.open({ workspace: false });
+    await openGroup(page, group);
+    await send(page, 'Let me decide what to do next.');
+    await expect(page.locator('#group_next_up')).toContainText('Waiting for you', { timeout: 30000 });
+    expect(app.provider.calls).toHaveLength(1);
+    expect(await page.evaluate(async () => (await import('/script.js')).chat.at(-1))).toMatchObject({ is_user: true, mes: 'Let me decide what to do next.' });
+    await expect(page.locator('#group_typing_indicator')).toBeHidden();
 });

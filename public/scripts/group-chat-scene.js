@@ -112,7 +112,7 @@ export function buildDirectorPrompt({ members, messages, userName = '', maxSpeak
     return [
         {
             role: 'system',
-            content: `You direct a group roleplay scene and decide who speaks next. Choose 1 to ${max} members from the list, in speaking order. Prefer whoever was addressed, asked something or has the strongest reason to react. Do not pick the same member twice in a row unless they were asked something directly.${user}${listening} Answer with JSON only, no other text: {"speakers": ["Name"], "reason": "under 12 words"}`,
+            content: `You direct a group roleplay scene and decide who speaks next. Choose 0 to ${max} members from the list, in speaking order. Choose none only when the scene should wait for the user. Prefer whoever was addressed, asked something or has the strongest reason to react. Do not pick the same member twice in a row unless they were asked something directly.${user}${listening} Answer with JSON only, no other text: {"speakers": ["Name"], "reason": "under 12 words"}`,
         },
         {
             role: 'user',
@@ -126,7 +126,7 @@ export function buildDirectorPrompt({ members, messages, userName = '', maxSpeak
  * @param {string} text Model output
  * @param {string[]} memberNames Names the director may choose from
  * @param {number} [maxSpeakers] Most speakers to keep
- * @returns {{speakers: string[], reason: string}}
+ * @returns {{speakers: string[], reason: string, paused?: boolean}}
  */
 export function parseDirectorResponse(text, memberNames, maxSpeakers = GROUP_DIRECTOR_MAX_SPEAKERS) {
     const raw = String(text || '');
@@ -136,6 +136,7 @@ export function parseDirectorResponse(text, memberNames, maxSpeakers = GROUP_DIR
     let picked = [];
     let reason = '';
     let readJson = false;
+    let paused = false;
 
     const json = raw.match(/\{[\s\S]*\}/)?.[0];
     if (json) {
@@ -145,6 +146,7 @@ export function parseDirectorResponse(text, memberNames, maxSpeakers = GROUP_DIR
             picked = list.map(name => byLower.get(String(name || '').trim().toLowerCase())).filter(Boolean);
             reason = typeof parsed?.reason === 'string' ? parsed.reason : '';
             readJson = Array.isArray(parsed?.speakers);
+            paused = readJson && parsed.speakers.length === 0;
         } catch {
             picked = [];
         }
@@ -161,6 +163,7 @@ export function parseDirectorResponse(text, memberNames, maxSpeakers = GROUP_DIR
     return {
         speakers: [...new Set(picked)].slice(0, max),
         reason: squash(reason, 90),
+        ...(paused ? { paused: true } : {}),
     };
 }
 

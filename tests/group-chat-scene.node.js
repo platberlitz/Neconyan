@@ -75,7 +75,7 @@ test('director prompt lists members, recent lines and the JSON answer shape', ()
         maxSpeakers: 9,
     });
     assert.equal(prompt.length, 2);
-    assert.match(prompt[0].content, /Choose 1 to 3 members/);
+    assert.match(prompt[0].content, /Choose 0 to 3 members/);
     assert.match(prompt[0].content, /Ana is the user; never choose them/);
     assert.match(prompt[0].content, /"speakers"/);
     assert.match(prompt[1].content, /- Mira: A thief\.\n- Kit \(narrator\)/);
@@ -94,6 +94,9 @@ test('director answers map to real members, in order, capped', () => {
     assert.deepEqual(parseDirectorResponse('{"speakers": [], "reason": "Mira already spoke"}', names).speakers, []);
     assert.deepEqual(parseDirectorResponse('{"speakers": ["Kit", "Nova"]}', names, 1).speakers, ['Kit']);
     assert.deepEqual(parseDirectorResponse('', names).speakers, []);
+    assert.equal(parseDirectorResponse('{"speakers": []}', names).paused, true);
+    assert.equal(parseDirectorResponse('{"speakers": ["Ghost"]}', names).paused, undefined);
+    assert.equal(parseDirectorResponse('broken answer', names).paused, undefined);
 });
 
 test('scene director is wired into the editor, server and new groups', () => {
