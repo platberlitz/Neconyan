@@ -9,6 +9,14 @@ const shellStyles = [...shellSource.match(/const NN_THEMES = Object.freeze\(\[([
 
 test.use({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block', reducedMotion: 'reduce' });
 
+// A port number is not proof that the server is disposable. The release runner
+// sets this explicit opt-in after preparing an owned fixture, so a preview or
+// live instance cannot be edited just because it happens to use another port.
+function requireDisposableReleaseFixture() {
+    expect(process.env.NECONYAN_TEST_BASE_URL, 'Use an explicit disposable preview').toBeTruthy();
+    expect(process.env.NECONYAN_RELEASE_TEST_DISPOSABLE, 'Set NECONYAN_RELEASE_TEST_DISPOSABLE=1 for an explicitly disposable server').toBe('1');
+}
+
 test.beforeEach(async ({ page }) => {
     await page.route('**/api/settings/save', async route => {
         let bytes = route.request().postDataBuffer();
@@ -20,9 +28,7 @@ test.beforeEach(async ({ page }) => {
 
 test('collapsed rail centres every icon inside reachable square buttons', async ({ page }) => {
     test.setTimeout(240000);
-    const target = process.env.NECONYAN_TEST_BASE_URL;
-    expect(target, 'Use an explicit disposable preview').toBeTruthy();
-    expect(new URL(target).port).not.toBe('4433');
+    requireDisposableReleaseFixture();
     await page.route('**/api/settings/get', async route => {
         const response = await route.fetch();
         const body = await response.json();
@@ -84,8 +90,7 @@ test('collapsed rail centres every icon inside reachable square buttons', async 
 
 test('empty shortcuts and saved-hidden sections leave no collapsed gap', async ({ page }) => {
     test.setTimeout(120000);
-    expect(process.env.NECONYAN_TEST_BASE_URL).toBeTruthy();
-    expect(new URL(process.env.NECONYAN_TEST_BASE_URL).port).not.toBe('4433');
+    requireDisposableReleaseFixture();
     await page.addInitScript(() => localStorage.setItem('sb-desktop-quick-actions-v2', '[]'));
     await page.route('**/api/settings/get', async route => {
         const response = await route.fetch();
@@ -118,8 +123,7 @@ test('empty shortcuts and saved-hidden sections leave no collapsed gap', async (
 
 test('populated recent chats keep collapsed geometry and keyboard reachability', async ({ page }) => {
     test.setTimeout(120000);
-    expect(process.env.NECONYAN_TEST_BASE_URL).toBeTruthy();
-    expect(new URL(process.env.NECONYAN_TEST_BASE_URL).port).not.toBe('4433');
+    requireDisposableReleaseFixture();
     const character = { name: 'M14 geometry fixture', avatar: 'm14-geometry-fixture.png', chat: 'M14 recent 1', first_mes: '', mes_example: '', shallow: false, tags: [], data: { name: 'M14 geometry fixture', first_mes: '', description: '', extensions: {} } };
     const recents = Array.from({ length: 6 }, (_, index) => ({ avatar: character.avatar, file_name: `M14 recent ${index + 1}.jsonl`, last_mes: new Date(Date.UTC(2026, 9, 20, 17, 6 - index)).toISOString(), chat_items: 2, file_size: '1kb', mes: 'Owned geometry fixture' }));
     await page.route('**/api/characters/all', route => route.fulfill({ json: [character] }));
@@ -191,8 +195,7 @@ for (const phone of [false, true]) {
         test.use({ viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone });
         test('heading prefixes stay inline through saved section collapse', async ({ page }) => {
             test.setTimeout(120000);
-            expect(process.env.NECONYAN_TEST_BASE_URL).toBeTruthy();
-            expect(new URL(process.env.NECONYAN_TEST_BASE_URL).port).not.toBe('4433');
+            requireDisposableReleaseFixture();
             let sections = '{}';
             await page.route('**/api/settings/get', async route => {
                 const response = await route.fetch();
