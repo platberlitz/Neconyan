@@ -266,6 +266,7 @@ router.post('/create', (request, response) => {
             allow_self_responses: !!body.allow_self_responses,
             keep_own_lines: body.keep_own_lines !== false,
             activation_strategy: body.activation_strategy ?? 0,
+            director_profile: typeof body.director_profile === 'string' ? body.director_profile : '',
             generation_mode: body.generation_mode ?? 0,
             disabled_members: body.disabled_members ?? [],
             fav: body.fav,

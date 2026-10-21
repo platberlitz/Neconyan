@@ -89,7 +89,7 @@ export function captureRoleplayGroupSpeakers(base, account, source, { effect, fo
                         ? enabled.filter(avatar => avatar !== lastAvatar) : enabled;
                     selected = [pool[Math.floor(draw(random) * pool.length)]];
                 } else if (strategy === 2 && !freshUser) selected = [shuffle(enabled, random)[0]];
-                else if (strategy === 0) {
+                else if (strategy === 0 || strategy === 4) {
                     const banned = !freshUser && !group.allow_self_responses && !last?.is_user ? last?.name : null;
                     const mentioned = enabled.filter(avatar => cards.get(avatar).name !== banned
                         && cards.get(avatar).name.split(/\W+/u).some(word => word && text.toLowerCase().includes(word.toLowerCase())));
