@@ -875,7 +875,7 @@ function updateGroupNextUp(directed = null) {
     else if (strategy === group_activation_strategy.POOLED) text = t`Next from: ${names(getGroupSpeakerPool(members, chat))}`;
     else if (strategy === group_activation_strategy.DIRECTOR && groupDirectorPreview?.groupId === selected_group && groupDirectorPreview.chatId === getCurrentChatId()) {
         const picked = names(groupDirectorPreview.chids.map(chid => characters[chid]?.avatar));
-        text = `${t`Director picked: ${picked}`}${groupDirectorPreview.reason ? ` · ${groupDirectorPreview.reason}` : ''}`;
+        text = `${picked ? t`Director picked: ${picked}` : t`Waiting for you`}${groupDirectorPreview.reason ? ` · ${groupDirectorPreview.reason}` : ''}`;
     }
     $('#group_next_up').text(text).toggleClass('displayNone', !text);
 }
@@ -2494,9 +2494,9 @@ export async function runGroupSceneDirector(group, members, { signal = null, max
         if (typeof text !== 'string' || controller.signal.aborted) {
             return null;
         }
-        const { speakers, reason } = parseDirectorResponse(text, entries.map(entry => entry.name), maxSpeakers);
+        const { speakers, reason, paused } = parseDirectorResponse(text, entries.map(entry => entry.name), maxSpeakers);
         const chids = speakers.map(name => entries.find(entry => entry.name === name)?.chid).filter(chid => Number.isInteger(chid));
-        return chids.length ? { chids, reason } : null;
+        return chids.length || paused ? { chids, reason } : null;
     } catch (error) {
         if (!signal?.aborted) {
             console.debug('[Group director] Falling back to the usual speaker choice.', error);

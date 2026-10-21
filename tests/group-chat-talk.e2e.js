@@ -131,7 +131,7 @@ test('with the scene director the burst shares out the replies and tells the dir
     const directorCalls = app.provider.calls.slice(callsBefore).filter(isDirectorCall);
     expect(directorCalls).toHaveLength(2);
     expect(directorCalls.every(call => call.messages[0].content.includes('only listening'))).toBe(true);
-    expect(directorCalls[1].messages[0].content).toContain('Choose 1 to 1 members');
+    expect(directorCalls[1].messages[0].content).toContain('Choose 0 to 1 members');
 });
 
 test('a user message cancels a held burst before another character is requested', async ({ app }) => {
