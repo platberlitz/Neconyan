@@ -1,3 +1,4 @@
+import { generationBlockedNotice } from '../generation-outcome-ui.js';
 /**
  * Submit, observe and read back the server's named Roleplay workflows.
  *
@@ -557,9 +558,13 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
             const message = typeof value.error === 'string' ? value.error : value.error?.message;
             // The origin is the workflow's own chat and account, as given when it was accepted or found in the job record.
             if (isImageInputIssue(value.error)) globalThis.dispatchEvent(new CustomEvent(IMAGE_REFUSED_EVENT, { detail: imageInputIssueDetail(value.error, roleplayImageOrigin(locator, account)) }));
+            else if (value.error?.code === 'GENERATION_BLOCKED') globalThis.toastr?.warning?.(generationBlockedNotice(false));
             else if (message) globalThis.toastr?.error?.(message, 'Reply stopped');
             stop(value.state);
-        } else stop('done');
+        } else {
+            if (value.result?.result?.generationOutcome || value.result?.generationOutcome) globalThis.toastr?.warning?.(generationBlockedNotice());
+            stop('done');
+        }
     };
     const stop = observeJob(jobId, {
         account,

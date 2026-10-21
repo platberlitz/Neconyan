@@ -10472,6 +10472,29 @@ Helper context.`;
         expect(saveChatDebounced).not.toHaveBeenCalled();
     });
 
+    test('filtered impersonation never dispatches an opted-in post pass, while the next ordinary request can', async () => {
+        useImpersonateTransformAgent({ runOnImpersonate: true });
+        generateQuietPrompt.mockResolvedValue('<assistant_response>Polished impersonation</assistant_response>');
+        const { initAgentRunner, getAgentGenerationContext } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const { suppressAutomaticGeneration } = await import('../public/scripts/generation-outcome.js');
+        initAgentRunner();
+        const textarea = { value: 'Draft impersonation', dispatchEvent: jest.fn() };
+        document.querySelector = jest.fn(selector => selector === '#send_textarea' ? textarea : null);
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'impersonate', {}, false);
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'impersonate', {}, false);
+        suppressAutomaticGeneration(getAgentGenerationContext());
+        await eventSource.emit(eventTypes.IMPERSONATE_READY, 'Draft impersonation');
+        expect(generateQuietPrompt).not.toHaveBeenCalled();
+        expect(textarea.value).toBe('Draft impersonation');
+        expect(textarea.dispatchEvent).not.toHaveBeenCalled();
+        await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length, getAgentGenerationContext());
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'impersonate', {}, false);
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'impersonate', {}, false);
+        await eventSource.emit(eventTypes.IMPERSONATE_READY, 'Draft impersonation');
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(textarea.value).toBe('Polished impersonation');
+    });
+
     test('rewrites generated impersonation text when prompt transform opts in', async () => {
         useImpersonateTransformAgent({ runOnImpersonate: true });
         generateQuietPrompt.mockResolvedValue('<assistant_response>Polished impersonation</assistant_response>');

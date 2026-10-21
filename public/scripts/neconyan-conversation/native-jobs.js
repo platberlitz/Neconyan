@@ -1,3 +1,4 @@
+import { generationBlockedNotice } from '../generation-outcome-ui.js';
 /**
  * Observe server-owned Conversation jobs without re-running their work.
  *
@@ -70,10 +71,15 @@ export function observeNativeConversationJob(jobId, account = getCurrentUserHand
     let stopPreview;
     // A terminal snapshot can be read again while its readback is retried; the notice is raised once.
     let refusalRaised = false;
+    let blockedRaised = false;
     const stop = observeJob(jobId, {
         account,
         onSnapshot: async job => {
             if (!refusalRaised) refusalRaised = raiseReplyImageRefusal(job, account);
+            if (!blockedRaised && TERMINAL.has(job.state) && (job.error?.code === 'GENERATION_BLOCKED' || job.result?.generationOutcome)) {
+                blockedRaised = true;
+                globalThis.toastr?.warning?.(generationBlockedNotice(Boolean(job.result?.generationOutcome)));
+            }
             if (['conversation.reply', 'conversation.rewrite'].includes(job.type) && !TERMINAL.has(job.state) && !stopPreview) stopPreview = observeNativeConversationPreview(jobId, account);
             await readback(account);
             await reviewAssistantJobChildren(job, account);

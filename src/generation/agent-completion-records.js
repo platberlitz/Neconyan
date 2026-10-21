@@ -1,3 +1,4 @@
+import { verifyBlockedOutputProof } from './blocked-output-proof.js';
 import { readArtifact } from '../jobs/artifacts.js';
 import { roleplayError, roleplayHash } from '../roleplay-store.js';
 import { selectRoleplayPromptRecords } from './roleplay-prompt.js';
@@ -21,6 +22,10 @@ function failedAgentStop(directories, job) {
 /** Only the saved native post-pass may change tracker metadata or replace a continued message. */
 export function applyAgentCompletionRecords(directories, job, records, output, baselineRecords = records) {
     const { request, source, effect } = job.intent;
+    if (output?.blockedProof) {
+        verifyBlockedOutputProof(directories, job, output, baselineRecords);
+        return;
+    }
     if (!output?.agentProof) {
         if (output?.continuedText !== undefined) throw failure();
         if (request?.worldInfo?.agents && !failedAgentStop(directories, job)) throw failure();

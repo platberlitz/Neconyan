@@ -224,3 +224,47 @@ test('cancelling the reply also cancels its pending assistant tool', async t => 
     assert.equal(f.child().cancellation.requested, true);
     await assert.rejects(f.finishTool(), /cancelled|no longer active/i);
 });
+
+test('filtered assistant response never admits tools, including saved replay', async t => {
+    const f = await fixture(t);
+    let calls = 0;
+    const response = tool('ReadLorebookEntry', { book: 'Manual', uid: 12 });
+    response.text = 'A partial sentence with';
+    response.response.choices[0].finish_reason = 'content_filter';
+    const generate = async () => { calls++; return response; };
+    assert.equal((await f.run(generate)).text, response.text);
+    assert.deepEqual(getJob(f.directories, f.job.id).children, []);
+    assert.equal((await f.run(generate)).text, response.text);
+    assert.equal(calls, 1);
+});
+
+for (const partial of ['Nova: unfinished [selfie: ocean] [reminder: 1h | later]', '']) test(`Conversation blocked ${partial ? 'partial is literal' : 'no-text is structured'} and replay dispatches no tools or presentation`, async t => {
+    const f = await fixture(t);
+    const { registerConversationReplyJob } = await import('../src/generation/conversation-jobs.js');
+    const { testExports: { runJob }, setDirectoriesResolver } = await import('../src/jobs/runner.js');
+    let calls = 0, images = 0, narration = 0;
+    const response = tool('ReadLorebookEntry', { book: 'Manual', uid: 12 });
+    response.text = partial;
+    response.response.choices[0].finish_reason = 'content_filter';
+    registerConversationReplyJob({ generate: async () => { calls++; return response; },
+        generateImage: async () => { images++; }, narrate: async () => { narration++; } });
+    setDirectoriesResolver(() => f.directories);
+    for (let replay = 0; replay < 2; replay++) {
+        updateJob(f.directories, f.job.id, { state: 'queued' });
+        await runJob(getJob(f.directories, f.job.id));
+    }
+    const current = readConversationTarget({ user: { directories: f.directories } }, f.snapshot.target);
+    assert.equal(calls, 1);
+    assert.equal(images, 0);
+    assert.equal(narration, 0);
+    assert.deepEqual(getJob(f.directories, f.job.id).children, []);
+    if (partial) {
+        assert.equal(current.branch.messages.length, 2);
+        assert.equal(current.branch.messages.at(-1).mes, partial);
+        assert.equal(current.branch.messages.at(-1).extra.generation_outcome.status, 'blocked');
+        assert.equal(getJob(f.directories, f.job.id).result.generationOutcome.status, 'blocked');
+    } else {
+        assert.equal(current.branch.messages.length, 1);
+        assert.equal(getJob(f.directories, f.job.id).error.code, 'GENERATION_BLOCKED');
+    }
+});

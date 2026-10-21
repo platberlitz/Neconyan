@@ -7,6 +7,8 @@ import { event_types, eventSource } from '../public/scripts/events.js';
 import { MacroRegistry } from '../public/scripts/macros/engine/MacroRegistry.js';
 import { getBrowserStoreKey } from '../public/scripts/extensions/third-party/MacroEnhanced/src/custom/browser-store.js';
 
+jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: strings => strings.join('') }));
+
 let account = 'alice';
 const chat = [];
 let currentChatId = 'roleplay';

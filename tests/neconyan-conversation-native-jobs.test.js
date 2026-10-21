@@ -1,6 +1,8 @@
 /* global globalThis */
 import { afterEach, beforeEach, expect, jest, test } from '@jest/globals';
 
+jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: strings => strings.join('') }));
+
 let account = 'alice';
 const observers = new Map();
 const refresh = jest.fn();

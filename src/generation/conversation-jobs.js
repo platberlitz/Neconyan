@@ -1,3 +1,4 @@
+import { classifyGenerationOutcome, providerBlockedError } from '../../public/scripts/generation-outcome.js';
 import { createHash } from 'node:crypto';
 import { createMessageTokenCounter, getReplyReasoning } from './message-token-counts.js';
 import { publishConversationPreview } from './conversation-preview.js';
@@ -767,7 +768,8 @@ async function runConversationRootJob(context, deps) {
     const directories = context.directories;
     const snapshot = readArtifact(directories, context.job.id, 'request');
     if (!snapshot) fail('The accepted Conversation snapshot is unavailable. Resubmit the request.');
-    if (readArtifact(directories, context.job.id, 'result')) return { artifact: true };
+    const savedResult = readArtifact(directories, context.job.id, 'result');
+    if (savedResult) return { artifact: true, ...(savedResult.generationOutcome ? { generationOutcome: savedResult.generationOutcome } : {}) };
     if (!Array.isArray(snapshot.participants)) {
         // A job accepted before participant support ran its own single reply.
         return runConversationParticipantJob(context, deps);
@@ -805,7 +807,8 @@ async function runConversationParticipantJob(context, deps) {
     const directories = context.directories;
     const snapshot = readArtifact(directories, context.job.id, 'request');
     if (!snapshot) fail('The accepted Conversation snapshot is unavailable. Resubmit the request.');
-    if (readArtifact(directories, context.job.id, 'result')) return { artifact: true };
+    const savedResult = readArtifact(directories, context.job.id, 'result');
+    if (savedResult) return { artifact: true, ...(savedResult.generationOutcome ? { generationOutcome: savedResult.generationOutcome } : {}) };
     const { target, binding, speaker, settings, userName } = snapshot;
     const force = snapshot.force === true;
     // An autonomous message was already chosen by the server's policy, so it
@@ -895,6 +898,20 @@ async function runConversationParticipantJob(context, deps) {
         }
         if (response === null) return { waiting: true };
         writeArtifact(directories, context.job.id, 'reply', response);
+    }
+    const blocked = classifyGenerationOutcome(response?.response);
+    if (blocked) {
+        if (typeof response.text !== 'string' || !response.text.trim()) throw providerBlockedError(blocked);
+        if (Buffer.byteLength(response.text) > 256 * 1024) fail('The model reply exceeded the Conversation message limit.', 502);
+        assertDeliverable();
+        setJobResume(directories, context.job.id, 'delivery');
+        const result = await appendConversationJobMessage(context, target, 'blocked-reply', {
+            role: speaker.avatar === target.avatar ? 'character' : 'partner', name: speaker.name, mes: response.text,
+            extra: { generation_outcome: blocked, ...(speaker.avatar !== target.avatar ? { partner_avatar: speaker.avatar } : {}),
+                ...(snapshot.replyReference ? { conversation_reply_to: snapshot.replyReference } : {}) },
+        }, { mutate: automation ? (branch, store) => applyConversationBookkeeping(branch, store, automation.patch, automation.key, deps.now()) : undefined });
+        writeArtifact(directories, context.job.id, 'result', { ...result, generationOutcome: blocked });
+        return { artifact: true, generationOutcome: blocked };
     }
     if (typeof response.text !== 'string' || !response.text.trim()) fail('The model returned an empty Conversation reply.', 502);
     if (Buffer.byteLength(response.text) > 256 * 1024) fail('The model reply exceeded the Conversation message limit.', 502);

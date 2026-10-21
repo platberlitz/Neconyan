@@ -460,3 +460,37 @@ test('a Custom pre-dispatch refusal validates the final body once, sends nothing
     assert.deepEqual(after.recoverySteps, []);
     assert.equal(after.recoverability, 'settled');
 });
+
+test('native blocked reply saves its provider proof and replays without another request', async t => {
+    const { f, context } = accepted(t);
+    let calls = 0;
+    const generate = async options => {
+        calls++;
+        const step = 'provider:' + 'c'.repeat(64);
+        await options.onProviderStep(step);
+        const result = { text: 'Unfinished sentence with', response: { choices: [{ finish_reason: 'content_filter', message: { content: 'Unfinished sentence with' } }] } };
+        writeArtifact(f.scope.directories, context.job.id, step, result);
+        return result;
+    };
+    const first = await runRoleplayReplyJob(context, { generate });
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Unfinished sentence with');
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).extra.generation_outcome.status, 'blocked');
+    assert.deepEqual(await runRoleplayReplyJob(context, { generate }), first);
+    assert.equal(calls, 1);
+});
+
+test('native no-text block retains a definite provider result and cannot redispatch on replay', async t => {
+    const { f, context } = accepted(t);
+    let calls = 0;
+    const generate = async options => {
+        calls++;
+        const step = 'provider:' + 'd'.repeat(64);
+        await options.onProviderStep(step);
+        const result = { text: '', response: { choices: [{ finish_reason: 'content_filter', message: { content: '' } }] } };
+        writeArtifact(f.scope.directories, context.job.id, step, result);
+        return result;
+    };
+    for (let attempt = 0; attempt < 2; attempt++) await assert.rejects(runRoleplayReplyJob(context, { generate }), { code: 'GENERATION_BLOCKED' });
+    assert.equal(calls, 1);
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.length, f.records.length);
+});

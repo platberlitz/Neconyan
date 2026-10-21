@@ -1,3 +1,4 @@
+import { classifyGenerationOutcome } from '../../public/scripts/generation-outcome.js';
 import { verifyPromptImageCopy } from '../managed-image-files.js';
 import { roleplayHash } from '../roleplay-store.js';
 /**
@@ -652,6 +653,7 @@ export async function runBackendRequest(request, handler, payload, { signal, fet
     }
 
     const body = payload.stream === true ? parseUnstreamedReply(capture.body) : capture.body;
+    if (classifyGenerationOutcome(body)) return body;
     if (capture.statusCode >= 400 || body?.error) {
         const reportedStatus = capture.statusCode >= 400 ? capture.statusCode : body?.status;
         const status = getSafeConversationGenerationStatus(reportedStatus);

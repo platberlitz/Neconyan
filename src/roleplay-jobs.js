@@ -185,6 +185,10 @@ function effectRecords(records, source, effect, output, request, job, directorie
     const selected = Number(message.swipe_id ?? 0);
     if (!Number.isInteger(selected) || selected < 0 || selected >= swipes.length) throw invalid('The message has an unreadable version choice.');
     if (effect === 'continue') {
+        if (!output.extra?.generation_outcome) {
+            if (message.extra) delete message.extra.generation_outcome;
+            if (message.swipe_info?.[selected]?.extra) delete message.swipe_info[selected].extra.generation_outcome;
+        }
         message.mes = output.continuedText ?? message.mes + output.text;
         Object.assign(message, timing);
         if (output.extra) message.extra = { ...message.extra, ...output.extra };
@@ -201,6 +205,7 @@ function effectRecords(records, source, effect, output, request, job, directorie
     message.swipes = [...swipes, output.text];
     message.swipe_info = [...info, { ...timing, ...(output.extra ? { extra: output.extra } : {}) }];
     message.swipe_id = message.swipes.length - 1;
+    if (!output.extra?.generation_outcome && message.extra) delete message.extra.generation_outcome;
     message.mes = output.text;
     Object.assign(message, timing);
     if (output.extra) message.extra = { ...message.extra, ...output.extra };

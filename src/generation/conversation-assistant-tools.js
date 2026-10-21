@@ -1,3 +1,4 @@
+import { classifyGenerationOutcome } from '../../public/scripts/generation-outcome.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { attachOwnedChild, getJob, releaseChildJobs, setJobResume, updateJob } from '../jobs/store.js';
 import { roleplayError, roleplayHash } from '../roleplay-store.js';
@@ -45,6 +46,7 @@ export async function generateConversationAssistantReply(context, snapshot, opti
                 generationType: 'normal', stepNamespace: `conversation-assistant:${round}` });
             saveStep(context, responseKey, identity, response);
         }
+        if (classifyGenerationOutcome(response?.response)) return response;
         const calls = normaliseRoleplayToolCalls(response, ASSISTANT_TOOL_NAMES);
         if (!calls.length) return response;
         totalCalls += calls.length;

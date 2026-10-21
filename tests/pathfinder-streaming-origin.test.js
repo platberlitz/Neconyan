@@ -2,6 +2,7 @@
 import { describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import * as generationOutcome from '../public/scripts/generation-outcome.js';
 
 const source = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8');
 const classSource = source.slice(source.indexOf('class StreamingProcessor {'), source.indexOf('\n/**', source.indexOf('\n}\n', source.indexOf('class StreamingProcessor {'))));
@@ -22,9 +23,11 @@ async function stream(type = 'normal') {
     }
     const element = new Element();
     const context = vm.createContext({
+        ...generationOutcome,
         console, AbortController, structuredClone,
         StreamingThinkingIndicator: class { constructor() { return thinking; } },
-        chat: [], chatId: 'original', chatGeneration: 1, activeGenerationRun: {}, streamingProcessor: null,
+        chat: [], chat_metadata: { tainted: true }, chatId: 'original', chatGeneration: 1, activeGenerationRun: {}, streamingProcessor: null,
+        saveChatConditional: jest.fn(async () => true),
         document: { querySelector: () => element }, HTMLElement: Element,
         power_user: { streaming_fps: 30 }, main_api: 'openai', scrollLock: false, scrollLockImmunityUntil: 0,
         IN_CHAT_AGENT_TRANSFORM_HISTORY_KEY: 'history', IN_CHAT_AGENT_PRE_GENERATION_INTERCEPT_HISTORY_KEY: 'intercept',
@@ -58,6 +61,8 @@ async function stream(type = 'normal') {
     context.getCurrentChatId = () => context.chatId;
     context.saveReply = async () => { context.chat.push({ ...replacement(), mes: 'original', swipes: ['original'] }); };
     vm.runInContext(classSource + '\nthis.StreamingProcessor = StreamingProcessor;', context);
+    const syncSwipe = source.match(/^export function syncMesToSwipe\([\s\S]*?^}$/m)[0].replace(/^export /, '');
+    vm.runInContext(syncSwipe, context);
     const apply = source.match(/^function applyStreamingVisibleWrite\([\s\S]*?^}$/m)[0];
     vm.runInContext(apply, context);
     const processor = new context.StreamingProcessor(type, false, new Date(), '', { prefixReasoning: '', removePrefix: text => text });
@@ -87,7 +92,7 @@ describe('streaming message origin', () => {
     test.each(['stop', 'error', 'abort', 'empty completion', 'chat switch'])('clears the owned waiting indicator on %s', async action => {
         const { context, processor, thinking } = await stream();
         if (action === 'stop') processor.onStopStreaming();
-        if (action === 'error') processor.onErrorStreaming();
+        if (action === 'error') await processor.onErrorStreaming();
         if (action === 'abort') processor.abortController.abort();
         if (action === 'empty completion') {
             processor.generator = async function* () {};
@@ -98,6 +103,13 @@ describe('streaming message origin', () => {
             await processor.generate();
         }
         expect(thinking.clear).toHaveBeenCalled();
+    });
+
+    test('saves the owned error outcome on its current swipe before finishing', async () => {
+        const { context, processor } = await stream();
+        await processor.onErrorStreaming();
+        expect(context.chat[0].swipe_info[0].extra.generation_outcome.status).toBe('error');
+        expect(context.saveChatConditional).toHaveBeenCalledTimes(1);
     });
 
     test('continues updating the original message and swipe through normal stream completion', async () => {

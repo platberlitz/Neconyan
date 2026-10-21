@@ -1,3 +1,5 @@
+import { classifyGenerationOutcome, isBlockedGeneration, applyGenerationOutcome, suppressAutomaticGeneration } from './scripts/generation-outcome.js';
+import { generationBlockedNotice, renderGenerationOutcome } from './scripts/generation-outcome-ui.js';
 import { initPromptMediaControls, projectBrowserPromptMedia, validatePromptImageCopies, reportBrowserImageRefusal, isReportedImageRefusal } from './scripts/prompt-media-client.js';
 import { promptMediaText, promptImageCopyDescriptor } from './scripts/prompt-media-policy.js';
 import { formatRoleplayTextMessage, combineRoleplayTextPrompt } from './scripts/roleplay-text-format.js';
@@ -6448,6 +6450,7 @@ export function updateMessageElement(mes, { messageId = chat.length - 1, message
         messageElement.find('.tokenCounterDisplay').text(`${tokenCount}t`);
     }
     updateMessageMetaBadges(messageElement, mes);
+    renderGenerationOutcome(messageElement, mes);
 
     mes.title && messageElement.attr('title', mes.title);
     timerValue && messageElement.find('.mes_timer').attr('title', timerTitle).text(timerValue);
@@ -7843,6 +7846,12 @@ class StreamingProcessor {
     }
 
     #applyProseLimit(state, isFinal = false) {
+        this.outcome ??= state?.outcome;
+        this.outcomes = state?.outcomes ?? this.outcomes;
+        if (this.outcome) {
+            suppressAutomaticGeneration(this.agentGenerationContext);
+            if (this.message) applyGenerationOutcome(this.message, this.outcome);
+        }
         if (!this.maxOutputTokens || (isFinal && this.lastRawText === null)) {
             return false;
         }
@@ -7995,7 +8004,7 @@ class StreamingProcessor {
             getMessage: text,
             isImpersonate: isImpersonate,
             isContinue: isContinue,
-            displayIncompleteSentences: !isFinal || this.finishReason === 'length',
+            displayIncompleteSentences: !isFinal || this.finishReason === 'length' || Boolean(this.outcome),
             stoppingStrings: this.stoppingStrings,
         });
 
@@ -8156,11 +8165,13 @@ class StreamingProcessor {
      */
     async finalizeIntermediaryMessage(messageId, text, { unlockUI = true }) {
         if (!this.#isCurrent(messageId)) return;
+        applyGenerationOutcome(chat[messageId], this.outcome);
         await this.onProgressStreaming(messageId, text, true);
         if (!this.#isCurrent(messageId)) return;
         const messageElement = chatElement.find(`.mes[mesid="${messageId}"]`);
         const message = chat[messageId];
         addCopyToCodeBlocks(messageElement);
+        renderGenerationOutcome(messageElement, message);
 
         await this.reasoningHandler.finish(messageId);
         if (!this.#isCurrent(messageId)) return;
@@ -8180,7 +8191,11 @@ class StreamingProcessor {
                 gen_finished: message.gen_finished,
                 extra: swipeInfoExtra,
             };
-            const swipeInfoArray = Array(this.swipes.length).fill().map(() => structuredClone(swipeInfo));
+            const swipeInfoArray = Array(this.swipes.length).fill().map((_, index) => {
+                const info = structuredClone(swipeInfo);
+                applyGenerationOutcome(info, this.outcomes?.[index + 1]);
+                return info;
+            });
             parseReasoningInSwipes(this.swipes, swipeInfoArray, message.extra?.reasoning_duration);
             message.swipes.push(...this.swipes);
             message.swipe_info.push(...swipeInfoArray);
@@ -8225,18 +8240,25 @@ class StreamingProcessor {
         if (!this.#isCurrent(messageId)) return;
 
         const isAborted = this.abortController.signal.aborted;
-        if (!isAborted && power_user.auto_swipe && generatedTextFiltered(text)) {
+        if (!this.outcome && !isAborted && power_user.auto_swipe && generatedTextFiltered(text)) {
             return await swipe(null, SWIPE_DIRECTION.RIGHT, { source: SWIPE_SOURCE.AUTO_SWIPE, repeated: true, forceMesId: chat.length - 1, generationOptions: this.requestControls });
         }
         playMessageSound();
     }
 
-    onErrorStreaming() {
+    async onErrorStreaming() {
+        suppressAutomaticGeneration(this.agentGenerationContext);
         this.thinkingIndicator.clear();
         if (this.isFinished || !this.#isCurrent(this.messageId, true)) {
             return;
         }
 
+        if (this.message && chat[this.messageId] === this.message) {
+            this.message.extra ??= {};
+            this.message.extra.generation_outcome = { version: 1, status: 'error', reason: 'provider_error' };
+            syncMesToSwipe(this.messageId);
+            await saveChatConditional();
+        }
         this.abortController.abort();
         this.isStopped = true;
         this.isFinished = true;
@@ -8337,6 +8359,7 @@ class StreamingProcessor {
 
             if (!this.isFinished) {
                 console.error(err);
+                suppressAutomaticGeneration(this.agentGenerationContext);
                 this.abortController.abort();
                 this.isStopped = true;
                 this.isFinished = true;
@@ -8441,7 +8464,7 @@ class StreamingProcessor {
 
             if (!this.isFinished) {
                 console.error(err);
-                this.onErrorStreaming();
+                await this.onErrorStreaming();
             }
             return this.result;
         } finally {
@@ -8998,6 +9021,25 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
     const getAgentGenerationContext = agentGenerationContextProvider ?? (() => null);
     const cancelRevision = getAgentGenerationContext()?.cancelRevision;
     let agentGenerationContext = null;
+    const priorReplyIndex = chat.length - 1;
+    const priorReply = ['swipe', 'continue', 'regenerate'].includes(type) && !chat.at(-1)?.is_user ? structuredClone(chat.at(-1)) : null;
+    if (priorReply && priorReply.swipe_id >= priorReply.swipes?.length) {
+        priorReply.swipe_id = Math.max(0, priorReply.swipes.length - 1);
+        priorReply.mes = priorReply.swipes[priorReply.swipe_id];
+        priorReply.extra = structuredClone(priorReply.swipe_info?.[priorReply.swipe_id]?.extra ?? priorReply.extra ?? {});
+    }
+    const restoreBlockedAttempt = async () => {
+        if (!isCurrent()) return;
+        if (priorReply) chat.splice(priorReplyIndex, chat.length - priorReplyIndex, priorReply);
+        else if (activeStream?.message && chat.at(-1) === activeStream.message) chat.pop();
+        await printMessages();
+        if (await saveChatConditional() && recoveryContext?.id && isCurrent()) await discardGeneration(recoveryContext.id, getRequestHeaders());
+    };
+    const notifyBlocked = hasText => {
+        suppressAutomaticGeneration(agentGenerationContext);
+        toastr.warning(generationBlockedNotice(hasText));
+    };
+
     let activeStream = null;
     let recoveryContext = null;
     let delegatedGeneration = false;
@@ -10443,6 +10485,22 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                         ? await activeStreamingProcessor.generateBuffered()
                         : await activeStreamingProcessor.generate();
                     if (!isCurrent()) return;
+                    if (activeStreamingProcessor.outcome) {
+                        const partial = getMessage;
+                        notifyBlocked(Boolean(partial.trim()));
+                        if (!partial.trim()) await restoreBlockedAttempt();
+                        else if (shouldBufferOutput) {
+                            await saveReply({ type: isContinue ? 'appendFinal' : type,
+                                getMessage: cleanUpMessage({ getMessage: (isContinue ? continue_mag : '') + partial, isContinue, displayIncompleteSentences: true }),
+                                reasoning: activeStreamingProcessor.reasoningHandler.reasoning,
+                                generationContext: agentGenerationContext, generationOutcome: activeStreamingProcessor.outcome,
+                                swipes: activeStreamingProcessor.swipes, choiceOutcomes: activeStreamingProcessor.outcomes, isCurrent });
+                            await saveChatWithHeldReply(recoveryContext, isCurrent);
+                        } else await activeStreamingProcessor.onFinishStreaming(activeStreamingProcessor.messageId, (isContinue ? continue_mag : '') + partial);
+                        unblockGeneration(type);
+                        clearStreamingProcessorIfCurrent(activeStreamingProcessor);
+                        return Object.defineProperties(new String(partial), { fromStream: { value: true }, generationOutcome: { value: activeStreamingProcessor.outcome } });
+                    }
                     let messageChunk = cleanUpMessage({
                         getMessage: getMessage,
                         isImpersonate: isImpersonate,
@@ -10528,6 +10586,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                                 type: saveReplyType,
                                 isCurrent,
                                 generationContext: agentGenerationContext,
+                                choiceOutcomes: activeStreamingProcessor.outcomes,
                                 getMessage,
                                 swipes: activeStreamingProcessor.swipes,
                                 reasoning: activeStreamingProcessor.lastReasoningPrefix
@@ -10605,10 +10664,11 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                 return data;
             }
 
+            const generationOutcome = classifyGenerationOutcome(data);
             let messageChunk = '';
 
             // if an error was returned in data (textgenwebui), show it and throw it
-            if (data.error) {
+            if (data.error && !generationOutcome) {
                 unblockGeneration(type);
 
                 if (data?.response) {
@@ -10629,6 +10689,20 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             let imageUrls = extractImagesFromData(data);
             const reasoningSignature = extractReasoningSignatureFromData(data);
             kobold_horde_model = title;
+            if (generationOutcome) {
+                notifyBlocked(Boolean(getMessage.trim()));
+                if (!getMessage.trim()) await restoreBlockedAttempt();
+                else if (type !== 'quiet' && !isImpersonate) {
+                    await saveReply({ type: originalType === 'continue' ? 'appendFinal' : type,
+                        getMessage: cleanUpMessage({ getMessage: (isContinue ? continue_mag : '') + getMessage, isContinue, displayIncompleteSentences: true }),
+                        title, reasoning, generationContext: agentGenerationContext, generationOutcome, isCurrent,
+                        swipes: extractMultiSwipes(data, type), choiceOutcomes: Object.fromEntries((data.choices ?? []).map((choice, index) => [choice.index ?? index, classifyGenerationOutcome(data, choice.index ?? index)])) });
+                    await saveChatWithHeldReply(recoveryContext, isCurrent);
+                }
+                unblockGeneration(type);
+                return Object.defineProperty(new String(getMessage), 'generationOutcome', { value: generationOutcome });
+            }
+
 
             const swipes = extractMultiSwipes(data, type);
 
@@ -10706,9 +10780,9 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             } else {
             // Without streaming we'll be having a full message on continuation. Treat it as a last chunk.
                 if (originalType !== 'continue') {
-                    ({ type, getMessage } = await saveReply({ type, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, reasoningTokens: data.reasoningTokens, isCurrent, generationContext: agentGenerationContext }));
+                    ({ type, getMessage } = await saveReply({ type, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, reasoningTokens: data.reasoningTokens, isCurrent, generationContext: agentGenerationContext, choiceOutcomes: Object.fromEntries((data.choices ?? []).map((choice, index) => [choice.index ?? index, classifyGenerationOutcome(data, choice.index ?? index)])) }));
                 } else {
-                    ({ type, getMessage } = await saveReply({ type: 'appendFinal', getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, reasoningTokens: data.reasoningTokens, isCurrent, generationContext: agentGenerationContext }));
+                    ({ type, getMessage } = await saveReply({ type: 'appendFinal', getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, reasoningTokens: data.reasoningTokens, isCurrent, generationContext: agentGenerationContext, choiceOutcomes: Object.fromEntries((data.choices ?? []).map((choice, index) => [choice.index ?? index, classifyGenerationOutcome(data, choice.index ?? index)])) }));
                 }
                 if (!isCurrent()) return;
 
@@ -10771,8 +10845,16 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
      * @param {Error|object} exception Error or response JSON
      * @throws {Error|object} Re-throws the exception
      */
-        function onError(exception) {
+        async function onError(exception) {
             if (!isCurrent()) throw exception;
+            suppressAutomaticGeneration(agentGenerationContext);
+            if (isBlockedGeneration(exception?.generationOutcome)) {
+                notifyBlocked(false);
+                await restoreBlockedAttempt();
+                unblockGeneration(type);
+                streamingProcessor = null;
+                return Object.defineProperty(new String(''), 'generationOutcome', { value: exception.generationOutcome });
+            }
             // if the response JSON was thrown (novel|textgenerationwebui|kobold), show the error message
             if (typeof exception?.error?.message === 'string') {
                 toastr.error(exception.error.message, t`Text generation error`, { timeOut: 10000, extendedTimeOut: 20000 });
@@ -11573,6 +11655,8 @@ async function applyHeldGeneration(job, headers, isCurrent) {
     let reasoningSignature = null;
     let swipes = [];
     let title = '';
+    let generationOutcome = null;
+    let choiceOutcomes = {};
     if (ctx.streaming) {
         let last = null;
         const read = {
@@ -11590,13 +11674,17 @@ async function applyHeldGeneration(job, headers, isCurrent) {
         imageUrls = last?.state?.images ?? [];
         reasoningSignature = last?.state?.signature || null;
         swipes = last?.swipes ?? [];
+        generationOutcome = last?.state?.outcome ?? null;
+        choiceOutcomes = last?.state?.outcomes ?? {};
     } else {
         let data = await response.json();
         if (ctx.api === 'koboldhorde' && data.id) {
             const { waitForHordeTask } = await import('./scripts/horde.js');
             data = await waitForHordeTask(data.id, { get aborted() { return !isCurrent(); } }, false, false);
         }
-        if (data?.error) {
+        generationOutcome = classifyGenerationOutcome(data);
+        choiceOutcomes = Object.fromEntries((data.choices ?? []).map((choice, index) => [choice.index ?? index, classifyGenerationOutcome(data, choice.index ?? index)]));
+        if (data?.error && !generationOutcome) {
             toastr.error(t`A reply that ran in the background failed.`);
             return discard();
         }
@@ -11613,7 +11701,11 @@ async function applyHeldGeneration(job, headers, isCurrent) {
     target = getHeldReplyTarget(chat, ctx, job.id);
     if (!target || target.type === 'saved') return;
     const isContinue = ctx.type === 'continue';
-    getMessage = cleanUpMessage({ getMessage, isImpersonate: false, isContinue });
+    if (generationOutcome) {
+        toastr.warning(generationBlockedNotice(Boolean(getMessage.trim())));
+        if (!getMessage.trim()) return discard();
+    }
+    getMessage = cleanUpMessage({ getMessage, isImpersonate: false, isContinue, displayIncompleteSentences: Boolean(generationOutcome) });
     reasoning = getRegexedString(reasoning, regex_placement.REASONING);
     if (!getMessage.trim() && !reasoning.trim() && !imageUrls.length) {
         toastr.warning(t`A reply that finished in the background had no text to restore.`);
@@ -11631,7 +11723,7 @@ async function applyHeldGeneration(job, headers, isCurrent) {
         chat.at(-1).extra.reasoning = target.reasoningPrefix ?? '';
         getMessage = (target.prefix ?? '') + getMessage;
     }
-    await saveReply({ type: target.type, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, isCurrent });
+    await saveReply({ type: target.type, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, isCurrent, generationOutcome, choiceOutcomes });
     if (!isCurrent()) return;
     if (!await saveChatWithHeldReply({ id: job.id }, isCurrent)) {
         scheduleHeldGenerationRecovery();
@@ -11975,7 +12067,7 @@ async function processImageAttachment(message, { imageUrls }) {
  * @property {string} type Type of generation
  * @property {string} getMessage Generated message
  */
-export async function saveReply({ type, getMessage, fromStreaming = false, title = '', swipes = [], reasoning = '', imageUrls = [], reasoningSignature = null, reasoningTokens = 0, isCurrent = () => true, generationContext = null }) {
+export async function saveReply({ type, getMessage, fromStreaming = false, title = '', swipes = [], reasoning = '', imageUrls = [], reasoningSignature = null, reasoningTokens = 0, isCurrent = () => true, generationContext = null, generationOutcome = null, choiceOutcomes = {} }) {
     // Backward compatibility
     if (arguments.length > 1 && typeof arguments[0] !== 'object') {
         console.trace('saveReply called with positional arguments. Please use an object instead.');
@@ -12011,6 +12103,7 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
     const generationFinished = new Date();
     if (type === 'swipe') {
         oldMessage = lastMessage.mes;
+        if (!fromStreaming) applyGenerationOutcome(lastMessage, generationOutcome);
         lastMessage.swipes.length++;
         if (lastMessage.swipe_id === lastMessage.swipes.length - 1) {
             lastMessage.title = title;
@@ -12041,6 +12134,7 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
     } else if (type === 'append' || type === 'continue') {
         console.debug('Trying to append.');
         oldMessage = lastMessage.mes;
+        if (!fromStreaming) applyGenerationOutcome(lastMessage, generationOutcome);
         lastMessage.title = title;
         lastMessage.mes += getMessage;
         lastMessage.gen_started = generation_started;
@@ -12063,6 +12157,7 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
         !fromStreaming && await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, chat_id, type, generationContext);
     } else if (type === 'appendFinal') {
         oldMessage = lastMessage.mes;
+        if (!fromStreaming) applyGenerationOutcome(lastMessage, generationOutcome);
         console.debug('Trying to appendFinal.');
         lastMessage.title = title;
         lastMessage.mes = getMessage;
@@ -12093,6 +12188,7 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
         replyMessage = newMessage;
         chat.push(newMessage);
         newMessage.extra = {};
+        applyGenerationOutcome(newMessage, generationOutcome);
         newMessage.name = name2;
         newMessage.is_user = false;
         newMessage.send_date = getMessageTimeStamp();
@@ -12176,7 +12272,11 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
             gen_finished: item.gen_finished,
             extra: swipeInfoExtra,
         };
-        const swipeInfoArray = Array(swipes.length).fill().map(() => structuredClone(swipeInfo));
+        const swipeInfoArray = Array(swipes.length).fill().map((_, index) => {
+            const info = structuredClone(swipeInfo);
+            applyGenerationOutcome(info, choiceOutcomes[index + 1]);
+            return info;
+        });
         parseReasoningInSwipes(swipes, swipeInfoArray, item.extra?.reasoning_duration);
         item.swipes.push(...swipes);
         item.swipe_info.push(...swipeInfoArray);

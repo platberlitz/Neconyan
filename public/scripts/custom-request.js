@@ -1,3 +1,4 @@
+import { classifyGenerationOutcome, providerBlockedError } from './generation-outcome.js';
 import { getPresetManager } from './preset-manager.js';
 import { extractJsonFromData, extractMessageFromData, getGenerateUrl, getRequestHeaders, name1, name2, normalizeContentText, substituteParams } from '../script.js';
 import { getTextGenServer, createTextGenGenerationData, textgenerationwebui_settings } from './textgen-settings.js';
@@ -145,6 +146,8 @@ export class TextCompletionService {
             });
 
             const json = await response.json();
+            const blocked = classifyGenerationOutcome(json);
+            if (blocked) throw providerBlockedError(blocked);
             if (!response.ok || json.error) {
                 const error = new Error(String(json.error?.message || json.error || 'Response not OK'));
                 error.status = response.status;
@@ -381,6 +384,8 @@ export class ChatCompletionService {
 
         if (!data.stream) {
             const json = await response.json();
+            const blocked = classifyGenerationOutcome(json);
+            if (blocked) throw providerBlockedError(blocked);
             if (!response.ok || json.error) {
                 const error = new Error(String(json.error?.message || json.error || 'Response not OK'));
                 error.status = response.status;
@@ -430,6 +435,8 @@ export class ChatCompletionService {
                 if (rawData === '[DONE]') return;
                 tryParseStreamingError(response, rawData, { quiet: true });
                 const parsed = JSON.parse(rawData);
+                const blocked = classifyGenerationOutcome(parsed);
+                if (blocked) throw providerBlockedError(blocked);
 
                 const reply = getStreamingReply(parsed, state, {
                     chatCompletionSource: data.chat_completion_source,

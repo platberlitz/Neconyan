@@ -1,3 +1,4 @@
+import { automaticGenerationSuppressed, messageAutomaticGenerationSuppressed } from '../../generation-outcome.js';
 import {
     chat,
     chat_metadata,
@@ -1974,6 +1975,7 @@ function hasRecoverableAssistantPostProcessingCandidate() {
     }
 
     const message = chat[messageIndex];
+    if (messageAutomaticGenerationSuppressed(message)) return false;
     if (!isGenerationAssistantCandidate(messageIndex, message)) {
         return false;
     }
@@ -2190,6 +2192,7 @@ function isGenerationAssistantCandidate(messageIndex, message) {
 }
 
 function queueLatestAssistantPostProcessingFromSnapshot() {
+    if (automaticGenerationSuppressed(getAgentGenerationContext())) return { queued: false, retry: false };
     if (postProcessingInvalidatedByChatChange || isCurrentGenerationChatStale()) {
         discardPostProcessingInvalidatedByChatChange();
         return { queued: false, retry: false };
@@ -2214,6 +2217,7 @@ function queueLatestAssistantPostProcessingFromSnapshot() {
     }
 
     const message = chat[messageIndex];
+    if (messageAutomaticGenerationSuppressed(message)) return { queued: false, retry: false };
     if (!isGenerationAssistantCandidate(messageIndex, message)) {
         return { queued: false, retry: true };
     }
@@ -3686,7 +3690,7 @@ async function requestProfilePromptTransform(isRuntimeAllowed, CMRS, profileId, 
             };
         }
     } catch (error) {
-        if (isAbortSignalTriggered(error, signal)) {
+        if (error?.code === 'GENERATION_BLOCKED' || isAbortSignalTriggered(error, signal)) {
             throw error;
         }
 
@@ -3890,7 +3894,7 @@ export async function requestPromptTransform(agent, promptMessages, maxTokens, o
                         model: String(response?.model ?? '').trim() || getPromptTransformRequestModel(attempt.profileId, attempt.modelOverride),
                     };
                 } catch (error) {
-                    if (isAbortSignalTriggered(error, requestAbortController.signal) || !isRequestCurrent()) throw error;
+                    if (error?.code === 'GENERATION_BLOCKED' || isAbortSignalTriggered(error, requestAbortController.signal) || !isRequestCurrent()) throw error;
                     lastError = error;
                     if (index < attempts.length - 1) {
                         console.warn(`[InChatAgents] ${agent?.name || 'Agent'} failed on ${target}; trying the next fallback connection.`, error);
@@ -4611,6 +4615,11 @@ function onGenerationEnded(_chatLength, generationContext) {
         return;
     }
 
+    if (automaticGenerationSuppressed(generationContext ?? getAgentGenerationContext())) {
+        pendingGenerationSnapshot = null;
+        isGenerationInProgress = false;
+        return;
+    }
     pendingGenerationSnapshot ??= buildActivationSnapshot(currentMainGenerationType);
     isGenerationInProgress = false;
     lastMainGenerationEndedAt = Date.now();
@@ -4807,7 +4816,7 @@ async function onGenerationAfterCommands(generationType, options, dryRun) {
  * @param {{ generationType: string, activeAgentIds: string[], chatId: string } | null} activationSnapshot
  */
 async function processReceivedMessage(messageIndex, generationType, activationSnapshot = null, retryAttempt = 0) {
-    if (isNativeRoleplayGeneration) return;
+    if (isNativeRoleplayGeneration || automaticGenerationSuppressed(getAgentGenerationContext()) || messageAutomaticGenerationSuppressed(chat[messageIndex])) return;
     const message = chat[messageIndex];
     if (!message || message.is_user || message.is_system) {
         return;
@@ -4835,7 +4844,7 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
     const initialText = message.mes;
     const postProcessingTarget = { text: initialText, valid: true, state: captureMessageTargetState(message) };
     const operationCancelRevision = agentGenerationCancelRevision;
-    const isOperationCurrent = () => agentGenerationCancelRevision === operationCancelRevision
+    const isOperationCurrent = () => !messageAutomaticGenerationSuppressed(message) && !automaticGenerationSuppressed(getAgentGenerationContext()) && agentGenerationCancelRevision === operationCancelRevision
         && postProcessingTarget.valid && isMessageTargetCurrent(message, postProcessingTarget.state, messageIndex);
     postProcessingTargets.set(message, postProcessingTarget);
     let pipelineCompleted = false;
@@ -5019,7 +5028,7 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
         if (!pipelineCompleted && !alreadyProcessed && agentGenerationCancelRevision === operationCancelRevision
             && !generationStopRequested && postProcessingTarget.valid && chat[messageIndex] === message) {
             // A request whose result is unknown may already have been paid for, so it is never re-sent.
-            if (!failureOutcomeUnknown && retryAttempt < POST_PROCESSING_MAX_RETRIES
+            if (!failureOutcomeUnknown && !messageAutomaticGenerationSuppressed(message) && retryAttempt < POST_PROCESSING_MAX_RETRIES
                 && isMessageTargetCurrent(message, postProcessingTarget.state, messageIndex)) {
                 schedulePostProcessingRetry(messageIndex, generationType, activationSnapshot, message, {
                     cancelRevision: operationCancelRevision,
@@ -5037,6 +5046,10 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
 }
 
 async function onMessageReceived(messageIndex, generationType, generationContext = null) {
+    if (automaticGenerationSuppressed(generationContext ?? getAgentGenerationContext()) || messageAutomaticGenerationSuppressed(chat[Number(messageIndex)])) {
+        clearDeferredPostProcessing(Number(messageIndex));
+        return;
+    }
     if (isNativeRoleplayGeneration || !areAgentsGloballyEnabled()) {
         return;
     }
@@ -5847,7 +5860,7 @@ async function onMainGenerationOutputReady(eventData) {
 }
 
 async function onImpersonateReady(text = '', eventData = {}) {
-    if (isAuxiliaryOrStaleRequest(eventData) || !areAgentsGloballyEnabled()) {
+    if (isAuxiliaryOrStaleRequest(eventData) || automaticGenerationSuppressed(getAgentGenerationContext()) || !areAgentsGloballyEnabled()) {
         return;
     }
 
