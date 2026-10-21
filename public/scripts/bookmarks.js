@@ -379,7 +379,7 @@ export async function convertSoloToGroupChat() {
         members: members,
         avatar_url: avatar,
         allow_self_responses: false,
-        activation_strategy: group_activation_strategy.NATURAL,
+        activation_strategy: group_activation_strategy.DIRECTOR,
         disabled_members: [],
         fav: favChecked,
         chat_id: chatName,

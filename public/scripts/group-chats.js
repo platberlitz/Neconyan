@@ -90,6 +90,9 @@ import {
     getChatGeneration,
     name1,
     name2,
+    main_api,
+    generateRawData,
+    extractMessageFromData,
 } from '../script.js';
 import { getQueuedChatSaveAbortReason } from './chat-save-guard.js';
 import { getChatBackupSaveOptions } from './chat-backup-sequence.js';
@@ -104,7 +107,19 @@ import { accountStorage } from './util/AccountStorage.js';
 import { fetchWithCsrfRetry } from './csrf-token-refresh.js';
 import { chat_completion_sources, oai_settings } from './openai.js';
 import { getRegexedString, regex_placement } from './extensions/regex/engine.js';
-import { appendGroupSpeakerStops, buildOwnLinesReminder, getOtherMemberNames, isKeepOwnLinesEnabled } from './group-chat-scene.js';
+import {
+    appendGroupSpeakerStops,
+    buildDirectorPrompt,
+    buildOwnLinesReminder,
+    getOtherMemberNames,
+    GROUP_DIRECTOR_MAX_SPEAKERS,
+    GROUP_DIRECTOR_RESPONSE_TOKENS,
+    GROUP_DIRECTOR_STRATEGY,
+    GROUP_DIRECTOR_TIMEOUT_MS,
+    isKeepOwnLinesEnabled,
+    parseDirectorResponse,
+    summariseMemberCard,
+} from './group-chat-scene.js';
 
 export {
     selected_group,
@@ -558,7 +573,19 @@ function limitGroupSpeakersForControl(activatedMembers, forceSingleSpeaker) {
     return activatedMembers.slice(0, 1);
 }
 
-function setGroupTypingIndicator(characterName = '') {
+function setGroupDirectorChoosingIndicator(active) {
+    activeGroupTypingName = '';
+    const indicator = $('#group_typing_indicator');
+    if (!indicator.length) {
+        return;
+    }
+
+    indicator.text(active ? t`Choosing who speaks next...` : '');
+    indicator.toggleClass('displayNone', !active);
+    $('#group_speaker_controls').toggleClass('is-typing', Boolean(active));
+}
+
+function setGroupTypingIndicator(characterName = '', directorNote = '') {
     const nextTypingName = String(characterName || '');
     activeGroupTypingName = nextTypingName;
     const indicator = $('#group_typing_indicator');
@@ -566,7 +593,8 @@ function setGroupTypingIndicator(characterName = '') {
         return;
     }
 
-    indicator.text(activeGroupTypingName ? `${activeGroupTypingName} is typing...` : '');
+    const note = activeGroupTypingName && directorNote ? ` · ${directorNote}` : '';
+    indicator.text(activeGroupTypingName ? `${activeGroupTypingName} is typing...${note}` : '');
     indicator.toggleClass('displayNone', !activeGroupTypingName);
     $('#group_speaker_controls').toggleClass('is-typing', Boolean(activeGroupTypingName));
 }
@@ -677,6 +705,7 @@ export const group_activation_strategy = {
     LIST: 1,
     MANUAL: 2,
     POOLED: 3,
+    DIRECTOR: GROUP_DIRECTOR_STRATEGY,
 };
 
 export const group_generation_mode = {
@@ -1877,6 +1906,8 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
         const selectedSpeakerChid = getSelectedGroupSpeakerChid(group);
         const addressedMemberChid = findDirectlyAddressedMember(group, activationText);
         const isWholeGroupAddress = isAddressedToEntireGroup(activationText);
+        let useSceneDirector = false;
+        let directorNote = '';
         if (params && Array.isArray(params.force_chids)) {
             activatedMembers = params.force_chids;
         } else if (params && typeof params.force_chid == 'number') {
@@ -1902,7 +1933,8 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             }
         } else if (type === 'impersonate') {
             activatedMembers = activateImpersonate(enabledMembers);
-        } else if (activationStrategy === group_activation_strategy.NATURAL) {
+        } else if (activationStrategy === group_activation_strategy.NATURAL || activationStrategy === group_activation_strategy.DIRECTOR) {
+            useSceneDirector = activationStrategy === group_activation_strategy.DIRECTOR;
             activatedMembers = activateNaturalOrder(enabledMembers, activationText, lastMessage, group.allow_self_responses, isUserInput);
         } else if (activationStrategy === group_activation_strategy.LIST) {
             activatedMembers = activateListOrder(enabledMembers);
@@ -1931,6 +1963,18 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             }
             didRenderUserMessage = true;
             $('#send_textarea').val('')[0].dispatchEvent(new Event('input', { bubbles: true }));
+        }
+
+        if (useSceneDirector) {
+            setGroupDirectorChoosingIndicator(true);
+            await unshallowGroupMembers(selected_group);
+            const directed = await runGroupSceneDirector(group, enabledMembers, { signal: params?.signal ?? null });
+            setGroupDirectorChoosingIndicator(false);
+            throwIfAborted();
+            if (directed) {
+                activatedMembers = directed.chids;
+                directorNote = directed.reason;
+            }
         }
 
         if (activatedMembers.length === 0) {
@@ -1982,7 +2026,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             deactivateSendButtons();
             setCharacterId(chId);
             setCharacterName(characters[chId].name);
-            setGroupTypingIndicator(characters[chId].name);
+            setGroupTypingIndicator(characters[chId].name, directorNote);
             if (power_user.show_group_chat_queue) {
                 printGroupMembers();
             }
@@ -2128,6 +2172,103 @@ function activateSwipe(members, { allowSystem = false } = {}) {
  * @param {string[]} members Array of group member avatar ids
  * @returns {number[]} Array of character ids
  */
+function resolveCardMacros(text, characterName) {
+    return String(text || '')
+        .replace(/\{\{char\}\}/gi, characterName)
+        .replace(/\{\{user\}\}/gi, name1 || 'User');
+}
+
+function getGroupDirectorMembers(members) {
+    return members.map(avatar => {
+        const chid = getCharacterIdByAvatar(avatar);
+        const character = characters[chid];
+        if (!character?.name) {
+            return null;
+        }
+        const card = character.description || character.personality || '';
+        return { chid, avatar, name: character.name, summary: summariseMemberCard(resolveCardMacros(card, character.name)) };
+    }).filter(Boolean);
+}
+
+function getGroupDirectorHistory() {
+    return chat
+        .filter(message => message && !message.is_system && String(message.mes || '').trim())
+        .slice(-12)
+        .map(message => ({ name: message.name, text: message.mes, isUser: Boolean(message.is_user) }));
+}
+
+async function requestGroupDirectorText(group, prompt, signal) {
+    const profileId = String(group?.director_profile || '');
+    const { ConnectionManagerRequestService } = profileId ? await import('./extensions/shared.js') : {};
+    let hasProfile = false;
+    try {
+        hasProfile = Boolean(profileId) && ConnectionManagerRequestService.getSupportedProfiles().some(profile => profile.id === profileId);
+    } catch {
+        hasProfile = false;
+    }
+    if (hasProfile) {
+        const response = await ConnectionManagerRequestService.sendRequest(profileId, prompt, GROUP_DIRECTOR_RESPONSE_TOKENS,
+            { stream: false, signal, extractData: true, includePreset: false, includeInstruct: true });
+        return typeof response === 'string' ? response : String(response?.content ?? '');
+    }
+    const data = await generateRawData({
+        prompt,
+        api: main_api,
+        instructOverride: main_api === 'openai',
+        responseLength: GROUP_DIRECTOR_RESPONSE_TOKENS,
+        signal,
+        cacheScope: 'auxiliary',
+    });
+    return String(extractMessageFromData(data, main_api, { excludeReasoning: true }) || '');
+}
+
+/**
+ * Ask the scene director who speaks next. Resolves to null on a timeout, a failure or an unusable answer,
+ * so the caller keeps its own pick and the reply is never held up for long.
+ * @param {object} group Group record
+ * @param {string[]} members Avatars of members who may speak
+ * @param {object} [options]
+ * @param {AbortSignal|null} [options.signal] Stop signal for the whole turn
+ * @param {number} [options.maxSpeakers] Most speakers to pick
+ * @returns {Promise<{chids: number[], reason: string}|null>}
+ */
+export async function runGroupSceneDirector(group, members, { signal = null, maxSpeakers = GROUP_DIRECTOR_MAX_SPEAKERS } = {}) {
+    const entries = getGroupDirectorMembers(Array.isArray(members) ? members : []);
+    if (entries.length < 2 || signal?.aborted) {
+        return null;
+    }
+
+    const prompt = buildDirectorPrompt({ members: entries, messages: getGroupDirectorHistory(), userName: name1, maxSpeakers });
+    const controller = new AbortController();
+    const stop = () => controller.abort();
+    signal?.addEventListener?.('abort', stop, { once: true });
+    let timer = null;
+    const timeout = new Promise(resolve => {
+        timer = setTimeout(() => {
+            controller.abort();
+            resolve(null);
+        }, GROUP_DIRECTOR_TIMEOUT_MS);
+    });
+
+    try {
+        const text = await Promise.race([requestGroupDirectorText(group, prompt, controller.signal), timeout]);
+        if (typeof text !== 'string' || controller.signal.aborted) {
+            return null;
+        }
+        const { speakers, reason } = parseDirectorResponse(text, entries.map(entry => entry.name), maxSpeakers);
+        const chids = speakers.map(name => entries.find(entry => entry.name === name)?.chid).filter(chid => Number.isInteger(chid));
+        return chids.length ? { chids, reason } : null;
+    } catch (error) {
+        if (!signal?.aborted) {
+            console.debug('[Group director] Falling back to the usual speaker choice.', error);
+        }
+        return null;
+    } finally {
+        clearTimeout(timer);
+        signal?.removeEventListener?.('abort', stop);
+    }
+}
+
 function activateListOrder(members) {
     let activatedMembers = members.filter(onlyUnique);
 
@@ -2464,10 +2605,51 @@ async function reorderGroupMember(groupId, groupMember, direction) {
 }
 
 async function onGroupActivationStrategyInput(e) {
-    if (openGroupId) {
-        let _thisGroup = groups.find((x) => x.id == openGroupId);
-        _thisGroup.activation_strategy = Number(e.target.value);
+    const strategy = Number(e.target.value);
+    const group = openGroupId && groups.find((x) => x.id == openGroupId);
+    syncGroupDirectorProfileBlock(strategy, group ? group.director_profile : $('#rm_group_director_profile').val());
+    if (group) {
+        group.activation_strategy = strategy;
         await editGroup(openGroupId, false, false);
+    }
+}
+
+async function onGroupDirectorProfileInput(e) {
+    const group = openGroupId && groups.find((x) => x.id == openGroupId);
+    if (group) {
+        group.director_profile = String(e.target.value || '');
+        await editGroup(openGroupId, false, false);
+    }
+}
+
+async function populateGroupDirectorProfiles(selectedId = '') {
+    const select = $('#rm_group_director_profile');
+    if (!select.length) {
+        return;
+    }
+    let profiles = [];
+    try {
+        const { ConnectionManagerRequestService } = await import('./extensions/shared.js');
+        profiles = ConnectionManagerRequestService.getSupportedProfiles();
+    } catch {
+        profiles = [];
+    }
+    const selected = String(selectedId || '');
+    select.empty().append($('<option value=""></option>').text(t`Current chat model`));
+    for (const profile of profiles) {
+        select.append($('<option></option>').val(profile.id).text(profile.name || profile.id));
+    }
+    if (selected && !profiles.some(profile => profile.id === selected)) {
+        select.append($('<option></option>').val(selected).text(t`Missing profile (uses the chat model)`));
+    }
+    select.val(selected);
+}
+
+function syncGroupDirectorProfileBlock(strategy, profileId = '') {
+    const isDirector = Number(strategy) === group_activation_strategy.DIRECTOR;
+    $('#rm_group_director_profile_block').toggleClass('displayNone', !isDirector);
+    if (isDirector) {
+        void populateGroupDirectorProfiles(profileId);
     }
 }
 
@@ -2862,7 +3044,9 @@ function select_group_chats(groupId, skipAnimation) {
     newGroupMembers = [];
     const group = openGroupId && groups.find((x) => x.id == openGroupId);
     const groupName = group?.name ?? '';
-    const replyStrategy = Number(group?.activation_strategy ?? group_activation_strategy.NATURAL);
+    const replyStrategy = group
+        ? Number(group.activation_strategy ?? group_activation_strategy.NATURAL)
+        : group_activation_strategy.DIRECTOR;
     const generationMode = Number(group?.generation_mode ?? group_generation_mode.SWAP);
 
     setMenuType(group ? 'group_edit' : 'group_create');
@@ -2872,6 +3056,7 @@ function select_group_chats(groupId, skipAnimation) {
     $('#rm_group_members_filter').val('').trigger('input');
     $('#rm_group_activation_strategy').val(replyStrategy);
     $(`#rm_group_activation_strategy option[value="${replyStrategy}"]`).prop('selected', true);
+    syncGroupDirectorProfileBlock(replyStrategy, group?.director_profile);
     $('#rm_group_generation_mode').val(generationMode);
     $(`#rm_group_generation_mode option[value="${generationMode}"]`).prop('selected', true);
     $('#rm_group_chat_name').val(groupName);
@@ -3246,6 +3431,7 @@ async function createGroup() {
     const keepOwnLines = $('#rm_group_keep_own_lines').prop('checked') !== false;
     let activationStrategy = Number($('#rm_group_activation_strategy').find(':selected').val()) ?? group_activation_strategy.NATURAL;
     let generationMode = Number($('#rm_group_generation_mode').find(':selected').val()) ?? group_generation_mode.SWAP;
+    const directorProfile = String($('#rm_group_director_profile').val() || '');
     const members = newGroupMembers.filter(onlyUnique);
     if (members.length === 0) {
         $('#rm_group_submit').prop('disabled', true);
@@ -3276,6 +3462,7 @@ async function createGroup() {
         keep_own_lines: keepOwnLines,
         hideMutedSprites: hideMutedSprites,
         activation_strategy: activationStrategy,
+        director_profile: directorProfile,
         generation_mode: generationMode,
         disabled_members: [],
         [GROUP_MEMBER_MODELS_KEY]: {},
@@ -3706,6 +3893,7 @@ jQuery(() => {
     $('#rm_group_allow_self_responses').on('input', onGroupSelfResponsesClick);
     $('#rm_group_keep_own_lines').on('input', onGroupKeepOwnLinesClick);
     $('#rm_group_activation_strategy').on('change', onGroupActivationStrategyInput);
+    $('#rm_group_director_profile').on('change', onGroupDirectorProfileInput);
     $('#rm_group_generation_mode').on('change', onGroupGenerationModeInput);
     $('#rm_group_generation_mode_join_prefix').on('input', onGroupGenerationModeTemplateInput);
     $('#rm_group_generation_mode_join_suffix').on('input', onGroupGenerationModeTemplateInput);

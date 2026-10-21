@@ -326,7 +326,7 @@ describe('Neconyan save behaviour', () => {
         }
         Object.assign(context, {
             $: () => controls,
-            group_activation_strategy: { NATURAL: 0 }, group_generation_mode: { SWAP: 0 },
+            group_activation_strategy: { NATURAL: 0, DIRECTOR: 4 }, group_generation_mode: { SWAP: 0 }, syncGroupDirectorProfileBlock() {},
             ensureGroupEditorLayout() {}, setMenuType() {}, getGroupAvatar() {}, applyTagsOnGroupSelect() {},
             printGroupCandidates() {}, printGroupMembers() {}, toggleHiddenControls() {}, isValidImageUrl() {},
             isExternalMediaAllowed() {}, updateFavButtonState() {}, updateGroupSpeakerControls() {},
