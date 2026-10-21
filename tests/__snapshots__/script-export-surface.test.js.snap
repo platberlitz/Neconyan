@@ -202,6 +202,7 @@ exports[`public/script.js named export surface matches the parser-derived export
   "refreshMessageActions",
   "refreshMessageModelIcons",
   "refreshSwipeButtons",
+  "registerSamePageServerWriteRecovery",
   "reloadChatMutex",
   "reloadCurrentChat",
   "reloadCurrentChatUnsafe",

@@ -9,6 +9,7 @@ function page({ version = 8, revision = 4 } = {}) {
     const context = {
         lastServerSettingsVersion: version,
         lastServerSettingsRevision: revision,
+        recentSamePageServerWrite: null,
         acknowledgedGenerationSettings: { account: 'alice', settingsRevision: revision, controls: {} },
         getCurrentUserHandle: () => 'alice',
     };

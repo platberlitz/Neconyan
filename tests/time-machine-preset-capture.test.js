@@ -7,7 +7,7 @@ const save = jest.fn(async () => ({ id: 'snapshot' }));
 const commitSettings = jest.fn(async () => undefined);
 const lastHashOf = jest.fn();
 jest.unstable_mockModule(storePath, () => ({ save, lastHashOf, getSettings: () => ({ capturePresets: true }),
-    MODULE_NAME: 'test', commitSettings }));
+    MODULE_NAME: 'test', commitSettings, withMutationLock: async action => action() }));
 const { capturePresets } = await import('../public/scripts/extensions/third-party/Neconyan-Time-Machine/src/api.js');
 const originalFetch = globalThis.fetch;
 const originalHost = globalThis.SillyTavern;

@@ -13,7 +13,7 @@
  * extension-owned block back without replacing the whole settings file.
  */
 import { cardFromCharacter, hashOf, isPlainObject, restorePayload } from './core.js';
-import { commitSettings, getSettings, lastHashOf, MODULE_NAME, save } from './store.js';
+import { commitSettings, getSettings, lastHashOf, MODULE_NAME, save, withMutationLock } from './store.js';
 
 const RESERVED_EXTENSION_KEYS = new Set([
     MODULE_NAME,
@@ -294,6 +294,69 @@ export async function capturePresets({ force = false } = {}) {
 }
 
 /**
+ * Cloned job-owned snapshot fields, or null when the result is not complete.
+ */
+function captureFields(result) {
+    if (!isPlainObject(result?.module) || !Array.isArray(result.module.snapshots)
+        || typeof result.module.lastCommit !== 'string' || !Array.isArray(result.attachments)) {
+        return null;
+    }
+    return {
+        snapshots: structuredClone(result.module.snapshots),
+        lastCommit: result.module.lastCommit,
+        attachments: structuredClone(result.attachments),
+    };
+}
+
+/**
+ * One idempotent application of a Time Machine capture result. It clones and validates
+ * the job-owned fields first, adopts the server tokens, and only then assigns
+ * snapshots/lastCommit and the Time Machine attachment key. Local switches, retention,
+ * quarantines and every other extension block stay as they are.
+ */
+function createCaptureApply(core, account) {
+    let settled = false;
+    return function apply(result) {
+        if (settled) return false;
+        settled = true;
+        const fields = captureFields(result);
+        if (!fields) return false;
+        const settings = ctx().extensionSettings;
+        if (!isPlainObject(settings)) return false;
+        const module = isPlainObject(settings[MODULE_NAME]) ? settings[MODULE_NAME] : {};
+        const attachments = isPlainObject(settings.character_attachments) ? settings.character_attachments : {};
+        if (!core.adoptServerSettingsWrite({
+            account,
+            previousVersion: result.previousVersion,
+            previousSettingsRevision: result.previousSettingsRevision,
+            version: result.version,
+            settingsRevision: result.settingsRevision,
+        })) return false;
+        module.snapshots = fields.snapshots;
+        module.lastCommit = fields.lastCommit;
+        if (settings[MODULE_NAME] !== module) settings[MODULE_NAME] = module;
+        attachments['__Neconyan-Card-Time-Machine__'] = fields.attachments;
+        if (settings.character_attachments !== attachments) settings.character_attachments = attachments;
+        return true;
+    };
+}
+
+function waitWithin(ms, signal, deadline) {
+    return new Promise(resolve => {
+        const delay = Math.min(ms, Math.max(0, deadline - Date.now()));
+        let timer;
+        const finish = () => {
+            globalThis.clearTimeout(timer);
+            signal?.removeEventListener?.('abort', finish);
+            resolve();
+        };
+        timer = globalThis.setTimeout(finish, delay);
+        signal?.addEventListener?.('abort', finish, { once: true });
+        if (signal?.aborted) finish();
+    });
+}
+
+/**
  * Snapshots everything now.
  *
  * The events cover ordinary editing, but not every write announces itself —
@@ -309,33 +372,87 @@ export async function captureEverything(onProgress = () => {}) {
     const [{ getOperationClient }, core, { getCurrentUserHandle }] = await Promise.all([
         import('../../../../operations-client.js'), import('../../../../../script.js'), import('../../../../user.js')]);
     const account = getCurrentUserHandle();
-    const client = await getOperationClient();
-    // One server job reads every card, lorebook and preset from disk and saves the
-    // snapshots and index together, so closing the page cannot leave it half done.
-    const record = await client.run('time-machine-capture', {}, {
-        scope: 'time-machine-capture',
-        onProgress: progress => {
-            if (progress?.total) {
-                onProgress(`Saving snapshots: ${progress.completed} of ${progress.total}`);
-            }
-        },
-        prepareInput: async input => {
-            if (!await core.saveSettings(0, { returnResult: true })) {
-                throw new Error('Save your settings before taking snapshots.');
-            }
-            return input;
-        },
+    return withMutationLock(async () => {
+        if (account !== getCurrentUserHandle()) {
+            throw new Error('The account changed before the snapshot started.');
+        }
+        const client = await getOperationClient();
+        if (account !== getCurrentUserHandle()) {
+            throw new Error('The account changed before the snapshot started.');
+        }
+        const apply = createCaptureApply(core, account);
+        const recovery = core.registerSamePageServerWriteRecovery({
+            account,
+            recover: async ({ signal, deadline, rejectedSettingsRevision, isAllowed }) => {
+                const allowed = () => Date.now() < deadline && !signal?.aborted && (isAllowed?.() ?? true);
+                if (!allowed() || !client.hasPending('time-machine-capture')) return null;
+                const key = client.pendingKey('time-machine-capture');
+                if (!key) return null;
+                let record;
+                try { record = await client.read(key, { signal }); } catch { return null; }
+                if (!allowed() || record?.kind !== 'time-machine-capture') return null;
+
+                const completed = record => {
+                    if (record?.state !== 'completed') return null;
+                    const result = record.result;
+                    if (!isPlainObject(result) || result.previousSettingsRevision !== rejectedSettingsRevision) return null;
+                    if (!allowed() || !apply(result)) return null;
+                    return { account, previousSettingsRevision: result.previousSettingsRevision,
+                        version: result.version, settingsRevision: result.settingsRevision };
+                };
+                if (record?.state === 'completed' || record?.state === 'refused') return completed(record);
+                if (!record?.jobId) return null;
+
+                let settings;
+                try {
+                    settings = await client.request('/api/settings/get', {
+                        method: 'POST',
+                        body: JSON.stringify({ extensionSettings: [MODULE_NAME] }),
+                        signal,
+                    });
+                } catch { return null; }
+                if (!allowed()) return null;
+                const module = settings?.extension_settings?.[MODULE_NAME];
+                if (!isPlainObject(module) || typeof module.lastCommit !== 'string'
+                    || !module.lastCommit.startsWith(`server-${record.jobId}-`)) return null;
+
+                while (allowed()) {
+                    await waitWithin(250, signal, deadline);
+                    if (!allowed()) return null;
+                    try { record = await client.read(key, { signal }); } catch { return null; }
+                    if (!allowed() || record?.kind !== 'time-machine-capture') return null;
+                    if (record.state === 'completed') return completed(record);
+                    if (record.state === 'refused') return null;
+                    if (!record.jobId) return null;
+                }
+                return null;
+            },
+        });
+        try {
+            // One server job reads every card, lorebook and preset from disk and saves the
+            // snapshots and index together, so closing the page cannot leave it half done.
+            // prepareInput stays here: a retained request must not pre-save again.
+            const record = await client.run('time-machine-capture', {}, {
+                scope: 'time-machine-capture',
+                onProgress: progress => {
+                    if (progress?.total) {
+                        onProgress(`Saving snapshots: ${progress.completed} of ${progress.total}`);
+                    }
+                },
+                prepareInput: async input => {
+                    if (!await core.saveSettings(0, { returnResult: true })) {
+                        throw new Error('Save your settings before taking snapshots.');
+                    }
+                    return input;
+                },
+            });
+            const result = record?.result ?? {};
+            apply(result);
+            return { taken: result.taken ?? 0, skipped: result.skipped ?? 0, failed: result.failed ?? 0, removed: result.removed ?? 0 };
+        } finally {
+            recovery.release();
+        }
     });
-    const result = record?.result ?? {};
-    if (account === getCurrentUserHandle() && result.module) {
-        const settings = ctx().extensionSettings;
-        settings[MODULE_NAME] = structuredClone(result.module);
-        settings.character_attachments = isPlainObject(settings.character_attachments) ? settings.character_attachments : {};
-        settings.character_attachments['__Neconyan-Card-Time-Machine__'] = structuredClone(result.attachments ?? []);
-        core.adoptServerSettingsWrite({ account, previousVersion: result.previousVersion, previousSettingsRevision: result.previousSettingsRevision,
-            version: result.version, settingsRevision: result.settingsRevision });
-    }
-    return { taken: result.taken ?? 0, skipped: result.skipped ?? 0, failed: result.failed ?? 0, removed: result.removed ?? 0 };
 }
 
 // ------------------------------------------------------------- live state ---

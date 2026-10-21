@@ -1145,6 +1145,9 @@ let accountImportSettingsPause = null;
 let settingsConflictReloadRequired = false;
 let settingsConflictPromptOpen = false;
 let settingsConflictPromptDismissed = false;
+const SAME_PAGE_WRITE_WAIT_MS = 10_000;
+let samePageServerWriteRecovery = null;
+let recentSamePageServerWrite = null;
 export let amount_gen = 80; //default max length of AI generated responses
 export let max_context = 2048;
 
@@ -14091,7 +14094,24 @@ export async function pauseSettingsForAccountImport({ flush = true } = {}) {
     return resume;
 }
 
-/** Return proof of the saved active controls, never mutable settings or credentials. */
+/**
+ * Register a same-page server write offered by an active extension operation.
+ * The callback must use its own account-bound client and must not accept a job key
+ * from the core. It is called only while a settings_conflict is being reconciled.
+ * @param {{account?: string, recover: (context: {signal: AbortSignal, deadline: number, rejectedSettingsRevision: number, isAllowed: () => boolean}) => Promise<{account: string, previousSettingsRevision: number, version: number, settingsRevision: number}|null>}} options
+ * @returns {{ release: () => void }}
+ */
+export function registerSamePageServerWriteRecovery({ account = getCurrentUserHandle(), recover }) {
+    if (typeof recover !== 'function') throw new TypeError('A same-page recovery callback is required.');
+    const entry = { account, recover };
+    samePageServerWriteRecovery = entry;
+    return {
+        release() {
+            if (samePageServerWriteRecovery === entry) samePageServerWriteRecovery = null;
+        },
+    };
+}
+
 /**
  * Accept a settings write the server made on this account's behalf, but only when this page had
  * already seen the version the server wrote over. Otherwise the ordinary conflict reload applies.
@@ -14101,7 +14121,10 @@ export async function pauseSettingsForAccountImport({ flush = true } = {}) {
  * @returns {boolean}
  */
 export function adoptServerSettingsWrite({ account, previousVersion, previousSettingsRevision, version, settingsRevision }) {
-    if (account !== getCurrentUserHandle()) return false;
+    if (account !== getCurrentUserHandle()) {
+        recentSamePageServerWrite = null;
+        return false;
+    }
     const conversationOnlyDrift = Number.isSafeInteger(previousVersion) && previousVersion > lastServerSettingsVersion
         && Number.isSafeInteger(previousSettingsRevision) && previousSettingsRevision === lastServerSettingsRevision;
     if (lastServerSettingsVersion !== previousVersion && !conversationOnlyDrift) return false;
@@ -14111,9 +14134,73 @@ export function adoptServerSettingsWrite({ account, previousVersion, previousSet
     if (acknowledgedGenerationSettings?.account === account) {
         acknowledgedGenerationSettings = { ...acknowledgedGenerationSettings, settingsRevision };
     }
+    recentSamePageServerWrite = Number.isSafeInteger(previousSettingsRevision)
+        ? { account, previousSettingsRevision, version, settingsRevision }
+        : null;
     return true;
 }
 
+function consumeRecentSamePageWrite(account, rejectedSettingsRevision) {
+    const recent = recentSamePageServerWrite;
+    if (!recent || recent.account !== account) return null;
+    if (lastServerSettingsRevision !== recent.settingsRevision) {
+        recentSamePageServerWrite = null;
+        return null;
+    }
+    if (recent.previousSettingsRevision !== rejectedSettingsRevision) return null;
+    recentSamePageServerWrite = null;
+    return recent;
+}
+
+async function recoverSamePageSettingsConflict(account, rejectedSettingsRevision) {
+    if (account !== getCurrentUserHandle() || accountImportSettingsPause?.account === account) return null;
+    if (recentSamePageServerWrite && recentSamePageServerWrite.account !== account) recentSamePageServerWrite = null;
+    const recent = consumeRecentSamePageWrite(account, rejectedSettingsRevision);
+    if (recent) return recent;
+    const active = samePageServerWriteRecovery;
+    if (!active || active.account !== account) return null;
+
+    const deadline = Date.now() + SAME_PAGE_WRITE_WAIT_MS;
+    const controller = new AbortController();
+    let timer;
+    const timeout = new Promise(resolve => {
+        timer = globalThis.setTimeout(() => {
+            controller.abort();
+            resolve(null);
+        }, SAME_PAGE_WRITE_WAIT_MS);
+    });
+    try {
+        const proof = await Promise.race([
+            active.recover({
+                signal: controller.signal,
+                deadline,
+                rejectedSettingsRevision,
+                isAllowed: () => account === getCurrentUserHandle() && accountImportSettingsPause?.account !== account,
+            }),
+            timeout,
+        ]);
+        if (account !== getCurrentUserHandle() || accountImportSettingsPause?.account === account) return null;
+        // Normal delivery may have adopted while the callback was reading or polling.
+        const late = consumeRecentSamePageWrite(account, rejectedSettingsRevision);
+        if (late) return late;
+        if (!proof) return null;
+        if (proof.account !== account || proof.previousSettingsRevision !== rejectedSettingsRevision
+            || lastServerSettingsRevision !== proof.settingsRevision) {
+            recentSamePageServerWrite = null;
+            return null;
+        }
+        recentSamePageServerWrite = null;
+        return proof;
+    } catch {
+        recentSamePageServerWrite = null;
+        return null;
+    } finally {
+        globalThis.clearTimeout(timer);
+        controller.abort();
+    }
+}
+
+/** Return proof of the saved active controls, never mutable settings or credentials. */
 export function getActiveGenerationAcknowledgement() {
     const saved = acknowledgedGenerationSettings;
     const current = generationSettingsSnapshot({
@@ -14191,7 +14278,8 @@ function matchesDownloadedSettings(account, payload, serializedPayload) {
     }
 }
 
-async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle()) {
+async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle(), allowSamePageRecovery = true) {
+    if (recentSamePageServerWrite && recentSamePageServerWrite.account !== account) recentSamePageServerWrite = null;
     acknowledgedGenerationSettings = null;
     if (!settingsReady) {
         console.warn('Settings not ready, scheduling another save');
@@ -14288,6 +14376,19 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
         if (result.status === 409) {
             const conflict = await result.json().catch(() => ({}));
             if (account !== getCurrentUserHandle()) return false;
+            if (allowSamePageRecovery && conflict?.error === 'settings_conflict') {
+                const proof = await recoverSamePageSettingsConflict(account, payload._settingsRevision);
+                if (account !== getCurrentUserHandle()) return false;
+                if (accountImportSettingsPause?.account === account) {
+                    accountImportSettingsPause.dirty = true;
+                    return false;
+                }
+                if (proof && proof.account === account && proof.previousSettingsRevision === payload._settingsRevision
+                    && lastServerSettingsRevision === proof.settingsRevision) {
+                    // Rebuild from current memory on the one retry. Never resend serializedPayload.
+                    return await saveSettingsInner(loopCounter, account, false);
+                }
+            }
             lastServerSettingsVersion = normalizeSettingsVersion(conflict?.version);
             settingsConflictReloadRequired = true;
             settingsConflictPromptDismissed = false;
@@ -14311,6 +14412,7 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
 
         lastServerSettingsVersion = savedSettingsVersion;
         lastServerSettingsRevision = normalizeSettingsRevision(saveResult?.settingsRevision ?? lastServerSettingsRevision);
+        recentSamePageServerWrite = null;
         acknowledgedGenerationSettings = { account, settingsRevision: lastServerSettingsRevision, controls: submittedGenerationSettings };
         payload._version = lastServerSettingsVersion;
         payload._settingsRevision = lastServerSettingsRevision;

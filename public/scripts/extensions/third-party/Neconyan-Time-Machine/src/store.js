@@ -304,6 +304,11 @@ function enqueueMutation(action) {
     return run;
 }
 
+/** Run one Time Machine action inside the same page queue and cross-tab Web Lock as its writes. */
+export function withMutationLock(action) {
+    return enqueueMutation(action);
+}
+
 function withBrowserLock(action) {
     // ponytail: Web Locks coordinate tabs in one browser. The persisted commit
     // check fails closed for other devices instead of building a custom leader.

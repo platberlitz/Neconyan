@@ -68,6 +68,7 @@ function createHarness({ profile = normalizeCustomEndpointPreset({ name: 'Saved 
         settingsConflictPromptDismissed: false,
         lastServerSettingsVersion: 1,
         lastServerSettingsRevision: 1,
+        recentSamePageServerWrite: null,
         settings: {},
         accountStorage: { getState: () => ({}) },
         getWorldInfoSettings: () => ({}),

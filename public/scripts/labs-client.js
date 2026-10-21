@@ -3,8 +3,18 @@ import { fetchWithCsrfRetry } from './csrf-token-refresh.js';
 
 export function createLabClient({ request, observeJob, account, storage, uuid = () => crypto.randomUUID(),
     basePath = '/api/labs', storagePrefix = 'neconyan-labs', label = 'Labs' }) {
-    const read = key => request(`${basePath}/records/${encodeURIComponent(key)}`);
+    const read = (key, options) => request(`${basePath}/records/${encodeURIComponent(key)}`, options);
     const hasPending = scope => Boolean(storage.getItem(`${storagePrefix}:${account}:${scope}`));
+    const pendingKey = scope => {
+        const raw = storage.getItem(`${storagePrefix}:${account}:${scope}`);
+        if (!raw) return null;
+        try {
+            const pending = JSON.parse(raw);
+            return typeof pending?.key === 'string' && pending.key ? pending.key : null;
+        } catch {
+            return null;
+        }
+    };
     const list = (kind = '') => request(`${basePath}/records?kind=${encodeURIComponent(kind)}`);
     const refusal = record => Object.assign(new Error(record.error || 'This reviewed change was refused. Review the current records before trying again.'), { refused: true });
 
@@ -90,7 +100,7 @@ export function createLabClient({ request, observeJob, account, storage, uuid = 
         }
     }
     const recover = async (key, options) => observe(await request(`${basePath}/records/${encodeURIComponent(key)}/recover`, { method: 'POST', body: '{}' }), options);
-    return { run, read, list, observe, request, recover, hasPending };
+    return { run, read, list, observe, request, recover, hasPending, pendingKey };
 }
 
 const recoveryPanels = new WeakMap();

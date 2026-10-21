@@ -175,3 +175,14 @@ test('a durably rejected submission can be released before job acceptance', asyn
     expect(f.entries.size).toBe(0);
     expect(f.request).toHaveBeenCalledTimes(1);
 });
+
+test('pendingKey exposes only its account scope key and read forwards abort options', async () => {
+    const f = fixture();
+    f.entries.set('neconyan-labs:alice:distill', JSON.stringify({ key: 'retained-key', body: { kind: 'distill' } }));
+    expect(f.client.pendingKey('distill')).toBe('retained-key');
+    expect(f.client.pendingKey('other')).toBeNull();
+
+    const signal = new AbortController().signal;
+    await f.client.read('retained-key', { signal });
+    expect(f.request).toHaveBeenCalledWith('/api/labs/records/retained-key', { signal });
+});
