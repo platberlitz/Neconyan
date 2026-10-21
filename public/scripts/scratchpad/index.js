@@ -452,7 +452,7 @@ function buildChatPanel() {
         oninput: fitComposer,
     });
     el.send = iconButton('', () => onSendButton(), { icon: 'fa-paper-plane', className: 'scratchpad-send', title: t`Send`, primary: true });
-    el.webSearch = iconButton(t`Web`, () => void toggleWebSearch(),
+    el.webSearch = iconButton('', () => void toggleWebSearch(),
         { icon: 'fa-globe', className: 'scratchpad-web-toggle', title: t`Search the web for this message`, pressed: false });
     el.overviewToggle = h('button', {
         type: 'button',

@@ -30,8 +30,13 @@ for (const phone of [false, true]) {
         if (phone) await applyIOSOnlyCss(page);
         const composer = page.getByRole('textbox', { name: 'Message for Scratchpad', exact: true });
         const send = page.locator('.scratchpad-send');
+        const web = page.locator('.scratchpad-web-toggle');
         await expect(composer).toBeEnabled();
         await expectIconButton(send, 'Send', 'fa-paper-plane');
+        await expectIconButton(web, 'Set up web search in Context', 'fa-globe');
+        await expect(web).toHaveAttribute('aria-pressed', 'false');
+        const row = await page.locator('.scratchpad-compose-row').boundingBox();
+        expect((await composer.boundingBox()).width, 'The message gets all space beyond two 44px buttons and two 8px gaps').toBeCloseTo(row.width - 104, 1);
         await expect(composer).toHaveAttribute('rows', '1');
         const measure = () => composer.evaluate(input => {
             const style = getComputedStyle(input);
@@ -88,6 +93,7 @@ for (const phone of [false, true]) {
         try {
             await expectIconButton(send, 'Sending...', 'fa-paper-plane');
             await expect(send).toBeDisabled();
+            await expect(web).toBeDisabled();
         } finally { release(); }
         const response = await accepted;
         expect(response.ok(), await response.text()).toBe(true);
@@ -95,10 +101,12 @@ for (const phone of [false, true]) {
         await expect(page.locator('.scratchpad-stream')).toContainText('Both lines arrived.');
         await expectIconButton(send, 'Stop', 'fa-stop');
         await expect(send).toBeEnabled();
+        await expect(web).toBeDisabled();
         app.provider.mode.finishStream();
         await account.settled((await response.json()).job.id);
         await expect(composer).toHaveValue('');
         await expectIconButton(send, 'Send', 'fa-paper-plane');
+        await expect(web).toBeEnabled();
         expect((await measure()).height).toBe(initial.height);
     });
 }
