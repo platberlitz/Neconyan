@@ -24,7 +24,10 @@ for (const phone of [false, true]) {
         for (const id of ['miso', 'taro', 'nori']) await page.locator(`#scratchpad-connection-${id}`).selectOption(`random-${id}`);
         await page.getByRole('tab', { name: 'Chat', exact: true }).click();
         await page.locator('.scratchpad-round-table').click();
+        await expect(page.locator('.scratchpad-round-table')).toHaveAttribute('aria-pressed', 'true');
+        await expect(page.locator('.scratchpad-random')).toBeVisible();
         await expect(page.locator('.scratchpad-random')).toHaveAttribute('aria-pressed', 'false');
+        await expect(page.locator('.scratchpad-send')).toHaveText('Ask 3');
         await page.locator('.scratchpad-assistants').getByRole('button', { name: 'Nori', exact: true }).click();
         await expect(page.locator('.scratchpad-send')).toHaveText('Ask 2');
         await page.locator('.scratchpad-random').click();
