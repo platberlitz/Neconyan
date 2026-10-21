@@ -4820,15 +4820,18 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
     const swipeId = Number(message?.swipe_id);
     const inFlightKey = `${messageIndex}:${Number.isInteger(swipeId) ? swipeId : 0}`;
     if (postProcessingInFlightKeys.has(inFlightKey)) {
-        return await postProcessingInFlightKeys.get(inFlightKey);
+        return await postProcessingInFlightKeys.get(inFlightKey).promise;
     }
 
-    const runPromise = runReceivedMessagePostProcessing(messageIndex, message, generationType, activationSnapshot, { retryAttempt, inFlightKey });
-    postProcessingInFlightKeys.set(inFlightKey, runPromise);
-    return await runPromise;
+    // Register before starting: a run that ends without awaiting (an already processed reply)
+    // clears its entry synchronously, so registering afterwards would leave it stuck.
+    const inFlightRun = { promise: null };
+    postProcessingInFlightKeys.set(inFlightKey, inFlightRun);
+    inFlightRun.promise = runReceivedMessagePostProcessing(messageIndex, message, generationType, activationSnapshot, { retryAttempt, inFlightKey, inFlightRun });
+    return await inFlightRun.promise;
 }
 
-async function runReceivedMessagePostProcessing(messageIndex, message, generationType, activationSnapshot, { retryAttempt = 0, inFlightKey }) {
+async function runReceivedMessagePostProcessing(messageIndex, message, generationType, activationSnapshot, { retryAttempt = 0, inFlightKey, inFlightRun }) {
     const initialText = message.mes;
     const postProcessingTarget = { text: initialText, valid: true, state: captureMessageTargetState(message) };
     const operationCancelRevision = agentGenerationCancelRevision;
@@ -5029,7 +5032,7 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
             }
         }
         if (postProcessingTargets.get(message) === postProcessingTarget) postProcessingTargets.delete(message);
-        postProcessingInFlightKeys.delete(inFlightKey);
+        if (postProcessingInFlightKeys.get(inFlightKey) === inFlightRun) postProcessingInFlightKeys.delete(inFlightKey);
     }
 }
 
