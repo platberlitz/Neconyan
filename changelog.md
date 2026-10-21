@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.3.8
+
+### Merged Staging PRs
+- PR #272 (2026-10-21) `fix(generation): save agent-edited continuations and stop blocked ret…`
+
 ## v1.3.7
 
 ### Highlights
