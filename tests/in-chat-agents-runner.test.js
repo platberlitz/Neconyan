@@ -8290,6 +8290,30 @@ describe('in-chat agent post-processing runner', () => {
         await new Promise(resolve => setTimeout(resolve, 5));
     });
 
+    test('rerun agents works after a repeat check of an already processed reply', async () => {
+        usePromptTransformPostAgent();
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        generateQuietPrompt.mockResolvedValueOnce('Automatic rewrite').mockResolvedValueOnce('Rerun rewrite');
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        const context = runner.getAgentGenerationContext();
+        await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length, context);
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal', context);
+        expect(message.mes).toBe('Automatic rewrite');
+
+        // Returning to the app checks the latest reply again; the finished run is skipped.
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal', context);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+
+        await runner.rerunPostGenerationAgentsOnMessage(0);
+        expect(globalThis.toastr.info).not.toHaveBeenCalledWith(expect.any(String), 'Rerun agents unavailable');
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(2);
+        expect(message.mes).toBe('Rerun rewrite');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
     test('a truncated sequential rerun stops before the next agent', async () => {
         useManualTransformAgents();
         globalSettings.appendAgentsExecutionMode = 'sequential';
