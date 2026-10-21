@@ -50,3 +50,16 @@ test('ensemble messages retain identities, swipe text and request-wide metadata 
     assert.equal(fallback[0].mes, 'An unsplit scene.');
     assert.equal(fallback[0].name, 'Narrator');
 });
+
+test('every ensemble passage and saved variant preserves a terminal provider outcome', () => {
+    for (const status of ['blocked', 'error']) {
+        const outcome = { version: 1, status, reason: 'content_filter' };
+        const original = { mes: 'Mira: Come in.\nKit (Jr.): Gladly.', extra: { generation_outcome: outcome } };
+        const result = createEnsembleMessages(original, members, avatar => avatar, '/narrator.png');
+        for (const message of result) {
+            assert.deepEqual(message.extra.generation_outcome, outcome);
+            assert.deepEqual(message.swipe_info[0].extra.generation_outcome, outcome);
+        }
+        assert.notEqual(result[0].extra.generation_outcome, result[1].extra.generation_outcome);
+    }
+});

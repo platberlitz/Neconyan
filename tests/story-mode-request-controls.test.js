@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import vm from 'node:vm';
 import * as generationOutcome from '../public/scripts/generation-outcome.js';
+import { rememberGroupSpeaker, restoreGroupSpeaker } from '../public/scripts/group-chat-speakers.js';
 import { parse } from 'acorn';
 import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse, requestUsesReasoning } from '../public/scripts/generation-request-controls.js';
 import { createChatGenerationParameters } from '../public/scripts/chat-provider-parameters.js';
@@ -58,6 +59,7 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
     };
     const context = vm.createContext({
         ...generationOutcome,
+        rememberGroupSpeaker, restoreGroupSpeaker,
         renderGenerationOutcome: jest.fn(),
         StreamingThinkingIndicator: class { update() {} clear() {} },
         captureRecoveryAnchor: () => ({}), releaseGenerationContext: jest.fn(), scheduleHeldGenerationRecovery: jest.fn(),

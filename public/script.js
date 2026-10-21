@@ -9045,6 +9045,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         priorReply.swipe_id = Math.max(0, priorReply.swipes.length - 1);
         priorReply.mes = priorReply.swipes[priorReply.swipe_id];
         priorReply.extra = structuredClone(priorReply.swipe_info?.[priorReply.swipe_id]?.extra ?? priorReply.extra ?? {});
+        restoreGroupSpeaker(priorReply);
     }
     const restoreBlockedAttempt = async () => {
         if (!isCurrent()) return;
