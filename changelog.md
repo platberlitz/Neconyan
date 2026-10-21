@@ -13,6 +13,7 @@
 - Mewmory waits 30 seconds before its first background scan, reuses unchanged chat and Story archives correctly, and gives page requests time to run during long catch-ups. Scene matching also avoids repeatedly splitting the same text.
 - Image refusals now show the review notice on browser sends, open the correct review without a stale save, and avoid a second error toast from Deep Swipe or Guided Correction. Prompt Manager no longer reports a hidden error when an image is refused. The image controls and refusal notices have updated German, Italian and Portuguese translations.
 - Scratchpad character drafts recover notes and alternate greetings when a model puts them inside the character object or uses the saved-card spelling. You still review the card before creation; conflicting or invalid values are rejected.
+- **Time Machine** no longer mistakes its own snapshot update for a settings change on another device. Settings saves and replies can continue during capture, and the returned snapshot list keeps your newer local choices. Real changes from another device still stop a conflicting save.
 - Fixed character saves on exFAT drives, file-picker cancellation closing its parent popup, and Notes list editing with unfinished frontmatter. Connection profile **Edit selected** and **Delete selected** now scroll with the desktop page.
 
 ### Merged Staging PRs
