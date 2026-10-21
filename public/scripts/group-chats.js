@@ -2103,11 +2103,11 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             activatedMembers = params.force_chids;
         } else if (params && typeof params.force_chid == 'number') {
             activatedMembers = [params.force_chid];
-        } else if (type !== 'quiet' && isWholeGroupAddress && isUserInput) {
+        } else if (!['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && isWholeGroupAddress && isUserInput) {
             activatedMembers = enabledMembers.map(avatar => getCharacterIdByAvatar(avatar)).filter(chid => chid !== -1);
-        } else if (type !== 'quiet' && addressedMemberChid !== -1) {
+        } else if (!['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && addressedMemberChid !== -1) {
             activatedMembers = [addressedMemberChid];
-        } else if (type !== 'quiet' && selectedSpeakerChid !== -1) {
+        } else if (!['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && selectedSpeakerChid !== -1) {
             activatedMembers = [selectedSpeakerChid];
         } else if (type === 'quiet') {
             activatedMembers = activateSwipe(enabledMembers, { allowSystem: true }).slice(0, 1);
