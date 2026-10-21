@@ -2,7 +2,7 @@
 import { describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { normalizeAgentExpressionLabel, resolveExpressionsAgentProfile } from '../public/scripts/extensions/expressions/expressions-agent-utils.js';
+import { normalizeAgentExpressionLabel, parseAgentExpressionAnswer, resolveExpressionsAgentProfile } from '../public/scripts/extensions/expressions/expressions-agent-utils.js';
 import { personaExpressionFolder, personaExpressionSelection } from '../public/scripts/extensions/expressions/persona-expressions.js';
 
 const index = readFileSync(new URL('../public/scripts/extensions/expressions/index.js', import.meta.url), 'utf8');
@@ -30,7 +30,7 @@ function setup() {
             isExpressionsAgent: item => (item.sourceTemplateId || item.id) === 'tpl-expressions-agent',
             getActiveCompanionResults: message => message.swipe_info?.[message.swipe_id ?? 0]?.extra?.inChatAgentCompanionResults ?? message.extra?.inChatAgentCompanionResults ?? {},
         }),
-        EXPRESSIONS_AGENT_TEMPLATE_ID: 'tpl-expressions-agent', normalizeAgentExpressionLabel,
+        EXPRESSIONS_AGENT_TEMPLATE_ID: 'tpl-expressions-agent', normalizeAgentExpressionLabel, parseAgentExpressionAnswer,
         getChatGeneration: () => runtime.generation, getCurrentChatId: () => runtime.id,
         getMessageExpressionAvatar: message => !message?.is_user && !message?.is_system ? message?.original_avatar : null,
         system_message_types: { NARRATOR: 'narrator' }, isVisualNovelMode: () => false, $: () => jq,

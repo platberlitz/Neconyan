@@ -1,4 +1,4 @@
-import { readExpressionSets, resolveExpressionMember, applyExpressionMemberPrompt } from '../public/scripts/extensions/expressions/expression-sets.js';
+import { readExpressionSets, resolveExpressionMember, applyExpressionMemberPrompt, getExpressionsAgentCastPrompt } from '../public/scripts/extensions/expressions/expression-sets.js';
 
 const mira = { id: 'mira', name: 'Mira', folder: 'cast/mira', description: 'Silver hair, green coat.' };
 const sol = { id: 'sol', name: 'Sol', folder: 'cast/sol', description: 'Red hair, blue coat.' };
@@ -10,6 +10,24 @@ describe('modular character expressions', () => {
         expect(resolveExpressionMember(card(true), { mes: 'I spoke to Sol yesterday.' })).toEqual(mira);
         expect(resolveExpressionMember(card(true), { mes: '**Sol:** Hello.\nMira: Hi.' })).toEqual(sol);
         expect(resolveExpressionMember(card(true), { name: 'Sol', mes: 'Hello.' })).toEqual(sol);
+    });
+    test('the Expressions Agent names the character, and the saved sprite keeps it', () => {
+        const reply = { mes: 'Mira: Hello.\nSol scowls.' };
+        expect(resolveExpressionMember(card(true), reply, { speaker: 'sol' })).toEqual(sol);
+        expect(resolveExpressionMember(card(true), reply, { speaker: 'Nobody' })).toEqual(mira);
+        expect(resolveExpressionMember(card(true), reply, { savedSrc: '/characters/cast/sol/anger.png?t=1' })).toEqual(sol);
+        expect(resolveExpressionMember(card(true), reply, { speaker: 'Mira', savedSrc: '/characters/cast/sol/anger.png' })).toEqual(mira);
+        expect(resolveExpressionMember(card(false), reply, { speaker: 'Sol', savedSrc: '/characters/cast/sol/anger.png' })).toEqual(mira);
+    });
+    test('only shared cards that follow the speaker ask the agent for a name', () => {
+        const prompt = getExpressionsAgentCastPrompt(card(true));
+        expect(prompt).toContain('Mira, Sol');
+        expect(prompt).toContain('Mira: <label>');
+        expect(getExpressionsAgentCastPrompt(card(false))).toBe('');
+        const single = card(true);
+        single.data.extensions.expression_sets.members = [mira];
+        expect(getExpressionsAgentCastPrompt(single)).toBe('');
+        expect(getExpressionsAgentCastPrompt(null)).toBe('');
     });
     test('malformed imported definitions cannot escape the sprite directory or alias a member', () => {
         const value = card(false);

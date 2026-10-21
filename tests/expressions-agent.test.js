@@ -1,4 +1,4 @@
-import { normalizeAgentExpressionLabel } from '../public/scripts/extensions/expressions/expressions-agent-utils.js';
+import { normalizeAgentExpressionLabel, parseAgentExpressionAnswer } from '../public/scripts/extensions/expressions/expressions-agent-utils.js';
 
 describe('expressions agent bridge', () => {
     describe('normalizeAgentExpressionLabel', () => {
@@ -31,6 +31,22 @@ describe('expressions agent bridge', () => {
         test('returns null for empty or whitespace input', () => {
             expect(normalizeAgentExpressionLabel('', ['joy'])).toBeNull();
             expect(normalizeAgentExpressionLabel('   ', ['joy'])).toBeNull();
+        });
+    });
+
+    describe('parseAgentExpressionAnswer', () => {
+        test('reads the named character on a shared card', () => {
+            expect(parseAgentExpressionAnswer('Sol: anger', ['joy', 'anger'])).toEqual({ label: 'anger', speaker: 'Sol' });
+            expect(parseAgentExpressionAnswer('**Mira**: joy.', ['joy', 'anger'])).toEqual({ label: 'joy', speaker: 'Mira' });
+            expect(parseAgentExpressionAnswer('Mira Vale: desire2', ['joy', 'desire'])).toEqual({ label: 'desire', speaker: 'Mira Vale' });
+            expect(parseAgentExpressionAnswer('{"character":"Sol","emotion":"joy"}', ['joy'])).toEqual({ label: 'joy', speaker: 'Sol' });
+            expect(normalizeAgentExpressionLabel('Sol: anger', ['joy', 'anger'])).toBe('anger');
+        });
+
+        test('keeps plain labels and rejects unknown labels after a name', () => {
+            expect(parseAgentExpressionAnswer('joy: she beams', ['joy'])).toEqual({ label: 'joy', speaker: '' });
+            expect(parseAgentExpressionAnswer('Sol: furious', ['joy', 'anger'])).toEqual({ label: null, speaker: '' });
+            expect(parseAgentExpressionAnswer('', ['joy'])).toEqual({ label: null, speaker: '' });
         });
     });
 });

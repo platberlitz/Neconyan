@@ -12,7 +12,7 @@
 
 import { getContext, extension_settings } from '../../extensions.js';
 import { system_message_types } from '../../../script.js';
-import { normalizeAgentExpressionLabel, resolveExpressionsAgentProfile as resolveProfile } from './expressions-agent-utils.js';
+import { normalizeAgentExpressionLabel, parseAgentExpressionAnswer, resolveExpressionsAgentProfile as resolveProfile } from './expressions-agent-utils.js';
 import { DEFAULT_EXPRESSION_SPRITE_PROMPT, getExpressionSpriteBackground, TRANSPARENT_DEFAULT_EXPRESSION_SPRITE_PROMPT } from './sprite-prompts.js';
 
 const EXPRESSIONS_AGENT_TEMPLATE_ID = 'tpl-expressions-agent';
@@ -328,8 +328,8 @@ export async function getAgentExpressionState(context, allowedExpressions, targe
         return { status: 'stale', label: null };
     }
     const result = shared?.getActiveCompanionResults(message)?.[agent.id];
-    const label = result?.status === 'done' ? normalizeAgentExpressionLabel(result.content, allowedExpressions) : null;
-    return { agentId: agent.id, result, label, status: result?.status ?? (status === 'ready' ? 'pending' : 'unavailable') };
+    const { label, speaker } = result?.status === 'done' ? parseAgentExpressionAnswer(result.content, allowedExpressions) : { label: null, speaker: '' };
+    return { agentId: agent.id, result, label, speaker, status: result?.status ?? (status === 'ready' ? 'pending' : 'unavailable') };
 }
 
 /**

@@ -15,21 +15,52 @@ export function readExpressionSets(character) {
     return { version: 1, members, active: members.some(member => member.id === saved?.active) ? saved.active : '', auto: saved?.auto === true };
 }
 
-/** Only explicit speaker labels count, never an ordinary mention of another character. */
-export function resolveExpressionMember(character, message = null) {
+function findMemberByName(members, name) {
+    const wanted = String(name || '').trim().toLowerCase();
+    return wanted ? members.find(member => member.name.toLowerCase() === wanted) : undefined;
+}
+
+/** A saved sprite path names the member's folder, so a chosen expression keeps its character. */
+function findMemberBySprite(members, src) {
+    let path = String(src || '').split(/[?#]/)[0];
+    try { path = decodeURIComponent(path); } catch { return undefined; }
+    return members.find(member => path.startsWith(`/characters/${member.folder}/`));
+}
+
+/**
+ * Only explicit speaker labels count, never an ordinary mention of another character.
+ * `speaker` is the Expressions Agent's named character; `savedSrc` is the message's saved sprite.
+ */
+export function resolveExpressionMember(character, message = null, { speaker = '', savedSrc = '' } = {}) {
     const sets = readExpressionSets(character);
     if (sets.auto && message) {
-        const byName = sets.members.find(member => member.name.toLowerCase() === String(message.name || '').trim().toLowerCase());
+        const chosen = findMemberByName(sets.members, speaker) ?? findMemberBySprite(sets.members, savedSrc);
+        if (chosen) return chosen;
+        const byName = findMemberByName(sets.members, message.name);
         if (byName) return byName;
         for (const line of String(message.mes || '').split('\n')) {
-            const speaker = line.trim().replace(/^[*_]+/, '').match(/^([^:\n]{1,84}):/);
-            if (!speaker) continue;
-            const name = speaker[1].replace(/[*_]+$/, '').trim().toLowerCase();
+            const label = line.trim().replace(/^[*_]+/, '').match(/^([^:\n]{1,84}):/);
+            if (!label) continue;
+            const name = label[1].replace(/[*_]+$/, '').trim().toLowerCase();
             const match = sets.members.find(member => member.name.toLowerCase() === name);
             if (match) return match;
         }
     }
     return sets.members.find(member => member.id === sets.active) ?? null;
+}
+
+/** Shared cards that follow the speaker ask the Expressions Agent to name the character first. */
+export function getExpressionsAgentCastPrompt(character) {
+    const sets = readExpressionSets(character);
+    if (!sets.auto || sets.members.length < 2) return '';
+    const names = sets.members.map(member => member.name);
+    return [
+        '[Characters on this card]',
+        `This card holds several characters, and each has their own expression set: ${names.join(', ')}.`,
+        'Decide which of these characters the target message mainly shows, then answer with that character\'s name, a colon and the label, for example:',
+        `${names[0]}: <label>`,
+        'This replaces the single-label answer format above. Use the name exactly as written in the list and nothing else.',
+    ].join('\n');
 }
 
 export function applyExpressionMemberPrompt(context, member) {
