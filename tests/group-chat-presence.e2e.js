@@ -10,6 +10,9 @@ test('away members are not chosen and cannot see what happened while they were a
     const page = await account.open({ workspace: false });
     await openSceneGroup(page, group);
     await page.locator('#group_scene_toggle').click();
+    await page.setViewportSize({ width: 393, height: 852 });
+    await expect.poll(() => page.locator('#group_scene_panel').evaluate(panel => panel.scrollWidth <= panel.clientWidth)).toBe(true);
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.locator('#group_scene_location').fill('The locked archive');
     await page.locator('#group_scene_location').press('Tab');
     const mira = page.locator('#group_scene_members button').filter({ hasText: 'Scene Mira' });
