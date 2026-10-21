@@ -3,6 +3,7 @@ import { groups, is_group_generating, selected_group, updateGroupSpeakerControls
 import { changeGroupScene, currentGroupScene } from './group-chat-scene-ui.js';
 import { canGroupMemberSee } from './group-chat-visibility.js';
 import { rememberGroupSpeaker } from './group-chat-speakers.js';
+import { getGroupMemberRole } from './group-chat-roles.js';
 import { addLongPressEvent } from './utils.js';
 import { callGenericPopup, POPUP_TYPE } from './popup.js';
 import { SWIPE_DIRECTION } from './constants.js';
@@ -18,11 +19,13 @@ export async function openGroupSpeakerMenu(avatar) {
     const name = characters[chid].name;
     const away = currentGroupScene()?.scene.away.includes(avatar);
     const muted = group.disabled_members?.includes(avatar);
+    const narrator = getGroupMemberRole(group, characters[chid]) === 'narrator';
     const content = $('<div class="group-speaker-menu"></div>').append($('<h3></h3>').text(name));
     const buttons = [
         { text: muted ? t`Unmute` : t`Mute`, result: 2 },
         { text: away ? t`Bring into the scene` : t`Mark away`, result: 3 },
         { text: t`Edit card`, result: 4 },
+        { text: narrator ? t`Use as character` : t`Use as Narrator / GM`, result: 7 },
     ];
     if (!away && !muted) {
         buttons.push({ text: t`Speak now`, result: 5 });
@@ -38,6 +41,10 @@ export async function openGroupSpeakerMenu(avatar) {
     }
     if (action === 2) {
         group.disabled_members = muted ? (group.disabled_members || []).filter(member => member !== avatar) : [...(group.disabled_members || []), avatar];
+        await handlers.saveGroup(group.id);
+        updateGroupSpeakerControls();
+    } else if (action === 7) {
+        group.member_roles = { ...group.member_roles, [avatar]: narrator ? 'character' : 'narrator' };
         await handlers.saveGroup(group.id);
         updateGroupSpeakerControls();
     } else if (action === 3) {

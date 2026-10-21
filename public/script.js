@@ -107,6 +107,7 @@ import {
     deleteGroupChatByName,
     waitForQueuedGroupChatSaves,
     shouldTrimGroupMarkdownNames,
+    isGroupNarratorActive,
     isGroupEnsembleActive,
     getGroupMessageAudience,
 } from './scripts/group-chats.js';
@@ -7162,7 +7163,7 @@ export function getStoppingStrings(isImpersonate, isContinue, api = main_api) {
         }
 
         // Add group members as stopping strings if generating for a specific group member or user. (Allow slash commands to work around name stopping string restrictions)
-        if (selected_group && !isGroupEnsembleActive() && (name2 || isImpersonate)) {
+        if (selected_group && !isGroupEnsembleActive() && !isGroupNarratorActive() && (name2 || isImpersonate)) {
             const group = groups.find(x => x.id === selected_group);
 
             if (group && Array.isArray(group.members)) {
@@ -12035,7 +12036,7 @@ export function cleanUpMessage({ getMessage, isImpersonate, isContinue, displayI
     const group = selected_group && groups.find(group => group.id == selected_group);
     const groupNames = Array.isArray(group?.members) ? group.members.map(avatar => characters.find(character => character.avatar == avatar)?.name).filter(name => name !== undefined) : [];
     return cleanGeneratedText(getMessage, { power: power_user, mainApi: main_api, name1, name2, groupNames,
-        trimMarkdownNames: shouldTrimGroupMarkdownNames(), preserveGroupNames: isGroupEnsembleActive(), isImpersonate, trimNames, trimWrongNames, displayIncompleteSentences,
+        trimMarkdownNames: shouldTrimGroupMarkdownNames(), preserveGroupNames: isGroupEnsembleActive() || isGroupNarratorActive(), isImpersonate, trimNames, trimWrongNames, displayIncompleteSentences,
         trimSentence: trimToEndSentence, reasoningPrefix: power_user.trim_spaces ? PromptReasoning.getLatestPrefix() : '' });
 }
 

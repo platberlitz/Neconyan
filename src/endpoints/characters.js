@@ -1170,6 +1170,7 @@ const toShallow = (character) => {
             extensions: {
                 fav: _.get(character, 'data.extensions.fav', false),
                 world: _.get(character, 'data.extensions.world', ''),
+                ...(character.data?.extensions?.neconyan_group_role === 'narrator' ? { neconyan_group_role: 'narrator' } : {}),
                 ...(_.get(character, 'data.extensions.neconyan_assistant.id') ? {
                     neconyan_assistant: { id: character.data.extensions.neconyan_assistant.id },
                 } : {}),

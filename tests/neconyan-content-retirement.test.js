@@ -71,7 +71,7 @@ describe('retired bundle inventory', () => {
     test('every active catalog entry has a source', () => {
         const folder = new URL('../default/content/', import.meta.url);
         const catalog = JSON.parse(fs.readFileSync(new URL('index.json', folder), 'utf8'));
-        expect(catalog.filter(item => item.type === 'character')).toEqual([]);
+        expect(catalog.filter(item => item.type === 'character')).toEqual([{ filename: 'characters/Narrator.png', type: 'character' }]);
         for (const item of catalog) expect(fs.existsSync(new URL(item.filename, folder))).toBe(true);
     });
 
