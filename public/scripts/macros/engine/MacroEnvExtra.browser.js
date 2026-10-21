@@ -19,6 +19,7 @@ import { timestampToMoment } from '../../utils.js';
 import { textgenerationwebui_banned_in_macros } from '../../textgen-settings.js';
 import { eventSource, event_types } from '../../events.js';
 import { findExtension } from '../../extensions.js';
+import { filterGroupPromptMessages } from '../../group-chat-visibility.js';
 
 /**
  * Per-operation state shared by the state macros. The generation type is
@@ -65,7 +66,7 @@ export function populateBrowserExtra(env) {
         getInput: () => /** @type {HTMLTextAreaElement} */(document.querySelector('#send_textarea'))?.value ?? '',
         chatMetadata: chat_metadata,
         setChatIdHash: value => { chat_metadata.chat_id_hash = value; },
-        chat,
+        chat: filterGroupPromptMessages(chat),
         getCurrentChatId: () => getCurrentChatId(),
         getMaxPromptTokens: () => getMaxPromptTokens(),
         getMaxContextTokens: () => getMaxContextTokens(),

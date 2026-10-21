@@ -36,7 +36,8 @@ export function createEnsembleMessages(message, members, avatarUrl, narratorAvat
             extra: { ...message.extra, group_ensemble: true } }];
     }
     return passages.map((passage, index) => {
-        const extra = index === 0 ? { ...message.extra } : { gen_id: message.extra?.gen_id };
+        const extra = index === 0 ? { ...message.extra } : { gen_id: message.extra?.gen_id,
+            ...(message.extra?.group_scene ? { group_scene: structuredClone(message.extra.group_scene) } : {}) };
         extra.group_ensemble = true;
         const result = { ...message, name: passage.name, mes: passage.text, original_avatar: passage.avatar,
             force_avatar: avatarUrl(passage.avatar), extra, swipe_id: 0, swipes: [passage.text],

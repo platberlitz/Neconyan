@@ -1,4 +1,5 @@
 import { chat_metadata, getCurrentChatId, saveSettingsDebounced } from '../script.js';
+import { hasRestrictedGroupHistory } from './group-chat-visibility.js';
 import { extension_settings, saveMetadataDebounced } from './extensions.js';
 import { executeSlashCommandsWithOptions } from './slash-commands.js';
 import { SlashCommand } from './slash-commands/SlashCommand.js';
@@ -22,6 +23,7 @@ import { areVariablesReadOnly } from './variable-read-only.js';
 const MAX_LOOPS = 100;
 
 export function getLocalVariable(name, args = {}) {
+    if (String(args.key ?? name).startsWith('agent_') && hasRestrictedGroupHistory()) return '';
     if (!chat_metadata.variables && !areVariablesReadOnly()) {
         chat_metadata.variables = {};
     }

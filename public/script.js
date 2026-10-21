@@ -108,7 +108,9 @@ import {
     waitForQueuedGroupChatSaves,
     shouldTrimGroupMarkdownNames,
     isGroupEnsembleActive,
+    getGroupMessageAudience,
 } from './scripts/group-chats.js';
+import { filterGroupPromptMessages } from './scripts/group-chat-visibility.js';
 
 import {
     collapseNewlines,
@@ -9343,6 +9345,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         if (generationChatFilter) {
             coreChat = coreChat.filter((message, index) => generationChatFilter(message, index, coreChat));
         }
+        coreChat = filterGroupPromptMessages(coreChat);
         if (type === 'swipe') {
             coreChat.pop();
         }
@@ -9356,8 +9359,9 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             ? [...chat, companionRewriteTarget]
             : chat
         ).filter(message => !message.extra?.[IGNORE_SYMBOL]);
+        const visibleCompanionPolicyMessages = filterGroupPromptMessages(companionPolicyMessages);
         const companionChatHistory = selectCompanionChatHistory(companionCandidateMessages, {
-            policyMessages: companionPolicyMessages,
+            policyMessages: visibleCompanionPolicyMessages,
         });
         const {
             host: consolidatedCompanionHistoryHost,
@@ -9365,7 +9369,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         } = consolidateCompanionChatHistory(companionCandidateMessages, companionChatHistory, sourceMessage => content => substituteParams(content, {
             name2Override: String(sourceMessage.name ?? '').trim() || undefined,
             original: sourceMessage.is_system ? '' : sourceMessage.mes,
-        }), message => !Array.isArray(message?.extra?.tool_invocations), { policyMessages: companionPolicyMessages });
+        }), message => !Array.isArray(message?.extra?.tool_invocations), { policyMessages: visibleCompanionPolicyMessages });
         const consolidatedRetainedContributions = consolidatedRetainedEntries.map(({ message: sourceMessage, contribution, ...placement }) => {
             const sourceIndex = coreChat.indexOf(sourceMessage);
             const regexType = sourceMessage.is_user ? regex_placement.USER_INPUT : regex_placement.AI_OUTPUT;
@@ -11231,6 +11235,7 @@ export async function sendMessageAsUser(messageText, messageBias, insertAt = nul
         mes: substituteParams(messageText),
         extra: {
             isSmallSys: compact,
+            ...(selected_group && getGroupMessageAudience() ? { group_scene: getGroupMessageAudience() } : {}),
         },
     };
 
@@ -12191,6 +12196,8 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
         chat.push(newMessage);
         newMessage.extra = {};
         applyGenerationOutcome(newMessage, generationOutcome);
+        const groupAudience = selected_group && getGroupMessageAudience();
+        if (groupAudience) newMessage.extra.group_scene = groupAudience;
         newMessage.name = name2;
         newMessage.is_user = false;
         newMessage.send_date = getMessageTimeStamp();

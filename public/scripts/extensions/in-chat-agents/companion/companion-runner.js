@@ -12,6 +12,7 @@ import {
     substituteParamsExtended,
 } from '../../../../script.js';
 import { withReadOnlyVariables } from '../../../variable-read-only.js';
+import { canGroupTargetSee, withGroupTargetPrompt } from '../../../group-chat-visibility.js';
 import { power_user } from '../../../power-user.js';
 import { extension_settings, getContext } from '../../../extensions.js';
 import { eventSource, event_types } from '../../../events.js';
@@ -829,7 +830,7 @@ function getRecentConversationSection(messageIndex, companion, contextCapture = 
 
     for (let index = Math.min(messageIndex, chat.length - 1); index >= 0; index--) {
         const message = chat[index];
-        if (!isValidCompanionMessage(message)) {
+        if (!isValidCompanionMessage(message) || !canGroupTargetSee(message, chat[messageIndex])) {
             continue;
         }
 
@@ -927,7 +928,7 @@ async function getWorldInfoSection(messageIndex, companion) {
 
     try {
         const scanLines = chat.slice(0, messageIndex + 1)
-            .filter(isValidCompanionMessage)
+            .filter(message => isValidCompanionMessage(message) && canGroupTargetSee(message, chat[messageIndex]))
             .map(message => normalizeText(message?.mes ?? ''))
             .filter(Boolean)
             .reverse();
@@ -948,7 +949,7 @@ export function collectRecentCompanionResults(agentId, { beforeMessageIndex = ch
         // Hidden hosts still count: "hide story above this shard" turns every earlier shard's
         // message into a system note, and dropping those here left the shard with no prior
         // shards to consolidate and trackers with no last known state.
-        if (!holdsReadableCompanionResults(message, { allowUserMessage: false })) {
+        if (!holdsReadableCompanionResults(message, { allowUserMessage: false }) || !canGroupTargetSee(message, chat[beforeMessageIndex])) {
             continue;
         }
 
@@ -1016,10 +1017,10 @@ function normalizeExtraContextSections(extraContextSections = []) {
 async function buildCompanionContextSections(agent, messageIndex, { extraContextSections = [], includePreviousNotes = true, contextCapture = null } = {}) {
     const companion = getCompanionConfig(agent);
     const sections = [];
-    const systemPrompt = getSystemPromptSection(companion);
+    const systemPrompt = withGroupTargetPrompt(chat[messageIndex], chat, () => getSystemPromptSection(companion));
     const characterCard = getCharacterCardSection(companion, messageIndex);
     const worldInfo = await getWorldInfoSection(messageIndex, companion);
-    const authorsNote = getAuthorsNoteSection(companion);
+    const authorsNote = withGroupTargetPrompt(chat[messageIndex], chat, () => getAuthorsNoteSection(companion));
     const previousNotes = includePreviousNotes ? getPreviousNotesSection(agent, messageIndex, companion) : '';
     const recentConversation = getRecentConversationSection(messageIndex, companion, contextCapture);
 
@@ -1362,7 +1363,7 @@ function expandCompanionPrompt(agent, messageIndex, generationType = 'normal', r
 
 export async function buildCompanionPromptMessages(agent, messageIndex, generationType = 'normal', { repair = false, extraContextSections = [], contextCapture = null } = {}) {
     const companion = getCompanionConfig(agent);
-    const expandedPrompt = expandCompanionPrompt(agent, messageIndex, generationType, repair);
+    const expandedPrompt = withGroupTargetPrompt(chat[messageIndex], chat, () => expandCompanionPrompt(agent, messageIndex, generationType, repair));
     const contextSections = await buildCompanionContextSections(agent, messageIndex, { extraContextSections, contextCapture });
     // rawPrompt sends the agent prompt verbatim: tracker prompts define their own exact output
     // format and break when extra format instructions are appended around them. The guard

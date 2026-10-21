@@ -124,6 +124,8 @@ import {
     summariseMemberCard,
 } from './group-chat-scene.js';
 import { buildEnsemblePrompt, createEnsembleMessages } from './group-chat-ensemble.js';
+import { beginGroupPromptScope, canGroupMemberSee, groupMessageAudience, groupScenePrompt, readGroupScene } from './group-chat-visibility.js';
+import { initGroupSceneControls, renderGroupScene } from './group-chat-scene-ui.js';
 
 export {
     selected_group,
@@ -374,7 +376,33 @@ function getGroupEnabledMembers(group) {
         return [];
     }
 
-    return group.members.filter(member => !group.disabled_members?.includes(member));
+    const away = group.id === selected_group ? readGroupScene(chat_metadata, group.members).away : [];
+    return group.members.filter(member => !group.disabled_members?.includes(member) && !away.includes(member));
+}
+
+let activeGroupAudience = null;
+
+export function getGroupMessageAudience() {
+    if (activeGroupAudience) return structuredClone(activeGroupAudience);
+    const group = groups.find(item => item.id === selected_group);
+    if (!group || !chat_metadata.group_scene) return null;
+    return groupMessageAudience(readGroupScene(chat_metadata, group.members), group.members);
+}
+
+function usesGroupSceneVisibility() {
+    return Boolean(chat_metadata.group_scene || chat.some(message => message.extra?.group_scene));
+}
+
+function getGroupScenePrompt(group) {
+    if (!chat_metadata.group_scene) return '';
+    return groupScenePrompt(readGroupScene(chat_metadata, group.members), group.members.map(avatar => ({ avatar, name: characters[getCharacterIdByAvatar(avatar)]?.name || avatar })));
+}
+
+async function runWithGroupScene(avatars, callback) {
+    const previous = activeGroupAudience;
+    activeGroupAudience = getGroupMessageAudience();
+    const restore = beginGroupPromptScope(avatars, chat);
+    try { return await callback(); } finally { restore(); activeGroupAudience = previous; }
 }
 
 function getSelectedGroupSpeakerChid(group) {
@@ -406,7 +434,7 @@ function buildGroupGreetingMessage(avatarId) {
         original_avatar: character.avatar,
         send_date: getMessageTimeStamp(),
         mes: getRegexedString(firstMes, regex_placement.AI_OUTPUT),
-        extra: {},
+        extra: getGroupMessageAudience() ? { group_scene: getGroupMessageAudience() } : {},
     };
 
     if (Array.isArray(alternateGreetings) && alternateGreetings.length > 0) {
@@ -621,6 +649,7 @@ function setGroupSpeakerControlsHidden(hidden) {
 }
 
 function updateGroupSpeakerControls() {
+    renderGroupScene();
     const container = $('#group_speaker_controls');
     if (!container.length) {
         return;
@@ -766,6 +795,7 @@ export async function letGroupMembersTalk() {
 }
 
 function initGroupSpeakerControls() {
+    initGroupSceneControls();
     if (groupSpeakerControlsInitialized) {
         return;
     }
@@ -2090,6 +2120,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             }
         }
 
+        activatedMembers = activatedMembers.filter(chid => enabledMembers.includes(characters[chid]?.avatar));
         if (activatedMembers.length === 0) {
             return Promise.resolve();
         }
@@ -2097,7 +2128,8 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
         const ensembleTurn = group.ensemble_replies === true && activatedMembers.length > 1
             && !['quiet', 'swipe', 'continue', 'impersonate'].includes(type);
         // Scene-specific turns use the browser's prompt and visibility rules.
-        const ordinaryTurn = !ensembleTurn && !['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && !params?.quiet_prompt && getCurrentChatId();
+        const ordinaryTurn = !ensembleTurn && !usesGroupSceneVisibility() && activationStrategy !== group_activation_strategy.DIRECTOR
+            && !['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && !params?.quiet_prompt && getCurrentChatId();
         const serverRequired = ordinaryTurn && params?.skipNativeRoleplay === undefined
             && await (await import('./browser-reply-routing.js')).requiresServerReply(activatedMembers);
         throwIfAborted();
@@ -2162,16 +2194,16 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
                 userName: name1,
             });
             const mergedParams = { ...(params || {}) };
-            mergedParams.quiet_prompt = [mergedParams.quiet_prompt, contextPrompt].filter(Boolean).join('\n');
+            mergedParams.quiet_prompt = [mergedParams.quiet_prompt, contextPrompt, getGroupScenePrompt(group)].filter(Boolean).join('\n');
             mergedParams.quietToLoud = true;
             mergedParams.suppressUserMessage = didRenderUserMessage || mergedParams.suppressUserMessage;
-            textResult = await runWithGroupMemberModelOverride(group, characters[chId]?.avatar, () => Generate(generateType, { automatic_trigger: byAutoMode, ...mergedParams }));
+            textResult = await runWithGroupScene([characters[chId].avatar], () => runWithGroupMemberModelOverride(group, characters[chId]?.avatar, () => Generate(generateType, { automatic_trigger: byAutoMode, ...mergedParams })));
             if (textResult?.generationOutcome) break;
             let messageChunk = textResult?.messageChunk;
 
             if (messageChunk) {
                 while (shouldAutoContinue(messageChunk, type === 'impersonate', mergedParams)) {
-                    textResult = await runWithGroupMemberModelOverride(group, characters[chId]?.avatar, () => Generate('continue', { automatic_trigger: byAutoMode, ...mergedParams, companionHistoryTarget: undefined }));
+                    textResult = await runWithGroupScene([characters[chId].avatar], () => runWithGroupMemberModelOverride(group, characters[chId]?.avatar, () => Generate('continue', { automatic_trigger: byAutoMode, ...mergedParams, companionHistoryTarget: undefined })));
                     if (textResult?.generationOutcome) break;
                     messageChunk = textResult?.messageChunk;
                 }
@@ -2217,8 +2249,8 @@ async function generateGroupEnsemble(group, chids, params) {
     setGroupTypingIndicator(scope.members.map(member => member.name).join(', '));
     try {
         await eventSource.emit(event_types.GROUP_MEMBER_DRAFTED, chids[0]);
-        return await Generate('normal', { ...params, skipNativeRoleplay: true, suppressAutoContinue: true, quietToLoud: true,
-            quiet_prompt: [params.quiet_prompt, buildEnsemblePrompt(scope.members.map(member => member.name), name1)].filter(Boolean).join('\n') });
+        return await runWithGroupScene(scope.members.map(member => member.avatar), () => Generate('normal', { ...params, skipNativeRoleplay: true, suppressAutoContinue: true, quietToLoud: true,
+            quiet_prompt: [params.quiet_prompt, buildEnsemblePrompt(scope.members.map(member => member.name), name1), getGroupScenePrompt(group)].filter(Boolean).join('\n') }));
     } finally {
         activeGroupEnsemble = null;
         // Keep completed output even when an after-reply Agent or cancellation interrupts the call.
@@ -2337,9 +2369,10 @@ function getGroupDirectorMembers(members) {
     }).filter(Boolean);
 }
 
-function getGroupDirectorHistory() {
+function getGroupDirectorHistory(members) {
     return chat
-        .filter(message => message && !message.is_system && String(message.mes || '').trim())
+        .filter(message => message && !message.is_system && !message.extra?.group_scene?.whisper_to?.length
+            && members.every(avatar => canGroupMemberSee(message, avatar)) && String(message.mes || '').trim())
         .slice(-12)
         .map(message => ({ name: message.name, text: message.mes, isUser: Boolean(message.is_user) }));
 }
@@ -2386,7 +2419,7 @@ export async function runGroupSceneDirector(group, members, { signal = null, max
         return null;
     }
 
-    const prompt = buildDirectorPrompt({ members: entries, messages: getGroupDirectorHistory(), userName: name1, maxSpeakers, continuing });
+    const prompt = buildDirectorPrompt({ members: entries, messages: getGroupDirectorHistory(members), userName: name1, maxSpeakers, continuing });
     const controller = new AbortController();
     const stop = () => controller.abort();
     signal?.addEventListener?.('abort', stop, { once: true });

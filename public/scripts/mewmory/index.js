@@ -14,6 +14,7 @@ import { cancelJob } from '../jobs.js';
 import { uuidv4 } from '../utils.js';
 import { setPreparedMewmoryContext } from '../extensions/in-chat-agents/agent-context-macros.js';
 import { t, translate } from '../i18n.js';
+import { hasRestrictedGroupHistory } from '../group-chat-visibility.js';
 
 export const mewmory = {
     config: null, view: null, stories: [], error: '', loading: false, busy: false, backfilling: false, preparing: false,
@@ -483,6 +484,8 @@ export function initMewmory() {
 export async function prepareMewmoryGeneration(messages, { signal } = {}) {
     const locator = getMewmoryLocator();
     setPreparedMewmoryContext(null, null);
+    // Chat-wide records cannot prove which scene participants heard their sources.
+    if (hasRestrictedGroupHistory()) return { enabled: false, chat: messages };
     if (!locator) return { enabled: false, chat: messages };
     const generation = getChatGeneration();
     const currentKey = getMewmoryScope();

@@ -24,6 +24,7 @@ import { extension_settings, getContext } from '../../extensions.js';
 import { t } from '../../i18n.js';
 import { eventSource, event_types } from '../../events.js';
 import { is_group_generating } from '../../group-chats.js';
+import { canGroupTargetSee, filterGroupPromptMessages, filterGroupTargetMessages, withGroupTargetPrompt } from '../../group-chat-visibility.js';
 import { POPUP_RESULT, POPUP_TYPE, callGenericPopup } from '../../popup.js';
 import { ToolManager } from '../../tool-calling.js';
 import {
@@ -1490,8 +1491,8 @@ function getPathfinderRetrievalContextSnapshot(targetMessageIndex) {
     const endIndex = Math.max(0, Number(targetMessageIndex));
     const startIndex = Math.max(0, endIndex - PATHFINDER_RETRIEVAL_CONTEXT_MESSAGE_LIMIT);
 
-    return chat.slice(startIndex, endIndex).map((message, offset) => ({
-        index: startIndex + offset,
+    return filterGroupPromptMessages(chat.slice(startIndex, endIndex)).map(message => ({
+        index: chat.indexOf(message),
         role: getPathfinderCacheMessageRole(message),
         name: normalizeMessageRunValue(message?.name),
         mes: normalizeMessageRunValue(message?.mes),
@@ -2308,16 +2309,17 @@ function buildBrowserAgentContextMacros(agent, message = null) {
         })))
         : null;
     const chatId = getCurrentChatId();
-    const trackers = usesAgentMacro(agent?.prompt, TRACKER_STATE_MACRO) ? captureTrackerState(getEnabledAgents(), chat_metadata) : null;
-    const secretsTrackers = usesAgentMacro(agent?.prompt, SECRETS_TRACKER_MACRO) ? captureSecretsTrackerState(getEnabledAgents(), chat_metadata) : null;
+    const restricted = chat.some(source => !canGroupTargetSee(source, message));
+    const trackers = !restricted && usesAgentMacro(agent?.prompt, TRACKER_STATE_MACRO) ? captureTrackerState(getEnabledAgents(), chat_metadata) : null;
+    const secretsTrackers = !restricted && usesAgentMacro(agent?.prompt, SECRETS_TRACKER_MACRO) ? captureSecretsTrackerState(getEnabledAgents(), chat_metadata) : null;
     const messageIndex = message ? chat.indexOf(message) : -1;
     const continuityNotes = usesAgentMacro(agent?.prompt, CONTINUITY_NOTES_MACRO)
-        ? latestContinuityNotes(messageIndex >= 0 ? chat.slice(0, messageIndex) : chat, getEnabledAgents()) : '';
+        ? latestContinuityNotes(filterGroupTargetMessages(messageIndex >= 0 ? chat.slice(0, messageIndex) : chat, message), getEnabledAgents()) : '';
     const continuityCorrections = message && usesAgentMacro(agent?.prompt, CONTINUITY_CORRECTIONS_MACRO)
         ? buildContinuityCorrectionsText(continuityCorrectionsFromRuns(getAgentExtraValue(message, PROMPT_RUNS_EXTRA_KEY), getEnabledAgents())) : '';
     return {
-        ...buildAgentContextMacros({ mewmory: getPreparedMewmoryContext(chatId), groupCards, userName: context.name1, charName: context.name2,
-            lore: getPreparedActiveLore(chatId), authorsNote: context.extensionPrompts?.[AUTHORS_NOTE_PROMPT_KEY]?.value, trackers, secretsTrackers, continuityNotes }),
+        ...buildAgentContextMacros({ mewmory: restricted ? null : getPreparedMewmoryContext(chatId), groupCards, userName: context.name1, charName: context.name2,
+            lore: restricted ? '' : getPreparedActiveLore(chatId), authorsNote: context.extensionPrompts?.[AUTHORS_NOTE_PROMPT_KEY]?.value, trackers, secretsTrackers, continuityNotes }),
         [CONTINUITY_CORRECTIONS_MACRO]: continuityCorrections,
     };
 }
@@ -3313,7 +3315,7 @@ function getPromptTransformRecentChat(agent, message, messageIndex) {
         endIndex = foundIndex >= 0 ? foundIndex : chat.length;
     }
 
-    return buildPromptTransformRecentChat(chat.slice(0, endIndex), limit, unwrapAssistantResponseWrapper);
+    return buildPromptTransformRecentChat(filterGroupTargetMessages(chat.slice(0, endIndex), message), limit, unwrapAssistantResponseWrapper);
 }
 
 function buildPromptTransformMessages(agentPrompt, messageText, assistantName, generationType, mode, recentChat = '') {
@@ -4029,11 +4031,11 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
             return result;
         }
 
-        const expandedPrompt = substituteParams(agent.prompt, {
+        const expandedPrompt = withGroupTargetPrompt(message, chat, () => substituteParams(agent.prompt, {
             name2Override: String(message?.name ?? '').trim(),
             original: transformMessageText,
             dynamicMacros: buildPromptDynamicMacros(transformMessageText, message, agent, normalizedGenerationType),
-        }).trim();
+        }).trim());
 
         if (!expandedPrompt) {
             const result = {
