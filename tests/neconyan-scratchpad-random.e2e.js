@@ -27,12 +27,12 @@ for (const phone of [false, true]) {
         await expect(page.locator('.scratchpad-round-table')).toHaveAttribute('aria-pressed', 'true');
         await expect(page.locator('.scratchpad-random')).toBeVisible();
         await expect(page.locator('.scratchpad-random')).toHaveAttribute('aria-pressed', 'false');
-        await expect(page.locator('.scratchpad-send')).toHaveText('Ask 3');
+        await expect(page.locator('.scratchpad-send')).toHaveAccessibleName('Ask 3');
         await page.locator('.scratchpad-assistants').getByRole('button', { name: 'Nori', exact: true }).click();
-        await expect(page.locator('.scratchpad-send')).toHaveText('Ask 2');
+        await expect(page.locator('.scratchpad-send')).toHaveAccessibleName('Ask 2');
         await page.locator('.scratchpad-random').click();
         await expect(page.locator('.scratchpad-random')).toHaveAttribute('aria-pressed', 'true');
-        await expect(page.locator('.scratchpad-send')).toHaveText('Ask 1');
+        await expect(page.locator('.scratchpad-send')).toHaveAccessibleName('Ask 1');
         const rect = await page.locator('.scratchpad-random').boundingBox();
         expect(Math.min(rect.width, rect.height)).toBeGreaterThanOrEqual(phone ? 44 : 32);
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(phone ? 393 : 1280);
@@ -51,7 +51,7 @@ for (const phone of [false, true]) {
         const result = await response.json();
         await expect(page.locator('.scratchpad-stream')).toHaveCount(1);
         await expect(page.locator('.scratchpad-stream')).toContainText('answers');
-        await expect(page.locator('.scratchpad-send')).toHaveText('Stop');
+        await expect(page.locator('.scratchpad-send')).toHaveAccessibleName('Stop');
         await expect(page.locator('.scratchpad-random')).toBeDisabled();
         const firstCalls = app.provider.calls.filter(call => call.messages?.at(-1)?.content === 'Choose a starting point.');
         expect(firstCalls).toHaveLength(1);
@@ -98,9 +98,9 @@ for (const phone of [false, true]) {
         await expect(page.locator('.scratchpad-message.is-user')).toHaveCount(2);
         await page.locator('.scratchpad-assistants').getByRole('button', { name: 'Taro', exact: true }).click();
         await page.locator('.scratchpad-random').click();
-        await expect(page.locator('.scratchpad-send')).toHaveText('Ask 2');
+        await expect(page.locator('.scratchpad-send')).toHaveAccessibleName('Ask 2');
         await page.locator('.scratchpad-round-table').click();
         await expect(page.locator('.scratchpad-random')).toBeHidden();
-        await expect(page.locator('.scratchpad-send')).toHaveText('Send');
+        await expect(page.locator('.scratchpad-send')).toHaveAccessibleName('Send');
     });
 }

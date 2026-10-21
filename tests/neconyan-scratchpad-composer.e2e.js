@@ -1,7 +1,24 @@
 /* global document, getComputedStyle */
+/* eslint-disable playwright/no-standalone-expect -- Shared checks cover every composer action state. */
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+
+async function expectIconButton(button, label, icon) {
+    await expect(button).toHaveAccessibleName(label);
+    await expect(button).toHaveAttribute('title', label);
+    await expect(button).toHaveText('');
+    await expect(button.locator(`i.${icon}`)).toHaveAttribute('aria-hidden', 'true');
+    const box = await button.boundingBox();
+    expect(box.width).toBe(44);
+    expect(box.height).toBe(44);
+    const fits = await button.evaluate(element => {
+        const box = element.getBoundingClientRect();
+        const icon = element.querySelector('i').getBoundingClientRect();
+        return icon.left >= box.left && icon.right <= box.right && icon.top >= box.top && icon.bottom <= box.bottom;
+    });
+    expect(fits, 'The icon fits inside its button').toBe(true);
+}
 
 for (const phone of [false, true]) {
     test(`${phone ? 'iPhone stand-in' : 'desktop'} Scratchpad input starts one line high and grows with the message`, async ({ app }) => {
@@ -12,7 +29,9 @@ for (const phone of [false, true]) {
         await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
         if (phone) await applyIOSOnlyCss(page);
         const composer = page.getByRole('textbox', { name: 'Message for Scratchpad', exact: true });
+        const send = page.locator('.scratchpad-send');
         await expect(composer).toBeEnabled();
+        await expectIconButton(send, 'Send', 'fa-paper-plane');
         await expect(composer).toHaveAttribute('rows', '1');
         const measure = () => composer.evaluate(input => {
             const style = getComputedStyle(input);
@@ -61,15 +80,25 @@ for (const phone of [false, true]) {
         await composer.fill('First line.\nSecond line.');
         await page.screenshot({ path: test.info().outputPath('growing-composer.png') });
         app.provider.mode.streamReply = { first: 'Both lines arrived.', rest: ' The input shrank back.' };
+        let release;
+        const held = new Promise(resolve => { release = resolve; });
+        await page.route('**/api/scratchpad/send', async route => { await held; await route.continue(); });
         const accepted = page.waitForResponse('**/api/scratchpad/send');
-        await page.locator('.scratchpad-send').click();
+        await send.click();
+        try {
+            await expectIconButton(send, 'Sending...', 'fa-paper-plane');
+            await expect(send).toBeDisabled();
+        } finally { release(); }
         const response = await accepted;
         expect(response.ok(), await response.text()).toBe(true);
         expect(response.request().postDataJSON().text).toBe('First line.\nSecond line.');
         await expect(page.locator('.scratchpad-stream')).toContainText('Both lines arrived.');
+        await expectIconButton(send, 'Stop', 'fa-stop');
+        await expect(send).toBeEnabled();
         app.provider.mode.finishStream();
         await account.settled((await response.json()).job.id);
         await expect(composer).toHaveValue('');
+        await expectIconButton(send, 'Send', 'fa-paper-plane');
         expect((await measure()).height).toBe(initial.height);
     });
 }

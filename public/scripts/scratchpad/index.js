@@ -45,7 +45,7 @@ import * as images from './images.js';
 import { integerSettingValue, reflectSavedValue, reflectedSettingValue } from './setting-input.js';
 import { renderWebSearchSettings, renderWebSearchSources, setWebSearchToggle } from './web-search.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261019e-scratchpad-context';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261021b-scratchpad-icons';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -451,7 +451,7 @@ function buildChatPanel() {
         onkeydown: onComposerKey,
         oninput: fitComposer,
     });
-    el.send = iconButton(t`Send`, () => onSendButton(), { icon: 'fa-paper-plane', className: 'scratchpad-send', primary: true });
+    el.send = iconButton('', () => onSendButton(), { icon: 'fa-paper-plane', className: 'scratchpad-send', title: t`Send`, primary: true });
     el.webSearch = iconButton(t`Web`, () => void toggleWebSearch(),
         { icon: 'fa-globe', className: 'scratchpad-web-toggle', title: t`Search the web for this message`, pressed: false });
     el.overviewToggle = h('button', {
@@ -1602,8 +1602,10 @@ function renderComposer() {
     el.composer.disabled = !app.source || !app.bucket;
     el.send.disabled = disabled && !pending;
     const count = randomReplyEnabled() ? 1 : sessionAssistants().length;
-    el.send.querySelector('span').textContent = pending ? (activeSession()?.settings.roundTable && !randomReplyEnabled() ? t`Stop all` : t`Stop`)
+    const sendLabel = pending ? (activeSession()?.settings.roundTable && !randomReplyEnabled() ? t`Stop all` : t`Stop`)
         : (app.sending ? t`Sending...` : count > 1 || randomReplyEnabled() ? t`Ask ${count}` : t`Send`);
+    el.send.setAttribute('aria-label', sendLabel);
+    el.send.title = sendLabel;
     el.send.querySelector('i').className = `fa-solid ${pending ? 'fa-stop' : 'fa-paper-plane'}`;
     setWebSearchToggle(el.webSearch, { enabled: currentSettings().webSearch === true, configured: app.webSearch?.readiness?.configured === true });
     el.webSearch.disabled = !app.source || !app.bucket || app.sending || Boolean(pending);
