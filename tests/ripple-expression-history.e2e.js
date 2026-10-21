@@ -214,12 +214,22 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
             const geometry = await page.evaluate(() => {
                 const image = document.querySelector('#chat .mes[mesid="1"] .neconyan-expression-avatar');
                 const rect = image.getBoundingClientRect();
-                return { fit: getComputedStyle(image).objectFit, left: rect.left, right: rect.right, width: rect.width,
+                const frame = image.parentElement.getBoundingClientRect();
+                const style = getComputedStyle(image);
+                return { fit: style.objectFit, position: style.objectPosition, left: rect.left, right: rect.right, width: rect.width,
+                    top: rect.top, height: rect.height, frameTop: frame.top, frameWidth: frame.width, frameHeight: frame.height,
                     sheldTop: document.querySelector('#sheld').getBoundingClientRect().top,
                     floating: getComputedStyle(document.querySelector('#expression-wrapper')).visibility,
                     sticky: getComputedStyle(document.querySelector('#chat .mesAvatarWrapper')).position };
             });
-            expect(geometry.fit).toBe('contain');
+            // The expression fills the avatar frame like a normal avatar, pinned to the top
+            // so square sprites keep the face instead of shrinking to the frame width.
+            expect(geometry.fit).toBe('cover');
+            expect(geometry.position).toBe('50% 0px');
+            expect(Math.abs(geometry.top - geometry.frameTop)).toBeLessThanOrEqual(1);
+            expect(Math.abs(geometry.width - geometry.frameWidth)).toBeLessThanOrEqual(1);
+            expect(Math.abs(geometry.height - geometry.frameHeight)).toBeLessThanOrEqual(1);
+            expect(geometry.height).toBeGreaterThan(geometry.width);
             expect(geometry.width).toBeGreaterThan(0);
             expect(geometry.left).toBeGreaterThanOrEqual(0);
             expect(geometry.right).toBeLessThanOrEqual(phone ? 393 : 1280);

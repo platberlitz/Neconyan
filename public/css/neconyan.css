@@ -553,7 +553,7 @@ body.neconyan #chat .mes .mesAvatarWrapper > .mes_stats > .agent-transform-badge
 }
 
 body.ripplestyle #chat .mes .mesAvatarWrapper .avatar.has-expression > :not(.neconyan-expression-avatar) { display: none; }
-body.ripplestyle #chat .mes .mesAvatarWrapper .avatar.has-expression > .neconyan-expression-avatar { display: block; object-fit: contain; mask-image: none; -webkit-mask-image: none; }
+body.ripplestyle #chat .mes .mesAvatarWrapper .avatar.has-expression > .neconyan-expression-avatar { display: block; object-fit: cover; object-position: 50% 0; mask-image: none; -webkit-mask-image: none; }
 body.neconyan.flatchat:not(.sbterm) #chat { padding: 24px max(var(--neco-gutter), calc((100% - var(--neco-reading-width)) / 2)); text-shadow: none; }
 /* Reserve room for the perched bodies, including first/history/Story/terminal rows. */
 body.neconyan #chat .mes.mes:is([mesid], [data-roleplay-draft]):has(> .neconyan-message-sleeper:not([hidden])) {
