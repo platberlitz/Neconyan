@@ -98,7 +98,7 @@ export function summariseMemberCard(text) {
  * @param {number} [options.maxSpeakers] Most speakers the director may pick
  * @returns {{role: string, content: string}[]}
  */
-export function buildDirectorPrompt({ members, messages, userName = '', maxSpeakers = GROUP_DIRECTOR_MAX_SPEAKERS }) {
+export function buildDirectorPrompt({ members, messages, userName = '', maxSpeakers = GROUP_DIRECTOR_MAX_SPEAKERS, continuing = false }) {
     const max = Math.max(1, Math.min(GROUP_DIRECTOR_MAX_SPEAKERS, Number(maxSpeakers) || 1));
     const memberLines = (members || []).map(member => {
         const role = member.role ? ` (${member.role})` : '';
@@ -108,10 +108,11 @@ export function buildDirectorPrompt({ members, messages, userName = '', maxSpeak
     const history = (messages || []).slice(-DIRECTOR_HISTORY_MESSAGES)
         .map(message => `${message.name || (message.isUser ? userName : 'Someone')}: ${squash(message.text, DIRECTOR_MESSAGE_CHARS)}`);
     const user = userName ? ` ${userName} is the user; never choose them.` : '';
+    const listening = continuing ? ' The user is only listening for now, so the characters keep the scene going among themselves.' : '';
     return [
         {
             role: 'system',
-            content: `You direct a group roleplay scene and decide who speaks next. Choose 1 to ${max} members from the list, in speaking order. Prefer whoever was addressed, asked something or has the strongest reason to react. Do not pick the same member twice in a row unless they were asked something directly.${user} Answer with JSON only, no other text: {"speakers": ["Name"], "reason": "under 12 words"}`,
+            content: `You direct a group roleplay scene and decide who speaks next. Choose 1 to ${max} members from the list, in speaking order. Prefer whoever was addressed, asked something or has the strongest reason to react. Do not pick the same member twice in a row unless they were asked something directly.${user}${listening} Answer with JSON only, no other text: {"speakers": ["Name"], "reason": "under 12 words"}`,
         },
         {
             role: 'user',
@@ -161,4 +162,35 @@ export function parseDirectorResponse(text, memberNames, maxSpeakers = GROUP_DIR
         speakers: [...new Set(picked)].slice(0, max),
         reason: squash(reason, 90),
     };
+}
+
+export const GROUP_TALK_BURST_DEFAULT = 3;
+export const GROUP_TALK_BURST_MAX = 8;
+
+/**
+ * How many messages one press of 'Let them talk' asks for, clamped to 1-8.
+ * @param {object|null|undefined} group Group record
+ * @returns {number}
+ */
+export function getGroupTalkBurstCount(group) {
+    const value = Math.round(Number(group?.talk_burst));
+    if (!Number.isFinite(value) || value < 1) {
+        return GROUP_TALK_BURST_DEFAULT;
+    }
+    return Math.min(GROUP_TALK_BURST_MAX, value);
+}
+
+/**
+ * The member after the last speaker, wrapping round, so list order takes turns during a burst.
+ * @param {string[]} members Avatars in list order
+ * @param {string} lastSpeakerAvatar Avatar of whoever spoke last
+ * @returns {string}
+ */
+export function pickNextListSpeaker(members, lastSpeakerAvatar) {
+    const list = Array.isArray(members) ? members.filter(Boolean) : [];
+    if (!list.length) {
+        return '';
+    }
+    const index = list.indexOf(lastSpeakerAvatar);
+    return list[(index + 1) % list.length];
 }

@@ -482,6 +482,7 @@ describe('owned host generation flow', () => {
             setCharacterId: id => { context.this_chid = id; },
             setCharacterName: name => { context.name2 = name; },
             setSendButtonState: jest.fn(), setGroupTypingIndicator: jest.fn(),
+            activeGroupTalkBurst: null,
             unshallowGroupMembers: jest.fn(),
         });
         context.chat[0].original_avatar = 'story.png';

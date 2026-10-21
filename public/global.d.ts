@@ -34,6 +34,9 @@ declare global {
         generation_mode_join_prefix?: string;
         generation_mode_join_suffix?: string;
         activation_strategy?: number;
+        director_profile?: string;
+        keep_own_lines?: boolean;
+        talk_burst?: number;
         allow_self_responses?: boolean;
         avatar_url?: string;
         hideMutedSprites?: boolean;

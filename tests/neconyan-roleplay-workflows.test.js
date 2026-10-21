@@ -1139,6 +1139,7 @@ test('group send submits without awaiting requestAnimationFrame in a hidden tab'
         deactivateSendButtons: () => {},
         activateSendButtons: () => {},
         setGroupTypingIndicator: () => {},
+        activeGroupTalkBurst: null,
         clearSelectedGroupSpeaker: () => {},
         event_types: { GROUP_WRAPPER_STARTED: 'group_wrapper_started' },
         eventSource: { emit: async () => {} },

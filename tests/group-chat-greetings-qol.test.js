@@ -47,10 +47,10 @@ describe('group chat greetings QoL', () => {
         expect(indexSource).toContain('class="fa-solid fa-hand-sparkles"');
         expect(indexSource).toContain('Add New Greeting');
         expect(groupChatSource).toContain('container.on(\'click\', \'#group_add_greeting\', addSelectedGroupGreeting);');
-        expect(styleSource).toContain('grid-template-areas: "typing typing typing typing" "avatars greeting speak hide";');
-        expect(styleSource).toContain('#group_add_greeting span,');
+        expect(styleSource).toContain('grid-template-areas: "typing typing typing typing typing" "avatars greeting talk speak hide";');
+        expect(styleSource).toContain('#group_speaker_controls>.menu_button span {');
         expect(styleSource).toMatch(/#group_add_greeting\s*\{[\s\S]*?grid-area:\s*greeting;\s*}/);
-        expect(mobileStyleSource).toContain('grid-template-areas: "avatars greeting speak hide" !important;');
+        expect(mobileStyleSource).toContain('grid-template-areas: "avatars greeting talk speak hide" !important;');
         expect(mobileStyleSource).toContain('#group_add_greeting span,');
         expect(mobileStyleSource).toMatch(/#group_add_greeting\s*\{[\s\S]*?grid-area:\s*greeting\s*!important;\s*}/);
     });
@@ -77,8 +77,8 @@ describe('group chat greetings QoL', () => {
         expect(styleSource).toMatch(/body\.groupSpeakerControlsHidden\s+#extensionsMenu>#wand_group_speaker_controls\s*\{\s*display:\s*flex;\s*}/);
 
         // The mobile grids reserve a column for the new button instead of overlapping the avatars.
-        expect(styleSource).toContain('grid-template-columns: minmax(0, 1fr) 34px 34px 34px;');
-        expect(styleSource).toContain('grid-template-columns: minmax(0, 1fr) 30px 30px 30px;');
+        expect(styleSource).toContain('grid-template-columns: minmax(0, 1fr) 34px 34px 34px 34px;');
+        expect(styleSource).toContain('grid-template-columns: minmax(0, 1fr) 30px 30px 30px 30px;');
         expect(styleSource).toMatch(/#group_speaker_hide\s*\{[\s\S]*?grid-area:\s*hide;\s*}/);
         expect(mobileStyleSource).toMatch(/#group_speaker_hide\s*\{[\s\S]*?grid-area:\s*hide\s*!important;\s*}/);
     });

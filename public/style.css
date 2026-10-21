@@ -7461,8 +7461,8 @@ body.groupSpeakerControlsHidden #extensionsMenu>#wand_group_speaker_controls {
 @media screen and (max-width: 600px) {
     .group_speaker_controls {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 34px 34px 34px;
-        grid-template-areas: "typing typing typing typing" "avatars greeting speak hide";
+        grid-template-columns: minmax(0, 1fr) 34px 34px 34px 34px;
+        grid-template-areas: "typing typing typing typing typing" "avatars greeting talk speak hide";
         align-items: center;
         gap: 4px;
         padding: 4px 6px;
@@ -7505,9 +7505,7 @@ body.groupSpeakerControlsHidden #extensionsMenu>#wand_group_speaker_controls {
     }
 
     .group_speaker_avatar span,
-    #group_add_greeting span,
-    #group_speaker_now span,
-    #group_speaker_hide span {
+    #group_speaker_controls>.menu_button span {
         display: none;
     }
 
@@ -7516,9 +7514,7 @@ body.groupSpeakerControlsHidden #extensionsMenu>#wand_group_speaker_controls {
         height: 24px;
     }
 
-    #group_add_greeting,
-    #group_speaker_now,
-    #group_speaker_hide {
+    #group_speaker_controls>.menu_button {
         width: 34px;
         min-width: 34px;
         max-width: 34px;
@@ -7535,6 +7531,10 @@ body.groupSpeakerControlsHidden #extensionsMenu>#wand_group_speaker_controls {
         grid-area: greeting;
     }
 
+    #group_let_them_talk {
+        grid-area: talk;
+    }
+
     #group_speaker_now {
         grid-area: speak;
     }
@@ -7547,12 +7547,10 @@ body.groupSpeakerControlsHidden #extensionsMenu>#wand_group_speaker_controls {
 
 @media screen and (max-width: 420px) {
     .group_speaker_controls {
-        grid-template-columns: minmax(0, 1fr) 30px 30px 30px;
+        grid-template-columns: minmax(0, 1fr) 30px 30px 30px 30px;
     }
 
-    #group_add_greeting,
-    #group_speaker_now,
-    #group_speaker_hide {
+    #group_speaker_controls>.menu_button {
         width: 30px;
         min-width: 30px;
         max-width: 30px;
