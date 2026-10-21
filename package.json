@@ -124,7 +124,7 @@
     "type": "module",
     "license": "AGPL-3.0",
     "description": "Neconyan, a server-driven character chat workspace",
-    "version": "1.3.7",
+    "version": "1.3.8",
     "scripts": {
         "start": "bun server.js",
         "start:node": "node --no-warnings server.js",
