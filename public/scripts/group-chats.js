@@ -93,6 +93,7 @@ import {
     main_api,
     generateRawData,
     extractMessageFromData,
+    stopGeneration,
 } from '../script.js';
 import { getQueuedChatSaveAbortReason } from './chat-save-guard.js';
 import { getChatBackupSaveOptions } from './chat-backup-sequence.js';
@@ -111,6 +112,7 @@ import {
     appendGroupSpeakerStops,
     buildDirectorPrompt,
     buildOwnLinesReminder,
+    getGroupTalkBurstCount,
     getOtherMemberNames,
     GROUP_DIRECTOR_MAX_SPEAKERS,
     GROUP_DIRECTOR_RESPONSE_TOKENS,
@@ -118,6 +120,7 @@ import {
     GROUP_DIRECTOR_TIMEOUT_MS,
     isKeepOwnLinesEnabled,
     parseDirectorResponse,
+    pickNextListSpeaker,
     summariseMemberCard,
 } from './group-chat-scene.js';
 
@@ -152,6 +155,8 @@ let fav_grp_checked = false;
 let openGroupId = null;
 let newGroupMembers = [];
 let groupChatSaveQueue = Promise.resolve();
+/** @type {{groupId: string, chatId: string, remaining: number, cancelled: boolean, controller: AbortController}|null} */
+let activeGroupTalkBurst = null;
 const groupSaveStates = new Map();
 let groupMetadataSaveQueue = Promise.resolve();
 let groupListReadGeneration = 0;
@@ -662,6 +667,97 @@ function updateGroupSpeakerControls() {
     });
 }
 
+function syncGroupTalkButton() {
+    const button = $('#group_let_them_talk');
+    if (!button.length) {
+        return;
+    }
+
+    const running = Boolean(activeGroupTalkBurst);
+    button.toggleClass('is-running', running).attr('aria-pressed', String(running));
+    button.attr('title', running ? t`Stop the characters talking` : t`Let the characters talk among themselves`);
+    button.find('i').toggleClass('fa-comments', !running).toggleClass('fa-circle-stop', running);
+    button.find('span').text(running ? t`Stop` : t`Let them talk`);
+}
+
+/**
+ * Ends a running 'Let them talk' burst and stops the reply being written, if any.
+ */
+export function stopGroupTalkBurst() {
+    if (!activeGroupTalkBurst) {
+        return;
+    }
+
+    activeGroupTalkBurst.cancelled = true;
+    activeGroupTalkBurst.controller.abort();
+    if (is_send_press || is_group_generating) {
+        stopGeneration();
+    }
+}
+
+/**
+ * Lets the group members take several turns in a row while the user listens.
+ * Each reply is saved as soon as it finishes; Stop, a user message or leaving the chat ends the burst.
+ * @returns {Promise<void>}
+ */
+export async function letGroupMembersTalk() {
+    if (activeGroupTalkBurst) {
+        stopGroupTalkBurst();
+        return;
+    }
+
+    const group = selected_group ? groups.find(x => x.id === selected_group) : null;
+    if (!group || getGroupEnabledMembers(group).length < 2) {
+        toastr.warning(t`Unmute at least two members first.`);
+        return;
+    }
+
+    if (is_send_press || is_group_generating) {
+        toastr.info(t`Wait for the current reply to finish.`);
+        return;
+    }
+
+    const chatId = String(getCurrentChatId() || '');
+    const burst = { groupId: group.id, chatId, remaining: getGroupTalkBurstCount(group), cancelled: false, controller: new AbortController() };
+    const cancel = () => {
+        burst.cancelled = true;
+        burst.controller.abort();
+    };
+    activeGroupTalkBurst = burst;
+    eventSource.on(event_types.GENERATION_STOPPED, cancel);
+    eventSource.on(event_types.MESSAGE_SENT, cancel);
+    eventSource.on(event_types.CHAT_CHANGED, cancel);
+    syncGroupTalkButton();
+
+    try {
+        while (!burst.cancelled && burst.remaining > 0) {
+            if (selected_group !== burst.groupId || String(getCurrentChatId() || '') !== burst.chatId) {
+                break;
+            }
+
+            const before = chat.length;
+            await Generate('normal', { suppressUserMessage: true, suppressAutoContinue: true, signal: burst.controller.signal });
+            const added = chat.slice(before).filter(message => message && !message.is_user && !message.is_system).length;
+            if (added === 0) {
+                break;
+            }
+            burst.remaining -= added;
+        }
+    } catch (error) {
+        if (!burst.cancelled) {
+            console.warn('[Group talk] The conversation stopped early.', error);
+        }
+    } finally {
+        eventSource.removeListener(event_types.GENERATION_STOPPED, cancel);
+        eventSource.removeListener(event_types.MESSAGE_SENT, cancel);
+        eventSource.removeListener(event_types.CHAT_CHANGED, cancel);
+        if (activeGroupTalkBurst === burst) {
+            activeGroupTalkBurst = null;
+        }
+        syncGroupTalkButton();
+    }
+}
+
 function initGroupSpeakerControls() {
     if (groupSpeakerControlsInitialized) {
         return;
@@ -696,6 +792,7 @@ function initGroupSpeakerControls() {
     });
 
     container.on('click', '#group_add_greeting', addSelectedGroupGreeting);
+    container.on('click', '#group_let_them_talk', letGroupMembersTalk);
     container.on('click', '#group_speaker_hide', () => setGroupSpeakerControlsHidden(true));
     $(document).on('click', '#wand_group_speaker_controls', () => setGroupSpeakerControlsHidden(false));
 }
@@ -1904,7 +2001,7 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
         let activatedMembers = [];
 
         const selectedSpeakerChid = getSelectedGroupSpeakerChid(group);
-        const addressedMemberChid = findDirectlyAddressedMember(group, activationText);
+        const addressedMemberChid = activeGroupTalkBurst && !isUserInput ? -1 : findDirectlyAddressedMember(group, activationText);
         const isWholeGroupAddress = isAddressedToEntireGroup(activationText);
         let useSceneDirector = false;
         let directorNote = '';
@@ -1936,6 +2033,8 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
         } else if (activationStrategy === group_activation_strategy.NATURAL || activationStrategy === group_activation_strategy.DIRECTOR) {
             useSceneDirector = activationStrategy === group_activation_strategy.DIRECTOR;
             activatedMembers = activateNaturalOrder(enabledMembers, activationText, lastMessage, group.allow_self_responses, isUserInput);
+        } else if (activationStrategy === group_activation_strategy.LIST && activeGroupTalkBurst && !isUserInput) {
+            activatedMembers = activateListOrder([pickNextListSpeaker(enabledMembers, lastMessage?.original_avatar || '')]);
         } else if (activationStrategy === group_activation_strategy.LIST) {
             activatedMembers = activateListOrder(enabledMembers);
         } else if (activationStrategy === group_activation_strategy.POOLED) {
@@ -1968,7 +2067,12 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
         if (useSceneDirector) {
             setGroupDirectorChoosingIndicator(true);
             await unshallowGroupMembers(selected_group);
-            const directed = await runGroupSceneDirector(group, enabledMembers, { signal: params?.signal ?? null });
+            const burst = activeGroupTalkBurst && !isUserInput ? activeGroupTalkBurst : null;
+            const directed = await runGroupSceneDirector(group, enabledMembers, {
+                signal: params?.signal ?? null,
+                maxSpeakers: burst ? Math.max(1, Math.min(GROUP_DIRECTOR_MAX_SPEAKERS, burst.remaining)) : GROUP_DIRECTOR_MAX_SPEAKERS,
+                continuing: Boolean(burst),
+            });
             setGroupDirectorChoosingIndicator(false);
             throwIfAborted();
             if (directed) {
@@ -2230,15 +2334,16 @@ async function requestGroupDirectorText(group, prompt, signal) {
  * @param {object} [options]
  * @param {AbortSignal|null} [options.signal] Stop signal for the whole turn
  * @param {number} [options.maxSpeakers] Most speakers to pick
+ * @param {boolean} [options.continuing] The user is listening while the characters talk among themselves
  * @returns {Promise<{chids: number[], reason: string}|null>}
  */
-export async function runGroupSceneDirector(group, members, { signal = null, maxSpeakers = GROUP_DIRECTOR_MAX_SPEAKERS } = {}) {
+export async function runGroupSceneDirector(group, members, { signal = null, maxSpeakers = GROUP_DIRECTOR_MAX_SPEAKERS, continuing = false } = {}) {
     const entries = getGroupDirectorMembers(Array.isArray(members) ? members : []);
     if (entries.length < 2 || signal?.aborted) {
         return null;
     }
 
-    const prompt = buildDirectorPrompt({ members: entries, messages: getGroupDirectorHistory(), userName: name1, maxSpeakers });
+    const prompt = buildDirectorPrompt({ members: entries, messages: getGroupDirectorHistory(), userName: name1, maxSpeakers, continuing });
     const controller = new AbortController();
     const stop = () => controller.abort();
     signal?.addEventListener?.('abort', stop, { once: true });
@@ -2618,6 +2723,16 @@ async function onGroupDirectorProfileInput(e) {
     const group = openGroupId && groups.find((x) => x.id == openGroupId);
     if (group) {
         group.director_profile = String(e.target.value || '');
+        await editGroup(openGroupId, false, false);
+    }
+}
+
+async function onGroupTalkBurstInput(e) {
+    const count = getGroupTalkBurstCount({ talk_burst: e.target.value });
+    $(e.target).val(count);
+    const group = openGroupId && groups.find((x) => x.id == openGroupId);
+    if (group && group.talk_burst !== count) {
+        group.talk_burst = count;
         await editGroup(openGroupId, false, false);
     }
 }
@@ -3057,6 +3172,7 @@ function select_group_chats(groupId, skipAnimation) {
     $('#rm_group_activation_strategy').val(replyStrategy);
     $(`#rm_group_activation_strategy option[value="${replyStrategy}"]`).prop('selected', true);
     syncGroupDirectorProfileBlock(replyStrategy, group?.director_profile);
+    $('#rm_group_talk_burst').val(Math.min(8, Math.max(1, Math.round(Number(group?.talk_burst)) || 3)));
     $('#rm_group_generation_mode').val(generationMode);
     $(`#rm_group_generation_mode option[value="${generationMode}"]`).prop('selected', true);
     $('#rm_group_chat_name').val(groupName);
@@ -3432,6 +3548,7 @@ async function createGroup() {
     let activationStrategy = Number($('#rm_group_activation_strategy').find(':selected').val()) ?? group_activation_strategy.NATURAL;
     let generationMode = Number($('#rm_group_generation_mode').find(':selected').val()) ?? group_generation_mode.SWAP;
     const directorProfile = String($('#rm_group_director_profile').val() || '');
+    const talkBurst = getGroupTalkBurstCount({ talk_burst: $('#rm_group_talk_burst').val() });
     const members = newGroupMembers.filter(onlyUnique);
     if (members.length === 0) {
         $('#rm_group_submit').prop('disabled', true);
@@ -3463,6 +3580,7 @@ async function createGroup() {
         hideMutedSprites: hideMutedSprites,
         activation_strategy: activationStrategy,
         director_profile: directorProfile,
+        talk_burst: talkBurst,
         generation_mode: generationMode,
         disabled_members: [],
         [GROUP_MEMBER_MODELS_KEY]: {},
@@ -3894,6 +4012,7 @@ jQuery(() => {
     $('#rm_group_keep_own_lines').on('input', onGroupKeepOwnLinesClick);
     $('#rm_group_activation_strategy').on('change', onGroupActivationStrategyInput);
     $('#rm_group_director_profile').on('change', onGroupDirectorProfileInput);
+    $('#rm_group_talk_burst').on('change', onGroupTalkBurstInput);
     $('#rm_group_generation_mode').on('change', onGroupGenerationModeInput);
     $('#rm_group_generation_mode_join_prefix').on('input', onGroupGenerationModeTemplateInput);
     $('#rm_group_generation_mode_join_suffix').on('input', onGroupGenerationModeTemplateInput);

@@ -6,9 +6,11 @@ import {
     appendGroupSpeakerStops,
     buildDirectorPrompt,
     buildOwnLinesReminder,
+    getGroupTalkBurstCount,
     getOtherMemberNames,
     isKeepOwnLinesEnabled,
     parseDirectorResponse,
+    pickNextListSpeaker,
     summariseMemberCard,
 } from '../public/scripts/group-chat-scene.js';
 import { cleanGeneratedText } from '../public/scripts/generation-format.js';
@@ -108,4 +110,45 @@ test('scene director is wired into the editor, server and new groups', () => {
     assert.match(groupChats, /DIRECTOR: GROUP_DIRECTOR_STRATEGY/);
     assert.match(groupChats, /: group_activation_strategy\.DIRECTOR;/);
     assert.match(groupChats, /runGroupSceneDirector\(group, enabledMembers/);
+});
+
+test('let them talk defaults to three replies and never goes past eight', () => {
+    assert.equal(getGroupTalkBurstCount({}), 3);
+    assert.equal(getGroupTalkBurstCount(null), 3);
+    assert.equal(getGroupTalkBurstCount({ talk_burst: 0 }), 3);
+    assert.equal(getGroupTalkBurstCount({ talk_burst: 'abc' }), 3);
+    assert.equal(getGroupTalkBurstCount({ talk_burst: '5' }), 5);
+    assert.equal(getGroupTalkBurstCount({ talk_burst: 4.6 }), 5);
+    assert.equal(getGroupTalkBurstCount({ talk_burst: 50 }), 8);
+});
+
+test('list order hands the next turn to the member after the last speaker', () => {
+    const members = ['a.png', 'b.png', 'c.png'];
+    assert.equal(pickNextListSpeaker(members, 'a.png'), 'b.png');
+    assert.equal(pickNextListSpeaker(members, 'c.png'), 'a.png');
+    assert.equal(pickNextListSpeaker(members, 'user.png'), 'a.png');
+    assert.equal(pickNextListSpeaker(members, ''), 'a.png');
+});
+
+test('director prompt says when the user is only listening', () => {
+    const members = [{ name: 'Mira', summary: '' }, { name: 'Kit', summary: '' }];
+    const listening = buildDirectorPrompt({ members, messages: [], userName: 'Sam', continuing: true });
+    const normal = buildDirectorPrompt({ members, messages: [], userName: 'Sam' });
+    assert.match(listening[0].content, /only listening/);
+    assert.doesNotMatch(normal[0].content, /only listening/);
+});
+
+test('let them talk is wired into the speaker bar, editor, director and server', () => {
+    const groupChats = readFileSync(new URL('../public/scripts/group-chats.js', import.meta.url), 'utf8');
+    const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+    const server = readFileSync(new URL('../src/endpoints/groups.js', import.meta.url), 'utf8');
+    assert.match(html, /<button type="button" id="group_let_them_talk" class="menu_button menu_button_icon"/);
+    assert.match(html, /<input id="rm_group_talk_burst" class="text_pole" type="number" min="1" max="8"/);
+    assert.match(server, /talk_burst: Math\.min\(8, Math\.max\(1, Math\.round\(Number\(body\.talk_burst\)\) \|\| 3\)\)/);
+    assert.match(groupChats, /container\.on\('click', '#group_let_them_talk', letGroupMembersTalk\);/);
+    assert.match(groupChats, /await Generate\('normal', \{ suppressUserMessage: true, suppressAutoContinue: true, signal: burst\.controller\.signal \}\);/);
+    assert.match(groupChats, /eventSource\.on\(event_types\.GENERATION_STOPPED, cancel\);/);
+    assert.match(groupChats, /eventSource\.on\(event_types\.MESSAGE_SENT, cancel\);/);
+    assert.match(groupChats, /continuing: Boolean\(burst\)/);
+    assert.match(groupChats, /talk_burst: talkBurst,/);
 });

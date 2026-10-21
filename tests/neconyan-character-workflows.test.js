@@ -364,6 +364,7 @@ describe('Neconyan save behaviour', () => {
             },
             newGroupMembers: ['mira.png'], characters: [{ avatar: 'mira.png', name: 'Mira' }], onlyUnique: () => true,
             findGroupByMembers: () => null, isValidImageUrl: () => false, default_avatar: 'default.png',
+            getGroupTalkBurstCount: () => 3,
             group_activation_strategy: { NATURAL: 0 }, group_generation_mode: { SWAP: 0 }, hideMutedSprites: false,
             GROUP_MEMBER_MODELS_KEY: 'member_models', fav_grp_checked: false, getRequestHeaders: () => ({}), fetch: request,
             createTagMapFromList() {}, getCharacters: async () => {}, select_rm_info() {},
