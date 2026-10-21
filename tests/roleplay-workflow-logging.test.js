@@ -17,6 +17,8 @@ import { PassThrough } from 'node:stream';
 import { resumableGenerationMiddleware, testExports } from '../src/resumable-generations.js';
 import { createFinishReasonScan, forwardFetchResponse } from '../src/util.js';
 
+jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: strings => strings.join('') }));
+
 let account = 'alice';
 const chat = [];
 let nativeEligible = true;

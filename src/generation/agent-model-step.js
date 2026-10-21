@@ -1,3 +1,4 @@
+import { classifyGenerationOutcome, providerBlockedError } from '../../public/scripts/generation-outcome.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { getCounter } from '../mewmory/tokens.js';
 import { readArtifact, unresolvedProviderStep, writeArtifact } from '../jobs/artifacts.js';
@@ -13,7 +14,7 @@ const fail = message => roleplayError('ROLEPLAY_AGENT_RECOVERY', message, 503);
 const limited = result => ['length', 'max_tokens', 'MAX_TOKENS', 'max_output_tokens'].includes(result.finishReason
     ?? result.response?.choices?.[0]?.finish_reason ?? result.response?.stop_reason ?? result.response?.candidates?.[0]?.finishReason);
 
-const NO_FALLBACK_CODES = new Set(['ROLEPLAY_AGENT_RECOVERY', 'PROVIDER_OUTCOME_UNKNOWN',
+const NO_FALLBACK_CODES = new Set(['GENERATION_BLOCKED', 'ROLEPLAY_AGENT_RECOVERY', 'PROVIDER_OUTCOME_UNKNOWN',
     'ROLEPLAY_SOURCE_CHANGED', 'ROLEPLAY_AGENT_SOURCE_CHANGED']);
 
 function canTryFallback(context, error) {
@@ -148,6 +149,8 @@ async function runSingleAgentModelStep(context, { base, account, name, identity,
                     save(`${key}:provider`, next);
                 } });
         }
+        const blocked = classifyGenerationOutcome(response?.response);
+        if (blocked) throw providerBlockedError(blocked);
         if (typeof response?.text !== 'string' || Buffer.byteLength(response.text) > 256 * 1024) throw fail('The Agent returned no valid bounded text result.');
         const result = { identity: inputIdentity, inputHash, text: response.text, lengthLimited: limited(response), macroState: input.macroState,
             profileId: binding.profileId ?? '', model: modelOverride || response.generation?.model || '', completedAt: Date.now() };

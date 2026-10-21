@@ -6,6 +6,7 @@ import { describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import vm from 'node:vm';
+import * as generationOutcome from '../public/scripts/generation-outcome.js';
 import { parse } from 'acorn';
 import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse, requestUsesReasoning } from '../public/scripts/generation-request-controls.js';
 import { createChatGenerationParameters } from '../public/scripts/chat-provider-parameters.js';
@@ -56,6 +57,8 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
         trigger: jest.fn(),
     };
     const context = vm.createContext({
+        ...generationOutcome,
+        renderGenerationOutcome: jest.fn(),
         StreamingThinkingIndicator: class { update() {} clear() {} },
         captureRecoveryAnchor: () => ({}), releaseGenerationContext: jest.fn(), scheduleHeldGenerationRecovery: jest.fn(),
         setCardScriptMessageStreaming: jest.fn(),
@@ -725,6 +728,24 @@ describe('owned host generation flow', () => {
         expect(context.chat[0].mes).toBe('Existing prose. partial');
         expect(received).toEqual(['Existing prose. partial']);
         expect(eventSource.emit.mock.calls.some(([name]) => name === event_types.GENERATION_STOPPED)).toBe(false);
+    });
+
+    test.each([false, true])('explicit streamed error is visible once and suppresses follow-up work, buffering: %s', async buffer => {
+        const { context, eventSource } = makeRuntime({ stream: true, buffer });
+        load(context, 'scripts/openai.js', ['tryParseStreamingError']);
+        const origin = { chatId: 'explicit-stream-error', runId: Number(buffer), cancelRevision: 0 };
+        context.agentGenerationContextProvider = () => origin;
+        context.ToolManager.invokeFunctionTools = jest.fn();
+        context.fetchResumable.mockResolvedValue(new Response('data: {"choices":[{"index":0,"delta":{"content":"Unfinished"}}]}\n\nevent: error\ndata: {"detail":"unavailable"}\n\n'));
+        const intercept = jest.fn();
+        eventSource.on(event_types.MAIN_GENERATION_OUTPUT_READY, intercept);
+        await context.Generate('continue', { suppressUserMessage: true });
+        expect(context.toastr.error).toHaveBeenCalledTimes(1);
+        expect(context.toastr.error).toHaveBeenCalledWith('The AI service rejected the reply.', 'Chat Completion API');
+        expect(generationOutcome.automaticGenerationSuppressed(origin)).toBe(true);
+        expect(context.fetchResumable).toHaveBeenCalledTimes(1);
+        expect(context.ToolManager.invokeFunctionTools).not.toHaveBeenCalled();
+        expect(intercept).not.toHaveBeenCalled();
     });
 
     test.each([false, true])('streamed cap completes once, including buffering: %s', async buffer => {

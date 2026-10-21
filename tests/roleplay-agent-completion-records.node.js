@@ -46,3 +46,45 @@ test('a continuation cannot use the failure stop to skip Agent proof', t => {
     assert.throws(() => applyAgentCompletionRecords(f.directories, f.job, f.records, { continuedText: 'Raw answer', text: 'Raw answer' }),
         { code: 'ROLEPLAY_AGENT_RECOVERY' });
 });
+
+const { saveBlockedOutputProof } = await import('../src/generation/blocked-output-proof.js');
+function blockedFixture(t, continuation = false) {
+    const f = prepared(t);
+    if (continuation) {
+        f.job.intent.effect = 'continue';
+        f.job.intent.source.message = { index: 0 };
+    }
+    const outcome = { version: 1, status: 'blocked', reason: 'content_filter' };
+    const result = { text: 'An incomplete sentence', response: { choices: [{ message: { content: 'An incomplete sentence' }, finish_reason: 'content_filter' }] } };
+    const step = 'provider:' + 'a'.repeat(64);
+    writeArtifact(f.directories, f.job.id, 'roleplay-main-provider', { intentHash: roleplayHash(f.job.intent), step });
+    writeArtifact(f.directories, f.job.id, step, result);
+    f.output = continuation ? { text: result.text, extra: { generation_outcome: outcome } }
+        : { message: { mes: result.text, extra: { generation_outcome: outcome } } };
+    saveBlockedOutputProof(f.directories, f.job, f.output, f.records);
+    return { ...f, step, result };
+}
+
+test('a provider-bound blocked proof admits exact partial output and continuation without Agent proof', t => {
+    for (const continuation of [false, true]) {
+        const f = blockedFixture(t, continuation);
+        assert.equal(applyAgentCompletionRecords(f.directories, f.job, f.records, f.output), undefined);
+        assert.equal(applyAgentCompletionRecords(f.directories, f.job, f.records, structuredClone(f.output)), undefined);
+    }
+});
+for (const [name, tamper] of [
+    ['forged metadata', f => { delete f.output.blockedProof; }],
+    ['wrong provider hash', f => writeArtifact(f.directories, f.job.id, f.step, { ...f.result, text: 'Changed' })],
+    ['changed partial text', f => { f.output.message.mes += ' forged'; }],
+    ['forged Agent metadata', f => { f.output.message.extra.inChatAgentCompanionResults = { forged: true }; }],
+    ['invented continuation', f => { f.output.continuedText = 'invented'; }],
+]) test(`blocked proof rejects ${name}`, t => {
+    const f = blockedFixture(t);
+    tamper(f);
+    assert.throws(() => applyAgentCompletionRecords(f.directories, f.job, f.records, f.output));
+});
+test('blocked continuation proof rejects a different accepted baseline', t => {
+    const f = blockedFixture(t, true);
+    f.records[1].mes = 'Different baseline';
+    assert.throws(() => applyAgentCompletionRecords(f.directories, f.job, f.records, f.output), { code: 'ROLEPLAY_BLOCKED_RECOVERY' });
+});

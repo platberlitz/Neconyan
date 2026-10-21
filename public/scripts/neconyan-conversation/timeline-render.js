@@ -1,3 +1,4 @@
+import { renderGenerationOutcome } from '../generation-outcome-ui.js';
 import {
     characters,
     default_user_avatar,
@@ -556,6 +557,7 @@ function createConversationMessageElement(message, { avatar, groupId, settings, 
         bubble.append(meta, text, actionBar);
     }
     item.append(avatarWrap, bubble);
+    renderGenerationOutcome(item, message);
     return item;
 }
 

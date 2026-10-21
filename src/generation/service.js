@@ -1,3 +1,4 @@
+import { classifyGenerationOutcome } from '../../public/scripts/generation-outcome.js';
 import { mergeChatPresetSettings } from '../../public/scripts/chat-preset-request.js';
 import path from 'node:path';
 import fetch from 'node-fetch';
@@ -85,7 +86,7 @@ export async function runTextGeneration({ context, backend, payload, signal, ano
         ? normalizeContentText(typeof response === 'string' ? response : response?.choices?.[0]?.text ?? response?.choices?.[0]?.message?.content ?? response?.content ?? response?.response ?? response?.[0]?.content ?? '', { excludeReasoning: true })
         : extractMessageFromData(response, 'openai', { excludeReasoning: true })
             || normalizeContentText(response?.content ?? response?.response, { excludeReasoning: true });
-    return { response, text, timing: { gen_started: new Date(startedAt).toISOString(), gen_finished: new Date(Date.now()).toISOString(),
+    return { response, text, ...(classifyGenerationOutcome(response) ? { outcome: classifyGenerationOutcome(response) } : {}), timing: { gen_started: new Date(startedAt).toISOString(), gen_finished: new Date(Date.now()).toISOString(),
         ...(hasReasoning ? { reasoning_duration: Math.max(0, (reasoningFinishedAt ?? Date.now()) - startedAt) } : {}) } };
 }
 
@@ -271,6 +272,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
                 beforeDispatch: dispatchValidation ? beforeDispatch : undefined,
                 onStream: onStream && (value => onStream({ ...value, generation })),
                 anonymousCustom: binding.backend === 'text' ? !material.secretId : payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy, boundProfile: true });
+            if (result.outcome) return { ...result, generation: { ...generation, ...result.timing } };
             if (raw && rawOptions.jsonSchema) return { ...result, generation: { ...generation, ...result.timing }, text: extractJsonFromData(result.response, {
                 mainApi: 'openai', chatCompletionSource: material.source, returnInvalidJson: rawOptions.jsonSchema.returnInvalid,
             }) };
@@ -319,7 +321,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
             beforeDispatch: dispatchValidation ? beforeDispatch : undefined,
             onStream: onStream && (value => onStream({ ...value, generation })),
             anonymousCustom: payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy, boundProfile: true })
-            .then(result => ({ ...result, text: cleanGeneratedText(removePartialStops(result.text,
+            .then(result => ({ ...result, text: result.outcome ? result.text : cleanGeneratedText(removePartialStops(result.text,
                 Array.isArray(payload.stop) ? payload.stop : []), { power: material.power,
                 mainApi: 'openai', name1: userName, name2: characterName, groupNames, displayIncompleteSentences: true }),
             generation: { ...generation, ...result.timing } }));

@@ -1,3 +1,4 @@
+import { classifyGenerationOutcome, generationErrorEnvelope } from '../../public/scripts/generation-outcome.js';
 import { normalizeContentText } from '../../public/scripts/generation-format.js';
 import { createStreamTools } from './stream-tools.js';
 import { MAX_GENERATION_STREAM_BYTES, MAX_GENERATION_TEXT_BYTES } from './stream-limits.js';
@@ -18,11 +19,13 @@ export function createGenerationStream(onUpdate, { allowTools = false } = {}) {
     let reasoning = '';
     let signature = '';
     let complete = false;
+    let outcome = null;
+    let unsupportedOutput = false;
     let terminated = false;
     let textBytes = 0;
     let reasoningBytes = 0;
     const accept = event => {
-        if (event.split('\n').some(line => /^event:\s*error\s*$/.test(line))) throw new Error('The AI service rejected the reply while it was streaming.');
+        const eventType = event.split('\n').find(line => line.startsWith('event:'))?.slice(6).trim();
         const data = event.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
         if (!data) return;
         if (data === '[DONE]') {
@@ -32,18 +35,25 @@ export function createGenerationStream(onUpdate, { allowTools = false } = {}) {
         }
         let chunk;
         try { chunk = JSON.parse(data); } catch { throw new Error('The AI service sent a reply that could not be read.'); }
-        if (chunk.error || chunk.type === 'error') throw new Error('The AI service rejected the reply while it was streaming.');
-        if (terminated) throw new Error('The AI service sent extra text after the reply had finished.');
-        const choice = chunk.choices?.[0];
-        const delta = choice?.delta ?? choice?.message;
-        const candidate = chunk.candidates?.[0];
-        const parts = candidate?.content?.parts;
-        if (choice?.index > 0 || candidate?.index > 0) return;
-        if (parts?.some(part => part?.inlineData) || !tools && (delta?.tool_calls?.length || parts?.some(part => part?.functionCall)
-            || chunk.content_block?.type === 'tool_use' || chunk.item?.type === 'function_call')) {
-            throw new Error('The AI service sent a kind of output that a Roleplay reply cannot save.');
+        outcome ??= classifyGenerationOutcome(chunk);
+        if (outcome) complete = true;
+        if (generationErrorEnvelope(chunk, eventType)) {
+            if (outcome) return;
+            throw new Error('The AI service rejected the reply while it was streaming.');
         }
-        tools?.push(chunk);
+        if (terminated) throw new Error('The AI service sent extra text after the reply had finished.');
+        const choice = chunk.choices?.find((value, index) => (value.index ?? index) === 0);
+        const delta = choice?.delta ?? choice?.message;
+        const candidate = chunk.candidates?.find((value, index) => (value.index ?? index) === 0);
+        const parts = candidate?.content?.parts;
+        if (chunk.choices?.length && !choice || chunk.candidates?.length && !candidate) return;
+        if (choice) chunk = { ...chunk, choices: [choice] };
+        if (candidate) chunk = { ...chunk, candidates: [candidate] };
+        if (!outcome && (parts?.some(part => part?.inlineData) || !tools && (delta?.tool_calls?.length || parts?.some(part => part?.functionCall)
+            || chunk.content_block?.type === 'tool_use' || chunk.item?.type === 'function_call'))) {
+            unsupportedOutput = true;
+        }
+        if (!outcome) tools?.push(chunk);
         let nextText = normalizeContentText(delta?.content ?? delta?.text ?? choice?.text ?? chunk.delta?.text
             ?? (chunk.type === 'response.output_text.delta' ? chunk.delta : undefined)
             ?? chunk.delta?.message?.content?.text ?? chunk.token ?? (typeof chunk.content === 'string' ? chunk.content : ''), { excludeReasoning: true });
@@ -84,9 +94,10 @@ export function createGenerationStream(onUpdate, { allowTools = false } = {}) {
         },
         finish() {
             if (pending) { accept(pending.replace(/\r\n/g, '\n')); pending = ''; }
-            const toolCalls = tools?.finish() ?? [];
-            if (!complete || !text.trim() && !toolCalls.length) throw new Error('The AI service ended the reply before it was finished.');
-            return { choices: [{ text, reasoning, message: { content: text, reasoning_content: reasoning, reasoning,
+            if (unsupportedOutput && !outcome) throw new Error('The AI service sent a kind of output that a Roleplay reply cannot save.');
+            const toolCalls = outcome ? [] : tools?.finish() ?? [];
+            if (!complete || !outcome && !text.trim() && !toolCalls.length) throw new Error('The AI service ended the reply before it was finished.');
+            return { choices: [{ ...(outcome ? { finish_reason: outcome.reason } : {}), text, reasoning, message: { content: text, reasoning_content: reasoning, reasoning,
                 ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
                 ...(signature ? { reasoning_details: [{ id: 'thought', type: 'reasoning.encrypted', data: signature }] } : {}) } }],
             content: [{ type: 'thinking', thinking: reasoning }, { type: 'text', text }], thinking: reasoning,

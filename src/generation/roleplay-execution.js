@@ -1,3 +1,5 @@
+import { classifyGenerationOutcome, providerBlockedError } from '../../public/scripts/generation-outcome.js';
+import { saveBlockedOutputProof } from './blocked-output-proof.js';
 import { mergeChatPresetSettings } from '../../public/scripts/chat-preset-request.js';
 import { uiText } from '../../public/scripts/ui-text.js';
 import { supportsChatImages, supportsChatTools, supportsChatSignatures, supportsInterleavedToolReasoning } from '../../public/scripts/chat-input-capabilities.js';
@@ -139,6 +141,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         return withRoleplayAccount(base, account, lease => assertRoleplaySourceLocked(lease, source, { effect }));
     };
     const finish = async (result, selection) => {
+        const blocked = classifyGenerationOutcome(result?.response);
+        if (blocked && !result?.text?.trim()) throw providerBlockedError(blocked);
         const saveCandidate = (kind, contents) => {
             const reference = readArtifact(directories, job.id, 'roleplay-main-provider');
             const providerResult = reference?.step && readArtifact(directories, job.id, reference.step);
@@ -156,21 +160,22 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             if (saved === undefined) writeArtifact(directories, job.id, 'roleplay-candidate', { ...value, hash: roleplayHash(value) });
             return { result: completeRoleplayCandidateJob(base, account, { operationKey: roleplay.operationKey, jobId: job.id }) };
         };
-        if (job.type === 'roleplay.candidate' && (result?.response?.choices?.[0]?.message?.tool_calls?.length
+        if (!blocked && job.type === 'roleplay.candidate' && (result?.response?.choices?.[0]?.message?.tool_calls?.length
             || result?.response?.content?.some?.(part => part.type === 'tool_use')
             || result?.response?.output?.some?.(part => part.type === 'function_call')
             || result?.response?.candidates?.some?.(candidate => candidate.content?.parts?.some(part => part.functionCall)))) {
             const staged = stageBoundModelToolCalls(context);
             return saveCandidate('tool-turn', { callsHash: staged.hash });
         }
-        if (result?.response?.choices?.[0]?.message?.tool_calls?.length
+        if (!blocked && (result?.response?.choices?.[0]?.message?.tool_calls?.length
                 || result?.response?.content?.some?.(part => part.type === 'tool_use')
                 || result?.response?.output?.some?.(part => part.type === 'function_call')
-                || result?.response?.candidates?.some?.(candidate => candidate.content?.parts?.some(part => part.functionCall))) {
+                || result?.response?.candidates?.some?.(candidate => candidate.content?.parts?.some(part => part.functionCall)))) {
             throw roleplayError('ROLEPLAY_TOOLS_PENDING', 'The saved provider result needs the native tool workflow before a reply can be written.', 409);
         }
         let output = replyOutput(result, effect, request.characterName, result.generation);
         let reply = output.message ?? output.messages?.[0] ?? output;
+        if (blocked) reply.extra.generation_outcome = blocked;
         // Tell the reader the main reply finished before macro hashing, token
         // counting or any Agent preparation takes the event loop. Pending cards
         // are a display prediction built from the same eligibility rule the run
@@ -179,7 +184,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         // shown as running again on a resumed or retried pass.
         let pendingCardsPublished = false;
         const publishPendingCompanions = (recordsForPlan, valueForPlan) => {
-            if (!request.worldInfo?.agents || roleplayAgentsStopped(context)) return false;
+            if (blocked || !request.worldInfo?.agents || roleplayAgentsStopped(context)) return false;
             try {
                 const pre = readArtifact(directories, job.id, 'roleplay-agents-pre');
                 if (!pre?.activeIds) return false;
@@ -253,7 +258,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 output.quickReply = { actions: data.actions, changes: data.changes, hash };
             }
         }
-        if (request.worldInfo?.agents) {
+        if (!blocked && request.worldInfo?.agents) {
             // A restart can arrive without the verified definitions that this
             // process normally keeps for the save-only pass. Keep the untouched
             // main output so that exceptional pass can still leave the paid
@@ -389,7 +394,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             }
             if (agentResult?.waiting) return agentResult;
         }
-        if (request.worldInfo?.translation && !roleplayAgentsStoppedByOwner(context)) {
+        if (!blocked && request.worldInfo?.translation && !roleplayAgentsStoppedByOwner(context)) {
             publishRoleplayPreview(context, { stage: 'translating' });
             try {
                 await translateIncomingRoleplayOutput(context, { base, snapshot: request.worldInfo,
@@ -401,7 +406,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 console.warn('[Roleplay] Translation failed after the reply finished; saving the reply without it.', error?.message ?? error);
             }
         }
-        if (request.worldInfo?.speech && !roleplayAgentsStoppedByOwner(context)) {
+        if (!blocked && request.worldInfo?.speech && !roleplayAgentsStoppedByOwner(context)) {
             publishRoleplayPreview(context, { stage: 'speech' });
             try {
                 const speechRecords = assertSource().records;
@@ -431,11 +436,12 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         if (reply.extra.reasoning) reply.extra.reasoning_tokens = await count(reply.extra.reasoning);
         publishRoleplayPreview(context, { text: finalText, token_count: reply.extra.token_count,
             reasoning_tokens: reply.extra.reasoning_tokens, stage: 'saving' });
+        if (blocked) saveBlockedOutputProof(directories, job, output, assertSource().records);
         if (job.type === 'roleplay.candidate') return saveCandidate('text', { output });
         writeArtifact(directories, job.id, 'roleplay-output', output);
         setJobResume(directories, job.id, 'roleplay-delivery');
         signal.throwIfAborted();
-        const hiding = await prepareReplyHiding(directories, base, account, source, request, job.id);
+        const hiding = blocked ? null : await prepareReplyHiding(directories, base, account, source, request, job.id);
         return { result: applyRoleplayJobEffect(base, account, { operationKey: roleplay.operationKey, jobId: job.id, output }, host, { hiding }) };
     };
     const saved = readArtifact(directories, job.id, 'roleplay-output');
@@ -444,7 +450,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved Roleplay result needs recovery.', 503);
         }
         const result = applyRoleplayJobEffect(base, account, { operationKey: roleplay.operationKey, jobId: job.id, output: saved },
-            host, { hiding: await prepareReplyHiding(directories, base, account, source, request, job.id) });
+            host, { hiding: saved.blockedProof ? null : await prepareReplyHiding(directories, base, account, source, request, job.id) });
         return { result };
     }
     const providerReference = readArtifact(directories, job.id, 'roleplay-main-provider');

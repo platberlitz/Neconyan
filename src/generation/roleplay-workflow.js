@@ -1,3 +1,5 @@
+import { saveBlockedContinuationProof } from './blocked-output-proof.js';
+import { messageGenerationBlocked } from '../../public/scripts/generation-outcome.js';
 import { roleplayError, roleplayHash } from '../roleplay-store.js';
 import { assertRoleplaySourceLocked, captureRoleplayStorageSourceLocked } from './roleplay-source.js';
 import { captureRoleplayWorldInfo } from './world-info.js';
@@ -137,7 +139,13 @@ function root(context) {
     return job;
 }
 
+function blockedCandidate(chosen) {
+    const output = chosen?.candidate?.output;
+    return messageGenerationBlocked(output?.message ?? output?.messages?.[0] ?? output);
+}
+
 async function prepareWorkflowHiding(context, job, chosen) {
+    if (blockedCandidate(chosen)) return null;
     const locator = admittedRoleplayChatLocator({ owner: context.owner, directories: context.directories }, job.intent.media, job.intent.source);
     if (!locator) return null;
     return prepareAutomaticHiding(context.directories, locator, {
@@ -519,7 +527,7 @@ async function runGroupWorkflow(context, job, beforePublication, decideCandidate
             completed.push(prior);
             previous = prior;
             turn = prior.turnEnd;
-            if (roleplayAgentsStopped({ ...context, job: getJob(context.directories, prior.childJobId) })) break;
+            if (readArtifact(context.directories, prior.childJobId, 'roleplay-blocked-output') || roleplayAgentsStopped({ ...context, job: getJob(context.directories, prior.childJobId) })) break;
             continue;
         }
         const speakerStart = turn;
@@ -535,6 +543,13 @@ async function runGroupWorkflow(context, job, beforePublication, decideCandidate
                 return { waiting: true, childJobId: child.id };
             }
             const chosen = selectedCandidate(context, job, child);
+            if (blockedCandidate(chosen)) {
+                chosen.output = combinedCandidateOutput(progressiveOutput, chosen.candidate.output, job.intent.request.effect);
+                if (progressiveOutput) saveBlockedContinuationProof(context.directories, chosen.child, chosen.output, progressiveOutput);
+                done = advanceSpeaker(context, job, chosen, index, turn + 1, previous, [], null);
+                turn++;
+                break;
+            }
             if (chosen.candidate.kind === 'tool-turn') {
                 const handled = savedToolHistory(context, job, chosen, turn, history);
                 if (handled.waiting) return handled;
@@ -569,9 +584,10 @@ async function runGroupWorkflow(context, job, beforePublication, decideCandidate
         completed.push(done);
         previous = done;
         await beforePublication?.(index);
-        if (roleplayAgentsStopped({ ...context, job: getJob(context.directories, done.childJobId) })) break;
+        if (readArtifact(context.directories, done.childJobId, 'roleplay-blocked-output') || roleplayAgentsStopped({ ...context, job: getJob(context.directories, done.childJobId) })) break;
     }
-    const result = { status: 'completed', childJobId: completed.at(-1).childJobId,
+    const blockedOutcome = readArtifact(context.directories, completed.at(-1).childJobId, 'roleplay-blocked-output')?.outcome;
+    const result = { ...(blockedOutcome ? { generationOutcome: blockedOutcome } : {}), status: 'completed', childJobId: completed.at(-1).childJobId,
         candidateHash: completed.at(-1).candidateHash,
         writeId: completed.at(-1).result.writeId, revision: completed.at(-1).result.revision,
         instanceId: completed.at(-1).result.instanceId, speakers: completed.map(entry => ({
@@ -650,7 +666,7 @@ export function recoverWaitingRoleplayWorkflow({ job, directories, owner }) {
         const uncertainty = child.recoverability === 'unknown-outcome'
             ? ' The provider may still have processed this request, so it was not retried automatically.' : '';
         updateJob(directories, current.id, { state: 'interrupted', stage: 'child-needs-recovery',
-            error: { code: 'ROLEPLAY_WORKFLOW_CHILD', message: reason + uncertainty } });
+            error: { code: child.error?.code === 'GENERATION_BLOCKED' ? 'GENERATION_BLOCKED' : 'ROLEPLAY_WORKFLOW_CHILD', message: reason + uncertainty } });
     }
 }
 
@@ -673,6 +689,11 @@ export async function runRoleplayWorkflowJob(context, { beforePublication, befor
             return { waiting: true, childJobId: child.id };
         }
         chosen = selectedCandidate(context, job, child);
+        if (blockedCandidate(chosen)) {
+            chosen.output = combinedCandidateOutput(progressiveOutput, chosen.candidate.output, job.intent.request.effect);
+            if (progressiveOutput) saveBlockedContinuationProof(context.directories, chosen.child, chosen.output, progressiveOutput);
+            break;
+        }
         if (chosen.candidate.kind === 'text') {
             const assembled = combinedCandidateOutput(progressiveOutput, chosen.candidate.output, job.intent.request.effect);
             decision = await savedTextDecision(context, job, chosen, turn, assembled, candidateText(assembled), decideCandidate);
@@ -697,7 +718,7 @@ export async function runRoleplayWorkflowJob(context, { beforePublication, befor
         chosen = null;
     }
     if (!chosen) throw error('The model did not finish within the saved tool turn limit.', 'ROLEPLAY_WORKFLOW_CAPACITY');
-    const alternatives = collectWorkflowAlternatives(context, job, { start: 0, end: turn,
+    const alternatives = blockedCandidate(chosen) ? [] : collectWorkflowAlternatives(context, job, { start: 0, end: turn,
         effect: job.intent.request.effect, candidateAt: previousTurn =>
             selectedCandidate(context, job, savedChild(context, job, previousTurn).child) });
     const hiding = await prepareWorkflowHiding(context, job, chosen);
@@ -705,7 +726,7 @@ export async function runRoleplayWorkflowJob(context, { beforePublication, befor
     await beforeCommit?.();
     const outcome = publishPlan(context, job, chosen, plan);
     await beforePublication?.();
-    const result = { status: 'completed', childJobId: chosen.child.id, candidateHash: chosen.candidate.hash,
+    const result = { ...(blockedCandidate(chosen) ? { generationOutcome: (chosen.candidate.output.message ?? chosen.candidate.output.messages?.[0] ?? chosen.candidate.output).extra.generation_outcome } : {}), status: 'completed', childJobId: chosen.child.id, candidateHash: chosen.candidate.hash,
         writeId: outcome.writeId, revision: outcome.revision, instanceId: outcome.instanceId,
         ...(plan.named ? { named: plan.named } : {}) };
     finishNativeMediaJob(context, result, { checkSource: false,

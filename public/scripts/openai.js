@@ -1,3 +1,4 @@
+import { classifyGenerationOutcome, generationErrorEnvelope, providerBlockedError } from './generation-outcome.js';
 import { appendAutoAppendReasoningInstruction } from './chat-reasoning-instruction.js';
 import { supportsChatImages, supportsChatVideo, supportsChatAudio, supportsChatSignatures, selectToolHistoryReasoning, supportsInterleavedToolReasoning } from './chat-input-capabilities.js';
 import { getChatImageTokenCost } from './chat-prompt-tokens.js';
@@ -1878,37 +1879,17 @@ export function keepPromptBiasLast(chat, bias) {
  * @param {object} [options]
  * @param {boolean?} [options.quiet=false] Suppress toast messages
  */
-export function tryParseStreamingError(response, decoded, { quiet = false } = {}) {
-    try {
-        const data = JSON.parse(decoded);
-
-        if (!data) {
-            return;
-        }
-
-        checkQuotaError(data, { quiet });
-        checkModerationError(data, { quiet });
-
-        // these do not throw correctly (equiv to Error("[object Object]"))
-        // if trying to fix "[object Object]" displayed to users, start here
-
-        if (data.error) {
-            !quiet && toastr.error(data.error.message || response.statusText, 'Chat Completion API');
-            throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
-        }
-
-        if (data.message) {
-            !quiet && toastr.error(data.message, 'Chat Completion API');
-            throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
-        }
-
-        if (data.detail) {
-            !quiet && toastr.error(data.detail?.error?.message || response.statusText, 'Chat Completion API');
-            throw new Error(typeof data === 'string' ? data : JSON.stringify(data));
-        }
-    } catch {
-        // No JSON. Do nothing.
-    }
+export function tryParseStreamingError(response, decoded, { quiet = false, eventType = '' } = {}) {
+    let data;
+    try { data = JSON.parse(decoded); } catch { return; }
+    if (!generationErrorEnvelope(data, eventType)) return;
+    const outcome = classifyGenerationOutcome(data);
+    if (outcome) throw providerBlockedError(outcome);
+    checkQuotaError(data, { quiet });
+    checkModerationError(data, { quiet });
+    const message = data.error?.message || (typeof data.message === 'string' ? data.message : '') || data.detail?.error?.message || (response.status >= 400 ? response.statusText : '') || 'The AI service rejected the reply.';
+    if (!quiet) toastr.error(message, 'Chat Completion API');
+    throw new Error(message || 'The AI service rejected the reply.');
 }
 
 /**
@@ -5382,6 +5363,7 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
         return readChatCompletionStream(response, { canMultiSwipe });
     } else {
         const data = await response.json();
+        if (classifyGenerationOutcome(data)) return data;
 
         checkQuotaError(data);
         checkModerationError(data);
@@ -5430,26 +5412,31 @@ export function readChatCompletionStream(response, { canMultiSwipe = false, chat
             if (done) return;
             const rawData = value.data;
             if (rawData === '[DONE]') return;
-            tryParseStreamingError(response, rawData);
             const parsed = JSON.parse(rawData);
-            if (isGenerationLengthFinish(parsed)) {
-                state.finishReason = 'length';
+            state.outcomes ??= {};
+            const choices = Array.isArray(parsed.choices) ? parsed.choices : null;
+            const frames = choices?.length ? choices.map((choice, index) => ({ ...parsed, choices: [{ ...choice, index: choice.index ?? index }] })) : [parsed];
+            for (const frame of frames) {
+                const index = frame.choices?.[0]?.index ?? 0;
+                state.outcomes[index] ??= classifyGenerationOutcome(frame, index);
+                if (index === 0) state.outcome = state.outcomes[0];
+                if (generationErrorEnvelope(frame, value.type)) {
+                    if (!state.outcome) tryParseStreamingError(response, rawData, { eventType: value.type });
+                    if (!state.outcome) throw new Error('The AI service rejected the reply.');
+                    continue;
+                }
+                if (index > 0) {
+                    if (canMultiSwipe) {
+                        const secondaryState = { reasoning: '', images: [], toolSignatures: {} };
+                        swipes[index - 1] = (swipes[index - 1] || '') + getStreamingReply(frame, secondaryState, { chatCompletionSource, overrideShowThoughts: false });
+                    }
+                    continue;
+                }
+                if (isGenerationLengthFinish(frame)) state.finishReason = 'length';
+                text += getStreamingReply(frame, state, { chatCompletionSource });
+                if (!state.outcome) ToolManager.parseToolCalls(toolCalls, frame, state.toolSignatures);
             }
-
-            if (parsed.usage?.completion_tokens_details?.reasoning_tokens) {
-                state.reasoning_tokens = parsed.usage.completion_tokens_details.reasoning_tokens;
-            }
-
-            if (canMultiSwipe && Array.isArray(parsed?.choices) && parsed?.choices?.[0]?.index > 0) {
-                const swipeIndex = parsed.choices[0].index - 1;
-                // FIXME: state.reasoning should be an array to support multi-swipe
-                swipes[swipeIndex] = (swipes[swipeIndex] || '') + getStreamingReply(parsed, state, { chatCompletionSource, overrideShowThoughts: false });
-            } else {
-                text += getStreamingReply(parsed, state, { chatCompletionSource });
-            }
-
-            ToolManager.parseToolCalls(toolCalls, parsed, state.toolSignatures);
-
+            if (parsed.usage?.completion_tokens_details?.reasoning_tokens) state.reasoning_tokens = parsed.usage.completion_tokens_details.reasoning_tokens;
             yield { text, swipes: swipes, logprobs: parseChatCompletionLogprobs(parsed), toolCalls: toolCalls, state: state };
         }
     };

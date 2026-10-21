@@ -113,8 +113,10 @@ export function reconcileConversationJob(directories, job, { now } = {}) {
     else if (children.some(child => child.state === 'interrupted' || child.state === 'conflict')) state = 'interrupted';
     else if (children.some(child => child.state === 'failed')) state = 'failed';
     else if (children.some(child => child.state === 'cancelled')) state = 'cancelled';
+    const blocked = children.find(child => child.error?.code === 'GENERATION_BLOCKED' || child.result?.generationOutcome);
     updateJob(directories, job.id, {
-        state, stage: null, result: { participants }, progress: { completed: children.length, total: children.length },
+        ...(blocked?.error?.code === 'GENERATION_BLOCKED' ? { error: blocked.error } : {}),
+        state, stage: null, result: { participants, ...(blocked?.result?.generationOutcome ? { generationOutcome: blocked.result.generationOutcome } : {}) }, progress: { completed: children.length, total: children.length },
         finishedAt: now, recoverability: state === 'completed' ? 'terminal' : 'needs-retry',
     });
     return true;

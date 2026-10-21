@@ -730,3 +730,37 @@ test('older jobs without a capture recover their saved prompt and saved provider
         assert.equal(f.records().at(-1).mes, 'Paid before the update.');
     });
 });
+
+for (const policy of ['autoSwipe', 'autoContinue']) test(`filtered candidate saves once before ${policy}, Agents and tools`, async t => {
+    const f = prepared(t, 'append', { agents: true, [policy]: true, assistant: true });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    let agentCalls = 0, decisions = 0;
+    const text = 'A partial sentence with';
+    await f.candidate(text, calls, { generateAgent: async () => { agentCalls++; throw new Error('Blocked Agent must not run'); },
+        response: { choices: [{ finish_reason: 'content_filter', message: { content: text,
+            tool_calls: [{ id: 'blocked-tool', type: 'function', function: { name: 'Neconyan_Assistant_ReadLorebookEntry', arguments: '{}' } }] } }] } });
+    const first = await runRoleplayWorkflowJob(f.context(), { decideCandidate: async () => { decisions++; throw new Error('Blocked candidate must not be judged'); } });
+    assert.equal(f.records().at(-1).mes, text);
+    assert.equal(f.records().at(-1).extra.generation_outcome.status, 'blocked');
+    assert.equal(calls.count, 1);
+    assert.equal(agentCalls, 0);
+    assert.equal(decisions, 0);
+    assert.deepEqual(await runRoleplayWorkflowJob(f.context()), first);
+});
+
+test('a filtered automatic continuation retains its accepted prefix and exact blocked suffix', async t => {
+    const f = prepared(t, 'append', { autoContinue: true, continueTarget: 100 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    await f.candidate('Accepted prefix. ', calls);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    await f.candidate('Unfinished suffix', calls, { turn: 1, response: { choices: [{ message: { content: 'Unfinished suffix' }, finish_reason: 'content_filter' }] } });
+    const first = await runRoleplayWorkflowJob(f.context());
+    assert.equal(f.records().at(-1).mes, 'Accepted prefix. Unfinished suffix');
+    assert.equal(f.records().at(-1).extra.generation_outcome.status, 'blocked');
+    assert.equal(calls.count, 2);
+    assert.deepEqual(await runRoleplayWorkflowJob(f.context()), first);
+});

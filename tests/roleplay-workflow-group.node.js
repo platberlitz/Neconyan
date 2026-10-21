@@ -429,3 +429,20 @@ test('an unowned chat change between group speakers cannot become the next accep
     assert.equal(paid, 0);
     assert.equal(getJob(f.dirs, f.jobId).children.length, 2);
 });
+
+test('a filtered group candidate is delivered immediately without the next speaker or automatic continuation', async t => {
+    const f = prepared(t, { autoContinue: true });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const count = { value: 0 };
+    await f.completeCandidate(0, { avatar: 'Nova.png', name: 'Nova', modelOverride: '', reply: 'An unfinished sentence',
+        response: { choices: [{ message: { content: 'An unfinished sentence' }, finish_reason: 'content_filter' }] } }, count);
+    const first = await runRoleplayWorkflowJob(f.context(), { decideCandidate: async () => { throw new Error('A blocked group candidate must not be judged'); } });
+    assert.equal(first.result.status, 'completed');
+    assert.equal(first.result.speakers.length, 1);
+    assert.equal(f.records().at(-1).mes, 'An unfinished sentence');
+    assert.equal(f.records().at(-1).extra.generation_outcome.status, 'blocked');
+    assert.equal(f.records().at(-1).original_avatar, 'Nova.png');
+    assert.equal(count.value, 1);
+    assert.deepEqual(await runRoleplayWorkflowJob(f.context()), first);
+});

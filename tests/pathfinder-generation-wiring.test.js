@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import * as generationOutcome from '../public/scripts/generation-outcome.js';
 import { EventEmitter } from '../public/lib/eventemitter.js';
 import { event_types } from '../public/scripts/events.js';
 import { resolveGenerationUiLockState, resolveGenerationUnblockState, resolveStopGenerationState } from '../public/scripts/generation-lifecycle/index.js';
@@ -39,6 +40,7 @@ function deferred() {
 function createHost() {
     const events = new EventEmitter();
     const context = vm.createContext({
+        ...generationOutcome,
         isChatNavigationBlocked, isSlashCommandText,
         captureRecoveryAnchor, releaseGenerationContext: jest.fn(), scheduleHeldGenerationRecovery: jest.fn(),
         saveChatWithHeldReply: jest.fn(async () => true), textgen_settings: {},

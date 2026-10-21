@@ -1,3 +1,4 @@
+import { classifyGenerationOutcome, providerBlockedError } from '../../generation-outcome.js';
 import { normalizeContentText } from '../../../script.js';
 import { removeReasoningFromString } from '../../reasoning.js';
 
@@ -84,6 +85,8 @@ function firstVisibleContentText(...values) {
 }
 
 export function extractProfileResponseText(response) {
+    const blocked = classifyGenerationOutcome(response);
+    if (blocked) throw providerBlockedError(blocked);
     const text = firstVisibleContentText(
         response?.content,
         response?.choices?.[0]?.text,

@@ -95,7 +95,7 @@ export const test = base.extend({
                 child = spawn(process.env.NECONYAN_TEST_RUNTIME || process.execPath, ['server.js', '--configPath', configPath,
                     ...(useConfigDataRoot ? [] : ['--dataRoot', config.dataRoot]),
                     '--port', String(port), '--browserLaunchEnabled', 'false'], {
-                    cwd: checkoutRoot, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: { ...process.env, ...env, NECONYAN_SUPERVISED: '1' },
+                    cwd: checkoutRoot, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: { ...process.env, ...env, NECONYAN_SUPERVISED: '1' },
                 });
                 const record = { pid: child.pid, startedAt: Date.now() };
                 processes.push(record);

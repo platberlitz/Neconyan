@@ -2,6 +2,7 @@
 import { describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import * as generationOutcome from '../public/scripts/generation-outcome.js';
 import { parse } from 'acorn';
 import { isGenerationLengthFinish } from '../public/scripts/generation-request-controls.js';
 import { buildChatPresetPayload, createChatRequestData } from '../public/scripts/chat-preset-request.js';
@@ -23,6 +24,7 @@ function load(context, file, names) {
 
 function runtime() {
     const context = vm.createContext({
+        ...generationOutcome,
         console, structuredClone, AbortController, Error,
         isGenerationLengthFinish, normalizeContentTextPure, extractMessageFromDataPure, constructScopedTextPrompt, cleanScopedTextResponse,
         name1: 'Sam', name2: 'Ada', selected_group: null, substituteParams: providerDependencies.substitute,

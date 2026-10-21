@@ -1,3 +1,4 @@
+import { classifyGenerationOutcome } from '../../../public/scripts/generation-outcome.js';
 /* eslint-disable dot-notation */
 import process from 'node:process';
 import { validateHeaderValue } from 'node:http';
@@ -956,7 +957,7 @@ async function sendMakerSuiteRequest(request, response) {
                 if (generateResponseJson?.promptFeedback?.blockReason) {
                     message += `\nPrompt was blocked due to : ${generateResponseJson.promptFeedback.blockReason}`;
                 }
-                return response.send({ error: { message } });
+                return response.send({ error: { message }, ...(classifyGenerationOutcome(generateResponseJson) ? { choices: [{ finish_reason: classifyGenerationOutcome(generateResponseJson).reason, message: { content: '' } }] } : {}) });
             }
 
             const responseContent = candidates[0].content ?? candidates[0].output;
@@ -968,7 +969,7 @@ async function sendMakerSuiteRequest(request, response) {
             if (!responseText && !functionCall && !inlineData) {
                 let message = `${apiName} Candidate text empty`;
                 console.warn(message, generateResponseJson);
-                return response.send({ error: { message } });
+                return response.send({ error: { message }, ...(classifyGenerationOutcome(generateResponseJson) ? { choices: [{ finish_reason: classifyGenerationOutcome(generateResponseJson).reason, message: { content: '' } }] } : {}) });
             }
 
             // Wrap it back to OAI format (responseContent includes thought signatures in parts array)
@@ -3576,7 +3577,7 @@ export async function handleChatCompletionsGenerate(request, response) {
             console.error('Chat completion request error: ', message, responseText);
 
             if (!response.headersSent) {
-                response.status(getSafeCompletionErrorStatus(fetchResponse.status)).send({ error: { message }, quota_error: quota_error, provider_status: fetchResponse.status });
+                response.status(getSafeCompletionErrorStatus(fetchResponse.status)).send({ error: { message, ...(classifyGenerationOutcome(errorData) ? { code: classifyGenerationOutcome(errorData).reason } : {}) }, quota_error: quota_error, provider_status: fetchResponse.status });
             } else if (!response.writableEnded) {
                 response.write(responseText);
             } else {

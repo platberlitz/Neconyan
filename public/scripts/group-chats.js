@@ -1966,15 +1966,18 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             mergedParams.quietToLoud = true;
             mergedParams.suppressUserMessage = didRenderUserMessage || mergedParams.suppressUserMessage;
             textResult = await runWithGroupMemberModelOverride(group, characters[chId]?.avatar, () => Generate(generateType, { automatic_trigger: byAutoMode, ...mergedParams }));
+            if (textResult?.generationOutcome) break;
             let messageChunk = textResult?.messageChunk;
 
             if (messageChunk) {
                 while (shouldAutoContinue(messageChunk, type === 'impersonate', mergedParams)) {
                     textResult = await runWithGroupMemberModelOverride(group, characters[chId]?.avatar, () => Generate('continue', { automatic_trigger: byAutoMode, ...mergedParams, companionHistoryTarget: undefined }));
+                    if (textResult?.generationOutcome) break;
                     messageChunk = textResult?.messageChunk;
                 }
             }
 
+            if (textResult?.generationOutcome) break;
             if (power_user.show_group_chat_queue) {
                 groupChatQueueOrder.delete(characters[chId].avatar);
                 groupChatQueueOrder.forEach((value, key, map) => map.set(key, value - 1));
