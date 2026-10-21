@@ -50,6 +50,29 @@ function runtime() {
 }
 
 describe('real agent request boundaries', () => {
+    test.each(['openrouter', 'nanogpt'])('%s blocked outcomes survive the real Connection Manager request wrapper', async api => {
+        const ctx = runtime();
+        const host = { ChatCompletionService: ctx.ChatCompletionService,
+            CONNECT_API_MAP: { [api]: { selected: 'openai', source: api } },
+            extensionSettings: { disabledExtensions: [], connectionManager: { profiles: [{ id: 'saved', api, model: 'fixture' }] } } };
+        Object.assign(ctx, {
+            t: strings => strings.join(''),
+            SillyTavern: { getContext: () => host },
+            getChatCompletionProfileRequestOverrides: () => ({ overrides: {}, profileFieldNames: [] }),
+            getChatCompletionProfileReverseProxy: () => ({}), getProfileServiceTier: () => '',
+        });
+        load(ctx, 'scripts/extensions/shared.js', ['ConnectionManagerRequestService']);
+        ctx.fetchResumable.mockResolvedValue({ ok: true, json: async () => ({ choices: [{ finish_reason: 'content_filter', message: { content: 'Partial' } }] }) });
+        const options = { stream: false, extractData: true, includePreset: false, includeInstruct: false };
+        await expect(ctx.ConnectionManagerRequestService.sendRequest('saved', [{ role: 'user', content: 'Rewrite' }], 64, options))
+            .rejects.toMatchObject({ code: 'GENERATION_BLOCKED', generationOutcome: { status: 'blocked', reason: 'content_filter' },
+                cause: { code: 'GENERATION_BLOCKED' } });
+        expect(ctx.fetchResumable).toHaveBeenCalledTimes(1);
+        ctx.fetchResumable.mockResolvedValue({ ok: false, status: 429, json: async () => ({ error: { message: 'Quota exhausted' } }) });
+        await expect(ctx.ConnectionManagerRequestService.sendRequest('saved', [], 64, options))
+            .rejects.toMatchObject({ message: 'API request failed', cause: { status: 429, message: 'Quota exhausted' } });
+    });
+
     test.each([undefined, 'missing', instructSettings])('direct text prompt preserves instruct fallback %#', preset => {
         const ctx = runtime();
         expect(ctx.TextCompletionService.constructPrompt(structuredClone(promptMessages), preset)).toBe(expectedPrompts.scoped);

@@ -312,7 +312,7 @@ function rejectedSwipeHistory(history, chosen, decision, turn) {
 function continuedHistory(history, chosen, decision, turn, assembled = chosen.candidate.output) {
     if (decision.decision.kind !== 'continue') throw error('A continuation needs its saved decision.');
     const text = candidateText(chosen.candidate.output);
-    if (roleplayHash(candidateText(assembled)) !== decision.decision.textHash) {
+    if (roleplayHash(assembled.continuedText ?? candidateText(assembled)) !== decision.decision.textHash) {
         throw error('The continued chunk changed after its decision.');
     }
     const result = [...history, { role: 'assistant', content: text },

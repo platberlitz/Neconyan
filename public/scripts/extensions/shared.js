@@ -551,7 +551,12 @@ export class ConnectionManagerRequestService {
                 }
             }
         } catch (error) {
-            throw new Error('API request failed', { cause: error });
+            const wrapped = new Error('API request failed', { cause: error });
+            if (error?.code === 'GENERATION_BLOCKED') {
+                wrapped.code = error.code;
+                wrapped.generationOutcome = error.generationOutcome;
+            }
+            throw wrapped;
         }
     }
 

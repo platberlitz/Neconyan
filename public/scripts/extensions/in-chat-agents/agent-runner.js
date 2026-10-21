@@ -2914,6 +2914,10 @@ function syncAssistantMessageStateToSwipe(message, messageIndex) {
     syncMesToSwipe(messageIndex);
 }
 
+function showBlockedAgentNotice() {
+    toastr.warning(t`The provider blocked an Agent request. The reply was kept and this pass will not retry automatically.`, 'In-Chat Agents');
+}
+
 function showPromptTransformResultToast(agent, result) {
     const agentName = agent?.name || result?.agentName || 'In-Chat Agent';
 
@@ -2934,6 +2938,10 @@ function showPromptTransformResultToast(agent, result) {
             break;
         }
         case 'error': {
+            if (result?.code === 'GENERATION_BLOCKED') {
+                toastr.error(t`The provider blocked this Agent request.`, agentName, { timeOut: 10000, extendedTimeOut: 12000 });
+                break;
+            }
             const targetLabel = describePromptTransformTarget(result?.profileId, result?.runner);
             const modeLabel = describePromptTransformMode(result?.mode);
             toastr.error(
@@ -4187,6 +4195,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
                 status: 'error',
                 mode: promptTransformMode,
                 error: describeAgentError(error),
+                ...(error?.code === 'GENERATION_BLOCKED' ? { code: error.code, generationOutcome: error.generationOutcome } : {}),
                 profileId,
                 ...runMetadata,
                 runner: 'error',
@@ -4196,7 +4205,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
                 beforeText: currentMessageText,
             };
 
-            if (showNotifications) {
+            if (showNotifications && !(options.stopOnBlocked && result.code === 'GENERATION_BLOCKED')) {
                 showPromptTransformResultToast(agent, result);
             }
 
@@ -4207,7 +4216,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
     } catch (error) { diagnosticOutcome = error?.name === 'AbortError' ? 'cancel' : 'error'; throw error; } finally { try { globalThis.NeconyanCrashDiagnostics?.endAgent?.(diagnosticHandle, diagnosticOutcome); } catch { /* Optional diagnostics. */ } }
 }
 
-async function runPromptTransformAppendBatch(agents, message, generationType, messageTextOverride = null, messageIndex = null, { cancelRevision = null, runtimeAgents = [], recentChatEndIndex = null, executionMode = getGlobalSettings().appendAgentsExecutionMode } = {}) {
+async function runPromptTransformAppendBatch(agents, message, generationType, messageTextOverride = null, messageIndex = null, { cancelRevision = null, runtimeAgents = [], stopOnBlocked = false, recentChatEndIndex = null, executionMode = getGlobalSettings().appendAgentsExecutionMode } = {}) {
     const targetState = captureMessageTargetState(message);
     const currentMessageText = unwrapAssistantResponseWrapper(
         messageTextOverride !== null ? messageTextOverride : message?.mes,
@@ -4229,12 +4238,13 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
             try {
                 const result = await runPromptTransformAgent(agent, message, generationType, currentMessageText, messageIndex, {
                     applyToMessage: false,
+                    stopOnBlocked,
                     runtimeAgents,
                     cancelRevision,
                     recentChatEndIndex,
                 });
                 results.push(result);
-                if (isCancelled() || result.status === 'cancelled') {
+                if (isCancelled() || result.status === 'cancelled' || (stopOnBlocked && result.code === 'GENERATION_BLOCKED')) {
                     break;
                 }
             } catch (error) {
@@ -4245,12 +4255,14 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
                     status: 'error',
                     mode: getPromptTransformMode(agent),
                     error: describeAgentError(error),
+                    ...(error?.code === 'GENERATION_BLOCKED' ? { code: error.code, generationOutcome: error.generationOutcome } : {}),
                     runner: 'error',
                     timestamp: new Date().toISOString(),
                     outputText: '',
                     nextMessageText: currentMessageText,
                     beforeText: currentMessageText,
                 });
+                if (stopOnBlocked && error?.code === 'GENERATION_BLOCKED') break;
             }
         }
     } else {
@@ -4259,6 +4271,7 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
                 try {
                     return await runPromptTransformAgent(agent, message, generationType, currentMessageText, messageIndex, {
                         applyToMessage: false,
+                        stopOnBlocked,
                         runtimeAgents,
                         cancelRevision,
                         recentChatEndIndex,
@@ -4271,6 +4284,7 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
                         status: 'error',
                         mode: getPromptTransformMode(agent),
                         error: describeAgentError(error),
+                        ...(error?.code === 'GENERATION_BLOCKED' ? { code: error.code, generationOutcome: error.generationOutcome } : {}),
                         runner: 'error',
                         timestamp: new Date().toISOString(),
                         outputText: '',
@@ -4304,12 +4318,17 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
  * cleaned of echoed text and duplicates, then joined around the finished body.
  * With Run together every agent request starts together.
  */
-async function runPromptTransformPasses(agents, message, generationType, text, messageIndex = null, { cancelRevision = null, runtimeAgents = [], stopOnFailure = false, stopOnFailureStatuses = null, isCurrent = () => true, recentChatEndIndex = null, executionMode = getGlobalSettings().appendAgentsExecutionMode } = {}) {
+async function runPromptTransformPasses(agents, message, generationType, text, messageIndex = null, { cancelRevision = null, runtimeAgents = [], stopOnFailure = false, stopOnBlocked = false, stopOnFailureStatuses = null, isCurrent = () => true, recentChatEndIndex = null, executionMode = getGlobalSettings().appendAgentsExecutionMode } = {}) {
     const promptRuns = [];
     const outcome = { cancelled: false, staleTarget: false, failed: false };
     const initialText = unwrapAssistantResponseWrapper(text);
     const isCancelled = () => (cancelRevision !== null && agentGenerationCancelRevision !== cancelRevision) || !runtimeAgents.every(isAgentRuntimeAllowed);
     const isFailureStatus = status => status === 'error' || Boolean(stopOnFailureStatuses?.has?.(status));
+    const rethrowBlockedResult = result => {
+        if (stopOnBlocked && result?.code === 'GENERATION_BLOCKED') throw Object.assign(new Error(result.error), {
+            code: result.code, generationOutcome: result.generationOutcome,
+        });
+    };
     const errorRun = (agent, error) => ({
         agentId: agent.id,
         agentName: agent.name,
@@ -4317,6 +4336,7 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
         status: 'error',
         mode: getPromptTransformMode(agent),
         error: describeAgentError(error),
+        ...(error?.code === 'GENERATION_BLOCKED' ? { code: error.code, generationOutcome: error.generationOutcome } : {}),
         runner: 'error',
         timestamp: new Date().toISOString(),
     });
@@ -4337,17 +4357,21 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
             try {
                 result = await runPromptTransformAgent(agent, message, generationType, body, messageIndex, {
                     applyToMessage: false,
+                    stopOnBlocked,
                     runtimeAgents,
                     recentChatEndIndex,
                     ...(cancelRevision !== null ? { cancelRevision } : {}),
                 });
             } catch (error) {
-                promptRuns.push(errorRun(agent, error));
+                const run = errorRun(agent, error);
+                promptRuns.push(run);
+                rethrowBlockedResult(run);
                 outcome.cancelled = isCancelled();
                 outcome.failed = !outcome.cancelled;
                 return { stop: outcome.cancelled || stopOnFailure };
             }
             promptRuns.push(result);
+            rethrowBlockedResult(result);
             if (result.status === 'stale-target') {
                 outcome.staleTarget = true;
                 return { stop: true };
@@ -4363,7 +4387,7 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
             return { text: result.nextMessageText };
         },
         runAppend: async (batchAgents, body) => {
-            const batch = await runPromptTransformAppendBatch(batchAgents, message, generationType, body, messageIndex, { cancelRevision, runtimeAgents, recentChatEndIndex, executionMode });
+            const batch = await runPromptTransformAppendBatch(batchAgents, message, generationType, body, messageIndex, { cancelRevision, runtimeAgents, stopOnBlocked, recentChatEndIndex, executionMode });
             promptRuns.push(...batch.results);
             if (batch.cancelled || isCancelled()) {
                 outcome.cancelled = true;
@@ -4374,6 +4398,7 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
                 return { stop: true };
             }
             if (batch.results.some(result => isFailureStatus(result?.status))) {
+                batch.results.forEach(rethrowBlockedResult);
                 outcome.failed = true;
                 if (stopOnFailure) return { stop: true };
             }
@@ -4384,11 +4409,12 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
             const synthesisAgent = { ...agent, name: 'Combined reply', postProcess: { ...agent.postProcess,
                 promptTransformMaxTokens: Math.max(...rewrites.map(item => normalizePromptTransformMaxTokens(item.agent.postProcess?.promptTransformMaxTokens))) } };
             const result = await runPromptTransformAgent(synthesisAgent, message, generationType, original, messageIndex, {
-                applyToMessage: false, runtimeAgents: [...runtimeAgents, ...agents.filter(isAgentRuntimeAllowed)], recentChatEndIndex,
+                applyToMessage: false, stopOnBlocked, runtimeAgents: [...runtimeAgents, ...agents.filter(isAgentRuntimeAllowed)], recentChatEndIndex,
                 ...(cancelRevision !== null ? { cancelRevision } : {}),
                 promptMessages: buildPromptTransformSynthesisMessages(original, rewrites, draft),
             });
             promptRuns.push({ ...result, mode: 'synthesis' });
+            rethrowBlockedResult(result);
             if (result.status === 'stale-target') outcome.staleTarget = true;
             if (isCancelled() || ['cancelled', 'skipped-runtime-filter'].includes(result.status)) outcome.cancelled = true;
             if (outcome.staleTarget || outcome.cancelled || !isCurrent()) return { stop: true };
@@ -4851,14 +4877,15 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
     let alreadyProcessed = false;
     let failureDetail = '';
     let failureOutcomeUnknown = false;
+    let runKey = '', indexRunKey = '';
     try {
         syncAssistantMessageTextToSwipe(message);
 
         const resolvedActivationSnapshot = activationSnapshot
             ? cloneActivationSnapshot(activationSnapshot, generationType)
             : cloneActivationSnapshot(pendingGenerationSnapshot ?? buildActivationSnapshot(generationType), generationType);
-        const runKey = getPostProcessingRunKey(message, generationType, resolvedActivationSnapshot);
-        const indexRunKey = getPostProcessingIndexRunKey(message, messageIndex, generationType, resolvedActivationSnapshot);
+        runKey = getPostProcessingRunKey(message, generationType, resolvedActivationSnapshot);
+        indexRunKey = getPostProcessingIndexRunKey(message, messageIndex, generationType, resolvedActivationSnapshot);
         if (hasProcessedPostProcessingRun(message, runKey, messageIndex, indexRunKey)) {
             alreadyProcessed = true;
             return;
@@ -4932,6 +4959,7 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
         const interceptRuns = takeInterceptRunsForMessage(message);
         const promptTransformResult = await runPromptTransformPasses(promptTransformAgents, message, generationType, currentPromptTransformText, messageIndex, {
             cancelRevision: operationCancelRevision,
+            stopOnBlocked: true,
             isCurrent: isOperationCurrent,
         });
         const promptRuns = promptTransformResult.promptRuns;
@@ -5024,6 +5052,15 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
         console.error('[InChatAgents] Agent post-processing failed:', error);
         failureDetail = describeAgentError(error);
         failureOutcomeUnknown = isUnknownProviderOutcome(error);
+        if (error?.code === 'GENERATION_BLOCKED' && isOperationCurrent()) {
+            // A definite provider block ends this automatic pass, including saved-swipe recovery.
+            // Manual reruns and future main requests keep their own eligibility.
+            markPostProcessingRunProcessed(message, runKey, messageIndex, indexRunKey);
+            syncAssistantMessageStateToSwipe(message, messageIndex);
+            pipelineCompleted = true;
+            await saveChatForAgent(getContext(), { deferBackup: false });
+            if (isOperationCurrent()) showBlockedAgentNotice();
+        }
     } finally {
         if (!pipelineCompleted && !alreadyProcessed && agentGenerationCancelRevision === operationCancelRevision
             && !generationStopRequested && postProcessingTarget.valid && chat[messageIndex] === message) {

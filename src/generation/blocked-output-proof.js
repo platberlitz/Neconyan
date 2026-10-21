@@ -76,7 +76,12 @@ function continuationBindings(directories, job, output, previousOutput) {
     const suffix = messageOf(original)?.mes ?? original?.text;
     const text = messageOf(output)?.mes ?? output?.text;
     if (typeof prefix !== 'string' || typeof suffix !== 'string' || text !== prefix + suffix || Buffer.byteLength(text) > 256 * 1024
-        || output.continuedText !== undefined || output.agentProof !== undefined) throw fail();
+        || output.agentProof !== undefined) throw fail();
+    if (previousOutput.continuedText !== undefined) {
+        if (job.intent.effect !== 'continue' || typeof previousOutput.continuedText !== 'string'
+            || output.continuedText !== previousOutput.continuedText + suffix
+            || Buffer.byteLength(output.continuedText) > 256 * 1024) throw fail();
+    } else if (output.continuedText !== undefined) throw fail();
     const delivered = structuredClone(output);
     delete delivered.blockedContinuationProof;
     // Group identity is independently checked by its publication path and the base blocked proof.

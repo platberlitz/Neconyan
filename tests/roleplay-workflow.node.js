@@ -19,6 +19,7 @@ const { readNativeMediaJobResult, readNativeMediaJobResultForOwner } = await imp
 const { releaseStoppedRoleplayWorkflow } = await import('../src/generation/roleplay-workflow-cancellation.js');
 const { requestRoleplayAgentStop } = await import('../src/generation/roleplay-agent-stop.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
+const { saveBlockedContinuationProof, verifyBlockedOutputProof } = await import('../src/generation/blocked-output-proof.js');
 const { enableMewmoryHiding } = await import('./mewmory-hiding-fixture.js');
 
 const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', system_prompt: true },
@@ -763,4 +764,52 @@ test('a filtered automatic continuation retains its accepted prefix and exact bl
     assert.equal(f.records().at(-1).extra.generation_outcome.status, 'blocked');
     assert.equal(calls.count, 2);
     assert.deepEqual(await runRoleplayWorkflowJob(f.context()), first);
+    const child = f.childJob(1);
+    const proof = readArtifact(f.dirs, child.id, 'roleplay-blocked-continuation');
+    const combined = structuredClone(readArtifact(f.dirs, child.id, 'roleplay-candidate').output);
+    combined.message.mes = 'Accepted prefix. Unfinished suffix';
+    combined.blockedContinuationProof = proof.hash;
+    combined.continuedText = 'Invented full reply';
+    assert.throws(() => verifyBlockedOutputProof(f.dirs, child, combined, f.f.records), { code: 'ROLEPLAY_BLOCKED_RECOVERY' });
+});
+
+for (const changesPrefix of [false, true]) test(`a filtered automatic continuation retains the accepted Agent continuedText for a continue effect (rewritten: ${changesPrefix})`, async t => {
+    const f = prepared(t, 'continue', { agents: true, autoContinue: true, continueTarget: 100 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    let agentCalls = 0;
+    const acceptedText = 'Agent revised baseline and prefix.';
+    const generateAgent = async () => { agentCalls++; return { text: acceptedText }; };
+    await f.candidate(changesPrefix ? 'First prefix.' : acceptedText, calls, { generateAgent });
+    assert.equal(readArtifact(f.dirs, f.childJob().id, 'roleplay-candidate').output.continuedText, acceptedText);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    await f.candidate('Unfinished suffix', calls, { turn: 1, generateAgent,
+        response: { choices: [{ message: { content: 'Unfinished suffix' }, finish_reason: 'content_filter' }] } });
+    const first = await runRoleplayWorkflowJob(f.context());
+    assert.equal(f.records().at(-1).mes, acceptedText + 'Unfinished suffix');
+    assert.equal(f.records().at(-1).extra.generation_outcome.status, 'blocked');
+    assert.equal(calls.count, 2);
+    assert.equal(agentCalls, 1);
+    assert.deepEqual(await runRoleplayWorkflowJob(f.context()), first);
+    const child = f.childJob(1);
+    const proof = readArtifact(f.dirs, child.id, 'roleplay-blocked-continuation');
+    const original = readArtifact(f.dirs, child.id, 'roleplay-candidate').output;
+    const combined = { ...original, text: proof.previousOutput.text + original.text,
+        continuedText: acceptedText + original.text, blockedContinuationProof: proof.hash };
+    assert.doesNotThrow(() => verifyBlockedOutputProof(f.dirs, child, combined, f.f.records));
+    assert.throws(() => verifyBlockedOutputProof(f.dirs, child, { ...combined, continuedText: 'Fabricated replacement' }, f.f.records),
+        { code: 'ROLEPLAY_BLOCKED_RECOVERY' });
+    const missing = { ...combined };
+    delete missing.continuedText;
+    assert.throws(() => verifyBlockedOutputProof(f.dirs, child, missing, f.f.records), { code: 'ROLEPLAY_BLOCKED_RECOVERY' });
+    assert.throws(() => verifyBlockedOutputProof(f.dirs, child, { ...combined, continuedText: 'x'.repeat(256 * 1024 + 1) }, f.f.records),
+        { code: 'ROLEPLAY_BLOCKED_RECOVERY' });
+    assert.throws(() => verifyBlockedOutputProof(f.dirs, child, { ...combined, text: combined.text + 'changed' }, f.f.records),
+        { code: 'ROLEPLAY_BLOCKED_RECOVERY' });
+    const changedBaseline = structuredClone(f.f.records);
+    changedBaseline[child.intent.source.message.index + 1].mes = 'Changed baseline';
+    assert.throws(() => verifyBlockedOutputProof(f.dirs, child, combined, changedBaseline), { code: 'ROLEPLAY_BLOCKED_RECOVERY' });
+    assert.throws(() => saveBlockedContinuationProof(f.dirs, child, combined, { ...proof.previousOutput, continuedText: 'Fabricated prefix' }),
+        { code: 'ROLEPLAY_BLOCKED_RECOVERY' });
 });

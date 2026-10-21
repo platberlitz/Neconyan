@@ -29,7 +29,7 @@ async function openChat(account) {
     return page;
 }
 
-async function setup(app, { phone = false, agents = [post, companion], streaming = true, automatic = false } = {}) {
+async function setup(app, { phone = false, agents = [post, companion], streaming = true, automatic = false, executionMode = 'parallel' } = {}) {
     app.provider.mode.reply = body => ({ choices: [{ message: { content: body.model === 'companion-model'
         ? 'The Companion note is ready.' : 'Post Gen revised the reply.' }, finish_reason: 'stop' }] });
     const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
@@ -43,7 +43,7 @@ async function setup(app, { phone = false, agents = [post, companion], streaming
         });
         saved.extension_settings.inChatAgents = { globalSettings: { enabled: true, separateRecentChats: false,
             connectionProfile: 'post', trackerCompanionAutoLoopVersion: 4,
-            companionExecutionMode: 'parallel', companionConcurrentWithPostGen: false } };
+            appendAgentsExecutionMode: executionMode, companionExecutionMode: 'parallel', companionConcurrentWithPostGen: false } };
     } });
     const directory = path.join(app.dataRoot, 'default-user', 'InChatAgents');
     await fs.mkdir(directory, { recursive: true });
@@ -74,6 +74,120 @@ async function evidence(page, app, label) {
     await page.screenshot({ path: path.resolve(`../screenshots/content-filter-after-${label}.png`) });
     await fs.writeFile(path.resolve(`../../browser-after-${label}.json`), JSON.stringify({ message,
         calls: app.provider.calls.map(call => ({ model: call.model, stream: call.stream })) }, null, 2));
+}
+
+for (const phone of [false, true]) {
+    const viewport = phone ? 'phone' : 'desktop';
+    test(`blocked caller scope ${viewport}: impersonation keeps the remaining prompt and regex work`, async ({ app }) => {
+        const conditions = { generationTypes: ['impersonate'], runOnImpersonate: true };
+        const first = { ...post, conditions, injection: { order: 10 } };
+        const second = { ...post, id: 'polish', name: 'Polish', connectionProfile: 'polish', conditions,
+            injection: { order: 20 }, regexScripts: [{ id: 'composer-regex', scriptName: 'Composer polish',
+                findRegex: '/polished/g', replaceString: 'finished', placement: [1, 2], disabled: false,
+                markdownOnly: false, promptOnly: false, trimStrings: [], substituteRegex: 0 }] };
+        const { page } = await setup(app, { phone, agents: [first, second], streaming: false, executionMode: 'sequential' });
+        const before = await page.evaluate(async () => JSON.stringify((await import('/script.js')).chat));
+        app.provider.mode.reply = body => ({ choices: [{ message: { content: body.model === MODEL
+            ? 'An ordinary draft.' : body.model === 'post-model' ? '' : 'A polished draft.' },
+        finish_reason: body.model === 'post-model' ? 'content_filter' : 'stop' }] });
+        await send(page, '', 'impersonate');
+        await fs.mkdir(path.resolve('../screenshots'), { recursive: true });
+        await page.screenshot({ path: path.resolve(`../screenshots/content-filter-caller-scope-impersonation-${viewport}.png`) });
+        await expect(page.locator('#send_textarea')).toHaveValue('A finished draft.');
+        expect(app.provider.calls.map(call => call.model)).toEqual([MODEL, 'post-model', 'polish-model']);
+        expect(await page.evaluate(async () => JSON.stringify((await import('/script.js')).chat))).toBe(before);
+        await expect(page.locator('#toast-container')).not.toContainText(/will not retry automatically|Automatic agents were not run|reply was kept/i);
+    });
+
+    test(`blocked caller scope ${viewport}: two parallel blocks show one terminal warning`, async ({ app }) => {
+        const second = { ...post, id: 'polish', name: 'Polish', connectionProfile: 'polish' };
+        const { account, page } = await setup(app, { phone, agents: [post, second], streaming: false });
+        app.provider.mode.reply = body => ({ choices: [{ message: { content: body.model === MODEL
+            ? 'An ordinary complete reply.' : '' }, finish_reason: body.model === MODEL ? 'stop' : 'content_filter' }] });
+        await send(page, 'Describe the fountain.');
+        await expect.poll(() => app.provider.calls.length).toBeGreaterThanOrEqual(3);
+        await delay(1800);
+        await wakeRecovery(page);
+        await fs.mkdir(path.resolve('../screenshots'), { recursive: true });
+        await page.screenshot({ path: path.resolve(`../screenshots/content-filter-caller-scope-parallel-${viewport}.png`) });
+        expect(app.provider.calls).toHaveLength(3);
+        await expect(page.locator('#toast-container .toast').filter({ hasText: 'will not retry automatically' })).toHaveCount(1);
+        await expect(page.locator('#chat .mes').last().locator('.mes_text')).toHaveText('An ordinary complete reply.');
+        const runs = await page.evaluate(async () => (await import('/script.js')).chat.at(-1).extra.inChatAgentPostRuns);
+        expect(runs.length).toBeGreaterThan(0);
+        await page.close();
+        const reopened = await openChat(account);
+        expect(await reopened.evaluate(async () => (await import('/script.js')).chat.at(-1).extra.inChatAgentPostRuns)).toEqual(runs);
+        await wakeRecovery(reopened);
+        expect(app.provider.calls).toHaveLength(3);
+        await expect(reopened.locator('#toast-container .toast').filter({ hasText: 'will not retry automatically' })).toHaveCount(0);
+    });
+}
+
+for (const phone of [false, true]) {
+    const viewport = phone ? 'phone' : 'desktop';
+    test(`blocked parallel synthesis ${viewport} is terminal across retry and reopen but permits manual and later work`, async ({ app }, info) => {
+        const second = { ...post, id: 'polish', name: 'Polish', connectionProfile: 'polish', prompt: 'Polish the reply.' };
+        const { account, page } = await setup(app, { phone, agents: [post, second], streaming: false });
+        const diagnostics = [];
+        page.on('console', entry => {
+            if (['error', 'warning'].includes(entry.type())) diagnostics.push(entry.text());
+        });
+        let blocked = true;
+        app.provider.mode.reply = body => {
+            const synthesis = body.messages?.some(message => String(message.content).includes('Combine parallel edits of one reply'));
+            const content = body.model === MODEL ? 'An ordinary complete reply.'
+                : synthesis ? blocked ? 'A blocked combined' : 'The combined revision is complete.'
+                    : body.model === 'post-model' ? 'The first independent revision.' : 'The second independent revision.';
+            return { choices: [{ message: { content }, finish_reason: synthesis && blocked ? 'content_filter' : 'stop' }] };
+        };
+        await send(page, 'Describe the fountain.');
+        await expect.poll(() => app.provider.calls.length).toBeGreaterThanOrEqual(4);
+        // Cross the real 1500 ms automatic-retry delay, then trigger deferred recovery.
+        await delay(1800);
+        await wakeRecovery(page);
+        await info.attach('synthesis-diagnostics', { body: JSON.stringify({ diagnostics,
+            message: await page.evaluate(async () => (await import('/script.js')).chat.at(-1)) }), contentType: 'application/json' });
+        expect(app.provider.calls).toHaveLength(4);
+        await expect(page.locator('#toast-container')).toContainText(/provider.*block|content filter/i);
+        await expect(page.locator('#chat .mes').last().locator('.mes_text')).toHaveText('An ordinary complete reply.');
+        expect(await page.evaluate(async () => (await import('/script.js')).chat.at(-1).extra.generation_outcome)).toBeUndefined();
+        const terminal = await page.evaluate(async () => {
+            const core = await import('/script.js');
+            return { chatId: core.getCurrentChatId(), runs: core.chat.at(-1).extra.inChatAgentPostRuns };
+        });
+        expect(terminal.runs.length).toBeGreaterThan(0);
+        const savedReply = async () => {
+            const file = path.join(app.dataRoot, 'default-user', 'chats', account.avatar.replace(/\.png$/, ''), `${terminal.chatId}.jsonl`);
+            return JSON.parse((await fs.readFile(file, 'utf8')).trim().split('\n').at(-1));
+        };
+        await expect.poll(async () => (await savedReply()).extra.inChatAgentPostRuns).toEqual(terminal.runs);
+        const saved = await savedReply();
+        expect(saved.swipe_info[saved.swipe_id ?? 0].extra.inChatAgentPostRuns).toEqual(terminal.runs);
+        await evidence(page, app, `synthesis-${viewport}`);
+
+        await page.close();
+        const reopened = await openChat(account);
+        expect(await reopened.evaluate(async () => (await import('/script.js')).chat.at(-1).extra.inChatAgentPostRuns)).toEqual(terminal.runs);
+        await wakeRecovery(reopened);
+        await delay(1800);
+        expect(app.provider.calls).toHaveLength(4);
+
+        // An explicit owner rerun is permitted even when automatic work is terminal.
+        blocked = false;
+        await reopened.evaluate(async () => {
+            const core = await import('/script.js');
+            await (await import('/scripts/extensions/in-chat-agents/agent-runner.js')).rerunPostGenerationAgentsOnMessage(core.chat.length - 1);
+        });
+        await expect(reopened.locator('#chat .mes').last().locator('.mes_text')).toHaveText('The combined revision is complete.');
+        expect(app.provider.calls).toHaveLength(7);
+
+        await send(reopened, 'Now describe the garden.');
+        await expect.poll(() => app.provider.calls.length).toBe(11);
+        await expect(reopened.locator('#chat .mes').last().locator('.mes_text')).toHaveText('The combined revision is complete.');
+        await wakeRecovery(reopened);
+        expect(app.provider.calls).toHaveLength(11);
+    });
 }
 
 for (const phone of [false, true]) {
