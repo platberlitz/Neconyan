@@ -6924,6 +6924,228 @@ describe('in-chat agent post-processing runner', () => {
         await new Promise(resolve => setTimeout(resolve, 5));
     });
 
+    async function blockedCallerError() {
+        const { providerBlockedError, classifyGenerationOutcome } = await import('../public/scripts/generation-outcome.js');
+        return providerBlockedError(classifyGenerationOutcome({ choices: [{ finish_reason: 'content_filter' }] }));
+    }
+
+    const callerRegex = () => [{ id: 'caller-regex', findRegex: '/ready/g', replaceString: 'done', placement: [2], disabled: false }];
+
+    test.each(['rewrite', 'append'])('caller scope: blocked impersonation %s preserves remaining prompt and regex work', async mode => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'sequential';
+        for (const agent of enabledAgents) {
+            Object.assign(agent.postProcess, { enabled: true, promptTransformMode: mode });
+            Object.assign(agent.conditions, { generationTypes: ['impersonate'], runOnImpersonate: true });
+        }
+        enabledAgents[1].regexScripts = callerRegex();
+        generateQuietPrompt.mockRejectedValueOnce(await blockedCallerError()).mockResolvedValueOnce('ready');
+        const textarea = { value: 'Draft', dispatchEvent: jest.fn() };
+        document.querySelector = jest.fn(selector => selector === '#send_textarea' ? textarea : null);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'impersonate', {}, false);
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'impersonate', {}, false);
+        await expect(eventSource.emit(eventTypes.IMPERSONATE_READY, 'Draft')).resolves.toBeUndefined();
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(2);
+        expect(textarea.value).toBe(mode === 'append' ? 'Draft\n\ndone' : 'done');
+    });
+
+    test.each(['composer', 'companion'])('caller scope: blocked manual %s prompt retains regex work and neutral notice', async kind => {
+        useManualTransformAgents();
+        const agent = enabledAgents[0];
+        agent.regexScripts = callerRegex();
+        globalSettings.promptTransformShowNotifications = true;
+        agent.postProcess.promptTransformShowNotifications = true;
+        generateQuietPrompt.mockRejectedValue(await blockedCallerError());
+        const textarea = { value: 'ready', dispatchEvent: jest.fn() };
+        document.querySelector = jest.fn(selector => selector === '#send_textarea' ? textarea : null);
+        enabledAgents.push(createCompanionAgent());
+        chat.push({ name: 'Assistant', mes: 'Main reply', is_user: false, is_system: false, extra: {} });
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const runtime = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        runtime.initCompanionRunner();
+        runtime.setCompanionResult(chat[0], enabledAgents[2], { status: 'done', content: 'ready' });
+        await expect(runner.runAgentOnTarget(agent.id, { kind, messageIndex: 0, companionAgentId: 'agent-companion' })).resolves.toMatchObject({ changed: true });
+        expect(kind === 'composer' ? textarea.value : runtime.getCompanionResults(chat[0])['agent-companion'].content).toBe('done');
+        const notices = [...globalThis.toastr.error.mock.calls, ...globalThis.toastr.warning.mock.calls].map(([text]) => text).join(' ');
+        expect(notices).toContain('provider blocked this Agent request');
+        expect(notices).not.toMatch(/Automatic agents were not run|will not retry automatically|reply was kept/);
+        expect(chat[0].extra.inChatAgentPostRuns).toBeUndefined();
+    });
+
+    test('caller scope: Fix Trackers retains a successful tracker after a blocked append', async () => {
+        useManualTransformAgents();
+        for (const agent of enabledAgents) {
+            agent.category = 'tracker';
+            Object.assign(agent.postProcess, { enabled: true, promptTransformMode: 'append' });
+        }
+        generateQuietPrompt.mockRejectedValueOnce(await blockedCallerError()).mockResolvedValueOnce('Successful tracker');
+        chat.push({ name: 'Assistant', mes: 'Main reply', is_user: false, is_system: false, extra: {} });
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await runner.runTrackerFixOnMessage(0);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(2);
+        expect(chat[0].mes).toContain('Successful tracker');
+        expect(chat[0].extra.inChatAgentPostRuns).toBeUndefined();
+    });
+
+    test('caller scope: explicit Rerun Agents retains its stop-on-failure contract', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'sequential';
+        generateQuietPrompt.mockRejectedValueOnce(await blockedCallerError());
+        chat.push({ name: 'Assistant', mes: 'Main reply', is_user: false, is_system: false, extra: {} });
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await expect(runner.rerunPostGenerationAgentsOnMessage(0)).resolves.toBeNull();
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(chat[0].mes).toBe('Main reply');
+        expect(chat[0].extra.inChatAgentPostRuns).toBeUndefined();
+    });
+
+    test('caller scope: companion output post passes retain their explicit failure contract', async () => {
+        const companion = createCompanionAgent();
+        enabledAgents = [companion, createCompanionOutputTransformAgent()];
+        generateQuietPrompt.mockRejectedValueOnce(await blockedCallerError());
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        await expect(runner.runCompanionOutputPostPasses(companion, 'ready')).rejects.toThrow();
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+    });
+
+    test('caller scope: a blocked pre-generation intercept preserves outgoing context and continues later intercepts', async () => {
+        enabledAgents = [createPreInterceptAgent({ id: 'blocked-pre' }), createPreInterceptAgent({ id: 'later-pre', injection: { order: 110 } })];
+        generateQuietPrompt.mockRejectedValueOnce(await blockedCallerError()).mockResolvedValueOnce('Later context');
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
+        const data = { prompt: 'Original context', dryRun: false };
+        await eventSource.emit(eventTypes.GENERATE_AFTER_COMBINE_PROMPTS, data);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(2);
+        expect(data.prompt).toBe('Later context');
+    });
+
+    test.each(['rewrite', 'append'])('caller scope: two parallel blocked automatic %s Agents produce one terminal notice', async mode => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'parallel';
+        globalSettings.promptTransformShowNotifications = true;
+        for (const agent of enabledAgents) Object.assign(agent.postProcess, { enabled: true, promptTransformMode: mode, promptTransformShowNotifications: true });
+        generateQuietPrompt.mockRejectedValue(await blockedCallerError());
+        chat.push({ name: 'Assistant', mes: 'Main reply', is_user: false, is_system: false, extra: {} });
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await new Promise(resolve => setTimeout(resolve, 1700));
+        await eventSource.emit(eventTypes.CHARACTER_MESSAGE_RENDERED, 0, 'normal');
+        await eventSource.emit(eventTypes.GENERATION_STOPPED);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(2);
+        expect(globalThis.toastr.warning.mock.calls.filter(([text]) => text.includes('provider blocked an Agent request'))).toHaveLength(1);
+        expect(globalThis.toastr.error).not.toHaveBeenCalled();
+        expect(chat[0].extra.inChatAgentPostRuns.length).toBeGreaterThan(0);
+        expect(chat[0].mes).toBe('Main reply');
+    });
+
+    test.each([false, true])('a blocked Combined reply terminates its automatic pass without retry or deferred reentry (notifications: %s)', async notifications => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'parallel';
+        for (const agent of enabledAgents) agent.postProcess.enabled = true;
+        globalSettings.promptTransformShowNotifications = notifications;
+        for (const agent of enabledAgents) agent.postProcess.promptTransformShowNotifications = notifications;
+        const { providerBlockedError, classifyGenerationOutcome } = await import('../public/scripts/generation-outcome.js');
+        const blocked = providerBlockedError(classifyGenerationOutcome({ choices: [{ finish_reason: 'content_filter' }] }));
+        generateQuietPrompt.mockImplementation(async request => {
+            if (request.quietPrompt.includes('Combine parallel edits')) throw blocked;
+            return request.quietPrompt.includes('Rewrite as A') ? 'First improvement' : 'Second improvement';
+        });
+        const message = { mes: 'Successful main reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(3);
+        await new Promise(resolve => setTimeout(resolve, 1700));
+        await eventSource.emit(eventTypes.CHARACTER_MESSAGE_RENDERED, 0, 'normal');
+        await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length);
+        await new Promise(resolve => setTimeout(resolve, 100));
+        await eventSource.emit(eventTypes.GENERATION_STOPPED);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(3);
+        expect(message.mes).toBe('Successful main reply');
+        expect(message.extra.generation_outcome).toBeUndefined();
+        expect(globalThis.toastr.warning.mock.calls.filter(([text]) => text.includes('provider blocked an Agent request'))).toHaveLength(1);
+        generateQuietPrompt.mockResolvedValue('Manual success');
+        await runner.runAgentOnMessage('agent-manual-a', 0);
+        expect(message.mes).toBe('Manual success');
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(4);
+    });
+
+    test('a blocked sequential append Agent prevents later automatic append requests', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'sequential';
+        for (const agent of enabledAgents) {
+            agent.postProcess.enabled = true;
+            agent.postProcess.promptTransformMode = 'append';
+        }
+        const { providerBlockedError, classifyGenerationOutcome } = await import('../public/scripts/generation-outcome.js');
+        generateQuietPrompt.mockRejectedValue(providerBlockedError(classifyGenerationOutcome({ choices: [{ finish_reason: 'content_filter' }] })));
+        const message = { mes: 'Successful main reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await eventSource.emit(eventTypes.GENERATION_STOPPED);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(message.mes).toBe('Successful main reply');
+    });
+
+    test('a late blocked Combined reply cannot terminal-mark a different selected swipe', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'parallel';
+        for (const agent of enabledAgents) agent.postProcess.enabled = true;
+        let rejectSynthesis;
+        generateQuietPrompt.mockImplementation(async request => {
+            if (request.quietPrompt.includes('Combine parallel edits')) return new Promise((resolve, reject) => { rejectSynthesis = reject; });
+            return request.quietPrompt.includes('Rewrite as A') ? 'First improvement' : 'Second improvement';
+        });
+        const message = { mes: 'First swipe', is_user: false, is_system: false, extra: {}, swipe_id: 0,
+            swipes: ['First swipe', 'Second swipe'], swipe_info: [{ extra: {} }, { extra: {} }] };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const { providerBlockedError, classifyGenerationOutcome } = await import('../public/scripts/generation-outcome.js');
+        runner.initAgentRunner();
+        const pending = eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await waitFor(() => typeof rejectSynthesis === 'function');
+        message.swipe_id = 1;
+        message.mes = 'Second swipe';
+        message.extra = {};
+        rejectSynthesis(providerBlockedError(classifyGenerationOutcome({ choices: [{ finish_reason: 'content_filter' }] })));
+        await pending;
+        await eventSource.emit(eventTypes.GENERATION_STOPPED);
+        expect(message.mes).toBe('Second swipe');
+        expect(message.extra.inChatAgentPostRuns).toBeUndefined();
+        expect(message.swipe_info[1].extra.inChatAgentPostRuns).toBeUndefined();
+    });
+
+    test('an ordinary Combined reply error still retries its automatic pass', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'parallel';
+        for (const agent of enabledAgents) agent.postProcess.enabled = true;
+        let synthesisCalls = 0;
+        generateQuietPrompt.mockImplementation(async request => {
+            if (request.quietPrompt.includes('Combine parallel edits')) {
+                if (++synthesisCalls === 1) throw new Error('Temporary model error');
+                return 'Combined retry success';
+            }
+            return request.quietPrompt.includes('Rewrite as A') ? 'First improvement' : 'Second improvement';
+        });
+        const message = { mes: 'Successful main reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await new Promise(resolve => setTimeout(resolve, 1700));
+        await eventSource.emit(eventTypes.GENERATION_STOPPED);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(6);
+        expect(message.mes).toBe('Combined retry success');
+    });
+
     test.each(['requests', 'synthesis'])('Stop during parallel %s keeps the original without applying late results', async phase => {
         useManualTransformAgents();
         globalSettings.appendAgentsExecutionMode = 'parallel';
