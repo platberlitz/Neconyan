@@ -4,6 +4,7 @@
 
 ### Merged Staging PRs
 - PR #272 (2026-10-21) `fix(generation): save agent-edited continuations and stop blocked ret…`
+- PR #278 (2026-10-22) `fix(scratchpad): share story messages whole or not at all`
 
 ## v1.3.7
 
