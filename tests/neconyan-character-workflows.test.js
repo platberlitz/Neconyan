@@ -321,7 +321,7 @@ describe('Neconyan save behaviour', () => {
     test('reopening a group during a save preserves Saving and reports a later failure', async () => {
         const { context, status } = groupContext();
         const controls = {};
-        for (const method of ['empty', 'append', 'val', 'trigger', 'prop', 'attr', 'show', 'hide', 'find', 'text', 'addClass', 'removeClass', 'toggle', 'children']) {
+        for (const method of ['empty', 'append', 'val', 'trigger', 'prop', 'attr', 'show', 'hide', 'find', 'text', 'addClass', 'removeClass', 'toggleClass', 'css', 'toggle', 'children']) {
             controls[method] = () => controls;
         }
         Object.assign(context, {

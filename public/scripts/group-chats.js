@@ -3365,29 +3365,25 @@ function select_group_chats(groupId, skipAnimation) {
     toggleHiddenControls(group, generationMode);
 
     // bottom buttons
+    // Toggle a class instead of .show()/.hide(): jQuery's .show() can write an inline
+    // `display: block` that overrides the editor's flex centring and pins the icons to the top.
+    $('#rm_group_submit').toggleClass('displayNone', Boolean(openGroupId));
+    $('#rm_group_delete, #rm_group_scenario, #group_open_media_overrides').css('display', '').toggleClass('displayNone', !openGroupId);
     if (openGroupId) {
-        $('#rm_group_submit').hide();
         $('#sb_group_cancel').show().find('span').text(t`Back to groups`);
         $('#sb_group_cancel').attr('aria-label', t`Back to groups`);
-        $('#rm_group_delete').show();
-        $('#rm_group_scenario').show();
         $('#group-metadata-controls .chat_lorebook_button').removeClass('disabled').prop('disabled', false);
-        $('#group_open_media_overrides').show();
         const isMediaAllowed = isExternalMediaAllowed();
         $('#group_media_allowed_icon').toggle(isMediaAllowed);
         $('#group_media_forbidden_icon').toggle(!isMediaAllowed);
     } else {
-        $('#rm_group_submit').show();
         $('#sb_group_cancel').show().find('span').text(t`Cancel`);
         $('#sb_group_cancel').attr('aria-label', t`Cancel`);
         const addMembersDrawer = document.getElementById('groupAddMemberListToggle')?.closest('.inline-drawer');
         if (addMembersDrawer instanceof HTMLElement) {
             toggleDrawer(addMembersDrawer, true);
         }
-        $('#rm_group_delete').hide();
-        $('#rm_group_scenario').hide();
         $('#group-metadata-controls .chat_lorebook_button').addClass('disabled').prop('disabled', true);
-        $('#group_open_media_overrides').hide();
     }
 
     updateFavButtonState(group?.fav ?? false);
