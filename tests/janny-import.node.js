@@ -188,3 +188,50 @@ test('server logs why a JannyAI link import failed', async () => {
     assert.equal(lines[1], '[BotSearcher] JannyAI link import failed: bad_import_url');
     assert.equal(lines[2], `[BotSearcher] JannyAI link import failed for ${ID}: janny_login_required (${'x'.repeat(300)})`);
 });
+
+test('server puts {{user}} back where JanitorAI wrote the importer persona name', async () => {
+    const { buildPrivateCard, restoreUserMacro } = await import('../public/scripts/extensions/third-party/Neconyan-BotSearcher/server/janny-browser.js');
+    const payload = {
+        messages: [
+            {
+                role: 'system',
+                content: [
+                    '<Mira\'s Persona>Mira is Kris\'s childhood friend. She calls Kris \'Krissy\'. Not Kristopher, not Kris_2.</Mira\'s Persona>',
+                    '<UserPersona>Kris is a tall librarian.</UserPersona>',
+                    '<Scenario>Kris returns home.<UserPersona>Kris is a tall librarian.</UserPersona></Scenario>',
+                    '<Example>Kris: Hello\nMira: Welcome back, Kris.</Example>',
+                ].join('\n'),
+            },
+            { role: 'assistant', content: 'Oh, Kris! You came.' },
+            { role: 'user', content: 'Kris: .' },
+        ],
+    };
+
+    const card = buildPrivateCard(payload, { name: 'Mira', showdefinition: false });
+    assert.equal(card.data.description, 'Mira is {{user}}\'s childhood friend. She calls {{user}} \'Krissy\'. Not Kristopher, not Kris_2.');
+    assert.equal(card.data.scenario, '{{user}} returns home.');
+    assert.equal(card.data.mes_example, '{{user}}: Hello\nMira: Welcome back, {{user}}.');
+    assert.equal(card.data.first_mes, 'Oh, {{user}}! You came.');
+
+    const publicFields = buildPrivateCard(payload, {
+        name: 'Mira',
+        scenario: 'Kris is the name of a ship in this story.',
+        example_dialogs: '{{user}}: Hi',
+        first_message: 'Hello, {{user}}. Kris the ship is here.',
+    });
+    assert.equal(publicFields.data.scenario, 'Kris is the name of a ship in this story.');
+    assert.equal(publicFields.data.mes_example, '{{user}}: Hi');
+    assert.equal(publicFields.data.first_mes, 'Hello, {{user}}. Kris the ship is here.');
+
+    const fromChat = buildPrivateCard({
+        messages: [{ role: 'system', content: '<Mira\'s Persona>Mira adores Élodie and Élodie\'s cat.</Mira\'s Persona>' }],
+    }, { name: 'Mira' }, { personaNames: ['Élodie'] });
+    assert.equal(fromChat.data.description, 'Mira adores {{user}} and {{user}}\'s cat.');
+
+    assert.equal(restoreUserMacro('Mira meets Mira.', ['Mira'], 'Mira'), 'Mira meets Mira.');
+    assert.equal(restoreUserMacro('You see You.', ['You'], 'Mira'), 'You see You.');
+    assert.equal(restoreUserMacro('A met B.', ['A'], 'Mira'), 'A met B.');
+    assert.equal(restoreUserMacro('Kris and Kris Lee.', ['Kris', 'Kris Lee'], 'Mira'), '{{user}} and {{user}}.');
+    assert.equal(restoreUserMacro('Price is $5 (a.b).', ['$5 (a.b)'], 'Mira'), 'Price is {{user}}.');
+    assert.equal(restoreUserMacro('Nobody here.', [], 'Mira'), 'Nobody here.');
+});

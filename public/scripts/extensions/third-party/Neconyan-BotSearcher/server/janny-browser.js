@@ -664,9 +664,7 @@ function buildPublicCard(meta) {
     };
 }
 
-function systemContent(payload) {
-    const messages = Array.isArray(payload?.messages) ? payload.messages : [];
-    const message = messages.find((candidate) => candidate?.role === 'system') ?? messages[0];
+function messageContent(message) {
     if (typeof message?.content === 'string') {
         return message.content;
     }
@@ -677,6 +675,65 @@ function systemContent(payload) {
             .join('');
     }
     return '';
+}
+
+function systemContent(payload) {
+    const messages = Array.isArray(payload?.messages) ? payload.messages : [];
+    const message = messages.find((candidate) => candidate?.role === 'system') ?? messages[0];
+    return messageContent(message);
+}
+
+// Pronouns a persona might be called that also appear as ordinary words.
+const UNSAFE_PERSONA_NAMES = new Set(['i', 'me', 'you', 'your', 'we', 'he', 'she', 'it', 'they']);
+
+function usablePersonaName(value, characterName) {
+    const name = text(value, 200).trim();
+    if (name.length < 2 || name.length > 80 || /[{}<>\n]/.test(name)) {
+        return '';
+    }
+    const folded = name.toLocaleLowerCase();
+    if (UNSAFE_PERSONA_NAMES.has(folded) || folded === characterName.trim().toLocaleLowerCase()) {
+        return '';
+    }
+    return name;
+}
+
+/**
+ * JanitorAI sends the probe message as 'Persona: .', so the user turns of the
+ * captured prompt name the persona the site put in place of {{user}}.
+ */
+function personaNamesFromCapture(payload) {
+    return (Array.isArray(payload?.messages) ? payload.messages : [])
+        .filter((message) => message?.role === 'user')
+        .map((message) => messageContent(message).match(/^\s*([^\n:]{2,80}?)\s*:\s*\.\s*$/u)?.[1] ?? '')
+        .filter(Boolean);
+}
+
+function escapeRegExp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * JanitorAI builds the proxy prompt with {{user}} already swapped for the
+ * importer's persona name, so a captured definition would otherwise carry
+ * that name in place of the macro.
+ */
+export function restoreUserMacro(value, personaNames, characterName = '') {
+    if (typeof value !== 'string' || value === '') {
+        return typeof value === 'string' ? value : '';
+    }
+    const names = [...new Set((Array.isArray(personaNames) ? personaNames : [])
+        .map((name) => usablePersonaName(name, characterName))
+        .filter(Boolean))]
+        .sort((a, b) => b.length - a.length);
+    return names.reduce((result, name) => result.replace(
+        new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRegExp(name)}(?![\\p{L}\\p{N}_])`, 'gu'),
+        '{{user}}',
+    ), value);
+}
+
+function withoutUserPersona(value) {
+    return value.replace(/<User\s*Persona>[\s\S]*?<\/User\s*Persona>/gi, '').trim();
 }
 
 function cardTextFromCapture(payload) {
@@ -706,23 +763,26 @@ function assistantText(payload) {
     return message?.content?.trim() ?? '';
 }
 
-export function buildPrivateCard(payload, meta) {
+export function buildPrivateCard(payload, meta, { personaNames = [] } = {}) {
     const captured = cardTextFromCapture(payload);
     if (!captured?.text) {
         throw new JannyBrowserError('janny_private_capture_failed', 502);
     }
+    const name = text(meta?.name, 200) || captured.name || 'Unnamed';
+    const names = [...personaNames, ...personaNamesFromCapture(payload)];
+    const fromCapture = (value) => restoreUserMacro(withoutUserPersona(value), names, name);
     const greetings = greetingsOf(meta);
-    const firstMessage = greetings[0] ?? assistantText(payload);
+    const firstMessage = greetings[0] ?? fromCapture(assistantText(payload));
     return {
         spec: 'chara_card_v2',
         spec_version: '2.0',
         data: {
-            name: text(meta?.name, 200) || captured.name || 'Unnamed',
-            description: captured.text,
+            name,
+            description: fromCapture(captured.text),
             personality: '',
-            scenario: text(meta?.scenario) || taggedText(payload, 'Scenario'),
+            scenario: text(meta?.scenario) || fromCapture(taggedText(payload, 'Scenario')),
             first_mes: firstMessage,
-            mes_example: text(meta?.example_dialogs) || taggedText(payload, 'Example'),
+            mes_example: text(meta?.example_dialogs) || fromCapture(taggedText(payload, 'Example')),
             creator_notes: text(meta?.description),
             system_prompt: '',
             post_history_instructions: '',
@@ -809,6 +869,25 @@ async function createChat(page, id, snapshot) {
 }
 
 /**
+ * The persona JanitorAI applied to the capture chat is the name it put in
+ * place of {{user}}. The lookup only refines the import, so it fails quietly
+ * unless the visible login changed.
+ */
+async function chatPersonaNames(page, chatId, snapshot) {
+    try {
+        const chat = await withTimeout(captureRequest(page, snapshot, `${ORIGIN}/hampter/chats/${encodeURIComponent(chatId)}`));
+        return (Array.isArray(chat?.personas) ? chat.personas : [])
+            .map((persona) => persona?.name)
+            .filter((name) => typeof name === 'string');
+    } catch (error) {
+        if (error?.code === 'janny_restore_failed') {
+            throw error;
+        }
+        return [];
+    }
+}
+
+/**
  * A creator who turns proxies off limits the card to JanitorAI's own models,
  * so the capture, which reads the prompt a proxy would receive, can never see
  * it. Refusing first leaves the account settings and chat list untouched.
@@ -838,7 +917,8 @@ async function capturePrivateCard(page, id, meta, recovery) {
             sendMessage(page, '.'),
         ]);
         const payload = await withTimeout(capturedResponseBody(response));
-        return buildPrivateCard(payload, meta);
+        const personaNames = await chatPersonaNames(page, chatId, snapshot);
+        return buildPrivateCard(payload, meta, { personaNames });
     } catch (error) {
         if (error instanceof JannyBrowserError) {
             throw error;
