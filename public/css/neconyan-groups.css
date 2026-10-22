@@ -46,3 +46,6 @@
 #group_scene_whisper { width: 40%; max-width: 240px; min-height: 44px; margin: 0; }
 .group-whisper-badge { font-size: 0.75em; font-weight: normal; color: var(--neco-ink); background: color-mix(in srgb, var(--neco-ginger) 15%, var(--neco-surface)); border-radius: 6px; padding: 2px 6px; margin-inline-start: 6px; }
 #group_next_up { padding: 3px 8px; font-size: 0.8em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#right-nav-panel #rm_group_buttons > #rm_group_talk_burst_block { flex-direction: row; align-items: center; }
+#right-nav-panel #rm_group_buttons > #rm_group_talk_burst_block > label { flex: 1; min-width: 0; text-align: start; }
+#right-nav-panel #rm_group_buttons #rm_group_talk_burst { width: 5em; flex: 0 0 5em; min-height: 44px; height: auto; margin: 0; }
