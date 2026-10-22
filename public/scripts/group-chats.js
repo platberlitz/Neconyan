@@ -885,13 +885,49 @@ function initGroupSpeakerControls() {
 }
 
 let groupDirectorPreview = null;
+let groupDirectorFailure = '';
+let groupDirectorFallbackNoticeChat = '';
+
+/**
+ * Tell the user once per chat that the Scene Director did not choose this turn, and why.
+ * @param {string} failure 'timeout', 'error' or 'unusable'
+ */
+function notifyGroupDirectorFallback(failure) {
+    const chatId = String(getCurrentChatId() || '');
+    if (groupDirectorFallbackNoticeChat === chatId) {
+        return;
+    }
+    groupDirectorFallbackNoticeChat = chatId;
+    const seconds = Math.round(GROUP_DIRECTOR_TIMEOUT_MS / 1000);
+    const message = failure === 'timeout'
+        ? t`The Scene Director took longer than ${seconds} seconds, so the usual order picked who speaks. A faster connection profile for the director, in the group's settings, helps.`
+        : t`The Scene Director's answer could not be used, so the usual order picked who speaks. Check the director's connection profile in the group's settings.`;
+    toastr.warning(message, t`Scene Director`);
+}
+
+function describeGroupDirectorStatus(preview, names) {
+    if (!preview) {
+        return t`Scene Director is on: before each reply it picks who answers.`;
+    }
+    if (preview.fallback === 'timeout') {
+        return t`Last turn: the Scene Director took longer than ${Math.round(GROUP_DIRECTOR_TIMEOUT_MS / 1000)} seconds, so the usual order picked the speaker.`;
+    }
+    if (preview.fallback) {
+        return t`Last turn: the Scene Director's answer could not be used, so the usual order picked the speaker.`;
+    }
+    const picked = names(preview.chids.map(chid => characters[chid]?.avatar).filter(Boolean));
+    const reason = preview.reason ? ` · ${preview.reason}` : '';
+    return `${picked ? t`Last turn: the Scene Director picked ${picked}` : t`Last turn: the Scene Director handed the scene back to you`}${reason}`;
+}
 
 function updateGroupNextUp(directed = null) {
     const group = groups.find(item => item.id === selected_group);
     if (directed) groupDirectorPreview = { groupId: selected_group, chatId: getCurrentChatId(), ...directed };
     const avatarButtons = $('#group_speaker_controls .group_speaker_avatar');
+    const directorStatus = $('#group_scene_director_status');
     if (!group) {
         $('#group_next_up').text('').addClass('displayNone');
+        directorStatus.text('').addClass('displayNone');
         avatarButtons.removeClass('is-next-up');
         return;
     }
@@ -899,6 +935,7 @@ function updateGroupNextUp(directed = null) {
     const members = getGroupEnabledMembers(group);
     const whispers = getGroupMessageAudience()?.whisper_to || [];
     const strategy = Number(group.activation_strategy);
+    const currentPreview = groupDirectorPreview?.groupId === selected_group && groupDirectorPreview.chatId === getCurrentChatId() ? groupDirectorPreview : null;
     let text = '';
     let next = [];
     let reason = '';
@@ -914,13 +951,16 @@ function updateGroupNextUp(directed = null) {
     } else if (strategy === group_activation_strategy.POOLED) {
         next = getGroupSpeakerPool(members, chat);
         text = t`Next from: ${names(next)}`;
-    } else if (strategy === group_activation_strategy.DIRECTOR && groupDirectorPreview?.groupId === selected_group && groupDirectorPreview.chatId === getCurrentChatId()) {
-        next = groupDirectorPreview.chids.map(chid => characters[chid]?.avatar).filter(Boolean);
-        reason = groupDirectorPreview.reason || '';
+    } else if (strategy === group_activation_strategy.DIRECTOR && currentPreview && !currentPreview.fallback) {
+        next = currentPreview.chids.map(chid => characters[chid]?.avatar).filter(Boolean);
+        reason = currentPreview.reason || '';
         const picked = names(next);
         text = `${picked ? t`Director picked: ${picked}` : t`Waiting for you`}${reason ? ` · ${reason}` : ''}`;
     }
     $('#group_next_up').text(text).toggleClass('displayNone', !text);
+    // The scene panel says what the director did last, so its work is visible without reading the console.
+    const isDirector = strategy === group_activation_strategy.DIRECTOR;
+    directorStatus.text(isDirector ? describeGroupDirectorStatus(currentPreview, names) : '').toggleClass('displayNone', !isDirector);
     // Ring the avatars instead of spending a row of the composer on the preview.
     avatarButtons.each(function () {
         const avatar = String($(this).data('avatar') || '');
@@ -2227,6 +2267,10 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
                 if (!directed.chids.length) {
                     toastr.info(directed.reason || t`The scene is waiting for you.`, t`Waiting for you`);
                 }
+            } else if (groupDirectorFailure) {
+                directorNote = t`usual order, the Scene Director did not choose`;
+                updateGroupNextUp({ chids: [], reason: '', fallback: groupDirectorFailure });
+                notifyGroupDirectorFallback(groupDirectorFailure);
             }
         }
 
@@ -2526,10 +2570,12 @@ async function requestGroupDirectorText(group, prompt, signal) {
  * @returns {Promise<{chids: number[], reason: string}|null>}
  */
 export async function runGroupSceneDirector(group, members, { signal = null, maxSpeakers = GROUP_DIRECTOR_MAX_SPEAKERS, continuing = false } = {}) {
+    groupDirectorFailure = '';
     const entries = getGroupDirectorMembers(Array.isArray(members) ? members : []);
     if (entries.length < 2 || signal?.aborted) {
         return null;
     }
+    let timedOut = false;
 
     const prompt = buildDirectorPrompt({ members: entries, messages: getGroupDirectorHistory(members), userName: name1, maxSpeakers, continuing });
     const controller = new AbortController();
@@ -2538,6 +2584,7 @@ export async function runGroupSceneDirector(group, members, { signal = null, max
     let timer = null;
     const timeout = new Promise(resolve => {
         timer = setTimeout(() => {
+            timedOut = true;
             controller.abort();
             resolve(null);
         }, GROUP_DIRECTOR_TIMEOUT_MS);
@@ -2546,14 +2593,21 @@ export async function runGroupSceneDirector(group, members, { signal = null, max
     try {
         const text = await Promise.race([requestGroupDirectorText(group, prompt, controller.signal), timeout]);
         if (typeof text !== 'string' || controller.signal.aborted) {
+            groupDirectorFailure = timedOut ? 'timeout' : '';
             return null;
         }
         const { speakers, reason, paused } = parseDirectorResponse(text, entries.map(entry => entry.name), maxSpeakers);
         const chids = speakers.map(name => entries.find(entry => entry.name === name)?.chid).filter(chid => Number.isInteger(chid));
-        return chids.length || paused ? { chids, reason } : null;
+        if (!chids.length && !paused) {
+            groupDirectorFailure = 'unusable';
+            console.warn('[Group director] The answer named no member, so the usual speaker choice is used.', text);
+            return null;
+        }
+        return { chids, reason };
     } catch (error) {
         if (!signal?.aborted) {
-            console.debug('[Group director] Falling back to the usual speaker choice.', error);
+            groupDirectorFailure = timedOut ? 'timeout' : 'error';
+            console.warn('[Group director] Falling back to the usual speaker choice.', error);
         }
         return null;
     } finally {
