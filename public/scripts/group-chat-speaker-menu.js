@@ -21,18 +21,19 @@ export async function openGroupSpeakerMenu(avatar) {
     const muted = group.disabled_members?.includes(avatar);
     const narrator = getGroupMemberRole(group, characters[chid]) === 'narrator';
     const content = $('<div class="group-speaker-menu"></div>').append($('<h3></h3>').text(name));
-    const buttons = [
-        { text: muted ? t`Unmute` : t`Mute`, result: 2 },
-        { text: away ? t`Bring into the scene` : t`Mark away`, result: 3 },
-        { text: t`Edit card`, result: 4 },
-        { text: narrator ? t`Use as character` : t`Use as Narrator / GM`, result: 7 },
-    ];
+    const buttons = [];
     if (!away && !muted) {
-        buttons.push({ text: t`Speak now`, result: 5 });
+        buttons.push({ text: t`Speak now`, result: 5, icon: 'fa-comment-dots' });
         if (chat.at(-1) && !chat.at(-1).is_user && !chat.at(-1).is_system && canGroupMemberSee(chat.at(-1), avatar)) {
-            buttons.push({ text: t`Regenerate last reply as ${name}`, result: 6 });
+            buttons.push({ text: t`Regenerate last reply as ${name}`, result: 6, icon: 'fa-rotate' });
         }
     }
+    buttons.push(
+        { text: muted ? t`Unmute` : t`Mute`, result: 2, icon: muted ? 'fa-volume-high' : 'fa-volume-xmark' },
+        { text: away ? t`Bring into the scene` : t`Mark away`, result: 3, icon: away ? 'fa-door-open' : 'fa-door-closed' },
+        { text: narrator ? t`Use as character` : t`Use as Narrator / GM`, result: 7, icon: 'fa-feather' },
+        { text: t`Edit card`, result: 4, icon: 'fa-pen' },
+    );
     const action = await callGenericPopup(content, POPUP_TYPE.TEXT, '', { okButton: false, cancelButton: t`Close`, customButtons: buttons });
     if (selected_group !== group.id || getCurrentChatId() !== chatId) return;
     if (is_send_press || is_group_generating) {

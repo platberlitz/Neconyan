@@ -297,6 +297,7 @@ export class Popup {
             if (button.icon) {
                 const icon = document.createElement('i');
                 icon.className = `fa-solid ${button.icon}`;
+                icon.setAttribute('aria-hidden', 'true');
                 buttonElement.appendChild(icon);
                 const textSpan = document.createElement('span');
                 textSpan.textContent = button.text;
