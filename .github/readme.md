@@ -202,11 +202,26 @@ Next time, run the same launcher again.
 
 A few Termux habits worth picking up:
 
-- Android likes to stop apps in the background. Pull down your notifications and tap **Acquire wakelock** on the Termux one, so Neconyan keeps running while you're in the browser.
 - To stop Neconyan, tap **CTRL** on the row of extra keys, then **C**.
 - Next time, open Termux and run `cd ~/Neconyan && bash start.sh` again. It updates itself before starting.
 - Keep the folder in your Termux home. The launcher refuses to run from shared storage like `/sdcard`, because Android blocks the file links Neconyan's packages need there.
 - In Chrome's menu, **Add to home screen** gives Neconyan its own icon.
+
+**Keeping it running in the background.** Android likes to stop apps you aren't looking at, and Termux is no exception. These steps keep Neconyan alive while you're in another app:
+
+1. Pull down your notifications and check the Termux one says the wake lock is held. Neconyan asks for it when it starts; if it didn't stick, tap **Acquire wakelock** there.
+2. Open Android's **Settings → Apps → Termux → Battery** and pick **Unrestricted**. The names move around between phone brands, so search Settings for 'battery optimisation' if you can't find it.
+3. On Android 12 or newer, Android also kills extra processes Termux starts, and Neconyan is one of them. On Android 14 and up, turn on Developer options (tap **Build number** in **About phone** seven times), then switch on **Disable child process restrictions**. On Android 12 and 13 there's no switch, so you have to run these two commands once from a computer with `adb` and USB debugging:
+
+   ```sh
+   adb shell "/system/bin/device_config set_sync_disabled_for_tests persistent"
+   ```
+
+   ```sh
+   adb shell "/system/bin/device_config put activity_manager max_phantom_processes 2147483647"
+   ```
+
+Even with the server alive, Chrome can still unload the page itself after a while, so Neconyan reloads when you come back. If that bugs you, turn on **Stay open in the background** in **Settings → System & Device → Memory and performance**. It plays a sound too quiet to hear while you're away, so Chrome treats Neconyan like a music player and leaves it alone. It costs some battery, shows a media notification, and can pause music playing in other apps, which is why it's off by default. I've only tested it in an emulated phone browser so far, not on a real phone, so tell me if your phone ignores it.
 
 ### Opening it on your phone
 
