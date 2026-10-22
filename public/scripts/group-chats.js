@@ -671,7 +671,6 @@ function setGroupSpeakerControlsHidden(hidden) {
 
 function updateGroupSpeakerControls() {
     renderGroupScene();
-    updateGroupNextUp();
     const container = $('#group_speaker_controls');
     if (!container.length) {
         return;
@@ -689,6 +688,7 @@ function updateGroupSpeakerControls() {
         clearSelectedGroupSpeaker();
         setGroupTypingIndicator('');
         groupSpeakerAvatarRenderKey = '';
+        updateGroupNextUp();
         return;
     }
 
@@ -723,6 +723,7 @@ function updateGroupSpeakerControls() {
         const avatarId = String($(this).data('avatar') || '');
         $(this).toggleClass('selected', avatarId === selectedGroupSpeakerAvatar);
     });
+    updateGroupNextUp();
 }
 
 function syncGroupTalkButton() {
@@ -864,21 +865,46 @@ let groupDirectorPreview = null;
 function updateGroupNextUp(directed = null) {
     const group = groups.find(item => item.id === selected_group);
     if (directed) groupDirectorPreview = { groupId: selected_group, chatId: getCurrentChatId(), ...directed };
-    if (!group) { $('#group_next_up').text('').addClass('displayNone'); return; }
+    const avatarButtons = $('#group_speaker_controls .group_speaker_avatar');
+    if (!group) {
+        $('#group_next_up').text('').addClass('displayNone');
+        avatarButtons.removeClass('is-next-up');
+        return;
+    }
     const names = avatars => avatars.map(avatar => characters[getCharacterIdByAvatar(avatar)]?.name).filter(Boolean).join(', ');
     const members = getGroupEnabledMembers(group);
     const whispers = getGroupMessageAudience()?.whisper_to || [];
     const strategy = Number(group.activation_strategy);
     let text = '';
-    if (whispers.length) text = t`Whisper to ${names(whispers)}`;
-    else if (selectedGroupSpeakerAvatar && members.includes(selectedGroupSpeakerAvatar)) text = t`Next up: ${names([selectedGroupSpeakerAvatar])}`;
-    else if (strategy === group_activation_strategy.LIST) text = t`Next up: ${names(members.slice(0, 1))}`;
-    else if (strategy === group_activation_strategy.POOLED) text = t`Next from: ${names(getGroupSpeakerPool(members, chat))}`;
-    else if (strategy === group_activation_strategy.DIRECTOR && groupDirectorPreview?.groupId === selected_group && groupDirectorPreview.chatId === getCurrentChatId()) {
-        const picked = names(groupDirectorPreview.chids.map(chid => characters[chid]?.avatar));
-        text = `${picked ? t`Director picked: ${picked}` : t`Waiting for you`}${groupDirectorPreview.reason ? ` · ${groupDirectorPreview.reason}` : ''}`;
+    let next = [];
+    let reason = '';
+    if (whispers.length) {
+        next = whispers;
+        text = t`Whisper to ${names(whispers)}`;
+    } else if (selectedGroupSpeakerAvatar && members.includes(selectedGroupSpeakerAvatar)) {
+        next = [selectedGroupSpeakerAvatar];
+        text = t`Next up: ${names(next)}`;
+    } else if (strategy === group_activation_strategy.LIST) {
+        next = members.slice(0, 1);
+        text = t`Next up: ${names(next)}`;
+    } else if (strategy === group_activation_strategy.POOLED) {
+        next = getGroupSpeakerPool(members, chat);
+        text = t`Next from: ${names(next)}`;
+    } else if (strategy === group_activation_strategy.DIRECTOR && groupDirectorPreview?.groupId === selected_group && groupDirectorPreview.chatId === getCurrentChatId()) {
+        next = groupDirectorPreview.chids.map(chid => characters[chid]?.avatar).filter(Boolean);
+        reason = groupDirectorPreview.reason || '';
+        const picked = names(next);
+        text = `${picked ? t`Director picked: ${picked}` : t`Waiting for you`}${reason ? ` · ${reason}` : ''}`;
     }
     $('#group_next_up').text(text).toggleClass('displayNone', !text);
+    // Ring the avatars instead of spending a row of the composer on the preview.
+    avatarButtons.each(function () {
+        const avatar = String($(this).data('avatar') || '');
+        const name = characters[getCharacterIdByAvatar(avatar)]?.name || avatar;
+        const isNext = next.includes(avatar);
+        $(this).toggleClass('is-next-up', isNext)
+            .attr('title', isNext ? `${t`Next up: ${name}`}${reason ? ` · ${reason}` : ''}` : `${name}: speak next / now`);
+    });
 }
 
 export const group_activation_strategy = {
@@ -2174,6 +2200,9 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
                 activatedMembers = directed.chids;
                 directorNote = directed.reason;
                 updateGroupNextUp(directed);
+                if (!directed.chids.length) {
+                    toastr.info(directed.reason || t`The scene is waiting for you.`, t`Waiting for you`);
+                }
             }
         }
 

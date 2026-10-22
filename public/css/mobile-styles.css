@@ -1932,8 +1932,8 @@
 
     .group_speaker_controls {
         display: grid !important;
-        grid-template-columns: minmax(0, 1fr) var(--sb-mobile-touch-target, 44px) var(--sb-mobile-touch-target, 44px) var(--sb-mobile-touch-target, 44px) var(--sb-mobile-touch-target, 44px) !important;
-        grid-template-areas: "avatars greeting talk speak hide" !important;
+        grid-template-columns: minmax(0, 1fr) repeat(5, var(--sb-mobile-touch-target, 44px)) !important;
+        grid-template-areas: "avatars greeting talk speak scene hide" !important;
         gap: 5px !important;
         align-items: center !important;
         min-height: calc(var(--sb-mobile-touch-target, 44px) + 8px) !important;
@@ -2014,6 +2014,7 @@
     #group_add_greeting span,
     #group_let_them_talk span,
     #group_speaker_now span,
+    #group_scene_open span,
     #group_speaker_hide span {
         display: none !important;
     }
@@ -2021,6 +2022,7 @@
     #group_add_greeting,
     #group_let_them_talk,
     #group_speaker_now,
+    #group_scene_open,
     #group_speaker_hide {
         width: var(--sb-mobile-touch-target, 44px) !important;
         min-width: var(--sb-mobile-touch-target, 44px) !important;
@@ -2049,6 +2051,10 @@
 
     #group_speaker_now {
         grid-area: speak !important;
+    }
+
+    #group_scene_open {
+        grid-area: scene !important;
     }
 
     #group_speaker_hide {

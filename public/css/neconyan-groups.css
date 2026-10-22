@@ -2,6 +2,9 @@
 #group_scene_strip {
     min-width: 0;
     width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 4px;
+    padding-inline: 6px;
     color: var(--neco-ink);
     font-family: var(--sb-font-body);
 }
@@ -13,39 +16,83 @@
 #group_scene_strip .menu_button:hover {
     background: color-mix(in srgb, var(--neco-ginger-hover) 18%, var(--neco-surface));
 }
+#group_scene_header { display: flex; align-items: stretch; gap: 6px; }
 #group_scene_toggle {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     min-height: 44px;
     margin: 0;
+    padding: 0 10px;
+    gap: 6px;
     justify-content: flex-start;
 }
 #group_scene_summary {
+    flex: 1;
+    min-width: 0;
+    text-align: start;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+#group_scene_whisper { width: 40%; max-width: 240px; min-height: 44px; margin: 0; }
 #group_scene_panel {
-    padding: 8px;
-    background: var(--neco-surface);
+    display: grid;
+    gap: 6px;
+    padding-top: 6px;
     white-space: normal;
-    max-height: 180px;
+    max-height: 200px;
     overflow-y: auto;
 }
-#group_scene_panel label { display: block; }
+#group_scene_location { width: 100%; min-height: 44px; margin: 0; box-sizing: border-box; }
 #group_scene_members { display: flex; flex-wrap: wrap; gap: 6px; }
 #group_scene_members .group_scene_member {
     min-height: 44px;
     margin: 0;
+    padding: 4px 10px 4px 4px;
     gap: 6px;
+    border-radius: 999px;
 }
 #group_scene_members .group_scene_member[aria-pressed="false"] { border-style: dashed; }
-#group_scene_members img { width: 28px; height: 28px; border-radius: 50%; }
-#group_scene_strip button:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 2px; }
-#group_scene_header { display: flex; align-items: stretch; gap: 6px; }
-#group_scene_header #group_scene_toggle { flex: 1; min-width: 0; width: auto; }
-#group_scene_whisper { width: 40%; max-width: 240px; min-height: 44px; margin: 0; }
+#group_scene_members img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
+.group_scene_member_tag {
+    font-size: 0.75em;
+    line-height: 1.4;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--neco-ginger) 18%, var(--neco-surface));
+}
+#group_scene_panel > small { font-size: 0.8em; line-height: 1.35; }
+#group_scene_strip :is(button, select, input):focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 2px; }
+#group_next_up {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+#group_speaker_controls .group_speaker_avatar.is-next-up { box-shadow: inset 0 0 0 2px var(--neco-ginger); }
+#group_speaker_controls > #group_scene_open:is([aria-pressed="true"], .has-scene) {
+    border-color: var(--neco-ginger);
+    background: color-mix(in srgb, var(--neco-ginger) 18%, var(--neco-surface));
+}
 .group-whisper-badge { font-size: 0.75em; font-weight: normal; color: var(--neco-ink); background: color-mix(in srgb, var(--neco-ginger) 15%, var(--neco-surface)); border-radius: 6px; padding: 2px 6px; margin-inline-start: 6px; }
-#group_next_up { padding: 3px 8px; font-size: 0.8em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media screen and (min-width: 769px) {
+    #group_scene_toggle,
+    #group_scene_whisper,
+    #group_scene_location,
+    #group_scene_members .group_scene_member { min-height: 36px; }
+    #group_speaker_controls { gap: 6px; }
+    #group_speaker_controls > .menu_button {
+        width: 36px;
+        height: 36px;
+        margin: 0;
+        padding: 0;
+        gap: 0;
+        justify-content: center;
+    }
+}
 #right-nav-panel #rm_group_buttons > #rm_group_talk_burst_block { flex-direction: row; align-items: center; }
 #right-nav-panel #rm_group_buttons > #rm_group_talk_burst_block > label { flex: 1; min-width: 0; text-align: start; }
 #right-nav-panel #rm_group_buttons #rm_group_talk_burst { width: 5em; flex: 0 0 5em; min-height: 44px; height: auto; margin: 0; }

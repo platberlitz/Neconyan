@@ -15,9 +15,9 @@ test('any member can narrate, retains multi-character narration and advertises i
     })).toBe(true);
     await page.locator('.group_speaker_avatar').filter({ hasText: 'Scene Mira' }).click({ button: 'right' });
     await page.getByRole('button', { name: 'Use as Narrator / GM', exact: true }).click();
-    await page.locator('#group_scene_toggle').click();
+    await page.locator('#group_scene_open').click();
     await expect(page.locator('.group_scene_member').filter({ hasText: 'Scene Mira' })).toContainText('Narrator / GM');
-    await page.locator('#group_scene_toggle').click();
+    await page.locator('#group_scene_open').click();
     app.provider.mode.reply = narratorReply;
     await sendSceneMessage(page, 'What happens next?');
     await expect.poll(async () => (await readSceneChat(page)).at(-1)?.mes, { timeout: 30000 }).toBe('The doors shake.\nScene Kit: A shadow crosses the wall.');
