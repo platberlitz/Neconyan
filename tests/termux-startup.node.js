@@ -162,7 +162,22 @@ test('native creation times and unrelated runtimes stay unchanged', t => {
     const desktop = boot(f.recovery, { termux: false });
     assert.equal(desktop.result.mode, 'unchanged'); assert.equal(desktop.wakes, 0);
     const bun = boot(f.recovery, { bun: true });
-    assert.equal(bun.result.mode, 'unchanged'); assert.equal(bun.wakes, 0);
+    assert.equal(bun.result.mode, 'unchanged'); assert.equal(bun.wakes, 1);
+});
+
+test('Bun on Termux warns when the wake lock is refused', t => {
+    const f = fixture(t);
+    const script = `
+        const { configureTermuxStartup } = await import(${JSON.stringify(startup)});
+        const warnings = [];
+        const result = await configureTermuxStartup({ dataRoot: ${JSON.stringify(f.recovery)} }, {
+            termux: true, bun: true, wakeLock: () => ({ status: 1 }), log: () => {}, warn: text => warnings.push(text),
+        });
+        process.stdout.write(JSON.stringify({ result, warnings }));
+    `;
+    const output = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8' }));
+    assert.equal(output.result.mode, 'unchanged');
+    assert.match(output.warnings[0], /wake lock could not be acquired/);
 });
 
 test('malformed policies and incompatible runtimes stop instead of changing saved identities', t => {

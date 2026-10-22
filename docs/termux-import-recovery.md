@@ -17,7 +17,7 @@ installation keeps its own data choice. An explicit `--port` keeps that port.
 Missing or invalid saved choices stop with an explanation instead of silently
 opening an empty instance.
 
-Ordinary native Termux startup also requests the wake lock. Android can still
+Ordinary native Termux startup, with Node or Bun, also requests the wake lock. Android can still
 terminate a process, so the saved folder and durable import records remain the
 basis for restarting. Use `termux-wake-unlock` after stopping the server when the
 lock is no longer needed.
