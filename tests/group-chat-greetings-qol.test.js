@@ -24,6 +24,44 @@ describe('group chat greetings QoL', () => {
         expect(getGroupChatBody).toContain('if (freshGroupGreetingMessageId !== -1) await emitGroupGreetingMessageEvents(freshGroupGreetingMessageId, greetingStillCurrent);');
     });
 
+    test('resolves macros in every member greeting as the greeting member', async () => {
+        const groupChatSource = await fs.readFile(fileURLToPath(new URL('../public/scripts/group-chats.js', import.meta.url)), 'utf8');
+        const start = groupChatSource.indexOf('/**\n * Resolves macros in a member\'s greeting');
+        const end = groupChatSource.indexOf('function getGroupGreetingMember');
+        const calls = [];
+        const context = {
+            this_chid: undefined,
+            characters: [
+                { name: 'Other', avatar: 'Other.png' },
+                { name: 'Alice', avatar: 'Alice.png', first_mes: 'Hi {{user}}, I am {{char}}.', data: { alternate_greetings: ['Alt {{user}} from {{char}}'] } },
+            ],
+            getCharacterIdByAvatar: avatar => context.characters.findIndex(character => character.avatar === avatar),
+            setCharacterId: value => { context.this_chid = value; },
+            substituteParams: (text, options) => {
+                calls.push({ chid: context.this_chid, options });
+                return text.replace(/\{\{user\}\}/g, 'Pura').replace(/\{\{char\}\}/g, context.characters[context.this_chid].name);
+            },
+            getRegexedString: text => text,
+            regex_placement: { AI_OUTPUT: 2 },
+            getThumbnailUrl: (_type, avatar) => `/thumb/${avatar}`,
+            getMessageTimeStamp: () => 'now',
+            getGroupMessageAudience: () => null,
+        };
+
+        expect(start).toBeGreaterThanOrEqual(0);
+        expect(end).toBeGreaterThan(start);
+        vm.createContext(context);
+        vm.runInContext(`${groupChatSource.slice(start, end).replaceAll('this_chid', 'globalThis.this_chid')}\nglobalThis.message = buildGroupGreetingMessage('Alice.png');`, context);
+
+        expect(context.message.mes).toBe('Hi Pura, I am Alice.');
+        expect(context.message.swipes).toEqual(['Hi Pura, I am Alice.', 'Alt Pura from Alice']);
+        expect(calls).toEqual([
+            { chid: 1, options: { name2Override: 'Alice' } },
+            { chid: 1, options: { name2Override: 'Alice' } },
+        ]);
+        expect(context.this_chid).toBeUndefined();
+    });
+
     test('starts new group branches with fresh integrity metadata', async () => {
         const groupChatSource = await fs.readFile(fileURLToPath(new URL('../public/scripts/group-chats.js', import.meta.url)), 'utf8');
         const createNewGroupChatBody = groupChatSource.slice(

@@ -72,6 +72,7 @@ import {
     getRequestHeaders,
     refreshCsrfToken,
     sendChatImport,
+    substituteParams,
     loadRoleplayChat,
     saveRoleplayChatRequest,
     setExternalAbortController,
@@ -435,12 +436,35 @@ function getSelectedGroupSpeakerChid(group) {
     return getCharacterIdByAvatar(selectedGroupSpeakerAvatar);
 }
 
+/**
+ * Resolves macros in a member's greeting as that member, so {{char}} and card fields name the greeter.
+ * @param {string} text Greeting text
+ * @param {number} chid Greeting member's character index
+ * @param {string} characterName Greeting member's name
+ * @returns {string}
+ */
+function substituteGroupGreetingMacros(text, chid, characterName) {
+    if (!text) {
+        return text;
+    }
+
+    const previousChid = this_chid;
+    setCharacterId(chid);
+    try {
+        return substituteParams(text, { name2Override: characterName });
+    } finally {
+        setCharacterId(previousChid);
+    }
+}
+
 function buildGroupGreetingMessage(avatarId) {
-    const character = characters[getCharacterIdByAvatar(avatarId)];
+    const chid = getCharacterIdByAvatar(avatarId);
+    const character = characters[chid];
     if (!character) {
         return null;
     }
 
+    const prepareGreeting = greeting => substituteGroupGreetingMacros(getRegexedString(greeting, regex_placement.AI_OUTPUT), chid, character.name);
     const firstMes = character.first_mes || '';
     const alternateGreetings = character.data?.alternate_greetings;
     const message = {
@@ -450,12 +474,12 @@ function buildGroupGreetingMessage(avatarId) {
         force_avatar: getThumbnailUrl('avatar', character.avatar),
         original_avatar: character.avatar,
         send_date: getMessageTimeStamp(),
-        mes: getRegexedString(firstMes, regex_placement.AI_OUTPUT),
+        mes: prepareGreeting(firstMes),
         extra: getGroupMessageAudience() ? { group_scene: getGroupMessageAudience() } : {},
     };
 
     if (Array.isArray(alternateGreetings) && alternateGreetings.length > 0) {
-        const swipes = [message.mes, ...(alternateGreetings.map(greeting => getRegexedString(greeting, regex_placement.AI_OUTPUT)))];
+        const swipes = [message.mes, ...alternateGreetings.map(prepareGreeting)];
 
         if (!message.mes) {
             swipes.shift();
