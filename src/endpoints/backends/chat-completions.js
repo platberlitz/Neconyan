@@ -679,7 +679,8 @@ async function sendMakerSuiteRequest(request, response) {
     const stream = Boolean(request.body.stream);
     const enableWebSearch = Boolean(request.body.enable_web_search);
     const requestImages = Boolean(request.body.request_images);
-    const reasoningEffort = String(request.body.reasoning_effort);
+    // Neconyan divergence: a bare String() turns an absent effort into "undefined", which Gemini 3 would forward as a thinking level.
+    const reasoningEffort = String(request.body.reasoning_effort ?? '');
     const includeReasoning = Boolean(request.body.include_reasoning);
     const aspectRatio = String(request.body.request_image_aspect_ratio);
     const imageSize = String(request.body.request_image_resolution);
