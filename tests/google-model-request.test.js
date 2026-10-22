@@ -77,7 +77,7 @@ describe('Google model request compatibility', () => {
         nodeFetchMock.mockImplementation((url, options) => actualNodeFetch(url, options));
     });
 
-    function makeRequest(model) {
+    function makeRequest(model, extra = {}) {
         return fetch(`${baseUrl}/api/backends/chat-completions/generate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -90,6 +90,7 @@ describe('Google model request compatibility', () => {
                 top_p: 0.9,
                 top_k: 40,
                 messages: [{ role: 'user', content: 'Question' }],
+                ...extra,
             }),
         });
     }
@@ -117,5 +118,26 @@ describe('Google model request compatibility', () => {
             topK: 40,
             candidateCount: 1,
         });
+    });
+
+    test('omits the thinking level when no reasoning effort is sent', async () => {
+        const response = await makeRequest('gemini-3.8-flash');
+
+        expect(response.status).toBe(200);
+        expect(capturedBody.generationConfig).not.toHaveProperty('thinkingConfig');
+    });
+
+    test('forwards a chosen reasoning effort as the thinking level', async () => {
+        const response = await makeRequest('gemini-3.8-flash', { reasoning_effort: 'medium' });
+
+        expect(response.status).toBe(200);
+        expect(capturedBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'medium' });
+    });
+
+    test('keeps the 2.5 thinking budget when no reasoning effort is sent', async () => {
+        const response = await makeRequest('gemini-2.5-flash');
+
+        expect(response.status).toBe(200);
+        expect(capturedBody.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 });
     });
 });
