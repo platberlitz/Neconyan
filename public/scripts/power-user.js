@@ -103,6 +103,7 @@ import {
     subscribeLowMemoryState,
     withLowMemoryControlHydration,
 } from './low-memory-mode.js';
+import { createBackgroundKeepAlive, isBackgroundKeepAliveDevice } from './background-keep-alive.js';
 
 export const toastPositionClasses = [
     'toast-top-left',
@@ -1482,6 +1483,33 @@ export function syncLowMemorySettingsUi({ chatWindowChanged = false } = {}) {
     }
 
     syncLowMemoryManagedFieldNotes(policy);
+}
+
+function formatBackgroundKeepAliveStatus({ enabled, playing, lastError }) {
+    if (lastError === 'blocked') return t`The browser blocked the sound. Tap anywhere in Neconyan once, then switch away again.`;
+    if (lastError) return t`The sound could not start in this browser.`;
+    if (!enabled) return t`Off. Android may reload Neconyan if you stay away for long.`;
+    if (playing) return t`Keeping Neconyan open.`;
+    return t`On. Starts when you switch to another app or tab.`;
+}
+
+function initBackgroundKeepAliveSetting() {
+    const group = document.getElementById('background_keep_alive_group');
+    const toggle = document.getElementById('background_keep_alive');
+    const statusElement = document.getElementById('background_keep_alive_status');
+    if (!(group instanceof HTMLElement) || !(toggle instanceof HTMLInputElement) || !isBackgroundKeepAliveDevice()) {
+        return;
+    }
+    const keepAlive = createBackgroundKeepAlive({
+        onStatus: (status) => {
+            toggle.checked = status.enabled;
+            if (statusElement) statusElement.textContent = formatBackgroundKeepAliveStatus(status);
+        },
+    });
+    group.style.removeProperty('display');
+    toggle.checked = keepAlive.isEnabled();
+    if (statusElement) statusElement.textContent = formatBackgroundKeepAliveStatus(keepAlive.getStatus());
+    toggle.addEventListener('change', () => keepAlive.setEnabled(toggle.checked));
 }
 
 function switchUiMode() {
@@ -4876,6 +4904,8 @@ jQuery(async () => {
         switchUiMode();
         syncLowMemorySettingsUi();
     });
+
+    initBackgroundKeepAliveSetting();
 
     window.addEventListener('sb:conversation-workspace-state-changed', () => {
         syncLowMemorySettingsUi();

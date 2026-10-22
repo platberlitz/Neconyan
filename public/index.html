@@ -6330,6 +6330,23 @@
                                         <span data-i18n="Use automatic recommendations">Use automatic recommendations</span>
                                     </button>
                                 </section>
+                                <section id="background_keep_alive_group" class="nn-vt-group" aria-labelledby="nn-background-keep-alive-title" style="display: none">
+                                    <div class="nn-vt-group-head">
+                                        <i class="fa-solid fa-moon nn-vt-group-icon" aria-hidden="true"></i>
+                                        <div class="nn-vt-group-copy">
+                                            <h4 id="nn-background-keep-alive-title" class="nn-vt-group-title" data-i18n="Leaving the tab">Leaving the tab</h4>
+                                            <p class="nn-vt-group-hint" data-i18n="Android can unload Neconyan after you switch away for a while, so it reloads when you come back.">Android can unload Neconyan after you switch away for a while, so it reloads when you come back.</p>
+                                        </div>
+                                    </div>
+                                    <label class="checkbox_label nn-vt-row" for="background_keep_alive">
+                                        <span class="nn-vt-text">
+                                            <small class="nn-vt-name" data-i18n="Stay open in the background">Stay open in the background</small>
+                                            <span class="nn-vt-desc" data-i18n="Plays a sound too quiet to hear while you are away, so the browser treats Neconyan like a music player. Uses more battery, shows a media notification and can pause music in other apps. Applies to this device only.">Plays a sound too quiet to hear while you are away, so the browser treats Neconyan like a music player. Uses more battery, shows a media notification and can pause music in other apps. Applies to this device only.</span>
+                                        </span>
+                                        <input id="background_keep_alive" type="checkbox" aria-describedby="background_keep_alive_status" />
+                                    </label>
+                                    <p id="background_keep_alive_status" class="nn-vt-desc" role="status" aria-live="polite" data-i18n-ignore></p>
+                                </section>
                                 <section class="nn-vt-group" aria-labelledby="nn-aggressive-dom-unload-title">
                                     <div class="nn-vt-group-head">
                                         <i class="fa-solid fa-broom nn-vt-group-icon" aria-hidden="true"></i>
