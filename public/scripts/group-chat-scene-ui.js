@@ -5,6 +5,7 @@ import { t } from './i18n.js';
 import { getGroupMemberRole } from './group-chat-roles.js';
 
 let initialised = false;
+let sceneExpanded = false;
 
 export function currentGroupScene() {
     const group = groups.find(item => item.id === selected_group);
@@ -24,7 +25,13 @@ export function renderGroupScene() {
     const strip = document.getElementById('group_scene_strip');
     if (!strip) return;
     const current = currentGroupScene();
-    strip.classList.toggle('displayNone', !current);
+    const inUse = Boolean(current && (current.scene.location || current.scene.away.length || current.scene.whisper_to.length));
+    if (!current) sceneExpanded = false;
+    // The strip stays out of the way until it is opened or the scene holds something worth showing.
+    strip.classList.toggle('displayNone', !current || !(sceneExpanded || inUse));
+    $('#group_scene_panel').toggleClass('displayNone', !sceneExpanded);
+    $('#group_scene_toggle').attr('aria-expanded', String(sceneExpanded));
+    $('#group_scene_open').attr('aria-pressed', String(sceneExpanded)).toggleClass('has-scene', inUse);
     if (!current) return;
     const { group, scene } = current;
     const present = group.members.length - scene.away.length;
@@ -46,20 +53,27 @@ export function renderGroupScene() {
         const button = $('<button type="button" class="menu_button group_scene_member"></button>')
             .attr({ 'data-avatar': avatar, 'aria-pressed': String(present), title: present ? t`Mark away` : t`Bring into the scene` });
         button.append($('<img alt="">').attr('src', getThumbnailUrl('avatar', avatar)));
-        const role = getGroupMemberRole(group, character) === 'narrator' ? ` · ${t`Narrator / GM`}` : '';
-        button.append($('<span></span>').text(`${character.name}${role} · ${present ? t`Present` : t`Away`}`));
+        button.append($('<span class="group_scene_member_name"></span>').text(character.name));
+        if (getGroupMemberRole(group, character) === 'narrator') {
+            button.append($('<small class="group_scene_member_tag"></small>').text(t`Narrator / GM`));
+        }
+        if (!present) {
+            button.append($('<small class="group_scene_member_tag"></small>').text(t`Away`));
+        }
         list.append(button);
     }
+}
+
+export function toggleGroupScene(expanded = !sceneExpanded) {
+    sceneExpanded = Boolean(expanded);
+    renderGroupScene();
 }
 
 export function initGroupSceneControls() {
     if (initialised) return;
     initialised = true;
-    $('#group_scene_toggle').on('click', function () {
-        const expanded = this.getAttribute('aria-expanded') !== 'true';
-        this.setAttribute('aria-expanded', String(expanded));
-        $('#group_scene_panel').toggleClass('displayNone', !expanded);
-    });
+    $('#group_scene_toggle').on('click', () => toggleGroupScene());
+    $('#group_speaker_controls').on('click', '#group_scene_open', () => toggleGroupScene());
     $('#group_scene_location').on('change', function () { void changeGroupScene({ location: this.value }); });
     $('#group_scene_whisper').on('change', function () { void changeGroupScene({ whisper_to: this.value ? [this.value] : [] }); });
     $('#group_scene_members').on('click', '[data-avatar]', function () {
@@ -70,6 +84,9 @@ export function initGroupSceneControls() {
             ? current.scene.away.filter(item => item !== avatar) : [...current.scene.away, avatar];
         void changeGroupScene({ away });
     });
-    eventSource.on(event_types.CHAT_CHANGED, renderGroupScene);
+    eventSource.on(event_types.CHAT_CHANGED, () => {
+        sceneExpanded = false;
+        renderGroupScene();
+    });
     renderGroupScene();
 }

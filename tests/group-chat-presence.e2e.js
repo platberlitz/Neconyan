@@ -9,7 +9,9 @@ test('away members are not chosen and cannot see what happened while they were a
     const group = await createSceneGroup(account);
     const page = await account.open({ workspace: false });
     await openSceneGroup(page, group);
-    await page.locator('#group_scene_toggle').click();
+    await expect(page.locator('#group_scene_strip')).toBeHidden();
+    await page.locator('#group_scene_open').click();
+    await expect(page.locator('#group_scene_open')).toHaveAttribute('aria-pressed', 'true');
     await page.setViewportSize({ width: 393, height: 852 });
     await expect.poll(() => page.locator('#group_scene_panel').evaluate(panel => panel.scrollWidth <= panel.clientWidth)).toBe(true);
     await page.setViewportSize({ width: 1280, height: 900 });

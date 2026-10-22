@@ -10,6 +10,7 @@ test('the speaker menu regenerates as another member and each swipe keeps its na
     const page = await account.open({ workspace: false });
     await openSceneGroup(page, group);
     await expect(page.locator('#group_next_up')).toContainText('Scene Kit');
+    await expect(page.locator('.group_speaker_avatar.is-next-up')).toHaveText('Scene Kit');
     app.provider.mode.reply = () => textReply('Kit opens the door.');
     await sendSceneMessage(page, 'Kit, open the door.');
     await expect.poll(() => page.evaluate(async () => (await import('/scripts/group-chats.js')).is_group_generating), { timeout: 30000 }).toBe(false);
@@ -47,7 +48,7 @@ test('the speaker menu regenerates as another member and each swipe keeps its na
     await page.locator('.group_speaker_avatar').filter({ hasText: 'Scene Mira' }).click({ button: 'right' });
     await page.getByRole('button', { name: 'Mute', exact: true }).click();
     await expect(page.locator('.group_speaker_avatar').filter({ hasText: 'Scene Mira' })).toHaveCount(0);
-    await page.locator('#group_scene_toggle').click();
+    await page.locator('#group_scene_open').click();
     await page.locator('.group_scene_member').filter({ hasText: 'Scene Mira' }).click({ button: 'right' });
     await page.getByRole('button', { name: 'Unmute', exact: true }).click();
     await expect(page.locator('.group_speaker_avatar').filter({ hasText: 'Scene Mira' })).toHaveCount(1);

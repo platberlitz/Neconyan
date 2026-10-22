@@ -7458,11 +7458,15 @@ body.groupSpeakerControlsHidden #extensionsMenu>#wand_group_speaker_controls {
     text-overflow: ellipsis;
 }
 
+#group_speaker_controls>.menu_button span {
+    display: none;
+}
+
 @media screen and (max-width: 600px) {
     .group_speaker_controls {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 34px 34px 34px 34px;
-        grid-template-areas: "typing typing typing typing typing" "avatars greeting talk speak hide";
+        grid-template-columns: minmax(0, 1fr) repeat(5, 34px);
+        grid-template-areas: "typing typing typing typing typing typing" "avatars greeting talk speak scene hide";
         align-items: center;
         gap: 4px;
         padding: 4px 6px;
@@ -7504,8 +7508,7 @@ body.groupSpeakerControlsHidden #extensionsMenu>#wand_group_speaker_controls {
         justify-content: center;
     }
 
-    .group_speaker_avatar span,
-    #group_speaker_controls>.menu_button span {
+    .group_speaker_avatar span {
         display: none;
     }
 
@@ -7527,27 +7530,17 @@ body.groupSpeakerControlsHidden #extensionsMenu>#wand_group_speaker_controls {
         font-size: calc(var(--mainFontSize) * 0.95);
     }
 
-    #group_add_greeting {
-        grid-area: greeting;
-    }
-
-    #group_let_them_talk {
-        grid-area: talk;
-    }
-
-    #group_speaker_now {
-        grid-area: speak;
-    }
-
-    #group_speaker_hide {
-        grid-area: hide;
-    }
+    #group_add_greeting { grid-area: greeting; }
+    #group_let_them_talk { grid-area: talk; }
+    #group_speaker_now { grid-area: speak; }
+    #group_scene_open { grid-area: scene; }
+    #group_speaker_hide { grid-area: hide; }
 
 }
 
 @media screen and (max-width: 420px) {
     .group_speaker_controls {
-        grid-template-columns: minmax(0, 1fr) 30px 30px 30px 30px;
+        grid-template-columns: minmax(0, 1fr) repeat(5, 30px);
     }
 
     #group_speaker_controls>.menu_button {

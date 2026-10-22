@@ -9392,17 +9392,16 @@
                     </button>
                     <select id="group_scene_whisper" aria-label="Message audience" data-i18n="[aria-label]Message audience"><option value="" data-i18n="To everyone">To everyone</option></select>
                 </div>
-                <div id="group_next_up" class="displayNone" aria-live="polite"></div>
                 <div id="group_scene_panel" class="displayNone">
-                    <label for="group_scene_location" data-i18n="Location">Location</label>
-                    <input id="group_scene_location" class="text_pole" maxlength="300" type="text" placeholder="Where is this scene?" data-i18n="[placeholder]Where is this scene?">
+                    <input id="group_scene_location" class="text_pole" maxlength="300" type="text" placeholder="Location: where is this scene?" aria-label="Location" data-i18n="[placeholder]Location: where is this scene?;[aria-label]Location">
                     <div id="group_scene_members" aria-label="Who is in the scene" data-i18n="[aria-label]Who is in the scene"></div>
-                    <small data-i18n="Away members miss these exchanges. Shared memory is omitted when it could reveal something they missed.">Away members miss these exchanges. Shared memory is omitted when it could reveal something they missed.</small>
+                    <small data-i18n="Tap a member to mark them away. They miss what's said meanwhile, and shared memory stays out when it could give it away.">Tap a member to mark them away. They miss what's said meanwhile, and shared memory stays out when it could give it away.</small>
                 </div>
             </div>
             <div id="group_speaker_controls" class="group_speaker_controls displayNone">
                 <div id="group_typing_indicator" class="group_typing_indicator displayNone" aria-live="polite"></div>
                 <div class="group_speaker_list"></div>
+                <div id="group_next_up" class="displayNone" aria-live="polite"></div>
                 <button type="button" id="group_add_greeting" class="menu_button menu_button_icon" title="Add New Greeting" data-i18n="[title]Add New Greeting">
                     <i class="fa-solid fa-hand-sparkles"></i>
                     <span data-i18n="Add New Greeting">Add New Greeting</span>
@@ -9414,6 +9413,10 @@
                 <button type="button" id="group_speaker_now" class="menu_button menu_button_icon" title="Make selected character speak now" data-i18n="[title]Make selected character speak now">
                     <i class="fa-solid fa-comment-dots"></i>
                     <span data-i18n="Speak Now">Speak Now</span>
+                </button>
+                <button type="button" id="group_scene_open" class="menu_button menu_button_icon" title="Scene: location, who is here and whispers" data-i18n="[title]Scene: location, who is here and whispers" aria-pressed="false" aria-controls="group_scene_strip">
+                    <i class="fa-solid fa-door-open"></i>
+                    <span data-i18n="Scene">Scene</span>
                 </button>
                 <button type="button" id="group_speaker_hide" class="menu_button menu_button_icon" title="Hide this bar (restore it from the wand menu)" data-i18n="[title]Hide this bar (restore it from the wand menu)">
                     <i class="fa-solid fa-eye-slash"></i>

@@ -9,6 +9,7 @@ test('a mid-reply audience change cannot make a whisper public and an away recip
     const group = await createSceneGroup(account);
     const page = await account.open({ workspace: false });
     await openSceneGroup(page, group);
+    await page.locator('#group_scene_open').click();
     await page.locator('#group_scene_whisper').selectOption(group.members[1]);
     app.provider.mode.streamReply = () => ({ first: 'Only Mira knows', rest: ' the answer.' });
     await sendSceneMessage(page, 'This is private.');
@@ -18,7 +19,6 @@ test('a mid-reply audience change cannot make a whisper public and an away recip
     await expect.poll(() => page.evaluate(async () => (await import('/scripts/group-chats.js')).is_group_generating), { timeout: 30000 }).toBe(false);
     expect((await readSceneChat(page)).at(-1).extra.group_scene.whisper_to).toEqual([group.members[1]]);
     await page.locator('#group_scene_whisper').selectOption(group.members[1]);
-    await page.locator('#group_scene_toggle').click();
     await page.locator('.group_scene_member').filter({ hasText: 'Scene Mira' }).click();
     await sendSceneMessage(page, 'Do not send this publicly.');
     await expect(page.locator('.toast-warning')).toContainText('Your whisper recipient is unavailable');
@@ -31,6 +31,7 @@ test('a whisper and its reply stay with the recipient after switching back to pu
     const group = await createSceneGroup(account, { activation_strategy: 4 });
     const page = await account.open({ workspace: false });
     await openSceneGroup(page, group);
+    await page.locator('#group_scene_open').click();
     await page.locator('#group_scene_whisper').selectOption(group.members[1]);
     app.provider.mode.reply = () => textReply('I will keep the violet key hidden.');
     await sendSceneMessage(page, 'Kit must not hear that the key is violet.');
