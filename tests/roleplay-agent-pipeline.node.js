@@ -294,7 +294,7 @@ test('server reply rewrites see the saved trackers, the lore activated for the r
 
 for (const effect of ['append', 'continue', 'swipe', 'replace']) {
     test(`bundled reply rewrites run in order with saved context and length settings for ${effect}`, async t => {
-        const names = ['continuity-corrector', 'character-authenticity', 'format-fixer', 'user-agency-guard', 'knowledge-guard', 'friction-keeper', 'nsfw-enhancer', 'dialogue-humaniser', 'repetition-breaker', 'length-trimmer', 'proofreader'];
+        const names = ['continuity-corrector', 'character-authenticity', 'prompt-adherence-checker', 'format-fixer', 'user-agency-guard', 'knowledge-guard', 'friction-keeper', 'nsfw-enhancer', 'dialogue-humaniser', 'repetition-breaker', 'length-trimmer', 'proofreader'];
         const agents = names.map(name => {
             const template = JSON.parse(fs.readFileSync(new URL(`../public/scripts/extensions/in-chat-agents/templates/${name}.json`, import.meta.url)));
             return { ...template, enabled: true, sourceTemplateId: template.id,
@@ -330,8 +330,34 @@ for (const effect of ['append', 'continue', 'swipe', 'replace']) {
             return `Pass ${calls.length}`;
         }) });
         assert.deepEqual(calls, agents.map(agent => agent.id));
-        assert.equal(f.saved().at(-1).mes, 'Pass 11');
+        assert.equal(f.saved().at(-1).mes, 'Pass 12');
         await f.run({ generate: () => assert.fail('Main reply repeated'), generateAgent: () => assert.fail('Rewrite repeated') });
+    });
+}
+
+for (const effect of ['append', 'swipe']) {
+    test(`Prompt Adherence Checker sees only the enabled preset prompts for ${effect}`, async t => {
+        const template = JSON.parse(fs.readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/prompt-adherence-checker.json', import.meta.url)));
+        const agents = [{ ...template, enabled: true, sourceTemplateId: template.id }];
+        const preset = { prompts: [...controls.prompts,
+            { identifier: 'main', name: 'Main Prompt', content: 'Write in third person past tense for {{char}}.' },
+            { identifier: 'rule-off', name: 'Switched Off', content: 'DISABLED_RULE_TEXT' },
+            { identifier: 'rule-swipe', name: 'Swipe Only', content: 'SWIPE_RULE_TEXT', injection_trigger: ['swipe'] },
+            { identifier: 'charDescription', marker: true }].filter((prompt, index, list) => list.findLastIndex(item => item.identifier === prompt.identifier) === index),
+        prompt_order: [{ character_id: 100001, order: [...controls.prompt_order[0].order,
+            { identifier: 'rule-off', enabled: false }, { identifier: 'rule-swipe', enabled: true }, { identifier: 'charDescription', enabled: true }] }] };
+        const f = prepared(t, agents, { effect });
+        let system = '';
+        await f.run({ promptBackend: () => ({ backend: 'chat', active: preset, profile: { model: 'fixture' }, source: 'custom' }),
+            generate: paid('main', () => 'Main output'), generateAgent: paid('rewrite', ({ messages }) => {
+                system = messages[0].content;
+                return 'Checked output';
+            }) });
+        assert.match(system, /<prompt name="Main Prompt">\nWrite in third person past tense for Nova\.\n<\/prompt>/);
+        assert.doesNotMatch(system, /DISABLED_RULE_TEXT|\{\{preset-prompts\}\}|charDescription/);
+        if (effect === 'swipe') assert.match(system, /SWIPE_RULE_TEXT/);
+        else assert.doesNotMatch(system, /SWIPE_RULE_TEXT/);
+        assert.equal(f.saved().at(-1).mes, 'Checked output');
     });
 }
 
@@ -729,7 +755,7 @@ test('a damaged postprocessing proof cannot publish a reply or tracker state', a
 });
 
 for (const mode of ['display-only', 'caption']) test(`versioned ${mode} images stay consistent through every bundled reply rewrite`, async t => {
-    const names = ['continuity-corrector', 'character-authenticity', 'format-fixer', 'user-agency-guard', 'knowledge-guard', 'friction-keeper', 'nsfw-enhancer', 'dialogue-humaniser', 'repetition-breaker', 'length-trimmer', 'proofreader'];
+    const names = ['continuity-corrector', 'character-authenticity', 'prompt-adherence-checker', 'format-fixer', 'user-agency-guard', 'knowledge-guard', 'friction-keeper', 'nsfw-enhancer', 'dialogue-humaniser', 'repetition-breaker', 'length-trimmer', 'proofreader'];
     const agents = names.map(name => {
         const template = JSON.parse(fs.readFileSync(new URL(`../public/scripts/extensions/in-chat-agents/templates/${name}.json`, import.meta.url)));
         return { ...template, enabled: true, sourceTemplateId: template.id };
@@ -752,7 +778,7 @@ for (const mode of ['display-only', 'caption']) test(`versioned ${mode} images s
         if (mode === 'caption') assert.match(text, /Reviewed visible description/);
         return 'Main output';
     }), generateAgent: paid('rewrite', ({ messages }) => { agentCalls++; inspect(messages); return `Pass ${agentCalls}`; }) });
-    assert.equal(mainCalls, 1); assert.equal(agentCalls, 11);
+    assert.equal(mainCalls, 1); assert.equal(agentCalls, 12);
     assert.match(f.saved()[1].extra.media[0].url, /BROKEN/);
     await f.run({ generate: () => assert.fail('Repeated main'), generateAgent: () => assert.fail('Repeated rewrite') });
 });

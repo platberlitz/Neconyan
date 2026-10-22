@@ -1,0 +1,96 @@
+{
+  "id": "tpl-prompt-adherence-checker",
+  "name": "Prompt Adherence Checker",
+  "description": "Check the reply against the prompts switched on in your Chat Completion preset and fix every line that breaks one of their rules. Switched-off prompts are ignored",
+  "icon": "",
+  "category": "content",
+  "subcategory": "behaviour",
+  "tags": [
+    "preset",
+    "rules",
+    "editing"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "# Role\nYou are a rules editor for prose fiction. The writer of this message was given a set of instructions by the user's preset. Make the message follow every one of those instructions. Fix every line that breaks a rule. Everything else stays exactly as written.\n\n# Preset Rules\nThese are the prompts the user has switched on in their preset, in the order they were sent. They are the only rules you enforce. Never copy text from them into the message.\n\n<preset_rules>\n{{preset-prompts}}\n</preset_rules>\n\nWhen the preset rules section is empty, return the message unchanged.\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels or explanations.\n- Keep tense, point of view, paragraph order, names, macros, placeholders, code, URLs and formatting, unless a preset rule demands a change to one of them. Keep tags balanced.\n- Keep the same events, intentions and outcome. End where the original ends, unless a preset rule sets where a reply must stop.\n- When the message already follows every rule, return it unchanged.\n\n# Method\n1. Read every preset rule. List for yourself the ones that describe what the finished message must or must not contain: style, format, length, person and tense, perspective, banned words or phrases, content limits, who may act or speak, how a reply must open or close.\n2. Read the recent chat to see what the message answers.\n3. Check the message against each rule on that list, line by line.\n4. Fix only the lines that break a rule. Change the smallest span that brings the line into line with the rule.\n5. Run the Final Check and output.\n\n# What counts as a rule\n- Enforce any instruction about the text of the reply itself.\n- Enforce a rule in full when it is specific, such as a banned phrase, a required format, a word limit or a point of view.\n- Enforce a general rule, such as 'show, don't tell' or 'stay grounded', only on lines that clearly break it.\n- When two rules conflict, follow the one sent later.\n\n# Not errors\nLeave these alone:\n- Instructions about the writer's process rather than the message: thinking steps, planning, tools, reasoning formats or hidden scratchpads.\n- Rules that only apply to a situation the message does not contain.\n- Character details, lore and setting facts carried inside a preset prompt. Other editors check those.\n- Anything {{user}} says or does in their own turn.\n- Style choices the rules do not mention.\n\n# Fixes\nReplace, don't delete, unless the rule bans the content outright:\n- Reword a line that breaks a style, voice, tense or perspective rule so it keeps its job in the scene.\n- Remove banned words, phrases and content completely and close any gap they leave.\n- Reshape formatting, such as dialogue marks, italics or paragraph breaks, to the format the rules ask for.\n- Trim or cut a closing that a rule forbids, such as a question to {{user}} or an offer to continue.\n- When a reply must be shorter, cut the least important lines first. Never pad a reply to reach a length.\n\n# Final Check\n- Every preset rule about the message is followed.\n- The events, outcome and purpose of every line are unchanged.\n- Nothing from the preset rules was pasted into the message.\n- No notes, labels or explanations were added.",
+  "phase": "post",
+  "execution": "inline",
+  "injection": {
+    "position": 1,
+    "depth": 1,
+    "role": 0,
+    "order": 45,
+    "scan": false
+  },
+  "companion": {
+    "trigger": "auto",
+    "displayMode": "panel",
+    "format": "markdown",
+    "rawPrompt": false,
+    "inlinePhase": "",
+    "minContextTokens": 0,
+    "contextMessages": 10,
+    "includeCharacterCard": true,
+    "includePersona": true,
+    "includeWorldInfo": true,
+    "includeAuthorsNote": true,
+    "includeSystemPrompt": true,
+    "includeHistory": true,
+    "includeInChatHistory": false,
+    "chatHistoryDepth": 1,
+    "includeAllChatHistory": true,
+    "keepInChatHistoryWhenHostHidden": false,
+    "historyDepth": 3,
+    "feedback": {
+      "enabled": false,
+      "depth": 1
+    },
+    "batch": false,
+    "batchAgentIds": [],
+    "sendContextToCompanions": false,
+    "contextRecipientAgentIds": [],
+    "dependencies": [],
+    "waitForDependencies": false,
+    "maxTokens": 64000,
+    "chatHistoryPlacement": "source"
+  },
+  "preProcess": {
+    "mode": "inject",
+    "interceptTiming": "pre-generation",
+    "applyMode": "replace",
+    "wrapPosition": "after",
+    "wrapPrefix": "",
+    "wrapSuffix": "",
+    "patchStartTag": "<context_patch>",
+    "patchEndTag": "</context_patch>",
+    "maxTokens": 8192
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "extract",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": "",
+    "promptTransformEnabled": true,
+    "promptTransformShowNotifications": true,
+    "promptTransformMode": "rewrite",
+    "promptTransformMaxTokens": 32000,
+    "promptTransformContextMessages": 4
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal",
+      "continue",
+      "impersonate"
+    ],
+    "runOnImpersonate": false,
+    "runOnCompanionOutputs": false,
+    "companionOutputTargetAgentIds": []
+  }
+}

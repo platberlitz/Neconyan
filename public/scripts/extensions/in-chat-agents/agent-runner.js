@@ -59,7 +59,7 @@ import { resolveExpressionsAgentProfile } from '../expressions/expressions-agent
 import { buildFallbackPromptText, extractProfileResponseText } from './llm-utils.js';
 import { buildPromptTransformRecentChat } from './prompt-transform-context.js';
 import { getTrackerRepairConnectionProfile, getTrackerRepairTimeoutMs, isTrackerRepairRunAgent, markTrackerRepairRunAgent } from './tracker-repair-run.js';
-import { buildAgentContextMacros, captureGroupCards, captureSecretsTrackerState, captureTrackerState, getPreparedActiveLore, getPreparedMewmoryContext, SECRETS_TRACKER_MACRO, setPreparedActiveLore, TRACKER_STATE_MACRO, usesAgentMacro, usesGroupCardsMacro } from './agent-context-macros.js';
+import { buildAgentContextMacros, captureGroupCards, capturePresetPrompts, captureSecretsTrackerState, captureTrackerState, getPreparedActiveLore, getPreparedMewmoryContext, PRESET_PROMPTS_MACRO, SECRETS_TRACKER_MACRO, setPreparedActiveLore, TRACKER_STATE_MACRO, usesAgentMacro, usesGroupCardsMacro } from './agent-context-macros.js';
 import { buildContinuityCorrectionsText, CONTINUITY_CORRECTIONS_MACRO, CONTINUITY_NOTES_MACRO, continuityCorrectionsFromRuns, latestContinuityNotes } from './continuity-link.js';
 import { getConnectionProfileDisplayName, getConnectionProfileModelName } from './profile-utils.js';
 import { describeAgentRunModel } from './model-label.js';
@@ -2295,11 +2295,11 @@ export function buildPromptDynamicMacros(messageText = '', message = null, agent
         agentName,
         generationType: normalizedGenerationType,
         lengthTarget: getAgentLengthTarget(agent),
-        ...buildBrowserAgentContextMacros(agent, message),
+        ...buildBrowserAgentContextMacros(agent, message, generationType),
     };
 }
 
-function buildBrowserAgentContextMacros(agent, message = null) {
+function buildBrowserAgentContextMacros(agent, message = null, generationType = 'normal') {
     const context = getContext?.() ?? {};
     const group = context.groupId ? context.groups?.find(item => item.id === context.groupId) : null;
     const groupCards = group && usesGroupCardsMacro(agent?.prompt)
@@ -2317,9 +2317,11 @@ function buildBrowserAgentContextMacros(agent, message = null) {
         ? latestContinuityNotes(filterGroupTargetMessages(messageIndex >= 0 ? chat.slice(0, messageIndex) : chat, message), getEnabledAgents()) : '';
     const continuityCorrections = message && usesAgentMacro(agent?.prompt, CONTINUITY_CORRECTIONS_MACRO)
         ? buildContinuityCorrectionsText(continuityCorrectionsFromRuns(getAgentExtraValue(message, PROMPT_RUNS_EXTRA_KEY), getEnabledAgents())) : '';
+    const presetPrompts = context.mainApi === 'openai' && usesAgentMacro(agent?.prompt, PRESET_PROMPTS_MACRO)
+        ? capturePresetPrompts(context.chatCompletionSettings, generationType) : null;
     return {
         ...buildAgentContextMacros({ mewmory: restricted ? null : getPreparedMewmoryContext(chatId), groupCards, userName: context.name1, charName: context.name2,
-            lore: restricted ? '' : getPreparedActiveLore(chatId), authorsNote: context.extensionPrompts?.[AUTHORS_NOTE_PROMPT_KEY]?.value, trackers, secretsTrackers, continuityNotes }),
+            lore: restricted ? '' : getPreparedActiveLore(chatId), authorsNote: context.extensionPrompts?.[AUTHORS_NOTE_PROMPT_KEY]?.value, trackers, secretsTrackers, continuityNotes, presetPrompts }),
         [CONTINUITY_CORRECTIONS_MACRO]: continuityCorrections,
     };
 }
@@ -4034,7 +4036,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
         const expandedPrompt = withGroupTargetPrompt(message, chat, () => substituteParams(agent.prompt, {
             name2Override: String(message?.name ?? '').trim(),
             original: transformMessageText,
-            dynamicMacros: buildPromptDynamicMacros(transformMessageText, message, agent, normalizedGenerationType),
+            dynamicMacros: buildPromptDynamicMacros(transformMessageText, message, agent, generationType),
         }).trim());
 
         if (!expandedPrompt) {
