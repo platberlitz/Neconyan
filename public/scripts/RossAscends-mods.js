@@ -797,6 +797,7 @@ export async function initMovingUI() {
 const sendTextArea = document.querySelector('#send_textarea');
 const chatBlock = document.getElementById('chat');
 const isFirefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
+const MESSAGE_SWIPE_IGNORED_SELECTOR = '#group_speaker_controls, #group_scene_strip';
 
 /**
  * this makes the chat input text area resize vertically to match the text size (limited by CSS at 50% window height)
@@ -1013,20 +1014,26 @@ export function initRossMods() {
     restoreUserInput();
 
     // Swipe gestures (see: https://www.npmjs.com/package/swiped-events)
-    document.addEventListener('swiped-left', function (e) {
+    function isMessageSwipeGesture(e) {
         if (power_user.gestures === false) {
-            return;
+            return false;
         }
         if (Popup.util.isPopupOpen()) {
-            return;
+            return false;
         }
-        if (!$(e.target).closest('#sheld').length) {
-            return;
+        const target = $(e.target);
+        if (!target.closest('#sheld').length) {
+            return false;
         }
-        if ($('#curEditTextarea').length) {
-            // Don't swipe while in text edit mode
-            // the ios selection gestures get picked up
-            // as swipe gestures
+        // Sliding along the group speaker bar scrolls and picks a character; it is not a swipe.
+        if (target.closest(MESSAGE_SWIPE_IGNORED_SELECTOR).length) {
+            return false;
+        }
+        // Don't swipe while in text edit mode: the iOS selection gestures get picked up as swipes.
+        return !$('#curEditTextarea').length;
+    }
+    document.addEventListener('swiped-left', function (e) {
+        if (!isMessageSwipeGesture(e)) {
             return;
         }
         var SwipeButR = $('.swipe_right:last');
@@ -1038,19 +1045,7 @@ export function initRossMods() {
         }
     });
     document.addEventListener('swiped-right', function (e) {
-        if (power_user.gestures === false) {
-            return;
-        }
-        if (Popup.util.isPopupOpen()) {
-            return;
-        }
-        if (!$(e.target).closest('#sheld').length) {
-            return;
-        }
-        if ($('#curEditTextarea').length) {
-            // Don't swipe while in text edit mode
-            // the ios selection gestures get picked up
-            // as swipe gestures
+        if (!isMessageSwipeGesture(e)) {
             return;
         }
         var SwipeButL = $('.swipe_left:last');
