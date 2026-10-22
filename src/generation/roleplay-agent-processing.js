@@ -1,7 +1,8 @@
 import { projectPromptMediaRecords } from '../../public/scripts/prompt-media-policy.js';
 import { appendHelperPrefillMessages } from '../../public/scripts/extensions/helper-prefill.js';
 import { buildPromptTransformRecentChat, getAgentLengthTarget } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-context.js';
-import { ACTIVE_LORE_MACRO, buildAgentContextMacros, captureSecretsTrackerState, captureTrackerState, SECRETS_TRACKER_MACRO, TRACKER_STATE_MACRO, usesAgentMacro } from '../../public/scripts/extensions/in-chat-agents/agent-context-macros.js';
+import { ACTIVE_LORE_MACRO, buildAgentContextMacros, capturePresetPrompts, captureSecretsTrackerState, captureTrackerState, PRESET_PROMPTS_MACRO, SECRETS_TRACKER_MACRO, TRACKER_STATE_MACRO, usesAgentMacro } from '../../public/scripts/extensions/in-chat-agents/agent-context-macros.js';
+import { mergeChatPresetSettings } from '../../public/scripts/chat-preset-request.js';
 import { CONTINUITY_NOTES_MACRO, describeTextCorrections, isContinuityCorrector, latestContinuityNotes } from '../../public/scripts/extensions/in-chat-agents/continuity-link.js';
 import { applyRegexScriptList } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { buildRegexScriptRefsForAgent } from '../../public/scripts/extensions/in-chat-agents/regex-snapshot-store.js';
@@ -94,7 +95,20 @@ function agentContextMacros(snapshot, mewmory = null, reference = null) {
         charName: snapshot.speakerNames?.character, lore: reference?.lore, authorsNote: savedAuthorsNote(snapshot),
         trackers: reference ? captureTrackerState(reference.agents, reference.records?.[0]?.chat_metadata) : null,
         secretsTrackers: reference ? captureSecretsTrackerState(reference.agents, reference.records?.[0]?.chat_metadata) : null,
-        continuityNotes: reference?.continuityNotes });
+        continuityNotes: reference?.continuityNotes, presetPrompts: reference?.presetPrompts });
+}
+
+/** The enabled prompts of the bound Chat Completion preset; empty for Text Completion or an unreadable binding. */
+export async function roleplayPresetPrompts(directories, binding, generationType, resolve = null) {
+    try {
+        if (!binding) return [];
+        const resolveProfile = resolve ?? (await import('./profiles.js')).resolveGenerationProfile;
+        const material = await resolveProfile(directories, binding);
+        if (!material || material.backend && material.backend !== 'chat') return [];
+        return capturePresetPrompts(mergeChatPresetSettings(material.active, material.preset), generationType);
+    } catch {
+        return [];
+    }
 }
 
 /** The lore the main reply was built with, so Agents check the reply against the same entries. */
@@ -379,9 +393,11 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     const usesTrackers = selected.some(agent => [TRACKER_STATE_MACRO, SECRETS_TRACKER_MACRO].some(macro => usesAgentMacro(agent.prompt, macro)));
     const usesContinuityNotes = selected.some(agent => usesAgentMacro(agent.prompt, CONTINUITY_NOTES_MACRO));
     const referenceAgents = usesTrackers || usesContinuityNotes ? readRoleplayAgents(base, snapshot, options.agentCache) : [];
+    const usesPresetPrompts = selected.some(agent => usesAgentMacro(agent.prompt, PRESET_PROMPTS_MACRO));
     options = { ...options, agentReference: { lore: options.activeLore ?? await scannedAgentLoreText(context, options, selected, identity),
         agents: usesTrackers ? referenceAgents : [], records: options.metadataRecords ?? options.records,
-        continuityNotes: usesContinuityNotes ? latestContinuityNotes(records, referenceAgents) : '' } };
+        continuityNotes: usesContinuityNotes ? latestContinuityNotes(records, referenceAgents) : '',
+        presetPrompts: usesPresetPrompts ? await roleplayPresetPrompts(context.directories, options.binding, generationType, options.resolvePresetProfile) : null } };
     let postFailed = false;
     const runs = [];
     const parallel = snapshot.agents.appendMode === 'parallel';

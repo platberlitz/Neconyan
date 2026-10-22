@@ -8,6 +8,9 @@ export const ACTIVE_LORE_MACRO = 'active-lore';
 export const ACTIVE_AUTHORS_NOTE_MACRO = 'active-authors-note';
 export const TRACKER_STATE_MACRO = 'tracker-state';
 export const SECRETS_TRACKER_MACRO = 'secrets-tracker';
+export const PRESET_PROMPTS_MACRO = 'preset-prompts';
+const PRESET_GLOBAL_ORDER_ID = '100001';
+const PRESET_CONTENT_SLOTS = new Set(['chatHistory', 'dialogueExamples', 'worldInfoBefore', 'worldInfoAfter', 'charDescription', 'charPersonality', 'scenario', 'personaDescription']);
 const GROUP_CARD_FIELDS = [['description', 'Description'], ['personality', 'Personality'], ['scenario', 'Scenario']];
 
 let preparedMewmory = null;
@@ -119,12 +122,41 @@ export function buildTrackerStateText(trackers) {
 }
 
 /**
+ * The written rules of the Chat Completion preset: every prompt switched on in the
+ * prompt order that would be sent for this generation type, in preset order. Slots the
+ * app fills with card, persona, lore or chat text are left out, as are switched-off prompts.
+ */
+export function capturePresetPrompts(settings, generationType = 'normal') {
+    const prompts = Array.isArray(settings?.prompts) ? settings.prompts : [];
+    const orders = Array.isArray(settings?.prompt_order) ? settings.prompt_order : [];
+    const order = orders.find(entry => String(entry?.character_id) === PRESET_GLOBAL_ORDER_ID)?.order;
+    if (!Array.isArray(order)) return [];
+    const trigger = String(generationType || 'normal');
+    return order.flatMap(item => {
+        if (item?.enabled !== true || PRESET_CONTENT_SLOTS.has(item.identifier)) return [];
+        const prompt = prompts.find(entry => entry?.identifier === item.identifier);
+        const content = text(prompt?.content);
+        if (!prompt || prompt.marker || !content) return [];
+        const triggers = prompt.injection_trigger;
+        if (Array.isArray(triggers) && triggers.length && !triggers.includes(trigger)) return [];
+        return [{ name: String(prompt.name ?? '').trim() || String(item.identifier), content }];
+    });
+}
+
+export function buildPresetPromptsText(prompts) {
+    return (Array.isArray(prompts) ? prompts : [])
+        .filter(prompt => text(prompt?.content))
+        .map(prompt => `<prompt name="${String(prompt.name ?? '').replace(/"/g, '\'')}">\n${text(prompt.content)}\n</prompt>`)
+        .join('\n\n');
+}
+
+/**
  * Dynamic macros that give an agent prompt its Mewmory memories, group member cards,
  * the lorebook entries and Author's Note in effect for the reply, the saved tracker state,
- * and the latest Continuity Companion note.
- * Lore and the note keep their own {{char}} and {{user}} names filled in.
+ * the latest Continuity Companion note and the enabled preset prompts.
+ * Lore, the note and the preset prompts keep their own {{char}} and {{user}} names filled in.
  */
-export function buildAgentContextMacros({ mewmory = null, groupCards = null, userName = '', charName = '', lore = '', authorsNote = '', trackers = null, secretsTrackers = null, continuityNotes = '' } = {}) {
+export function buildAgentContextMacros({ mewmory = null, groupCards = null, userName = '', charName = '', lore = '', authorsNote = '', trackers = null, secretsTrackers = null, continuityNotes = '', presetPrompts = null } = {}) {
     const names = value => {
         const filled = text(value);
         return filled && charName ? fillNames(filled, charName, userName) : filled;
@@ -137,5 +169,6 @@ export function buildAgentContextMacros({ mewmory = null, groupCards = null, use
         [TRACKER_STATE_MACRO]: buildTrackerStateText(trackers),
         [SECRETS_TRACKER_MACRO]: buildTrackerStateText(secretsTrackers),
         [CONTINUITY_NOTES_MACRO]: text(continuityNotes),
+        [PRESET_PROMPTS_MACRO]: names(buildPresetPromptsText(presetPrompts)),
     };
 }

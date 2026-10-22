@@ -9676,6 +9676,32 @@ describe('in-chat agent post-processing runner', () => {
         await eventSource.emit(eventTypes.GENERATION_STOPPED);
     });
 
+    test('fills the preset prompts macro with only the enabled Chat Completion prompts', async () => {
+        const { buildPromptDynamicMacros } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const agent = { prompt: '<rules>{{preset-prompts}}</rules>' };
+        contextChatCompletionSettings = {
+            prompts: [
+                { identifier: 'main', name: 'Main Prompt', content: 'Write as {{char}} in past tense.' },
+                { identifier: 'rule-off', name: 'Off Rule', content: 'Disabled rule' },
+                { identifier: 'rule-swipe', name: 'Swipe "Rule"', content: 'Only on swipes', injection_trigger: ['swipe'] },
+                { identifier: 'rule-empty', name: 'Empty Rule', content: '   ' },
+                { identifier: 'chatHistory', name: 'Chat History', marker: true },
+                { identifier: 'scenario', name: 'Scenario', content: 'Slot text' },
+            ],
+            prompt_order: [
+                { character_id: 100000, order: [{ identifier: 'rule-off', enabled: true }] },
+                { character_id: 100001, order: ['main', 'rule-off', 'rule-swipe', 'rule-empty', 'chatHistory', 'scenario'].map(identifier => ({ identifier, enabled: identifier !== 'rule-off' })) },
+            ],
+        };
+
+        expect(buildPromptDynamicMacros('Reply', null, agent, 'normal')['preset-prompts']).toBe('');
+
+        mainApi = 'openai';
+        expect(buildPromptDynamicMacros('Reply', null, agent, 'normal')['preset-prompts']).toBe('<prompt name="Main Prompt">\nWrite as Mira in past tense.\n</prompt>');
+        expect(buildPromptDynamicMacros('Reply', null, agent, 'swipe')['preset-prompts']).toBe('<prompt name="Main Prompt">\nWrite as Mira in past tense.\n</prompt>\n\n<prompt name="Swipe \'Rule\'">\nOnly on swipes\n</prompt>');
+        expect(buildPromptDynamicMacros('Reply', null, { prompt: 'No rules here' }, 'normal')['preset-prompts']).toBe('');
+    });
+
     test('fills the separate secrets macro from renamed and legacy trackers without other tracker state', async () => {
         const { buildPromptDynamicMacros } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
         enabledAgents.push(

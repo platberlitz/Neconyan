@@ -566,6 +566,7 @@ const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-dialogue-humaniser',
     'tpl-continuity-corrector',
     'tpl-character-authenticity',
+    'tpl-prompt-adherence-checker',
     'tpl-format-fixer',
     'tpl-user-agency-guard',
     'tpl-knowledge-guard',

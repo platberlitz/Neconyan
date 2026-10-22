@@ -49,6 +49,8 @@ export const refreshedKnowledgeCases = [
     ['What does Batch & connect do for Companions?', 'agents.batch-connect', 'It does not wait for a new note'],
     ['What does Character Authenticity Checker do?', 'agents.authenticity', 'earned character development'],
     ['Do agent full-mewmory and group-cards macros fetch more memories?', 'agents.context-macros', 'do not perform a fresh search'],
+    ['What does Prompt Adherence Checker do?', 'agents.prompt-adherence', 'switched-off prompts are ignored'],
+    ['Does the preset-prompts agent macro include switched-off prompts?', 'agents.context-macros', 'skipping switched-off prompts'],
     ['How many Recent messages to read can Proofreader use?', 'agents.reply-rewrites', 'up to 30 previous messages'],
     ['Can Scratchpad create a new character from a note?', 'scratchpad.create-character', 'not an immediately saved card'],
     ['Can I edit Miso prompt instructions in Scratchpad?', 'scratchpad.prompts', 'Save prompt applies your text'],

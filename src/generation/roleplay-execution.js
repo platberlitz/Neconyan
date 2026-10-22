@@ -306,7 +306,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 const options = { base, snapshot: request.worldInfo, records, metadataRecords: current.records, binding: request.binding, mewmory,
                     activeLore: roleplayAgentLoreText(selection), agentCache: cache,
                     macros: savedRoleplayMacroSnapshot(request.worldInfo, records), generationType: request.worldInfo.global.trigger,
-                    assistantName: request.characterName, assertCurrent: () => freshness(), generate: generateAgent };
+                    assistantName: request.characterName, assertCurrent: () => freshness(), generate: generateAgent,
+                    resolvePresetProfile: promptBackend };
                 // The fresh path already announced cards before its first check.
                 // A resumed, reviewed or retried pass builds them before any
                 // reviewed interceptor can delay the post-reply work. If those

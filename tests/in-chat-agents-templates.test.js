@@ -60,6 +60,7 @@ const sourceFilenames = [
     'parallel-tracker.json',
     'plot-compass-companion.json',
     'position-tracker-companion.json',
+    'prompt-adherence-checker.json',
     'proofreader.json',
     'relationship-lens-companion.json',
     'relationship-tracker.json',
@@ -1016,6 +1017,7 @@ describe('in-chat agent bundled templates', () => {
         const chain = [
             ['continuity-corrector.json', 'tpl-continuity-corrector', 'Continuity Corrector', 12],
             ['character-authenticity.json', 'tpl-character-authenticity', 'Character Authenticity Checker', 8],
+            ['prompt-adherence-checker.json', 'tpl-prompt-adherence-checker', 'Prompt Adherence Checker', 4],
             ['format-fixer.json', 'tpl-format-fixer', 'Format Fixer', 0],
             ['user-agency-guard.json', 'tpl-user-agency-guard', 'User Agency Guard', 2],
             ['knowledge-guard.json', 'tpl-knowledge-guard', 'Knowledge Guard', 6],
