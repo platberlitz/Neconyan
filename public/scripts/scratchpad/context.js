@@ -20,8 +20,7 @@ import { loadWorldInfo, selected_world_info, world_info } from '../world-info.js
 import { readCurrentPreset } from './preset.js';
 import { sameSourceContext } from './source.js';
 
-const MAX_CONTEXT_BYTES = 1_400_000;
-const MAX_MESSAGE_CHARS = 16_000;
+export const MAX_CONTEXT_BYTES = 1_400_000;
 const MAX_LORE_ENTRIES = 40;
 const MAX_LORE_CHARS = 24_000;
 const LORE_SCAN_MESSAGES = 5;
@@ -45,11 +44,6 @@ const CARD_FIELDS = [
     ['post_history_instructions', 'Post-history instructions'],
 ];
 const CARD_TOP_LEVEL_FIELDS = { creator_notes: 'creatorcomment' };
-
-function clip(text, limit) {
-    const value = String(text ?? '');
-    return value.length > limit ? `${value.slice(0, limit)}\n[...]` : value;
-}
 
 function clipLabel(text) {
     return String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, 200);
@@ -469,15 +463,40 @@ async function loadSourceCharacters(source) {
     return people.some(item => item?.shallow) ? sourceCharacters(source) : people;
 }
 
+function byteLength(text) {
+    return new TextEncoder().encode(text).length;
+}
+
+function messageLine(item) {
+    const swipe = item.swipe ? ` [swipe ${item.swipe} of ${item.swipeCount}; ${item.current ? 'current' : 'alternative'}]` : '';
+    return `#${item.number} ${item.name}${swipe}${item.hidden ? ' (hidden)' : ''}:\n${item.text}`;
+}
+
+/** The heading for the messages actually shared; picked versions are counted apart from their messages. */
+function messageHeading(messages, picked, total) {
+    if (!picked) return `## Latest messages (${messages.length} of ${total})`;
+    const messageCount = new Set(messages.map(item => item.messageRef ?? item.ref)).size;
+    const swipeCount = messages.filter(item => item.swipe).length;
+    return swipeCount ? `## Picked messages and swipes (${messages.length} versions from ${messageCount} of ${total} messages)` : `## Picked messages (${messageCount} of ${total})`;
+}
+
+function swipeNote(messages) {
+    return messages.some(item => item.swipe)
+        ? 'Swipes are alternative versions of the same message, shared for comparison. Only the current version belongs to the active story; do not treat alternatives as consecutive events.'
+        : '';
+}
+
 /**
  * Builds the reference material for a message from the visible workspace.
- * Nothing here is saved; General never borrows a hidden story.
+ * Nothing here is saved; General never borrows a hidden story. Messages are
+ * shared whole or not at all: the head keeps its bytes and the newest messages
+ * that fit, and an explicit picked set is refused rather than thinned.
  */
 export async function buildContext({ source, settings, pendingText = '', sessionText = '' }) {
     requireCurrentSource(source);
     if (source.kind === 'notebook') return {
         text: `Notebook discussion: ${source.label}\nOnly the explicitly shared notes are included. No story messages, persona, character cards or lorebooks are shared.`,
-        names: { user: name1, character: '' }, lore: { books: [], entries: [] }, messageCount: 0, swipeCount: 0, totalMessages: 0, picked: false, preset: null,
+        names: { user: name1, character: '' }, lore: { books: [], entries: [] }, messageCount: 0, swipeCount: 0, totalMessages: 0, picked: false, preset: null, leftOut: 0,
         capabilities: { lore: false, character: false, chat: false, members: [] },
         targets: [],
     };
@@ -534,21 +553,52 @@ export async function buildContext({ source, settings, pendingText = '', session
         preset = { name: snapshot?.name || '', on: modules.filter(item => item.enabled).length, off: modules.filter(item => !item.enabled).length };
     }
 
-    const messageCount = new Set(selection.messages.map(item => item.messageRef ?? item.ref)).size;
-    const swipeCount = selection.messages.filter(item => item.swipe).length;
-    const heading = selection.picked
-        ? (swipeCount ? `## Picked messages and swipes (${selection.messages.length} versions from ${messageCount} of ${all.length} messages)` : `## Picked messages (${messageCount} of ${all.length})`)
-        : `## Latest messages (${selection.messages.length} of ${all.length})`;
-    const lines = selection.messages.map(item => {
-        const swipe = item.swipe ? ` [swipe ${item.swipe} of ${item.swipeCount}; ${item.current ? 'current' : 'alternative'}]` : '';
-        return `#${item.number} ${item.name}${swipe}${item.hidden ? ' (hidden)' : ''}:\n${clip(item.text, MAX_MESSAGE_CHARS)}`;
-    });
-    if (!general) sections.push([heading, ...(swipeCount ? ['Swipes are alternative versions of the same message, shared for comparison. Only the current version belongs to the active story; do not treat alternatives as consecutive events.'] : []), ...lines].join('\n\n'));
-
-    let text = sections.join('\n\n');
-    const encoded = new TextEncoder().encode(text);
-    if (encoded.length > MAX_CONTEXT_BYTES) text = `${new TextDecoder().decode(encoded.subarray(0, MAX_CONTEXT_BYTES - 10)).replace(/\uFFFD$/, '')}\n[...]`;
+    // The head is explicit input, so it keeps its bytes and is never trimmed for messages.
+    const head = sections.join('\n\n');
+    const headBytes = byteLength(head);
+    const scaffoldNote = selection.picked ? swipeNote(selection.messages) : '';
+    const scaffoldHeading = selection.picked ? messageHeading(selection.messages, true, all.length) : `## Latest messages (0 of ${all.length})`;
+    const scaffold = general ? 0 : 2 + byteLength(scaffoldHeading) + (scaffoldNote ? 2 + byteLength(scaffoldNote) : 0);
     requireCurrentSource(source);
+    if (headBytes + scaffold > MAX_CONTEXT_BYTES) {
+        throw new Error(t`The shared context is too large to send. Turn off the persona, character cards, Author's Note, lorebooks or preset you do not need, then try again.`);
+    }
+
+    const lines = selection.messages.map(item => ({ item, bytes: byteLength(messageLine(item)) }));
+    let kept;
+    let leftOut;
+    if (selection.picked) {
+        const total = headBytes + 2 + byteLength(scaffoldHeading) + (scaffoldNote ? 2 + byteLength(scaffoldNote) : 0)
+            + lines.reduce((sum, line) => sum + 2 + line.bytes, 0);
+        if (total > MAX_CONTEXT_BYTES) {
+            throw new Error(t`These picked messages are too large to share. Pick fewer or shorter ones, then try again.`);
+        }
+        kept = selection.messages;
+        leftOut = 0;
+    } else {
+        let firstFail = lines.length + 1;
+        let used = 0;
+        for (let index = lines.length - 1; index >= 0; index--) {
+            const count = lines.length - index;
+            used += 2 + lines[index].bytes;
+            if (headBytes + 2 + byteLength(`## Latest messages (${count} of ${all.length})`) + used > MAX_CONTEXT_BYTES) {
+                firstFail = count;
+                break;
+            }
+        }
+        const keptCount = firstFail - 1;
+        if (lines.length && !keptCount) {
+            throw new Error(t`The selected chat messages are too large to share. Shorten them, pick specific messages, or turn off the persona, character cards, Author's Note, lorebooks and preset, then try again.`);
+        }
+        kept = keptCount ? selection.messages.slice(-keptCount) : [];
+        leftOut = selection.messages.length - keptCount;
+    }
+
+    const messageCount = new Set(kept.map(item => item.messageRef ?? item.ref)).size;
+    const swipeCount = kept.filter(item => item.swipe).length;
+    const heading = messageHeading(kept, selection.picked, all.length);
+    if (!general) sections.push([heading, ...(swipeCount ? [swipeNote(kept)] : []), ...kept.map(messageLine)].join('\n\n'));
+    const text = sections.join('\n\n');
 
     const loreBooks = include.lore ? lore.books : [];
     return {
@@ -560,6 +610,7 @@ export async function buildContext({ source, settings, pendingText = '', session
         totalMessages: all.length,
         picked: selection.picked,
         preset,
+        leftOut,
         targets: include.card ? people.map(item => ({ avatar: item.avatar, name: item.name })) : [],
         capabilities: {
             lore: loreBooks.length > 0,

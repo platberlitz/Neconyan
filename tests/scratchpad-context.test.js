@@ -68,7 +68,7 @@ const presetSnapshot = {
 const readCurrentPreset = jest.fn(() => presetSnapshot);
 jest.unstable_mockModule('../public/scripts/scratchpad/preset.js', () => ({ readCurrentPreset, currentPresetName: () => presetSnapshot.name }));
 
-const { buildContext, collectLore, currentSource, formatPreset, isCurrentSource, wireSource, sameChat, sourceMessages, sourceCharacters, setNotebookSource } = await import('../public/scripts/scratchpad/context.js');
+const { buildContext, collectLore, currentSource, formatPreset, isCurrentSource, wireSource, sameChat, sourceMessages, sourceCharacters, setNotebookSource, MAX_CONTEXT_BYTES } = await import('../public/scripts/scratchpad/context.js');
 const settings = { depth: 15, include: { lore: true, card: true, persona: true } };
 
 beforeEach(() => {
@@ -302,12 +302,6 @@ describe('Scratchpad source context', () => {
         loadWorldInfo.mockImplementationOnce(async name => { avatar = 'Kit.png'; return books.get(name); });
         await expect(buildContext({ source, settings })).rejects.toThrow('context changed');
     });
-
-    test('bounds non-Latin context by the server byte limit', async () => {
-        branch.messages = Array.from({ length: 200 }, (_, index) => ({ id: String(index), role: 'user', mes: '猫'.repeat(16000) }));
-        const result = await buildContext({ source: currentSource(), settings: { depth: 200 } });
-        expect(Buffer.byteLength(result.text, 'utf8')).toBeLessThanOrEqual(1536 * 1024);
-    });
 });
 
 describe('General Scratchpad context', () => {
@@ -489,5 +483,136 @@ describe('Scratchpad current preset', () => {
         const result = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, preset: true } } });
         expect(result.text).not.toContain('Current preset');
         expect(readCurrentPreset).not.toHaveBeenCalled();
+    });
+});
+
+describe('Scratchpad shared context budget', () => {
+    const bytes = text => new TextEncoder().encode(text).length;
+    const occurrences = (text, body) => text.split(body).length - 1;
+    const headCopy = 'The shared context is too large to send. Turn off the persona, character cards, Author\'s Note, lorebooks or preset you do not need, then try again.';
+    const depthCopy = 'The selected chat messages are too large to share. Shorten them, pick specific messages, or turn off the persona, character cards, Author\'s Note, lorebooks and preset, then try again.';
+    const pickedCopy = 'These picked messages are too large to share. Pick fewer or shorter ones, then try again.';
+
+    test('shares a 20,000-character message whole and never marks a cut', async () => {
+        conversationState.conversationWorkspaceOpen = false;
+        chat.push({ name: 'Nova', mes: 'A'.repeat(19_993) + 'THE-END' });
+        const context = await buildContext({ source: currentSource(), settings: { depth: 1 } });
+        expect(chat.at(-1).mes).toHaveLength(20_000);
+        expect(context.text).toContain('THE-END');
+        expect(context.text).not.toContain('[...]');
+        expect(context.messageCount).toBe(1);
+        expect(context.leftOut).toBe(0);
+    });
+
+    test('fits CJK Conversation messages newest first to the exact byte budget', async () => {
+        branch.messages = Array.from({ length: 200 }, (_, index) => ({ id: String(index), role: 'user', mes: '猫'.repeat(16_000) }));
+        const context = await buildContext({ source: currentSource(), settings: { depth: 200 } });
+        expect(context.messageCount).toBe(29);
+        expect(context.leftOut).toBe(171);
+        expect(context.totalMessages).toBe(200);
+        expect(context.text).toContain('## Latest messages (29 of 200)');
+        expect(bytes(context.text)).toBe(1_392_877);
+        expect(occurrences(context.text, '猫'.repeat(16_000))).toBe(29);
+        const nextOlderLine = '#170 Conversation user:\n' + '猫'.repeat(16_000);
+        expect(bytes(context.text) + 2 + bytes(nextOlderLine)).toBeGreaterThan(MAX_CONTEXT_BYTES);
+    });
+
+    test('drops the oldest whole Roleplay messages and keeps the newest ones complete', async () => {
+        conversationState.conversationWorkspaceOpen = false;
+        const body = index => 'M' + index + ':' + 'x'.repeat(250_000) + ':END';
+        chat.push(...Array.from({ length: 10 }, (_, index) => ({ name: 'Nova', mes: body(index) })));
+        const context = await buildContext({ source: currentSource(), settings: { depth: 10 } });
+        expect(context.messageCount).toBe(5);
+        expect(context.totalMessages).toBe(10);
+        expect(context.leftOut).toBe(5);
+        expect(context.text).toContain('## Latest messages (5 of 10)');
+        for (const index of [5, 6, 7, 8, 9]) {
+            expect(context.text).toContain(body(index));
+            expect(occurrences(context.text, body(index))).toBe(1);
+        }
+        for (const index of [0, 1, 2, 3, 4]) expect(context.text).not.toContain(body(index));
+    });
+
+    test('refuses picked messages that cannot all fit and shares a smaller pick whole', async () => {
+        conversationState.conversationWorkspaceOpen = false;
+        const body = index => 'P' + index + ':' + 'C'.repeat(300_000) + ':END';
+        chat.push(...Array.from({ length: 6 }, (_, index) => ({ name: 'Nova', mes: body(index) })));
+        const source = currentSource();
+        await expect(buildContext({ source, settings: { picked: ['0', '1', '2', '3', '4', '5'] } })).rejects.toThrow(pickedCopy);
+        const context = await buildContext({ source, settings: { picked: ['0', '1', '2'] } });
+        expect(context.messageCount).toBe(3);
+        expect(context.leftOut).toBe(0);
+        for (const index of [0, 1, 2]) {
+            expect(context.text).toContain(body(index));
+            expect(occurrences(context.text, body(index))).toBe(1);
+        }
+        for (const index of [3, 4, 5]) expect(context.text).not.toContain(body(index));
+    });
+
+    test('refuses picked swipe versions that cannot all fit and shares a smaller pick whole', async () => {
+        conversationState.conversationWorkspaceOpen = false;
+        const swipes = [0, 1, 2].map(index => `V${index}:` + 'D'.repeat(600_000) + ':END');
+        chat.push({ name: 'Nova', swipe_id: 1, mes: swipes[1], swipes });
+        const source = currentSource();
+        await expect(buildContext({ source, settings: { picked: ['0:swipe:0', '0:swipe:1', '0:swipe:2'] } })).rejects.toThrow(pickedCopy);
+        const context = await buildContext({ source, settings: { picked: ['0:swipe:0', '0:swipe:1'] } });
+        expect(context.messageCount).toBe(1);
+        expect(context.swipeCount).toBe(2);
+        expect(context.leftOut).toBe(0);
+        expect(context.text).toContain('[swipe 1 of 3; alternative]');
+        expect(context.text).toContain('[swipe 2 of 3; current]');
+        expect(occurrences(context.text, swipes[0])).toBe(1);
+        expect(occurrences(context.text, swipes[1])).toBe(1);
+        expect(context.text).not.toContain(swipes[2]);
+    });
+
+    test('refuses a Conversation head that is too large', async () => {
+        characters[1].data.description = 'E'.repeat(1_450_000);
+        await expect(buildContext({ source: currentSource(), settings: { depth: 0, include: { card: true } } })).rejects.toThrow(headCopy);
+    });
+
+    test('refuses a single Roleplay message that is too large', async () => {
+        conversationState.conversationWorkspaceOpen = false;
+        chat.push({ name: 'Nova', mes: 'F'.repeat(1_500_000) });
+        await expect(buildContext({ source: currentSource(), settings: { depth: 1 } })).rejects.toThrow(depthCopy);
+    });
+
+    test('shares no messages at depth 0 and skips hidden messages entirely', async () => {
+        conversationState.conversationWorkspaceOpen = false;
+        chat.push({ name: 'Nova', mes: 'A short message.' });
+        const empty = await buildContext({ source: currentSource(), settings: { depth: 0 } });
+        expect(empty.messageCount).toBe(0);
+        expect(empty.leftOut).toBe(0);
+        expect(empty.text).toContain('## Latest messages (0 of 1)');
+        chat.length = 0;
+        const hiddenBody = 'H' + 'G'.repeat(199_999);
+        chat.push(...Array.from({ length: 10 }, () => ({ name: 'Nova', mes: hiddenBody, is_system: true })));
+        chat.push({ name: 'Nova', mes: 'VISIBLE-ONLY', is_user: true });
+        const visible = await buildContext({ source: currentSource(), settings: { depth: 2 } });
+        expect(visible.messageCount).toBe(1);
+        expect(visible.totalMessages).toBe(11);
+        expect(visible.leftOut).toBe(0);
+        expect(visible.text).toContain('VISIBLE-ONLY');
+        expect(visible.text).not.toContain(hiddenBody);
+    });
+
+    test('General refuses an oversized card but keeps the notebook path free of the budget check', async () => {
+        conversationState.conversationWorkspaceOpen = false;
+        home.visible = false;
+        chatId = '';
+        expect(currentSource()).toMatchObject({ kind: 'general', avatar: 'Roleplay.png' });
+        characters[0].data.description = 'E'.repeat(1_450_000);
+        const settings = { depth: 0, include: { card: true } };
+        await expect(buildContext({ source: currentSource(), settings })).rejects.toThrow(headCopy);
+        delete characters[0].data.description;
+        const general = await buildContext({ source: currentSource(), settings });
+        expect(general.leftOut).toBe(0);
+        expect(general.messageCount).toBe(0);
+        characters[0].data.description = 'E'.repeat(1_450_000);
+        setNotebookSource({ notebookId: 'nb', noteId: 'note', title: 'Saved plan' });
+        const notebook = await buildContext({ source: currentSource(), settings });
+        expect(notebook.text).toContain('Notebook discussion: Saved plan');
+        expect(notebook.leftOut).toBe(0);
+        expect(notebook.messageCount).toBe(0);
     });
 });
