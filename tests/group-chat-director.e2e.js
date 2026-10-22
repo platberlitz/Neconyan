@@ -79,6 +79,7 @@ test('the scene director picks who answers and shows why', async ({ app }) => {
     expect(indicator).toContain('Choosing who speaks next...');
     expect(indicator).toContain('Durable Mira is typing... · Mira knows the archive');
     await expect(page.locator('#group_typing_indicator')).toBeHidden();
+    await expect(page.locator('#group_scene_director_status')).toHaveText('Last turn: the Scene Director picked Durable Mira · Mira knows the archive');
 });
 
 test('a stuck director model falls back to the usual order within seconds', async ({ app }) => {
@@ -89,6 +90,14 @@ test('a stuck director model falls back to the usual order within seconds', asyn
     await openGroup(page, group);
     app.provider.mode.hold = 'unused-named-model';
     const before = app.provider.calls.length;
+    await page.evaluate(() => {
+        window.__toasts = [];
+        new MutationObserver(records => {
+            for (const node of records.flatMap(record => [...record.addedNodes])) {
+                if (node instanceof window.Element && node.matches('.toast')) window.__toasts.push(node.textContent);
+            }
+        }).observe(document.body, { childList: true, subtree: true });
+    });
 
     const started = Date.now();
     await send(page, 'Anyone around?');
@@ -102,6 +111,9 @@ test('a stuck director model falls back to the usual order within seconds', asyn
     expect(elapsed).toBeLessThan(10000);
     const names = ['Durable Nova', 'Durable Kit', 'Durable Mira'];
     expect(names).toContain((await lastReply(page))?.name);
+    await expect(page.locator('#group_scene_director_status')).toContainText('the Scene Director took longer than 3 seconds, so the usual order picked the speaker');
+    const toasts = await page.evaluate(() => window.__toasts);
+    expect(toasts.filter(text => text.includes('The Scene Director took longer than 3 seconds'))).toHaveLength(1);
 });
 
 test('the director can hand the scene back to the user without forcing another reply', async ({ app }) => {
@@ -115,4 +127,5 @@ test('the director can hand the scene back to the user without forcing another r
     expect(app.provider.calls).toHaveLength(1);
     expect(await page.evaluate(async () => (await import('/script.js')).chat.at(-1))).toMatchObject({ is_user: true, mes: 'Let me decide what to do next.' });
     await expect(page.locator('#group_typing_indicator')).toBeHidden();
+    await expect(page.locator('#group_scene_director_status')).toContainText('the Scene Director handed the scene back to you');
 });

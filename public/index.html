@@ -9388,13 +9388,14 @@
             <div id="group_scene_strip" class="displayNone">
                 <div id="group_scene_header">
                     <button id="group_scene_toggle" type="button" class="menu_button" aria-expanded="false" aria-controls="group_scene_panel">
-                        <i class="fa-solid fa-door-open" aria-hidden="true"></i><span id="group_scene_summary" data-i18n="Scene">Scene</span><i class="fa-solid fa-angle-down" aria-hidden="true"></i>
+                        <i class="fa-solid fa-clapperboard" aria-hidden="true"></i><span id="group_scene_summary" data-i18n="Scene">Scene</span><i class="fa-solid fa-angle-down" aria-hidden="true"></i>
                     </button>
                     <select id="group_scene_whisper" aria-label="Message audience" data-i18n="[aria-label]Message audience"><option value="" data-i18n="To everyone">To everyone</option></select>
                 </div>
                 <div id="group_scene_panel" class="displayNone">
                     <input id="group_scene_location" class="text_pole" maxlength="300" type="text" placeholder="Location: where is this scene?" aria-label="Location" data-i18n="[placeholder]Location: where is this scene?;[aria-label]Location">
                     <div id="group_scene_members" aria-label="Who is in the scene" data-i18n="[aria-label]Who is in the scene"></div>
+                    <small id="group_scene_director_status" class="displayNone" aria-live="polite"></small>
                     <small data-i18n="Tap a member to mark them away. They miss what's said meanwhile, and shared memory stays out when it could give it away.">Tap a member to mark them away. They miss what's said meanwhile, and shared memory stays out when it could give it away.</small>
                 </div>
             </div>
@@ -9414,8 +9415,8 @@
                     <i class="fa-solid fa-comment-dots"></i>
                     <span data-i18n="Speak Now">Speak Now</span>
                 </button>
-                <button type="button" id="group_scene_open" class="menu_button menu_button_icon" title="Scene: location, who is here and whispers" data-i18n="[title]Scene: location, who is here and whispers" aria-pressed="false" aria-controls="group_scene_strip">
-                    <i class="fa-solid fa-door-open"></i>
+                <button type="button" id="group_scene_open" class="menu_button menu_button_icon" title="Scene: location, who is here, whispers and the Scene Director" data-i18n="[title]Scene: location, who is here, whispers and the Scene Director" aria-pressed="false" aria-controls="group_scene_strip">
+                    <i class="fa-solid fa-clapperboard"></i>
                     <span data-i18n="Scene">Scene</span>
                 </button>
                 <button type="button" id="group_speaker_hide" class="menu_button menu_button_icon" title="Hide this bar (restore it from the wand menu)" data-i18n="[title]Hide this bar (restore it from the wand menu)">
