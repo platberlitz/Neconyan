@@ -1938,7 +1938,8 @@
         align-items: center !important;
         min-height: calc(var(--sb-mobile-touch-target, 44px) + 8px) !important;
         padding: 4px 6px !important;
-        margin-bottom: 2px !important;
+        /* Inset past the bottom panel's 3px generating ring so the bar never paints over it. */
+        margin: 0 4px 2px !important;
         border-radius: 9px !important;
         overflow: hidden !important;
     }
