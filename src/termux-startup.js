@@ -59,6 +59,11 @@ export function resolveTermuxRecovery(
     return { ...unchanged, recovery: saved === root };
 }
 
+function acquireWakeLock(wakeLock, warn) {
+    const wake = wakeLock();
+    if (wake?.error || wake?.status !== 0) warn('The Termux wake lock could not be acquired. Use Acquire wakelock in the Termux notification during long operations.');
+}
+
 /** Configure identities before protected storage opens and carry that policy into workers. */
 export async function configureTermuxStartup({ dataRoot, termuxRecovery = false }, {
     termux = isNativeTermuxEnvironment(), bun = isBunRuntime(),
@@ -79,6 +84,7 @@ export async function configureTermuxStartup({ dataRoot, termuxRecovery = false 
     }
     if (bun) {
         if (mode || termuxRecovery) throw new Error('This Termux recovery uses Node.js file identities. Start Neconyan with Node.js to keep using this data.');
+        acquireWakeLock(wakeLock, warn);
         return { mode: 'unchanged' };
     }
     const probe = await probeTermuxFileIdentity(root);
@@ -97,8 +103,7 @@ export async function configureTermuxStartup({ dataRoot, termuxRecovery = false 
     } else if (existing && probe.fallback) {
         warn('This older Termux data folder uses existing file identities. They were kept unchanged. For failed imports, use the Termux recovery launcher described in docs/termux-import-recovery.md.');
     }
-    const wake = wakeLock();
-    if (wake?.error || wake?.status !== 0) warn('The Termux wake lock could not be acquired. Use Acquire wakelock in the Termux notification during long operations.');
+    acquireWakeLock(wakeLock, warn);
     if (termuxRecovery) log(`Continuing the saved Termux recovery data folder: ${root}`);
     return { mode: useZero ? 'zero' : existing && probe.fallback ? 'legacy' : 'native' };
 }
