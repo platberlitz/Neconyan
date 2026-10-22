@@ -2051,6 +2051,7 @@ function renderPreview() {
             clear(output);
             append(output, [
                 h('p', { text: t`About ${tokens} tokens. Chat messages: ${context.messageCount} of ${context.totalMessages}. Lorebook entries: ${context.lore.entries.filter(entry => entry.included).length}.` }),
+                context.leftOut ? h('p', { text: t`Older messages left out to fit: ${context.leftOut}. They are not sent at all.` }) : null,
                 context.swipeCount ? h('p', { text: t`Swipes shared for comparison: ${context.swipeCount}.` }) : null,
                 context.preset ? h('p', { text: t`Preset modules on: ${context.preset.on}. Off: ${context.preset.off}.` }) : null,
                 h('p', { text: t`Saved notes or sections: ${notes.notes.filter(note => !note.unavailable).length}.` }),
