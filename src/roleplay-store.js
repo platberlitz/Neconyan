@@ -24,6 +24,12 @@ const ROLEPLAY_UNBOUND_EXTENSION_SETTINGS = Object.freeze(['neconyan_conversatio
 const leases = new WeakMap();
 const observedAccounts = new Map();
 const activeAccountLeases = new Map();
+const failedAccountLockCleanups = new WeakSet();
+
+/** Preserve the original failure while letting startup distinguish an unsafe cleanup. */
+export function roleplayLockCleanupFailed(failure) {
+    return failedAccountLockCleanups.has(failure);
+}
 
 export function roleplayError(code, message, status = 409) {
     return Object.assign(new Error(message), { code, status });
@@ -931,7 +937,10 @@ function locked(scope, operation, initialise = false) {
     const release = acquireChatFileLock(path.join(root, 'state.json'));
     let result;
     try { result = operation(root); } catch (failure) {
-        try { release(); } catch (cause) { console.warn('Roleplay account lock cleanup also failed:', cause?.code || cause?.name); }
+        try { release(); } catch (cause) {
+            if (failure !== null && ['object', 'function'].includes(typeof failure)) failedAccountLockCleanups.add(failure);
+            console.warn('Roleplay account lock cleanup also failed:', cause?.code || cause?.name);
+        }
         throw failure;
     }
     try { release(); } catch (cause) {

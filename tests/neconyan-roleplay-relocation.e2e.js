@@ -2,10 +2,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 
-for (const phone of [false, true]) test(`a complete stopped folder copy opens and saves on ${phone ? 'phone' : 'desktop'} without repair`, async ({ app, initialServerOptions }, info) => {
+const ctimePreload = fileURLToPath(new URL('./termux-ctime-fixture.js', import.meta.url));
+
+for (const termux of [false, true]) for (const phone of [false, true]) test(`a complete stopped folder copy opens and saves on ${termux ? 'Termux ' : ''}${phone ? 'phone' : 'desktop'} without repair`, async ({ app, initialServerOptions }, info) => {
     test.setTimeout(180000);
     const account = await app.account({ phone });
     const chats = [];
@@ -34,7 +37,12 @@ for (const phone of [false, true]) test(`a complete stopped folder copy opens an
     const original = path.join(app.directory, 'original-data');
     fs.renameSync(app.dataRoot, original);
     fs.cpSync(original, app.dataRoot, { recursive: true, verbatimSymlinks: true });
-    await app.start(initialServerOptions);
+    const destinationOptions = termux ? { env: { NODE_OPTIONS: `--import=${ctimePreload}`, NECONYAN_TERMUX_ZERO_BIRTHTIME_DEVICE: '' } } : initialServerOptions;
+    await app.start(destinationOptions);
+    if (termux) {
+        expect(JSON.parse(fs.readFileSync(path.join(app.dataRoot, '_termux-file-identity.json'), 'utf8'))).toEqual({ version: 1, birthtime: 'zero' });
+        expect(app.serverOutput).toContain('Termux file identity compatibility is active');
+    }
 
     for (const chat of chats) {
         const response = await account.context.request.post(chat.route + 'get', { headers: account.headers, data: chat.fields });
@@ -83,7 +91,7 @@ for (const phone of [false, true]) test(`a complete stopped folder copy opens an
     await info.attach('moved-chat', { body: await page.screenshot(), contentType: 'image/png' });
     await page.close();
     await app.stop();
-    await app.start(initialServerOptions);
+    await app.start(destinationOptions);
     for (const chat of chats) {
         const records = await account.post(chat.route + 'get', chat.fields);
         expect(records[2].mes).toBe(chat.name + ' edited after moving.');

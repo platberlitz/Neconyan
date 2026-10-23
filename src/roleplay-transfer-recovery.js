@@ -3,11 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual, TextDecoder } from 'node:util';
 import { parseChatJsonl } from './chat-recovery.js';
+import { USER_DIRECTORY_TEMPLATE } from './constants.js';
 import { FILE_WRITE_RECOVERY_MAX_BYTES, FILE_WRITE_RECOVERY_SUFFIX, fsyncDirectorySync } from './util.js';
 import { normaliseRoleplayLocator, normaliseRoleplayGroupId, roleplayChatPath, roleplayContentHash, roleplayEntityContent,
     roleplayParsedContentHash } from './generation/roleplay-source.js';
 import { confirmRoleplayAccount, createRoleplayDirectory, inspectRoleplayFile, readRoleplayFile, readRoleplayWriteJournal,
-    roleplayAvatarOwner, roleplayError, roleplayHash, roleplayLease, roleplayPathKey, saveRoleplayAccount, withRoleplayAccount } from './roleplay-store.js';
+    roleplayAvatarOwner, roleplayError, roleplayHash, roleplayLease, roleplayLockCleanupFailed, roleplayPathKey, roleplayStoreDirectory,
+    saveRoleplayAccount, withRoleplayAccount } from './roleplay-store.js';
 
 const FILE_LIMIT = Math.max(64 * 1024 * 1024, FILE_WRITE_RECOVERY_MAX_BYTES);
 const FILE_COUNT_LIMIT = 100000;
@@ -25,7 +27,7 @@ function checked(relative, read) {
 }
 
 /** Includes staged writes and journals, but never follows links or copies live locks. */
-function inventory(lease) {
+function inventory(lease, strictLocks = false) {
     const { scope, root } = roleplayLease(lease);
     const files = [];
     const walk = (directory, prefix, library) => {
@@ -33,8 +35,16 @@ function inventory(lease) {
         checked(prefix, () => readRoleplayFile(path.join(directory, '.neconyan-recovery-check'), 0, { allowMissingParent: true }));
         if (!fs.existsSync(directory)) return;
         for (const entry of fs.readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-            if (entry.name.endsWith('.lock') || entry.name.endsWith('.lock.owner')) continue;
             const filename = path.join(directory, entry.name);
+            const lockArtifact = strictLocks ? /^\.neconyan-chat-[a-f0-9]{64}\.lock(?:\.owner)?$/.test(entry.name)
+                : entry.name.endsWith('.lock') || entry.name.endsWith('.lock.owner');
+            if (lockArtifact) {
+                if (strictLocks) {
+                    const stat = fs.lstatSync(filename);
+                    if (stat.isSymbolicLink() || (stat.isDirectory() ? fs.readdirSync(filename).length > 0 : !stat.isFile() || stat.nlink !== 1)) throw relocationChanged();
+                }
+                continue;
+            }
             const relative = path.posix.join(prefix, entry.name);
             if (entry.isDirectory()) {
                 if (!OPERATION_BINARY_DIRECTORIES.has(relative)) walk(filename, relative, library);
@@ -166,7 +176,7 @@ function relocationContentHash(resource, bytes) {
  * prove the stored content hash and size. Every unreadable, linked, oversized,
  * journal-backed or changed file is a conservative refusal, never a rebind.
  */
-function observeRelocation(scope, state, instanceId, resource) {
+function observeRelocation(scope, state, instanceId, resource, verifyContent = false) {
     if (state.paths[roleplayPathKey(state, resource.kind, resource.locator)]?.instanceId !== instanceId) return { outcome: 'refused' };
     try {
         const filename = relocationFilename(scope, resource);
@@ -174,7 +184,7 @@ function observeRelocation(scope, state, instanceId, resource) {
         const inspection = inspectRoleplayFile(filename, FILE_LIMIT, { allowMissingParent: true });
         if (!inspection) return { outcome: 'refused', missing: true };
         if (inspection.rawHash !== resource.head.rawHash) return { outcome: 'refused' };
-        if (isDeepStrictEqual(inspection.physical, resource.head.physical)) return { outcome: 'match' };
+        if (!verifyContent && isDeepStrictEqual(inspection.physical, resource.head.physical)) return { outcome: 'match' };
         // The same exact bytes now have a different physical identity. Read them through the
         // protected reader once more and require both observations to agree before parsing.
         let file, contentHash;
@@ -228,6 +238,92 @@ function assertRelocationStable(candidates) {
         const file = inspectRoleplayFile(candidate.filename, FILE_LIMIT, { allowMissingParent: true });
         if (!file || file.rawHash !== candidate.rawHash || file.size !== candidate.size
             || !isDeepStrictEqual(file.physical, candidate.physical)) throw relocationChanged();
+    }
+}
+
+/** Physical discovery includes disabled accounts; the user database is not authority here. */
+function discoverHandoffAccounts(dataRoot) {
+    const protectedRoot = path.join(dataRoot, '_roleplay');
+    return fs.readdirSync(protectedRoot).sort().map(name => {
+        if (!/^[a-f0-9]{64}$/.test(name)) throw relocationChanged();
+        const root = path.join(protectedRoot, name);
+        const file = readRoleplayFile(path.join(root, 'identity.json'), 4096);
+        if (!file) throw relocationChanged();
+        const identity = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(file.bytes));
+        const directories = Object.fromEntries(Object.entries(USER_DIRECTORY_TEMPLATE)
+            .map(([key, relative]) => [key, path.join(dataRoot, identity.owner, relative)]));
+        const base = { owner: identity.owner, directories };
+        if (roleplayStoreDirectory(base) !== root) throw relocationChanged();
+        // Do not create a missing account root to make the handoff appear complete.
+        readRoleplayFile(path.join(directories.root, '.neconyan-handoff-check'), 0);
+        return base;
+    });
+}
+
+function observeCleanHandoff(lease, device) {
+    const { state, scope, root, identityFile, stateFile } = roleplayLease(lease);
+    if (state.pending || Object.values(state.accountResets ?? {}).some(receipt => receipt.phase !== 'complete')
+        || !state.placement || (state.placement.dev === identityFile.physical.dev && state.placement.ino === identityFile.physical.ino)) {
+        throw relocationChanged();
+    }
+    // All active libraries participate, including journals belonging to untracked files.
+    // Backups beneath the protected store are historical evidence, not active journals.
+    const files = inventory(lease, true);
+    if (files.some(file => file.library && file.relative.endsWith(FILE_WRITE_RECOVERY_SUFFIX))) throw relocationChanged();
+    const observations = [];
+    for (const [instanceId, resource] of Object.entries(state.resources)) {
+        if (resource.status !== 'live' || resource.accountId !== state.accountId || resource.dataEpoch !== state.dataEpoch) continue;
+        const observed = observeRelocation(scope, state, instanceId, resource, true);
+        if (observed.outcome !== 'relocated') throw relocationChanged();
+        observations.push({ instanceId, resource, ...observed });
+    }
+    assertRelocationCollision(observations, observations);
+    const projected = observations.map(item => ({ ...item, physical: { ...item.physical,
+        birthtimeNs: item.physical.dev === device ? '0' : item.physical.birthtimeNs } }));
+    assertRelocationCollision(projected, projected);
+    // This confirmation is deliberately read-only: ordinary confirmation may retire
+    // historical repair journals. No cleanup authority is granted by this preflight.
+    for (const [name, expected] of [['identity.json', identityFile], ['state.json', stateFile]]) {
+        if (readRoleplayWriteJournal(path.join(root, name))) throw relocationChanged();
+        const current = readRoleplayFile(path.join(root, name));
+        if (!current || current.rawHash !== expected.rawHash || !isDeepStrictEqual(current.physical, expected.physical)) throw relocationChanged();
+    }
+    return { files, observations };
+}
+
+/**
+ * Publish only the existing stable-policy marker, under every account lease and the
+ * original raw policy. Ordinary startup later reconnects each ledger atomically.
+ * Validation refusals return false; publication and lock-cleanup errors must escape.
+ */
+export function publishCleanTermuxHandoff(dataRoot, device, publish) {
+    let accounts;
+    try { accounts = discoverHandoffAccounts(dataRoot); } catch { return false; }
+    if (!accounts.length) return false;
+    const held = [];
+    let publishing = false;
+    const lockNext = index => {
+        if (index < accounts.length) return withRoleplayAccount(accounts[index], null, lease => {
+            let observation;
+            try { observation = observeCleanHandoff(lease, device); } catch { return false; }
+            held.push({ lease, observation });
+            return lockNext(index + 1);
+        });
+        try {
+            for (const { lease, observation } of held) {
+                if (!isDeepStrictEqual(observeCleanHandoff(lease, device), observation)) throw relocationChanged();
+            }
+            if (!isDeepStrictEqual(discoverHandoffAccounts(dataRoot), accounts)) throw relocationChanged();
+        } catch { return false; }
+        publishing = true;
+        publish();
+        return true;
+    };
+    try { return lockNext(0); } catch (error) {
+        // Loading an incomplete/retired store is a refusal, never an invitation to initialise it.
+        if (!publishing && !roleplayLockCleanupFailed(error)
+            && ['ROLEPLAY_STORE_DAMAGED', 'ROLEPLAY_ACCOUNT_UNAVAILABLE'].includes(error?.code)) return false;
+        throw error;
     }
 }
 
