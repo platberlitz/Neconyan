@@ -9,7 +9,7 @@ import { tryWriteFileSync } from '../util.js';
 /** Permanent evidence for native workflows using the existing jobs runner. */
 export function createOperationRecords({ namespace, label, errorCode, recordLimit, planLimit,
     storeLimit = 512 * 1024 * 1024, maximumRecordBytes = 64 * 1024 * 1024, canRelease = () => true,
-    survivesReset = () => false, reconcile = () => false }) {
+    survivesReset = () => false, reconcile = () => false, reserves = value => ['preparing', 'accepted'].includes(value.state) }) {
     if (!/^[a-z][a-z-]*$/.test(namespace)) throw new Error('Invalid operation namespace.');
     const labError = (message, status = 409) => roleplayError(errorCode, message.replaceAll('Labs', label), status);
     const states = new Set(['preparing', 'accepted', 'completed', 'refused']);
@@ -70,19 +70,18 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
         return entry;
     }
 
-    const open = state => ['preparing', 'accepted'].includes(state);
     function save(filename, value, before, { wasOpen = false } = {}) {
         const bytes = JSON.stringify(value);
         if (Buffer.byteLength(bytes) > recordLimit(value.kind)) throw labError('The saved Labs result is too large to store.', 413);
         // An open record already holds its full reservation, so rewriting it cannot change the store total.
-        if (!(before && wasOpen && open(value.state))) {
-            let reserved = open(value.state) ? recordLimit(value.kind) : Buffer.byteLength(bytes);
+        if (!(before && wasOpen && reserves(value))) {
+            let reserved = reserves(value) ? recordLimit(value.kind) : Buffer.byteLength(bytes);
             for (const name of fs.readdirSync(path.dirname(filename))) {
                 const other = path.join(path.dirname(filename), name);
                 if (other === filename || !/^[a-f0-9]{64}\.json$/.test(name)) continue;
                 const item = summarize(other);
                 if (!item.value) throw labError('A saved Labs record is missing.');
-                reserved += open(item.value.state) ? recordLimit(item.value.kind) : item.size;
+                reserved += reserves(item.value) ? recordLimit(item.value.kind) : item.size;
             }
             if (reserved > storeLimit) throw labError('Labs storage is full. Existing records were kept.', 413);
         }
@@ -115,7 +114,7 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
         let used = recordLimit(kind);
         for (const { size, value } of records(base)) {
             if (!value) throw labError('A saved Labs record is missing.');
-            const open = ['preparing', 'accepted'].includes(value.state);
+            const open = reserves(value);
             used += open ? recordLimit(value.kind) : size;
             if (used > storeLimit) throw labError('Labs storage has no room for another result. Existing records were kept.', 413);
             if (open && value.applyTarget && Object.keys(value.effects).length && roleplayHash(value.account) === roleplayHash(stamp(account))
@@ -152,7 +151,7 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
             const filename = filenameFor(base, account, key);
             const existing = read(filename).value;
             if (existing) return false;
-            reserve(base, null, account);
+            if (kind !== 'distill' || namespace !== 'labs') reserve(base, null, account);
             createRoleplayDirectory(directoryFor(base), roleplayStoreDirectory(base));
             const plan = {};
             save(filename, { version: 1, key, account: stamp(account), kind, label: 'Refused Labs submission',
@@ -167,7 +166,7 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
             if (!value || !belongs(value, account) || kind && value.kind !== kind) return [];
             return [{ key: value.key, kind: value.kind, state: value.state, jobId: value.jobId, createdAt: value.createdAt,
                 label: value.label, book: value.plan.target?.name ?? null, operation: value.plan.operation ?? null,
-                resultHash: value.resultHash ?? null }];
+                resultHash: value.resultHash ?? null, ...(value.lifecycle ? { lifecycle: value.lifecycle } : {}) }];
         }).sort((a, b) => b.createdAt - a.createdAt));
     }
 
@@ -182,8 +181,8 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
             if (!value || !belongs(value, currentAccount) || value.jobId !== context.job.id || value.planHash !== identity.planHash
             || roleplayHash(value.account) !== roleplayHash(identity.account)
             || value.kind !== context.job.type.slice(namespace.length + 1)) throw labError('This job does not belong to that Labs record.');
-            let wasOpen = open(value.state);
-            return operation({ lease, value, save: () => { file = save(filename, value, file, { wasOpen }); wasOpen = open(value.state); }, base, account: identity.account });
+            let wasOpen = reserves(value);
+            return operation({ lease, value, save: () => { file = save(filename, value, file, { wasOpen }); wasOpen = reserves(value); }, base, account: identity.account });
         });
     }
 
@@ -199,7 +198,7 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
     }
 
     /** The complete plan is saved before a paused job can be accepted or released. */
-    function admitLabJob(base, account, { key, kind, input, plan, label, applyTarget = null, validateLocked = () => {} }) {
+    function admitLabJob(base, account, { key, kind, input, plan, label, applyTarget = null, validateLocked = () => {}, beforeAcceptLocked = () => {} }) {
         if (!/^[a-z][a-z.-]{0,63}$/.test(kind) || !plan || Buffer.byteLength(JSON.stringify(plan)) > planLimit(kind)) {
             throw labError('The Labs plan is invalid or too large.', 413);
         }
@@ -208,6 +207,9 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
             const filename = filenameFor(base, account, key);
             let { file, value } = read(filename);
             if (value && (value.requestHash !== requestHash || roleplayHash(value.account) !== roleplayHash(account))) throw labError('This Labs key was already used for different work.');
+            if (namespace === 'labs' && kind === 'distill' && value?.lifecycle?.retired) return {
+                created: false, job: value.jobId ? getJob(base.directories, value.jobId) : null, record: value,
+            };
             if (value && value.state !== 'preparing') return { created: false, job: value.jobId ? getJob(base.directories, value.jobId) : null, record: value };
             if (!value) {
                 validateLocked(lease);
@@ -215,11 +217,24 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
                 createRoleplayDirectory(directoryFor(base), roleplayStoreDirectory(base));
                 value = { version: 1, key, account: stamp(account), kind, label, requestHash, plan, planHash: roleplayHash(plan),
                     applyTarget, state: 'preparing', jobId: null, effects: {}, createdAt: Date.now() };
+                if (namespace === 'labs' && kind === 'distill') value.requestInput = input;
                 file = save(filename, value, null);
             }
-            const accepted = acceptJob(base.directories, { owner: base.owner, type: `${namespace}.${kind}`, submissionKey: `${namespace}:${account.accountId}:${key}`,
-                intent: { [namespace]: { key, account: stamp(account), planHash: value.planHash } },
-                target: applyTarget || { kind: namespace, id: roleplayHash([account.accountId, key]) }, paused: true, label: value.label });
+            beforeAcceptLocked(lease, value);
+            let accepted;
+            try {
+                accepted = acceptJob(base.directories, { owner: base.owner, type: `${namespace}.${kind}`, submissionKey: `${namespace}:${account.accountId}:${key}`,
+                    intent: { [namespace]: { key, account: stamp(account), planHash: value.planHash } },
+                    target: applyTarget || { kind: namespace, id: roleplayHash([account.accountId, key]) }, paused: true, label: value.label });
+            } catch (error) {
+                // This named store refusal precedes its ledger write. A lost write/acknowledgement is deliberately excluded.
+                if (namespace === 'labs' && kind === 'distill' && error.code === 'JOB_STORE_FULL') {
+                    value.state = 'refused'; value.jobId = ''; value.error = error.message;
+                    save(filename, value, file);
+                    error.notAccepted = true;
+                }
+                throw error;
+            }
             value.jobId = accepted.job.id;
             value.state = 'accepted';
             save(filename, value, file);
@@ -249,12 +264,33 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
             value.result = result;
             value.resultHash = roleplayHash(result);
             value.state = 'completed';
+            if (namespace === 'labs' && value.kind === 'distill') delete value.partial;
             save();
             return result;
         });
     }
 
+    /** Small synchronous transaction used by the Distiller's durable retry receipts. */
+    function transaction(base, account, operation) {
+        return withRoleplayAccount(base, account, lease => transactionLocked(lease, operation));
+    }
+
+    function transactionLocked(lease, operation) {
+        const { scope: base } = roleplayLease(lease);
+        const account = stamp(base);
+        return operation(lease, {
+            read: key => read(filenameFor(base, account, key)).value,
+            write: value => {
+                const filename = filenameFor(base, account, value.key);
+                createRoleplayDirectory(directoryFor(base), roleplayStoreDirectory(base));
+                save(filename, value, read(filename).file);
+            },
+            all: (kind = '') => records(base).map(item => item.value).filter(value => value && belongs(value, account) && (!kind || value.kind === kind))
+                .map(value => read(filenameFor(base, account, value.key)).value),
+        });
+    }
+
     return Object.freeze({ error: labError, assertTargetIdle: assertLabsTargetIdle, read: readLabRecord,
         refuse: refuseLabSubmission, list: listLabRecords, withRecord: withLabRecord, mutateLocked: mutateLabRecordLocked,
-        admit: admitLabJob, finalize: finalizeLabSubmission, finish: finishLabJob });
+        admit: admitLabJob, finalize: finalizeLabSubmission, finish: finishLabJob, transaction, transactionLocked });
 }

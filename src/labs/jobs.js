@@ -3,7 +3,8 @@ import { registerHandler, noteOwner } from '../jobs/runner.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 import { isNativeLorebook } from '../../public/scripts/neconyan-lorebook-tools-core.js';
-import { admitLabJob, finalizeLabSubmission, finishLabJob, labError, readLabRecord, withLabRecord } from './store.js';
+import { admitLabJob, finalizeLabSubmission, finishLabJob, labError, readLabRecord, withLabRecord,
+    reconcileDistillations, distillTransaction, fenceDistillation, assertDistillActive } from './store.js';
 import { captureDistillPlan, runDistill } from './distill.js';
 import { captureLabApply, captureLabBook, applyLabBook } from './books.js';
 import { computeLab } from './compute.js';
@@ -38,6 +39,7 @@ export async function acceptLabJob(request, body = {}) {
     const definition = definitions.get(kind);
     if (!definition) throw labError('That native Lab is not available.', 400);
     const { base, account } = labAccount(request);
+    if (kind === 'distill') reconcileDistillations(base, account);
     const existing = readLabRecord(base, key);
     if (existing) {
         if (existing.requestHash !== roleplayHash({ kind, input })) throw labError('This Labs key was already used for different work.');
@@ -56,10 +58,48 @@ export async function acceptLabJob(request, body = {}) {
     return { ...accepted, job: accepted.job && getJob(base.directories, accepted.job.id) };
 }
 
+/** One deliberate replacement; an acknowledgement retry resolves the durable winning attempt. */
+export async function replaceDistillation(request, body = {}) {
+    const { previousKey, previousRevision, previousBody, consent, key, kind, ...input } = body;
+    if (kind !== 'distill' || typeof previousKey !== 'string' || !previousKey || previousKey.length > 200
+        || typeof key !== 'string' || !key || key.length > 200 || key === previousKey || !Number.isSafeInteger(previousRevision) || previousRevision < 0) {
+        throw labError('This distillation retry needs its earlier request and current selections.', 400);
+    }
+    const { base, account } = labAccount(request);
+    reconcileDistillations(base, account);
+    const winner = distillTransaction(base, account, (_lease, tx) => {
+        const old = tx.read(previousKey);
+        const linked = old?.lifecycle?.replacement && tx.read(old.lifecycle.replacement.key);
+        return linked && linked.state !== 'refused' ? linked : null;
+    });
+    if (winner) return acceptLabJob(request, { ...winner.requestInput, key: winner.key, kind: 'distill' });
+    const existing = readLabRecord(base, key);
+    if (existing && existing.requestHash !== roleplayHash({ kind, input })) throw labError('This Labs key was already used for different work.');
+    if (existing && existing.state !== 'preparing') return acceptLabJob(request, { ...input, kind, key });
+    // Source validation happens before the earlier operation is fenced.
+    const plan = existing?.plan ?? await captureDistillPlan(base, account, input);
+    const replacement = { previousKey, previousRevision, previousBody, consent, key };
+    let accepted;
+    try {
+        accepted = admitLabJob(base, account, { key, kind, input, plan, label: definitions.get(kind).label,
+            validateLocked: lease => fenceDistillation(lease, replacement, null, true),
+            beforeAcceptLocked: (lease, value) => fenceDistillation(lease, replacement, value) });
+    } catch (error) {
+        if (!error.replacementKey) throw error;
+        const winning = readLabRecord(base, error.replacementKey);
+        if (!winning?.requestInput) throw error;
+        return acceptLabJob(request, { ...winning.requestInput, key: winning.key, kind: 'distill' });
+    }
+    if (accepted.job) finalizeLabSubmission({ ...base, job: accepted.job });
+    noteOwner(base.owner);
+    return { ...accepted, job: accepted.job && getJob(base.directories, accepted.job.id) };
+}
+
 export async function runLabJob(context, dependencies = {}) {
     const record = withLabRecord(context, ({ value }) => value);
     if (record.state === 'completed') return { result: { key: record.key, resultHash: record.resultHash } };
     if (record.state === 'refused') throw labError(record.error || 'This reviewed change was refused.');
+    if (record.kind === 'distill') assertDistillActive(context);
     context.signal.throwIfAborted();
     if (record.kind === 'apply') {
         try { applyLabBook(context, dependencies); } catch (error) {

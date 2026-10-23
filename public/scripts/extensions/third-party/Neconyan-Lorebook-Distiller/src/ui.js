@@ -25,6 +25,11 @@ function option(value, label) {
     return node;
 }
 
+function setShown(node, shown) {
+    node.hidden = !shown;
+    node.style.display = shown ? '' : 'none';
+}
+
 function labelled(labelText, control) {
     const wrapper = el('label', 'sbld-field');
     wrapper.append(el('span', 'sbld-field-label', labelText), control);
@@ -151,8 +156,19 @@ export async function openDistiller(ctx, opener) {
     const list = el('div', 'sbld-list');
     const applyButton = el('button', 'menu_button sbld-button sbld-apply', 'Add selected entries');
     applyButton.type = 'button';
-    applyButton.hidden = true;
-    root.append(controls, status, list, applyButton);
+    setShown(applyButton, false);
+    const recoveryActions = el('div', 'sbld-actions');
+    const technicalDetails = el('details');
+    setShown(technicalDetails, false);
+    const technicalText = el('p');
+    technicalDetails.append(el('summary', '', 'Request details'), technicalText);
+    const retryButton = el('button', 'menu_button menu_button_primary', 'Try again with current selections');
+    const checkButton = el('button', 'menu_button', 'Check previous request');
+    const stopButton = el('button', 'menu_button', 'Stop');
+    for (const button of [retryButton, checkButton, stopButton]) button.type = 'button';
+    for (const button of [retryButton, checkButton, stopButton]) setShown(button, false);
+    recoveryActions.append(retryButton, checkButton, stopButton);
+    root.append(controls, status, recoveryActions, technicalDetails, list, applyButton);
 
     function syncNewBookVisibility() {
         newBookName.parentElement.hidden = bookSelect.value !== NEW_BOOK;
@@ -196,6 +212,8 @@ export async function openDistiller(ctx, opener) {
     });
 
     let busy = false;
+    let runningController = null;
+    let previousRecord = null;
     let resultTarget = null;
     const savedSelect = el('select', 'text_pole sbld-select');
     savedSelect.setAttribute('aria-label', 'Saved distillations');
@@ -214,25 +232,103 @@ export async function openDistiller(ctx, opener) {
         const used = new Set(record.review?.usedIds ?? []);
         const proposals = record.result.proposals.filter(proposal => !used.has(proposal.id));
         list.replaceChildren(...proposals.map(proposalCard));
-        applyButton.hidden = !proposals.length;
+        setShown(applyButton, Boolean(proposals.length));
         status.textContent = proposals.length
             ? `Review ${proposals.length} proposed entries for '${record.result.target.name}'. Unticked entries are skipped.`
             : 'There are no remaining proposed entries to add.';
         if (record.result.failedChunks) status.textContent += ` ${record.result.failedChunks} parts returned no readable proposals.`;
+        if (record.result.incomplete) status.textContent += ' This is a partial result from the earlier request; other parts were stopped.';
     }
     const observation = { signal: abort.signal, onProgress: progress => {
         if (!abort.signal.aborted) status.textContent = `${progress?.stage || 'Working on the server'}${progress?.total ? ` (${progress.completed}/${progress.total})` : ''}...`;
     } };
+    function showPrevious(record) {
+        previousRecord = record;
+        const uncertain = record?.state !== 'completed' && (record?.lifecycle?.uncertain || record?.state === 'preparing' && !record?.jobId);
+        setShown(retryButton, Boolean(uncertain));
+        setShown(checkButton, Boolean(record));
+        setShown(stopButton, Boolean(record?.jobId) && !record.lifecycle?.retired && record.state !== 'completed');
+        distillButton.disabled = busy || Boolean(uncertain);
+        if (!record) { setShown(technicalDetails, false); return; }
+        const details = [record.lifecycle?.error?.status ? `HTTP ${record.lifecycle.error.status}` : '', record.lifecycle?.error?.code,
+            `request ${record.key}`, record.jobId ? `job ${record.jobId}` : ''].filter(Boolean);
+        technicalText.textContent = details.join('; ');
+        setShown(technicalDetails, true);
+        if (record.state === 'completed') { showResult(record); return; }
+        if (record.partial?.proposals?.length) {
+            list.replaceChildren(...record.partial.proposals.map(proposalCard));
+            setShown(applyButton, false);
+        }
+        status.textContent = uncertain
+            ? `${record.state === 'preparing' ? 'The earlier acceptance is incomplete. ' : ''}The previous request may still be processing, or its reply may have been lost. Trying again may use tokens again.`
+            : record.lifecycle?.removed ? record.lifecycle.reason === 'cleared' ? 'The previous job was cleared. You can distill with current selections.'
+                : 'The previous job is no longer available. You can distill with current selections.'
+                : record.lifecycle?.retired ? `Previous distillation: ${record.error || record.lifecycle.reason}. You can distill with current selections.`
+                    : 'The previous distillation is still on the server. Check its progress or stop it.';
+    }
+    function reportDistillError(error) {
+        if (abort.signal.aborted || error?.name === 'AbortError') return;
+        if (error.record) {
+            showPrevious(error.record);
+            if (error.phase === 'generation') {
+                const message = String(error.generationMessage || error.record.error || 'No completed result was saved').replace(/\.\s*$/, '');
+                const guidance = error.record.lifecycle?.uncertain || error.record.lifecycle?.removed
+                    ? status.textContent : 'You can distill with current selections.';
+                status.textContent = `The distillation failed while generating: ${message}. ${guidance}`;
+            }
+        } else {
+            const prefix = error.phase === 'submission' ? 'The distillation could not be submitted'
+                : error.phase === 'generation' ? 'The distillation failed while generating' : 'The previous request could not be checked';
+            status.textContent = `${prefix}: ${error.message}`;
+            if (error.phase === 'submission' && !error.uncertain) status.textContent += ' Check the selected chat, lorebook and connection, then try Distill again.';
+            if (error.uncertain || error.phase === 'observation') {
+                status.textContent += ' The previous request may still be processing, or its reply may have been lost. Trying again may use tokens again.';
+                setShown(retryButton, true); setShown(checkButton, true);
+            }
+        }
+        const details = [error.status ? `HTTP ${error.status}` : '', error.serverCode || error.code,
+            error.requestKey ? `request ${error.requestKey}` : '', error.jobId ? `job ${error.jobId}` : ''].filter(Boolean);
+        setShown(technicalDetails, Boolean(details.length));
+        technicalText.textContent = details.join('; ');
+    }
+    async function refreshPrevious() {
+        if (busy || abort.signal.aborted) return;
+        try {
+            const record = await client.distillStatus();
+            if (!abort.signal.aborted && !busy) showPrevious(record);
+            await refreshSaved();
+        } catch (error) { if (!busy) reportDistillError(error); }
+    }
+    checkButton.addEventListener('click', () => void refreshPrevious());
+    stopButton.addEventListener('click', async () => {
+        if (runningController) { runningController.abort('user-stop'); return; }
+        if (!previousRecord?.jobId) return;
+        try {
+            await client.request(`/api/jobs/${encodeURIComponent(previousRecord.jobId)}/cancel`, { method: 'POST', body: '{}' });
+            await refreshPrevious();
+        } catch (error) { reportDistillError(Object.assign(error, { phase: 'observation' })); }
+    });
+    window.addEventListener('storage', () => void refreshPrevious(), { signal: abort.signal });
+    window.addEventListener('focus', () => void refreshPrevious(), { signal: abort.signal });
     savedSelect.addEventListener('change', async () => {
         if (busy || !savedSelect.value) return;
         busy = true;
         distillButton.disabled = true;
-        try { showResult(await client.observe(await client.read(savedSelect.value), observation)); }
-        catch (error) { if (!abort.signal.aborted) status.textContent = error.message; }
-        finally { busy = false; distillButton.disabled = false; }
+        try {
+            const saved = await client.read(savedSelect.value);
+            if (saved.lifecycle?.retired && saved.state !== 'completed') {
+                resultTarget = null;
+                setShown(applyButton, false);
+                list.replaceChildren(...(saved.partial?.proposals ?? []).map(proposalCard));
+                status.textContent = saved.partial?.proposals?.length
+                    ? 'Partial proposals from an earlier distillation. They remain saved; this view does not start or replace work.'
+                    : `Earlier distillation: ${saved.error || saved.lifecycle.reason}.`;
+                if (saved.lifecycle.uncertain) status.textContent += ' Its request may still be processing, or its reply may have been lost.';
+            } else showResult(await client.observe(saved, observation));
+        } catch (error) { if (!abort.signal.aborted) status.textContent = error.message; } finally { busy = false; distillButton.disabled = !retryButton.hidden; }
     });
-    void refreshSaved().catch(error => { if (!abort.signal.aborted) status.textContent = error.message; });
-    distillButton.addEventListener('click', async () => {
+    void refreshPrevious();
+    async function distill(retryUncertain = false) {
         if (busy) {
             return;
         }
@@ -246,19 +342,26 @@ export async function openDistiller(ctx, opener) {
             return;
         }
         busy = true;
+        runningController = new AbortController();
+        const closeObservation = () => runningController?.abort();
+        abort.signal.addEventListener('abort', closeObservation, { once: true });
         resultTarget = null;
         distillButton.disabled = true;
-        applyButton.hidden = true;
+        retryButton.disabled = true;
+        setShown(retryButton, false); setShown(checkButton, false); setShown(stopButton, true);
+        setShown(applyButton, false);
         list.replaceChildren();
+        let finalError = null;
         try {
             status.textContent = 'Submitting saved chat for distillation...';
+            setShown(technicalDetails, false);
             const selected = source === CURRENT_CHAT ? null : JSON.parse(source);
             const currentLocator = current => current.groupId != null ? { group: true, chat: current.getCurrentChatId() }
                 : { group: false, avatar: current.characters?.[current.characterId]?.avatar, chat: current.getCurrentChatId() };
             const locator = selected ? { group: false, avatar: selected.avatar, chat: selected.fileName.replace(/\.jsonl$/, '') }
                 : currentLocator(SillyTavern.getContext());
-            const record = await client.run('distill', { locator, book: requestedBook, create: createBook, profileId }, {
-                ...observation, prepareInput: async input => {
+            const record = await client.runDistill({ locator, book: requestedBook, create: createBook, profileId }, {
+                ...observation, signal: runningController.signal, retryUncertain, expectedPreviousKey: previousRecord?.key, prepareInput: async input => {
                     if (source === CURRENT_CHAT) {
                         const current = SillyTavern.getContext();
                         const before = currentLocator(current);
@@ -275,16 +378,22 @@ export async function openDistiller(ctx, opener) {
             await refreshSaved();
             savedSelect.value = record.key;
         } catch (error) {
-            if (!abort.signal.aborted && error?.name !== 'AbortError') {
-                status.textContent = `Distilling failed: ${error?.message ?? error}`;
-            }
+            finalError = error;
+            reportDistillError(error);
         } finally {
+            abort.signal.removeEventListener('abort', closeObservation);
+            runningController = null;
             busy = false;
+            retryButton.disabled = false;
+            setShown(stopButton, false);
             if (!abort.signal.aborted) {
-                distillButton.disabled = false;
+                distillButton.disabled = !retryButton.hidden;
+                if (finalError?.name === 'AbortError') await refreshPrevious();
             }
         }
-    });
+    }
+    distillButton.addEventListener('click', () => void distill());
+    retryButton.addEventListener('click', () => void distill(true));
 
     applyButton.addEventListener('click', async () => {
         if (busy) {
@@ -321,7 +430,7 @@ export async function openDistiller(ctx, opener) {
             syncNewBookVisibility();
             status.textContent = `Added ${saved.selected.length} entries to '${saved.name}'.`;
             if (!list.children.length) {
-                applyButton.hidden = true;
+                setShown(applyButton, false);
                 resultTarget = null;
             }
         } catch (error) {

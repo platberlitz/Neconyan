@@ -433,3 +433,113 @@ for (const phone of [false, true]) test(`${phone ? 'phone' : 'desktop'} Distille
     await expect(final.locator('.sbld-status')).toContainText('no remaining');
     expect(app.provider.calls).toHaveLength(1);
 });
+
+async function seedDistillerRecovery(app, account) {
+    await account.post('/api/worldinfo/edit', { name: 'Garden', data: book });
+    await account.post('/api/worldinfo/edit', { name: 'Changed garden', data: book });
+    const directory = path.join(app.dataRoot, 'default-user/chats', account.avatar.replace(/\.png$/i, ''));
+    await fs.mkdir(directory, { recursive: true });
+    for (const name of ['imported-first', 'imported-current']) await fs.writeFile(path.join(directory, `${name}.jsonl`), [
+        { user_name: 'User', character_name: 'Durable Nova', chat_metadata: {} },
+        { name: 'Durable Nova', is_user: false, mes: `The moon garden grows roses: ${name}.`, send_date: 1700000000000 },
+    ].map(record => JSON.stringify(record)).join('\n') + '\n');
+}
+async function chooseDistillerRecovery(page, current = false) {
+    await expect(page.getByLabel('Chat to distill')).toContainText('imported-current');
+    await page.getByLabel('Chat to distill').selectOption({ label: `Durable Nova - imported-${current ? 'current' : 'first'}` });
+    await page.getByRole('combobox', { name: 'Connection', exact: true }).selectOption(current ? 'changed' : 'durable');
+    await page.getByRole('combobox', { name: 'Write into', exact: true }).selectOption(current ? 'Changed garden' : 'Garden');
+}
+async function distillReplacement(page, action) {
+    const received = page.waitForResponse(response => response.url().endsWith('/api/labs/distill/replace') && response.request().method() === 'POST');
+    await action();
+    const response = await received;
+    expect(response.status(), await response.text()).toBe(202);
+    return { ...await response.json(), input: response.request().postDataJSON() };
+}
+const fixtureProposals = { choices: [{ message: { role: 'assistant', content: JSON.stringify([
+    { title: 'Moon garden', keys: ['moon garden'], content: 'Roses grow on the moon.' },
+]) } }] };
+
+for (const phone of [false, true]) {
+    test(`${phone ? 'phone' : 'desktop'} Distiller recovery uses current imported chat controls after failure and cross-device cleanup`, async ({ app }) => {
+        const account = await app.account({ phone, configureSettings: settings => {
+            settings.extension_settings.connectionManager.profiles.push({ ...settings.extension_settings.connectionManager.profiles[0], id: 'changed', name: 'Changed fixture' });
+        } });
+        await seedDistillerRecovery(app, account);
+        app.provider.mode.reply = null;
+        app.provider.mode.fail = true;
+        const page = await openDistiller(account);
+        await chooseDistillerRecovery(page);
+        const first = await accepted(page, () => page.getByRole('button', { name: 'Distill this chat', exact: true }).click(), 'distill');
+        await account.settled(first.job.id, 'failed');
+        await expect(page.locator('.sbld-status')).toContainText('failed while generating');
+        await expect(page.getByRole('button', { name: 'Distill this chat', exact: true })).toBeEnabled();
+        await expect(page.getByRole('button', { name: 'Try again with current selections', exact: true })).toBeHidden();
+        app.provider.mode.fail = false;
+        app.provider.mode.reply = fixtureProposals;
+        await chooseDistillerRecovery(page, true);
+        const next = await distillReplacement(page, () => page.getByRole('button', { name: 'Distill this chat', exact: true }).click());
+        expect(next.input).toMatchObject({ locator: { chat: 'imported-current' }, book: 'Changed garden', profileId: 'changed', previousKey: first.record.key, consent: false });
+        await account.settled(next.job.id);
+        await expect(page.getByLabel('Entry content', { exact: true })).toHaveValue('Roses grow on the moon.');
+        expect(app.provider.calls).toHaveLength(2);
+        app.provider.mode.reply = null;
+        app.provider.mode.fail = true;
+        const failedAgain = await accepted(page, () => page.getByRole('button', { name: 'Distill this chat', exact: true }).click(), 'distill');
+        await account.settled(failedAgain.job.id, 'failed');
+        await expect(page.locator('.sbld-status')).toContainText('failed while generating');
+        await account.post('/api/jobs/clear-history');
+        await page.getByRole('button', { name: 'Check previous request', exact: true }).click();
+        await expect(page.locator('.sbld-status')).toContainText('previous job was cleared');
+        app.provider.mode.fail = false;
+        app.provider.mode.reply = fixtureProposals;
+        const afterCleanup = await distillReplacement(page, () => page.getByRole('button', { name: 'Distill this chat', exact: true }).click());
+        await account.settled(afterCleanup.job.id);
+        expect(app.provider.calls).toHaveLength(4);
+        expect(await account.post('/api/worldinfo/get', { name: 'Garden' })).toEqual(book);
+    });
+
+    test(`${phone ? 'phone' : 'desktop'} Distiller recovery keeps uncertain cleanup warning until an explicit current-selection retry`, async ({ app }) => {
+        const account = await app.account({ phone, configureSettings: settings => {
+            settings.extension_settings.connectionManager.profiles.push({ ...settings.extension_settings.connectionManager.profiles[0], id: 'changed', name: 'Changed fixture' });
+        } });
+        await seedDistillerRecovery(app, account);
+        app.provider.mode.disconnect = true;
+        const page = await openDistiller(account);
+        await chooseDistillerRecovery(page);
+        const first = await accepted(page, () => page.getByRole('button', { name: 'Distill this chat', exact: true }).click(), 'distill');
+        await account.settled(first.job.id, 'interrupted');
+        await expect(page.locator('.sbld-status')).toContainText('Trying again may use tokens again');
+        await expect(page.getByRole('button', { name: 'Distill this chat', exact: true })).toBeDisabled();
+        await account.post('/api/jobs/clear-history');
+        await page.getByRole('button', { name: 'Check previous request', exact: true }).click();
+        await expect(page.locator('.sbld-status')).toContainText('Trying again may use tokens again');
+        expect(app.provider.calls).toHaveLength(1);
+        await page.close();
+        const reopened = await openDistiller(account);
+        await expect(reopened.locator('.sbld-status')).toContainText('Trying again may use tokens again');
+        await chooseDistillerRecovery(reopened, true);
+        app.provider.mode.disconnect = false;
+        app.provider.mode.reply = fixtureProposals;
+        const next = await distillReplacement(reopened, () => reopened.getByRole('button', { name: 'Try again with current selections', exact: true }).click());
+        expect(next.input).toMatchObject({ previousKey: first.record.key, consent: true, book: 'Changed garden', profileId: 'changed' });
+        await account.settled(next.job.id);
+        await expect(reopened.getByLabel('Entry content', { exact: true })).toHaveValue('Roses grow on the moon.');
+        expect(app.provider.calls).toHaveLength(2);
+        expect(await account.post('/api/worldinfo/get', { name: 'Changed garden' })).toEqual(book);
+        // UI edge fixture: a genuinely saved completion can retain historical uncertainty metadata.
+        const completed = await (await account.context.request.get(`${app.url}/api/labs/records/${next.record.key}`)).json();
+        await reopened.route(`**/api/labs/records/${next.record.key}`, route => route.fulfill({ json: {
+            ...completed, lifecycle: { ...completed.lifecycle, retired: true, uncertain: true, revision: 1 },
+        } }));
+        await reopened.evaluate(key => {
+            localStorage.setItem('neconyan-labs:default-user:distill', JSON.stringify({ key }));
+            window.dispatchEvent(new Event('focus'));
+        }, next.record.key);
+        await expect(reopened.getByRole('button', { name: 'Distill this chat', exact: true })).toBeEnabled();
+        await expect(reopened.getByRole('button', { name: 'Try again with current selections', exact: true })).toBeHidden();
+        await expect(reopened.getByLabel('Entry content', { exact: true })).toHaveValue('Roses grow on the moon.');
+        expect(app.provider.calls).toHaveLength(2);
+    });
+}

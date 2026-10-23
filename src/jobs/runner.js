@@ -18,6 +18,7 @@ export const CONCURRENCY = Object.freeze({
 });
 
 const running = new Map();
+export const isJobRunning = id => running.has(id);
 const controllers = new Map();
 const knownOwners = new Set();
 let timer = null;
