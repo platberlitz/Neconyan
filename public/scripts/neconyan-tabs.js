@@ -516,7 +516,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261022c-group-edit';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261023a-rail-reorder';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -15780,7 +15780,7 @@ function createRailOrderSettingsGroup(mode) {
     const copy = createElement('span', { className: 'sb-compact-mode-copy' });
     copy.append(
         createElement('strong', { text: 'Reorder sidebar' }),
-        createElement('small', { id: `${inputId}-hint`, text: 'Drag the grips within Workspace, Fine-tuning or Modes. On phones, hold a grip first. With a row focused, use Alt + Up/Down. Turning this off keeps your order.' }),
+        createElement('small', { id: `${inputId}-hint`, text: 'Drag the grips to move buttons within a section or into another one, such as Persona into Workspace. Modes keep their own list. On phones, hold a grip first. With a button focused, Alt + Up/Down moves it. The arrows button beside Workspace in the sidebar turns this on too. Turning this off keeps your order.' }),
     );
     const reset = createElement('button', {
         className: 'menu_button widthNatural', text: 'Reset sidebar order',
@@ -19086,7 +19086,7 @@ function ensureNeconyanRailDrawerBindings() {
             return;
         }
         const button = event.target.closest('#neconyan-workspace-rail button');
-        if (!(button instanceof HTMLElement) || button.matches('#neconyan-sidebar-toggle, [data-neconyan-refresh-recent], [data-neconyan-section-toggle]')) {
+        if (!(button instanceof HTMLElement) || button.matches('#neconyan-sidebar-toggle, [data-neconyan-refresh-recent], [data-neconyan-section-toggle], [data-neconyan-rail-reorder-toggle], [data-neconyan-rail-reorder-bar] button')) {
             return;
         }
         window.setTimeout(() => setNeconyanRailDrawerOpen(false), 0);

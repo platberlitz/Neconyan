@@ -1534,20 +1534,38 @@ const NECONYAN_RAIL_SECTIONS_KEY = 'NeconyanWorkspaceRailSections.v1';
 const NECONYAN_ISSUES_URL = 'https://github.com/platberlitz/Neconyan/issues';
 let neconyanRailOrder;
 const neconyanRailGroups = {};
+const neconyanRailButtons = new Map();
 let neconyanRailRefreshId = 0;
 let neconyanRailRefreshTimer = 0;
 
-function normalizeNeconyanRailOrder(saved, defaults) {
-    const order = [...new Set((Array.isArray(saved) ? saved : []).filter(id => defaults.includes(id)))];
-    // A destination added in an update slots in between its default neighbours when both are saved; anything else goes last.
-    defaults.forEach((id, index) => {
-        if (order.includes(id)) return;
-        const before = defaults[index - 1];
-        const after = defaults[index + 1];
-        if (order.includes(before) && order.includes(after)) order.splice(order.indexOf(before) + 1, 0, id);
-        else order.push(id);
-    });
-    return order;
+// Each saved list may hold buttons from other sections, so Persona can live in Workspace.
+// Buttons in a fixed section (the chat modes) never leave it, and nothing else joins it.
+function normalizeNeconyanRailLayout(saved, defaults, fixed = ['modes']) {
+    const home = new Map(Object.entries(defaults).flatMap(([name, ids]) => ids.map(id => [id, name])));
+    const placed = new Set();
+    const layout = {};
+    for (const name of Object.keys(defaults)) {
+        const list = Array.isArray(saved?.[name]) ? saved[name] : [];
+        layout[name] = list.filter(id => {
+            if (!home.has(id) || placed.has(id)) return false;
+            if (home.get(id) !== name && (fixed.includes(name) || fixed.includes(home.get(id)))) return false;
+            placed.add(id);
+            return true;
+        });
+    }
+    // A destination added in an update slots in between its default neighbours when both are there; anything else goes last.
+    for (const [name, ids] of Object.entries(defaults)) {
+        const order = layout[name];
+        ids.forEach((id, index) => {
+            if (placed.has(id)) return;
+            const before = ids[index - 1];
+            const after = ids[index + 1];
+            if (order.includes(before) && order.includes(after)) order.splice(order.indexOf(before) + 1, 0, id);
+            else order.push(id);
+            placed.add(id);
+        });
+    }
+    return layout;
 }
 
 function saveNeconyanRailOrder() {
@@ -1556,10 +1574,12 @@ function saveNeconyanRailOrder() {
 
 function applyNeconyanRailOrder() {
     const enabled = neconyanRailOrder.enabled;
-    for (const [name, { host, buttons }] of Object.entries(neconyanRailGroups)) {
-        neconyanRailOrder[name] = normalizeNeconyanRailOrder(neconyanRailOrder[name], [...buttons.keys()]);
+    const defaults = Object.fromEntries(Object.entries(neconyanRailGroups).map(([name, group]) => [name, group.defaults]));
+    const layout = normalizeNeconyanRailLayout(neconyanRailOrder, defaults);
+    for (const [name, { host }] of Object.entries(neconyanRailGroups)) {
+        neconyanRailOrder[name] = layout[name];
         for (const id of neconyanRailOrder[name]) {
-            const button = buttons.get(id);
+            const button = neconyanRailButtons.get(id);
             host.appendChild(button);
             if (enabled) button.setAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown');
             else button.removeAttribute('aria-keyshortcuts');
@@ -1570,6 +1590,13 @@ function applyNeconyanRailOrder() {
             $(host).sortable('option', 'disabled', !enabled);
         }
     }
+    const rail = document.getElementById('neconyan-workspace-rail');
+    rail?.classList.toggle('neconyan-rail-is-reordering', enabled);
+    const bar = rail?.querySelector('[data-neconyan-rail-reorder-bar]');
+    if (bar) bar.hidden = !enabled;
+    rail?.querySelectorAll('[data-neconyan-rail-reorder-toggle]').forEach(toggle => {
+        toggle.setAttribute('aria-pressed', String(enabled));
+    });
     document.querySelectorAll('[data-sb-rail-reorder-input]').forEach(input => {
         input.checked = enabled;
         input.disabled = false;
@@ -1600,22 +1627,48 @@ function initializeNeconyanRailOrder(rail) {
     status.className = 'sr-only';
     status.setAttribute('role', 'status');
     rail.appendChild(status);
+    const nav = rail.querySelector('.neconyan-rail-nav');
+    const labels = {
+        primary: t`Workspace`, advanced: t`Fine-tuning`, lore: t`Characters & Lore`,
+        appearance: t`Appearance`, finer: t`Troubleshooting`, modes: t`Modes`,
+    };
+    const isFixed = name => name === 'modes';
+    const idOf = button => button.dataset.neconyanRoute || button.dataset.neconyanChatMode;
+    let suppressClickUntil = 0;
+    const saveOrder = button => {
+        for (const [name, { host }] of Object.entries(neconyanRailGroups)) {
+            neconyanRailOrder[name] = [...host.children].map(idOf).filter(id => neconyanRailButtons.has(id));
+        }
+        saveNeconyanRailOrder();
+        const host = button.parentElement;
+        const visible = [...host.children].filter(child => !child.hidden);
+        const position = visible.indexOf(button) + 1;
+        status.textContent = t`${button.getAttribute('aria-label')} moved to position ${position} of ${visible.length} in ${labels[host.dataset.neconyanRailGroup]}.`;
+    };
+    // A move past the top or bottom of a section continues into the next open section.
+    const moveAcrossSections = (button, up) => {
+        const from = button.parentElement.dataset.neconyanRailGroup;
+        if (isFixed(from)) return false;
+        const names = Object.keys(neconyanRailGroups).filter(name => !isFixed(name)
+            && (name === from || neconyanRailGroups[name].host.getClientRects().length));
+        const target = neconyanRailGroups[names[names.indexOf(from) + (up ? -1 : 1)]]?.host;
+        if (!target) return false;
+        if (up) target.appendChild(button);
+        else target.prepend(button);
+        return true;
+    };
     for (const [name, selector] of Object.entries({
         primary: '[data-neconyan-primary-nav]', advanced: '[data-neconyan-advanced-nav]', lore: '[data-neconyan-lore-nav]',
         appearance: '[data-neconyan-appearance-nav]', finer: '[data-neconyan-finer-nav]', modes: '[data-neconyan-mode-nav]',
     })) {
         const host = rail.querySelector(selector);
-        const buttons = new Map([...host.children].map(button => [button.dataset.neconyanRoute || button.dataset.neconyanChatMode, button]));
-        const group = { host, buttons, sortableReady: false };
+        host.dataset.neconyanRailGroup = name;
+        const defaults = [...host.children].map(idOf);
+        const group = { host, defaults, sortableReady: false };
         neconyanRailGroups[name] = group;
-        let suppressClickUntil = 0;
-        const saveOrder = button => {
-            neconyanRailOrder[name] = [...host.children].map(child => child.dataset.neconyanRoute || child.dataset.neconyanChatMode);
-            saveNeconyanRailOrder();
-            const position = [...host.children].indexOf(button) + 1;
-            status.textContent = t`${button.getAttribute('aria-label')} moved to position ${position} of ${buttons.size}.`;
-        };
-        for (const button of buttons.values()) {
+        for (const button of host.children) {
+            neconyanRailButtons.set(idOf(button), button);
+            button.dataset.neconyanRailHome = name;
             const grip = document.createElement('span');
             grip.className = 'neconyan-rail-grip fa-solid fa-grip-vertical';
             grip.setAttribute('aria-hidden', 'true');
@@ -1635,10 +1688,15 @@ function initializeNeconyanRailOrder(rail) {
             if (button?.parentElement !== host) return;
             event.preventDefault();
             event.stopPropagation();
-            const sibling = event.key === 'ArrowUp' ? button.previousElementSibling : button.nextElementSibling;
-            if (!sibling) return;
-            if (event.key === 'ArrowUp') host.insertBefore(button, sibling);
-            else host.insertBefore(sibling, button);
+            const up = event.key === 'ArrowUp';
+            let sibling = up ? button.previousElementSibling : button.nextElementSibling;
+            while (sibling?.hidden) sibling = up ? sibling.previousElementSibling : sibling.nextElementSibling;
+            if (sibling) {
+                if (up) host.insertBefore(button, sibling);
+                else host.insertBefore(button, sibling.nextElementSibling);
+            } else if (!moveAcrossSections(button, up)) {
+                return;
+            }
             button.focus({ preventScroll: true });
             button.scrollIntoView({ block: 'nearest' });
             saveOrder(button);
@@ -1646,24 +1704,32 @@ function initializeNeconyanRailOrder(rail) {
         const ensureSortable = () => {
             // jQuery UI creates its drag machinery, including position
             // measurement, at construction time. Build it only when a reorder
-            // gesture actually starts, not on every page load.
+            // gesture actually starts, not on every page load. Sections that
+            // share buttons are built together, because a drop target must
+            // already be a sortable when the drag starts.
             if (!neconyanRailOrder.enabled || group.sortableReady) {
                 return;
             }
-            $(host).sortable({
-                items: '> .neconyan-rail-button', handle: '.neconyan-rail-grip', cancel: '',
-                axis: 'y', containment: 'parent', delay: getSortableDelay(),
-                disabled: false, tolerance: 'pointer',
-                placeholder: 'neconyan-rail-placeholder',
-                start: (_event, ui) => {
-                    ui.placeholder.outerHeight(ui.item.outerHeight());
-                    suppressClickUntil = Infinity;
-                },
-                stop: (_event, ui) => {
-                    suppressClickUntil = Date.now() + 400;
-                    saveOrder(ui.item[0]);
-                },
-            });
+            const connected = isFixed(name) ? [group] : Object.entries(neconyanRailGroups)
+                .filter(([other, candidate]) => !isFixed(other) && !candidate.sortableReady).map(([, candidate]) => candidate);
+            for (const target of connected) {
+                $(target.host).sortable({
+                    items: '> .neconyan-rail-button', handle: '.neconyan-rail-grip', cancel: '',
+                    axis: 'y', containment: isFixed(name) ? 'parent' : nav, delay: getSortableDelay(),
+                    connectWith: isFixed(name) ? false : '[data-neconyan-rail-group]:not([data-neconyan-rail-group="modes"], [hidden])',
+                    disabled: false, tolerance: 'pointer',
+                    placeholder: 'neconyan-rail-placeholder',
+                    start: (_event, ui) => {
+                        ui.placeholder.outerHeight(ui.item.outerHeight());
+                        suppressClickUntil = Infinity;
+                    },
+                    stop: (_event, ui) => {
+                        suppressClickUntil = Date.now() + 400;
+                        saveOrder(ui.item[0]);
+                    },
+                });
+                target.sortableReady = true;
+            }
             group.sortableReady = true;
         };
         // Capture runs before jQuery UI's own mousedown listener and before
@@ -1677,7 +1743,53 @@ function initializeNeconyanRailOrder(rail) {
         host.addEventListener('mousedown', ensureSortableFromGrip, true);
         host.addEventListener('touchstart', ensureSortableFromGrip, { capture: true, passive: true });
     }
+    initializeNeconyanRailReorderControls(rail);
     applyNeconyanRailOrder();
+}
+
+// The sidebar's own Reorder button, and the Reset and Done bar shown while reordering.
+function initializeNeconyanRailReorderControls(rail) {
+    const heading = rail.querySelector('[data-neconyan-primary-nav]')?.previousElementSibling;
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'neconyan-rail-icon-button';
+    toggle.dataset.neconyanRailReorderToggle = '';
+    toggle.title = t`Reorder sidebar`;
+    toggle.setAttribute('aria-label', t`Reorder sidebar`);
+    toggle.innerHTML = '<i class="fa-solid fa-arrows-up-down" aria-hidden="true"></i>';
+    toggle.addEventListener('click', () => setNeconyanRailReordering(!neconyanRailOrder.enabled));
+    if (heading) {
+        const actions = document.createElement('span');
+        actions.className = 'neconyan-rail-section-actions';
+        actions.append(toggle);
+        heading.append(actions);
+    }
+    const bar = document.createElement('div');
+    bar.className = 'neconyan-rail-reorder-bar';
+    bar.dataset.neconyanRailReorderBar = '';
+    bar.hidden = true;
+    bar.setAttribute('role', 'group');
+    bar.setAttribute('aria-label', t`Reorder sidebar`);
+    const hint = document.createElement('p');
+    hint.textContent = t`Drag the grips to move buttons, even into another section.`;
+    const reset = document.createElement('button');
+    reset.type = 'button';
+    reset.className = 'neconyan-rail-reorder-reset';
+    reset.textContent = t`Reset`;
+    reset.title = t`Reset sidebar order`;
+    reset.addEventListener('click', () => resetNeconyanRailOrder());
+    const done = document.createElement('button');
+    done.type = 'button';
+    done.className = 'neconyan-rail-reorder-done';
+    done.textContent = t`Done`;
+    done.addEventListener('click', () => {
+        setNeconyanRailReordering(false);
+        toggle.focus({ preventScroll: true });
+    });
+    const buttons = document.createElement('div');
+    buttons.append(reset, done);
+    bar.append(hint, buttons);
+    rail.querySelector('.neconyan-rail-scroll')?.prepend(bar);
 }
 
 function isNeconyanRailCollapsed() {
