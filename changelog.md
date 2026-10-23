@@ -4,6 +4,7 @@
 
 ### Merged Staging PRs
 - PR #285 (2026-10-23) `fix(authors-note): stop typing in the note scanning the whole page`
+- PR #286 (2026-10-23) `fix(termux): retry transfer checks after temporary timestamp changes`
 
 ## v1.3.8
 
