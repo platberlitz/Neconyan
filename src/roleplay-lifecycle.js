@@ -1,4 +1,5 @@
 import { pinnedImageRepairReceipts } from './roleplay-image-repair-store.js';
+import { reconnectRelocatedRoleplay } from './roleplay-transfer-recovery.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { addChatNavigationCharacterRenameSteps, assertChatNavigationCharacterRename, finishChatNavigationCharacterRename } from './chat-navigation-lifecycle.js';
@@ -1366,7 +1367,22 @@ export function bootstrapRoleplayAccount(base, host) {
     // An interrupted reset settles before any other recovery; a purged account is left retired.
     const scope = settleRoleplayAccountReset(base);
     if (!scope) return null;
+    // A stopped copy of the whole data folder reconnects here, before pending work can
+    // publish. A relocation refusal must never replace the existing recovery outcome:
+    // normal reads keep their strict checks and a pending record still reconciles below.
+    const attemptRelocation = () => {
+        try { return reconnectRelocatedRoleplay(base); } catch (error) {
+            console.warn('Roleplay storage relocation check needs attention; its protected files stay as they were.',
+                error?.code || error?.name);
+            return null;
+        }
+    };
+    const reconnection = attemptRelocation();
     reconcilePendingChatWrite(scope, host);
+    // An unfinished record blocked the first check; once reconciliation clears it, the
+    // same startup retries so the files it just finished can reconnect. A failed or still
+    // pending reconciliation keeps its original strict refusal.
+    if (reconnection?.status === 'pending') attemptRelocation();
     return scope;
 }
 
