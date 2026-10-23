@@ -373,6 +373,10 @@ function validateState(state, identity) {
         || !['ready', 'maintenance', 'deleted', 'recovery-required'].includes(state.status)
         || !object(state.paths) || !object(state.resources) || !object(state.submissions)
         || (state.pending !== null && !object(state.pending))) throw damaged();
+    // Absent keeps ledgers written before folder placement was recorded readable. A
+    // present value must be a complete physical identity; startup may then reconnect a
+    // stopped copy only after proving stored content and single-link files.
+    if (state.placement !== undefined && !validPhysical(state.placement)) throw damaged();
     if (state.accountResets !== undefined) {
         if (!object(state.accountResets)) throw damaged();
         for (const [key, value] of Object.entries(state.accountResets)) {

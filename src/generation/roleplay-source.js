@@ -220,7 +220,11 @@ function enrol(lease, kind, locator, file, contentHash, marker = null) {
     if (marker && !retired(state.resources[marker.instanceId])) {
         throw roleplayError('ROLEPLAY_FOREIGN_SOURCE', 'Imported native metadata cannot establish a chat identity. Import this chat as a new copy.');
     }
-    if (Object.values(state.resources).some(resource => !retired(resource) && isDeepStrictEqual(resource.head.physical, file.physical))) {
+    // Deleted or replaced records keep their evidence but no longer own a file. A reused
+    // inode, especially on a mobile filesystem without reliable birth times, must not
+    // block enrolling an unrelated new file at that physical identity.
+    if (Object.values(state.resources).some(resource => resource.status === 'live' && !retired(resource)
+        && isDeepStrictEqual(resource.head.physical, file.physical))) {
         throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'This file already has a protected identity at another location.');
     }
     const instanceId = crypto.randomUUID();
