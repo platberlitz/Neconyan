@@ -6,6 +6,7 @@
 - PR #272 (2026-10-21) `fix(generation): save agent-edited continuations and stop blocked ret…`
 - PR #278 (2026-10-22) `fix(scratchpad): share story messages whole or not at all`
 - PR #280 (2026-10-22) `fix(mewmory): omit the Gemini 3 thinking level when no effort is set`
+- PR #282 (2026-10-23) `fix(distiller): recover from failed and cleared jobs`
 
 ## v1.3.7
 
