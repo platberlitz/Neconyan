@@ -1,0 +1,87 @@
+/* Sidebar reordering: the Reorder button beside Workspace, the Reset and Done bar, and drop zones for empty sections.
+   Loaded as a deferred sheet; nothing here is needed until someone turns reordering on. */
+
+body.neconyan #neconyan-workspace-rail .neconyan-rail-reorder-bar {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: grid;
+    gap: 8px;
+    margin: 0 0 12px;
+    padding: 10px;
+    border: 1px solid var(--neco-ginger);
+    border-radius: 8px;
+    background: var(--neco-rail);
+}
+
+body.neconyan #neconyan-workspace-rail .neconyan-rail-reorder-bar[hidden] { display: none; }
+
+body.neconyan #neconyan-workspace-rail .neconyan-rail-reorder-bar > p {
+    margin: 0;
+    color: var(--neco-ink);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+body.neconyan #neconyan-workspace-rail .neconyan-rail-reorder-bar > div {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+body.neconyan #neconyan-workspace-rail .neconyan-rail-reorder-bar button {
+    justify-content: center;
+    min-height: 44px;
+    border-color: var(--neco-ginger);
+    color: var(--neco-ink);
+    font-weight: 500;
+    text-align: center;
+}
+
+body.neconyan #neconyan-workspace-rail .neconyan-rail-reorder-bar button:hover {
+    border-color: var(--neco-ginger-hover);
+}
+
+body.neconyan #neconyan-workspace-rail .neconyan-rail-reorder-bar .neconyan-rail-reorder-done {
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+body.neconyan #neconyan-workspace-rail .neconyan-rail-reorder-bar .neconyan-rail-reorder-done:hover {
+    background: var(--neco-ginger-hover);
+    color: var(--neco-on-accent);
+}
+
+body.neconyan #neconyan-workspace-rail [data-neconyan-rail-reorder-toggle][aria-pressed='true'] {
+    border-color: var(--neco-ginger);
+    color: var(--neco-ink);
+    background: var(--neco-raised);
+}
+
+/* Keeps buttons scrolled into view, such as by Alt + Up/Down, out from under the sticky bar. */
+body.neconyan #neconyan-workspace-rail.neconyan-rail-is-reordering .neconyan-rail-scroll {
+    scroll-padding-top: 132px;
+}
+
+@media (max-width: 768px) {
+    body.neconyan #neconyan-workspace-rail [data-neconyan-rail-reorder-toggle] {
+        width: 44px;
+        min-height: 44px;
+        margin-block: -8px;
+    }
+}
+
+/* An emptied section stays a place to drop buttons back into while reordering, and steps aside otherwise. */
+body.neconyan #neconyan-workspace-rail.neconyan-rail-is-reordering [data-neconyan-rail-group]:not(:has(> .neconyan-rail-button:not([hidden]))) {
+    min-height: 44px;
+    border: 1px dashed var(--neco-border);
+    border-radius: 6px;
+}
+
+body.neconyan #neconyan-workspace-rail:not(.neconyan-rail-is-reordering) .neconyan-rail-advanced:has(> [data-neconyan-rail-group]):not(:has(> [data-neconyan-rail-group] > .neconyan-rail-button:not([hidden]))) {
+    display: none;
+}
+
+:root[data-neconyan-sidebar='closed'] body.neconyan #neconyan-workspace-rail :is(.neconyan-rail-reorder-bar, [data-neconyan-rail-reorder-toggle]) {
+    display: none;
+}

@@ -19,7 +19,9 @@ describe('desktop startup wiring', () => {
         const initialize = welcomeFunction('initializeNeconyanRailOrder');
         const apply = welcomeFunction('applyNeconyanRailOrder');
 
-        expect(initialize).toMatch(/const ensureSortable = \(\) => \{[\s\S]*?\$\(host\)\.sortable\(\{/);
+        expect(initialize).toMatch(/const ensureSortable = \(\) => \{[\s\S]*?\$\(target\.host\)\.sortable\(\{/);
+        // Sections share buttons, so every drop target is built in the same gesture; Modes stays on its own.
+        expect(initialize).toMatch(/connectWith: isFixed\(name\) \? false : '\[data-neconyan-rail-group\]:not\(\[data-neconyan-rail-group="modes"\], \[hidden\]\)'/);
         expect(initialize).toMatch(/host\.addEventListener\('pointerdown', ensureSortableFromGrip, true\)/);
         expect(initialize).toMatch(/host\.addEventListener\('mousedown', ensureSortableFromGrip, true\)/);
         expect(initialize).toMatch(/host\.addEventListener\('touchstart', ensureSortableFromGrip, \{ capture: true, passive: true \}\)/);

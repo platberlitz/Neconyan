@@ -11,12 +11,16 @@ const groups = {
     finer: ['server', 'console-logs', 'debugger', 'report-issue'],
     modes: ['roleplay', 'conversation', 'meower', 'story'],
 };
+const previousGroup = { advanced: 'primary', lore: 'advanced', appearance: 'lore', finer: 'appearance' };
 const selector = name => `[data-neconyan-${name === 'modes' ? 'mode' : name}-nav]`;
 const order = (page, name) => page.locator(`${selector(name)} > button`).evaluateAll(buttons => buttons.map(button => button.dataset.neconyanRoute || button.dataset.neconyanChatMode));
 
 async function ready(page) {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+    // Tour progress saves are intercepted below, so a fresh preview offers the tour on every load.
+    const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
+    await skip.waitFor({ state: 'visible', timeout: 3000 }).then(() => skip.click(), () => {});
 }
 
 async function settings(page, phone) {
@@ -65,6 +69,55 @@ async function drag(page, name, phone) {
     }
 }
 
+async function dragTo(page, grip, target, phone) {
+    const source = await grip.boundingBox();
+    const box = await target.boundingBox();
+    const x = source.x + source.width / 2;
+    const y = source.y + source.height / 2;
+    const end = box.y + box.height * 0.3;
+    if (phone) {
+        const session = await page.context().newCDPSession(page);
+        await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+        await new Promise(resolve => setTimeout(resolve, 850));
+        for (let step = 1; step <= 16; step++) {
+            await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y + (end - y) * step / 16 }] });
+            await new Promise(resolve => setTimeout(resolve, 30));
+        }
+        await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        await session.detach();
+    } else {
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        await new Promise(resolve => setTimeout(resolve, 100));
+        await page.mouse.move(x, end, { steps: 20 });
+        await page.mouse.up();
+    }
+}
+
+async function storeOrder(page, initial) {
+    const state = { stored: JSON.stringify(initial) };
+    await page.route('**/api/settings/get', async route => {
+        const response = await route.fetch();
+        const body = await response.json();
+        if (typeof body.settings !== 'string') return route.fulfill({ response, json: body });
+        const data = JSON.parse(body.settings);
+        data.accountStorage = { ...data.accountStorage, 'NeconyanWorkspaceRailCollapsed.v1': 'false', 'NeconyanWorkspaceRailSections.v1': '{}', [key]: state.stored };
+        await route.fulfill({ response, json: { ...body, settings: JSON.stringify(data) } });
+    });
+    await page.route('**/api/settings/save', async route => {
+        let bytes = route.request().postDataBuffer();
+        if (route.request().headers()['content-encoding'] === 'gzip') bytes = gunzipSync(bytes);
+        const payload = JSON.parse(bytes.toString());
+        state.stored = payload.accountStorage[key] ?? state.stored;
+        await route.fulfill({ json: {
+            result: 'ok',
+            version: Number(payload._version || 0) + 1,
+            settingsRevision: Number(payload._settingsRevision || 0) + 1,
+        } });
+    });
+    return state;
+}
+
 async function checkPhoneScrolling(page, phone) {
     if (!phone) return;
     const scroller = page.locator('.neconyan-rail-scroll');
@@ -86,27 +139,8 @@ for (const phone of [false, true]) {
         test.use({ viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone, serviceWorkers: 'block', reducedMotion: 'reduce' });
         test('settings, drag, keyboard, saved order and reset', async ({ page }, info) => {
             test.setTimeout(240000);
-            let stored = JSON.stringify({ enabled: false, primary: ['model', 'model', 'removed', 'home', 'story'] });
             // Exercise the real account save/load flow without changing the preview account.
-            await page.route('**/api/settings/get', async route => {
-                const response = await route.fetch();
-                const body = await response.json();
-                if (typeof body.settings !== 'string') return route.fulfill({ response, json: body });
-                const data = JSON.parse(body.settings);
-                data.accountStorage = { ...data.accountStorage, 'NeconyanWorkspaceRailCollapsed.v1': 'false', [key]: stored };
-                await route.fulfill({ response, json: { ...body, settings: JSON.stringify(data) } });
-            });
-            await page.route('**/api/settings/save', async route => {
-                let bytes = route.request().postDataBuffer();
-                if (route.request().headers()['content-encoding'] === 'gzip') bytes = gunzipSync(bytes);
-                const payload = JSON.parse(bytes.toString());
-                stored = payload.accountStorage[key] ?? stored;
-                await route.fulfill({ json: {
-                    result: 'ok',
-                    version: Number(payload._version || 0) + 1,
-                    settingsRevision: Number(payload._settingsRevision || 0) + 1,
-                } });
-            });
+            const state = await storeOrder(page, { enabled: false, primary: ['model', 'model', 'removed', 'home', 'story'] });
             await ready(page);
             expect(await order(page, 'primary')).toEqual(['model', 'home', 'characters', 'agents', 'mewmory', 'lorebooks', 'notes', 'scratchpad', 'chat-archive', 'extensions']);
             let checkbox = await settings(page, phone);
@@ -129,9 +163,17 @@ for (const phone of [false, true]) {
             for (const [name, defaults] of Object.entries(groups)) {
                 await drag(page, name, phone);
                 await expect.poll(() => order(page, name)).toEqual([defaults[1], defaults[0], ...defaults.slice(2)]);
-                const first = page.locator(`${selector(name)} > button[data-neconyan-${name === 'modes' ? 'chat-mode' : 'route'}="${defaults[1]}"]`);
+                const first = page.locator(`#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-${name === 'modes' ? 'chat-mode' : 'route'}="${defaults[1]}"]`);
                 await first.focus();
                 await first.press('Alt+ArrowUp');
+                const previous = previousGroup[name];
+                if (previous) {
+                    // At the top of a section, Alt+Up hands the button to the end of the section above.
+                    expect(await order(page, name)).toEqual([defaults[0], ...defaults.slice(2)]);
+                    expect((await order(page, previous)).at(-1)).toBe(defaults[1]);
+                    await expect(first).toBeFocused();
+                    await first.press('Alt+ArrowDown');
+                }
                 expect(await order(page, name)).toEqual([defaults[1], defaults[0], ...defaults.slice(2)]);
                 await first.press('Alt+ArrowDown');
                 expect(await order(page, name)).toEqual(defaults);
@@ -151,8 +193,8 @@ for (const phone of [false, true]) {
             checkbox = await settings(page, phone);
             await checkbox.uncheck();
             await expect(page.locator('[data-sb-rail-reorder-input]:checked')).toHaveCount(0);
-            await expect.poll(() => JSON.parse(stored).enabled).toBe(false);
-            await expect.poll(() => JSON.parse(stored).modes?.[0]).toBe('conversation');
+            await expect.poll(() => JSON.parse(state.stored).enabled).toBe(false);
+            await expect.poll(() => JSON.parse(state.stored).modes?.[0]).toBe('conversation');
             await ready(page);
             await rail(page, phone);
             for (const [name, defaults] of Object.entries(groups)) {
@@ -169,7 +211,7 @@ for (const phone of [false, true]) {
             await expect(checkbox).not.toBeChecked();
             for (const [name, defaults] of Object.entries(groups)) expect(await order(page, name)).toEqual(defaults);
             await checkbox.check();
-            await expect.poll(() => JSON.parse(stored).enabled).toBe(true);
+            await expect.poll(() => JSON.parse(state.stored).enabled).toBe(true);
             await ready(page);
             checkbox = await settings(page, phone);
             await expect(checkbox).toBeChecked();
@@ -180,6 +222,82 @@ for (const phone of [false, true]) {
             await expect(page.locator('#character_search_bar')).toBeVisible();
             expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(phone ? 394 : 1281);
             // A late settings load can still be in flight when the page closes.
+            await page.unrouteAll({ behavior: 'ignoreErrors' });
+        });
+
+        test('sidebar reorder button, moves between sections, Done and Reset', async ({ page }, info) => {
+            test.setTimeout(180000);
+            // Every Troubleshooting button already sits in Appearance, so that section starts empty.
+            const state = await storeOrder(page, { enabled: false, appearance: [...groups.appearance, ...groups.finer], finer: [] });
+            await ready(page);
+            await rail(page, phone);
+            const toggle = page.locator('[data-neconyan-rail-reorder-toggle]');
+            const bar = page.locator('[data-neconyan-rail-reorder-bar]');
+            const troubleshooting = page.locator('section:has(> [data-neconyan-finer-nav])');
+            await expect(toggle).toBeVisible();
+            await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+            await expect(bar).toBeHidden();
+            await expect(troubleshooting).toBeHidden();
+            const toggleBox = await toggle.boundingBox();
+            expect(toggleBox.width).toBeGreaterThanOrEqual(phone ? 44 : 28);
+
+            await toggle.click();
+            await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+            await expect(bar).toBeVisible();
+            await expect(page.locator('body')).toHaveClass(phone ? /neconyan-rail-drawer-open/ : /neconyan-rail-ready/);
+            await expect(page.locator('[data-sb-rail-reorder-input]:checked')).toHaveCount(2);
+            await expect.poll(() => JSON.parse(state.stored).enabled).toBe(true);
+            await expect(troubleshooting).toBeVisible();
+            expect((await page.locator('[data-neconyan-finer-nav]').boundingBox()).height).toBeGreaterThanOrEqual(44);
+            for (const button of [bar.locator('.neconyan-rail-reorder-reset'), bar.locator('.neconyan-rail-reorder-done')]) {
+                expect((await button.boundingBox()).height).toBeGreaterThanOrEqual(44);
+            }
+            await page.screenshot({ path: info.outputPath('reorder-bar.png') });
+
+            // Drag Persona from Characters & Lore up into Workspace.
+            const fine = page.locator('[data-neconyan-section-toggle="advanced"]');
+            if (await fine.getAttribute('aria-expanded') === 'true') await fine.click();
+            const lore = page.locator('[data-neconyan-section-toggle="lore"]');
+            if (await lore.getAttribute('aria-expanded') === 'false') await lore.click();
+            const target = page.locator('[data-neconyan-primary-nav] > [data-neconyan-route="agents"]');
+            const persona = page.locator('#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-route="persona"]');
+            await persona.evaluate(element => element.scrollIntoView({ block: 'end' }));
+            const grip = persona.locator('.neconyan-rail-grip');
+            await expect(grip).toBeInViewport();
+            await expect(target).toBeInViewport();
+            await dragTo(page, grip, target, phone);
+            await expect.poll(() => order(page, 'primary')).toEqual(['home', 'characters', 'model', 'persona', ...groups.primary.slice(3)]);
+            expect(await order(page, 'lore')).toEqual(groups.lore.slice(1));
+            await expect(page.locator('#neconyan-workspace-rail > [role="status"]')).toHaveText('Persona moved to position 4 of 11 in Workspace.');
+            await expect.poll(() => JSON.parse(state.stored).primary?.[3]).toBe('persona');
+            await page.screenshot({ path: info.outputPath('persona-in-workspace.png') });
+
+            // Collapsed sections never catch a drop.
+            await expect(page.locator('[data-neconyan-advanced-nav]')).toBeHidden();
+            expect(await order(page, 'advanced')).toEqual(groups.advanced);
+
+            await bar.locator('.neconyan-rail-reorder-done').click();
+            await expect(bar).toBeHidden();
+            await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+            await expect(toggle).toBeFocused();
+            await expect(page.locator('#neconyan-workspace-rail .neconyan-rail-grip').first()).toBeHidden();
+            await expect(troubleshooting).toBeHidden();
+            await expect.poll(() => JSON.parse(state.stored).enabled).toBe(false);
+
+            await ready(page);
+            await rail(page, phone);
+            expect(await order(page, 'primary')).toEqual(['home', 'characters', 'model', 'persona', ...groups.primary.slice(3)]);
+            await page.locator('#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-route="persona"] > span').first().click();
+            await expect(page.locator('#persona-management-block')).toBeVisible();
+            if (phone) await expect(page.locator('body')).not.toHaveClass(/neconyan-rail-drawer-open/);
+
+            await rail(page, phone);
+            await toggle.click();
+            await bar.locator('.neconyan-rail-reorder-reset').click();
+            for (const [name, defaults] of Object.entries(groups)) expect(await order(page, name)).toEqual(defaults);
+            await expect(bar).toBeVisible();
+            await expect.poll(() => JSON.parse(state.stored).lore).toEqual(groups.lore);
+            expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(phone ? 394 : 1281);
             await page.unrouteAll({ behavior: 'ignoreErrors' });
         });
     });

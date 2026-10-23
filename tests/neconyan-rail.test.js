@@ -148,17 +148,43 @@ describe('Neconyan workspace rail behavior', () => {
 
     test('restores only known unique destinations and adds new ones between their neighbours or last', () => {
         const context = vm.createContext({});
-        vm.runInContext(getWelcomeFunctionSource('normalizeNeconyanRailOrder'), context);
+        vm.runInContext(getWelcomeFunctionSource('normalizeNeconyanRailLayout'), context);
+        const normalize = (saved, defaults) => JSON.parse(JSON.stringify(context.normalizeNeconyanRailLayout(saved, defaults)));
         const defaults = ['home', 'characters', 'model', 'agents'];
-        expect(context.normalizeNeconyanRailOrder(['model', 'removed', 'model', 'home', 'story'], defaults))
+        expect(normalize({ primary: ['model', 'removed', 'model', 'home', 'story'] }, { primary: defaults }).primary)
             .toEqual(['model', 'home', 'characters', 'agents']);
         // An order saved before Scratchpad existed gains it just under Notes.
         const primary = ['home', 'characters', 'model', 'agents', 'mewmory', 'lorebooks', 'notes', 'scratchpad', 'extensions'];
-        expect(context.normalizeNeconyanRailOrder(['notes', 'home', 'characters', 'model', 'agents', 'mewmory', 'lorebooks', 'extensions'], primary))
+        expect(normalize({ primary: ['notes', 'home', 'characters', 'model', 'agents', 'mewmory', 'lorebooks', 'extensions'] }, { primary }).primary)
             .toEqual(['notes', 'scratchpad', 'home', 'characters', 'model', 'agents', 'mewmory', 'lorebooks', 'extensions']);
-        for (const invalid of [null, undefined, 'model', {}, 123]) {
-            expect(context.normalizeNeconyanRailOrder(invalid, defaults)).toEqual(defaults);
+        for (const invalid of [null, undefined, 'model', {}, 123, { primary: 'model' }]) {
+            expect(normalize(invalid, { primary: defaults }).primary).toEqual(defaults);
         }
+    });
+
+    test('keeps buttons moved into another section there, but never moves modes', () => {
+        const context = vm.createContext({});
+        vm.runInContext(getWelcomeFunctionSource('normalizeNeconyanRailLayout'), context);
+        const normalize = (saved, defaults) => JSON.parse(JSON.stringify(context.normalizeNeconyanRailLayout(saved, defaults)));
+        const defaults = {
+            primary: ['home', 'characters', 'model'],
+            lore: ['persona', 'expressions'],
+            modes: ['roleplay', 'story'],
+        };
+        // Persona saved under Characters in Workspace stays there and leaves its old section.
+        expect(normalize({ primary: ['home', 'characters', 'persona', 'model'], lore: ['expressions'] }, defaults)).toEqual({
+            primary: ['home', 'characters', 'persona', 'model'],
+            lore: ['expressions'],
+            modes: ['roleplay', 'story'],
+        });
+        // A button listed twice keeps its first place, and an emptied section stays empty.
+        expect(normalize({ primary: ['persona', 'expressions', 'home', 'characters', 'model'], lore: ['persona'] }, defaults).lore).toEqual([]);
+        // Mode buttons cannot leave Modes, and nothing else can join them.
+        expect(normalize({ primary: ['story', 'home', 'characters', 'model'], modes: ['persona', 'story', 'roleplay'] }, defaults)).toEqual({
+            primary: ['home', 'characters', 'model'],
+            lore: ['persona', 'expressions'],
+            modes: ['story', 'roleplay'],
+        });
     });
 
     test('turning reordering off preserves orders and reset preserves the enabled setting', () => {

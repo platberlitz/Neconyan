@@ -16,17 +16,17 @@ const SIMPLE_MODE_STYLE_ID = 'neconyan-simple-mode-style';
 
 const SIMPLE_MODE_HIDDEN_RAIL_ROUTES = Object.freeze(['mewmory', 'chat-archive', 'extensions']);
 
-/* Presets is the one Fine-tuning page Simple Mode keeps, so the section stays and only its heading and other pages go. */
+/* Presets is the one Fine-tuning page Simple Mode keeps; every other page from below Workspace goes, wherever the sidebar order has moved it. */
 export const SIMPLE_MODE_KEPT_FINE_TUNING_ROUTE = 'presets';
 
 export const SIMPLE_MODE_HIDDEN_SELECTORS = Object.freeze([
-    '#neconyan-workspace-rail .neconyan-rail-advanced:not(.neconyan-rail-fine-tuning)',
-    '#neconyan-workspace-rail .neconyan-rail-fine-tuning > .neconyan-rail-section-heading',
-    `#neconyan-workspace-rail [data-neconyan-advanced-nav] > :not([data-neconyan-route="${SIMPLE_MODE_KEPT_FINE_TUNING_ROUTE}"])`,
+    '#neconyan-workspace-rail .neconyan-rail-advanced > .neconyan-rail-section-heading',
+    '#neconyan-workspace-rail .neconyan-rail-advanced > [data-neconyan-quick-actions]',
+    `#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-rail-home]:not([data-neconyan-rail-home="primary"], [data-neconyan-rail-home="modes"], [data-neconyan-route="${SIMPLE_MODE_KEPT_FINE_TUNING_ROUTE}"])`,
     '#neconyan-workspace-rail .neconyan-rail-modes-label',
     '#neconyan-workspace-rail [data-neconyan-mode-nav]',
     '#neconyan-workspace-rail [data-neconyan-open-archive]',
-    ...SIMPLE_MODE_HIDDEN_RAIL_ROUTES.map(route => `#neconyan-workspace-rail [data-neconyan-primary-nav] [data-neconyan-route="${route}"]`),
+    ...SIMPLE_MODE_HIDDEN_RAIL_ROUTES.map(route => `#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-rail-home="primary"][data-neconyan-route="${route}"]`),
     '#sb-reasoning-effort-button',
     '.sb-advanced-only',
     '#extensionsMenuButton',
@@ -74,9 +74,9 @@ export function isSimpleModeEnabled() {
 export function buildSimpleModeCss() {
     return [
         `html.${SIMPLE_MODE_CLASS} :is(${SIMPLE_MODE_HIDDEN_SELECTORS.join(', ')}) { display: none !important; }`,
-        /* A collapsed Fine-tuning section would otherwise take Presets with it, since its heading (the toggle) is hidden. */
-        `html.${SIMPLE_MODE_CLASS} #neconyan-workspace-rail .neconyan-rail-fine-tuning { margin-top: 0; }`,
-        `html.${SIMPLE_MODE_CLASS} #neconyan-workspace-rail .neconyan-rail-fine-tuning > [data-neconyan-advanced-nav][hidden] { display: block !important; }`,
+        /* A collapsed section would otherwise take Presets or a moved Workspace page with it, since its heading (the toggle) is hidden. */
+        `html.${SIMPLE_MODE_CLASS} #neconyan-workspace-rail .neconyan-rail-advanced { margin-top: 0; }`,
+        `html.${SIMPLE_MODE_CLASS} #neconyan-workspace-rail .neconyan-rail-advanced > [data-neconyan-rail-group][hidden] { display: block !important; }`,
         `html:not(.${SIMPLE_MODE_CLASS}) .neconyan-rail-simple-exit { display: none !important; }`,
         /* While Nori asks, the answer buttons are the only way forward. */
         '#neconyan-tour-coachmark.neconyan-tour-asking :is([data-tour-coach-back], [data-tour-coach-next]) { display: none !important; }',
