@@ -51,6 +51,10 @@ const DEFAULT_INTERVAL = 1;
 // dead zone while this module body runs. The default role has to be read lazily, at call time.
 const getDefaultRole = () => extension_prompt_roles.SYSTEM;
 
+// Every keystroke in a note re-renders the panel; an attribute selector on the whole document
+// scans every element of a long chat, so look inside the panel instead.
+const findInNotePanel = selector => $('#floatingPrompt').find(selector);
+
 // Neconyan: resolving these at read time keeps a chat that never used an Author's Note out of
 // chat_metadata. Stamping the defaults in on load dirtied every chat the moment it was opened, and
 // there is no metadata-only write: saving chat metadata rewrites the entire chat file.
@@ -552,7 +556,7 @@ function renderNoteSlot(slotName) {
     $select.val(view.profile.id);
     $(`#extension_floating_${slotName}`).val(canEdit ? view.profile.prompt : '');
     $(slot.checkbox).prop('checked', Boolean(entry?.[slot.enabledKey]));
-    $(`input[name="${slot.radioName}"][value="${view.profile.position}"]`).prop('checked', true);
+    findInNotePanel(`input[name="${slot.radioName}"][value="${view.profile.position}"]`).prop('checked', true);
     if (slot.perPersona) {
         $('#extension_floating_chara_per_persona').prop('checked', Boolean(canEdit && view.perPersona));
     }
@@ -561,8 +565,8 @@ function renderNoteSlot(slotName) {
 function setNoteSlotDisabled(slotName) {
     const slot = noteSlots[slotName];
     const disabled = !slot.canEdit();
-    $(`#extension_floating_${slotName}, #extension_floating_${slotName}_profile, ${slot.checkbox}, input[name="${slot.radioName}"]`).prop('disabled', disabled);
-    $(`[data-an-profile-slot="${slotName}"]`).toggleClass('disabled', disabled).attr('aria-disabled', String(disabled));
+    findInNotePanel(`#extension_floating_${slotName}, #extension_floating_${slotName}_profile, ${slot.checkbox}, input[name="${slot.radioName}"]`).prop('disabled', disabled);
+    findInNotePanel(`[data-an-profile-slot="${slotName}"]`).toggleClass('disabled', disabled).attr('aria-disabled', String(disabled));
     if (slot.perPersona) {
         $('#extension_floating_chara_per_persona').prop('disabled', disabled);
     }
@@ -651,7 +655,7 @@ function setNotePositionCommand(_, text) {
             return;
         }
 
-        $(`input[name="extension_floating_position"][value="${position}"]`).prop('checked', true).trigger('input');
+        findInNotePanel(`input[name="extension_floating_position"][value="${position}"]`).prop('checked', true).trigger('input');
         toastr.info(t`Author's Note position updated`);
     }
     return Object.keys(validPositions).find(key => validPositions[key] == getAuthorsNotePosition());
@@ -784,7 +788,7 @@ function loadSettings() {
     $('#extension_floating_allow_wi_scan').prop('checked', extension_settings.note.allowWIScan ?? false);
     $('#extension_floating_depth').val(getAuthorsNoteDepth());
     $('#extension_floating_role').val(getAuthorsNoteRole());
-    $(`input[name="extension_floating_position"][value="${getAuthorsNotePosition()}"]`).prop('checked', true);
+    findInNotePanel(`input[name="extension_floating_position"][value="${getAuthorsNotePosition()}"]`).prop('checked', true);
 
     renderNoteSlot('chara');
     renderNoteSlot('persona');
@@ -794,7 +798,7 @@ function loadSettings() {
     $('#extension_default_depth').val(extension_settings.note.defaultDepth);
     $('#extension_default_interval').val(extension_settings.note.defaultInterval);
     $('#extension_default_role').val(extension_settings.note.defaultRole);
-    $(`input[name="extension_default_position"][value="${extension_settings.note.defaultPosition}"]`).prop('checked', true);
+    findInNotePanel(`input[name="extension_default_position"][value="${extension_settings.note.defaultPosition}"]`).prop('checked', true);
 }
 
 export function setFloatingPrompt() {
