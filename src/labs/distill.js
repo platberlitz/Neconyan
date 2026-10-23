@@ -4,9 +4,10 @@ import { resolveGenerationProfile } from '../generation/profiles.js';
 import { runChatProfile } from '../generation/service.js';
 import { createRoleplayTextCounter } from '../generation/roleplay-budget.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
+import { getJob } from '../jobs/store.js';
 import { captureLabBook } from './books.js';
 import { captureLabChat, captureLabConnection } from './sources.js';
-import { labError, withLabRecord } from './store.js';
+import { labError, withLabRecord, assertDistillActive } from './store.js';
 import { messageLines, chunkLines, buildDistillPrompt, parseProposals, normalizeProposals, mergeProposals, markDuplicates }
     from '../../public/scripts/extensions/third-party/Neconyan-Lorebook-Distiller/src/core.js';
 
@@ -35,21 +36,46 @@ export async function runDistill(context, { generate = runChatProfile } = {}) {
         chunks = await chunkLines(plan.lines, count, budget, buildDistillPrompt);
         writeArtifact(context.directories, context.job.id, 'distill-chunks', chunks);
     }
-    const collected = [];
+    const previousPartial = withLabRecord(context, ({ value }) => value.partial);
+    const collected = [...(previousPartial?.proposals ?? [])];
     let failedChunks = 0;
+    let incomplete = false;
+    const proposalsFor = () => {
+        const cleaned = normalizeProposals(collected);
+        return { proposals: markDuplicates(mergeProposals(cleaned.proposals), Object.values(plan.target.book.entries))
+            .map((proposal, id) => ({ ...proposal, id })), dropped: Math.max(cleaned.dropped, previousPartial?.dropped ?? 0) };
+    };
     for (const [index, chunk] of chunks.entries()) {
+        if (context.signal.aborted && collected.length) { incomplete = true; break; }
         context.signal.throwIfAborted();
         await context.progress({ stage: 'Distilling saved chat', completed: index, total: chunks.length });
-        const response = await generate({ context: base, jobContext: context, binding: plan.binding,
-            messages: [{ role: 'user', content: buildDistillPrompt(chunk) }], maxTokens: plan.maxTokens,
-            macroEnvironment: createMacroEnvironment(plan.chat.macros), userName: plan.chat.macros.names.user,
-            characterName: plan.chat.macros.names.char, signal: context.signal, stepNamespace: `distill:${index}`,
-            beforeDispatch: () => withLabRecord(context, () => {}) });
+        let response;
+        let responseStep = null;
+        try {
+            response = await generate({ context: base, jobContext: context, binding: plan.binding,
+                messages: [{ role: 'user', content: buildDistillPrompt(chunk) }], maxTokens: plan.maxTokens,
+                macroEnvironment: createMacroEnvironment(plan.chat.macros), userName: plan.chat.macros.names.user,
+                characterName: plan.chat.macros.names.char, signal: context.signal, stepNamespace: `distill:${index}`,
+                onProviderStep: step => { responseStep = step; },
+                beforeDispatch: () => assertDistillActive(context) });
+        } catch (error) {
+            // providerStep durably saves a late reply before reporting the saved Stop.
+            const step = getJob(context.directories, context.job.id)?.resume;
+            if (context.signal.aborted && typeof step === 'string' && step.startsWith('provider:')) {
+                response = readArtifact(context.directories, context.job.id, step);
+                if (response) responseStep = step;
+            }
+            if (!response) throw error;
+            incomplete = true;
+        }
         try { collected.push(...parseProposals(response.text)); } catch { failedChunks++; }
+        withLabRecord(context, ({ value, save }) => {
+            value.partial = { target: plan.target, ...proposalsFor(), failedChunks: Math.max(failedChunks, previousPartial?.failedChunks ?? 0), chunks: chunks.length, incomplete: true,
+                lastProviderStep: responseStep ?? value.partial?.lastProviderStep ?? null };
+            save();
+        });
+        if (incomplete) break;
     }
-    const cleaned = normalizeProposals(collected);
-    const proposals = markDuplicates(mergeProposals(cleaned.proposals), Object.values(plan.target.book.entries))
-        .map((proposal, id) => ({ ...proposal, id }));
     await context.progress({ stage: 'Proposals saved for review', completed: chunks.length, total: chunks.length });
-    return { target: plan.target, proposals, dropped: cleaned.dropped, failedChunks, chunks: chunks.length };
+    return { target: plan.target, ...proposalsFor(), failedChunks: Math.max(failedChunks, previousPartial?.failedChunks ?? 0), chunks: chunks.length, incomplete };
 }

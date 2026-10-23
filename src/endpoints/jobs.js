@@ -17,6 +17,7 @@ import { applyRoleplayPreviewFrame, buildRoleplayPreviewFrame } from '../../publ
 import { subscribeJobsChanged } from '../jobs/notifications.js';
 import { getDiagnosticJobActivity } from '../diagnostic-activity.js';
 import { assertScratchpadImageRetry } from '../scratchpad/images.js';
+import { retryDistillJob } from '../labs/store.js';
 
 export const router = express.Router();
 
@@ -396,6 +397,7 @@ router.post('/:id/retry', async (request, response) => {
         const job = getJob(directories, request.params.id);
         if (!job || job.owner !== owner) return response.status(404).json({ error: 'That job could not be found.' });
         if (!['failed', 'interrupted'].includes(job.state)) return response.status(409).json({ error: 'Only jobs that failed or were interrupted can be tried again.' });
+        if (job.type === 'labs.distill') return response.json({ job: retryDistillJob({ owner, directories }, job) });
         assertScratchpadImageRetry(directories, job);
         if (job.type === 'conversation.reply' && (job.children ?? []).length) {
             return response.json({ job: retryConversationFamily(directories, job.id).job });

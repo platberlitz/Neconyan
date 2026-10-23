@@ -8,12 +8,14 @@ import { setConfigFilePath } from '../src/util.js';
 import { providerSettings, instructSettings } from './fixtures/text-generation-baseline.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
-const { acceptLabJob, runLabJob } = await import('../src/labs/jobs.js');
+const { acceptLabJob, runLabJob, replaceDistillation } = await import('../src/labs/jobs.js');
 const { admitLabJob, readLabRecord, finalizeLabSubmission, refuseLabSubmission, listLabRecords, LAB_STORE_LIMIT, LAB_RECORD_LIMIT } = await import('../src/labs/store.js');
-const { initialiseRoleplayAccount, withRoleplayAccount, roleplayStoreDirectory } = await import('../src/roleplay-store.js');
-const { providerStep, writeArtifact } = await import('../src/jobs/artifacts.js');
+const { retryDistillJob, reconcileDistillations, distillTransaction, fenceDistillation } = await import('../src/labs/store.js');
+const { initialiseRoleplayAccount, withRoleplayAccount, roleplayStoreDirectory, roleplayHash } = await import('../src/roleplay-store.js');
+const { providerStep, writeArtifact, readArtifact } = await import('../src/jobs/artifacts.js');
+const { runDistill } = await import('../src/labs/distill.js');
 const { runChatProfile } = await import('../src/generation/service.js');
-const { getJob, updateJob } = await import('../src/jobs/store.js');
+const { getJob, updateJob, clearFinishedJobs, acceptJob, mutateJobs, jobKey, JOB_LIMIT, JOB_FAILURE_RETENTION_MS } = await import('../src/jobs/store.js');
 const { worldInfoRevision } = await import('../src/world-info-history.js');
 const { write: writeCard, read: readCard } = await import('../src/character-card-parser.js');
 const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
@@ -656,6 +658,362 @@ test('an unknown paid result is not dispatched again by recovery', async () => {
     await assert.rejects(runLabJob(context, { generate: unknown }), /connection lost/);
     await assert.rejects(runLabJob(context, { generate: unknown }), /unknown/);
     assert.equal(calls, 1);
+});
+
+const replacementBody = (f, key = 'replacement', extra = {}) => ({ ...f.body, key, previousKey: f.body.key,
+    previousRevision: readLabRecord(f.base, f.body.key)?.lifecycle?.revision ?? 0, ...extra });
+
+test('failed distillation retires its slot and replacement captures the current chat, book and connection', async () => {
+    const f = fixture(), old = await acceptLabJob(f.request, f.body);
+    updateJob(f.base.directories, old.job.id, { state: 'failed', error: { message: 'Bad Request', status: 400, code: 'UPSTREAM_400' } });
+    assert.equal(readLabRecord(f.base, f.body.key).lifecycle.uncertain, false);
+    fs.copyFileSync(f.chatPath, path.join(path.dirname(f.chatPath), 'changed.jsonl'));
+    fs.copyFileSync(f.bookPath, path.join(path.dirname(f.bookPath), 'Changed.json'));
+    const settingsFile = path.join(f.base.directories.root, 'settings.json');
+    const settings = JSON.parse(fs.readFileSync(settingsFile));
+    settings.extension_settings.connectionManager.profiles.push({ id: 'other', api: 'openai', model: 'gpt-4o' });
+    fs.writeFileSync(settingsFile, JSON.stringify(settings));
+    const next = await replaceDistillation(f.request, replacementBody(f, 'current', { book: 'Changed', profileId: 'other', locator: { ...f.body.locator, chat: 'changed' } }));
+    assert.notEqual(next.job.id, old.job.id);
+    const saved = readLabRecord(f.base, 'current');
+    assert.equal(saved.requestInput.book, 'Changed');
+    assert.equal(saved.requestInput.profileId, 'other');
+    assert.equal(saved.requestInput.locator.chat, 'changed');
+    assert.equal((await acceptLabJob(f.request, f.body)).created, false);
+    assert.equal(getJob(f.base.directories, old.job.id).state, 'failed');
+    assert.throws(() => retryDistillJob(f.base, old.job), /no longer active/);
+    await assert.rejects(runLabJob(f.context(old), { generate }), /retired/);
+});
+
+test('generic Jobs retry reconciles failure before the first Labs read and preserves saved completion guidance', async () => {
+    for (const completed of [false, true]) {
+        const f = fixture(), accepted = await acceptLabJob(f.request, f.body);
+        if (completed) writeArtifact(f.base.directories, accepted.job.id, 'result', { target: accepted.record.plan.target,
+            proposals: proposals.map((proposal, id) => ({ ...proposal, id })), chunks: 1 });
+        updateJob(f.base.directories, accepted.job.id, { state: 'failed', error: { message: 'Bad Request', status: 400 } });
+        assert.throws(() => retryDistillJob(f.base, getJob(f.base.directories, accepted.job.id)),
+            error => error.code === (completed ? 'DISTILL_COMPLETED' : 'DISTILL_RETIRED'));
+        assert.equal(getJob(f.base.directories, accepted.job.id).state, 'failed');
+        const record = readLabRecord(f.base, f.body.key);
+        assert.equal(completed ? record.state === 'completed' : record.lifecycle.retired, true);
+    }
+});
+
+test('uncertain distillation requires consent before one durable replacement, including competing tabs and lost acknowledgement', async () => {
+    const f = fixture(), old = await acceptLabJob(f.request, f.body);
+    let calls = 0;
+    await assert.rejects(runLabJob(f.context(old), { generate: () => providerStep(f.context(old), 'uncertain', async () => {
+        calls++; throw new Error('lost provider reply');
+    }) }), /lost provider/);
+    updateJob(f.base.directories, old.job.id, { state: 'interrupted' });
+    const body = replacementBody(f);
+    await assert.rejects(replaceDistillation(f.request, body), /may still be processing/);
+    assert.equal(readLabRecord(f.base, f.body.key).lifecycle.replacement, undefined);
+    const [first, second] = await Promise.all([
+        replaceDistillation(f.request, { ...body, consent: true }),
+        replaceDistillation(f.request, { ...body, key: 'competing', consent: true }),
+    ]);
+    assert.equal(first.job.id, second.job.id);
+    const replay = await replaceDistillation(f.request, { ...body, consent: true });
+    assert.equal(replay.job.id, first.job.id);
+    assert.equal(calls, 1);
+    await runLabJob(f.context(first), { generate: async () => { calls++; return generate(); } });
+    assert.equal(calls, 2);
+    assert.equal(readLabRecord(f.base, f.body.key).lifecycle.uncertain, true);
+    assert.equal(readLabRecord(f.base, first.record.key).state, 'completed');
+});
+
+test('an uncertain replacement failure needs its own explicit retry decision', async () => {
+    const f = fixture(), old = await acceptLabJob(f.request, f.body);
+    updateJob(f.base.directories, old.job.id, { state: 'failed' });
+    const next = await replaceDistillation(f.request, replacementBody(f));
+    await assert.rejects(providerStep(f.context(next), 'second-unknown', async () => { throw new Error('second lost reply'); }), /second lost/);
+    updateJob(f.base.directories, next.job.id, { state: 'interrupted' });
+    const previous = readLabRecord(f.base, next.record.key);
+    await assert.rejects(replaceDistillation(f.request, { ...f.body, key: 'third', previousKey: previous.key,
+        previousRevision: previous.lifecycle.revision }), /may still be processing/);
+    assert.equal(readLabRecord(f.base, 'third'), null);
+});
+
+test('history cleanup saves uncertain outcome before deleting provider evidence and preserves completed proposals', async () => {
+    const f = fixture(), old = await acceptLabJob(f.request, f.body);
+    await assert.rejects(providerStep(f.context(old), 'lost', async () => { throw new Error('lost'); }), /lost/);
+    updateJob(f.base.directories, old.job.id, { state: 'failed', finishedAt: Date.now() - 1000 });
+    clearFinishedJobs(f.base.directories, { owner: f.base.owner });
+    assert.equal(getJob(f.base.directories, old.job.id), null);
+    const missing = readLabRecord(f.base, f.body.key);
+    assert.equal(missing.lifecycle.reason, 'cleared');
+    assert.equal(missing.lifecycle.uncertain, true);
+    assert.equal(missing.lifecycle.removed, true);
+    await assert.rejects(replaceDistillation(f.request, replacementBody(f)), /may still be processing/);
+    const next = await replaceDistillation(f.request, replacementBody(f, 'after-cleanup', { consent: true }));
+    await runLabJob(f.context(next), { generate });
+    updateJob(f.base.directories, next.job.id, { state: 'completed', finishedAt: Date.now() - 20 * 60 * 1000 });
+    clearFinishedJobs(f.base.directories, { owner: f.base.owner });
+    assert.equal(readLabRecord(f.base, next.record.key).result.proposals.length, 2);
+});
+
+test('cleanup retains a saved provider reply before proposal parsing and reconciles the final-result crash gap', async () => {
+    for (const finalResult of [false, true]) {
+        const f = fixture(), old = await acceptLabJob(f.request, f.body);
+        await providerStep(f.context(old), 'saved-before-parsing', generate);
+        if (finalResult) writeArtifact(f.base.directories, old.job.id, 'result', { target: old.record.plan.target, proposals, chunks: 1 });
+        updateJob(f.base.directories, old.job.id, { state: 'failed', finishedAt: Date.now() - 1000 });
+        clearFinishedJobs(f.base.directories, { owner: f.base.owner });
+        const retained = readLabRecord(f.base, old.record.key);
+        assert.equal(getJob(f.base.directories, old.job.id), null);
+        assert.equal((finalResult ? retained.result : retained.partial).proposals.length, 2);
+        assert.equal(retained.state, finalResult ? 'completed' : 'accepted');
+        if (finalResult) assert.equal(retained.partial, undefined);
+        else assert.equal(retained.lifecycle.uncertain, false);
+    }
+});
+
+test('restart replay cannot shrink retained proposals or misidentify the latest saved provider checkpoint before cleanup', async () => {
+    for (const savedCount of [2, 3]) {
+        const f = fixture(), old = await acceptLabJob(f.request, f.body), context = f.context(old);
+        const saved = Array.from({ length: 3 }, (_, index) => ({ title: `Saved concept ${index}`, keys: [`saved-${index}`], content: `Saved reply ${index}.` }));
+        let calls = 0;
+        for (let index = 0; index < 3; index++) await providerStep(context, `chunk-${index}`, async () => {
+            calls++;
+            return { text: JSON.stringify([saved[index]]) };
+        });
+        writeArtifact(f.base.directories, old.job.id, 'distill-chunks', ['one', 'two', 'three']);
+        distillTransaction(f.base, f.account, (_lease, tx) => {
+            const value = tx.read(old.record.key);
+            value.partial = { target: value.plan.target, proposals: saved.slice(0, savedCount).map((proposal, id) => ({ ...proposal, id })),
+                lastProviderStep: `provider:chunk-${savedCount - 1}`, chunks: 3, failedChunks: 0, dropped: 0, incomplete: true };
+            tx.write(value);
+        });
+        await assert.rejects(runDistill({ ...context, progress: async progress => {
+            if (progress.completed === 1) throw new Error('stopped during cached replay');
+        } }, { generate: async options => readArtifact(f.base.directories, old.job.id,
+            `provider:chunk-${Number(options.stepNamespace.split(':')[1])}`) }), /cached replay/);
+        updateJob(f.base.directories, old.job.id, { state: 'cancelled', finishedAt: Date.now() });
+        clearFinishedJobs(f.base.directories, { owner: f.base.owner });
+        const retained = readLabRecord(f.base, old.record.key);
+        assert.equal(retained.partial.proposals.length, 3);
+        assert.equal(retained.partial.lastProviderStep, 'provider:chunk-2');
+        assert.equal(calls, 3);
+        assert.equal(getJob(f.base.directories, old.job.id), null);
+    }
+});
+
+test('legacy absence remains uncertain and a replacement fences a delayed initial submission', async () => {
+    const f = fixture();
+    const next = await replaceDistillation(f.request, { ...replacementBody(f), consent: true, previousBody: f.body });
+    const delayed = await acceptLabJob(f.request, f.body);
+    assert.equal(delayed.job, null);
+    assert.equal(delayed.record.lifecycle.reason, 'superseded');
+    assert.equal(delayed.record.lifecycle.uncertain, true);
+    await runLabJob(f.context(next), { generate });
+    assert.equal(readLabRecord(f.base, next.record.key).state, 'completed');
+});
+
+test('invalid replacement controls do not fence the previous operation and corrected controls can try again', async () => {
+    const f = fixture(), old = await acceptLabJob(f.request, f.body);
+    updateJob(f.base.directories, old.job.id, { state: 'failed' });
+    const invalid = replacementBody(f, 'invalid', { book: 'Missing' });
+    await assert.rejects(replaceDistillation(f.request, invalid), /Missing|found|exist/);
+    assert.equal(refuseLabSubmission(f.base, f.account,
+        { ...f.body, key: 'invalid', book: 'Missing' }, 'Missing book'), true);
+    assert.equal(readLabRecord(f.base, f.body.key).lifecycle.replacement, undefined);
+    const corrected = await replaceDistillation(f.request, replacementBody(f, 'corrected'));
+    assert.equal(corrected.created, true);
+    assert.equal(readLabRecord(f.base, 'invalid').state, 'refused');
+});
+
+test('definite job-store refusal after fencing closes only that replacement and permits corrected later attempts', async () => {
+    const f = fixture(), old = await acceptLabJob(f.request, f.body);
+    updateJob(f.base.directories, old.job.id, { state: 'failed' });
+    const seed = acceptJob(f.base.directories, { owner: f.base.owner, type: 'fixture.test', submissionKey: 'seed', intent: {} }).job;
+    mutateJobs(f.base.directories, store => {
+        store.jobs = Object.fromEntries(Array.from({ length: JOB_LIMIT }, (_, index) => {
+            const job = { ...seed, id: `busy-${index}`, state: 'waiting' };
+            return [jobKey(job.id), job];
+        }));
+        return { changed: true };
+    });
+    await assert.rejects(replaceDistillation(f.request, replacementBody(f, 'rejected-after-fence')), error => error.code === 'JOB_STORE_FULL' && error.notAccepted === true);
+    assert.equal(readLabRecord(f.base, 'rejected-after-fence').state, 'refused');
+    assert.equal(readLabRecord(f.base, f.body.key).lifecycle.replacement.key, 'rejected-after-fence');
+    assert.equal(refuseLabSubmission(f.base, f.account, { ...f.body, key: 'rejected-after-fence' }, 'full'), false);
+    updateJob(f.base.directories, 'busy-0', { state: 'completed' });
+    const next = await replaceDistillation(f.request, replacementBody(f, 'corrected-after-fence'));
+    assert.equal(next.created, true);
+    assert.equal(next.record.key, 'corrected-after-fence');
+    assert.equal(readLabRecord(f.base, f.body.key).lifecycle.replacement.key, 'corrected-after-fence');
+});
+
+test('completion discovered before replacement keeps the result and requires another deliberate action', async () => {
+    const f = fixture(), old = await acceptLabJob(f.request, f.body);
+    const body = { ...replacementBody(f), consent: true };
+    await runLabJob(f.context(old), { generate });
+    await assert.rejects(replaceDistillation(f.request, body), /finished.*saved proposals/);
+    assert.equal(readLabRecord(f.base, 'replacement'), null);
+    assert.equal(readLabRecord(f.base, f.body.key).result.proposals.length, 2);
+});
+
+test('count pruning and expiry preserve distillation outcome classification before history disappears', async () => {
+    for (const expiry of [false, true]) {
+        const f = fixture(), old = await acceptLabJob(f.request, f.body);
+        updateJob(f.base.directories, old.job.id, { state: 'failed', dismissed: !expiry, finishedAt: Date.now() - (expiry ? JOB_FAILURE_RETENTION_MS + 1000 : 1000) });
+        const seed = acceptJob(f.base.directories, { owner: f.base.owner, type: 'fixture.test', submissionKey: 'seed', intent: {} }).job;
+        mutateJobs(f.base.directories, store => {
+            for (let index = 0; index < JOB_LIMIT + 2; index++) {
+                const job = { ...seed, id: `fixture-${index}`, state: 'completed', updatedAt: Date.now(), finishedAt: Date.now() };
+                store.jobs[jobKey(job.id)] = job;
+            }
+            return { changed: true };
+        });
+        assert.equal(getJob(f.base.directories, old.job.id), null);
+        const record = readLabRecord(f.base, f.body.key);
+        assert.equal(record.lifecycle.reason, 'missing');
+        assert.equal(record.lifecycle.uncertain, false);
+    }
+});
+
+test('abandoned Distiller reservations are released at the ledger threshold without deleting records or unrelated reservations', async () => {
+    const f = fixture();
+    for (let index = 0; index < LAB_STORE_LIMIT / LAB_RECORD_LIMIT; index++) {
+        const accepted = admitLabJob(f.base, f.account, { key: `abandoned-${index}`, kind: index === 0 ? 'prompting.requests' : 'distill', input: {}, plan: { frozen: true }, label: 'Test' });
+        updateJob(f.base.directories, accepted.job.id, { state: 'failed' });
+    }
+    reconcileDistillations(f.base, f.account);
+    const admitted = await acceptLabJob(f.request, f.body);
+    assert.equal(admitted.created, true);
+    assert.equal(listLabRecords(f.base).length, 33);
+    assert.equal(readLabRecord(f.base, 'abandoned-0').lifecycle, undefined);
+    assert.equal(readLabRecord(f.base, 'abandoned-1').lifecycle.retired, true);
+    await runLabJob(f.context(admitted), { generate });
+    assert.equal(readLabRecord(f.base, admitted.record.key).result.proposals.length, 2);
+});
+
+test('late old provider reply remains saved under its original operation after a live replacement', async () => {
+    const f = fixture(), old = await acceptLabJob(f.request, f.body);
+    const { registerHandler, setDirectoriesResolver, testExports } = await import('../src/jobs/runner.js');
+    let release, started;
+    const waiting = new Promise(resolve => { started = resolve; });
+    registerHandler('labs.distill', context => runLabJob(context, { generate: () => providerStep(context, 'late-provider', async () => {
+        started();
+        return new Promise(resolve => { release = () => resolve({ text: JSON.stringify(proposals) }); });
+    }) }));
+    setDirectoriesResolver(() => f.base.directories);
+    const running = testExports.runJob(old.job);
+    await waiting;
+    const next = await replaceDistillation(f.request, replacementBody(f, 'live-replacement', { consent: true }));
+    release();
+    await running;
+    const late = readLabRecord(f.base, old.record.key);
+    assert.equal(late.state, 'completed');
+    assert.equal(late.result.proposals.length, 2);
+    assert.equal(late.result.incomplete, true);
+    assert.equal(readLabRecord(f.base, next.record.key).state, 'accepted');
+    assert.equal(getJob(f.base.directories, old.job.id).state, 'cancelled');
+    assert.equal(JSON.parse(fs.readFileSync(f.bookPath)).entries[3].content, 'Earth is blue.');
+});
+
+test('preparing replacement survives a crash after its fence and is resumed from server-captured controls', async () => {
+    const f = fixture(), old = await acceptLabJob(f.request, f.body);
+    updateJob(f.base.directories, old.job.id, { state: 'failed' });
+    const previous = readLabRecord(f.base, f.body.key);
+    const input = { ...f.body };
+    const kind = input.kind;
+    delete input.key; delete input.kind;
+    const successor = { ...previous, key: 'crash-successor', state: 'preparing', jobId: null, requestInput: input,
+        requestHash: roleplayHash({ kind, input }), lifecycle: undefined };
+    delete successor.lifecycle;
+    distillTransaction(f.base, f.account, (lease, tx) => {
+        tx.write(successor);
+        fenceDistillation(lease, { previousKey: previous.key, previousRevision: previous.lifecycle.revision, key: successor.key, consent: false }, successor);
+    });
+    const recovered = await replaceDistillation(f.request, replacementBody(f, 'other-device-key', { book: 'Different ignored controls' }));
+    assert.equal(recovered.record.key, successor.key);
+    assert.equal(recovered.record.requestInput.book, 'Garden');
+    assert.ok(recovered.job);
+    assert.equal((await replaceDistillation(f.request, replacementBody(f, 'later-tab'))).job.id, recovered.job.id);
+});
+
+test('a retired preparing original cannot admit a delayed job after replacement', async () => {
+    const f = fixture(), old = await acceptLabJob(f.request, f.body);
+    mutateJobs(f.base.directories, store => { delete store.jobs[jobKey(old.job.id)]; return { changed: true }; });
+    distillTransaction(f.base, f.account, (_lease, tx) => {
+        const value = tx.read(f.body.key);
+        value.state = 'preparing'; value.jobId = null; delete value.lifecycle;
+        tx.write(value);
+    });
+    const next = await replaceDistillation(f.request, replacementBody(f, 'replace-preparing', { consent: true }));
+    const delayed = await acceptLabJob(f.request, f.body);
+    assert.equal(delayed.job, null);
+    assert.equal(delayed.created, false);
+    assert.equal(delayed.record.lifecycle.reason, 'superseded');
+    assert.ok(next.job);
+});
+
+test('live replacement at the reservation boundary preserves bounded room for a late old result', async () => {
+    const f = fixture(), old = await acceptLabJob(f.request, f.body);
+    for (let index = 0; index < 31; index++) admitLabJob(f.base, f.account, { key: `live-quota-${index}`, kind: 'distill', input: {}, plan: { frozen: true }, label: 'Quota fixture' });
+    const { registerHandler, setDirectoriesResolver, testExports } = await import('../src/jobs/runner.js');
+    let release, started;
+    const waiting = new Promise(resolve => { started = resolve; });
+    registerHandler('labs.distill', context => runLabJob(context, { generate: () => providerStep(context, 'quota-late', async () => {
+        started();
+        return new Promise(resolve => { release = () => resolve({ text: JSON.stringify(proposals) }); });
+    }) }));
+    setDirectoriesResolver(() => f.base.directories);
+    const running = testExports.runJob(old.job);
+    await waiting;
+    await assert.rejects(replaceDistillation(f.request, replacementBody(f, 'no-room', { consent: true })), /no room/);
+    assert.equal(readLabRecord(f.base, f.body.key).lifecycle?.replacement, undefined);
+    // Retained receipt bytes still count: freeing one exact reservation is not enough headroom.
+    for (const key of ['live-quota-0', 'live-quota-1']) {
+        const released = readLabRecord(f.base, key);
+        updateJob(f.base.directories, released.jobId, { state: 'failed' });
+    }
+    const next = await replaceDistillation(f.request, replacementBody(f, 'bounded-replacement', { consent: true }));
+    release();
+    await running;
+    assert.equal(readLabRecord(f.base, old.record.key).result.proposals.length, 2);
+    assert.equal(readLabRecord(f.base, next.record.key).state, 'accepted');
+    assert.equal(listLabRecords(f.base).length, 33);
+});
+
+for (const source of ['nanogpt', 'koboldcpp']) test(`${source} Distiller recovery prepares its real backend request once per admitted attempt`, async () => {
+    const f = fixture(), directories = f.base.directories;
+    const settingsFile = path.join(directories.root, 'settings.json');
+    const settings = JSON.parse(fs.readFileSync(settingsFile));
+    settings.max_context = 8192;
+    if (source === 'nanogpt') {
+        fs.writeFileSync(path.join(directories.root, 'secrets.json'), JSON.stringify({ api_key_nanogpt: [{ id: 'fake-nano', value: 'fake-fixture-key-only', active: true }] }));
+        settings.extension_settings.connectionManager.profiles = [{ id: 'saved', api: 'nanogpt', model: 'gpt-4o', 'secret-id': 'fake-nano' }];
+    } else {
+        settings.extension_settings.connectionManager.profiles = [{ id: 'saved', mode: 'tc', api: 'kcpp', model: 'gpt-4o', tokenizer: 2, 'api-url': 'http://127.0.0.1:18000' }];
+        settings.textgenerationwebui_settings = { ...providerSettings, type: 'koboldcpp', api_server: 'http://127.0.0.1:18000',
+            banned_tokens: '', global_banned_tokens: '', logit_bias: [], dry_sequence_breakers: '[]', negative_prompt: '' };
+        settings.power_user = { tokenizer: 2, custom_stopping_strings: '[]', instruct: { ...instructSettings, enabled: false } };
+    }
+    fs.writeFileSync(settingsFile, JSON.stringify(settings));
+    let calls = 0;
+    const run = refused => ({ generate: options => runChatProfile({ ...options, fetch: async (url, request) => {
+        calls++;
+        const body = JSON.parse(request.body);
+        assert.equal(url, source === 'nanogpt' ? 'https://nano-gpt.com/api/v1/chat/completions' : 'http://127.0.0.1:18000/v1/completions');
+        assert.equal(body.max_tokens, 1500);
+        assert.match(source === 'nanogpt' ? body.messages[0].content : body.prompt, /moon garden grows roses/);
+        if (refused) return new Response(JSON.stringify({ error: { message: 'Fixture Bad Request' } }), { status: 400, statusText: 'Bad Request' });
+        return new Response(JSON.stringify(source === 'nanogpt'
+            ? { choices: [{ message: { role: 'assistant', content: JSON.stringify(proposals) } }] }
+            : { choices: [{ text: JSON.stringify(proposals) }] }));
+    } }) });
+    const old = await acceptLabJob(f.request, f.body);
+    await assert.rejects(runLabJob(f.context(old), run(true)), /Bad Request|400|Fixture/);
+    updateJob(directories, old.job.id, { state: 'failed', error: { status: 400, code: 'FIXTURE_REFUSAL', message: 'Fixture Bad Request' } });
+    assert.equal(readLabRecord(f.base, f.body.key).lifecycle.uncertain, false);
+    const next = await replaceDistillation(f.request, replacementBody(f, `${source}-recovery`));
+    await runLabJob(f.context(next), run(false));
+    assert.equal(calls, 2);
+    assert.equal(readLabRecord(f.base, next.record.key).result.proposals.length, 2);
+    assert.equal(JSON.stringify(readLabRecord(f.base, next.record.key)).includes('fake-fixture-key-only'), false);
 });
 
 test('paused acceptance recovers its preparing record without reconstructing source data', async () => {

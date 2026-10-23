@@ -35,6 +35,10 @@ export const CANCELLABLE_STATES = Object.freeze(['queued', 'running', 'waiting']
 
 const STORE_FILE = 'index.json';
 const pruneHolds = new Set();
+let historyLifecycle = null;
+
+/** Native Distiller evidence must survive every removal path, before artefacts go. */
+export function registerJobHistoryLifecycle(lifecycle) { historyLifecycle = lifecycle; }
 
 /**
  * The jobs runner polls every 500 ms per owner, and every artifact read checks
@@ -276,11 +280,11 @@ function familyLocked(job, jobs) {
     return false;
 }
 
-const removable = (job, jobs = {}) => !pruneHolds.has(job.owner) && baseRemovable(job) && !familyLocked(job, jobs);
+const removable = (job, jobs = {}) => !pruneHolds.has(job.owner) && !historyLifecycle?.keep(job) && baseRemovable(job) && !familyLocked(job, jobs);
 // Last resort when the ledger is over a limit: a recent unresolved failure may
 // go so new work is never refused because of old mistakes.
 const evictableFailure = (job, jobs = {}) => !pruneHolds.has(job.owner) && unresolvedFailure(job)
-    && !job.retainedReply && !familyLocked(job, jobs);
+    && !historyLifecycle?.keep(job) && !job.retainedReply && !familyLocked(job, jobs);
 
 function pruneJobs(jobs, protectedId) {
     const entries = Object.entries(jobs);
@@ -319,7 +323,7 @@ function dismissExpiredFailures(jobs) {
     }
 }
 
-function writeStore(directories, store, protectedId, previousKeys = Object.keys(store.jobs)) {
+function writeStore(directories, store, protectedId, previousJobs = { ...store.jobs }) {
     // The server accepts requests before startup recovery runs, and any write
     // here expires and prunes. Claim old Recovered copies on this ledger's first
     // write before that race can discard the last saved reply.
@@ -340,6 +344,8 @@ function writeStore(directories, store, protectedId, previousKeys = Object.keys(
     if (Buffer.byteLength(text) > JOB_LEDGER_MAX_BYTES) {
         throw fail(413, 'JOB_STORE_FULL', 'Too many jobs for this account are still unfinished. Wait for some to finish, or use User Settings > Clear job history.');
     }
+    const removed = Object.entries(previousJobs).filter(([key]) => !ordered.jobs[key]).map(([, job]) => job);
+    historyLifecycle?.beforeRemove(directories, removed);
     fs.mkdirSync(stateDir(directories), { recursive: true, mode: 0o700 });
     const filename = storePath(directories);
     writeFileAtomicSync(filename, text, { mode: 0o600 });
@@ -355,7 +361,7 @@ function writeStore(directories, store, protectedId, previousKeys = Object.keys(
         }
     } catch { /* The next read reports the real problem. */ }
     // Delete artifacts only after the ledger no longer references their job.
-    for (const key of previousKeys) {
+    for (const key of Object.keys(previousJobs)) {
         if (ordered.jobs[key]) continue;
         try {
             fs.rmSync(path.join(stateDir(directories), 'artifacts', key), { recursive: true, force: true });
@@ -372,6 +378,11 @@ function writeStore(directories, store, protectedId, previousKeys = Object.keys(
  * a lock-protected read/modify/write, not a revision compare-and-set.
  */
 export function mutateJobs(directories, mutate) {
+    const action = () => mutateJobsLocked(directories, mutate);
+    return historyLifecycle ? historyLifecycle.withMutation(directories, action) : action();
+}
+
+function mutateJobsLocked(directories, mutate) {
     const release = acquireChatFileLock(storePath(directories));
     try {
         // A mutation owns and may rewrite every job object, so it must not use
@@ -379,15 +390,23 @@ export function mutateJobs(directories, mutate) {
         const store = readStore(directories, { mutable: true });
         const previousOwner = Object.values(store.jobs)[0]?.owner;
         const queued = new Set(Object.values(store.jobs).filter(job => job.state === 'queued').map(job => job.id));
-        const previousKeys = Object.keys(store.jobs);
+        const previousJobs = { ...store.jobs };
         const result = mutate(store);
-        if (result?.changed === false) return result;
-        const written = writeStore(directories, store, result?.job?.id, previousKeys);
+        if (result?.changed === false) {
+            delete result.removedJobs;
+            return result;
+        }
+        // Explicit cleanup annotates the objects before deletion; preserve its reason.
+        const beforeRemoval = { ...previousJobs, ...store.jobs };
+        for (const job of result?.removedJobs ?? []) beforeRemoval[jobKey(job.id)] = job;
+        const written = writeStore(directories, store, result?.job?.id, beforeRemoval);
         const jobs = Object.values(written.jobs);
         const owner = result?.job?.owner ?? jobs[0]?.owner ?? previousOwner;
         if (owner) notifyJobsChanged({ owner, queued: jobs.some(job => job.state === 'queued' && !queued.has(job.id)),
             ...(result?.job?.id ? { id: result.job.id, state: result.job.state } : {}) });
-        return { ...result, revision: written.revision };
+        const publicResult = { ...result };
+        delete publicResult.removedJobs;
+        return { ...publicResult, revision: written.revision };
     } finally {
         release();
     }
@@ -783,9 +802,10 @@ export function clearFinishedJobs(directories, { owner } = {}) {
         const pinned = job => recent(job) || [job.parentId, ...(job.children ?? [])]
             .some(id => id && recent(store.jobs[jobKey(id)] ?? {}));
         const doomed = mine.filter(([, job]) => removable(job, store.jobs) && !pinned(job)).map(([key]) => key);
+        const removedJobs = doomed.map(key => store.jobs[key]);
         for (const key of doomed) delete store.jobs[key];
         const remaining = Object.values(store.jobs).filter(job => owner === undefined || job.owner === owner).length;
-        return { changed: dismissed > 0 || doomed.length > 0, removed: doomed.length, dismissed, remaining };
+        return { changed: dismissed > 0 || doomed.length > 0, removed: doomed.length, dismissed, remaining, removedJobs };
     });
 }
 

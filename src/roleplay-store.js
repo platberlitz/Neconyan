@@ -1195,6 +1195,17 @@ export function roleplayLease(lease) {
     return held;
 }
 
+/** Synchronous storage integrations keep the account-before-jobs lock order. */
+export function withExistingRoleplayAccount(base, operation) {
+    const active = activeAccountLeases.get(path.resolve(base.directories.root));
+    if (active) {
+        const { scope } = roleplayLease(active);
+        if (scope.owner !== base.owner) throw roleplayError('ROLEPLAY_ACCOUNT_CHANGED', 'The signed-in account changed.');
+        return operation(active, { accountId: scope.accountId, dataEpoch: scope.dataEpoch });
+    }
+    return withRoleplayAccount(base, null, operation);
+}
+
 /** Keep the account lock through a legacy recovery or migration publication. */
 export function withUntrackedRoleplayFiles(base, filenames, operation) {
     return withRoleplayAccount(base, null, lease => {
