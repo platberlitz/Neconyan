@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.4.0
+
+### Merged Staging PRs
+- PR #285 (2026-10-23) `fix(authors-note): stop typing in the note scanning the whole page`
+
 ## v1.3.8
 
 ### Merged Staging PRs
