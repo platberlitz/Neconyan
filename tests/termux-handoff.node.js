@@ -10,7 +10,7 @@ import { USER_DIRECTORY_TEMPLATE } from '../src/constants.js';
 import { bootstrapRoleplayAccount, commitSingleChatWrite } from '../src/roleplay-lifecycle.js';
 import { captureRoleplayStorageSource, readRoleplayEntity } from '../src/generation/roleplay-source.js';
 import { roleplayNativeHost } from '../src/endpoints/chats.js';
-import { readRoleplayAccount, roleplayLease, roleplayStoreDirectory,
+import { readRoleplayAccount, readRoleplayFile, roleplayLease, roleplayStoreDirectory,
     saveRoleplayAccount, withRoleplayAccount, resetRoleplayAccount } from '../src/roleplay-store.js';
 import { FILE_WRITE_RECOVERY_SUFFIX } from '../src/util.js';
 import { captureChatProfile, captureProfilePresetBinding } from '../src/generation/profiles.js';
@@ -90,10 +90,10 @@ function boot(root, options = {}) {
         const { setConfigFilePath } = await import(${JSON.stringify(moduleUrl('util'))}); setConfigFilePath(${JSON.stringify(config)});
         const { configureTermuxStartup } = await import(${JSON.stringify(moduleUrl('termux-startup'))});
         const { USER_DIRECTORY_TEMPLATE } = await import(${JSON.stringify(moduleUrl('constants'))});
-        const { bootstrapRoleplayAccount, commitSingleChatWrite } = await import(${JSON.stringify(moduleUrl('roleplay-lifecycle'))});
+        const { bootstrapRoleplayAccount, commitSingleChatWrite, commitRoleplayLifecycleLocked } = await import(${JSON.stringify(moduleUrl('roleplay-lifecycle'))});
         const { roleplayNativeHost } = await import(${JSON.stringify(moduleUrl('endpoints/chats'))});
         const { captureRoleplayStorageSource } = await import(${JSON.stringify(moduleUrl('generation/roleplay-source'))});
-        const { readRoleplayAccount, readRoleplayFile } = await import(${JSON.stringify(moduleUrl('roleplay-store'))});
+        const { readRoleplayAccount, readRoleplayFile, withRoleplayAccount } = await import(${JSON.stringify(moduleUrl('roleplay-store'))});
         const oldReaddir = fs.readdirSync;
         let accountScans = 0;
         fs.readdirSync = (...args) => {
@@ -121,6 +121,25 @@ function boot(root, options = {}) {
                 || options.failure === 'early-lock-cleanup')) throw new Error('injected lock cleanup');
             return oldRmdir(...args);
         };
+        const originalRead = fs.readSync;
+        let disturbances = 0, targetReads = 0;
+        fs.readSync = (fd, ...args) => {
+            const filename = filenames.get(fd);
+            const target = options.disturbIdentity ? String(filename).endsWith('/identity.json')
+                : options.disturbStore ? String(filename).endsWith('/state.json')
+                : String(filename).endsWith('/chats/Nova/Source.jsonl');
+            if (target) targetReads++;
+            if (!options.disturb || !target || targetReads < (options.disturbRead || 1) || (disturbances && options.disturb !== 'persistent')) return originalRead(fd, ...args);
+            disturbances++;
+            if (options.disturb === 'short') return 0;
+            const count = originalRead(fd, ...args);
+            if (options.disturb === 'replacement') {
+                fs.copyFileSync(filename, filename + '.replacement'); fs.renameSync(filename + '.replacement', filename);
+            } else if (options.disturb === 'content') fs.appendFileSync(filename, ' ');
+            else if (options.disturb === 'link') fs.linkSync(filename, filename + '.link');
+            else fs.fchmodSync(fd, fs.fstatSync(fd).mode);
+            return count;
+        };
         try {
             output.result = await configureTermuxStartup({ dataRoot: root }, { termux: !options.native, bun: false,
                 wakeLock: () => ({ status: 0 }), log: console.info, warn: console.warn });
@@ -130,6 +149,13 @@ function boot(root, options = {}) {
                 if (options.skipBootstrap) break;
                 const directories = Object.fromEntries(Object.entries(USER_DIRECTORY_TEMPLATE).map(([key, relative]) => [key, path.join(root, owner, relative)]));
                 const scope = bootstrapRoleplayAccount({ owner, directories }, roleplayNativeHost);
+                if (options.seedNarrator) {
+                    const bytes = fs.readFileSync(new URL('../default/content/characters/Narrator.png', ${JSON.stringify(moduleUrl('termux-startup'))}));
+                    withRoleplayAccount(scope, null, lease => commitRoleplayLifecycleLocked(lease, {
+                        action: 'character-seed', intent: { avatar: 'Narrator.png' },
+                        steps: [{ op: 'create', kind: 'character', locator: { avatar: 'Narrator.png' }, bytes }],
+                    }));
+                }
                 const sources = [], records = [];
                 for (const [index, locator] of ${JSON.stringify(locators)}.entries()) {
                     let source = captureRoleplayStorageSource(scope, locator);
@@ -156,6 +182,7 @@ function boot(root, options = {}) {
                 output.binding = job.intent.binding;
             }
         } catch (error) { output.error = error.message; output.code = error.code; }
+        output.disturbances = disturbances;
         output.workerDevice = process.env.NECONYAN_TERMUX_ZERO_BIRTHTIME_DEVICE;
         output.nodeOptionsUnchanged = originalNodeOptions === process.env.NODE_OPTIONS;
         process.stdout.write(JSON.stringify(output));
@@ -365,4 +392,106 @@ test('the preflight does not rewrite previously captured physical evidence for o
     assert.match(result.dependencyRefusal, /preset or connection changed after acceptance/);
     assert.deepEqual(result.binding, binding);
     assert.deepEqual(getJob(base(root).directories, job.id).intent.binding, binding);
+});
+
+
+function diagnostics(result) {
+    return result.logs.filter(line => line.startsWith('Termux handoff diagnostic: '))
+        .map(line => JSON.parse(line.slice('Termux handoff diagnostic: '.length)));
+}
+
+test('one complete metadata-only read disturbance retries the whole handoff before bootstrap and Narrator seeding', t => {
+    for (const disturbance of [{}, { disturbStore: true }, { disturbIdentity: true }, { disturbRead: 2 }, { disturbRead: 3 }, { disturbRead: 4 }]) {
+        const f = account(t); const root = copy(t, f.root);
+        const result = boot(root, { disturb: 'once', ...disturbance, seedNarrator: true, save: 'after-retry' });
+        assert.equal(result.error, undefined);
+        assert.equal(result.result.mode, 'zero');
+        assert.equal(result.disturbances, 1);
+        assert.equal(result.accounts[0].state.pending, null);
+        assert.ok(fs.existsSync(path.join(base(root).directories.characters, 'Narrator.png')));
+        const events = diagnostics(result);
+        assert.equal(events.length, 1);
+        assert.equal(events[0].reason, 'metadata-changed');
+        assert.equal(events[0].attempt, 1);
+        assert.equal(events[0].retry, true);
+        assert.deepEqual(events[0].changedFields, ['birthtimeNs', 'ctimeNs']);
+        assert.doesNotMatch(JSON.stringify(events), /Nova|Source|fixture|\/|Original|Narrator/);
+        assert.deepEqual(boot(root).accounts, result.accounts);
+    }
+});
+
+test('persistent metadata disturbance exhausts one retry without marker or ledger publication', t => {
+    const f = account(t); const root = copy(t, f.root);
+    const before = fs.readFileSync(statePath(root));
+    const result = boot(root, { disturb: 'persistent', skipBootstrap: true });
+    assert.equal(result.result.mode, 'legacy');
+    assert.equal(result.disturbances, 2);
+    assert.deepEqual(diagnostics(result).map(event => [event.attempt, event.retry]), [[1, true], [2, false]]);
+    assert.equal(fs.existsSync(path.join(root, marker)), false);
+    assert.deepEqual(fs.readFileSync(statePath(root)), before);
+});
+
+test('the fresh retry still refuses a second resource with changed contents', t => {
+    const f = account(t); const root = copy(t, f.root);
+    fs.appendFileSync(path.join(base(root).directories.groupChats, 'Source.jsonl'), '\n{}');
+    const result = boot(root, { disturb: 'once', skipBootstrap: true });
+    assert.equal(result.result.mode, 'legacy');
+    assert.deepEqual(diagnostics(result).map(event => [event.reason, event.retry]), [['metadata-changed', true], ['content-changed', false]]);
+    assert.equal(fs.existsSync(path.join(root, marker)), false);
+});
+
+for (const disturb of ['short', 'replacement', 'content', 'link']) {
+    test('protected ' + disturb + ' refusal is not retried', t => {
+        const f = account(t); const root = copy(t, f.root);
+        const result = boot(root, { disturb, skipBootstrap: true });
+        assert.equal(result.result.mode, 'legacy');
+        assert.equal(result.disturbances, 1);
+        assert.equal(diagnostics(result).length, 1);
+        assert.equal(diagnostics(result)[0].retry, false);
+        assert.equal(fs.existsSync(path.join(root, marker)), false);
+    });
+}
+
+test('metadata refusal plus lease cleanup failure escapes before a retry', t => {
+    const f = account(t); const root = copy(t, f.root);
+    const result = boot(root, { disturb: 'once', failure: 'early-lock-cleanup', skipBootstrap: true });
+    assert.ok(result.error);
+    assert.equal(result.disturbances, 1);
+    assert.deepEqual(diagnostics(result), []);
+    assert.equal(fs.existsSync(path.join(root, marker)), false);
+});
+
+
+test('a marker publication failure after the successful preflight retry is never retried', t => {
+    for (const failure of ['before-marker', 'marker-fsync', 'lock-cleanup']) {
+        const f = account(t); const root = copy(t, f.root);
+        const result = boot(root, { disturb: 'once', failure, skipBootstrap: true });
+        assert.ok(result.error);
+        assert.equal(result.disturbances, 1);
+        assert.deepEqual(diagnostics(result).map(event => [event.attempt, event.retry]), [[1, true]]);
+        assert.equal(result.workerDevice, '');
+        assert.equal(fs.existsSync(path.join(root, marker)), failure !== 'before-marker');
+    }
+});
+
+test('ordinary protected readers still refuse metadata changes with the same public error', t => {
+    const f = account(t);
+    const originalRead = fs.readSync;
+    let disturbed = false;
+    fs.readSync = (fd, ...args) => {
+        const count = originalRead(fd, ...args);
+        if (!disturbed) { disturbed = true; fs.fchmodSync(fd, fs.fstatSync(fd).mode); }
+        return count;
+    };
+    try {
+        assert.throws(() => readRoleplayFile(f.filename), error => {
+            assert.equal(error.code, 'ROLEPLAY_STORE_DAMAGED');
+            assert.equal(error.status, 409);
+            assert.equal(error.message, 'Protected Roleplay evidence needs recovery and was left untouched.');
+            assert.equal(error.protectedRead.reason, 'metadata-changed');
+            assert.deepEqual(error.protectedRead.changedFields, ['ctimeNs']);
+            assert.doesNotMatch(JSON.stringify(error.protectedRead), /Nova|Source|fixture|\//);
+            return true;
+        });
+    } finally { fs.readSync = originalRead; }
 });
