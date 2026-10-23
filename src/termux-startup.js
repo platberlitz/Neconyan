@@ -6,6 +6,7 @@ import { isBunRuntime, isNativeTermuxEnvironment } from './runtime.js';
 import { serverDirectory } from './server-directory.js';
 import { tryWriteFileSync } from './util.js';
 import { probeTermuxFileIdentity, useZeroTermuxBirthtime } from './termux-file-identity.js';
+import { publishCleanTermuxHandoff } from './roleplay-transfer-recovery.js';
 
 const modeFilename = '_termux-file-identity.json';
 const zeroMode = { version: 1, birthtime: 'zero' };
@@ -94,14 +95,21 @@ export async function configureTermuxStartup({ dataRoot, termuxRecovery = false 
         normalDirectory(protectedRoot);
         existing = fs.readdirSync(protectedRoot).length > 0;
     }
+    const publishMode = () => {
+        tryWriteFileSync(marker, JSON.stringify(zeroMode), { mode: 0o600 }, { expectedFileAbsent: true, durable: true, preserveOnCreateError: true });
+        if (readSmallFile(marker) !== JSON.stringify(zeroMode)) throw new Error('The saved Termux file-identity policy changed during publication.');
+    };
+    if (!mode && !termuxRecovery && existing && probe.fallback && publishCleanTermuxHandoff(root, probe.device, publishMode)) mode = zeroMode;
     const useZero = Boolean(mode || termuxRecovery || (!existing && (probe.fallback || probe.zero)));
     if (useZero) {
+        // Marker publication and raw-policy lease cleanup must finish before the
+        // process or any worker can observe the new policy.
+        if (!mode) publishMode();
         useZeroTermuxBirthtime(probe.device);
-        if (!mode) tryWriteFileSync(marker, JSON.stringify(zeroMode), { mode: 0o600 }, { expectedFileAbsent: true, durable: true, preserveOnCreateError: true });
         process.env.NECONYAN_TERMUX_ZERO_BIRTHTIME_DEVICE = probe.device;
         log('Termux file identity compatibility is active for this data folder.');
     } else if (existing && probe.fallback) {
-        warn('This older Termux data folder uses existing file identities. They were kept unchanged. For failed imports, use the Termux recovery launcher described in docs/termux-import-recovery.md.');
+        warn('A clean handoff could not be verified for this older Termux data folder. Its existing file identities were kept unchanged. Keep a backup and follow docs/data-portability.md or the Termux recovery launcher in docs/termux-import-recovery.md.');
     }
     acquireWakeLock(wakeLock, warn);
     if (termuxRecovery) log(`Continuing the saved Termux recovery data folder: ${root}`);

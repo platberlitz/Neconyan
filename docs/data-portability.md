@@ -17,7 +17,9 @@ The Android APK's server only accepts connections from its own phone. It can't c
 
 A dual-boot computer can use one external-drive folder in this way, with only one installation running at a time. Separate offline devices still need local copies. This change doesn't add a sync service or merge histories.
 
-Termux can retain an older file-identity mode when you bring in an existing desktop folder. If startup reports that warning, keep the original and check that your chats still open after saving and restarting. Automatic reconnection doesn't change that mode.
+On Termux filesystems that report a changing creation timestamp, a verified clean handoff selects a stable file-identity policy before reconnecting the files. Every protected account must have recorded placement evidence proving a real filesystem move, unchanged tracked content and no unfinished writes or resets. The policy marker travels with the complete data folder, so restarts and later return trips retain it. Windows continues to use its native file identities.
+
+If a clean handoff cannot be verified, Termux keeps the older identity mode and reports a warning. Keep both copies and follow the recovery instructions below before editing; on affected filesystems, saving under the older mode can fail. In-place data, incomplete tracking records and already-failed saves are not automatically converted.
 
 ## When recovery is still needed
 
