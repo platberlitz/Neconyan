@@ -83,6 +83,11 @@ const object = value => value !== null && typeof value === 'object' && !Array.is
 const integer = value => Number.isSafeInteger(value) && value >= 0;
 const damaged = () => roleplayError('ROLEPLAY_STORE_DAMAGED', 'Protected Roleplay evidence needs recovery and was left untouched.');
 
+// Deliberately contains no path, account identifier, stat values or file content.
+function protectedReadRefusal(reason, changedFields = []) {
+    return Object.assign(damaged(), { protectedRead: { stage: 'protected-read', reason, changedFields } });
+}
+
 /** This directory is a sibling of user data, never an imported or reset user file. */
 export function roleplayStoreDirectory({ owner, directories }) {
     validateOwner(owner);
@@ -98,7 +103,7 @@ function directory(filePath, create = false, allowMissing = false) {
     if (parent !== filePath && directory(parent, false, allowMissing) === false) return false;
     try {
         const stat = fs.lstatSync(filePath);
-        if (!stat.isDirectory() || stat.isSymbolicLink()) throw damaged();
+        if (!stat.isDirectory() || stat.isSymbolicLink()) throw protectedReadRefusal('unsafe-directory');
     } catch (error) {
         if (error.code === 'ENOENT' && allowMissing && !create) return false;
         if (error.code !== 'ENOENT' || !create) throw error;
@@ -155,7 +160,7 @@ export function inspectRoleplayFileStat(filename, limit = ROLEPLAY_STORE_MAX_BYT
         if (error.code === 'ENOENT') return null;
         throw error;
     }
-    if (!stat.isFile() || stat.nlink !== 1n || stat.size > BigInt(limit)) throw damaged();
+    if (!stat.isFile() || stat.nlink !== 1n || stat.size > BigInt(limit)) throw protectedReadRefusal('unsafe-file');
     return stat;
 }
 
@@ -166,7 +171,7 @@ function sameFileStat(left, right) {
 
 function readProtectedHandle(filename, limit, fd, { flush, collectBytes }, stat = inspectRoleplayFileStat(filename, limit)) {
     const current = fs.fstatSync(fd, { bigint: true });
-    if (!stat || !sameFileStat(current, stat)) throw damaged();
+    if (!stat || !sameFileStat(current, stat)) throw protectedReadRefusal('opened-file-changed');
     const size = Number(stat.size);
     const bytes = Buffer.alloc(collectBytes ? size : Math.min(size, 64 * 1024));
     const hash = crypto.createHash('sha256');
@@ -183,9 +188,16 @@ function readProtectedHandle(filename, limit, fd, { flush, collectBytes }, stat 
         fsyncDirectorySync(path.dirname(filename));
     }
     const after = fs.fstatSync(fd, { bigint: true });
-    if (!sameFileStat(after, stat) || offset !== size) throw damaged();
+    if (offset !== size) throw protectedReadRefusal('short-read');
     const finalPath = inspectRoleplayFileStat(filename, limit);
-    if (!finalPath || !sameFileStat(finalPath, after)) throw damaged();
+    if (!finalPath || !sameFileStat(finalPath, after)) throw protectedReadRefusal('path-changed');
+    if (!sameFileStat(after, stat)) {
+        const changedFields = ['dev', 'ino', 'birthtimeNs', 'size', 'mtimeNs', 'ctimeNs', 'nlink']
+            .filter(key => after[key] !== stat[key]);
+        const metadataOnly = after.isFile() && stat.isFile() && after.nlink === 1n && stat.nlink === 1n
+            && changedFields.length > 0 && changedFields.every(key => key === 'birthtimeNs' || key === 'ctimeNs');
+        throw protectedReadRefusal(metadataOnly ? 'metadata-changed' : 'file-changed', changedFields);
+    }
     return { ...(collectBytes ? { bytes } : { size }), rawHash: hash.digest('hex'),
         physical: { dev: String(after.dev), ino: String(after.ino), birthtimeNs: String(after.birthtimeNs) } };
 }

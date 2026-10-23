@@ -21,8 +21,8 @@ const changed = () => roleplayError('ROLEPLAY_RECOVERY_CHANGED', 'The files chan
 function checked(relative, read) {
     try { return read(); } catch (error) {
         if (error.code !== 'ROLEPLAY_STORE_DAMAGED') throw error;
-        throw roleplayError(error.code, `Repair cannot check ${relative}: it is a link, larger than ${Math.floor(FILE_LIMIT / 1024 / 1024)} MB,`
-            + ' or changed while it was read. Nothing was changed.');
+        throw Object.assign(roleplayError(error.code, `Repair cannot check ${relative}: it is a link, larger than ${Math.floor(FILE_LIMIT / 1024 / 1024)} MB,`
+            + ' or changed while it was read. Nothing was changed.'), { protectedRead: error.protectedRead });
     }
 }
 
@@ -152,6 +152,16 @@ export function inspectTransferredRoleplay(base) {
 const relocationChanged = () => roleplayError('ROLEPLAY_RECOVERY_CHANGED', 'Roleplay storage changed while its new folder was being checked. Nothing was changed.');
 const relocationCollision = () => roleplayError('ROLEPLAY_SOURCE_CHANGED', 'Relocated Roleplay storage has conflicting file identities. Nothing was changed.');
 
+function handoffDiagnostic(stage, error, reason = 'validation-refused') {
+    return { stage, reason: error?.protectedRead?.reason ?? reason,
+        ...(error?.protectedRead ? { changedFields: error.protectedRead.changedFields } : {}) };
+}
+
+function handoffRefusal(stage, reason, error = relocationChanged()) {
+    return Object.assign(error, { handoffDiagnostic: handoffDiagnostic(stage, error, reason) });
+}
+
+
 function relocationFilename(scope, resource) {
     if (resource.kind === 'chat') return roleplayChatPath(scope, resource.locator);
     return path.join(resource.kind === 'character' ? scope.directories.characters : scope.directories.groups,
@@ -177,34 +187,34 @@ function relocationContentHash(resource, bytes) {
  * journal-backed or changed file is a conservative refusal, never a rebind.
  */
 function observeRelocation(scope, state, instanceId, resource, verifyContent = false) {
-    if (state.paths[roleplayPathKey(state, resource.kind, resource.locator)]?.instanceId !== instanceId) return { outcome: 'refused' };
+    if (state.paths[roleplayPathKey(state, resource.kind, resource.locator)]?.instanceId !== instanceId) return { outcome: 'refused', diagnostic: handoffDiagnostic('resource', null, 'path-index') };
     try {
         const filename = relocationFilename(scope, resource);
-        if (readRoleplayWriteJournal(filename, { allowMissingParent: true })) return { outcome: 'refused' };
+        if (readRoleplayWriteJournal(filename, { allowMissingParent: true })) return { outcome: 'refused', diagnostic: handoffDiagnostic('resource', null, 'write-journal') };
         const inspection = inspectRoleplayFile(filename, FILE_LIMIT, { allowMissingParent: true });
-        if (!inspection) return { outcome: 'refused', missing: true };
-        if (inspection.rawHash !== resource.head.rawHash) return { outcome: 'refused' };
+        if (!inspection) return { outcome: 'refused', missing: true, diagnostic: handoffDiagnostic('resource', null, 'missing-file') };
+        if (inspection.rawHash !== resource.head.rawHash) return { outcome: 'refused', diagnostic: handoffDiagnostic('resource', null, 'content-changed') };
         if (!verifyContent && isDeepStrictEqual(inspection.physical, resource.head.physical)) return { outcome: 'match' };
         // The same exact bytes now have a different physical identity. Read them through the
         // protected reader once more and require both observations to agree before parsing.
         let file, contentHash;
         try {
-            if (readRoleplayWriteJournal(filename, { allowMissingParent: true })) return { outcome: 'refused' };
+            if (readRoleplayWriteJournal(filename, { allowMissingParent: true })) return { outcome: 'refused', diagnostic: handoffDiagnostic('resource', null, 'write-journal') };
             file = readRoleplayFile(filename, FILE_LIMIT, { allowMissingParent: true });
-            if (!file) return { outcome: 'refused', missing: true };
+            if (!file) return { outcome: 'refused', missing: true, diagnostic: handoffDiagnostic('resource', null, 'missing-file') };
             if (file.rawHash !== inspection.rawHash || file.bytes.length !== inspection.size
                 || !isDeepStrictEqual(file.physical, inspection.physical)) throw relocationChanged();
             contentHash = relocationContentHash(resource, file.bytes);
         } catch (error) {
             if (error?.code === 'ROLEPLAY_RECOVERY_CHANGED') throw error;
-            return { outcome: 'refused' };
+            return { outcome: 'refused', diagnostic: handoffDiagnostic('resource', error) };
         }
-        if (contentHash !== resource.head.contentHash) return { outcome: 'refused' };
+        if (contentHash !== resource.head.contentHash) return { outcome: 'refused', diagnostic: handoffDiagnostic('resource', null, 'content-changed') };
         return { outcome: 'relocated', instanceId, filename, physical: file.physical, rawHash: file.rawHash,
             contentHash, size: file.bytes.length };
     } catch (error) {
         if (error?.code === 'ROLEPLAY_RECOVERY_CHANGED') throw error;
-        return { outcome: 'refused' };
+        return { outcome: 'refused', diagnostic: handoffDiagnostic('resource', error) };
     }
 }
 
@@ -262,19 +272,22 @@ function discoverHandoffAccounts(dataRoot) {
 
 function observeCleanHandoff(lease, device) {
     const { state, scope, root, identityFile, stateFile } = roleplayLease(lease);
-    if (state.pending || Object.values(state.accountResets ?? {}).some(receipt => receipt.phase !== 'complete')
-        || !state.placement || (state.placement.dev === identityFile.physical.dev && state.placement.ino === identityFile.physical.ino)) {
-        throw relocationChanged();
+    if (state.pending || Object.values(state.accountResets ?? {}).some(receipt => receipt.phase !== 'complete')) {
+        throw handoffRefusal('account', 'unfinished-operation');
+    }
+    if (!state.placement || (state.placement.dev === identityFile.physical.dev && state.placement.ino === identityFile.physical.ino)) {
+        throw handoffRefusal('account', 'placement-unproven');
     }
     // All active libraries participate, including journals belonging to untracked files.
     // Backups beneath the protected store are historical evidence, not active journals.
-    const files = inventory(lease, true);
-    if (files.some(file => file.library && file.relative.endsWith(FILE_WRITE_RECOVERY_SUFFIX))) throw relocationChanged();
+    let files;
+    try { files = inventory(lease, true); } catch (error) { throw handoffRefusal('inventory', 'unreadable-evidence', error); }
+    if (files.some(file => file.library && file.relative.endsWith(FILE_WRITE_RECOVERY_SUFFIX))) throw handoffRefusal('inventory', 'write-journal');
     const observations = [];
     for (const [instanceId, resource] of Object.entries(state.resources)) {
         if (resource.status !== 'live' || resource.accountId !== state.accountId || resource.dataEpoch !== state.dataEpoch) continue;
         const observed = observeRelocation(scope, state, instanceId, resource, true);
-        if (observed.outcome !== 'relocated') throw relocationChanged();
+        if (observed.outcome !== 'relocated') throw Object.assign(relocationChanged(), { handoffDiagnostic: observed.diagnostic });
         observations.push({ instanceId, resource, ...observed });
     }
     assertRelocationCollision(observations, observations);
@@ -296,35 +309,58 @@ function observeCleanHandoff(lease, device) {
  * original raw policy. Ordinary startup later reconnects each ledger atomically.
  * Validation refusals return false; publication and lock-cleanup errors must escape.
  */
-export function publishCleanTermuxHandoff(dataRoot, device, publish) {
-    let accounts;
-    try { accounts = discoverHandoffAccounts(dataRoot); } catch { return false; }
-    if (!accounts.length) return false;
-    const held = [];
-    let publishing = false;
-    const lockNext = index => {
-        if (index < accounts.length) return withRoleplayAccount(accounts[index], null, lease => {
-            let observation;
-            try { observation = observeCleanHandoff(lease, device); } catch { return false; }
-            held.push({ lease, observation });
-            return lockNext(index + 1);
-        });
-        try {
-            for (const { lease, observation } of held) {
-                if (!isDeepStrictEqual(observeCleanHandoff(lease, device), observation)) throw relocationChanged();
-            }
-            if (!isDeepStrictEqual(discoverHandoffAccounts(dataRoot), accounts)) throw relocationChanged();
-        } catch { return false; }
-        publishing = true;
-        publish();
-        return true;
+export function publishCleanTermuxHandoff(dataRoot, device, publish, report = () => {}) {
+    const attempt = () => {
+        let refusal;
+        const refused = (error, stage) => {
+            if (roleplayLockCleanupFailed(error)) throw error;
+            refusal = error?.handoffDiagnostic ?? handoffDiagnostic(stage, error);
+            return false;
+        };
+        let accounts;
+        try { accounts = discoverHandoffAccounts(dataRoot); } catch (error) {
+            refused(error, 'discovery');
+            return { published: false, refusal };
+        }
+        if (!accounts.length) return { published: false, refusal: handoffDiagnostic('discovery', null, 'no-accounts') };
+        const held = [];
+        let publishing = false;
+        const lockNext = index => {
+            if (index < accounts.length) return withRoleplayAccount(accounts[index], null, lease => {
+                let observation;
+                try { observation = observeCleanHandoff(lease, device); } catch (error) { return refused(error, 'validation'); }
+                held.push({ lease, observation });
+                return lockNext(index + 1);
+            });
+            try {
+                for (const { lease, observation } of held) {
+                    if (!isDeepStrictEqual(observeCleanHandoff(lease, device), observation)) throw relocationChanged();
+                }
+                if (!isDeepStrictEqual(discoverHandoffAccounts(dataRoot), accounts)) throw relocationChanged();
+            } catch (error) { return refused(error, 'confirmation'); }
+            publishing = true;
+            publish();
+            return true;
+        };
+        let published;
+        try { published = lockNext(0); } catch (error) {
+            // Publication and every lease-cleanup failure escape without retrying.
+            if (publishing || roleplayLockCleanupFailed(error)
+                || !['ROLEPLAY_STORE_DAMAGED', 'ROLEPLAY_ACCOUNT_UNAVAILABLE'].includes(error?.code)) throw error;
+            published = refused(error, 'account-load');
+        }
+        return { published, refusal };
     };
-    try { return lockNext(0); } catch (error) {
-        // Loading an incomplete/retired store is a refusal, never an invitation to initialise it.
-        if (!publishing && !roleplayLockCleanupFailed(error)
-            && ['ROLEPLAY_STORE_DAMAGED', 'ROLEPLAY_ACCOUNT_UNAVAILABLE'].includes(error?.code)) return false;
-        throw error;
+    for (let number = 1; number <= 2; number++) {
+        // Returning from attempt proves all raw-policy leases were released. No
+        // rejected observation is reused, and publication is never retried.
+        const { published, refusal } = attempt();
+        if (published) return true;
+        const retry = number === 1 && refusal.reason === 'metadata-changed';
+        report({ attempt: number, ...refusal, retry });
+        if (!retry) return false;
     }
+    return false;
 }
 
 /**

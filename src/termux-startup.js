@@ -99,7 +99,8 @@ export async function configureTermuxStartup({ dataRoot, termuxRecovery = false 
         tryWriteFileSync(marker, JSON.stringify(zeroMode), { mode: 0o600 }, { expectedFileAbsent: true, durable: true, preserveOnCreateError: true });
         if (readSmallFile(marker) !== JSON.stringify(zeroMode)) throw new Error('The saved Termux file-identity policy changed during publication.');
     };
-    if (!mode && !termuxRecovery && existing && probe.fallback && publishCleanTermuxHandoff(root, probe.device, publishMode)) mode = zeroMode;
+    if (!mode && !termuxRecovery && existing && probe.fallback && publishCleanTermuxHandoff(root, probe.device, publishMode,
+        diagnostic => log('Termux handoff diagnostic: ' + JSON.stringify(diagnostic)))) mode = zeroMode;
     const useZero = Boolean(mode || termuxRecovery || (!existing && (probe.fallback || probe.zero)));
     if (useZero) {
         // Marker publication and raw-policy lease cleanup must finish before the
