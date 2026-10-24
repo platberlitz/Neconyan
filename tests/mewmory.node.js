@@ -28,6 +28,7 @@ const { createMewmoryProvider } = await import('./mewmory-provider.js');
 const { readConfig, publicConfig, roleVersion } = await import('../src/mewmory/models.js');
 const { readSecret, writeSecret, SecretManager, SECRET_KEYS } = await import('../src/endpoints/secrets.js');
 const { resolveModelProfile } = await import('../src/mewmory/connection-profiles.js');
+const { EXTRACTION_CONTRACT } = await import('../src/mewmory/contracts.js');
 const { startProcessing, waitForProcessing, cancelProcessing, scanProcessing, startMewmoryWorker, pauseInterruptedProcessing } = await import('../src/mewmory/worker.js');
 const { startOperation, registerMewmoryOperations } = await import('../src/mewmory/operations.js');
 const { getJob: getSavedJob, recoverJobs, updateJob } = await import('../src/jobs/store.js');
@@ -1188,11 +1189,17 @@ test('Mewmory extracts and retrieves completed trackers from only the accepted a
     assert.match(input.sources[0].text, /brass key/);
     assert.doesNotMatch(input.sources[0].text, /Wrong|Unfinished|Failed|tracker-none|Imagined|Rejected/);
     applyExtraction(state, { records: [{ id: 'state:inventory', kind: 'state', entityId: 'npc:mara',
-        text: 'Mara carries the brass key.', refs: state.timeline }], activeNpcIds: [] }, input);
+        text: 'Mara has a brass key with her at the north gate.', refs: state.timeline }], activeNpcIds: [] }, input);
     assert.equal(eligibleRecords(state).length, 1);
+    const sources = searchDocuments(state).filter(document => document.kind === 'source');
+    assert.deepEqual(sources.map(document => document.text), [message.mes], 'source passages carry only the story text');
     const hits = lexicalSearch(searchDocuments(state), 'brass key', 10).map(hit => hit.document);
-    assert.ok(hits.some(hit => hit.kind === 'source'));
-    assert.match(assembleContext(state, hits, { counter }).memoryText, /brass key/);
+    assert.deepEqual(hits.map(hit => hit.kind), ['state']);
+    const recalled = assembleContext(state, [...hits, ...sources], { counter }).memoryText;
+    assert.match(recalled, /Mara has a brass key with her at the north gate\./);
+    assert.match(recalled, /She closes the bag\./);
+    assert.doesNotMatch(recalled, /Tracker output|carries the brass key|Location: north gate/, 'tracker notes reach the writer only as restated records');
+    assert.match(EXTRACTION_CONTRACT, /Restate what a tracker reports in your own plain wording/);
 
     const initial = structuredClone(state.timeline);
     message.swipe_info[0].extra.inChatAgentCompanionResults.inventory.updatedAt = 'new timestamp';
