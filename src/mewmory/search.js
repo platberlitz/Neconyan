@@ -63,7 +63,9 @@ export function searchDocuments(state, asOf = Infinity, config = {}) {
         if (source.type === 'file' && !options.includeFiles) continue;
         const revision = sourceAt(state, ref);
         // Small source passages keep recovery and embeddings bounded; the full revision stays in the archive.
-        const passages = splitPassages(revision.text, options);
+        // Tracker notes reach the writer only as records restated by the extractor. The story text is a prefix
+        // of the revision text, so passage offsets still point at the same characters.
+        const passages = splitPassages(revision.storyText ?? revision.text, options);
         passages.forEach((passage, index) => documents.push({
             id: 'source:' + refKey(ref) + ':' + index, kind: 'source', dataType: source.type,
             text: passage.text, searchText: revision.speaker + '\n' + passage.text, refs: [ref],
