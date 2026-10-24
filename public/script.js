@@ -9054,9 +9054,9 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         await printMessages();
         if (await saveChatConditional() && recoveryContext?.id && isCurrent()) await discardGeneration(recoveryContext.id, getRequestHeaders());
     };
-    const notifyBlocked = hasText => {
+    const notifyBlocked = (hasText, outcome) => {
         suppressAutomaticGeneration(agentGenerationContext);
-        toastr.warning(generationBlockedNotice(hasText));
+        toastr.warning(generationBlockedNotice(hasText, outcome));
     };
 
     let activeStream = null;
@@ -10508,7 +10508,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                     if (!isCurrent()) return;
                     if (activeStreamingProcessor.outcome) {
                         const partial = getMessage;
-                        notifyBlocked(Boolean(partial.trim()));
+                        notifyBlocked(Boolean(partial.trim()), activeStreamingProcessor.outcome);
                         if (!partial.trim()) await restoreBlockedAttempt();
                         else if (shouldBufferOutput) {
                             await saveReply({ type: isContinue ? 'appendFinal' : type,
@@ -10711,7 +10711,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             const reasoningSignature = extractReasoningSignatureFromData(data);
             kobold_horde_model = title;
             if (generationOutcome) {
-                notifyBlocked(Boolean(getMessage.trim()));
+                notifyBlocked(Boolean(getMessage.trim()), generationOutcome);
                 if (!getMessage.trim()) await restoreBlockedAttempt();
                 else if (type !== 'quiet' && !isImpersonate) {
                     await saveReply({ type: originalType === 'continue' ? 'appendFinal' : type,
@@ -11724,7 +11724,7 @@ async function applyHeldGeneration(job, headers, isCurrent) {
     if (!target || target.type === 'saved') return;
     const isContinue = ctx.type === 'continue';
     if (generationOutcome) {
-        toastr.warning(generationBlockedNotice(Boolean(getMessage.trim())));
+        toastr.warning(generationBlockedNotice(Boolean(getMessage.trim()), generationOutcome));
         if (!getMessage.trim()) return discard();
     }
     getMessage = cleanUpMessage({ getMessage, isImpersonate: false, isContinue, displayIncompleteSentences: Boolean(generationOutcome) });

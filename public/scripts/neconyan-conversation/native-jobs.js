@@ -78,7 +78,7 @@ export function observeNativeConversationJob(jobId, account = getCurrentUserHand
             if (!refusalRaised) refusalRaised = raiseReplyImageRefusal(job, account);
             if (!blockedRaised && TERMINAL.has(job.state) && (job.error?.code === 'GENERATION_BLOCKED' || job.result?.generationOutcome)) {
                 blockedRaised = true;
-                globalThis.toastr?.warning?.(generationBlockedNotice(Boolean(job.result?.generationOutcome)));
+                globalThis.toastr?.warning?.(generationBlockedNotice(Boolean(job.result?.generationOutcome), job.result?.generationOutcome));
             }
             if (['conversation.reply', 'conversation.rewrite'].includes(job.type) && !TERMINAL.has(job.state) && !stopPreview) stopPreview = observeNativeConversationPreview(jobId, account);
             await readback(account);

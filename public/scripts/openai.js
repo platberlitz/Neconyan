@@ -5418,8 +5418,11 @@ export function readChatCompletionStream(response, { canMultiSwipe = false, chat
             const frames = choices?.length ? choices.map((choice, index) => ({ ...parsed, choices: [{ ...choice, index: choice.index ?? index }] })) : [parsed];
             for (const frame of frames) {
                 const index = frame.choices?.[0]?.index ?? 0;
+                const previous = state.outcomes[index];
                 state.outcomes[index] ??= classifyGenerationOutcome(frame, index);
                 if (index === 0) state.outcome = state.outcomes[0];
+                // The red toast is gone for a classified error, so keep the provider's own message in the console.
+                if (!previous && state.outcomes[index]?.status === 'error' && frame.error) console.warn('The provider ended the reply with an error.', frame.error);
                 if (generationErrorEnvelope(frame, value.type)) {
                     if (!state.outcome) tryParseStreamingError(response, rawData, { eventType: value.type });
                     if (!state.outcome) throw new Error('The AI service rejected the reply.');

@@ -1,5 +1,5 @@
 import { saveBlockedContinuationProof } from './blocked-output-proof.js';
-import { messageGenerationBlocked } from '../../public/scripts/generation-outcome.js';
+import { messageAutomaticGenerationSuppressed } from '../../public/scripts/generation-outcome.js';
 import { roleplayError, roleplayHash } from '../roleplay-store.js';
 import { assertRoleplaySourceLocked, captureRoleplayStorageSourceLocked } from './roleplay-source.js';
 import { captureRoleplayWorldInfo } from './world-info.js';
@@ -141,7 +141,7 @@ function root(context) {
 
 function blockedCandidate(chosen) {
     const output = chosen?.candidate?.output;
-    return messageGenerationBlocked(output?.message ?? output?.messages?.[0] ?? output);
+    return messageAutomaticGenerationSuppressed(output?.message ?? output?.messages?.[0] ?? output);
 }
 
 async function prepareWorkflowHiding(context, job, chosen) {

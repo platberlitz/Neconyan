@@ -326,3 +326,107 @@ test('filtered impersonation suppresses its opted-in Agent and the next ordinary
     await expect.poll(() => app.provider.calls.some(call => call.model === 'post-model')).toBe(true);
     expect(app.provider.calls.map(call => call.model)).toEqual([MODEL, MODEL, 'post-model']);
 });
+
+for (const phone of [false, true]) {
+    const viewport = phone ? 'phone' : 'desktop';
+    test(`provider error ${viewport} keeps the partial, suppresses Agents and survives reopen`, async ({ app }) => {
+        app.provider.mode.streamEvents = stream(PARTIAL, 'error');
+        const { account, page } = await setup(app, { phone });
+        await send(page, 'Describe the fountain.');
+        await expect(page.locator('#chat .generation_outcome')).toContainText('The provider ended this reply with an error');
+        await expect(page.locator('#toast-container .toast').filter({ hasText: 'The provider ended this reply with an error' })).toHaveCount(1);
+        await expect(page.locator('#chat .mes').last().locator('.mes_text')).toHaveText(PARTIAL);
+        await wakeRecovery(page);
+        expect(app.provider.calls.map(call => call.model)).toEqual([MODEL]);
+        const ended = await page.evaluate(async () => (await import('/script.js')).chat.at(-1));
+        expect(ended.extra.generation_outcome).toEqual({ version: 1, status: 'error', reason: 'error' });
+        await page.close();
+        const reopened = await openChat(account);
+        await expect(reopened.locator('#chat .generation_outcome')).toContainText('The provider ended this reply with an error');
+        await expect(reopened.locator('#toast-container .toast').filter({ hasText: 'The provider ended this reply with an error' })).toHaveCount(0);
+        await wakeRecovery(reopened);
+        expect(app.provider.calls.map(call => call.model)).toEqual([MODEL]);
+
+        // A manual swipe succeeds and clears only its own status.
+        app.provider.mode.streamEvents = stream('A complete ordinary reply.', 'stop');
+        await reopened.locator('#chat .mes').last().locator('.swipe_right').click();
+        await expect(reopened.locator('#chat .mes').last().locator('.mes_text')).toHaveText('Post Gen revised the reply.');
+        await expect(reopened.locator('#chat .generation_outcome')).toHaveCount(0);
+        await reopened.locator('#chat .mes').last().locator('.swipe_left').click();
+        await expect(reopened.locator('#chat .mes').last().locator('.mes_text')).toHaveText(PARTIAL);
+        await expect(reopened.locator('#chat .generation_outcome')).toContainText('The provider ended this reply with an error');
+
+        // A later successful send runs the enabled Agents.
+        app.provider.mode.streamEvents = stream('A complete ordinary reply.', 'stop');
+        await send(reopened, 'Now describe the garden.');
+        await expect.poll(() => app.provider.calls.some(call => call.model === 'post-model')).toBe(true);
+        await expect.poll(() => app.provider.calls.some(call => call.model === 'companion-model')).toBe(true);
+        await expect(reopened.locator('#chat .mes').last()).toContainText('Post Gen revised the reply.');
+        const success = await reopened.evaluate(async () => (await import('/script.js')).chat.at(-1));
+        expect(success.extra.generation_outcome).toBeUndefined();
+    });
+
+    test(`provider error ${viewport} with no text restores the earlier reply and shows one notice`, async ({ app }) => {
+        app.provider.mode.streamEvents = stream('', 'error');
+        const { page } = await setup(app, { phone, agents: [post] });
+        const before = await page.evaluate(async () => structuredClone((await import('/script.js')).chat));
+        await send(page, 'A request that ends before text.');
+        await expect(page.locator('#toast-container .toast').filter({ hasText: 'The provider ended this reply with an error' })).toHaveCount(1);
+        await wakeRecovery(page);
+        expect(app.provider.calls.map(call => call.model)).toEqual([MODEL]);
+        const after = await page.evaluate(async () => (await import('/script.js')).chat);
+        expect(after.at(-1).is_user).toBe(true);
+        expect(after[before.length - 1].mes).toBe(before.at(-1).mes);
+        expect(after[before.length - 1].extra.generation_outcome).toBeUndefined();
+        await expect(page.locator('#chat .generation_outcome')).toHaveCount(0);
+    });
+
+    test(`non-streaming provider error ${viewport} keeps the partial and restores an empty error body`, async ({ app }) => {
+        const { page } = await setup(app, { phone, agents: [], streaming: false, automatic: true });
+        app.provider.mode.reply = { choices: [{ message: { content: PARTIAL }, finish_reason: 'error', error: { message: 'upstream failed' } }] };
+        await send(page, 'Describe the fountain.');
+        await expect(page.locator('#chat .generation_outcome')).toContainText('The provider ended this reply with an error');
+        await expect(page.locator('#chat .mes').last().locator('.mes_text')).toHaveText(PARTIAL);
+        await wakeRecovery(page);
+        expect(app.provider.calls.map(call => call.model)).toEqual([MODEL]);
+        const ended = await page.evaluate(async () => (await import('/script.js')).chat.at(-1));
+        expect(ended.extra.generation_outcome).toEqual({ version: 1, status: 'error', reason: 'error' });
+
+        // The Gemini no-text error body restores the earlier reply with the same one notice.
+        app.provider.mode.reply = { error: { message: 'Gemini Candidate text empty' },
+            choices: [{ finish_reason: 'MALFORMED_FUNCTION_CALL', message: { content: '' } }] };
+        const before = await page.evaluate(async () => structuredClone((await import('/script.js')).chat));
+        await send(page, 'A request that ends before text.');
+        await expect(page.locator('#toast-container .toast').filter({ hasText: 'The provider ended this reply with an error' })).toHaveCount(1);
+        await wakeRecovery(page);
+        expect(app.provider.calls.map(call => call.model)).toEqual([MODEL, MODEL]);
+        const after = await page.evaluate(async () => (await import('/script.js')).chat);
+        expect(after.at(-1).is_user).toBe(true);
+        expect(after[before.length - 1].mes).toBe(PARTIAL);
+        expect(after[before.length - 1].extra.generation_outcome?.status).toBe('error');
+        await expect(page.locator('#chat .generation_outcome')).toContainText('The provider ended this reply with an error');
+    });
+
+    test(`an Agent reply ending in a provider error ${viewport} stays terminal across retry and reopen`, async ({ app }) => {
+        const second = { ...post, id: 'polish', name: 'Polish', connectionProfile: 'polish' };
+        const { account, page } = await setup(app, { phone, agents: [post, second], streaming: false });
+        app.provider.mode.reply = body => ({ choices: [{ message: { content: body.model === MODEL
+            ? 'An ordinary complete reply.' : 'An Agent revision that must not land.' },
+        finish_reason: body.model === MODEL ? 'stop' : 'error' }] });
+        await send(page, 'Describe the fountain.');
+        await expect.poll(() => app.provider.calls.length).toBeGreaterThanOrEqual(3);
+        await delay(1800);
+        await wakeRecovery(page);
+        expect(app.provider.calls).toHaveLength(3);
+        await expect(page.locator('#toast-container .toast').filter({ hasText: 'will not retry automatically' })).toHaveCount(1);
+        await expect(page.locator('#chat .mes').last().locator('.mes_text')).toHaveText('An ordinary complete reply.');
+        const runs = await page.evaluate(async () => (await import('/script.js')).chat.at(-1).extra.inChatAgentPostRuns);
+        expect(runs.length).toBeGreaterThan(0);
+        await page.close();
+        const reopened = await openChat(account);
+        expect(await reopened.evaluate(async () => (await import('/script.js')).chat.at(-1).extra.inChatAgentPostRuns)).toEqual(runs);
+        await wakeRecovery(reopened);
+        expect(app.provider.calls).toHaveLength(3);
+        await expect(reopened.locator('#toast-container .toast').filter({ hasText: 'will not retry automatically' })).toHaveCount(0);
+    });
+}
