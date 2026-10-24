@@ -161,7 +161,7 @@ describe('tracker-family selection through the real apply path', () => {
     test('applies both, restores excluded trackers exactly, resumes overrides and persists scope', async () => {
         const original = structuredClone(agents);
         updateSettings({ overrides: { 'tpl-the-ledger': THEMES[1].slug } });
-        expect(await applyAll()).toMatchObject({ ok: true, applied: 39, blocked: [], failed: [] });
+        expect(await applyAll()).toMatchObject({ ok: true, applied: 40, blocked: [], failed: [] });
         for (const agent of agents) expect(inspectAgent(agent).status).toBe('pristine');
         saveAgent.mockClear();
         expect(await reconcile()).toMatchObject({ repaired: 0, reverted: 0, needsAttention: [] });
@@ -187,7 +187,7 @@ describe('tracker-family selection through the real apply path', () => {
         }
         expect(resolveThemeSlug('tpl-the-ledger')).toBe(THEMES[1].slug);
         updateSettings({ theme: STOCK_THEME, overrides: {} });
-        expect(await applyAll()).toMatchObject({ reverted: 39, blocked: [], failed: [] });
+        expect(await applyAll()).toMatchObject({ reverted: 40, blocked: [], failed: [] });
         expect(agents).toEqual(original);
     });
 
@@ -199,7 +199,7 @@ describe('tracker-family selection through the real apply path', () => {
         expect(ledger.regexScripts).toEqual(scriptsFor('tpl-the-ledger'));
         expect(await reconcile()).toMatchObject({ repaired: 0, reverted: 20, needsAttention: [] });
         updateSettings({ trackerScope: 'ethereal' });
-        expect(await reconcile()).toMatchObject({ repaired: 21, reverted: 15, needsAttention: [] });
+        expect(await reconcile()).toMatchObject({ repaired: 21, reverted: 16, needsAttention: [] });
     });
 
     test('scope changes protect manual edits and altered source patterns', async () => {

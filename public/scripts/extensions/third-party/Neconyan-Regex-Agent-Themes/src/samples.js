@@ -46,6 +46,10 @@ export const SAMPLES = Object.freeze({
         full: '[PARALLEL|City|High]\n- Docks: The night shift is short two hands.\n- Guild hall: A courier arrives asking for you by name.\n- Barracks: Patrol routes changed at sundown.\n[/PARALLEL]',
         partial: '[PARALLEL|City|Low]\n- Docks: The night shift is short two hands.\n[/PARALLEL]',
     },
+    'parallel-extended': {
+        full: '[OFFSCREEN|City|Rising tension]\nScene 1: Harbour tavern - Mira and the dockmaster\nMira slides a coin across the bar. "You saw the ship come in?" The dockmaster pockets it and looks at the door.\n\nScene 2: Palace kitchens - Old Bren\nBren hums while he kneads tomorrow\'s bread and scolds the new boy for burning the onions.\n\nScene 3: North road - Two couriers\nThey argue over a shortcut through the marsh. "It saves a day," one insists. The other is not convinced.\n[/OFFSCREEN]',
+        partial: '[OFFSCREEN|City|Regularities]\nScene 1: Palace kitchens - Old Bren\nBren hums while he kneads tomorrow\'s bread.\n[/OFFSCREEN]',
+    },
     choices: {
         full: '[CHOICES]\n1. Take the ledger and go.\n2. Ask her who sent the courier.\n3. Wait until the bells ring.\n4. Leave the way you came.\n[/CHOICES]',
         partial: '[CHOICES]\n1. Take the ledger and go.\n2. Ask her who sent the courier.\n[/CHOICES]',
