@@ -58,6 +58,7 @@ const sourceFilenames = [
     'omen-tracker.json',
     'pace-setter.json',
     'parallel-tracker.json',
+    'parallel-tracker-extended.json',
     'plot-compass-companion.json',
     'position-tracker-companion.json',
     'prompt-adherence-checker.json',
@@ -286,6 +287,7 @@ describe('in-chat agent bundled templates', () => {
             ['tpl-item-tracker', '[ITEM|GAINED|Key|Brass]\nnote: found\n[/ITEM]'],
             ['tpl-npc-profiles', '[NPC:REF|Ava|red scarf|wary][/NPC]'],
             ['tpl-parallel-tracker', '[PARALLEL|Background|threat]\n- A\n- B\n- C\n[/PARALLEL]'],
+            ['tpl-parallel-tracker-extended', '[OFFSCREEN|Background|threat]\nScene 1: Docks - Ava\nA\n\nScene 2: Inn - Ben\nB\n\nScene 3: Road - Cy\nC\n[/OFFSCREEN]'],
             ['tpl-relationship-tracker', '[METER|Ava|5/10|6/10|Friendly|STABLE]\nreason\n[/METER]'],
             ['tpl-reputation-tracker', '[REP|Town|Helpful|RISING]\ncause: rescue\n[/REP]'],
             ['tpl-scene-tracker', '[SCENE|Harbor|Dusk|Foggy]\ndetail: bells\n[/SCENE]'],
@@ -474,6 +476,7 @@ describe('in-chat agent bundled templates', () => {
         ];
         const alwaysEmittingTemplates = [
             'parallel-tracker.json',
+            'parallel-tracker-extended.json',
             'world-detail.json',
             'cyoa-choices.json',
             'cyoa-choices-skill-checks.json',

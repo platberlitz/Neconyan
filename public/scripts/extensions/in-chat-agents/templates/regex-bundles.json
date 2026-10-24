@@ -249,6 +249,25 @@
       "maxDepth": null
     }
   ],
+  "tpl-parallel-tracker-extended": [
+    {
+      "id": "3f6b2c8e-9a41-4d7e-b5c2-7e18d0a4f9b3",
+      "scriptName": "Replace Parallel Tracker (Extended)",
+      "findRegex": "/\\[OFFSCREEN\\|([^\\]\\n\\r|]+)\\|([^\\]\\n\\r|]+)\\]\\s*(?!\\[\\/OFFSCREEN\\])(?:[-#*>]+[ \\t]*)?(?:[Ss]cene[ \\t]*\\d+[ \\t]*[:.)\\-–—][ \\t*]*)?([^\\n\\r]+?)[ \\t*]*(?:\\r?\\n)+[ \\t]*(?!\\[\\/OFFSCREEN\\])([^\\n\\r]+)(?:(?:\\r?\\n)+[ \\t]*(?!\\[\\/OFFSCREEN\\])(?:[-#*>]+[ \\t]*)?(?:[Ss]cene[ \\t]*\\d+[ \\t]*[:.)\\-–—][ \\t*]*)?([^\\n\\r]+?)[ \\t*]*(?:\\r?\\n)+[ \\t]*(?!\\[\\/OFFSCREEN\\])([^\\n\\r]+))?(?:(?:\\r?\\n)+[ \\t]*(?!\\[\\/OFFSCREEN\\])(?:[-#*>]+[ \\t]*)?(?:[Ss]cene[ \\t]*\\d+[ \\t]*[:.)\\-–—][ \\t*]*)?([^\\n\\r]+?)[ \\t*]*(?:\\r?\\n)+[ \\t]*(?!\\[\\/OFFSCREEN\\])([^\\n\\r]+))?(?:\\s*\\[\\/OFFSCREEN\\])?/g",
+      "replaceString": "<style>.pura-offscreen-scene:has(.pura-offscreen-where:empty){display:none}</style><details style=\"margin:10px 0\"><summary style=\"padding:10px 13px;background:linear-gradient(135deg,rgba(24,19,34,0.97),rgba(86,58,128,0.7));border-radius:12px;border:1px solid rgba(181,146,235,0.5);box-shadow:0 10px 24px rgba(0,0,0,0.28);color:#d8c5ff;font-family:monospace;font-size:11px;cursor:pointer\">🎬 Off-Screen · $1 · $2</summary><div style=\"padding:7px 13px;background:linear-gradient(180deg,rgba(20,19,28,0.97),rgba(35,32,46,0.96));border-radius:0 0 12px 12px;border:1px solid rgba(181,146,235,0.3);border-top:none;color:#f8f8f2\"><div class=\"pura-offscreen-scene\" style=\"margin:8px 0;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);border-left:3px solid #c9a7ff;background:linear-gradient(90deg,rgba(201,167,255,0.10),rgba(255,255,255,0.025) 60%)\"><div style=\"font-family:monospace;font-size:9.5px;letter-spacing:0.14em;color:#c9a7ff;opacity:0.9\">SCENE 1</div><div class=\"pura-offscreen-where\" style=\"margin:2px 0 6px;font-size:12px;font-weight:700;color:#efe6ff\">$3</div><div style=\"font-size:12px;line-height:1.72;color:#f2eef8\">$4</div></div><div class=\"pura-offscreen-scene\" style=\"margin:8px 0;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);border-left:3px solid #93b8ff;background:linear-gradient(90deg,rgba(147,184,255,0.10),rgba(255,255,255,0.025) 60%)\"><div style=\"font-family:monospace;font-size:9.5px;letter-spacing:0.14em;color:#93b8ff;opacity:0.9\">SCENE 2</div><div class=\"pura-offscreen-where\" style=\"margin:2px 0 6px;font-size:12px;font-weight:700;color:#efe6ff\">$5</div><div style=\"font-size:12px;line-height:1.72;color:#f2eef8\">$6</div></div><div class=\"pura-offscreen-scene\" style=\"margin:8px 0;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);border-left:3px solid #ffb98f;background:linear-gradient(90deg,rgba(255,185,143,0.10),rgba(255,255,255,0.025) 60%)\"><div style=\"font-family:monospace;font-size:9.5px;letter-spacing:0.14em;color:#ffb98f;opacity:0.9\">SCENE 3</div><div class=\"pura-offscreen-where\" style=\"margin:2px 0 6px;font-size:12px;font-weight:700;color:#efe6ff\">$7</div><div style=\"font-size:12px;line-height:1.72;color:#f2eef8\">$8</div></div></div></details>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    }
+  ],
   "tpl-relationship-tracker": [
     {
       "id": "c81e4b95-2d7a-4a60-8f3c-7b9e0d6a4c22",

@@ -1856,6 +1856,52 @@
         }
     },
     {
+        "id": "tpl-parallel-tracker-extended",
+        "name": "Parallel Off-Screen (Extended)",
+        "description": "Three short off-screen scenes of absent characters talking, moving and getting on with their lives",
+        "icon": "",
+        "category": "tracker",
+        "subcategory": "world",
+        "tags": [
+            "offscreen",
+            "npcs",
+            "world",
+            "scenes"
+        ],
+        "version": 1,
+        "author": "Purachina",
+        "prompt": "{{// Use with regex.}}{{trim}}\n### Parallel Off-Screen Tracker (Extended)\nThe world keeps moving while {{user}} is elsewhere. Show three short off-screen scenes of characters who are not with {{user}} right now: talking, travelling, working, scheming, resting, or running into each other.\n\nUse this exact format every reply:\n\n[OFFSCREEN|Scope|Relevance]\nScene 1: Location - Characters\nOne paragraph of 50 to 90 words.\n\nScene 2: Location - Characters\nOne paragraph of 50 to 90 words.\n\nScene 3: Location - Characters\nOne paragraph of 50 to 90 words.\n[/OFFSCREEN]\n\nRules:\n- Exactly 3 scenes, headed Scene 1, Scene 2 and Scene 3.\n- Each scene is one heading line, then ONE paragraph on the next line. Never split a paragraph across lines. No bullets or lists.\n- Heading = \"Scene N: Location - Characters\". Name the place and who is there, for example \"Scene 2: Harbour tavern - Mira and the dockmaster\".\n- Paragraph = 50 to 90 words of plain text, present tense, third person. No asterisks, bold or other markdown.\n- Show characters doing something with each other or with the world: talking, arguing, moving somewhere, trading, planning, training, or quietly getting on with their day. Put at least one short line of quoted dialogue in at least two of the scenes.\n- Use absent characters and NPCs the story already knows; new minor NPCs are fine. {{user}} never appears in these scenes, and nobody here learns what {{user}} is doing right now unless the story already allows it.\n- Scope = a specific location, \"Multiple locations\" or \"Background\".\n- Relevance = one short tag: \"regularities\", \"rising tension\", \"opportunity\", \"complication\", \"threat\" or \"alliance forming\".\n- At least one scene must be completely mundane, with no stakes at all, such as someone cooking dinner, gossiping or finishing a shift.\n- Off-screen developments start below the current scene's intensity and build slowly over many replies before they meet the main story.\n- Keep continuity with earlier off-screen scenes: people stay where they went and remember what they said.",
+        "phase": "both",
+        "injection": {
+            "position": 0,
+            "depth": 4,
+            "role": 1,
+            "order": 100,
+            "scan": false
+        },
+        "postProcess": {
+            "enabled": true,
+            "type": "extract",
+            "regexFind": "",
+            "regexReplace": "",
+            "regexFlags": "g",
+            "appendText": "",
+            "extractPattern": "\\[OFFSCREEN\\|[^\\]\\r\\n]*\\](?:(?!\\[OFFSCREEN(?=[:|\\]]))[\\s\\S])*?\\[/OFFSCREEN\\]",
+            "extractVariable": "offscreen_data"
+        },
+        "enabled": false,
+        "conditions": {
+            "triggerKeywords": [],
+            "triggerProbability": 100,
+            "generationTypes": [
+                "normal"
+            ]
+        },
+        "companion": {
+            "includeSystemPrompt": false
+        }
+    },
+    {
         "id": "tpl-relationship-tracker",
         "name": "Relationship Tracker",
         "description": "Track affection and trust for recurring NPCs with meaningful interactions",
