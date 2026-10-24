@@ -89,7 +89,7 @@ export function publishVectorIndexes(context, replacements, result, { verifySour
         }
         for (const effect of Object.values(value.effects)) {
             if (effect.state === 'done') continue;
-            publishAuthoringFileLocked(lease, effect.staged);
+            publishAuthoringFileLocked(lease, effect.staged, { checkpoint: save });
             afterVectorPublication?.(effect.staged);
             effect.state = 'done'; save();
         }

@@ -1,3 +1,4 @@
+import { authoringRenameTest, assertSavedAuthoring } from './authoring-rename-fixture.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,15 +27,15 @@ function prepared(t) {
     return { ...f, account, filename, before, context, relative: 'worlds/Book.json' };
 }
 
-test('an approved authoring file publishes from a saved physical witness and survives lost completion status', t => {
+authoringRenameTest('an approved authoring file publishes from a saved physical witness and survives lost completion status', t => {
     const f = prepared(t), bytes = Buffer.from(JSON.stringify({ entries: { 1: { content: 'after' } } }));
     assert.throws(() => publishNativeAuthoringFile(f.context, { relative: f.relative, before: f.before, bytes,
         beforePublish: () => { throw new Error('Stopped before rename'); } }), /Stopped before rename/);
     assert.equal(JSON.parse(fs.readFileSync(f.filename, 'utf8')).entries[1].content, 'before');
     const key = roleplayHash(['authoring', f.relative]);
-    const staged = withNativeMediaReceipt(f.context, ({ value }) => value.effects[key].staged);
-    const after = withNativeMediaReceipt(f.context, ({ lease }) => authoringEvidence(publishAuthoringFileLocked(lease, staged)));
+    const after = withNativeMediaReceipt(f.context, ({ lease, value, save }) => authoringEvidence(publishAuthoringFileLocked(lease, value.effects[key].staged, { checkpoint: save })));
     assert.equal(JSON.parse(fs.readFileSync(f.filename, 'utf8')).entries[1].content, 'after');
+    withNativeMediaReceipt(f.context, ({ value }) => assertSavedAuthoring(f.scope.directories.root, value.effects));
     assert.deepEqual(publishNativeAuthoringFile(f.context, { relative: f.relative, before: f.before, bytes }), after);
     assert.deepEqual(publishNativeAuthoringFile(f.context, { relative: f.relative, before: f.before, bytes }), after);
     assert.deepEqual(finishNativeMediaJob(f.context, { file: f.relative, after }), { result: { file: f.relative, after } });

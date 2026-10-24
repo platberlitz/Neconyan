@@ -20,9 +20,9 @@ test('staged authoring changes bind the new physical file before publication and
     const staged = f.locked(lease => stageAuthoringFileLocked(lease, filename, '{"new":true}'));
     assert.equal(fs.readFileSync(filename, 'utf8'), '{"old":true}');
     const recovered = JSON.parse(JSON.stringify(staged));
-    const first = f.locked(lease => publishAuthoringFileLocked(lease, recovered));
+    const first = f.locked(lease => publishAuthoringFileLocked(lease, recovered, { ephemeral: true }));
     assert.deepEqual(authoringEvidence(first), recovered.after);
-    const again = f.locked(lease => publishAuthoringFileLocked(lease, recovered));
+    const again = f.locked(lease => publishAuthoringFileLocked(lease, recovered, { ephemeral: true }));
     assert.deepEqual(authoringEvidence(again), recovered.after);
     assert.equal(fs.existsSync(path.join(f.scope.directories.root, recovered.temporary)), false);
 });
@@ -32,12 +32,12 @@ test('equal bytes at a different inode cannot stand in for an accepted authoring
     fs.writeFileSync(filename, 'old');
     const staged = f.locked(lease => stageAuthoringFileLocked(lease, filename, 'new'));
     fs.writeFileSync(`${filename}.replacement`, 'old'); fs.renameSync(`${filename}.replacement`, filename);
-    assert.throws(() => f.locked(lease => publishAuthoringFileLocked(lease, staged)), { code: 'AUTHORING_SOURCE_CHANGED' });
+    assert.throws(() => f.locked(lease => publishAuthoringFileLocked(lease, staged, { ephemeral: true })), { code: 'AUTHORING_SOURCE_CHANGED' });
     assert.equal(fs.readFileSync(filename, 'utf8'), 'old');
     const fresh = path.join(f.directory, 'Fresh.json');
     const create = f.locked(lease => stageAuthoringFileLocked(lease, fresh, 'new', { expected: null }));
     fs.writeFileSync(fresh, 'new');
-    assert.throws(() => f.locked(lease => publishAuthoringFileLocked(lease, create)), { code: 'AUTHORING_SOURCE_CHANGED' });
+    assert.throws(() => f.locked(lease => publishAuthoringFileLocked(lease, create, { ephemeral: true })), { code: 'AUTHORING_SOURCE_CHANGED' });
 });
 
 test('known pre-publication failure retains the old file and cleans only its own prepared bytes', t => {

@@ -1,3 +1,4 @@
+import { authoringRenameTest, assertSavedAuthoring } from './authoring-rename-fixture.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -481,7 +482,7 @@ test('interrupted persona publication resumes once and never overwrites later se
     }
 });
 
-test('persona publication recovers both sides of its durable rename when there are no later edits', async t => {
+authoringRenameTest('persona publication recovers both sides of its durable rename when there are no later edits', async t => {
     for (const point of ['afterPersonaSettingsPrepared', 'afterPersonaSettingsPublication']) {
         const p = setup(t, `recover-${point}`);
         const settings = path.join(p.base.directories.root, 'settings.json');
@@ -489,6 +490,7 @@ test('persona publication recovers both sides of its durable rename when there a
         sourceFile(p, 'settings.json', '{"power_user":{"personas":{"Persona.png":"Imported"}}}');
         const accepted = await accept(p, 'recover-persona', { mode: 'folder', content: 'core', path: p.sourceRoot });
         await assert.rejects(runOperation(accepted.context, { [point]: () => { throw new Error('lost persona acknowledgement'); } }), /lost persona/);
+        if (point === 'afterPersonaSettingsPublication') assertSavedAuthoring(p.base.directories.root, readOperation(p.base, 'recover-persona').effects);
         await runOperation(accepted.context);
         const saved = JSON.parse(fs.readFileSync(settings));
         assert.equal(saved.power_user.personas['Persona.png'], 'Imported'); assert.equal(saved._version, 3);

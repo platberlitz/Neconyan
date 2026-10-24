@@ -27,7 +27,7 @@ export function readObsidianHistoryIndexLocked(lease, notebookId) {
     return index;
 }
 
-function finishRecord(lease, notebookId, args, plan) {
+function finishRecord(lease, notebookId, args, plan, setPlan) {
     if (plan?.type !== 'obsidian-file-history' || plan.notebookId !== notebookId || JSON.stringify(plan.args) !== JSON.stringify(args)) {
         throw new NotebookError('OBSIDIAN_HISTORY_DAMAGED', 'An interrupted sync history entry could not be verified.', 409);
     }
@@ -39,7 +39,7 @@ function finishRecord(lease, notebookId, args, plan) {
         if (plan.staged?.relative !== expected || plan.staged?.after?.rawHash !== args.hash || plan.staged?.limit !== MAX_ATTACHMENT_BYTES) {
             throw new NotebookError('OBSIDIAN_HISTORY_DAMAGED', 'An interrupted sync history file could not be verified.', 409);
         }
-        publishAuthoringFileLocked(lease, plan.staged);
+        publishAuthoringFileLocked(lease, plan.staged, { checkpoint: () => setPlan(plan) });
     }
     const index = readObsidianHistoryIndexLocked(lease, notebookId);
     if (!index.events.some(event => event.id === plan.event.id)) {
@@ -58,7 +58,7 @@ function finishRecord(lease, notebookId, args, plan) {
 export function recoverObsidianHistoryLocked(lease, notebookId) {
     for (const entry of pendingOperationsLocked(lease)) {
         if (entry.plan?.type !== 'obsidian-file-history' || entry.plan.notebookId !== notebookId) continue;
-        runOperationLocked(lease, { operationId: entry.operationId, kind: 'obsidian-file-history', args: entry.plan.args }, ({ plan }) => finishRecord(lease, notebookId, plan.args, plan));
+        runOperationLocked(lease, { operationId: entry.operationId, kind: 'obsidian-file-history', args: entry.plan.args }, ({ plan, setPlan }) => finishRecord(lease, notebookId, plan.args, plan, setPlan));
     }
 }
 
@@ -100,7 +100,7 @@ export function recordObsidianFileLocked(lease, notebookId, file, { origin = 'ex
             setPlan(plan);
         }
         fault?.('planned');
-        const result = finishRecord(lease, notebookId, args, plan);
+        const result = finishRecord(lease, notebookId, args, plan, setPlan);
         fault?.('recorded');
         return result;
     });

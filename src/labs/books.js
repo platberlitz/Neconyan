@@ -94,7 +94,7 @@ export function applyLabBook(context, { afterPublication } = {}) {
         for (const name of ['history', 'book']) {
             const effect = value.effects[name];
             if (effect.state === 'done') continue;
-            publishAuthoringFileLocked(lease, effect.staged);
+            publishAuthoringFileLocked(lease, effect.staged, { checkpoint: save });
             afterPublication?.(name);
             effect.state = 'done';
             save();

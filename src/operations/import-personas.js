@@ -76,7 +76,7 @@ export function publishImportPersonasLocked(lease, value, save, file, index, byt
         save();
         dependencies.afterPersonaSettingsPrepared?.();
     }
-    publishAuthoringFileLocked(lease, effect.staged);
+    publishAuthoringFileLocked(lease, effect.staged, { checkpoint: save });
     dependencies.afterPersonaSettingsPublication?.();
     effect.state = 'done';
     save();

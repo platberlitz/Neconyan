@@ -1,3 +1,4 @@
+import { authoringRenameTest, assertSavedAuthoring } from './authoring-rename-fixture.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -306,7 +307,7 @@ async function presetDraft(f, name = 'Moon preset') {
     return (await readPromptingStorage(f.base, f.account, 'getDraft', ['draft'])).value;
 }
 
-test('preset publication recovers its own physical write and does not restore a later deletion', async () => {
+authoringRenameTest('preset publication recovers its own physical write and does not restore a later deletion', async () => {
     const f = fixture(), draft = await presetDraft(f);
     const job = await acceptLabJob(f.request, { key: 'publish', kind: 'prompting.publish', draftId: draft.id, version: await fingerprint(draft) });
     const filename = path.join(f.base.directories.openAI_Settings, 'Moon preset.json');
@@ -314,6 +315,7 @@ test('preset publication recovers its own physical write and does not restore a 
     await assert.rejects(runLabJob(f.context(job), { afterPresetPublication: () => { throw new Error('process lost after rename'); } }), /process lost/);
     assert.equal(JSON.parse(fs.readFileSync(filename)).temperature, 0.7);
     assert.equal(readLabRecord(f.base, 'publish').state, 'accepted');
+    assertSavedAuthoring(f.base.directories.root, readLabRecord(f.base, 'publish').effects);
     assert.throws(() => withRoleplayAccount(f.base, f.account, lease => assertNativeMediaTargetIdle(lease,
         { kind: 'preset', id: path.relative(f.base.directories.root, filename) })), /unfinished reviewed Labs change/);
     await runLabJob(f.context(job));
@@ -634,11 +636,12 @@ test('a concurrent lorebook edit refuses reviewed apply and keeps both old and p
     assert.equal(readLabRecord(f.base, record.key).result.proposals.length, 2);
 });
 
-test('a crash after book publication reconciles the physical write and does not append twice', async () => {
+authoringRenameTest('a crash after book publication reconciles the physical write and does not append twice', async () => {
     const f = fixture();
     const record = await ready(f);
     const accepted = await acceptLabJob(f.request, applyBody(record));
     await assert.rejects(runLabJob(f.context(accepted), { afterPublication: name => { if (name === 'book') throw new Error('process died'); } }), /process died/);
+    assertSavedAuthoring(f.base.directories.root, readLabRecord(f.base, 'apply-one').effects);
     assert.equal(Object.keys(JSON.parse(fs.readFileSync(f.bookPath)).entries).length, 2);
     assert.throws(() => withRoleplayAccount(f.base, f.account, lease => assertNativeMediaTargetIdle(lease, { kind: 'world-info', id: 'Garden' })), /unfinished reviewed/);
     await runLabJob(f.context(accepted));

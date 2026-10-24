@@ -41,7 +41,7 @@ export function publishNativeAuthoringFile(context, { relative, before, bytes, c
             }
         }
         beforePublish?.(effect.staged);
-        const published = publishAuthoringFileLocked(lease, effect.staged);
+        const published = publishAuthoringFileLocked(lease, effect.staged, { checkpoint: save });
         if (roleplayHash(authoringEvidence(published)) !== roleplayHash(effect.staged.after)) throw invalid('The authoring change needs recovery.');
         effect.state = 'done';
         save();

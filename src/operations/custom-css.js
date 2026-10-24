@@ -77,7 +77,7 @@ export function publishCustomCss(context, plan, css, { afterCustomCssPublication
                 previousSettingsRevision: getSettingsRevision(settings), version: prepared.version, settingsRevision: prepared.settingsRevision };
             save();
         }
-        publishAuthoringFileLocked(lease, staged);
+        publishAuthoringFileLocked(lease, staged, { checkpoint: save });
         afterCustomCssPublication?.(staged);
         value.effects.settings.state = 'done'; save();
         return value.cssResult;

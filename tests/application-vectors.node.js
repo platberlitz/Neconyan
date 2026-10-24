@@ -1,3 +1,4 @@
+import { authoringRenameTest, assertSavedAuthoring } from './authoring-rename-fixture.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -76,7 +77,7 @@ test('a late embedding response after cancellation leaves the original index int
     assert.deepEqual(JSON.parse(fs.readFileSync(p.filename, 'utf8')), p.old);
 });
 
-test('one accepted vector prompt prepares chat and file contributions without changing saved history', async t => {
+authoringRenameTest('one accepted vector prompt prepares chat and file contributions without changing saved history', async t => {
     const p = prepared(t);
     const url = '/user/files/context.txt';
     Object.assign(p.settings.extension_settings.vectors, { enabled_chats: true, enabled_files: true, protect: 1, insert: 2,
@@ -212,12 +213,13 @@ test('a changed indexed source prevents publication and preserves the user corre
     assert.deepEqual(JSON.parse(fs.readFileSync(p.filename, 'utf8')), p.old);
 });
 
-test('known vector publication resumes its own physical write without another provider call', async t => {
+authoringRenameTest('known vector publication resumes its own physical write without another provider call', async t => {
     const p = prepared(t);
     const accepted = await acceptApplicationOperation(p.request, p.body('publish'));
     let calls = 0;
     await assert.rejects(runOperation(p.context(accepted.job), { fetchImpl: async (...args) => { calls++; return embeddings(...args); },
         afterVectorPublication() { throw new Error('Lost publication response'); } }), /Lost publication response/);
+    assertSavedAuthoring(p.base.directories.root, readOperation(p.base, 'publish').effects);
     const saved = fs.readFileSync(p.filename, 'utf8');
     await runOperation(p.context(accepted.job), { fetchImpl: async () => assert.fail('No repeated provider request') });
     assert.equal(fs.readFileSync(p.filename, 'utf8'), saved);

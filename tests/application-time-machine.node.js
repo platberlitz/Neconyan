@@ -1,3 +1,4 @@
+import { authoringRenameTest, assertSavedAuthoring } from './authoring-rename-fixture.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -79,10 +80,11 @@ test('unchanged items are skipped and retention removes the older copy of an edi
     assert.equal(fs.existsSync(path.join(p.dirs.files, firstBook)), false);
 });
 
-test('an interrupted index write finishes once and keeps settings saved meanwhile', async t => {
+authoringRenameTest('an interrupted index write finishes once and keeps settings saved meanwhile', async t => {
     const p = prepared(t, { keepPerTarget: 15 });
     const accepted = await acceptApplicationOperation(p.request, { key: 'crash', kind: 'time-machine-capture' });
     await assert.rejects(runOperation(p.context(accepted.job), { afterTimeMachineIndex: () => { throw new Error('crash'); } }), /crash/);
+    assertSavedAuthoring(p.base.directories.root, readOperation(p.base, 'crash').effects);
     await runOperation(p.context(accepted.job));
     assert.equal(p.settings().extension_settings[MODULE].snapshots.length, p.total);
     const other = await acceptApplicationOperation(p.request, { key: 'merge', kind: 'time-machine-capture' });

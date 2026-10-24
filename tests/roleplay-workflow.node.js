@@ -1,3 +1,4 @@
+import { authoringRenameTest } from './authoring-rename-fixture.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -415,7 +416,7 @@ test('a completed notebook tool advances only its owned chat source before the n
     assert.equal(calls.count, 2);
 });
 
-test('an owned lorebook tool changes only its bound book before the next model turn', async t => {
+authoringRenameTest('an owned lorebook tool changes only its bound book before the next model turn', async t => {
     const f = prepared(t, 'append', { pathfinder: true });
     updateJob(f.dirs, f.jobId, { state: 'running' });
     await runRoleplayWorkflowJob(f.context());
@@ -443,7 +444,7 @@ test('an owned lorebook tool changes only its bound book before the next model t
     assert.equal(calls.count, 2);
 });
 
-test('multiple tool calls in one model reply advance only their owned book changes in order', async t => {
+authoringRenameTest('multiple tool calls in one model reply advance only their owned book changes in order', async t => {
     const f = prepared(t, 'append', { pathfinder: true });
     updateJob(f.dirs, f.jobId, { state: 'running' });
     await runRoleplayWorkflowJob(f.context());

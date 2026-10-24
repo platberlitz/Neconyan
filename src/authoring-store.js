@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { assertUntrackedRoleplayFiles, createRoleplayDirectory, readRoleplayFile, roleplayAccountBase, roleplayAccountStamp, roleplayError, roleplayHash, roleplayLease, withRoleplayAccount } from './roleplay-store.js';
+import { types } from 'node:util';
+import { assertUntrackedRoleplayFiles, createRoleplayDirectory, readRoleplayFile, roleplayAccountBase, roleplayAccountStamp, roleplayError, roleplayHash, roleplayLease, withRoleplayAccount, withRoleplayFileHandle } from './roleplay-store.js';
 import { fsyncDirectorySync, tryWriteFileSync, withDirectoryFlushBatchSync } from './util.js';
 
 export const AUTHORING_FILE_LIMIT = 32 * 1024 * 1024;
@@ -45,21 +46,63 @@ export function stageAuthoringFileLocked(lease, filename, data, { expected, limi
     return { relative, before, after: authoringEvidence(prepared), temporary: path.relative(root, temporary), limit };
 }
 
-export function publishAuthoringFileLocked(lease, staged) {
+export function publishAuthoringFileLocked(lease, staged, { checkpoint, ephemeral = false } = {}) {
     if (!staged || !Number.isSafeInteger(staged.limit) || staged.limit < 0 || staged.limit > AUTHORING_FILE_LIMIT) throw roleplayError('AUTHORING_RECOVERY_REQUIRED', 'The prepared authoring file is invalid.', 409);
     const { scope } = roleplayLease(lease);
     const root = path.resolve(scope.directories.root);
     const target = ownedPath(lease, path.join(root, staged.relative)).target;
     const current = readAuthoringFileLocked(lease, target, staged.limit);
     if (roleplayHash(authoringEvidence(current)) === roleplayHash(staged.after)) return current;
+    if ((!ephemeral && typeof checkpoint !== 'function') || (checkpoint !== undefined && (typeof checkpoint !== 'function' || types.isAsyncFunction(checkpoint) || types.isGeneratorFunction(checkpoint)))) {
+        throw roleplayError('AUTHORING_CHECKPOINT_REQUIRED', 'Authoring publication needs a synchronous witness checkpoint.', 409);
+    }
     assertAuthoringEvidence(lease, target, staged.before, staged.limit);
     if (!staged.temporary) throw roleplayError('AUTHORING_RECOVERY_REQUIRED', 'The prepared authoring file is missing.', 409);
     const temporary = ownedPath(lease, path.join(root, staged.temporary)).target;
     if (path.dirname(temporary) !== path.dirname(target) || !/^\.author-[a-f0-9-]+\.tmp$/.test(path.basename(temporary))) throw roleplayError('AUTHORING_RECOVERY_REQUIRED', 'The prepared authoring path is invalid.', 409);
     assertAuthoringEvidence(lease, temporary, staged.after, staged.limit);
-    fs.renameSync(temporary, target);
-    fsyncDirectorySync(path.dirname(target));
-    return assertAuthoringEvidence(lease, target, staged.after, staged.limit);
+    // Staging already flushed this exact file. Hold it across rename without a second file flush.
+    return withRoleplayFileHandle(temporary, staged.limit, (prepared, readAt) => {
+        if (roleplayHash(authoringEvidence(prepared)) !== roleplayHash(staged.after)) throw roleplayError('AUTHORING_SOURCE_CHANGED', 'The prepared authoring file changed.', 409);
+        assertAuthoringEvidence(lease, target, staged.before, staged.limit);
+        assertAuthoringEvidence(lease, temporary, staged.after, staged.limit);
+        fs.renameSync(temporary, target);
+        fsyncDirectorySync(path.dirname(target));
+        const verify = () => {
+            const held = readAt(target);
+            if (held.rawHash !== prepared.rawHash || held.size !== prepared.size || held.physical.dev !== prepared.physical.dev || held.physical.birthtimeNs !== prepared.physical.birthtimeNs) {
+                throw roleplayError('AUTHORING_SOURCE_CHANGED', 'The published authoring file changed.', 409);
+            }
+            const published = readAuthoringFileLocked(lease, target, staged.limit);
+            if (!published || published.bytes.length !== held.size || roleplayHash(authoringEvidence(published)) !== roleplayHash(authoringEvidence(held))) {
+                throw roleplayError('AUTHORING_SOURCE_CHANGED', 'The published authoring file could not be verified.', 409);
+            }
+            return published;
+        };
+        const published = verify();
+        const previous = staged.after;
+        const finalEvidence = authoringEvidence(published);
+        if (roleplayHash(previous) !== roleplayHash(finalEvidence)) {
+            staged.after = finalEvidence;
+            try {
+                const result = checkpoint?.();
+                if (result && typeof result.then === 'function') {
+                    // Reject asynchronous persistence; its already scheduled effects cannot be cancelled.
+                    Promise.resolve(result).catch(() => {});
+                    throw roleplayError('AUTHORING_CHECKPOINT_REQUIRED', 'Authoring witness checkpoints must be synchronous.', 409);
+                }
+                // A checkpoint may itself publish a journal. Keep this descriptor's proof live.
+                const checked = verify();
+                if (roleplayHash(authoringEvidence(checked)) !== roleplayHash(finalEvidence)) throw roleplayError('AUTHORING_SOURCE_CHANGED', 'The published authoring identity changed during checkpointing.', 409);
+                return checked;
+            } catch (error) {
+                // Disk may already contain the checkpoint. This object must not imply it succeeded.
+                staged.after = previous;
+                throw error;
+            }
+        }
+        return published;
+    }, { flush: false });
 }
 
 export function writeAuthoringFileLocked(lease, filename, data, options = {}) {
@@ -67,7 +110,7 @@ export function writeAuthoringFileLocked(lease, filename, data, options = {}) {
     let published = false;
     try {
         options.beforePublish?.(staged);
-        const result = publishAuthoringFileLocked(lease, staged);
+        const result = publishAuthoringFileLocked(lease, staged, { ephemeral: true });
         published = true;
         return result;
     } finally {
