@@ -2144,8 +2144,8 @@
                                             <div class="toggle-description justifyLeft marginBot5" data-source="zai" data-i18n="Only GLM-5.2 and newer accept reasoning efforts. Every effort is sent exactly as picked, aside from Minimum which is sent as 'minimal'. GLM-5.3 specifically only accepts 'low', 'high', and 'max'.">
                                                 Only GLM-5.2 and newer accept reasoning efforts. Every effort is sent exactly as picked, aside from Minimum which is sent as 'minimal'. GLM-5.3 specifically only accepts 'low', 'high', and 'max'.
                                             </div>
-                                            <div class="toggle-description justifyLeft marginBot5" data-source="moonshot" data-i18n="Only Kimi K3 accepts reasoning efforts, and documents low, high and max. Every effort is sent exactly as picked, so anything else may be rejected. Minimum is sent as 'minimal'. Reasoning cannot be turned off for K3.">
-                                                Only Kimi K3 accepts reasoning efforts, and documents low, high and max. Every effort is sent exactly as picked, so anything else may be rejected. Minimum is sent as 'minimal'. Reasoning cannot be turned off for K3.
+                                            <div class="toggle-description justifyLeft marginBot5" data-source="moonshot" data-i18n="Kimi K3 and K3.1 Pro accept reasoning efforts and document low, high and max. Every effort is sent exactly as picked, so anything else may be rejected. Minimum is sent as 'minimal'. Reasoning cannot be turned off for these models.">
+                                                Kimi K3 and K3.1 Pro accept reasoning efforts and document low, high and max. Every effort is sent exactly as picked, so anything else may be rejected. Minimum is sent as 'minimal'. Reasoning cannot be turned off for these models.
                                             </div>
                                             <div class="toggle-description justifyLeft marginBot5" data-source="nanogpt" data-i18n="Reasoning efforts are sent exactly, aside from minimum which is sent as 'minimal'.">
                                                 Reasoning efforts are sent exactly, aside from minimum which is sent as 'minimal'.
@@ -2157,8 +2157,8 @@
                                             <span data-i18n="Partial Prefill">Partial Prefill</span>
                                         </label>
                                         <textarea id="openai_kimi_partial_prefill" data-macros class="text_pole textarea_compact autoSetHeight" rows="2" aria-label="Partial Prefill" placeholder="Write your partial prefill text here..." data-i18n="[aria-label]Partial Prefill;[placeholder]Write your partial prefill text here..."></textarea>
-                                        <div class="toggle-description justifyLeft marginBot5" data-i18n="This sends a partial prefill with the parameter 'partial: true' that only Kimi K3 accepts as of time of writing.">
-                                            This sends a partial prefill with the parameter 'partial: true' that only Kimi K3 accepts as of time of writing.
+                                        <div class="toggle-description justifyLeft marginBot5" data-i18n="This sends a partial prefill with the parameter 'partial: true' for Kimi K3 and K3.1 Pro.">
+                                            This sends a partial prefill with the parameter 'partial: true' for Kimi K3 and K3.1 Pro.
                                         </div>
                                     </div>
                                     <div class="flex-container flexFlowColumn wide100p textAlignCenter marginTop10" data-source="openai,custom,openrouter,claude,linkapi">
@@ -3958,6 +3958,8 @@
                             </div>
                             <h4 data-i18n="Moonshot AI Model">Moonshot AI Model</h4>
                             <select id="model_moonshot_select">
+                                <option value="kimi-k3.1-pro">kimi-k3.1-pro</option>
+                                <option value="kimi-k3.1-pro-highspeed">kimi-k3.1-pro-highspeed</option>
                                 <option value="kimi-k3">kimi-k3</option>
                                 <option value="moonshot-v1-8k">moonshot-v1-8k</option>
                                 <option value="moonshot-v1-32k">moonshot-v1-32k</option>

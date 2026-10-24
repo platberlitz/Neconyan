@@ -130,6 +130,19 @@ describe('Kimi K3 chat completion requests', () => {
         expectFixedParametersOmitted();
     });
 
+    test('marks native Moonshot K3.1 Pro prefill as partial and omits unsupported parameters', async () => {
+        const response = await makeRequest(CHAT_COMPLETION_SOURCES.MOONSHOT, { model: 'kimi-k3.1-pro' });
+
+        expect(response.status).toBe(200);
+        expect(capturedBody.messages.at(-1)).toEqual({
+            role: 'assistant',
+            content: 'Prefill',
+            reasoning_content: KIMI_K3_STOCK_REASONING,
+            partial: true,
+        });
+        expectFixedParametersOmitted();
+    });
+
     test('marks namespaced Custom K3 prefill as partial', async () => {
         const response = await makeRequest(CHAT_COMPLETION_SOURCES.CUSTOM, {
             model: 'moonshotai/Kimi-K3',
@@ -139,6 +152,19 @@ describe('Kimi K3 chat completion requests', () => {
         expect(response.status).toBe(200);
         expect(capturedBody.messages.at(-1).partial).toBe(true);
         expect(capturedBody.thinking).toBeUndefined();
+        expectFixedParametersOmitted();
+    });
+
+    test('marks provider-prefixed Custom K3.1 Pro Highspeed prefill as partial', async () => {
+        const response = await makeRequest(CHAT_COMPLETION_SOURCES.CUSTOM, { model: 'moonshotai/kimi-k3.1-pro-highspeed' });
+
+        expect(response.status).toBe(200);
+        expect(capturedBody.messages.at(-1)).toEqual({
+            role: 'assistant',
+            content: 'Prefill',
+            reasoning_content: KIMI_K3_STOCK_REASONING,
+            partial: true,
+        });
         expectFixedParametersOmitted();
     });
 

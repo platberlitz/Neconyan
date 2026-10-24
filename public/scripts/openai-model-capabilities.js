@@ -414,18 +414,18 @@ export function zaiSupportsReasoningEffort(model) {
 }
 
 /**
- * Checks whether a model ID targets Kimi K3, including provider-prefixed IDs.
+ * Checks whether a model ID targets Kimi K3 or K3.1 Pro, including provider-prefixed IDs.
  *
  * @param {unknown} model Model identifier
- * @returns {boolean} Whether the model is Kimi K3
+ * @returns {boolean} Whether the model is Kimi K3 or K3.1 Pro
  */
 export function isKimiK3Model(model) {
     const normalizedModel = String(model ?? '').trim().toLowerCase();
-    return /(?:^|[/:])kimi-k3(?:[-/:]|$)/.test(normalizedModel);
+    return /(?:^|[/:])kimi-k3(?:\.1-pro)?(?:[-/:]|$)/.test(normalizedModel);
 }
 
 /**
- * Removes request parameters fixed by the Kimi K3 API.
+ * Removes request parameters fixed by the Kimi K3 and K3.1 Pro APIs.
  *
  * @param {Record<string, any>} generateData Chat Completion request data
  * @returns {Record<string, any>} The request data

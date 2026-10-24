@@ -216,12 +216,12 @@ test('Other provider pickers omit confirmed-retired model IDs', () => {
     expect(mainHtml).toEqual(expect.not.stringContaining('value="kimi-thinking-preview"'));
 });
 
-test('Moonshot picker includes Kimi K3 with its one-million-token context', () => {
+test('Moonshot picker includes Kimi K3 and K3.1 Pro with their one-million-token context', () => {
     const mainSource = readSource('../public/index.html');
     const openAiScript = readSource('../public/scripts/openai.js');
     const moonshotPicker = getSelectOptionIds(mainSource, 'model_moonshot_select');
 
-    expect(moonshotPicker).toContain('kimi-k3');
+    expect(moonshotPicker).toEqual(expect.arrayContaining(['kimi-k3', 'kimi-k3.1-pro', 'kimi-k3.1-pro-highspeed']));
     expect(openAiScript).toContain('\'kimi-k3\': max_1mil');
 });
 
