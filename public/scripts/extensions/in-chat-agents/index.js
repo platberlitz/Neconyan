@@ -587,6 +587,7 @@ const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-item-tracker',
     'tpl-npc-profiles',
     'tpl-parallel-tracker',
+    'tpl-parallel-tracker-extended',
     'tpl-relationship-tracker',
     'tpl-reputation-tracker',
     'tpl-scene-tracker',

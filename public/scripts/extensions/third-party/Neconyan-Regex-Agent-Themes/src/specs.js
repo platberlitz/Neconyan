@@ -227,6 +227,15 @@ const SPEC_LIST = [
         head: [{ text: 'Parallel' }, { g: 1 }, { g: 2 }],
         slots: [{ k: 3, v: 4 }, { k: 5, v: 6 }, { k: 7, v: 8 }],
     },
+    {
+        templateId: 'tpl-parallel-tracker-extended',
+        scriptId: '3f6b2c8e-9a41-4d7e-b5c2-7e18d0a4f9b3',
+        scriptName: 'Replace Parallel Tracker (Extended)',
+        key: 'parallel-extended', archetype: ARCHETYPES.SLOTS, groups: 8, accent: 2,
+        icon: '🎬', kv: true,
+        head: [{ text: 'Off-Screen' }, { g: 1 }, { g: 2 }],
+        slots: [{ k: 3, v: 4 }, { k: 5, v: 6 }, { k: 7, v: 8 }],
+    },
 
     // ----------------------------------------------------------- trackers: statcard
     {
