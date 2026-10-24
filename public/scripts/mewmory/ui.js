@@ -14,6 +14,7 @@ const tabs = [['now', 'Now'], ['pawspective', 'Pawspective'], ['archive', 'Archi
 const kinds = { entity: 'NPC or entity reference', state: 'Current state', event: 'Event', relationship: 'Relationship fact',
     knowledge: 'Character knowledge', commitment: 'Promise or unresolved matter', interview: 'Pawspective interview', overview: 'Current subject view' };
 const roles = { extractor: 'Facts and events', pawspective: 'Pawspective interviews', embedding: 'Embeddings', selector: 'Recall selector', fallback: 'Recall fallback' };
+const MAX_FALLBACK_PROFILES = 10;
 const SWITCHES = ['enableNewChats', 'autoUpdate', 'localOnly', 'excludeHistory', 'autoHide'];
 const tokenizers = ['auto', 'o200k_base', 'cl100k_base', 'gpt2', 'llama', 'llama3', 'mistral', 'gemma', 'claude', 'qwen2', 'deepseek', 'nemo', 'jamba', 'yi'];
 const ui = { root: null, tab: 'now', owner: '', subject: '', significance: '', status: '', kind: 'objective', query: '', offset: 0,
@@ -715,9 +716,85 @@ window.addEventListener('neconyan:account-changing', () => {
 
 // A server still running older code drops switches it does not know and saves the rest.
 function confirmSavedSwitches(saved, expected) {
-    if (SWITCHES.some(key => typeof expected[key] === 'boolean' && saved?.[key] !== expected[key])) {
+    if (SWITCHES.some(key => typeof expected[key] === 'boolean' && saved?.[key] !== expected[key])
+        || (Array.isArray(expected.fallbackProfileIds) && !Array.isArray(saved?.fallbackProfileIds))) {
         throw new Error('Neconyan was updated but is still running the old version. Restart Neconyan, then try again.');
     }
+}
+
+function renderFallbackConnections(draft) {
+    const list = node('div', 'mewmory-fallbacks');
+    list.id = 'mewmory-fallbacks';
+    const fallbacks = draft.fallbackProfileIds ||= [];
+    const profiles = new Map((mewmory.config.profiles || []).map(profile => [profile.id, profile.name]));
+    const heading = node('div', 'mewmory-fallback-heading');
+    heading.append(node('span', '', 'Fallback connections'), node('small', 'mewmory-fallback-count', fallbacks.length + ' of ' + MAX_FALLBACK_PROFILES));
+    list.append(heading, node('p', 'mewmory-caption', 'When a role’s own connection fails, times out or sends back something unusable, Mewmory tries these saved profiles in order, each with its own model. Embeddings never fall back, because a different model would not match the saved search index. Each role’s remote and reading permissions still apply.'));
+    const update = (change, focus) => {
+        change(fallbacks);
+        scheduleConfigSave({ immediate: true });
+        const replacement = renderFallbackConnections(draft);
+        list.replaceWith(replacement);
+        replacement.querySelector(focus(replacement))?.focus();
+    };
+    const rows = node('ol', 'mewmory-fallback-rows');
+    fallbacks.forEach((profileId, index) => {
+        const row = node('li', 'mewmory-fallback-row');
+        row.dataset.profileId = profileId;
+        const name = node('span', 'mewmory-fallback-name', profiles.get(profileId) || 'Missing profile (' + profileId + ')');
+        if (!profiles.has(profileId)) row.classList.add('is-missing');
+        const actions = node('span', 'mewmory-fallback-actions');
+        const action = (icon, label, kind, disabled, change) => {
+            const control = button('', () => update(change, replacement => {
+                const sameRow = '.mewmory-fallback-row[data-profile-id="' + CSS.escape(profileId) + '"]';
+                if (replacement.querySelector(sameRow + ' [title="' + label + '"]:not(:disabled)')) return sameRow + ' [title="' + label + '"]';
+                if (replacement.querySelector(sameRow)) return sameRow + ' button:not(:disabled)';
+                const remaining = replacement.querySelectorAll('.mewmory-fallback-row');
+                return remaining.length
+                    ? '.mewmory-fallback-row:nth-child(' + Math.min(index + 1, remaining.length) + ') [title="Remove"]'
+                    : '.mewmory-fallback-add';
+            }), { disabled });
+            control.classList.add('menu_button_icon', 'mewmory-fallback-action');
+            control.id = 'mewmory-fallback-' + kind + '-' + profileId;
+            control.title = label;
+            control.setAttribute('aria-label', label + ': ' + name.textContent);
+            control.append(node('i', 'fa-solid ' + icon));
+            control.firstChild.setAttribute('aria-hidden', 'true');
+            return control;
+        };
+        const move = offset => next => next.splice(index + offset, 0, ...next.splice(index, 1));
+        actions.append(
+            action('fa-arrow-up', 'Try earlier', 'earlier', index === 0, move(-1)),
+            action('fa-arrow-down', 'Try later', 'later', index === fallbacks.length - 1, move(1)),
+            action('fa-xmark', 'Remove', 'remove', false, next => next.splice(index, 1)),
+        );
+        row.append(name, actions);
+        rows.append(row);
+    });
+    if (fallbacks.length) list.append(rows);
+    const available = [...profiles].filter(([id]) => !fallbacks.includes(id));
+    const full = fallbacks.length >= MAX_FALLBACK_PROFILES;
+    const add = node('select', 'text_pole mewmory-fallback-add');
+    add.id = 'mewmory-field-fallback-add';
+    add.setAttribute('aria-label', 'Add a fallback connection');
+    add.disabled = ui.running || full || !available.length;
+    const placeholder = node('option', '', full ? 'All ' + MAX_FALLBACK_PROFILES + ' fallbacks are in use'
+        : !profiles.size ? 'Save a connection profile first'
+            : !available.length ? 'Every saved connection is already listed'
+                : 'Add a fallback connection…');
+    placeholder.value = '';
+    add.append(placeholder);
+    if (!full) for (const [id, label] of available) {
+        const option = node('option', '', label);
+        option.value = id;
+        add.append(option);
+    }
+    add.addEventListener('change', () => {
+        const id = add.value;
+        if (id) update(next => next.push(id), () => '.mewmory-fallback-add');
+    });
+    list.append(add);
+    return list;
 }
 
 function renderSettings(root) {
@@ -852,7 +929,7 @@ function renderSettings(root) {
         }));
     }
     roleForm.append(scope);
-    model.append(roleForm, node('p', 'mewmory-caption', 'Recall selector and Recall fallback only pick from memories that already exist. Only use models on this computer applies to every role. Embeddings are optional; keyword search always works.'));
+    model.append(roleForm, renderFallbackConnections(draft), node('p', 'mewmory-caption', 'Recall selector and Recall fallback only pick from memories that already exist. Only use models on this computer applies to every role. Embeddings are optional; keyword search always works.'));
     root.append(model);
     const actions = node('div', 'mewmory-actions');
     const retry = button('Retry saving', () => { void mewmoryConfigAutosave.retry(); }, { primary: true });
@@ -1087,7 +1164,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20260926c';
+        style.href = 'css/mewmory.css?v=20261024a';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {
