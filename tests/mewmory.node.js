@@ -16,7 +16,7 @@ const {
 } = await import('../src/mewmory/core.js');
 const { activeReferences, assembleContext, generationFingerprint } = await import('../src/mewmory/context.js');
 const { callJsonRole, defaultConfig, embed, isLocalEndpoint, validateEndpoint, saveConfig } = await import('../src/mewmory/models.js');
-const { applyExtraction, applyInterview, extractionInput, interviewInput, pendingSources, processBatch } = await import('../src/mewmory/processing.js');
+const { applyExtraction, applyInterview, extractionInput, interviewInput, pendingSources, processBatch, processingVersion } = await import('../src/mewmory/processing.js');
 const { forcedMatches, validateSelection, recall, recallInBackground } = await import('../src/mewmory/retrieval.js');
 const { expandNeighbours, hybridCandidates, lexicalSearch, searchDocuments, splitPassages, updateIndex } = await import('../src/mewmory/search.js');
 const { loadCurrentState } = await import('../src/mewmory/sources.js');
@@ -832,6 +832,79 @@ test('fallback connections answer in order after a model failure and respect eac
         assert.match(error.message, /^Facts and events: .*no longer exists/);
         return true;
     });
+});
+
+test('a connection profile for all roles drives every role that follows it without changing processing fingerprints', async t => {
+    const { directories } = disk(t);
+    const provider = await createMewmoryProvider();
+    t.after(() => new Promise(resolve => provider.server.close(resolve)));
+    writeJson(path.join(directories.root, 'settings.json'), { extension_settings: { connectionManager: { profiles: [
+        { id: 'main', name: 'Main', api: 'custom', 'api-url': provider.url, model: 'extractor' },
+        { id: 'other', name: 'Other', api: 'custom', 'api-url': provider.url, model: 'pawspective' },
+    ] } } });
+    const config = defaultConfig();
+    assert.equal(config.sharedProfileId, '');
+    assert.equal(config.roles.extractor.useShared, false);
+    assert.equal('useShared' in config.roles.embedding, false, 'embeddings never follow the shared profile');
+    config.roles.extractor.enabled = true;
+    config.roles.extractor.useShared = true;
+    assert.throws(() => saveConfig(directories, config), /^Error: Facts and events: Choose a connection profile for all roles/);
+
+    const own = defaultConfig();
+    Object.assign(own.roles.extractor, { enabled: true, profileId: 'main' });
+    saveConfig(directories, own);
+    const ownVersion = processingVersion(readConfig(directories));
+    const ownRole = roleVersion(readConfig(directories), 'extractor');
+
+    const shared = publicConfig(directories);
+    Object.assign(shared, { sharedProfileId: 'main', sharedModelOverride: '' });
+    Object.assign(shared.roles.extractor, { useShared: true, profileId: '' });
+    Object.assign(shared.roles.pawspective, { enabled: true, useShared: true });
+    shared.roles.embedding.useShared = true;
+    const saved = saveConfig(directories, shared);
+    assert.equal(saved.roles.extractor.useShared, true);
+    assert.equal(saved.roles.extractor.profileId, '', 'the role keeps its own choice for switching back');
+    assert.equal('useShared' in saved.roles.embedding, false);
+    const resolved = readConfig(directories);
+    assert.equal(resolved.roles.extractor.profileId, 'main');
+    assert.equal(resolved.roles.pawspective.model, 'extractor');
+    assert.equal('useShared' in resolved.roles.extractor, false);
+    assert.equal(roleVersion(resolved, 'extractor'), ownRole, 'following the shared profile matches choosing it directly');
+    assert.equal(publicConfig(directories).roles.pawspective.model, 'extractor');
+    const result = await callJsonRole(directories, resolved, 'pawspective', 'Interview.', { sources: [], existing: [] });
+    assert.equal(result.usage.model, 'extractor');
+
+    const switched = publicConfig(directories);
+    Object.assign(switched, { sharedProfileId: 'other', sharedModelOverride: 'override-model' });
+    saveConfig(directories, switched);
+    const moved = readConfig(directories);
+    assert.equal(moved.roles.extractor.model, 'override-model');
+    assert.equal(moved.roles.pawspective.model, 'override-model', 'changing the shared profile moves every following role together');
+    assert.notEqual(processingVersion(moved), ownVersion);
+
+    const back = publicConfig(directories);
+    Object.assign(back, { sharedProfileId: 'main', sharedModelOverride: '' });
+    Object.assign(back.roles.pawspective, { enabled: false, useShared: false });
+    saveConfig(directories, back);
+    assert.equal(roleVersion(readConfig(directories), 'extractor'), ownRole, 'returning to the same model restores the same coverage');
+    const bare = defaultConfig();
+    delete bare.roles.extractor.useShared;
+    assert.equal(roleVersion(defaultConfig(), 'extractor'), roleVersion(bare, 'extractor'), 'the new setting alone never changes a fingerprint');
+
+    const configPath = path.join(directories.root, 'mewmory', 'config.json');
+    const handEdited = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    handEdited.sharedProfileId = '';
+    writeJson(configPath, handEdited);
+    assert.match(readConfig(directories).roles.extractor.error, /Choose a connection profile for all roles/);
+
+    const legacy = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    delete legacy.sharedProfileId;
+    delete legacy.sharedModelOverride;
+    for (const role of Object.values(legacy.roles)) delete role.useShared;
+    writeJson(configPath, legacy);
+    const upgraded = publicConfig(directories);
+    assert.equal(upgraded.sharedProfileId, '');
+    assert.equal(upgraded.roles.extractor.useShared, false);
 });
 
 test('credential saves roll back on invalid input or failed configuration writes and clearing removes older keys', t => {
