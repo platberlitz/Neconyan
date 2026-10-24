@@ -53,7 +53,7 @@ An interview receives only that character’s source-backed knowledge and eligib
 
 Each entity has one complete current temporary-state record. Updating its clothing or location must retain an ongoing injury or carried item. Automatic cast changes are saved at their story position, so reviewing an earlier scene cannot apply a later departure. Superseded overviews remain labelled as historical when recalled alongside the current interpretation.
 
-I keep the interview guidance brief: aim for 1-3 short sentences per answer, with at most one action or subtext cue when it adds meaning. Character voice and supported uncertainty still matter; answers aren't cut off to enforce that target.
+Records are written in full. Once messages leave the recent chat, the records are all the writer has left of them, so an event, relationship or commitment gets two to four sentences that say who did what, where, how and what came of it, and keep the names, objects, numbers, deadlines, habits and lines a later scene could call back to. Detail never means invention: anything the messages don't show is left out. Interview answers follow the same rule: two to four sentences in the character's voice, each grounded in a named event, object, place or line, with at most one action or subtext cue when it adds meaning. Character voice and supported uncertainty still matter; answers aren't cut off to enforce that target.
 
 “Reported” means that someone said something; it does not establish that the claim is true. Significance requires accepted story evidence. Retrieval, retrying a job and copying summaries do not raise significance.
 

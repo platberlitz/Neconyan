@@ -28,7 +28,7 @@ const { createMewmoryProvider } = await import('./mewmory-provider.js');
 const { readConfig, publicConfig, roleVersion } = await import('../src/mewmory/models.js');
 const { readSecret, writeSecret, SecretManager, SECRET_KEYS } = await import('../src/endpoints/secrets.js');
 const { resolveModelProfile } = await import('../src/mewmory/connection-profiles.js');
-const { EXTRACTION_CONTRACT } = await import('../src/mewmory/contracts.js');
+const { EXTRACTION_CONTRACT, PAWSPECTIVE_CONTRACT } = await import('../src/mewmory/contracts.js');
 const { startProcessing, waitForProcessing, cancelProcessing, scanProcessing, startMewmoryWorker, pauseInterruptedProcessing } = await import('../src/mewmory/worker.js');
 const { startOperation, registerMewmoryOperations } = await import('../src/mewmory/operations.js');
 const { getJob: getSavedJob, recoverJobs, updateJob } = await import('../src/jobs/store.js');
@@ -78,6 +78,25 @@ test('RAG prefixes preserve whitespace through saving and real custom and native
     settings.extension_settings.vectors.source = 'webllm';
     writeJson(path.join(directories.root, 'settings.json'), settings);
     assert.match(readConfig(directories).roles.embedding.error, /browser embeddings/);
+});
+
+test('memory prompts ask for full, specific records instead of one-line notes', async t => {
+    const { directories } = disk(t);
+    const provider = await createMewmoryProvider();
+    t.after(() => new Promise(resolve => provider.server.close(resolve)));
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: provider.url, model: 'extractor' });
+    saveConfig(directories, config);
+    await callJsonRole(directories, readConfig(directories), 'extractor', EXTRACTION_CONTRACT, { sources: [], existing: [] });
+    const system = provider.calls.at(-1).messages[0].content;
+    assert.match(system, /Write full, specific records/);
+    assert.match(system, /an event, relationship or commitment takes two to four full sentences/);
+    assert.match(system, /An entity’s text always says who they are/);
+    assert.match(system, /never write that something is not described, and never fill a gap with a likely detail/);
+    assert.match(system, /at the length the contract asks for/);
+    assert.doesNotMatch(system, /one short sentence where possible|stay brief|Keep every text field short/);
+    assert.match(PAWSPECTIVE_CONTRACT, /two to four sentences/);
+    assert.doesNotMatch(PAWSPECTIVE_CONTRACT, /1-3 short sentences|one brief third-person/);
 });
 
 test('archive HTTP search combines semantic retrieval, filters, safe fallback and source revalidation', async t => {
@@ -2399,7 +2418,7 @@ test('real model HTTP calls complete chronological extraction, bounded interview
     assert.equal(result.memoryText.includes('SEARCH ONLY'), false);
     assert.ok(provider.calls.filter(call => call.model === 'pawspective').every(call => !JSON.stringify(call.messages).includes('SECRET:')));
     assert.ok(provider.calls.filter(call => call.model === 'pawspective').every(call =>
-        call.messages[0].content.includes('1-3 short sentences per answer') && call.messages[0].content.includes('at most one brief narrated action')));
+        call.messages[0].content.includes('in two to four sentences. Ground every answer in a specific supplied event') && call.messages[0].content.includes('at most one brief narrated action')));
     assert.ok(provider.calls.every(call => call.tools === undefined));
     assert.equal(fs.readFileSync(filename, 'utf8'), bytes);
     provider.mode.invalidSelector = true;
