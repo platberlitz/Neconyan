@@ -6,6 +6,7 @@
 - PR #285 (2026-10-23) `fix(authors-note): stop typing in the note scanning the whole page`
 - PR #286 (2026-10-23) `fix(termux): retry transfer checks after temporary timestamp changes`
 - PR #287 (2026-10-24) `fix(storage): prevent false authoring save conflicts on exfat drives`
+- PR #289 (2026-10-24) `fix(generation): stop agents when a provider ends a reply with an error`
 
 ## v1.3.8
 
