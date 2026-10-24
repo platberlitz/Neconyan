@@ -76,6 +76,17 @@
 .mewmory-record > .mewmory-actions { align-items: end; }
 .mewmory-record > .mewmory-actions > .mewmory-field { flex: 1 1 10rem; }
 .mewmory-record > .mewmory-actions :is(select, button) { margin: 0; }
+.mewmory-fallbacks { display: flex; flex-direction: column; gap: .55rem; min-width: 0; padding-left: .8rem; border-left: 2px solid var(--SmartThemeBorderColor); }
+.mewmory-fallback-heading { display: flex; align-items: baseline; justify-content: space-between; gap: .6rem; font-weight: 700; }
+.mewmory-fallback-count { color: var(--SmartThemeEmColor); font-weight: 400; font-variant-numeric: tabular-nums; }
+.mewmory-fallback-rows { display: flex; flex-direction: column; gap: .3rem; margin: 0; padding: 0; list-style: none; counter-reset: mewmory-fallback; }
+.mewmory-fallback-row { display: flex; align-items: center; gap: .6rem; min-width: 0; counter-increment: mewmory-fallback; }
+.mewmory-fallback-row::before { content: counter(mewmory-fallback) '.'; flex: 0 0 1.6em; color: var(--SmartThemeEmColor); font-variant-numeric: tabular-nums; text-align: right; }
+.mewmory-fallback-name { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; line-height: 1.3; }
+.mewmory-fallback-row.is-missing .mewmory-fallback-name { color: var(--SmartThemeEmColor); font-style: italic; }
+.mewmory-fallback-actions { display: flex; flex: 0 0 auto; gap: .3rem; }
+#mewmory-workspace .mewmory-fallback-action { width: 2.75rem; min-width: 2.75rem; margin: 0; padding: 0; justify-content: center; }
+#mewmory-workspace .mewmory-fallback-add { margin: 0; }
 
 @media (max-width: 600px) {
     .mewmory-fields { grid-template-columns: minmax(0, 1fr); }

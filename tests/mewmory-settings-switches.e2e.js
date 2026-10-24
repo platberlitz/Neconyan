@@ -46,6 +46,7 @@ async function resetSettings(page) {
         enableNewChats: false,
         autoHide: false,
         autoHideTokens: 30000,
+        fallbackProfileIds: [],
         roles: Object.fromEntries(Object.entries(config.roles).map(([name, role]) => [name, { ...role, tokenizer: 'auto' }])),
     };
     return saveConfig(page, reset);
@@ -198,7 +199,67 @@ async function oldServerIsReported({ page }) {
     await resetSettings(page);
 }
 
+const TEST_PROFILES = [
+    { id: 'e2e-fallback-a', name: 'E2E fallback A', model: 'model-a' },
+    { id: 'e2e-fallback-b', name: 'E2E fallback B', model: 'model-b' },
+];
+
+async function setTestProfiles(page, present) {
+    await page.evaluate(({ profiles, present }) => {
+        const context = window.SillyTavern.getContext();
+        const manager = context.extensionSettings.connectionManager ??= { profiles: [] };
+        const ids = new Set(profiles.map(profile => profile.id));
+        manager.profiles = (manager.profiles || []).filter(profile => !ids.has(profile.id));
+        if (present) manager.profiles.push(...profiles.map(profile => ({ ...profile, api: 'custom', mode: 'cc', 'api-url': 'http://127.0.0.1:9/v1' })));
+        context.saveSettingsDebounced();
+    }, { profiles: TEST_PROFILES, present });
+    await expect.poll(async () => {
+        const listed = new Set(((await readConfig(page)).config.profiles || []).map(profile => profile.id));
+        return TEST_PROFILES.every(profile => listed.has(profile.id) === present);
+    }, { timeout: 15000 }).toBe(true);
+}
+
+async function fallbackConnectionsSaveInOrder({ page }) {
+    await load(page);
+    await resetSettings(page);
+    await setTestProfiles(page, true);
+    try {
+        const workspace = await openSettings(page);
+        const status = workspace.locator('#mewmory-settings-status');
+        const fallbacks = workspace.locator('#mewmory-fallbacks');
+        const add = fallbacks.getByLabel('Add a fallback connection', { exact: true });
+        const names = fallbacks.locator('.mewmory-fallback-name');
+        const saved = async () => (await readConfig(page)).config.fallbackProfileIds;
+
+        await fallbacks.scrollIntoViewIfNeeded();
+        await expect(fallbacks.locator('.mewmory-fallback-count')).toHaveText('0 of 10');
+        await add.selectOption('e2e-fallback-a');
+        await expect.poll(saved, { timeout: 15000 }).toEqual(['e2e-fallback-a']);
+        await add.selectOption('e2e-fallback-b');
+        await expect.poll(saved, { timeout: 15000 }).toEqual(['e2e-fallback-a', 'e2e-fallback-b']);
+        await expect(names).toHaveText(['E2E fallback A', 'E2E fallback B']);
+        await expect(fallbacks.locator('.mewmory-fallback-count')).toHaveText('2 of 10');
+
+        await fallbacks.getByRole('button', { name: 'Try earlier: E2E fallback B', exact: true }).click();
+        await expect.poll(saved, { timeout: 15000 }).toEqual(['e2e-fallback-b', 'e2e-fallback-a']);
+        await expect(names).toHaveText(['E2E fallback B', 'E2E fallback A']);
+        await expect(fallbacks.getByRole('button', { name: 'Try earlier: E2E fallback B', exact: true })).toBeDisabled();
+        await expect(fallbacks.getByRole('button', { name: 'Try later: E2E fallback B', exact: true })).toBeFocused();
+
+        await fallbacks.getByRole('button', { name: 'Remove: E2E fallback B', exact: true }).click();
+        await expect.poll(saved, { timeout: 15000 }).toEqual(['e2e-fallback-a']);
+        await expect(status).toHaveText('Configuration saved.', { timeout: 15000 });
+
+        const reopened = (await openSettings(page)).locator('#mewmory-fallbacks');
+        await expect(reopened.locator('.mewmory-fallback-name')).toHaveText(['E2E fallback A']);
+    } finally {
+        await resetSettings(page);
+        await setTestProfiles(page, false);
+    }
+}
+
 const AUTOSAVE_TITLE = 'every setting saves automatically, including token limits and model roles';
+const FALLBACK_TITLE = 'fallback connections are added, reordered and removed, and save in order';
 const RETRY_TITLE = 'a failed save keeps the draft and saves it when retried';
 const CONFLICT_TITLE = 'a revision conflict keeps local edits and merges the newer server copy';
 const RAPID_TITLE = 'rapid edits and panel navigation keep the newest draft and send one request';
@@ -211,10 +272,12 @@ test.describe('desktop', () => {
     test(CONFLICT_TITLE, revisionConflictKeepsLocalEdit);
     test(RAPID_TITLE, rapidEditsSurviveNavigation);
     test(OLD_SERVER_TITLE, oldServerIsReported);
+    test(FALLBACK_TITLE, fallbackConnectionsSaveInOrder);
 });
 
 test.describe('touch phone', () => {
     test.use({ viewport: { width: 393, height: 852 }, hasTouch: true, isMobile: true });
     test(AUTOSAVE_TITLE, settingsSaveAutomatically);
+    test(FALLBACK_TITLE, fallbackConnectionsSaveInOrder);
     test(OLD_SERVER_TITLE, oldServerIsReported);
 });

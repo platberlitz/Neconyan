@@ -14,13 +14,14 @@ import { captureVectorPolicy, requestVectorEmbedding } from '../operations/vecto
 import { RAG_DEFAULTS } from '../../public/scripts/mewmory/rag-settings.js';
 
 export const ROLE_LABELS = { extractor: 'Facts and events', pawspective: 'Pawspective interviews', embedding: 'Embeddings', selector: 'Recall selector', fallback: 'Recall fallback' };
+export const MAX_FALLBACK_PROFILES = 10;
 
 export function defaultConfig() {
     return {
         revision: 0, defaultsVersion: 2, localOnly: false, autoUpdate: true, historyWindow: 30000,
         memoryTokens: 6000, batchMessages: 12, candidateLimit: 24,
         writerTokenizer: 'auto', excludeHistory: true, autoHide: false, autoHideTokens: 30000, enableNewChats: false,
-        retrieval: { ...RAG_DEFAULTS },
+        retrieval: { ...RAG_DEFAULTS }, fallbackProfileIds: [],
         roles: Object.fromEntries(ROLE_NAMES.map(name => [name, {
             enabled: false, profileId: '', endpoint: '', model: '', modelOverride: '', modelRevision: '', allowRemote: true,
             contextTokens: 200000, maxOutputTokens: name === 'embedding' ? 0 : 32000,
@@ -81,6 +82,13 @@ function validateRetrieval(input = {}) {
     return Object.fromEntries(Object.keys(RAG_DEFAULTS).map(key => [key, result[key]]));
 }
 
+function validateFallbackProfiles(value = []) {
+    if (!Array.isArray(value)) fail('Fallback connections are in the wrong format.');
+    const ids = [...new Set(value.map(id => text(id, 'Fallback connection', 250)))];
+    if (ids.length > MAX_FALLBACK_PROFILES) fail('Choose at most ' + MAX_FALLBACK_PROFILES + ' fallback connections.');
+    return ids;
+}
+
 export function validateConfig(input) {
     object(input, 'Settings');
     const result = defaultConfig();
@@ -94,6 +102,7 @@ export function validateConfig(input) {
     result.batchMessages = integer(input.batchMessages, 'Messages per update', 1, 24);
     result.candidateLimit = integer(input.candidateLimit, 'Recall candidates', 4, 64);
     result.retrieval = validateRetrieval(input.retrieval);
+    result.fallbackProfileIds = validateFallbackProfiles(input.fallbackProfileIds);
     if (!TOKENIZERS.includes(input.writerTokenizer)) fail('Choose a token counter for your main writer from the list.');
     result.writerTokenizer = input.writerTokenizer;
     object(input.roles, 'Model roles');
@@ -152,6 +161,7 @@ function readSavedConfig(directories) {
     config.autoHide ??= false;
     config.autoHideTokens ??= 30000;
     config.enableNewChats ??= false;
+    config.fallbackProfileIds ??= [];
     config.roles.embedding.provider ||= 'custom';
     return config;
 }
@@ -269,7 +279,8 @@ function authorizeRole(config, name, dataTypes) {
     return { role, endpoint };
 }
 
-async function requestModel(directories, config, name, payload, dataTypes, signal) {
+/** `connectionRole` swaps in a fallback connection while the saved role still guards against mid-run setting changes. */
+async function requestModel(directories, config, name, payload, dataTypes, signal, connectionRole = null) {
     if (signal?.aborted) fail('Mewmory request cancelled.', 499);
     const checkCurrent = () => {
         const current = readConfig(directories);
@@ -278,7 +289,7 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
         }
     };
     checkCurrent();
-    const { role, endpoint } = authorizeRole(config, name, dataTypes);
+    const { role, endpoint } = authorizeRole(connectionRole ? { ...config, roles: { ...config.roles, [name]: connectionRole } } : config, name, dataTypes);
     const base = (endpoint || (role.connection?.api === 'openai' ? 'https://api.openai.com/v1' : '')).replace(/\/(?:chat\/completions|embeddings)\/?$/, '');
     const url = base + (name === 'embedding' ? '/embeddings' : '/chat/completions');
     const key = role.connection
@@ -327,6 +338,7 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
             data,
             usage: {
                 role: name, model: role.model, modelRevision: role.modelRevision,
+                ...(connectionRole ? { fallbackProfileId: connectionRole.profileId } : {}),
                 input: Number(data.usage?.prompt_tokens) || 0, output: Number(data.usage?.completion_tokens) || 0,
                 milliseconds: Date.now() - started,
             },
@@ -361,8 +373,27 @@ function parseJsonReply(content) {
     }
 }
 
+function fallbackRoles(directories, config, name, dataTypes) {
+    if (name === 'embedding') return [];
+    return (config.fallbackProfileIds || []).flatMap(profileId => {
+        try {
+            const connection = resolveModelProfile(directories, profileId, false, '');
+            const role = { ...config.roles[name], profileId, modelOverride: '', connection, model: connection.model, endpoint: connection.endpoint, error: undefined };
+            authorizeRole({ ...config, roles: { ...config.roles, [name]: role } }, name, dataTypes);
+            return [role];
+        } catch {
+            // A deleted profile, a missing key or a remote profile this role may not use is left out.
+            return [];
+        }
+    });
+}
+
 export async function callJsonRole(directories, config, name, contract, input, { dataTypes = SOURCE_TYPES, signal } = {}) {
-    const { role } = authorizeRole(config, name, dataTypes);
+    const saved = config.roles[name];
+    // A broken own connection still lets the fallbacks answer; a switched-off role or a data permission does not.
+    const brokenConnection = Boolean(ROLE_NAMES.includes(name) && saved?.enabled && saved.error);
+    const { role } = brokenConnection ? { role: saved } : authorizeRole(config, name, dataTypes);
+    if (brokenConnection && dataTypes.some(type => !role.allowedData.includes(type))) fail(ROLE_LABELS[name] + ' cannot read the information it needs. Check ‘This role may read’ in Mewmory settings.', 403);
     const counter = await getCounter(role.tokenizer, { tokenizerKey: 'openai', tokenizerName: role.model });
     const messages = [
         { role: 'system', content: contract + '\n' + RESPONSE_RULES },
@@ -376,20 +407,44 @@ export async function callJsonRole(directories, config, name, contract, input, {
             + ROLE_LABELS[name] + ' > Context limit, tokens to the limit your model service supports'
             + (name === 'extractor' ? ', or reduce Messages per update.' : '.'), 409);
     }
-    const result = await requestModel(directories, config, name, {
-        messages, stream: false, max_tokens: role.maxOutputTokens, temperature: 0.2,
-    }, dataTypes, signal);
-    const content = result.data.choices?.[0]?.message?.content;
-    if (result.data.choices?.[0]?.finish_reason === 'length') fail('The ' + ROLE_LABELS[name] + ' model ran out of reply space, so its answer was cut short and nothing was saved. Raise ' + ROLE_LABELS[name] + ' > Output limit, tokens in Mewmory settings if your model supports it, or lower Messages per update.', 502);
-    if (typeof content !== 'string') fail('The model for ' + ROLE_LABELS[name] + ' sent back an empty reply. Check its model connection in Mewmory settings, then try again.', 502);
-    let value;
-    try {
-        value = parseJsonReply(content);
-        object(value, 'Model output');
-    } catch {
-        fail('The ' + ROLE_LABELS[name] + ' model replied in a format Mewmory cannot read, so nothing was saved. Try again; if it keeps happening, choose a different model for ' + ROLE_LABELS[name] + ' in Mewmory settings.', 502);
+    const attempt = async connectionRole => {
+        const result = await requestModel(directories, config, name, {
+            messages, stream: false, max_tokens: role.maxOutputTokens, temperature: 0.2,
+        }, dataTypes, signal, connectionRole);
+        const content = result.data.choices?.[0]?.message?.content;
+        if (result.data.choices?.[0]?.finish_reason === 'length') fail('The ' + ROLE_LABELS[name] + ' model ran out of reply space, so its answer was cut short and nothing was saved. Raise ' + ROLE_LABELS[name] + ' > Output limit, tokens in Mewmory settings if your model supports it, or lower Messages per update.', 502);
+        if (typeof content !== 'string') fail('The model for ' + ROLE_LABELS[name] + ' sent back an empty reply. Check its model connection in Mewmory settings, then try again.', 502);
+        let value;
+        try {
+            value = parseJsonReply(content);
+            object(value, 'Model output');
+        } catch {
+            fail('The ' + ROLE_LABELS[name] + ' model replied in a format Mewmory cannot read, so nothing was saved. Try again; if it keeps happening, choose a different model for ' + ROLE_LABELS[name] + ' in Mewmory settings.', 502);
+        }
+        return { value, usage: { ...result.usage, input: result.usage.input || inputTokens, tokenizer: counter.name } };
+    };
+    let primaryError;
+    if (brokenConnection) {
+        primaryError = Object.assign(new Error(ROLE_LABELS[name] + ': ' + saved.error), { status: 409 });
+    } else {
+        try {
+            return await attempt(null);
+        } catch (error) {
+            // Only a model-side failure moves on; cancellations, limits and permission problems stop here.
+            if (error.status !== 502) throw error;
+            primaryError = error;
+        }
     }
-    return { value, usage: { ...result.usage, input: result.usage.input || inputTokens, tokenizer: counter.name } };
+    const fallbacks = fallbackRoles(directories, config, name, dataTypes);
+    for (const fallback of fallbacks) {
+        try {
+            return await attempt(fallback);
+        } catch (error) {
+            if (error.status !== 502) throw error;
+        }
+    }
+    if (!fallbacks.length) throw primaryError;
+    fail(primaryError.message + ' ' + (fallbacks.length === 1 ? 'The fallback connection also failed.' : 'All ' + fallbacks.length + ' fallback connections also failed.'), primaryError.status);
 }
 
 export async function embed(directories, config, texts, { query = false, dataTypes = SOURCE_TYPES, signal } = {}) {

@@ -771,6 +771,69 @@ test('saved profiles keep keyless connections anonymous, enforce bindings, and r
     assert.equal(destination.calls.length, 0);
 });
 
+test('fallback connections answer in order after a model failure and respect each role\'s permissions', async t => {
+    const { directories } = disk(t);
+    const provider = await createMewmoryProvider();
+    t.after(() => new Promise(resolve => provider.server.close(resolve)));
+    const remoteKey = writeSecret(directories, SECRET_KEYS.OPENAI, 'test-openai-key');
+    const settings = { extension_settings: { connectionManager: { profiles: [
+        { id: 'remote', name: 'Remote', api: 'openai', model: 'gpt-4o', 'secret-id': remoteKey },
+        { id: 'local', name: 'Local', api: 'custom', 'api-url': provider.url, model: 'extractor' },
+        { id: 'own', name: 'Own', api: 'custom', 'api-url': provider.url, model: 'extractor' },
+    ] } } };
+    writeJson(path.join(directories.root, 'settings.json'), settings);
+    const input = { sources: [], existing: [] };
+    const config = defaultConfig();
+    assert.deepEqual(config.fallbackProfileIds, []);
+    config.fallbackProfileIds = Array.from({ length: 11 }, (_, index) => 'profile-' + index);
+    assert.throws(() => saveConfig(directories, config), /at most 10 fallback connections/);
+    config.fallbackProfileIds = ['deleted', 'remote', 'local', 'local'];
+    config.localOnly = true;
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'dead', timeoutMs: 1000 });
+    const saved = saveConfig(directories, config);
+    assert.deepEqual(saved.fallbackProfileIds, ['deleted', 'remote', 'local'], 'duplicates are dropped and the order is kept');
+    const before = provider.calls.length;
+    const result = await callJsonRole(directories, readConfig(directories), 'extractor', 'Extract facts.', input);
+    assert.deepEqual(result.value.records, []);
+    assert.equal(result.usage.fallbackProfileId, 'local');
+    assert.equal(result.usage.model, 'extractor');
+    assert.equal(provider.calls.length, before + 1, 'the deleted and the remote local-only-blocked profiles are skipped');
+
+    provider.mode.reply = { choices: [{ message: { content: 'not json' } }] };
+    await assert.rejects(callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', input), error => {
+        assert.equal(error.status, 502);
+        assert.match(error.message, /could not be reached.*The fallback connection also failed\./);
+        return true;
+    });
+    delete provider.mode.reply;
+
+    const tight = publicConfig(directories);
+    Object.assign(tight.roles.extractor, { contextTokens: 1024, maxOutputTokens: 900 });
+    saveConfig(directories, tight);
+    const calls = provider.calls.length;
+    await assert.rejects(callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', { text: 'long passage '.repeat(400) }), /context limit/);
+    assert.equal(provider.calls.length, calls, 'a size limit is not a connection failure');
+
+    const own = publicConfig(directories);
+    Object.assign(own.roles.extractor, { profileId: 'own', endpoint: '', model: '', contextTokens: 200000, maxOutputTokens: 32000 });
+    saveConfig(directories, own);
+    writeJson(path.join(directories.root, 'settings.json'), { extension_settings: { connectionManager: { profiles: settings.extension_settings.connectionManager.profiles.filter(profile => profile.id !== 'own') } } });
+    assert.match(readConfig(directories).roles.extractor.error, /no longer exists/);
+    const rescued = await callJsonRole(directories, readConfig(directories), 'extractor', 'Extract.', input);
+    assert.equal(rescued.usage.fallbackProfileId, 'local', 'a deleted own profile hands over to the fallbacks');
+    const blocked = readConfig(directories);
+    blocked.roles.extractor.allowedData = [];
+    await assert.rejects(callJsonRole(directories, blocked, 'extractor', 'Extract.', input, { dataTypes: ['chat'] }), error => error.status === 403);
+
+    const none = readConfig(directories);
+    none.fallbackProfileIds = [];
+    await assert.rejects(callJsonRole(directories, none, 'extractor', 'Extract.', input), error => {
+        assert.equal(error.status, 409);
+        assert.match(error.message, /^Facts and events: .*no longer exists/);
+        return true;
+    });
+});
+
 test('credential saves roll back on invalid input or failed configuration writes and clearing removes older keys', t => {
     const { directories } = disk(t);
     let config = defaultConfig();
