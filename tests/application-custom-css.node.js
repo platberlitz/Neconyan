@@ -1,3 +1,4 @@
+import { authoringRenameTest, assertSavedAuthoring } from './authoring-rename-fixture.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -80,11 +81,12 @@ test('newer CSS edits win and the generated CSS stays in the saved result', asyn
     assert.deepEqual([record.state, record.result.applied, record.result.css], ['completed', false, '.generated {}']);
 });
 
-test('a lost acknowledgement after saving finishes without overwriting later edits', async t => {
+authoringRenameTest('a lost acknowledgement after saving finishes without overwriting later edits', async t => {
     const p = prepared(t);
     const accepted = await acceptApplicationOperation(p.request, body('lost', 'replace'));
     const generate = async () => ({ text: '.generated {}' });
     await assert.rejects(runOperation(p.context(accepted.job), { generate, afterCustomCssPublication: () => { throw new Error('Simulated lost acknowledgement'); } }), /lost acknowledgement/);
+    assertSavedAuthoring(p.base.directories.root, readOperation(p.base, 'lost').effects);
     assert.equal(p.settings().power_user.custom_css, '.generated {}');
     const current = p.settings();
     p.write({ ...current, power_user: { ...current.power_user, custom_css: '.later {}' }, _version: current._version + 1 });

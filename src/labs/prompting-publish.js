@@ -44,7 +44,7 @@ export async function runPromptingPublish(context, plan, { afterPresetPublicatio
             save();
         }
         if (value.effects.preset.state !== 'done') {
-            publishAuthoringFileLocked(lease, value.effects.preset.staged);
+            publishAuthoringFileLocked(lease, value.effects.preset.staged, { checkpoint: save });
             afterPresetPublication?.();
             value.effects.preset.state = 'done';
             save();

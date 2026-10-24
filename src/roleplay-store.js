@@ -213,12 +213,12 @@ function readProtectedFile(filename, limit, { flush, allowMissingParent, collect
 }
 
 /** Synchronous publication proof: keep this exact file open until the callback returns. */
-export function withRoleplayFileHandle(filename, limit, callback) {
+export function withRoleplayFileHandle(filename, limit, callback, { flush = true } = {}) {
     const stat = inspectRoleplayFileStat(filename, limit);
     if (!stat) throw damaged();
     const fd = fs.openSync(filename, fs.constants.O_RDWR | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
     try {
-        const initial = readProtectedHandle(filename, limit, fd, { flush: true, collectBytes: false }, stat);
+        const initial = readProtectedHandle(filename, limit, fd, { flush, collectBytes: false }, stat);
         // Explicit-position reads also work after the same descriptor has followed a rename.
         return callback(initial, target => readProtectedHandle(target, limit, fd, { flush: false, collectBytes: false }));
     } finally { fs.closeSync(fd); }

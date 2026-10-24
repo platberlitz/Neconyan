@@ -106,7 +106,7 @@ function finishJournal(lease, notebookId, operationId, journal, { fault } = {}) 
             writeJsonLocked(lease, journalFile(lease, notebookId, operationId), journal);
         }
         fault?.('staged', { canvasId: journal.canvasId });
-        publishAuthoringFileLocked(lease, journal.staged);
+        publishAuthoringFileLocked(lease, journal.staged, { checkpoint: () => writeJsonLocked(lease, journalFile(lease, notebookId, operationId), journal) });
         fault?.('renamed', { canvasId: journal.canvasId });
         journal.published = true;
         writeJsonLocked(lease, journalFile(lease, notebookId, operationId), journal);

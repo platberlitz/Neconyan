@@ -1,3 +1,4 @@
+import { authoringRenameTest, assertSavedAuthoring, simulateAuthoringRename } from './authoring-rename-fixture.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -8,6 +9,8 @@ const { acceptApplicationOperation, runOperation } = await import('../src/operat
 const { readArchiveFile, readArchiveOrganization } = await import('../src/operations/archive.js');
 const { readOperation } = await import('../src/operations/store.js');
 const { getJob } = await import('../src/jobs/store.js');
+const { publishAccountFile } = await import('../src/operations/file-publication.js');
+const { roleplayHash } = await import('../src/roleplay-store.js');
 
 function setup(t, owner = 'fixture') {
     const f = fixture(t, false, owner); const directories = f.scope.directories;
@@ -89,10 +92,11 @@ test('archive exports retain the captured selected swipes and do not read a late
     assert.equal(fs.readFileSync(p.f.filename, 'utf8'), 'Later file');
 });
 
-test('archive organisation publication recovers a lost acknowledgement without resurrecting a deleted file', async t => {
+authoringRenameTest('archive organisation publication recovers a lost acknowledgement without resurrecting a deleted file', async t => {
     const p = setup(t); const current = readArchiveOrganization(p.base);
     const accepted = await p.accept('organization', 'archive-organization', { revision: current.revision, organization: { version: 1, chats: {}, folders: [], savedViews: [] } });
     await assert.rejects(runOperation(p.context(accepted.job), { afterFilePublication: () => { throw new Error('Lost acknowledgement'); } }), /Lost acknowledgement/);
+    assertSavedAuthoring(p.base.directories.root, readOperation(p.base, 'organization').effects);
     const file = path.join(p.base.directories.files, '_sbca_organization.json');
     assert.equal(fs.existsSync(file), true);
     await runOperation(p.context(accepted.job));
@@ -103,6 +107,44 @@ test('archive organisation publication recovers a lost acknowledgement without r
     await runOperation(p.context(accepted.job));
     assert.equal(fs.existsSync(file), false);
 });
+
+for (const savesFirst of [false, true]) {
+    test(`account-file witness and derived revision survive checkpoint failure only when actually persisted: ${savesFirst}`, async t => {
+        const p = setup(t), current = readArchiveOrganization(p.base);
+        const accepted = await p.accept('checkpoint', 'archive-organization', { revision: current.revision,
+            organization: { version: 1, chats: {}, folders: [], savedViews: [] } });
+        const context = p.context(accepted.job), plan = readOperation(p.base, 'checkpoint').plan;
+        let published = false, injected = false;
+        simulateAuthoringRename(t, { afterRename(_from, to) {
+            if (path.basename(to) === '_sbca_organization.json') published = true;
+        } });
+        const rename = fs.renameSync;
+        const failure = new Error('Checkpoint persistence fault');
+        t.mock.method(fs, 'renameSync', (from, to) => {
+            if (published && !injected && path.basename(path.dirname(to)) === 'operations') {
+                injected = true;
+                if (savesFirst) rename(from, to);
+                throw failure;
+            }
+            return rename(from, to);
+        });
+        assert.throws(() => publishAccountFile(context, plan), error => error === failure);
+        assert.equal(injected, true);
+        const persisted = readOperation(p.base, 'checkpoint');
+        assert.equal(persisted.effects.file.state, 'prepared');
+        assert.equal(persisted.fileResult.revision, roleplayHash(persisted.effects.file.staged.after));
+        const actual = readArchiveOrganization(p.base).revision;
+        if (savesFirst) {
+            assert.equal(persisted.fileResult.revision, actual);
+            assertSavedAuthoring(p.base.directories.root, persisted.effects);
+            assert.equal(publishAccountFile(context, plan).revision, actual);
+        } else {
+            assert.notEqual(persisted.fileResult.revision, actual);
+            assert.throws(() => publishAccountFile(context, plan), { code: 'AUTHORING_SOURCE_CHANGED' });
+            assert.equal(readArchiveOrganization(p.base).revision, actual);
+        }
+    });
+}
 
 test('ambiguous or malformed group ownership refuses an archive scan instead of inventing orphan status', async t => {
     const p = setup(t);

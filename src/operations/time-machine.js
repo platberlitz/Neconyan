@@ -191,7 +191,7 @@ function publishBlob(context, row, index, text) {
             value.effects[key] = { state: 'prepared', staged };
             save();
         }
-        publishAuthoringFileLocked(lease, staged);
+        publishAuthoringFileLocked(lease, staged, { checkpoint: save });
         value.effects[key].state = 'done';
         save();
     });
@@ -243,7 +243,7 @@ function publishIndex(context, planned, { afterTimeMachineIndex } = {}) {
                 settingsRevision: prepared.settingsRevision };
             save();
         }
-        publishAuthoringFileLocked(lease, staged);
+        publishAuthoringFileLocked(lease, staged, { checkpoint: save });
         afterTimeMachineIndex?.(staged);
         value.effects.settings.state = 'done';
         save();

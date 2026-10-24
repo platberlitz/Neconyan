@@ -19,7 +19,16 @@ export function publishAccountFile(context, plan, { afterFilePublication } = {})
             save();
         }
         if (value.effects.file.state !== 'done') {
-            publishAuthoringFileLocked(lease, value.effects.file.staged);
+            const previousRevision = value.fileResult.revision;
+            try {
+                publishAuthoringFileLocked(lease, value.effects.file.staged, { checkpoint: () => {
+                    value.fileResult.revision = roleplayHash(value.effects.file.staged.after);
+                    return save();
+                } });
+            } catch (error) {
+                value.fileResult.revision = previousRevision;
+                throw error;
+            }
             afterFilePublication?.(value.effects.file.staged);
             value.effects.file.state = 'done'; save();
         }
