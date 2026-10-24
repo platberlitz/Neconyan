@@ -21,9 +21,10 @@ export function defaultConfig() {
         revision: 0, defaultsVersion: 2, localOnly: false, autoUpdate: true, historyWindow: 30000,
         memoryTokens: 6000, batchMessages: 12, candidateLimit: 24,
         writerTokenizer: 'auto', excludeHistory: true, autoHide: false, autoHideTokens: 30000, enableNewChats: false,
-        retrieval: { ...RAG_DEFAULTS }, fallbackProfileIds: [],
+        retrieval: { ...RAG_DEFAULTS }, fallbackProfileIds: [], sharedProfileId: '', sharedModelOverride: '',
         roles: Object.fromEntries(ROLE_NAMES.map(name => [name, {
-            enabled: false, profileId: '', endpoint: '', model: '', modelOverride: '', modelRevision: '', allowRemote: true,
+            enabled: false, ...(name === 'embedding' ? {} : { useShared: false }),
+            profileId: '', endpoint: '', model: '', modelOverride: '', modelRevision: '', allowRemote: true,
             contextTokens: 200000, maxOutputTokens: name === 'embedding' ? 0 : 32000,
             timeoutMs: 300000, tokenizer: 'auto', allowedData: [...SOURCE_TYPES],
             queryPrefix: '', documentPrefix: '', ...(name === 'embedding' ? { provider: 'custom' } : {}),
@@ -103,6 +104,8 @@ export function validateConfig(input) {
     result.candidateLimit = integer(input.candidateLimit, 'Recall candidates', 4, 64);
     result.retrieval = validateRetrieval(input.retrieval);
     result.fallbackProfileIds = validateFallbackProfiles(input.fallbackProfileIds);
+    result.sharedProfileId = text(input.sharedProfileId || '', 'Connection profile for all roles', 250, true);
+    result.sharedModelOverride = result.sharedProfileId ? text(input.sharedModelOverride || '', 'Model override for all roles', 250, true) : '';
     if (!TOKENIZERS.includes(input.writerTokenizer)) fail('Choose a token counter for your main writer from the list.');
     result.writerTokenizer = input.writerTokenizer;
     object(input.roles, 'Model roles');
@@ -113,12 +116,17 @@ export function validateConfig(input) {
             const provider = name === 'embedding' ? role.provider || 'custom' : 'custom';
             if (!['custom', 'native'].includes(provider)) fail('Choose a valid embedding connection.');
             const native = provider === 'native';
+            const useShared = name !== 'embedding' && role.useShared === true;
+            if (enabled && useShared && !result.sharedProfileId) fail('Choose a connection profile for all roles, or pick a connection for this role.');
             const profileId = text(role.profileId || '', 'Connection profile', 250, true);
-            const endpoint = text(role.endpoint, 'Endpoint', 2048, !enabled || Boolean(profileId) || native);
+            // A role on the shared profile keeps its own choice saved for when it is switched back.
+            const ownOptional = !enabled || useShared || Boolean(profileId) || native;
+            const endpoint = text(role.endpoint, 'Endpoint', 2048, ownOptional);
             const allowRemote = role.allowRemote === true;
             result.roles[name] = {
-                enabled, profileId: native ? '' : profileId, endpoint: !native && !profileId && endpoint ? enabled ? validateEndpoint(endpoint, { localOnly: result.localOnly, allowRemote }) : endpoint : '',
-                model: text(role.model, 'Model', 250, !enabled || Boolean(profileId) || native),
+                enabled, ...(name === 'embedding' ? {} : { useShared }),
+                profileId: native ? '' : profileId, endpoint: !native && !profileId && endpoint ? enabled && !useShared ? validateEndpoint(endpoint, { localOnly: result.localOnly, allowRemote }) : endpoint : '',
+                model: text(role.model, 'Model', 250, ownOptional),
                 ...(name === 'embedding' ? { provider } : {}),
                 modelOverride: text(role.modelOverride, 'Model override', 250, true),
                 modelRevision: text(role.modelRevision, 'Model revision', 250, true), allowRemote,
@@ -162,8 +170,22 @@ function readSavedConfig(directories) {
     config.autoHideTokens ??= 30000;
     config.enableNewChats ??= false;
     config.fallbackProfileIds ??= [];
+    config.sharedProfileId ??= '';
+    config.sharedModelOverride ??= '';
+    for (const name of ROLE_NAMES) if (name !== 'embedding') config.roles[name].useShared ??= false;
     config.roles.embedding.provider ||= 'custom';
     return config;
+}
+
+/**
+ * The connection a role really uses. A role on the shared profile looks exactly like a role that
+ * chose that profile itself, so switching between the two keeps processing fingerprints unchanged.
+ */
+function connectionRole(config, role) {
+    const { useShared, ...own } = role;
+    if (!useShared) return own;
+    if (!config.sharedProfileId) return { ...own, profileId: '', endpoint: '', sharedMissing: true };
+    return { ...own, profileId: config.sharedProfileId, modelOverride: config.sharedModelOverride || '' };
 }
 
 function resolveNativeRole(directories, role) {
@@ -176,9 +198,13 @@ function resolveNativeRole(directories, role) {
 export function readConfig(directories) {
     const config = readSavedConfig(directories);
     for (const name of ROLE_NAMES) {
-        const role = config.roles[name];
+        const role = config.roles[name] = connectionRole(config, config.roles[name]);
         if (name === 'embedding' && role.enabled && role.provider === 'native') {
             try { config.roles[name] = resolveNativeRole(directories, role); } catch (error) { role.error = error.message; }
+            continue;
+        }
+        if (role.enabled && role.sharedMissing) {
+            role.error = 'Choose a connection profile for all roles, or pick a connection for this role.';
             continue;
         }
         if (!role.enabled || !role.profileId) continue;
@@ -199,7 +225,8 @@ export function publicConfig(directories) {
     const profiles = listModelProfiles(directories);
     return { ...config, profiles, roles: Object.fromEntries(ROLE_NAMES.map(name => {
         const role = config.roles[name];
-        const model = role.profileId ? role.modelOverride || profiles.find(profile => profile.id === role.profileId)?.model || '' : role.model;
+        const used = connectionRole(config, role);
+        const model = used.profileId ? used.modelOverride || profiles.find(profile => profile.id === used.profileId)?.model || '' : role.model;
         const native = resolved.roles[name].nativePolicy;
         return [name, { ...role, model, ...(native ? { native: { source: native.source, model: native.settings.model,
             queryPrefix: native.settings.queryPrefix || '', documentPrefix: native.settings.documentPrefix || '' } } : {}),
@@ -221,11 +248,12 @@ export function saveConfig(directories, input) {
             authorizeRole({ ...validated, roles: { ...validated.roles, [name]: resolveNativeRole(directories, role) } }, name, []);
             continue;
         }
-        if (!role.enabled || !role.profileId) continue;
+        const used = connectionRole(validated, role);
+        if (!role.enabled || !used.profileId) continue;
         try {
-            const connection = resolveModelProfile(directories, role.profileId, name === 'embedding', role.modelOverride);
-            authorizeRole({ ...validated, roles: { ...validated.roles, [name]: { ...role, connection, endpoint: connection.endpoint } } }, name, []);
-            role.model = connection.model;
+            const connection = resolveModelProfile(directories, used.profileId, name === 'embedding', used.modelOverride);
+            authorizeRole({ ...validated, roles: { ...validated.roles, [name]: { ...used, connection, endpoint: connection.endpoint } } }, name, []);
+            if (!role.useShared) role.model = connection.model;
         } catch (error) {
             fail(ROLE_LABELS[name] + ': ' + error.message, error.status);
         }
@@ -259,7 +287,7 @@ export function roleVersion(config, name) {
         const { endpoint, model, modelRevision, queryPrefix, documentPrefix, profileId, nativePolicy } = config.roles.embedding;
         return hash({ endpoint, model, modelRevision, queryPrefix, documentPrefix, profileId, ...(nativePolicy ? { nativePolicy } : {}) });
     }
-    return hash([config.localOnly, { ...config.roles[name], timeoutMs: undefined }]);
+    return hash([config.localOnly, { ...connectionRole(config, config.roles[name]), timeoutMs: undefined }]);
 }
 
 function authorizeRole(config, name, dataTypes) {

@@ -47,7 +47,14 @@ async function resetSettings(page) {
         autoHide: false,
         autoHideTokens: 30000,
         fallbackProfileIds: [],
-        roles: Object.fromEntries(Object.entries(config.roles).map(([name, role]) => [name, { ...role, tokenizer: 'auto' }])),
+        sharedProfileId: '',
+        sharedModelOverride: '',
+        roles: Object.fromEntries(Object.entries(config.roles).map(([name, role]) => [name, {
+            ...role,
+            tokenizer: 'auto',
+            ...(name === 'embedding' ? {} : { useShared: false }),
+            ...(role.profileId?.startsWith('e2e-fallback-') ? { profileId: '', modelOverride: '' } : {}),
+        }])),
     };
     return saveConfig(page, reset);
 }
@@ -258,6 +265,61 @@ async function fallbackConnectionsSaveInOrder({ page }) {
     }
 }
 
+async function sharedProfileDrivesEveryRole({ page }) {
+    await load(page);
+    await resetSettings(page);
+    await setTestProfiles(page, true);
+    const { config: original } = await readConfig(page);
+    try {
+        // Roles with a connection of their own keep it when the shared profile is chosen, so start from none.
+        await saveConfig(page, {
+            ...original,
+            roles: Object.fromEntries(Object.entries(original.roles).map(([name, role]) => [name,
+                name === 'embedding' ? role : { ...role, enabled: false, profileId: '', modelOverride: '', endpoint: '', model: '' }])),
+        });
+        let workspace = await openSettings(page);
+        const saved = async () => (await readConfig(page)).config;
+        const followers = async () => Object.entries((await saved()).roles)
+            .filter(([name]) => name !== 'embedding').map(([name, role]) => [name, role.useShared, role.model]);
+
+        await workspace.getByLabel('Connection profile for all roles', { exact: true }).selectOption('e2e-fallback-a');
+        await expect.poll(async () => (await saved()).sharedProfileId, { timeout: 15000 }).toBe('e2e-fallback-a');
+        await expect.poll(followers, { timeout: 15000 }).toEqual([
+            ['extractor', true, 'model-a'], ['pawspective', true, 'model-a'], ['selector', true, 'model-a'], ['fallback', true, 'model-a'],
+        ]);
+        expect((await saved()).roles.embedding.useShared).toBeUndefined();
+        const roleProfile = workspace.getByLabel('Connection profile', { exact: true });
+        await expect(roleProfile).toHaveValue('mewmory:shared-profile');
+        await expect(workspace.locator('.mewmory-role')).toContainText('Follows the profile for all roles: E2E fallback A · model-a');
+
+        await roleProfile.selectOption('e2e-fallback-b');
+        await expect.poll(async () => {
+            const role = (await saved()).roles.extractor;
+            return [role.useShared, role.profileId, role.model];
+        }, { timeout: 15000 }).toEqual([false, 'e2e-fallback-b', 'model-b']);
+        await expect(workspace.getByText('1 role still uses its own connection.', { exact: true })).toBeVisible();
+
+        await workspace.getByRole('button', { name: 'Use for every role', exact: true }).click();
+        await expect.poll(async () => (await saved()).roles.extractor.useShared, { timeout: 15000 }).toBe(true);
+        await expect(workspace.getByRole('button', { name: 'Use for every role', exact: true })).toHaveCount(0);
+
+        await workspace.getByLabel('Connection profile for all roles', { exact: true }).selectOption('e2e-fallback-b');
+        await expect.poll(followers, { timeout: 15000 }).toEqual([
+            ['extractor', true, 'model-b'], ['pawspective', true, 'model-b'], ['selector', true, 'model-b'], ['fallback', true, 'model-b'],
+        ]);
+
+        workspace = await openSettings(page);
+        await expect(workspace.getByLabel('Connection profile for all roles', { exact: true })).toHaveValue('e2e-fallback-b');
+        await expect(workspace.getByLabel('Connection profile', { exact: true })).toHaveValue('mewmory:shared-profile');
+    } finally {
+        const { config } = await readConfig(page);
+        await saveConfig(page, { ...original, revision: config.revision });
+        await resetSettings(page);
+        await setTestProfiles(page, false);
+    }
+}
+
+const SHARED_TITLE = 'a connection profile for all roles switches every following role together';
 const AUTOSAVE_TITLE = 'every setting saves automatically, including token limits and model roles';
 const FALLBACK_TITLE = 'fallback connections are added, reordered and removed, and save in order';
 const RETRY_TITLE = 'a failed save keeps the draft and saves it when retried';
@@ -273,11 +335,13 @@ test.describe('desktop', () => {
     test(RAPID_TITLE, rapidEditsSurviveNavigation);
     test(OLD_SERVER_TITLE, oldServerIsReported);
     test(FALLBACK_TITLE, fallbackConnectionsSaveInOrder);
+    test(SHARED_TITLE, sharedProfileDrivesEveryRole);
 });
 
 test.describe('touch phone', () => {
     test.use({ viewport: { width: 393, height: 852 }, hasTouch: true, isMobile: true });
     test(AUTOSAVE_TITLE, settingsSaveAutomatically);
     test(FALLBACK_TITLE, fallbackConnectionsSaveInOrder);
+    test(SHARED_TITLE, sharedProfileDrivesEveryRole);
     test(OLD_SERVER_TITLE, oldServerIsReported);
 });

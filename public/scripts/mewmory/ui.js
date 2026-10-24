@@ -15,6 +15,7 @@ const kinds = { entity: 'NPC or entity reference', state: 'Current state', event
     knowledge: 'Character knowledge', commitment: 'Promise or unresolved matter', interview: 'Pawspective interview', overview: 'Current subject view' };
 const roles = { extractor: 'Facts and events', pawspective: 'Pawspective interviews', embedding: 'Embeddings', selector: 'Recall selector', fallback: 'Recall fallback' };
 const MAX_FALLBACK_PROFILES = 10;
+const SHARED_PROFILE = 'mewmory:shared-profile';
 const SWITCHES = ['enableNewChats', 'autoUpdate', 'localOnly', 'excludeHistory', 'autoHide'];
 const tokenizers = ['auto', 'o200k_base', 'cl100k_base', 'gpt2', 'llama', 'llama3', 'mistral', 'gemma', 'claude', 'qwen2', 'deepseek', 'nemo', 'jamba', 'yi'];
 const ui = { root: null, tab: 'now', owner: '', subject: '', significance: '', status: '', kind: 'objective', query: '', offset: 0,
@@ -717,7 +718,8 @@ window.addEventListener('neconyan:account-changing', () => {
 // A server still running older code drops switches it does not know and saves the rest.
 function confirmSavedSwitches(saved, expected) {
     if (SWITCHES.some(key => typeof expected[key] === 'boolean' && saved?.[key] !== expected[key])
-        || (Array.isArray(expected.fallbackProfileIds) && !Array.isArray(saved?.fallbackProfileIds))) {
+        || (Array.isArray(expected.fallbackProfileIds) && !Array.isArray(saved?.fallbackProfileIds))
+        || (expected.sharedProfileId && saved?.sharedProfileId !== expected.sharedProfileId)) {
         throw new Error('Neconyan was updated but is still running the old version. Restart Neconyan, then try again.');
     }
 }
@@ -844,6 +846,38 @@ function renderSettings(root) {
     root.append(retrieval);
     const model = section('Model roles');
     model.dataset.mewmoryTour = 'models';
+    const allProfiles = mewmory.config.profiles || [];
+    const sharedProfile = allProfiles.find(profile => profile.id === draft.sharedProfileId);
+    const shared = node('div', 'mewmory-fields mewmory-shared-profile');
+    const textRoles = Object.entries(draft.roles).filter(([name]) => name !== 'embedding').map(([, role]) => role);
+    shared.append(configField('Connection profile for all roles', draft.sharedProfileId || '', value => {
+        draft.sharedProfileId = value;
+        draft.sharedModelOverride = '';
+        // Roles with no connection of their own start following the new profile straight away.
+        if (value) for (const role of textRoles) if (!role.profileId && !role.endpoint) role.useShared = true;
+        render();
+    }, { options: [['', allProfiles.length ? 'None, choose for each role' : 'Save a connection profile first'], ...allProfiles.map(profile => [profile.id, profile.name]),
+        ...(draft.sharedProfileId && !sharedProfile ? [[draft.sharedProfileId, 'Unavailable saved profile']] : [])], key: 'shared-profile',
+    hint: 'Every role set to ‘Use the profile for all roles’ follows this one, so changing it here switches them together. Embeddings choose their own connection.' }));
+    if (draft.sharedProfileId) shared.append(configField(sharedProfile?.model ? 'Model override for all roles, optional' : 'Model for all roles', draft.sharedModelOverride || '', value => {
+        draft.sharedModelOverride = value;
+        render();
+    }, { key: 'shared-model-override', hint: sharedProfile?.model
+        ? 'Leave blank to use the profile’s model: ' + sharedProfile.model
+        : 'This profile has no saved model. Enter the model name provided by your service.' }));
+    model.append(shared);
+    const own = textRoles.filter(role => !role.useShared).length;
+    if (draft.sharedProfileId && own) {
+        const useEverywhere = button('Use for every role', () => {
+            for (const role of textRoles) role.useShared = true;
+            scheduleConfigSave({ immediate: true });
+            render();
+        });
+        useEverywhere.id = 'mewmory-shared-profile-everywhere';
+        const row = node('div', 'mewmory-actions');
+        row.append(node('p', 'mewmory-caption', own + (own === 1 ? ' role still uses its own connection.' : ' roles still use their own connection.')), useEverywhere);
+        model.append(row);
+    }
     const picker = node('div', 'mewmory-role-picker');
     picker.setAttribute('role', 'group');
     picker.setAttribute('aria-label', 'Model role to set up');
@@ -868,32 +902,44 @@ function renderSettings(root) {
     if (native) roleForm.append(node('p', 'mewmory-caption', role.native
         ? 'Saved Vectorization connection: ' + role.native.source + ' · ' + (role.native.model || 'server default')
         : 'Mewmory resolves the current Vectorization connection after these settings save. Configure its provider and prefixes in Extensions > Built-in > Vectorization.'));
-    const profiles = (mewmory.config.profiles || []).filter(profile => ui.role !== 'embedding' || profile.embeddings);
-    const selectedProfile = profiles.find(profile => profile.id === role.profileId);
-    if (!native) fields.append(configField('Connection profile', role.profileId || '', value => {
-        role.profileId = value;
-        const profile = profiles.find(profile => profile.id === value);
-        role.model = profile?.model || '';
-        role.modelOverride = '';
+    const profiles = allProfiles.filter(profile => ui.role !== 'embedding' || profile.embeddings);
+    const usesShared = ui.role !== 'embedding' && role.useShared === true;
+    const ownProfile = profiles.find(profile => profile.id === role.profileId);
+    const selectedProfile = usesShared ? sharedProfile : ownProfile;
+    if (!native) fields.append(configField('Connection profile', usesShared ? SHARED_PROFILE : role.profileId || '', value => {
+        role.useShared = value === SHARED_PROFILE;
+        if (!role.useShared) {
+            role.profileId = value;
+            role.model = profiles.find(profile => profile.id === value)?.model || '';
+            role.modelOverride = '';
+        }
         render();
-    }, { options: [['', 'Manual endpoint'], ...profiles.map(profile => [profile.id, profile.name]),
-        ...(role.profileId && !selectedProfile ? [[role.profileId, 'Unavailable saved profile']] : [])], key: 'profile-' + ui.role,
-    hint: 'Uses the saved profile’s model and server-side credentials. Embeddings need an OpenAI-compatible profile.' }));
-    if (!native && role.profileId) fields.append(configField(selectedProfile?.model ? 'Model override, optional' : 'Model', role.modelOverride || '', value => {
+    }, { options: [...(ui.role === 'embedding' ? [] : [[SHARED_PROFILE, 'Use the profile for all roles' + (sharedProfile ? ' (' + sharedProfile.name + ')' : '')]]),
+        ['', 'Manual endpoint'], ...profiles.map(profile => [profile.id, profile.name]),
+        ...(!usesShared && role.profileId && !ownProfile ? [[role.profileId, 'Unavailable saved profile']] : [])], key: 'profile-' + ui.role,
+    hint: usesShared && draft.sharedProfileId
+        ? 'Follows the profile for all roles: ' + (sharedProfile?.name || 'Unavailable saved profile') + ' · ' + (draft.sharedModelOverride || sharedProfile?.model || 'no model chosen')
+        : 'Uses the saved profile’s model and server-side credentials. Embeddings need an OpenAI-compatible profile.' }));
+    if (!native && usesShared && !draft.sharedProfileId) roleForm.append(node('p', 'mewmory-error', 'Choose a connection profile for all roles above, or pick a connection for this role.'));
+    if (!native && !usesShared && role.profileId) fields.append(configField(selectedProfile?.model ? 'Model override, optional' : 'Model', role.modelOverride || '', value => {
         role.modelOverride = value;
         render();
     }, { key: 'model-override-' + ui.role, hint: selectedProfile?.model
         ? 'Leave blank to use the profile’s model: ' + selectedProfile.model
         : 'This profile has no saved model. Enter the model name provided by your service.' }));
-    if (!native && !role.profileId) fields.append(
+    if (!native && !usesShared && !role.profileId) fields.append(
         configField('OpenAI-compatible endpoint', role.endpoint, value => { role.endpoint = value; }, { hint: 'For example: http://127.0.0.1:8000/v1', key: 'endpoint-' + ui.role }),
         configField('Model', role.model, value => { role.model = value; render(); }, { key: 'model-' + ui.role }),
         configField('API key', role.apiKey || '', value => { role.apiKey = value; }, { type: 'password', hint: role.hasKey ? 'A key is saved. Leave blank to keep it.' : 'Stored in the server’s protected credentials.', key: 'api-key-' + ui.role }),
     );
-    const modelName = role.profileId ? role.modelOverride || selectedProfile?.model : role.model;
+    const usedProfileId = usesShared ? draft.sharedProfileId : role.profileId;
+    const usedOverride = usesShared ? draft.sharedModelOverride : role.modelOverride;
+    const modelName = usedProfileId ? usedOverride || selectedProfile?.model : role.model;
     const savedRole = mewmory.config.roles[ui.role];
-    if (savedRole.error && role.profileId === savedRole.profileId) roleForm.append(node('p', 'mewmory-error', savedRole.error));
-    const autoTokenizer = role.profileId && !role.modelOverride ? selectedProfile?.autoTokenizer
+    const savedShared = savedRole.useShared === true;
+    if (savedRole.error && savedShared === usesShared && (usesShared ? draft.sharedProfileId === mewmory.config.sharedProfileId : role.profileId === savedRole.profileId)
+        && (draft.sharedProfileId || !usesShared)) roleForm.append(node('p', 'mewmory-error', savedRole.error));
+    const autoTokenizer = usedProfileId && !usedOverride ? selectedProfile?.autoTokenizer
         : modelName === savedRole.model ? savedRole.autoTokenizer : '';
     fields.append(
         configField('Model revision, optional', role.modelRevision, value => { role.modelRevision = value; }, { key: 'revision-' + ui.role }),
@@ -919,7 +965,7 @@ function renderSettings(root) {
             configField('Document prefix, optional', native ? role.native?.documentPrefix || '' : role.documentPrefix, value => { role.documentPrefix = value; }, { multiline: true, disabled: native }));
     }
     roleForm.append(fields, configCheck('Allow sending story data to a service on another computer', role.allowRemote, value => { role.allowRemote = value; }));
-    if (!native && !role.profileId) roleForm.append(configCheck('Remove the saved API key', role.clearKey, value => { role.clearKey = value; }));
+    if (!native && !usesShared && !role.profileId) roleForm.append(configCheck('Remove the saved API key', role.clearKey, value => { role.clearKey = value; }));
     const scope = section('This role may read');
     scope.dataset.mewmoryTour = 'permissions';
     for (const [type, label] of [['chat', 'Chat messages'], ['character', 'Character cards'], ['lore', 'Enabled lore'], ['memory', 'Saved memories'], ['file', 'Attached files and Data Bank']]) {
