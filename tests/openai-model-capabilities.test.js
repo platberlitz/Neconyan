@@ -111,38 +111,43 @@ describe('Grok model capabilities', () => {
 });
 
 describe('Kimi K3 model capabilities', () => {
-    test('recognizes native and provider-prefixed K3 model IDs', () => {
-        for (const model of ['kimi-k3', 'KIMI-K3', 'moonshotai/kimi-k3', 'models:moonshotai/kimi-k3']) {
+    test('recognizes native and provider-prefixed K3 and K3.1 Pro model IDs', () => {
+        for (const model of [
+            'kimi-k3', 'KIMI-K3', 'moonshotai/kimi-k3', 'models:moonshotai/kimi-k3',
+            'kimi-k3.1-pro', 'KIMI-K3.1-PRO', 'moonshotai/kimi-k3.1-pro', 'models:moonshotai/kimi-k3.1-pro-highspeed',
+        ]) {
             expect(isKimiK3Model(model)).toBe(true);
         }
     });
 
     test('rejects unrelated model IDs', () => {
-        for (const model of ['kimi-k2.5', 'moonshotai/kimi-k2', 'not-kimi-k3', '', undefined]) {
+        for (const model of ['kimi-k2.5', 'moonshotai/kimi-k2', 'not-kimi-k3', 'kimi-k3.1', 'kimi-k3.2-pro', 'not-kimi-k3.1-pro', '', undefined]) {
             expect(isKimiK3Model(model)).toBe(false);
         }
     });
 
-    test('removes parameters fixed by the Kimi K3 API', () => {
-        const payload = {
-            model: 'moonshotai/Kimi-K3',
-            temperature: 1,
-            top_p: 0.95,
-            frequency_penalty: 0,
-            presence_penalty: 0,
-            n: 3,
-            max_tokens: 4096,
-            reasoning_effort: 'max',
-            thinking: { type: 'enabled' },
-        };
+    test('removes parameters fixed by the Kimi K3 and K3.1 Pro APIs', () => {
+        for (const model of ['moonshotai/Kimi-K3', 'moonshotai/kimi-k3.1-pro']) {
+            const payload = {
+                model,
+                temperature: 1,
+                top_p: 0.95,
+                frequency_penalty: 0,
+                presence_penalty: 0,
+                n: 3,
+                max_tokens: 4096,
+                reasoning_effort: 'max',
+                thinking: { type: 'enabled' },
+            };
 
-        applyKimiK3ModelParameterConstraints(payload);
+            applyKimiK3ModelParameterConstraints(payload);
 
-        expect(payload).toEqual({
-            model: 'moonshotai/Kimi-K3',
-            max_tokens: 4096,
-            reasoning_effort: 'max',
-        });
+            expect(payload).toEqual({
+                model,
+                max_tokens: 4096,
+                reasoning_effort: 'max',
+            });
+        }
     });
 
     test('leaves non-K3 payloads unchanged', () => {
