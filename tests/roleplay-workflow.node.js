@@ -752,6 +752,31 @@ for (const policy of ['autoSwipe', 'autoContinue']) test(`filtered candidate sav
     assert.deepEqual(await runRoleplayWorkflowJob(f.context()), first);
 });
 
+test('an error candidate skips the decision, Agents, alternatives and hiding, saves once and replays identically', async t => {
+    const f = prepared(t, 'append', { agents: true, autoSwipe: true, assistant: true, history: 20 });
+    // A 1024-token hiding budget would hide the older context if hiding were prepared.
+    enableMewmoryHiding(f.dirs, f.f.locator, { autoHideTokens: 1024 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    let agentCalls = 0, decisions = 0;
+    const text = 'A partial sentence that ends with an error';
+    await f.candidate(text, calls, { generateAgent: async () => { agentCalls++; throw new Error('Error Agent must not run'); },
+        response: { choices: [{ finish_reason: 'error', message: { content: text,
+            tool_calls: [{ id: 'error-tool', type: 'function', function: { name: 'Neconyan_Assistant_ReadLorebookEntry', arguments: '{}' } }] } }] } });
+    const first = await runRoleplayWorkflowJob(f.context(), { decideCandidate: async () => { decisions++; throw new Error('Error candidate must not be judged'); } });
+    assert.equal(first.result.status, 'completed');
+    assert.equal(first.result.generationOutcome.status, 'error');
+    assert.equal(f.records().at(-1).mes, text);
+    assert.equal(f.records().at(-1).extra.generation_outcome.status, 'error');
+    assert.equal(calls.count, 1);
+    assert.equal(agentCalls, 0);
+    assert.equal(decisions, 0);
+    assert.ok(f.records().slice(1).every(record => !record.is_system && record.extra?.mewmoryKeepHidden !== true),
+        'a terminated candidate hides no earlier message');
+    assert.deepEqual(await runRoleplayWorkflowJob(f.context()), first);
+});
+
 test('a filtered automatic continuation retains its accepted prefix and exact blocked suffix', async t => {
     const f = prepared(t, 'append', { autoContinue: true, continueTarget: 100 });
     updateJob(f.dirs, f.jobId, { state: 'running' });

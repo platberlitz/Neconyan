@@ -571,16 +571,19 @@ test('source and Agent source refusals never consume fallback connections', asyn
 
 test('a blocked Agent model step neither rewrites nor tries fallback and replays without paying', async t => {
     const f = prepared(t);
-    const calls = [];
     const aux = { kind: 'profile', ...captureChatProfile(f.directories, 'aux') };
-    const options = { base: f.scope, account: f.account, name: 'blocked', identity: roleplayHash('blocked'), binding: f.binding,
-        maxTokens: 64, macros: {}, assertCurrent() {}, fallbacks: [{ binding: aux, profileLabel: 'Backup' }],
-        buildMessages: () => [{ role: 'user', content: 'Write a note' }],
-        generate: modelResponse(({ binding }) => {
-            calls.push(binding.profileId);
-            return { text: 'Partial rewrite', response: { choices: [{ finish_reason: 'content_filter', message: { content: 'Partial rewrite' } }] } };
-        }) };
-    await assert.rejects(runAgentModelStep(f.context, options), { code: 'GENERATION_BLOCKED' });
-    await assert.rejects(runAgentModelStep({ ...f.context, providerScope: createProviderScope(f.context) }, options), { code: 'GENERATION_BLOCKED' });
-    assert.deepEqual(calls, ['main']);
+    for (const finish of ['content_filter', 'error']) {
+        const calls = [];
+        const name = `blocked-${finish}`;
+        const options = { base: f.scope, account: f.account, name, identity: roleplayHash(name), binding: f.binding,
+            maxTokens: 64, macros: {}, assertCurrent() {}, fallbacks: [{ binding: aux, profileLabel: 'Backup' }],
+            buildMessages: () => [{ role: 'user', content: 'Write a note' }],
+            generate: modelResponse(({ binding }) => {
+                calls.push(binding.profileId);
+                return { text: 'Partial rewrite', response: { choices: [{ finish_reason: finish, message: { content: 'Partial rewrite' } }] } };
+            }) };
+        await assert.rejects(runAgentModelStep(f.context, options), { code: 'GENERATION_BLOCKED' });
+        await assert.rejects(runAgentModelStep({ ...f.context, providerScope: createProviderScope(f.context) }, options), { code: 'GENERATION_BLOCKED' });
+        assert.deepEqual(calls, ['main'], `${finish} stops before a fallback connection is tried`);
+    }
 });

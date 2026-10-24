@@ -562,7 +562,7 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
             else if (message) globalThis.toastr?.error?.(message, 'Reply stopped');
             stop(value.state);
         } else {
-            if (value.result?.result?.generationOutcome || value.result?.generationOutcome) globalThis.toastr?.warning?.(generationBlockedNotice());
+            if (value.result?.result?.generationOutcome || value.result?.generationOutcome) globalThis.toastr?.warning?.(generationBlockedNotice(true, value.result?.result?.generationOutcome ?? value.result?.generationOutcome));
             stop('done');
         }
     };

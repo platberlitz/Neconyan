@@ -13,6 +13,7 @@ const sandbox = { classifyGenerationOutcome, generationErrorEnvelope, providerBl
     getStreamingReply: (parsed, state) => { state.reasoning += parsed.choices?.[0]?.delta?.reasoning ?? ''; return parsed.choices?.[0]?.delta?.content ?? parsed.delta?.text ?? ''; },
     isGenerationLengthFinish: data => data.choices?.[0]?.finish_reason === 'length', parseChatCompletionLogprobs: () => null,
     checkQuotaError: () => {}, checkModerationError: () => {}, toastr: { error() {} },
+    console: { warn: (...args) => sandbox.warnings.push(args) }, warnings: [],
 };
 vm.createContext(sandbox);
 vm.runInContext(extract('tryParseStreamingError') + '\n' + extract('readChatCompletionStream'), sandbox);
@@ -59,5 +60,22 @@ test('explicit error events and ordinary error envelopes each show one notice', 
         assert.equal(notices.length, 1);
         assert.ok(notices[0][0]);
         assert.notEqual(notices[0][0], 'OK');
+    }
+});
+
+test('browser reader classifies provider error endings and parses no tools after them', async () => {
+    const partial = encode({ choices: [{ index: 0, delta: { content: 'Unfinished' } }] });
+    const toolAfter = encode({ choices: [{ index: 0, delta: { tool_calls: [{ id: 'late-tool' }] } }] });
+    const bare = { choices: [{ index: 0, delta: {}, finish_reason: 'error' }] };
+    const usage = { choices: [{ index: 0, delta: {}, finish_reason: 'error' }], usage: { total_tokens: 9 } };
+    const withEnvelope = { choices: [{ index: 0, delta: {}, finish_reason: 'error' }], error: { message: 'upstream failed' } };
+    for (const [final, warnings] of [[encode(bare), 0], [encode(bare) + 'data: [DONE]\n\n', 0], [encode(usage), 0],
+        [encode(withEnvelope), 1], [encode(withEnvelope) + 'data: [DONE]\n\n', 1]]) {
+        sandbox.warnings.length = 0;
+        const result = await read(partial + final + toolAfter);
+        assert.equal(result.text, 'Unfinished');
+        assert.deepEqual(result.state.outcome, { version: 1, status: 'error', reason: 'error' });
+        assert.equal(result.toolCalls.length, 0);
+        assert.equal(sandbox.warnings.length, warnings);
     }
 });
