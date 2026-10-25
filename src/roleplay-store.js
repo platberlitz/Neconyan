@@ -21,6 +21,16 @@ const IMPORT_RESULT_MAX_BYTES = 32 * 1024;
 const DEFER_SEQUENCE_MAX_LENGTH = 256;
 const RESERVED_IDENTIFIERS = new Set(['.', '..', '__proto__', 'constructor', 'prototype']);
 const ROLEPLAY_UNBOUND_EXTENSION_SETTINGS = Object.freeze(['neconyan_conversation', 'dialogue-colors']);
+const ROLEPLAY_SETTINGS_HASH_TOP_LEVEL_BOOKKEEPING = new Set(['_version', '_settingsRevision', 'accountStorage']);
+const ROLEPLAY_SETTINGS_HASH_UNBOUND_EXTENSIONS = new Set(ROLEPLAY_UNBOUND_EXTENSION_SETTINGS);
+const ROLEPLAY_SETTINGS_HASH_UNBOUND_POWER_USER = new Set(['reply_generation_location']);
+// A guard token is roughly one machine word. The cap keeps a pathological
+// settings object from turning the cache entry itself into a memory problem.
+const ROLEPLAY_SETTINGS_HASH_GUARD_MAX_TOKENS = 2 * 1024 * 1024;
+const SETTINGS_HASH_PRIMITIVE = 0;
+const SETTINGS_HASH_ARRAY = 1;
+const SETTINGS_HASH_OBJECT = 2;
+const settingsHashCache = new WeakMap();
 const leases = new WeakMap();
 const observedAccounts = new Map();
 const activeAccountLeases = new Map();
@@ -43,6 +53,204 @@ export function roleplayHash(value) {
     return crypto.createHash('sha256').update(canonical(value)).digest('hex');
 }
 
+/*
+ * Loaded settings are long-lived shared snapshots (readJsonShared and
+ * readRoleplaySettingsJson reuse the parsed object while the file is unchanged),
+ * and roleplaySettingsHash is called several times for one reply. The hash is
+ * therefore cached per parsed object, but identity alone is not proof: callers
+ * may still mutate the object. A guard records every key and value that the
+ * canonical hash binds, so a cache hit proves the tree is unchanged. Any
+ * mutation, including a new object with identical contents, either matches the
+ * same canonical JSON and is safe to reuse, or falls through to a fresh hash.
+ * Below the root only plain Object.prototype data is trusted: null prototypes,
+ * accessors and proxies are never cached and always take the fresh-hash path.
+ * The cache is keyed weakly by the parsed object and is never shared across
+ * accounts or files.
+ */
+
+/** Read an own data property without invoking an accessor. */
+function settingsHashDataDescriptor(value, key) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor && Object.hasOwn(descriptor, 'value') ? descriptor : null;
+}
+
+function captureSettingsHashGuardValue(value, tokens) {
+    if (types.isProxy(value)) return false;
+    if (Array.isArray(value)) {
+        if (Object.getPrototypeOf(value) !== Array.prototype || tokens.length > ROLEPLAY_SETTINGS_HASH_GUARD_MAX_TOKENS) return false;
+        tokens.push(SETTINGS_HASH_ARRAY, value.length);
+        for (let index = 0; index < value.length; index++) {
+            if (tokens.length > ROLEPLAY_SETTINGS_HASH_GUARD_MAX_TOKENS) return false;
+            const descriptor = settingsHashDataDescriptor(value, String(index));
+            if (!descriptor || !captureSettingsHashGuardValue(descriptor.value, tokens)) return false;
+        }
+        return true;
+    }
+    if (value && typeof value === 'object') {
+        const prototype = Object.getPrototypeOf(value);
+        if (prototype !== Object.prototype || tokens.length > ROLEPLAY_SETTINGS_HASH_GUARD_MAX_TOKENS) return false;
+        const keys = Object.keys(value);
+        tokens.push(SETTINGS_HASH_OBJECT, keys.length);
+        for (const key of keys) {
+            if (tokens.length > ROLEPLAY_SETTINGS_HASH_GUARD_MAX_TOKENS) return false;
+            const descriptor = settingsHashDataDescriptor(value, key);
+            if (!descriptor) return false;
+            tokens.push(key);
+            if (!captureSettingsHashGuardValue(descriptor.value, tokens)) return false;
+        }
+        return true;
+    }
+    if (value === null || typeof value === 'string' || typeof value === 'boolean'
+        || (typeof value === 'number' && Number.isFinite(value))) {
+        tokens.push(SETTINGS_HASH_PRIMITIVE, value);
+        return true;
+    }
+    return false;
+}
+
+/** Capture an object view with the same keys roleplaySettingsHash removes. */
+function captureSettingsHashGuardRecord(value, tokens, unbound) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return captureSettingsHashGuardValue(value, tokens);
+    if (types.isProxy(value)) return false;
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype || tokens.length > ROLEPLAY_SETTINGS_HASH_GUARD_MAX_TOKENS) return false;
+    const allKeys = Object.keys(value);
+    const keys = [];
+    const values = [];
+    for (const key of allKeys) {
+        const descriptor = settingsHashDataDescriptor(value, key);
+        if (!descriptor) return false;
+        if (!unbound.has(key)) {
+            keys.push(key);
+            values.push(descriptor.value);
+        }
+    }
+    tokens.push(SETTINGS_HASH_OBJECT, keys.length);
+    for (let index = 0; index < keys.length; index++) {
+        if (tokens.length > ROLEPLAY_SETTINGS_HASH_GUARD_MAX_TOKENS) return false;
+        tokens.push(keys[index]);
+        if (!captureSettingsHashGuardValue(values[index], tokens)) return false;
+    }
+    return true;
+}
+
+function captureSettingsHashGuard(settings) {
+    if (types.isProxy(settings)) return null;
+    const tokens = [];
+    try {
+        const allKeys = Object.keys(settings);
+        const keys = [];
+        const values = [];
+        for (const key of allKeys) {
+            const descriptor = settingsHashDataDescriptor(settings, key);
+            if (!descriptor) return null;
+            if (!ROLEPLAY_SETTINGS_HASH_TOP_LEVEL_BOOKKEEPING.has(key)) {
+                keys.push(key);
+                values.push(descriptor.value);
+            }
+        }
+        tokens.push(SETTINGS_HASH_OBJECT, keys.length);
+        for (let index = 0; index < keys.length; index++) {
+            if (tokens.length > ROLEPLAY_SETTINGS_HASH_GUARD_MAX_TOKENS) return null;
+            const key = keys[index];
+            const value = values[index];
+            tokens.push(key);
+            const captured = key === 'extension_settings'
+                ? captureSettingsHashGuardRecord(value, tokens, ROLEPLAY_SETTINGS_HASH_UNBOUND_EXTENSIONS)
+                : key === 'power_user'
+                    ? captureSettingsHashGuardRecord(value, tokens, ROLEPLAY_SETTINGS_HASH_UNBOUND_POWER_USER)
+                    : captureSettingsHashGuardValue(value, tokens);
+            if (!captured) return null;
+        }
+        return tokens.length <= ROLEPLAY_SETTINGS_HASH_GUARD_MAX_TOKENS ? tokens : null;
+    } catch {
+        return null;
+    }
+}
+
+function settingsHashGuardValueMatches(value, tokens, cursor) {
+    if (types.isProxy(value)) return false;
+    const kind = tokens[cursor.index++];
+    if (kind === SETTINGS_HASH_PRIMITIVE) return Object.is(value, tokens[cursor.index++]);
+    if (kind === SETTINGS_HASH_ARRAY) {
+        const length = tokens[cursor.index++];
+        if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype
+            || Reflect.ownKeys(value).length !== length + 1 || value.length !== length) return false;
+        for (let index = 0; index < length; index++) {
+            const descriptor = settingsHashDataDescriptor(value, String(index));
+            if (!descriptor || !settingsHashGuardValueMatches(descriptor.value, tokens, cursor)) return false;
+        }
+        return true;
+    }
+    if (kind !== SETTINGS_HASH_OBJECT || !value || typeof value !== 'object' || Array.isArray(value)) return false;
+    if (Object.getPrototypeOf(value) !== Object.prototype) return false;
+    const count = tokens[cursor.index++];
+    const keys = Object.keys(value);
+    if (keys.length !== count || Reflect.ownKeys(value).length !== keys.length) return false;
+    for (let index = 0; index < count; index++) {
+        const key = tokens[cursor.index++];
+        const descriptor = settingsHashDataDescriptor(value, key);
+        if (!descriptor || !settingsHashGuardValueMatches(descriptor.value, tokens, cursor)) return false;
+    }
+    return true;
+}
+
+function settingsHashGuardRecordMatches(value, tokens, cursor, unbound) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return settingsHashGuardValueMatches(value, tokens, cursor);
+    if (types.isProxy(value)) return false;
+    if (Object.getPrototypeOf(value) !== Object.prototype) return false;
+    if (tokens[cursor.index++] !== SETTINGS_HASH_OBJECT) return false;
+    const count = tokens[cursor.index++];
+    const allKeys = Object.keys(value);
+    if (Reflect.ownKeys(value).length !== allKeys.length) return false;
+    let current = 0;
+    for (const key of allKeys) {
+        if (!settingsHashDataDescriptor(value, key)) return false;
+        if (!unbound.has(key)) current++;
+    }
+    if (current !== count) return false;
+    for (let index = 0; index < count; index++) {
+        const key = tokens[cursor.index++];
+        if (unbound.has(key) || !Object.hasOwn(value, key) || !settingsHashGuardValueMatches(value[key], tokens, cursor)) return false;
+    }
+    return true;
+}
+
+function settingsHashGuardMatches(settings, tokens) {
+    if (types.isProxy(settings)) return false;
+    const cursor = { index: 0 };
+    if (tokens[cursor.index++] !== SETTINGS_HASH_OBJECT) return false;
+    const count = tokens[cursor.index++];
+    const allKeys = Object.keys(settings);
+    if (Reflect.ownKeys(settings).length !== allKeys.length) return false;
+    for (const key of allKeys) if (!settingsHashDataDescriptor(settings, key)) return false;
+    let current = 0;
+    for (const key of allKeys) if (!ROLEPLAY_SETTINGS_HASH_TOP_LEVEL_BOOKKEEPING.has(key)) current++;
+    if (current !== count) return false;
+    for (let index = 0; index < count; index++) {
+        const key = tokens[cursor.index++];
+        if (ROLEPLAY_SETTINGS_HASH_TOP_LEVEL_BOOKKEEPING.has(key) || !Object.hasOwn(settings, key)) return false;
+        const value = settings[key];
+        const matched = key === 'extension_settings'
+            ? settingsHashGuardRecordMatches(value, tokens, cursor, ROLEPLAY_SETTINGS_HASH_UNBOUND_EXTENSIONS)
+            : key === 'power_user'
+                ? settingsHashGuardRecordMatches(value, tokens, cursor, ROLEPLAY_SETTINGS_HASH_UNBOUND_POWER_USER)
+                : settingsHashGuardValueMatches(value, tokens, cursor);
+        if (!matched) return false;
+    }
+    return cursor.index === tokens.length;
+}
+
+function cachedRoleplaySettingsHash(settings) {
+    const cached = settingsHashCache.get(settings);
+    if (!cached?.guard) return null;
+    try {
+        return settingsHashGuardMatches(settings, cached.guard) ? cached.hash : null;
+    } catch {
+        return null;
+    }
+}
+
 /**
  * Bind saved settings without the page's own bookkeeping. The save counters, the
  * page's mirrored browser storage, the Conversation store and the dialogue colour
@@ -55,8 +263,10 @@ export function roleplayHash(value) {
  */
 export function roleplaySettingsHash(settings) {
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return roleplayHash(settings ?? null);
+    const cached = cachedRoleplaySettingsHash(settings);
+    if (cached !== null) return cached;
     const bound = { ...settings };
-    for (const key of ['_version', '_settingsRevision', 'accountStorage']) delete bound[key];
+    for (const key of ROLEPLAY_SETTINGS_HASH_TOP_LEVEL_BOOKKEEPING) delete bound[key];
     const extensions = bound.extension_settings;
     if (extensions && typeof extensions === 'object' && !Array.isArray(extensions)
         && ROLEPLAY_UNBOUND_EXTENSION_SETTINGS.some(key => Object.hasOwn(extensions, key))) {
@@ -69,7 +279,9 @@ export function roleplaySettingsHash(settings) {
         bound.power_user = { ...powerUser };
         delete bound.power_user.reply_generation_location;
     }
-    return roleplayHash(bound);
+    const hash = roleplayHash(bound);
+    settingsHashCache.set(settings, { hash, guard: captureSettingsHashGuard(settings) });
+    return hash;
 }
 
 export function roleplayPathKey(stamp, kind, locator) {
