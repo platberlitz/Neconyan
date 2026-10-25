@@ -14506,14 +14506,16 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
             acknowledgedGenerationSettings = {
                 account,
                 settingsRevision: payload._settingsRevision,
-                controls: generationSettingsSnapshot(JSON.parse(serializedPayload)),
+                controls: generationSettingsSnapshot(payload),
             };
             lastSavedSettings = { account, body: serializedPayload, acknowledgement: acknowledgedGenerationSettings };
             return true;
         }
         lastSavedSettings = null;
         const submittedVersion = { _version: payload._version, _settingsRevision: payload._settingsRevision };
-        const submittedGenerationSettings = generationSettingsSnapshot(JSON.parse(serializedPayload));
+        // The snapshot copies and JSON-normalises just the generation controls before
+        // the first await; avoid parsing the entire settings body a second time.
+        const submittedGenerationSettings = generationSettingsSnapshot(payload);
         const saveSettingsRequest = await compressRequest({
             method: 'POST',
             headers: { ...getRequestHeaders(), 'X-Neconyan-Account': account },
