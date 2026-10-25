@@ -612,6 +612,74 @@ function setupQigCollapsibleSection(sectionId, buttonId, contentId) {
     };
 }
 
+// The four settings sections share one labelled tab row. At most one is open; pressing the open
+// tab again closes it so the panel stays short. Search is a fifth tab that is never persisted.
+const QIG_SETTINGS_TABS = [
+    { key: "sectionProvider", buttonId: "qig-tab-provider", contentId: "qig-section-provider-content" },
+    { key: "sectionCreate", buttonId: "qig-tab-prompting", contentId: "qig-section-create-content" },
+    { key: "sectionContext", buttonId: "qig-tab-context", contentId: "qig-section-context-content" },
+    { key: "sectionAutomation", buttonId: "qig-tab-automation", contentId: "qig-section-automation-content" },
+    { key: "search", buttonId: "qig-tab-search", contentId: "qig-settings-search-shell" },
+];
+let qigActiveSettingsTab = null;
+
+function getStoredQigSettingsTab(settings = getSettings()) {
+    const collapsed = getCollapsedSections(settings);
+    if (collapsed.setupPanel) return null;
+    return QIG_SETTINGS_TABS.find(tab => tab.key !== "search" && !collapsed[tab.key])?.key || null;
+}
+
+function applyQigSettingsTab() {
+    for (const tab of QIG_SETTINGS_TABS) {
+        const open = qigActiveSettingsTab === tab.key;
+        const button = document.getElementById(tab.buttonId);
+        const content = document.getElementById(tab.contentId);
+        if (button) {
+            button.setAttribute("aria-expanded", open ? "true" : "false");
+            button.classList.toggle("active", open);
+        }
+        if (content) {
+            content.hidden = !open;
+            content.classList.toggle("qig-collapsible__content--collapsed", !open);
+        }
+    }
+    document.getElementById("qig-setup-panel")?.classList.toggle("qig-settings-area--open", Boolean(qigActiveSettingsTab));
+}
+
+function selectQigSettingsTab(key, { persist = true } = {}) {
+    const next = QIG_SETTINGS_TABS.some(tab => tab.key === key) ? key : null;
+    const searchInput = document.getElementById("qig-settings-search");
+    const leavingSearch = qigActiveSettingsTab === "search" && next !== "search";
+    qigActiveSettingsTab = next;
+    if (leavingSearch && searchInput?.value) {
+        searchInput.value = "";
+        rerunSettingsSearch();
+    }
+    if (next !== "search") {
+        const s = getSettings();
+        if (s) {
+            const collapsed = { ...getCollapsedSections(s), setupPanel: !next };
+            for (const tab of QIG_SETTINGS_TABS) {
+                if (tab.key !== "search") collapsed[tab.key] = tab.key !== next;
+            }
+            s.collapsedSections = collapsed;
+            if (persist) saveSettingsDebounced?.();
+        }
+    }
+    applyQigSettingsTab();
+    if (next === "search") searchInput?.focus({ preventScroll: true });
+}
+
+function setupQigSettingsTabs() {
+    qigActiveSettingsTab = getStoredQigSettingsTab();
+    for (const tab of QIG_SETTINGS_TABS) {
+        const button = document.getElementById(tab.buttonId);
+        if (!button) continue;
+        button.onclick = () => selectQigSettingsTab(qigActiveSettingsTab === tab.key ? null : tab.key);
+    }
+    applyQigSettingsTab();
+}
+
 let rerunSettingsSearch = () => {};
 
 function setupSettingsSearch() {
@@ -624,12 +692,8 @@ function setupSettingsSearch() {
     const restoreCollapsibles = () => {
         const s = getSettings();
         const collapsed = getCollapsedSections(s);
+        applyQigSettingsTab();
         const pairs = [
-            ["setupPanel", "qig-setup-toggle", "qig-setup-panel"],
-            ["sectionProvider", "qig-section-provider-toggle", "qig-section-provider-content"],
-            ["sectionCreate", "qig-section-create-toggle", "qig-section-create-content"],
-            ["sectionContext", "qig-section-context-toggle", "qig-section-context-content"],
-            ["sectionAutomation", "qig-section-automation-toggle", "qig-section-automation-content"],
             ["promptAdvanced", "qig-prompt-advanced-toggle", "qig-prompt-advanced-content"],
             ["injectOptions", "qig-inject-options-toggle", "qig-inject-options"],
             ["advancedSettings", "qig-advanced-settings-toggle", "qig-advanced-settings"],
@@ -733,7 +797,7 @@ function setupSettingsSearch() {
                     content.classList.remove("qig-collapsible__content--collapsed");
                     const toggleBtn = content.id
                         ? section.querySelector(`[aria-controls="${content.id}"]`)
-                        : section.querySelector(".qig-section-header-toggle, .qig-collapsible__header");
+                        : section.querySelector(".qig-collapsible__header");
                     if (toggleBtn) {
                         toggleBtn.setAttribute("aria-expanded", "true");
                         const icon = toggleBtn.querySelector(".qig-collapsible__icon");
@@ -803,6 +867,8 @@ function updatePromptSourceUI(s = getSettings()) {
     document.querySelectorAll('input[name="qig-prompt-source"]').forEach(radio => {
         radio.checked = radio.value === mode;
     });
+    const createCard = document.querySelector("#qig-settings .qig-create");
+    if (createCard) createCard.dataset.promptSource = mode;
     const help = document.getElementById("qig-prompt-source-help");
     if (help) help.textContent = PROMPT_SOURCE_HELP[mode] || "";
     // Keep the Prompt field honest: in chat/tags modes it is not what gets sent.
@@ -16988,21 +17054,6 @@ function buildConfigurationsFromLegacyStores(profiles = connectionProfiles, pres
     return records.map(complete);
 }
 
-function expandQigCollapsible(sectionKey, buttonId, contentId) {
-    const button = document.getElementById(buttonId);
-    const content = document.getElementById(contentId);
-    if (!button || !content) return;
-    setCollapsedSection(sectionKey, false);
-    button.setAttribute("aria-expanded", "true");
-    content.hidden = false;
-    content.classList.remove("qig-collapsible__content--collapsed");
-    const icon = button.querySelector(".qig-collapsible__icon");
-    if (icon) {
-        icon.classList.remove("fa-chevron-right");
-        icon.classList.add("fa-chevron-down");
-    }
-}
-
 // Quick Setup names the section a provider still needs; this actually takes the user there
 // instead of leaving them to find it.
 function revealProviderSettings() {
@@ -17012,8 +17063,7 @@ function revealProviderSettings() {
     if (drawerContent && getComputedStyle(drawerContent).display === "none") {
         document.querySelector("#qig-settings .inline-drawer-toggle")?.click();
     }
-    expandQigCollapsible("setupPanel", "qig-setup-toggle", "qig-setup-panel");
-    expandQigCollapsible("sectionProvider", "qig-section-provider-toggle", "qig-section-provider-content");
+    selectQigSettingsTab("sectionProvider");
     // The drawer opens with a slide, so let it settle before scrolling to the target.
     setTimeout(() => {
         const section = document.getElementById(`qig-${getSettings()?.provider}-settings`);
@@ -18492,14 +18542,7 @@ function createUI() {
     if (s.provider === "novelai") normalizeSize(s);
     const esc = (v) => escapeHtml(v == null ? "" : String(v));
     const collapsed = getCollapsedSections(s);
-    const sectionProviderHidden = collapsed.sectionProvider ? "hidden" : "";
-    const sectionProviderExpanded = collapsed.sectionProvider ? "false" : "true";
-    const sectionCreateHidden = collapsed.sectionCreate ? "hidden" : "";
-    const sectionCreateExpanded = collapsed.sectionCreate ? "false" : "true";
-    const sectionContextHidden = collapsed.sectionContext ? "hidden" : "";
-    const sectionContextExpanded = collapsed.sectionContext ? "false" : "true";
-    const sectionAutomationHidden = collapsed.sectionAutomation ? "hidden" : "";
-    const sectionAutomationExpanded = collapsed.sectionAutomation ? "false" : "true";
+    const initialSettingsTab = getStoredQigSettingsTab(s);
     const a1111TuningCollapsed = isQigSectionCollapsed(collapsed, "a1111Tuning");
     const a1111TuningHidden = a1111TuningCollapsed ? "hidden" : "";
     const a1111TuningExpanded = a1111TuningCollapsed ? "false" : "true";
@@ -18510,8 +18553,6 @@ function createUI() {
     const injectOptionsExpanded = injectOptionsCollapsed ? "false" : "true";
     const advancedSettingsHidden = collapsed.advancedSettings ? "hidden" : "";
     const advancedSettingsExpanded = collapsed.advancedSettings ? "false" : "true";
-    const setupPanelHidden = collapsed.setupPanel ? "hidden" : "";
-    const setupPanelExpanded = collapsed.setupPanel ? "false" : "true";
     const promptSourceMode = derivePromptSource(s);
     const selectedNaiResolution = getNaiResolutionOptionValue(s.width, s.height);
     const isFalSchnell = s.provider === "fal" && /(?:^|\/)flux\/schnell(?:$|\/)/i.test(String(s.falModel || ""));
@@ -18541,20 +18582,8 @@ function createUI() {
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div>
             <div class="inline-drawer-content">
-                <nav class="qig-action-bar" aria-label="Quick Image Gen primary actions">
-                    <button id="qig-generate-btn" class="menu_button qig-primary-action" title="Generate image with current settings (${esc(formatGenerateShortcutLabel())})" aria-label="Generate image with current settings">
-                        <span class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></span>
-                        <span>Generate</span>
-                        <span class="qig-shortcut-hint">${esc(formatGenerateShortcutLabel())}</span>
-                    </button>
-                    <button class="menu_button qig-action-bar__prominent qig-wizard-btn" title="Quick setup: pick a provider, paste a key, choose a style"><span class="fa-solid fa-hat-wizard" aria-hidden="true"></span><span>Quick Setup</span></button>
-                    <button class="menu_button qig-action-bar__prominent qig-logs-btn" title="View generation logs and errors"><span class="fa-solid fa-list-check" aria-hidden="true"></span><span>Logs</span></button>
-                    <button id="qig-gallery-settings-btn" class="menu_button qig-action-bar__secondary" title="Browse generated images (Ctrl+Shift+G)" aria-label="Open generated image gallery"><span class="fa-solid fa-images" aria-hidden="true"></span><span>Gallery</span></button>
-                    <button id="qig-prompt-history-btn" class="menu_button qig-action-bar__secondary" title="View prompt history (Ctrl+Shift+H)" aria-label="Open prompt history"><span class="fa-solid fa-clock-rotate-left" aria-hidden="true"></span><span>Prompts</span></button>
-                </nav>
-
-                <div class="qig-menu-hero">
-                    <div class="qig-menu-hero__summary">
+                <section class="qig-create" aria-label="Create an image" data-prompt-source="${esc(promptSourceMode)}">
+                    <div class="qig-create__status">
                         <span id="qig-status-eyebrow" class="qig-menu-eyebrow">Ready to generate</span>
                         <div id="qig-status-meta" class="qig-menu-meta">
                             <span>${esc(activeProviderName)}</span>
@@ -18563,51 +18592,63 @@ function createUI() {
                         </div>
                     </div>
                     <div id="qig-status-warnings" class="qig-status-warnings" role="status" aria-live="polite" style="display:none;"></div>
-                </div>
 
-                <div class="qig-essentials">
-                    <div class="qig-field">
-                        <label for="qig-config-select">Configuration</label>
-                        <div class="qig-inline-control">
-                            <select id="qig-config-select" class="qig-inline-control__main"></select>
-                            <button id="qig-config-save" class="menu_button" title="Save current settings as a new configuration"><span class="fa-solid fa-floppy-disk" aria-hidden="true"></span><span class="qig-sr-label">Save As</span></button>
-                            <button id="qig-config-update" class="menu_button" title="Overwrite the selected configuration with current settings"><span class="fa-solid fa-rotate" aria-hidden="true"></span><span class="qig-sr-label">Update</span></button>
-                            <button id="qig-config-del" class="menu_button" title="Delete the selected configuration"><span class="fa-solid fa-trash" aria-hidden="true"></span><span class="qig-sr-label">Delete</span></button>
+                    <div class="qig-field qig-create__prompt">
+                        <div class="qig-create__prompt-head">
+                            <label for="qig-prompt">Prompt</label>
+                            <span id="qig-prompt-source-label" class="qig-sr-label">Prompt source</span>
+                            <div class="qig-prompt-source" role="radiogroup" aria-labelledby="qig-prompt-source-label" aria-describedby="qig-prompt-source-help">
+                                <label class="qig-prompt-source__option"><input type="radio" name="qig-prompt-source" value="manual" ${promptSourceMode === "manual" ? "checked" : ""}><span>Manual</span></label>
+                                <label class="qig-prompt-source__option"><input type="radio" name="qig-prompt-source" value="chat" ${promptSourceMode === "chat" ? "checked" : ""}><span>Chat scene</span></label>
+                                <label class="qig-prompt-source__option"><input type="radio" name="qig-prompt-source" value="tags" ${promptSourceMode === "tags" ? "checked" : ""}><span>AI-tagged</span></label>
+                            </div>
                         </div>
-                        <small>A configuration is one complete setup: provider, credentials, model, components, and generation settings. Switching one only touches that provider.</small>
-                    </div>
-                    <div class="qig-field">
-                        <label for="qig-prompt">Prompt</label>
                         <textarea id="qig-prompt" rows="3" aria-describedby="qig-prompt-help">${esc(s.prompt)}</textarea>
                         <small id="qig-prompt-help">Sent as your image prompt. The optional LLM rewrite still applies if enabled.</small>
-                    </div>
-                    <div class="qig-field">
-                        <label id="qig-prompt-source-label">Prompt source</label>
-                            <div class="qig-prompt-source" role="radiogroup" aria-labelledby="qig-prompt-source-label" aria-describedby="qig-prompt-source-help">
-                            <label class="qig-prompt-source__option"><input type="radio" name="qig-prompt-source" value="manual" ${promptSourceMode === "manual" ? "checked" : ""}><span>Manual</span></label>
-                            <label class="qig-prompt-source__option"><input type="radio" name="qig-prompt-source" value="chat" ${promptSourceMode === "chat" ? "checked" : ""}><span>Chat scene</span></label>
-                            <label class="qig-prompt-source__option"><input type="radio" name="qig-prompt-source" value="tags" ${promptSourceMode === "tags" ? "checked" : ""}><span>AI-tagged</span></label>
-                        </div>
                         <small id="qig-prompt-source-help">${esc(PROMPT_SOURCE_HELP[promptSourceMode] || "")}</small>
                     </div>
-                    <div class="qig-field">
-                        <label for="qig-style">Style</label>
-                        <select id="qig-style">${styleOpts}</select>
-                        <small>Visual style preset applied to the prompt.</small>
+
+                    <div class="qig-create__pickers">
+                        <div class="qig-field">
+                            <label for="qig-style">Style</label>
+                            <select id="qig-style">${styleOpts}</select>
+                        </div>
+                        <div class="qig-field">
+                            <label for="qig-config-select">Configuration</label>
+                            <div class="qig-inline-control">
+                                <select id="qig-config-select" class="qig-inline-control__main" title="A saved setup: provider, key, model and image settings together"></select>
+                                <button id="qig-config-save" class="menu_button qig-icon-button" title="Save current settings as a new configuration"><span class="fa-solid fa-floppy-disk" aria-hidden="true"></span><span class="qig-sr-label">Save As</span></button>
+                                <button id="qig-config-update" class="menu_button qig-icon-button" title="Overwrite the selected configuration with current settings"><span class="fa-solid fa-rotate" aria-hidden="true"></span><span class="qig-sr-label">Update</span></button>
+                                <button id="qig-config-del" class="menu_button qig-icon-button" title="Delete the selected configuration"><span class="fa-solid fa-trash" aria-hidden="true"></span><span class="qig-sr-label">Delete</span></button>
+                            </div>
+                        </div>
                     </div>
-                </div>
 
-                <div class="qig-collapsible qig-setup-shell">
-                    <button id="qig-setup-toggle" type="button" class="qig-collapsible__header" aria-expanded="${setupPanelExpanded}" aria-controls="qig-setup-panel">
-                        <span>
-                            <span class="qig-card-title">More settings</span>
-                            <small>Generation controls, character context, automation, and provider setup.</small>
-                        </span>
-                        <span class="qig-collapsible__icon fa-solid ${collapsed.setupPanel ? "fa-chevron-right" : "fa-chevron-down"}" aria-hidden="true"></span>
+                    <button id="qig-generate-btn" class="menu_button menu_button_primary qig-primary-action" title="Generate image with current settings (${esc(formatGenerateShortcutLabel())})" aria-label="Generate image with current settings">
+                        <span class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></span>
+                        <span>Generate</span>
+                        <span class="qig-shortcut-hint">${esc(formatGenerateShortcutLabel())}</span>
                     </button>
-                    <div id="qig-setup-panel" class="qig-collapsible__content" ${setupPanelHidden}>
 
-                        <div class="qig-settings-search-shell">
+                    <nav class="qig-quick-links" aria-label="Quick Image Gen tools">
+                        <button id="qig-gallery-settings-btn" class="menu_button" title="Browse generated images (Ctrl+Shift+G)" aria-label="Open generated image gallery"><span class="fa-solid fa-images" aria-hidden="true"></span><span>Gallery</span></button>
+                        <button id="qig-prompt-history-btn" class="menu_button" title="View prompt history (Ctrl+Shift+H)" aria-label="Open prompt history"><span class="fa-solid fa-clock-rotate-left" aria-hidden="true"></span><span>History</span></button>
+                        <button class="menu_button qig-logs-btn" title="View generation logs and errors"><span class="fa-solid fa-list-check" aria-hidden="true"></span><span>Logs</span></button>
+                        <button class="menu_button qig-wizard-btn" title="Quick setup: pick a provider, paste a key, choose a style"><span class="fa-solid fa-hat-wizard" aria-hidden="true"></span><span>Quick setup</span></button>
+                    </nav>
+                </section>
+
+                <div id="qig-setup-panel" class="qig-settings-area${initialSettingsTab ? " qig-settings-area--open" : ""}">
+                    <span id="qig-settings-tabs-label" class="qig-settings-area__label">More settings</span>
+                    <div class="qig-settings-tabs" role="group" aria-labelledby="qig-settings-tabs-label">
+                        <button type="button" id="qig-tab-provider" class="qig-settings-tab${initialSettingsTab === "sectionProvider" ? " active" : ""}" aria-controls="qig-section-provider-content" aria-expanded="${initialSettingsTab === "sectionProvider"}"><span class="fa-solid fa-plug" aria-hidden="true"></span><span>Provider</span></button>
+                        <button type="button" id="qig-tab-prompting" class="qig-settings-tab${initialSettingsTab === "sectionCreate" ? " active" : ""}" aria-controls="qig-section-create-content" aria-expanded="${initialSettingsTab === "sectionCreate"}"><span class="fa-solid fa-pen-nib" aria-hidden="true"></span><span>Prompting</span></button>
+                        <button type="button" id="qig-tab-context" class="qig-settings-tab${initialSettingsTab === "sectionContext" ? " active" : ""}" aria-controls="qig-section-context-content" aria-expanded="${initialSettingsTab === "sectionContext"}"><span class="fa-solid fa-book-open" aria-hidden="true"></span><span>Context</span></button>
+                        <button type="button" id="qig-tab-automation" class="qig-settings-tab${initialSettingsTab === "sectionAutomation" ? " active" : ""}" aria-controls="qig-section-automation-content" aria-expanded="${initialSettingsTab === "sectionAutomation"}"><span class="fa-solid fa-bolt" aria-hidden="true"></span><span>Automation</span></button>
+                        <button type="button" id="qig-tab-search" class="qig-settings-tab qig-settings-tab--icon" aria-controls="qig-settings-search-shell" aria-expanded="false" aria-label="Search settings" title="Search settings"><span class="fa-solid fa-magnifying-glass" aria-hidden="true"></span></button>
+                    </div>
+
+                        <div id="qig-settings-search-shell" class="qig-settings-search-shell qig-settings-pane" hidden>
                             <div class="qig-settings-search-input-wrap">
                                 <span class="fa-solid fa-magnifying-glass qig-settings-search-icon" aria-hidden="true"></span>
                                 <input type="search" id="qig-settings-search" placeholder="Search settings (e.g. resolution, key, negative)..." aria-label="Search settings" autocomplete="off" />
@@ -18618,15 +18659,12 @@ function createUI() {
                             <span id="qig-settings-search-status" class="qig-settings-search-status" aria-live="polite"></span>
                         </div>
 
-                <section class="qig-menu-section qig-menu-section--connection qig-menu-section--collapsible qig-flow-provider" aria-labelledby="qig-connection-heading">
-                    <button id="qig-section-provider-toggle" type="button" class="qig-collapsible__header qig-section-header-toggle" aria-expanded="${sectionProviderExpanded}" aria-controls="qig-section-provider-content">
-                        <span class="qig-section-header-text">
-                            <h3 id="qig-connection-heading" class="qig-section-kicker">Image Provider &amp; Output</h3>
-                            <small class="qig-section-subtitle">Choose a backend and profile, then set output size, count, model, and provider options.</small>
-                        </span>
-                        <span class="qig-collapsible__icon fa-solid ${collapsed.sectionProvider ? "fa-chevron-right" : "fa-chevron-down"}" aria-hidden="true"></span>
-                    </button>
-                    <div id="qig-section-provider-content" class="qig-collapsible__content" ${sectionProviderHidden}>
+                <section class="qig-menu-section qig-menu-section--connection qig-flow-provider" aria-labelledby="qig-connection-heading">
+                    <div id="qig-section-provider-content" class="qig-collapsible__content qig-settings-pane" ${initialSettingsTab === "sectionProvider" ? "" : "hidden"}>
+                    <header class="qig-pane-intro">
+                        <h3 id="qig-connection-heading" class="qig-section-kicker">Image Provider &amp; Output</h3>
+                        <p class="qig-section-subtitle">Pick a service, then set its key, model and image size.</p>
+                    </header>
                     <div class="qig-control-grid">
                         <div class="qig-field">
                             <label>Provider</label>
@@ -19443,15 +19481,12 @@ function createUI() {
                     </div>
                 </section>
 
-                <section class="qig-menu-section qig-menu-section--prompt qig-menu-section--collapsible qig-flow-create" aria-labelledby="qig-prompt-heading">
-                    <button id="qig-section-create-toggle" type="button" class="qig-collapsible__header qig-section-header-toggle" aria-expanded="${sectionCreateExpanded}" aria-controls="qig-section-create-content">
-                        <span class="qig-section-header-text">
-                            <h3 id="qig-prompt-heading" class="qig-section-kicker">Prompting Tools</h3>
-                            <small class="qig-section-subtitle">Generate from plain descriptions or rewrite prompts with a language model.</small>
-                        </span>
-                        <span class="qig-collapsible__icon fa-solid ${collapsed.sectionCreate ? "fa-chevron-right" : "fa-chevron-down"}" aria-hidden="true"></span>
-                    </button>
-                    <div id="qig-section-create-content" class="qig-collapsible__content" ${sectionCreateHidden}>
+                <section class="qig-menu-section qig-menu-section--prompt qig-flow-create" aria-labelledby="qig-prompt-heading">
+                    <div id="qig-section-create-content" class="qig-collapsible__content qig-settings-pane" ${initialSettingsTab === "sectionCreate" ? "" : "hidden"}>
+                    <header class="qig-pane-intro">
+                        <h3 id="qig-prompt-heading" class="qig-section-kicker">Prompting Tools</h3>
+                        <p class="qig-section-subtitle">Write prompts from plain descriptions or let a language model rewrite them.</p>
+                    </header>
                     <div class="qig-action-strip">
                         <button id="qig-chatgpt-nbp-setup" class="menu_button qig-inline-action" title="Set QIG for ChatGPT prompt writing and Nano Banana Pro image rendering"><span class="fa-solid fa-wand-magic-sparkles"></span><span>ChatGPT + NBP</span></button>
                         <button id="qig-plain-desc-btn" class="menu_button" title="Write a plain-language image description and let the AI turn it into a prompt"><span class="fa-solid fa-pen-to-square"></span><span>Plain Description</span></button>
@@ -19580,15 +19615,12 @@ function createUI() {
                     </div>
                 </section>
 
-                <section class="qig-menu-section qig-menu-section--collapsible qig-flow-context" aria-labelledby="qig-context-heading">
-                    <button id="qig-section-context-toggle" type="button" class="qig-collapsible__header qig-section-header-toggle" aria-expanded="${sectionContextExpanded}" aria-controls="qig-section-context-content">
-                        <span class="qig-section-header-text">
-                            <h3 id="qig-context-heading" class="qig-section-kicker">Context Rules &amp; Media</h3>
-                            <small class="qig-section-subtitle">Apply Neconyan character overrides, inject library media, and manage contextual filters.</small>
-                        </span>
-                        <span class="qig-collapsible__icon fa-solid ${collapsed.sectionContext ? "fa-chevron-right" : "fa-chevron-down"}" aria-hidden="true"></span>
-                    </button>
-                    <div id="qig-section-context-content" class="qig-collapsible__content" ${sectionContextHidden}>
+                <section class="qig-menu-section qig-flow-context" aria-labelledby="qig-context-heading">
+                    <div id="qig-section-context-content" class="qig-collapsible__content qig-settings-pane" ${initialSettingsTab === "sectionContext" ? "" : "hidden"}>
+                    <header class="qig-pane-intro">
+                        <h3 id="qig-context-heading" class="qig-section-kicker">Context Rules &amp; Media</h3>
+                        <p class="qig-section-subtitle">Character overrides, library media and filters.</p>
+                    </header>
                     <label class="checkbox_label qig-switch-row">
                         <input id="qig-use-st-style" type="checkbox" ${s.useSTStyle !== false ? "checked" : ""}>
                         <span>Use Neconyan's Style panel</span>
@@ -19639,15 +19671,12 @@ function createUI() {
                     </div>
                 </section>
 
-                <section class="qig-menu-section qig-menu-section--collapsible qig-flow-automation" aria-labelledby="qig-automation-heading">
-                    <button id="qig-section-automation-toggle" type="button" class="qig-collapsible__header qig-section-header-toggle" aria-expanded="${sectionAutomationExpanded}" aria-controls="qig-section-automation-content">
-                        <span class="qig-section-header-text">
-                            <h3 id="qig-automation-heading" class="qig-section-kicker">Automation &amp; Delivery</h3>
-                            <small class="qig-section-subtitle">Control auto-generation triggers, background chat modes, shortcut keys, and tag injection.</small>
-                        </span>
-                        <span class="qig-collapsible__icon fa-solid ${collapsed.sectionAutomation ? "fa-chevron-right" : "fa-chevron-down"}" aria-hidden="true"></span>
-                    </button>
-                    <div id="qig-section-automation-content" class="qig-collapsible__content" ${sectionAutomationHidden}>
+                <section class="qig-menu-section qig-flow-automation" aria-labelledby="qig-automation-heading">
+                    <div id="qig-section-automation-content" class="qig-collapsible__content qig-settings-pane" ${initialSettingsTab === "sectionAutomation" ? "" : "hidden"}>
+                    <header class="qig-pane-intro">
+                        <h3 id="qig-automation-heading" class="qig-section-kicker">Automation &amp; Delivery</h3>
+                        <p class="qig-section-subtitle">When images generate on their own, where they land and your shortcut.</p>
+                    </header>
                     <div class="qig-subsection">
                     <label class="checkbox_label" style="margin-top:6px;">
                         <input id="qig-auto-generate" type="checkbox" ${s.autoGenerate ? "checked" : ""}>
@@ -19883,7 +19912,6 @@ function createUI() {
                     </div>
                 </div>
                 </div>
-                    </div>
                 </div>
             </div>
         </div>
@@ -19937,11 +19965,7 @@ function createUI() {
     };
     document.getElementById("qig-export-btn").onclick = exportAllSettings;
     document.getElementById("qig-import-btn").onclick = importSettings;
-    setupQigCollapsibleSection("setupPanel", "qig-setup-toggle", "qig-setup-panel");
-    setupQigCollapsibleSection("sectionProvider", "qig-section-provider-toggle", "qig-section-provider-content");
-    setupQigCollapsibleSection("sectionCreate", "qig-section-create-toggle", "qig-section-create-content");
-    setupQigCollapsibleSection("sectionContext", "qig-section-context-toggle", "qig-section-context-content");
-    setupQigCollapsibleSection("sectionAutomation", "qig-section-automation-toggle", "qig-section-automation-content");
+    setupQigSettingsTabs();
     setupQigCollapsibleSection("promptAdvanced", "qig-prompt-advanced-toggle", "qig-prompt-advanced-content");
     setupQigCollapsibleSection("injectOptions", "qig-inject-options-toggle", "qig-inject-options");
     setupQigCollapsibleSection("advancedSettings", "qig-advanced-settings-toggle", "qig-advanced-settings");

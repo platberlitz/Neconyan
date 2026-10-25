@@ -106,7 +106,10 @@ describe('Quick Image Gen opens as a page led by Nori', () => {
         expect(page.name).toBe('Quick Image Gen');
         const steps = getToolTourSteps('quick-image-gen', { isShown: () => true });
         expect(steps.map(step => step.id)).toEqual(expect.arrayContaining(['actions', 'status', 'prompt', 'source', 'more', 'provider', 'automation', 'done']));
-        expect(steps.find(step => step.id === 'provider').open).toEqual(expect.arrayContaining(['#qig-setup-toggle', '#qig-section-provider-toggle']));
+        expect(steps.find(step => step.id === 'provider').open).toEqual(['#qig-tab-provider']);
+        expect(steps.find(step => step.id === 'prompting').open).toEqual(['#qig-tab-prompting']);
+        expect(steps.find(step => step.id === 'context').open).toEqual(['#qig-tab-context']);
+        expect(steps.find(step => step.id === 'automation').open).toEqual(['#qig-tab-automation']);
     });
 
     test('the rail item and the tool definition both open the page', () => {
