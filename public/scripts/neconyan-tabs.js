@@ -5099,7 +5099,6 @@ function syncExistingMobileNavQuickActions(overlay) {
         if (quickActionSection instanceof HTMLElement) {
             nnState.mobileNav.quickActionSection = quickActionSection;
         }
-        refreshMobileNavQuickActions();
     }
 }
 
@@ -18637,8 +18636,12 @@ function updateMobileNavButtonLabel() {
         title = t`Open ${replacement.label}`;
     }
 
-    button.title = title;
-    button.setAttribute('aria-label', title);
+    if (button.title !== title) {
+        button.title = title;
+    }
+    if (button.getAttribute('aria-label') !== title) {
+        button.setAttribute('aria-label', title);
+    }
 }
 
 function createMobileQuickActionButton(item) {
@@ -18884,6 +18887,10 @@ function buildMobileNav() {
 }
 
 function setMobileNavOpenState(isOpen) {
+    if (!isOpen && !(document.getElementById('sb-mobile-nav') instanceof HTMLElement)) {
+        return;
+    }
+
     const overlay = ensureMobileNavReady();
     const button = document.getElementById('sb-hamburger');
 
@@ -18903,25 +18910,47 @@ function setMobileNavOpenState(isOpen) {
         nnState.mobileNav.lastOpenedAt = performance.now();
     }
 
-    overlay.hidden = navState.overlayHidden;
-    overlay.classList.toggle('sb-nav-open', navState.shouldOpen);
-    overlay.setAttribute('aria-hidden', navState.overlayAriaHidden);
-
-    if ('inert' in overlay) {
+    // Closing a nav that is already closed is routine on phones: opening any
+    // workspace drawer asks it to close first. Write only what differs, so that
+    // path neither restyles the document nor rebuilds the quick actions.
+    let overlayStateChanged = false;
+    if (overlay.hidden !== navState.overlayHidden) {
+        overlay.hidden = navState.overlayHidden;
+        overlayStateChanged = true;
+    }
+    if (overlay.classList.contains('sb-nav-open') !== navState.shouldOpen) {
+        overlay.classList.toggle('sb-nav-open', navState.shouldOpen);
+        overlayStateChanged = true;
+    }
+    if (overlay.getAttribute('aria-hidden') !== navState.overlayAriaHidden) {
+        overlay.setAttribute('aria-hidden', navState.overlayAriaHidden);
+        overlayStateChanged = true;
+    }
+    if ('inert' in overlay && overlay.inert !== navState.overlayInert) {
         overlay.inert = navState.overlayInert;
+        overlayStateChanged = true;
     }
 
-    button.classList.toggle('is-open', navState.shouldOpen);
-    button.setAttribute('aria-expanded', navState.buttonExpanded);
+    if (button.classList.contains('is-open') !== navState.shouldOpen) {
+        button.classList.toggle('is-open', navState.shouldOpen);
+    }
+    if (button.getAttribute('aria-expanded') !== navState.buttonExpanded) {
+        button.setAttribute('aria-expanded', navState.buttonExpanded);
+    }
     const closedIcon = document.body?.classList.contains('neconyan')
         ? NN_NECONYAN_MOBILE_NAV_CLOSED_ICON
         : NN_MOBILE_NAV_CLOSED_ICON;
-    button.innerHTML = navState.buttonIcon === 'close'
+    const buttonIcon = navState.buttonIcon === 'close'
         ? '<i class="fa-solid fa-xmark" aria-hidden="true"></i>'
         : `<i class="fa-solid ${closedIcon}" aria-hidden="true"></i>`;
+    if (button.innerHTML !== buttonIcon) {
+        button.innerHTML = buttonIcon;
+    }
     updateMobileNavButtonLabel();
 
-    queueMobileModalStateSync();
+    if (overlayStateChanged) {
+        queueMobileModalStateSync();
+    }
 
     if (wasOpen && !navState.shouldOpen) {
         requestMobileViewportReset();
@@ -19016,21 +19045,66 @@ function setNeconyanRailDrawerOpen(open, { restoreFocus = false } = {}) {
         setMobileNavOpenState(false);
     }
 
-    // Opening a settings sheet asks an already closed rail to close again; skip
-    // the motion checks then so they cannot delay the sheet's first frame.
+    // Opening a settings sheet asks an already closed rail to close again; settle
+    // that without motion or repeated attribute writes.
     const settledClosed = !shouldOpen && !wasOpen && !(rail instanceof HTMLElement && isUiClosing(rail));
     const scrim = ensureNeconyanRailScrim();
+
+    if (settledClosed) {
+        // Keep the first scrim creation and repair stale accessibility state, but
+        // do not rewrite matching attributes or restyle on every panel open.
+        if (scrim.hidden !== true && !isUiClosing(scrim)) {
+            scrim.hidden = true;
+        }
+        if (rail instanceof HTMLElement) {
+            if (document.body.classList.contains('neconyan-rail-drawer-open')) {
+                document.body.classList.remove('neconyan-rail-drawer-open');
+            }
+            if (mobile) {
+                if ('inert' in rail && rail.inert !== true) {
+                    rail.inert = true;
+                }
+                if (rail.getAttribute('aria-hidden') !== 'true') {
+                    rail.setAttribute('aria-hidden', 'true');
+                }
+            } else {
+                if ('inert' in rail && rail.inert !== false) {
+                    rail.inert = false;
+                }
+                if (rail.hasAttribute('aria-hidden')) {
+                    rail.removeAttribute('aria-hidden');
+                }
+            }
+        }
+        if (button instanceof HTMLElement) {
+            if (button.classList.contains('is-open')) {
+                button.classList.remove('is-open');
+            }
+            if (button.getAttribute('aria-expanded') !== 'false') {
+                button.setAttribute('aria-expanded', 'false');
+            }
+            const closedIcon = `<i class="fa-solid ${NN_NECONYAN_MOBILE_NAV_CLOSED_ICON}" aria-hidden="true"></i>`;
+            if (button.innerHTML !== closedIcon) {
+                button.innerHTML = closedIcon;
+            }
+            updateMobileNavButtonLabel();
+            if (restoreFocus) {
+                button.focus({ preventScroll: true });
+            }
+        }
+        return;
+    }
+
     setUiVisibility(scrim, shouldOpen, visible => { scrim.hidden = !visible; }, {
         distance: 0,
         drawerPace: true,
-        animate: !settledClosed || isUiClosing(scrim),
     });
 
     if (rail instanceof HTMLElement) {
         setUiVisibility(rail, shouldOpen, visible => {
             document.body.classList.toggle('neconyan-rail-drawer-open', visible);
             rail.inert = mobile && !visible;
-        }, { animate: mobile && !settledClosed, edge: 'left' });
+        }, { animate: mobile, edge: 'left' });
         if (mobile) {
             rail.setAttribute('aria-hidden', String(!shouldOpen));
         } else {
