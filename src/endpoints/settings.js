@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHmac, randomBytes } from 'node:crypto';
 
 import express from 'express';
 import _ from 'lodash';
@@ -366,25 +367,103 @@ function readSettingsSections(request, sections) {
 }
 
 /**
- * Reads the saved settings of the named extensions from the current settings
- * file. Extensions that poll or confirm their own block use this so they do not
- * download the whole settings file, which can run to several megabytes.
- * @param {import('express').Request} request
+ * Copies the saved blocks of the named extensions out of one parsed settings
+ * snapshot. Extensions that poll or confirm their own block use this so they do
+ * not download the whole settings file, which can run to several megabytes.
+ * @param {any} settings Parsed file snapshot.
  * @param {string[]} names
  * @returns {Record<string, any>} Only the names that exist in the file.
  */
-function readExtensionSettings(request, names) {
-    const settingsPath = path.join(request.user.directories.root, SETTINGS_FILE);
-    const settings = readParsedSettingsFile(settingsPath, request.user?.profile?.handle);
+function readExtensionSettings(settings, names) {
     const source = settings?.extension_settings;
-    const result = {};
-    if (!source || typeof source !== 'object' || Array.isArray(source)) return result;
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
+    const entries = [];
     for (const name of names) {
         // Extensions mutate what they receive before saving it back, so never
         // hand out the parsed block that the cache holds.
-        if (Object.hasOwn(source, name)) result[name] = structuredClone(source[name]);
+        if (Object.hasOwn(source, name)) entries.push([name, structuredClone(source[name])]);
     }
-    return result;
+    return Object.fromEntries(entries);
+}
+
+const EXTENSION_SETTINGS_TOKEN_VERSION = 1;
+const EXTENSION_SETTINGS_TOKEN_PATTERN = /^[a-f0-9]{64}$/;
+const MAX_EXTENSION_SETTINGS_TOKEN_ENTRIES = 64;
+// A save check asks for two names. Capping the response map keeps a request
+// naming every extension from turning into a second copy of the block list;
+// the request token still covers the full requested set.
+const MAX_EXTENSION_SETTINGS_RESPONSE_TOKENS = 32;
+// Tokens are keyed content digests, cached against the read-only parsed
+// snapshot that settings-file-cache reuses while the file identity is unchanged.
+// A new parse (external edit, replacement, invalidated save) is a new object
+// and therefore a cache miss, so a token can never outlive the content it
+// describes.
+const extensionSettingsTokenCache = new WeakMap();
+// Keyed so a token is opaque and cannot be correlated with another process or a
+// restart. A restart invalidates old tokens and costs one full response.
+const EXTENSION_SETTINGS_TOKEN_SECRET = randomBytes(32);
+
+function normalizeExtensionSettingsToken(value) {
+    return typeof value === 'string' && value.length === 64 && EXTENSION_SETTINGS_TOKEN_PATTERN.test(value)
+        ? value
+        : '';
+}
+
+function createExtensionSettingsBlockToken(owner, name, present, value) {
+    return createHmac('sha256', EXTENSION_SETTINGS_TOKEN_SECRET)
+        .update(JSON.stringify({
+            version: EXTENSION_SETTINGS_TOKEN_VERSION,
+            owner,
+            name,
+            present,
+            value: present ? value : null,
+        }))
+        .digest('hex');
+}
+
+/**
+ * Exact content tokens for each requested extension block. The parsed settings
+ * object is trusted to be read-only (see settings-file-cache.js), so a cached
+ * token is reused without serialising the block again on an unchanged poll.
+ * @param {any} settings Parsed file snapshot.
+ * @param {string[]} names Unique, sorted extension names.
+ * @param {string} owner Authenticated account handle, kept inside the opaque token.
+ * @returns {Record<string, string>}
+ */
+function getExtensionSettingsBlockTokens(settings, names, owner) {
+    const source = settings?.extension_settings;
+    const sourceIsRecord = !!source && typeof source === 'object' && !Array.isArray(source);
+    const cacheable = !!settings && typeof settings === 'object';
+    let cache = cacheable ? extensionSettingsTokenCache.get(settings) : null;
+    if (cacheable && !cache) {
+        cache = new Map();
+        extensionSettingsTokenCache.set(settings, cache);
+    }
+    const entries = [];
+    for (const name of names) {
+        const cacheKey = `${owner}\u0000${name}`;
+        let token = cache?.get(cacheKey);
+        if (!token) {
+            const present = sourceIsRecord && Object.hasOwn(source, name);
+            token = createExtensionSettingsBlockToken(owner, name, present, present ? source[name] : null);
+            if (cache) {
+                if (cache.size >= MAX_EXTENSION_SETTINGS_TOKEN_ENTRIES) cache.delete(cache.keys().next().value);
+                cache.set(cacheKey, token);
+            }
+        }
+        entries.push([name, token]);
+    }
+    return Object.fromEntries(entries);
+}
+
+function getExtensionSettingsRequestToken(blockTokens, names) {
+    if (names.length === 1) return blockTokens[names[0]];
+    return createHmac('sha256', EXTENSION_SETTINGS_TOKEN_SECRET)
+        .update(JSON.stringify({
+            version: EXTENSION_SETTINGS_TOKEN_VERSION,
+            blocks: names.map(name => [name, blockTokens[name]]),
+        }))
+        .digest('hex');
 }
 
 // Wintermute's code
@@ -397,7 +476,34 @@ router.post('/get', (request, response) => {
             return response.status(400).send({ error: 'unknown_settings_section' });
         }
         try {
-            return response.send({ extension_settings: readExtensionSettings(request, extensionNames) });
+            const settingsPath = path.join(request.user.directories.root, SETTINGS_FILE);
+            const settings = readParsedSettingsFile(settingsPath, request.user?.profile?.handle);
+            const wantsToken = Object.prototype.hasOwnProperty.call(request.body, 'extensionSettingsToken');
+            if (!wantsToken) {
+                return response.send({ extension_settings: readExtensionSettings(settings, extensionNames) });
+            }
+            // A token describes the exact requested set. Polls ask for one block,
+            // while a save check asks for the module and regex together and reads
+            // the module token out of the per-block map.
+            const tokenNames = [...new Set(extensionNames)].sort();
+            const owner = request.user?.profile?.handle || '';
+            const blockTokens = getExtensionSettingsBlockTokens(settings, tokenNames, owner);
+            const extensionSettingsToken = getExtensionSettingsRequestToken(blockTokens, tokenNames);
+            const source = settings?.extension_settings;
+            const sourceIsRecord = !!source && typeof source === 'object' && !Array.isArray(source);
+            const extensionSettingsTokens = Object.fromEntries(tokenNames
+                .filter(name => sourceIsRecord && Object.hasOwn(source, name))
+                .slice(0, MAX_EXTENSION_SETTINGS_RESPONSE_TOKENS)
+                .map(name => [name, blockTokens[name]]));
+            const knownToken = normalizeExtensionSettingsToken(request.body.extensionSettingsToken);
+            if (knownToken && knownToken === extensionSettingsToken) {
+                return response.send({ unchanged: true, extensionSettingsToken, extensionSettingsTokens });
+            }
+            return response.send({
+                extension_settings: readExtensionSettings(settings, extensionNames),
+                extensionSettingsToken,
+                extensionSettingsTokens,
+            });
         } catch (error) {
             console.error('Extension settings could not be read:', error);
             return response.sendStatus(500);

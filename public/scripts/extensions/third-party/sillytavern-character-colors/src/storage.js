@@ -1008,10 +1008,23 @@ let metadataPersistenceSuppression = 0;
 let autoSyncPendingExpectedRecord = null;
 const autoSyncRequestGate = createLatestRequestGate();
 let autoSyncPollPromise = null;
+// Opaque server token for the last narrow block read. Empty means "ask for the
+// whole block"; a pending local write always clears it for that request so the
+// server's merge logic sees full data.
+let lastServerExtensionSettingsToken = '';
 
 function hasPendingColorStateActivity() {
     return !!(colorStateSaveTimer || pendingColorStateSaveData || pendingColorStateHistory
         || pendingColorStateUpdateList || pendingColorStateInjectPrompt);
+}
+
+// Shared by the write deferral and the token decision. The confirmed-pending
+// record stays out of this predicate: applyAutoSyncRecord must still reach its
+// conflict/confirm branches instead of deferring its own expected record.
+function hasPendingLocalAutoSyncWork() {
+    return !!moduleSettingsDebounceTimer || ordinaryModuleSaveQueued
+        || moduleSettingsPersistenceActive || moduleSettingsPersistenceQueued > 0
+        || storageOperationActive || hasPendingColorStateActivity();
 }
 
 function flushPendingColorStateActivity() {
@@ -1074,6 +1087,14 @@ function clearModuleSettingsDebounce() {
 // would change nothing. Null means "unknown", which always writes.
 let lastServerVerifiedModuleRecord = null;
 
+// Losing the confirmed copy also invalidates the conditional poll token: the
+// next read must fetch the whole block instead of trusting an unchanged answer
+// for a server state this tab no longer knows.
+function invalidateVerifiedServerModuleRecord() {
+    lastServerVerifiedModuleRecord = null;
+    lastServerExtensionSettingsToken = '';
+}
+
 // Set while a legacy localStorage migration has been queued for persistence but
 // not yet confirmed by the server. The completion marker is only written after a
 // verified save, so an interrupted migration is retried instead of suppressed.
@@ -1102,7 +1123,7 @@ function moduleRecordMatchesSnapshot(expected) {
 function queueDebouncedModuleSettingsSave(expectedSource = getAutoSyncRecord(true), options = {}) {
     clearModuleSettingsDebounce();
     moduleSettingsActivityEpoch++;
-    lastServerVerifiedModuleRecord = null;
+    invalidateVerifiedServerModuleRecord();
     const expected = getModuleRecordSnapshot(expectedSource);
     const expectedRegex = cloneJsonValue(extension_settings.regex);
     const delay = Number.isFinite(options.delay) ? options.delay : 250;
@@ -1115,7 +1136,7 @@ function queueDebouncedModuleSettingsSave(expectedSource = getAutoSyncRecord(tru
 export function queueImmediateSettingsSave(expectedSource = getAutoSyncRecord(true), options = {}) {
     clearModuleSettingsDebounce();
     moduleSettingsActivityEpoch++;
-    lastServerVerifiedModuleRecord = null;
+    invalidateVerifiedServerModuleRecord();
     if (!options.retry) ordinaryModuleSaveRetryCount = 0;
     ordinaryModuleSaveExpected = getModuleRecordSnapshot(expectedSource);
     ordinaryModuleSaveExpectedRegex = cloneJsonValue(options.expectedRegex ?? extension_settings.regex);
@@ -1135,7 +1156,8 @@ export function queueImmediateSettingsSave(expectedSource = getAutoSyncRecord(tr
         try {
             await saveSettings();
             // The check below compares the regex block too, so it has to be read back.
-            const storedSettings = await fetchExtensionSettingsFromServer(SAVE_VERIFICATION_EXTENSION_SETTINGS);
+            const storedResponse = await fetchExtensionSettingsFromServer(SAVE_VERIFICATION_EXTENSION_SETTINGS);
+            const storedSettings = storedResponse.extensionSettings;
             const stored = storedSettings?.[MODULE_NAME];
             const moduleMatches = !!stored && recordsEqual(buildAutoSyncRecord(stored), expected);
             const regexMatches = JSON.stringify(storedSettings?.regex ?? null) === JSON.stringify(expectedRegex ?? null);
@@ -1143,9 +1165,12 @@ export function queueImmediateSettingsSave(expectedSource = getAutoSyncRecord(tr
             if (matches) {
                 ordinaryModuleSaveRetryCount = 0;
                 lastServerVerifiedModuleRecord = getModuleRecordSnapshot(stored);
+                lastServerExtensionSettingsToken = normalizeExtensionSettingsToken(
+                    storedResponse.extensionSettingsTokens?.[MODULE_NAME],
+                );
                 confirmAutoSyncRecord(stored, { serverVerified: true });
             } else if (ordinaryModuleSaveRetryCount < 3 && moduleRecordMatchesSnapshot(expected)) {
-                lastServerVerifiedModuleRecord = null;
+                invalidateVerifiedServerModuleRecord();
                 ordinaryModuleSaveRetryCount++;
                 queueDebouncedModuleSettingsSave(expected, {
                     retry: true,
@@ -1153,13 +1178,13 @@ export function queueImmediateSettingsSave(expectedSource = getAutoSyncRecord(tr
                     delay: 250 * (2 ** (ordinaryModuleSaveRetryCount - 1)),
                 });
             } else {
-                lastServerVerifiedModuleRecord = null;
+                invalidateVerifiedServerModuleRecord();
                 setAutoSyncError('The save could not be checked. Try again.');
                 saveSettingsDebounced?.();
             }
             return matches;
         } catch (error) {
-            lastServerVerifiedModuleRecord = null;
+            invalidateVerifiedServerModuleRecord();
             console.warn('[Dialogue Colors] Immediate settings save failed; falling back to a later save:', error);
             if (ordinaryModuleSaveRetryCount < 3 && moduleRecordMatchesSnapshot(expected)) {
                 ordinaryModuleSaveRetryCount++;
@@ -1203,6 +1228,7 @@ export function persistModuleStore(record, { debounce = true, immediate = false 
         commitLegacyMigrationMarkerIfPending(lastServerVerifiedModuleRecord);
         return normalized;
     }
+    lastServerExtensionSettingsToken = '';
     if (immediate) queueImmediateSettingsSave(normalized);
     else if (debounce) queueDebouncedModuleSettingsSave(normalized);
     return normalized;
@@ -1443,8 +1469,7 @@ export function applyAutoSyncRecord(record, {
         || (activityEpoch !== undefined && activityEpoch !== moduleSettingsActivityEpoch)) {
         return 'superseded';
     }
-    if (storageOperationActive || moduleSettingsPersistenceActive || moduleSettingsPersistenceQueued > 0
-        || moduleSettingsDebounceTimer || ordinaryModuleSaveQueued || hasPendingColorStateActivity()) {
+    if (hasPendingLocalAutoSyncWork()) {
         const options = { force, serverVerified, request, activityEpoch };
         if (shouldReplaceDeferredAutoSync(record, options)) {
             deferredAutoSyncApplication = { record: cloneJsonValue(record), options };
@@ -1560,14 +1585,25 @@ export function applyAutoSyncRecord(record, {
 }
 
 const SAVE_VERIFICATION_EXTENSION_SETTINGS = [MODULE_NAME, 'regex'];
+const EXTENSION_SETTINGS_TOKEN_PATTERN = /^[a-f0-9]{64}$/;
 
-async function fetchExtensionSettingsFromServer(names = [MODULE_NAME]) {
+function normalizeExtensionSettingsToken(value) {
+    return typeof value === 'string' && value.length === 64 && EXTENSION_SETTINGS_TOKEN_PATTERN.test(value)
+        ? value
+        : '';
+}
+
+async function fetchExtensionSettingsFromServer(names = [MODULE_NAME], { knownToken = '' } = {}) {
     const response = await fetch('/api/settings/get', {
         method: 'POST',
         headers: getRequestHeaders(),
         // Only the blocks the caller compares: auto-sync polls every few seconds and
-        // the whole settings file can be several megabytes.
-        body: JSON.stringify({ extensionSettings: names }),
+        // the whole settings file can be several megabytes. The token lets the
+        // server answer an unchanged poll without copying or sending the block.
+        body: JSON.stringify({
+            extensionSettings: names,
+            extensionSettingsToken: normalizeExtensionSettingsToken(knownToken),
+        }),
         cache: 'no-cache',
     });
 
@@ -1576,8 +1612,20 @@ async function fetchExtensionSettingsFromServer(names = [MODULE_NAME]) {
     }
 
     const data = await response.json();
-    if (data?.extension_settings && typeof data.extension_settings === 'object') return data.extension_settings;
-    if (data.result === 'file not find' || !data.settings) return null;
+    const extensionSettingsTokens = isPlainObject(data?.extensionSettingsTokens)
+        ? data.extensionSettingsTokens
+        : null;
+    const extensionSettingsToken = normalizeExtensionSettingsToken(data?.extensionSettingsToken)
+        || (names.length === 1 ? normalizeExtensionSettingsToken(extensionSettingsTokens?.[names[0]]) : '');
+    if (data?.unchanged === true) {
+        return { unchanged: true, extensionSettings: null, extensionSettingsToken, extensionSettingsTokens };
+    }
+    if (data?.extension_settings && typeof data.extension_settings === 'object') {
+        return { unchanged: false, extensionSettings: data.extension_settings, extensionSettingsToken, extensionSettingsTokens };
+    }
+    if (data.result === 'file not find' || !data.settings) {
+        return { unchanged: false, extensionSettings: null, extensionSettingsToken: '', extensionSettingsTokens: null };
+    }
 
     let parsedSettings = null;
     try {
@@ -1586,18 +1634,35 @@ async function fetchExtensionSettingsFromServer(names = [MODULE_NAME]) {
         throw new Error('The saved settings are damaged.');
     }
 
-    return parsedSettings?.extension_settings || null;
+    return {
+        unchanged: false,
+        extensionSettings: parsedSettings?.extension_settings || null,
+        extensionSettingsToken: '',
+        extensionSettingsTokens: null,
+    };
 }
 
 async function fetchModuleRecordFromServer() {
-    const extensionSettings = await fetchExtensionSettingsFromServer();
-    const record = extensionSettings?.[MODULE_NAME];
+    const result = await fetchExtensionSettingsFromServer([MODULE_NAME]);
+    const record = result.extensionSettings?.[MODULE_NAME];
     if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
     return record;
 }
 
 export async function fetchAutoSyncRecordFromServer() {
     return fetchModuleRecordFromServer();
+}
+
+async function fetchAutoSyncServerState({ knownToken = '' } = {}) {
+    const result = await fetchExtensionSettingsFromServer([MODULE_NAME], { knownToken });
+    const token = normalizeExtensionSettingsToken(result.extensionSettingsTokens?.[MODULE_NAME])
+        || normalizeExtensionSettingsToken(result.extensionSettingsToken);
+    if (result.unchanged) return { unchanged: true, record: null, token };
+    const record = result.extensionSettings?.[MODULE_NAME];
+    if (!record || typeof record !== 'object' || Array.isArray(record)) {
+        return { unchanged: false, record: null, token };
+    }
+    return { unchanged: false, record, token };
 }
 
 // globalSettings is what a reload restores settings from; settings is the auto-sync transport
@@ -5258,13 +5323,42 @@ export async function loadSettingsFromServer() {
     const request = autoSyncRequestGate.begin();
     const activityEpoch = moduleSettingsActivityEpoch;
     try {
-        const record = await fetchAutoSyncRecordFromServer();
+        const knownToken = autoSyncPendingRecord || hasPendingLocalAutoSyncWork()
+            ? ''
+            : lastServerExtensionSettingsToken;
+        let state = await fetchAutoSyncServerState({ knownToken });
         if (!autoSyncRequestGate.isCurrent(request)) return { ok: false, superseded: true };
+        // A conditional hit is only valid for the exact token this tab sent.
+        // Anything else (old server, malformed response, protocol drift) falls
+        // back to one full read before any merge starts.
+        if (state.unchanged && (!knownToken || state.token !== knownToken)) {
+            state = await fetchAutoSyncServerState({ knownToken: '' });
+            if (!autoSyncRequestGate.isCurrent(request)) return { ok: false, superseded: true };
+        }
+        if (state.unchanged) {
+            if (!knownToken || state.token !== knownToken) {
+                throw new Error('The server returned an unchanged colour block without a matching token.');
+            }
+            clearAutoSyncError();
+            return { ok: true, found: true, unchanged: true, disposition: 'unchanged' };
+        }
+        const record = state.record;
         if (!record) {
+            // No block to merge. Adopting the token is safe: a later create,
+            // delete or save changes the block content and therefore the token.
+            lastServerExtensionSettingsToken = state.token;
             clearAutoSyncError();
             return { ok: true, found: false };
         }
         const disposition = applyAutoSyncRecord(record, { serverVerified: true, request, activityEpoch });
+        if (disposition === 'confirm' || disposition === 'apply') {
+            // Only adopt the token once this response is actually consumed and
+            // did not queue local work of its own. A deferred read is retried in
+            // full, because dropping it must not also drop the only pointer to
+            // the change.
+            if (autoSyncPendingRecord || hasPendingLocalAutoSyncWork()) invalidateVerifiedServerModuleRecord();
+            else lastServerExtensionSettingsToken = state.token;
+        }
         if (disposition === 'unsupported_schema_version') {
             return { ok: false, found: true, error: disposition, disposition };
         }
