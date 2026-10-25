@@ -49,7 +49,9 @@ export function roleplayHash(value) {
  * counts change on routine page saves (input history, Conversation sync, a reply
  * being shown while it streams), and no server generation reads them (dialogue
  * colours reach the prompt through the captured macro), so a reply accepted a
- * moment earlier must not be refused because of them.
+ * moment earlier must not be refused because of them. The reply location is read
+ * only before a job is submitted; changing it during a running reply must not
+ * invalidate that reply's settings proof or drop an Agent result.
  */
 export function roleplaySettingsHash(settings) {
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return roleplayHash(settings ?? null);
@@ -60,6 +62,12 @@ export function roleplaySettingsHash(settings) {
         && ROLEPLAY_UNBOUND_EXTENSION_SETTINGS.some(key => Object.hasOwn(extensions, key))) {
         bound.extension_settings = { ...extensions };
         for (const key of ROLEPLAY_UNBOUND_EXTENSION_SETTINGS) delete bound.extension_settings[key];
+    }
+    const powerUser = bound.power_user;
+    if (powerUser && typeof powerUser === 'object' && !Array.isArray(powerUser)
+        && Object.hasOwn(powerUser, 'reply_generation_location')) {
+        bound.power_user = { ...powerUser };
+        delete bound.power_user.reply_generation_location;
     }
     return roleplayHash(bound);
 }

@@ -44,26 +44,93 @@ test.each([false, true])('Notebook requirements preserve chat, character and lor
         lorebooks: ['Global world', 'Chat world', 'Persona world', 'Character world', 'Extra world'] }] });
 });
 
+const normalizeLocation = sourceFunction('../public/scripts/browser-reply-routing.js', 'normalizeReplyGenerationLocation');
+const preferServer = sourceFunction('../public/scripts/browser-reply-routing.js', 'prefersServerReplies');
+
+function preference(powerUser) {
+    return vm.runInNewContext(`(() => { ${normalizeLocation}\n${preferServer}\nreturn { prefersServerReplies }; })()`, { power_user: powerUser })
+        .prefersServerReplies();
+}
+
+test.each([
+    [undefined, 'browser', false],
+    [null, 'browser', false],
+    ['', 'browser', false],
+    ['browser', 'browser', false],
+    ['server', 'server', true],
+    ['SERVER', 'browser', false],
+    ['remote', 'browser', false],
+])('reply location %p normalises to %s and prefers the server: %s', (saved, normalized, server) => {
+    expect(vm.runInNewContext(`(${normalizeLocation})`, {})(saved)).toBe(normalized);
+    expect(preference({ reply_generation_location: saved })).toBe(server);
+    expect(preference({})).toBe(false);
+});
+
 const workflowDecision = sourceFunction('../public/script.js', 'nativeRoleplayWorkflowFor')
     .replace('await import(\'./scripts/browser-reply-routing.js\')', '__routing');
 
-test.each([false, true])('automatic routing loads a workflow only when required: %s', async required => {
+function workflowContext(workflows, routing, willRun = () => true) {
+    return vm.runInNewContext(`(${workflowDecision})`, {
+        willRunNativeRoleplayWorkflow: willRun, loadNativeRoleplayWorkflows: async () => workflows, __routing: routing, console,
+    });
+}
+
+test.each([false, true])('browser preference routes a workflow only when Notebook context requires it: %s', async required => {
     const workflows = { roleplayWorkflowNameFor: () => 'roleplay.reply', capturePagePrompts: async () => ({}) };
     const load = jest.fn(async () => workflows);
     const decide = vm.runInNewContext(`(${workflowDecision})`, {
         willRunNativeRoleplayWorkflow: () => true, loadNativeRoleplayWorkflows: load,
-        __routing: { requiresServerReply: async () => required }, console,
+        __routing: { prefersServerReplies: () => false, requiresServerReply: async () => required }, console,
     });
     expect(await decide('normal', {})).toEqual(required ? { name: 'roleplay.reply', workflows } : null);
     expect(load).toHaveBeenCalledTimes(Number(required));
 });
 
+test.each(['normal', 'swipe', 'continue', 'regenerate'])('server preference routes %s without probing Notebook requirements', async type => {
+    const workflows = { roleplayWorkflowNameFor: () => 'roleplay.reply', capturePagePrompts: async () => ({}) };
+    const requiresServerReply = jest.fn(async () => false);
+    const decide = workflowContext(workflows, { prefersServerReplies: () => true, requiresServerReply });
+    expect(await decide(type, {})).toEqual({ name: 'roleplay.reply', workflows });
+    expect(requiresServerReply).not.toHaveBeenCalled();
+});
+
+test('explicit browser and background choices ignore the saved preference', async () => {
+    const workflows = { roleplayWorkflowNameFor: () => 'roleplay.reply', capturePagePrompts: async () => ({}) };
+    const routing = { prefersServerReplies: jest.fn(() => true), requiresServerReply: jest.fn(async () => false) };
+    expect(await workflowContext(workflows, routing, () => false)('normal', { skipNativeRoleplay: true })).toBeNull();
+    expect(await workflowContext(workflows, routing)('normal', { skipNativeRoleplay: false }))
+        .toEqual({ name: 'roleplay.reply', workflows });
+    expect(routing.prefersServerReplies).not.toHaveBeenCalled();
+    expect(routing.requiresServerReply).not.toHaveBeenCalled();
+});
+
+test('server preference falls back when page prompts cannot be carried only without a Notebook requirement', async () => {
+    const workflows = { roleplayWorkflowNameFor: () => 'roleplay.reply', capturePagePrompts: async () => null };
+    const requiresServerReply = jest.fn(async () => false);
+    expect(await workflowContext(workflows, { prefersServerReplies: () => true, requiresServerReply })('normal', {})).toBeNull();
+    expect(requiresServerReply).toHaveBeenCalledTimes(1);
+
+    const required = jest.fn(async () => true);
+    await expect(workflowContext(workflows, { prefersServerReplies: () => true, requiresServerReply: required })('normal', {}))
+        .rejects.toThrow('Notebook context cannot be combined');
+    expect(required).toHaveBeenCalledTimes(1);
+});
+
+test('server preference falls back when the server workflow is unavailable only without a Notebook requirement', async () => {
+    const requiresServerReply = jest.fn(async () => false);
+    expect(await workflowContext(null, { prefersServerReplies: () => true, requiresServerReply })('normal', {})).toBeNull();
+    expect(requiresServerReply).toHaveBeenCalledTimes(1);
+
+    const required = jest.fn(async () => true);
+    await expect(workflowContext(null, { prefersServerReplies: () => true, requiresServerReply: required })('normal', {}))
+        .rejects.toThrow('needs a server reply');
+    expect(required).toHaveBeenCalledTimes(1);
+});
+
 test('required Notebook context never silently falls back when page prompts cannot be carried', async () => {
-    const decide = vm.runInNewContext(`(${workflowDecision})`, {
-        willRunNativeRoleplayWorkflow: () => true,
-        loadNativeRoleplayWorkflows: async () => ({ roleplayWorkflowNameFor: () => 'roleplay.reply', capturePagePrompts: async () => null }),
-        __routing: { requiresServerReply: async () => true }, console,
-    });
+    const decide = workflowContext(
+        { roleplayWorkflowNameFor: () => 'roleplay.reply', capturePagePrompts: async () => null },
+        { prefersServerReplies: () => false, requiresServerReply: async () => true });
     await expect(decide('normal', {})).rejects.toThrow('Notebook context cannot be combined');
 });
 

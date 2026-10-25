@@ -1,4 +1,5 @@
 import { extension_settings, getContext } from '../../../extensions.js';
+import { isNeconyanAssistant } from '../../../neconyan-assistant-knowledge.js';
 import { isImageInputIssue } from '../../../prompt-media-policy.js';
 import {
     getCurrentProfile,
@@ -24,6 +25,7 @@ const guidedGenerationInjectIds = [
     guidedCorrectionInjectId,
     guidedImpersonateInjectId,
 ];
+const mandatoryServerGuidedWorkflows = new Set(['guided.regenerate', 'guided.correction', 'roleplay.correct']);
 
 let previousImpersonateInput = '';
 let lastImpersonateResult = '';
@@ -61,11 +63,18 @@ function isGroupChat() {
     return Boolean(context?.groupId && context?.groups);
 }
 
+function currentCharacter() {
+    const context = getContext();
+    return context?.characters?.[context?.characterId];
+}
+
 /**
- * Responses and swipes use the browser unless scoped Notebook context needs the server.
- * Replacements still need the server's atomic write: their browser fallback
- * temporarily removes the target or following messages and can save that shortened
- * chat if the page closes. Returns false when no protected server workflow exists.
+ * Responses and swipes follow the account's reply location, except in the built-in
+ * helper's chats, and use the server when scoped Notebook context needs it.
+ * Replacements still need the server's atomic write: their
+ * browser fallback temporarily removes the target or following messages and can save
+ * that shortened chat if the page closes. Returns false when no protected server
+ * workflow exists.
  */
 async function submitGuidedWorkflow(name, prompt) {
     if (isGroupChat()) {
@@ -77,17 +86,36 @@ async function submitGuidedWorkflow(name, prompt) {
         return current?.chat === chat && current?.chatId === chatId && current?.groupId === groupId;
     };
     let serverRequired = false;
-    if (!['guided.regenerate', 'guided.correction', 'roleplay.correct'].includes(name)) {
-        const { requiresServerReply } = await import('../../../browser-reply-routing.js');
-        serverRequired = await requiresServerReply();
-        if (!isCurrent()) return true;
-        if (!serverRequired) return false;
+    let preferServer = false;
+    let requiresServerReply = null;
+    if (!mandatoryServerGuidedWorkflows.has(name)) {
+        // The built-in helper carries its own help reference and tools in the page;
+        // server prompts have neither, so optional guided actions stay in the browser.
+        if (isNeconyanAssistant(currentCharacter())) return false;
+        const routing = await import('../../../browser-reply-routing.js');
+        preferServer = routing.prefersServerReplies() === true;
+        requiresServerReply = routing.requiresServerReply;
+        if (!preferServer) {
+            serverRequired = await requiresServerReply();
+            if (!isCurrent()) return true;
+            if (!serverRequired) return false;
+        }
     }
+    // A preferred server path may fall back to the browser only when no Notebook
+    // requirement needs the server's prompt.
+    const serverMustOwn = async () => {
+        if (serverRequired) return true;
+        if (!preferServer) return false;
+        serverRequired = await requiresServerReply();
+        return serverRequired;
+    };
     const workflows = await import('../../../neconyan-conversation/roleplay-workflows.js').catch(() => null);
     // Treat a chat switch as handled so no caller falls back into the new chat.
     if (!isCurrent()) return true;
     if (!workflows?.isNativeRoleplayWorkflowReady?.()) {
-        if (serverRequired) throw new Error('The selected Notebook context needs a server reply. Please reload and try again.');
+        const mustOwn = await serverMustOwn();
+        if (!isCurrent()) return true;
+        if (mustOwn) throw new Error('The selected Notebook context needs a server reply. Please reload and try again.');
         return false;
     }
     // Macros resolve in the page exactly as the injected guide would have, and a
@@ -96,7 +124,9 @@ async function submitGuidedWorkflow(name, prompt) {
     const page = await workflows.capturePagePrompts(name);
     if (!isCurrent()) return true;
     if ((prompt !== undefined && !text) || !page) {
-        if (serverRequired) throw new Error('The selected Notebook context cannot be combined with these page prompts. Nothing was generated.');
+        const mustOwn = await serverMustOwn();
+        if (!isCurrent()) return true;
+        if (mustOwn) throw new Error('The selected Notebook context cannot be combined with these page prompts. Nothing was generated.');
         return false;
     }
     debugLog('[Guided] Submitting named workflow', name);

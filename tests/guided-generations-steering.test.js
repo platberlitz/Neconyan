@@ -55,6 +55,8 @@ describe('Guided Generations steering commands', () => {
     let eventSource;
     let eventTypes;
     let extensionSettings;
+    let routing;
+    let workflows;
 
     afterEach(() => {
         jest.useRealTimers();
@@ -141,17 +143,20 @@ describe('Guided Generations steering commands', () => {
             extension_settings: extensionSettings,
             getContext: jest.fn(() => context),
         }));
-        await jest.unstable_mockModule('../public/scripts/browser-reply-routing.js', () => ({
+        routing = {
+            prefersServerReplies: jest.fn(() => false),
             requiresServerReply: jest.fn(async () => false),
-        }));
+        };
+        await jest.unstable_mockModule('../public/scripts/browser-reply-routing.js', () => routing);
         // The shell's named-workflow module is replaced so these browser-path cases
         // stay deterministic and no real import outlives the test environment.
-        await jest.unstable_mockModule('../public/scripts/neconyan-conversation/roleplay-workflows.js', () => ({
+        workflows = {
             capturePagePrompts: jest.fn(async () => []),
             isNativeRoleplayWorkflowReady: jest.fn(() => false),
             resolvePageText: jest.fn(text => text),
             submitRoleplayWorkflow: jest.fn(),
-        }));
+        };
+        await jest.unstable_mockModule('../public/scripts/neconyan-conversation/roleplay-workflows.js', () => workflows);
         await jest.unstable_mockModule('../public/scripts/extensions/guided-generations/scripts/presetUtils.js', () => ({
             getCurrentProfile: jest.fn(async () => ''),
             getCurrentProfileId: jest.fn(async () => ''),
@@ -177,6 +182,72 @@ describe('Guided Generations steering commands', () => {
         expect(context.chatMetadata.script_injects['gg-guided-response']).toBeUndefined();
         expect(textarea.value).toBe('aim for a colder, suspicious reply');
         expect(textarea.dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'input' }));
+    });
+
+    test('server replies chosen submit a guided response instead of injecting a browser prompt', async () => {
+        routing.prefersServerReplies.mockReturnValue(true);
+        workflows.isNativeRoleplayWorkflowReady.mockReturnValue(true);
+        workflows.capturePagePrompts.mockResolvedValue([{ key: 'gg-guided-response', content: 'GUIDE', position: 1, depth: 2, role: 'assistant' }]);
+        const { guidedResponse } = await import('../public/scripts/extensions/guided-generations/scripts/guidedResponse.js');
+
+        await guidedResponse();
+
+        expect(workflows.submitRoleplayWorkflow).toHaveBeenCalledWith(expect.objectContaining({
+            name: 'guided.response',
+            intent: { prompt: expect.objectContaining({ text: 'GUIDE: aim for a colder, suspicious reply' }) },
+        }));
+        expect(routing.requiresServerReply).not.toHaveBeenCalled();
+        expect(context.executeSlashCommandsWithOptions).not.toHaveBeenCalled();
+        expect(textarea.value).toBe('aim for a colder, suspicious reply');
+    });
+
+    test('a preferred server guided reply keeps the Notebook error when the workflow cannot run', async () => {
+        routing.prefersServerReplies.mockReturnValue(true);
+        routing.requiresServerReply.mockResolvedValue(true);
+        const { submitGuidedWorkflow } = await import('../public/scripts/extensions/guided-generations/scripts/shared.js');
+
+        await expect(submitGuidedWorkflow('guided.response', { text: 'GUIDE', depth: 2, role: 'assistant', scan: true }))
+            .rejects.toThrow('needs a server reply');
+        expect(routing.requiresServerReply).toHaveBeenCalledTimes(1);
+    });
+
+    test('server replies chosen submit a guided swipe instead of injecting a browser prompt', async () => {
+        routing.prefersServerReplies.mockReturnValue(true);
+        workflows.isNativeRoleplayWorkflowReady.mockReturnValue(true);
+        workflows.capturePagePrompts.mockResolvedValue([{ key: 'gg-guided-swipe', content: 'SWIPE GUIDE', position: 1, depth: 3, role: 'assistant' }]);
+        const { guidedSwipe } = await import('../public/scripts/extensions/guided-generations/scripts/guidedSwipe.js');
+
+        await guidedSwipe();
+
+        expect(workflows.submitRoleplayWorkflow).toHaveBeenCalledWith(expect.objectContaining({ name: 'guided.swipe' }));
+        expect(routing.requiresServerReply).not.toHaveBeenCalled();
+        expect(context.executeSlashCommandsWithOptions).not.toHaveBeenCalled();
+        expect(context.swipe.right).not.toHaveBeenCalled();
+        expect(textarea.value).toBe('aim for a colder, suspicious reply');
+    });
+
+    test('optional guided actions stay in the browser for the built-in assistant', async () => {
+        routing.prefersServerReplies.mockReturnValue(true);
+        context.characters = [{ data: { extensions: { neconyan_assistant: { id: 'miso-neutral' } } } }];
+        context.characterId = 0;
+        const { submitGuidedWorkflow } = await import('../public/scripts/extensions/guided-generations/scripts/shared.js');
+
+        await expect(submitGuidedWorkflow('guided.response', { text: 'GUIDE', depth: 2, role: 'assistant', scan: true })).resolves.toBe(false);
+        expect(routing.prefersServerReplies).not.toHaveBeenCalled();
+        expect(workflows.submitRoleplayWorkflow).not.toHaveBeenCalled();
+    });
+
+    test('mandatory guided replacements still use the server for the built-in assistant', async () => {
+        routing.prefersServerReplies.mockReturnValue(true);
+        workflows.isNativeRoleplayWorkflowReady.mockReturnValue(true);
+        workflows.capturePagePrompts.mockResolvedValue([]);
+        context.characters = [{ data: { extensions: { neconyan_assistant: { id: 'miso-neutral' } } } }];
+        context.characterId = 0;
+        const { submitGuidedWorkflow } = await import('../public/scripts/extensions/guided-generations/scripts/shared.js');
+
+        await expect(submitGuidedWorkflow('guided.regenerate', { text: 'GUIDE' })).resolves.toBe(true);
+        expect(workflows.submitRoleplayWorkflow).toHaveBeenCalledWith(expect.objectContaining({ name: 'guided.regenerate' }));
+        expect(routing.prefersServerReplies).not.toHaveBeenCalled();
     });
 
     test('guided swipe keeps guidance injected until the swipe generation starts', async () => {

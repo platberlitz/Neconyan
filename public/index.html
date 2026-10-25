@@ -5682,6 +5682,15 @@
                                                 <p class="nn-vt-group-hint">How new replies appear while they are written.</p>
                                             </div>
                                         </div>
+                                        <div class="nn-cw-field nn-cw-field-stacked sb-advanced-only">
+                                            <label for="reply_generation_location" class="nn-vt-text"><small class="nn-vt-name" data-i18n="Where replies are written">Where replies are written</small><span class="nn-vt-desc">Both show the reply as it is written. The server finishes it after you close the page or your phone sleeps, and after-reply Agents still run.</span><span class="nn-vt-desc">Conversation, replies that need a selected Notebook context, one-to-one guided corrections and Deep Swipe use the server. Built-in assistant chats, group guided actions and some group turns stay in the browser. Browser-only macros stop a server reply with an error; a page instruction the server cannot carry falls back to the browser only when no Notebook context requires the server.</span></label>
+                                            <div class="nn-cw-control">
+                                                <select id="reply_generation_location" class="text_pole">
+                                                    <option value="browser" data-i18n="In the browser (recommended)">In the browser (recommended)</option>
+                                                    <option value="server" data-i18n="On the server">On the server</option>
+                                                </select>
+                                            </div>
+                                        </div>
                                         <label id="smooth_streaming_control" for="smooth_streaming" class="checkbox_label nn-vt-row nn-cw-parent">
                                             <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Smooth Streaming">Smooth streaming</small><span class="nn-vt-desc">Shows replies at an even pace instead of in bursts.</span></span>
                                             <input id="smooth_streaming" type="checkbox" />

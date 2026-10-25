@@ -4,6 +4,16 @@ import { power_user } from './power-user.js';
 import { selected_world_info, world_info } from './world-info.js';
 import { roleplayAccountStamp } from './roleplay-save-chain.js';
 
+/** Saved routing is browser-first unless the account explicitly chose the server. */
+export function normalizeReplyGenerationLocation(value) {
+    return value === 'server' ? 'server' : 'browser';
+}
+
+/** True when ordinary replies should ask for the durable server workflow first. */
+export function prefersServerReplies() {
+    return normalizeReplyGenerationLocation(power_user?.reply_generation_location) === 'server';
+}
+
 /** Notebook context currently belongs to the server workflow, unlike ordinary prompts. */
 export async function requiresServerReply(memberIds = [this_chid]) {
     const chat = String(getCurrentChatId() || '').replace(/\.jsonl$/, '');

@@ -40,6 +40,7 @@ const listJobs = jest.fn(async () => []);
 const cancelJob = jest.fn(async () => ({}));
 const serviceVectorBrowserWork = jest.fn(async () => {});
 const extensionPrompts = {};
+const chatMetadata = {};
 const extensionSettings = {};
 const interceptors = [];
 const restoreDisplay = jest.fn();
@@ -98,6 +99,7 @@ jest.unstable_mockModule('../public/scripts/roleplay-save-chain.js', () => ({
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.js', () => ({ getCurrentCharAvatar: () => currentAvatar }));
 jest.unstable_mockModule('../public/script.js', () => ({
     chat,
+    chat_metadata: chatMetadata,
     extension_prompts: extensionPrompts,
     substituteParams: value => String(value).replaceAll('{{user}}', 'Alice'),
     getCurrentChatId: () => currentChatId,
@@ -152,6 +154,7 @@ beforeEach(() => {
     chatSaving = false;
     globalThis.document.visibilityState = 'visible';
     for (const key of Object.keys(extensionPrompts)) delete extensionPrompts[key];
+    for (const key of Object.keys(chatMetadata)) delete chatMetadata[key];
     for (const key of Object.keys(extensionSettings)) delete extensionSettings[key];
     interceptors.length = 0;
     delete globalThis.DialogueColorsInterceptor;
@@ -631,6 +634,29 @@ test('kept-note blocks left by a browser prompt preview do not disable server-ow
     await pending;
 });
 
+test('group page additions keep the browser because the group payload cannot carry them', async () => {
+    expect(await workflows.groupPagePromptsBlocked()).toBe(false);
+
+    // A saved /inject is caught even before the page materializes it.
+    chatMetadata.script_injects = { note: { value: 'Always answer in French.', position: 1, depth: 0, scan: false, role: 0 } };
+    expect(await workflows.groupPagePromptsBlocked()).toBe(true);
+
+    // Once materialized, the ordinary capture sees the same instruction.
+    extensionPrompts.script_inject_note = { value: 'Always answer in French.', position: 1, depth: 0, scan: false, role: 0 };
+    expect(await workflows.groupPagePromptsBlocked()).toBe(true);
+    delete extensionPrompts.script_inject_note;
+
+    // An injection hidden from the prompt does not travel either way.
+    chatMetadata.script_injects = { hidden: { value: 'Hidden note.', position: -1, depth: 0, scan: false, role: 0 } };
+    expect(await workflows.groupPagePromptsBlocked()).toBe(false);
+
+    extensionPrompts['dialogue-colors'] = { value: 'Colour the dialogue.', position: 1, depth: 1, scan: false, role: 0 };
+    expect(await workflows.groupPagePromptsBlocked()).toBe(true);
+
+    interceptors.push({ name: 'third-party/other', key: 'otherInterceptor' });
+    expect(await workflows.groupPagePromptsBlocked()).toBe(true);
+});
+
 test('page text a control hands over resolves its macros or keeps the browser path', () => {
     expect(workflows.resolvePageText(' Rewrite {{user}}\'s reply. ')).toBe('Rewrite Alice\'s reply.');
     expect(workflows.resolvePageText('Roll {{roll:d6}}')).toBeNull();
@@ -1096,18 +1122,31 @@ test('passive readback respects pending saves and unrelated generation across re
     expect(reloads).toEqual([2]);
 });
 
-test('group send submits without awaiting requestAnimationFrame in a hidden tab', async () => {
+function groupWrapperHarness({
+    routing = { prefersServerReplies: () => false, requiresServerReply: async () => false },
+    workflowModule = {},
+    roleplayAccountStamp = () => ({ account: accountStamp }),
+    browserPath = () => { throw new Error('browser path reached'); },
+    overrides = {},
+} = {}) {
     // rAF never resolves here, so a regression that awaits a frame before submit fails by timing out.
     const groupSource = fs.readFileSync(new URL('../public/scripts/group-chats.js', import.meta.url), 'utf8');
     const ast = parse(groupSource, { ecmaVersion: 'latest', sourceType: 'module' });
     const node = ast.body.map(row => row.declaration ?? row).find(row => row.id?.name === 'generateGroupWrapper');
     const wrapperCode = groupSource.slice(node.start, node.end)
+        .replace('await import(\'./browser-reply-routing.js\')', '__routingModule')
         .replace('await import(\'./neconyan-conversation/roleplay-workflows.js\')', '__workflowsModule')
         .replace('await import(\'./roleplay-save-chain.js\')', '__saveChainModule');
-
     const rAF = jest.fn(() => 0);
-    const submitRoleplayGroupTurn = jest.fn(async () => ({ accepted: true, state: 'closed' }));
     const sendMessageAsUser = jest.fn(async () => {});
+    const submitRoleplayGroupTurn = workflowModule.submitRoleplayGroupTurn
+        ?? jest.fn(async () => ({ accepted: true, state: 'closed' }));
+    const workflows = {
+        capturePagePrompts: jest.fn(async () => []),
+        groupPagePromptsBlocked: jest.fn(async () => false),
+        ...workflowModule,
+        submitRoleplayGroupTurn,
+    };
     const textarea = { dispatchEvent: jest.fn() };
     const runtime = vm.createContext({
         AbortSignal, Event, Promise, Map, Error, Date, console,
@@ -1147,10 +1186,18 @@ test('group send submits without awaiting requestAnimationFrame in a hidden tab'
         event_types: { GROUP_WRAPPER_STARTED: 'group_wrapper_started' },
         eventSource: { emit: async () => {} },
         $: () => ({ 0: textarea, val: () => ({ 0: textarea, toString: () => 'Hello group' }) }),
-        __workflowsModule: { submitRoleplayGroupTurn },
-        __saveChainModule: { roleplayAccountStamp: () => ({ account: accountStamp }) },
+        unshallowGroupMembers: browserPath,
+        __routingModule: routing,
+        __workflowsModule: workflows,
+        __saveChainModule: { roleplayAccountStamp },
+        ...overrides,
     });
     vm.runInContext(wrapperCode, runtime);
+    return { runtime, rAF, sendMessageAsUser, submitRoleplayGroupTurn, workflows, routing };
+}
+
+test('group send submits without awaiting requestAnimationFrame in a hidden tab', async () => {
+    const { runtime, rAF, sendMessageAsUser, submitRoleplayGroupTurn } = groupWrapperHarness();
     const result = await runtime.generateGroupWrapper(false, 'normal', { skipNativeRoleplay: false });
     expect(rAF).not.toHaveBeenCalled();
     expect(sendMessageAsUser).toHaveBeenCalledTimes(1);
@@ -1159,6 +1206,78 @@ test('group send submits without awaiting requestAnimationFrame in a hidden tab'
         forcedAvatars: ['nova.png'],
     }));
     expect(result).toEqual({ accepted: true, state: 'closed' });
+});
+
+test('an explicit group background request keeps its server path without a page capture', async () => {
+    const groupPagePromptsBlocked = jest.fn(async () => true);
+    const { runtime, submitRoleplayGroupTurn } = groupWrapperHarness({ workflowModule: { groupPagePromptsBlocked } });
+    await runtime.generateGroupWrapper(false, 'normal', { skipNativeRoleplay: false });
+    expect(groupPagePromptsBlocked).not.toHaveBeenCalled();
+    expect(submitRoleplayGroupTurn).toHaveBeenCalledTimes(1);
+});
+
+test('server preference sends a supported group turn to the server without probing Notebook context', async () => {
+    const routing = { prefersServerReplies: () => true, requiresServerReply: jest.fn(async () => false) };
+    const { runtime, sendMessageAsUser, submitRoleplayGroupTurn, workflows } = groupWrapperHarness({ routing });
+    const result = await runtime.generateGroupWrapper(false, 'normal', {});
+    expect(workflows.groupPagePromptsBlocked).toHaveBeenCalledTimes(1);
+    expect(submitRoleplayGroupTurn).toHaveBeenCalledWith(expect.objectContaining({
+        groupId: 'group-1',
+        forcedAvatars: ['nova.png'],
+    }));
+    expect(routing.requiresServerReply).not.toHaveBeenCalled();
+    expect(sendMessageAsUser).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ accepted: true, state: 'closed' });
+});
+
+test('server preference keeps a group turn in the browser when a page instruction cannot travel', async () => {
+    const routing = { prefersServerReplies: () => true, requiresServerReply: jest.fn(async () => false) };
+    const { runtime, sendMessageAsUser, submitRoleplayGroupTurn } = groupWrapperHarness({
+        routing,
+        workflowModule: { groupPagePromptsBlocked: jest.fn(async () => true) },
+    });
+    await expect(runtime.generateGroupWrapper(false, 'normal', {})).rejects.toThrow('browser path reached');
+    expect(submitRoleplayGroupTurn).not.toHaveBeenCalled();
+    expect(routing.requiresServerReply).toHaveBeenCalledTimes(1);
+    expect(sendMessageAsUser).toHaveBeenCalledTimes(1);
+});
+
+test('a missing account stamp keeps a server-preferred group turn in the browser when no Notebook context requires the server', async () => {
+    const routing = { prefersServerReplies: () => true, requiresServerReply: jest.fn(async () => false) };
+    const { runtime, sendMessageAsUser, submitRoleplayGroupTurn, workflows } = groupWrapperHarness({
+        routing,
+        roleplayAccountStamp: () => { throw new Error('ROLEPLAY_ACCOUNT_CHANGED'); },
+    });
+    await expect(runtime.generateGroupWrapper(false, 'normal', {})).rejects.toThrow('browser path reached');
+    expect(sendMessageAsUser).toHaveBeenCalledTimes(1);
+    expect(submitRoleplayGroupTurn).not.toHaveBeenCalled();
+    expect(workflows.groupPagePromptsBlocked).not.toHaveBeenCalled();
+    expect(routing.requiresServerReply).toHaveBeenCalledTimes(1);
+});
+
+test('a missing account stamp fails closed when Notebook context requires the server', async () => {
+    const routing = { prefersServerReplies: () => true, requiresServerReply: jest.fn(async () => true) };
+    const { runtime, sendMessageAsUser, submitRoleplayGroupTurn, workflows } = groupWrapperHarness({
+        routing,
+        roleplayAccountStamp: () => { throw new Error('ROLEPLAY_ACCOUNT_CHANGED'); },
+    });
+    await expect(runtime.generateGroupWrapper(false, 'normal', {}))
+        .rejects.toThrow('The selected Notebook context needs a server reply. Please reload and try again.');
+    expect(sendMessageAsUser).toHaveBeenCalledTimes(1);
+    expect(submitRoleplayGroupTurn).not.toHaveBeenCalled();
+    expect(workflows.groupPagePromptsBlocked).not.toHaveBeenCalled();
+    expect(routing.requiresServerReply).toHaveBeenCalledTimes(1);
+});
+
+test('a required Notebook context fails closed when group page instructions cannot travel', async () => {
+    const routing = { prefersServerReplies: () => false, requiresServerReply: jest.fn(async () => true) };
+    const { runtime, submitRoleplayGroupTurn } = groupWrapperHarness({
+        routing,
+        workflowModule: { groupPagePromptsBlocked: jest.fn(async () => true) },
+    });
+    await expect(runtime.generateGroupWrapper(false, 'normal', {}))
+        .rejects.toThrow('Notebook context cannot be combined with these page prompts');
+    expect(submitRoleplayGroupTurn).not.toHaveBeenCalled();
 });
 
 test.each([

@@ -13,7 +13,7 @@ import { canonical } from '../src/jobs/store.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const { initialiseRoleplayAccount, readRoleplayAccount, withRoleplayAccountLock, roleplayLease, saveRoleplayAccount,
-    roleplayStoreDirectory, roleplayHash, readRoleplayFile, reconcileRoleplayAccount, assertRoleplayTransactionCapacity,
+    roleplayStoreDirectory, roleplayHash, roleplaySettingsHash, readRoleplayFile, reconcileRoleplayAccount, assertRoleplayTransactionCapacity,
     withRoleplayAccount, ROLEPLAY_STORE_MAX_BYTES } = await import('../src/roleplay-store.js');
 
 function fixture(t) {
@@ -194,6 +194,19 @@ test('canonical identity retains array order and missing versus null fields', ()
     assert.notEqual(roleplayHash([1, 2]), roleplayHash([2, 1]));
     assert.throws(() => roleplayHash({ a: undefined }), { code: 'ROLEPLAY_INVALID' });
     assert.throws(() => roleplayHash([NaN]), { code: 'ROLEPLAY_INVALID' });
+});
+
+test('the reply location does not invalidate a running reply settings proof', () => {
+    const settings = { power_user: { auto_swipe: false, reply_generation_location: 'browser' }, extension_settings: {} };
+    const original = structuredClone(settings);
+    const browser = roleplaySettingsHash(settings);
+    assert.deepEqual(settings, original);
+    assert.notEqual(browser, roleplayHash(original));
+    settings.power_user.reply_generation_location = 'server';
+    assert.equal(roleplaySettingsHash(settings), browser);
+    assert.deepEqual(settings.power_user, { auto_swipe: false, reply_generation_location: 'server' });
+    settings.power_user.auto_swipe = true;
+    assert.notEqual(roleplaySettingsHash(settings), browser);
 });
 
 test('symlinked protected storage is refused before bootstrap writes', t => {
