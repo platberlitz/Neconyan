@@ -100,6 +100,14 @@ describe('paper texture regression guards', () => {
         expect(messageAfterRule).toContain('--sb-paper-texture-opacity');
     });
 
+    test('keeps the page overlay off the safe-area strips so iOS finds the top bar', () => {
+        const bodyAfterRule = paperThemeCss.match(/body::after\s*\{[\s\S]*?\}/)?.[0] ?? '';
+
+        expect(bodyAfterRule).toContain('position: fixed;');
+        expect(bodyAfterRule).toContain('inset: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px);');
+        expect(bodyAfterRule).not.toMatch(/inset:\s*0\s*;/);
+    });
+
     test('derives thought box colors from active SmartTheme tokens', () => {
         const thoughtBoxTokenBlock = paperThemeCss.match(/--thought-box-bg:[\s\S]*?--thought-box-accent:[^;]+;/)?.[0] ?? '';
 
