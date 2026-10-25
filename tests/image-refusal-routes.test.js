@@ -136,11 +136,14 @@ describe('the other routes that submit a named workflow', () => {
         const context = { chat: [], chatId: 'chat-1', groupId: null };
         const workflows = {
             isNativeRoleplayWorkflowReady: () => true, resolvePageText: text => text, capturePagePrompts: async () => ({ prompts: [] }),
+            prefersServerReplies: () => false, requiresServerReply: async () => false,
             submitRoleplayWorkflow: async () => { throw failure; },
         };
         const host = {
             console: { error: (...args) => logged.push(args) }, toastr: { error: (...args) => toasts.push(args) },
             isGroupChat: () => false, getContext: () => context, debugLog: () => {}, isImageInputIssue,
+            mandatoryServerGuidedWorkflows: new Set(['guided.regenerate', 'guided.correction', 'roleplay.correct']),
+            isNeconyanAssistant: () => false, currentCharacter: () => null,
         };
         const importModuleDynamically = async () => {
             const stand = new vm.SyntheticModule(Object.keys(workflows), function () { for (const [name, value] of Object.entries(workflows)) this.setExport(name, value); });

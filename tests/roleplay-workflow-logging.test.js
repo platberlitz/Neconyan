@@ -61,6 +61,7 @@ jest.unstable_mockModule('../public/scripts/roleplay-save-chain.js', () => ({
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.js', () => ({ getCurrentCharAvatar: () => 'nova.png' }));
 jest.unstable_mockModule('../public/script.js', () => ({
     chat,
+    chat_metadata: {},
     extension_prompts: extensionPrompts,
     substituteParams: value => String(value),
     getCurrentChatId: () => 'roleplay',
