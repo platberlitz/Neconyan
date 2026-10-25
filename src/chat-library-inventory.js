@@ -141,13 +141,47 @@ export async function collectRecentChatFiles(directories, {
 }
 
 /**
- * @param {Array<{filePath: string, pngFile?: string, groupId?: string}>} chatFile
- * @param {Array<{file_name: string, avatar?: string, group?: string}>} pinnedChats
+ * The original pinned test, minus the file-name comparison. Callers group pins
+ * by file name first, so this only has to keep the avatar/group OR exactly as
+ * it was, including undefined on either side.
+ * @param {{avatar?: string, group?: string}} pinned
+ * @param {{pngFile?: string, groupId?: string}} chatFile
  * @returns {boolean}
  */
-function isPinnedChat(chatFile, pinnedChats) {
-    return pinnedChats.some(pinned => pinned.file_name === path.basename(chatFile.filePath)
-        && (pinned.avatar === chatFile.pngFile || pinned.group === chatFile.groupId));
+function pinnedChatMatches(pinned, chatFile) {
+    return pinned.avatar === chatFile.pngFile || pinned.group === chatFile.groupId;
+}
+
+/**
+ * Builds the pinned membership for one selection pass. Pins are indexed by
+ * file name so a chat only compares against pins that could match its basename.
+ * Duplicate basenames stay correct because every chat with that basename is
+ * checked against the same pin list.
+ * @param {Array<{filePath: string, pngFile?: string, groupId?: string}>} chatFiles
+ * @param {Array<{file_name: string, avatar?: string, group?: string}>} pinnedChats
+ * @returns {Set<object>}
+ */
+function collectPinnedChatFiles(chatFiles, pinnedChats) {
+    /** @type {Map<string, Array<{file_name: string, avatar?: string, group?: string}>>} */
+    const pinsByName = new Map();
+    for (const pinned of pinnedChats) {
+        const pins = pinsByName.get(pinned.file_name);
+        if (pins) {
+            pins.push(pinned);
+        } else {
+            pinsByName.set(pinned.file_name, [pinned]);
+        }
+    }
+
+    /** @type {Set<object>} */
+    const pinnedFiles = new Set();
+    for (const chatFile of chatFiles) {
+        const pins = pinsByName.get(path.basename(chatFile.filePath));
+        if (pins && pins.some(pinned => pinnedChatMatches(pinned, chatFile))) {
+            pinnedFiles.add(chatFile);
+        }
+    }
+    return pinnedFiles;
 }
 
 /**
@@ -158,10 +192,10 @@ function isPinnedChat(chatFile, pinnedChats) {
  * @returns {Array<{filePath: string, pngFile?: string, groupId?: string, mtime: number}>}
  */
 export function selectRecentChatFiles(chatFiles, { max, pinnedChats }) {
-    const isPinned = chatFile => isPinnedChat(chatFile, pinnedChats);
+    const pinnedFiles = pinnedChats.length > 0 ? collectPinnedChatFiles(chatFiles, pinnedChats) : null;
     const sortRecentChatFiles = (a, b) => {
-        const isAPinned = isPinned(a);
-        const isBPinned = isPinned(b);
+        const isAPinned = pinnedFiles !== null && pinnedFiles.has(a);
+        const isBPinned = pinnedFiles !== null && pinnedFiles.has(b);
 
         if (isAPinned && !isBPinned) return -1;
         if (!isAPinned && isBPinned) return 1;
