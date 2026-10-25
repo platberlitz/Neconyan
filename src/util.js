@@ -1,7 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import process from 'node:process';
-import { createRequire } from 'node:module';
 import { Buffer } from 'node:buffer';
 import { promises as dnsPromise } from 'node:dns';
 import os from 'node:os';
@@ -9,7 +8,6 @@ import crypto from 'node:crypto';
 
 import yaml from 'yaml';
 import util from 'node:util';
-import { sync as commandExistsSync } from 'command-exists';
 import _ from 'lodash';
 import yauzl from 'yauzl';
 import mime from 'mime-types';
@@ -122,41 +120,356 @@ export function getBasicAuthHeader(auth) {
     return `Basic ${encoded}`;
 }
 
+const VERSION_CACHE_LIMIT = 8;
+const VERSION_CACHE = new Map();
+const VERSION_LOADS = new Map();
+let VERSION_LOAD_ID = 0;
+
 /**
- * Returns the version of the running instance. Get the version from the package.json file and the git revision.
- * Also returns the agent string for the Horde API.
- * @returns {Promise<{agent: string, pkgVersion: string, gitRevision: string | null, gitBranch: string | null, commitDate: string | null, isLatest: boolean}>} Version info object
+ * Reads a tiny checkout file, returning an error marker instead of throwing.
+ * @param {string} filePath File path
+ * @returns {string} File contents or a \0-prefixed error marker
  */
-export async function getVersion() {
-    let pkgVersion = 'UNKNOWN';
-    let gitRevision = null;
-    let gitBranch = null;
-    let commitDate = null;
-    let isLatest = true;
-
+function readVersionText(filePath) {
     try {
-        const require = createRequire(import.meta.url);
-        const pkgJson = require(path.join(serverDirectory, './package.json'));
-        pkgVersion = pkgJson.version;
-        if (commandExistsSync('git')) {
-            const git = simpleGit({ baseDir: serverDirectory });
-            gitRevision = await git.revparse(['--short', 'HEAD']);
-            gitBranch = await git.revparse(['--abbrev-ref', 'HEAD']);
-            commitDate = await git.show(['-s', '--format=%ci', gitRevision]);
+        return fs.readFileSync(filePath, 'utf8');
+    } catch (error) {
+        return `\0${error?.code ?? 'ERROR'}`;
+    }
+}
 
-            const trackingBranch = await git.revparse(['--abbrev-ref', '@{u}']);
+/**
+ * Hashes cache-key components without keeping a second copy of the checkout.
+ * @param {string[]} parts Cache-key components
+ * @returns {string} Cache key
+ */
+function hashVersionParts(parts) {
+    return crypto.createHash('sha256').update(parts.join('\n')).digest('hex');
+}
 
-            // Might fail, but exception is caught. Just don't run anything relevant after in this block...
-            const localLatest = await git.revparse(['HEAD']);
-            const remoteLatest = await git.revparse([trackingBranch]);
-            isLatest = localLatest === remoteLatest;
+/**
+ * Resolves a Git-relative path, refusing to escape its base directory.
+ * @param {string} baseDirectory Base directory
+ * @param {string} relativePath Relative path
+ * @returns {string | null} Absolute path, or null when it escapes the base
+ */
+function resolveVersionGitPath(baseDirectory, relativePath) {
+    if (!baseDirectory || !relativePath) {
+        return null;
+    }
+    const base = path.resolve(baseDirectory);
+    const resolved = path.resolve(base, relativePath);
+    return resolved === base || resolved.startsWith(base + path.sep) ? resolved : null;
+}
+
+/**
+ * Git config can come from includes, the environment or a global file. Those cases
+ * are not safe to fingerprint, so they bypass the cache instead of guessing.
+ * @returns {boolean} Whether Git config or repository discovery comes from the environment
+ */
+function hasUnsupportedGitEnvironment() {
+    const names = [
+        'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_CEILING_DIRECTORIES',
+        'GIT_DISCOVERY_ACROSS_FILESYSTEM', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM',
+        'GIT_CONFIG_NOSYSTEM', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS',
+    ];
+    return names.some(name => process.env[name] !== undefined)
+        || Object.keys(process.env).some(name => name.startsWith('GIT_CONFIG_KEY_') || name.startsWith('GIT_CONFIG_VALUE_'));
+}
+
+/**
+ * Finds the Git checkout governing a directory, including linked worktrees.
+ * @param {string} directory Directory to inspect
+ * @returns {null | object} Checkout layout
+ */
+function findVersionGitCheckout(directory) {
+    let workTreeRoot = path.resolve(directory);
+
+    for (;;) {
+        const dotGitPath = path.join(workTreeRoot, '.git');
+        let stat = null;
+        try {
+            stat = fs.statSync(dotGitPath);
+        } catch {
+            // Keep looking in parent directories.
         }
-    } catch {
-        // suppress exception
+
+        if (stat) {
+            const dotGitKind = stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : 'other';
+            const dotGitFile = dotGitKind === 'file' ? readVersionText(dotGitPath) : null;
+            const match = dotGitFile ? /^gitdir:\s*(.+?)\s*$/m.exec(dotGitFile) : null;
+            const gitDir = dotGitKind === 'directory' ? dotGitPath : match ? path.resolve(workTreeRoot, match[1]) : null;
+            let commonDir = gitDir;
+            if (gitDir && dotGitKind === 'file') {
+                const commondir = readVersionText(path.join(gitDir, 'commondir'));
+                if (!commondir.startsWith('\0') && commondir.trim()) {
+                    commonDir = path.resolve(gitDir, commondir.trim());
+                }
+            }
+            return { workTreeRoot, dotGitPath, dotGitKind, dotGitFile, gitDir, commonDir };
+        }
+
+        const parent = path.dirname(workTreeRoot);
+        if (parent === workTreeRoot) {
+            return null;
+        }
+        workTreeRoot = parent;
+    }
+}
+
+/**
+ * Lists a loose ref and any symbolic refs it points through.
+ * @param {string} refName Full ref name
+ * @param {{gitDir: string, commonDir: string}} checkout Git directories
+ * @returns {string[]} Cache-key components
+ */
+function readVersionRefParts(refName, checkout) {
+    const parts = [];
+    let current = refName;
+
+    for (let depth = 0; current && depth < 10; depth++) {
+        const perWorktree = current.startsWith('refs/worktree/') || current.startsWith('refs/bisect/');
+        const directory = perWorktree ? checkout.gitDir : checkout.commonDir;
+        const refPath = resolveVersionGitPath(directory, current);
+        const value = refPath ? readVersionText(refPath) : '\0EINVAL';
+        parts.push(`ref:${current}=${value}`);
+        if (!value.startsWith('ref: ')) {
+            break;
+        }
+        current = value.slice('ref: '.length).trim();
     }
 
-    const agent = `Neconyan:${pkgVersion}`;
-    return { agent, pkgVersion, gitRevision, gitBranch, commitDate: commitDate?.trim() ?? null, isLatest };
+    return parts;
+}
+
+/**
+ * Reads the package version from package.json contents.
+ * @param {string} packageText Package file contents or an error marker
+ * @returns {string} Package version or UNKNOWN
+ */
+function readVersionPackageVersion(packageText) {
+    if (packageText.startsWith('\0')) {
+        return 'UNKNOWN';
+    }
+    try {
+        const parsed = JSON.parse(packageText.replace(/^\uFEFF/, ''));
+        return parsed?.version !== undefined && parsed?.version !== null ? String(parsed.version) : 'UNKNOWN';
+    } catch {
+        return 'UNKNOWN';
+    }
+}
+
+/**
+ * Checks that branch settings come only from this checkout's own config files.
+ * Global, included or environment-provided branch settings bypass the cache.
+ * @param {string} output `git config --includes --show-origin --list` output
+ * @param {{workTreeRoot: string, gitDir: string, commonDir: string}} checkout Git directories
+ * @returns {boolean} Whether branch settings are local to this checkout
+ */
+function hasLocalBranchConfig(output, checkout) {
+    const local = [
+        path.resolve(checkout.commonDir, 'config'),
+        path.resolve(checkout.gitDir, 'config.worktree'),
+    ];
+
+    return output.split(/\r?\n/).every(line => {
+        const separator = line.indexOf('\t');
+        if (separator === -1) {
+            return true;
+        }
+        const entry = line.slice(separator + 1);
+        if (entry.startsWith('include')) {
+            return false;
+        }
+        if (!entry.startsWith('branch.')) {
+            return true;
+        }
+        const origin = line.slice(0, separator);
+        if (!origin.startsWith('file:')) {
+            return false;
+        }
+        const file = origin.slice('file:'.length);
+        return local.includes(path.isAbsolute(file) ? file : path.resolve(checkout.workTreeRoot, file));
+    });
+}
+
+/**
+ * Builds a cache key from package and Git metadata.
+ * @param {string} directory Checkout directory
+ * @param {string | null} upstreamRef Upstream ref discovered by an earlier load
+ * @returns {{key: string, stateKey: string, pkgVersion: string, hasGit: boolean, cacheable: boolean, checkout: object | null}} Checkout snapshot
+ */
+function inspectVersionSources(directory, upstreamRef = null) {
+    const root = path.resolve(directory);
+    const parts = [`root:${root}`];
+    const packageText = readVersionText(path.join(root, 'package.json'));
+    parts.push(`package=${packageText}`);
+    const pkgVersion = readVersionPackageVersion(packageText);
+    const checkout = findVersionGitCheckout(root);
+
+    if (!checkout?.gitDir) {
+        parts.push(checkout
+            ? `dotgit=${checkout.dotGitPath}:${checkout.dotGitKind}:${checkout.dotGitFile ?? ''}`
+            : 'git=none');
+        const key = hashVersionParts(parts);
+        return { key, stateKey: key, pkgVersion, hasGit: false, cacheable: !hasUnsupportedGitEnvironment(), checkout: null };
+    }
+
+    parts.push(
+        `worktree:${checkout.workTreeRoot}`,
+        `dotgit:${checkout.dotGitPath}:${checkout.dotGitKind}`,
+        `gitdir:${checkout.gitDir}`,
+        `commondir:${checkout.commonDir}`,
+    );
+
+    const head = readVersionText(path.join(checkout.gitDir, 'HEAD'));
+    parts.push(`head=${head}`);
+    if (head.startsWith('ref: ')) {
+        parts.push(...readVersionRefParts(head.slice('ref: '.length).trim(), checkout));
+    }
+
+    parts.push(
+        `packed-refs=${readVersionText(path.join(checkout.commonDir, 'packed-refs'))}`,
+        `reftable-tables=${readVersionText(path.join(checkout.commonDir, 'reftable', 'tables.list'))}`,
+        `worktree-reftable-tables=${readVersionText(path.join(checkout.gitDir, 'reftable', 'tables.list'))}`,
+    );
+
+    parts.push(
+        `config=${readVersionText(path.join(checkout.commonDir, 'config'))}`,
+        `config.worktree=${readVersionText(path.join(checkout.gitDir, 'config.worktree'))}`,
+    );
+
+    const stateKey = hashVersionParts(parts);
+    if (upstreamRef) {
+        parts.push(`upstream:${upstreamRef}`, ...readVersionRefParts(upstreamRef, checkout));
+    }
+
+    return {
+        key: hashVersionParts(parts),
+        stateKey,
+        pkgVersion,
+        hasGit: true,
+        cacheable: !hasUnsupportedGitEnvironment(),
+        checkout,
+    };
+}
+
+/**
+ * Stores a verified checkout result and evicts the oldest entry when full.
+ * @param {string} root Checkout directory
+ * @param {string} key Cache key
+ * @param {string | null} upstreamRef Discovered upstream ref
+ * @param {object} result Version details
+ */
+function cacheVersionResult(root, key, upstreamRef, result) {
+    VERSION_CACHE.delete(root);
+    VERSION_CACHE.set(root, { key, upstreamRef, result: { ...result } });
+    while (VERSION_CACHE.size > VERSION_CACHE_LIMIT) {
+        VERSION_CACHE.delete(VERSION_CACHE.keys().next().value);
+    }
+}
+
+/**
+ * Loads version details only when the checkout changes, and caches nothing it could not verify.
+ * @param {string} root Checkout directory
+ * @param {number} loadId Load generation
+ * @param {ReturnType<typeof inspectVersionSources>} before Snapshot taken before loading
+ * @returns {Promise<object>} Version details
+ */
+async function loadVersionInfo(root, loadId, before) {
+    const result = {
+        agent: `Neconyan:${before.pkgVersion}`,
+        pkgVersion: before.pkgVersion,
+        gitRevision: null,
+        gitBranch: null,
+        commitDate: null,
+        isLatest: true,
+    };
+    const shouldQueryGit = before.pkgVersion !== 'UNKNOWN'
+        && (before.hasGit || hasUnsupportedGitEnvironment());
+
+    if (!shouldQueryGit) {
+        if (before.cacheable && VERSION_LOADS.get(root)?.id === loadId) {
+            cacheVersionResult(root, before.key, null, result);
+        }
+        return result;
+    }
+
+    try {
+        const client = simpleGit({ baseDir: root });
+        const configOriginsSafe = await client.raw(['config', '--includes', '--show-origin', '--list'])
+            .then(output => Boolean(before.checkout) && hasLocalBranchConfig(output, before.checkout))
+            .catch(() => false);
+
+        const log = (await client.raw(['log', '-1', '--no-show-signature', '--format=%h%n%H%n%ci', 'HEAD'])).trimEnd();
+        const [gitRevision, fullHead, ...dateParts] = log.split('\n');
+        result.gitRevision = gitRevision;
+        result.gitBranch = await client.revparse(['--abbrev-ref', 'HEAD']);
+        result.commitDate = dateParts.join('\n').trim() || null;
+
+        let upstreamRef = null;
+        let upstreamHash = null;
+        try {
+            upstreamRef = await client.revparse(['--symbolic-full-name', '@{u}']);
+        } catch {
+            // No upstream is a normal detached or local-only checkout.
+        }
+        if (upstreamRef) {
+            upstreamHash = await client.revparse([upstreamRef]).catch(() => null);
+            result.isLatest = upstreamHash ? fullHead === upstreamHash : true;
+        }
+
+        const finalSnapshot = inspectVersionSources(root, upstreamRef);
+        const currentUpstream = upstreamRef
+            ? await client.revparse([upstreamRef]).catch(() => null)
+            : upstreamHash;
+        const stable = before.stateKey === finalSnapshot.stateKey
+            && (!upstreamRef || Boolean(upstreamHash) && currentUpstream === upstreamHash);
+
+        if (stable && configOriginsSafe && before.cacheable && finalSnapshot.cacheable
+            && VERSION_LOADS.get(root)?.id === loadId) {
+            cacheVersionResult(root, finalSnapshot.key, upstreamRef, result);
+        }
+    } catch {
+        // Missing Git or a broken checkout falls back to package-only details and is retried.
+    }
+
+    return result;
+}
+
+/**
+ * Returns the version of the running instance. Get the version from the package.json file and the git revision.
+ * Also returns the agent string for the Horde API. Package.json is read on each call, unlike the old require
+ * cache, so version changes made without a restart are visible. Git is read only when the checkout changes.
+ * @param {string} [directory] Directory to describe. Defaults to the running server directory.
+ * @returns {Promise<{agent: string, pkgVersion: string, gitRevision: string | null, gitBranch: string | null, commitDate: string | null, isLatest: boolean}>} Version info object
+ */
+export async function getVersion(directory = serverDirectory) {
+    const root = path.resolve(directory);
+    const cached = VERSION_CACHE.get(root);
+    const upstreamRef = cached?.upstreamRef ?? null;
+    const snapshot = inspectVersionSources(root, upstreamRef);
+
+    if (cached && snapshot.cacheable && cached.key === snapshot.key) {
+        return { ...cached.result };
+    }
+
+    const pending = VERSION_LOADS.get(root);
+    if (pending && pending.key === snapshot.key) {
+        return pending.promise.then(result => ({ ...result }));
+    }
+
+    const loadId = ++VERSION_LOAD_ID;
+    const promise = loadVersionInfo(root, loadId, snapshot);
+    const entry = { id: loadId, key: snapshot.key, promise };
+    VERSION_LOADS.set(root, entry);
+    promise.catch(() => {}).finally(() => {
+        if (VERSION_LOADS.get(root) === entry) {
+            VERSION_LOADS.delete(root);
+        }
+    });
+
+    return promise.then(result => ({ ...result }));
 }
 
 /**
