@@ -59,8 +59,20 @@ export const PERFORMANCE_PROFILES = Object.freeze({
     }),
 });
 
-function getPathValue(object, metricPath) {
-    return String(metricPath).split('.').reduce((current, key) => current?.[key], object);
+function readBudgetMetric(object, metricPath) {
+    let current = object;
+
+    for (const key of String(metricPath).split('.')) {
+        if (current === null || typeof current !== 'object') {
+            return { value: undefined, unavailable: false };
+        }
+        if (current.available === false || current.supported === false) {
+            return { value: undefined, unavailable: true };
+        }
+        current = current[key];
+    }
+
+    return { value: current, unavailable: false };
 }
 
 export function parseProfileNames(value, profiles = PERFORMANCE_PROFILES) {
@@ -86,12 +98,12 @@ export function collectBudgetFailures(result, budget) {
     const failures = [];
 
     for (const [metricPath, maxValue] of Object.entries(maxBudgets)) {
-        const actualValue = getPathValue(result, metricPath);
-        if (typeof actualValue !== 'number') {
+        const { value: actualValue, unavailable } = readBudgetMetric(result, metricPath);
+        if (unavailable || typeof actualValue !== 'number') {
             failures.push({
                 path: metricPath,
                 expected: `number <= ${maxValue}`,
-                actual: actualValue ?? null,
+                actual: null,
                 reason: 'missing_metric',
             });
             continue;
@@ -211,7 +223,108 @@ export function createLongChatRenderFixture({
     };
 }
 
+// An open Home hides every #sheld child except the Home host. Leave Home before
+// measuring synthetic renders, or #chat has no layout and scroll FPS cannot run.
+export async function ensureChatSurfaceVisible(page) {
+    return await page.evaluate(async () => {
+        const browserGlobal = globalThis;
+        const body = browserGlobal.document?.body;
+        const chat = browserGlobal.document?.getElementById?.('chat');
+        const homeVisible = body?.classList?.contains('neconyan-home-visible') === true;
+
+        const nextFrame = () => new Promise(resolve => {
+            if (typeof browserGlobal.requestAnimationFrame === 'function') {
+                browserGlobal.requestAnimationFrame(resolve);
+            } else {
+                resolve();
+            }
+        });
+
+        if (homeVisible) {
+            const welcome = browserGlobal.NeconyanWelcome;
+            if (typeof welcome?.concealHome === 'function') {
+                try {
+                    welcome.concealHome();
+                } catch {
+                    body.classList.remove('neconyan-home-visible');
+                }
+            } else {
+                body.classList.remove('neconyan-home-visible');
+            }
+
+            // revealChat adds a finite Web Animation to #chat. Decorative loops
+            // report an infinite end time and must not be awaited.
+            const animations = typeof chat?.getAnimations === 'function' ? chat.getAnimations() : [];
+            const finiteAnimations = animations.filter(animation => {
+                try {
+                    return Number.isFinite(animation.effect?.getComputedTiming?.().endTime);
+                } catch {
+                    return false;
+                }
+            });
+            const finishedAnimations = finiteAnimations
+                .map(animation => animation.finished)
+                .filter(promise => promise && typeof promise.then === 'function');
+            if (finishedAnimations.length > 0) {
+                let timeoutId;
+                try {
+                    await Promise.race([
+                        Promise.all(finishedAnimations.map(promise => promise.catch(() => {}))),
+                        new Promise(resolve => {
+                            if (typeof browserGlobal.setTimeout === 'function') {
+                                timeoutId = browserGlobal.setTimeout(resolve, 2500);
+                            } else {
+                                resolve();
+                            }
+                        }),
+                    ]);
+                } finally {
+                    if (timeoutId !== undefined && typeof browserGlobal.clearTimeout === 'function') {
+                        browserGlobal.clearTimeout(timeoutId);
+                    }
+                }
+            }
+
+            // concealHome queues the reopened-chat bottom scroll. Let it settle
+            // for a bounded number of frames before synthetic work starts.
+            let previousScrollTop = null;
+            let stableFrames = 0;
+            for (let frame = 0; frame < 10 && stableFrames < 2; frame++) {
+                await nextFrame();
+                const scrollTop = Number(chat?.scrollTop) || 0;
+                stableFrames = scrollTop === previousScrollTop ? stableFrames + 1 : 0;
+                previousScrollTop = scrollTop;
+            }
+        }
+
+        const HTMLElementClass = browserGlobal.HTMLElement;
+        const isChatElement = typeof HTMLElementClass === 'function' && chat instanceof HTMLElementClass;
+        const visible = isChatElement
+            ? (typeof chat.checkVisibility === 'function'
+                ? chat.checkVisibility({ visibilityProperty: true })
+                : Boolean(chat.offsetWidth || chat.offsetHeight || chat.getClientRects().length))
+            : false;
+
+        return { revealedFromHome: homeVisible, visible };
+    });
+}
+
 export async function measureLongChatRender(page, fixture = createLongChatRenderFixture()) {
+    const fixtureSummary = {
+        messageCount: fixture.messageCount,
+        visibleCount: fixture.visibleCount,
+        fillerRepeat: fixture.fillerRepeat,
+    };
+    const surface = await ensureChatSurfaceVisible(page);
+    if (!surface.visible) {
+        return {
+            fixture: fixtureSummary,
+            surface,
+            available: false,
+            reason: 'chat-hidden',
+        };
+    }
+
     const renderResult = await page.evaluate(async ({ messages, messageCount, visibleCount, fillerRepeat }) => {
         const browserGlobal = globalThis;
         const context = browserGlobal.SillyTavern?.getContext?.();
@@ -224,37 +337,50 @@ export async function measureLongChatRender(page, fixture = createLongChatRender
             };
         }
 
-        context.powerUserSettings.auto_scroll_chat_to_bottom = true;
-        context.powerUserSettings.chat_truncation = visibleCount;
-        context.chat.length = 0;
-        chatElement.replaceChildren();
-        context.chat.push(...messages);
+        const previousAutoScroll = context.powerUserSettings.auto_scroll_chat_to_bottom;
+        const previousChatTruncation = context.powerUserSettings.chat_truncation;
 
-        const start = browserGlobal.performance.now();
-        await context.printMessages();
-        await new Promise(resolve => browserGlobal.requestAnimationFrame(() => browserGlobal.requestAnimationFrame(resolve)));
-        const durationMs = browserGlobal.performance.now() - start;
-        const renderedMessages = Array.from(chatElement.querySelectorAll('.mes[mesid]'));
+        try {
+            context.powerUserSettings.auto_scroll_chat_to_bottom = true;
+            context.powerUserSettings.chat_truncation = visibleCount;
+            context.chat.length = 0;
+            chatElement.replaceChildren();
+            context.chat.push(...messages);
 
-        return {
-            available: true,
-            durationMs,
-            messageCount: context.chat.length,
-            visibleCount,
-            fillerRepeat,
-            renderedCount: renderedMessages.length,
-            firstRenderedMesId: renderedMessages.at(0)?.getAttribute('mesid') ?? null,
-            lastRenderedMesId: renderedMessages.at(-1)?.getAttribute('mesid') ?? null,
-            bottomDelta: chatElement.scrollHeight - chatElement.clientHeight - chatElement.scrollTop,
-        };
+            const start = browserGlobal.performance.now();
+            await context.printMessages();
+            await new Promise(resolve => browserGlobal.requestAnimationFrame(() => browserGlobal.requestAnimationFrame(resolve)));
+            const durationMs = browserGlobal.performance.now() - start;
+            const renderedMessages = Array.from(chatElement.querySelectorAll('.mes[mesid]'));
+
+            return {
+                available: true,
+                durationMs,
+                messageCount: context.chat.length,
+                visibleCount,
+                fillerRepeat,
+                renderedCount: renderedMessages.length,
+                firstRenderedMesId: renderedMessages.at(0)?.getAttribute('mesid') ?? null,
+                lastRenderedMesId: renderedMessages.at(-1)?.getAttribute('mesid') ?? null,
+                bottomDelta: chatElement.scrollHeight - chatElement.clientHeight - chatElement.scrollTop,
+            };
+        } finally {
+            if (previousAutoScroll === undefined) {
+                delete context.powerUserSettings.auto_scroll_chat_to_bottom;
+            } else {
+                context.powerUserSettings.auto_scroll_chat_to_bottom = previousAutoScroll;
+            }
+            if (previousChatTruncation === undefined) {
+                delete context.powerUserSettings.chat_truncation;
+            } else {
+                context.powerUserSettings.chat_truncation = previousChatTruncation;
+            }
+        }
     }, fixture);
 
     return {
-        fixture: {
-            messageCount: fixture.messageCount,
-            visibleCount: fixture.visibleCount,
-            fillerRepeat: fixture.fillerRepeat,
-        },
+        fixture: fixtureSummary,
+        surface,
         ...renderResult,
     };
 }
@@ -262,6 +388,21 @@ export async function measureLongChatRender(page, fixture = createLongChatRender
 export async function measureStreamingRender(page, fixture = createStreamingRenderFixture(), {
     plainPreviewModuleUrl = '/scripts/mobile-streaming.js',
 } = {}) {
+    const fixtureSummary = {
+        stepCount: fixture.stepCount,
+        fillerRepeat: fixture.fillerRepeat,
+        codeRepeat: fixture.codeRepeat,
+    };
+    const surface = await ensureChatSurfaceVisible(page);
+    if (!surface.visible) {
+        return {
+            fixture: fixtureSummary,
+            surface,
+            available: false,
+            reason: 'chat-hidden',
+        };
+    }
+
     const renderResult = await page.evaluate(async ({ steps, stepCount, fillerRepeat, codeRepeat, plainPreviewModuleUrl }) => {
         const browserGlobal = globalThis;
         const context = browserGlobal.SillyTavern?.getContext?.();
@@ -393,11 +534,8 @@ export async function measureStreamingRender(page, fixture = createStreamingRend
     });
 
     return {
-        fixture: {
-            stepCount: fixture.stepCount,
-            fillerRepeat: fixture.fillerRepeat,
-            codeRepeat: fixture.codeRepeat,
-        },
+        fixture: fixtureSummary,
+        surface,
         ...renderResult,
     };
 }
@@ -504,13 +642,133 @@ async function captureInstrumentationSnapshot(page) {
     }).catch(() => null);
 }
 
+// Chromium does not return long tasks from getEntriesByType, so an observer
+// installed before navigation is the only supported way to collect them.
+export function installLongTaskObserver() {
+    const browserGlobal = globalThis;
+    const stateKey = '__neconyanPerfLongTasks';
+    const existing = browserGlobal[stateKey];
+    if (typeof existing?.observer?.disconnect === 'function') {
+        existing.observer.disconnect();
+    }
+
+    const state = {
+        supported: false,
+        reason: 'longtask-unsupported',
+        tasks: [],
+        observer: null,
+    };
+
+    Object.defineProperty(browserGlobal, stateKey, {
+        configurable: true,
+        enumerable: false,
+        writable: true,
+        value: state,
+    });
+
+    const Observer = browserGlobal.PerformanceObserver;
+    if (typeof Observer !== 'function') {
+        return state;
+    }
+
+    const supportedEntryTypes = Observer.supportedEntryTypes;
+    if (!Array.isArray(supportedEntryTypes) || !supportedEntryTypes.includes('longtask')) {
+        return state;
+    }
+
+    try {
+        const observer = new Observer((list) => {
+            for (const entry of list.getEntries()) {
+                state.tasks.push({
+                    startTime: Number(entry.startTime) || 0,
+                    duration: Number(entry.duration) || 0,
+                });
+            }
+        });
+        observer.observe({ type: 'longtask', buffered: true });
+        state.observer = observer;
+        state.supported = true;
+        state.reason = null;
+    } catch {
+        state.observer = null;
+    }
+
+    return state;
+}
+
+export function resetLongTaskCollection() {
+    const state = globalThis.__neconyanPerfLongTasks;
+    if (!state) {
+        return false;
+    }
+
+    state.tasks.length = 0;
+    if (state.supported && typeof state.observer?.takeRecords === 'function') {
+        try {
+            state.observer.takeRecords();
+        } catch {
+            // Clearing is best effort; collection resumes for the next navigation.
+        }
+    }
+    return true;
+}
+
+export function collectLongTaskMetrics() {
+    const state = globalThis.__neconyanPerfLongTasks;
+    if (!state) {
+        return {
+            supported: false,
+            reason: 'longtask-observer-missing',
+            count: null,
+            totalDuration: null,
+            longest: null,
+        };
+    }
+
+    if (state.supported !== true) {
+        return {
+            supported: false,
+            reason: state.reason || 'longtask-unsupported',
+            count: null,
+            totalDuration: null,
+            longest: null,
+        };
+    }
+
+    if (typeof state.observer?.takeRecords === 'function') {
+        try {
+            for (const entry of state.observer.takeRecords()) {
+                state.tasks.push({
+                    startTime: Number(entry.startTime) || 0,
+                    duration: Number(entry.duration) || 0,
+                });
+            }
+        } catch {
+            // Keep entries already delivered to the observer callback.
+        }
+    }
+
+    let totalDuration = 0;
+    let longest = 0;
+    for (const task of state.tasks) {
+        totalDuration += task.duration;
+        longest = Math.max(longest, task.duration);
+    }
+
+    return {
+        supported: true,
+        count: state.tasks.length,
+        totalDuration,
+        longest,
+    };
+}
+
 async function measurePage(page) {
     const metrics = await page.evaluate(() => {
         const browserGlobal = globalThis;
         const navigation = browserGlobal.performance.getEntriesByType('navigation')[0];
         const paint = Object.fromEntries(browserGlobal.performance.getEntriesByType('paint').map(entry => [entry.name, entry.startTime]));
         const resources = browserGlobal.performance.getEntriesByType('resource');
-        const longTasks = browserGlobal.performance.getEntriesByType('longtask');
 
         return {
             appReady: browserGlobal.__neconyanPerfReadyAt,
@@ -522,11 +780,6 @@ async function measurePage(page) {
                 decodedBodySize: navigation.decodedBodySize,
             } : null,
             paint,
-            longTasks: {
-                count: longTasks.length,
-                totalDuration: longTasks.reduce((total, task) => total + task.duration, 0),
-                longest: longTasks.reduce((max, task) => Math.max(max, task.duration), 0),
-            },
             resourceCount: resources.length,
             heap: browserGlobal.performance.memory ? {
                 usedJSHeapSize: browserGlobal.performance.memory.usedJSHeapSize,
@@ -534,6 +787,8 @@ async function measurePage(page) {
             } : null,
         };
     });
+    const longTasks = await page.evaluate(collectLongTaskMetrics);
+    await page.evaluate(resetLongTaskCollection);
     const instrumentationAtReady = await captureInstrumentationSnapshot(page);
 
     const streaming = await measureStreamingRender(page);
@@ -543,10 +798,13 @@ async function measurePage(page) {
     const scrollFps = await measureScrollFps(page);
     await settlePage(page);
     const chatRender = { streaming, longChat };
+    const longTasksAfterSynthetic = await page.evaluate(collectLongTaskMetrics);
     const instrumentationAfterSynthetic = await captureInstrumentationSnapshot(page);
 
     return {
         ...metrics,
+        longTasks,
+        longTasksAfterSynthetic,
         instrumentation: {
             ready: instrumentationAtReady,
             afterSynthetic: instrumentationAfterSynthetic,
@@ -693,6 +951,7 @@ async function collectResourceTimings(page) {
 }
 
 async function measureNavigation(page, action) {
+    await page.evaluate(resetLongTaskCollection).catch(() => {});
     await page.evaluate(() => globalThis.performance.clearResourceTimings()).catch(() => {});
     await action();
     await waitForAppReady(page);
@@ -728,6 +987,7 @@ export async function measureProfile(browser, profile, { url, serviceWorkers, in
 
     try {
         await context.addInitScript(installResourceTimingBuffer, resourceTimingBufferSize);
+        await context.addInitScript(installLongTaskObserver);
 
         if (instrumentation) {
             await context.addInitScript(installPerformanceInstrumentation);
