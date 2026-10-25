@@ -119,6 +119,24 @@ function observeStreamingTarget() {
     streamingSession.observer.observe(streamingSession.mesText, { childList: true, subtree: true, characterData: true });
 }
 
+// STREAM_TOKEN_RECEIVED is emitted before the host writes the token into
+// .mes_text (see Generator.onProgressStreaming in public/script.js). Painting
+// from that event therefore repaints the previous render, and the observer
+// callback repaints the visible write that follows: two full message passes per
+// token. Repeat tokens only need to keep a target the host replaced attached;
+// the observer owns every visible text update.
+function ensureStreamingPaintTarget() {
+    if (!streamingSession.active || !streamingSession.observer) return false;
+    if (!isStreamingIdentityCurrent()) return invalidateStreamingPaint();
+    const mesElement = streamingSession.mesElement;
+    const mesText = streamingSession.mesText;
+    if (!mesElement?.isConnected || !mesText?.isConnected
+        || mesElement.querySelector?.('.mes_text') !== mesText) {
+        return paintStreamingMessage();
+    }
+    return false;
+}
+
 function stabilizeStreamingAssignments(attribution, overrideOptions, assignments = stableSegmentAssignments) {
     const overrides = overrideOptions.overrides;
     for (const segment of attribution.segments.slice(0, MAX_STREAMING_SEGMENT_ASSIGNMENTS)) {
@@ -256,10 +274,11 @@ export function beginStreamingPaint() {
     if (isHostSystemOrToolMessage(chat[mesIndex])) return false;
 
     // Both STREAM_TOKEN_RECEIVED and SMOOTH_STREAM_TOKEN_RECEIVED fire per
-    // token, so this runs constantly and must stay a cheap no-op once armed.
+    // token, so this runs constantly. Only the first token of a message arms
+    // the session and paints; the observer handles the rest (see
+    // ensureStreamingPaintTarget).
     if (streamingSession.active && streamingSession.mesIndex === mesIndex) {
-        if (!streamingSession.observer) return false;
-        return paintStreamingMessage();
+        return ensureStreamingPaintTarget();
     }
 
     resetStreamingSession();
