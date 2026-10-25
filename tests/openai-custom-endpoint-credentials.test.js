@@ -179,6 +179,29 @@ function createHarness({ profile = normalizeCustomEndpointPreset({ name: 'Saved 
 }
 
 describe('Custom endpoint profile credentials on Connect', () => {
+    test('acknowledges the submitted controls when live settings change during compression', async () => {
+        const harness = createHarness();
+        const { context } = harness;
+        context.oai_settings.custom_model = 'submitted-model';
+        context.power_user = { nested: { value: 7 }, omitted: undefined, normalised: NaN };
+        context.extension_settings.otherExtension.history = 'unrelated settings'.repeat(10_000);
+        context.JSON = { stringify: JSON.stringify, parse: jest.fn(JSON.parse) };
+        context.compressRequest.mockImplementation(async request => {
+            context.oai_settings.custom_model = 'edited-model';
+            context.power_user.nested.value = 9;
+            return request;
+        });
+
+        await expect(context.saveSettingsInner()).resolves.toBe(true);
+
+        expect(context.acknowledgedGenerationSettings.controls).toEqual(generationSettingsSnapshot(harness.persisted()));
+        expect(context.acknowledgedGenerationSettings.controls.oai_settings.custom_model).toBe('submitted-model');
+        expect(context.acknowledgedGenerationSettings.controls.power_user).toEqual({ nested: { value: 7 }, normalised: null });
+        expect(context.oai_settings.custom_model).toBe('edited-model');
+        expect(context.power_user.nested.value).toBe(9);
+        expect(context.JSON.parse).not.toHaveBeenCalled();
+    });
+
     test('does not reselect A when B is selected during the settings response', async () => {
         const harness = createHarness({ input: 'replacement-test-key' });
         const other = normalizeCustomEndpointPreset({ name: 'B', model: 'model-b', secretId: 'b-id' });
