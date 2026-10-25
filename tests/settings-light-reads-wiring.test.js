@@ -11,7 +11,7 @@ const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 
 describe('light settings reads', () => {
     test.each([
-        ['public/scripts/extensions/third-party/sillytavern-character-colors/src/storage.js', 'fetchExtensionSettingsFromServer(names = [MODULE_NAME])'],
+        ['public/scripts/extensions/third-party/sillytavern-character-colors/src/storage.js', 'fetchExtensionSettingsFromServer(names = [MODULE_NAME], { knownToken = \'\' } = {})'],
         ['public/scripts/extensions/third-party/Neconyan-Time-Machine/src/store.js', 'extensionSettings: [MODULE_NAME]'],
         ['public/scripts/extensions/quick-image-gen/lib/host-persistence.js', 'extensionSettings: [settingsKey]'],
         ['public/scripts/extensions/third-party/Neconyan-Time-Machine/src/api.js', 'sections: [\'presets\']'],
@@ -34,6 +34,7 @@ describe('light settings reads', () => {
         const body = source.slice(start, source.indexOf('\nfunction runStorageOperation', start));
         expect(body).toContain('fetchExtensionSettingsFromServer(SAVE_VERIFICATION_EXTENSION_SETTINGS)');
         expect(body).toContain('storedSettings?.regex');
+        expect(body).toContain('extensionSettingsTokens?.[MODULE_NAME]');
     });
 
     test('Dialogue Colors skips the migration save when a browser has no old local data', () => {

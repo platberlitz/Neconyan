@@ -382,8 +382,10 @@ export function registerEventHandlers() {
         messageRendered: () => { if (settings.enabled && automaticRuntimeActive) { scheduleDomRefreshSeries(120); scheduleCustomFontRefresh(120); } },
         messageUpdated: handleMessageUpdated,
         messageDeleted: handleMessageDeleted,
-        // No timers here: beginStreamingPaint installs a MutationObserver so the
-        // repaint lands in the same frame as the host's .mes_text rewrite.
+        // No timers here. The host emits this before its .mes_text write, so
+        // the first token arms the streaming observer and later tokens only
+        // check that the observed target still exists; the observer repaints
+        // each visible write in the same frame.
         streamToken: () => { if (settings.enabled && automaticRuntimeActive && !impersonateGenerationActive) { setIsStreamingGenerationActive(true); beginStreamingPaint(); scheduleStreamingAttributionVerification(); } },
         generationEnded: () => {
             if (!settings.enabled || !automaticRuntimeActive) return;
