@@ -13,7 +13,7 @@ import { generationBlockedNotice } from '../generation-outcome-ui.js';
  * instead of paying twice, and a reopened page reattaches to the accepted job and
  * reads its permanent receipt back rather than submitting anything again.
  */
-import { activateSendButtons, chat, deactivateSendButtons, extension_prompts, getActiveGenerationAcknowledgement, getCurrentChatId, getRequestHeaders, isChatSaving, isGenerating, keepChatReadingPositionOnNextLoad, refreshCurrentChatFromSaved, saveChatConditional, saveSettings, setRoleplayJobControls, substituteParams, willRunNativeRoleplayWorkflow } from '../../script.js';
+import { activateSendButtons, chat, chat_metadata, deactivateSendButtons, extension_prompts, getActiveGenerationAcknowledgement, getCurrentChatId, getRequestHeaders, isChatSaving, isGenerating, keepChatReadingPositionOnNextLoad, refreshCurrentChatFromSaved, saveChatConditional, saveSettings, setRoleplayJobControls, substituteParams, willRunNativeRoleplayWorkflow } from '../../script.js';
 import { event_types, eventSource } from '../events.js';
 import { activeGenerationInterceptors, extension_settings } from '../extensions.js';
 import { COMPANION_HISTORY_PROMPT_KEY_PREFIX } from '../extensions/in-chat-agents/companion/companion-shared.js';
@@ -258,6 +258,34 @@ export async function capturePagePrompts(name, collector = null) {
         if (page.length > MAX_PAGE_PROMPTS || bytes > MAX_PAGE_BYTES) return refuse('size');
     }
     return page;
+}
+
+const SCRIPT_INJECT_PREFIX = 'script_inject_';
+
+/**
+ * A reopened chat can hold a saved /inject before the page has materialized it
+ * as an extension prompt. Materialized injects are judged by
+ * capturePagePrompts; this covers the entries it cannot see yet.
+ */
+export function hasUnmaterializedPageInjections() {
+    const injects = chat_metadata?.script_injects;
+    if (!injects || typeof injects !== 'object' || Array.isArray(injects)) return false;
+    return Object.entries(injects).some(([id, inject]) => {
+        if (!inject || typeof inject.value !== 'string' || !inject.value.trim()) return false;
+        if (Number(inject.position) === -1) return false;
+        return !extension_prompts[`${SCRIPT_INJECT_PREFIX}${id}`];
+    });
+}
+
+/**
+ * A group server turn has no page-prompt payload, so any page addition keeps the
+ * browser in charge. Returns true when the page has an addition that would
+ * otherwise be lost.
+ */
+export async function groupPagePromptsBlocked(collector = null) {
+    const page = await capturePagePrompts('group.reply', collector);
+    if (!Array.isArray(page)) return true;
+    return page.length > 0 || hasUnmaterializedPageInjections();
 }
 
 const DIALOGUE_COLORS_EXTENSION = 'sillytavern-character-colors';

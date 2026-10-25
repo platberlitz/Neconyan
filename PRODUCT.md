@@ -37,5 +37,5 @@ Neconyan is a self-hosted web app for chatting with AI characters. It grew out o
 3. Readable first. Nunito for everything you read, Fredoka One only for headings and the brand. Solid surfaces over the wallpaper; the paws show through the canvas, never through text.
 4. Cute but honest. Puns in copy, never in error causes. Errors say what went wrong and the first thing to try.
 5. Accessible by default. 44px touch targets, visible focus rings, WCAG 2.2 AA contrast for every bundled theme, reduced-motion respected.
-6. Replies are browser-first. Ordinary Roleplay, Story and group replies use the browser's generation path for direct display. The server retains supported single-character requests for recovery and handles work that needs background execution or a protected saved-message replacement, plus imports, translations and memory.
+6. Replies are browser-first by default. Ordinary Roleplay, Story and group replies use the browser's generation path for direct display unless the account chooses server replies so they keep going after the page closes. The server retains supported single-character requests for recovery and handles work that needs background execution or a protected saved-message replacement, plus imports, translations and memory.
 7. Your data stays yours. Same files as SillyTavern, importable both ways, no telemetry.

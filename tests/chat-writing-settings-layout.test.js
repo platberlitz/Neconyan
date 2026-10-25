@@ -21,7 +21,7 @@ const DRAWERS = [
 
 const CONTROL_IDS = [
     'send_on_enter', 'continue_on_send', 'quick_continue', 'quick_impersonate', 'restore_user_input',
-    'auto_focus_chat_input', 'enable_auto_select_input', 'enable_md_hotkeys', 'smooth_streaming', 'smooth_streaming_no_think',
+    'auto_focus_chat_input', 'enable_auto_select_input', 'enable_md_hotkeys', 'reply_generation_location', 'smooth_streaming', 'smooth_streaming_no_think',
     'smooth_streaming_speed', 'stream_fade_in', 'streaming_fps', 'streaming_fps_counter', 'play_message_sound',
     'audio_message_sound', 'play_sound_unfocused', 'swipes-checkbox', 'gestures-checkbox', 'image_overswipe',
     'auto_scroll_chat_to_bottom', 'chat_truncation', 'chat_truncation_counter', 'show_group_chat_queue',
@@ -110,6 +110,22 @@ describe('Chat & Writing settings layout', () => {
             expect(path.basename(file, '.json')).toBe(preset.name);
             expect(Object.keys(preset.movingUIState).sort()).toEqual(['cfgConfig', 'floatingPrompt', 'logprobsViewer']);
         }
+    });
+
+    test('offers a saved browser or server reply location with the browser as the default', () => {
+        const powerUserJs = read('public/scripts/power-user.js');
+        const routingJs = read('public/scripts/browser-reply-routing.js');
+        const defaults = JSON.parse(read('default/content/settings.json'));
+
+        expect(indexHtml).toMatch(/<select id="reply_generation_location" class="text_pole">/);
+        expect(indexHtml).toContain('>In the browser (recommended)</option>');
+        expect(indexHtml).toContain('>On the server</option>');
+        expect(defaults.power_user.reply_generation_location).toBe('browser');
+        expect(powerUserJs).toContain('reply_generation_location: \'browser\',');
+        expect(powerUserJs).toContain('power_user.reply_generation_location = power_user.reply_generation_location === \'server\' ? \'server\' : \'browser\';');
+        expect(powerUserJs).toContain('$(\'#reply_generation_location\').val(power_user.reply_generation_location);');
+        expect(powerUserJs).toContain('power_user.reply_generation_location = $(this).val() === \'server\' ? \'server\' : \'browser\';');
+        expect(routingJs).toContain('return value === \'server\' ? \'server\' : \'browser\';');
     });
 
     test('wires the auto_focus_chat_input toggle across power-user settings and chat-open entry points', () => {

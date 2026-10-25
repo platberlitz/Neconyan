@@ -30,6 +30,7 @@ test('acknowledged Kobold uses the saved endpoint and samplers exactly once', as
     fixture.save();
     const binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 41 });
     assert.equal(binding.backend, 'kobold');
+    assertActivePreferenceStability(fixture, binding);
     let calls = 0;
     const options = { context: { owner: 'tester', directories: fixture.directories }, binding,
         messages: [{ role: 'user', content: 'Hello' }], maxTokens: 73, userName: 'Sam', characterName: 'Ada',
@@ -67,6 +68,7 @@ test('acknowledged NovelAI uses its saved model, server-side token and clean rep
     fixture.save();
     const binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 42 });
     assert.equal(binding.backend, 'novel');
+    assertActivePreferenceStability(fixture, binding);
     let calls = 0;
     const options = { context: { owner: 'tester', directories: fixture.directories }, binding,
         messages: [{ role: 'user', content: 'Hello' }], maxTokens: 73, userName: 'Sam', characterName: 'Ada',
@@ -132,6 +134,7 @@ test('acknowledged Horde saves its task ID before polling and never submits it t
     fs.writeFileSync(path.join(fixture.root, 'secrets.json'), JSON.stringify({ api_key_horde: [{ id: 'selected', value: 'horde-private', active: true }] }));
     fixture.save();
     const binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 43 });
+    assertActivePreferenceStability(fixture, binding);
     const job = acceptJob(fixture.directories, { owner: 'tester', type: 'roleplay.reply', submissionKey: 'horde-bound', intent: {} }).job;
     setJobState(fixture.directories, job.id, 'running');
     let submits = 0;
@@ -231,6 +234,24 @@ test('saved text Meower requests omit sampler and instruct formatting together',
     assert.equal(request.api_server, 'http://127.0.0.1:5000');
 });
 
+/** Legacy active connections still bind the whole power object, except reply routing. */
+function assertActivePreferenceStability(fixture, binding) {
+    const original = fixture.settings.power_user.reply_generation_location;
+    fixture.settings.power_user.reply_generation_location = 'browser';
+    fixture.save();
+    assert.equal(resolveGenerationProfile(fixture.directories, binding).fingerprint, binding.fingerprint);
+    fixture.settings.power_user.auto_swipe = true;
+    fixture.save();
+    assert.throws(() => resolveGenerationProfile(fixture.directories, binding), /changed/);
+    delete fixture.settings.power_user.auto_swipe;
+    fixture.settings.power_user.reply_generation_location = 'server';
+    fixture.save();
+    assert.equal(resolveGenerationProfile(fixture.directories, binding).fingerprint, binding.fingerprint);
+    if (original === undefined) delete fixture.settings.power_user.reply_generation_location;
+    else fixture.settings.power_user.reply_generation_location = original;
+    fixture.save();
+}
+
 function textFixture(t) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-text-controls-'));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -286,6 +307,14 @@ for (const backend of ['chat', 'text']) test(`explicit saved-active ${backend} c
         assert.equal(payload.reverse_proxy, '');
     }
     settings.extension_settings.connectionManager.selectedProfile = 'another-wrong-profile';
+    fixture.save();
+    assert.equal(resolveGenerationProfile(fixture.directories, binding).fingerprint, binding.fingerprint);
+    // Reply routing is read before admission; changing it during a run must not
+    // invalidate the accepted connection or its Agent work.
+    settings.power_user.reply_generation_location = 'browser';
+    fixture.save();
+    assert.equal(resolveGenerationProfile(fixture.directories, binding).fingerprint, binding.fingerprint);
+    settings.power_user.reply_generation_location = 'server';
     fixture.save();
     assert.equal(resolveGenerationProfile(fixture.directories, binding).fingerprint, binding.fingerprint);
     settings.power_user.instruct.input_sequence = 'changed';
@@ -1013,6 +1042,23 @@ for (const source of Object.values(textgen_types)) {
                 return new Response(JSON.stringify({ choices: [{ text: 'Bound reply' }] }));
             } };
         assert.equal((await runChatProfile(options)).text, 'Bound reply');
+        // Keep the pre-upgrade saved Text Completion fingerprint shape: only the
+        // four request controls, never the whole power object.
+        const textMaterial = resolveGenerationProfile(directories, binding);
+        const expectedFingerprint = hash({ profile: textMaterial.profile, active: textMaterial.active,
+            preset: textMaterial.preset, instruct: textMaterial.instruct, context: textMaterial.context,
+            contextLimit: textMaterial.contextLimit, secretId: textMaterial.secretId,
+            requestControls: {
+                custom_stopping_strings: textMaterial.power.custom_stopping_strings,
+                custom_stopping_strings_macro: textMaterial.power.custom_stopping_strings_macro,
+                tokenizer: textMaterial.power.tokenizer,
+                request_token_probabilities: textMaterial.power.request_token_probabilities,
+            } });
+        assert.equal(binding.fingerprint, expectedFingerprint);
+        settings.power_user.auto_swipe = true;
+        settings.power_user.reply_generation_location = 'server';
+        save();
+        assert.equal(resolveGenerationProfile(directories, binding).fingerprint, binding.fingerprint);
         settings.extension_settings.connectionManager.profiles = [];
         save();
         assert.equal((await runChatProfile(options)).text, 'Bound reply');

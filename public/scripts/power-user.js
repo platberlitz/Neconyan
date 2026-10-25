@@ -502,6 +502,7 @@ export const power_user = {
     theme: NECONYAN_DARK_THEME_NAME,
 
     gestures: true,
+    reply_generation_location: 'browser',
     auto_swipe: false,
     auto_swipe_minimum_length: 0,
     auto_swipe_blacklist: [],
@@ -2804,6 +2805,8 @@ export async function loadPowerUserSettings(settings, data) {
         Object.assign(power_user, accessibleTheme({ ...power_user, name: power_user.theme }));
     }
 
+    power_user.reply_generation_location = power_user.reply_generation_location === 'server' ? 'server' : 'browser';
+
     if (!hasAccentProfileSeedVersion) {
         power_user.sb_accent_profiles_seed_version = 0;
     }
@@ -2921,6 +2924,7 @@ export async function loadPowerUserSettings(settings, data) {
     $('#mes_continue').css('display', power_user.quick_continue ? '' : 'none');
     $('#mes_impersonate').css('display', power_user.quick_impersonate ? '' : 'none');
     $('#gestures-checkbox').prop('checked', power_user.gestures);
+    $('#reply_generation_location').val(power_user.reply_generation_location);
     $('#auto_swipe').prop('checked', power_user.auto_swipe);
     $('#auto_swipe_minimum_length').val(power_user.auto_swipe_minimum_length);
     $('#auto_swipe_blacklist').val(power_user.auto_swipe_blacklist.join(', '));
@@ -5086,6 +5090,12 @@ jQuery(async () => {
 
     $('#gestures-checkbox').on('change', function () {
         power_user.gestures = !!$('#gestures-checkbox').prop('checked');
+        saveSettingsDebounced();
+    });
+
+    $('#reply_generation_location').on('change', function () {
+        power_user.reply_generation_location = $(this).val() === 'server' ? 'server' : 'browser';
+        $(this).val(power_user.reply_generation_location);
         saveSettingsDebounced();
     });
 

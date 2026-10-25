@@ -20,6 +20,16 @@ const novelNumericControls = ['temperature', 'min_length', 'tail_free_sampling',
     'repetition_penalty_presence', 'top_a', 'top_p', 'top_k', 'min_p', 'math1_temp',
     'math1_quad', 'math1_quad_entropy_scale', 'typical_p'];
 
+/**
+ * The reply location is read before a job is accepted. Changing it during a
+ * running reply must not invalidate the accepted connection or its Agent work.
+ */
+function connectionPowerEvidence(powerUser) {
+    const power = { ...(powerUser && typeof powerUser === 'object' && !Array.isArray(powerUser) ? powerUser : {}) };
+    delete power.reply_generation_location;
+    return power;
+}
+
 function readPreset(directory, name, label) {
     if (!name) return undefined;
     if (typeof name !== 'string' || sanitize(name) !== name || !directory) fail(`The profile has an invalid ${label}.`, 409);
@@ -190,7 +200,8 @@ function readActiveConnection(directories) {
         const backend = api === 'koboldhorde' ? 'horde' : api;
         const secretType = api === 'novel' ? SECRET_KEYS.NOVEL : api === 'koboldhorde' ? SECRET_KEYS.HORDE : null;
         const secretId = secretType ? new SecretManager(directories).getSecretState()[secretType]?.find(item => item.active)?.id ?? null : null;
-        const fingerprint = hash({ backend, selection, controls, horde, contextLimit, preset, power, secretId });
+        const fingerprint = hash({ backend, selection, controls, horde, contextLimit, preset,
+            power: connectionPowerEvidence(power), secretId });
         return { kind: 'active', backend, source: api, active: controls, horde, preset, power, contextLimit,
             fingerprint, settingsRevision: getSettingsRevision(settings) };
     }
@@ -226,7 +237,7 @@ function readActiveConnection(directories) {
     };
     return { ...material, kind: 'active', power: structuredClone(settings.power_user || {}), regexPolicy,
         fingerprint: hash({ kind: 'active', material: material.fingerprint, selection,
-            power: settings.power_user, regexPolicy }),
+            power: connectionPowerEvidence(settings.power_user), regexPolicy }),
         settingsRevision: getSettingsRevision(settings) };
 }
 

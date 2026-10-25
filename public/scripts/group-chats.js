@@ -2285,32 +2285,61 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
         const ordinaryTurn = !ensembleTurn && !usesGroupSceneVisibility() && activationStrategy !== group_activation_strategy.DIRECTOR
             && !activatedMembers.some(chid => getGroupMemberRole(group, characters[chid]) === 'narrator')
             && !['quiet', 'swipe', 'continue', 'impersonate'].includes(type) && !params?.quiet_prompt && getCurrentChatId();
-        const serverRequired = ordinaryTurn && params?.skipNativeRoleplay === undefined
-            && await (await import('./browser-reply-routing.js')).requiresServerReply(activatedMembers);
-        throwIfAborted();
-        if ((params?.skipNativeRoleplay === false || serverRequired) && ordinaryTurn) {
-            const workflows = await import('./neconyan-conversation/roleplay-workflows.js');
+        const automaticRouting = ordinaryTurn && params?.skipNativeRoleplay === undefined;
+        const routing = automaticRouting ? await import('./browser-reply-routing.js') : null;
+        const preferServer = routing?.prefersServerReplies() === true;
+        let serverRequired = Boolean(routing) && !preferServer && await routing.requiresServerReply(activatedMembers);
+        let serverRequirementKnown = Boolean(routing) && !preferServer;
+        // A preferred server turn may fall back to the browser only when no
+        // Notebook context needs the server's prompt. Probe only on that fallback.
+        const serverMustOwn = async () => {
+            if (serverRequired || !preferServer) return serverRequired;
+            if (!serverRequirementKnown) {
+                serverRequired = await routing.requiresServerReply(activatedMembers);
+                serverRequirementKnown = true;
+            }
+            return serverRequired;
+        };
+        let groupWorkflows = null;
+        let forcedAvatars = [];
+        let groupReady = false;
+        if (ordinaryTurn && (params?.skipNativeRoleplay === false || preferServer || serverRequired)) {
+            groupWorkflows = await import('./neconyan-conversation/roleplay-workflows.js');
             const { roleplayAccountStamp } = await import('./roleplay-save-chain.js');
             let ready = true;
             try { roleplayAccountStamp(); } catch { ready = false; }
-            const forcedAvatars = activatedMembers.map(chid => characters[chid]?.avatar).filter(Boolean);
-            if (ready && forcedAvatars.length === activatedMembers.length) {
-                deactivateSendButtons();
-                setGroupTypingIndicator(characters[activatedMembers[0]]?.name || '');
-                await eventSource.emit(event_types.GROUP_WRAPPER_STARTED, { selected_group, type, nativeRoleplay: true });
-                try {
-                    textResult = await workflows.submitRoleplayGroupTurn({ groupId: selected_group, forcedAvatars,
-                        generationId: group_generation_id, signal: params?.signal ?? null });
-                } catch (error) {
-                    if (!params?.signal?.aborted && error?.name !== 'AbortError') reportGroupReplyFailure(error);
-                    throw error;
+            forcedAvatars = activatedMembers.map(chid => characters[chid]?.avatar).filter(Boolean);
+            groupReady = ready && forcedAvatars.length === activatedMembers.length;
+            // Explicit server callers keep their existing path. Automatic routing
+            // must not lose page instructions the group server payload cannot carry.
+            if (automaticRouting && groupReady && await groupWorkflows.groupPagePromptsBlocked()) {
+                if (await serverMustOwn()) {
+                    throw new Error('The selected Notebook context cannot be combined with these page prompts. Nothing was generated.');
                 }
-                if (selectedSpeakerChid !== -1 && !(params && typeof params.force_chid == 'number')) {
-                    clearSelectedGroupSpeaker();
-                }
-                return Promise.resolve(textResult);
+                groupReady = false;
             }
-            if (serverRequired) throw new Error('The selected Notebook context needs a server reply. Please reload and try again.');
+        }
+        throwIfAborted();
+        const useGroupServer = ordinaryTurn && groupReady
+            && (params?.skipNativeRoleplay === false || preferServer || serverRequired);
+        if (useGroupServer) {
+            deactivateSendButtons();
+            setGroupTypingIndicator(characters[activatedMembers[0]]?.name || '');
+            await eventSource.emit(event_types.GROUP_WRAPPER_STARTED, { selected_group, type, nativeRoleplay: true });
+            try {
+                textResult = await groupWorkflows.submitRoleplayGroupTurn({ groupId: selected_group, forcedAvatars,
+                    generationId: group_generation_id, signal: params?.signal ?? null });
+            } catch (error) {
+                if (!params?.signal?.aborted && error?.name !== 'AbortError') reportGroupReplyFailure(error);
+                throw error;
+            }
+            if (selectedSpeakerChid !== -1 && !(params && typeof params.force_chid == 'number')) {
+                clearSelectedGroupSpeaker();
+            }
+            return Promise.resolve(textResult);
+        }
+        if (automaticRouting && (preferServer || serverRequired) && await serverMustOwn()) {
+            throw new Error('The selected Notebook context needs a server reply. Please reload and try again.');
         }
 
         await unshallowGroupMembers(selected_group);

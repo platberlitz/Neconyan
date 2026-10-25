@@ -20664,5 +20664,8 @@
   "The shared context is too large to send. Turn off the persona, character cards, Author's Note, lorebooks or preset you do not need, then try again.": "The shared context is too large to send. Turn off the persona, character cards, Author's Note, lorebooks or preset you do not need, then try again.",
   "The selected chat messages are too large to share. Shorten them, pick specific messages, or turn off the persona, character cards, Author's Note, lorebooks and preset, then try again.": "The selected chat messages are too large to share. Shorten them, pick specific messages, or turn off the persona, character cards, Author's Note, lorebooks and preset, then try again.",
   "These picked messages are too large to share. Pick fewer or shorter ones, then try again.": "These picked messages are too large to share. Pick fewer or shorter ones, then try again.",
-  "Older messages left out to fit: ${0}. They are not sent at all.": "Older messages left out to fit: ${0}. They are not sent at all."
+  "Older messages left out to fit: ${0}. They are not sent at all.": "Older messages left out to fit: ${0}. They are not sent at all.",
+  "Where replies are written": "Where replies are written",
+  "In the browser (recommended)": "In the browser (recommended)",
+  "On the server": "On the server"
 }
