@@ -7,7 +7,7 @@ import { roleplayNativeHost } from './chats.js';
 import express from 'express';
 import { validateOwner } from '../jobs/store.js';
 import { noteOwner } from '../jobs/runner.js';
-import { acceptRoleplayGroupTurn, acceptRoleplayNamedWorkflow, readRoleplayWorkflowReceipt } from '../generation/roleplay-acceptance.js';
+import { acceptRoleplayAgentAction, acceptRoleplayGroupTurn, acceptRoleplayNamedWorkflow, readRoleplayWorkflowReceipt } from '../generation/roleplay-acceptance.js';
 import { inspectTransferredRoleplay, repairTransferredRoleplay } from '../roleplay-transfer-recovery.js';
 
 export const router = express.Router();
@@ -56,6 +56,17 @@ router.post('/group/submit', async (request, response) => {
     try {
         scope(request);
         const accepted = await acceptRoleplayGroupTurn(request, request.body || {});
+        response.set('X-Neconyan-Job', accepted.jobId ?? '');
+        return response.status(accepted.created ? 202 : 200).json(accepted);
+    } catch (error) {
+        return fail(response, error);
+    }
+});
+
+router.post('/agent/submit', async (request, response) => {
+    try {
+        scope(request);
+        const accepted = await acceptRoleplayAgentAction(request, request.body || {});
         response.set('X-Neconyan-Job', accepted.jobId ?? '');
         return response.status(accepted.created ? 202 : 200).json(accepted);
     } catch (error) {

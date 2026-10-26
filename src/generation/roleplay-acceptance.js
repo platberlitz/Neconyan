@@ -23,6 +23,7 @@ import { readNativeMediaJobResultForOwner } from './media-jobs.js';
 import { captureRoleplayNamedWorkflow, ROLEPLAY_WORKFLOW_NAMES } from './roleplay-workflow-named.js';
 import { admitRoleplayWorkflowJob, captureRoleplayWorkflowRequest, MAX_WORKFLOW_TOKENS } from './roleplay-workflow.js';
 import { closeUnstartedRoleplayWorkflow } from './roleplay-workflow-cancellation.js';
+import { admitAgentJob, captureAgentRequest } from './agent-jobs.js';
 import { normalizeBrowserMacroNames } from '../macros/browser-only.js';
 import { getRoleplaySourceMessageRevision } from '../../public/scripts/neconyan-conversation/roleplay-source.js';
 
@@ -352,6 +353,71 @@ export async function acceptRoleplayGroupTurn(request, body = {}) {
         created: accepted.created !== false, state: accepted.state ?? null,
         ...(accepted.result ? { result: accepted.result } : {}),
         write: { instanceId: source.instanceId, revision: source.revision } };
+}
+
+const AGENT_SUBMISSION = ['key', 'mode', 'agentIds', 'companionId', 'source', 'messageIndex', 'messageRevision', 'account', 'acknowledgement'];
+
+/**
+ * One manual Agent action on a saved message: the same Run, Rerun, Retry and
+ * repair choices the Agents panel offers, named by mode and Agent ids.
+ */
+export function normalizeRoleplayAgentSubmission(body = {}) {
+    assertKeys(body, AGENT_SUBMISSION, 'Agent submission');
+    assertKeys(body.source, ['locator'], 'Agent source');
+    assertKeys(body.source.locator, ['chat', 'avatar', 'group'], 'Agent locator');
+    const key = identifier(body.key, 'Agent key');
+    if (key.length > MAX_KEY_LENGTH) throw invalid('The Agent key is too long.');
+    if (body.source.locator.group !== false) throw invalid('Server Agent actions answer one character chat.');
+    const avatar = identifier(body.source.locator.avatar, 'character file');
+    if (sanitize(avatar) !== avatar) throw invalid('Invalid character file.');
+    const mode = identifier(body.mode, 'Agent mode');
+    const agentIds = body.agentIds ?? [];
+    if (!Array.isArray(agentIds) || agentIds.some(id => typeof id !== 'string' || !id)) throw invalid('Invalid Agent selection.');
+    const companionId = body.companionId === undefined || body.companionId === '' ? '' : identifier(body.companionId, 'companion id');
+    const messageIndex = body.messageIndex;
+    if (!Number.isSafeInteger(messageIndex) || messageIndex < 0) throw invalid('Invalid Agent message index.');
+    const settingsRevision = body.acknowledgement?.settingsRevision;
+    if (!Number.isSafeInteger(settingsRevision) || settingsRevision < 0) throw invalid('Invalid settings revision.');
+    return { key, mode, agentIds: [...agentIds], companionId, locator: { chat: chatName(body.source.locator.chat), avatar, group: false },
+        messageIndex, messageRevision: revision(body.messageRevision, 'message revision'), account: accountStamp(body.account),
+        acknowledgement: { account: identifier(body.acknowledgement?.account, 'account handle'), settingsRevision } };
+}
+
+/**
+ * Accept one manual Agent action as a protected server job, so it finishes and
+ * saves even when the page closes. The message must still be the one the page
+ * showed, and the active connection must be the acknowledged one.
+ */
+export async function acceptRoleplayAgentAction(request, body = {}) {
+    const { base, owner, directories } = submissionScope(request);
+    const submission = normalizeRoleplayAgentSubmission(body);
+    if (submission.acknowledgement.account !== owner) throw changed('This account does not match the saved one.');
+    const source = withRoleplayAccount(base, submission.account, lease => {
+        const locator = normalizeLocator(submission.locator);
+        const saved = readRoleplayChatLocked(lease, locator);
+        const message = saved.records.slice(1)[submission.messageIndex];
+        if (!message || getRoleplaySourceMessageRevision(message) !== submission.messageRevision) {
+            throw changed('The saved Roleplay message changed after this Agent action was chosen.', 'roleplay_workflow_changed');
+        }
+        const captured = captureRoleplaySourceFromSavedChatLocked(lease, saved, { locator, message: submission.messageIndex });
+        if (saved.changed || captured.changed) saveRoleplayAccount(lease);
+        return captured.source;
+    });
+    const connection = { kind: 'active' };
+    try {
+        captureGenerationBinding(directories, connection, submission.acknowledgement);
+    } catch (error) {
+        if (error?.status !== 409) throw error;
+        throw changed('The active connection settings are not acknowledged. Save them before running an Agent.', 'roleplay_settings_ack_required');
+    }
+    const agentRequest = captureAgentRequest(base, submission.account, source, { avatar: submission.locator.avatar,
+        mode: submission.mode, agentIds: submission.agentIds, companionId: submission.companionId,
+        connection, acknowledgement: submission.acknowledgement });
+    const accepted = admitAgentJob(base, submission.account, { operationKey: submission.key, source, request: agentRequest });
+    if (accepted.jobId) releaseJob(directories, accepted.jobId);
+    return { key: submission.key, mode: submission.mode, jobId: accepted.jobId ?? null,
+        created: accepted.created !== false, state: accepted.state ?? null,
+        ...(accepted.result ? { result: accepted.result } : {}) };
 }
 
 /**

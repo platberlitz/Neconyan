@@ -167,6 +167,46 @@ test('changing the reply location during a server reply keeps the reply and its 
     expect(await page.evaluate(async () => (await import('/scripts/power-user.js')).power_user.reply_generation_location)).toBe('browser');
 });
 
+test('a manual Agent run follows the saved server choice and finishes after the page closes', async ({ app }) => {
+    app.provider.mode.hold = 'manual-held';
+    app.provider.mode.reply = { choices: [{ message: { content: 'The manual Agent rewrite landed.' } }] };
+    const account = await app.account({ activeConnection: true, configureSettings(saved) {
+        saved.power_user.reply_generation_location = 'server';
+        saved.extension_settings.connectionManager.profiles.push(
+            { id: 'manual', name: 'Manual fixture', api: 'custom', mode: 'cc', model: 'manual-held', 'api-url': app.provider.url });
+        saved.extension_settings.inChatAgents = { globalSettings: { enabled: true, separateRecentChats: false } };
+    } });
+    const directory = path.join(app.dataRoot, 'default-user', 'InChatAgents');
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(path.join(directory, 'manual.json'), JSON.stringify({ id: 'manual', name: 'Manual Gen', enabled: true,
+        phase: 'post', prompt: 'Revise the reply.', connectionProfile: 'manual',
+        postProcess: { enabled: false, promptTransformEnabled: true } }));
+    const page = await openChat(account);
+    const browserRequests = [];
+    page.on('request', request => {
+        if (request.url().includes('/api/backends/chat-completions/generate')) browserRequests.push(request.url());
+    });
+
+    const submission = page.waitForResponse(response => response.url().endsWith('/api/roleplay/agent/submit'));
+    await page.evaluate(async () => {
+        const core = await import('/script.js');
+        const runner = await import('/scripts/extensions/in-chat-agents/agent-runner.js');
+        void runner.runAgentOnMessage('manual', core.chat.length - 1);
+    });
+    const accepted = await submission;
+    expect(accepted.ok(), await accepted.text()).toBe(true);
+    const { jobId } = await accepted.json();
+    await expect.poll(() => app.provider.calls.length).toBe(1);
+    await page.close();
+    await app.release();
+    await account.settled(jobId);
+
+    const reopened = await openChat(account);
+    await expect(reopened.locator('#chat .mes[mesid]').last().locator('.mes_text')).toHaveText('The manual Agent rewrite landed.');
+    expect(browserRequests).toEqual([]);
+    expect(app.provider.calls.map(call => call.model)).toEqual(['manual-held']);
+});
+
 test('ordinary group replies follow the saved server choice', async ({ app }) => {
     const account = await app.account({ activeConnection: true, configureSettings(saved) {
         saved.power_user.reply_generation_location = 'server';

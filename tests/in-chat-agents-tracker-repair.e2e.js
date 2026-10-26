@@ -200,6 +200,49 @@ for (const { phone, kind } of [false, true].flatMap(phone => ['header', 'field o
     });
 }
 
+test('with server replies chosen, Fix Trackers and the Companion wrench repair on the server', async ({ app }) => {
+    const account = await app.account({ activeConnection: true, configureSettings(saved) {
+        configureTrackerSettings(saved);
+        saved.power_user.reply_generation_location = 'server';
+    } });
+    const browserRequests = [];
+    const serverActions = [];
+    app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: repaired } }] };
+    const { page, request } = await openTrackerChat(account, 'Server tracker repair', repaired.replace('STABLE|', 'STABLE]'));
+    page.on('request', sent => {
+        if (sent.url().includes('/api/backends/chat-completions/generate')) browserRequests.push(sent.url());
+        if (sent.url().endsWith('/api/roleplay/agent/submit')) serverActions.push(sent.postDataJSON().mode);
+    });
+    const message = page.locator('#chat .mes[mesid="0"]');
+    const text = message.locator('.mes_text');
+    await message.locator('.extraMesButtonsHint').click();
+    await message.locator('.mes_fix_trackers').click();
+    await expect(text.locator('details').first()).toBeVisible({ timeout: 60000 });
+    await expect(text).not.toContainText('[METER|');
+    await expect.poll(async () => (await account.post('/api/chats/get', request))[1].mes)
+        .toBe(`Before the tracker.\n\n${repaired}\n\nAfter the tracker.`);
+
+    const event = '[EVENT|✅ RESOLVED|The Archon War question was answered|Tonight, kitchen table]\ncontext: Alhaitham now knows which war Kris fought in.\n[/EVENT]';
+    const broken = event.replace('[EVENT|', '[EVENT|⚠️ THREAT|');
+    app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: event } }] };
+    const companion = await openTrackerChat(account, 'Server event repair', 'The scene is unchanged.', {
+        id: 'repair-event', execution: 'companion', companion: { trigger: 'manual', displayMode: 'card', format: 'markdown' },
+    }, { templateName: 'event-tracker', companionContent: broken });
+    companion.page.on('request', sent => {
+        if (sent.url().includes('/api/backends/chat-completions/generate')) browserRequests.push(sent.url());
+        if (sent.url().endsWith('/api/roleplay/agent/submit')) serverActions.push(sent.postDataJSON().mode);
+    });
+    const card = companion.page.locator('#chat .ica--companion-card[data-agent-id="repair-event"]');
+    await expect(card.locator('.ica--companion-body')).toContainText('[EVENT|⚠️ THREAT|');
+    await card.locator('[data-action="fix"]').click();
+    await expect(card.locator('.ica--companion-body')).not.toContainText('[EVENT|', { timeout: 60000 });
+    await expect.poll(async () => (await account.post('/api/chats/get', companion.request))[1].extra.inChatAgentCompanionResults['repair-event'].content).toBe(event);
+
+    expect(serverActions).toEqual(['repair-trackers', 'repair-companions']);
+    expect(browserRequests).toEqual([]);
+    expect(app.provider.calls).toHaveLength(2);
+});
+
 for (const phone of [false, true]) {
     test(`Fix trackers saves its connections and escapes a stalled primary on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
         const account = await app.account({ phone, activeConnection: true, configureSettings: saved => {

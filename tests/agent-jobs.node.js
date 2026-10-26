@@ -384,6 +384,7 @@ test('a length-limited manual rewrite preserves the original message or note wit
         assert.equal(saved.mes, 'Answer');
         assert.deepEqual(saved.extra.inChatAgentCompanionResults.side, f.records[2].extra.inChatAgentCompanionResults.side);
         assert.equal(saved.extra.inChatAgents, undefined);
+        if (mode === 'run') assert.equal(saved.extra.inChatAgentPromptRuns.find(run => run.agentId === 'edit')?.status, 'length-limited');
     }
 });
 

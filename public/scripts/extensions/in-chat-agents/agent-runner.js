@@ -98,6 +98,7 @@ import {
 } from './tracker-state.js';
 import { buildPromptTransformSynthesisMessages, composePromptTransformDraft, runPromptTransformStages } from './prompt-transform-synthesis.js';
 import { isLikelyPromptTransformRefusal } from './prompt-transform-refusal.js';
+import { runAgentActionOnServer } from './server-agent-actions.js';
 
 const PROMPT_KEY_PREFIX = 'inchat_agent_';
 const AUTHORS_NOTE_PROMPT_KEY = '2_floating_prompt';
@@ -6381,6 +6382,37 @@ function warnManualAgentTargetChanged(agent) {
     return null;
 }
 
+const SERVER_RUN_FAILURES = {
+    'length-limited': 'The Agent reply was cut short, so the message was kept.',
+    refused: 'The model refused the rewrite, so the message was kept.',
+    error: 'Check the connection and try again.',
+};
+
+/**
+ * Reads the result of a manual Agent run the server finished and saved.
+ * @param {import('./agent-store.js').InChatAgent} agent
+ * @param {number} messageIndex
+ * @param {string} beforeText
+ * @param {{ state: string, error?: string }} remote
+ */
+function readServerAgentRun(agent, messageIndex, beforeText, remote) {
+    if (remote.state !== 'completed') {
+        return { agentId: agent.id, agentName: agent.name, status: remote.state === 'cancelled' ? 'cancelled' : 'failed', error: remote.error, changed: false };
+    }
+    const message = chat[messageIndex];
+    const runs = getAgentExtraValue(message, PROMPT_RUNS_EXTRA_KEY);
+    const run = (Array.isArray(runs) ? runs : []).findLast(item => item?.agentId === agent.id) ?? {};
+    const failure = SERVER_RUN_FAILURES[run.status];
+    return {
+        ...run,
+        agentId: agent.id,
+        agentName: agent.name,
+        status: failure ? 'failed' : run.status === 'stopped' ? 'cancelled' : 'done',
+        error: failure ? run.error || failure : run.error,
+        changed: message?.mes !== beforeText,
+    };
+}
+
 async function executeManualAgentRun(agentId, target, cancelRevision = agentGenerationCancelRevision) {
     const runTarget = normalizeManualRunTarget(target);
     const agent = getAgentById(agentId);
@@ -6439,6 +6471,9 @@ async function executeManualAgentRun(agentId, target, cancelRevision = agentGene
 
         return await companionRuntime.runCompanionAgentOnMessage(agent.id, messageIndex, { cancelRevision });
     }
+
+    const remote = await runAgentActionOnServer({ mode: 'run', agentIds: [agent.id], messageIndex });
+    if (remote) return remote.current ? readServerAgentRun(agent, messageIndex, message.mes, remote) : null;
 
     const generationType = 'normal';
     const beforeText = message.mes;
@@ -6540,6 +6575,31 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     return await enqueueManualOperation(manualAgentRunQueues[0], target, () => executeTrackerFixOnMessage(target, cancelRevision), cancelRevision);
 }
 
+function reportServerTrackerFix(messageIndex, remote) {
+    if (remote.state !== 'completed') {
+        toastr.warning(remote.error || t`1 error. Some trackers could not be repaired. Check the connection the agent uses, then try again.`, 'Tracker repair incomplete');
+        return;
+    }
+    const runs = getAgentExtraValue(chat[messageIndex], PROMPT_RUNS_EXTRA_KEY);
+    const promptRuns = Array.isArray(runs) ? runs : [];
+    const trackerRepairs = promptRuns.filter(run => run?.mode === 'tracker-repair' && run.changed).length;
+    const changedRuns = promptRuns.filter(run => run?.mode !== 'tracker-repair' && run?.changed).length;
+    const errorRuns = promptRuns.filter(run => run?.status === 'error').length;
+    const parts = [];
+    if (trackerRepairs > 0) parts.push(trackerRepairs > 1 ? t`${trackerRepairs} trackers repaired` : t`1 tracker repaired`);
+    if (changedRuns > 0) parts.push(changedRuns > 1 ? t`${changedRuns} prompt transforms applied` : t`1 prompt transform applied`);
+    if (errorRuns > 0) {
+        parts.push(errorRuns > 1
+            ? t`${errorRuns} errors. Some trackers could not be repaired. Check the connection the agent uses, then try again.`
+            : t`1 error. Some trackers could not be repaired. Check the connection the agent uses, then try again.`);
+        toastr.warning(parts.join(', '), 'Tracker repair incomplete');
+    } else if (parts.length > 0) {
+        toastr.success(parts.join(', '), 'Trackers fixed');
+    } else {
+        toastr.info('No tracker changes were needed.', 'Trackers checked');
+    }
+}
+
 async function executeTrackerFixOnMessage(submittedTarget, cancelRevision) {
     const { message, messageIndex } = submittedTarget;
     if (!areAgentsGloballyEnabled() || agentGenerationCancelRevision !== cancelRevision
@@ -6560,6 +6620,12 @@ async function executeTrackerFixOnMessage(submittedTarget, cancelRevision) {
 
     if (trackerAgents.length === 0) {
         toastr.info('No enabled tracker agents found.');
+        return null;
+    }
+
+    const remote = await runAgentActionOnServer({ mode: 'repair-trackers', agentIds: trackerAgents.map(agent => agent.id), messageIndex });
+    if (remote) {
+        if (remote.current) reportServerTrackerFix(messageIndex, remote);
         return null;
     }
 

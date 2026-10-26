@@ -19,6 +19,7 @@ import { eventSource, event_types } from '../../../events.js';
 import { getWorldInfoPrompt } from '../../../world-info.js';
 import { getStringHash } from '../../../utils.js';
 import { getConnectionProfileDisplayName } from '../profile-utils.js';
+import { runAgentActionOnServer } from '../server-agent-actions.js';
 import {
     areAgentsGloballyEnabled,
     getAgentById,
@@ -2462,6 +2463,20 @@ export function injectCompanionFeedbackPrompts(activeAgents = [], { excludeMessa
     }
 }
 
+/**
+ * Runs companions as a server job when replies finish on the server. The finished
+ * notes are read back from the saved chat, so the message object is looked up again.
+ * @returns {Promise<object[]|null>} null when the page should run them itself
+ */
+async function runCompanionsOnServer(agents, messageIndex, { repair = false } = {}) {
+    const remote = await runAgentActionOnServer({ mode: repair ? 'repair-companions' : 'companions', agentIds: agents.map(agent => agent.id), messageIndex });
+    if (!remote) return null;
+    if (!remote.current) return [];
+    await emitCompanionResultsUpdated(messageIndex);
+    const results = getCompanionResults(chat[messageIndex]);
+    return agents.map(agent => results[agent.id]);
+}
+
 export async function runCompanionAgentOnMessage(agentId, messageIndex, { cancelRevision = getAgentGenerationCancelRevision(), repair = false, extraContextSections = [], pendingContent = '', allowUserMessage = true } = {}) {
     const agent = getAgentById(agentId);
     const message = chat[messageIndex];
@@ -2490,6 +2505,10 @@ export async function runCompanionAgentOnMessage(agentId, messageIndex, { cancel
             }
             return getCompanionResults(message)[agent.id];
         }
+    }
+    if (extraContextSections.length === 0 && !pendingContent) {
+        const remote = await runCompanionsOnServer([agent], messageIndex, { repair });
+        if (remote) return remote[0] ?? null;
     }
     const runnable = getRunnableCompanionAgents(getEnabledAgents(), { manual: true, messageIndex });
     const agentByReferenceId = buildCompanionReferenceMap(runnable);
@@ -2576,6 +2595,17 @@ export async function applyAgentPostPassesToCompanionResult(transformerAgentId, 
         return null;
     }
 
+    const remote = await runAgentActionOnServer({ mode: 'companion-output', agentIds: [transformer.id], companionId: companionAgentId, messageIndex });
+    if (remote) {
+        if (!remote.current) return null;
+        if (remote.state !== 'completed') return { status: 'failed', error: remote.error, changed: false };
+        const text = getCompanionResults(chat[messageIndex])[companionAgentId]?.content ?? '';
+        const changed = text !== result.content;
+        if (changed) await emitCompanionResultsUpdated(messageIndex, companionAgentId);
+        else toastr.info(`"${transformer.name}" made no changes to the companion note.`, 'In-Chat Agents');
+        return { text, changed };
+    }
+
     const characterName = String(message?.name ?? '').trim();
     const passResult = await runSingleAgentPostPassesOnText(transformer, result.content, COMPANION_OUTPUT_GENERATION_TYPE, {
         characterOverride: characterName,
@@ -2618,6 +2648,8 @@ export async function runCompanionsOnMessage(messageIndex, { allowUserMessage = 
         return [];
     }
 
+    const remote = await runCompanionsOnServer(agents, messageIndex);
+    if (remote) return remote;
     const cancelRevision = getAgentGenerationCancelRevision();
     await runCompanionAgentsWithDependencyDelay(agents, messageIndex, 'normal', cancelRevision, { allowUserMessage, contextSourceAgents: agents });
 
@@ -2657,6 +2689,8 @@ export async function runConnectedCompanionsOnMessage(messageIndex, { cancelRevi
         return [];
     }
 
+    const remote = await runCompanionsOnServer(agents, messageIndex);
+    if (remote) return remote;
     await runCompanionAgentsWithDependencyDelay(agents, messageIndex, 'normal', cancelRevision, { allowUserMessage: true, contextSourceAgents: runnable });
 
     if (!isTargetCurrent()) return [];
@@ -2732,6 +2766,8 @@ export async function runAutomaticCompanionsOnMessage(messageIndex) {
         return [];
     }
 
+    const remote = await runCompanionsOnServer(agents, messageIndex);
+    if (remote) return remote;
     const cancelRevision = getAgentGenerationCancelRevision();
     const contextSourceAgents = getRunnableCompanionAgents(getEnabledAgents(), { manual: true, messageIndex, includeHidden: false });
     await runCompanionAgentsWithDependencyDelay(agents, messageIndex, 'normal', cancelRevision, { contextSourceAgents });
@@ -2772,6 +2808,8 @@ export async function retryFailedCompanionsOnMessage(messageIndex) {
         return [];
     }
 
+    const remote = await runCompanionsOnServer(agents, messageIndex);
+    if (remote) return remote;
     const cancelRevision = getAgentGenerationCancelRevision();
     const contextSourceAgents = getRunnableCompanionAgents(getEnabledAgents(), { manual: true, messageIndex });
     await runCompanionAgentsWithDependencyDelay(agents, messageIndex, 'normal', cancelRevision, { allowUserMessage: true, contextSourceAgents });
