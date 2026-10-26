@@ -50,10 +50,13 @@ def verify(ipa, commit):
         manifest_bytes = archive.read(server + 'dist/frontend/asset-manifest.json')
         require(hashlib.sha256(manifest_bytes).hexdigest() == provenance['frontendManifestSha256'], 'Frontend manifest mismatch')
         manifest = json.loads(manifest_bytes)
-        for asset in manifest['assets'].values():
+        for source, asset in manifest['assets'].items():
             content = archive.read(server + 'dist/frontend/' + asset['output'])
             require(len(content) == asset['bytes'], f'Asset size mismatch: {asset["output"]}')
-            require(hashlib.sha256(content).hexdigest()[:12] == asset['hash'], f'Asset hash mismatch: {asset["output"]}')
+            if 'hash' in asset:
+                require(hashlib.sha256(content).hexdigest()[:12] == asset['hash'], f'Asset hash mismatch: {asset["output"]}')
+            else:
+                require(content == archive.read(server + 'public/' + source), f'Copied asset mismatch: {source}')
         print(json.dumps({'commit': commit, 'version': provenance['version'], 'platform': 'iOS ARM64 device', 'frontendAssets': len(manifest['assets']), 'signing': 'requires user sideload signing'}, indent=2))
 
 
