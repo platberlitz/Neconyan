@@ -3090,6 +3090,12 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         --sb-composer-bottom-padding: 0px;
     }
 
+    /* A home-screen app on an iPhone keeps half of the home-indicator strip
+       under the composer, so the text box sits lower and still clears the bar. */
+    html:not(.sb-ios-composer-keyboard-controls-active) body.safari.PWA #form_sheld {
+        --sb-composer-bottom-padding: calc(env(safe-area-inset-bottom, 0px) / 2);
+    }
+
     #send_form {
         margin: 0 !important;
         width: 100% !important;
