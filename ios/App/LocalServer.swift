@@ -16,7 +16,7 @@ final class LocalServer {
 
     init() throws {
         let fm = FileManager.default
-        state = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("Neconyan", isDirectory: true)
+        state = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("Neconyan", isDirectory: true).resolvingSymlinksInPath().standardizedFileURL
         try fm.createDirectory(at: state, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
         let credentialsURL = state.appendingPathComponent("native-credentials.json")
         #if DEBUG
@@ -54,20 +54,8 @@ final class LocalServer {
             throw LocalServerError.message("The bundled server is missing.")
         }
         let version = try String(contentsOf: versionURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard version.range(of: "^[a-f0-9]{40}$", options: .regularExpression) != nil else { throw LocalServerError.message("The server version is invalid.") }
         let runtimeRoot = state.appendingPathComponent("runtimes", isDirectory: true)
-        try fm.createDirectory(at: runtimeRoot, withIntermediateDirectories: true)
-        let runtime = runtimeRoot.appendingPathComponent(version, isDirectory: true)
-        if !fm.fileExists(atPath: runtime.path) {
-            let installing = runtimeRoot.appendingPathComponent("installing", isDirectory: true)
-            if fm.fileExists(atPath: installing.path) { try fm.removeItem(at: installing) }
-            try fm.copyItem(at: bundled, to: installing)
-            try fm.moveItem(at: installing, to: runtime)
-        }
-        // Only disposable application code is replaced. The sibling data directory is retained.
-        for old in try fm.contentsOfDirectory(at: runtimeRoot, includingPropertiesForKeys: nil) where old != runtime {
-            try? fm.removeItem(at: old)
-        }
+        let runtime = try RuntimeInstaller.install(bundled: bundled, in: runtimeRoot, version: version)
         var excluded = runtimeRoot
         var values = URLResourceValues()
         values.isExcludedFromBackup = true

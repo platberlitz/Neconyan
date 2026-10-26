@@ -11,6 +11,10 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Check runtime installation and path aliases
+        run: |
+          swiftc ios/App/RuntimeInstaller.swift ios/tools/storage-tests/main.swift -o "$RUNNER_TEMP/neconyan-storage-tests"
+          "$RUNNER_TEMP/neconyan-storage-tests"
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
