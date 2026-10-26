@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "polywasm": "0.2.0",
     "wabt": "1.0.39"
   }
 }

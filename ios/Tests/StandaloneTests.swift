@@ -5,6 +5,11 @@ final class StandaloneTests: XCTestCase {
     private var csrf = ""
     private let session = URLSession(configuration: .ephemeral)
 
+    override func setUp() {
+        super.setUp()
+        continueAfterFailure = false
+    }
+
     private func request(_ path: String, body: [String: Any]? = nil) async throws -> Data {
         var request = URLRequest(url: URL(string: path, relativeTo: origin)!)
         request.timeoutInterval = 90
@@ -31,13 +36,26 @@ final class StandaloneTests: XCTestCase {
         app.launchEnvironment["NECONYAN_TEST_PORT"] = "28193"
         app.launch()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 240), "The bundled Neconyan server must open without a remote server.")
-        XCTAssertTrue(app.webViews.buttons.firstMatch.waitForExistence(timeout: 120), "The actual web interface must finish loading.")
+        XCTAssertTrue(app.webViews["workspace-ready"].waitForExistence(timeout: 120), "The actual workspace must load, not the startup error page.")
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "standalone-first-launch"
         screenshot.lifetime = .keepAlways
         add(screenshot)
         XCTAssertFalse(app.staticTexts["startup-status"].exists)
         try await authorise()
+        for streaming in [false, true] {
+            let reply = try await request("/api/backends/chat-completions/generate", body: [
+                "chat_completion_source": "custom", "custom_url": "http://127.0.0.1:28194/v1",
+                "model": "ios-test", "stream": streaming, "max_tokens": 32,
+                "messages": [["role": "user", "content": "Test the standalone reply."]],
+            ])
+            let text = String(data: reply, encoding: .utf8) ?? ""
+            if streaming {
+                XCTAssertTrue(text.contains("Standalone ") && text.contains("reply received.") && text.contains("[DONE]"), text)
+            } else {
+                XCTAssertTrue(text.contains("Standalone reply received."), text)
+            }
+        }
         let expected = [9906, 505, 264, 44488, 4275, 444, 8503, 13]
         for model in ["llama3", "openai"] {
             let data = try await request("/api/tokenizers/\(model)/encode?model=gpt-4", body: ["text": "Hello from a standalone Neconyan."])
@@ -60,7 +78,7 @@ final class StandaloneTests: XCTestCase {
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 30))
         app.terminate()
         app.launch()
-        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 120))
+        XCTAssertTrue(app.webViews["workspace-ready"].waitForExistence(timeout: 120))
         XCTAssertFalse(app.staticTexts["startup-status"].exists)
         try await authorise()
         let exported = try await request("/api/characters/export", body: ["avatar_url": avatar, "format": "json"])

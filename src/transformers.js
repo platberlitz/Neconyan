@@ -12,6 +12,8 @@ configureTransformers();
 function configureTransformers() {
     // Limit the number of threads to 1 to avoid issues on Android
     env.backends.onnx.wasm.numThreads = 1;
+    // The iOS interpreter accepts the feature probe but cannot execute SIMD instructions.
+    if (process.env.NECONYAN_IOS_APP === '1') env.backends.onnx.wasm.simd = false;
     // Use WASM from a local folder to avoid CDN connections
     env.backends.onnx.wasm.wasmPaths = path.join(serverDirectory, 'node_modules', 'sillytavern-transformers', 'dist') + path.sep;
 }

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import process from 'node:process';
 import { createRequire } from 'node:module';
 import { parentPort, workerData } from 'node:worker_threads';
 import { matteSprite, upscaleSprite } from './sprite-model-pixels.js';
@@ -10,6 +11,7 @@ try {
     const runtimeRequire = createRequire(require.resolve('sillytavern-transformers'));
     const ort = runtimeRequire('onnxruntime-web');
     ort.env.wasm.numThreads = 1;
+    if (process.env.NECONYAN_IOS_APP === '1') ort.env.wasm.simd = false;
     ort.env.wasm.wasmPaths = path.dirname(runtimeRequire.resolve('onnxruntime-web')) + path.sep;
     const session = await ort.InferenceSession.create(fs.readFileSync(workerData.filename), { executionProviders: ['wasm'] });
     const infer = async (input, width, height) => {
