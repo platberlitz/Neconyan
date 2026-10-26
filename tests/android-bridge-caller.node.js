@@ -41,7 +41,7 @@ test('every native action validates the token before effects; setup is main-page
     assert.match(read('BridgeCallerGate.java'), /new SecureRandom/); assert.match(read('BridgeCallerGate.java'), /MessageDigest\.isEqual/);
     assert.match(activity, /onPageStarted[\s\S]*?bridgeGate\.clear\(\)/);
     assert.match(activity, /onDestroy\(\)[\s\S]*?bridgeGate\.clear\(\)/);
-    assert.match(activity, /import\('\/scripts\/android-native-bridge\.js'\)[\s\S]*?JSONObject\.quote\(bridgeToken\)[\s\S]*?JSONObject\.quote\(origin\)/);
+    assert.match(activity, /"import\(" \+ JSONObject\.quote\(origin \+ "\/scripts\/android-native-bridge\.js"\) \+ "\)\.then[\s\S]*?JSONObject\.quote\(bridgeToken\)[\s\S]*?JSONObject\.quote\(origin\)/);
     assert.doesNotMatch(activity, /loadUrl\([^;]*bridgeToken/);
     const finished = activity.slice(activity.indexOf('public void onPageFinished('), activity.indexOf('web.setWebChromeClient('));
     // A URL mismatch (e.g. replaceState during load) must never keep the workspace hidden; only token delivery is guarded.
