@@ -1,0 +1,64 @@
+name: Standalone iOS
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/standalone-ios]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Prepare the standalone server and pinned iOS runtime
+        run: |
+          node scripts/build-ios-payload.js
+          bash ios/prepare-runtime.sh
+          brew install xcodegen
+          cd ios
+          xcodegen generate
+      - name: Build real-device app without distribution signing
+        run: |
+          xcodebuild -project ios/Neconyan.xcodeproj -scheme Neconyan -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath ios/build/device CODE_SIGNING_ALLOWED=NO build > ios/device-build.log 2>&1 || { tail -100 ios/device-build.log; exit 1; }
+          mkdir -p ios/artifacts/Payload
+          cp -R ios/build/device/Build/Products/Release-iphoneos/Neconyan.app ios/artifacts/Payload/
+          cd ios/artifacts
+          ditto -c -k --keepParent Payload Neconyan-unsigned.ipa
+          rm -rf Payload
+          shasum -a 256 Neconyan-unsigned.ipa > SHA256SUMS
+          cp ../generated/server/release-provenance.json provenance.json
+      - name: Start an iPhone simulator
+        id: simulator
+        run: |
+          id=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for a in d["devices"].values() for x in a if "iPhone" in x["name"]))')
+          xcrun simctl boot "$id"
+          xcrun simctl bootstatus "$id" -b
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+      - name: Test standalone startup and relaunch on iOS
+        run: |
+          xcodebuild -project ios/Neconyan.xcodeproj -scheme Neconyan -configuration Debug -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath ios/build/simulator -resultBundlePath ios/test-results.xcresult CODE_SIGNING_ALLOWED=NO test > ios/simulator-test.log 2>&1 || { tail -120 ios/simulator-test.log; exit 1; }
+      - name: Collect simulator server diagnostics
+        if: always()
+        run: |
+          container=$(xcrun simctl get_app_container '${{ steps.simulator.outputs.id }}' io.github.platberlitz.neconyan data 2>/dev/null || true)
+          if test -n "$container"; then
+            cp "$container/Library/Application Support/Neconyan/server.log" ios/server.log || true
+            xcrun simctl io '${{ steps.simulator.outputs.id }}' screenshot ios/simulator.png || true
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: neconyan-ios-${{ github.sha }}
+          path: |
+            ios/artifacts/
+            ios/*-build.log
+            ios/*-test.log
+            ios/server.log
+            ios/simulator.png
+            ios/test-results.xcresult

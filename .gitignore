@@ -122,3 +122,11 @@ skills-lock.json
 
 # Private BotSearcher signing state must never ship as a public asset.
 .cursor-key
+ios/vendor/
+ios/generated/
+ios/build/
+ios/artifacts/
+ios/*.xcodeproj/
+ios/*.xcresult/
+ios/*.log
+ios/simulator.png
