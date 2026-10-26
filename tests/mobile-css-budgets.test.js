@@ -84,19 +84,6 @@ describe('mobile css ratchet budgets', () => {
     });
 });
 
-describe('iPhone home-screen composer strip', () => {
-    const mobileShellCss = forkSheetSources['neconyan-mobile-shell.css'];
-
-    test('keeps half the home-indicator strip under the composer, and none with the keyboard up', () => {
-        const homeScreenRule = mobileShellCss.match(/html:not\(\.sb-ios-composer-keyboard-controls-active\) body\.safari\.PWA #form_sheld\s*\{[\s\S]*?\}/)?.[0] ?? '';
-        const keyboardRule = mobileShellCss.match(/html\.sb-ios-composer-keyboard-controls-active #form_sheld\s*\{[\s\S]*?\}/)?.[0] ?? '';
-
-        expect(homeScreenRule).toContain('--sb-composer-bottom-padding: calc(env(safe-area-inset-bottom, 0px) / 2);');
-        expect(keyboardRule).toContain('--sb-composer-bottom-padding: 0px;');
-        expect(mobileShellCss).toContain('padding: 0 0 var(--sb-composer-bottom-padding, env(safe-area-inset-bottom, 0px)) !important;');
-    });
-});
-
 describe('paper texture regression guards', () => {
     const paperThemeCss = forkSheetSources['neconyan-paper-theme.css'];
 

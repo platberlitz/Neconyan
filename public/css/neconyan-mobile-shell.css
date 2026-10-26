@@ -3099,7 +3099,7 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
 
     #form_sheld {
         padding: 0 0 var(--sb-composer-bottom-padding, env(safe-area-inset-bottom, 0px)) !important;
-        margin: 0 !important;
+        margin: 0 0 var(--sb-composer-bottom-margin, 0px) !important;
         width: 100% !important;
         max-width: none !important;
     }
@@ -3108,10 +3108,15 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         --sb-composer-bottom-padding: 0px;
     }
 
-    /* A home-screen app on an iPhone keeps half of the home-indicator strip
-       under the composer, so the text box sits lower and still clears the bar. */
-    html:not(.sb-ios-composer-keyboard-controls-active) body.safari.PWA #form_sheld {
-        --sb-composer-bottom-padding: calc(env(safe-area-inset-bottom, 0px) / 2);
+    /* Keep the home-indicator clearance outside the installed iPhone app's
+       painted panel. Square, edge-to-edge corners disappear behind the screen
+       curve. Retain a small gap even when standalone reports a zero inset;
+       the keyboard restores the flush layout through the default values above. */
+    html:not(.sb-ios-composer-keyboard-controls-active) body.neconyan.safari.PWA:not(.sbterm) #form_sheld.neconyan-cat-panel {
+        --sb-composer-bottom-padding: 6px;
+        --sb-composer-bottom-margin: max(12px, calc(env(safe-area-inset-bottom, 0px) / 2));
+        border-bottom-left-radius: 36px;
+        border-bottom-right-radius: 36px;
     }
 
     #send_form {
