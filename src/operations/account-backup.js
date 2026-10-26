@@ -10,7 +10,7 @@ import { getConfigValue } from '../util.js';
 import { inspectRoleplayFile, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 import { registerOperation } from './jobs.js';
 import { operationError, withOperation } from './store.js';
-import { BINARY_FILE_LIMIT, prepareBinaryOutput, openBinaryOutput, publishBinaryOutput } from './binary-files.js';
+import { prepareBinaryOutput, openBinaryOutput, publishBinaryOutput } from './binary-files.js';
 
 const physical = stat => ({ dev: String(stat.dev), ino: String(stat.ino), birthtimeNs: String(stat.birthtimeNs) });
 
@@ -32,17 +32,17 @@ export function captureAccountBackup(base, account, input, { sourceBase, include
                 if (entry.isSymbolicLink()) throw operationError('This backup contains a linked source. Its files were kept.');
                 if (entry.isDirectory()) walk(filename, depth + 1);
                 else if (entry.isFile()) {
-                    const file = inspectRoleplayFile(filename, BINARY_FILE_LIMIT);
+                    const file = inspectRoleplayFile(filename, Number.MAX_SAFE_INTEGER);
                     if (!file) throw operationError('A backup source disappeared during capture.');
                     total += file.size;
-                    if (total > BINARY_FILE_LIMIT) throw operationError('The account backup exceeds its saved output capacity.', 413);
+                    if (!Number.isSafeInteger(total)) throw operationError('The account backup exceeds its saved output capacity.', 413);
                     files.push({ relative, size: file.size, rawHash: file.rawHash, physical: file.physical, mtime: fs.statSync(filename).mtimeMs });
                 } else throw operationError('This backup contains a source that is not a regular file.');
             }
         };
         walk(source.directories.root, 0);
         const limit = Math.ceil(total * 1.05) + files.length * 1024 + 65536;
-        if (limit > BINARY_FILE_LIMIT) throw operationError('The account backup exceeds its saved output capacity.', 413);
+        if (!Number.isSafeInteger(limit)) throw operationError('The account backup exceeds its saved output capacity.', 413);
         return { source: { owner: source.owner, directories: source.directories, account: stamp }, files, limit, includeSecrets,
             fileName: `${source.owner}-${new Date().toISOString().replace(/[:.]/g, '-')}.zip` };
     });
@@ -52,7 +52,7 @@ function openSource(context, plan, item) {
     withOperation(context, () => {});
     return withRoleplayAccount(plan.source, plan.source.account, () => {
         const filename = path.join(plan.source.directories.root, item.relative);
-        const file = inspectRoleplayFile(filename, BINARY_FILE_LIMIT);
+        const file = inspectRoleplayFile(filename, item.size);
         if (!file || file.rawHash !== item.rawHash || roleplayHash(file.physical) !== roleplayHash(item.physical)) throw operationError('A backup source changed after acceptance. The original files were kept.');
         const fd = fs.openSync(filename, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
         const stat = fs.fstatSync(fd, { bigint: true });

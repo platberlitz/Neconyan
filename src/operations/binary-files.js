@@ -11,10 +11,12 @@ const physical = stat => ({ dev: String(stat.dev), ino: String(stat.ino), birtht
 const evidence = file => file && ({ rawHash: file.rawHash, physical: file.physical });
 const directory = base => path.join(roleplayStoreDirectory(base), 'application-binaries');
 
-/** A permanent allocation refuses new work at capacity; previous files and proof are never evicted. */
+/** Backups stream trusted local files with a captured size bound; other binaries retain their fixed quotas. */
 export function prepareBinaryOutput(context, name, limit) {
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > BINARY_FILE_LIMIT) throw operationError('This saved binary exceeds its output capacity.', 413);
+    const backup = name === 'account-backup';
+    if (!Number.isSafeInteger(limit) || limit < 1 || (!backup && limit > BINARY_FILE_LIMIT)) throw operationError('This saved binary exceeds its output capacity.', 413);
     return withOperation(context, ({ base, account, value, save }) => {
+        if (backup && (value.kind !== 'account-backup' || limit !== value.plan.limit)) throw operationError('This backup allocation does not match its accepted work.');
         const root = directory(base);
         createRoleplayDirectory(root, roleplayStoreDirectory(base));
         const id = roleplayHash([account.accountId, value.key, name]);
@@ -26,12 +28,13 @@ export function prepareBinaryOutput(context, name, limit) {
             let record;
             try { record = JSON.parse(stored.bytes); } catch { throw operationError('The saved binary allocation needs recovery.'); }
             if (record.version !== 1 || file !== record.id + '.json' || record.id !== roleplayHash([record.accountId, record.key, record.name])
-                || !Number.isSafeInteger(record.limit) || record.limit < 1 || record.limit > BINARY_FILE_LIMIT) throw operationError('The saved binary allocation needs recovery.');
-            used += record.limit;
+                || !Number.isSafeInteger(record.limit) || record.limit < 1 || (record.name !== 'account-backup' && record.limit > BINARY_FILE_LIMIT)) throw operationError('The saved binary allocation needs recovery.');
+            // A backup's worst-case ZIP estimate is not permanent usage of the incoming-file quota.
+            if (record.name !== 'account-backup') used += record.limit;
             if (record.id === id && roleplayHash(record) !== roleplayHash(allocation)) throw operationError('This binary allocation belongs to different work.');
         }
         if (!readRoleplayFile(allocationPath, 4096)) {
-            if (used + limit > TOTAL_LIMIT) throw operationError('Saved binary storage is full. Existing files and evidence were kept.', 413);
+            if (!backup && used + limit > TOTAL_LIMIT) throw operationError('Saved binary storage is full. Existing files and evidence were kept.', 413);
             tryWriteFileSync(allocationPath, JSON.stringify(allocation), { mode: 0o600 }, { expectedFileAbsent: true, durable: true, preserveOnCreateError: true });
         }
         const key = `binary:${name}`;
