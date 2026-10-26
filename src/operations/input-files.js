@@ -8,7 +8,6 @@ import { fsyncDirectorySync, tryWriteFileSync } from '../util.js';
 import { BINARY_FILE_LIMIT } from './binary-files.js';
 import { operationError } from './store.js';
 
-const INPUT_CAPACITY = 32 * 1024 * 1024 * 1024;
 const directory = base => path.join(roleplayStoreDirectory(base), 'application-inputs');
 const physical = stat => ({ dev: String(stat.dev), ino: String(stat.ino), birthtimeNs: String(stat.birthtimeNs) });
 const identity = value => roleplayHash([value.account.accountId, value.account.dataEpoch, value.key]);
@@ -63,8 +62,7 @@ async function copyUploadedArchive(base, account, key, filename) {
         const recordPath = path.join(root, id + '.json');
         const records = fs.readdirSync(root).filter(name => /^[a-f0-9]{64}\.json$/.test(name));
         if (records.length > 100000) throw operationError('Retained upload storage has reached its record capacity.', 413);
-        let used = 0;
-        for (const name of records) used += readAllocation(path.join(root, name)).value.size;
+        for (const name of records) readAllocation(path.join(root, name));
         let saved = readAllocation(recordPath);
         let value = saved?.value;
         if (value && roleplayHash(value.account) !== roleplayHash(account)) throw operationError('This upload belongs to an earlier account.');
@@ -72,7 +70,6 @@ async function copyUploadedArchive(base, account, key, filename) {
             throw Object.assign(operationError('This import key already belongs to a different upload. The earlier upload was kept.'), { code: 'IMPORT_UPLOAD_CONFLICT' });
         }
         if (!value) {
-            if (used + source.size > INPUT_CAPACITY) throw operationError('Retained upload storage is full. Earlier uploads and evidence were kept.', 413);
             const temporary = id + '.' + randomUUID() + '.pending';
             const fd = fs.openSync(path.join(root, temporary), 'wx', 0o600);
             try {

@@ -129,7 +129,7 @@ test('large backup reservations survive publication recovery and do not consume 
     const p = setup(t);
     const plan = captureAccountBackup(p.base, p.f.scope, { handle: p.base.owner });
     // Exercise the saved-output path with a large captured bound without writing gigabytes in every test run.
-    plan.limit = 5 * BINARY_FILE_LIMIT;
+    plan.limit = 40 * 1024 ** 3;
     const first = admitOperation(p.base, p.f.scope, { key: 'large', kind: 'account-backup', input: {}, plan, label: 'Large backup' });
     const context = p.context(first.job);
     assert.throws(() => prepareBinaryOutput(context, 'account-backup', plan.limit + 1), /accepted work/);
@@ -140,10 +140,13 @@ test('large backup reservations survive publication recovery and do not consume 
 
     const incoming = admitOperation(p.base, p.f.scope, { key: 'incoming', kind: 'account-import', input: {}, plan: {}, label: 'Incoming files' });
     const incomingContext = p.context(incoming.job);
-    // Incoming binaries keep both their individual bound and their aggregate storage quota.
-    assert.throws(() => prepareBinaryOutput(incomingContext, 'import:oversized', BINARY_FILE_LIMIT + 1), /output capacity/);
-    for (let index = 0; index < 4; index++) prepareBinaryOutput(incomingContext, `import:${index}`, BINARY_FILE_LIMIT);
-    assert.throws(() => prepareBinaryOutput(incomingContext, 'import:full', 1), /storage is full/);
+    // Imports can exceed both former fixed quotas while retaining their accepted byte bounds.
+    for (let index = 0; index < 4; index++) prepareBinaryOutput(incomingContext, `import:${index}`, 13 * 1024 ** 3);
+    prepareBinaryOutput(incomingContext, 'import:large-file', 40 * 1024 ** 3);
+    assert.throws(() => prepareBinaryOutput(incomingContext, 'import:large-file', 41 * 1024 ** 3), /different work/);
+    for (const limit of [0, -1, NaN, Infinity, BINARY_FILE_LIMIT + 1]) {
+        assert.throws(() => prepareBinaryOutput(incomingContext, 'import:invalid', limit), /output capacity/);
+    }
     const second = await p.accept('next');
     await runOperation(p.context(second.job));
     assert.deepEqual((await unzip(readDownload(p.base, 'next').bytes))['chats/Nova/Source.jsonl'], fs.readFileSync(p.f.filename));
@@ -152,8 +155,8 @@ test('large backup reservations survive publication recovery and do not consume 
 
 test('only accepted account backups can use the backup allocation policy', t => {
     const p = setup(t);
-    const accepted = admitOperation(p.base, p.f.scope, { key: 'not-backup', kind: 'account-import', input: {}, plan: { limit: BINARY_FILE_LIMIT + 1 }, label: 'Other work' });
-    assert.throws(() => prepareBinaryOutput(p.context(accepted.job), 'account-backup', BINARY_FILE_LIMIT + 1), /accepted work/);
+    const accepted = admitOperation(p.base, p.f.scope, { key: 'not-backup', kind: 'account-import', input: {}, plan: { limit: 13 * 1024 ** 3 }, label: 'Other work' });
+    assert.throws(() => prepareBinaryOutput(p.context(accepted.job), 'account-backup', 13 * 1024 ** 3), /accepted work/);
     for (const limit of [0, -1, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
         assert.throws(() => prepareBinaryOutput(p.context(accepted.job), 'account-backup', limit), /output capacity/);
     }
