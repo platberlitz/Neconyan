@@ -211,7 +211,7 @@ describe('update toast', () => {
 
     test('explicit server checks bypass the cached status and status redraws preserve an active update label', () => {
         const refresh = extract('refreshServerAdminPanel');
-        expect(refresh).toContain('requestServerAdmin(\'/api/server-admin/status\', forceUpdateCheck ? { forceRefresh: true } : {})');
+        expect(refresh).toContain('requestServerAdmin(\'/api/server-admin/status\', { forceRefresh: forceUpdateCheck, autoStash: state.autoStashOverride })');
         expect(tabsSource).toContain('refreshButton.addEventListener(\'click\', () => refreshServerAdminPanel({ includeConfig: false, forceUpdateCheck: true }))');
         expect(extract('checkForNeconyanUpdate')).toContain('requestServerAdmin(\'/api/server-admin/status\')');
 

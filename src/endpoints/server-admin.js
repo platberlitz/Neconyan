@@ -600,7 +600,7 @@ function getInstallCommand() {
     return null;
 }
 
-async function getRepositoryStatus({ refresh = false } = {}) {
+async function getRepositoryStatus({ refresh = false, autoStash = getConfigValue('autoStashBeforePull', false, 'boolean') } = {}) {
     const status = {
         supported: false,
         isRepo: false,
@@ -612,6 +612,7 @@ async function getRepositoryStatus({ refresh = false } = {}) {
         ahead: 0,
         behind: 0,
         hasLocalChanges: false,
+        autoStash,
         changedFiles: [],
         changedFilesCount: 0,
         canUpdate: false,
@@ -640,7 +641,7 @@ async function getRepositoryStatus({ refresh = false } = {}) {
     const gitStatus = await git.status();
     status.hasLocalChanges = !gitStatus.isClean();
     status.changedFilesCount = gitStatus.files.length;
-    status.changedFiles = gitStatus.files.slice(0, 12).map(file => ({
+    status.changedFiles = gitStatus.files.map(file => ({
         path: file.path,
         index: file.index,
         workingDir: file.working_dir,
@@ -664,15 +665,13 @@ async function getRepositoryStatus({ refresh = false } = {}) {
     status.ahead = Number(aheadRaw) || 0;
     status.behind = Number(behindRaw) || 0;
     status.remoteCommit = toTrimmedString(await git.revparse(['--short', trackingBranch]).catch(() => ''));
-    const autoStashForStatus = getConfigValue('autoStashBeforePull', false, 'boolean');
-    status.canUpdate = status.behind > 0 && status.ahead === 0 && (!status.hasLocalChanges || autoStashForStatus);
-    status.autoStash = autoStashForStatus;
+    status.canUpdate = status.behind > 0 && status.ahead === 0 && (!status.hasLocalChanges || autoStash);
 
     if (status.behind > 0 && status.ahead > 0) {
         status.message = 'This branch has diverged from upstream and needs manual Git resolution.';
-    } else if (status.hasLocalChanges && !autoStashForStatus) {
+    } else if (status.hasLocalChanges && !autoStash) {
         status.message = 'Local changes are present, so auto-update is blocked to protect your work.';
-    } else if (status.hasLocalChanges && autoStashForStatus) {
+    } else if (status.hasLocalChanges && autoStash) {
         status.message = `Local changes will be auto-stashed before updating. ${status.behind} upstream commit${status.behind === 1 ? '' : 's'} available.`;
     } else if (status.behind > 0) {
         status.message = `${status.behind} upstream commit${status.behind === 1 ? '' : 's'} available.`;
@@ -689,7 +688,8 @@ router.post('/status', requireAdminMiddleware, async (request, response) => {
     try {
         const forceRefresh = request.body?.forceRefresh === true;
         const version = await getVersion();
-        const repository = await getRepositoryStatus({ refresh: forceRefresh });
+        const autoStash = typeof request.body?.autoStash === 'boolean' ? request.body.autoStash : undefined;
+        const repository = await getRepositoryStatus({ refresh: forceRefresh, autoStash });
         const androidRelease = await getLatestAndroidReleaseStatus(version.pkgVersion, { force: forceRefresh });
         const release = repository.isRepo || androidRelease ? null : await getLatestZipReleaseStatus(version.pkgVersion);
         const userRoot = request.user?.directories?.root;
@@ -1085,11 +1085,15 @@ router.post('/zip-update', requireAdminMiddleware, async (_request, response) =>
     }
 });
 
-router.post('/update', requireAdminMiddleware, async (_request, response) => {
+router.post('/update', requireAdminMiddleware, async (request, response) => {
     let git = null;
     let stashed = false;
+    let restorePending = false;
+    let stashPopWarning = null;
     try {
-        const repository = await getRepositoryStatus({ refresh: true });
+        const autoStash = typeof request.body?.autoStash === 'boolean'
+            ? request.body.autoStash : getConfigValue('autoStashBeforePull', false, 'boolean');
+        const repository = await getRepositoryStatus({ refresh: true, autoStash });
 
         if (!repository.supported) {
             return response.status(400).json({ error: repository.message || 'Git updates are not available on this server.' });
@@ -1103,9 +1107,7 @@ router.post('/update', requireAdminMiddleware, async (_request, response) => {
             return response.status(409).json({ error: repository.message || 'This branch is not linked to a remote copy of the code, so it cannot be updated automatically.', repository });
         }
 
-        const autoStash = getConfigValue('autoStashBeforePull', false, 'boolean');
         git = simpleGit({ baseDir: serverDirectory, ...GIT_OPTIONS });
-        let stashPopWarning = null;
 
         if (repository.hasLocalChanges) {
             if (!autoStash) {
@@ -1114,6 +1116,7 @@ router.post('/update', requireAdminMiddleware, async (_request, response) => {
             try {
                 await git.stash(['push', '-u', '-m', 'Neconyan auto-stash before update']);
                 stashed = true;
+                restorePending = true;
                 console.info('Local changes, including untracked files, stashed before update.');
             } catch (stashError) {
                 console.error('Failed to stash local changes.', stashError);
@@ -1123,6 +1126,7 @@ router.post('/update', requireAdminMiddleware, async (_request, response) => {
 
         if (repository.ahead > 0 && repository.behind > 0) {
             if (stashed) {
+                restorePending = false;
                 stashPopWarning = await restoreAutoStash(git, { reason: 'after diverged-branch update stop' });
             }
             return response.status(409).json({ error: repository.message || 'This copy and the remote copy have different changes, so it cannot be updated automatically.', repository, stashed, stashPopWarning });
@@ -1130,6 +1134,7 @@ router.post('/update', requireAdminMiddleware, async (_request, response) => {
 
         if (repository.behind === 0) {
             if (stashed) {
+                restorePending = false;
                 stashPopWarning = await restoreAutoStash(git, { reason: 'after no-op update' });
             }
             return response.json({
@@ -1146,6 +1151,7 @@ router.post('/update', requireAdminMiddleware, async (_request, response) => {
         await git.raw(['merge', '--ff-only', repository.trackingBranch]);
 
         if (stashed) {
+            restorePending = false;
             stashPopWarning = await restoreAutoStash(git, { reason: 'after update' });
         }
 
@@ -1165,7 +1171,7 @@ router.post('/update', requireAdminMiddleware, async (_request, response) => {
             }
         }
 
-        const nextRepository = await getRepositoryStatus();
+        const nextRepository = await getRepositoryStatus({ autoStash });
         const nextVersion = await getVersion();
 
         scheduleRestart(response, { reloadSupervisor: true });
@@ -1186,8 +1192,7 @@ router.post('/update', requireAdminMiddleware, async (_request, response) => {
         });
     } catch (error) {
         console.error('Failed to update Neconyan.', error);
-        let stashPopWarning = null;
-        if (stashed && git) {
+        if (restorePending && git) {
             stashPopWarning = await restoreAutoStash(git, { reason: 'after update failure' });
         }
         response.status(500).json({

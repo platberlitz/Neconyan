@@ -100,7 +100,7 @@ test('an explicit refresh bypasses the cached GitHub release metadata', async ()
 
 test('the explicit server status refresh reaches both repository and APK release checks', () => {
     const endpoint = fs.readFileSync(new URL('../src/endpoints/server-admin.js', import.meta.url), 'utf8');
-    assert.match(endpoint, /const forceRefresh = request\.body\?\.forceRefresh === true;[\s\S]*getRepositoryStatus\(\{ refresh: forceRefresh \}\)[\s\S]*getLatestAndroidReleaseStatus\(version\.pkgVersion, \{ force: forceRefresh \}\)/);
+    assert.match(endpoint, /const forceRefresh = request\.body\?\.forceRefresh === true;[\s\S]*getRepositoryStatus\(\{ refresh: forceRefresh, autoStash \}\)[\s\S]*getLatestAndroidReleaseStatus\(version\.pkgVersion, \{ force: forceRefresh \}\)/);
 });
 
 test('network errors retry after a minute without claiming the app is up to date', async () => {

@@ -45,6 +45,19 @@ afterAll(async () => {
 });
 
 describe('server status folder paths', () => {
+    test('uses only a boolean auto-stash override without saving it', async () => {
+        for (const [autoStash, expected] of [[true, true], [false, false], ['true', false], [undefined, false]]) {
+            const response = await fetch(`${baseUrl}/api/server-admin/status`, {
+                method: 'POST',
+                headers: { 'X-Test-Admin': 'true', 'Content-Type': 'application/json' },
+                body: JSON.stringify({ autoStash }),
+            });
+            expect(response.status).toBe(200);
+            expect((await response.json()).repository.autoStash).toBe(expected);
+        }
+        expect(fs.readFileSync(path.join(configDirectory, 'config.yaml'), 'utf8')).toBe('enableServerPlugins: false\n');
+    }, 30000);
+
     test('keeps folder paths behind the administrator check', async () => {
         const response = await fetch(`${baseUrl}/api/server-admin/status`, { method: 'POST' });
         expect(response.status).toBe(403);
