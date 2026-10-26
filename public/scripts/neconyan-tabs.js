@@ -1611,6 +1611,7 @@ const nnState = {
     serverAdmin: {
         refs: null,
         originalConfig: '',
+        autoStashOverride: undefined,
         lastModifiedMs: 0,
         thumbnailLastModifiedMs: 0,
         thumbnailSettingsLoaded: false,
@@ -13260,6 +13261,11 @@ function updateServerAdminInteractivity() {
     setButtonDisabled(refs.saveConfigButton, locked || !hasConfigContent);
     setButtonDisabled(refs.saveConfigRestartButton, locked || !hasConfigContent);
     setThumbnailInputsDisabled(thumbnailLocked);
+    if (refs.autoStashCheckbox) {
+        const data = state.lastStatusData;
+        refs.autoStashCheckbox.disabled = locked || Boolean(data?.androidRelease?.supported)
+            || !data?.repository?.supported || !data?.repository?.isRepo;
+    }
 
     if (refs.configEditor instanceof HTMLTextAreaElement) {
         refs.configEditor.disabled = locked;
@@ -13355,7 +13361,10 @@ function renderServerAdminStatus(data) {
         if (!repository?.trackingBranch) {
             pillLabel = 'Local project';
             pillTone = 'neutral';
-        } else if (repository?.hasLocalChanges && !repository?.canUpdate) {
+        } else if (repository?.ahead > 0 && repository?.behind > 0) {
+            pillLabel = 'Update Blocked';
+            pillTone = 'danger';
+        } else if (repository?.hasLocalChanges && !repository?.autoStash) {
             pillLabel = 'Update Blocked';
             pillTone = 'danger';
         } else if (repository?.hasLocalChanges && repository?.autoStash) {
@@ -13411,16 +13420,20 @@ function renderServerAdminStatus(data) {
         noteParts.push('Open the Neconyan Android app to install this APK update.');
     }
 
-    if (repository?.hasLocalChanges && !repository?.canUpdate) {
+    if (isGitInstall && repository?.hasLocalChanges && !repository?.autoStash) {
         noteParts.push('Update blocked while this checkout has local changes.');
     }
 
-    if ((repository?.changedFilesCount ?? 0) > 0) {
-        const changedPreview = Array.isArray(repository?.changedFiles)
-            ? repository.changedFiles.map(file => file?.path).filter(Boolean).join(', ')
-            : '';
-        noteParts.push(`Changed files: ${repository.changedFilesCount}`);
-        appendServerAdminStat(sourceDetailsGrid, 'Changed files', changedPreview || String(repository.changedFilesCount));
+    if (refs.changedFiles) {
+        refs.changedFiles.hidden = !isGitInstall || !(repository?.changedFilesCount > 0);
+        refs.changedFiles.replaceChildren();
+        if (!refs.changedFiles.hidden) {
+            refs.changedFiles.append(createElement('strong', { text: `Changed files: ${repository.changedFilesCount}` }));
+            for (const file of repository.changedFiles ?? []) {
+                // Filenames are text, never HTML or translation keys.
+                refs.changedFiles.append(createElement('div', { text: file.path, attrs: { translate: 'no' } }));
+            }
+        }
     }
 
     setServerAdminMessage(refs.statusNote, noteParts.join('\n'), pillTone);
@@ -13519,7 +13532,7 @@ async function refreshServerAdminPanel({ includeConfig = false, forceConfig = fa
         refs.configState.dataset.state = 'loading';
     }
 
-    const statusPromise = requestServerAdmin('/api/server-admin/status', forceUpdateCheck ? { forceRefresh: true } : {});
+    const statusPromise = requestServerAdmin('/api/server-admin/status', { forceRefresh: forceUpdateCheck, autoStash: state.autoStashOverride });
     const configPromise = shouldLoadConfig ? requestServerAdmin('/api/server-admin/config/get') : null;
     const thumbnailPromise = shouldLoadThumbnails
         ? requestServerAdmin('/api/server-admin/config/thumbnail-settings/get')
@@ -13863,7 +13876,7 @@ async function handleServerAdminUpdate() {
     refs.updateOutput.textContent = '';
 
     try {
-        const result = await requestServerAdmin('/api/server-admin/update');
+        const result = await requestServerAdmin('/api/server-admin/update', { autoStash: refs.autoStashCheckbox.checked });
         const nextStatus = {
             ...(state.lastStatusData ?? {}),
             configPath: refs.configPath?.textContent || state.lastStatusData?.configPath || '',
@@ -14021,6 +14034,32 @@ async function loadServerAdminBranches(selectElement, currentBranch) {
     }
 }
 
+async function handleServerAdminAutoStash() {
+    const state = getServerAdminState();
+    const refs = getServerAdminRefs();
+    if (!refs || state.busy || state.restarting) return;
+
+    const previous = Boolean(state.lastStatusData?.repository?.autoStash);
+    const autoStash = refs.autoStashCheckbox.checked;
+    state.busy = true;
+    updateServerAdminInteractivity();
+    setServerAdminMessage(refs.updateNote, 'Checking update options…');
+    try {
+        const status = await requestServerAdmin('/api/server-admin/status', { autoStash });
+        state.autoStashOverride = autoStash;
+        renderServerAdminStatus(status);
+        setServerAdminMessage(refs.updateNote, autoStash
+            ? 'Auto-stash is on for this session. Choose Update & Restart to set your changes aside, update, then restore them.'
+            : 'Auto-stash is off. Local changes will block updates.', 'good');
+    } catch (error) {
+        refs.autoStashCheckbox.checked = previous;
+        setServerAdminMessage(refs.updateNote, error.message || 'Could not change auto-stash. Try again.', 'danger');
+    } finally {
+        state.busy = false;
+        updateServerAdminInteractivity();
+    }
+}
+
 async function handleServerAdminBranchSwitch(selectElement) {
     const state = getServerAdminState();
     const refs = getServerAdminRefs();
@@ -14125,13 +14164,14 @@ function buildServerAdminPanel() {
     const statusGrid = createElement('div', { className: 'sb-server-grid sb-server-summary-grid' });
     const folderList = createElement('div', { className: 'sb-server-folder-list', attrs: { hidden: '' } });
     const statusNote = createElement('div', { className: 'sb-server-note' });
+    const changedFiles = createElement('div', { className: 'sb-server-note', attrs: { hidden: '' } });
     const sourceDetails = createElement('details', { className: 'sb-server-source-details' });
     const sourceSummary = createElement('summary', { text: 'More source details' });
     const sourceDetailsGrid = createElement('div', { className: 'sb-server-grid' });
     sourceDetails.append(sourceSummary, sourceDetailsGrid);
     statusCopy.append(statusTitle, statusDescription);
     statusHeader.append(statusCopy, statusPill);
-    statusCard.append(statusHeader, statusGrid, folderList, statusNote, sourceDetails);
+    statusCard.append(statusHeader, statusGrid, folderList, statusNote, changedFiles, sourceDetails);
 
     const updateCard = createElement('section', { className: 'sb-admin-card sb-server-card' });
     const updateHeader = createElement('div', { className: 'sb-admin-card-header' });
@@ -14291,6 +14331,7 @@ function buildServerAdminPanel() {
         updateOutput,
         autoStashCheckbox,
         autoStashLabel,
+        changedFiles,
         thumbnailEnabled,
         thumbnailFormat,
         thumbnailQuality,
@@ -14343,18 +14384,7 @@ function buildServerAdminPanel() {
         updateServerConfigDirtyState();
         updateServerAdminInteractivity();
     });
-    autoStashCheckbox.addEventListener('change', function () {
-        const refs = getServerAdminRefs();
-        if (!refs?.configEditor) return;
-        const yaml = refs.configEditor.value;
-        const newValue = this.checked ? 'true' : 'false';
-        if (/^autoStashBeforePull:\s*(true|false)/m.test(yaml)) {
-            refs.configEditor.value = yaml.replace(/^(autoStashBeforePull:\s*)(true|false)/m, `$1${newValue}`);
-        } else {
-            refs.configEditor.value = yaml + `\nautoStashBeforePull: ${newValue}\n`;
-        }
-        refs.configEditor.dispatchEvent(new Event('input'));
-    });
+    autoStashCheckbox.addEventListener('change', handleServerAdminAutoStash);
     updateServerAdminInteractivity();
 
     return {
