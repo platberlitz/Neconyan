@@ -18883,5 +18883,12 @@
   "Switch motion, blur, message details and other interface extras on or off.": "アニメーション、ぼかし、メッセージ詳細などの表示を切り替えます。",
   "Writes the exact model name by each reply's time, after its icon when icons are on.": "返信の時刻の横に正確なモデル名を表示します。アイコンがオンの場合はアイコンの後ろに表示されます。",
   "Needs Model Name After Icon switched on.": "「アイコンの後にモデル名」をオンにする必要があります。",
-  "Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.": "プロバイダーのプレフィックスを省略し、kimi/kimi-k3 を kimi-k3 と表示します。"
+  "Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.": "プロバイダーのプレフィックスを省略し、kimi/kimi-k3 を kimi-k3 と表示します。",
+  "All snapshots": "すべてのスナップショット",
+  "Embedded lorebook": "埋め込みローアブック",
+  "Nothing matches that search.": "検索に一致するものは見つかりませんでした。",
+  "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "キャラクター、ローアブック、プリセットの過去のバージョンが自動で保存されています。現在の内容と見比べて、必要なら元に戻すことができます。",
+  "Search snapshots": "スナップショットを検索",
+  "The item changed again, so the restore was stopped. Compare the versions and try again.": "アイテムが変更されたため、復元を中断しました。バージョンを見比べて、もう一度お試しください。",
+  "This version": "このバージョン"
 }

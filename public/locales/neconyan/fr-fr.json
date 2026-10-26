@@ -18336,5 +18336,12 @@
   "Switch motion, blur, message details and other interface extras on or off.": "Activez ou désactivez les animations, le flou, les détails des messages et d'autres options d'interface.",
   "Writes the exact model name by each reply's time, after its icon when icons are on.": "Affiche le nom exact du modèle à côté de l'heure de chaque réponse, après son icône si les icônes sont activées.",
   "Needs Model Name After Icon switched on.": "Nécessite d'activer Nom du modèle après l'icône.",
-  "Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.": "Masque le préfixe du fournisseur, ainsi kimi/kimi-k3 s'affiche sous la forme kimi-k3."
+  "Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.": "Masque le préfixe du fournisseur, ainsi kimi/kimi-k3 s'affiche sous la forme kimi-k3.",
+  "All snapshots": "Tous les instantanés",
+  "Embedded lorebook": "Lorebook intégré",
+  "Nothing matches that search.": "Rien ne correspond à cette recherche.",
+  "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "Les anciennes versions de vos personnages, lorebooks et préréglages, sauvegardées automatiquement. Comparez-en une avec ce que vous avez actuellement et rétablissez-la si besoin.",
+  "Search snapshots": "Rechercher dans les instantanés",
+  "The item changed again, so the restore was stopped. Compare the versions and try again.": "L'élément a de nouveau changé, la restauration a donc été interrompue. Comparez les versions et réessayez.",
+  "This version": "Cette version"
 }

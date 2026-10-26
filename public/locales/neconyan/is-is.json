@@ -18907,5 +18907,12 @@
   "Switch motion, blur, message details and other interface extras on or off.": "Kveiktu eða slökktu á hreyfingum, móðu, upplýsingum um skilaboð og öðru aukaefni í viðmótinu.",
   "Writes the exact model name by each reply's time, after its icon when icons are on.": "Birtir nákvæmt heiti líkans við tímasetningu hvers svars, á eftir tákninu þegar kveikt er á táknum.",
   "Needs Model Name After Icon switched on.": "Krefst þess að kveikt sé á Heiti líkans á eftir tákni.",
-  "Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.": "Sleppir forskeyti þjónustuveitanda, svo kimi/kimi-k3 birtist sem kimi-k3."
+  "Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.": "Sleppir forskeyti þjónustuveitanda, svo kimi/kimi-k3 birtist sem kimi-k3.",
+  "All snapshots": "Allar skyndimyndir",
+  "Embedded lorebook": "Innfelld fróðleiksbók",
+  "Nothing matches that search.": "Ekkert passar við þessa leit.",
+  "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "Eldri útgáfur af persónunum þínum, fróðleiksbókum og forstillingum, vistaðar sjálfkrafa. Berðu útgáfu saman við það sem þú ert með núna og settu hana aftur inn ef þú þarft.",
+  "Search snapshots": "Leita í skyndimyndum",
+  "The item changed again, so the restore was stopped. Compare the versions and try again.": "Hluturinn breyttist aftur, svo hætt var við endurheimtina. Berðu útgáfurnar saman og reyndu aftur.",
+  "This version": "Þessi útgáfa"
 }

@@ -20188,5 +20188,11 @@
   "This reply contains a quote. If your image settings require a review and the quote cannot be checked against its original message, the model receives what you choose here instead of the quote: your reviewed text, or nothing. The message as shown is not changed.": "Diese Antwort enthält ein Zitat. Wenn deine Bildeinstellungen eine Überprüfung verlangen und das Zitat nicht mit seiner Originalnachricht abgeglichen werden kann, erhält das Modell statt des Zitats das, was du hier wählst: deinen überprüften Text oder nichts. Die angezeigte Nachricht wird nicht geändert.",
   "The chat or branch this notice refers to could not be opened, so its image review is not available.": "Der Chat oder Zweig, auf den sich diese Meldung bezieht, konnte nicht geöffnet werden, daher ist seine Bildüberprüfung nicht verfügbar.",
   "This notice belongs to another account. Switch back to that account to review the image.": "Diese Meldung gehört zu einem anderen Konto. Wechsle zurück zu diesem Konto, um das Bild zu überprüfen.",
-  "This notice refers to a different branch. Switch back to that branch to review the image.": "Diese Meldung bezieht sich auf einen anderen Zweig. Wechsle zurück zu diesem Zweig, um das Bild zu überprüfen."
+  "This notice refers to a different branch. Switch back to that branch to review the image.": "Diese Meldung bezieht sich auf einen anderen Zweig. Wechsle zurück zu diesem Zweig, um das Bild zu überprüfen.",
+  "All snapshots": "Alle Snapshots",
+  "Embedded lorebook": "Eingebettetes Lorebook",
+  "Nothing matches that search.": "Dazu wurde nichts gefunden.",
+  "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "Ältere Versionen deiner Charaktere, Lorebooks und Presets, automatisch gespeichert. Vergleiche eine davon mit deinem aktuellen Stand und stelle sie wieder her, wenn du sie brauchst.",
+  "Search snapshots": "Snapshots durchsuchen",
+  "This version": "Diese Version"
 }

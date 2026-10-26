@@ -19071,5 +19071,12 @@
   "Switch motion, blur, message details and other interface extras on or off.": "เปิดหรือปิดภาพเคลื่อนไหว, ภาพเบลอ, รายละเอียดข้อความ และส่วนเสริมอื่นๆ ของหน้าจอ",
   "Writes the exact model name by each reply's time, after its icon when icons are on.": "แสดงชื่อโมเดลข้างเวลาของแต่ละข้อความตอบกลับ ถัดจากไอคอนเมื่อเปิดใช้งานไอคอน",
   "Needs Model Name After Icon switched on.": "ต้องเปิดใช้งาน 'ชื่อโมเดลหลังไอคอน' ก่อน",
-  "Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.": "ตัดคำนำหน้าผู้ให้บริการออก, เพื่อให้ kimi/kimi-k3 แสดงเป็น kimi-k3"
+  "Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.": "ตัดคำนำหน้าผู้ให้บริการออก, เพื่อให้ kimi/kimi-k3 แสดงเป็น kimi-k3",
+  "All snapshots": "สแนปชอตทั้งหมด",
+  "Embedded lorebook": "Lorebook ที่ฝังไว้",
+  "Nothing matches that search.": "ไม่พบสิ่งที่ตรงกับการค้นหา",
+  "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "เวอร์ชันก่อนหน้าของตัวละคร Lorebook และพรีเซ็ตของคุณที่บันทึกไว้ให้อัตโนมัติ ลองเปรียบเทียบกับเวอร์ชันปัจจุบัน แล้วนำกลับมาใช้ใหม่ได้ทุกเมื่อที่ต้องการ",
+  "Search snapshots": "ค้นหาสแนปชอต",
+  "The item changed again, so the restore was stopped. Compare the versions and try again.": "รายการนี้มีการเปลี่ยนแปลงอีกครั้ง การกู้คืนจึงหยุดลง ลองเปรียบเทียบเวอร์ชันแล้วลองใหม่อีกครั้ง",
+  "This version": "เวอร์ชันนี้"
 }

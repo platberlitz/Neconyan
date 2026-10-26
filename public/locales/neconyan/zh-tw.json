@@ -17617,5 +17617,12 @@
   "Switch motion, blur, message details and other interface extras on or off.": "自由開啟或關閉動態效果、模糊、訊息詳細資訊與其他介面細節。",
   "Writes the exact model name by each reply's time, after its icon when icons are on.": "在每則回覆的時間旁顯示確切的模型名稱，若開啟圖示則顯示在圖示後方。",
   "Needs Model Name After Icon switched on.": "需開啟「圖示後顯示模型名稱」。",
-  "Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.": "省略提供者前綴，讓 kimi/kimi-k3 顯示為 kimi-k3。"
+  "Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.": "省略提供者前綴，讓 kimi/kimi-k3 顯示為 kimi-k3。",
+  "All snapshots": "所有快照",
+  "Embedded lorebook": "內嵌的世界書",
+  "Nothing matches that search.": "找不到符合搜尋條件的內容。",
+  "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "系統會自動為你儲存角色、世界書與預設集先前的版本。你可以拿來和現在的內容比對，需要的話隨時都能還原回去。",
+  "Search snapshots": "搜尋快照",
+  "The item changed again, so the restore was stopped. Compare the versions and try again.": "內容又有了新的變更，因此已停止還原。請先比對版本後再試一次。",
+  "This version": "此版本"
 }
