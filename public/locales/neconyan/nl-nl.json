@@ -18927,5 +18927,12 @@
   "Switch motion, blur, message details and other interface extras on or off.": "Zet beweging, vervaging, berichtdetails en andere interface-opties aan of uit.",
   "Writes the exact model name by each reply's time, after its icon when icons are on.": "Toont de exacte modelnaam bij het tijdstip van elk antwoord, achter het icoon als iconen aanstaan.",
   "Needs Model Name After Icon switched on.": "Vereist dat Modelnaam achter icoon is ingeschakeld.",
-  "Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.": "Laat het provider-voorvoegsel weg, zodat kimi/kimi-k3 als kimi-k3 wordt getoond."
+  "Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.": "Laat het provider-voorvoegsel weg, zodat kimi/kimi-k3 als kimi-k3 wordt getoond.",
+  "All snapshots": "Alle momentopnamen",
+  "Embedded lorebook": "Ingesloten lorebook",
+  "Nothing matches that search.": "Niets gevonden voor deze zoekopdracht.",
+  "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "Oudere versies van je personages, lorebooks en presets, automatisch opgeslagen. Vergelijk er eentje met wat je nu hebt en zet hem terug als je hem nodig hebt.",
+  "Search snapshots": "Momentopnamen zoeken",
+  "The item changed again, so the restore was stopped. Compare the versions and try again.": "Het item is weer veranderd, dus het terugzetten is gestopt. Vergelijk de versies en probeer het opnieuw.",
+  "This version": "Deze versie"
 }

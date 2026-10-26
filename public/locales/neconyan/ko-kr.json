@@ -18726,5 +18726,12 @@
   "Switch motion, blur, message details and other interface extras on or off.": "화면 효과, 블러, 메시지 상세 정보 등 부가 기능을 켜거나 끌 수 있어요.",
   "Writes the exact model name by each reply's time, after its icon when icons are on.": "각 답변의 시간 옆, 아이콘이 켜져 있다면 아이콘 뒤에 정확한 모델 이름을 표시해요.",
   "Needs Model Name After Icon switched on.": "'아이콘 뒤 모델 이름'이 켜져 있어야 해요.",
-  "Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.": "제공자 접두사를 생략해 kimi/kimi-k3를 kimi-k3로 표시해요."
+  "Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.": "제공자 접두사를 생략해 kimi/kimi-k3를 kimi-k3로 표시해요.",
+  "All snapshots": "모든 스냅샷",
+  "Embedded lorebook": "포함된 로어북",
+  "Nothing matches that search.": "검색 결과와 일치하는 항목이 없어요.",
+  "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "캐릭터, 로어북, 프리셋의 이전 버전이 자동으로 저장돼요. 현재 내용과 비교해 보고 필요할 때 되돌릴 수 있어요.",
+  "Search snapshots": "스냅샷 검색",
+  "The item changed again, so the restore was stopped. Compare the versions and try again.": "항목이 다시 변경되어 복원이 중단되었어요. 버전을 비교한 후 다시 시도해 주세요.",
+  "This version": "이 버전"
 }

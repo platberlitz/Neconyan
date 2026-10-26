@@ -17832,5 +17832,12 @@
   "Switch motion, blur, message details and other interface extras on or off.": "Включение и отключение анимаций, размытия, деталей сообщений и других мелочей интерфейса.",
   "Writes the exact model name by each reply's time, after its icon when icons are on.": "Показывает точное название модели рядом со временем каждого ответа, после значка, если значки включены.",
   "Needs Model Name After Icon switched on.": "Нужно включить Название модели после значка.",
-  "Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.": "Убирает префикс провайдера, поэтому kimi/kimi-k3 отображается как kimi-k3."
+  "Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.": "Убирает префикс провайдера, поэтому kimi/kimi-k3 отображается как kimi-k3.",
+  "All snapshots": "Все снимки",
+  "Embedded lorebook": "Встроенный лорбук",
+  "Nothing matches that search.": "По этому запросу ничего не нашлось.",
+  "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "Прежние версии ваших персонажей, лорбуков и пресетов, сохранённые автоматически. Сравните любую с тем, что у вас есть сейчас, и верните её, если понадобится.",
+  "Search snapshots": "Поиск по снимкам",
+  "The item changed again, so the restore was stopped. Compare the versions and try again.": "Элемент снова изменился, поэтому восстановление было прервано. Сравните версии и попробуйте ещё раз.",
+  "This version": "Эта версия"
 }

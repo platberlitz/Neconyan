@@ -18940,5 +18940,12 @@
   "Switch motion, blur, message details and other interface extras on or off.": "Bật hoặc tắt chuyển động, làm mờ, chi tiết tin nhắn và các tiện ích giao diện khác.",
   "Writes the exact model name by each reply's time, after its icon when icons are on.": "Hiển thị tên mô hình chính xác cạnh thời gian phản hồi, phía sau biểu tượng khi biểu tượng đang bật.",
   "Needs Model Name After Icon switched on.": "Cần bật Tên mô hình sau biểu tượng.",
-  "Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.": "Bỏ tiền tố nhà cung cấp, để kimi/kimi-k3 hiển thị thành kimi-k3."
+  "Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.": "Bỏ tiền tố nhà cung cấp, để kimi/kimi-k3 hiển thị thành kimi-k3.",
+  "All snapshots": "Tất cả bản lưu",
+  "Embedded lorebook": "Lorebook nhúng",
+  "Nothing matches that search.": "Không tìm thấy kết quả nào phù hợp.",
+  "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "Các phiên bản cũ của nhân vật, lorebook và preset được lưu lại tự động. Bạn có thể so sánh một bản với những gì đang có và khôi phục lại nếu cần nhé.",
+  "Search snapshots": "Tìm kiếm bản lưu",
+  "The item changed again, so the restore was stopped. Compare the versions and try again.": "Mục này vừa có thay đổi mới nên quá trình khôi phục đã dừng lại. Hãy so sánh các phiên bản rồi thử lại nhé.",
+  "This version": "Phiên bản này"
 }

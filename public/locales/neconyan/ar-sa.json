@@ -18885,5 +18885,12 @@
   "Switch motion, blur, message details and other interface extras on or off.": "تشغيل أو إيقاف الحركة، والتمويه، وتفاصيل الرسائل، وإضافات الواجهة الأخرى.",
   "Writes the exact model name by each reply's time, after its icon when icons are on.": "يعرض اسم النموذج بالتحديد بجانب وقت كل رد، بعد أيقونته عند تفعيل الأيقونات.",
   "Needs Model Name After Icon switched on.": "يتطلب تفعيل خيار اسم النموذج بعد الأيقونة.",
-  "Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.": "يحذف بادئة المزود، ليظهر kimi/kimi-k3 كـ kimi-k3."
+  "Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.": "يحذف بادئة المزود، ليظهر kimi/kimi-k3 كـ kimi-k3.",
+  "All snapshots": "جميع اللقطات",
+  "Embedded lorebook": "كتاب معارف مدمج",
+  "Nothing matches that search.": "لم نجد ما يطابق بحثك.",
+  "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "نسخ سابقة من شخصياتك وكتب المعارف والإعدادات المسبقة، تُحفظ تلقائيًا. قارن أي نسخة بما لديك الآن واستعدها إن احتجت إليها.",
+  "Search snapshots": "ابحث في اللقطات",
+  "The item changed again, so the restore was stopped. Compare the versions and try again.": "تغير العنصر مجددًا، لذا توقفت عملية الاستعادة. قارن بين النسختين وحاول مرة أخرى.",
+  "This version": "هذه النسخة"
 }

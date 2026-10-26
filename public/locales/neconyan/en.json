@@ -20667,5 +20667,12 @@
   "Older messages left out to fit: ${0}. They are not sent at all.": "Older messages left out to fit: ${0}. They are not sent at all.",
   "Where replies are written": "Where replies are written",
   "In the browser (recommended)": "In the browser (recommended)",
-  "On the server": "On the server"
+  "On the server": "On the server",
+  "All snapshots": "All snapshots",
+  "Embedded lorebook": "Embedded lorebook",
+  "Nothing matches that search.": "Nothing matches that search.",
+  "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.": "Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.",
+  "Search snapshots": "Search snapshots",
+  "The item changed again, so the restore was stopped. Compare the versions and try again.": "The item changed again, so the restore was stopped. Compare the versions and try again.",
+  "This version": "This version"
 }
