@@ -1,6 +1,8 @@
 #import "NodeRunner.h"
 #import <NodeMobile/NodeMobile.h>
 #include <stdio.h>
+#include <sys/stat.h>
+#include <errno.h>
 
 @implementation NodeRunner
 + (void)startWithArguments:(NSArray<NSString *> *)arguments logPath:(NSString *)logPath {
@@ -11,6 +13,9 @@
             freopen(logPath.fileSystemRepresentation, "a", stderr);
             setvbuf(stdout, NULL, _IOLBF, 0);
             setvbuf(stderr, NULL, _IOLBF, 0);
+            struct stat entry;
+            int entryStatus = stat(arguments[1].fileSystemRepresentation, &entry);
+            fprintf(stderr, "Neconyan startup: entry file stat=%d errno=%d\n", entryStatus, entryStatus == 0 ? 0 : errno);
             int argc = (int)arguments.count;
             char **argv = (char **)calloc(argc + 1, sizeof(char *));
             for (int i = 0; i < argc; i++) argv[i] = strdup(arguments[i].UTF8String);
