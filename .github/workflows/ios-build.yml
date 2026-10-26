@@ -24,6 +24,9 @@ jobs:
         env:
           NECONYAN_LARGE_IMPORT_BYTES: '13958643712'
         run: |
+          # macOS exposes its temporary directory through /var, a symbolic link.
+          # The storage fixtures require the same canonical paths as the app.
+          export TMPDIR="$(node -p 'require("node:fs").realpathSync(require("node:os").tmpdir())')"
           node --max-old-space-size=512 --test tests/application-import-large.node.js > ios/large-import-test.log 2>&1 || { cat ios/large-import-test.log; exit 1; }
           cat ios/large-import-test.log
       - name: Prepare the standalone server and pinned iOS runtime
