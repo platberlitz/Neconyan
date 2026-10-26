@@ -98,16 +98,63 @@ function invalidateUi(generation) {
     }
 }
 
-/** A value shown in a diff cell: short enough to read, long enough to recognise. */
+/** A value shown in a diff: whole enough to read, capped so a huge card stays usable. */
 function preview(value) {
     if (value === undefined) {
         return '(not set)';
     }
-    const text = typeof value === 'string' ? value : JSON.stringify(value);
-    return text.length > 300 ? `${text.slice(0, 299)}…` : text;
+    const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+    if (text === '') {
+        return '(empty)';
+    }
+    return text.length > 2000 ? `${text.slice(0, 1999)}…` : text;
+}
+
+function icon(name) {
+    const node = el('i', `fa-solid ${name}`);
+    node.setAttribute('aria-hidden', 'true');
+    return node;
+}
+
+function iconButton(className, iconName, label, onClick) {
+    const node = button(className, '', onClick);
+    node.append(icon(iconName), el('span', '', label));
+    return node;
 }
 
 const KIND_LABELS = { character: 'Characters', lorebook: 'Lorebooks', preset: 'Presets' };
+const KIND_ICONS = { character: 'fa-user', lorebook: 'fa-book-open', preset: 'fa-sliders' };
+const CHANGE_LABELS = { added: 'Comes back', removed: 'Goes away', changed: 'Changes' };
+const SEARCH_THRESHOLD = 8;
+
+const CHARACTER_FIELD_LABELS = {
+    name: 'Name',
+    description: 'Description',
+    personality: 'Personality',
+    scenario: 'Scenario',
+    first_mes: 'First message',
+    mes_example: 'Example messages',
+    alternate_greetings: 'Alternate greetings',
+    creator_notes: 'Creator\'s notes',
+    creatorcomment: 'Creator\'s notes',
+    system_prompt: 'System prompt',
+    post_history_instructions: 'Post-history instructions',
+    tags: 'Card tags',
+    creator: 'Creator',
+    character_version: 'Character version',
+    character_book: 'Embedded lorebook',
+    extensions: 'Extensions',
+    talkativeness: 'Talkativeness',
+    fav: 'Favourite',
+};
+
+function characterFieldLabel(key) {
+    return CHARACTER_FIELD_LABELS[key] ?? key;
+}
+
+function versionCount(count) {
+    return `${count} version${count === 1 ? '' : 's'}`;
+}
 
 export async function openTimeMachine() {
     if (openPopup) {
@@ -116,17 +163,21 @@ export async function openTimeMachine() {
     const context = ctx();
     const generation = ++uiGeneration;
     const root = el('div', 'sbctm');
-    const state = { selected: null, comparison: 0, restoring: false };
-
-    const heading = el('h2', 'sbctm-title', 'Time Machine');
-    heading.id = 'sbctm-title';
-    root.append(heading);
+    root.dataset.view = 'list';
+    const state = { selected: null, comparison: 0, restoring: false, kind: 'all' };
 
     // ---- header ----
+    const header = el('header', 'sbctm-header');
+    const heading = el('h2', 'sbctm-title', 'Time Machine');
+    heading.id = 'sbctm-title';
+    const lede = el('p', 'sbctm-lede', 'Older versions of your characters, lorebooks and presets, saved automatically. Compare one with what you have now and put it back if you need it.');
+    const intro = el('div', 'sbctm-intro');
+    intro.append(heading, lede);
+
     const actions = el('div', 'sbctm-actions');
-    const status = el('span', 'sbctm-status');
+    const status = el('p', 'sbctm-status');
     status.setAttribute('role', 'status');
-    const snapshotNow = button('menu_button', 'Snapshot everything now', async () => {
+    const snapshotNow = iconButton('menu_button menu_button_primary sbctm-snapshot', 'fa-camera', 'Snapshot everything now', async () => {
         if (state.restoring) {
             return;
         }
@@ -153,59 +204,140 @@ export async function openTimeMachine() {
             snapshotNow.disabled = false;
         }
     });
-    actions.append(snapshotNow, status);
-    root.append(actions);
-
-    root.append(el('div', 'sbctm-hint',
-        'Characters, lorebooks and presets are snapshotted here, because nothing in Neconyan backs them up. '
-        + 'Extension settings from Neconyan\'s own settings backups are available further down.'));
+    actions.append(snapshotNow);
+    header.append(intro, actions, status);
+    root.append(header);
 
     // ---- body ----
     const body = el('div', 'sbctm-body');
     const targets = el('nav', 'sbctm-targets');
     targets.setAttribute('aria-label', 'Snapshot targets');
+    const filters = el('div', 'sbctm-filters');
+    filters.setAttribute('role', 'group');
+    filters.setAttribute('aria-label', 'Show');
+    const search = el('input', 'text_pole sbctm-search');
+    search.type = 'search';
+    search.placeholder = 'Search snapshots';
+    search.setAttribute('aria-label', 'Search snapshots');
+    search.addEventListener('input', () => renderTargetList());
+    const targetList = el('div', 'sbctm-target-list');
+    targets.append(filters, search, targetList);
     const detail = el('section', 'sbctm-detail');
     body.append(targets, detail);
     root.append(body);
 
-    function renderTargets() {
-        targets.replaceChildren();
-        const rows = listSnapshots();
-        if (rows.length === 0) {
-            targets.append(el('div', 'sbctm-empty',
-                'No snapshots yet. Editing a character or lorebook takes one automatically, or use the button above.'));
-            return;
-        }
+    let latestRows = [];
 
+    function setView(view) {
+        root.dataset.view = view;
+    }
+
+    function renderTargets() {
+        const rows = listSnapshots();
         const grouped = new Map();
         for (const row of rows) {
             const key = `${row.kind}:${row.target}`;
             const existing = grouped.get(key);
-            if (!existing || row.ts > existing.ts) {
-                grouped.set(key, row);
+            if (!existing) {
+                grouped.set(key, { row, count: 1 });
+            } else {
+                existing.count++;
+                if (row.ts > existing.row.ts) {
+                    existing.row = row;
+                }
             }
         }
+        latestRows = [...grouped.values()].sort((a, b) => a.row.label.localeCompare(b.row.label));
 
+        const kinds = ['character', 'lorebook', 'preset'].filter(kind => latestRows.some(item => item.row.kind === kind));
+        if (state.kind !== 'all' && !kinds.includes(state.kind)) {
+            state.kind = 'all';
+        }
+        filters.replaceChildren();
+        filters.hidden = kinds.length < 2;
+        for (const kind of ['all', ...kinds]) {
+            const count = kind === 'all' ? latestRows.length : latestRows.filter(item => item.row.kind === kind).length;
+            const chip = button('sbctm-filter', '', () => {
+                state.kind = kind;
+                renderTargets();
+            });
+            chip.append(el('span', '', kind === 'all' ? 'All' : KIND_LABELS[kind]), el('span', 'sbctm-count', String(count)));
+            chip.setAttribute('aria-pressed', String(state.kind === kind));
+            filters.append(chip);
+        }
+        search.hidden = latestRows.length <= SEARCH_THRESHOLD;
+        if (search.hidden) {
+            search.value = '';
+        }
+        renderTargetList();
+    }
+
+    function renderTargetList() {
+        targetList.replaceChildren();
+        if (latestRows.length === 0) {
+            const empty = el('div', 'sbctm-empty sbctm-empty-start');
+            empty.append(icon('fa-clock-rotate-left'), el('span', '',
+                'No snapshots yet. Editing a character or lorebook takes one automatically, or use the button above.'));
+            targetList.append(empty);
+            return;
+        }
+        const query = search.value.trim().toLocaleLowerCase();
+        const visible = latestRows.filter(item =>
+            (state.kind === 'all' || item.row.kind === state.kind)
+            && (!query || item.row.label.toLocaleLowerCase().includes(query)));
+        if (visible.length === 0) {
+            targetList.append(el('div', 'sbctm-empty', 'Nothing matches that search.'));
+            return;
+        }
         for (const kind of ['character', 'lorebook', 'preset']) {
-            const inKind = [...grouped.values()]
-                .filter(row => row.kind === kind)
-                .sort((a, b) => a.label.localeCompare(b.label));
+            const inKind = visible.filter(item => item.row.kind === kind);
             if (inKind.length === 0) {
                 continue;
             }
-            targets.append(el('h3', 'sbctm-group', KIND_LABELS[kind]));
-            for (const row of inKind) {
-                const count = rows.filter(r => r.kind === row.kind && r.target === row.target).length;
-                const item = button('sbctm-target', '', () => selectTarget(row.kind, row.target));
-                const meta = el('span', 'sbctm-target-meta', `${count} version${count === 1 ? '' : 's'} · ${formatWhen(row.ts)}`);
-                meta.title = new Date(row.ts).toLocaleString();
-                item.append(el('span', 'sbctm-target-name', row.label), meta);
-                if (state.selected?.kind === row.kind && state.selected?.target === row.target) {
-                    item.classList.add('sbctm-target-current');
-                    item.setAttribute('aria-current', 'true');
-                }
-                targets.append(item);
+            if (state.kind === 'all') {
+                targetList.append(el('h3', 'sbctm-group', KIND_LABELS[kind]));
             }
+            for (const item of inKind) {
+                targetList.append(targetCard(item));
+            }
+        }
+    }
+
+    function targetCard({ row, count }) {
+        const card = button('sbctm-target', '', () => selectTarget(row.kind, row.target));
+        card.dataset.kind = row.kind;
+        const art = el('span', 'sbctm-target-art');
+        const thumbnail = row.kind === 'character' ? thumbnailUrl(row.target) : '';
+        if (thumbnail) {
+            const image = el('img');
+            image.alt = '';
+            image.loading = 'lazy';
+            image.decoding = 'async';
+            image.addEventListener('error', () => image.replaceWith(icon(KIND_ICONS[row.kind])), { once: true });
+            image.src = thumbnail;
+            art.append(image);
+        } else {
+            art.append(icon(KIND_ICONS[row.kind]));
+        }
+        const text = el('span', 'sbctm-target-text');
+        const meta = el('span', 'sbctm-target-meta', `${versionCount(count)} · ${formatWhen(row.ts)}`);
+        meta.title = new Date(row.ts).toLocaleString();
+        text.append(el('span', 'sbctm-target-name', row.label), meta);
+        const chevron = icon('fa-chevron-right');
+        chevron.classList.add('sbctm-target-chevron');
+        card.append(art, text, chevron);
+        if (state.selected?.kind === row.kind && state.selected?.target === row.target) {
+            card.classList.add('sbctm-target-current');
+            card.setAttribute('aria-current', 'true');
+        }
+        return card;
+    }
+
+    function thumbnailUrl(avatar) {
+        try {
+            return ctx().getThumbnailUrl?.('avatar', avatar) ?? '';
+        } catch {
+            return '';
         }
     }
 
@@ -220,9 +352,29 @@ export async function openTimeMachine() {
         focusDetailHeading();
     }
 
+    function showList() {
+        if (state.restoring) {
+            return;
+        }
+        state.comparison++;
+        setView('list');
+        const current = targetList.querySelector('.sbctm-target-current') ?? targetList.querySelector('.sbctm-target');
+        current?.focus();
+    }
+
     function focusDetailHeading() {
-        // Fall back to the empty state: deleting the last version removes the
-        // focused button, and focus must not silently drop out of the dialog.
+        if (root.dataset.view === 'list' && !state.selected) {
+            // Deleting the last version removes the focused button, and focus
+            // must not silently drop out of the dialog.
+            const node = targetList.querySelector('.sbctm-target') ?? targetList.querySelector('.sbctm-empty');
+            if (node) {
+                if (!node.matches('button')) {
+                    node.tabIndex = -1;
+                }
+                node.focus();
+                return;
+            }
+        }
         const node = detail.querySelector('.sbctm-heading') ?? detail.querySelector('.sbctm-empty');
         if (node) {
             node.tabIndex = -1;
@@ -230,30 +382,60 @@ export async function openTimeMachine() {
         }
     }
 
+    function backToList() {
+        const back = iconButton('sbctm-back', 'fa-chevron-left', 'All snapshots', showList);
+        return back;
+    }
+
+    function detailHead(title, subtitle, kind) {
+        const head = el('div', 'sbctm-detail-head');
+        const art = el('span', 'sbctm-detail-art');
+        art.append(icon(KIND_ICONS[kind] ?? 'fa-clock-rotate-left'));
+        const text = el('div', 'sbctm-detail-text');
+        text.append(el('h4', 'sbctm-heading', title));
+        if (subtitle) {
+            text.append(el('p', 'sbctm-sub', subtitle));
+        }
+        head.append(art, text);
+        return head;
+    }
+
     function renderTimeline() {
         detail.replaceChildren();
         if (!state.selected) {
-            detail.append(el('div', 'sbctm-empty', 'Pick something on the left to see its history.'));
+            setView('list');
+            const empty = el('div', 'sbctm-empty', 'Pick something on the left to see its history.');
+            detail.append(empty);
             return;
         }
+        setView('detail');
 
         const { kind, target } = state.selected;
         const rows = sortSnapshots(listSnapshots().filter(r => r.kind === kind && r.target === target));
-        detail.append(el('h4', 'sbctm-heading', rows[0]?.label ?? target));
+        detail.append(backToList(), detailHead(rows[0]?.label ?? target, `${versionCount(rows.length)} saved`, kind));
 
-        const list = el('div', 'sbctm-timeline');
-        for (const row of rows) {
-            const entry = el('div', 'sbctm-version');
+        const list = el('ol', 'sbctm-timeline');
+        rows.forEach((row, index) => {
+            const entry = el('li', 'sbctm-version');
+            entry.append(el('span', 'sbctm-version-dot'));
+            const text = el('div', 'sbctm-version-text');
+            const whenLine = el('span', 'sbctm-version-line');
             const when = el('span', 'sbctm-version-when', formatWhen(row.ts));
             when.title = new Date(row.ts).toLocaleString();
-            entry.append(when);
-            entry.append(el('span', 'sbctm-version-size', formatBytes(row.size)));
-            entry.append(button('menu_button sbctm-small', 'Compare', () => {
+            whenLine.append(when);
+            if (index === 0) {
+                whenLine.append(el('span', 'sbctm-badge sbctm-badge-latest', 'Latest'));
+            }
+            text.append(whenLine, el('span', 'sbctm-version-meta', `${new Date(row.ts).toLocaleString()} · ${formatBytes(row.size)}`));
+            entry.append(text);
+
+            const controls = el('div', 'sbctm-version-actions');
+            controls.append(button('menu_button sbctm-small', 'Compare', () => {
                 if (!state.restoring) {
                     void showComparison(row);
                 }
             }));
-            const deleteVersion = button('menu_button sbctm-small', 'Delete', async () => {
+            const deleteVersion = iconButton('menu_button sbctm-small sbctm-delete', 'fa-trash-can', 'Delete', async () => {
                 if (state.restoring) {
                     return;
                 }
@@ -281,9 +463,10 @@ export async function openTimeMachine() {
                     deleteVersion.disabled = false;
                 }
             });
-            entry.append(deleteVersion);
+            controls.append(deleteVersion);
+            entry.append(controls);
             list.append(entry);
-        }
+        });
         detail.append(list);
     }
 
@@ -327,16 +510,18 @@ export async function openTimeMachine() {
             return;
         }
 
-        detail.replaceChildren();
-        const heading = el('h4', 'sbctm-heading', `${row.label}: ${formatWhen(row.ts)}`);
-        heading.title = new Date(row.ts).toLocaleString();
-        detail.append(heading);
+        detail.replaceChildren(backToList());
+        const head = detailHead(row.label, `${formatWhen(row.ts)} · ${formatBytes(row.size)}`, row.kind);
+        head.querySelector('.sbctm-sub').title = new Date(row.ts).toLocaleString();
+        detail.append(head);
 
         if (live === null) {
-            detail.append(el('div', 'sbctm-warn',
+            const warn = el('div', 'sbctm-warn');
+            warn.append(icon('fa-triangle-exclamation'), el('span', '',
                 row.kind === 'character'
                     ? 'This character is not in your collection any more. Restoring needs the card file itself, which this extension does not store; it stores only the fields.'
                     : 'This no longer exists. Restoring will create it again.'));
+            detail.append(warn);
         }
 
         const diffNode = row.kind === 'character'
@@ -350,7 +535,7 @@ export async function openTimeMachine() {
         detail.append(diffNode);
 
         const bar = el('div', 'sbctm-bar');
-        const restore = button('menu_button', 'Restore this version', () => trackWork(confirmRestore(row, payload, restore)));
+        const restore = iconButton('menu_button menu_button_primary', 'fa-clock-rotate-left', 'Restore this version', () => trackWork(confirmRestore(row, payload, restore)));
         if (row.kind === 'character' && live === null) {
             restore.disabled = true;
         }
@@ -378,49 +563,65 @@ export async function openTimeMachine() {
     }
 
     function fieldDiff(live, snapshot) {
-        // Snapshot on the right: the question is "what would restoring change",
-        // so the current state is the starting point and the snapshot is the end.
-        return renderFieldDiff(diffFields(live ?? {}, snapshot ?? {}));
+        // "Now" first, then the snapshot: the question is "what would restoring
+        // change", so the current state is the starting point.
+        return renderFieldDiff(diffFields(live ?? {}, snapshot ?? {}), key => key);
     }
 
     function characterDiff(live, snapshot) {
         const rows = diffFields(live?.data ?? {}, snapshot?.data ?? {});
+        // The V2 card repeats most fields inside `data`. Show its fields one by
+        // one, and only those the top-level rows have not already covered.
+        const nestedIndex = rows.findIndex(change => change.key === 'data');
+        if (nestedIndex !== -1) {
+            const [nested] = rows.splice(nestedIndex, 1);
+            const covered = new Set(rows.map(change => change.key));
+            const asObject = value => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
+            const inner = diffFields(asObject(nested.from), asObject(nested.to));
+            if (inner.length === 0 && canonicalJson(nested.from) !== canonicalJson(nested.to)) {
+                rows.push(nested);
+            }
+            rows.push(...inner.filter(change => !covered.has(change.key)));
+        }
         if (snapshot?.tags !== undefined) {
             rows.push(...diffFields(
                 { tags: live?.tags ?? [] },
                 { tags: snapshot.tags },
             ).map(change => ({ ...change, key: 'Tags' })));
         }
-        return renderFieldDiff(rows);
+        return renderFieldDiff(rows, characterFieldLabel);
     }
 
-    function renderFieldDiff(rows) {
+    function renderFieldDiff(rows, labelFor) {
         if (rows.length === 0) {
             return el('div', 'sbctm-empty', 'Identical to what is there now.');
         }
-        const table = el('table', 'sbctm-diff');
-        const thead = el('thead');
-        const header = el('tr');
-        for (const label of ['Field', 'Current', 'Snapshot']) {
-            const cell = el('th', '', label);
-            cell.scope = 'col';
-            header.append(cell);
-        }
-        thead.append(header);
-        const tbody = el('tbody');
-        for (const change of rows) {
-            const tr = el('tr', `sbctm-${change.kind}`);
-            const key = el('th', 'sbctm-diff-key', change.key);
-            key.scope = 'row';
-            tr.append(key);
-            tr.append(el('td', 'sbctm-diff-from', preview(change.from)));
-            tr.append(el('td', 'sbctm-diff-to', preview(change.to)));
-            tbody.append(tr);
-        }
-        table.append(thead, tbody);
         const wrapper = el('div', 'sbctm-diff-wrap');
-        wrapper.append(el('div', 'sbctm-diff-legend', 'Left: as it is now. Right: as it was in this version.'), table);
+        wrapper.append(el('p', 'sbctm-diff-legend',
+            `Restoring this version changes ${rows.length} field${rows.length === 1 ? '' : 's'}.`));
+        for (const change of rows) {
+            const card = el('div', `sbctm-change sbctm-${change.kind}`);
+            const head = el('div', 'sbctm-change-head');
+            head.append(
+                el('span', 'sbctm-change-key', labelFor(change.key)),
+                el('span', `sbctm-badge sbctm-badge-${change.kind}`, CHANGE_LABELS[change.kind] ?? CHANGE_LABELS.changed),
+            );
+            const sides = el('div', 'sbctm-change-sides');
+            sides.append(diffSide('sbctm-diff-from', 'Now', change.from), diffSide('sbctm-diff-to', 'This version', change.to));
+            card.append(head, sides);
+            wrapper.append(card);
+        }
         return wrapper;
+    }
+
+    function diffSide(className, label, value) {
+        const side = el('div', `sbctm-side ${className}`);
+        const text = el('div', 'sbctm-side-text', preview(value));
+        if (value === undefined || value === '') {
+            text.classList.add('sbctm-side-unset');
+        }
+        side.append(el('span', 'sbctm-side-label', label), text);
+        return side;
     }
 
     function lorebookDiff(live, snapshot) {
@@ -429,53 +630,38 @@ export async function openTimeMachine() {
             return el('div', 'sbctm-empty', 'Identical to what is there now.');
         }
         const wrapper = el('div', 'sbctm-diff-wrap');
-        wrapper.append(el('div', 'sbctm-diff-legend',
+        wrapper.append(el('p', 'sbctm-diff-legend',
             `Restoring would bring back ${added.length}, remove ${removed.length}, change ${changed.length} entries, and change ${metadata.length} book settings.`));
-        const table = el('table', 'sbctm-diff');
-        const thead = el('thead');
-        const header = el('tr');
-        for (const label of ['Change', 'Entry or setting', 'Fields']) {
-            const cell = el('th', '', label);
-            cell.scope = 'col';
-            header.append(cell);
-        }
-        thead.append(header);
-        const tbody = el('tbody');
+        const list = el('ul', 'sbctm-entries');
+        const line = (kind, badge, title, extra = '') => {
+            const item = el('li', `sbctm-entry sbctm-${kind}`);
+            const text = el('span', 'sbctm-entry-text');
+            text.append(el('span', 'sbctm-entry-title', title));
+            if (extra) {
+                text.append(el('span', 'sbctm-entry-detail', extra));
+            }
+            item.append(el('span', `sbctm-badge sbctm-badge-${kind}`, badge), text);
+            list.append(item);
+        };
         for (const entry of added) {
-            const tr = el('tr', 'sbctm-added');
-            const change = el('th', 'sbctm-diff-key', 'Comes back');
-            change.scope = 'row';
-            tr.append(change, el('td', '', entry.title), el('td', ''));
-            tbody.append(tr);
+            line('added', 'Comes back', entry.title);
         }
         for (const entry of removed) {
-            const tr = el('tr', 'sbctm-removed');
-            const change = el('th', 'sbctm-diff-key', 'Goes away');
-            change.scope = 'row';
-            tr.append(change, el('td', '', entry.title), el('td', ''));
-            tbody.append(tr);
+            line('removed', 'Goes away', entry.title);
         }
         for (const entry of changed) {
-            const tr = el('tr', 'sbctm-changed');
-            const change = el('th', 'sbctm-diff-key', 'Changes');
-            change.scope = 'row';
-            tr.append(
-                change,
-                el('td', '', entry.title),
-                el('td', '', entry.fields.map(field => field.key).join(', ')),
-            );
-            tbody.append(tr);
+            line('changed', 'Changes', entry.title, entry.fields.map(field => field.key).join(', '));
         }
         for (const field of metadata) {
-            const tr = el('tr', `sbctm-${field.kind}`);
-            const change = el('th', 'sbctm-diff-key', 'Book setting');
-            change.scope = 'row';
-            tr.append(change, el('td', '', field.key), el('td', '', `${preview(field.from)} → ${preview(field.to)}`));
-            tbody.append(tr);
+            line(field.kind, 'Book setting', field.key, `${shortPreview(field.from)} → ${shortPreview(field.to)}`);
         }
-        table.append(thead, tbody);
-        wrapper.append(table);
+        wrapper.append(list);
         return wrapper;
+    }
+
+    function shortPreview(value) {
+        const text = value === undefined ? '(not set)' : typeof value === 'string' ? value : JSON.stringify(value);
+        return text.length > 120 ? `${text.slice(0, 119)}…` : text;
     }
 
     async function confirmRestore(row, payload, control) {
@@ -626,7 +812,11 @@ export async function openTimeMachine() {
  */
 function hostBackupsSection() {
     const section = el('details', 'sbctm-host');
-    section.append(el('summary', '', 'Restore an extension\'s settings from Neconyan\'s own backups'));
+    const summary = el('summary');
+    const chevron = icon('fa-chevron-down');
+    chevron.classList.add('sbctm-host-chevron');
+    summary.append(icon('fa-box-archive'), el('span', '', 'Restore an extension\'s settings from Neconyan\'s own backups'), chevron);
+    section.append(summary);
     const inner = el('div', 'sbctm-host-body');
     section.append(inner);
     inner.append(el('div', 'sbctm-hint',
@@ -681,7 +871,9 @@ function hostBackupsSection() {
                     parts.replaceChildren(el('div', 'sbctm-empty', 'That backup could not be read.'));
                 }
             });
-            picker.append(selectLabel, open, parts);
+            const row = el('div', 'sbctm-host-row');
+            row.append(selectLabel, open);
+            picker.append(row, parts);
         } catch (error) {
             console.error('[Time Machine] could not list backups', error);
             // Not loaded after all: reopening the section retries the fetch.
@@ -708,10 +900,11 @@ function renderParts(host, settings, backup) {
         const stored = settings.extension_settings[part.key];
         const rows = diffFields(ctx().extensionSettings[part.key] ?? {}, stored ?? {});
         const line = el('div', 'sbctm-host-part');
-        line.append(el('span', 'sbctm-target-name', part.label));
+        const text = el('span', 'sbctm-target-text');
         const meta = el('span', 'sbctm-target-meta',
             rows.length === 0 ? 'Same as now' : `${rows.length} setting${rows.length === 1 ? '' : 's'} differ`);
-        line.append(meta);
+        text.append(el('span', 'sbctm-target-name', part.label), meta);
+        line.append(text);
         if (rows.length > 0) {
             const restore = button('menu_button sbctm-small', 'Restore this block', async () => {
                 const ok = await confirmAction(
