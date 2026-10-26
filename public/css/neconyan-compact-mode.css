@@ -1,0 +1,49 @@
+/* Compact Mode beyond the shell: chat, conversations, settings rows, the workspace rail, character cards and popups.
+   Phones only tighten spacing; tap targets keep their 44px minimum (DESIGN.md). Desktop may also shrink controls. */
+
+/* Chat, every style: less room above each message and a smaller sleeping cat to fill it. */
+:root[data-sb-compact-mode='true'] body.neconyan {
+    --neco-gutter: calc(16px * var(--messageMarginScale, 1));
+    --neco-bubble-pad: calc(12px * var(--messageMarginScale, 1));
+}
+:root[data-sb-compact-mode='true']:not([data-sb-kittyless='true']) body.neconyan { --neconyan-sleeper-space: 30px; }
+/* Shrink about the paws, then shift back so the tail still hangs past the bubble's outer edge. */
+:root[data-sb-compact-mode='true'] body.neconyan img.neconyan-message-sleeper { transform: scale(0.7); transform-origin: 50% 41px; translate: -14px 0; }
+:root[data-sb-compact-mode='true'] body.neconyan img.neconyan-message-sleeper.is-user { translate: 14px 0; }
+:root[data-sb-compact-mode='true'] body.neconyan.flatchat:not(.sbterm) #chat { padding-block: 12px; }
+:root[data-sb-compact-mode='true'] body.neconyan.flatchat:not(.sbterm):not(.nnchat) #chat .mes { margin-bottom: 12px; padding-block: 6px; gap: 12px; }
+:root[data-sb-compact-mode='true'] body.neconyan.flatchat:not(.sbterm):not(.nnchat) #chat .mes[is_user='true'] .mes_block { padding-block: 8px; }
+
+/* Conversation mode */
+:root[data-sb-compact-mode='true'] body.neconyan .sb-conversation-timeline { padding-block: 12px; gap: 12px; }
+:root[data-sb-compact-mode='true'] body.neconyan #sheld .sb-conversation-message[data-message-id] { gap: 12px; }
+:root[data-sb-compact-mode='true'] body.neconyan .sb-conversation-message-bubble { padding-block: 4px; }
+:root[data-sb-compact-mode='true'] body.neconyan .sb-conversation-message[data-role='user'] .sb-conversation-message-bubble { padding-block: 8px; }
+
+@media (min-width: 1001px) {
+    :root[data-sb-compact-mode='true'] {
+        --avatar-base-width: 40px;
+        --avatar-base-height: 40px;
+    }
+
+    /* Settings drawer rows */
+    :root[data-sb-compact-mode='true'] body.neconyan :is(.inline-drawer-header, .sb-theme-settings-drawer > .inline-drawer-header),
+    :root[data-sb-compact-mode='true'] body.neconyan #user-settings-block .sb-settings-subdrawer > .inline-drawer-header { min-height: 34px; }
+    :root[data-sb-compact-mode='true'] body.neconyan #user-settings-block .sb-settings-subdrawer > .inline-drawer-header { padding-block: 6px !important; }
+
+    /* Workspace rail */
+    :root[data-sb-compact-mode='true'] body.neconyan #neconyan-workspace-rail button { min-height: 30px; padding-block: 5px; }
+
+    /* Character cards */
+    :root[data-sb-compact-mode='true'] body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) {
+        --neco-char-card-avatar-size: 48px;
+        grid-template-columns: 48px minmax(0, 1fr);
+        min-height: 0;
+        margin-bottom: 4px;
+        padding: 10px;
+    }
+
+    /* Popups */
+    :root[data-sb-compact-mode='true'] body.neconyan dialog.popup { padding: 10px 14px; }
+    :root[data-sb-compact-mode='true'] body.neconyan dialog.popup .popup-controls .menu_button { min-height: 34px; }
+}
