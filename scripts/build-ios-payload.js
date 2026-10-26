@@ -18,7 +18,7 @@ for (const name of files) {
     fs.copyFileSync(path.join(root, name), path.join(target, name));
 }
 fs.copyFileSync(path.join(root, 'ios/server-bootstrap.mjs'), path.join(target, 'server-bootstrap.mjs'));
-fs.copyFileSync(path.join(root, 'android/app/src/main/assets/NODE-LICENSE.txt'), path.join(target, 'NODE-LICENSE.txt'));
+for (const notice of ['NODE-LICENSE.txt', 'POLYWASM-LICENSE.txt']) fs.copyFileSync(path.join(root, 'ios', notice), path.join(target, notice));
 const extensions = [...new Set(files.filter(name => name.startsWith('public/scripts/extensions/third-party/')).map(name => name.split('/')[4]))].filter(Boolean).sort();
 fs.writeFileSync(path.join(target, 'bundled-extensions.json'), JSON.stringify(extensions));
 fs.cpSync(path.join(root, 'dist/frontend'), path.join(target, 'dist/frontend'), { recursive: true });
@@ -30,5 +30,11 @@ const provenance = {
 };
 fs.writeFileSync(path.join(target, 'release-provenance.json'), JSON.stringify(provenance, null, 2) + '\n');
 execFileSync('npm', ['ci', '--omit=dev', '--omit=optional', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: target, stdio: 'inherit' });
+execFileSync('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: path.join(root, 'ios/tools'), stdio: 'inherit' });
+execFileSync(process.execPath, ['ios/tools/prepare-sentencepiece.mjs', target], { cwd: root, stdio: 'inherit' });
 fs.writeFileSync(path.join(root, 'ios/generated/payload-version.txt'), provenance.commit + '\n');
+const icons = path.join(root, 'ios/generated/Assets.xcassets/AppIcon.appiconset');
+fs.mkdirSync(icons, { recursive: true });
+fs.copyFileSync(path.join(root, 'public/img/neconyan-icon-512.png'), path.join(icons, 'icon.png'));
+fs.writeFileSync(path.join(icons, 'Contents.json'), JSON.stringify({ images: [{ filename: 'icon.png', idiom: 'universal', platform: 'ios', size: '1024x1024' }], info: { author: 'xcode', version: 1 } }));
 console.log(`iOS server payload built for ${provenance.commit}`);

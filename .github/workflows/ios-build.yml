@@ -19,6 +19,8 @@ jobs:
       - name: Prepare the standalone server and pinned iOS runtime
         run: |
           node scripts/build-ios-payload.js
+          node --test ios/tools/sentencepiece.test.mjs
+          sips -z 1024 1024 ios/generated/Assets.xcassets/AppIcon.appiconset/icon.png
           bash ios/prepare-runtime.sh
           brew install xcodegen
           cd ios
@@ -28,6 +30,9 @@ jobs:
           xcodebuild -project ios/Neconyan.xcodeproj -scheme Neconyan -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath ios/build/device CODE_SIGNING_ALLOWED=NO build > ios/device-build.log 2>&1 || { tail -100 ios/device-build.log; exit 1; }
           mkdir -p ios/artifacts/Payload
           cp -R ios/build/device/Build/Products/Release-iphoneos/Neconyan.app ios/artifacts/Payload/
+          test -f ios/artifacts/Payload/Neconyan.app/server/server-bootstrap.mjs
+          test -f ios/artifacts/Payload/Neconyan.app/server/dist/frontend/asset-manifest.json
+          test -f ios/artifacts/Payload/Neconyan.app/payload-version.txt
           cd ios/artifacts
           ditto -c -k --keepParent Payload Neconyan-unsigned.ipa
           rm -rf Payload
@@ -42,7 +47,7 @@ jobs:
           echo "id=$id" >> "$GITHUB_OUTPUT"
       - name: Test standalone startup and relaunch on iOS
         run: |
-          xcodebuild -project ios/Neconyan.xcodeproj -scheme Neconyan -configuration Debug -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -derivedDataPath ios/build/simulator -resultBundlePath ios/test-results.xcresult CODE_SIGNING_ALLOWED=NO test > ios/simulator-test.log 2>&1 || { tail -120 ios/simulator-test.log; exit 1; }
+          xcodebuild -project ios/Neconyan.xcodeproj -scheme Neconyan -configuration Debug -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -parallel-testing-enabled NO -derivedDataPath ios/build/simulator -resultBundlePath ios/test-results.xcresult CODE_SIGNING_ALLOWED=NO test > ios/simulator-test.log 2>&1 || { tail -120 ios/simulator-test.log; exit 1; }
       - name: Collect simulator server diagnostics
         if: always()
         run: |
@@ -51,6 +56,7 @@ jobs:
             cp "$container/Library/Application Support/Neconyan/server.log" ios/server.log || true
             xcrun simctl io '${{ steps.simulator.outputs.id }}' screenshot ios/simulator.png || true
           fi
+          xcrun xcresulttool export attachments --path ios/test-results.xcresult --output-path ios/test-attachments || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -62,3 +68,4 @@ jobs:
             ios/server.log
             ios/simulator.png
             ios/test-results.xcresult
+            ios/test-attachments/

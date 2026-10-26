@@ -1,0 +1,8 @@
+{
+  "name": "neconyan-ios-build-tools",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "wabt": "1.0.39"
+  }
+}
