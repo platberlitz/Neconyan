@@ -478,15 +478,20 @@ export {
 };
 
 /**
- * Wait for page to load before continuing the app initialization.
+ * Wait inside startup, not at module scope. This module shares circular imports
+ * with settings and translations; suspending its evaluation lets WebKit run
+ * ready handlers before those modules have initialised their exports.
+ * @returns {Promise<void>}
  */
-await new Promise((resolve) => {
-    if (document.readyState === 'complete') {
-        resolve();
-    } else {
-        window.addEventListener('load', resolve);
-    }
-});
+function waitForPageLoad() {
+    return new Promise((resolve) => {
+        if (document.readyState === 'complete') {
+            resolve();
+        } else {
+            window.addEventListener('load', () => resolve(), { once: true });
+        }
+    });
+}
 
 // Configure toast library:
 toastr.options = {
@@ -19718,6 +19723,7 @@ function initCharacterSearch() {
 
 // MARK: DOM Handlers Start
 jQuery(async function () {
+    await waitForPageLoad();
     setTimeout(function () {
         $('#groupControlsToggle').trigger('click');
         $('#groupCurrentMemberListToggle .inline-drawer-icon').trigger('click');
