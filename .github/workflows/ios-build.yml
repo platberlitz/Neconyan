@@ -20,6 +20,12 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Import and verify a real 13 GiB ZIP payload
+        env:
+          NECONYAN_LARGE_IMPORT_BYTES: '13958643712'
+        run: |
+          node --max-old-space-size=512 --test tests/application-import-large.node.js > ios/large-import-test.log 2>&1 || { cat ios/large-import-test.log; exit 1; }
+          cat ios/large-import-test.log
       - name: Prepare the standalone server and pinned iOS runtime
         run: |
           node scripts/build-ios-payload.js
