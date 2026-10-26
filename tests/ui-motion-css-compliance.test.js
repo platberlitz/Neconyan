@@ -7,6 +7,10 @@ const stylesheets = [
     { name: 'Macro Enhanced', url: new URL('../public/scripts/extensions/third-party/MacroEnhanced/style.css', import.meta.url) },
     { name: 'chat widgets', url: new URL('../public/css/neconyan-chat-widgets.css', import.meta.url) },
     {
+        name: 'Time Machine',
+        url: new URL('../public/scripts/extensions/third-party/Neconyan-Time-Machine/style.css', import.meta.url),
+    },
+    {
         name: 'in-chat agents',
         url: new URL('../public/scripts/extensions/in-chat-agents/style.css', import.meta.url),
     },
