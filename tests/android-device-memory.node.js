@@ -142,6 +142,6 @@ test('MainActivity passes DeviceMemoryProfile only through the existing origin-g
     assert.doesNotMatch(activity, /addJavascriptInterface\([^)]*DeviceMemoryProfile/);
     assert.match(
         activity,
-        /import\('\/scripts\/android-native-bridge\.js'\)\.then\(module => module\.installAndroidNativeBridge\("\s*\+\s*JSONObject\.quote\(bridgeToken\)\s*\+\s*","\s*\+\s*JSONObject\.quote\(origin\)\s*\+\s*","\s*\+\s*DeviceMemoryProfile\.readJson\(MainActivity\.this\)\s*\+\s*"\)\)"/,
+        /"import\(" \+ JSONObject\.quote\(origin \+ "\/scripts\/android-native-bridge\.js"\) \+ "\)\.then\(module => module\.installAndroidNativeBridge\("\s*\+\s*JSONObject\.quote\(bridgeToken\)\s*\+\s*","\s*\+\s*JSONObject\.quote\(origin\)\s*\+\s*","\s*\+\s*DeviceMemoryProfile\.readJson\(MainActivity\.this\)\s*\+\s*"\)\)"/,
     );
 });

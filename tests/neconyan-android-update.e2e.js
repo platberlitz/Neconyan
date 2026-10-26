@@ -8,12 +8,29 @@ const status = {
         assetAvailable: true, canUpdate: true, message: 'Neconyan v1.3.0 is available from GitHub. Android will ask before installing it. Your saved data stays on this device.' },
 };
 
+// Like WebView.evaluateJavascript, a cross-origin classic script has muted errors
+// and an about:blank base URL. Playwright's page.evaluate does not reproduce that.
+async function injectNativeBridge(page, { relative = false } = {}) {
+    const origin = new URL(page.url()).origin;
+    const moduleUrl = `${relative ? '' : origin}/scripts/android-native-bridge.js`;
+    const sourceUrl = `http://android-bootstrap.invalid/${relative ? 'relative' : 'absolute'}.js`;
+    await page.evaluate(() => { window.androidBridgeResult = null; });
+    await page.route(sourceUrl, route => route.fulfill({ contentType: 'application/javascript', body: `
+        import(${JSON.stringify(moduleUrl)}).then(module => {
+            window.androidBridgeResult = module.installAndroidNativeBridge(${JSON.stringify('a'.repeat(64))}, ${JSON.stringify(origin)});
+        }).catch(error => { window.androidBridgeResult = error.message; });
+    ` }));
+    await page.addScriptTag({ url: sourceUrl });
+    await page.waitForFunction(() => window.androidBridgeResult !== null);
+    return page.evaluate(() => window.androidBridgeResult);
+}
+
 for (const phone of [false, true]) {
     test.describe(`${phone ? 'phone' : 'desktop'} Android APK updates`, () => {
         test.setTimeout(90000);
         test.use({ serviceWorkers: 'block', viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone });
 
-        async function openServer(page, response = status, bridge = true) {
+        async function openServer(page, response = status, bridge = true, installBridge = true) {
             await page.emulateMedia({ reducedMotion: 'reduce' });
             await page.route('**/api/settings/save', route => route.fulfill({ json: { result: 'ok' } }));
             if (bridge) await page.addInitScript(() => {
@@ -25,10 +42,7 @@ for (const phone of [false, true]) {
             await page.route('**/api/server-admin/status', route => route.fulfill({ json: response }));
             await page.goto('/', { waitUntil: 'domcontentloaded' });
             await page.waitForFunction(() => window.NeconyanShell?.openTab, { timeout: 60000 });
-            if (bridge) await page.evaluate(async () => {
-                const module = await import('/scripts/android-native-bridge.js');
-                module.installAndroidNativeBridge('a'.repeat(64), window.location.origin);
-            });
+            if (bridge && installBridge) expect(await injectNativeBridge(page)).toBe(true);
             await expect(page.locator('#loader')).toBeHidden({ timeout: 60000 });
             const skipTour = page.locator('[data-tour-coach-skip]');
             if (await skipTour.isVisible()) await skipTour.click();
@@ -100,6 +114,20 @@ for (const phone of [false, true]) {
             await panel.getByRole('button', { name: 'Check for updates', exact: true }).click();
             await expect(panel).toContainText('No newer APK is available on GitHub.');
             await expect(panel.getByRole('button', { name: 'Update APK', exact: true })).toBeDisabled();
+        });
+
+        test('initialises Android controls from a script without a usable base URL', async ({ page }) => {
+            const panel = await openServer(page, status, true, false);
+            expect(await injectNativeBridge(page, { relative: true })).toContain('base URL is about:blank');
+            const button = panel.getByRole('button', { name: 'Update APK', exact: true });
+            await button.click();
+            await expect(panel).toContainText('Android controls are not ready. Reload this page and try again.');
+            expect(await page.evaluate(() => window.apkRequestedVersion)).toBeUndefined();
+
+            expect(await injectNativeBridge(page)).toBe(true);
+            await button.click();
+            expect(await page.evaluate(() => window.apkRequestedVersion)).toBe('1.3.0');
+            await expect(panel).not.toContainText('Android controls are not ready.');
         });
     });
 }

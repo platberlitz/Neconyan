@@ -205,7 +205,8 @@ public final class MainActivity extends Activity {
                 String current = view.getUrl();
                 if (current == null || !local(Uri.parse(current))) return;
                 if (bridgeToken == null) bridgeToken = bridgeGate.issue();
-                view.evaluateJavascript("import('/scripts/android-native-bridge.js').then(module => module.installAndroidNativeBridge("
+                // WebView evaluates this with an about:blank script base URL, so relative imports fail.
+                view.evaluateJavascript("import(" + JSONObject.quote(origin + "/scripts/android-native-bridge.js") + ").then(module => module.installAndroidNativeBridge("
                     + JSONObject.quote(bridgeToken) + "," + JSONObject.quote(origin) + "," + DeviceMemoryProfile.readJson(MainActivity.this) + "))", null);
             }
         });
