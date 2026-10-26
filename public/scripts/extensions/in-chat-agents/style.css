@@ -389,6 +389,15 @@ button.ica--card-pill--version-update {
         margin-inline: auto;
     }
 
+    /* Standalone iOS loses a few pixels to shell padding. Keep the row together
+       using the summary's padding, but retain wrapping on smaller screens. */
+    @media (min-width: 375px) {
+        .ica--companion-summary .ica--companion-actions,
+        #chat .ica--companion-summary .ica--companion-actions {
+            flex-wrap: nowrap;
+        }
+    }
+
     .ica--companion-summary .ica--companion-actions .ica--companion-action,
     #chat .ica--companion-summary .ica--companion-actions .ica--companion-action {
         position: relative;
