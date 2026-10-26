@@ -16,9 +16,8 @@
 }
 
 /* Fine, neutral paper fibres: no colour wash or repeating dots over the text.
-   Kept off the safe-area strips: iOS colours the status bar and home indicator
-   from the fixed bar it finds at each edge, and an overlay there (even at
-   opacity 0) hides the top bar, so a home-screen app gets a tall blur instead. */
+   Keep the safe-area strips clear so the texture does not cover the fixed
+   surfaces iOS samples for its status bar and home indicator. */
 body::after {
     content: '';
     position: fixed;

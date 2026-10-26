@@ -1,6 +1,19 @@
 /* Neconyan mobile shell foundation: final sheet contract for modal drawers.
  * Keep this at the end of the shell sheet so it beats older mobile drawer rules. */
 @media screen and (max-width: 768px) {
+    /* Give iOS home-screen status-bar sampling a solid fixed surface, independent
+       of the top bar's theme, transparency or visibility. No extra layout space. */
+    body.neconyan.safari.PWA #nn-ios-status-bar {
+        display: block;
+        position: fixed;
+        inset: 0 0 auto;
+        height: env(safe-area-inset-top, 0px);
+        z-index: calc(var(--sb-z-shell) + 1);
+        pointer-events: none;
+        background-color: var(--neco-canvas);
+        background-color: rgb(from var(--neco-canvas) r g b / 1);
+    }
+
     body.neconyan.neconyan-mobile-expressions #chat .mes .mes_block > .neconyan-mobile-expression {
         display: none;
         clear: both;
