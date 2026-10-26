@@ -1799,8 +1799,9 @@ body.neconyan #rm_extensions_block :is(#extensions_details, #third_party_extensi
         width: 100%;
     }
     body.neconyan .sb-settings-tabs-nav {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
         gap: 4px;
     }
     body.neconyan .sb-settings-tab-btn {
