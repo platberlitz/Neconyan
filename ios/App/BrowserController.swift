@@ -2,7 +2,7 @@ import UIKit
 import WebKit
 
 @MainActor
-final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, WKScriptMessageHandler {
     private var web: WKWebView!
     private var server: LocalServer?
     private let status = UILabel()
@@ -15,7 +15,28 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
         view.backgroundColor = .systemBackground
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
+        config.userContentController.add(self, name: "nativeDiagnostics")
+        config.userContentController.addUserScript(WKUserScript(source: """
+        (() => {
+            const send = (kind, text) => window.webkit.messageHandlers.nativeDiagnostics.postMessage({kind, text: String(text).slice(0, 12000)});
+            addEventListener('error', e => send('error', e.error?.stack || e.message || e.target?.src), true);
+            addEventListener('unhandledrejection', e => send('error', e.reason?.stack || e.reason));
+            addEventListener('neconyan:ready', () => send('ready', 'Workspace initialisation completed'));
+            addEventListener('DOMContentLoaded', () => {
+                let reportedFailure = false;
+                const inspect = () => {
+                    const failure = document.querySelector('#preloader pre');
+                    if (failure && !reportedFailure) { reportedFailure = true; send('error', failure.textContent); }
+                };
+                const observer = new MutationObserver(inspect);
+                observer.observe(document.documentElement, {subtree: true, childList: true});
+                addEventListener('neconyan:ready', () => observer.disconnect(), {once: true});
+                inspect();
+            });
+        })();
+        """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         web = WKWebView(frame: .zero, configuration: config)
+        web.accessibilityIdentifier = "workspace-loading"
         web.navigationDelegate = self
         web.uiDelegate = self
         web.isHidden = true
@@ -77,8 +98,13 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
 
     @objc private func shareLog() { if let url = server?.logURL { share(url) } }
 
-    private func share(_ url: URL) {
+    private func share(_ url: URL, removeAfterwards: Bool = false) {
         let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        if removeAfterwards {
+            sheet.completionWithItemsHandler = { _, _, _, _ in
+                try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+            }
+        }
         sheet.popoverPresentationController?.sourceView = view
         sheet.popoverPresentationController?.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
         present(sheet, animated: true)
@@ -87,6 +113,13 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
     private func isLocal(_ url: URL) -> Bool {
         guard let origin = server?.origin else { return false }
         return url.scheme == origin.scheme && url.host == origin.host && url.port == origin.port && url.user == nil && url.password == nil
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.frameInfo.isMainFrame, let source = message.frameInfo.request.url, isLocal(source),
+              let body = message.body as? [String: String], let text = body["text"] else { return }
+        if body["kind"] == "ready" { web.accessibilityIdentifier = "workspace-ready" }
+        NSLog("Neconyan web %@: %@", body["kind"] ?? "diagnostic", text)
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -102,13 +135,19 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-        decisionHandler(navigationResponse.canShowMIMEType ? .allow : .download)
+        let disposition = (navigationResponse.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? ""
+        let attachment = disposition.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("attachment")
+        decisionHandler(attachment || !navigationResponse.canShowMIMEType ? .download : .allow)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         if webView.url?.path == "/login" { connect(); return }
         web.isHidden = false
         actions.isHidden = true
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        web.accessibilityIdentifier = "workspace-loading"
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { connect() }
@@ -133,13 +172,13 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("exports/\(UUID().uuidString)", isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let filename = (suggestedFilename as NSString).lastPathComponent
-            let destination = directory.appendingPathComponent(filename.isEmpty ? "neconyan-export" : filename)
+            let destination = directory.appendingPathComponent(["", ".", ".."].contains(filename) ? "neconyan-export" : filename)
             downloads[ObjectIdentifier(download)] = destination
             completionHandler(destination)
         } catch { completionHandler(nil) }
     }
     func downloadDidFinish(_ download: WKDownload) {
-        if let url = downloads.removeValue(forKey: ObjectIdentifier(download)) { share(url) }
+        if let url = downloads.removeValue(forKey: ObjectIdentifier(download)) { share(url, removeAfterwards: true) }
     }
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
         if let url = downloads.removeValue(forKey: ObjectIdentifier(download)) { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
@@ -156,6 +195,13 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
         let alert = UIAlertController(title: "Neconyan", message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(false) })
         alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(true) })
+        present(alert, animated: true)
+    }
+    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
+        let alert = UIAlertController(title: "Neconyan", message: prompt, preferredStyle: .alert)
+        alert.addTextField { $0.text = defaultText }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(nil) })
+        alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(alert.textFields?.first?.text ?? "") })
         present(alert, animated: true)
     }
 }

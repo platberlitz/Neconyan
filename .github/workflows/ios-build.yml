@@ -19,7 +19,7 @@ jobs:
       - name: Prepare the standalone server and pinned iOS runtime
         run: |
           node scripts/build-ios-payload.js
-          node --test ios/tools/sentencepiece.test.mjs
+          node --test ios/tools/*.test.mjs
           sips -z 1024 1024 ios/generated/Assets.xcassets/AppIcon.appiconset/icon.png
           bash ios/prepare-runtime.sh
           brew install xcodegen
@@ -38,6 +38,8 @@ jobs:
           rm -rf Payload
           shasum -a 256 Neconyan-unsigned.ipa > SHA256SUMS
           cp ../generated/server/release-provenance.json provenance.json
+      - name: Verify the packaged device IPA
+        run: python3 scripts/verify-ios-build.py --commit "$GITHUB_SHA" ios/artifacts/Neconyan-unsigned.ipa
       - name: Start an iPhone simulator
         id: simulator
         run: |
@@ -47,6 +49,9 @@ jobs:
           echo "id=$id" >> "$GITHUB_OUTPUT"
       - name: Test standalone startup and relaunch on iOS
         run: |
+          node ios/tools/model-fixture.mjs > ios/model-fixture.log 2>&1 &
+          fixture=$!
+          trap 'kill "$fixture" 2>/dev/null || true' EXIT
           xcodebuild -project ios/Neconyan.xcodeproj -scheme Neconyan -configuration Debug -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -parallel-testing-enabled NO -derivedDataPath ios/build/simulator -resultBundlePath ios/test-results.xcresult CODE_SIGNING_ALLOWED=NO test > ios/simulator-test.log 2>&1 || { tail -120 ios/simulator-test.log; exit 1; }
       - name: Collect simulator server diagnostics
         if: always()
@@ -66,6 +71,7 @@ jobs:
             ios/*-build.log
             ios/*-test.log
             ios/server.log
+            ios/model-fixture.log
             ios/simulator.png
             ios/test-results.xcresult
             ios/test-attachments/

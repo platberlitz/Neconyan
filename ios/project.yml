@@ -35,6 +35,8 @@ targets:
       path: generated/Info.plist
       properties:
         CFBundleDisplayName: Neconyan
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
