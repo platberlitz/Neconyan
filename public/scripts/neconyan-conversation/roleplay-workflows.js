@@ -757,6 +757,104 @@ async function submitRoleplayWorkflowRequest({ name, intent, locator, anchorInde
     return { ...accepted, key: payload.key, finished };
 }
 
+function waitForAgentJob(jobId, account) {
+    return new Promise(resolve => {
+        let finished = null;
+        observeJob(jobId, {
+            account,
+            onDone: job => { finished = job; },
+            onStop: reason => resolve(reason === 'done' ? finished : null),
+        });
+    });
+}
+
+function messageReadingAnchor(messageIndex) {
+    const chatNode = globalThis.document?.querySelector?.('#chat');
+    const node = chatNode?.querySelector(`.mes[mesid="${messageIndex}"]`);
+    if (!node) return null;
+    return { messageId: messageIndex, offsetTop: node.getBoundingClientRect().top - chatNode.getBoundingClientRect().top, part: null, fallback: null };
+}
+
+async function adoptSavedAgentResult(locator, account, messageIndex) {
+    for (let attempt = 1; attempt <= 12; attempt += 1) {
+        if (account !== getCurrentUserHandle() || !matchesCurrentWorkflowLocator(locator)) return false;
+        try {
+            if (activeReload) {
+                await activeReload;
+                continue;
+            }
+            activeReload = Promise.resolve()
+                .then(() => {
+                    keepChatReadingPositionOnNextLoad(messageReadingAnchor(messageIndex));
+                    return refreshCurrentChatFromSaved();
+                })
+                .finally(() => {
+                    keepChatReadingPositionOnNextLoad(null);
+                    activeReload = null;
+                });
+            await activeReload;
+            return account === getCurrentUserHandle() && matchesCurrentWorkflowLocator(locator);
+        } catch {
+            // A save or an open editor holds the chat; the saved result waits for it.
+            await new Promise(resolve => setTimeout(resolve, Math.min(2000, 250 * attempt)));
+        }
+    }
+    return false;
+}
+
+/**
+ * Run one manual Agent action (Run, Rerun, Retry, repair, undo or redo) as a
+ * protected server job, so it finishes and saves even if the page closes. The
+ * chat is saved first so the server sees the message the user chose, and the
+ * finished result is read back into the open chat.
+ *
+ * Returns null when this chat has no server path (a group chat or an account
+ * without protected storage) or the server declines the action before accepting
+ * it, so the caller runs it in the page as before. Otherwise resolves with the
+ * finished job's state; `current` is false when another chat was opened meanwhile.
+ */
+export async function runRoleplayAgentAction({ mode, agentIds = [], companionId = '', messageIndex, account = getCurrentUserHandle() }) {
+    if (selected_group || !isNativeRoleplayWorkflowReady() || !chat[messageIndex]) return null;
+    const locator = currentLocator();
+    let payload;
+    let accepted;
+    let posted = false;
+    try {
+        await saveChatConditional({ throwOnError: true, account, skipUnchanged: true });
+        payload = {
+            key: createKey(`agent-${mode}`),
+            mode,
+            agentIds: [...agentIds],
+            ...(companionId ? { companionId } : {}),
+            source: { locator },
+            messageIndex,
+            messageRevision: messageRevisionAt(messageIndex),
+            account: roleplayAccountStamp().account,
+            acknowledgement: { account, settingsRevision: await acknowledgedSettingsRevision() },
+        };
+        posted = true;
+        try {
+            accepted = await postSubmission(payload, account, '/api/roleplay/agent/submit');
+        } catch (error) {
+            if (error.body?.code !== 'roleplay_settings_ack_required') throw error;
+            payload = { ...payload, acknowledgement: { account, settingsRevision: await acknowledgedSettingsRevision() } };
+            accepted = await postSubmission(payload, account, '/api/roleplay/agent/submit');
+        }
+    } catch (error) {
+        // A lost response may already be running on the server, so only a clear
+        // refusal hands the action back to the page.
+        const refused = !posted || error?.status >= 400 && error.status < 500;
+        if (error?.message === 'account_changed' || !refused) throw error;
+        console.debug('Server Agent action declined; running it in the page.', { mode, reason: error?.body?.code ?? error?.message });
+        return null;
+    }
+    const job = accepted?.jobId ? await waitForAgentJob(accepted.jobId, account) : null;
+    const current = await adoptSavedAgentResult(locator, account, messageIndex);
+    const state = job?.state ?? accepted?.state ?? null;
+    const error = typeof job?.error === 'string' ? job.error : job?.error?.message ?? '';
+    return { state, error, jobId: accepted?.jobId ?? null, current };
+}
+
 /**
  * Submit one whole group turn. The page has already chosen the speakers exactly as
  * the group settings say and saved the user's message, so the server receives the

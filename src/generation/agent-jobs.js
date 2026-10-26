@@ -122,8 +122,10 @@ export async function runAgentJob(context, { generate, host = roleplayNativeHost
             const result = await runRoleplayAgentPostprocessing(context, { ...options, namespace, manualAgentIds: request.agent.ids,
                 value: note ? note.content : text, includeDisplayRegex: Boolean(note), repairTrackers: request.agent.mode === 'repair-trackers' });
             proofs[`roleplay-agent-post:${namespace}`] = result.hash;
-            if (result.failed) preserveMessage = true;
-            else if (note) extra.inChatAgentCompanionResults = { ...getActiveCompanionResults(message), [request.agent.companionId]: { ...note, content: result.text, updatedAt: Date.now() } };
+            if (result.failed) {
+                preserveMessage = true;
+                if (!note) extra.inChatAgentPromptRuns = result.runs ?? [];
+            } else if (note) extra.inChatAgentCompanionResults = { ...getActiveCompanionResults(message), [request.agent.companionId]: { ...note, content: result.text, updatedAt: Date.now() } };
             else {
                 text = result.text;
                 extra = result.extra;

@@ -2997,9 +2997,12 @@ async function runTrackerFixFromButton(messageIndex, button, { inlineMessageInde
         const inlineMessage = chat[inlineMessageIndex];
         const companionMessage = chat[companionMessageIndex];
         const fixChatId = getCurrentChatId();
+        // A fix finished on the server reloads the saved messages as new objects.
+        const isSameMessage = (index, message) => chat[index] === message
+            || (Boolean(message) && chat[index]?.send_date === message.send_date && chat[index]?.is_user === message.is_user);
         const isFixContextCurrent = () => getCurrentChatId() === fixChatId
-            && chat[inlineMessageIndex] === inlineMessage
-            && chat[companionMessageIndex] === companionMessage;
+            && isSameMessage(inlineMessageIndex, inlineMessage)
+            && isSameMessage(companionMessageIndex, companionMessage);
         const canRunInlineTrackers = inlineMessage && !inlineMessage.is_user && !inlineMessage.is_system;
         const canRunCompanionTrackers = companionMessage && !companionMessage.is_system;
 
