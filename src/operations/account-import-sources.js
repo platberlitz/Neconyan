@@ -101,7 +101,7 @@ export function captureFolderImport(base, sourcePath, { extensionsOnly = false, 
         } else {
             const file = inspectRoleplayFile(filename, BINARY_FILE_LIMIT);
             total += file.size;
-            if (total > BINARY_FILE_LIMIT) throw operationError('The import exceeds its total file capacity.', 413);
+            if (!Number.isSafeInteger(total)) throw operationError('The import byte count cannot be represented exactly.', 413);
             files.push({ relative: normalized, filename, size: file.size, evidence: evidence(file) });
         }
     };
@@ -196,7 +196,7 @@ export async function captureZipImport(source, { coreOnly = false, parts } = {})
         if (entry.name.endsWith('/')) { directories.push(relative); continue; }
         if (seen.has(relative)) throw operationError('The ZIP contains duplicate file destinations.', 400);
         seen.add(relative); total += entry.size;
-        if (total > BINARY_FILE_LIMIT) throw operationError('The ZIP exceeds its total expanded capacity.', 413);
+        if (!Number.isSafeInteger(total)) throw operationError('The ZIP byte count cannot be represented exactly.', 413);
         files.push({ relative, size: entry.size, zip: entry });
     }
     if (!files.length && (!coreOnly || !excluded.length)) throw operationError('The ZIP contains no importable files.', 400);
