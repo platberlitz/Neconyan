@@ -309,7 +309,10 @@ class WebTokenizer {
         try {
             pathToModel = await getPathToTokenizer(this.#model, this.#fallbackModel);
             const fileBuffer = await fs.promises.readFile(pathToModel);
-            this.#instance = await withWebTokenizerRuntimeLocation(() => Tokenizer.fromJSON(fileBuffer.toString('utf-8')));
+            const json = fileBuffer.toString('utf-8');
+            this.#instance = process.env.NECONYAN_IOS_APP === '1'
+                ? (await import('../ios-tokenizer.js')).createIOSTokenizer(json)
+                : await withWebTokenizerRuntimeLocation(() => Tokenizer.fromJSON(json));
             this.loadedModel = path.parse(pathToModel).name;
             this.fallback = pathToModel === this.#fallbackModel;
             console.info('Instantiated the tokenizer for', path.parse(pathToModel).name);

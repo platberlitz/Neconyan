@@ -19,7 +19,15 @@ final class LocalServer {
         state = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("Neconyan", isDirectory: true)
         try fm.createDirectory(at: state, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
         let credentialsURL = state.appendingPathComponent("native-credentials.json")
-        if let data = try? Data(contentsOf: credentialsURL), let saved = try? JSONDecoder().decode(Credentials.self, from: data), saved.password.count == 64, (20000...60000).contains(saved.port) {
+        #if DEBUG
+        let testPort = ProcessInfo.processInfo.environment["NECONYAN_TEST_PORT"].flatMap(Int.init)
+        #else
+        let testPort: Int? = nil
+        #endif
+        if let testPort, (20000...60000).contains(testPort) {
+            password = String(repeating: "a", count: 64)
+            origin = URL(string: "http://127.0.0.1:\(testPort)")!
+        } else if let data = try? Data(contentsOf: credentialsURL), let saved = try? JSONDecoder().decode(Credentials.self, from: data), saved.password.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil, (20000...60000).contains(saved.port) {
             password = saved.password
             origin = URL(string: "http://127.0.0.1:\(saved.port)")!
         } else {
