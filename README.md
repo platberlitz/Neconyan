@@ -15,11 +15,11 @@ If you want SillyTavern with everything working exactly like upstream, use [Sill
   <img src="docs/readme/banner-why.webp" alt="Why Neconyan?">
 </p>
 
-- **It keeps going when you leave.** Almost everything runs on the server now, so you can send a message on your phone, switch apps or lock the screen, and the reply will be sitting there when you come back. A few things still need the page open, like in-browser WebLLM models and Kokoro voices.
+- **It keeps going when you leave.** Replies are written in the browser while you watch, because that's quicker. If you switch apps or lock your phone halfway through a one-on-one chat, the server keeps the reply and hands it over when you reopen that chat, without paying for it twice. Conversation, Meower and memory work carry on on the server anyway. If you want after-reply Agents to keep going too, set 'Where replies are written' to **On the server**. A few things still need the page open, like in-browser WebLLM models and Kokoro voices.
 - **It's actually made for phones.** Proper labelled tabs, a bottom chat bar and a sliding menu, not the desktop layout squished down.
 - **Four ways to chat.** Classic Roleplay, messenger-style Conversation, a social timeline called Meower, and Story Mode for long-form writing.
 - **Story memory.** [Mewmory](docs/mewmory.md) keeps track of your story, the NPCs you've met and what they said, so you're not re-explaining everything 200 messages later.
-- **The good stuff comes built in.** Agents, Chat Archive, Quick Image Gen, Guided Generations, BotSearcher and a few more, each with their own settings. [Here's the full list and who made them.](docs/neconyan-native-tools.md)
+- **The good stuff comes built in.** Agents, Chat Archive, Quick Image Gen, Guided Generations, BotSearcher and a few more, each with their own settings. [Here are the ones that started out as separate projects, and who made them.](docs/neconyan-native-tools.md)
 - **Somewhere to keep notes.** [Notebooks](docs/notebooks.md) gives you space for character drafts, places, scene plans and session journals, right next to your chats. Notes link to each other and to your lorebooks, and the assistants can edit them if you let them.
 - **Little helpers.** Miso, Taro and Nori can use tool calls to create characters with portraits, edit lorebooks and adjust presets or agents. The short First paws tour walks you through the basics, and [Simple Mode](#simple-mode) keeps the advanced stuff out of the way until you want it.
 - **Someone to talk the story over with.** [Scratchpad](docs/scratchpad.md) is a side chat next to your story where the assistants, your own characters or a whole round table of them can read the scene and give you ideas, without any of it ending up in the chat.
@@ -131,7 +131,8 @@ Pick whichever fits what you've got:
 | An Android phone on Android 11 or newer | [The Android app](#android-app) |
 | An older Android phone, or you like a terminal | [Termux](#android-with-termux) |
 | Windows, macOS or Linux | [A computer install](#on-a-computer) |
-| An iPhone | A computer install, then [open it on your phone](#opening-it-on-your-phone) |
+| An iPhone on iOS 17 or newer, and you're fine with sideloading | [The iPhone app](#iphone-app) (early test builds) |
+| Any other iPhone, or you'd rather keep your chats on a computer | A computer install, then [open it on your phone](#opening-it-on-your-phone) |
 
 Whichever you pick, you still need a model to talk to: an API key from a provider, or a local backend like KoboldCpp or Ollama.
 
@@ -139,13 +140,25 @@ Whichever you pick, you still need a model to talk to: an API key from a provide
 
 On Android 11 or newer, download the file ending in `-android-arm64.apk` from the [latest release](https://github.com/platberlitz/Neconyan/releases/latest) and open it. Android will probably ask you to allow installing apps from your browser first.
 
-Everything runs on the phone, so there's no Termux or computer involved. Leave about 2 GiB free and give the first opening time to unpack. To update, install the new APK over the old one and your chats stay put. [Android setup, backups and build instructions.](android/README.md)
+Everything runs on the phone, so there's no Termux or computer involved. Leave about 2 GiB free and give the first opening time to unpack. It also needs Android System WebView 124 or newer, and the app tells you if yours is too old. To update, install the new APK over the old one and your chats stay put. [Android setup, backups and build instructions.](android/README.md)
+
+### iPhone app
+
+There's a standalone iPhone app now too. Same idea as the Android one: the server, your chats and your settings all live on the phone, so you don't need a computer running Neconyan. It's still early, so it isn't on the releases page or the App Store yet.
+
+1. Sign in to GitHub, open a successful run of the [Standalone iOS workflow](https://github.com/platberlitz/Neconyan/actions/workflows/ios-build.yml) and download the `neconyan-ios-...` file under **Artifacts**. GitHub only lets signed-in accounts download these, and old ones expire after a while.
+2. Unzip it and pick `Neconyan-unsigned.ipa` in a sideloading tool like [iloader](https://github.com/nab138/iloader). The tool signs it with your Apple account and installs it. You'll need iOS 17 or newer.
+3. Open Neconyan and connect a model from **Connections**, same as everywhere else.
+
+A free Apple account has to re-sign the app every seven days and only lets you sideload three apps. To update, install the new IPA over the old one with the same Apple account, and your chats stay put. Deleting the app deletes your chats with it, so export an account backup first if you're switching sideloading tools.
+
+Keep the app open, with the screen on, while a reply is generating or a backup is importing. iOS pauses apps you aren't looking at, Neconyan's server included, so I can't promise anything finishes in the background. Big imports are the shakiest part right now. [iPhone setup, limits and build instructions.](ios/README.md)
 
 ### On a computer
 
 1. **Get Neconyan.** There are two ways, and the second one keeps itself up to date.
 
-   - **Download it.** Grab the file ending in `-source.zip` from the [latest release](https://github.com/platberlitz/Neconyan/releases/latest) and unzip it somewhere easy to find, like your Documents folder. On Windows, right-click the zip and choose **Extract All** first, because running the launcher from inside the zip won't work. You'll end up with a folder named after the version, like `Neconyan-1.1.0`.
+   - **Download it.** Grab the file ending in `-source.zip` from the [latest release](https://github.com/platberlitz/Neconyan/releases/latest) and unzip it somewhere easy to find, like your Documents folder. On Windows, right-click the zip and choose **Extract All** first, because running the launcher from inside the zip won't work. You'll end up with a folder named after the version, like `Neconyan-1.3.7`.
    - **Clone it with [Git](https://git-scm.com/downloads).** Open a terminal where you want the folder and run the line below. The launcher then checks for a new version every time you start it and updates before opening, which is why I'd go this way.
 
      ```sh
@@ -223,7 +236,7 @@ Even with the server alive, Chrome can still unload the page itself after a whil
 
 ### Opening it on your phone
 
-If Neconyan runs on your computer, your phone can use it too, as long as both are on the same Wi-Fi. It's the only way to use it on an iPhone for now.
+If Neconyan runs on your computer, your phone can use it too, as long as both are on the same Wi-Fi. It's also the way to go on an iPhone if you'd rather not sideload the [iPhone app](#iphone-app).
 
 Both browsers use the same data. If you need to move an offline setup between devices instead, read [Moving data between devices](docs/data-portability.md), including the GitHub data-folder setup, before copying or syncing the folder.
 
@@ -278,7 +291,7 @@ To stop a Git install updating itself, set `NECONYAN_AUTO_UPDATE=0` before runni
   ```
 
 - **A Git install stopped updating:** the launcher skips updates if you've edited any of Neconyan's own files, and says why when it starts. Your chats and `config.yaml` don't count.
-- **Android:** Node.js is the default in Termux. Bun needs two extra packages first:
+- **Android:** Node.js is the default in Termux. Bun needs two extra packages, which the Bun launcher tries to install for you. If that fails, install them yourself:
 
   ```sh
   pkg update && pkg install -y glibc-repo && pkg install -y glibc-runner
