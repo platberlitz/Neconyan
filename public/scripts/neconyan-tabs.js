@@ -716,7 +716,10 @@ function syncNeconyanModeControls() {
     const activeMode = getActualNeconyanMode();
     try { globalThis.NeconyanCrashDiagnostics?.updateActivity?.({ mode: activeMode, ...(!['roleplay'].includes(activeMode) ? { chat: { messageCount: null } } : {}) }); } catch { /* Optional diagnostics. */ }
     const definition = getNeconyanModeDefinition(activeMode);
-    document.documentElement.dataset.neconyanChatMode = activeMode;
+    // Writing the same value still wakes attribute observers, and the message sleepers re-measure every bubble.
+    if (document.documentElement.dataset.neconyanChatMode !== activeMode) {
+        document.documentElement.dataset.neconyanChatMode = activeMode;
+    }
     if (document.body?.dataset.neconyanChatMode !== activeMode) {
         const previousMode = document.body.dataset.neconyanChatMode;
         document.body.dataset.neconyanChatMode = activeMode;
@@ -1583,6 +1586,7 @@ const nnState = {
     chatAvatars: {
         observer: null,
         debounceTimer: 0,
+        pendingMessages: null,
         retryTimer: 0,
         sourceCache: new WeakMap(),
     },
@@ -5252,12 +5256,52 @@ function updateChatAvatarVariables(root = document) {
     }
 }
 
-function scheduleChatAvatarVariableUpdate(delay = 80) {
+/**
+ * @param {number} [delay]
+ * @param {Iterable<HTMLElement>|null} [messages] Only these messages; null rescans the chat.
+ */
+function scheduleChatAvatarVariableUpdate(delay = 80, messages = null) {
+    const queued = Boolean(nnState.chatAvatars.debounceTimer);
+    if (!messages) {
+        nnState.chatAvatars.pendingMessages = null;
+    } else if (!queued) {
+        nnState.chatAvatars.pendingMessages = new Set(messages);
+    } else if (nnState.chatAvatars.pendingMessages) {
+        for (const message of messages) nnState.chatAvatars.pendingMessages.add(message);
+    }
     window.clearTimeout(nnState.chatAvatars.debounceTimer);
     nnState.chatAvatars.debounceTimer = window.setTimeout(() => {
+        const pending = nnState.chatAvatars.pendingMessages;
         nnState.chatAvatars.debounceTimer = 0;
-        updateChatAvatarVariables();
+        nnState.chatAvatars.pendingMessages = null;
+        if (!pending) {
+            updateChatAvatarVariables();
+            return;
+        }
+        for (const message of pending) {
+            if (message.isConnected) updateChatAvatarVariables(message);
+        }
     }, delay);
+}
+
+/** Phones redraw a streaming reply every 250 ms, longer than the delay, so each draw rescanned every message. */
+function collectChatAvatarMessages(mutations) {
+    const messages = new Set();
+    for (const mutation of mutations) {
+        const target = mutation.target instanceof Element ? mutation.target : null;
+        if (target?.closest('.mes_text')) continue;
+        const owner = target?.closest('.mes');
+        if (owner instanceof HTMLElement) {
+            messages.add(owner);
+            continue;
+        }
+        for (const node of mutation.addedNodes) {
+            if (!(node instanceof HTMLElement)) continue;
+            if (node.matches('.mes')) messages.add(node);
+            for (const message of node.querySelectorAll('.mes')) messages.add(message);
+        }
+    }
+    return messages;
 }
 
 function initChatAvatarVariables() {
@@ -5282,7 +5326,10 @@ function initChatAvatarVariables() {
     window.clearTimeout(nnState.chatAvatars.retryTimer);
     nnState.chatAvatars.retryTimer = 0;
 
-    const observer = new MutationObserver(() => scheduleChatAvatarVariableUpdate());
+    const observer = new MutationObserver((mutations) => {
+        const messages = collectChatAvatarMessages(mutations);
+        if (messages.size) scheduleChatAvatarVariableUpdate(80, messages);
+    });
     observer.observe(chatContainer, {
         childList: true,
         subtree: true,

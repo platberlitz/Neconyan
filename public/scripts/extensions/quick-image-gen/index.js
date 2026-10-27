@@ -1685,6 +1685,7 @@ let qigMessageActionObserver = null;
 let qigMessageActionObserverRetryTimer = null;
 let qigMessageActionRefreshQueued = false;
 let qigMessageActionRefreshCancel = null;
+let qigMessageActionRefreshTargets = null;
 let qigMessageActionClicksBound = false;
 let qigSlashCommandsRegistered = false;
 const PALETTE_GENERATE_LOCK_MS = 350;
@@ -21267,13 +21268,33 @@ function refreshMessageGenerateActions(root = document) {
     }
 }
 
-function scheduleRefreshMessageGenerateActions() {
+/**
+ * @param {Iterable<Element>|null} [messages] Only these messages; null rescans the whole chat.
+ */
+function scheduleRefreshMessageGenerateActions(messages = null) {
+    if (messages) {
+        if (qigMessageActionRefreshTargets) {
+            for (const message of messages) qigMessageActionRefreshTargets.add(message);
+        }
+    } else {
+        qigMessageActionRefreshTargets = null;
+    }
     if (qigMessageActionRefreshQueued) return;
     qigMessageActionRefreshQueued = true;
+    if (messages) qigMessageActionRefreshTargets = new Set(messages);
     const refresh = () => {
+        const targets = qigMessageActionRefreshTargets;
+        qigMessageActionRefreshTargets = null;
         qigMessageActionRefreshCancel = null;
         qigMessageActionRefreshQueued = false;
-        refreshMessageGenerateActions(document.getElementById("chat") || document);
+        if (!targets) {
+            refreshMessageGenerateActions(document.getElementById("chat") || document);
+            return;
+        }
+        const ctx = getContext?.();
+        for (const messageElement of targets) {
+            if (messageElement.isConnected) ensureMessageGenerateAction(messageElement, ctx);
+        }
     };
     if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
         const frameId = window.requestAnimationFrame(refresh);
@@ -21301,10 +21322,21 @@ function initMessageGenerateActionObserver() {
     if (qigMessageActionObserver) {
         qigMessageActionObserver.disconnect();
     }
+    // Streaming rewrites one message every frame, so only the messages a change touched are revisited.
     qigMessageActionObserver = new MutationObserver((mutations) => {
-        if (mutations.some(mutation => mutation.type === "childList" && (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0))) {
-            scheduleRefreshMessageGenerateActions();
+        const touched = new Set();
+        for (const mutation of mutations) {
+            if (mutation.type !== "childList" || (mutation.addedNodes.length === 0 && mutation.removedNodes.length === 0)) continue;
+            const owner = mutation.target instanceof Element ? mutation.target.closest(".mes[mesid]") : null;
+            if (owner) {
+                touched.add(owner);
+                continue;
+            }
+            for (const node of mutation.addedNodes) {
+                for (const messageElement of getMessageElementsWithin(node)) touched.add(messageElement);
+            }
         }
+        if (touched.size > 0) scheduleRefreshMessageGenerateActions(touched);
     });
     qigMessageActionObserver.observe(chatRoot, { childList: true, subtree: true });
     scheduleRefreshMessageGenerateActions();
@@ -21320,6 +21352,7 @@ function cleanupMessageGenerateActionBindings() {
     qigMessageActionRefreshCancel?.();
     qigMessageActionRefreshCancel = null;
     qigMessageActionRefreshQueued = false;
+    qigMessageActionRefreshTargets = null;
     if (qigMessageActionClicksBound) {
         $(document).off("click.qigMessageGenerate", `.${QIG_MESSAGE_ACTION_CLASS}`);
         qigMessageActionClicksBound = false;

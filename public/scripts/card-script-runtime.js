@@ -195,10 +195,14 @@ async function reconcileAllMessages() {
         if (!isCurrent(record) || !visibility(record.messageElement).near) destroyRecord(record);
     }
     // Only messages that carry a card script, a mount or a shown control need work; plain chats stay cheap on every scroll and stream write.
-    const messages = Array.from(dependencies.getDocument()?.querySelectorAll('#chat .mes[mesid]') ?? []).filter(element => {
-        const button = element.querySelector(CARD_SCRIPT_RUN_BUTTON_SELECTOR);
-        return element.querySelector(CARD_SCRIPT_MARKER_TAG) || element.querySelector('.card-script-sandbox-slot') || (button && button.style.display !== 'none');
-    });
+    // One query over the chat finds them; three queries per message ran after every streamed chunk.
+    const messages = [];
+    const candidates = dependencies.getDocument()?.querySelectorAll(`#chat .mes[mesid] :is(${CARD_SCRIPT_MARKER_TAG}, .card-script-sandbox-slot, ${CARD_SCRIPT_RUN_BUTTON_SELECTOR})`) ?? [];
+    for (const candidate of candidates) {
+        if (candidate.matches(CARD_SCRIPT_RUN_BUTTON_SELECTOR) && candidate.style.display === 'none') continue;
+        const element = candidate.closest('.mes[mesid]');
+        if (element && messages.at(-1) !== element && !messages.includes(element)) messages.push(element);
+    }
     for (const element of observedMessages) {
         if (!element.isConnected) { intersectionObserver?.unobserve(element); observedMessages.delete(element); }
     }
