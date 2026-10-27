@@ -60,7 +60,9 @@ describe('companion quick controls', () => {
     test('builds controls only for companions and lists the other companions to connect', () => {
         agents = [companion('a', 'Alpha', { includeInChatHistory: true, includeAllChatHistory: false, chatHistoryDepth: 4, dependencies: ['b'] }), companion('b', 'Beta <b>'), { id: 'x', name: 'Plain', execution: 'inline' }];
         expect(quick.buildCompanionQuickControlsHtml(agents[2])).toBe('');
+        quick.setCompanionLinksOpen('card', 'a', true);
         const html = quick.buildCompanionQuickControlsHtml(agents[0]);
+        quick.setCompanionLinksOpen('card', 'a', false);
         expect(html).toContain('data-companion-quick="a"');
         expect(html).toContain('data-quick-keep');
         expect(html).toContain('value="4"');
@@ -68,5 +70,20 @@ describe('companion quick controls', () => {
         expect(html).toContain('Beta &lt;b&gt;');
         expect(html).not.toContain('data-candidate-id="x"');
         expect(html).toContain('More connection options');
+    });
+
+    test('a closed Connections panel leaves its checkbox groups out until it opens', () => {
+        agents = [companion('a', 'Alpha', { dependencies: ['b'] }), companion('b', 'Beta'), companion('c', 'Gamma')];
+        const html = quick.buildCompanionQuickControlsHtml(agents[0]);
+        expect(html).toContain('data-quick-groups-pending');
+        expect(html).not.toContain('data-quick-link=');
+        expect(html).toContain('Runs after Beta');
+        expect(html).toContain('More connection options');
+
+        const groups = quick.buildCompanionQuickGroupsHtml(agents[0]);
+        expect(groups.match(/data-quick-link=/g)).toHaveLength(6);
+        expect(groups).toContain('data-quick-link="dependencies" data-candidate-id="b" checked');
+        expect(groups).not.toContain('data-candidate-id="a"');
+        expect(quick.buildCompanionQuickGroupsHtml(companion('solo', 'Solo'), [])).toContain('Make another agent a companion');
     });
 });
