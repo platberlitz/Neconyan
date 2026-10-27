@@ -69,6 +69,20 @@ describe('exact expression history', () => {
         expect(runtime.needsExpression(message)).toBe(true);
     });
 
+    test('the poll skips the character lookup for messages it already processed, and while the page is hidden', () => {
+        const chat = Array.from({ length: 50 }, (_, index) => ({ mes: `line ${index}`, swipe_id: 0 }));
+        let lookups = 0;
+        const runtime = vm.createContext({ getContext: () => ({ chat }), getMessageExpressionAvatar: () => { lookups += 1; return 'Cat.png'; } });
+        vm.runInContext(`let processedExpressions = new WeakMap();\n${['getExpressionClassificationSnapshot', 'rememberExpressionMessage', 'seedExpressionHistory', 'needsExpression'].map(name => extract(expressions, name)).join('\n')}`, runtime);
+        runtime.seedExpressionHistory();
+        expect(chat.some(message => runtime.needsExpression(message))).toBe(false);
+        expect(lookups).toBe(0);
+
+        const poll = expressions.slice(expressions.indexOf('setInterval(() => {'), expressions.indexOf('}, UPDATE_INTERVAL);'));
+        expect(poll).toContain('if (document.visibilityState === \'hidden\') return;');
+        expect(poll).toContain('requestExpressionUpdate()');
+    });
+
     for (const name of ['runSingleCompanionAgent', 'runBatchCompanionAgents']) {
         test(`${name} discards delayed results without cancellation writes to the new swipe`, async () => {
             const message = { mes: 'old', swipe_id: 0 };
