@@ -238,8 +238,11 @@ function seedExpressionHistory() {
 }
 
 function needsExpression(message) {
-    return !message.is_user && getMessageExpressionAvatar(message) && message.mes && message.mes !== '...'
-        && processedExpressions.get(message)?.get(message.swipe_id ?? 0)?.text !== message.mes;
+    // The avatar lookup searches every character, so it runs last: the poll
+    // checks each message in the chat, and almost all are already processed.
+    return Boolean(!message.is_user && message.mes && message.mes !== '...'
+        && processedExpressions.get(message)?.get(message.swipe_id ?? 0)?.text !== message.mes
+        && getMessageExpressionAvatar(message));
 }
 
 async function onAgentExpressionUpdated(event, update) {
@@ -3301,7 +3304,11 @@ export async function init() {
     await refreshExpressionOwners();
     seedExpressionHistory();
     eventSource.on('in_chat_agent_companion_results_updated', event => onAgentExpressionUpdated(event, requestExpressionUpdate));
-    setInterval(requestExpressionUpdate, UPDATE_INTERVAL);
+    setInterval(() => {
+        // A hidden page has nothing to show; the next visible poll catches up.
+        if (document.visibilityState === 'hidden') return;
+        void requestExpressionUpdate();
+    }, UPDATE_INTERVAL);
     void requestExpressionUpdate();
     dragElement($('#expression-holder'));
     eventSource.on(event_types.CHAT_CHANGED, () => {

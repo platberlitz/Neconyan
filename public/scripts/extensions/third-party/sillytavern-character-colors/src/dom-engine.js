@@ -2526,7 +2526,9 @@ export function runDomHealthCheck() {
         stopDomHealthCheck();
         return;
     }
-    if (isDecoratingDom) return;
+    // Each check hit-tests the screen and parses on-screen messages. A hidden
+    // page shows nothing to repair; the first visible check catches up.
+    if (isDecoratingDom || document.visibilityState === 'hidden') return;
     setupChatObserver();
 
     const chat = getContext()?.chat || [];
