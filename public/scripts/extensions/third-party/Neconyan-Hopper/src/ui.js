@@ -3662,45 +3662,49 @@ function closeFeedInternal(cancelTransition, allowExpectedPersonaSwitch = false)
     if (!state.body && !openTask && !host?.hasAttribute('data-sbtw-mode')) {
         return closingTask;
     }
-    if (state.draftReady && !saveDraft()) {
-        toast(state.draftError, 'error');
-    }
     const restoreFocus = state.body?.contains(document.activeElement);
     const pendingMutation = mutationTask;
     const pendingSync = syncingFeed;
-    clearUndo();
-    invalidateWork();
-    openTask = null;
-    refreshRuns += 1;
-    uploadToken += 1;
-    state.body?.remove();
-    state.body = null;
-    state.session = null;
-    state.feed = null;
-    setAccounts([]);
-    state.replyingTo = null;
-    state.status = '';
-    state.busy = false;
-    state.opening = false;
-    state.loadFailure = null;
-    state.imagePending = false;
-    state.draft = { text: '', image: '', poll: null, imageDescription: '' };
-    state.draftOwner = null;
-    state.draftReady = false;
-    state.draftError = '';
-    state.syncError = '';
-    state.timelineSearch = '';
-    state.revealTarget = null;
-    replyDrafts.clear();
-    pendingReplyFocus = null;
-    byPost = new Map();
-    postsById = new Map();
-    interactionsById = new Map();
-    cachedNotifications = null;
-    scrollPositions.clear();
-    listLimits.clear();
-    host?.removeAttribute('data-sbtw-mode');
-    syncLaunchState(false);
+    // The attribute hides the chat behind Meower, so a failing clean-up must not leave it set.
+    try {
+        if (state.draftReady && !saveDraft()) {
+            toast(state.draftError, 'error');
+        }
+        clearUndo();
+        invalidateWork();
+        openTask = null;
+        refreshRuns += 1;
+        uploadToken += 1;
+        state.body?.remove();
+        state.body = null;
+        state.session = null;
+        state.feed = null;
+        setAccounts([]);
+        state.replyingTo = null;
+        state.status = '';
+        state.busy = false;
+        state.opening = false;
+        state.loadFailure = null;
+        state.imagePending = false;
+        state.draft = { text: '', image: '', poll: null, imageDescription: '' };
+        state.draftOwner = null;
+        state.draftReady = false;
+        state.draftError = '';
+        state.syncError = '';
+        state.timelineSearch = '';
+        state.revealTarget = null;
+        replyDrafts.clear();
+        pendingReplyFocus = null;
+        byPost = new Map();
+        postsById = new Map();
+        interactionsById = new Map();
+        cachedNotifications = null;
+        scrollPositions.clear();
+        listLimits.clear();
+    } finally {
+        host?.removeAttribute('data-sbtw-mode');
+        syncLaunchState(false);
+    }
     if (restoreFocus) {
         const target = opener?.isConnected && opener.getClientRects().length ? opener : document.getElementById(LAUNCH_ID);
         if (target?.getClientRects().length) {

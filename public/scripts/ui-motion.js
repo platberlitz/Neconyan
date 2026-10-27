@@ -109,9 +109,21 @@ function isVisible(element) {
 function play(element, frames, { duration, easing = easeOut, closing = false, linked = [], complete = () => {}, restore = () => {}, holdWhileBusy = false }) {
     bindPreferences();
     const options = { duration, easing, fill: 'both' };
-    const animation = element.animate(frames, options);
-    // Linked parts settle with their surface, so neither can snap back on its own.
-    const parts = linked.map(([part, partFrames]) => part.animate(partFrames, options));
+    let animation;
+    let parts;
+    try {
+        animation = element.animate(frames, options);
+        // Linked parts settle with their surface, so neither can snap back on its own.
+        parts = linked.map(([part, partFrames]) => part.animate(partFrames, options));
+    } catch (error) {
+        // A closing surface is inert and ignores taps until restore runs, so a
+        // motion that cannot start must still hand the page back.
+        animation?.cancel();
+        console.warn('UI motion skipped', error);
+        restore();
+        complete();
+        return;
+    }
     let settled = false;
     let started = false;
     // Safari starts the clock when animate() is called, so the rest of the tap's
