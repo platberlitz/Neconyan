@@ -3,6 +3,7 @@ import {
     BACKGROUND_KEEP_ALIVE_STORAGE_KEY,
     createBackgroundKeepAlive,
     createQuietToneWav,
+    createReplyKeepAlive,
     isBackgroundKeepAliveDevice,
     readBackgroundKeepAliveEnabled,
     writeBackgroundKeepAliveEnabled,
@@ -224,6 +225,120 @@ describe('background keep-alive controller', () => {
         const { documentRef, controller } = setup();
         expect(documentRef.listenerCount()).toBe(1);
         controller.destroy();
+        expect(documentRef.listenerCount()).toBe(0);
+    });
+});
+
+describe('iPhone app reply keep-alive', () => {
+    function setupReply() {
+        const documentRef = createDocument();
+        const audio = createAudioStub();
+        const mediaSession = createMediaSession();
+        const native = [];
+        const timers = new Map();
+        let nextTimer = 1;
+        let listener = null;
+        const controller = createReplyKeepAlive({
+            subscribe: (fn) => { listener = fn; fn(false); return () => { listener = null; }; },
+            notifyNative: busy => native.push(busy),
+            documentRef,
+            navigatorRef: { mediaSession },
+            createAudio: () => audio,
+            createObjectUrl: () => 'blob:quiet-tone',
+            setTimer: (fn, ms) => { const id = nextTimer++; timers.set(id, { fn, ms }); return id; },
+            clearTimer: id => timers.delete(id),
+        });
+        const fire = (ms) => {
+            for (const [id, timer] of [...timers]) {
+                if (timer.ms === ms) { timers.delete(id); timer.fn(); }
+            }
+        };
+        return { controller, documentRef, audio, mediaSession, native, timers, fire, activity: busy => listener(busy) };
+    }
+
+    test('stays silent while the page is open, even mid-reply', () => {
+        const { controller, audio, native, activity } = setupReply();
+        activity(true);
+        expect(native).toEqual([true]);
+        expect(audio.src).toBe('blob:quiet-tone');
+        expect(audio.play).not.toHaveBeenCalled();
+        expect(controller.isHolding()).toBe(true);
+    });
+
+    test('plays while hidden mid-reply and stops once the page is shown again', () => {
+        const { controller, documentRef, audio, mediaSession, activity } = setupReply();
+        activity(true);
+        documentRef.setVisibility('hidden');
+        expect(audio.play).toHaveBeenCalledTimes(1);
+        expect(audio.loop).toBe(true);
+        expect(mediaSession.playbackState).toBe('playing');
+        documentRef.setVisibility('visible');
+        expect(audio.pause).toHaveBeenCalledTimes(1);
+        expect(controller.isPlaying()).toBe(false);
+        expect(controller.isHolding()).toBe(true);
+    });
+
+    test('starts at once when a reply begins on a hidden page', () => {
+        const { documentRef, audio, activity } = setupReply();
+        documentRef.setVisibility('hidden');
+        expect(audio.play).not.toHaveBeenCalled();
+        activity(true);
+        expect(audio.play).toHaveBeenCalledTimes(1);
+    });
+
+    test('keeps going briefly after a reply so the Agents after it can start', () => {
+        const { controller, documentRef, audio, native, timers, fire, activity } = setupReply();
+        activity(true);
+        documentRef.setVisibility('hidden');
+        activity(false);
+        expect(controller.isPlaying()).toBe(true);
+        activity(true);
+        expect([...timers.values()].map(timer => timer.ms)).toEqual([65 * 60_000]);
+        activity(false);
+        fire(15_000);
+        expect(controller.isHolding()).toBe(false);
+        expect(audio.pause).toHaveBeenCalledTimes(1);
+        expect(native).toEqual([true, false]);
+    });
+
+    test('lets go after an hour even if a reply never reports back', () => {
+        const { controller, documentRef, native, fire, activity } = setupReply();
+        activity(true);
+        documentRef.setVisibility('hidden');
+        fire(65 * 60_000);
+        expect(controller.isHolding()).toBe(false);
+        expect(controller.isPlaying()).toBe(false);
+        expect(native).toEqual([true, false]);
+    });
+
+    test('the lock-screen pause stops it until the page is opened again', () => {
+        const { controller, documentRef, audio, mediaSession, activity } = setupReply();
+        activity(true);
+        documentRef.setVisibility('hidden');
+        mediaSession.handlers.pause();
+        expect(controller.isPlaying()).toBe(false);
+        documentRef.setVisibility('visible');
+        documentRef.setVisibility('hidden');
+        expect(audio.play).toHaveBeenCalledTimes(2);
+    });
+
+    test('a refused play leaves it ready to try again', async () => {
+        const { controller, documentRef, audio, activity } = setupReply();
+        audio.play.mockImplementationOnce(() => Promise.reject(new DOMException('blocked', 'NotAllowedError')));
+        activity(true);
+        documentRef.setVisibility('hidden');
+        await Promise.resolve();
+        expect(controller.isPlaying()).toBe(false);
+        documentRef.setVisibility('visible');
+        documentRef.setVisibility('hidden');
+        expect(controller.isPlaying()).toBe(true);
+    });
+
+    test('destroy lets go and stops listening', () => {
+        const { controller, documentRef, native, activity } = setupReply();
+        activity(true);
+        controller.destroy();
+        expect(native).toEqual([true, false]);
         expect(documentRef.listenerCount()).toBe(0);
     });
 });

@@ -2,8 +2,9 @@ import AVFoundation
 import UIKit
 
 /// iOS suspends a backgrounded app within seconds, and the local server with it. While the server reports
-/// unfinished work (imports, replies, memory jobs) this plays silence, which keeps the app running with the
-/// screen off or another app open. Once the server has been idle for a while, it stops so the phone can rest.
+/// unfinished work (imports, replies, memory jobs) or the page is still writing a reply, this plays silence,
+/// which keeps the app running with the screen off or another app open. Once both are idle, it stops so the
+/// phone can rest.
 @MainActor
 final class BackgroundKeeper {
     private let marker: URL
@@ -13,6 +14,7 @@ final class BackgroundKeeper {
     private var timer: Timer?
     private var observers: [NSObjectProtocol] = []
     private var holding = false
+    private var pageBusy = false
     private var bridge: UIBackgroundTaskIdentifier = .invalid
 
     init(marker: URL) {
@@ -44,15 +46,29 @@ final class BackgroundKeeper {
         poll()
     }
 
+    /// Reported by the page while it streams or saves a reply in the browser.
+    func setPageBusy(_ busy: Bool) {
+        guard busy != pageBusy else { return }
+        pageBusy = busy
+        poll()
+    }
+
     private func poll() {
-        let busy = FileManager.default.fileExists(atPath: marker.path)
+        let busy = pageBusy || FileManager.default.fileExists(atPath: marker.path)
         if busy != holding {
             holding = busy
             if busy { restartAudio() } else { stopAudio() }
             NSLog("Neconyan background work %@", busy ? "started" : "finished")
-        } else if busy, !engine.isRunning {
+        } else if busy, !engine.isRunning || !sessionKeepsRunning() {
             restartAudio()
         }
+    }
+
+    /// The page's own keep-alive sound makes WebKit switch the shared audio session to its own category;
+    /// this puts back the one that keeps playing with the screen locked.
+    private func sessionKeepsRunning() -> Bool {
+        let session = AVAudioSession.sharedInstance()
+        return session.category == .playback && session.categoryOptions.contains(.mixWithOthers)
     }
 
     private func restartAudio() {

@@ -18,7 +18,10 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
         view.backgroundColor = .systemBackground
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
+        // The page starts its quiet keep-alive sound on its own once it is hidden mid-reply.
+        config.mediaTypesRequiringUserActionForPlayback = []
         config.userContentController.add(self, name: "nativeDiagnostics")
+        config.userContentController.add(self, name: "neconyanBackground")
         config.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "neconyanImport")
         config.userContentController.addUserScript(WKUserScript(source: """
         (() => {
@@ -124,8 +127,12 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.frameInfo.isMainFrame, let source = message.frameInfo.request.url, isLocal(source),
-              let body = message.body as? [String: String], let text = body["text"] else { return }
+        guard message.frameInfo.isMainFrame, let source = message.frameInfo.request.url, isLocal(source) else { return }
+        if message.name == "neconyanBackground" {
+            if let busy = (message.body as? [String: Any])?["busy"] as? Bool { keeper?.setPageBusy(busy) }
+            return
+        }
+        guard let body = message.body as? [String: String], let text = body["text"] else { return }
         if body["kind"] == "ready" { web.accessibilityIdentifier = "workspace-ready" }
         NSLog("Neconyan web %@: %@", body["kind"] ?? "diagnostic", text)
     }
@@ -208,7 +215,10 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
         web.accessibilityIdentifier = "workspace-loading"
     }
 
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { connect() }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        keeper?.setPageBusy(false)
+        connect()
+    }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         if (error as NSError).code == NSURLErrorCancelled { return }
         status.text = error.localizedDescription

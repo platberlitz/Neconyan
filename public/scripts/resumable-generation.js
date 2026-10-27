@@ -6,6 +6,7 @@
  * stalled stream, reattaches from the last byte it received. The streaming code above it sees one
  * uninterrupted response. Aborting the request's signal cancels the generation for real.
  */
+import { createReplyKeepAlive } from './background-keep-alive.js';
 
 const GENERATION_ID_HEADER = 'X-Generation-Id';
 const GENERATION_CONTEXT_HEADER = 'X-Generation-Context';
@@ -23,6 +24,9 @@ const SKIPPED_RESPONSE_HEADERS = new Set(['content-encoding', 'content-length', 
 const activeRequests = new Map();
 /** Replies still being parsed or saved by this page, including after the last byte. */
 const ownedReplies = new Map();
+/** @type {Set<(busy: boolean) => void>} */
+const activityListeners = new Set();
+let generationBusy = false;
 /**
  * Chat/message-slot descriptions keyed by the abort signal the generation will be sent with.
  * Generate() fills this right before the request goes out; the wrapper reads it once.
@@ -64,6 +68,33 @@ function encodeContext(context) {
 /**
  * @returns {string} Random id; crypto.randomUUID needs a secure context, this does not.
  */
+function notifyGenerationActivity() {
+    const busy = activeRequests.size + ownedReplies.size > 0;
+    if (busy === generationBusy) {
+        return;
+    }
+    generationBusy = busy;
+    for (const listener of activityListeners) {
+        try {
+            listener(busy);
+        } catch (error) {
+            console.warn('A generation activity listener failed:', error);
+        }
+    }
+}
+
+/**
+ * Calls `listener(true)` when this page starts streaming or saving a reply and `listener(false)` once
+ * nothing is left, with the current state straight away.
+ * @param {(busy: boolean) => void} listener
+ * @returns {() => void} Unsubscribe
+ */
+export function onGenerationActivity(listener) {
+    activityListeners.add(listener);
+    listener(generationBusy);
+    return () => activityListeners.delete(listener);
+}
+
 function createGenerationId() {
     const bytes = crypto.getRandomValues(new Uint8Array(16));
     return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
@@ -157,6 +188,7 @@ class ResumableRequest {
         this.handleAbort = () => this.cancel();
         this.outerSignal?.addEventListener('abort', this.handleAbort, { once: true });
         activeRequests.set(this.id, this);
+        notifyGenerationActivity();
     }
 
     get aborted() {
@@ -329,6 +361,7 @@ class ResumableRequest {
     release() {
         ownedReplies.delete(this.id);
         this.outerSignal?.removeEventListener('abort', this.handleAbort);
+        notifyGenerationActivity();
     }
 
     finish() {
@@ -340,6 +373,7 @@ class ResumableRequest {
         if (!this.hasContext) {
             this.release();
         }
+        notifyGenerationActivity();
     }
 
     /**
@@ -451,6 +485,14 @@ if (typeof document !== 'undefined') {
             reconnectStaleGenerations();
         }
     });
+    // The iPhone app freezes a hidden page within seconds; this keeps it writing replies instead.
+    const nativeBackground = globalThis.webkit?.messageHandlers?.neconyanBackground;
+    if (nativeBackground) {
+        createReplyKeepAlive({
+            subscribe: onGenerationActivity,
+            notifyNative: busy => nativeBackground.postMessage({ busy }),
+        });
+    }
 }
 
 // Deliberately no beforeunload/pagehide cancel: a reply keeps running server-side when the page

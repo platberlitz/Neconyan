@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 
-const { fetchResumable, reconnectStaleGenerations, setGenerationContext, releaseGenerationContext, listRecoverableGenerations, openHeldGeneration, discardGeneration } = await import('../public/scripts/resumable-generation.js');
+const { fetchResumable, onGenerationActivity, reconnectStaleGenerations, setGenerationContext, releaseGenerationContext, listRecoverableGenerations, openHeldGeneration, discardGeneration } = await import('../public/scripts/resumable-generation.js');
 const customRequestSource = readFileSync(new URL('../public/scripts/custom-request.js', import.meta.url), 'utf8');
 
 const RESUME_URL = '/api/resumable-generations/resume';
@@ -193,6 +193,13 @@ test('routes Horde generation requests through fetchResumable', () => {
     expect(hordeSource).not.toContain('fetch(\'/api/horde/generate-text\'');
 });
 
+test('the iPhone app is told while a reply is being written', () => {
+    const source = readFileSync(new URL('../public/scripts/resumable-generation.js', import.meta.url), 'utf8');
+    expect(source).toContain('globalThis.webkit?.messageHandlers?.neconyanBackground');
+    expect(source).toContain('subscribe: onGenerationActivity');
+    expect(source).toContain('nativeBackground.postMessage({ busy })');
+});
+
 test('leaving the page keeps the reply running on the server', () => {
     const source = readFileSync(new URL('../public/scripts/resumable-generation.js', import.meta.url), 'utf8');
     expect(source).not.toContain('window.addEventListener(\'beforeunload\'');
@@ -232,6 +239,23 @@ describe('held generation context', () => {
         expect(discardCalls).toHaveLength(1);
         expect(JSON.parse(discardCalls[0][1].body)).toEqual({ id: init.headers['X-Generation-Id'] });
         expect(discardCalls[0][1].headers['X-CSRF-Token']).toBe('csrf');
+    });
+
+    test('reports the page busy through parsing and saving, then idle once released', async () => {
+        fetchMock.mockResolvedValue(new Response(bodyFrom(['data: a\n\n']), { status: 200 }));
+        const states = [];
+        const unsubscribe = onGenerationActivity(busy => states.push(busy));
+        const controller = new AbortController();
+        const context = { v: 3 };
+        setGenerationContext(controller.signal, context);
+
+        const response = await fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}', signal: controller.signal });
+        await response.text();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(states).toEqual([false, true]);
+        releaseGenerationContext(context);
+        expect(states).toEqual([false, true, false]);
+        unsubscribe();
     });
 
     test('Stop still cancels a received reply while the chat save is pending', async () => {
