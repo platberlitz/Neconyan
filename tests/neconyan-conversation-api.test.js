@@ -1048,6 +1048,19 @@ describe('Neconyan Conversation REST API', () => {
         expect(readSettings().extension_settings[CONVERSATION_STORE_KEY]).toBeUndefined();
     });
 
+    test('store/get leaves the store out when the page already holds that version', async () => {
+        const first = await (await postJson('/store/get', {})).json();
+        const same = await postJson('/store/get', { knownVersion: first.version });
+        expect(same.status).toBe(200);
+        const sameJson = await same.json();
+        expect(sameJson).toMatchObject({ unchanged: true, version: first.version });
+        expect(sameJson.store).toBeUndefined();
+
+        const older = await (await postJson('/store/get', { knownVersion: first.version + 1 })).json();
+        expect(older.unchanged).toBeUndefined();
+        expect(older.store).toMatchObject({ characters: {} });
+    });
+
     test('thread/get create persists a versioned thread atomically', async () => {
         const missingVersionResponse = await postJson('/thread/get', { avatar: 'nova.png', create: true });
         expect(missingVersionResponse.status).toBe(400);
