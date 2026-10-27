@@ -23,8 +23,11 @@ basis for restarting. Use `termux-wake-unlock` after stopping the server when th
 lock is no longer needed.
 
 Older protected data without a known identity policy is not silently rewritten.
-If its runtime has the timestamp problem, startup keeps those records unchanged
-and prints the recovery instructions below. A saved recovery folder is recognised
+If its runtime has the timestamp problem and a clean handoff can't be verified,
+stop the server before editing and follow the
+[offline same-folder identity repair](data-portability.md#when-recovery-is-still-needed)
+to check the folder, keep a complete backup and repair it before restarting.
+This is separate from the 1.2.1 ZIP import recovery below. A saved recovery folder is recognised
 as the explicitly chosen compatibility instance. Its policy is recorded in
 `_termux-file-identity.json` outside the account's imported files. Data marked for
 Node compatibility must continue using Node rather than a forced Bun runtime.

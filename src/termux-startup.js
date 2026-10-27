@@ -110,7 +110,8 @@ export async function configureTermuxStartup({ dataRoot, termuxRecovery = false 
         process.env.NECONYAN_TERMUX_ZERO_BIRTHTIME_DEVICE = probe.device;
         log('Termux file identity compatibility is active for this data folder.');
     } else if (existing && probe.fallback) {
-        warn('A clean handoff could not be verified for this older Termux data folder. Its existing file identities were kept unchanged. Keep a backup and follow docs/data-portability.md or the Termux recovery launcher in docs/termux-import-recovery.md.');
+        throw Object.assign(new Error(`A clean handoff could not be verified for this older Termux data folder. Its data was left unchanged. Stop all Neconyan installations, then run node scripts/repair-data-identity.js check --dataRoot "${root}" --backupRoot "BACKUP_FOLDER". See docs/data-portability.md.`),
+            { code: 'DATA_IDENTITY_REPAIR_REQUIRED' });
     }
     acquireWakeLock(wakeLock, warn);
     if (termuxRecovery) log(`Continuing the saved Termux recovery data folder: ${root}`);

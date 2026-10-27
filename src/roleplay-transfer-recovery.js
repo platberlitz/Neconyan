@@ -149,6 +149,44 @@ export function inspectTransferredRoleplay(base) {
     return withRoleplayAccount(base, null, lease => inspect(lease).report);
 }
 
+/** Offline callers hold a validated account lease; this does not publish or retire journals. */
+export function inspectTransferredRoleplayLocked(lease) {
+    return inspect(lease);
+}
+
+/** Build the exact replacement state without mutating the active ledger. */
+export function prepareTransferredRoleplayState(lease, checked, receipt, instanceIds, device = null) {
+    const { state, identityFile } = roleplayLease(lease);
+    if (!checked || !receipt || receipt.token !== checked.report.token || receipt.dataEpoch !== state.dataEpoch + 1
+        || checked.report.issues.length || !Array.isArray(instanceIds)) throw changed();
+    const entries = state.status === 'deleted' ? [] : checked.entries;
+    if (instanceIds.length !== entries.length || new Set(instanceIds).size !== instanceIds.length
+        || instanceIds.some(id => !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id))) throw changed();
+    const project = physical => {
+        if (device === null) return structuredClone(physical);
+        if (physical.dev !== device) throw roleplayError('ROLEPLAY_RECOVERY_INVALID', 'A protected file is on another filesystem. Its data was left untouched.', 409);
+        return { ...physical, birthtimeNs: '0' };
+    };
+    const next = structuredClone(state);
+    next.dataEpoch++;
+    next.paths = {}; next.resources = {}; next.submissions = {}; next.pending = null;
+    next.accountResets = {};
+    next.placement = project(identityFile.physical);
+    next.transferRecovery = { ...structuredClone(receipt), journals: receipt.journals.map(journal => ({ ...journal, physical: project(journal.physical) })) };
+    const physicals = new Set();
+    for (const [index, entry] of entries.entries()) {
+        const instanceId = instanceIds[index];
+        const physical = project(entry.head.physical);
+        const key = JSON.stringify(physical);
+        if (physicals.has(key)) throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'Protected files have conflicting identities. Their data was left untouched.', 409);
+        physicals.add(key);
+        next.paths[roleplayPathKey(next, entry.kind, entry.locator)] = { generation: 1, instanceId };
+        next.resources[instanceId] = { ...entry, head: { ...entry.head, physical }, accountId: next.accountId, dataEpoch: next.dataEpoch,
+            status: 'live', revision: 1, busySubmission: null };
+    }
+    return next;
+}
+
 const relocationChanged = () => roleplayError('ROLEPLAY_RECOVERY_CHANGED', 'Roleplay storage changed while its new folder was being checked. Nothing was changed.');
 const relocationCollision = () => roleplayError('ROLEPLAY_SOURCE_CHANGED', 'Relocated Roleplay storage has conflicting file identities. Nothing was changed.');
 
@@ -252,7 +290,7 @@ function assertRelocationStable(candidates) {
 }
 
 /** Physical discovery includes disabled accounts; the user database is not authority here. */
-function discoverHandoffAccounts(dataRoot) {
+export function discoverHandoffAccounts(dataRoot, { allowMissingUserRoot = false } = {}) {
     const protectedRoot = path.join(dataRoot, '_roleplay');
     return fs.readdirSync(protectedRoot).sort().map(name => {
         if (!/^[a-f0-9]{64}$/.test(name)) throw relocationChanged();
@@ -265,7 +303,7 @@ function discoverHandoffAccounts(dataRoot) {
         const base = { owner: identity.owner, directories };
         if (roleplayStoreDirectory(base) !== root) throw relocationChanged();
         // Do not create a missing account root to make the handoff appear complete.
-        readRoleplayFile(path.join(directories.root, '.neconyan-handoff-check'), 0);
+        readRoleplayFile(path.join(directories.root, '.neconyan-handoff-check'), 0, { allowMissingParent: allowMissingUserRoot });
         return base;
     });
 }
@@ -463,7 +501,7 @@ export function repairTransferredRoleplay(base, token) {
     if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) throw changed();
     return withRoleplayAccount(base, null, lease => {
         confirmRoleplayAccount(lease);
-        const { state, scope, root, identityFile } = roleplayLease(lease);
+        const { state, scope, root } = roleplayLease(lease);
         if (state.transferRecovery?.token === token && state.transferRecovery.dataEpoch === state.dataEpoch) return state.transferRecovery;
         const checked = inspect(lease);
         if (checked.report.token !== token) throw changed();
@@ -488,17 +526,8 @@ export function repairTransferredRoleplay(base, token) {
         confirmRoleplayAccount(lease);
         // Old evidence remains in the backup, including unfinished operations and their payloads.
         // Removing receipts here also prevents old receipt cleanup from touching retained journals.
-        state.dataEpoch++;
-        state.paths = {}; state.resources = {}; state.submissions = {}; state.pending = null;
-        state.accountResets = {};
-        state.placement = identityFile.physical;
-        state.transferRecovery = receipt;
-        for (const entry of checked.entries) {
-            const instanceId = crypto.randomUUID();
-            state.paths[roleplayPathKey(state, entry.kind, entry.locator)] = { generation: 1, instanceId };
-            state.resources[instanceId] = { ...entry, accountId: state.accountId, dataEpoch: state.dataEpoch,
-                status: 'live', revision: 1, busySubmission: null };
-        }
+        const prepared = prepareTransferredRoleplayState(lease, checked, receipt, checked.entries.map(() => crypto.randomUUID()));
+        Object.assign(state, prepared);
         saveRoleplayAccount(lease);
         confirmRoleplayAccount(lease);
         return receipt;

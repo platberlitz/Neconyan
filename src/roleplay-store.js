@@ -4,6 +4,7 @@ import path from 'node:path';
 import { isDeepStrictEqual, TextDecoder, types } from 'node:util';
 import sanitize from 'sanitize-filename';
 import { acquireChatFileLock, getChatFileLockPath } from './chat-file-lock.js';
+import { assertDataRootRepairOwner } from './data-root-owner.js';
 import { canonical, retireJobStore, validateOwner } from './jobs/store.js';
 import { preserveMeowerReceipts } from './meower-retirement.js';
 import { saveResetContent, loadResetContent, installResetContent } from './account-reset-content.js';
@@ -1406,18 +1407,18 @@ export function withRoleplayAccountLock(scope, operation) {
 }
 
 /** Explicit discovery uses null; mutating request handlers must supply their captured account stamp. */
-export function withRoleplayAccount(base, expected, operation) {
+function withValidatedRoleplayAccount(base, expected, operation, allowRetired, rootOwner = null) {
     if (typeof operation !== 'function' || types.isAsyncFunction(operation)) throw new TypeError('Roleplay storage operations must be synchronous.');
     if (expected !== null && (!object(expected) || !UUID.test(expected.accountId) || !integer(expected.dataEpoch) || expected.dataEpoch < 1)) {
         throw roleplayError('ROLEPLAY_ACCOUNT_CHANGED', 'A saved account identity is required. Reload before continuing.');
     }
-    return locked(base, () => {
+    const run = () => {
         const loaded = load(base, expected === null);
         if (expected !== null) assertAccountIdentity(expected, loaded.state);
         const scope = stamp(base, loaded.state);
-        assertRoleplayAccountCurrent(scope, loaded.state);
+        if (!allowRetired || loaded.state.status !== 'deleted') assertRoleplayAccountCurrent(scope, loaded.state);
         const lease = Object.freeze({});
-        const held = { ...loaded, scope, persistedRevision: loaded.state.revision,
+        const held = { ...loaded, scope, rootOwner, persistedRevision: loaded.state.revision,
             persistedTransferRecovery: loaded.state.transferRecovery ? structuredClone(loaded.state.transferRecovery) : null, failure: null };
         leases.set(lease, held);
         activeAccountLeases.set(path.resolve(scope.directories.root), lease);
@@ -1430,6 +1431,76 @@ export function withRoleplayAccount(base, expected, operation) {
             if (held.failure) throw held.failure;
             return result;
         } finally { activeAccountLeases.delete(path.resolve(scope.directories.root)); leases.delete(lease); }
+    };
+    if (!rootOwner) return locked(base, run);
+    const root = path.dirname(path.dirname(roleplayStoreDirectory(base)));
+    assertDataRootRepairOwner(rootOwner, root);
+    const lockPath = getChatFileLockPath(path.join(roleplayStoreDirectory(base), 'state.json'));
+    for (const filename of [lockPath, lockPath + '.owner']) {
+        try { fs.lstatSync(filename); throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An existing account lock needs inspection before offline repair.'); } catch (error) {
+            if (error.code !== 'ENOENT') throw error;
+        }
+    }
+    const result = run();
+    assertDataRootRepairOwner(rootOwner, root);
+    return result;
+}
+
+/** Explicit discovery uses null; mutating request handlers need their captured account stamp. */
+export function withRoleplayAccount(base, expected, operation) {
+    return withValidatedRoleplayAccount(base, expected, operation, false);
+}
+
+/** Offline repair inspection may inspect a validated retired store without reopening it. */
+export function withOfflineRoleplayAccount(base, operation) {
+    return withValidatedRoleplayAccount(base, null, operation, true);
+}
+
+/** Exclusive offline repair bypasses secondary account locks only with a live root-owner capability. */
+export function withOwnedOfflineRoleplayAccount(rootOwner, base, operation) {
+    assertDataRootRepairOwner(rootOwner, path.dirname(path.dirname(roleplayStoreDirectory(base))));
+    return withValidatedRoleplayAccount(base, null, operation, true, rootOwner);
+}
+
+/** Encode a proposed next ledger with the same validator and bytes as the guarded writer. */
+export function encodePreparedRoleplayState(lease, state) {
+    const held = roleplayLease(lease);
+    if (state.accountId !== held.state.accountId || state.storageId !== held.state.storageId
+        || state.owner !== held.state.owner || state.status !== held.state.status
+        || state.dataEpoch !== held.state.dataEpoch + 1) throw damaged();
+    return Buffer.from(JSON.stringify(encodeState(held.identity, { ...state, revision: held.persistedRevision + 1 })));
+}
+
+/** Publish only the exact staged offline repair ledger under its existing account lock. */
+export function publishPreparedRoleplayState(lease, bytes, oldHash, newHash, candidatePath) {
+    const held = roleplayLease(lease);
+    const dataRoot = path.dirname(path.dirname(held.root));
+    assertDataRootRepairOwner(held.rootOwner, dataRoot);
+    const expectedCandidate = path.join(dataRoot, '_neconyan-policy-repair', 'publication', path.basename(held.root) + '.json');
+    if (!Buffer.isBuffer(bytes) || !HASH.test(oldHash) || !HASH.test(newHash)
+        || path.resolve(candidatePath) !== expectedCandidate || held.stateFile.rawHash !== oldHash
+        || crypto.createHash('sha256').update(bytes).digest('hex') !== newHash) throw damaged();
+    let prepared;
+    try { prepared = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); } catch { throw damaged(); }
+    if (!prepared?.state || !Buffer.from(bytes).equals(encodePreparedRoleplayState(lease, prepared.state))) throw damaged();
+    const destination = path.join(held.root, 'state.json');
+    withRoleplayFileHandle(candidatePath, ROLEPLAY_STORE_MAX_BYTES, (candidate, readHeld) => {
+        if (candidate.rawHash !== newHash || candidate.size !== bytes.length) throw damaged();
+        assertSameFile(readRoleplayFile(path.join(held.root, 'identity.json'), 4096), held.identityFile);
+        assertSameFile(readRoleplayFile(destination, ROLEPLAY_STORE_MAX_BYTES), held.stateFile);
+        fs.renameSync(candidatePath, destination);
+        fsyncDirectorySync(path.dirname(candidatePath));
+        fsyncDirectorySync(path.dirname(destination));
+        const written = readHeld(destination);
+        if (written.rawHash !== newHash || written.size !== candidate.size || written.physical.dev !== candidate.physical.dev
+            || written.physical.birthtimeNs !== candidate.physical.birthtimeNs) throw damaged();
+        const reread = readRoleplayFile(destination, ROLEPLAY_STORE_MAX_BYTES);
+        if (!reread || reread.rawHash !== newHash || !isDeepStrictEqual(reread.physical, written.physical)) throw damaged();
+        held.stateFile = reread;
+        Object.assign(held.state, prepared.state);
+        held.persistedRevision = held.state.revision;
+        held.persistedTransferRecovery = held.state.transferRecovery ? structuredClone(held.state.transferRecovery) : null;
+        observedAccounts.set(path.resolve(held.scope.directories.root), stamp(held.scope, held.state));
     });
 }
 
