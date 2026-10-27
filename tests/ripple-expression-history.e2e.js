@@ -13,7 +13,7 @@ const requestJson = request => JSON.parse((request.headers()['content-encoding']
 const first = '/characters/Expression Cat/joy-1.png?t=1';
 const second = '/characters/Expression Cat/joy-2.png?t=2';
 
-async function fixture(page, chatStyle = 6) {
+async function fixture(page, chatStyle = 6, { waifuMode = false } = {}) {
     let envelope, settings;
     const storage = createMockRoleplayStore(() => envelope.roleplayAccount);
     const state = { saved: null, saves: 0, savedSettings: null, modelCalls: [], errors: [], groups: [], storage };
@@ -25,7 +25,7 @@ async function fixture(page, chatStyle = 6) {
         settings ??= JSON.parse(envelope.settings);
         settings.firstRun = false;
         settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', 'NeconyanTutorialIndex.v1': '0' };
-        Object.assign(settings.power_user, theme, { theme: theme.name, chat_display: chatStyle, waifuMode: chatStyle === 6, chat_truncation: 50 });
+        Object.assign(settings.power_user, theme, { theme: theme.name, chat_display: chatStyle, waifuMode, chat_truncation: 50 });
         settings.extension_settings.expressions = { ...settings.extension_settings.expressions, api: 99, showDefault: true };
         settings.extension_settings.disabledExtensions = (settings.extension_settings.disabledExtensions ?? []).filter(id => !['regex', 'expressions'].includes(id));
         await route.fulfill({ json: { ...envelope, settings: JSON.stringify(settings) } });
@@ -62,11 +62,34 @@ async function fixture(page, chatStyle = 6) {
     return state;
 }
 
-async function selectSprite(page, file) {
-    await page.evaluate(async file => {
+async function runSlashCommand(page, command) {
+    await page.evaluate(async command => {
         const { executeSlashCommandsWithOptions } = await import('/scripts/slash-commands.js');
-        await executeSlashCommandsWithOptions(`/expression-set type=sprite ${file}`);
-    }, file);
+        await executeSlashCommandsWithOptions(command);
+    }, command);
+}
+
+async function selectSprite(page, file) {
+    await runSlashCommand(page, `/expression-set type=sprite ${file}`);
+}
+
+async function visualNovelGeometry(page) {
+    return page.evaluate(() => {
+        const rect = selector => document.querySelector(selector).getBoundingClientRect();
+        const holder = document.querySelector('#expression-holder');
+        const wrapper = document.querySelector('#expression-wrapper');
+        return {
+            sheldTop: rect('#sheld').top,
+            chatTop: rect('#chat').top,
+            chatHeight: rect('#chat').height,
+            composerBottom: rect('#send_textarea').bottom,
+            holderTop: rect('#expression-holder').top,
+            holderHeight: rect('#expression-holder').height,
+            holderDisplay: getComputedStyle(holder).display,
+            stage: getComputedStyle(wrapper).visibility,
+            viewport: window.innerHeight,
+        };
+    });
 }
 
 for (const [name, phone] of [['desktop', false], ['phone', true]]) {
@@ -153,6 +176,40 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
             await expect(portrait).toHaveCount(0);
             await page.locator('#chat_display').selectOption('6', { force: true });
             await expect(page.locator('#chat .mes[mesid="0"] .neconyan-expression-avatar')).toBeVisible();
+            expect(state.modelCalls).toEqual([]);
+            expect(state.errors).toEqual([]);
+        });
+
+        test('Visual Novel Mode puts the sprite above a shorter chat in Ripple and Flat', async ({ page }) => {
+            const state = await fixture(page, 6);
+            await selectSprite(page, 'joy-1.png');
+            for (const style of ['6', '0']) {
+                await page.locator('#chat_display').selectOption(style, { force: true });
+                await expect(page.locator('body')).toHaveClass(style === '6' ? /\bripplestyle\b/ : /\bflatchat\b/);
+                const off = await visualNovelGeometry(page);
+                if (style === '6') expect(off.stage).toBe('hidden');
+
+                await runSlashCommand(page, '/vn');
+                await expect(page.locator('body')).toHaveClass(/\bwaifuMode\b/);
+                await expect(page.locator('#waifuMode')).toBeChecked();
+                await expect.poll(() => state.savedSettings?.power_user?.waifuMode).toBe(true);
+                await expect.poll(async () => (await visualNovelGeometry(page)).chatHeight).toBeLessThan(off.chatHeight * 0.6);
+                const on = await visualNovelGeometry(page);
+                expect(on.stage, `style ${style}`).toBe('visible');
+                expect(on.holderDisplay, `style ${style}`).not.toBe('none');
+                expect(on.holderHeight, `style ${style}`).toBeGreaterThan(on.viewport * 0.5);
+                // The sprite owns the top of the screen and the chat sits below its face.
+                expect(on.holderTop, `style ${style}`).toBeLessThan(on.chatTop - 100);
+                expect(on.composerBottom, `style ${style}`).toBeLessThanOrEqual(on.viewport);
+                if (!phone) expect(on.sheldTop, `style ${style}`).toBeGreaterThan(on.viewport * 0.5);
+                if (style === '6') await expect(page.locator('#chat .mes[mesid="0"] .neconyan-expression-avatar')).toBeVisible();
+                await page.screenshot({ path: `../screenshots/visual-novel-${name}-style-${style}.png`, animations: 'disabled' });
+
+                await runSlashCommand(page, '/vn');
+                await expect(page.locator('body')).not.toHaveClass(/\bwaifuMode\b/);
+                await expect.poll(() => state.savedSettings?.power_user?.waifuMode).toBe(false);
+                await expect.poll(async () => (await visualNovelGeometry(page)).chatHeight).toBeGreaterThan(off.chatHeight - 2);
+            }
             expect(state.modelCalls).toEqual([]);
             expect(state.errors).toEqual([]);
         });
@@ -290,6 +347,8 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
             await page.route('**/api/groups/edit', route => state.storage.saveGroup(route));
             state.groups.push({ id: 'expression-group', name: 'Expression group', members: ['expression-cat.png', 'other-cat.png'],
                 disabled_members: [], chat_id: 'group-history', chats: ['group-history'], chat_metadata: {}, past_metadata: {} });
+            await runSlashCommand(page, '/vn');
+            await expect(page.locator('body')).toHaveClass(/\bwaifuMode\b/);
             await page.evaluate(async () => {
                 const core = await import('/script.js');
                 const { getGroups, openGroupById } = await import('/scripts/group-chats.js');
@@ -305,7 +364,8 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
             await expect(page.locator('#chat .mes[mesid="1"] .neconyan-expression-avatar')).toHaveAttribute('src', second);
             expect(await page.evaluate(() => window.SillyTavern.getContext().chat.map(message => message.extra.neconyanExpression.avatar)))
                 .toEqual(['expression-cat.png', 'other-cat.png']);
-            expect(await page.locator('#visual-novel-wrapper').evaluate(element => getComputedStyle(element).visibility)).toBe('hidden');
+            // Visual Novel Mode keeps its stage in Ripple instead of being silently ignored.
+            expect(await page.locator('#visual-novel-wrapper').evaluate(element => getComputedStyle(element).visibility)).toBe('visible');
             expect(state.modelCalls).toEqual([]);
             expect(state.errors).toEqual([]);
         });

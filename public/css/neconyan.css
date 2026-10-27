@@ -462,7 +462,7 @@ body.neconyan #sheld { min-width: 0; overflow: hidden; }
 /* Page Size & Clarity sliders: each scale is 1 at its default, so the stock sizes are unchanged. */
 body.neconyan { --neco-gutter: calc(24px * var(--messageMarginScale, 1)); --neco-bubble-pad: calc(16px * var(--messageMarginScale, 1)); --neco-reading-width: calc(820px * var(--neconyanPageWidthScale, 1)); --neco-line-height: calc(1 + var(--neconyanLineSpacing, 1.2) * .54); --neco-line-ratio: calc(var(--neconyanLineSpacing, 1.2) / 1.2); }
 /* Keep the floating holders measurable for the expression worker's mode detection. */
-body.ripplestyle :is(#expression-wrapper, #visual-novel-wrapper) { visibility: hidden; pointer-events: none; }
+body.ripplestyle:not(.waifuMode) :is(#expression-wrapper, #visual-novel-wrapper) { visibility: hidden; pointer-events: none; }
 #chat .neconyan-expression-avatar { display: none; }
 /* Message number, timer, token counts and the agent history button share one box under the avatar. */
 body.neconyan #chat .mes .mesAvatarWrapper > .mes_stats {
