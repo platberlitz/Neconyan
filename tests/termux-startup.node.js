@@ -102,7 +102,7 @@ function boot(root, { mode = 'ctime', recovery = false, worker = false, termux =
                 const { prepareInWorker } = await import(${JSON.stringify(preparation)});
                 output.notebookBirthtime = (await prepareInWorker('scan',{contentRoot:notes})).files[0].evidence.physical.birthtimeNs;
             }
-        } catch(error) { output.error = error.message; }
+        } catch(error) { output.error = error.message; output.errorCode = error.code; }
         Object.assign(output,{warnings,logs,wakes});
         process.stdout.write(JSON.stringify(output));
     `;
@@ -148,10 +148,10 @@ test('older unmarked protected data is not silently converted or given new autho
     const f = fixture(t); const protectedRoot = path.join(f.recovery, '_roleplay'); fs.mkdirSync(protectedRoot);
     fs.writeFileSync(path.join(protectedRoot, 'kept.json'), '{"birthtimeNs":"123"}');
     const result = boot(f.recovery);
-    assert.equal(result.result.mode, 'legacy');
-    assert.notEqual(result.physical.birthtimeNs, '0');
+    assert.equal(result.result, undefined);
+    assert.equal(result.errorCode, 'DATA_IDENTITY_REPAIR_REQUIRED');
+    assert.match(result.error, /repair-data-identity\.js check/);
     assert.equal(fs.existsSync(path.join(f.recovery, marker)), false);
-    assert.match(result.warnings[0], /kept unchanged/);
     assert.equal(fs.readFileSync(path.join(protectedRoot, 'kept.json'), 'utf8'), '{"birthtimeNs":"123"}');
 });
 

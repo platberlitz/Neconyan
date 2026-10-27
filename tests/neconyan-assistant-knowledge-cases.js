@@ -95,6 +95,8 @@ export const refreshedKnowledgeCases = [
     ['Would machine IDs let me use one copy on multiple devices?', 'recovery.data-portability', 'Machine IDs do not resolve conflicting edits'],
     ['Can the Android APK be my phone as master for desktop access?', 'recovery.data-portability', 'only accepts connections from its own phone'],
     ['Will a stopped folder move keep unchanged chats working?', 'recovery.data-portability', 'preserving their identities and saved history'],
+    ['How do I sync my Neconyan data folder with GitHub between phone and desktop?', 'recovery.data-portability', 'pull with --ff-only'],
+    ['How do I repair a Termux data folder with an unstable file identity?', 'recovery.transferred-data', 'offline check, backup, apply and resume'],
     ['What does ROLEPLAY_RECOVERY_REQUIRED mean?', 'recovery.pending-operation', 'Refreshing the browser alone does not run startup recovery'],
     ['An earlier Roleplay transaction must be reconciled first and I cannot create chats', 'recovery.pending-operation', 'first startup error'],
     ['Why do two local installations show Invalid CSRF token?', 'troubleshooting.browser-session', 'distinct names for their data folders and configured ports'],

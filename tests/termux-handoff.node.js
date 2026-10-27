@@ -195,10 +195,10 @@ function boot(root, options = {}) {
 function unchangedRefusal(root, options = {}, owners = ['fixture']) {
     const states = owners.map(owner => fs.readFileSync(statePath(root, owner)));
     const result = boot(root, { ...options, skipBootstrap: true });
-    assert.equal(result.error, undefined);
-    assert.equal(result.result.mode, 'legacy');
+    assert.equal(result.code, 'DATA_IDENTITY_REPAIR_REQUIRED');
+    assert.match(result.error, /repair-data-identity\.js check/);
+    assert.equal(result.result, undefined);
     assert.equal(fs.existsSync(path.join(root, marker)), false);
-    assert.match(result.warnings[0], /clean handoff could not be verified/);
     owners.forEach((owner, index) => assert.deepEqual(fs.readFileSync(statePath(root, owner)), states[index]));
 }
 
@@ -424,7 +424,8 @@ test('persistent metadata disturbance exhausts one retry without marker or ledge
     const f = account(t); const root = copy(t, f.root);
     const before = fs.readFileSync(statePath(root));
     const result = boot(root, { disturb: 'persistent', skipBootstrap: true });
-    assert.equal(result.result.mode, 'legacy');
+    assert.equal(result.code, 'DATA_IDENTITY_REPAIR_REQUIRED');
+    assert.match(result.error, /repair-data-identity\.js check/);
     assert.equal(result.disturbances, 2);
     assert.deepEqual(diagnostics(result).map(event => [event.attempt, event.retry]), [[1, true], [2, false]]);
     assert.equal(fs.existsSync(path.join(root, marker)), false);
@@ -435,7 +436,8 @@ test('the fresh retry still refuses a second resource with changed contents', t 
     const f = account(t); const root = copy(t, f.root);
     fs.appendFileSync(path.join(base(root).directories.groupChats, 'Source.jsonl'), '\n{}');
     const result = boot(root, { disturb: 'once', skipBootstrap: true });
-    assert.equal(result.result.mode, 'legacy');
+    assert.equal(result.code, 'DATA_IDENTITY_REPAIR_REQUIRED');
+    assert.match(result.error, /repair-data-identity\.js check/);
     assert.deepEqual(diagnostics(result).map(event => [event.reason, event.retry]), [['metadata-changed', true], ['content-changed', false]]);
     assert.equal(fs.existsSync(path.join(root, marker)), false);
 });
@@ -444,7 +446,8 @@ for (const disturb of ['short', 'replacement', 'content', 'link']) {
     test('protected ' + disturb + ' refusal is not retried', t => {
         const f = account(t); const root = copy(t, f.root);
         const result = boot(root, { disturb, skipBootstrap: true });
-        assert.equal(result.result.mode, 'legacy');
+        assert.equal(result.code, 'DATA_IDENTITY_REPAIR_REQUIRED');
+        assert.match(result.error, /repair-data-identity\.js check/);
         assert.equal(result.disturbances, 1);
         assert.equal(diagnostics(result).length, 1);
         assert.equal(diagnostics(result)[0].retry, false);

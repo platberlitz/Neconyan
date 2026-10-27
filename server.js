@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import path from 'node:path';
+import fs from 'node:fs';
 import { runSupervisor, shouldSupervise } from './src/server-supervisor.js';
 
 // Supervise a child copy so restarts and transactional plugin replacement are
@@ -25,14 +26,26 @@ process.chdir(serverDirectory);
 const cliArgs = new CommandLineParser().parse(process.argv);
 globalThis.DATA_ROOT = path.resolve(cliArgs.dataRoot);
 globalThis.COMMAND_LINE_ARGS = cliArgs;
-initialiseCrashDiagnostics(globalThis.DATA_ROOT);
 
+let diagnosticsReady = false;
 try {
+    const { acquireDataRootOwner } = await import('./src/data-root-owner.js');
+    acquireDataRootOwner(globalThis.DATA_ROOT, 'server');
+    try {
+        fs.lstatSync(path.join(globalThis.DATA_ROOT, '_neconyan-policy-repair'));
+        throw Object.assign(new Error(`An identity repair is unfinished for ${globalThis.DATA_ROOT}. Run node scripts/repair-data-identity.js status --dataRoot "${globalThis.DATA_ROOT}" and resume it before starting Neconyan.`),
+            { code: 'DATA_IDENTITY_REPAIR_REQUIRED' });
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    initialiseCrashDiagnostics(globalThis.DATA_ROOT);
+    diagnosticsReady = true;
     const { configureTermuxStartup } = await import('./src/termux-startup.js');
     await configureTermuxStartup(cliArgs);
     await import('./src/server-main.js');
 } catch (error) {
-    recordFatalError('startup-failure', error);
+    if (diagnosticsReady) recordFatalError('startup-failure', error);
     console.error('A critical error has occurred while starting the server:', error);
+    if (error.code === 'DATA_ROOT_OWNED') {
+        console.error(`Stop every Neconyan installation, then inspect ownership with node scripts/repair-data-identity.js status --dataRoot "${globalThis.DATA_ROOT}".`);
+    }
     process.exit(1);
 }
