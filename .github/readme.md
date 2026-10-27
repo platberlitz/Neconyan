@@ -227,7 +227,7 @@ Even with the server alive, Chrome can still unload the page itself after a whil
 
 If Neconyan runs on your computer, your phone can use it too, as long as both are on the same Wi-Fi. It's the only way to use it on an iPhone for now.
 
-Both browsers use the same data. If you need to move an offline setup between devices instead, read [Moving data between devices](../docs/data-portability.md) before copying or syncing the folder.
+Both browsers use the same data. If you need to move an offline setup between devices instead, read [Moving data between devices](../docs/data-portability.md), including the GitHub data-folder setup, before copying or syncing the folder.
 
 1. Stop Neconyan and open `config.yaml` in the Neconyan folder with any text editor. It appears after the first start. Change `listen: false` to `listen: true`.
 2. While you're in there, turn on a password, because otherwise anyone on your Wi-Fi can open it. Set `basicAuthMode: true`, then change the `username` and `password` under `basicAuthUser`.
