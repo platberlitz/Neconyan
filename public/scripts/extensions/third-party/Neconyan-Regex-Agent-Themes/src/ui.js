@@ -85,7 +85,10 @@ const uiState = {
     result: null,
 };
 
+const SECTION_KEYS = Object.freeze(['overview', 'browse', 'options', 'scope', 'maintenance']);
+
 let view = null;
+let rootDrawerOpen = false;
 let refreshHandle = null;
 let renderGeneration = 0;
 let thumbnailObserver = null;
@@ -381,6 +384,9 @@ function makeSection(key, title) {
     }, [toggle, content]);
     observeDrawerState(drawer, toggle, content, (isOpen) => {
         sectionOpen[key] = isOpen;
+        if (isOpen) {
+            renderStaleSections();
+        }
         if (key === 'browse' && isOpen) {
             queueMicrotask(mountVisibleThumbnailFallbacks);
         }
@@ -1590,24 +1596,55 @@ function renderMaintenance(settings, host, agents) {
     ]));
 }
 
-async function renderView({ interaction = captureInteraction() } = {}) {
+function sectionShown(key) {
+    return rootDrawerOpen && Boolean(sectionOpen[key]);
+}
+
+// The tracker overrides list alone builds thousands of <option> nodes, so a
+// closed section is left stale and drawn when it opens. The drawer observers
+// call this from a mutation callback, so it lands before the section paints.
+function renderStaleSections() {
+    if (!view?.staleSections?.size || uiState.busy) {
+        return;
+    }
+    if ([...view.staleSections].some(sectionShown)) {
+        void renderView({ interaction: null, onlyStale: true });
+    }
+}
+
+async function renderView({ interaction = captureInteraction(), onlyStale = false } = {}) {
     if (!view) {
         return;
     }
     const generation = ++renderGeneration;
+    if (!onlyStale) {
+        view.staleSections = new Set(SECTION_KEYS);
+    }
     const settings = getSettings();
     const host = await loadHost();
     if (!view || generation !== renderGeneration) {
         return;
     }
+    const keys = SECTION_KEYS.filter(key => sectionShown(key) && view.staleSections.has(key));
+    if (!keys.length) {
+        return;
+    }
     const agents = host.ok ? themableAgents(host.store.getAgents() ?? []) : [];
-    const reports = agents.map(agent => inspectAgent(agent, settings));
 
-    renderOverview(settings, host, agents, reports);
-    renderBrowse(settings);
-    renderOptions(settings);
-    renderScope(settings, host, agents);
-    renderMaintenance(settings, host, agents);
+    for (const key of keys) {
+        view.staleSections.delete(key);
+        if (key === 'overview') {
+            renderOverview(settings, host, agents, agents.map(agent => inspectAgent(agent, settings)));
+        } else if (key === 'browse') {
+            renderBrowse(settings);
+        } else if (key === 'options') {
+            renderOptions(settings);
+        } else if (key === 'scope') {
+            renderScope(settings, host, agents);
+        } else {
+            renderMaintenance(settings, host, agents);
+        }
+    }
     updateBusyState();
     queueMicrotask(() => restoreInteraction(interaction));
 }
@@ -1671,7 +1708,12 @@ function createView(host) {
     content.append(...Object.values(sections).map(section => section.drawer));
 
     const drawer = el('div', { class: 'inline-drawer' }, [rootToggle, content]);
-    observeDrawerState(drawer, rootToggle, content);
+    observeDrawerState(drawer, rootToggle, content, (open) => {
+        rootDrawerOpen = open;
+        if (open) {
+            renderStaleSections();
+        }
+    });
 
     const container = el('div', {
         class: 'extension_container',
@@ -1680,7 +1722,7 @@ function createView(host) {
         'aria-busy': 'false',
     }, drawer);
     host.append(container);
-    return { container, drawer, rootToggle, content, sections, resultHost: null };
+    return { container, drawer, rootToggle, content, sections, resultHost: null, staleSections: new Set(SECTION_KEYS) };
 }
 
 /** Mounts the drawer. Idempotent, so a re-activation cannot duplicate it. */
@@ -1711,6 +1753,7 @@ export function removeSettings() {
     viewVisibilityObserver?.disconnect();
     viewVisibilityObserver = null;
     viewRenderPending = false;
+    rootDrawerOpen = false;
     view?.container?.remove();
     view = null;
 }
