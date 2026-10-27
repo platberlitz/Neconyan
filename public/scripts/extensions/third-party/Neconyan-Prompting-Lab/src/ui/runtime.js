@@ -55,7 +55,10 @@ export function mountRuntimeUi({ signal = null } = {}) {
     let pageStatus = null;
     let pageOpener = null;
     let modalObserver = null;
-    const modalBackground = new Map();
+    // Only the siblings this page made inert; others (the phone shell inerts #sheld while a
+    // drawer is open) keep whatever their owner sets, or closing the page could leave the chat
+    // untouchable with nothing on screen.
+    const modalBackground = new Set();
     let disposed = false;
     let workbench = null;
     let pendingRefreshReason = null;
@@ -290,12 +293,14 @@ export function mountRuntimeUi({ signal = null } = {}) {
             if (sibling === page) {
                 continue;
             }
-            if (!modalBackground.has(sibling)) {
-                modalBackground.set(sibling, sibling.hasAttribute('inert'));
+            if (hasActiveHostUi(sibling)) {
+                if (modalBackground.delete(sibling)) {
+                    sibling.removeAttribute('inert');
+                }
+            } else if (!sibling.hasAttribute('inert')) {
+                sibling.setAttribute('inert', '');
+                modalBackground.add(sibling);
             }
-            sibling.toggleAttribute('inert', hasActiveHostUi(sibling)
-                ? modalBackground.get(sibling)
-                : true);
         }
     }
 
@@ -318,8 +323,8 @@ export function mountRuntimeUi({ signal = null } = {}) {
         modalObserver = null;
         document.removeEventListener('focusin', containPageFocus, true);
         document.removeEventListener('toggle', inertPageBackground, true);
-        for (const [sibling, wasInert] of modalBackground) {
-            sibling.toggleAttribute('inert', wasInert);
+        for (const sibling of modalBackground) {
+            sibling.removeAttribute('inert');
         }
         modalBackground.clear();
     }
