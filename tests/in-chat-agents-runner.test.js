@@ -11151,6 +11151,50 @@ Helper context.`;
         jest.useRealTimers();
     });
 
+    test('does not hold the reply render while a recovered Agent pass is still running', async () => {
+        usePromptTransformPostAgent();
+        let releaseAgent = () => {};
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => {
+            releaseAgent = () => resolve('Agent rewrite');
+        }));
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
+        document.body.dataset.generating = 'true';
+        chat.push({
+            name: 'Assistant',
+            mes: 'Held reply',
+            is_user: false,
+            is_system: false,
+            gen_finished: '2026-04-26T00:00:00.000Z',
+            extra: {},
+        });
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        emitDocumentEvent('visibilitychange');
+        await waitForDeferredFlush(() => generateQuietPrompt.mock.calls.length === 1);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+
+        let rendered = false;
+        void eventSource.emit(eventTypes.CHARACTER_MESSAGE_RENDERED, 0, 'normal').then(() => {
+            rendered = true;
+        });
+        await waitForDeferredFlush(() => rendered, 500);
+
+        expect(rendered).toBe(true);
+        expect(chat[0].mes).toBe('Held reply');
+
+        releaseAgent();
+        await waitForDeferredFlush(() => chat[0].mes === 'Agent rewrite');
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        expect(chat[0].mes).toBe('Agent rewrite');
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+    });
+
     test('keeps deferred mobile post-processing when render replaces the message object', async () => {
         useAppendPostAgent();
 
