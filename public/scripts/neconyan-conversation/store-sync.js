@@ -113,7 +113,13 @@ async function postJson(url, body, account) {
 /** Read the authoritative store and merge it into the browser's copy. Returns
  *  the merged store, or null when a genuine conflict must be reported. */
 async function refreshOnce(account) {
-    const body = await postJson(STORE_GET_ENDPOINT, {}, account);
+    const knownVersion = savedSnapshot && readLocalStore() && Number.isSafeInteger(savedVersion) ? savedVersion : null;
+    const body = await postJson(STORE_GET_ENDPOINT, knownVersion === null ? {} : { knownVersion }, account);
+    if (body?.unchanged === true && knownVersion !== null && body.version === knownVersion && savedVersion === knownVersion && readLocalStore()) {
+        // The server still holds the baseline, so merging it would return the
+        // browser's copy unchanged. Skip the download, parse and deep compare.
+        return { store: readLocalStore(), version: knownVersion, conflict: false, changed: false };
+    }
     const serverStore = responseStore(body);
     const version = body?.version;
     const localStore = readLocalStore();

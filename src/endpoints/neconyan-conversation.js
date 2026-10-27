@@ -361,7 +361,13 @@ router.post('/store/get', (request, response) => {
     if (!context) {
         return;
     }
-    return response.send({ store: context.store, version: getSettingsVersion(context.settings), settingsMissing: context.missing });
+    const version = getSettingsVersion(context.settings);
+    // The store lives in settings, so an unchanged version means an unchanged
+    // store. Pages poll this, and a long history makes the body large.
+    if (!context.missing && Number.isSafeInteger(request.body?.knownVersion) && request.body.knownVersion === version) {
+        return response.send({ unchanged: true, version, settingsMissing: false });
+    }
+    return response.send({ store: context.store, version, settingsMissing: context.missing });
 });
 
 router.post('/store/save', asyncRoute(async (request, response) => {

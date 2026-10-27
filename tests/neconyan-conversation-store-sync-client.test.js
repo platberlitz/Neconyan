@@ -277,6 +277,25 @@ describe('conversation store synchronisation', () => {
         expect(messages.map(item => item.id)).toEqual(['a', 'native']);
     });
 
+    test('a refresh at an unchanged version keeps the local copy without a store download', async () => {
+        seed(store({ 'nova.png': thread([message('a', 'Hi')]) }), 7);
+        extension_settings[KEY].characters['nova.png'].branches.b1.messages.push(message('local', 'Unsaved'));
+        const before = extension_settings[KEY];
+
+        globalThis.fetch = async (url, options) => {
+            expect(url).toBe('/api/neconyan-conversation/store/get');
+            expect(JSON.parse(options.body)).toEqual({ knownVersion: 7 });
+            return jsonResponse(200, { unchanged: true, version: 7 });
+        };
+
+        const result = await storeSync.refreshConversationStore();
+
+        expect(result).toMatchObject({ conflict: false, changed: false, version: 7 });
+        expect(extension_settings[KEY]).toBe(before);
+        expect(storeSync.getConversationSavedVersion()).toBe(7);
+        expect(storeSync.getConversationSavedSnapshot().characters['nova.png'].branches.b1.messages.map(item => item.id)).toEqual(['a']);
+    });
+
     test('a save posts the local store under the saved version and adopts the reply', async () => {
         seed(store({ 'nova.png': thread([message('a', 'Hi')]) }), 7);
 
