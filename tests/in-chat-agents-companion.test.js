@@ -735,6 +735,49 @@ describe('companion card ui', () => {
         ]));
     });
 
+    // Drawing a card as <details open> fires 'toggle' by itself. Saving on that
+    // rewrote the chat and made a running server reply reject itself.
+    test('saves card collapse only when the open state really changes', async () => {
+        chat.push({
+            name: 'Assistant',
+            mes: 'reply',
+            is_user: false,
+            is_system: false,
+            extra: {
+                inChatAgentCompanionResults: {
+                    'companion-tracker': { status: 'done', content: 'Note', collapsed: false },
+                },
+            },
+        });
+        const { initCompanionCardUi } = await importCompanionUi();
+        const runner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const script = await import('../public/script.js');
+        const mesElement = { attr: jest.fn(name => (name === 'mesid' ? '0' : '')) };
+        const details = {
+            open: true,
+            classList: { contains: name => name === 'ica--companion-card' },
+        };
+        const cardElement = {
+            attr: jest.fn(name => (name === 'data-agent-id' ? 'companion-tracker' : '')),
+            closest: jest.fn(() => mesElement),
+        };
+        globalThis.$ = jest.fn(arg => (arg === details ? cardElement : jqueryObject));
+
+        initCompanionCardUi();
+        const toggleListener = globalThis.document.addEventListener.mock.calls
+            .find(([eventName]) => eventName === 'toggle')[1];
+
+        toggleListener({ target: details });
+        expect(runner.updateCompanionResult).not.toHaveBeenCalled();
+        expect(script.saveChatDebounced).not.toHaveBeenCalled();
+
+        details.open = false;
+        runner.updateCompanionResult.mockReturnValue({ collapsed: true });
+        toggleListener({ target: details });
+        expect(runner.updateCompanionResult).toHaveBeenCalledWith(chat[0], 'companion-tracker', { collapsed: true });
+        expect(script.saveChatDebounced).toHaveBeenCalledTimes(1);
+    });
+
     test('re-renders every remaining displayed message when one is deleted', async () => {
         const { initCompanionCardUi } = await importCompanionUi();
         chat.push(
