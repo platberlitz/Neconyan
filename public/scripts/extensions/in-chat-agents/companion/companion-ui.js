@@ -994,9 +994,15 @@ function persistCompanionCollapseState(event) {
         return;
     }
 
-    const result = updateCompanionResult(message, agentId, {
-        collapsed: !details.open,
-    });
+    // Rendering a card as <details open> fires 'toggle' too. Only a real
+    // change of state is saved, so redrawing cards never rewrites the chat.
+    const collapsed = !details.open;
+    const stored = getCompanionResults(message)[agentId];
+    if (!stored || Boolean(stored.collapsed) === collapsed) {
+        return;
+    }
+
+    const result = updateCompanionResult(message, agentId, { collapsed });
     if (result) {
         saveChatDebounced({ deferBackup: false });
     }

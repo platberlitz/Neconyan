@@ -570,6 +570,12 @@ export function updateCompanionResult(message, agentId, update = {}) {
         throw new Error('Keep the note within 65,536 characters before saving.');
     }
     const editsContent = Object.hasOwn(update, 'content') || Object.hasOwn(update, 'status');
+    // A no-op update must not restamp the note: a new updatedAt changes the chat
+    // and makes a running server reply reject itself as written over.
+    if (!editsContent && !Object.hasOwn(update, 'updatedAt')
+        && Object.entries(update).every(([key, value]) => Object.is(results[agentId][key], value))) {
+        return results[agentId];
+    }
     if (editsContent) {
         companionRuns.get(message)?.delete(`${message.swipe_id ?? 0}:${agentId}`);
     }

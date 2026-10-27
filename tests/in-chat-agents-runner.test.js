@@ -1968,6 +1968,23 @@ describe('in-chat agent post-processing runner', () => {
             expect(isCurrent()).toBe(false);
         });
 
+        test('an update that changes nothing keeps the note untouched', async () => {
+            const agent = createCompanionAgent();
+            const runtime = await setup([agent]);
+            runtime.setCompanionResult(chat[0], agent, { status: 'done', content: 'Original note', updatedAt: '2026-10-27T08:42:25.555Z' });
+            const before = runtime.getCompanionResults(chat[0]);
+            const isCurrent = runtime.captureCompanionResultTarget(0, agent.id);
+
+            expect(runtime.updateCompanionResult(chat[0], agent.id, { collapsed: false })).toBe(before[agent.id]);
+            expect(runtime.getCompanionResults(chat[0])).toBe(before);
+            expect(runtime.getCompanionResults(chat[0])[agent.id].updatedAt).toBe('2026-10-27T08:42:25.555Z');
+            expect(isCurrent()).toBe(true);
+
+            runtime.updateCompanionResult(chat[0], agent.id, { collapsed: true });
+            expect(runtime.getCompanionResults(chat[0])[agent.id].collapsed).toBe(true);
+            expect(runtime.getCompanionResults(chat[0])[agent.id].updatedAt).not.toBe('2026-10-27T08:42:25.555Z');
+        });
+
         test('a historical group companion receives its original speaker card', async () => {
             const agent = createCompanionAgent({ companion: { includeCharacterCard: true } });
             const runtime = await setup([agent]);
