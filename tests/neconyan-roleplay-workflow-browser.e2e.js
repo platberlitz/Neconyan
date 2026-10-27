@@ -194,6 +194,46 @@ for (const phone of [false, true]) {
         }
     });
 
+    test(`${viewport} a reply stopped while it streams stays in the chat and after reopening`, async ({ app }) => {
+        app.provider.mode.streamReply = { first: 'The server ', rest: 'wrote this reply.' };
+        const account = await app.account({ phone, activeConnection: true,
+            contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings(settings) {
+                settings.oai_settings.stream_openai = true;
+            } });
+        if (phone) await installIPhoneSafari(account.context);
+        const native = owned(app);
+        const locator = await savedChat(account, `Stopped stream ${viewport}`);
+        const page = await account.open({ workspace: false, readyTimeout: 120000 });
+        await openChat(page, locator);
+        if (phone) await applyIOSOnlyCss(page);
+        const submitted = page.waitForResponse(acceptedSubmission);
+        await page.locator('#send_textarea').fill('Keep what you wrote when I stop.');
+        await startNativeReply(page);
+        const { jobId } = await (await submitted).json();
+        try {
+            await expect(page.locator('#neconyan-roleplay-preview')).toContainText('The server', { timeout: 60000 });
+            await dismissTour(page);
+            await page.screenshot({ path: path.join('..', 'screenshots', `stopped-stream-${viewport}-before-stop.png`) });
+            await page.evaluate(async () => (await import('/script.js')).stopGeneration());
+            expect((await terminal(account, jobId)).state).toBe('cancelled');
+            await expect(page.locator('#neconyan-roleplay-preview')).toHaveCount(0);
+            await expect(page.locator('#chat .mes').last()).toContainText('The server');
+            await expect.poll(() => readRoleplayChat(native.scope, locator).records.at(-1).mes, { timeout: 30000 })
+                .toBe('The server ');
+            expect(readRoleplayChat(native.scope, locator).records.at(-2).mes).toBe('Keep what you wrote when I stop.');
+            await expect.poll(() => page.evaluate(async () => (await import('/script.js')).isGenerating())).toBe(false);
+            await page.screenshot({ path: path.join('..', 'screenshots', `stopped-stream-${viewport}-after-stop.png`) });
+            await page.reload({ waitUntil: 'domcontentloaded' });
+            await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: 120000 });
+            await openChat(page, locator);
+            await expect(page.locator('#chat .mes').last()).toContainText('The server');
+            expect(readRoleplayChat(native.scope, locator).records.filter(row => row.mes === 'The server ')).toHaveLength(1);
+        } finally {
+            app.provider.mode.finishStream?.();
+            await app.release();
+        }
+    });
+
     test(`${viewport} leaving before the first token submits without a paint and finishes with the page frozen`, async ({ app }) => {
         app.provider.mode.hold = 'conversation-fixture';
         app.provider.mode.streamReply = { first: 'The server ', rest: 'wrote this reply.' };
@@ -658,7 +698,7 @@ for (const phone of [false, true]) {
         await expect.poll(() => page.evaluate(async () => (await import('/script.js')).isGenerating())).toBe(false);
 
         await page.evaluate(async () => { (await import('/scripts/openai.js')).oai_settings.stream_openai = true; });
-        app.provider.mode.streamReply = { first: 'Replacement in progress', rest: ' must not be saved.' };
+        app.provider.mode.streamReply = { first: 'Replacement in progress', rest: ' is never streamed.' };
         const replacement = page.waitForResponse(acceptedSubmission);
         await startNativeReply(page, 'regenerate');
         const { jobId } = await (await replacement).json();
@@ -677,8 +717,22 @@ for (const phone of [false, true]) {
             expect((await terminal(account, jobId)).state).toBe('cancelled');
             await expect(preview).toHaveCount(0);
             await expect(page.locator('#chat [data-roleplay-replacement]')).toHaveCount(0);
+            // The cancelled replacement stays as a new swipe; the original is kept beside it.
+            await expect(page.locator('#chat .mes').last()).toContainText('Replacement in progress');
+            await expect.poll(() => readRoleplayChat(native.scope, locator).records.at(-1).swipes, { timeout: 30000 })
+                .toEqual([ANSWER, 'Replacement in progress']);
+            expect(readRoleplayChat(native.scope, locator).records.at(-1).mes).toBe('Replacement in progress');
+            await expect.poll(() => page.evaluate(async () => (await import('/script.js')).isGenerating()), { timeout: 30000 }).toBe(false);
+            await page.evaluate(async () => {
+                const [core, { SWIPE_DIRECTION }] = await Promise.all([import('/script.js'), import('/scripts/constants.js')]);
+                await core.swipe(null, SWIPE_DIRECTION.LEFT);
+            });
             await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
-            expect(readRoleplayChat(native.scope, locator).records.at(-1).mes).toBe(ANSWER);
+            await page.evaluate(async () => {
+                const [core, { SWIPE_DIRECTION }] = await Promise.all([import('/script.js'), import('/scripts/constants.js')]);
+                await core.swipe(null, SWIPE_DIRECTION.RIGHT);
+            });
+            await expect(page.locator('#chat .mes').last()).toContainText('Replacement in progress');
         } finally {
             app.provider.mode.finishStream?.();
             await app.release();
@@ -691,8 +745,8 @@ for (const phone of [false, true]) {
         await startNativeReply(page, 'swipe');
         expect((await refused).status()).toBe(400);
         await expect(page.locator('#chat [data-roleplay-replacement]')).toHaveCount(0);
-        await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
-        expect(readRoleplayChat(native.scope, locator).records.at(-1).mes).toBe(ANSWER);
+        await expect(page.locator('#chat .mes').last()).toContainText('Replacement in progress');
+        expect(readRoleplayChat(native.scope, locator).records.at(-1).swipes).toEqual([ANSWER, 'Replacement in progress']);
         expect(app.provider.calls).toHaveLength(2);
     });
 

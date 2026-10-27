@@ -40,7 +40,11 @@ function hasUnfinishedReasoning(preview) {
     return Boolean(preview?.reasoning) && !preview?.reasoning_finished;
 }
 
-/** Display only: partial output never enters the chat array or a chat save. */
+/**
+ * Display only: the preview itself never enters the chat array or a chat save.
+ * `stop.reply()` hands its last text to the observer, which keeps a reply the
+ * server stopped or refused to write instead of letting it vanish.
+ */
 export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, name, messageIndex }) {
     let node = null;
     let latest = null;
@@ -332,5 +336,17 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     // so the preview stays where the reader sees it and cannot reappear in the
     // emptied chat ahead of the saved messages.
     stop.freeze = () => { cancelPendingDraws(); render(); frozen = true; thinkingIndicator.clear(); clearInterval(timer); timer = null; };
+    // The last reply text shown, so a reply the server did not save can be kept.
+    stop.reply = () => {
+        if (!latest || !/\S/.test(latest.text || '')) return null;
+        const sentAt = startedAt || new Date(latest.updatedAt || Date.now()).toISOString();
+        const extra = Object.fromEntries(Object.entries({ reasoning: latest.reasoning || undefined,
+            api: latest.generation?.source, model: latest.generation?.model,
+            token_count: latest.token_count, reasoning_tokens: latest.reasoning_tokens,
+            time_to_first_token: latest.time_to_first_token, reasoning_duration: latest.reasoning_duration })
+            .filter(([, value]) => value !== undefined && value !== null));
+        return { name: latest.name || 'Reply', avatar: latest.avatar || '', text: latest.text, send_date: sentAt,
+            gen_started: latest.gen_started || sentAt, gen_finished: latest.gen_finished || new Date(receivedAt || Date.now()).toISOString(), extra };
+    };
     return stop;
 }

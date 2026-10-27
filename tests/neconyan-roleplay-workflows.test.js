@@ -28,6 +28,8 @@ const reloads = [];
 const readingAnchors = [];
 const activations = [];
 const jobControls = jest.fn();
+const addOneMessage = jest.fn();
+const updateMessageBlock = jest.fn(async () => {});
 let settingsPending = false;
 let generating = false;
 let chatSaving = false;
@@ -118,6 +120,11 @@ jest.unstable_mockModule('../public/script.js', () => ({
     activateSendButtons: () => activations.push('idle'),
     setRoleplayJobControls: jobControls,
     willRunNativeRoleplayWorkflow: (type, options = {}) => nativeEligible && !options.skipNativeRoleplay,
+    addOneMessage,
+    getThumbnailUrl: (type, file) => `/thumbnail?type=${type}&file=${file}`,
+    refreshSwipeButtons: () => {},
+    syncMesToSwipe: () => false,
+    updateMessageBlock,
 }));
 
 globalThis.fetch = async (url, options = {}) => {
@@ -253,6 +260,64 @@ test.each(['roleplay.swipe', 'roleplay.correct', 'guided.swipe', 'guided.regener
     await accepted.finished;
     await settle();
     expect(restoreDisplay).toHaveBeenCalled();
+});
+
+describe('a reply the server did not save stays in the chat', () => {
+    const shown = text => ({ name: 'Nova', avatar: 'nova.png', text, send_date: '2026-10-27T10:00:00.000Z',
+        gen_started: '2026-10-27T10:00:00.000Z', gen_finished: '2026-10-27T10:00:05.000Z', extra: { model: 'model-a' } });
+
+    async function stopWith(name, state, text, error = null) {
+        const accepted = await workflows.submitRoleplayWorkflow({ name });
+        await waitFor(() => previews.has(accepted.jobId));
+        previews.get(accepted.jobId).stop.reply = () => (text === null ? null : shown(text));
+        const savesBefore = saved.length;
+        await observers.get(accepted.jobId).onSnapshot({ state, ...(error ? { error } : {}) });
+        expect(await accepted.finished).toBeNull();
+        return saved.length - savesBefore;
+    }
+
+    beforeEach(() => {
+        addOneMessage.mockClear();
+        updateMessageBlock.mockClear();
+    });
+
+    test('a stopped reply is added as a new message and saved', async () => {
+        chat.push({ name: 'User', is_user: true, mes: 'Next' });
+        expect(await stopWith('roleplay.reply', 'cancelled', 'Half a reply')).toBe(1);
+        expect(chat).toHaveLength(4);
+        expect(chat[3]).toMatchObject({ name: 'Nova', is_user: false, mes: 'Half a reply', extra: { model: 'model-a' } });
+        expect(chat[3].force_avatar).toBeUndefined();
+        expect(addOneMessage).toHaveBeenCalledWith(chat[3]);
+        expect(reloads.length).toBeGreaterThan(0);
+    });
+
+    test('a swipe refused because the chat changed keeps the original and adds the reply as a swipe', async () => {
+        const changes = await stopWith('roleplay.swipe', 'failed', 'New answer',
+            { code: 'ROLEPLAY_SOURCE_CHANGED', message: 'The Roleplay source changed after this work was prepared.' });
+        expect(changes).toBe(1);
+        expect(chat).toHaveLength(2);
+        expect(chat[1]).toMatchObject({ mes: 'New answer', swipes: ['Answer', 'Other', 'New answer'], swipe_id: 2 });
+        expect(chat[1].swipe_info).toHaveLength(3);
+        expect(updateMessageBlock).toHaveBeenCalledWith(1, chat[1]);
+    });
+
+    test('a stopped continuation extends its message', async () => {
+        expect(await stopWith('roleplay.continue', 'cancelled', ' and more')).toBe(1);
+        expect(chat).toHaveLength(2);
+        expect(chat[1].mes).toBe('Answer and more');
+    });
+
+    test('a reply the saved chat already holds is not added twice', async () => {
+        reloadHandler = () => { chat.push({ name: 'Nova', mes: 'Saved already' }); };
+        expect(await stopWith('roleplay.reply', 'interrupted', 'Saved already')).toBe(0);
+        expect(chat.filter(message => message.mes === 'Saved already')).toHaveLength(1);
+        expect(addOneMessage).not.toHaveBeenCalled();
+    });
+
+    test('nothing is added when no reply text was shown', async () => {
+        expect(await stopWith('roleplay.reply', 'cancelled', null)).toBe(0);
+        expect(chat).toHaveLength(2);
+    });
 });
 
 test('a refused replacement restores the same display without changing the saved source', async () => {
