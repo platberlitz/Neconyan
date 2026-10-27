@@ -1292,6 +1292,41 @@ class PromptManager {
         return renderRequestId === this.renderRequestId;
     }
 
+    #deferredRender = null;
+    #renderVisibilityObserver = null;
+    #renderVisibilityTarget = null;
+
+    /**
+     * A render builds the whole prompt as a dry run (history, lorebook scan, token counts)
+     * after every reply and chat open. While the panel is out of sight that work only
+     * slows phones down, so it waits until the panel is shown again.
+     * @param {boolean} afterTryGenerate
+     * @returns {boolean} True when the render was put off.
+     */
+    #deferRenderWhileHidden(afterTryGenerate) {
+        const container = this.containerElement;
+        if (!container?.isConnected || typeof container.checkVisibility !== 'function' || typeof IntersectionObserver !== 'function') {
+            return false;
+        }
+        if (container.checkVisibility()) {
+            this.#deferredRender = null;
+            return false;
+        }
+        this.#deferredRender = { afterTryGenerate: Boolean(this.#deferredRender?.afterTryGenerate || afterTryGenerate) };
+        if (this.#renderVisibilityTarget !== container) {
+            this.#renderVisibilityObserver?.disconnect();
+            this.#renderVisibilityTarget = container;
+            this.#renderVisibilityObserver = new IntersectionObserver((entries) => {
+                if (!this.#deferredRender || !entries.some(entry => entry.isIntersecting)) return;
+                const { afterTryGenerate: pendingDryRun } = this.#deferredRender;
+                this.#deferredRender = null;
+                this.render(pendingDryRun);
+            });
+            this.#renderVisibilityObserver.observe(container);
+        }
+        return true;
+    }
+
     /**
      * Main rendering function
      *
@@ -1309,6 +1344,7 @@ class PromptManager {
             isGroupGenerating: is_group_generating,
         });
         if (!renderState.shouldRender && !renderState.shouldWaitForGeneration) return;
+        if (this.#deferRenderWhileHidden(afterTryGenerate)) return;
         this.error = null;
 
         const renderPromptManagerDom = async () => {
