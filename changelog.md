@@ -7,6 +7,7 @@
 - PR #286 (2026-10-23) `fix(termux): retry transfer checks after temporary timestamp changes`
 - PR #287 (2026-10-24) `fix(storage): prevent false authoring save conflicts on exfat drives`
 - PR #289 (2026-10-24) `fix(generation): stop agents when a provider ends a reply with an error`
+- PR #312 (2026-10-27) `fix(sync): repair legacy data for github folder sync`
 
 ## v1.3.8
 
