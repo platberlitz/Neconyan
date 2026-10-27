@@ -183,3 +183,143 @@ export function createBackgroundKeepAlive({
         },
     };
 }
+
+// Covers a gap between a reply finishing and the Agents that run after it starting their own requests.
+const REPLY_GRACE_MS = 15_000;
+// Longer than the server ever keeps a reply running, so a reply that never reports back cannot hold the phone awake.
+const REPLY_HOLD_LIMIT_MS = 65 * 60_000;
+
+/**
+ * The iPhone app freezes a hidden page within seconds, which would stop a reply being written,
+ * saved and handed to Agents until the app was opened again. A page that is playing sound keeps
+ * running, so this plays the quiet tone while the page is hidden and a reply is still going.
+ * @param {object} options
+ * @param {(listener: (busy: boolean) => void) => (() => void)} options.subscribe
+ * @param {(busy: boolean) => void} [options.notifyNative]
+ * @param {Document} [options.documentRef]
+ * @param {Navigator} [options.navigatorRef]
+ * @param {() => HTMLAudioElement} [options.createAudio]
+ * @param {(blob: Blob) => string} [options.createObjectUrl]
+ * @param {typeof setTimeout} [options.setTimer]
+ * @param {typeof clearTimeout} [options.clearTimer]
+ */
+export function createReplyKeepAlive({
+    subscribe,
+    notifyNative = () => {},
+    documentRef = globalThis.document,
+    navigatorRef = globalThis.navigator,
+    createAudio = () => new globalThis.Audio(),
+    createObjectUrl = blob => globalThis.URL.createObjectURL(blob),
+    setTimer = globalThis.setTimeout.bind(globalThis),
+    clearTimer = globalThis.clearTimeout.bind(globalThis),
+} = {}) {
+    let holding = false;
+    let playing = false;
+    let dismissed = false;
+    let audio = null;
+    let graceTimer = null;
+    let limitTimer = null;
+
+    const hidden = () => documentRef?.visibilityState === 'hidden';
+    const tell = busy => {
+        try { notifyNative(busy); } catch { /* The app may be closing. */ }
+    };
+
+    function setMediaSession(active) {
+        const session = navigatorRef?.mediaSession;
+        if (!session) return;
+        try {
+            if (active && typeof globalThis.MediaMetadata === 'function') {
+                session.metadata = new globalThis.MediaMetadata({ title: 'Neconyan is finishing a reply', artist: 'Neconyan' });
+            } else if (!active) {
+                session.metadata = null;
+            }
+            session.playbackState = active ? 'playing' : 'none';
+            for (const action of ['pause', 'stop']) {
+                session.setActionHandler?.(action, active ? () => { dismissed = true; stopAudio(); } : null);
+            }
+        } catch {
+            // Playback works without the lock-screen controls.
+        }
+    }
+
+    function prepareAudio() {
+        if (audio) return audio;
+        audio = createAudio();
+        audio.loop = true;
+        audio.preload = 'auto';
+        // Loaded up front: the page has only a moment to start playing once it is hidden.
+        audio.src = createObjectUrl(new Blob([createQuietToneWav()], { type: 'audio/wav' }));
+        return audio;
+    }
+
+    function startAudio() {
+        if (!holding || playing || dismissed || !hidden()) return;
+        playing = true;
+        try {
+            const result = prepareAudio().play();
+            setMediaSession(true);
+            result?.catch?.(() => {
+                playing = false;
+                setMediaSession(false);
+            });
+        } catch {
+            playing = false;
+        }
+    }
+
+    function stopAudio() {
+        if (!playing) return;
+        playing = false;
+        try { audio?.pause(); } catch { /* Already stopped. */ }
+        setMediaSession(false);
+    }
+
+    function release() {
+        clearTimer(graceTimer);
+        clearTimer(limitTimer);
+        graceTimer = limitTimer = null;
+        if (!holding) return;
+        holding = false;
+        stopAudio();
+        tell(false);
+    }
+
+    function handleActivity(busy) {
+        if (busy) {
+            clearTimer(graceTimer);
+            graceTimer = null;
+            if (!holding) {
+                holding = true;
+                limitTimer = setTimer(release, REPLY_HOLD_LIMIT_MS);
+                prepareAudio();
+                tell(true);
+            }
+            startAudio();
+        } else if (holding && !graceTimer) {
+            graceTimer = setTimer(release, REPLY_GRACE_MS);
+        }
+    }
+
+    function handleVisibilityChange() {
+        if (hidden()) {
+            startAudio();
+        } else {
+            dismissed = false;
+            stopAudio();
+        }
+    }
+
+    documentRef?.addEventListener?.('visibilitychange', handleVisibilityChange);
+    const unsubscribe = subscribe(handleActivity);
+
+    return {
+        isHolding: () => holding,
+        isPlaying: () => playing,
+        destroy() {
+            unsubscribe?.();
+            documentRef?.removeEventListener?.('visibilitychange', handleVisibilityChange);
+            release();
+        },
+    };
+}
