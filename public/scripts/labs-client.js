@@ -183,7 +183,7 @@ export function createLabClient({ request, observeJob, account, storage, uuid = 
         }
     }
 
-    async function run(kind, input, { scope = kind, prepareInput = value => value, ...options } = {}) {
+    async function run(kind, input, { scope = kind, prepareInput = value => value, key: presetKey, ...options } = {}) {
         options.signal?.throwIfAborted();
         const storageKey = `${storagePrefix}:${account}:${scope}`;
         const raw = storage.getItem(storageKey);
@@ -195,7 +195,7 @@ export function createLabClient({ request, observeJob, account, storage, uuid = 
         if (pending && !pending.body) record = await read(pending.key);
         else {
             if (!pending) {
-                const body = { ...await prepareInput(input), kind, key: uuid() };
+                const body = { ...await prepareInput(input), kind, key: presetKey ?? uuid() };
                 options.signal?.throwIfAborted();
                 pending = { key: body.key, body };
                 storage.setItem(storageKey, JSON.stringify(pending));

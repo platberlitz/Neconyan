@@ -48,32 +48,80 @@ export function mountAccountImportReportDownload(container, result) {
     return button;
 }
 
+const NATIVE_TOKEN = /^[A-Fa-f0-9-]{36}$/;
+
+/**
+ * Opens the iPhone app's own file picker. The app moves the chosen ZIP into its private inbox,
+ * so a big import never waits on a browser upload that stops when the app leaves the screen.
+ * @returns {Promise<{name: string, size: number, lastModified: number, nativeToken: string}|null>} Null when cancelled
+ */
+export async function pickNativeArchive() {
+    const value = await globalThis.webkit.messageHandlers.neconyanImport.postMessage({ action: 'pickArchive' });
+    if (!value) return null;
+    if (typeof value.token !== 'string' || !NATIVE_TOKEN.test(value.token) || typeof value.name !== 'string' || !(Number(value.size) > 0)) {
+        throw new Error('The iPhone app returned an unreadable ZIP selection.');
+    }
+    return Object.freeze({ name: value.name, size: Number(value.size), lastModified: Number(value.lastModified) || 0, nativeToken: value.token });
+}
+
+export const isNativeArchive = file => typeof file?.nativeToken === 'string' && NATIVE_TOKEN.test(file.nativeToken);
+
 export async function importAccountData(input, options = {}) {
     const owner = getCurrentUserHandle();
     const client = await getOperationClient();
     const assertOwner = () => { if (owner !== getCurrentUserHandle()) throw new Error('account_changed'); };
-    const upload = async (key, file) => {
-        assertOwner();
-        const body = new FormData(); body.append('key', key); body.append('avatar', file, file.name);
-        const response = await fetchWithCsrfRetry('/api/operations/import-input', () => {
-            assertOwner();
-            return { method: 'POST', body, headers: { ...getRequestHeaders({ omitContentType: true }), 'X-Neconyan-Account': owner } };
-        }, { refreshCsrfToken });
-        const text = await response.text();
-        assertOwner();
-        let value;
-        try { value = JSON.parse(text); } catch { throw new Error('The ZIP upload response was unreadable. Its request has been retained.'); }
-        if (!response.ok) throw Object.assign(new Error(value.error || 'The ZIP upload failed.'), { status: response.status, code: value.code });
-        return value;
-    };
+    const send = (url, init) => fetchWithCsrfRetry(url, () => { assertOwner(); return init(); }, { refreshCsrfToken });
     let resumeSettings;
+    let prepared = false;
+    const prepare = async () => {
+        if (prepared) return;
+        assertOwner();
+        if (getCurrentChatId()) await saveChatConditional({ throwOnError: true, throwOnPromptError: true });
+        resumeSettings = await pauseSettingsForAccountImport();
+        assertOwner();
+        prepared = true;
+    };
+    const handOver = async (key, file, submission) => {
+        // iOS pauses the page soon after the app leaves the screen, which drops this request while the
+        // server keeps retaining the ZIP. Asking again picks up the retained copy instead of failing.
+        for (let attempt = 1; ; attempt += 1) {
+            try {
+                return await send('/api/operations/import-input-local', () => ({ method: 'POST',
+                    body: JSON.stringify({ key, token: file.nativeToken, submission }), headers: { ...getRequestHeaders(), 'X-Neconyan-Account': owner } }));
+            } catch (error) {
+                if (!(error instanceof TypeError) || attempt >= 40) throw error;
+                await new Promise(resolve => setTimeout(resolve, 3000));
+            }
+        }
+    };
+    const upload = async (key, file, submission) => {
+        assertOwner();
+        try {
+            let response;
+            if (isNativeArchive(file)) {
+                // The server may start the import before this page can, so stop settings saves first.
+                if (submission) await prepare();
+                response = await handOver(key, file, submission);
+            } else {
+                const body = new FormData(); body.append('key', key); body.append('avatar', file, file.name);
+                response = await send('/api/operations/import-input', () => ({ method: 'POST', body, headers: { ...getRequestHeaders({ omitContentType: true }), 'X-Neconyan-Account': owner } }));
+            }
+            const text = await response.text();
+            assertOwner();
+            let value;
+            try { value = JSON.parse(text); } catch { throw new Error('The ZIP upload response was unreadable. Its request has been retained.'); }
+            if (!response.ok) throw Object.assign(new Error(value.error || 'The ZIP upload failed.'), { status: response.status, code: value.code });
+            return value;
+        } catch (error) {
+            // Only a definite refusal proves the server did not start the import itself.
+            if (submission && prepared && error.status) { prepared = false; resumeSettings?.(); resumeSettings = undefined; }
+            throw error;
+        }
+    };
     try {
         if (client.hasPending(accountImportScope(input))) resumeSettings = await pauseSettingsForAccountImport({ flush: false });
         const record = await createAccountImportClient({ client, owner, storage: localStorage, upload })(input, { ...options, prepareInput: async value => {
-            assertOwner();
-            if (getCurrentChatId()) await saveChatConditional({ throwOnError: true, throwOnPromptError: true });
-            resumeSettings = await pauseSettingsForAccountImport();
-            assertOwner();
+            await prepare();
             return value;
         } });
         // Extension-only imports do not replace settings. Account imports need a reload first.

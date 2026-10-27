@@ -1,10 +1,13 @@
 import UIKit
+import UniformTypeIdentifiers
 import WebKit
 
 @MainActor
-final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, WKScriptMessageHandler {
+final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, WKScriptMessageHandler, WKScriptMessageHandlerWithReply, UIDocumentPickerDelegate {
     private var web: WKWebView!
     private var server: LocalServer?
+    private var keeper: BackgroundKeeper?
+    private var pickReply: (@MainActor @Sendable (Any?, String?) -> Void)?
     private let status = UILabel()
     private let actions = UIStackView()
     private var downloads: [ObjectIdentifier: URL] = [:]
@@ -16,6 +19,7 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
         config.userContentController.add(self, name: "nativeDiagnostics")
+        config.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "neconyanImport")
         config.userContentController.addUserScript(WKUserScript(source: """
         (() => {
             const send = (kind, text) => window.webkit.messageHandlers.nativeDiagnostics.postMessage({kind, text: String(text).slice(0, 12000)});
@@ -82,6 +86,10 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
             do {
                 if server == nil { server = try LocalServer() }
                 guard let server else { return }
+                if keeper == nil {
+                    keeper = BackgroundKeeper(marker: server.state.appendingPathComponent("ios-busy"))
+                    keeper?.start()
+                }
                 // Installing the payload and starting Node must not block UIKit's main thread.
                 try await Task.detached { try server.start() }.value
                 let cookies = try await server.signIn()
@@ -120,6 +128,56 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
               let body = message.body as? [String: String], let text = body["text"] else { return }
         if body["kind"] == "ready" { web.accessibilityIdentifier = "workspace-ready" }
         NSLog("Neconyan web %@: %@", body["kind"] ?? "diagnostic", text)
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage, replyHandler: @escaping @MainActor @Sendable (Any?, String?) -> Void) {
+        guard message.frameInfo.isMainFrame, let source = message.frameInfo.request.url, isLocal(source),
+              let body = message.body as? [String: Any], body["action"] as? String == "pickArchive" else {
+            replyHandler(nil, "Unsupported request.")
+            return
+        }
+        guard pickReply == nil, presentedViewController == nil else {
+            replyHandler(nil, "A file picker is already open.")
+            return
+        }
+        pickReply = replyHandler
+        // A copy keeps the original in Files untouched; the server removes this one once it is retained.
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.zip], asCopy: true)
+        picker.delegate = self
+        picker.allowsMultipleSelection = false
+        present(picker, animated: true)
+    }
+
+    private struct PickedArchive: Sendable { let token: String; let name: String; let size: Int; let lastModified: Int64 }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        pickReply?(nil, nil)
+        pickReply = nil
+    }
+
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        guard let reply = pickReply else { return }
+        pickReply = nil
+        guard let picked = urls.first, let inbox = server?.importInbox else { reply(nil, "No ZIP was picked."); return }
+        Task {
+            do {
+                let chosen = try await Task.detached { () -> PickedArchive in
+                    let fm = FileManager.default
+                    try fm.createDirectory(at: inbox, withIntermediateDirectories: true)
+                    let token = UUID().uuidString
+                    let destination = inbox.appendingPathComponent("\(token).zip")
+                    let modified = (try? picked.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date()
+                    // The picked copy sits on the same volume, so moving it is instant even for a 13 GB ZIP.
+                    do { try fm.moveItem(at: picked, to: destination) } catch { try fm.copyItem(at: picked, to: destination) }
+                    let values = try destination.resourceValues(forKeys: [.fileSizeKey])
+                    return PickedArchive(token: token, name: picked.lastPathComponent, size: values.fileSize ?? 0,
+                                         lastModified: Int64(modified.timeIntervalSince1970 * 1000))
+                }.value
+                reply(["token": chosen.token, "name": chosen.name, "size": chosen.size, "lastModified": chosen.lastModified], nil)
+            } catch {
+                reply(nil, "Could not prepare the ZIP: \(error.localizedDescription)")
+            }
+        }
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {

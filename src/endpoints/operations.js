@@ -1,5 +1,6 @@
 import express from 'express';
 import fs from 'node:fs';
+import path from 'node:path';
 import mime from 'mime-types';
 import { acceptApplicationOperation, operationAccount, listApplicationRecovery, recoverApplicationPublication } from '../operations/jobs.js';
 import { listOperations, readOperation, refuseOperation } from '../operations/store.js';
@@ -18,6 +19,7 @@ import '../operations/quiet-generation.js';
 import '../operations/raw-generation.js';
 import '../operations/time-machine.js';
 import { readUploadedArchive, retainUploadedArchive } from '../operations/input-files.js';
+import { beginServerWork } from '../android-wake.js';
 
 export const router = express.Router();
 export const publicRecord = value => value && ({ key: value.key, kind: value.kind, label: value.label, state: value.state,
@@ -52,6 +54,48 @@ router.post('/import-input', route(async (request, response) => {
         response.json({ inputId: input.id, size: input.size });
     } finally {
         if (filename) await fs.promises.rm(filename, { force: true });
+    }
+}));
+// The iPhone app's own file picker leaves the chosen ZIP in its private inbox. Retaining it from there
+// skips a browser upload that iOS would pause the moment the app leaves the screen.
+router.post('/import-input-local', route(async (request, response) => {
+    const { base, account } = operationAccount(request);
+    const inbox = process.env.NECONYAN_LOCAL_IMPORT_DIR;
+    const { key, token, submission } = request.body ?? {};
+    if (!inbox) return response.status(404).json({ error: 'Local ZIP handoff is only available in the iPhone app.' });
+    if (typeof key !== 'string' || !key || key.length > 200 || typeof token !== 'string' || !/^[A-Fa-f0-9-]{36}$/.test(token)) {
+        return response.status(400).json({ error: 'A picked ZIP and upload identity are required.' });
+    }
+    if (submission !== undefined && (submission?.kind !== 'account-import' || typeof submission.key !== 'string' || !submission.key
+        || submission.key.length > 200 || !submission.input || typeof submission.input !== 'object' || Array.isArray(submission.input))) {
+        return response.status(400).json({ error: 'The planned import is unreadable.' });
+    }
+    // The page can be paused, and its connection dropped, long before this finishes.
+    const endWork = beginServerWork();
+    try {
+        const filename = path.join(inbox, `${token}.zip`);
+        let input;
+        try {
+            input = await retainUploadedArchive(base, account, key, filename);
+        } catch (error) {
+            // A repeated request after the page was paused finds its ZIP already retained and removed.
+            if (fs.existsSync(filename) || error.code === 'IMPORT_UPLOAD_CONFLICT') throw error;
+            input = readUploadedArchive(base, account, key);
+            if (!input) throw error;
+        }
+        await fs.promises.rm(filename, { force: true });
+        let submitError = null;
+        if (submission) {
+            // Same body, in the same order, as the page submits later, so its own submit finds this one.
+            try {
+                await acceptApplicationOperation(request, { ...submission.input, inputId: input.id, kind: submission.kind, key: submission.key });
+            } catch (error) {
+                submitError = error.message;
+            }
+        }
+        response.json({ inputId: input.id, size: input.size, submitError });
+    } finally {
+        endWork();
     }
 }));
 router.get('/import-input/:key', route((request, response) => {

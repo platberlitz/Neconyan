@@ -49,6 +49,8 @@ targets:
         NSCameraUsageDescription: Take an image for a character or persona.
         NSMicrophoneUsageDescription: Record a voice message when you choose to use voice input.
         ITSAppUsesNonExemptEncryption: false
+        UIBackgroundModes:
+          - audio
   NeconyanUITests:
     type: bundle.ui-testing
     platform: iOS

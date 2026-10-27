@@ -13,6 +13,7 @@ final class LocalServer {
     let session: URLSession
     private var started = false
     var logURL: URL { state.appendingPathComponent("server.log") }
+    var importInbox: URL { state.appendingPathComponent("import-inbox", isDirectory: true) }
 
     init() throws {
         let fm = FileManager.default
@@ -61,6 +62,8 @@ final class LocalServer {
         values.isExcludedFromBackup = true
         try excluded.setResourceValues(values)
         try? fm.removeItem(at: state.appendingPathComponent("ios-ready.json"))
+        // Picked ZIPs belong to the run that picked them; an abandoned one would hold gigabytes forever.
+        try? fm.removeItem(at: importInbox)
         if let size = try? fm.attributesOfItem(atPath: logURL.path)[.size] as? NSNumber, size.intValue > 4 * 1024 * 1024 { try? fm.removeItem(at: logURL) }
         NodeRunner.start(withArguments: ["node", runtime.appendingPathComponent("server-bootstrap.mjs").path, state.path, String(origin.port!), password], logPath: logURL.path)
         started = true

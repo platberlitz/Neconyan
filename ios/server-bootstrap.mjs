@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { serverEvents, EVENT_NAMES } from './src/server-events.js';
+import { beginServerWork, configureServerWakeMarker } from './src/android-wake.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const [privatePath, port, password] = process.argv.slice(2);
@@ -28,11 +29,20 @@ config.logging.enableAccessLog = false;
 writeFileAtomicSync(configPath, YAML.stringify(config), { mode: 0o600 });
 process.env.NECONYAN_SUPERVISED = '1';
 process.env.NECONYAN_IOS_APP = '1';
+// The app moves ZIPs picked in its own file picker here, so big imports skip the browser upload.
+process.env.NECONYAN_LOCAL_IMPORT_DIR = path.join(statePath, 'import-inbox');
 process.argv = [process.argv[0], path.join(root, 'server.js'), '--configPath', configPath];
 const readyPath = path.join(statePath, 'ios-ready.json');
 fs.rmSync(readyPath, { force: true });
+// The app keeps running in the background only while this marker exists; starting up counts as work.
+configureServerWakeMarker(path.join(statePath, 'ios-busy'));
+const endStartup = beginServerWork();
 serverEvents.once(EVENT_NAMES.SERVER_STARTED, () => {
+    endStartup();
     writeFileAtomicSync(readyPath, JSON.stringify({ pid: process.pid, port: Number(port) }), { mode: 0o600 });
 });
-process.once('exit', () => fs.rmSync(readyPath, { force: true }));
+process.once('exit', () => {
+    fs.rmSync(readyPath, { force: true });
+    configureServerWakeMarker(null);
+});
 await import('./server.js');
