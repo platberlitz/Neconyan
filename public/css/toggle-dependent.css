@@ -388,11 +388,8 @@ body.waifuMode #top-bar {
     border: 1px solid var(--SmartThemeBorderColor);
 }
 
-body.waifuMode:not(.ripplestyle) #sheld {
-    height: 40vh;
-    height: 40dvh;
-    top: calc(100% - 40vh);
-    bottom: 0;
+@media screen and (min-width: 769px) {
+    html body.waifuMode #sheld { height: 40dvh; top: calc(100% - 40vh); bottom: 0; }
 }
 
 body.waifuMode #chat {

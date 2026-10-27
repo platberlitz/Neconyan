@@ -1296,12 +1296,12 @@
         display: none;
     }
 
-    body.waifuMode:not(.ripplestyle) #sheld {
-        height: 40vh;
-        height: 40dvh;
-        top: 60vh;
-        top: 60dvh;
-        bottom: 0 !important;
+    /* The phone shell pins #sheld to the full screen height, so the chat
+       shrinks inside it and the composer stays on screen under the sprite. */
+    body.waifuMode #sheld #chat {
+        flex: 0 1 36dvh;
+        max-height: 36dvh;
+        margin-top: auto;
     }
 
     body:not(.waifuMode) #expression-wrapper {
@@ -1329,7 +1329,8 @@
     }
 
     body.waifuMode img.expression {
-        object-fit: cover;
+        object-fit: contain;
+        object-position: top;
     }
 
     body.waifuMode .zoomed_avatar_container {
