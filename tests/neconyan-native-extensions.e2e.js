@@ -55,7 +55,7 @@ async function mockNativeSettings(page, { tone = 'dark', resetTerminal = false, 
             delete settings.accountStorage['NeconyanTutorialHidden.v1'];
             if (homePanelMode) settings.accountStorage.WelcomePage_PanelMode = homePanelMode;
             const { name, ...theme } = JSON.parse(readFileSync(new URL(`../default/content/themes/Neconyan Calico${tone === 'dark' ? ' Dark' : ''}.json`, import.meta.url), 'utf8'));
-            Object.assign(settings.power_user, theme, { theme: name, google_font: '' });
+            Object.assign(settings.power_user, theme, { theme: name, google_font: '', google_font_heading: '', google_font_chat: '', google_font_mono: '' });
             if (resetTerminal) delete settings.extension_settings['Neconyan-Terminal-UI'];
             if (mainFont) settings.extension_settings.CTSI = { ...settings.extension_settings.CTSI, entries: { ...settings.extension_settings.CTSI?.entries, mainFont } };
         }
@@ -1245,6 +1245,96 @@ test('saved theme fonts remain local when an explicit font override is cleared',
     expect(fixture.reads).toBeGreaterThan(beforeReload);
     await expect(page.locator('body')).toHaveCSS('font-family', /Nunito/);
     await expectLoadedFont(page, 'Nunito');
+});
+
+test('headings, chat messages and code each take their own font and reset together', async ({ page }) => {
+    const fixture = await mockNativeSettings(page);
+    await safety.navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
+    await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 60000 });
+    const fonts = () => page.evaluate(() => {
+        const probe = (tag, parent) => {
+            const element = document.createElement(tag);
+            parent.appendChild(element);
+            const family = getComputedStyle(element).fontFamily;
+            element.remove();
+            return family;
+        };
+        const chat = document.createElement('div');
+        chat.innerHTML = '<div class="mes"><div class="mes_block"><div class="mes_text"></div></div></div>';
+        document.getElementById('chat').appendChild(chat);
+        const message = getComputedStyle(chat.querySelector('.mes_text')).fontFamily;
+        chat.remove();
+        return {
+            body: getComputedStyle(document.body).fontFamily,
+            heading: probe('h2', document.body),
+            message,
+            code: getComputedStyle(document.documentElement).getPropertyValue('--monoFontFamily').trim(),
+            links: [...document.querySelectorAll('link[id^="google-font-style"]')].map(link => link.id).sort(),
+        };
+    });
+    const choose = (role, value) => page.evaluate(({ role, value }) => {
+        const select = document.getElementById(`google_font_${role}_preset`);
+        select.value = value; select.dispatchEvent(new Event('change', { bubbles: true }));
+    }, { role, value });
+
+    const defaults = await fonts();
+    expect(defaults.body).toMatch(/^"?Nunito"?,/);
+    expect(defaults.heading).toMatch(/^"?Fredoka One"?,/);
+    expect(defaults.message).toMatch(/^"?Nunito"?,/);
+    expect(defaults.code).toMatch(/^'?"?Noto Sans Mono/);
+    expect(defaults.links).toEqual([]);
+
+    await choose('heading', 'Figtree');
+    await expect(page.locator('#google-font-style-heading')).toHaveAttribute('href', /\/webfonts\/Figtree\/stylesheet\.css/);
+    await expectLoadedFont(page, 'Figtree');
+    await page.evaluate(() => {
+        const select = document.getElementById('google_font_chat_preset');
+        select.value = '__custom__'; select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await expect(page.locator('#google_font_chat_custom_row')).not.toHaveCSS('display', 'none');
+    await page.evaluate(() => {
+        document.getElementById('google_font_chat_custom').value = 'Fredoka One';
+        document.getElementById('apply_google_font_chat').click();
+    });
+    await expectLoadedFont(page, 'Fredoka One');
+    await page.evaluate(() => {
+        const input = document.getElementById('google_font_mono_custom');
+        input.value = 'Nunito';
+        input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+
+    await expect.poll(async () => (await fonts()).heading).toMatch(/^"?Figtree"?,/);
+    const chosen = await fonts();
+    expect(chosen.body).toMatch(/^"?Nunito"?,/);
+    expect(chosen.message).toMatch(/^"?Fredoka One"?,/);
+    expect(chosen.code).toMatch(/^'?"?Nunito/);
+    expect(chosen.links).toEqual(['google-font-style-chat', 'google-font-style-heading', 'google-font-style-mono']);
+    await expect(page.locator('#google_font_heading_preset')).toHaveValue('Figtree');
+    await expect(page.locator('#google_font_heading_custom_row')).toHaveCSS('display', 'none');
+    await expect(page.locator('#google_font_chat_preset')).toHaveValue('__custom__');
+    await expect(page.locator('#google_font_chat_custom')).toHaveValue('Fredoka One');
+    await expect(page.locator('#google_font_mono_preset')).toHaveValue('__custom__');
+    await expect.poll(() => fixture.lastSaved?.power_user?.google_font_mono).toBe('Nunito');
+    expect(fixture.lastSaved.power_user).toMatchObject({ google_font: '', google_font_heading: 'Figtree', google_font_chat: 'Fredoka One' });
+
+    const beforeReload = fixture.reads;
+    await safety.navigate(() => page.reload({ waitUntil: 'domcontentloaded' }));
+    await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 60000 });
+    expect(fixture.reads).toBeGreaterThan(beforeReload);
+    await expect.poll(async () => (await fonts()).heading).toMatch(/^"?Figtree"?,/);
+    expect((await fonts()).message).toMatch(/^"?Fredoka One"?,/);
+    await expect(page.locator('#google_font_mono_custom')).toHaveValue('Nunito');
+
+    await page.evaluate(() => document.getElementById('google_font_reset_all').click());
+    await expect.poll(async () => (await fonts()).links).toEqual([]);
+    const reset = await fonts();
+    expect(reset.heading).toMatch(/^"?Fredoka One"?,/);
+    expect(reset.message).toMatch(/^"?Nunito"?,/);
+    expect(reset.code).toMatch(/^'?"?Noto Sans Mono/);
+    await expect(page.locator('#google_font_mono_preset')).toHaveValue('');
+    await expect(page.locator('#google_font_mono_custom_row')).toHaveCSS('display', 'none');
+    await expect.poll(() => fixture.lastSaved?.power_user?.google_font_heading).toBe('');
+    expect(fixture.lastSaved.power_user).toMatchObject({ google_font: '', google_font_chat: '', google_font_mono: '' });
 });
 
 for (const width of [393, 1280]) {

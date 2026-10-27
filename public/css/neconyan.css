@@ -2,6 +2,7 @@
 /* Theme fonts override Nunito and Fredoka One inline on :root. */
 :root[style*='--mainFontFamily']:has(> body.neconyan) { --sb-font-display: var(--mainFontFamily); }
 body.neconyan:not(.sbterm) :is(h1, h2, h3, h4, h5, h6, .sb-topbar-brand, .neconyan-rail-brand) { font-family: var(--sb-font-display); }
+:root[style*='--sb-font-chat'] body.neconyan:not(.sbterm) :is(#chat .mes .mes_block .mes_text, .sb-conversation-message-text) { font-family: var(--sb-font-chat); }
 
 /* Import consent stays readable and easy to press as the panel grows. */
 body.neconyan #sb_character_import_panel { flex: 0 0 auto; }

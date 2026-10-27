@@ -493,6 +493,9 @@ export const power_user = {
 
     custom_css: '',
     google_font: '',
+    google_font_heading: '',
+    google_font_chat: '',
+    google_font_mono: '',
 
     waifuMode: false,
     movingUI: true,
@@ -2382,9 +2385,17 @@ async function handleCustomCssAiWandClick() {
     }
 }
 
-function getGoogleFontStylesheetId() {
-    return 'google-font-style';
-}
+const GOOGLE_FONT_CUSTOM_OPTION_VALUE = '__custom__';
+const DEFAULT_MONO_FONT_STACK = '\'Noto Sans Mono\', \'SFMono-Regular\', Consolas, \'Liberation Mono\', monospace';
+
+// Each role keeps its own setting, stylesheet link and CSS variable. Body text keeps the original
+// google_font setting and control ids so saved settings and older themes carry over unchanged.
+const GOOGLE_FONT_ROLES = Object.freeze({
+    body: Object.freeze({ setting: 'google_font', controlPrefix: 'google_font', applyButtonId: 'apply_google_font', stylesheetId: 'google-font-style', cssVariable: '--mainFontFamily', fallback: 'sans-serif' }),
+    heading: Object.freeze({ setting: 'google_font_heading', controlPrefix: 'google_font_heading', applyButtonId: 'apply_google_font_heading', stylesheetId: 'google-font-style-heading', cssVariable: '--sb-font-display', fallback: 'sans-serif' }),
+    chat: Object.freeze({ setting: 'google_font_chat', controlPrefix: 'google_font_chat', applyButtonId: 'apply_google_font_chat', stylesheetId: 'google-font-style-chat', cssVariable: '--sb-font-chat', fallback: 'sans-serif' }),
+    mono: Object.freeze({ setting: 'google_font_mono', controlPrefix: 'google_font_mono', applyButtonId: 'apply_google_font_mono', stylesheetId: 'google-font-style-mono', cssVariable: '--monoFontFamily', fallback: DEFAULT_MONO_FONT_STACK }),
+});
 
 const LOCAL_FONT_STYLESHEETS = Object.freeze({
     'Fredoka One': '/webfonts/FredokaOne/stylesheet.css?v=20260913g',
@@ -2392,62 +2403,81 @@ const LOCAL_FONT_STYLESHEETS = Object.freeze({
     Nunito: '/webfonts/Nunito/stylesheet.css?v=20260913g',
 });
 
+function normalizeGoogleFontName(fontName) {
+    // Quotes, brackets and semicolons would break out of the CSS value, and no Google Font uses them.
+    return String(fontName ?? '').replace(/["'`\\;:{}()<>]/g, '').replace(/\s+/g, ' ').trim();
+}
+
 function buildGoogleFontHref(fontName) {
-    const family = String(fontName ?? '').trim();
+    const family = normalizeGoogleFontName(fontName);
 
     if (!family) {
         return '';
     }
 
-    const encodedFamily = family.split(/\s+/).filter(Boolean).join(' ');
-    return `https://fonts.googleapis.com/css2?family=${encodeURIComponent(encodedFamily)}:wght@400;500;600;700&display=swap`;
+    return `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:wght@400;500;600;700&display=swap`;
 }
 
-function applyGoogleFont(fontName = power_user.google_font) {
-    const normalizedFontName = String(fontName ?? '').trim();
-    const styleId = getGoogleFontStylesheetId();
-    let link = document.getElementById(styleId);
-    const presetSelect = $('#google_font_preset');
-    const hasPresetMatch = normalizedFontName && presetSelect.find(`option[value="${CSS.escape(normalizedFontName)}"]`).length > 0;
-    document.getElementById('google_font_preset_custom_option')?.remove();
+function syncGoogleFontRoleControls(role, fontName) {
+    const { controlPrefix } = GOOGLE_FONT_ROLES[role];
+    const presetSelect = $(`#${controlPrefix}_preset`);
+    const customRow = $(`#${controlPrefix}_custom_row`);
+    const hasPresetMatch = !fontName || (fontName !== GOOGLE_FONT_CUSTOM_OPTION_VALUE
+        && presetSelect.find(`option[value="${CSS.escape(fontName)}"]`).length > 0);
+
+    // A font saved from a theme or typed by hand is not a preset, so the picker shows Custom with
+    // the name filled in instead of claiming Default while that font stays active.
+    presetSelect.val(hasPresetMatch ? fontName : GOOGLE_FONT_CUSTOM_OPTION_VALUE);
+    $(`#${controlPrefix}_custom`).val(hasPresetMatch ? '' : fontName);
+    customRow.toggle(!hasPresetMatch);
+}
+
+function applyGoogleFont(fontName = power_user.google_font, role = 'body', { notifyOnError = false } = {}) {
+    const config = GOOGLE_FONT_ROLES[role];
+    if (!config) {
+        return;
+    }
+
+    const normalizedFontName = normalizeGoogleFontName(fontName);
+    let link = document.getElementById(config.stylesheetId);
+    syncGoogleFontRoleControls(role, normalizedFontName);
 
     if (!normalizedFontName) {
-        if (link) {
-            link.remove();
-        }
+        link?.remove();
 
         // Default means the built-in Neconyan pairing: Nunito body text with Fredoka One
-        // headings. Saved theme fonts only apply while an explicit font is chosen, so a
-        // stored CTSI mainFont entry no longer hijacks the reset.
-        document.documentElement.style.removeProperty('--mainFontFamily');
-
-        presetSelect.val('');
-        $('#google_font_custom').val('');
+        // headings, chat text in the body font and Noto Sans Mono for code. Saved theme fonts
+        // only apply while an explicit font is chosen, so a stored CTSI mainFont entry no
+        // longer hijacks the reset.
+        document.documentElement.style.removeProperty(config.cssVariable);
         return;
     }
 
     if (!link) {
         link = document.createElement('link');
-        link.id = styleId;
+        link.id = config.stylesheetId;
         link.rel = 'stylesheet';
         document.head.appendChild(link);
     }
 
+    link.onerror = notifyOnError
+        ? () => toastr.warning(t`Google Fonts could not load '${normalizedFontName}'. Check the spelling, or pick another font.`)
+        : null;
     link.href = LOCAL_FONT_STYLESHEETS[normalizedFontName] ?? buildGoogleFontHref(normalizedFontName);
-    document.documentElement.style.setProperty('--mainFontFamily', `'${normalizedFontName}', sans-serif`);
+    document.documentElement.style.setProperty(config.cssVariable, `'${normalizedFontName}', ${config.fallback}`);
+}
 
-    // A font saved from a theme or typed by hand is not a preset option, so the drawer would
-    // show "Default" while the font stays active and re-picking Default would fire no change.
-    if (!hasPresetMatch) {
-        const customOption = document.createElement('option');
-        customOption.id = 'google_font_preset_custom_option';
-        customOption.value = normalizedFontName;
-        customOption.textContent = normalizedFontName;
-        document.getElementById('google_font_preset')?.appendChild(customOption);
+function applyGoogleFonts() {
+    for (const [role, config] of Object.entries(GOOGLE_FONT_ROLES)) {
+        applyGoogleFont(power_user[config.setting], role);
     }
+}
 
-    presetSelect.val(normalizedFontName);
-    $('#google_font_custom').val(normalizedFontName);
+function setGoogleFont(role, fontName) {
+    const config = GOOGLE_FONT_ROLES[role];
+    power_user[config.setting] = normalizeGoogleFontName(fontName);
+    applyGoogleFont(power_user[config.setting], role, { notifyOnError: true });
+    saveSettingsDebounced();
 }
 
 function applyCustomThemeStyleEntries() {
@@ -2648,7 +2678,7 @@ function applyTheme(name) {
     power_user.theme = theme.name;
     syncNeconyanPaletteAttribute();
     // Imported theme variables must not replace the font selected in Google Font.
-    applyGoogleFont();
+    applyGoogleFonts();
 
     console.log('theme applied: ' + name);
 }
@@ -2705,7 +2735,7 @@ export function applyPowerUserSettings() {
     applyLandingContrastPalette();
     applyShadowWidth();
     applyCustomCSS();
-    applyGoogleFont();
+    applyGoogleFonts();
     switchMovingUI();
     applyNoShadows();
     syncNeconyanPaletteAttribute();
@@ -2964,8 +2994,6 @@ export async function loadPowerUserSettings(settings, data) {
     $('#waifuMode').prop('checked', power_user.waifuMode);
     $('#movingUImode').prop('checked', power_user.movingUI);
     $('#noShadowsmode').prop('checked', power_user.noShadows);
-    $('#google_font_preset').val(power_user.google_font);
-    $('#google_font_custom').val(power_user.google_font);
     $('.start-reply-with-input').val(power_user.user_prompt_bias);
     $('#chat-show-reply-prefix-checkbox').prop('checked', power_user.show_user_prompt_bias);
     $('#auto_continue_enabled').prop('checked', power_user.auto_continue.enabled);
@@ -3117,7 +3145,7 @@ export async function loadPowerUserSettings(settings, data) {
     loadMaxContextUnlocked();
     switchWaifuMode();
     switchSpoilerMode();
-    applyGoogleFont();
+    applyGoogleFonts();
     loadMovingUIState();
     loadCharListState();
     toggleMDHotkeyIconDisplay();
@@ -4696,18 +4724,36 @@ jQuery(async () => {
         $('#custom_css_ai_wand').trigger('click');
     });
 
-    $('#google_font_preset').on('change', function () {
-        const selectedFont = String($(this).val() ?? '').trim();
-        $('#google_font_custom').val(selectedFont);
-        power_user.google_font = selectedFont;
-        applyGoogleFont(selectedFont);
-        saveSettingsDebounced();
-    });
+    for (const [role, config] of Object.entries(GOOGLE_FONT_ROLES)) {
+        const customInput = $(`#${config.controlPrefix}_custom`);
+        const applyCustomFont = () => setGoogleFont(role, customInput.val());
 
-    $('#apply_google_font').on('click', function () {
-        const customFont = String($('#google_font_custom').val() ?? '').trim();
-        power_user.google_font = customFont;
-        applyGoogleFont(customFont);
+        $(`#${config.controlPrefix}_preset`).on('change', function () {
+            const selectedFont = String($(this).val() ?? '');
+
+            if (selectedFont === GOOGLE_FONT_CUSTOM_OPTION_VALUE) {
+                $(`#${config.controlPrefix}_custom_row`).show();
+                customInput.trigger('focus');
+                return;
+            }
+
+            setGoogleFont(role, selectedFont);
+        });
+
+        $(`#${config.applyButtonId}`).on('click', applyCustomFont);
+        customInput.on('keydown', function (event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                applyCustomFont();
+            }
+        });
+    }
+
+    $('#google_font_reset_all').on('click', function () {
+        for (const config of Object.values(GOOGLE_FONT_ROLES)) {
+            power_user[config.setting] = '';
+        }
+        applyGoogleFonts();
         saveSettingsDebounced();
     });
 
