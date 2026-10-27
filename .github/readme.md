@@ -154,7 +154,7 @@ There's a standalone iPhone app now too. Same idea as the Android one: the serve
 
 A free Apple account has to re-sign the app every seven days and only lets you sideload three apps. To update, install the new IPA over the old one with the same Apple account, and your chats stay put. Deleting the app deletes your chats with it, so export an account backup first if you're switching sideloading tools.
 
-Keep the app open, with the screen on, while a reply is generating or a backup is importing. iOS pauses apps you aren't looking at, Neconyan's server included, so I can't promise anything finishes in the background. Big imports are the shakiest part right now. [iPhone setup, limits and build instructions.](../ios/README.md)
+Imports keep going when you switch apps or lock the phone. Pick the backup with the app's own **Import Backup ZIP** button, confirm, and the server takes it from there, playing silence so iOS doesn't freeze it while it works, and you can check back whenever. Replies are another story: they're written in the page, which iOS still pauses, so keep the app open for those or set 'Where replies are written' to **On the server**. iOS can still close the app if the phone runs short on memory, and a 13 GB backup needs about twice that free while it's being copied in. [iPhone setup, limits and build instructions.](../ios/README.md)
 
 ### On a computer
 

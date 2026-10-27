@@ -16,7 +16,7 @@ function mark(busy) {
         if (busy) fs.writeFileSync(markerPath, '', { mode: 0o600 });
         else fs.rmSync(markerPath, { force: true });
     } catch (error) {
-        console.warn('Could not update the Android wake marker:', error.message);
+        console.warn('Could not update the server wake marker:', error.message);
     }
 }
 

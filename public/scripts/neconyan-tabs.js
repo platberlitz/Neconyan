@@ -15001,7 +15001,7 @@ async function handleSillyTavernExtensionSync() {
 async function handleSillyTavernZipImport(file) {
     const refs = getImporterRefs();
 
-    if (!(file instanceof File) || getImporterState().busy || !refs) {
+    if (!(file instanceof File || typeof file?.nativeToken === 'string') || getImporterState().busy || !refs) {
         return;
     }
 
@@ -15229,7 +15229,24 @@ function injectSillyTavernImportCard() {
         }
     });
 
-    zipButton.addEventListener('click', () => zipFileInput.click());
+    zipButton.addEventListener('click', async () => {
+        if (!window.webkit?.messageHandlers?.neconyanImport) {
+            zipFileInput.click();
+            return;
+        }
+
+        // The iPhone app picks the ZIP itself so the import can carry on after leaving the app.
+        try {
+            const { pickNativeArchive } = await import('./account-import.js');
+            const archive = await pickNativeArchive();
+            zipFileName.textContent = archive?.name || 'No ZIP selected yet.';
+            if (archive) {
+                void handleSillyTavernZipImport(archive);
+            }
+        } catch (error) {
+            setServerAdminMessage(note, error.message || 'Could not open the ZIP picker.', 'danger');
+        }
+    });
     zipFileInput.addEventListener('change', () => {
         const [file] = Array.from(zipFileInput.files ?? []);
         zipFileName.textContent = file?.name || 'No ZIP selected yet.';

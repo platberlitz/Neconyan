@@ -15,7 +15,10 @@ The build isn't an App Store release. Simulator checks don't replace testing on 
 ## What to expect
 
 - Characters, chats, settings and imported files stay in the app's private storage. Updates replace the bundled server separately from your data.
-- Keep the app open while generating or importing. iOS can suspend it when you switch apps or lock the phone, including its local server. I can't promise background replies will finish.
+- Imports carry on in the background. While the local server has work (an import, a server-side reply, memory upkeep), the app plays silent audio so iOS keeps it running with the screen locked, and stops once the server has been idle for 30 seconds. That's what the 'audio' background mode is for, which is also why this build isn't headed for the App Store.
+- Backup ZIPs picked through the app's own picker are copied straight into its storage, so the page never uploads them. The server then starts the import itself, so it doesn't matter if the page is paused. Leave about twice the backup's size free while it's copied in.
+- Replies written in the page still pause with it. Keep the app open while one is generating, or set 'Where replies are written' to 'On the server'.
+- iOS can still end the app under memory pressure. If that happens mid-import, reopen it and start the import again.
 - File inputs use the system picker. Downloads open the share sheet, where you can save to Files.
 - External links open outside the app. The embedded browser connects only to Neconyan's password-protected loopback server, which isn't exposed to the local network.
 - Server plugins and automatic extension updates are disabled. Extensions requiring a shell or a separate executable won't work inside the iOS sandbox.
