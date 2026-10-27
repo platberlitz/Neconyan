@@ -1,5 +1,7 @@
 /* global document, window */
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { expect } from '@playwright/test';
 import { test, acknowledgeActiveSettings, MODEL } from './neconyan-conversation-durable-fixture.js';
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
@@ -22,7 +24,7 @@ function labelBoundsWithinButton(element) {
     return { x: label.x - button.x, y: label.y - button.y, width: label.width, height: label.height };
 }
 
-async function openTrackerChat(account, chatName, broken, agentOverrides = {}, { templateName = 'relationship-tracker', companionContent } = {}) {
+async function openTrackerChat(account, chatName, broken, agentOverrides = {}, { templateName = 'relationship-tracker', companionContent, messageName = 'Durable Nova' } = {}) {
     const request = { avatar_url: account.avatar, file_name: chatName };
     const vacant = await account.context.request.post('/api/chats/get', {
         headers: account.headers, data: { ...request, allow_create: true },
@@ -30,7 +32,7 @@ async function openTrackerChat(account, chatName, broken, agentOverrides = {}, {
     expect(vacant.ok()).toBe(true);
     const vacancy = JSON.parse(vacant.headers()['x-neconyan-roleplay']);
     await account.post('/api/chats/save', { ...request,
-        chat: [{ chat_metadata: {} }, { name: 'Durable Nova', is_user: false, mes: `Before the tracker.\n\n${broken}\n\nAfter the tracker.`,
+        chat: [{ chat_metadata: {} }, { name: messageName, is_user: false, mes: `Before the tracker.\n\n${broken}\n\nAfter the tracker.`,
             extra: companionContent ? { inChatAgentCompanionResults: { [agentOverrides.id]: {
                 status: 'done', content: companionContent, agentName: 'Event Tracker', agentCategory: 'tracker', format: 'markdown', displayMode: 'card',
             } } } : {} }],
@@ -197,6 +199,46 @@ for (const { phone, kind } of [false, true].flatMap(phone => ['header', 'field o
         await page.evaluate(async chatName => (await import('/script.js')).openCharacterChat(chatName), chatName);
         await expect(text.locator('details').first()).toBeVisible();
         await expect(text).not.toContainText('[METER|');
+    });
+}
+
+for (const phone of [false, true]) {
+    test(`server Companion retry replaces a renamed speaker's note on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
+        const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
+            configureTrackerSettings(saved);
+            saved.power_user.reply_generation_location = 'server';
+        } });
+        const event = '[EVENT|✅ RESOLVED|The question was answered|Tonight]\ncontext: They understand each other.\n[/EVENT]';
+        app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: event } }] };
+        const { page, request } = await openTrackerChat(account, 'Server companion retry', 'The scene is unchanged.', {
+            id: 'retry-event', execution: 'companion', companion: { trigger: 'manual', displayMode: 'card', format: 'markdown' },
+        }, { templateName: 'event-tracker', companionContent: 'Previous note', messageName: 'Earlier Nova' });
+        const response = page.waitForResponse(sent => sent.url().endsWith('/api/roleplay/agent/submit'));
+        const browserRequests = [];
+        page.on('request', sent => {
+            if (sent.url().includes('/api/backends/chat-completions/generate')) browserRequests.push(sent.url());
+        });
+        const card = page.locator('#chat .ica--companion-card[data-agent-id="retry-event"]');
+        await card.scrollIntoViewIfNeeded();
+        const screenshots = path.resolve('..', 'screenshots', 'server-companion-retry');
+        await fs.mkdir(screenshots, { recursive: true });
+        await page.screenshot({ path: path.join(screenshots, `${phone ? 'phone' : 'desktop'}-before.png`) });
+        await card.locator('[data-action="regenerate"]').click();
+        const accepted = await (await response).json();
+        expect(accepted.mode).toBe('companions');
+        await account.settled(accepted.jobId);
+        await expect.poll(async () => (await account.post('/api/chats/get', request))[1].extra.inChatAgentCompanionResults['retry-event'].content,
+            { timeout: 30000 }).toBe(event);
+        await expect(card.locator('.ica--companion-body')).toContainText('They understand each other.');
+        expect(browserRequests).toEqual([]);
+        expect(app.provider.calls).toHaveLength(1);
+        const geometry = await card.evaluate(element => ({ left: element.getBoundingClientRect().left,
+            right: element.getBoundingClientRect().right, width: window.innerWidth, display: window.getComputedStyle(element).display }));
+        expect(geometry.left).toBeGreaterThanOrEqual(0);
+        expect(geometry.right).toBeLessThanOrEqual(geometry.width + 1);
+        expect(geometry.display).not.toBe('none');
+        await info.attach('retry-geometry', { body: JSON.stringify(geometry), contentType: 'application/json' });
+        await page.screenshot({ path: path.join(screenshots, `${phone ? 'phone' : 'desktop'}-after.png`) });
     });
 }
 
