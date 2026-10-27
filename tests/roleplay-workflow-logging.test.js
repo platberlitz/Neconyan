@@ -77,6 +77,11 @@ jest.unstable_mockModule('../public/script.js', () => ({
     activateSendButtons: () => {},
     setRoleplayJobControls: () => {},
     willRunNativeRoleplayWorkflow: (type, options = {}) => nativeEligible && !options.skipNativeRoleplay,
+    addOneMessage: () => {},
+    getThumbnailUrl: (type, file) => `/thumbnail?type=${type}&file=${file}`,
+    refreshSwipeButtons: () => {},
+    syncMesToSwipe: () => false,
+    updateMessageBlock: async () => {},
 }));
 
 globalThis.fetch = async (url, options = {}) => {

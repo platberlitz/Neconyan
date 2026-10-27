@@ -13,7 +13,7 @@ import { generationBlockedNotice } from '../generation-outcome-ui.js';
  * instead of paying twice, and a reopened page reattaches to the accepted job and
  * reads its permanent receipt back rather than submitting anything again.
  */
-import { activateSendButtons, chat, chat_metadata, deactivateSendButtons, extension_prompts, getActiveGenerationAcknowledgement, getCurrentChatId, getRequestHeaders, isChatSaving, isGenerating, keepChatReadingPositionOnNextLoad, refreshCurrentChatFromSaved, saveChatConditional, saveSettings, setRoleplayJobControls, substituteParams, willRunNativeRoleplayWorkflow } from '../../script.js';
+import { activateSendButtons, addOneMessage, chat, chat_metadata, deactivateSendButtons, extension_prompts, getActiveGenerationAcknowledgement, getCurrentChatId, getRequestHeaders, getThumbnailUrl, isChatSaving, isGenerating, keepChatReadingPositionOnNextLoad, refreshCurrentChatFromSaved, refreshSwipeButtons, saveChatConditional, saveSettings, setRoleplayJobControls, substituteParams, syncMesToSwipe, updateMessageBlock, willRunNativeRoleplayWorkflow } from '../../script.js';
 import { event_types, eventSource } from '../events.js';
 import { activeGenerationInterceptors, extension_settings } from '../extensions.js';
 import { COMPANION_HISTORY_PROMPT_KEY_PREFIX } from '../extensions/in-chat-agents/companion/companion-shared.js';
@@ -573,6 +573,74 @@ async function readbackReceipt(key, name, shared, id) {
     return null;
 }
 
+const KEEP_AS_CONTINUATION = new Set(['roleplay.continue', 'story.passage']);
+
+function keptReplyMessage(reply, mes, group) {
+    return { name: reply.name, is_user: false, is_system: false, mes, send_date: reply.send_date,
+        gen_started: reply.gen_started, gen_finished: reply.gen_finished, extra: structuredClone(reply.extra ?? {}),
+        ...(group && reply.avatar ? { original_avatar: reply.avatar, force_avatar: getThumbnailUrl('avatar', reply.avatar) } : {}) };
+}
+
+function addKeptSwipe(message, kept) {
+    syncMesToSwipe(chat.indexOf(message));
+    const swipes = Array.isArray(message.swipes) && message.swipes.length ? message.swipes : [message.mes];
+    const info = Array.isArray(message.swipe_info) ? message.swipe_info : [];
+    while (info.length < swipes.length) {
+        info.push(info.length === Number(message.swipe_id ?? 0)
+            ? { send_date: message.send_date, gen_started: message.gen_started, gen_finished: message.gen_finished, extra: structuredClone(message.extra ?? {}) }
+            : { extra: {} });
+    }
+    swipes.push(kept.mes);
+    info.push({ send_date: kept.send_date, gen_started: kept.gen_started, gen_finished: kept.gen_finished, extra: structuredClone(kept.extra) });
+    Object.assign(message, { swipes, swipe_info: info, swipe_id: swipes.length - 1, mes: kept.mes,
+        send_date: kept.send_date, gen_started: kept.gen_started, gen_finished: kept.gen_finished, extra: kept.extra });
+}
+
+/**
+ * A reply the user stopped, or the server cancelled or could not write because the
+ * chat changed while it was written, stays in the chat instead of vanishing with
+ * its preview. A swipe, correction or regeneration keeps the original message and
+ * adds the reply as a new swipe; a continuation extends its message; anything else
+ * becomes a new message. A reply the saved chat already holds is not added twice.
+ */
+async function keepUnsavedReply(reply, { name, messageIndex, locator, account, isCurrent }) {
+    if (!isCurrent()) return false;
+    try {
+        await refreshCurrentChatFromSaved();
+    } catch {
+        // Keep the reply in the chat this page shows; the save below reconciles it.
+    }
+    if (!isCurrent()) return false;
+    const holds = text => chat.some(message => message && !message.is_user
+        && (message.mes === text || (Array.isArray(message.swipes) && message.swipes.includes(text))));
+    const anchor = Number.isSafeInteger(messageIndex) ? chat[messageIndex] : null;
+    const answersModel = anchor && anchor.is_user !== true && anchor.is_system !== true;
+    try {
+        if (KEEP_AS_CONTINUATION.has(name) && anchor) {
+            const base = String(anchor.mes ?? '');
+            if (base.endsWith(reply.text) || holds(reply.text)) return false;
+            anchor.mes = reply.text.startsWith(base) ? reply.text : base + reply.text;
+            if (anchor.extra) delete anchor.extra.display_text;
+            syncMesToSwipe(messageIndex);
+            await updateMessageBlock(messageIndex, anchor);
+        } else if (holds(reply.text)) {
+            return false;
+        } else if (ROLEPLAY_WORKFLOW_ANCHORS[name] && ROLEPLAY_WORKFLOW_ANCHORS[name] !== 'end' && answersModel) {
+            addKeptSwipe(anchor, keptReplyMessage(reply, reply.text, false));
+            await updateMessageBlock(messageIndex, anchor);
+            refreshSwipeButtons(true);
+        } else {
+            const message = keptReplyMessage(reply, reply.text, Boolean(locator?.group));
+            chat.push(message);
+            addOneMessage(message);
+        }
+    } catch (error) {
+        console.warn('The stopped Roleplay reply could not be shown in the chat.', error);
+    }
+    await saveChatConditional({ account });
+    return true;
+}
+
 /** Watch an accepted root job and read its receipt back once it settles. */
 export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageIndex = finalModelMessageIndex(), account = getCurrentUserHandle() }) {
     if (!jobId || observed.has(jobId)) return;
@@ -618,8 +686,10 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
         onStop: async (reason) => {
             ended = true;
             if (reason !== 'done' && reason !== 'stopped') {
+                const reply = TERMINAL.has(reason) ? stopPreview.reply?.() : null;
                 stopPreview();
                 restore();
+                if (reply) await keepUnsavedReply(reply, { name, messageIndex, locator, account, isCurrent });
                 announce({ key, name, state: reason, result: null, jobId });
                 // A refused or lost job must not leave a caller waiting for a write
                 // that will never arrive.
