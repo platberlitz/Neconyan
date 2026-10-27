@@ -4,9 +4,11 @@ I wanted the server and the chats on the iPhone itself. This app bundles Node.js
 
 You still choose your own model provider. The app doesn't include a local language model or free API access.
 
-## Installing a development build
+## Installing it
 
-The 'Standalone iOS' GitHub Actions workflow builds an **unsigned device IPA** and runs the app in Apple's iPhone simulator. Download the artifact from a successful run, extract it, and select `Neconyan-unsigned.ipa` in your sideloading tool, such as iloader. The tool signs it for your Apple account before installing it.
+Every release has an **unsigned device IPA**, the file ending in `-ios-unsigned.ipa` on the [releases page](https://github.com/platberlitz/Neconyan/releases/latest). Select it in your sideloading tool, such as iloader. The tool signs it for your Apple account before installing it. `SHA256SUMS-ios` and `provenance-ios.json` sit next to it if you want to check the file matches the release commit.
+
+The 'iOS Release Build' GitHub Actions workflow makes it: it builds the IPA, runs a 13 GiB import and starts the app in Apple's iPhone simulator. Run it by hand on any branch for a test build; the files are under **Artifacts** as `ios-release-<commit>`, for signed-in GitHub accounts only.
 
 You'll need iOS 17 or later. A free Apple account normally needs its signature refreshed every seven days and has a three-app limit. Keep the same signing identity and app identifier when updating so iOS can keep the app's data. Export an account backup before changing signing tools or removing the app; deleting the app deletes its private data too.
 

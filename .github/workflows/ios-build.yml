@@ -1,10 +1,11 @@
-name: Standalone iOS
+name: iOS Release Build
 on:
   workflow_dispatch:
-  push:
-    branches: [feat/standalone-ios]
 permissions:
   contents: read
+concurrency:
+  group: ios-release-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   build:
     runs-on: macos-15
@@ -53,6 +54,15 @@ jobs:
           cp ../generated/server/release-provenance.json provenance.json
       - name: Verify the packaged device IPA
         run: python3 scripts/verify-ios-build.py --commit "$GITHUB_SHA" ios/artifacts/Neconyan-unsigned.ipa
+      - name: Name the release files
+        run: |
+          set -euo pipefail
+          version=$(node -p 'require("./package.json").version')
+          mkdir -p release
+          cp ios/artifacts/Neconyan-unsigned.ipa "release/Neconyan-$version-ios-unsigned.ipa"
+          cp ios/artifacts/provenance.json release/provenance-ios.json
+          cd release
+          shasum -a 256 *.ipa provenance-ios.json > SHA256SUMS-ios
       - name: Start an iPhone simulator
         id: simulator
         run: |
@@ -66,6 +76,13 @@ jobs:
           fixture=$!
           trap 'kill "$fixture" 2>/dev/null || true' EXIT
           xcodebuild -project ios/Neconyan.xcodeproj -scheme Neconyan -configuration Debug -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' -parallel-testing-enabled NO -derivedDataPath ios/build/simulator -resultBundlePath ios/test-results.xcresult CODE_SIGNING_ALLOWED=NO test > ios/simulator-test.log 2>&1 || { tail -120 ios/simulator-test.log; exit 1; }
+      - name: Upload release candidates
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-release-${{ github.sha }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
       - name: Collect simulator server diagnostics
         if: always()
         run: |
@@ -78,7 +95,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: neconyan-ios-${{ github.sha }}
+          name: ios-build-diagnostics-${{ github.sha }}
           path: |
             ios/artifacts/
             ios/*-build.log

@@ -133,7 +133,7 @@ Pick whichever fits what you've got:
 | An Android phone on Android 11 or newer | [The Android app](#android-app) |
 | An older Android phone, or you like a terminal | [Termux](#android-with-termux) |
 | Windows, macOS or Linux | [A computer install](#on-a-computer) |
-| An iPhone on iOS 17 or newer, and you're fine with sideloading | [The iPhone app](#iphone-app) (early test builds) |
+| An iPhone on iOS 17 or newer, and you're fine with sideloading | [The iPhone app](#iphone-app) |
 | Any other iPhone, or you'd rather keep your chats on a computer | A computer install, then [open it on your phone](#opening-it-on-your-phone) |
 
 Whichever you pick, you still need a model to talk to: an API key from a provider, or a local backend like KoboldCpp or Ollama.
@@ -146,10 +146,10 @@ Everything runs on the phone, so there's no Termux or computer involved. Leave a
 
 ### iPhone app
 
-There's a standalone iPhone app now too. Same idea as the Android one: the server, your chats and your settings all live on the phone, so you don't need a computer running Neconyan. It's still early, so it isn't on the releases page or the App Store yet.
+There's a standalone iPhone app now too. Same idea as the Android one: the server, your chats and your settings all live on the phone, so you don't need a computer running Neconyan. It isn't on the App Store, so you sideload it yourself.
 
-1. Sign in to GitHub, open a successful run of the [Standalone iOS workflow](https://github.com/platberlitz/Neconyan/actions/workflows/ios-build.yml) and download the `neconyan-ios-...` file under **Artifacts**. GitHub only lets signed-in accounts download these, and old ones expire after a while.
-2. Unzip it and pick `Neconyan-unsigned.ipa` in a sideloading tool like [iloader](https://github.com/nab138/iloader). The tool signs it with your Apple account and installs it. You'll need iOS 17 or newer.
+1. Download the file ending in `-ios-unsigned.ipa` from the [latest release](https://github.com/platberlitz/Neconyan/releases/latest).
+2. Pick it in a sideloading tool like [iloader](https://github.com/nab138/iloader). The tool signs it with your Apple account and installs it. You'll need iOS 17 or newer.
 3. Open Neconyan and connect a model from **Connections**, same as everywhere else.
 
 A free Apple account has to re-sign the app every seven days and only lets you sideload three apps. To update, install the new IPA over the old one with the same Apple account, and your chats stay put. Deleting the app deletes your chats with it, so export an account backup first if you're switching sideloading tools.
