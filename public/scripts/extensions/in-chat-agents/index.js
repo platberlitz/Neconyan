@@ -1181,6 +1181,9 @@ function updateCancelGenerationButton() {
     $('#ica--cancelGeneration').toggle(isAgentGenerationActive());
 }
 
+// A server reply running its Companions shares this stop; the stop function comes from the page's job controls.
+let backgroundReplyStop = null;
+
 function ensureComposerCancelButton() {
     if (document.getElementById('ica--cancel-agents')) {
         return;
@@ -1198,11 +1201,12 @@ function ensureComposerCancelButton() {
     button.hidden = true;
     button.innerHTML = '<i class="fa-solid fa-circle-stop" aria-hidden="true"></i>';
     button.addEventListener('click', () => {
-        if (!isAgentGenerationActive()) {
+        if (isAgentGenerationActive()) {
+            cancelAgentGeneration();
+            refreshGenerationUi();
             return;
         }
-        cancelAgentGeneration();
-        refreshGenerationUi();
+        backgroundReplyStop?.();
     });
     rightForm.prepend(button);
 }
@@ -1211,7 +1215,7 @@ function updateAgentGenerationSendControls(active = isAgentGenerationActive(), {
     ensureComposerCancelButton();
     const cancelButton = document.getElementById('ica--cancel-agents');
     if (cancelButton instanceof HTMLElement) {
-        cancelButton.hidden = !active;
+        cancelButton.hidden = !active && !backgroundReplyStop;
     }
     if (active) {
         // Agent passes run in the background: keep the composer usable so the next message can
@@ -7236,6 +7240,15 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
     }
 
     onAgentGenerationStateChanged(refreshGenerationUi);
+    document.addEventListener('neconyan:roleplay-job-controls', event => {
+        const stop = event.detail?.background ? event.detail.stop : null;
+        backgroundReplyStop = typeof stop === 'function' ? stop : null;
+        ensureComposerCancelButton();
+        const cancelButton = document.getElementById('ica--cancel-agents');
+        if (cancelButton instanceof HTMLElement) {
+            cancelButton.hidden = !isAgentGenerationActive() && !backgroundReplyStop;
+        }
+    });
     $(document).on('click', '#mes_stop', () => {
         if (!isAgentGenerationActive()) {
             return;

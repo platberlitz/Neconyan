@@ -68,6 +68,55 @@ describe('in-chat agents generation UI wiring', () => {
         expect(runtime.activations).toBe(1);
     });
 
+    test('a server reply running Companions shows the Agents stop and routes it to the reply cancel', () => {
+        class FakeElement {
+            hidden = false;
+            listeners = {};
+            addEventListener(type, listener) { this.listeners[type] = listener; }
+            setAttribute() {}
+        }
+        const elements = {};
+        const rightForm = Object.assign(new FakeElement(), { prepend(button) { elements[button.id] = button; } });
+        const runtime = vm.createContext({
+            is_send_press: true,
+            is_group_generating: false,
+            agentActive: false,
+            agentCancels: 0,
+            backgroundReplyStop: null,
+            HTMLElement: FakeElement,
+            document: {
+                getElementById: id => id === 'rightSendForm' ? rightForm : elements[id] ?? null,
+                createElement: () => new FakeElement(),
+            },
+            t: strings => strings.join(''),
+            activateSendButtons: () => {},
+            refreshGenerationUi: () => {},
+        });
+        runtime.isAgentGenerationActive = () => runtime.agentActive;
+        runtime.cancelAgentGeneration = () => { runtime.agentCancels++; };
+        vm.runInContext(`${getFunctionSource('ensureComposerCancelButton')}\n${getFunctionSource('updateAgentGenerationSendControls')}`, runtime);
+
+        runtime.updateAgentGenerationSendControls(false);
+        const button = elements['ica--cancel-agents'];
+        expect(button.hidden).toBe(true);
+
+        let replyCancels = 0;
+        runtime.backgroundReplyStop = () => { replyCancels++; };
+        runtime.updateAgentGenerationSendControls(false);
+        expect(button.hidden).toBe(false);
+        button.listeners.click();
+        expect(replyCancels).toBe(1);
+        expect(runtime.agentCancels).toBe(0);
+
+        runtime.agentActive = true;
+        button.listeners.click();
+        expect(runtime.agentCancels).toBe(1);
+        expect(replyCancels).toBe(1);
+
+        expect(indexSource).toContain('document.addEventListener(\'neconyan:roleplay-job-controls\'');
+        expect(coreScriptSource).toContain('new CustomEvent(\'neconyan:roleplay-job-controls\'');
+    });
+
     test('subscribes agent state changes and routes send-bar stop clicks to agent cancel', () => {
         expect(indexSource).toContain('onAgentGenerationStateChanged(refreshGenerationUi);');
         expect(indexSource).toContain('$(document).on(\'click\', \'#mes_stop\'');
