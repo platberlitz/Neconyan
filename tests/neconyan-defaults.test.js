@@ -77,6 +77,7 @@ function createPaletteRuntime(powerUserOverrides = {}, useDarkTheme = true, cont
     const context = vm.createContext({
         accessibleTheme: contrastTheme,
         applyGoogleFont: () => undefined,
+        applyGoogleFonts: () => undefined,
         power_user: powerUser,
         themes: [{ name: calicoTheme.name, main_text_color: 'user-edited value' }, calicoDarkTheme],
         NECONYAN_THEME_NAME: calicoTheme.name,
@@ -393,7 +394,11 @@ describe('Meower prompt defaults', () => {
         expect(index).toContain('webfonts/FredokaOne/stylesheet.css?v=20260913g');
         expect(index).toContain('webfonts/FredokaOne/FredokaOne-Regular.ttf?v=20260913g');
         expect((index.match(/webfonts\/FredokaOne\/FredokaOne-Regular\.ttf/g) || [])).toHaveLength(1);
-        expect(index).toContain('Default (Nunito + Fredoka One)');
+        expect(index).toContain('Default (Nunito)</option>');
+        expect(index).toContain('Default (Fredoka One)</option>');
+        expect(index).toContain('Default (same as body text)</option>');
+        expect(index).toContain('Default (Noto Sans Mono)</option>');
+        expect(neconyanCss).toContain(':root[style*=\'--sb-font-chat\'] body.neconyan:not(.sbterm) :is(#chat .mes .mes_block .mes_text, .sb-conversation-message-text) { font-family: var(--sb-font-chat); }');
         expect(index).toContain('<option value="Nunito">Nunito</option>');
         expect(index).toContain('<option value="Fredoka One">Fredoka One</option>');
         expect(login).toContain('webfonts/FredokaOne/stylesheet.css?v=20260913g');
@@ -415,6 +420,9 @@ describe('Meower prompt defaults', () => {
         expect(powerUserSource).toContain('Nunito: \'/webfonts/Nunito/stylesheet.css?v=20260913g\'');
         expect(powerUserSource).toContain('Figtree: \'/webfonts/Figtree/stylesheet.css?v=20260422b\'');
         expect(powerUserSource).toContain('google_font: \'\',');
+        for (const role of ['heading', 'chat', 'mono']) {
+            expect(powerUserSource).toContain(`google_font_${role}: '',`);
+        }
         expect(fredoka).toContain('font-family: \'Fredoka One\';');
         expect(fredoka).toContain('font-style: normal;');
         expect(fredoka).toContain('font-weight: 400;');

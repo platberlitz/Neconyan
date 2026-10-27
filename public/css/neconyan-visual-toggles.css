@@ -299,3 +299,21 @@ body.reduced-motion :is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-row > i
 body.reduced-motion :is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-action {
     transition: none;
 }
+
+/* Google Font (Settings > Appearance): one labelled picker per part of the app. */
+#google_font_roles {
+    gap: 12px;
+}
+
+#google_font_roles .sb-google-font-role > .flex-container {
+    flex-wrap: nowrap;
+}
+
+#google_font_roles .sb-google-font-role-label {
+    flex: 0 0 7.5rem;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+}
+
+#google_font_roles .sb-google-font-custom-row {
+    padding-inline-start: calc(7.5rem + 5px);
+}
