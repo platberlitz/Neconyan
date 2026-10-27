@@ -2988,10 +2988,11 @@ export function addLongPressEvent(selector, callback, delay = 500) {
         fired = false;
         timer = setTimeout(() => {
             fired = true;
-            event.preventDefault();
             callback.call(el, event);
         }, delay);
-    }, { passive: false });
+        // Passive: the hold fires after the event has finished, so it could never cancel it, and a
+        // blocking page-wide touchstart makes every scroll wait for the main thread.
+    }, { passive: true });
 
     document.addEventListener('touchend', cancelTimer);
     document.addEventListener('touchmove', cancelTimer);

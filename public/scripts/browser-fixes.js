@@ -402,12 +402,14 @@ function applyBrowserFixes() {
         // in the viewport meta for pinch-zoom. Intercept multi-touch events at the
         // touch level and preventDefault to block the browser's zoom gesture before
         // it can change visualViewport.scale and drift the app layout.
+        // A pinch needs movement, so only touchmove is cancelled. Cancelling touchstart also
+        // cancels the tap, and a touch point the browser never released (no touchcancel after a
+        // system gesture) would then make every later tap count as two fingers and do nothing.
         const blockMultiTouchZoom = (event) => {
             if (event.touches.length > 1) {
                 event.preventDefault();
             }
         };
-        document.addEventListener('touchstart', blockMultiTouchZoom, { passive: false });
         document.addEventListener('touchstart', captureDocumentPanStart, { passive: true, capture: true });
         document.addEventListener('touchmove', blockMultiTouchZoom, { passive: false });
         document.addEventListener('touchmove', blockDocumentPanFromShellGaps, { passive: false, capture: true });
