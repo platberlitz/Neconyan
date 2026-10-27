@@ -26,8 +26,7 @@ function getOtherCompanions(agent) {
         .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function isLinked(config, field, candidate) {
-    const ids = new Set(config[field] ?? []);
+function isLinked(ids, candidate) {
     return getCompanionReferenceIds(candidate).some(id => ids.has(id));
 }
 
@@ -35,7 +34,8 @@ function isLinked(config, field, candidate) {
 export function describeCompanionLinks(agent, companions = getOtherCompanions(agent)) {
     const config = getCompanionConfig(agent);
     const parts = COMPANION_QUICK_LINKS.map(({ field, title }) => {
-        const linked = companions.filter(candidate => isLinked(config, field, candidate));
+        const ids = new Set(config[field] ?? []);
+        const linked = companions.filter(candidate => isLinked(ids, candidate));
         if (!linked.length) return '';
         return `${title} ${linked.length === 1 ? linked[0].name : linked.length}`;
     }).filter(Boolean);
@@ -81,6 +81,37 @@ export function applyCompanionQuickChange(agent, change) {
 }
 
 /**
+ * Checkbox groups inside the Connections panel. Every companion lists every other companion three
+ * times, so a closed panel leaves them out and {@link bindCompanionQuickControls} fills them in when
+ * it opens.
+ */
+export function buildCompanionQuickGroupsHtml(agent, companions = getOtherCompanions(agent)) {
+    if (!companions.length) return '<p class="ica--companion-quick-help">Make another agent a companion to connect them.</p>';
+    const config = getCompanionConfig(agent);
+    return COMPANION_QUICK_LINKS.map(({ field, title, help }) => {
+        const ids = new Set(config[field] ?? []);
+        return `
+            <fieldset class="ica--companion-quick-group">
+                <legend>${title}</legend>
+                <p class="ica--companion-quick-help">${help}</p>
+                <div class="ica--companion-quick-options">
+                    ${companions.map(candidate => `<label class="checkbox_label"><input type="checkbox" data-quick-link="${field}" data-candidate-id="${escapeHtml(candidate.id)}"${isLinked(ids, candidate) ? ' checked' : ''}><span>${escapeHtml(candidate.name)}</span></label>`).join('')}
+                </div>
+            </fieldset>`;
+    }).join('');
+}
+
+function fillCompanionQuickGroups(details) {
+    const groups = details?.querySelector(':scope > .ica--companion-quick-groups[data-quick-groups-pending]');
+    if (!groups) return;
+    const agentId = details.closest('[data-companion-quick]')?.getAttribute('data-companion-quick');
+    const agent = getAgents().find(item => item.id === agentId);
+    if (!agent) return;
+    groups.innerHTML = buildCompanionQuickGroupsHtml(agent);
+    groups.removeAttribute('data-quick-groups-pending');
+}
+
+/**
  * Keep-in-history switch, notes count and inline connections for one companion.
  * Callers bind the controls with {@link readCompanionQuickChange}.
  */
@@ -91,16 +122,10 @@ export function buildCompanionQuickControlsHtml(agent, { scope = 'card' } = {}) 
     const id = escapeHtml(agent.id);
     const name = escapeHtml(agent.name);
     const depth = config.includeAllChatHistory ? '' : String(config.chatHistoryDepth);
-    const groups = companions.length
-        ? COMPANION_QUICK_LINKS.map(({ field, title, help }) => `
-            <fieldset class="ica--companion-quick-group">
-                <legend>${title}</legend>
-                <p class="ica--companion-quick-help">${help}</p>
-                <div class="ica--companion-quick-options">
-                    ${companions.map(candidate => `<label class="checkbox_label"><input type="checkbox" data-quick-link="${field}" data-candidate-id="${escapeHtml(candidate.id)}"${isLinked(config, field, candidate) ? ' checked' : ''}><span>${escapeHtml(candidate.name)}</span></label>`).join('')}
-                </div>
-            </fieldset>`).join('')
-        : '<p class="ica--companion-quick-help">Make another agent a companion to connect them.</p>';
+    const open = isCompanionLinksOpen(scope, agent.id);
+    const groups = open
+        ? `<div class="ica--companion-quick-groups">${buildCompanionQuickGroupsHtml(agent, companions)}</div>`
+        : '<div class="ica--companion-quick-groups" data-quick-groups-pending></div>';
     return `
         <div class="ica--companion-quick" data-companion-quick="${id}">
             <div class="ica--companion-quick-history">
@@ -113,9 +138,9 @@ export function buildCompanionQuickControlsHtml(agent, { scope = 'card' } = {}) 
                     <span>notes</span>
                 </label>
             </div>
-            <details class="ica--companion-quick-links"${isCompanionLinksOpen(scope, agent.id) ? ' open' : ''}>
+            <details class="ica--companion-quick-links"${open ? ' open' : ''}>
                 <summary><i class="fa-solid fa-link" aria-hidden="true"></i><span>Connections</span><small>${escapeHtml(describeCompanionLinks(agent, companions))}</small></summary>
-                <div class="ica--companion-quick-groups">${groups}</div>
+                ${groups}
                 ${companions.length ? '<button type="button" class="menu_button ica--companion-quick-more" data-quick-more>More connection options</button>' : ''}
             </details>
         </div>`;
@@ -160,6 +185,12 @@ export function bindCompanionQuickControls(root, { scope, save, openMore, getRoo
         if (!(details instanceof HTMLDetailsElement) || !details.matches('.ica--companion-quick-links')) return;
         const agentId = details.closest('[data-companion-quick]')?.getAttribute('data-companion-quick');
         if (agentId) setCompanionLinksOpen(scope, agentId, details.open);
+        if (details.open) fillCompanionQuickGroups(details);
+    }, true);
+    // Fill the groups before the summary opens the panel, so it never paints empty.
+    root.addEventListener('click', event => {
+        const summary = event.target instanceof Element ? event.target.closest('.ica--companion-quick-links > summary') : null;
+        if (summary) fillCompanionQuickGroups(summary.parentElement);
     }, true);
     root.addEventListener('click', async event => {
         const button = event.target instanceof Element ? event.target.closest('[data-quick-more]') : null;
