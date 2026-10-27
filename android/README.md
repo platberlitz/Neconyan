@@ -9,7 +9,7 @@ No model weights, API keys or credits are included.
 
 ## Install and use
 
-Install the signed `Neconyan-1.0.0-android-arm64.apk` from the official release on
+Install the signed APK ending in `-android-arm64.apk` from the latest release on
 an Android 11 or newer phone with a 64-bit ARM processor. Android asks you to allow
 installation from the app opening the APK. The x86_64 download is for compatible
 devices and emulators. Allow about 2 GiB of free storage for installation and data.
