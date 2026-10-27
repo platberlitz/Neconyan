@@ -71,6 +71,9 @@ function dialog() {
     return element;
 }
 
+const SLOW_LOADING_ESCAPE_MS = 8000;
+let slowLoadingTimer = 0;
+
 function showRouteState(kind, { transient = false, link = '', home = false } = {}) {
     const element = dialog();
     const copying = kind === 'copy';
@@ -83,6 +86,15 @@ function showRouteState(kind, { transient = false, link = '', home = false } = {
                 : 'This link is invalid, unavailable, or its mode is disabled. Go to Home to choose another chat.';
     element.querySelector('[data-route-retry]').hidden = copying || loading || !transient;
     element.querySelector('[data-route-home]').hidden = copying || loading;
+    clearTimeout(slowLoadingTimer);
+    if (loading && !home) {
+        // A request can take up to 30 seconds; never leave a modal without a way out that long.
+        slowLoadingTimer = setTimeout(() => {
+            if (element.open && element.querySelector('[data-route-retry]').hidden && element.querySelector('[data-route-close]').hidden) {
+                element.querySelector('[data-route-home]').hidden = false;
+            }
+        }, SLOW_LOADING_ESCAPE_MS);
+    }
     element.querySelector('[data-route-close]').hidden = !copying;
     const input = element.querySelector('[data-route-link]');
     input.hidden = !copying;
@@ -270,7 +282,16 @@ async function observeForeground({ reason = 'foreground', track = true, homeRequ
     // different selection; persona, group, branch and lifetime still must match.
     const selectionKey = value => JSON.stringify({ ...value, ...(value.expectedBranch ? { expectedBranch: { ...value.expectedBranch, navigationId: null } } : {}) });
     if (ticket !== observationTicket || routing || !currentAccount()
-        || selectionKey(captured) !== selectionKey(captureVisibleTarget())) return;
+        || selectionKey(captured) !== selectionKey(captureVisibleTarget())) {
+        // A save that finished meanwhile can change the selection key without any event that
+        // observes again, so this ticket has to release its buttonless loading dialog itself.
+        if (preparingForeground === ticket && ticket === observationTicket && !routing) {
+            preparingForeground = 0;
+            dialog().close();
+            setChatNavigationBlocked(false);
+        }
+        return;
+    }
     const changed = !sameChatDestination(visible, destination);
     visible = destination;
     preparedLink = destination.kind === 'chat' ? chatNavigationUrl(location.href, destination, { minimal: true }).href : '';
