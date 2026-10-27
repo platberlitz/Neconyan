@@ -17,7 +17,8 @@ export function companionMessageTokens(message) {
 
 export function companionEnvironment(options, agent, message = options.messages.at(-1)) {
     const environment = createMacroEnvironment(options.macros, {}, { readOnly: true });
-    environment.names.char = clean(message?.name) || options.assistantName || environment.names.char;
+    // Speaker overrides belong to this prompt, not the immutable accepted job.
+    environment.names = { ...environment.names, char: clean(message?.name) || options.assistantName || environment.names.char };
     const text = clean(message?.mes);
     for (const name of ['currentMessage', 'lastMessage', 'latestMessage', 'response', 'currentResponse', 'latestResponse', 'assistantMessage']) {
         environment.dynamicMacros[name.toLowerCase()] = text;

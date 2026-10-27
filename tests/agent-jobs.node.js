@@ -238,6 +238,29 @@ test('manual Agent undo and redo keep the history chain and reconcile tracker st
     assert.equal(saved[2].swipes[1], 'Other');
 });
 
+for (const index of [0, 1]) {
+    test(`a manual Companion retry on a ${index ? 'renamed assistant' : 'user'} message preserves its accepted input`, async t => {
+        const f = prepared(t, [{ id: 'side', enabled: true, category: 'companion', prompt: 'SIDE {{char}}' }], records => {
+            records[2].name = 'Earlier Nova';
+            records[index + 1].extra.inChatAgentCompanionResults = { side: { status: 'error', content: '', error: 'Companion returned no output.' } };
+        });
+        const operation = f.action('companions', ['side'], index);
+        const context = operation.context();
+        const accepted = structuredClone(context.job.intent);
+        let calls = 0;
+        const result = await runAgentJob(context, { generate: paid(({ messages }) => {
+            calls++;
+            assert.match(JSON.stringify(messages), new RegExp(`SIDE ${index ? 'Earlier Nova' : 'User'}`));
+            return { text: 'A refreshed note' };
+        }) });
+        assert.deepEqual(context.job.intent, accepted);
+        assert.equal(f.saved()[index + 1].extra.inChatAgentCompanionResults.side.content, 'A refreshed note');
+        assert.equal(f.saved()[index + 1].extra.inChatAgentCompanionResults.side.status, 'done');
+        assert.deepEqual(await runAgentJob(context, { generate: () => assert.fail('completed retries must not repeat paid work') }), result);
+        assert.equal(calls, 1);
+    });
+}
+
 test('a manually selected hidden companion can repair its note on a user message without paying or erasing other notes', async t => {
     const f = prepared(t, [{ id: 'side', enabled: false, category: 'tracker', execution: 'companion', prompt: 'SIDE TRACKER',
         postProcess: { enabled: true, type: 'extract', extractVariable: 'side', extractPattern: '\\[SIDE\\]([\\s\\S]*?)\\[/SIDE\\]' } }], records => {
