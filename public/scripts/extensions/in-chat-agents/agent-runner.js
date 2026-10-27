@@ -5138,6 +5138,13 @@ async function onMessageReceived(messageIndex, generationType, generationContext
         return;
     }
 
+    // The host awaits this listener before it unlocks Send, so a pass started
+    // while it still holds the send must run from the queue, not inline.
+    if (document.body?.dataset?.generating === 'true') {
+        deferPostProcessing(numericMessageIndex, generationType, activationSnapshot);
+        return;
+    }
+
     clearDeferredPostProcessing(numericMessageIndex);
 
     await processReceivedMessage(numericMessageIndex, generationType, activationSnapshot);
