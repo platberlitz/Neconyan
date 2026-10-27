@@ -41,6 +41,18 @@ describe('opening a chat skips work for panels that are not on screen', () => {
         expect(functionBody(regexThemesUiJs, 'export function removeSettings(')).toContain('viewVisibilityObserver?.disconnect();');
     });
 
+    test('the Regex Agent Themes panel draws only the sections that are open', () => {
+        const render = functionBody(regexThemesUiJs, 'async function renderView(');
+        expect(render).toMatch(/if \(!onlyStale\) {\s*view\.staleSections = new Set\(SECTION_KEYS\);\s*}\s*const settings/);
+        expect(render).toContain('SECTION_KEYS.filter(key => sectionShown(key) && view.staleSections.has(key))');
+        expect(functionBody(regexThemesUiJs, 'function sectionShown(')).toContain('rootDrawerOpen && Boolean(sectionOpen[key])');
+        expect(functionBody(regexThemesUiJs, 'function renderStaleSections(')).toContain('renderView({ interaction: null, onlyStale: true })');
+        const create = functionBody(regexThemesUiJs, 'function createView(');
+        expect(create).toContain('rootDrawerOpen = open;');
+        expect(create).toContain('renderStaleSections();');
+        expect(functionBody(regexThemesUiJs, 'function makeSection(')).toContain('renderStaleSections();');
+    });
+
     test('fix-tracker buttons change display without reading computed styles', () => {
         const update = functionBody(agentsJs, 'function updateFixTrackersButtonVisibility(');
         expect(update).not.toContain('.toggle(');
