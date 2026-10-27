@@ -37,8 +37,31 @@ function deferred() {
     return { promise, resolve, reject };
 }
 
-function createHost() {
+class FakeElement {
+    hidden = false;
+    attributes = {};
+    setAttribute(name, value) { this.attributes[name] = String(value); }
+    removeAttribute(name) { delete this.attributes[name]; }
+}
+
+function createHost({ agentsExtension = false } = {}) {
     const events = new EventEmitter();
+    const elements = { send_but: new FakeElement() };
+    const agentsStop = { press: () => {} };
+    if (agentsExtension) {
+        // Mirrors the Agents extension: a background reply shows its stop and borrows the reply's cancel.
+        elements['ica--cancel-agents'] = Object.assign(new FakeElement(), { hidden: true });
+    }
+    const document = {
+        body: { dataset: {} },
+        getElementById: id => elements[id] ?? null,
+        dispatchEvent(event) {
+            if (event.type !== 'neconyan:roleplay-job-controls' || !elements['ica--cancel-agents']) return;
+            const stop = event.detail.background ? event.detail.stop : null;
+            agentsStop.press = () => stop?.();
+            elements['ica--cancel-agents'].hidden = typeof stop !== 'function';
+        },
+    };
     const context = vm.createContext({
         ...generationOutcome,
         isChatNavigationBlocked, isSlashCommandText,
@@ -72,8 +95,11 @@ function createHost() {
         itemizedPrompts: [], openai_messages_count: 0, kobold_horde_model: '',
         internalPromptTransformDepth: 0, isGenerationInProgress: false, pathfinderRetrievalRun: null,
         injectPathfinderRetrieval,
-        document: { body: { dataset: {} } },
+        document,
         Event: class {},
+        CustomEvent: class { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } },
+        HTMLElement: FakeElement,
+        swipeState: 'none', SWIPE_STATE: { NONE: 'none', EDITING: 'editing' },
         unshallowCharacter: jest.fn(async () => {}), processCommands: jest.fn(async () => false),
         getBiasStrings: () => ({ messageBias: '', promptBias: '', isUserPromptBias: false }),
         hasPendingFileAttachment: () => false, shouldBatchMobileChatRendering: () => false,
@@ -103,13 +129,17 @@ function createHost() {
         saveReply: jest.fn(async data => data), saveChatConditional: jest.fn(async () => {}),
         TempResponseLength: { isCustomized: () => false }, removeReasoningFromString: text => text,
         t: (strings, ...values) => String.raw({ raw: strings }, ...values),
-        toastr: { error: jest.fn(), warning: jest.fn() },
+        toastr: { error: jest.fn(), warning: jest.fn(), info: jest.fn() },
     });
-    const buttons = { visible: false, generatingClass: false };
+    const buttons = { visible: false, generatingClass: false, background: false };
     const input = { value: '', val(value) { if (arguments.length) { input.value = value; return input; } return input.value; }, 0: { dispatchEvent() {} } };
     context.$ = selector => ({
         '#send_textarea': input,
-        '#send_form': { addClass() { buttons.generatingClass = true; }, removeClass() { buttons.generatingClass = false; } },
+        '#send_form': {
+            addClass() { buttons.generatingClass = true; },
+            removeClass() { buttons.generatingClass = false; },
+            toggleClass(name, on) { if (name === 'sb-roleplay-background') buttons.background = Boolean(on); },
+        },
         '#mes_stop': { css(value) {
             if (typeof value === 'string') return buttons.generatingClass && buttons.visible ? 'flex' : 'none';
             buttons.visible = value.display !== 'none';
@@ -126,7 +156,7 @@ function createHost() {
     context.setExtensionPrompt = jest.fn((key, value) => { context.extension_prompts[key] = { value }; });
     context.getExtensionPrompt = async () => context.extension_prompts.pathfinder_pipeline_retrieval?.value ?? '';
     context.prepareOpenAIMessages = jest.fn(async data => [[{ role: 'system', content: data.extensionPrompts.pathfinder_pipeline_retrieval?.value ?? '' }], false]);
-    const scriptFunctions = ['setAgentGenerationContextProvider', 'Generate', 'sendTextareaMessage', 'buildRecoveryContext', 'generateQuietPrompt', 'showStopButton', 'hideStopButton', 'activateSendButtons', 'deactivateSendButtons', 'stopGeneration', 'setRoleplayJobControls', 'unblockGeneration', 'getNextMessageId'];
+    const scriptFunctions = ['setAgentGenerationContextProvider', 'Generate', 'sendTextareaMessage', 'buildRecoveryContext', 'generateQuietPrompt', 'showStopButton', 'hideStopButton', 'activateSendButtons', 'deactivateSendButtons', 'stopGeneration', 'isRoleplayJobInBackground', 'syncRoleplayBackgroundControls', 'setRoleplayJobControls', 'unblockGeneration', 'getNextMessageId'];
     vm.runInContext(scriptFunctions.map(name => functionSource(scriptSource, name)).join('\n'), context);
     vm.runInContext(functionSource(worldSource, 'getWorldInfoPrompt'), context);
     vm.runInContext(functionSource(runnerSource, 'onWorldInfoActivated'), context);
@@ -153,7 +183,7 @@ function createHost() {
     events.on(event_types.GENERATION_STOPPED, () => { context.cancelRevision++; context.isGenerationInProgress = false; });
     events.on(event_types.GENERATION_ENDED, () => { context.isGenerationInProgress = false; });
     const emitted = jest.spyOn(events, 'emit');
-    return { context, events, emitted, buttons, input, generate: (type = 'normal', options = {}, dryRun = false) => context.Generate(type, { suppressUserMessage: true, ...options }, dryRun) };
+    return { context, events, emitted, buttons, input, elements, agentsStop, generate: (type = 'normal', options = {}, dryRun = false) => context.Generate(type, { suppressUserMessage: true, ...options }, dryRun) };
 }
 
 afterEach(() => jest.restoreAllMocks());
@@ -178,6 +208,48 @@ describe('Pathfinder integration with the real extracted host generation flow', 
         expect(host.context.is_send_press).toBe(false);
         expect(host.buttons.visible).toBe(false);
         expect(host.emitted).not.toHaveBeenCalled();
+    });
+
+    test('a server reply running Companions swaps Stop for the Agents stop and keeps Send locked until it settles', async () => {
+        const host = createHost({ agentsExtension: true });
+        const cancel = jest.fn();
+        host.context.setRoleplayJobControls('companion-reply', cancel);
+        expect(host.buttons.visible).toBe(true);
+        expect(host.elements['ica--cancel-agents'].hidden).toBe(true);
+
+        host.context.setRoleplayJobControls('companion-reply', cancel, { background: true });
+        expect(host.buttons.visible).toBe(false);
+        expect(host.buttons.background).toBe(true);
+        expect(host.elements['ica--cancel-agents'].hidden).toBe(false);
+        expect(host.elements.send_but.attributes['aria-disabled']).toBe('true');
+        expect(host.context.is_send_press).toBe(true);
+
+        host.input.value = 'The next turn';
+        await host.context.sendTextareaMessage();
+        await host.generate('normal', { suppressUserMessage: false });
+        expect(host.context.toastr.info).toHaveBeenCalledTimes(1);
+        expect(host.context.sendGenerationRequest).not.toHaveBeenCalled();
+
+        host.agentsStop.press();
+        expect(cancel).toHaveBeenCalledTimes(1);
+
+        host.context.setRoleplayJobControls(null);
+        expect(host.context.is_send_press).toBe(false);
+        expect(host.buttons.background).toBe(false);
+        expect(host.elements['ica--cancel-agents'].hidden).toBe(true);
+        expect(host.elements.send_but.attributes['aria-disabled']).toBeUndefined();
+        expect(host.emitted).not.toHaveBeenCalled();
+    });
+
+    test('a background server reply keeps the full Stop when the Agents extension is absent', () => {
+        const host = createHost();
+        const cancel = jest.fn();
+        host.context.setRoleplayJobControls('companion-reply', cancel, { background: true });
+        expect(host.buttons.visible).toBe(true);
+        expect(host.buttons.background).toBe(false);
+        expect(host.elements.send_but.attributes['aria-disabled']).toBeUndefined();
+        expect(host.context.stopGeneration()).toBe(true);
+        expect(cancel).toHaveBeenCalledTimes(1);
     });
 
     test('tags the actual native scan and removes only its activated entries before prompt assembly', async () => {

@@ -5057,6 +5057,10 @@ export async function sendTextareaMessage() {
         return;
     }
     if (swipeState !== SWIPE_STATE.NONE) return; // don't proceed if mid-swipe.
+    if (isRoleplayJobInBackground()) {
+        toastr.info(t`Send unlocks once the Companions have saved their notes.`, '', { preventDuplicates: true });
+        return;
+    }
     if (isGenerating()) return;
 
     hideSwipeButtons(); //Swipe buttons must be hidden now, otherwise concurrent generations are possible.
@@ -12613,7 +12617,10 @@ export function deactivateSendButtons({ markBodyGenerating = true } = {}) {
     // A new generation starts only from idle; repeated locks keep the same start.
     if (!is_send_press && markBodyGenerating) chatSendStartRevision += 1;
     const lockState = resolveGenerationUiLockState({ isGenerating: true, markBodyGenerating });
-    if (lockState.shouldShowStopButton) {
+    const backgroundStop = activeRoleplayJob ? syncRoleplayBackgroundControls() : false;
+    if (backgroundStop) {
+        hideStopButton({ emitGenerationEnded: false });
+    } else if (lockState.shouldShowStopButton) {
         showStopButton();
     }
     if (lockState.shouldHideSwipeButtons) {
@@ -12626,10 +12633,34 @@ export function deactivateSendButtons({ markBodyGenerating = true } = {}) {
     }
 }
 
+/**
+ * Whether the current server reply runs Companions in the background: the reply is
+ * shown, so the Agents stop replaces Stop, while Send stays locked until it is saved.
+ */
+function isRoleplayJobInBackground() {
+    return Boolean(activeRoleplayJob?.background);
+}
+
+function syncRoleplayBackgroundControls() {
+    const background = isRoleplayJobInBackground();
+    // The Agents extension shows its stop for a background job; without it, Stop stays.
+    const stop = background ? activeRoleplayJob.stop : null;
+    document.dispatchEvent(new CustomEvent('neconyan:roleplay-job-controls', { detail: { background, stop } }));
+    const agentsStop = document.getElementById('ica--cancel-agents');
+    const swapped = background && agentsStop instanceof HTMLElement && !agentsStop.hidden;
+    $('#send_form').toggleClass('sb-roleplay-background', swapped);
+    const send = document.getElementById('send_but');
+    if (send) {
+        if (swapped) send.setAttribute('aria-disabled', 'true');
+        else send.removeAttribute('aria-disabled');
+    }
+    return swapped;
+}
+
 /** Reopened server replies own the same Send/Stop controls until saved readback. */
-export function setRoleplayJobControls(jobId, stop = null) {
+export function setRoleplayJobControls(jobId, stop = null, { background = false } = {}) {
     const previous = activeRoleplayJob;
-    activeRoleplayJob = jobId ? { id: jobId, stop } : null;
+    activeRoleplayJob = jobId ? { id: jobId, stop, background: Boolean(background) } : null;
     if (activeRoleplayJob) {
         // A different server job is a new Send even while the old lock is still true.
         if (!previous || previous.id !== activeRoleplayJob.id) chatSendStartRevision += 1;
@@ -12637,6 +12668,7 @@ export function setRoleplayJobControls(jobId, stop = null) {
         deactivateSendButtons();
     } else if (previous) {
         activateSendButtons({ emitGenerationEnded: false });
+        syncRoleplayBackgroundControls();
     }
 }
 

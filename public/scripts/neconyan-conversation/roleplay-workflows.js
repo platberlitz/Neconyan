@@ -51,7 +51,7 @@ function syncJobControls() {
     const entry = [...observed.entries()].find(([, value]) => value.isCurrent());
     setRoleplayJobControls(entry?.[0] ?? null, entry ? () => {
         void cancelJob(entry[0], { account: entry[1].account, reason: 'user_cancelled' }).catch(() => {});
-    } : null);
+    } : null, { background: entry?.[1].stage === 'companions' });
 }
 
 /**
@@ -712,13 +712,19 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
             }
         },
     });
-    observed.set(jobId, { account, stop, onTerminal, isCurrent });
+    const entry = { account, stop, onTerminal, isCurrent, stage: null };
+    observed.set(jobId, entry);
     syncJobControls();
     void import('./roleplay-preview.js').then(({ observeRoleplayPreview }) => {
         if (ended) return;
         stopPreview = observeRoleplayPreview(jobId, { account, name, messageIndex,
             isCurrent,
             onTerminal,
+            // Companions write notes after the reply is shown; their run swaps Stop for the Agents stop.
+            onStage: stage => {
+                entry.stage = stage;
+                if (observed.get(jobId) === entry) syncJobControls();
+            },
         });
     }).catch(() => {});
 }

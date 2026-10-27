@@ -117,6 +117,7 @@ describe('browser image refusal notice', () => {
         SWIPE_STATE: { NONE: 0, EDITING: 1 },
         toastr: { warning: jest.fn() },
         t: tag,
+        isRoleplayJobInBackground: () => false,
         isGenerating: () => false,
         hideSwipeButtons: jest.fn(),
         power_user: { continue_on_send: false },

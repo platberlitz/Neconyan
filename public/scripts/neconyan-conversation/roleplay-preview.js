@@ -45,7 +45,7 @@ function hasUnfinishedReasoning(preview) {
  * `stop.reply()` hands its last text to the observer, which keeps a reply the
  * server stopped or refused to write instead of letting it vanish.
  */
-export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, name, messageIndex }) {
+export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, onStage, name, messageIndex }) {
     let node = null;
     let latest = null;
     let receivedAt = 0;
@@ -60,6 +60,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     const thinkingIndicator = new StreamingThinkingIndicator();
     const diagnosticHandle = {};
     let diagnosticStage = null;
+    let reportedStage = null;
     const diagnostic = phase => { try { globalThis.NeconyanCrashDiagnostics?.observePhase?.(diagnosticHandle, phase); } catch { /* Optional diagnostics. */ } };
     let restoreReplacement = () => {};
     const remove = () => {
@@ -289,6 +290,10 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                                     latest = applied; receivedAt = Date.now();
                                     receivedMonotonic = performance.now();
                                     serverTime = Number.isFinite(value.serverTime) ? value.serverTime : null;
+                                    if (latest.stage !== reportedStage) {
+                                        reportedStage = latest.stage;
+                                        try { onStage?.(reportedStage); } catch { /* The preview keeps drawing. */ }
+                                    }
                                     if (latest.stage !== diagnosticStage && isCurrent()) {
                                         diagnosticStage = latest.stage;
                                         diagnostic(({ preparing: 'preparing', generating: 'generating', agents: 'post-agents', companions: 'companions', review: 'waiting-review', saving: 'saving' })[diagnosticStage] || 'unknown');

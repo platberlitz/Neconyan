@@ -962,7 +962,14 @@ test('chat-open discovery after idempotent init attaches to a running workflow, 
     ]);
     await eventSource.emit(event_types.CHAT_CHANGED);
     await waitFor(() => observers.has('running-on-open'));
-    expect(jobControls).toHaveBeenLastCalledWith('running-on-open', expect.any(Function));
+    expect(jobControls).toHaveBeenLastCalledWith('running-on-open', expect.any(Function), { background: false });
+    // Companions run after the reply is shown, so their stage hands Stop to the Agents stop.
+    previews.get('running-on-open').onStage('agents');
+    expect(jobControls).toHaveBeenLastCalledWith('running-on-open', expect.any(Function), { background: false });
+    previews.get('running-on-open').onStage('companions');
+    expect(jobControls).toHaveBeenLastCalledWith('running-on-open', expect.any(Function), { background: true });
+    previews.get('running-on-open').onStage('saving');
+    expect(jobControls).toHaveBeenLastCalledWith('running-on-open', expect.any(Function), { background: false });
     jobControls.mock.calls.at(-1)[1]();
     expect(cancelJob).toHaveBeenCalledWith('running-on-open', { account: 'alice', reason: 'user_cancelled' });
     expect(listJobs).toHaveBeenCalledTimes(2);
@@ -975,7 +982,7 @@ test('chat-open discovery after idempotent init attaches to a running workflow, 
         await eventSource.emit(event_types.CHAT_CHANGED);
     };
     await observers.get('running-on-open').onStop('done');
-    expect(jobControls).toHaveBeenLastCalledWith(null, null);
+    expect(jobControls).toHaveBeenLastCalledWith(null, null, { background: false });
     expect(reloads).toEqual([2]);
     expect(listJobs).toHaveBeenCalledTimes(2);
 
