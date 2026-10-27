@@ -278,4 +278,6 @@ export const refreshedKnowledgeCases = [
     ['Does automatic persona expression classification cost a request?', 'images.expression-personas', 'each classification is an extra model request'],
     ['Do old Expressions Agent copies classify persona messages?', 'images.expression-personas', 'Older template copies also work'],
     ['Is Interleaved Thinking on by default?', 'generation.tool-reasoning', 'It is off by default'],
+    ['How do I change the heading font separately from body text?', 'appearance.fonts', 'separate picker for Body text, Headings, Chat messages and Code'],
+    ['Can I use a different font for code blocks?', 'appearance.fonts', 'Noto Sans Mono for code'],
 ];
