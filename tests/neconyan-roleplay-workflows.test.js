@@ -301,7 +301,7 @@ describe('a reply the server did not save stays in the chat', () => {
 
     test('a swipe refused because the chat changed keeps the original and adds the reply as a swipe', async () => {
         const changes = await stopWith('roleplay.swipe', 'failed', 'New answer',
-            { code: 'ROLEPLAY_SOURCE_CHANGED', message: 'The Roleplay source changed after this work was prepared.' });
+            { code: 'ROLEPLAY_SOURCE_CHANGED', message: 'The chat was saved by another change (an edit, a new message, or an extension rewriting messages) after this was requested, so it was stopped instead of saving over that change. Try again.' });
         expect(changes).toBe(1);
         expect(chat).toHaveLength(2);
         expect(chat[1]).toMatchObject({ mes: 'New answer', swipes: ['Answer', 'Other', 'New answer'], swipe_id: 2 });

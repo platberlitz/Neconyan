@@ -368,6 +368,8 @@ function checkGroupOwnership(lease, locator, groupId, read) {
     return group;
 }
 
+const SOURCE_CHANGE_OUTCOME = 'so it was stopped instead of saving over that change. Try again.';
+
 /** Recheck the exact pending source without enrolling resources or bypassing normal-read barriers. */
 export function assertPendingRoleplayDependencies(lease) {
     const { state } = roleplayLease(lease);
@@ -380,13 +382,13 @@ export function assertPendingRoleplayDependencies(lease) {
         if (!resource || resource.status !== 'live' || resource.accountId !== state.accountId || resource.dataEpoch !== state.dataEpoch
             || resource.kind !== dependency.kind || resource.revision !== dependency.revision || current.contentHash !== dependency.contentHash
             || !isDeepStrictEqual(resource.locator, dependency.locator) || resource.head.rawHash !== current.file.rawHash
-            || !isDeepStrictEqual(resource.head.physical, current.file.physical)) throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'A pending Roleplay dependency changed.');
+            || !isDeepStrictEqual(resource.head.physical, current.file.physical)) throw roleplayError('ROLEPLAY_SOURCE_CHANGED', `A character card or group this chat uses was saved after this was requested, ${SOURCE_CHANGE_OUTCOME}`);
     }
     if (source.locator.group) {
         const group = checkGroupOwnership(lease, source.locator, source.groupId, (kind, id) => inspectEntity(lease, kind, id));
         const characters = source.dependencies.filter(item => item.kind === 'character').map(item => item.locator.avatar);
         if (!isDeepStrictEqual([...new Set(group.data.members)].sort(), characters.sort())) {
-            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'A pending Roleplay dependency list does not match the saved group members.');
+            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', `The group's members were changed after this was requested, ${SOURCE_CHANGE_OUTCOME}`);
         }
     }
 }
@@ -552,6 +554,36 @@ export function captureRoleplayStorageSource(scope, locator) {
     });
 }
 
+function dependencyName(dependency) {
+    return dependency.kind === 'character'
+        ? String(dependency.locator?.avatar ?? '').replace(/\.[^.]+$/, '')
+        : String(dependency.locator?.groupId ?? '');
+}
+
+/** Name the first difference a person can recognise, most fundamental first. */
+export function describeRoleplaySourceChange(expected, current) {
+    const changed = key => !isDeepStrictEqual(expected?.[key], current?.[key]);
+    const result = (reason, what) => ({ reason, message: `${what} after this was requested, ${SOURCE_CHANGE_OUTCOME}` });
+    if (changed('accountId') || changed('dataEpoch')) return result('account', 'Your saved data was restored or imported');
+    if (changed('instanceId')) return result('chat-replaced', 'The chat was deleted and replaced');
+    if (changed('locator')) return result('chat-moved', 'The chat was renamed or moved');
+    if (changed('groupId')) return result('group', 'The chat was moved to a different group');
+    const before = expected?.dependencies ?? [];
+    const after = current?.dependencies ?? [];
+    const key = item => `${item.kind}:${item.kind === 'character' ? item.locator?.avatar : item.locator?.groupId}`;
+    const afterByKey = new Map(after.map(item => [key(item), item]));
+    const beforeKeys = new Set(before.map(key));
+    if (before.some(item => item.kind === 'group' && !isDeepStrictEqual(item, afterByKey.get(key(item))))
+        || after.some(item => !beforeKeys.has(key(item))) || before.some(item => !afterByKey.has(key(item)))) {
+        return result('group', 'The group\'s settings or members were changed');
+    }
+    const character = before.find(item => !isDeepStrictEqual(item, afterByKey.get(key(item))));
+    if (character) return result('character', `The character card '${dependencyName(character)}' was saved`);
+    if (changed('message')) return result('message', 'The message this was for was edited, swiped or deleted');
+    if (changed('range')) return result('range', 'The messages this was for were edited or deleted');
+    return result('chat-saved', 'The chat was saved by another change (an edit, a new message, or an extension rewriting messages)');
+}
+
 export function assertRoleplaySourceLocked(lease, source, { effect } = {}) {
     if (source?.kind !== undefined && source.kind !== 'storage') throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay source kind.', 400);
     let locator = source.locator;
@@ -570,7 +602,9 @@ export function assertRoleplaySourceLocked(lease, source, { effect } = {}) {
     const expected = effect ? { ...source, locator, ...(effect === 'append' ? {}
         : { revision: captured.source.revision, rawHash: captured.source.rawHash }) } : source;
     if (!isDeepStrictEqual(captured.source, expected)) {
-        const error = roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The Roleplay source changed after this work was prepared.');
+        const { reason, message } = describeRoleplaySourceChange(expected, captured.source);
+        const error = roleplayError('ROLEPLAY_SOURCE_CHANGED', message);
+        error.reason = reason;
         if (source.kind === 'storage' && !captured.changed) {
             const { instanceId, revision, rawHash } = captured.saved;
             error.current = { instanceId, revision, rawHash };
