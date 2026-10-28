@@ -148,7 +148,13 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     await workspace.getByRole('tab', { name: 'Now', exact: true }).click();
     await workspace.getByRole('button', { name: 'Update now', exact: true }).click();
     await expect.poll(async () => (await post('/api/mewmory/inspect', { locator })).health.pending, { timeout: 60000 }).toBe(0);
+    // The status card answers 'is it working?' from every tab, not only from Settings.
+    const overview = workspace.locator('.mewmory-overview');
+    await expect(overview.locator('.mewmory-stat').filter({ hasText: 'Waiting' })).toContainText('0 messages');
+    await expect(overview.getByRole('progressbar', { name: 'Messages remembered' })).toBeVisible();
+    await expect.poll(() => overview.getByRole('progressbar', { name: 'Messages remembered' }).evaluate(bar => bar.value === bar.max)).toBe(true);
     await workspace.getByRole('tab', { name: 'Pawspective', exact: true }).click();
+    await expect(overview).toBeVisible();
     await expect(workspace.getByText('Her objection has softened after learning the purchase date. This does not establish complete trust.', { exact: true })).toBeVisible();
     await expect(workspace.getByText('"I do not need pity." She grips the imaginary armchair.', { exact: true })).toBeVisible();
     await workspace.getByRole('button', { name: 'Message 3 · revision 1', exact: true }).first().click();
@@ -176,6 +182,14 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     await workspace.getByRole('button', { name: 'Search archive', exact: true }).click();
     await expect(workspace.getByText(fixture.lore[0].text, { exact: false })).toBeVisible();
     await expect(workspace.getByText('DISABLED:', { exact: false })).toHaveCount(0);
+    await expect(workspace.locator('.mewmory-tab-hint')).toHaveText('Search everything Mewmory has remembered, plus the original messages. A match here is not necessarily used in a reply.');
+    // Search results come before the stored memory list, so a search answers first.
+    const archiveHeadings = await workspace.locator('#mewmory-pane-archive .mewmory-section h4').allTextContents();
+    expect(archiveHeadings.indexOf('Ranked archive matches')).toBeGreaterThanOrEqual(0);
+    expect(archiveHeadings.indexOf('Ranked archive matches')).toBeLessThan(archiveHeadings.indexOf('Memories'));
+    await workspace.getByRole('button', { name: 'Clear search', exact: true }).click();
+    await expect(workspace.getByRole('heading', { name: 'Ranked archive matches', exact: true })).toHaveCount(0);
+    await expect(workspace.getByLabel('Search memories and original messages')).toHaveValue('');
 
     const touch = await page.context().newCDPSession(page);
     await touch.send('Emulation.setTouchEmulationEnabled', { enabled: true });
