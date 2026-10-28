@@ -1,6 +1,8 @@
 /* global globalThis */
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
+import { buildRegexScriptRefsForAgent, resolveRegexScriptsForSnapshot } from '../public/scripts/extensions/in-chat-agents/regex-snapshot-store.js';
+import { applyRegexScriptList } from '../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 
 const scriptSource = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8');
 const chat = [];
@@ -242,6 +244,27 @@ describe('Roleplay preview rendering', () => {
     async function waitForFirstDraw() {
         await waitFor(() => updateMessageElement.mock.calls.length >= 1);
     }
+
+    test('recovery keeps the accepted display and prompt regex rules without changing the reply text', async () => {
+        const scripts = [
+            { id: 'display', findRegex: '/\\[MOOD\\|([^\\]]+)\\]/g', replaceString: '<em>$1</em>', placement: [2], markdownOnly: true },
+            { id: 'prompt', findRegex: '/\\[MOOD\\|([^\\]]+)\\]/g', replaceString: 'Mood: $1', placement: [2], promptOnly: true },
+        ];
+        const inChatAgents = { activeAgentIds: ['mood'], generationType: 'normal', edited: false,
+            regexScriptRefs: buildRegexScriptRefsForAgent('mood', scripts),
+            nativeRegexScripts: scripts.map(script => ({ agentId: 'mood', script })) };
+        const stop = startPreview();
+        stream.send({ preview: { childId: 'reply', stage: 'generating', text: '[MOOD|Calm] Hello.', inChatAgents } });
+        await waitForFirstDraw();
+        const reply = stop.reply();
+        expect(reply.text).toBe('[MOOD|Calm] Hello.');
+        expect(reply.extra.inChatAgents).toEqual(inChatAgents);
+        const recoveredScripts = resolveRegexScriptsForSnapshot(reply.extra.inChatAgents);
+        expect(applyRegexScriptList(reply.text, recoveredScripts, 2, { isMarkdown: true })).toBe('<em>Calm</em> Hello.');
+        expect(applyRegexScriptList(reply.text, recoveredScripts, 2, { isPrompt: true })).toBe('Mood: Calm Hello.');
+        reply.extra.inChatAgents.nativeRegexScripts[0].script.replaceString = 'Changed after recovery';
+        expect(stop.reply().extra.inChatAgents).toEqual(inChatAgents);
+    });
 
     test.each(['prose', 'reasoning', 'companions'])('waiting clears on %s without saving synthetic reasoning', async end => {
         const stop = startPreview();

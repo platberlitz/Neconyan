@@ -348,6 +348,8 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         const sentAt = startedAt || new Date(latest.updatedAt || Date.now()).toISOString();
         const extra = Object.fromEntries(Object.entries({ reasoning: latest.reasoning || undefined,
             api: latest.generation?.source, model: latest.generation?.model,
+            // Display and prompt regexes need the exact rules accepted for this reply.
+            inChatAgents: latest.inChatAgents ? structuredClone(latest.inChatAgents) : undefined,
             token_count: latest.token_count, reasoning_tokens: latest.reasoning_tokens,
             time_to_first_token: latest.time_to_first_token, reasoning_duration: latest.reasoning_duration })
             .filter(([, value]) => value !== undefined && value !== null));
