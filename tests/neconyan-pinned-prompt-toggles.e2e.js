@@ -241,6 +241,7 @@ test('desktop pins, live switches, reload, collapse, preset isolation, requests 
     await expect.poll(() => app.provider.calls.length, { timeout: 60000 }).toBe(1);
     await page.evaluate(() => window.SillyTavern.getContext().promptManager.handleCharacterUpdated({ detail: { id: 0, character: { name: 'Updated fixture card' } } }));
     await openPrompts(page);
+    await capture(page, 'staging-test-audit/prompts-during-reply-desktop-after.png');
     await promptRow(page, 'pin-b').locator('.prompt-manager-toggle-action').click();
     await expect(promptRow(page, 'pin-b').locator('.prompt-manager-toggle-action')).toHaveAttribute('aria-checked', 'true');
     await expect(dockRow(page, 'pin-b')).toHaveAttribute('aria-checked', 'true');
@@ -285,7 +286,20 @@ test('phone has no dock or space, and a labelled 44px pin does not edit or toggl
     expect(geometry).toEqual({ width: 393, height: 809, x: 0, padding: '0px' });
     await recordGeometry(page, 'phone-geometry-after.json');
     await capture(page, 'phone-chat-after.png');
-    await openPrompts(page);
+    app.provider.mode.hold = 'conversation-fixture';
+    await page.locator('#send_textarea').fill('Open Prompts while replying.');
+    await page.locator('#send_but').click();
+    try {
+        await expect.poll(() => app.provider.calls.length, { timeout: 60000 }).toBe(1);
+        await openPrompts(page);
+        await expect(promptRow(page, 'pin-a').locator('.prompt-manager-toggle-action')).toBeVisible();
+        expect(app.provider.calls[0].completedAt).toBeNull();
+        await capture(page, 'staging-test-audit/prompts-during-reply-phone-after.png');
+    } finally {
+        await app.release();
+    }
+    await expect(page.locator('#chat .mes').last()).toContainText('Durable first reply.', { timeout: 60000 });
+    await expect.poll(() => page.evaluate(async () => (await import('/script.js')).is_send_press), { timeout: 60000 }).toBe(false);
     await expect(page.locator('.prompt-manager-pin-note')).toBeHidden();
     await assertSwitchAppearance(page);
     const button = promptRow(page, 'pin-a').locator('.prompt-manager-pin-action');
