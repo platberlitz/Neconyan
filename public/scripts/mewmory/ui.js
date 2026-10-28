@@ -21,6 +21,15 @@ function displayedSkipReason(reason) {
 const tabs = [['now', 'Now'], ['pawspective', 'Pawspective'], ['archive', 'Archive'], ['recall', 'Recall'], ['settings', 'Settings']];
 const kinds = { entity: 'NPC or entity reference', state: 'Current state', event: 'Event', relationship: 'Relationship fact',
     knowledge: 'Character knowledge', commitment: 'Promise or unresolved matter', interview: 'Pawspective interview', overview: 'Current subject view' };
+const kindBadges = { entity: 'NPC', state: 'State', event: 'Event', relationship: 'Relationship', knowledge: 'Knowledge',
+    commitment: 'Promise', interview: 'Interview', overview: 'Current view' };
+const tabHints = {
+    now: 'What Mewmory will add to your next reply, and who is in the scene.',
+    pawspective: 'How each character sees people, places and promises, and how that changed.',
+    archive: 'Search everything Mewmory has remembered, plus the original messages. A match here is not necessarily used in a reply.',
+    recall: 'Why each memory was picked, or left out, for the latest reply.',
+    settings: 'Which models Mewmory uses, how much it may add, and upkeep for this chat.',
+};
 const roles = { extractor: 'Facts and events', pawspective: 'Pawspective interviews', embedding: 'Embeddings', selector: 'Recall selector', fallback: 'Recall fallback' };
 const roleDescriptions = {
     extractor: 'Records what happened, character details, current states, knowledge and promises. It also decides when a Pawspective interview is warranted.',
@@ -56,7 +65,8 @@ function numberValue(text) {
     return String(text).trim() === '' ? '' : Number(text);
 }
 
-function field(label, value, onChange, { type = 'text', multiline = false, options = null, key = label, hint = '', disabled = false, autosave = false } = {}) {
+function field(label, value, onChange, { type = 'text', multiline = false, options = null, key = label, hint = '', disabled = false, autosave = false,
+    placeholder = '', hideLabel = false } = {}) {
     const wrapper = node('div', 'mewmory-field');
     const control = node(options ? 'select' : multiline ? 'textarea' : 'input', 'text_pole');
     control.id = 'mewmory-field-' + key;
@@ -74,11 +84,12 @@ function field(label, value, onChange, { type = 'text', multiline = false, optio
     }
     control.value = value ?? '';
     control.disabled = disabled || ui.running;
+    if (placeholder) control.placeholder = placeholder;
     control.addEventListener(options ? 'change' : 'input', () => {
         onChange(type === 'number' ? numberValue(control.value) : control.value);
         if (autosave) scheduleConfigSave({ immediate: Boolean(options) });
     });
-    const caption = node('label', '', label);
+    const caption = node('label', hideLabel ? 'mewmory-sr-only' : '', label);
     caption.htmlFor = control.id;
     wrapper.append(caption, control);
     if (hint) wrapper.append(node('small', 'mewmory-caption', hint));
@@ -99,10 +110,35 @@ function check(label, checked, onChange, disabled = false, { autosave = false } 
     return wrapper;
 }
 
-function section(title) {
+function section(title, ...controls) {
     const element = node('section', 'mewmory-section');
-    element.append(node('h4', '', title));
+    if (!controls.length) {
+        element.append(node('h4', '', title));
+        return element;
+    }
+    const heading = node('div', 'mewmory-section-heading');
+    heading.append(node('h4', '', title), ...controls);
+    element.append(heading);
     return element;
+}
+
+function badge(text, tone = '') {
+    const element = node('span', 'mewmory-badge', text);
+    if (tone) element.dataset.tone = tone;
+    return element;
+}
+
+function stats(entries, label) {
+    const list = node('dl', 'mewmory-stats');
+    if (label) list.setAttribute('aria-label', label);
+    for (const { name, value, detail, bar } of entries) {
+        const item = node('div', 'mewmory-stat');
+        item.append(node('dt', '', name), node('dd', '', value));
+        if (bar) item.append(bar);
+        if (detail) item.append(node('dd', 'mewmory-caption', detail));
+        list.append(item);
+    }
+    return list;
 }
 
 function empty(root, title, description, action, handler) {
@@ -203,16 +239,30 @@ function renderSource(root) {
 
 function renderRecord(record, root, { editable = true } = {}) {
     const article = node('article', 'mewmory-record');
+    const unused = record.eligible === false || Boolean(record.excluded);
     article.dataset.ineligible = String(record.eligible === false);
+    article.dataset.kind = record.kind;
+    article.dataset.unused = String(unused);
+    article.dataset.pinned = String(Boolean(record.pinned));
     const heading = node('div', 'mewmory-record-heading');
-    const subjects = record.subjectIds.map(nameOf).join(', ');
+    const subjects = (record.subjectIds || []).map(nameOf).join(', ');
     const title = record.kind === 'entity' ? record.name
         : record.ownerId ? nameOf(record.ownerId) + (subjects ? ' / ' + subjects : '') : kinds[record.kind];
-    heading.append(node('h4', '', title), node('span', 'mewmory-caption',
-        [record.status, record.significance ? record.significance + ' importance' : '', 'message ' + (record.asOf + 1), record.authorOverride ? 'edited by you' : ''].filter(Boolean).join(' · ')));
+    const badges = node('div', 'mewmory-badges');
+    if (title !== kinds[record.kind] && kindBadges[record.kind]) badges.append(badge(kindBadges[record.kind]));
+    if (record.pinned) badges.append(badge('Pinned', 'accent'));
+    if (unused) badges.append(badge('Not used in replies', 'muted'));
+    if (record.status && record.status !== 'active') badges.append(badge(record.status[0].toUpperCase() + record.status.slice(1), 'muted'));
+    if (['high', 'medium'].includes(record.significance)) badges.append(badge(record.significance === 'high' ? 'High importance' : 'Medium importance',
+        record.significance === 'high' ? 'accent' : ''));
+    if (record.authorOverride) badges.append(badge('Edited by you'));
+    heading.append(node('h4', '', title));
+    if (badges.childElementCount) heading.append(badges);
     article.append(heading);
-    if (record.provenance?.model && !record.authorOverride) article.append(node('p', 'mewmory-caption',
-        'Generated by ' + record.provenance.model + (record.provenance.modelRevision ? ' · ' + record.provenance.modelRevision : '') + ' · version ' + record.version));
+    const meta = [record.asOf >= 0 ? 'From message ' + (record.asOf + 1) : '',
+        record.provenance?.model && !record.authorOverride ? 'Generated by ' + record.provenance.model
+            + (record.provenance.modelRevision ? ' · ' + record.provenance.modelRevision : '') + ' · version ' + record.version : ''].filter(Boolean);
+    if (meta.length) article.append(node('p', 'mewmory-caption mewmory-record-meta', meta.join(' · ')));
     if (record.eligible === false) article.append(node('p', 'mewmory-caption', 'Not used in replies: a message or memory it is based on changed, or it was switched off.'));
     if (record.kind === 'interview') {
         const interview = node('div', 'mewmory-interview');
@@ -220,13 +270,17 @@ function renderRecord(record, root, { editable = true } = {}) {
         article.append(interview, node('p', 'mewmory-caption', 'Imaginary interview. Its actions are not events in the story.'));
         if (record.changeExplanation) article.append(node('p', 'mewmory-prose', 'Their explanation of the change: ' + record.changeExplanation));
     } else {
-        article.append(node('p', 'mewmory-prose', record.text));
+        if (record.text && record.text !== record.name) article.append(node('p', 'mewmory-prose', record.text));
         if (record.appearance) article.append(node('p', 'mewmory-prose', 'Appearance: ' + record.appearance));
         if (record.speech) article.append(node('p', 'mewmory-prose', 'Speech: ' + record.speech));
         if (record.evidenceStatus) article.append(node('p', 'mewmory-caption', 'How certain: ' + record.evidenceStatus));
         if (record.method) article.append(node('p', 'mewmory-caption', 'Learned through: ' + record.method));
     }
-    article.append(sourceButtons(record.refs));
+    if (record.refs?.length) {
+        const sources = node('div', 'mewmory-record-sources');
+        sources.append(node('span', 'mewmory-caption', 'Based on'), sourceButtons(record.refs));
+        article.append(sources);
+    }
     if (editable) {
         const actions = node('div', 'mewmory-actions');
         const corrections = [
@@ -237,7 +291,7 @@ function renderRecord(record, root, { editable = true } = {}) {
         if (['knowledge', 'interview', 'overview'].includes(record.kind)) corrections.splice(2, 0, ['never_learned', 'This character never learned this']);
         const correction = field('Correction', '', action => {
             if (action) void act(() => changeMewmory('record/action', { id: record.id, action }));
-        }, { options: corrections, key: 'correction-' + record.id });
+        }, { options: corrections, key: 'correction-' + record.id, hideLabel: true });
         actions.append(correction, button('Edit', () => openEditor(record)),
             button('Undo last change', () => act(() => changeMewmory('record/action', { id: record.id, action: 'undo' }))));
         article.append(actions);
@@ -249,16 +303,15 @@ function renderNow(root) {
     const view = mewmory.view;
     if (!view?.enabled) {
         empty(root, 'Keep the story, and how it felt.',
-            'Mewmory remembers events and NPC details. Pawspective tracks how each character’s view changes, linked back to the messages behind it.',
+            'Mewmory remembers events and NPC details. Pawspective tracks how each character’s view changes, linked back to the messages behind it. Switch on Use Mewmory in this chat above, then pick the models it uses.',
             'Set up model roles', () => switchTab('settings'));
         return;
     }
     const actions = node('div', 'mewmory-actions');
     actions.append(button('Preview next memory', () => act(() => requestMewmory('recall', { tokenizer: getFriendlyTokenizerName() })), { primary: true }),
-        button(mewmory.busy ? 'Updating…' : 'Update now', () => processMewmory({ all: true }), { disabled: mewmory.busy }),
-        button('Add NPC reference', () => openEditor(null, 'entity')));
-    root.append(actions);
-    const cast = section('Active NPCs');
+        button(mewmory.busy ? 'Updating…' : 'Update now', () => processMewmory({ all: true }), { disabled: mewmory.busy }));
+    renderPreview(root, { actions });
+    const cast = section('Active NPCs', button('Add NPC reference', () => openEditor(null, 'entity')));
     cast.append(node('p', 'mewmory-caption', 'Character references and current states sent with replies.'));
     cast.append(check('Choose active characters automatically', view.activeNpcIds === null,
         automatic => act(() => changeMewmory('scene', { activeNpcIds: automatic ? null : view.activeReferences.ids }))));
@@ -278,20 +331,30 @@ function renderNow(root) {
     if (!activeViews.length) overview.append(node('p', 'mewmory-caption', 'These appear once a Pawspective interview finds a real change in how a character sees something.'));
     for (const record of activeViews) renderRecord(record, overview);
     root.append(overview);
-    renderPreview(root);
 }
 
-function renderPreview(root) {
+function renderPreview(root, { actions = null } = {}) {
     const preview = mewmory.view?.preview;
-    if (!preview) return;
-    const block = section('Memories and passages selected for this reply');
-    block.append(node('p', 'mewmory-caption', mewmory.view.previewCurrent
+    if (!preview && !actions) return;
+    const current = Boolean(preview && mewmory.view.previewCurrent);
+    const block = section('Memories and passages selected for this reply', ...(preview ? [badge(current ? 'Up to date' : 'Out of date', current ? 'success' : 'warning')] : []));
+    block.classList.add('mewmory-preview');
+    if (actions) block.append(actions);
+    if (!preview) {
+        block.append(node('p', 'mewmory-caption', 'Press Preview next memory to see what Mewmory would add to your next reply. Update now reads any new messages first.'));
+        root.append(block);
+        return;
+    }
+    block.append(node('p', 'mewmory-caption', current
         ? 'This is the latest prepared snapshot. A later reply may use different memories. Why each memory was picked is shown in Recall.'
         : 'This preview is out of date. Preview again to refresh it.'));
     const counts = node('dl', 'mewmory-tokens');
     for (const [label, value] of [['NPC details, tokens', preview.tokens?.npc], ['Picked memories, tokens', preview.tokens?.memory],
         ['Recent chat kept, tokens', preview.history?.retainedTokens], ['Recent chat in this prepared reply, messages', preview.history?.retainedMessages]]) {
-        if (value !== undefined) counts.append(node('dt', '', label), node('dd', '', Number(value).toLocaleString()));
+        if (value === undefined) continue;
+        const item = node('div', 'mewmory-token');
+        item.append(node('dt', '', label), node('dd', '', Number(value).toLocaleString()));
+        counts.append(item);
     }
     block.append(counts, node('pre', 'mewmory-prompt', [preview.npcText, preview.memoryText].filter(Boolean).join('\n\n') || 'No older memories were picked.'));
     if (preview.history?.waitingForPreservation) block.append(node('p', 'mewmory-caption', 'Waiting for an older group to finish recording; keeping its original messages for now.'));
@@ -346,8 +409,6 @@ function renderPawspective(root) {
 
 function renderArchive(root) {
     const view = mewmory.view;
-    root.append(node('p', 'mewmory-caption', 'Search saved memories and original sources. A search result is not necessarily used in a reply.'));
-    const controls = node('div', 'mewmory-fields');
     const search = async () => {
         ui.offset = 0;
         const result = ui.query.trim() ? await requestMewmory('search', { query: ui.query, mode: ui.searchMode, dataType: ui.searchType }) : null;
@@ -355,36 +416,36 @@ function renderArchive(root) {
         ui.searchReport = result?.retrieval || null;
         await refreshMewmory(filters());
     };
-    controls.append(field('Memory type', ui.kind, value => {
-        ui.kind = value;
-        ui.offset = 0;
-        void act(() => refreshMewmory(filters()), { refresh: false });
-    }, { options: [['objective', 'All facts and events'], ...Object.entries(kinds).filter(([kind]) => !['interview', 'overview'].includes(kind))] }),
-    field('Search memories and original messages', ui.query, value => { ui.query = value; }, { key: 'archive-search' }),
-    field('Search method', ui.searchMode, value => { ui.searchMode = value; }, { options: [['hybrid', 'Keywords and meaning'], ['keyword', 'Keywords'], ['semantic', 'Meaning']] }),
-    field('Search source', ui.searchType, value => { ui.searchType = value; }, { options: [['', 'All sources'], ['chat', 'Chat messages'],
-        ['memory', 'Saved memories'], ['character', 'Character cards'], ['lore', 'Lorebooks'], ['file', 'Attached files and Data Bank']] }));
-    const form = node('form');
+    const form = node('form', 'mewmory-search');
+    form.setAttribute('role', 'search');
     form.addEventListener('submit', event => { event.preventDefault(); void act(search, { refresh: false }); });
-    form.append(controls);
-    const actions = node('div', 'mewmory-actions');
-    actions.append(button('Search archive', () => act(search, { refresh: false }), { primary: true }),
-        button('Add memory', () => openEditor()));
-    form.append(actions);
+    const bar = node('div', 'mewmory-search-bar');
+    bar.append(field('Search memories and original messages', ui.query, value => { ui.query = value; },
+        { key: 'archive-search', type: 'search', placeholder: 'A name, place, promise or line of dialogue' }),
+    button('Search archive', () => act(search, { refresh: false }), { primary: true }));
+    const options = node('div', 'mewmory-fields mewmory-search-options');
+    options.append(field('Search source', ui.searchType, value => { ui.searchType = value; }, { options: [['', 'All sources'], ['chat', 'Chat messages'],
+        ['memory', 'Saved memories'], ['character', 'Character cards'], ['lore', 'Lorebooks'], ['file', 'Attached files and Data Bank']] }),
+    field('Search method', ui.searchMode, value => { ui.searchMode = value; }, { options: [['hybrid', 'Keywords and meaning'], ['keyword', 'Keywords'], ['semantic', 'Meaning']] }));
+    form.append(bar, options);
     root.append(form);
     if (ui.searchReport) root.append(node('p', 'mewmory-caption', 'Search used ' + ui.searchReport.usedMode + ' matching across '
         + ui.searchReport.documents + ' passages.' + (ui.searchReport.keywordFallback ? ' Meaning search is unavailable; keyword matches are shown.' : '')
         + (ui.searchReport.error ? ' ' + ui.searchReport.error : '')));
-    const records = section('Memories');
-    for (const record of view.records.filter(record => !['interview', 'overview'].includes(record.kind))) renderRecord(record, records);
-    if (!view.records.length) empty(records, 'No memories here yet', 'Run an update, choose another memory type, or add a memory yourself.');
-    root.append(records);
-    pagination(root);
-    const sources = section(ui.matches ? 'Ranked archive matches' : 'Recent messages, lore and files');
+    const sources = ui.matches
+        ? section('Ranked archive matches', button('Clear search', () => {
+            ui.query = '';
+            ui.matches = null;
+            ui.searchReport = null;
+            render();
+            document.getElementById('mewmory-field-archive-search')?.focus({ preventScroll: true });
+        }))
+        : section('Recent messages, lore and files');
     if (ui.matches) {
         const passages = ui.matches;
+        sources.append(node('p', 'mewmory-caption', passages.length === 1 ? '1 match, best first.' : passages.length + ' matches, best first.'));
         for (const passage of passages) {
-            const row = node('article', 'mewmory-record');
+            const row = node('article', 'mewmory-record mewmory-match');
             row.append(node('strong', '', passage.sourceName || kinds[passage.kind] || passage.dataType),
                 node('p', 'mewmory-prose', passage.text), sourceButtons(passage.refs));
             if (passage.retrieval) row.append(node('p', 'mewmory-caption', 'Rank score: ' + passage.retrieval.score.toFixed(4)
@@ -392,15 +453,28 @@ function renderArchive(root) {
             sources.append(row);
         }
         if (!passages.length) sources.append(node('p', 'mewmory-caption', 'No eligible memory or passage matches this search.'));
+        root.append(sources);
     } else {
         for (const source of view.sources) {
-            const row = node('article', 'mewmory-record');
+            const row = node('article', 'mewmory-record mewmory-match');
             row.append(node('strong', '', source.speaker + (source.eligible ? '' : ' · not used')),
                 node('p', 'mewmory-caption', source.text), sourceButtons([source]));
             sources.append(row);
         }
     }
-    root.append(sources);
+    const records = section('Memories', button('Add memory', () => openEditor()));
+    const filter = node('div', 'mewmory-fields');
+    filter.append(field('Memory type', ui.kind, value => {
+        ui.kind = value;
+        ui.offset = 0;
+        void act(() => refreshMewmory(filters()), { refresh: false });
+    }, { options: [['objective', 'All facts and events'], ...Object.entries(kinds).filter(([kind]) => !['interview', 'overview'].includes(kind))] }));
+    records.append(filter);
+    for (const record of view.records.filter(record => !['interview', 'overview'].includes(record.kind))) renderRecord(record, records);
+    if (!view.records.length) empty(records, 'No memories here yet', 'Run an update, choose another memory type, or add a memory yourself.');
+    root.append(records);
+    pagination(root);
+    if (!ui.matches && view.sources.length) root.append(sources);
 }
 
 function renderRecall(root) {
@@ -413,6 +487,12 @@ function renderRecall(root) {
     root.append(node('p', 'mewmory-caption', [{ complete: 'Done', needs_evidence: 'Needed more detail', uncertain: 'Unsure' }[run.status] || run.status,
         run.retrieval && !run.retrieval.aiSelection ? 'Ranked retrieval' : run.fallbackUsed ? 'Picked by Recall fallback' : 'Picked by Recall selector',
         new Date(run.at).toLocaleString()].join(' · ')));
+    root.append(stats([
+        { name: 'Picked', value: String(run.selections?.length ?? 0) },
+        { name: 'Left out', value: String(run.rejections?.length ?? 0) },
+        ...(run.retrieval ? [{ name: 'Sent with the reply', value: String(run.retrieval.selected?.length ?? 0) },
+            { name: 'Passages searched', value: Number(run.retrieval.documents ?? 0).toLocaleString() }] : []),
+    ], 'Latest recall in numbers'));
     if (run.error || run.indexError) root.append(node('p', 'mewmory-caption', run.error || run.indexError));
     if (run.retrieval) {
         const report = run.retrieval;
@@ -836,7 +916,27 @@ function renderSettings(root) {
     if (!draft || !mewmory.config) return;
     const configField = (label, value, onChange, options = {}) => field(label, value, onChange, { ...options, autosave: true });
     const configCheck = (label, checked, onChange, disabled = false) => check(label, checked, onChange, disabled, { autosave: true });
+    const jump = node('nav', 'mewmory-jump');
+    jump.setAttribute('aria-label', 'Settings sections');
+    jump.append(node('span', 'mewmory-caption', 'Jump to'));
+    for (const [id, label] of [['automatic', 'Memory updates'], ['models', 'Models used by Mewmory'], ['search', 'Finding relevant memories'],
+        ...(mewmory.view ? [['upkeep', 'Upkeep'], ['transfers', 'Export and restore']] : [])]) {
+        const link = node('button', 'mewmory-jump-link', label);
+        link.type = 'button';
+        link.addEventListener('click', () => {
+            const target = document.getElementById('mewmory-settings-' + id);
+            target?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+            const title = target?.querySelector('h4');
+            if (title) {
+                title.tabIndex = -1;
+                title.focus({ preventScroll: true });
+            }
+        });
+        jump.append(link);
+    }
+    root.append(jump);
     const settings = section('Memory updates');
+    settings.id = 'mewmory-settings-automatic';
     settings.dataset.mewmoryTour = 'automatic';
     settings.append(node('p', 'mewmory-caption', 'Mewmory records facts and character perspectives as you chat. Keeping recent messages in replies is a separate setting.'),
         configCheck('Use Mewmory in new chats', draft.enableNewChats, value => { draft.enableNewChats = value; }),
@@ -901,6 +1001,7 @@ function renderSettings(root) {
     }
     root.append(settings);
     const retrieval = section('Finding relevant memories');
+    retrieval.id = 'mewmory-settings-search';
     const rag = draft.retrieval;
     retrieval.append(node('p', 'mewmory-caption', 'Search recent scene cues against saved memories and original text. Complete passages already present in a reply are skipped when their presence can be confirmed. Replies use local search and completed AI selections while new AI searches run in the background.'));
     const ragFields = node('div', 'mewmory-fields');
@@ -918,8 +1019,8 @@ function renderSettings(root) {
     ]) ragFields.append(configField(label, rag[key], value => { rag[key] = value; }, { type: 'number', key: 'rag-' + key, hint }));
     retrieval.append(ragFields, configCheck('Search attached files and the Data Bank', rag.includeFiles, value => { rag.includeFiles = value; }),
         node('p', 'mewmory-caption', 'Only files attached to this account, character or chat are searched. File passages are references for the writer, not knowledge automatically given to characters. Allow file access separately for each model role.'));
-    root.append(retrieval);
     const model = section('Models used by Mewmory');
+    model.id = 'mewmory-settings-models';
     model.dataset.mewmoryTour = 'models';
     model.append(node('p', 'mewmory-caption', 'Each role has a different job. These connections are separate from the model that writes replies and are shared across chats.'));
     const allProfiles = mewmory.config.profiles || [];
@@ -1052,7 +1153,7 @@ function renderSettings(root) {
     }
     roleForm.append(scope);
     model.append(roleForm, renderFallbackConnections(draft), node('p', 'mewmory-caption', 'Recall selector and Recall fallback only pick from memories that already exist. Use models running on this computer only applies to every role. Embeddings are optional; keyword search always works.'));
-    root.append(model);
+    root.append(model, retrieval);
     const actions = node('div', 'mewmory-actions');
     const retry = button('Retry saving', () => { void mewmoryConfigAutosave.retry(); }, { primary: true });
     retry.id = 'mewmory-settings-retry';
@@ -1074,7 +1175,8 @@ function renderSettings(root) {
 function renderHealth(root) {
     const view = mewmory.view;
     if (!view) return;
-    const health = section('Progress');
+    const health = section('Upkeep for this chat');
+    health.id = 'mewmory-settings-upkeep';
     const progress = document.createElement('progress');
     progress.className = 'mewmory-progress';
     progress.max = Math.max(1, view.health.totalMessages);
@@ -1120,8 +1222,9 @@ function renderHealth(root) {
                 : ' proposed entries were skipped because Mewmory could not save them')
                 + (job.skippedReasons?.length ? ', for example: ' + displayedSkipReason(job.skippedReasons[0]) : '.') : '')));
     }
-    const usage = node('dl', 'mewmory-tokens');
-    for (const [role, total] of Object.entries(view.health.usage)) {
+    const usage = node('dl', 'mewmory-usage');
+    if (Object.keys(view.health.usage || {}).length) health.append(node('h4', '', 'Model calls for this chat'));
+    for (const [role, total] of Object.entries(view.health.usage || {})) {
         usage.append(node('dt', '', roles[role]), node('dd', '', total.requests + ' calls · '
             + total.input.toLocaleString() + ' in / ' + total.output.toLocaleString() + ' out · '
             + (total.milliseconds / 1000).toFixed(1) + ' s'));
@@ -1146,6 +1249,7 @@ function renderHealth(root) {
 
 function renderTransfers(root, recover = false) {
     const archive = section('Export and restore');
+    if (!recover) archive.id = 'mewmory-settings-transfers';
     archive.append(node('p', 'mewmory-caption', 'Exports contain the story text and memories, but no API keys or passwords. Restoring checks every memory against the chat as it is now.'));
     const transfers = node('div', 'mewmory-actions');
     if (!recover) transfers.append(button('Export Mewmory', () => act(async () => {
@@ -1191,6 +1295,47 @@ function renderTransfers(root, recover = false) {
     root.append(archive);
 }
 
+function renderOverview(root) {
+    const view = mewmory.view;
+    const overview = node('section', 'mewmory-overview');
+    overview.setAttribute('aria-label', 'Memory status for this chat');
+    const restoration = view.visibilityRestore;
+    const toggle = check('Use Mewmory in this chat', view.enabled, enabled => act(async () => {
+        await changeMewmory('enabled', { enabled });
+        window.dispatchEvent(new Event('mewmory:configured'));
+    }), ['pending', 'failed'].includes(restoration?.status));
+    toggle.classList.add('mewmory-switch');
+    overview.append(toggle);
+    if (restoration?.status === 'failed') overview.append(button('Retry restoration', () => act(() => retryMewmoryVisibilityRestore())));
+    if (!view.enabled) {
+        overview.append(node('p', 'mewmory-caption', 'Off for this chat. Replies are written without Mewmory’s memories until you switch it on.'));
+        root.append(overview);
+        return;
+    }
+    overview.append(node('p', 'mewmory-caption', 'Turning this off shows messages hidden by Mewmory. Messages you hid yourself stay hidden. Saved memories are kept.'));
+    const health = view.health || {};
+    const total = Number(health.totalMessages) || 0;
+    const pending = Math.max(0, Number(health.pending) || 0);
+    const entries = [];
+    if (total) {
+        const done = Math.max(0, total - pending);
+        const bar = document.createElement('progress');
+        bar.className = 'mewmory-progress';
+        bar.max = total;
+        bar.value = done;
+        bar.setAttribute('aria-label', 'Messages remembered');
+        entries.push({ name: 'Remembered', value: done.toLocaleString() + ' of ' + total.toLocaleString() + ' messages', bar });
+    }
+    entries.push({ name: 'Waiting', value: pending === 1 ? '1 message' : pending.toLocaleString() + ' messages',
+        detail: mewmory.busy ? 'Updating now' : pending && !mewmory.config?.autoUpdate ? 'Press Update now on the Now tab' : '' });
+    entries.push({ name: 'Memories', value: Number(view.recordCount ?? view.records?.length ?? 0).toLocaleString() });
+    if (health.indexStatus) entries.push({ name: 'Search', value: health.indexStatus === 'lexical' ? 'Keywords only'
+        : health.indexStatus === 'ready' ? 'Keywords and meaning' : 'Building meaning search',
+    detail: health.indexStatus === 'ready' || health.indexStatus === 'lexical' ? '' : 'Keyword search works meanwhile' });
+    overview.append(stats(entries));
+    root.append(overview);
+}
+
 function render() {
     const root = ui.root;
     if (!root) return;
@@ -1219,29 +1364,29 @@ function render() {
     root.replaceChildren();
     const heading = node('header', 'mewmory-heading');
     const locator = getMewmoryLocator();
-    heading.append(node('p', 'mewmory-caption mewmory-scope', locator?.chat || 'No Roleplay chat selected'),
-        button('Refresh', () => act(() => refreshMewmory(filters()), { refresh: false })));
+    const where = node('div', 'mewmory-where');
+    where.append(node('span', 'mewmory-eyebrow', 'Memory for'),
+        node('p', 'mewmory-scope', locator?.chat || mewmory.view?.locator?.chat || 'No Roleplay chat selected'));
+    const extractorOn = mewmory.config?.roles.extractor.enabled;
+    const waiting = Boolean(mewmory.view?.health?.pending);
     const restoration = mewmory.view?.visibilityRestore;
     const restoreMessage = restoration?.status === 'pending' ? 'Turning off Mewmory and showing its hidden messages…'
         : restoration?.status === 'failed' ? 'Mewmory is off, but some messages could not be shown. Retry restoration.'
             : restoration?.status === 'complete' && !mewmory.view?.enabled ? restoration.restored
                 ? 'Mewmory is off. Restored ' + restoration.restored + ' hidden messages.' : 'Mewmory is off. No messages needed restoring.' : '';
     const status = node('p', 'mewmory-status', mewmory.error || restoreMessage || (mewmory.loading ? 'Loading this chat’s memory…' : mewmory.busy || mewmory.preparing ? 'Updating memories…'
-        : mewmory.view?.enabled ? mewmory.config?.roles.extractor.enabled
-            ? mewmory.view.health?.pending ? 'Messages are waiting for a memory update.' : 'Up to date'
+        : mewmory.view?.enabled ? extractorOn
+            ? waiting ? 'Messages are waiting for a memory update.' : 'Up to date'
             : 'Facts and events is switched off. Original passages remain searchable.' : 'Off'));
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
     status.dataset.error = String(Boolean(mewmory.error));
-    heading.append(status);
+    status.dataset.state = mewmory.error || restoration?.status === 'failed' ? 'error'
+        : mewmory.loading || mewmory.busy || mewmory.preparing || restoration?.status === 'pending' ? 'busy'
+            : mewmory.view?.enabled ? extractorOn && !waiting ? 'ready' : 'warning' : 'off';
+    heading.append(where, status, button('Refresh', () => act(() => refreshMewmory(filters()), { refresh: false })));
     root.append(heading);
-    if (mewmory.view) {
-        root.append(check('Use Mewmory in this chat', mewmory.view.enabled, enabled => act(async () => {
-            await changeMewmory('enabled', { enabled });
-            window.dispatchEvent(new Event('mewmory:configured'));
-        }), ['pending', 'failed'].includes(restoration?.status)), node('p', 'mewmory-caption', 'Turning this off shows messages hidden by Mewmory. Messages you hid yourself stay hidden. Saved memories are kept.'));
-        if (restoration?.status === 'failed') root.append(button('Retry restoration', () => act(() => retryMewmoryVisibilityRestore())));
-    }
+    if (mewmory.view) renderOverview(root);
     const navigation = node('nav', 'mewmory-tabs');
     navigation.setAttribute('role', 'tablist');
     navigation.setAttribute('aria-label', 'Mewmory views');
@@ -1264,7 +1409,7 @@ function render() {
         });
         navigation.append(tab);
     }
-    root.append(navigation);
+    root.append(navigation, node('p', 'mewmory-caption mewmory-tab-hint', tabHints[ui.tab] || ''));
     for (const [id] of tabs) {
         const page = node('div', 'mewmory-page');
         page.id = 'mewmory-pane-' + id;
@@ -1300,7 +1445,7 @@ function loadMewmoryStyles() {
     if (!style) {
         style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.href = 'css/mewmory.css?v=20261024a';
+        style.href = 'css/mewmory.css?v=20261028a';
         document.head.append(style);
     }
     if (style.rel !== 'stylesheet') {
