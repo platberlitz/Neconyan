@@ -1528,7 +1528,7 @@ describe('an image refusal on the solo and group routes', () => {
         expect(refusalEvents()).toHaveLength(0);
     });
 
-    test('a reply job that fails for an image raises the one event instead of the Reply stopped toast; other failures keep it', async () => {
+    test('a reply job that fails for an image raises the one event instead of the Reply failed toast; other failures keep it', async () => {
         const pending = workflows.runNativeRoleplayGeneration('normal');
         await settle();
         await observers.get('job-1').onSnapshot({ state: 'failed', error: { message: 'An image description changed while the reply was starting. Try again.', code: 'ROLEPLAY_IMAGE_INPUT', status: 409 } });
@@ -1541,13 +1541,13 @@ describe('an image refusal on the solo and group routes', () => {
         await observers.get('job-1').onSnapshot({ state: 'failed', error: { message: 'The connection to your model provider closed.', code: 'JOB_FAILED', status: 500 } });
         await second;
         expect(globalThis.toastr.error).toHaveBeenCalledTimes(1);
-        expect(globalThis.toastr.error).toHaveBeenCalledWith('The connection to your model provider closed.', 'Reply stopped');
+        expect(globalThis.toastr.error).toHaveBeenCalledWith('The connection to your model provider closed.', 'Reply failed');
         expect(refusalEvents()).toHaveLength(1);
     });
 
     // GEN-S01 fails inside the reply job. The job keeps { message, code, status }; tests/roleplay-world-info.node.js asserts that this
     // exact shape is what the runner stores for it (code ROLEPLAY_IMAGE_INPUT), and for an ordinary invalid reply (code ROLEPLAY_INVALID).
-    test('a reply job that fails with GEN-S01 raises the notice with its reason, and another ROLEPLAY_INVALID failure still shows Reply stopped', async () => {
+    test('a reply job that fails with GEN-S01 raises the notice with its reason, and another ROLEPLAY_INVALID failure still shows Reply failed', async () => {
         const pending = workflows.runNativeRoleplayGeneration('normal');
         await settle();
         await observers.get('job-1').onSnapshot({ state: 'failed', error: { message: connectionWords, code: 'ROLEPLAY_IMAGE_INPUT', status: 409 } });
@@ -1560,8 +1560,42 @@ describe('an image refusal on the solo and group routes', () => {
         await observers.get('job-1').onSnapshot({ state: 'failed', error: { message: 'The saved image detail setting is invalid.', code: 'ROLEPLAY_INVALID', status: 409 } });
         await second;
         expect(globalThis.toastr.error).toHaveBeenCalledTimes(1);
-        expect(globalThis.toastr.error).toHaveBeenCalledWith('The saved image detail setting is invalid.', 'Reply stopped');
+        expect(globalThis.toastr.error).toHaveBeenCalledWith('The saved image detail setting is invalid.', 'Reply failed');
         expect(refusalEvents()).toHaveLength(1);
+    });
+
+    test('saved-data errors read as plain advice with a title for what happened, and the original wording goes to the console', async () => {
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const cases = [
+            [{ state: 'failed', error: { message: 'Protected Roleplay evidence has no room for another transaction.', code: 'ROLEPLAY_STORE_FULL', status: 413 } },
+                'Neconyan has no room left to record new replies for this account, so this reply was not started. Your chat was not changed.', 'Reply failed'],
+            [{ state: 'conflict', error: { message: 'An earlier Roleplay transaction must be reconciled first.', code: 'ROLEPLAY_RECOVERY_REQUIRED', status: 409 } },
+                'Neconyan was still finishing an earlier save, so this reply was not saved. Wait a moment, then try again. If it keeps happening, reload the page.', 'Reply not saved'],
+            [{ state: 'failed', error: { message: 'A protected Roleplay resource changed.', code: 'ROLEPLAY_SOURCE_CHANGED', status: 409 } },
+                'The chat changed while the reply was being written, so the reply was not saved. Try again.', 'Reply failed'],
+            [{ state: 'interrupted', error: { message: 'The candidate is not owned by this accepted workflow.', code: 'SOMETHING_NEW', status: 409 } },
+                'The reply could not be finished, and nothing in your chat was changed. Try again.', 'Reply interrupted'],
+            // Plain server wording is kept as it is.
+            [{ state: 'failed', error: { message: 'The chat has moved on since this reply was requested, so the reply was not saved.', code: 'ROLEPLAY_SOURCE_CHANGED', status: 409 } },
+                'The chat has moved on since this reply was requested, so the reply was not saved.', 'Reply failed'],
+        ];
+        for (const [snapshot, message, title] of cases) {
+            globalThis.toastr.error.mockClear();
+            observers.clear();
+            const pending = workflows.runNativeRoleplayGeneration('normal');
+            await settle();
+            await observers.get('job-1').onSnapshot(snapshot);
+            await pending;
+            expect(globalThis.toastr.error).toHaveBeenCalledTimes(1);
+            expect(globalThis.toastr.error).toHaveBeenCalledWith(message, title);
+        }
+        expect(warn).toHaveBeenCalledWith('[Roleplay] Reply ended:', { state: 'failed', code: 'ROLEPLAY_STORE_FULL', message: 'Protected Roleplay evidence has no room for another transaction.' });
+        // A refused request uses the same wording.
+        globalThis.toastr.error.mockClear();
+        submitHandler = async () => response(413, { error: 'Protected Roleplay evidence is full.', code: 'ROLEPLAY_STORE_FULL' });
+        await workflows.runNativeRoleplayGeneration('normal');
+        expect(globalThis.toastr.error).toHaveBeenCalledWith(expect.stringContaining('no room left to record new replies'), 'Nothing was generated');
+        warn.mockRestore();
     });
 });
 
