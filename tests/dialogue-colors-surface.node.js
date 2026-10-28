@@ -36,13 +36,14 @@ function element(backgroundColor, parentElement = null) {
     return { backgroundColor, parentElement };
 }
 
-const page = { body: element(PAGE), message: null };
+const page = { body: element(PAGE), message: null, characterMessage: null };
 // The hidden message template is always in the page; it is not a chat message.
 page.template = element('rgba(0, 0, 0, 0)', page.body);
 
 globalThis.document = {
     get body() { return page.body; },
     querySelector(selector) {
+        if (selector === '#chat .mes:not([is_user="true"]):not([is_system="true"]) .mes_text') return page.characterMessage;
         if (selector === '#chat .mes_text') return page.message;
         if (selector === '#chat .mes_text, .mes_text') return page.message ?? page.template;
         return null;
@@ -90,6 +91,7 @@ test.beforeEach(() => {
     page.body = element(PAGE);
     page.template.parentElement = page.body;
     page.message = null;
+    page.characterMessage = null;
 });
 
 test('only a message in the chat counts as a surface to measure', () => {
@@ -120,4 +122,23 @@ test('unavailable storage falls back to measuring the page', () => {
     assert.equal(measure(), '#31312c');
     page.message = null;
     assert.equal(measure(), '#161716');
+});
+
+test('a character message sets the surface even when a user message is drawn first', () => {
+    const USER_BUBBLE = 'rgb(34, 36, 43)';
+    const CHARACTER_BUBBLE = 'rgb(27, 29, 36)';
+    const characterMessage = element(CHARACTER_BUBBLE, page.body);
+    page.characterMessage = characterMessage;
+
+    // A truncated chat that alternates speakers starts with a different speaker after each
+    // new message. The surface must not follow it, or every message is recoloured and saved.
+    page.message = element(USER_BUBBLE, page.body);
+    assert.equal(measure(), '#1b1d24');
+    page.message = characterMessage;
+    assert.equal(measure(), '#1b1d24');
+
+    // A chat with only user messages still has a surface to measure.
+    page.characterMessage = null;
+    page.message = element(USER_BUBBLE, page.body);
+    assert.equal(measure(), '#22242b');
 });
