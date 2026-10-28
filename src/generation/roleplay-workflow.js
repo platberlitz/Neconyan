@@ -14,7 +14,7 @@ import { admitBoundModelToolCall, readBoundModelToolResult, releaseBoundModelToo
 import { admitNativeMediaJob, finishNativeMediaJob, withNativeMediaReceipt } from './media-jobs.js';
 import { readRoleplayWorkflowRecords, writeRoleplayWorkflowRecords } from './roleplay-workflow-records.js';
 import { captureWorkflowToolLineage } from './roleplay-workflow-lineage.js';
-import { captureRoleplaySourceLocked } from './roleplay-source.js';
+import { captureRoleplaySourceLocked, readRoleplayChat } from './roleplay-source.js';
 import { captureRoleplayWorkflowPolicy, decideRoleplayWorkflowCandidate } from './roleplay-workflow-policy.js';
 import { captureRoleplayGroupSpeakers } from './roleplay-workflow-groups.js';
 import { addWorkflowAlternatives, collectWorkflowAlternatives } from './roleplay-workflow-alternatives.js';
@@ -24,6 +24,7 @@ import { roleplayEffectTrigger } from './roleplay-prompt.js';
 import { registerHandler } from '../jobs/runner.js';
 import { releaseStoppedRoleplayWorkflow } from './roleplay-workflow-cancellation.js';
 import { roleplayAgentsStopped } from './roleplay-agent-stop.js';
+import { preserveRoleplayWorkflowReply, recordWorkflowReplyText } from './roleplay-kept-reply.js';
 import { applyOverflowHiding, prepareAutomaticHiding } from '../mewmory/hiding.js';
 
 const error = (message, code = 'ROLEPLAY_WORKFLOW_RECOVERY') => roleplayError(code, message, 409);
@@ -490,6 +491,47 @@ function completedSpeaker(context, job, index, previous = null) {
     return saved;
 }
 
+function continuationPrefixText(context, source) {
+    try {
+        if (!Number.isSafeInteger(source?.message?.index)) return '';
+        const media = context.job?.intent?.media;
+        if (!media) return '';
+        const saved = readRoleplayChat({ owner: context.owner, directories: context.directories,
+            accountId: media.accountId, dataEpoch: media.dataEpoch }, source.locator);
+        const record = saved.records[source.message.index + 1];
+        return typeof record?.mes === 'string' ? record.mes : '';
+    } catch {
+        return '';
+    }
+}
+
+function continuationSuffixText(output, prefix) {
+    const continued = typeof output?.continuedText === 'string' ? output.continuedText : null;
+    const raw = typeof output?.text === 'string' ? output.text : '';
+    // A full continuedText that still starts with the authoritative source
+    // prefix is cumulative; it already includes every earlier suffix for this
+    // reply. A raw chunk is only this turn's new text.
+    if (continued && prefix && continued.startsWith(prefix)) {
+        return { suffix: continued.slice(prefix.length), cumulative: true };
+    }
+    if (continued && !prefix) return { suffix: raw || continued, cumulative: false };
+    if (continued !== null) return { suffix: raw || continued, cumulative: false };
+    return { suffix: raw, cumulative: false };
+}
+
+function nextContinuationSuffix(previous, current) {
+    if (!current) return previous ?? '';
+    return current.cumulative ? current.suffix : (previous ?? '') + current.suffix;
+}
+
+function markWorkflowReply(output, job, childJobId) {
+    const marker = { version: 1, rootJobId: job.id, childJobId };
+    const message = output?.message ?? output?.messages?.[0];
+    if (message) message.extra = { ...message.extra, roleplay_workflow_reply: marker };
+    if (output && typeof output === 'object') output.extra = { ...output.extra, roleplay_workflow_reply: marker };
+    return output;
+}
+
 function advanceSpeaker(context, job, chosen, index, turnEnd, previous = null, alternatives = [], hiding = null) {
     const prior = completedSpeaker(context, job, index, previous);
     if (prior) return prior;
@@ -506,7 +548,8 @@ function advanceSpeaker(context, job, chosen, index, turnEnd, previous = null, a
     } else if (job.intent.request.effect !== 'append') {
         output.extra = { ...output.extra, gen_id: job.intent.request.group.generationId };
     }
-    chosen.output = output;
+    const blocked = Boolean((output.message ?? output.messages?.[0] ?? output)?.extra?.generation_outcome);
+    chosen.output = blocked ? output : markWorkflowReply(output, job, chosen.child.id);
     const plan = finalPlan(context, job, chosen, { key: `${FINAL}:${index}`, speakerIndex: index,
         priorSpeaker: previous, alternatives, hiding });
     const result = publishPlan(context, job, chosen, plan, { effectId: `speaker:${index}`, proof: index });
@@ -539,6 +582,8 @@ async function runGroupWorkflow(context, job, beforePublication, decideCandidate
         let history = [];
         let decision = null;
         let progressiveOutput = null;
+        let continuationPrefix = null;
+        let continuationSuffix = null;
         let done = null;
         while (turn < MAX_TURNS) {
             const child = acceptedChild(context, job, turn, history, lineage, decision, index).child;
@@ -565,7 +610,17 @@ async function runGroupWorkflow(context, job, beforePublication, decideCandidate
             const assembled = combinedCandidateOutput(progressiveOutput, chosen.candidate.output, job.intent.request.effect);
             decision = await savedTextDecision(context, job, chosen, turn, assembled, candidateText(assembled), decideCandidate);
             chosen.output = assembled;
+            const continuous = job.intent.request.effect === 'continue';
+            if (continuous && continuationPrefix === null) {
+                continuationPrefix = continuationPrefixText(context, chosen.child.intent.source);
+            }
+            const currentSuffix = continuous
+                ? continuationSuffixText(chosen.candidate.output, continuationPrefix ?? '') : null;
             if (decision.decision?.kind === 'final' || decision.kind === 'final') {
+                recordWorkflowReplyText(context, job, turn, assembled, { speakerIndex: index,
+                    ...(continuous ? { continuation: { prefix: continuationPrefix ?? '',
+                        suffix: nextContinuationSuffix(continuationSuffix, currentSuffix) } } : {
+                        chunk: false }) });
                 const alternatives = collectWorkflowAlternatives(context, job, { start: speakerStart, end: turn,
                     effect: job.intent.request.effect, speakerIndex: index,
                     candidateAt: previousTurn => selectedCandidate(context, job, savedChild(context, job, previousTurn).child) });
@@ -578,7 +633,13 @@ async function runGroupWorkflow(context, job, beforePublication, decideCandidate
             if (decision.decision.kind === 'swipe') {
                 history = rejectedSwipeHistory(history, chosen, decision, turn);
                 progressiveOutput = null;
+                continuationSuffix = null;
+                recordWorkflowReplyText(context, job, turn, null, { selected: false, speakerIndex: index });
             } else {
+                continuationSuffix = nextContinuationSuffix(continuationSuffix, currentSuffix);
+                recordWorkflowReplyText(context, job, turn, assembled, { speakerIndex: index,
+                    ...(continuous ? { continuation: { prefix: continuationPrefix ?? '', suffix: continuationSuffix } }
+                        : { chunk: false }) });
                 history = continuedHistory(history, chosen, decision, turn, assembled);
                 progressiveOutput = assembled;
             }
@@ -675,7 +736,21 @@ export function recoverWaitingRoleplayWorkflow({ job, directories, owner }) {
     }
 }
 
-export async function runRoleplayWorkflowJob(context, { beforePublication, beforeCommit, decideCandidate } = {}) {
+export async function runRoleplayWorkflowJob(context, options = {}) {
+    try {
+        return await executeRoleplayWorkflowJob(context, options);
+    } catch (error) {
+        // A candidate can be complete while the root's protected publication is
+        // refused. Keep that full paid text once, in the same chat, instead of
+        // losing it with the terminal root.
+        try { preserveRoleplayWorkflowReply(context, error); } catch (keepError) {
+            console.warn('[Roleplay] The finished workflow reply could not be preserved.', keepError?.message ?? keepError);
+        }
+        throw error;
+    }
+}
+
+async function executeRoleplayWorkflowJob(context, { beforePublication, beforeCommit, decideCandidate } = {}) {
     const job = root(context);
     const closed = withNativeMediaReceipt(context, ({ value }) => value.state === 'closed' ? value.result : null,
         { checkSource: false });
@@ -686,6 +761,8 @@ export async function runRoleplayWorkflowJob(context, { beforePublication, befor
     let lineage = null;
     let decision = null;
     let progressiveOutput = null;
+    let continuationPrefix = null;
+    let continuationSuffix = null;
     let turn = 0;
     for (; turn < MAX_TURNS; turn++) {
         const child = acceptedChild(context, job, turn, history, lineage, decision).child;
@@ -700,17 +777,35 @@ export async function runRoleplayWorkflowJob(context, { beforePublication, befor
             break;
         }
         if (chosen.candidate.kind === 'text') {
+            const continuous = job.intent.request.effect === 'continue';
+            if (continuous && continuationPrefix === null) {
+                continuationPrefix = continuationPrefixText(context, chosen.child.intent.source);
+            }
+            const currentSuffix = continuous
+                ? continuationSuffixText(chosen.candidate.output, continuationPrefix ?? '') : null;
             const assembled = combinedCandidateOutput(progressiveOutput, chosen.candidate.output, job.intent.request.effect);
             decision = await savedTextDecision(context, job, chosen, turn, assembled, candidateText(assembled), decideCandidate);
             chosen.output = assembled;
-            if (decision.decision?.kind === 'final' || decision.kind === 'final') break;
+            if (decision.decision?.kind === 'final' || decision.kind === 'final') {
+                recordWorkflowReplyText(context, job, turn, assembled, continuous
+                    ? { continuation: { prefix: continuationPrefix ?? '',
+                        suffix: nextContinuationSuffix(continuationSuffix, currentSuffix) } }
+                    : { chunk: false });
+                break;
+            }
             if (turn === MAX_TURNS - 1) throw error('The automatic reply limit needs reviewed recovery.', 'ROLEPLAY_WORKFLOW_CAPACITY');
             if (decision.decision.kind === 'swipe') {
                 history = rejectedSwipeHistory(history, chosen, decision, turn);
                 progressiveOutput = null;
+                continuationSuffix = null;
+                recordWorkflowReplyText(context, job, turn, null, { selected: false });
                 chosen = null;
                 continue;
             }
+            continuationSuffix = nextContinuationSuffix(continuationSuffix, currentSuffix);
+            recordWorkflowReplyText(context, job, turn, assembled, continuous
+                ? { continuation: { prefix: continuationPrefix ?? '', suffix: continuationSuffix } }
+                : { chunk: false });
             history = continuedHistory(history, chosen, decision, turn, assembled);
             progressiveOutput = assembled;
             chosen = null;
@@ -727,6 +822,8 @@ export async function runRoleplayWorkflowJob(context, { beforePublication, befor
         effect: job.intent.request.effect, candidateAt: previousTurn =>
             selectedCandidate(context, job, savedChild(context, job, previousTurn).child) });
     const hiding = await prepareWorkflowHiding(context, job, chosen);
+    const blocked = blockedCandidate(chosen);
+    if (!blocked) chosen.output = markWorkflowReply(chosen.output, job, chosen.child.id);
     const plan = finalPlan(context, job, chosen, { alternatives, hiding });
     await beforeCommit?.();
     const outcome = publishPlan(context, job, chosen, plan);

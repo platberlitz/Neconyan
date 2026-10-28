@@ -36,9 +36,13 @@ export const CANCELLABLE_STATES = Object.freeze(['queued', 'running', 'waiting']
 const STORE_FILE = 'index.json';
 const pruneHolds = new Set();
 let historyLifecycle = null;
+let recoveryLifecycle = null;
 
 /** Native Distiller evidence must survive every removal path, before artefacts go. */
 export function registerJobHistoryLifecycle(lifecycle) { historyLifecycle = lifecycle; }
+
+/** Bounded, idempotent follow-up after terminal states have been reconciled. */
+export function registerJobRecoveryLifecycle(lifecycle) { recoveryLifecycle = lifecycle; }
 
 /**
  * The jobs runner polls every 500 ms per owner, and every artifact read checks
@@ -677,12 +681,40 @@ export function releaseChildJobs(directories, parentId) {
     });
 }
 
+/**
+ * A waiting parent whose cancellation was deferred for a running child becomes
+ * terminal as soon as its whole subtree is. This keeps the parent's job state
+ * (and the page's reading of it) behind the child's owned keeper write.
+ */
+function finaliseCancelledAncestors(store, completed) {
+    let current = completed;
+    for (let depth = 0; depth < 16; depth += 1) {
+        const parent = current.parentId ? store.jobs[jobKey(current.parentId)] : null;
+        if (!parent) return;
+        const allChildrenTerminal = (parent.children ?? []).every(id => {
+            const child = store.jobs[jobKey(id)];
+            return !child || TERMINAL_STATES.includes(child.state);
+        });
+        if (parent.state === 'waiting' && parent.cancellation?.requested && allChildrenTerminal) {
+            parent.state = 'cancelled';
+            parent.finishedAt = now();
+            parent.error = null;
+            parent.recoverability = 'terminal';
+            parent.updatedAt = now();
+        }
+        if (!TERMINAL_STATES.includes(parent.state) && parent.state !== 'waiting') return;
+        if (parent.state === 'waiting' && (!parent.cancellation?.requested || !allChildrenTerminal)) return;
+        current = parent;
+    }
+}
+
 export function updateJob(directories, id, patch) {
     return mutateJobs(directories, store => {
         const key = jobKey(id);
         const job = store.jobs[key];
         if (!job) throw fail(404, 'JOB_NOT_FOUND', 'This job no longer exists.');
         Object.assign(job, typeof patch === 'function' ? patch(job) : patch, { updatedAt: now() });
+        if (TERMINAL_STATES.includes(job.state)) finaliseCancelledAncestors(store, job);
         return { job };
     });
 }
@@ -731,22 +763,24 @@ export function requestCancellation(directories, id, { reason = null } = {}) {
         if (TERMINAL_STATES.includes(job.state)) return { job, changed: false };
         job.cancellation = { requested: true, requestedAt: now(), reason };
         job.updatedAt = now();
-        // A queued job was never started, so the cancellation is final at once.
-        // Running work records the request and lets the runner observe it.
-        if (job.state === 'queued' || job.state === 'waiting') {
-            job.state = 'cancelled';
-            job.finishedAt = now();
-        }
         // Cancelling a family cancels its unfinished children in the same write.
         // Committed child effects stay intact; only pending work stops.
-        const descendants = [...(job.children ?? [])];
+        const descendants = [];
+        const pending = [...(job.children ?? [])];
         const visited = new Set([job.id]);
-        for (const childId of descendants) {
+        for (const childId of pending) {
             if (visited.has(childId)) continue;
             visited.add(childId);
             const child = store.jobs[jobKey(childId)];
             if (!child || child.owner !== job.owner) continue;
-            descendants.push(...(child.children ?? []));
+            descendants.push(child);
+            pending.push(...(child.children ?? []));
+        }
+        // Only a running server reply child has a keeper write to finish. A
+        // vector, caption or other auxiliary child does not extend the wait.
+        const activeDescendant = descendants.some(child => child.state === 'running'
+            && (child.type === 'roleplay.reply' || child.type === 'roleplay.candidate'));
+        for (const child of descendants) {
             if (TERMINAL_STATES.includes(child.state)) continue;
             child.cancellation = { requested: true, requestedAt: now(), reason };
             child.updatedAt = now();
@@ -754,6 +788,16 @@ export function requestCancellation(directories, id, { reason = null } = {}) {
                 child.state = 'cancelled';
                 child.finishedAt = now();
             }
+        }
+        // A queued job was never started, and a waiting job whose children all
+        // stopped in this write, so its cancellation is final at once. A Roleplay
+        // parent waiting on a running child is still doing work: its terminal
+        // state waits until that child and its server keeper have finished.
+        const survivesForChild = activeDescendant
+            && (job.type === 'media.roleplay-workflow' || job.type === 'roleplay.reply');
+        if ((job.state === 'queued' || job.state === 'waiting') && !survivesForChild) {
+            job.state = 'cancelled';
+            job.finishedAt = now();
         }
         // The request is durable before it is acknowledged. The runner observes
         // it before starting, between stages, and after any late provider reply.
@@ -1256,7 +1300,7 @@ function upgradeLegacyRoleplayReplies(directories, jobs, { hold = false } = {}) 
  * unknown provider outcome is never silently re-submitted as a charged call.
  */
 export function recoverJobs(directories, { startedAt = PROCESS_STARTED_AT, hold = false } = {}) {
-    return mutateJobs(directories, store => {
+    const result = mutateJobs(directories, store => {
         const recoverable = [];
         // Claim old Recovered replies once, in the same mutation that would
         // otherwise expire or prune them, before any state below can dismiss
@@ -1328,4 +1372,8 @@ export function recoverJobs(directories, { startedAt = PROCESS_STARTED_AT, hold 
         if (upgradeLegacyRoleplayReplies(directories, store.jobs, { hold })) changed = true;
         return { recoverable, changed };
     });
+    try { recoveryLifecycle?.(directories, { hold }); } catch (error) {
+        console.warn('[Jobs] Saved reply reconciliation failed:', error?.message ?? error);
+    }
+    return result;
 }

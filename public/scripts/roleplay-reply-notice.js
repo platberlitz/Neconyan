@@ -44,21 +44,63 @@ function stateTitle(state) {
     }
 }
 
+function keptReason(error) {
+    const raw = typeof error === 'string' ? error : String(error?.message ?? '');
+    const code = typeof error === 'object' && error ? String(error.code ?? error.body?.code ?? '') : '';
+    if (code === 'ROLEPLAY_SOURCE_CHANGED') return t`The chat changed while the reply was being written.`;
+    if (code === 'ROLEPLAY_STORE_FULL') return t`Neconyan ran out of room while it was finishing this reply.`;
+    if (['ROLEPLAY_RECOVERY_REQUIRED', 'ROLEPLAY_STORE_UNCERTAIN', 'ROLEPLAY_WRITE_UNCERTAIN'].includes(code)) {
+        return t`An earlier save was still unfinished.`;
+    }
+    if (code === 'ROLEPLAY_AGENT_RECOVERY') return t`The after-reply Agent work couldn't finish.`;
+    if (STORAGE_TERMS.test(raw)) return t`The reply ended while Neconyan was checking its save.`;
+    return raw;
+}
+
 /**
  * @param {{ message?: string, code?: string } | string | null | undefined} error A job error or a refused request's error.
  * @param {string} state The job's terminal state, or 'refused' when the request was never accepted.
+ * @param {{ kept?: boolean }} [options] Whether the text written so far is already in this chat.
  * @returns {{ title: string, message: string }}
  */
-export function roleplayReplyNotice(error, state) {
+export function roleplayReplyNotice(error, state, { kept = false } = {}) {
     const raw = typeof error === 'string' ? error : String(error?.message ?? '');
     const code = typeof error === 'object' && error ? String(error.code ?? error.body?.code ?? '') : '';
     let message = codeMessage(code);
+    if (kept) {
+        const reason = keptReason(error);
+        const saved = t`The text written so far was saved in this chat.`;
+        message = reason ? `${reason} ${saved}` : saved;
+        if (raw) console.warn('[Roleplay] Reply ended:', { state, code: code || null, message: raw, kept: true });
+        return { title: state === 'conflict' ? t`Reply kept` : stateTitle(state), message };
+    }
     if (!message && code === 'ROLEPLAY_SOURCE_CHANGED' && STORAGE_TERMS.test(raw)) {
         message = t`The chat changed while the reply was being written, so the reply was not saved. Try again.`;
     }
     if (!message && STORAGE_TERMS.test(raw)) message = t`The reply could not be finished, and nothing in your chat was changed. Try again.`;
     if (message && raw && message !== raw) console.warn('[Roleplay] Reply ended:', { state, code: code || null, message: raw });
     return { title: stateTitle(state), message: message || raw };
+}
+
+/**
+ * A stopped or failed reply whose server keeper could not write the chat. Say
+ * what happened, and do not promise a retry the keeper cannot perform.
+ */
+export function roleplayKeptReplyNotice({ state = 'failed', error = null } = {}) {
+    const code = String(error?.code ?? '');
+    const held = t`Neconyan still has the text saved.`;
+    let message = t`The text written so far couldn't be added to this chat.`;
+    if (code === 'ROLEPLAY_SOURCE_MISSING' || code === 'ROLEPLAY_SOURCE_DAMAGED') {
+        message = t`The chat is missing, so the text couldn't be added to it.`;
+    } else if (code === 'ROLEPLAY_STORE_FULL') {
+        message = t`Neconyan has no room left to add this text to the chat.`;
+    } else if (code === 'ROLEPLAY_WORKFLOW_CAPACITY') {
+        message = t`This chat has no room left for the reply.`;
+    } else if (['ROLEPLAY_RECOVERY_REQUIRED', 'ROLEPLAY_STORE_UNCERTAIN', 'ROLEPLAY_WRITE_UNCERTAIN',
+        'ROLEPLAY_JOB_REJECTED'].includes(code)) {
+        message = t`Another save was still unfinished, so the text wasn't added to this chat.`;
+    }
+    return { title: stateTitle(state), message: `${message} ${held}` };
 }
 
 /**

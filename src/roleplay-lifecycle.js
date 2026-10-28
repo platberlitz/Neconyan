@@ -1422,6 +1422,20 @@ export function bootstrapRoleplayAccount(base, host) {
     return scope;
 }
 
+/**
+ * Finish only a pending write that this exact operation key owns. A pending
+ * write for another operation is left alone, so a keeper cannot settle or
+ * misreport unrelated account work.
+ */
+export function reconcileRoleplayChatWriteIfPending(scope, operationKey, host) {
+    return withRoleplayAccountLock(scope, lease => {
+        confirmRoleplayAccount(lease);
+        const { state } = roleplayLease(lease);
+        if (state.pending?.kind !== 'chat-write' || state.pending.operationKeyHash !== key(state, operationKey)) return null;
+        return applyPending(lease, host);
+    });
+}
+
 export function reconcileSingleChatWrite(scope, operationKey, host) {
     return withRoleplayAccountLock(scope, lease => {
         confirmRoleplayAccount(lease);
