@@ -171,6 +171,35 @@ test('stopped replies whose jobs were pruned no longer fill the store and refuse
     assert.equal(messages(f).at(-1).mes, 'Back again');
 });
 
+test('a browser save also returns the room held by stopped replies when the store is full', async t => {
+    const f = fixture(t);
+    const { withRoleplayAccountLock, roleplayLease, saveRoleplayAccount, ROLEPLAY_STORE_MAX_BYTES } = await import('../src/roleplay-store.js');
+    const { commitSingleChatWrite } = await import('../src/roleplay-lifecycle.js');
+    const { randomUUID } = await import('node:crypto');
+    const reserved = 72 * 1024;
+    const count = Math.floor((ROLEPLAY_STORE_MAX_BYTES - 128 * 1024) / reserved);
+    const keys = Array.from({ length: count }, (_, index) => roleplayHashFor(f, `stopped-${index}`));
+    const live = admit(f, 'live', 'append');
+    const { instanceId } = captureRoleplaySource(f.scope, { locator: f.locator });
+    withRoleplayAccountLock(f.scope, lease => {
+        const { state } = roleplayLease(lease);
+        for (const key of keys) {
+            state.submissions[key] = { accountId: state.accountId, dataEpoch: state.dataEpoch, intentHash: 'a'.repeat(64),
+                jobId: randomUUID(), targetInstanceId: instanceId, state: 'accepted', reservedReceiptBytes: reserved, effects: {} };
+        }
+        saveRoleplayAccount(lease);
+    });
+    // No new server reply is ever admitted: the user only saves from the browser.
+    commitSingleChatWrite(f.scope, f.input(), host);
+    assert.equal(messages(f).at(-1).mes, 'New result');
+    const submissions = readRoleplayAccount(f.scope).submissions;
+    assert.ok(keys.every(key => submissions[key].state === 'void' && submissions[key].reservedReceiptBytes === 0));
+    // A reply still running keeps its room.
+    assert.equal(submissions[roleplayHashFor(f, 'live')].state, 'accepted');
+    assert.ok(submissions[roleplayHashFor(f, 'live')].reservedReceiptBytes > 0);
+    assert.equal(getJob(f.scope.directories, live.jobId).state, 'waiting');
+});
+
 test('a completed job replays after its chat is deleted without recreating it', async t => {
     const f = fixture(t);
     const append = admit(f, 'append', 'append');

@@ -24,7 +24,8 @@ import { applyOverflowHiding } from './mewmory/hiding.js';
 import { assertRoleplayQuickReplyProof } from './generation/roleplay-quick-replies.js';
 import { applyManualAgentRecords } from './generation/agent-manual-records.js';
 import { applyPathfinderNotebookRecords } from './generation/pathfinder-notebook-records.js';
-import { assertRoleplayTransactionCapacity, confirmRoleplayAccount, roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, withRoleplayAccount } from './roleplay-store.js';
+import { assertRoleplayTransactionCapacity, confirmRoleplayAccount, releaseUnwritableRoleplayReservations, roleplayError, roleplayHash, roleplayLease,
+    saveRoleplayAccount, withRoleplayAccount } from './roleplay-store.js';
 
 export const ROLEPLAY_JOB_EFFECTS = Object.freeze(['append', 'continue', 'swipe', 'alternative', 'replace', 'caption', 'agent', 'notebook']);
 // A closed receipt holds one chat-write result twice (outcome and effect) plus its keys.
@@ -59,33 +60,6 @@ export function roleplayHidingModels(directories, jobId) {
     const saved = readArtifact(directories, jobId, 'roleplay-model-capabilities');
     if (!saved || saved.hash !== roleplayHash(saved.record) || !saved.record?.id) return [];
     return [saved.record];
-}
-
-/**
- * An admitted job holds its reservation until it writes. A job that was
- * cancelled, or that has left the jobs ledger, can never write, so its room is
- * returned and the receipt stays as void evidence. Failed and interrupted jobs
- * can still be retried, so they keep theirs until the ledger prunes them.
- */
-function releaseUnwritableReservations(lease) {
-    const { state, scope } = roleplayLease(lease);
-    let released = 0;
-    try {
-        for (const receipt of Object.values(state.submissions)) {
-            if (receipt?.state !== 'accepted' || typeof receipt.jobId !== 'string' || !(receipt.reservedReceiptBytes > 0)) continue;
-            const job = getJob(scope.directories, receipt.jobId);
-            if (job && !(job.state === 'cancelled' && job.cancellation?.requested)) continue;
-            receipt.state = 'void';
-            receipt.reservedReceiptBytes = 0;
-            released += 1;
-        }
-    } catch (error) {
-        // An unreadable ledger proves nothing about its jobs; keep every reservation.
-        console.warn('[Roleplay] Could not check admitted jobs for released space:', error.message);
-        return 0;
-    }
-    if (released) saveRoleplayAccount(lease);
-    return released;
 }
 
 function assertOperationKey(operationKey) {
@@ -123,7 +97,7 @@ export function admitRoleplayJob(base, account, { operationKey, effect, source, 
         if (!prior) {
             if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay action must finish first.');
             assertRoleplaySourceLocked(lease, source);
-            releaseUnwritableReservations(lease);
+            if (releaseUnwritableRoleplayReservations(lease).length) saveRoleplayAccount(lease);
             state.submissions[keyHash] = { accountId: state.accountId, dataEpoch: state.dataEpoch, intentHash, jobId: null,
                 targetInstanceId: source.instanceId, state: 'preparing', reservedReceiptBytes: ADMISSION_RESERVE_BYTES, effects: {} };
             try {

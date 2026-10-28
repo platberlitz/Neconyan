@@ -5,7 +5,7 @@ import { isDeepStrictEqual, TextDecoder, types } from 'node:util';
 import sanitize from 'sanitize-filename';
 import { acquireChatFileLock, getChatFileLockPath } from './chat-file-lock.js';
 import { assertDataRootRepairOwner } from './data-root-owner.js';
-import { canonical, retireJobStore, validateOwner } from './jobs/store.js';
+import { canonical, getJob, retireJobStore, validateOwner } from './jobs/store.js';
 import { preserveMeowerReceipts } from './meower-retirement.js';
 import { saveResetContent, loadResetContent, installResetContent } from './account-reset-content.js';
 import { decodeFileWriteRecovery, fsyncDirectorySync, setFileWriteRecoveryGuard, tryWriteFileSync, FILE_WRITE_RECOVERY_SUFFIX, FILE_WRITE_RECOVERY_MAX_BYTES } from './util.js';
@@ -1103,8 +1103,46 @@ export function largestRoleplayJournal(pending) {
 }
 
 /** Leave emergency capacity for bounded reconciliation rather than evicting older evidence. */
+/**
+ * An admitted job holds its reservation until it writes. A job that was
+ * cancelled, or that has left the jobs ledger, can never write, so its room is
+ * returned and the receipt stays as void evidence. Failed and interrupted jobs
+ * can still be retried, so they keep theirs until the ledger prunes them.
+ * Returns the released receipt keys; the caller's next save persists them.
+ */
+export function releaseUnwritableRoleplayReservations(lease) {
+    const { state, scope } = roleplayLease(lease);
+    const releasable = [];
+    try {
+        for (const [key, receipt] of Object.entries(state.submissions)) {
+            if (receipt?.state !== 'accepted' || typeof receipt.jobId !== 'string' || !(receipt.reservedReceiptBytes > 0)) continue;
+            const job = getJob(scope.directories, receipt.jobId);
+            if (job && !(job.state === 'cancelled' && job.cancellation?.requested)) continue;
+            releasable.push(key);
+        }
+    } catch (error) {
+        // An unreadable ledger proves nothing about its jobs; keep every reservation.
+        console.warn('[Roleplay] Could not check admitted jobs for released space:', error.message);
+        return [];
+    }
+    for (const key of releasable) {
+        state.submissions[key].state = 'void';
+        state.submissions[key].reservedReceiptBytes = 0;
+    }
+    return releasable;
+}
+
 export function assertRoleplayTransactionCapacity(lease, pending, finalState) {
     const { state, identity } = roleplayLease(lease);
+    // Every write first returns room held by replies that can never save, so
+    // stopped replies cannot fill the store for browser saves, imports or renames.
+    for (const key of releaseUnwritableRoleplayReservations(lease)) {
+        const planned = finalState?.submissions?.[key];
+        if (planned && planned !== state.submissions[key] && planned.jobId === state.submissions[key].jobId) {
+            planned.state = 'void';
+            planned.reservedReceiptBytes = 0;
+        }
+    }
     // Reserve the largest recovery progress record before staging or publishing any content.
     const progress = pending && { ...state, pending: pending.kind === 'chat-import'
         ? { ...pending, phase: 'linked', outputs: pending.outputs.map(output => ({ ...output, physical: ROLEPLAY_LARGEST_PHYSICAL, memoryDone: true })),
