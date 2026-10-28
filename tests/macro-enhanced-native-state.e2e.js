@@ -39,13 +39,10 @@ test('A dirty pronoun draft cannot overwrite the newly selected persona', async 
 
 test('Shorthand and frozen previews produce real results without leaving saved state', async ({ app }) => {
     const { page, account, workbench } = await openMacros(app);
-    // Character selection starts a prompt preview whose validation cache is saved.
-    // Wait for that unrelated startup write before measuring sandbox requests.
-    const initialValidationSave = page.waitForResponse(response => response.url().endsWith('/api/settings/save')
-        && response.ok()
-        && response.request().postDataJSON()?.accountStorage?.StoryStringValidationCache);
     await selectMacroCharacter(page, account.avatar);
-    await initialValidationSave;
+    // Flush startup settings before measuring sandbox writes. Hidden prompt previews
+    // are deferred, so selection need not create a validation-cache write.
+    expect(await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }))).toBe(true);
     await page.clock.install();
     await page.clock.fastForward(2000);
     const saves = [];

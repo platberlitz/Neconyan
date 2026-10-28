@@ -120,7 +120,8 @@ for (const layout of layouts) {
             // Hidden prompt controls render on first opening. Include them in both snapshots.
             await page.locator('#openai-tab-btn-prompts').click();
             await expect(page.locator('#completion_prompt_manager_list')).toBeVisible();
-            await expect(root.locator('#completion_prompt_manager_popup_entry_form_prompt')).toBeAttached();
+            // Only the desktop split view moves the editor into the drawer.
+            await expect((layout.ios ? page : root).locator('#completion_prompt_manager_popup_entry_form_prompt')).toBeAttached();
             await page.locator('#openai-tab-btn-parameters').click();
             await expect(page.locator('#openai-tab-btn-parameters')).toHaveAttribute('aria-selected', 'true');
             const values = () => root.locator('.sb-shell-panel-active').evaluate(panel => [...panel.querySelectorAll('input, select, textarea')].map(el => ({ id: el.id, value: el.value, checked: el.checked })));
