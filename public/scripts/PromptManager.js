@@ -1373,7 +1373,10 @@ class PromptManager {
             }
         };
 
-        waitUntilCondition(() => !is_send_press && !is_group_generating, 1024 * 1024, 100).then(async () => {
+        // First opening during a reply still needs usable controls. Only the dry run
+        // waits for generation; display-only counts cannot change chat variables.
+        const initialRender = renderState.shouldWaitForGeneration ? renderPromptManagerDom() : Promise.resolve();
+        Promise.all([initialRender, waitUntilCondition(() => !is_send_press && !is_group_generating, 1024 * 1024, 100)]).then(async () => {
             if (!this.#isRenderCurrent(renderRequestId)) {
                 return;
             }
