@@ -27,7 +27,7 @@ let handleIndex = 0;
 let server;
 let tempParent;
 
-function createCard(name, description, tags = ['fixture']) {
+function createCard(name, description, tags = ['fixture'], assistant = undefined) {
     return writeCard(png, JSON.stringify({
         spec: 'chara_card_v2',
         spec_version: '2.0',
@@ -48,7 +48,7 @@ function createCard(name, description, tags = ['fixture']) {
             tags,
             creator: 'Fixture',
             character_version: '1.0',
-            extensions: { fav: false, world: '' },
+            extensions: { fav: false, world: '', ...(assistant ? { neconyan_assistant: assistant } : {}) },
         },
     }));
 }
@@ -148,6 +148,42 @@ afterAll(async () => {
 });
 
 describe('character list performance', () => {
+    test('assistant lists reuse positive and negative metadata, then detect edits, renames and deletion', async () => {
+        const cardPath = path.join(directories.characters, 'Nova.png');
+        const otherPath = path.join(directories.characters, 'Kit.png');
+        fs.writeFileSync(cardPath, createCard('Nova', 'SHALLOW_CARD_MARKER one', [], { id: 'miso-male', version: 1 }));
+        fs.writeFileSync(otherPath, createCard('Kit', 'SHALLOW_CARD_MARKER two'));
+        const counter = countCardParses();
+        const catalogue = async () => {
+            const response = await fetch(`${baseUrl}/api/characters/assistants`);
+            expect(response.status).toBe(200);
+            return (await response.json()).personalities.flatMap(personality => personality.variants).flatMap(variant => variant.installed);
+        };
+        expect(await catalogue()).toEqual([expect.objectContaining({ avatar: 'Nova.png', version: 1 })]);
+        expect(counter.parses).toBe(2);
+        counter.reset();
+        expect(await catalogue()).toEqual([expect.objectContaining({ avatar: 'Nova.png', version: 1 })]);
+        expect(counter.parses).toBe(0);
+
+        const stat = fs.statSync(cardPath);
+        fs.writeFileSync(cardPath, createCard('Nova', 'SHALLOW_CARD_MARKER one', [], { id: 'miso-male', version: 2 }));
+        expect(fs.statSync(cardPath).size).toBe(stat.size);
+        fs.utimesSync(cardPath, stat.atime, stat.mtime);
+        counter.reset();
+        expect(await catalogue()).toEqual([expect.objectContaining({ avatar: 'Nova.png', version: 2 })]);
+        expect(counter.parses).toBe(1);
+
+        fs.writeFileSync(otherPath, createCard('Kit', 'SHALLOW_CARD_MARKER two', [], { id: 'taro-male', version: 1 }));
+        fs.renameSync(cardPath, path.join(directories.characters, 'Renamed.png'));
+        expect(await catalogue()).toEqual(expect.arrayContaining([
+            expect.objectContaining({ avatar: 'Renamed.png', version: 2 }),
+            expect.objectContaining({ avatar: 'Kit.png', version: 1 }),
+        ]));
+        fs.unlinkSync(otherPath);
+        fs.unlinkSync(path.join(directories.characters, 'Renamed.png'));
+        expect(await catalogue()).toEqual([]);
+    });
+
     test('reuses an unchanged shallow card across a forced list rebuild', async () => {
         fs.writeFileSync(path.join(directories.characters, 'Nova.png'), createCard('Nova', 'SHALLOW_CARD_MARKER one'));
         fs.writeFileSync(path.join(directories.characters, 'Kit.png'), createCard('Kit', 'SHALLOW_CARD_MARKER two', ['other']));

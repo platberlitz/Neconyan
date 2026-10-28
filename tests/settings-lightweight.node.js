@@ -100,3 +100,28 @@ test('a section request skips settings.json and rejects unknown names', t => {
         assert.deepEqual(result, { error: 'unknown_settings_section' });
     }
 });
+
+test('catalogue reads reuse unchanged files and observe edits, additions, deletions and corruption', t => {
+    const request = catalogueRequest(t, { sections: ['presets', 'quickReplies'] });
+    const dirs = request.user.directories;
+    const preset = path.join(dirs.openAI_Settings, 'Default.json');
+    const quickReply = path.join(dirs.quickreplies, 'Set.json');
+    const reads = t.mock.method(fs, 'readFileSync');
+    const first = call(request).result;
+    first.quickReplyPresets[0].name = 'mutated';
+    const second = call(request).result;
+    assert.equal(second.quickReplyPresets[0].name, 'Set');
+    assert.equal(reads.mock.calls.filter(call => call.arguments[0] === preset).length, 1);
+    assert.equal(reads.mock.calls.filter(call => call.arguments[0] === quickReply).length, 1);
+
+    fs.writeFileSync(preset, JSON.stringify({ temperature: 2 }));
+    fs.writeFileSync(path.join(dirs.openAI_Settings, 'Added.json'), JSON.stringify({ temperature: 3 }));
+    const updated = call(request).result;
+    assert.deepEqual(updated.openai_setting_names, ['Added', 'Default']);
+    assert.deepEqual(updated.openai_settings.map(text => JSON.parse(text).temperature), [3, 2]);
+    fs.unlinkSync(preset);
+    fs.writeFileSync(quickReply, '{broken');
+    const final = call(request).result;
+    assert.deepEqual(final.openai_setting_names, ['Added']);
+    assert.deepEqual(final.quickReplyPresets, []);
+});

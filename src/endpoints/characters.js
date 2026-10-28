@@ -37,7 +37,7 @@ import { serverDirectory } from '../server-directory.js';
 import { forgetSharedScratchpadsLocked, moveSharedScratchpadsLocked } from '../scratchpad/shared-sessions.js';
 import { assertScratchpadAvatarWriteLocked } from '../scratchpad/images.js';
 import { scratchpadAccountBase, withScratchpad } from '../scratchpad/store.js';
-import { createFileSummaryCache, createLimiter, fileStatIdentity } from '../file-summary-cache.js';
+import { createFileSummaryCache, createLimiter, fileStatIdentity, sameFileStatIdentity } from '../file-summary-cache.js';
 import { decodeServerImage } from '../media-codecs.js';
 import { createEntityDateAdded, ensureEntityDateAdded, prepareEntityDateAddedMove, reconcileEntityDateAdded, removeEntityDateAdded, ENTITY_DATE_ADDED_FILE } from '../entity-date-added.js';
 import { getEntityLastChat, prepareEntityLastChatMove, readEntityLastChats, removeEntityLastChat, setEntityLastChat, ENTITY_LAST_CHAT_FILE } from '../entity-last-chat.js';
@@ -75,6 +75,9 @@ const memoryCache = new MemoryLimitedMap(memoryCacheCapacity);
  * stale. This is not a byte hash, and the card reader uses the same identity.
  */
 const shallowCardCache = createFileSummaryCache({ maxBytes: 32 * 1024 * 1024, maxEntries: 4096 });
+// Remember absence too: most cards are not bundled assistants. Keep only the
+// two fields the picker and installer use, rather than retaining full cards.
+const assistantMetadataCache = createFileSummaryCache({ maxBytes: 1024 * 1024, maxEntries: 4096 });
 // Stats for every character's chats share one bound, so a large library cannot
 // start thousands of file stats at once during a list rebuild.
 const CHARACTER_CHAT_STATS_CONCURRENCY = 32;
@@ -290,9 +293,18 @@ async function assistantUiCatalog(request) {
 
 async function readAssistantMetadata(filePath) {
     try {
+        recoverFileWriteSync(filePath);
+        const key = path.resolve(filePath);
+        const identity = fileStatIdentity(fs.statSync(filePath));
+        const cached = assistantMetadataCache.get(key, identity);
+        if (cached !== undefined) return cached;
         const card = JSON.parse(await readCharacterData(filePath));
         const metadata = card?.data?.extensions?.neconyan_assistant;
-        return metadata && typeof metadata.id === 'string' ? metadata : null;
+        const result = metadata && typeof metadata.id === 'string' ? { id: metadata.id, version: metadata.version } : null;
+        if (sameFileStatIdentity(identity, fileStatIdentity(fs.statSync(filePath)))) {
+            assistantMetadataCache.set(key, identity, result);
+        }
+        return result;
     } catch {
         return null;
     }

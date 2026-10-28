@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import sanitize from 'sanitize-filename';
 
 import { SETTINGS_FILE, MEDIA_EXTENSIONS } from '../constants.js';
+import { readParsedSettingsFile } from '../settings-file-cache.js';
 import { clientRelativePath, fsyncDirectorySync, removeFileExtension } from '../util.js';
 import { roleplayAccountBase, withRoleplayAccount } from '../roleplay-store.js';
 import {
@@ -514,9 +515,11 @@ const PROVIDER_GENERATORS = {
 
 export function readQuickImageGenSettings(directories) {
     try {
-        const raw = fs.readFileSync(path.join(directories.root, SETTINGS_FILE), 'utf8');
-        const block = JSON.parse(raw)?.extension_settings?.[QUICK_IMAGE_GEN_EXTENSION_ID];
-        return block && typeof block === 'object' ? block : {};
+        const settings = readParsedSettingsFile(path.join(directories.root, SETTINGS_FILE));
+        const block = settings?.extension_settings?.[QUICK_IMAGE_GEN_EXTENSION_ID];
+        // Request preparation adds provider-specific fields, so never expose the
+        // shared settings snapshot to a caller that may mutate it.
+        return block && typeof block === 'object' ? structuredClone(block) : {};
     } catch {
         return {};
     }

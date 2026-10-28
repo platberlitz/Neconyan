@@ -1,5 +1,5 @@
-import fs from 'node:fs';
 import path from 'node:path';
+import { readParsedSettingsFile } from '../settings-file-cache.js';
 
 import { applyQuickImageStyle } from '../../public/scripts/extensions/quick-image-gen/lib/styles.js';
 import { resolveCharacterImageSettings } from '../../public/scripts/extensions/quick-image-gen/lib/character-settings.js';
@@ -20,10 +20,10 @@ const invalid = (message, code = 'QIG_SCOPED_SOURCE_CHANGED') => { throw rolepla
 
 function readSDSettings(directories) {
     let settings;
-    try { settings = JSON.parse(fs.readFileSync(path.join(directories.root, 'settings.json'), 'utf8')); } catch {
+    try { settings = readParsedSettingsFile(path.join(directories.root, 'settings.json')); } catch {
         invalid('The saved image style settings are unavailable.');
     }
-    return settings?.extension_settings?.sd || settings?.extension_settings?.['stable-diffusion'] || {};
+    return structuredClone(settings?.extension_settings?.sd || settings?.extension_settings?.['stable-diffusion'] || {});
 }
 
 function assertAcceptedSettings(directories, snapshot) {
