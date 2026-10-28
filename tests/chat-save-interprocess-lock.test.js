@@ -8,8 +8,16 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 let tempRoot;
+const children = new Set();
 
-afterEach(() => {
+afterEach(async () => {
+    // A timed-out assertion must not leave a paused writer keeping Jest alive.
+    await Promise.all([...children].map(child => new Promise(resolve => {
+        if (child.exitCode !== null || child.signalCode !== null) return resolve();
+        child.once('exit', resolve);
+        child.kill('SIGKILL');
+    })));
+    children.clear();
     if (tempRoot) {
         fs.rmSync(tempRoot, { recursive: true, force: true });
         tempRoot = undefined;
@@ -137,7 +145,7 @@ describe('chat save interprocess lock', () => {
         expect(secondOutput).toMatch(/second-rejected:.*(?:integrity|source changed)/i);
         expect(secondOutput).not.toContain('second-saved');
         expect(fs.readFileSync(chatFile, 'utf8')).toContain('first writer');
-    });
+    }, 30000);
 });
 
 function createChat(integrity, message) {
@@ -160,27 +168,43 @@ function waitForOutput(child, expected) {
     return new Promise((resolve, reject) => {
         let stdout = '';
         let stderr = '';
+        const timer = setTimeout(() => finish(new Error(`Timed out waiting for ${expected}: ${stdout}\n${stderr}`)), 10000);
+        const finish = error => {
+            clearTimeout(timer);
+            child.stdout.off('data', onData);
+            child.stderr.off('data', onErrorData);
+            child.off('error', onError);
+            child.off('exit', onExit);
+            if (error) reject(error);
+            else resolve();
+        };
+        const onError = error => finish(error);
+        const onErrorData = chunk => stderr += chunk;
+        const onExit = code => finish(new Error(`Lock holder exited with code ${code}: ${stderr}`));
+        const onData = chunk => {
+            stdout += chunk;
+            if (stdout.includes(expected)) finish();
+        };
         child.stdout.setEncoding('utf8');
         child.stderr.setEncoding('utf8');
-        child.stdout.on('data', (chunk) => {
-            stdout += chunk;
-            if (stdout.includes(expected)) {
-                resolve();
-            }
-        });
-        child.stderr.on('data', chunk => stderr += chunk);
-        child.once('error', reject);
-        child.once('exit', (code) => {
-            if (!stdout.includes(expected)) {
-                reject(new Error(`Lock holder exited with code ${code}: ${stderr}`));
-            }
-        });
+        child.stdout.on('data', onData);
+        child.stderr.on('data', onErrorData);
+        child.once('error', onError);
+        child.once('exit', onExit);
     });
 }
 
 function waitForChildExit(child) {
-    return new Promise((resolve, reject) => {
+    children.add(child);
+    const exited = new Promise((resolve, reject) => {
         child.once('error', reject);
-        child.once('exit', code => code === 0 ? resolve() : reject(new Error(`Lock holder exited with code ${code}.`)));
+        child.once('exit', code => {
+            children.delete(child);
+            if (code === 0) resolve();
+            else reject(new Error(`Lock holder exited with code ${code}.`));
+        });
     });
+    // Cleanup can stop this child before the test reaches its exit assertion.
+    exited.catch(() => {});
+    return exited;
 }

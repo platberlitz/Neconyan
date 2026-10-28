@@ -90,6 +90,13 @@ for (const phone of [false, true]) {
         await expect.poll(() => page.evaluate(async () => (await import('/script.js')).is_send_press)).toBe(false);
         expect(submissions).toEqual([]);
         expect(app.provider.calls).toHaveLength(3);
+        // Send unlocks before Agents finish; closing Playwright bypasses the pending-save warning.
+        const chatId = await page.evaluate(async () => (await import('/script.js')).getCurrentChatId());
+        await expect.poll(async () => {
+            const saved = await account.post('/api/chats/get', { avatar_url: account.avatar, file_name: chatId });
+            const reply = saved.at(-1);
+            return { text: reply?.mes, note: reply?.extra?.inChatAgentCompanionResults?.companion?.content };
+        }, { timeout: 30000 }).toEqual({ text: 'The revised browser reply is ready.', note: 'The Companion note is ready.' });
         await page.close();
         const reopened = await openChat(account);
         await expect(reopened.locator('#chat .mes[mesid]').last()).toContainText('The revised browser reply is ready.');

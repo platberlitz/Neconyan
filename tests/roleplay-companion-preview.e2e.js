@@ -87,14 +87,17 @@ for (const [phone, stopAfterReturn] of [[true, false], [false, false], [true, tr
             await preview.scrollIntoViewIfNeeded();
             await page.screenshot({ path: `../screenshots/roleplay-reopened-${viewport}-${process.env.NECONYAN_SCREENSHOT_PHASE || 'after'}.png`, scale: 'css' });
             await expect.poll(() => page.evaluate(async () => (await import('/script.js')).isGenerating())).toBe(true);
-            await expect(page.locator('#mes_stop')).toBeVisible();
+            const stopAgents = page.getByRole('button', { name: 'Cancel running agents', exact: true });
+            await expect(stopAgents).toBeVisible();
+            await expect(page.locator('#mes_stop')).toBeHidden();
+            await expect(page.locator('#send_but')).toHaveAttribute('aria-disabled', 'true');
             const length = await page.evaluate(async () => (await import('/script.js')).chat.length);
             await page.locator('#send_textarea').fill('This must wait for the current reply.');
             await startNativeReply(page);
             expect(await page.evaluate(async () => (await import('/script.js')).chat.length)).toBe(length);
             await page.locator('#send_textarea').fill('');
             if (stopAfterReturn) {
-                await page.locator('#mes_stop').click();
+                await stopAgents.click();
                 await account.settled(jobId);
                 expect(app.provider.calls.find(call => call.model === 'held-note').completedAt).toBeNull();
             }

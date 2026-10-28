@@ -36,7 +36,12 @@ for (const termux of [false, true]) for (const phone of [false, true]) test(`a c
     await app.stop();
     const original = path.join(app.directory, 'original-data');
     fs.renameSync(app.dataRoot, original);
-    fs.cpSync(original, app.dataRoot, { recursive: true, verbatimSymlinks: true });
+    // The stopped-transfer instructions leave device-local ownership on the source.
+    const sourceOwner = path.join(original, '.neconyan-root-owner');
+    expect(fs.existsSync(sourceOwner)).toBe(true);
+    fs.cpSync(original, app.dataRoot, { recursive: true, verbatimSymlinks: true, filter: source => source !== sourceOwner });
+    expect(fs.existsSync(sourceOwner)).toBe(true);
+    expect(fs.existsSync(path.join(app.dataRoot, '.neconyan-root-owner'))).toBe(false);
     const destinationOptions = termux ? { env: { NODE_OPTIONS: `--import=${ctimePreload}`, NECONYAN_TERMUX_ZERO_BIRTHTIME_DEVICE: '' } } : initialServerOptions;
     await app.start(destinationOptions);
     if (termux) {

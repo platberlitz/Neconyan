@@ -11,8 +11,21 @@ async function readStore(account) {
     return (await account.context.request.get('/api/plugins/hopper/store')).json();
 }
 
+async function accountWithFixtureLibrary(app, options = {}) {
+    const account = await app.account(options);
+    // Bundled cards are installed on startup; these cases need an exact library.
+    for (const character of await account.post('/api/characters/all')) {
+        if (character.avatar === account.avatar) continue;
+        const deleted = await account.context.request.post('/api/characters/delete', {
+            headers: account.headers, data: { avatar_url: character.avatar },
+        });
+        expect(deleted.ok()).toBe(true);
+    }
+    return account;
+}
+
 test('Meower disables Add all when no characters are available', async ({ app }) => {
-    const account = await app.account();
+    const account = await accountWithFixtureLibrary(app);
     const deleted = await account.context.request.post('/api/characters/delete', {
         headers: account.headers, data: { avatar_url: account.avatar },
     });
@@ -32,7 +45,7 @@ async function openSettings(account) {
 }
 
 test('phone Meower keeps character selection controls inside the screen at the largest text size', async ({ app }, info) => {
-    const account = await app.account({ phone: true, configureSettings: saved => { saved.power_user.font_scale = 1.5; } });
+    const account = await accountWithFixtureLibrary(app, { phone: true, configureSettings: saved => { saved.power_user.font_scale = 1.5; } });
     const library = [account.avatar];
     for (let index = 1; index <= 11; index++) {
         const created = await account.context.request.post('/api/characters/create', {
@@ -84,7 +97,7 @@ test('phone Meower keeps character selection controls inside the screen at the l
 for (const phone of [false, true]) {
     const minimumTarget = phone ? 44 : 32;
     test(`${phone ? 'phone' : 'desktop'} Meower adds the whole character library without replacing invites`, async ({ app }) => {
-        const account = await app.account({ phone });
+        const account = await accountWithFixtureLibrary(app, { phone });
         const created = await account.context.request.post('/api/characters/create', {
             headers: account.headers, data: { ch_name: 'Luna', description: 'A quiet astronomer.' },
         });
