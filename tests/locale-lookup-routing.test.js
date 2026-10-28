@@ -26,6 +26,8 @@ class FakeElement {
         this.nodeType = 1;
         this.attributes = { ...attributes };
         this.textContent = text;
+        this.isConnected = true;
+        this.parentElement = null;
     }
     getAttribute(name) { return Object.hasOwn(this.attributes, name) ? this.attributes[name] : null; }
     hasAttribute(name) { return Object.hasOwn(this.attributes, name); }
@@ -249,6 +251,35 @@ describe('scoped key lookups', () => {
     });
 
     describe('data-i18n elements', () => {
+        test('a nested insertion localises each connected subtree once and ignores removed nodes', async () => {
+            const { page, mocks } = await loadI18n();
+            mocks.localizeControls.mockClear();
+            const panel = new FakeElement();
+            const child = element('Open', 'Open');
+            child.parentElement = panel;
+            panel.querySelectorAll = () => [child];
+            const removed = element('Open', 'Open');
+            removed.isConnected = false;
+            page.observers[0]([
+                { addedNodes: [panel, removed] },
+                { addedNodes: [child, child] },
+                { addedNodes: [{ nodeType: 3, parentElement: child }, { nodeType: 3, parentElement: child }] },
+            ]);
+            expect(child.textContent).toBe('Abrir');
+            expect(removed.textContent).toBe('Open');
+            expect(mocks.localizeControls).toHaveBeenCalledTimes(1);
+            expect(mocks.localizeControls.mock.calls[0][0]).toBe(panel);
+        });
+
+        test('replacing text does not reapply a parent data-i18n key', async () => {
+            const { page, mocks } = await loadI18n();
+            mocks.localizeControls.mockClear();
+            const parent = element('Open', 'Updated caption');
+            page.observers[0]([{ addedNodes: [{ nodeType: 3, parentElement: parent }] }]);
+            expect(parent.textContent).toBe('Updated caption');
+            expect(mocks.localizeControls).toHaveBeenCalledTimes(1);
+        });
+
         test('a scoped key sets text or an attribute from the scoped table, in any position of a multi-key list', async () => {
             const { i18n, page } = await loadI18n();
             const text = element('scoped.x.short', 'Completed');
@@ -381,6 +412,10 @@ describe('scoped key lookups', () => {
             page.observers[0]([{ addedNodes: [after], attributeName: null, target: after }]);
             expect(after.textContent).toBe('Done');
             expect(i18n.translate('Completed', 'scoped.x.short')).toBe('Done');
+            const reapplied = element('scoped.x.short', 'Completed');
+            page.elements.push(reapplied);
+            i18n.applyLocale();
+            expect(reapplied.textContent).toBe('Done');
         });
     });
 

@@ -6,6 +6,8 @@ import { applyLocale } from './i18n.js';
  * @description Cache for Handlebars templates.
  */
 const TEMPLATE_CACHE = new Map();
+// Concurrent callers share the download and compilation, not their rendered data.
+const TEMPLATE_REQUESTS = new Map();
 
 /**
  * Loads a URL content using XMLHttpRequest synchronously.
@@ -59,13 +61,18 @@ function getUrlAsync(url) {
  */
 export async function renderTemplateAsync(templateId, templateData = {}, sanitize = true, localize = true, fullPath = false) {
     async function fetchTemplateAsync(pathToTemplate) {
-        let template = TEMPLATE_CACHE.get(pathToTemplate);
-        if (!template) {
-            const templateContent = await getUrlAsync(pathToTemplate);
-            template = Handlebars.compile(templateContent);
+        const cached = TEMPLATE_CACHE.get(pathToTemplate);
+        if (cached) return cached;
+        if (TEMPLATE_REQUESTS.has(pathToTemplate)) return TEMPLATE_REQUESTS.get(pathToTemplate);
+
+        const request = getUrlAsync(pathToTemplate).then(templateContent => {
+            // A legacy synchronous caller may have populated the cache while we waited.
+            const template = TEMPLATE_CACHE.get(pathToTemplate) ?? Handlebars.compile(templateContent);
             TEMPLATE_CACHE.set(pathToTemplate, template);
-        }
-        return template;
+            return template;
+        }).finally(() => TEMPLATE_REQUESTS.delete(pathToTemplate));
+        TEMPLATE_REQUESTS.set(pathToTemplate, request);
+        return request;
     }
 
     try {
