@@ -137,7 +137,7 @@ jest.unstable_mockModule('../public/script.js', () => ({
 globalThis.fetch = async (url, options = {}) => {
     const body = options.body ? JSON.parse(options.body) : null;
     requests.push({ url, body, method: options.method || 'GET', signal: options.signal ?? null });
-    if (url.endsWith('/workflow/submit') || url.endsWith('/group/submit')) return submitHandler(body, requests.length);
+    if (url.endsWith('/workflow/submit') || url.endsWith('/group/submit') || url.endsWith('/agent/submit')) return submitHandler(body, requests.length);
     if (url.includes('/workflow/receipt')) return receiptHandler(requests.length, options);
     throw new Error(`unexpected fetch ${url}`);
 };
@@ -1625,5 +1625,24 @@ describe('the origin an image refusal carries', () => {
         submitHandler = async () => response(409, { error: words, code: 'ROLEPLAY_IMAGE_INPUT' });
         await workflows.runNativeRoleplayGeneration('normal');
         expect(refusalEvents()[0].detail.origin.account).toBe('alice');
+    });
+});
+
+describe('a manual Agent action the server cannot hold', () => {
+    const run = () => workflows.runRoleplayAgentAction({ mode: 'companions', agentIds: ['a', 'b', 'c', 'd', 'e'], messageIndex: 1 });
+    const agentSubmissions = () => requests.filter(request => request.url.endsWith('/agent/submit'));
+
+    test('too many Companions for one server run go back to the page instead of failing', async () => {
+        submitHandler = async () => response(507, { error: 'The selected Companions cannot fit their saved results within this account workflow.', code: 'ROLEPLAY_COMPANION_CAPACITY' });
+        await expect(run()).resolves.toBeNull();
+        expect(agentSubmissions()).toHaveLength(1);
+        expect(agentSubmissions()[0].body).toMatchObject({ mode: 'companions', agentIds: ['a', 'b', 'c', 'd', 'e'], messageIndex: 1 });
+    });
+
+    test('any other server failure is still reported, because the run may already have started there', async () => {
+        for (const [status, body] of [[507, { error: 'Storage is full.', code: 'ROLEPLAY_STORAGE_FULL' }], [500, { error: 'Broken' }], [503, { error: 'Busy' }]]) {
+            submitHandler = async () => response(status, body);
+            await expect(run()).rejects.toThrow(body.error);
+        }
     });
 });

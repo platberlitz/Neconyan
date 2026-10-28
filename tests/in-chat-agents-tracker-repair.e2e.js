@@ -242,6 +242,37 @@ for (const phone of [false, true]) {
     });
 }
 
+test('Run automatic falls back to the page when the server has no room for every Companion', async ({ app }) => {
+    const account = await app.account({ activeConnection: true, configureSettings(saved) {
+        configureTrackerSettings(saved);
+        saved.power_user.reply_generation_location = 'server';
+    } });
+    const event = '[EVENT|✅ RESOLVED|The question was answered|Tonight]\ncontext: They understand each other.\n[/EVENT]';
+    app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: event } }] };
+    const ids = ['auto-1', 'auto-2', 'auto-3', 'auto-4', 'auto-5', 'auto-6'];
+    const automatic = { execution: 'companion', companion: { trigger: 'auto', displayMode: 'card', format: 'markdown' } };
+    const { page, request } = await openTrackerChat(account, 'Run automatic capacity', 'The scene is unchanged.',
+        { id: ids[0], ...automatic }, { templateName: 'event-tracker' });
+    await page.evaluate(async ({ ids, automatic }) => {
+        const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+        const template = await (await fetch('/scripts/extensions/in-chat-agents/templates/event-tracker.json')).json();
+        for (const id of ids) await store.saveAgent({ ...template, id, name: id, enabled: true, ...automatic });
+        await (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).openCompanionPanel();
+    }, { ids: ids.slice(1), automatic });
+    const refused = page.waitForResponse(sent => sent.url().endsWith('/api/roleplay/agent/submit'));
+    const button = page.locator('#ica--tracker-panel [data-action="panel-run-auto"]');
+    await expect(button).toBeEnabled();
+    await button.click();
+    const response = await refused;
+    expect(response.status()).toBe(507);
+    expect((await response.json()).code).toBe('ROLEPLAY_COMPANION_CAPACITY');
+    await expect.poll(async () => {
+        const results = (await account.post('/api/chats/get', request))[1].extra?.inChatAgentCompanionResults || {};
+        return ids.filter(id => results[id]?.status === 'done' && results[id].content === event).length;
+    }, { timeout: 60000 }).toBe(ids.length);
+    expect(app.provider.calls).toHaveLength(ids.length);
+});
+
 test('with server replies chosen, Fix Trackers and the Companion wrench repair on the server', async ({ app }) => {
     const account = await app.account({ activeConnection: true, configureSettings(saved) {
         configureTrackerSettings(saved);
