@@ -9,6 +9,7 @@ import bytes from 'bytes';
 import { SETTINGS_FILE } from '../constants.js';
 import { prepareSettingsSave, restoreSettingsSnapshot } from '../settings-version.js';
 import { invalidateParsedSettingsFile, readParsedSettingsFile } from '../settings-file-cache.js';
+import { createJsonCatalogueCache } from '../json-catalogue-cache.js';
 import { readAgentCollection } from '../in-chat-agent-storage.js';
 import {
     getConfigValue,
@@ -39,6 +40,7 @@ const AUTOSAVE_INTERVAL = 10 * 60 * 1000;
  * @type {Map<string, function>}
  */
 const AUTOSAVE_FUNCTIONS = new Map();
+const catalogueCache = createJsonCatalogueCache();
 
 /** Cancel pending autosave throttles. Used when a process is winding down. */
 export function cancelAutoSaves() {
@@ -113,8 +115,8 @@ function readAndParseFromDirectory(directoryPath, fileExtension = '.json') {
 
     files.forEach(item => {
         try {
-            const file = fs.readFileSync(path.join(directoryPath, item), 'utf-8');
-            parsedFiles.push(fileExtension == '.json' ? JSON.parse(file) : file);
+            const filePath = path.join(directoryPath, item);
+            parsedFiles.push(fileExtension == '.json' ? catalogueCache.read(filePath, true) : fs.readFileSync(filePath, 'utf-8'));
         } catch {
             // skip
         }
@@ -161,8 +163,7 @@ function readPresetsFromDirectory(directoryPath, options = {}) {
 
     files.forEach(item => {
         try {
-            const file = fs.readFileSync(path.join(directoryPath, item), 'utf8');
-            JSON.parse(file);
+            const file = catalogueCache.read(path.join(directoryPath, item));
             fileContents.push(file);
             fileNames.push(removeFileExtension ? item.replace(/\.[^/.]+$/, '') : item);
         } catch {

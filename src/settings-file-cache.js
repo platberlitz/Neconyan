@@ -105,7 +105,7 @@ export function readParsedSettingsFile(filePath, handle = '') {
     }
 
     removeCachedSettings(key);
-    const entry = { identity, bytes: Number(identity.size), settings };
+    const entry = { identity, bytes: Number(identity.size), settings, filePath: path.resolve(filePath) };
     parsedSettingsCache.set(key, entry);
     parsedSettingsBytes += entry.bytes;
     trimCachedSettings();
@@ -118,4 +118,10 @@ export function readParsedSettingsFile(filePath, handle = '') {
  */
 export function invalidateParsedSettingsFile(filePath, handle = '') {
     removeCachedSettings(getCacheKey(filePath, handle));
+    // Background readers have a directory but no request handle. A write must
+    // invalidate every snapshot of this path, including those readers' copies.
+    const resolved = path.resolve(filePath);
+    for (const [key, entry] of parsedSettingsCache) {
+        if (entry.filePath === resolved) removeCachedSettings(key);
+    }
 }
