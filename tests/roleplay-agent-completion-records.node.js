@@ -21,9 +21,9 @@ function prepared(t) {
         output: { message: { mes: 'Raw answer', extra: {} } } };
 }
 
-test('an automatic Agent failure stop delivers a reply without Agent proof', t => {
+for (const reason of ['failed', 'refused']) test(`an automatic Agent ${reason} stop delivers a reply without Agent proof`, t => {
     const f = prepared(t);
-    writeArtifact(f.directories, f.job.id, 'roleplay-agent-stop', { intentHash: roleplayHash(f.job.intent), reason: 'failed' });
+    writeArtifact(f.directories, f.job.id, 'roleplay-agent-stop', { intentHash: roleplayHash(f.job.intent), reason });
     assert.equal(applyAgentCompletionRecords(f.directories, f.job, f.records, f.output), undefined);
     assert.deepEqual(f.records, [{ chat_metadata: {} }, { mes: 'Answer' }]);
 });

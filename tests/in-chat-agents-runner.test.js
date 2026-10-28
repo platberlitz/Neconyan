@@ -10325,6 +10325,32 @@ describe('in-chat agent post-processing runner', () => {
         expect(chat[0].mes).toBe(expected);
     });
 
+    test.each([
+        [undefined, 0],
+        [false, 1],
+    ])('a refused main reply with the refusal guard set to %s sends %s Agent requests', async (guard, requests) => {
+        const refusal = 'I cannot fulfill this request. My safety policies strictly prohibit sexually explicit content, regardless of framing.';
+        usePromptTransformPostAgent();
+        globalSettings.promptTransformRefusalGuard = guard;
+        enabledAgents[0].connectionProfile = 'profile-cc';
+        connectionManagerRequestService = {
+            getProfile: jest.fn(() => ({ name: 'Example profile', model: 'm' })),
+            sendRequest: jest.fn(async () => ({ content: 'Rewritten refusal', lengthLimited: false })),
+        };
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        chat.push({ name: 'Assistant', mes: refusal, is_user: false, is_system: false, extra: {} });
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await new Promise(resolve => setTimeout(resolve, 5));
+
+        expect(connectionManagerRequestService.sendRequest).toHaveBeenCalledTimes(requests);
+        expect(chat[0].mes).toBe(requests ? 'Rewritten refusal' : refusal);
+        const notice = globalThis.toastr.info.mock.calls.some(([message]) => /looks like a refusal/.test(message));
+        expect(notice).toBe(!requests);
+    });
+
     test.each([401, 429, 500])('profile failure %s keeps its cause without repeating the same chat request', async status => {
         usePromptTransformPostAgent();
         enabledAgents[0].connectionProfile = 'profile-cc';

@@ -53,7 +53,8 @@ import { stageBoundModelToolCalls } from './roleplay-tool-dispatch.js';
 import { createRoleplayStreamPreview, publishRoleplayPreview } from './roleplay-preview.js';
 import { applyRoleplayVectorFiles, prepareRoleplayVectors } from './roleplay-vectors.js';
 import { prepareRoleplayNoteContext, prepareRoleplayNotebooks } from '../notebooks/context.js';
-import { isRoleplayAgentStop, markRoleplayAgentsFailed, roleplayAgentsStopped, roleplayAgentsStoppedByOwner, withRoleplayAgentStop } from './roleplay-agent-stop.js';
+import { isRoleplayAgentStop, markRoleplayAgentsFailed, markRoleplayAgentsRefused, roleplayAgentsStopped, roleplayAgentsStoppedByOwner, withRoleplayAgentStop } from './roleplay-agent-stop.js';
+import { isLikelyMainReplyRefusal } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-refusal.js';
 import { assertRoleplayBundledMacrosCaptured } from './roleplay-bundled-macros.js';
 import { preserveInterruptedRoleplayReply, recordRoleplayMainReplyComplete } from './roleplay-kept-reply.js';
 
@@ -186,6 +187,14 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
         if (!blocked) {
             try { recordRoleplayMainReplyComplete(context, output); } catch (markerError) {
                 console.warn('[Roleplay] The completed reply marker could not be saved.', markerError?.message ?? markerError);
+            }
+        }
+        // A model refusal is kept as the reply, but Agents and Companions do not
+        // run on it. Translation and speech still follow, as after a failure.
+        if (!blocked && request.worldInfo?.agents && request.worldInfo.agents.refusalGuard !== false
+            && isLikelyMainReplyRefusal(effect === 'continue' ? output.text : reply.mes ?? output.text)) {
+            try { markRoleplayAgentsRefused(context); } catch (refusalError) {
+                console.warn('[Roleplay] The refusal could not skip Agents.', refusalError?.message ?? refusalError);
             }
         }
         // Tell the reader the main reply finished before macro hashing, token

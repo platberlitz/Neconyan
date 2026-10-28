@@ -13,10 +13,10 @@ function proof(directories, job, name, expected) {
     return data;
 }
 
-/** Only a saved automatic Agent failure stop may deliver a reply without Agent proof. */
+/** Only a saved automatic Agent stop (a failure or a refused reply) may deliver a reply without Agent proof. */
 function failedAgentStop(directories, job) {
     const stop = readArtifact(directories, job.id, 'roleplay-agent-stop');
-    return stop?.reason === 'failed' && stop.intentHash === roleplayHash(job.intent);
+    return ['failed', 'refused'].includes(stop?.reason) && stop.intentHash === roleplayHash(job.intent);
 }
 
 /** Only the saved native post-pass may change tracker metadata or replace a continued message. */

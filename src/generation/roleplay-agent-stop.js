@@ -3,6 +3,8 @@ import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 
 const key = 'roleplay-agent-stop';
+/** Stops Neconyan makes on its own, as opposed to the owner's Stop. */
+const AUTOMATIC_ROLEPLAY_AGENT_STOP_REASONS = Object.freeze(['failed', 'refused']);
 const controllers = new Map();
 const stopped = () => roleplayError('ROLEPLAY_AGENTS_STOPPED', 'The remaining Agents were stopped; the completed reply will be saved.', 409);
 
@@ -22,19 +24,31 @@ export function roleplayAgentsStopped({ directories, job }) {
  * saved decision makes the next Agent pass skip the remaining work, exactly
  * like the owner's Stop, but records that failure caused the stop.
  */
-export function markRoleplayAgentsFailed({ directories, owner, job }) {
+export function markRoleplayAgentsFailed(context) {
+    return markAutomaticRoleplayAgentStop(context, 'failed');
+}
+
+/**
+ * Keep a main reply that reads as a model refusal and skip its after-reply
+ * Agents and Companions, so none of them rewrites or answers the refusal.
+ */
+export function markRoleplayAgentsRefused(context) {
+    return markAutomaticRoleplayAgentStop(context, 'refused');
+}
+
+function markAutomaticRoleplayAgentStop({ directories, owner, job }, reason) {
     const account = job.intent?.roleplay;
     return withRoleplayAccount({ owner, directories }, account, () => {
         if (roleplayAgentsStopped({ directories, job })) return false;
-        writeArtifact(directories, job.id, key, { intentHash: roleplayHash(job.intent), reason: 'failed' });
+        writeArtifact(directories, job.id, key, { intentHash: roleplayHash(job.intent), reason });
         return true;
     });
 }
 
-/** Translation and speech are skipped only for the owner's Stop, never for a failure stop. */
+/** Translation and speech are skipped only for the owner's Stop, never for an automatic stop. */
 export function roleplayAgentsStoppedByOwner({ directories, job }) {
     if (!roleplayAgentsStopped({ directories, job })) return false;
-    return readArtifact(directories, job.id, key)?.reason !== 'failed';
+    return !AUTOMATIC_ROLEPLAY_AGENT_STOP_REASONS.includes(readArtifact(directories, job.id, key)?.reason);
 }
 
 /** Stop only post-reply work. The normal cancellation path still owns an unfinished main reply. */

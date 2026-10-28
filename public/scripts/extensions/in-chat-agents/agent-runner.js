@@ -97,7 +97,7 @@ import {
     writeTrackerMetadataValue,
 } from './tracker-state.js';
 import { buildPromptTransformSynthesisMessages, composePromptTransformDraft, runPromptTransformStages } from './prompt-transform-synthesis.js';
-import { isLikelyPromptTransformRefusal } from './prompt-transform-refusal.js';
+import { isLikelyMainReplyRefusal, isLikelyPromptTransformRefusal } from './prompt-transform-refusal.js';
 import { runAgentActionOnServer } from './server-agent-actions.js';
 
 const PROMPT_KEY_PREFIX = 'inchat_agent_';
@@ -2699,6 +2699,10 @@ function isGuardedRefusal(outputText, originalText) {
     return getGlobalSettings()?.promptTransformRefusalGuard !== false && isLikelyPromptTransformRefusal(outputText, originalText);
 }
 
+function shouldSkipAgentsForRefusedReply(replyText) {
+    return getGlobalSettings()?.promptTransformRefusalGuard !== false && isLikelyMainReplyRefusal(replyText);
+}
+
 function describePromptTransformTarget(profileId = '', runner = '') {
     if (runner === 'main') {
         return 'the main model';
@@ -2923,6 +2927,18 @@ function syncAssistantMessageStateToSwipe(message, messageIndex) {
 
 function showBlockedAgentNotice() {
     toastr.warning(t`The provider blocked an Agent request. The reply was kept and this pass will not retry automatically.`, 'In-Chat Agents');
+}
+
+function showRefusedReplyAgentNotice(activeAgents, generationType) {
+    const hasAfterReplyAgents = activeAgents.some(agent => isAgentRuntimeAllowed(agent) && (
+        isCompanionAgent(agent)
+        || (!isImpersonateGenerationType(generationType) && agent.postProcess?.enabled && agent.postProcess.type !== 'regex')
+    ))
+        || getPromptTransformAgentsForMessage(activeAgents, generationType).length > 0
+        || getPostMainGenerationInterceptAgents(activeAgents).length > 0;
+    if (hasAfterReplyAgents) {
+        toastr.info(t`The reply looks like a refusal, so Agents did not run on it.`, 'In-Chat Agents');
+    }
 }
 
 function showPromptTransformResultToast(agent, result) {
@@ -4948,16 +4964,21 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
             messageDisplayChanged = true;
         }
 
+        // A refused reply keeps its text, but no after-reply Agent or Companion runs on it.
+        const refusedReply = shouldSkipAgentsForRefusedReply(currentPromptTransformText);
+        if (refusedReply) showRefusedReplyAgentNotice(activeAgents, generationType);
+
         // Companions normally run last so they see the post-transform reply; the concurrent
         // option trades that for speed and runs them against the current reply alongside the passes.
         const companionStageArgs = { messageIndex, message, generationType };
-        const concurrentCompanionStage = getGlobalSettings().companionConcurrentWithPostGen && companionRuntime?.runCompanionStage
+        const runCompanions = !refusedReply && Boolean(companionRuntime?.runCompanionStage);
+        const concurrentCompanionStage = runCompanions && getGlobalSettings().companionConcurrentWithPostGen
             ? companionRuntime.runCompanionStage({ ...companionStageArgs, activeAgents: activeAgents.filter(isAgentRuntimeAllowed) }).catch(error => {
                 console.warn('[InChatAgents] Companion stage failed:', error);
             })
             : null;
-        const promptTransformAgents = getPromptTransformAgentsForMessage(activeAgents, generationType);
-        const utilityAgents = isImpersonateGenerationType(generationType)
+        const promptTransformAgents = refusedReply ? [] : getPromptTransformAgentsForMessage(activeAgents, generationType);
+        const utilityAgents = refusedReply || isImpersonateGenerationType(generationType)
             ? []
             : activeAgents.filter(agent =>
                 !isCompanionAgent(agent) &&
@@ -5049,7 +5070,7 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
 
         if (concurrentCompanionStage) {
             await concurrentCompanionStage;
-        } else if (companionRuntime?.runCompanionStage) {
+        } else if (runCompanions) {
             try {
                 await companionRuntime.runCompanionStage({ ...companionStageArgs, activeAgents: activeAgents.filter(isAgentRuntimeAllowed) });
             } catch (error) {
@@ -5686,6 +5707,10 @@ async function runPostMainGenerationInterceptorsOnText(initialOutputText, genera
     if (interceptAgents.length === 0) {
         return { text: currentOutputText, runs: [], cancelled: false };
     }
+    // The after-reply pass shows the refusal notice once the reply is on screen.
+    if (shouldSkipAgentsForRefusedReply(currentOutputText)) {
+        return { text: currentOutputText, runs: [], cancelled: false };
+    }
 
     const runs = [];
     for (const agent of interceptAgents) {
@@ -5880,7 +5905,7 @@ async function onMainGenerationOutputReady(eventData) {
     const generationType = eventData.type ?? currentMainGenerationType;
     const activationSnapshot = getGenerationContextSnapshot(generationType);
     const interceptAgents = getPostMainGenerationInterceptAgents(getSnapshotAgents(activationSnapshot));
-    if (interceptAgents.length === 0) {
+    if (interceptAgents.length === 0 || shouldSkipAgentsForRefusedReply(eventData.text)) {
         return;
     }
 
