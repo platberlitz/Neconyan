@@ -234,6 +234,79 @@ for (const phone of [false, true]) {
         }
     });
 
+    for (const failure of ['cancelled', 'changed-source']) {
+        test(`${viewport} recovered regex survives ${failure} and reopening`, async ({ app }) => {
+            app.provider.mode.streamReply = { first: '[MOOD|Calm] The server ', rest: 'wrote this reply.' };
+            const account = await app.account({ phone, activeConnection: true,
+                contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings(settings) {
+                    settings.oai_settings.stream_openai = true;
+                    settings.extension_settings.inChatAgents = { globalSettings: { enabled: true, separateRecentChats: false,
+                        connectionProfile: 'durable' } };
+                } });
+            if (phone) await installIPhoneSafari(account.context);
+            const native = owned(app);
+            await fs.mkdir(native.directories.inChatAgents, { recursive: true });
+            await fs.writeFile(path.join(native.directories.inChatAgents, 'recovery-mood.json'), JSON.stringify({
+                id: 'recovery-mood', name: 'Recovery mood', enabled: true, phase: 'post',
+                regexScripts: [{ id: 'mood', scriptName: 'Mood display', findRegex: '/\\[MOOD\\|([^\\]]+)\\]/g',
+                    replaceString: '<em class="recovery-mood">$1</em>', placement: [2], markdownOnly: true, promptOnly: false }],
+            }));
+            const locator = await savedChat(account, `Recovered regex ${failure} ${viewport}`);
+            const page = await account.open({ workspace: false, readyTimeout: 120000 });
+            await openChat(page, locator);
+            if (phone) await applyIOSOnlyCss(page);
+            const submitted = page.waitForResponse(acceptedSubmission);
+            await page.locator('#send_textarea').fill('Keep my reply and its mood formatting.');
+            await startNativeReply(page);
+            const { jobId } = await (await submitted).json();
+            try {
+                await expect(page.locator('#neconyan-roleplay-preview .custom-recovery-mood')).toHaveText('Calm', { timeout: 60000 });
+                if (failure === 'cancelled') {
+                    await page.evaluate(async () => (await import('/script.js')).stopGeneration());
+                    expect((await terminal(account, jobId)).state).toBe('cancelled');
+                } else {
+                    // A concurrent saved edit makes the server refuse its final write.
+                    const source = readRoleplayChat(native.scope, locator);
+                    source.records.at(-1).mes += ' Edited while replying.';
+                    const { instanceId, revision, rawHash } = source;
+                    await account.post('/api/chats/save', { avatar_url: locator.avatar, file_name: locator.chat, chat: source.records,
+                        roleplay: { account: native.account, source: { instanceId, revision, rawHash }, operationKey: randomUUID() } });
+                    app.provider.mode.finishStream();
+                    const result = await terminal(account, jobId);
+                    expect(result.state).toBe('interrupted');
+                    expect(result.error.code).toBe('ROLEPLAY_WORKFLOW_CHILD');
+                    const children = await Promise.all(result.children.map(id => account.job(id)));
+                    expect(children.some(child => child.error?.code === 'ROLEPLAY_SOURCE_CHANGED')).toBe(true);
+                }
+                await expect(page.locator('#neconyan-roleplay-preview')).toHaveCount(0);
+                const reply = page.locator('#chat .mes').last();
+                await expect(reply).toContainText('The server');
+                await dismissTour(page);
+                await reply.scrollIntoViewIfNeeded();
+                await page.screenshot({ path: path.join('..', 'screenshots', `recovered-regex-${viewport}-${failure}.png`) });
+                await expect(reply.locator('.custom-recovery-mood')).toHaveText('Calm');
+                const appearance = await reply.locator('.custom-recovery-mood').evaluate(node => ({
+                    fontStyle: getComputedStyle(node).fontStyle, width: node.getBoundingClientRect().width,
+                }));
+                expect(appearance.fontStyle).toBe('italic');
+                expect(appearance.width).toBeGreaterThan(0);
+                const text = '[MOOD|Calm] ' + (failure === 'cancelled' ? 'The server ' : ANSWER);
+                await expect.poll(() => readRoleplayChat(native.scope, locator).records.at(-1).mes).toBe(text);
+                const snapshot = readRoleplayChat(native.scope, locator).records.at(-1).extra.inChatAgents;
+                expect(snapshot.nativeRegexScripts[0].script.id).toBe('mood');
+                await page.reload({ waitUntil: 'domcontentloaded' });
+                await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: 120000 });
+                await openChat(page, locator);
+                await expect(page.locator('#chat .mes').last().locator('.custom-recovery-mood')).toHaveText('Calm');
+                expect(readRoleplayChat(native.scope, locator).records.filter(row => row.mes === text)).toHaveLength(1);
+                expect(app.provider.calls).toHaveLength(1);
+            } finally {
+                app.provider.mode.finishStream?.();
+                await app.release();
+            }
+        });
+    }
+
     test(`${viewport} leaving before the first token submits without a paint and finishes with the page frozen`, async ({ app }) => {
         app.provider.mode.hold = 'conversation-fixture';
         app.provider.mode.streamReply = { first: 'The server ', rest: 'wrote this reply.' };

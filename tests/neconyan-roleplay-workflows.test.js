@@ -271,13 +271,13 @@ test.each(['roleplay.swipe', 'roleplay.correct', 'guided.swipe', 'guided.regener
 });
 
 describe('a reply the server did not save stays in the chat', () => {
-    const shown = text => ({ name: 'Nova', avatar: 'nova.png', text, send_date: '2026-10-27T10:00:00.000Z',
-        gen_started: '2026-10-27T10:00:00.000Z', gen_finished: '2026-10-27T10:00:05.000Z', extra: { model: 'model-a' } });
+    const shown = (text, extra) => ({ name: 'Nova', avatar: 'nova.png', text, send_date: '2026-10-27T10:00:00.000Z',
+        gen_started: '2026-10-27T10:00:00.000Z', gen_finished: '2026-10-27T10:00:05.000Z', extra: { model: 'model-a', ...extra } });
 
-    async function stopWith(name, state, text, error = null) {
+    async function stopWith(name, state, text, error = null, extra = {}) {
         const accepted = await workflows.submitRoleplayWorkflow({ name });
         await waitFor(() => previews.has(accepted.jobId));
-        previews.get(accepted.jobId).stop.reply = () => (text === null ? null : shown(text));
+        previews.get(accepted.jobId).stop.reply = () => (text === null ? null : shown(text, extra));
         const savesBefore = saved.length;
         await observers.get(accepted.jobId).onSnapshot({ state, ...(error ? { error } : {}) });
         expect(await accepted.finished).toBeNull();
@@ -310,9 +310,31 @@ describe('a reply the server did not save stays in the chat', () => {
     });
 
     test('a stopped continuation extends its message', async () => {
+        chat[1].extra = { inChatAgents: { activeAgentIds: ['previous'] }, other: 'retained' };
         expect(await stopWith('roleplay.continue', 'cancelled', ' and more')).toBe(1);
         expect(chat).toHaveLength(2);
         expect(chat[1].mes).toBe('Answer and more');
+        expect(chat[1].extra).toEqual({ inChatAgents: { activeAgentIds: ['previous'] }, other: 'retained' });
+    });
+
+    test.each([
+        ['roleplay.reply', undefined, undefined],
+        ['roleplay.swipe', undefined, { activeAgentIds: ['previous'] }],
+        ['roleplay.continue', 'retained', undefined],
+    ])('%s keeps its regex snapshot after a failed save', async (name, retainedExtra, originalSwipeSnapshot) => {
+        const inChatAgents = { activeAgentIds: ['mood'], regexScriptRefs: [{ agentId: 'mood', scriptId: 'display', revision: 'accepted' }],
+            nativeRegexScripts: [{ agentId: 'mood', script: { id: 'display', replaceString: '<em>$1</em>' } }] };
+        chat[1].extra = { other: 'retained', display_text: 'Outdated display', inChatAgents: { activeAgentIds: ['previous'] } };
+        if (name === 'roleplay.reply') chat.push({ name: 'User', is_user: true, mes: 'Next' });
+        expect(await stopWith(name, 'failed', ' [MOOD|Calm]', { code: 'ROLEPLAY_SOURCE_CHANGED' }, { inChatAgents })).toBe(1);
+        const recovered = chat.at(-1);
+        expect(recovered.extra.inChatAgents).toEqual(inChatAgents);
+        expect(recovered.extra.inChatAgents).not.toBe(inChatAgents);
+        expect(recovered.swipe_info?.[0]?.extra.inChatAgents).toEqual(originalSwipeSnapshot);
+        expect(recovered.extra.other).toBe(retainedExtra);
+        expect(recovered.extra.display_text).toBeUndefined();
+        const savedSnapshot = recovered.swipe_info?.at(-1)?.extra.inChatAgents ?? recovered.extra.inChatAgents;
+        expect(savedSnapshot).toEqual(inChatAgents);
     });
 
     test('a reply the saved chat already holds is not added twice', async () => {

@@ -622,6 +622,10 @@ async function keepUnsavedReply(reply, { name, messageIndex, locator, account, i
             const base = String(anchor.mes ?? '');
             if (base.endsWith(reply.text) || holds(reply.text)) return false;
             anchor.mes = reply.text.startsWith(base) ? reply.text : base + reply.text;
+            if (reply.extra?.inChatAgents) {
+                anchor.extra ??= {};
+                anchor.extra.inChatAgents = structuredClone(reply.extra.inChatAgents);
+            }
             if (anchor.extra) delete anchor.extra.display_text;
             syncMesToSwipe(messageIndex);
             await updateMessageBlock(messageIndex, anchor);
