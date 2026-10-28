@@ -1588,7 +1588,10 @@ export function initCompanionPanel() {
     // 'toggle' does not bubble, so listen in the capture phase for every history list.
     $('#ica--tracker-panel')[0]?.addEventListener('toggle', handlePanelHistoryToggle, true);
     $('#ica--tracker-panel').on('click', '[data-action]', event =>
-        runCompanionViewAction(event.currentTarget, () => handlePanelAction(event)));
+        runCompanionViewAction(event.currentTarget, () => handlePanelAction(event)).catch(error => {
+            console.error('[InChatAgents] Companion panel action failed:', error);
+            toastr.error(error?.message || 'That action could not finish. Try again.');
+        }));
     $('#ica--tracker-panel').on('input', '[data-role="panel-search"]', event => {
         panelSearchQuery = event.currentTarget.value;
         applyPanelSearch();

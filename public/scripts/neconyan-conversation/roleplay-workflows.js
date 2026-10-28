@@ -934,8 +934,11 @@ export async function runRoleplayAgentAction({ mode, agentIds = [], companionId 
         }
     } catch (error) {
         // A lost response may already be running on the server, so only a clear
-        // refusal hands the action back to the page.
-        const refused = !posted || error?.status >= 400 && error.status < 500;
+        // refusal hands the action back to the page. The Companion capacity check
+        // runs before the job is admitted, so its 507 is a refusal too: a manual run
+        // only reserves room for a few Companions, and the page has no such limit.
+        const refused = !posted || error?.status >= 400 && error.status < 500
+            || error?.body?.code === 'ROLEPLAY_COMPANION_CAPACITY';
         if (error?.message === 'account_changed' || !refused) throw error;
         console.debug('Server Agent action declined; running it in the page.', { mode, reason: error?.body?.code ?? error?.message });
         return null;
