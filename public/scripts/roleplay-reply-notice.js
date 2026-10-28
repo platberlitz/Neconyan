@@ -60,3 +60,16 @@ export function roleplayReplyNotice(error, state) {
     if (message && raw && message !== raw) console.warn('[Roleplay] Reply ended:', { state, code: code || null, message: raw });
     return { title: stateTitle(state), message: message || raw };
 }
+
+/**
+ * A refused chat save names the store that refused it, so a full store is not
+ * mistaken for a lost connection. Returns '' for refusals without plain words.
+ * @param {{ error?: string } | null | undefined} data The refused save's response body.
+ * @returns {string}
+ */
+export function roleplaySaveNotice(data) {
+    if (data?.error === 'roleplay_store_full') {
+        return t`Neconyan ran out of room to record saves for this account, so this change was not saved. Reload the page, then try again.`;
+    }
+    return '';
+}
