@@ -54,6 +54,6 @@ export function promptingMemoryPreparation(context, plan, tokenizer) {
             history: source.messages.flatMap((record, index) => !record.is_system && !record.extra?.nn_generation_failed
                 ? [{ index, text: preparedContent[index] ?? String(record.mes ?? '') }] : []),
         }, context.signal, { loadState: () => state, mutate: (_directories, _locator, mutate) => mutate(state),
-            readSource: () => source, readConfiguration: () => frozen.config, scheduleBackground: false });
+            readSource: () => source, readConfiguration: () => frozen.config, scheduleBackground: false, deterministicMarker: true });
     };
 }

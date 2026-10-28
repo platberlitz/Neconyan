@@ -15,6 +15,7 @@ import { collectRecentChatFiles, selectRecentChatFiles } from '../chat-library-i
 import validateAvatarUrlMiddleware from '../middleware/validateFileName.js';
 import { renameChatFile } from '../chat-rename.js';
 import { captureBranchMemory, chatMemoryExists, removeChatMemory, renameChatMemory } from '../mewmory/store.js';
+import { applyOverflowHiding, prepareAutomaticHiding, prepareMessageHidingPolicy } from '../mewmory/hiding.js';
 import { confirmRoleplayAccount, inspectRoleplayFileStat, readRoleplayFile, readRoleplayWriteJournal, roleplayAvatarOwner, roleplayError, roleplayHash, roleplayLease, roleplayPathKey, saveRoleplayAccount, withRoleplayAccount, withUntrackedRoleplayFiles } from '../roleplay-store.js';
 import { normaliseRoleplayLocator, readRoleplayChatLocked, roleplayChatPath, ROLEPLAY_METADATA_KEY } from '../generation/roleplay-source.js';
 import { cleanupRoleplayReceiptsLocked, commitRoleplayLifecycleLocked, commitSingleChatImport, forgetRoleplayReceiptLocked, commitSingleChatWriteLocked, repairSingleChatWriteLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
@@ -1323,6 +1324,10 @@ function roleplayRequest(request, group, saving = false) {
                 || typeof block.source.rawHash !== 'string' || !/^[a-f0-9]{64}$/.test(block.source.rawHash)) throw invalid();
         } else if (!Number.isSafeInteger(block.vacancy) || block.vacancy < 0) throw invalid();
         if (['force', 'allowShrink', 'deferBackup'].some(key => body[key] !== undefined && typeof body[key] !== 'boolean')
+            || (body.mewmoryHidePolicy !== undefined && (!isPlainObject(body.mewmoryHidePolicy)
+                || Object.keys(body.mewmoryHidePolicy).some(key => !['type', 'lastDisableId'].includes(key))
+                || !['manual', 'automatic'].includes(body.mewmoryHidePolicy.type)
+                || typeof body.mewmoryHidePolicy.lastDisableId !== 'string' || body.mewmoryHidePolicy.lastDisableId.length > 256))
             || (body.deferSequenceId !== undefined && (typeof body.deferSequenceId !== 'string' || body.deferSequenceId.length > 256))) throw invalid();
     }
     return { base, locator, block, account: block?.account ?? null };
@@ -1425,19 +1430,39 @@ function loadProtectedChat(request, group) {
     });
 }
 
-function saveProtectedChat(request, group) {
+async function saveProtectedChat(request, group) {
     const { base, locator, block, account } = roleplayRequest(request, group, true);
+    const hideRequested = request.body.mewmoryHidePolicy;
+    // Tokenizer resolution may load asynchronously. Its guard is checked again
+    // within the protected first admission; retries use the staged native write.
+    const tokenPolicy = hideRequested ? await prepareAutomaticHiding(base.directories, locator, {
+        manual: hideRequested.type === 'manual', expectedLastDisableId: hideRequested.lastDisableId,
+    }) : null;
     return withRoleplayAccount(base, account, (lease, currentAccount) => {
         const { state } = roleplayLease(lease);
         try {
+            const host = hideRequested ? { ...roleplayBrowserHost, prepare(records, options) {
+                let proposed = records;
+                try {
+                    const messagePolicy = prepareMessageHidingPolicy(base.directories, locator, {
+                        manual: hideRequested.type === 'manual', lastDisableId: hideRequested.lastDisableId,
+                    });
+                    const policy = messagePolicy || (tokenPolicy?.mode !== 'messages' ? tokenPolicy : null);
+                    if (policy) proposed = applyOverflowHiding(records, policy, locator).records;
+                } catch (error) {
+                    console.warn('[Mewmory] Could not prepare automatic hiding:', error.message);
+                }
+                return roleplayBrowserHost.prepare(proposed, options);
+            } } : roleplayBrowserHost;
             const result = commitSingleChatWriteLocked(lease, {
                 operationKey: block.operationKey, sourceKind: 'storage', mode: block.source ? 'update' : 'create',
                 ...(block.source ? { source: { kind: 'storage', ...currentAccount, ...block.source, locator, dependencies: [] } }
                     : { destination: locator, expectedVacancy: block.vacancy }),
                 records: request.body.chat, force: request.body.force === true, allowShrink: request.body.allowShrink === true,
+                ...(hideRequested ? { mewmoryHidePolicy: hideRequested } : {}),
                 backup: { deferBackup: request.body.deferBackup === true,
                     ...(request.body.deferSequenceId !== undefined ? { deferSequenceId: request.body.deferSequenceId } : {}) },
-            }, roleplayBrowserHost);
+            }, host);
             return { ok: true, integrity: result.integrity,
                 roleplay: { account: currentAccount, operationKey: block.operationKey, changed: result.changed, source: wireChatSource(result) } };
         } catch (error) {
@@ -1479,8 +1504,8 @@ function sendProtectedChatLoad(request, response, group) {
     } catch (error) { return sendRoleplayError(response, error); }
 }
 
-function sendProtectedChatSave(request, response, group) {
-    try { return response.set('Cache-Control', 'no-store').send(saveProtectedChat(request, group)); } catch (error) { return sendRoleplayError(response, error); }
+async function sendProtectedChatSave(request, response, group) {
+    try { return response.set('Cache-Control', 'no-store').send(await saveProtectedChat(request, group)); } catch (error) { return sendRoleplayError(response, error); }
 }
 
 /**

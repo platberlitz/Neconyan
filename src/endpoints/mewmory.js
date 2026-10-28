@@ -12,10 +12,11 @@ import { cancelProcessing, startProcessing, waitForProcessing } from '../mewmory
 import { recall } from '../mewmory/retrieval.js';
 import { hybridCandidates, searchDocuments, updateIndex } from '../mewmory/search.js';
 import { loadCurrentState, purgeMissingContextSources, readContextSources } from '../mewmory/sources.js';
-import { commitRecovery, listStories, MAX_ARCHIVE_BYTES, mutateState, normalizeLocator, readChat, recoveryState } from '../mewmory/store.js';
+import { commitRecovery, listStories, MAX_ARCHIVE_BYTES, mutateState, normalizeLocator, readChat, readStateShared, recoveryState } from '../mewmory/store.js';
 import { getCounter } from '../mewmory/tokens.js';
 import { startOperation } from '../mewmory/operations.js';
 import { listJobs } from '../jobs/store.js';
+import { disableMewmory, resumeVisibilityRestore } from '../mewmory/visibility.js';
 
 export const router = express.Router();
 
@@ -75,6 +76,7 @@ export function inspectState(state, config, { query = '', kind = '', ownerId = '
     return {
         locator: state.locator, revision: state.revision, storyId: state.storyId, branchId: state.branchId,
         parent: state.parent, enabled: state.enabled, activeNpcIds: state.activeNpcIds,
+        visibilityRestore: state.visibilityRestore || null, lastDisableId: state.lastDisableId || '',
         activeReferences: activeReferences(state), overviews: currentOverviews(state),
         entities: eligibleRecords(state).filter(record => record.kind === 'entity'),
         records: filtered.slice(page, page + 80).map(record => ({
@@ -110,8 +112,12 @@ route('/config/save', (directories, body, signal, owner) => ({
     config: accountConfig(saveConfig(directories, body.config), owner),
 }), { accountScoped: true });
 
-route('/inspect', async (directories, body) => {
+route('/inspect', async (directories, body, signal, owner) => {
     const locator = normalizeLocator(body.locator);
+    const pending = readStateShared(directories, locator).visibilityRestore;
+    if (owner && pending && pending.status !== 'complete') {
+        try { resumeVisibilityRestore({ owner, directories }, locator); } catch { /* The inspection exposes the saved retry state. */ }
+    }
     const state = await loadCurrentState(directories, locator);
     const inspection = { ...inspectState(state, readConfig(directories), body), operations: [] };
     try {
@@ -124,14 +130,32 @@ route('/inspect', async (directories, body) => {
     return inspection;
 });
 
-route('/enabled', async (directories, body) => {
+route('/enabled', async (directories, body, signal, owner) => {
     const locator = normalizeLocator(body.locator);
+    if (typeof body.enabled !== 'boolean') fail('Choose whether Mewmory is on or off.');
+    if (body.enabled !== true) {
+        const state = disableMewmory({ owner, directories }, locator, {
+            account: body.account, branchId: body.branchId, revision: body.revision,
+            operationKey: body.operationKey, sourceInstanceId: body.sourceInstanceId,
+        });
+        return inspectState(state, readConfig(directories));
+    }
     const current = await loadCurrentState(directories, locator);
     expectedRevision(body, current);
+    if (current.visibilityRestore && current.visibilityRestore.status !== 'complete') {
+        fail('Finish restoring hidden messages before turning Mewmory on.', 409);
+    }
     const state = mutateState(directories, locator, state => {
-        state.enabled = body.enabled === true;
+        state.enabled = true;
         state.preview = null;
     }, current.revision);
+    return inspectState(state, readConfig(directories));
+});
+
+route('/visibility/restore', async (directories, body, signal, owner) => {
+    const locator = normalizeLocator(body.locator);
+    if (!owner) fail('Reload this chat before restoring messages.', 409);
+    const state = resumeVisibilityRestore({ owner, directories }, locator);
     return inspectState(state, readConfig(directories));
 });
 

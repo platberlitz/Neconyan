@@ -1,13 +1,16 @@
 import path from 'node:path';
 import { overflowPlan, visibleMessageIndices } from '../../public/scripts/mewmory/overflow-policy.js';
+import { messageHistoryPlan } from '../../public/scripts/mewmory/history-policy.js';
 import { getSettingsRevision } from '../settings-version.js';
 import { captureGenerationBinding, resolveGenerationProfile } from '../generation/profiles.js';
 import { createRoleplayChatCounter, createRoleplayTextCounter } from '../generation/roleplay-budget.js';
 import { resolveTextTokenizer } from '../generation/text-request.js';
 import { captureSavedTokenizer } from '../generation/saved-token-counter.js';
-import { hash } from './core.js';
+import { hash, refKey, sourceEligible, syncSources } from './core.js';
 import { readConfig } from './models.js';
-import { readJsonShared, readStateShared } from './store.js';
+import { processingVersion } from './processing.js';
+import { readContextSourcesSync } from './sources.js';
+import { readJsonShared, readStateShared, sourceSyncOptions } from './store.js';
 import { getCounter, getTokenizerModel } from './tokens.js';
 
 function writerSettings(directories) {
@@ -91,30 +94,39 @@ export async function resolveWriterTokenizer(directories, { binding = null, mode
  * choice or per-chat enabled state changed while the tokenizer was loading,
  * and reads the current chat name after a supported rename.
  */
-export async function prepareAutomaticHiding(directories, locator, { binding = null, models = [], modelOverride = '' } = {}) {
+export async function prepareAutomaticHiding(directories, locator, { binding = null, models = [], modelOverride = '',
+    manual = false, expectedLastDisableId } = {}) {
     try {
         const config = readConfig(directories);
-        if (!config.autoHide) return null;
+        if (!manual && !config.autoHide) return null;
         const state = readStateShared(directories, locator);
-        if (!state.enabled) return null;
+        if (!state.enabled || ['pending', 'failed'].includes(state.visibilityRestore?.status)
+            || (expectedLastDisableId !== undefined && (state.lastDisableId || '') !== expectedLastDisableId)
+            || (config.historyMode === 'messages' && !config.excludeHistory)) return null;
         const writerTokenizer = config.writerTokenizer;
-        const settingsHash = writerTokenizer === 'auto' ? hash(writerSettings(directories)) : null;
-        const tokenizer = writerTokenizer === 'auto'
+        const messageMode = config.historyMode === 'messages';
+        const settingsHash = !messageMode && writerTokenizer === 'auto' ? hash(writerSettings(directories)) : null;
+        const tokenizer = messageMode ? null : writerTokenizer === 'auto'
             ? await resolveWriterTokenizer(directories, { binding, models, modelOverride })
             : writerTokenizer;
-        if (!tokenizer) return null;
-        const counter = await getCounter(tokenizer);
+        if (!messageMode && !tokenizer) return null;
+        const counter = messageMode ? null : await getCounter(tokenizer);
         const policy = {
             limit: config.autoHideTokens, writerTokenizer, settingsHash, directories, locator,
-            count: value => counter.count(String(value ?? '')),
+            mode: config.historyMode, recent: config.recentMessages, batch: config.historyBatchMessages,
+            lastDisableId: state.lastDisableId, count: value => counter?.count(String(value ?? '')) || 0,
         };
         policy.guard = checkedLocator => {
             try {
                 const current = readConfig(directories);
-                if (!current.autoHide || current.autoHideTokens !== policy.limit
+                if ((!manual && !current.autoHide) || current.autoHideTokens !== policy.limit
                     || current.writerTokenizer !== policy.writerTokenizer
+                    || current.historyMode !== policy.mode || current.recentMessages !== policy.recent
+                    || current.historyBatchMessages !== policy.batch || (messageMode && !current.excludeHistory)
                     || (policy.settingsHash !== null && hash(writerSettings(directories)) !== policy.settingsHash)) return false;
-                return readStateShared(directories, checkedLocator || locator).enabled === true;
+                const state = readStateShared(directories, checkedLocator || locator);
+                return state.enabled === true && state.lastDisableId === policy.lastDisableId
+                    && !['pending', 'failed'].includes(state.visibilityRestore?.status);
             } catch {
                 return false;
             }
@@ -126,6 +138,41 @@ export async function prepareAutomaticHiding(directories, locator, { binding = n
         console.warn('[Mewmory] Automatic hiding was skipped:', error?.message || error);
         return null;
     }
+}
+
+/** Capture the message-mode policy at first protected browser-save admission. */
+export function prepareMessageHidingPolicy(directories, locator, { manual = false, lastDisableId = '' } = {}) {
+    const config = readConfig(directories);
+    const state = readStateShared(directories, locator);
+    if (config.historyMode !== 'messages' || (!manual && !config.autoHide) || !config.excludeHistory || !state.enabled
+        || (state.lastDisableId || '') !== lastDisableId
+        || ['pending', 'failed'].includes(state.visibilityRestore?.status)) return null;
+    const policy = { mode: 'messages', directories, locator, recent: config.recentMessages,
+        batch: config.historyBatchMessages, lastDisableId };
+    policy.guard = checked => {
+        const current = readConfig(directories);
+        const saved = readStateShared(directories, checked || locator);
+        return current.historyMode === 'messages' && (manual || current.autoHide) && current.excludeHistory
+            && current.recentMessages === policy.recent && current.historyBatchMessages === policy.batch
+            && saved.enabled && (saved.lastDisableId || '') === policy.lastDisableId
+            && !['pending', 'failed'].includes(saved.visibilityRestore?.status);
+    };
+    return policy;
+}
+
+/** Plan against a clone of the proposed saved vector; never publish uncommitted sources. */
+export function planPreservedMessageHiding(records, archivedState, config, contextSources, sourceOptions = {}) {
+    const shadow = structuredClone(archivedState);
+    const messages = records.slice(1);
+    syncSources(shadow, messages, contextSources, sourceOptions);
+    const offset = shadow.inheritedTimeline?.length || 0;
+    const policy = processingVersion(config);
+    const visible = visibleMessageIndices(messages).filter(index => !messages[index]?.extra?.nn_generation_failed);
+    const plan = messageHistoryPlan(visible, config.recentMessages, config.historyBatchMessages, index => {
+        const ref = shadow.timeline[index + offset];
+        return Boolean(ref && (!sourceEligible(shadow, ref) || shadow.checkpoints[refKey(ref)] === policy));
+    });
+    return plan.excluded;
 }
 
 /**
@@ -140,16 +187,25 @@ export function applyOverflowHiding(records, policy, locator = policy?.locator) 
     try {
         if (policy.guard && !policy.guard(locator)) return { records, hidden: 0 };
         const messages = records.slice(1);
-        const visible = visibleMessageIndices(messages);
-        const counts = visible.map(index => policy.count(messages[index]?.mes));
-        const plan = overflowPlan(messages, policy.limit, counts);
-        if (!plan.indices.length) return { records, hidden: 0 };
+        let indices;
+        if (policy.mode === 'messages') {
+            const state = readStateShared(policy.directories, locator);
+            const config = readConfig(policy.directories);
+            const source = { metadata: records[0].chat_metadata ?? {}, messages };
+            const context = readContextSourcesSync(policy.directories, locator, state, source);
+            indices = planPreservedMessageHiding(records, state, config, context, sourceSyncOptions(policy.directories, messages));
+        } else {
+            const visible = visibleMessageIndices(messages);
+            const counts = visible.map(index => policy.count(messages[index]?.mes));
+            indices = overflowPlan(messages, policy.limit, counts).indices;
+        }
+        if (!indices.length) return { records, hidden: 0 };
         const next = records.slice();
-        for (const index of plan.indices) {
+        for (const index of indices) {
             next[index + 1] = { ...next[index + 1], is_system: true,
                 extra: { ...next[index + 1].extra, mewmoryKeepHidden: true } };
         }
-        return { records: next, hidden: plan.indices.length };
+        return { records: next, hidden: indices.length };
     } catch (error) {
         // A tokenizer problem must not discard a reply that is already paid for.
         console.warn('[Mewmory] Automatic hiding was skipped:', error?.message || error);

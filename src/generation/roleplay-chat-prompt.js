@@ -145,8 +145,13 @@ export async function assembleRoleplayChatPrompt(history, snapshot, material, wo
             result.push(...relative.filter(item => item.position === 0).map(({ role, content }) => ({ role, content })));
         }
     }
-    if (memory?.enabled) result.push(...[memory.npcText, memory.memoryText].filter(Boolean)
-        .map(content => ({ role: 'system', content })));
+    if (memory?.enabled) {
+        for (const [id, content] of [['mewmory-npc', memory.npcText], ['mewmory-context', memory.memoryText]]) {
+            if (!content) continue;
+            onSection?.({ id, content });
+            result.push({ role: 'system', content });
+        }
+    }
     const savedBias = effect === 'continue' ? '' : records.slice(1).findLast(record => record.is_user || record.is_system || record.extra?.type === 'narrator')?.extra?.bias;
     const defaultBias = ['custom', 'moonshot', 'nanogpt', 'openrouter'].includes(material.source) && isKimiK3Model(material.profile?.model)
         ? controls.kimi_partial_prefill || material.power?.user_prompt_bias : material.power?.user_prompt_bias;

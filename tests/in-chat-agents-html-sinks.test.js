@@ -31,8 +31,8 @@ describe('style decoder cannot break out of its style element', () => {
             'getCurrentChatId', 'getRequestHeaders', 'name2', 'reloadCurrentChat', 'saveSettingsDebounced', 'this_chid',
             'saveChatConditional', 'chat_metadata', 'neutralCharacterName', 'updateChatMetadata', 'system_message_types',
             'converter', 'substituteParams', 'getSystemMessageByType', 'printMessages', 'clearChat', 'refreshSwipeButtons',
-            'getMediaIndex', 'getMediaDisplay', 'chatElement',
-        ], { this_chid: undefined, characters: [], chat: [], event_types: {}, eventSource: { on: jest.fn() } }));
+            'getMediaIndex', 'getMediaDisplay', 'chatElement', 'getChatGeneration',
+        ], { this_chid: undefined, characters: [], chat: [], event_types: {}, eventSource: { on: jest.fn() }, getChatGeneration: () => 1 }));
         const utilNames = [...readSource('../../utils.js').matchAll(/^export (?:async function|function|const|let|class) (\w+)/gm)]
             .map(match => match[1]);
         const escapeHtml = str => String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');

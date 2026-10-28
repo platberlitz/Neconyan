@@ -59,6 +59,8 @@ export const STATUS_LABEL = Object.freeze({
 });
 
 export const SECTION_LABEL = Object.freeze({
+    'mewmory-npc': 'Mewmory character references',
+    'mewmory-context': 'Mewmory recalled context',
     worldInfoBefore: 'World Info (before character)',
     main: 'Main prompt',
     worldInfoAfter: 'World Info (after character)',

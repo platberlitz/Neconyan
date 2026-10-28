@@ -9,6 +9,13 @@ import { getBrowserStoreKey } from '../public/scripts/extensions/third-party/Mac
 
 jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: strings => strings.join('') }));
 
+const callGenericPopup = jest.fn(async () => null);
+jest.unstable_mockModule('../public/scripts/popup.js', () => ({
+    callGenericPopup, POPUP_TYPE: { CONFIRM: 2 },
+    POPUP_RESULT: { AFFIRMATIVE: 1, NEGATIVE: 0, CANCELLED: null, CUSTOM1: 1001 },
+}));
+
+
 let account = 'alice';
 const chat = [];
 let currentChatId = 'roleplay';
@@ -139,6 +146,7 @@ const response = (status, body) => ({ ok: status >= 200 && status < 300, status,
 const workflows = await import('../public/scripts/neconyan-conversation/roleplay-workflows.js');
 
 beforeEach(() => {
+    callGenericPopup.mockReset().mockResolvedValue(null);
     restoreDisplay.mockClear();
     jobControls.mockClear();
     beginRoleplayReplacement.mockClear();
@@ -380,6 +388,7 @@ test('a named continuation anchors the last block, saves the chat first and reso
     await observers.get('job-1').onStop('done');
     const outcome = await pending;
     expect(outcome).toMatchObject({ native: true, name: 'roleplay.continue', jobId: 'job-1', state: 'closed' });
+    expect(callGenericPopup).not.toHaveBeenCalled();
     expect(reloads).toEqual([2]);
     expect(activations).toEqual(['busy', 'idle']);
 });

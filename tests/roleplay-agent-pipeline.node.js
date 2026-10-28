@@ -11,7 +11,10 @@ const { captureRoleplayWorldInfo } = await import('../src/generation/world-info.
 const { captureChatProfile } = await import('../src/generation/profiles.js');
 const { runRoleplayReplyJob } = await import('../src/generation/roleplay-execution.js');
 const { admitRoleplayJob } = await import('../src/roleplay-jobs.js');
-const { roleplayHash } = await import('../src/roleplay-store.js');
+const { roleplayHash, withRoleplayAccount } = await import('../src/roleplay-store.js');
+const { loadCurrentStateSync } = await import('../src/mewmory/sources.js');
+const { mutateState } = await import('../src/mewmory/store.js');
+const { putRecord, validateRecord } = await import('../src/mewmory/core.js');
 const { getJob, releaseJob, updateJob } = await import('../src/jobs/store.js');
 const { providerStep, readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
 const { decideJobApproval } = await import('../src/generation/job-approvals.js');
@@ -222,6 +225,44 @@ test('native Agent prompts, lore, complete-context interception and postprocessi
     assert.equal(readArtifact(f.directories, f.jobId, 'roleplay-prompt').agentsHash, readArtifact(f.directories, f.jobId, 'roleplay-agents-pre').hash);
     await f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') });
     assert.equal(f.saved().length, 4);
+});
+
+test('Mewmory Agent working prompt stays marked while the final writer prompt resumes cleanly', async t => {
+    const f = prepared(t, [{ id: 'before', phase: 'pre', prompt: 'READ {{full-mewmory}}',
+        preProcess: { mode: 'intercept', applyMode: 'wrap', wrapPosition: 'before', wrapPrefix: '<agent>', wrapSuffix: '</agent>', maxTokens: 64 } }]);
+    withRoleplayAccount(f.scope, f.account, () => {
+        loadCurrentStateSync(f.directories, f.locator);
+        mutateState(f.directories, f.locator, state => {
+            state.enabled = true;
+            putRecord(state, validateRecord(state, { id: 'event:private-sentinel', kind: 'event',
+                text: 'The parcel is blue. [Sources: genuine text]', refs: [state.timeline[0]], subjectIds: [], pinned: true },
+            { asOf: 0, origin: 'author' }));
+        });
+    });
+    let agentCalls = 0, first;
+    const generateAgent = paid('memory-agent', ({ messages }) => {
+        agentCalls++;
+        const macroPrompt = messages[0].content;
+        assert.match(macroPrompt, /The parcel is blue/);
+        assert.doesNotMatch(macroPrompt, /event:private-sentinel|Mewmory context [^\]]+ (?:begin|end)/);
+        return 'Prepared context';
+    });
+    await assert.rejects(f.run({ generateAgent, generate: async ({ messages }) => {
+        first = structuredClone(messages);
+        assert.match(JSON.stringify(messages), /The parcel is blue/);
+        assert.match(JSON.stringify(messages), /\[Sources: genuine text\]/);
+        assert.doesNotMatch(JSON.stringify(messages), /event:private-sentinel|Mewmory context [^\]]+ (?:begin|end)/);
+        throw new Error('Stopped before dispatch');
+    } }), /Stopped before dispatch/);
+    const base = readArtifact(f.directories, f.jobId, 'roleplay-base-prompt');
+    const final = readArtifact(f.directories, f.jobId, 'roleplay-prompt');
+    assert.match(JSON.stringify(base.messages), /Mewmory context [^\]]+ begin/);
+    assert.deepEqual(final.messages, first);
+    await f.run({ generateAgent: () => assert.fail('Agent must not repeat'), generate: ({ messages }) => {
+        assert.deepEqual(messages, first);
+        return { text: 'Saved result' };
+    } });
+    assert.equal(agentCalls, 1);
 });
 
 test('prompt contributions and interceptors can use saved tracker macros before generation', async t => {

@@ -354,7 +354,8 @@ import { accountStorage } from './scripts/util/AccountStorage.js';
 import { getAssistantIconSrc } from './scripts/neconyan-assistant-art.js';
 import { initWelcomeScreen, openPermanentAssistantChat, openPermanentAssistantCard, getPermanentAssistantAvatar } from './scripts/welcome-screen.js';
 import { initDataMaid } from './scripts/data-maid.js';
-import { initMewmory, prepareMewmoryGeneration, validateMewmoryGeneration } from './scripts/mewmory/index.js';
+import { initMewmory, prepareMewmoryGeneration, validateMewmoryGeneration, updatePreparedMewmoryPresentation, syncMewmoryMacroUse } from './scripts/mewmory/index.js';
+import { cleanMewmoryCountView, finaliseMewmoryContext } from './scripts/mewmory/prompt-proof.js';
 import { ensureMewmoryMessageIds } from './scripts/mewmory/message-identity.js';
 import { buildAssistantKnowledge, getAssistantKnowledgeBudget, isNeconyanAssistant } from './scripts/neconyan-assistant-knowledge.js';
 import { clearItemizedPrompts, deleteItemizedPromptForMessage, deleteItemizedPrompts, findItemizedPromptSet, restoreItemizedPrompts, initItemizedPrompts, itemizedParams, itemizedPrompts, loadItemizedPrompts, promptItemize, replaceItemizedPromptText, saveItemizedPrompts, swapItemizedPrompts } from './scripts/itemized-prompts.js';
@@ -9036,7 +9037,7 @@ function consumePendingUserMessageExtra(message) {
     pendingUserMessageExtra = null;
 }
 
-export async function Generate(type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, jsonSchema = null, depth = 0, suppressUserMessage = false, cacheScope = null, preserveLastMessage = false, companionHistoryTarget = null, suppressAutoContinue = false, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false, skipNativeRoleplay, preparedNativeRoleplay = null } = {}, dryRun = false) {
+export async function Generate(type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, jsonSchema = null, depth = 0, suppressUserMessage = false, cacheScope = null, preserveLastMessage = false, companionHistoryTarget = null, suppressAutoContinue = false, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false, skipNativeRoleplay, preparedNativeRoleplay = null, mewmoryCatchUpOverride } = {}, dryRun = false) {
     if (!dryRun && isChatNavigationBlocked()) return;
     if (!dryRun && signal?.aborted) return;
     // Commands do not own a reply's cancellation controller or generation events.
@@ -9074,8 +9075,9 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         priorReply.extra = structuredClone(priorReply.swipe_info?.[priorReply.swipe_id]?.extra ?? priorReply.extra ?? {});
         restoreGroupSpeaker(priorReply);
     }
-    const restoreBlockedAttempt = async () => {
-        if (!isCurrent()) return;
+    const restoreBlockedAttempt = async (allowStopped = false) => {
+        if (!isCurrent() && !(allowStopped && getCurrentChatId() === originChatId && chatGeneration === originChatGeneration
+            && getCurrentUserHandle() === refusalAccount && activeGenerationRun === run)) return;
         if (priorReply) chat.splice(priorReplyIndex, chat.length - priorReplyIndex, priorReply);
         else if (activeStream?.message && chat.at(-1) === activeStream.message) chat.pop();
         await printMessages();
@@ -9648,7 +9650,41 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         const assistantCharacter = characters[this_chid];
         const assistantMessages = coreChat.map(message => ({ is_user: message.is_user, is_system: message.is_system, mes: message.mes }));
         if (!dryRun && !isAuxiliaryGeneration && type !== 'impersonate') {
-            mewmoryContext = await prepareMewmoryGeneration(coreChat, { signal });
+            const waitingChat = JSON.stringify(chat);
+            try {
+                mewmoryContext = await prepareMewmoryGeneration(coreChat, { signal, mewmoryCatchUpOverride });
+            } catch (error) {
+                const stoppedHere = signal?.aborted && error.code === 'MEWMORY_WAIT_ABORTED'
+                    && getCurrentChatId() === originChatId && chatGeneration === originChatGeneration
+                    && getCurrentUserHandle() === refusalAccount && activeGenerationRun === run && JSON.stringify(chat) === waitingChat;
+                if ((isCurrent() || stoppedHere) && String(error.code || '').startsWith('MEWMORY_WAIT_')) {
+                    await restoreBlockedAttempt(Boolean(stoppedHere));
+                    const savedChat = JSON.stringify(chat);
+                    const savedIntegrity = chat_metadata.integrity;
+                    const message = document.createElement('p');
+                    message.textContent = error.message + ' Your message is saved. Retry this reply when memory is ready, or reply now with extra original messages.';
+                    const choice = await callGenericPopup(message, POPUP_TYPE.CONFIRM, null, {
+                        okButton: 'Retry reply', cancelButton: 'Cancel',
+                        customButtons: [{ text: 'Reply now', result: POPUP_RESULT.CUSTOM1 }],
+                    });
+                    if (choice === POPUP_RESULT.AFFIRMATIVE || choice === POPUP_RESULT.CUSTOM1) {
+                        setTimeout(() => {
+                            if (getCurrentChatId() !== originChatId || chatGeneration !== originChatGeneration
+                                || getCurrentUserHandle() !== refusalAccount || chat_metadata.integrity !== savedIntegrity || JSON.stringify(chat) !== savedChat) {
+                                toastr.warning('The chat changed. Open the saved message and retry the reply.');
+                                return;
+                            }
+                            void Generate(type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid,
+                                quietImage, quietName, jsonSchema, depth, suppressUserMessage: true, cacheScope, preserveLastMessage,
+                                companionHistoryTarget, suppressAutoContinue, maxOutputTokens, responseLength, preserveReasoningBudget,
+                                skipNativeRoleplay: true, ...(choice === POPUP_RESULT.CUSTOM1 ? { mewmoryCatchUpOverride: 'reply' } : {}) })
+                                .catch(retryError => toastr.error(retryError.message, 'Mewmory'));
+                        }, 0);
+                    }
+                    return;
+                }
+                throw error;
+            }
             if (!isCurrent()) return;
             coreChat = mewmoryContext.chat;
         }
@@ -10220,7 +10256,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                 modifyLastPromptLine(''),
                 generatedPromptCache,
             ].join('').replace(/\r/gm, '');
-            let thisPromptContextSize = await getTokenCountAsync(prompt, power_user.token_padding);
+            let thisPromptContextSize = await getTokenCountAsync(cleanMewmoryCountView(prompt, mewmoryContext?.suppression?.marker), power_user.token_padding);
 
             if (thisPromptContextSize > this_max_context) {        //if the prepared prompt is larger than the max context size...
                 if (count_exm_add > 0) {                            // ..and we have example messages..
@@ -10440,6 +10476,20 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             throw new Error('The assistant help reference and required prompt exceed the model context. Increase the context allowance or shorten the required prompt.');
         }
         if (mewmoryContext?.enabled) {
+            syncMewmoryMacroUse(mewmoryContext);
+            const prepared = finaliseMewmoryContext(generate_data.prompt ?? finalPrompt, mewmoryContext);
+            if (generate_data.prompt !== undefined) generate_data.prompt = prepared.prompt;
+            else finalPrompt = prepared.prompt;
+            mewmoryContext.memoryText = prepared.memoryText;
+            if (prepared.choice === 'fallback') {
+                mewmoryContext.factsText = mewmoryContext.suppression?.fallbackFactsText || '';
+                mewmoryContext.interviewText = mewmoryContext.suppression?.fallbackInterviewText || '';
+            }
+            updatePreparedMewmoryPresentation(mewmoryContext);
+            if (mewmoryContext.inspection?.retrieval) {
+                mewmoryContext.inspection.retrieval.alreadyPresentSkipped = prepared.skipped;
+                mewmoryContext.inspection.retrieval.suppressionChoice = prepared.choice;
+            }
             await validateMewmoryGeneration(mewmoryContext, generate_data.prompt ?? finalPrompt, this_max_context, { signal });
             if (!isCurrent()) return;
         }
@@ -13185,6 +13235,7 @@ async function saveChatImmediately(...args) {
         scheduledChatId,
         account,
         roleplaySave,
+        mewmoryHidePolicy = undefined,
     } = options;
 
     if (account !== undefined && account !== getCurrentUserHandle()) return false;
@@ -13259,6 +13310,7 @@ async function saveChatImmediately(...args) {
             deferBackup: Boolean(deferBackup),
             deferSequenceId,
             allowShrink: Boolean(allowShrink),
+            ...(mewmoryHidePolicy ? { mewmoryHidePolicy } : {}),
         });
 
         if (result.ok) {
@@ -13306,7 +13358,7 @@ async function saveChatImmediately(...args) {
         }
 
         confirmRoleplayOverwrite(roleplaySave, uuidv4());
-        return await saveChatImmediately({ chatName, withMetadata, metadataSnapshot: metadata, mesId, force: true, chatData, throwOnError, deferBackup, deferSequenceId, allowShrink, activeChatName, characterName, avatarUrl, wasGroupChat, scheduledGeneration, scheduledCharacterId, scheduledGroupId, scheduledChatId, account, roleplaySave });
+        return await saveChatImmediately({ chatName, withMetadata, metadataSnapshot: metadata, mesId, force: true, chatData, throwOnError, deferBackup, deferSequenceId, allowShrink, activeChatName, characterName, avatarUrl, wasGroupChat, scheduledGeneration, scheduledCharacterId, scheduledGroupId, scheduledChatId, account, roleplaySave, mewmoryHidePolicy });
     } catch (error) {
         console.error(error);
         toastr.error(t`Check your connection to Neconyan, then reload the page to avoid losing changes.`, t`Chat could not be saved`);

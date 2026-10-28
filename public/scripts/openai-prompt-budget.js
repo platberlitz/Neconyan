@@ -1,3 +1,5 @@
+import { cleanMewmoryCountView } from './mewmory/prompt-proof.js';
+
 /**
  * Determines whether a prompt-ready chat payload needs a post-mutation budget recount.
  *
@@ -16,7 +18,7 @@ export function shouldCheckPostInterceptChatBudget(eventData) {
  * @param {(chat: object[]) => Promise<number>|number} countTokens Token counter for the payload.
  * @returns {Promise<{promptTokens: number, promptTokenBudget: number, exceeded: boolean}>}
  */
-export async function checkPostInterceptChatBudget(chat, userSettings = {}, countTokens) {
+export async function checkPostInterceptChatBudget(chat, userSettings = {}, countTokens, marker = null) {
     if (!Array.isArray(chat)) {
         throw new TypeError('Post-intercept chat payload must be an array.');
     }
@@ -26,7 +28,7 @@ export async function checkPostInterceptChatBudget(chat, userSettings = {}, coun
     }
 
     const promptTokenBudget = Number(userSettings?.openai_max_context) - Number(userSettings?.openai_max_tokens);
-    const promptTokens = await countTokens(chat);
+    const promptTokens = await countTokens(cleanMewmoryCountView(chat, marker));
 
     return {
         promptTokens,

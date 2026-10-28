@@ -8,6 +8,7 @@ import {
     chat,
     eventSource,
     event_types,
+    getChatGeneration,
     getCurrentChatId,
     getRequestHeaders,
     name2,
@@ -418,6 +419,8 @@ export function hasPendingFileAttachment() {
     return fileInput.files.length > 0;
 }
 
+let clearAttachmentScope = null;
+
 /**
  * Displays file information in the message sending form.
  * @param {FileList} fileList File object
@@ -444,12 +447,24 @@ async function onFileAttach(fileList) {
     $('#file_form .file_size').text(humanFileSize(size)).attr('title', size);
     $('#file_form').removeClass('displayNone');
 
-    // Reset form on chat change (if not on a welcome screen)
+    // A refreshed saved tail also emits CHAT_CHANGED. Only an actual navigation or
+    // account change owns this pending composer attachment.
     const currentChatId = getCurrentChatId();
     if (currentChatId) {
-        eventSource.once(event_types.CHAT_CHANGED, () => {
-            $('#file_form').trigger('reset');
-        });
+        clearAttachmentScope?.();
+        const generation = getChatGeneration();
+        const account = getCurrentUserHandle();
+        const reset = () => $('#file_form').trigger('reset');
+        const changed = () => {
+            if (getChatGeneration() !== generation || getCurrentUserHandle() !== account || getCurrentChatId() !== currentChatId) reset();
+        };
+        eventSource.on(event_types.CHAT_CHANGED, changed);
+        window.addEventListener('neconyan:account-changing', reset);
+        clearAttachmentScope = () => {
+            eventSource.removeListener(event_types.CHAT_CHANGED, changed);
+            window.removeEventListener('neconyan:account-changing', reset);
+            clearAttachmentScope = null;
+        };
     }
 }
 
@@ -2456,6 +2471,7 @@ export function initChatUtilities() {
     });
 
     $('#file_form').on('reset', function () {
+        clearAttachmentScope?.();
         $('#file_form').addClass('displayNone');
     });
 

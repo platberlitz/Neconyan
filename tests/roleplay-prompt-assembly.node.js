@@ -13,8 +13,10 @@ const { runRoleplayReplyJob } = await import('../src/generation/roleplay-executi
 const { readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
 const { injectChatPromptDepth } = await import('../public/scripts/chat-prompt-depth.js');
 const { loadCurrentStateSync } = await import('../src/mewmory/sources.js');
-const { mutateState } = await import('../src/mewmory/store.js');
-const { putRecord, validateRecord } = await import('../src/mewmory/core.js');
+const { mutateState, readStateShared } = await import('../src/mewmory/store.js');
+const { putRecord, validateRecord, refKey } = await import('../src/mewmory/core.js');
+const { defaultConfig, readConfig, saveConfig } = await import('../src/mewmory/models.js');
+const { processingVersion } = await import('../src/mewmory/processing.js');
 const { withRoleplayAccount } = await import('../src/roleplay-store.js');
 const { buildRoleplaySavedHistory } = await import('../src/generation/roleplay-prompt.js');
 const { saveRoleplayPromptContributions } = await import('../src/generation/roleplay-contributions.js');
@@ -318,18 +320,113 @@ function enableMemory(job) {
     });
 }
 
+function waitMemoryJob(t) {
+    const job = promptJob(t, [main, history], ['main', 'chatHistory'], {}, f => {
+        f.records.splice(1, f.records.length - 1, ...Array.from({ length: 15 }, (_, index) => ({
+            name: index % 2 ? 'User' : 'Nova', is_user: Boolean(index % 2), mes: `Scene ${index}.`, send_date: `scene-${index}`,
+        })));
+    });
+    const config = defaultConfig();
+    Object.assign(config, { historyMode: 'messages', recentMessages: 10, historyBatchMessages: 5,
+        historyCatchUp: 'wait', autoUpdate: false, writerTokenizer: 'cl100k_base' });
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:4551/v1', model: 'fixture' });
+    saveConfig(job.f.scope.directories, config);
+    withRoleplayAccount(job.f.scope, { accountId: job.f.scope.accountId, dataEpoch: job.f.scope.dataEpoch }, () => {
+        loadCurrentStateSync(job.f.scope.directories, job.f.locator);
+        mutateState(job.f.scope.directories, job.f.locator, state => { state.enabled = true; });
+    });
+    return job;
+}
+
+test('native wait starts one worker and dispatches once when its older prefix is recorded', async t => {
+    const job = waitMemoryJob(t);
+    let starts = 0;
+    let calls = 0;
+    job.options.startMemoryProcessing = async (directories, locator, options) => {
+        starts++;
+        assert.deepEqual(options, { all: true, checkpoint: true });
+        const policy = processingVersion(readConfig(directories));
+        mutateState(directories, locator, state => {
+            for (const ref of state.timeline.slice(0, 5)) state.checkpoints[refKey(ref)] = policy;
+        });
+    };
+    await job.run(async ({ messages, beforeDispatch }) => {
+        calls++;
+        beforeDispatch();
+        const dialogue = messages.filter(message => ['user', 'assistant'].includes(message.role)).map(message => message.content);
+        assert.ok(!dialogue.some(text => text.includes('Scene 0.')));
+        assert.ok(dialogue.some(text => text.includes('Scene 14.')));
+        return { text: 'Saved reply' };
+    });
+    await job.run(async () => assert.fail('The accepted reply must not dispatch twice'));
+    assert.equal(starts, 1);
+    assert.equal(calls, 1);
+    const wait = readArtifact(job.context.directories, job.context.job.id, 'mewmory-wait');
+    assert.equal(wait.initiated, true);
+    assert.equal(wait.snapshot.requiredRefs.length, 5);
+});
+
+test('native wait cancellation and an expired resumed deadline do not dispatch or restart processing', async t => {
+    const job = waitMemoryJob(t);
+    const controller = new AbortController();
+    job.context.signal = controller.signal;
+    let reachedStart;
+    const started = new Promise(resolve => { reachedStart = resolve; });
+    let starts = 0;
+    job.options.startMemoryProcessing = async () => { starts++; reachedStart(); return new Promise(() => {}); };
+    const running = job.run(async () => assert.fail('A waiting reply must not dispatch'));
+    await started;
+    controller.abort();
+    await assert.rejects(running, { code: 'MEWMORY_WAIT_ABORTED' });
+    const wait = readArtifact(job.context.directories, job.context.job.id, 'mewmory-wait');
+    assert.equal(wait.initiated, true);
+    writeArtifact(job.context.directories, job.context.job.id, 'mewmory-wait', { ...wait, deadline: Date.now() - 1 });
+    job.context.signal = new AbortController().signal;
+    await assert.rejects(job.run(async () => assert.fail('An expired reply must not dispatch')), { code: 'MEWMORY_WAIT_TIMEOUT' });
+    assert.equal(starts, 1);
+});
+
 test('saved Mewmory context is assembled natively and retained outside Prompt Manager markers', async t => {
     const job = promptJob(t, [main, history], ['main', 'chatHistory']);
     enableMemory(job);
     await job.run(async ({ messages, beforeDispatch }) => {
         beforeDispatch();
         assert.match(messages.at(-1).content, /The Original parcel was blue/);
+        const emitted = JSON.stringify(messages);
+        assert.doesNotMatch(emitted, /event:original|Sources:|as of message|Mewmory context [^\]]+ (?:begin|end)/);
+        const finalArtifact = readArtifact(job.context.directories, job.context.job.id, 'roleplay-prompt');
+        assert.deepEqual(finalArtifact.messages, messages);
+        assert.doesNotMatch(JSON.stringify(finalArtifact.messages), /event:original|Mewmory context [^\]]+ (?:begin|end)/);
         assert.deepEqual(messages.slice(0, 3).map(message => message.content), ['Main', 'Original', 'Answer']);
         const memory = readArtifact(job.context.directories, job.context.job.id, 'roleplay-mewmory');
         assert.equal(memory.enabled, true);
         assert.equal(memory.inspection.status, 'local');
+        const privateState = readStateShared(job.context.directories, job.f.locator);
+        assert.ok(privateState.records.some(record => record.id === 'event:original' && record.refs.length));
         return { text: 'Saved result' };
     });
+    await job.run(async () => assert.fail('A completed writer request must not be dispatched again'));
+});
+
+test('a clean Mewmory prompt resumes before dispatch without rerunning macros or requiring markers', async t => {
+    const job = macroJob(t, '{{incvar::turns}}', f => { f.records[0].chat_metadata.variables = { turns: 4 }; });
+    enableMemory(job);
+    let first;
+    await assert.rejects(job.run(async ({ messages }) => {
+        first = structuredClone(messages);
+        assert.equal(messages[0].content, '5');
+        assert.match(JSON.stringify(messages), /The Original parcel was blue/);
+        assert.doesNotMatch(JSON.stringify(messages), /Mewmory context [^\]]+ (?:begin|end)|event:original/);
+        throw new Error('Stopped before dispatch');
+    }), /Stopped before dispatch/);
+    const artifact = readArtifact(job.context.directories, job.context.job.id, 'roleplay-prompt');
+    assert.deepEqual(artifact.messages, first);
+    await job.run(async ({ messages, beforeDispatch }) => {
+        beforeDispatch();
+        assert.deepEqual(messages, first);
+        return { text: 'Saved result' };
+    });
+    assert.equal(readRoleplayChat(job.f.scope, job.f.locator).records[0].chat_metadata.variables.turns, 5);
 });
 
 test('Mewmory changes during preparation refuse dispatch and retain the earlier prompt evidence', async t => {

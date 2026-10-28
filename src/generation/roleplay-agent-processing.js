@@ -287,11 +287,12 @@ export async function runRoleplayAgentInterceptors(context, options) {
     if (!snapshot.agents) return { value, runs: [] };
     const identity = roleplayHash({ intent: context.job.intent, timing, format, value });
     const name = `roleplay-agent-intercepts:${timing}`;
-    const completed = readPhase(context, snapshot.account, name, identity);
-    if (completed) return completed;
     const { agents } = activeAgents(context, base, snapshot, options.agentCache);
     const selected = agents.filter(agent => inline(agent) && ['pre', 'both'].includes(agent.phase) && agent.preProcess.mode === 'intercept'
         && agent.preProcess.interceptTiming === timing && agent.prompt.trim());
+    if (timing === 'pre-generation' && options.mewmory && selected.some(agent => ['full-mewmory', 'mewmory-facts', 'mewmory-interview'].some(name => usesAgentMacro(agent.prompt, name)))) options.mewmory.mewmoryMacrosUsed = true;
+    const completed = readPhase(context, snapshot.account, name, identity);
+    if (completed) return completed;
     if (selected.length && timing === 'post-main-generation' && snapshot.agents.reviewPostMain && !roleplayAgentsStopped(context)) {
         const approval = requireJobApproval(context, { account: snapshot.account, key: 'post-main-interceptors', choices: ['continue', 'skip'],
             proposal: { title: 'Review the main reply before its configured interceptors', response: value, agents: selected.map(agent => ({ id: agent.id, name: agent.name })) } });

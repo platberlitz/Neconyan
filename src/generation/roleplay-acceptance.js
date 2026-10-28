@@ -33,7 +33,7 @@ const MAX_REVISION_BYTES = 512 * 1024;
 const MAX_BUNDLED_MACRO_BYTES = 64 * 1024;
 const BUNDLED_MACRO_NAMES = ['dialoguecolors'];
 const LEGACY_REPLY_BACKENDS = new Set(['kobold', 'novel', 'horde']);
-const SUBMISSION = ['key', 'name', 'intent', 'source', 'anchor', 'messageRevision', 'groupRevision', 'maxTokens', 'account', 'acknowledgement', 'bundledMacros', 'browserMacros'];
+const SUBMISSION = ['key', 'name', 'intent', 'source', 'anchor', 'messageRevision', 'groupRevision', 'maxTokens', 'account', 'acknowledgement', 'bundledMacros', 'browserMacros', 'mewmoryCatchUpOverride'];
 const ANCHOR_FIELDS = ['messageIndex', 'chosen'];
 
 const invalid = (message, code = 'roleplay_workflow_invalid') => Object.assign(new Error(message), { status: 400, apiError: code });
@@ -120,6 +120,7 @@ function accountStamp(value) {
  */
 export function normalizeRoleplayWorkflowSubmission(body = {}) {
     assertKeys(body, SUBMISSION, 'workflow submission');
+    if (body.mewmoryCatchUpOverride !== undefined && body.mewmoryCatchUpOverride !== 'reply') throw invalid('Invalid memory catch-up choice.');
     assertKeys(body.source, ['locator'], 'workflow source');
     assertKeys(body.source.locator, ['chat', 'avatar', 'group'], 'workflow locator');
     const key = identifier(body.key, 'workflow key');
@@ -148,6 +149,7 @@ export function normalizeRoleplayWorkflowSubmission(body = {}) {
     return { key, name, named, locator: { chat: chatName(body.source.locator.chat), avatar, group: false },
         messageIndex, chosen: body.anchor.chosen === true, messageRevision: revision(body.messageRevision, 'message revision'),
         maxTokens, bundledMacros: bundledMacros(body.bundledMacros), browserMacros: browserMacros(body.browserMacros),
+        ...(body.mewmoryCatchUpOverride ? { mewmoryCatchUpOverride: body.mewmoryCatchUpOverride } : {}),
         account: accountStamp(body.account),
         acknowledgement: { account: identifier(body.acknowledgement?.account, 'account handle'), settingsRevision } };
 }
@@ -274,7 +276,7 @@ export async function acceptRoleplayNamedWorkflow(request, body = {}) {
     }
     const maxTokens = workflowTokenLimit(directories, binding, submission.maxTokens);
     const workflow = captureRoleplayWorkflowRequest(base, submission.account, captured.source,
-        { avatar: submission.locator.avatar, binding, maxTokens, named: submission.named,
+        { avatar: submission.locator.avatar, binding, maxTokens, named: submission.named, mewmoryCatchUpOverride: submission.mewmoryCatchUpOverride,
             bundledMacros: submission.bundledMacros, browserMacros: submission.browserMacros });
     const accepted = admitRoleplayWorkflowJob(base, submission.account,
         { operationKey: submission.key, source: captured.source, request: workflow });
@@ -285,7 +287,7 @@ export async function acceptRoleplayNamedWorkflow(request, body = {}) {
         write: { instanceId: captured.source.instanceId, revision: captured.source.revision } };
 }
 
-const GROUP_SUBMISSION = ['key', 'name', 'source', 'messageCount', 'forcedAvatars', 'generationId', 'maxTokens', 'account', 'acknowledgement', 'bundledMacros', 'browserMacros'];
+const GROUP_SUBMISSION = ['key', 'name', 'source', 'messageCount', 'forcedAvatars', 'generationId', 'maxTokens', 'account', 'acknowledgement', 'bundledMacros', 'browserMacros', 'mewmoryCatchUpOverride'];
 
 /**
  * One whole group turn. The page names the saved group chat, how many messages it
@@ -294,6 +296,7 @@ const GROUP_SUBMISSION = ['key', 'name', 'source', 'messageCount', 'forcedAvatar
  */
 export function normalizeRoleplayGroupSubmission(body = {}) {
     assertKeys(body, GROUP_SUBMISSION, 'group submission');
+    if (body.mewmoryCatchUpOverride !== undefined && body.mewmoryCatchUpOverride !== 'reply') throw invalid('Invalid memory catch-up choice.');
     assertKeys(body.source, ['locator'], 'group source');
     assertKeys(body.source.locator, ['chat', 'group', 'groupId'], 'group locator');
     const key = identifier(body.key, 'workflow key');
@@ -316,6 +319,7 @@ export function normalizeRoleplayGroupSubmission(body = {}) {
     return { key, locator: { chat: chatName(body.source.locator.chat), avatar: '', group: true }, groupId, messageCount,
         forcedAvatars: [...forcedAvatars], generationId: body.generationId, maxTokens, bundledMacros: bundledMacros(body.bundledMacros),
         browserMacros: browserMacros(body.browserMacros), account: accountStamp(body.account),
+        ...(body.mewmoryCatchUpOverride ? { mewmoryCatchUpOverride: body.mewmoryCatchUpOverride } : {}),
         acknowledgement: { account: identifier(body.acknowledgement?.account, 'account handle'), settingsRevision } };
 }
 
@@ -345,7 +349,7 @@ export async function acceptRoleplayGroupTurn(request, body = {}) {
     }
     const maxTokens = workflowTokenLimit(directories, binding, submission.maxTokens);
     const workflow = captureRoleplayWorkflowRequest(base, submission.account, source, { binding, maxTokens, effect: 'append',
-        forcedAvatars: submission.forcedAvatars, generationId: submission.generationId,
+        forcedAvatars: submission.forcedAvatars, generationId: submission.generationId, mewmoryCatchUpOverride: submission.mewmoryCatchUpOverride,
         bundledMacros: submission.bundledMacros, browserMacros: submission.browserMacros });
     const accepted = admitRoleplayWorkflowJob(base, submission.account, { operationKey: submission.key, source, request: workflow });
     if (accepted.jobId) releaseJob(directories, accepted.jobId);

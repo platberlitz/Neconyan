@@ -1660,6 +1660,7 @@ function saveGroupChat(groupId, shouldSaveGroup, force = false, throwOnError = f
             deferBackup: Boolean(options.deferBackup),
             deferSequenceId: options.deferSequenceId,
             allowShrink: Boolean(options.allowShrink),
+            mewmoryHidePolicy: options.mewmoryHidePolicy,
             scheduledGeneration: currentGeneration,
             account,
             roleplaySave,
@@ -1685,7 +1686,7 @@ export async function waitForQueuedGroupChatSaves() {
     }
 }
 
-async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = false, throwOnError = false, chatId, chatData, metadata, deferBackup = false, deferSequenceId, allowShrink = false, scheduledGeneration, account, roleplaySave }) {
+async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = false, throwOnError = false, chatId, chatData, metadata, deferBackup = false, deferSequenceId, allowShrink = false, scheduledGeneration, account, roleplaySave, mewmoryHidePolicy }) {
     if (account !== undefined && account !== getCurrentUserHandle()) return false;
     const group = groups.find(x => x.id == groupId);
     if (!group) {
@@ -1726,6 +1727,7 @@ async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = fals
     const response = await saveRoleplayChatRequest(roleplaySave, {
         id: chatId, chat: [chatHeader, ...chatMessages], force: force,
         deferBackup: Boolean(deferBackup), deferSequenceId, allowShrink: Boolean(allowShrink),
+        ...(mewmoryHidePolicy ? { mewmoryHidePolicy } : {}),
     });
 
     if (!response.ok) {
@@ -1758,7 +1760,7 @@ async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = fals
         }
 
         confirmRoleplayOverwrite(roleplaySave, uuidv4());
-        return await saveGroupChatImmediately({ groupId, shouldSaveGroup, force: true, throwOnError, chatId, chatData: chatMessages, metadata: metadataForSave, deferBackup, deferSequenceId, allowShrink, scheduledGeneration, account, roleplaySave });
+        return await saveGroupChatImmediately({ groupId, shouldSaveGroup, force: true, throwOnError, chatId, chatData: chatMessages, metadata: metadataForSave, deferBackup, deferSequenceId, allowShrink, scheduledGeneration, account, roleplaySave, mewmoryHidePolicy });
     }
 
     const responseData = response.data;

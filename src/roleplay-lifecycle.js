@@ -855,6 +855,10 @@ function writeIntent(state, input) {
     if (!['update', 'create'].includes(mode) || (input.sourceKind !== undefined && input.sourceKind !== 'storage')
         || (mode === 'update' && input.sourceKind !== input.source?.kind)
         || (input.sourceKind === 'storage' && input.groupId !== undefined)
+        || (input.mewmoryHidePolicy !== undefined && (!input.mewmoryHidePolicy || typeof input.mewmoryHidePolicy !== 'object'
+            || Array.isArray(input.mewmoryHidePolicy) || Object.keys(input.mewmoryHidePolicy).some(key => !['type', 'lastDisableId'].includes(key))
+            || !['manual', 'automatic'].includes(input.mewmoryHidePolicy.type)
+            || typeof input.mewmoryHidePolicy.lastDisableId !== 'string' || input.mewmoryHidePolicy.lastDisableId.length > 256))
         || (input.force !== undefined && typeof input.force !== 'boolean')) {
         throw roleplayError('ROLEPLAY_INVALID', 'Invalid chat write intent.', 400);
     }
@@ -865,7 +869,8 @@ function writeIntent(state, input) {
     const intentHash = roleplayHash({ accountId: state.accountId, dataEpoch: state.dataEpoch, mode, locator,
         source: input.source ?? null, groupId: input.groupId ?? null, expectedVacancy: input.expectedVacancy ?? null,
         records: input.records, allowShrink: input.allowShrink === true, backup,
-        ...(input.sourceKind === 'storage' ? { sourceKind: 'storage' } : {}), ...(input.force === true ? { force: true } : {}) });
+        ...(input.sourceKind === 'storage' ? { sourceKind: 'storage' } : {}), ...(input.force === true ? { force: true } : {}),
+        ...(input.mewmoryHidePolicy ? { mewmoryHidePolicy: input.mewmoryHidePolicy } : {}) });
     return { operationKeyHash: key(state, input.operationKey), intentHash, mode, locator, backup };
 }
 

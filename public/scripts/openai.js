@@ -1,3 +1,4 @@
+import { cleanMewmoryCountView, createMewmoryBudgetMessage } from './mewmory/prompt-proof.js';
 import { classifyGenerationOutcome, generationErrorEnvelope, providerBlockedError } from './generation-outcome.js';
 import { appendAutoAppendReasoningInstruction } from './chat-reasoning-instruction.js';
 import { supportsChatImages, supportsChatVideo, supportsChatAudio, supportsChatSignatures, selectToolHistoryReasoning, supportsInterleavedToolReasoning } from './chat-input-capabilities.js';
@@ -1348,7 +1349,7 @@ async function populateChatCompletion(prompts, chatCompletion, { bias, quietProm
     if (mewmoryContext?.enabled) {
         for (const content of [mewmoryContext.npcText, mewmoryContext.memoryText]) {
             if (typeof content === 'string' && content.length > 0) {
-                promptsToPrime.push({ role: 'system', content });
+                promptsToPrime.push({ role: 'system', content: cleanMewmoryCountView(content, mewmoryContext.suppression?.marker) });
             }
         }
     }
@@ -1383,7 +1384,11 @@ async function populateChatCompletion(prompts, chatCompletion, { bias, quietProm
     if (mewmoryContext?.enabled) {
         const memory = new MessageCollection('mewmory');
         for (const [identifier, content] of [['mewmory-npc', mewmoryContext.npcText], ['mewmory-context', mewmoryContext.memoryText]]) {
-            if (content) memory.add(await Message.createAsync('system', content, identifier));
+            if (content) {
+                const message = await createMewmoryBudgetMessage(
+                    (...args) => Message.createAsync(...args), content, identifier, mewmoryContext.suppression?.marker);
+                memory.add(message);
+            }
         }
         // Allocate before history, at a separate position outside every prompt-manager marker.
         chatCompletion.add(memory, prompts.collection.length);
@@ -1828,7 +1833,7 @@ export async function prepareOpenAIMessages({
     chat = eventData.chat;
 
     if (!dryRun && shouldCheckPostInterceptChatBudget(eventData)) {
-        const { promptTokens, promptTokenBudget, exceeded } = await checkPostInterceptChatBudget(chat, userSettings, countChatCompletionPayloadTokensOpenAIAsync);
+        const { promptTokens, promptTokenBudget, exceeded } = await checkPostInterceptChatBudget(chat, userSettings, countChatCompletionPayloadTokensOpenAIAsync, mewmoryContext?.suppression?.marker);
         if (exceeded) {
             toastr.error(t`The extra steps that run before each reply are longer than the context size. Increase the context size or turn some off.`);
             chatCompletion.log(`Pre-generation intercepts exceed the context size. Tokens: ${promptTokens}. Budget: ${promptTokenBudget}.`);
@@ -5841,11 +5846,11 @@ class Message {
      * @param {string} identifier
      * @returns {Promise<Message>} Message instance
      */
-    static async createAsync(role, content, identifier) {
+    static async createAsync(role, content, identifier, countContent = content) {
         const message = new Message(role, content, identifier);
 
         if (typeof message.content === 'string' && message.content.length > 0) {
-            message.tokens = await tokenHandler.countAsync({ role: message.role, content: message.content });
+            message.tokens = await tokenHandler.countAsync({ role: message.role, content: countContent });
         }
 
         return message;

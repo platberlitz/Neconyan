@@ -148,6 +148,7 @@ export async function updateIndex(state, directories, config, { signal, limit = 
     const batchSize = Math.min(config.retrieval?.batchSize || 10, policy?.source === 'vertexai' ? policy.settings.model.startsWith('gemini-embedding-') ? 1 : 5 : 10);
     let dimension = Object.values(next)[0]?.vector.length;
     for (let start = 0; start < Math.min(limit, missing.length); start += batchSize) {
+        signal?.throwIfAborted();
         const batch = missing.slice(start, Math.min(start + batchSize, limit));
         const result = await embedFn(directories, config, batch.map(document => document.searchText), {
             signal, dataTypes: [...new Set(batch.map(document => document.dataType))],

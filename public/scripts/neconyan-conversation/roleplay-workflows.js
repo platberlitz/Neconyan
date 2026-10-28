@@ -28,6 +28,7 @@ import { getRoleplaySourceMessageRevision } from './roleplay-source.js';
 import { beginRoleplayReplacement } from './roleplay-replacement.js';
 import { withAbortSignal } from '../abort.js';
 import { imageInputIssueDetail, isImageInputIssue, roleplayImageOrigin } from '../prompt-media-policy.js';
+import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
 
 const WORKFLOW_EVENT = 'neconyan:roleplay-workflow-finished';
 const IMAGE_REFUSED_EVENT = 'neconyan:image-input-refused';
@@ -648,10 +649,15 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
     const restore = beginRoleplayReplacement(name, messageIndex, isCurrent);
     let stopPreview = () => {};
     let ended = false;
+    let memoryWaitFailure = null;
+    let memoryWaitObserved = false;
     const onTerminal = value => {
         if (ended) return;
         if (value.state !== 'completed') {
             const message = typeof value.error === 'string' ? value.error : value.error?.message;
+            if (memoryWaitObserved || String(value.error?.code || '').startsWith('MEWMORY_WAIT_')) {
+                memoryWaitFailure = { state: value.state, error: message || 'Stopped waiting for memory.', mewmoryWait: true };
+            }
             // The origin is the workflow's own chat and account, as given when it was accepted or found in the job record.
             if (isImageInputIssue(value.error)) globalThis.dispatchEvent(new CustomEvent(IMAGE_REFUSED_EVENT, { detail: imageInputIssueDetail(value.error, roleplayImageOrigin(locator, account)) }));
             else if (value.error?.code === 'GENERATION_BLOCKED') globalThis.toastr?.warning?.(generationBlockedNotice(false));
@@ -685,6 +691,14 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
         },
         onStop: async (reason) => {
             ended = true;
+            if (memoryWaitFailure) {
+                stopPreview();
+                restore();
+                settleFinished(key, memoryWaitFailure);
+                observed.delete(jobId);
+                syncJobControls();
+                return;
+            }
             if (reason !== 'done' && reason !== 'stopped') {
                 const reply = TERMINAL.has(reason) ? stopPreview.reply?.() : null;
                 stopPreview();
@@ -693,7 +707,7 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
                 announce({ key, name, state: reason, result: null, jobId });
                 // A refused or lost job must not leave a caller waiting for a write
                 // that will never arrive.
-                settleFinished(key, null);
+                settleFinished(key, memoryWaitFailure);
                 observed.delete(jobId);
                 syncJobControls();
                 return;
@@ -723,6 +737,7 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
             // Companions write notes after the reply is shown; their run swaps Stop for the Agents stop.
             onStage: stage => {
                 entry.stage = stage;
+                memoryWaitObserved = stage === 'waiting-memory';
                 if (observed.get(jobId) === entry) syncJobControls();
             },
         });
@@ -756,7 +771,7 @@ async function acknowledgedSettingsRevision() {
  * looking at is the message the server anchors its write to, and an uncertain
  * response keeps the whole payload so an identical retry cannot duplicate it.
  */
-export async function submitRoleplayWorkflow({ name, intent: named = {}, page = [], messageIndex = null, maxTokens = 0, account = getCurrentUserHandle() }) {
+export async function submitRoleplayWorkflow({ name, intent: named = {}, page = [], messageIndex = null, maxTokens = 0, account = getCurrentUserHandle(), mewmoryCatchUpOverride }) {
     const intent = Array.isArray(page) && page.length ? { ...named, page } : named;
     const anchorKind = ROLEPLAY_WORKFLOW_ANCHORS[name];
     if (!anchorKind) throw new Error(`Unknown named Roleplay workflow: ${name}`);
@@ -770,7 +785,7 @@ export async function submitRoleplayWorkflow({ name, intent: named = {}, page = 
     const restore = beginRoleplayReplacement(name, anchorIndex,
         () => account === getCurrentUserHandle() && matchesCurrentWorkflowLocator(locator));
     try {
-        const accepted = await submitRoleplayWorkflowRequest({ name, intent, locator, anchorIndex, chosen, maxTokens, account });
+        const accepted = await submitRoleplayWorkflowRequest({ name, intent, locator, anchorIndex, chosen, maxTokens, account, mewmoryCatchUpOverride });
         void accepted.finished.then(restore);
         return accepted;
     } catch (error) {
@@ -784,10 +799,10 @@ function preloadRoleplayPreview() {
     void import('./roleplay-preview.js').catch(() => {});
 }
 
-async function submitRoleplayWorkflowRequest({ name, intent, locator, anchorIndex, chosen, maxTokens, account }) {
+async function submitRoleplayWorkflowRequest({ name, intent, locator, anchorIndex, chosen, maxTokens, account, mewmoryCatchUpOverride }) {
     preloadRoleplayPreview();
     const stamp = roleplayAccountStamp().account;
-    const signature = JSON.stringify([account, name, intent, anchorIndex, chosen, maxTokens, locator, stamp]);
+    const signature = JSON.stringify([account, name, intent, anchorIndex, chosen, maxTokens, locator, stamp, mewmoryCatchUpOverride]);
     const known = pending.get(account);
     const browserMacros = captureBrowserMacros();
     let payload = known?.signature === signature ? known.payload : {
@@ -802,6 +817,7 @@ async function submitRoleplayWorkflowRequest({ name, intent, locator, anchorInde
         messageRevision: messageRevisionAt(anchorIndex),
         account: stamp,
         acknowledgement: { account, settingsRevision: await acknowledgedSettingsRevision() },
+        ...(mewmoryCatchUpOverride ? { mewmoryCatchUpOverride } : {}),
         ...(Number(maxTokens) > 0 ? { maxTokens: Number(maxTokens) } : {}),
     };
     pending.set(account, { signature, payload });
@@ -996,7 +1012,7 @@ export async function submitRoleplayGroupTurn({ groupId, forcedAvatars, generati
  * paid call this migration must never make, so a refused call still returns a
  * result and the host never generates a second time.
  */
-export async function runNativeRoleplayGeneration(type, { committed = false, page = null, maxOutputTokens = 0, signal = null, skipNativeRoleplay = false } = {}) {
+export async function runNativeRoleplayGeneration(type, { committed = false, page = null, maxOutputTokens = 0, signal = null, skipNativeRoleplay = false, mewmoryCatchUpOverride } = {}) {
     const refuse = () => {
         globalThis.toastr?.error?.('A Roleplay workflow is already running.', 'Nothing was generated');
         return { native: true, name: null, key: null, jobId: null, state: 'refused', result: null, refused: true };
@@ -1024,22 +1040,55 @@ export async function runNativeRoleplayGeneration(type, { committed = false, pag
     }
     busyName = name;
     deactivateSendButtons();
+    const originLocator = currentLocator();
+    const originAccount = getCurrentUserHandle();
+    let stopRequested = false;
     const onStop = () => {
+        stopRequested = true;
         const jobId = currentJobId;
         currentJobId = null;
         if (jobId) void cancelJob(jobId, { reason: 'user_cancelled' }).catch(() => {});
     };
     try {
-        const accepted = await submitRoleplayWorkflow({ name, intent: workflowIntent(name), page: prompts,
-            maxTokens: Number(maxOutputTokens) > 0 ? Number(maxOutputTokens) : 0 });
-        currentJobId = accepted.jobId ?? null;
-        if (signal && currentJobId) {
-            if (signal.aborted) onStop();
-            else signal.addEventListener('abort', onStop, { once: true });
+        let override = mewmoryCatchUpOverride;
+        let firstAttempt = true;
+        for (;;) {
+            stopRequested = false;
+            eventSource.on(event_types.GENERATION_STOPPED, onStop);
+            if (signal && !signal.aborted) signal.addEventListener('abort', onStop, { once: true });
+            else if (signal?.aborted && firstAttempt) stopRequested = true;
+            let accepted;
+            let receipt;
+            try {
+                accepted = await submitRoleplayWorkflow({ name, intent: workflowIntent(name), page: prompts,
+                    maxTokens: Number(maxOutputTokens) > 0 ? Number(maxOutputTokens) : 0, mewmoryCatchUpOverride: override });
+                currentJobId = accepted.jobId ?? null;
+                if (stopRequested) onStop();
+                firstAttempt = false;
+                receipt = await accepted.finished;
+            } finally {
+                signal?.removeEventListener?.('abort', onStop);
+                eventSource.removeListener(event_types.GENERATION_STOPPED, onStop);
+            }
+            if (!receipt?.mewmoryWait) return { native: true, name, key: accepted.key ?? null, jobId: accepted.jobId ?? null,
+                state: receipt?.state ?? null, result: receipt?.result ?? null, created: accepted.created !== false };
+            currentJobId = null;
+            if (originAccount !== getCurrentUserHandle() || !matchesCurrentWorkflowLocator(originLocator)) {
+                return { native: true, name, state: receipt.state, result: null };
+            }
+            const savedChat = JSON.stringify(chat);
+            const integrity = chat_metadata.integrity;
+            const message = document.createElement('p');
+            message.textContent = receipt.error + ' Your message is saved. Retry this reply when memory is ready, or reply now with extra original messages.';
+            const choice = await callGenericPopup(message, POPUP_TYPE.CONFIRM, null, { okButton: 'Retry reply', cancelButton: 'Cancel',
+                customButtons: [{ text: 'Reply now', result: POPUP_RESULT.CUSTOM1 }] });
+            if (choice !== POPUP_RESULT.AFFIRMATIVE && choice !== POPUP_RESULT.CUSTOM1) return { native: true, name, state: receipt.state, result: null };
+            if (originAccount !== getCurrentUserHandle() || !matchesCurrentWorkflowLocator(originLocator)
+                || chat_metadata.integrity !== integrity || JSON.stringify(chat) !== savedChat) {
+                throw new Error('The chat changed. Open the saved message and retry the reply.');
+            }
+            override = choice === POPUP_RESULT.CUSTOM1 ? 'reply' : undefined;
         }
-        const receipt = await accepted.finished;
-        return { native: true, name, key: accepted.key ?? null, jobId: accepted.jobId ?? null,
-            state: receipt?.state ?? null, result: receipt?.result ?? null, created: accepted.created !== false };
     } catch (error) {
         // An image refusal has already raised its own notice (postSubmission), so it gets no second, generic toast.
         if (!isImageInputIssue(error)) globalThis.toastr?.error?.(error?.message || 'The Roleplay workflow could not be started.', 'Nothing was generated');

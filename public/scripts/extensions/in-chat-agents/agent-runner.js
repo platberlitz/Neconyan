@@ -2310,6 +2310,8 @@ function buildBrowserAgentContextMacros(agent, message = null, generationType = 
         })))
         : null;
     const chatId = getCurrentChatId();
+    const preparedMemory = getPreparedMewmoryContext(chatId);
+    if (preparedMemory && ['full-mewmory', 'mewmory-facts', 'mewmory-interview'].some(name => usesAgentMacro(agent?.prompt, name))) preparedMemory.mewmoryMacrosUsed = true;
     const restricted = chat.some(source => !canGroupTargetSee(source, message));
     const trackers = !restricted && usesAgentMacro(agent?.prompt, TRACKER_STATE_MACRO) ? captureTrackerState(getEnabledAgents(), chat_metadata) : null;
     const secretsTrackers = !restricted && usesAgentMacro(agent?.prompt, SECRETS_TRACKER_MACRO) ? captureSecretsTrackerState(getEnabledAgents(), chat_metadata) : null;

@@ -39,7 +39,7 @@ export function buildMemoryRecoveryGuard(state) {
     const guard = {};
     for (const key of ['format', 'revision', 'storyId', 'branchId', 'sourceNamespace', 'locator', 'parent', 'enabled',
         'activeNpcIds', 'sceneNpcIds', 'castHistory', 'characterAliases', 'worldAliases', 'excludedSources',
-        'timeline', 'inheritedTimeline', 'contextSources']) guard[key] = state[key];
+        'timeline', 'inheritedTimeline', 'contextSources', 'lastDisableId', 'visibilityRestore']) guard[key] = state[key];
     guard.sources = Object.fromEntries(Object.values(state.sources).map(source => [source.id, {
         id: source.id, type: source.type, current: source.current, active: source.active,
         identity: source.identity, messageId: source.messageId,
@@ -305,6 +305,7 @@ function cloneStorySummary(summary) {
         ...summary,
         locator: { ...summary.locator },
         processing: summary.processing ? { ...summary.processing } : null,
+        visibilityRestore: summary.visibilityRestore ? structuredClone(summary.visibilityRestore) : null,
     };
 }
 
@@ -354,6 +355,7 @@ function rememberStorySummary(key, stat, state) {
     const summary = {
         locator: { ...state.locator }, storyId: state.storyId, branchId: state.branchId, enabled: state.enabled,
         updatedAt: state.updatedAt, processing: state.processing ? { status: state.processing.status, automatic: state.processing.automatic } : null,
+        visibilityRestore: state.visibilityRestore ? structuredClone(state.visibilityRestore) : null,
     };
     storySummaryCache.delete(key);
     storySummaryCache.set(key, { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, summary });
@@ -381,6 +383,13 @@ export function readChat(directories, locator) {
 function validateState(locator, state, expectedHash = hash(locator)) {
     if (state.format !== 1 || hash(normalizeLocator(state.locator)) !== expectedHash || hash(locator) !== expectedHash || !Array.isArray(state.records)) {
         fail('This memory file is from an unsupported version or belongs to a different chat.', 409);
+    }
+    const restore = state.visibilityRestore;
+    if (restore && (!['pending', 'failed', 'complete'].includes(restore.status)
+        || typeof restore.operationKey !== 'string' || !restore.operationKey || restore.operationKey.length > 256
+        || typeof restore.branchId !== 'string' || typeof restore.account?.accountId !== 'string'
+        || !Number.isSafeInteger(restore.account?.dataEpoch) || typeof restore.instanceId !== 'string')) {
+        fail('Mewmory cannot read the saved message restoration state. Keep the memory file and restore a valid backup.', 409);
     }
     return state;
 }
@@ -432,17 +441,23 @@ export function mutateState(directories, locator, mutate, expectedRevision, { ex
     }
 }
 
+/** Capture the same legacy tracker configuration for real or shadow reconciliation. */
+export function sourceSyncOptions(directories, messages) {
+    const legacy = messages.some(message => Object.values(getActiveCompanionResults(message))
+        .some(result => result?.status === 'done' && !result.agentCategory));
+    const trackerAgentIds = legacy ? readAgentCollection(agentCollectionDirectory(directories)).records
+        .filter(agent => agent.category === 'tracker').map(agent => agent.id) : [];
+    return { trackerAgentIds };
+}
+
 export function synchronize(directories, locator, context = [], source = readChatShared(directories, locator)) {
     locator = normalizeLocator(locator);
     // Native saves take this lock first too; never reconcile a chat snapshot read before it.
     return withChatFileLocks([chatPath(directories, locator)], () => {
         captureBranchMemory(directories, locator, source);
         // Older saved results predate the category snapshot; resolve them from the saved Agent library.
-        const legacy = source.messages.some(message => Object.values(getActiveCompanionResults(message))
-            .some(result => result?.status === 'done' && !result.agentCategory));
-        const trackerAgentIds = legacy ? readAgentCollection(agentCollectionDirectory(directories)).records
-            .filter(agent => agent.category === 'tracker').map(agent => agent.id) : [];
-        return mutateState(directories, locator, state => syncSources(state, source.messages, context, { trackerAgentIds }));
+        const options = sourceSyncOptions(directories, source.messages);
+        return mutateState(directories, locator, state => syncSources(state, source.messages, context, options));
     });
 }
 

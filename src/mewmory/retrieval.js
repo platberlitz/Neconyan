@@ -14,21 +14,29 @@ import { getCounter } from './tokens.js';
 import { listJobs } from '../jobs/store.js';
 
 const running = new Map();
+const controllers = new Map();
+
+export function abortMewmoryRecall(directories, locator) {
+    controllers.get(statePath(directories, locator))?.abort();
+}
 
 /** One recall per user/story; a slow provider must not accumulate work on every send. */
 export function recallInBackground(directories, locator, options = {}, dependencies = {}) {
     const key = statePath(directories, locator);
     if (running.has(key)) return running.get(key);
-    const run = () => recall(directories, locator, { ...options, local: false, background: true, signal: undefined }, dependencies);
+    const controller = new AbortController();
+    controllers.set(key, controller);
+    const run = () => recall(directories, locator, { ...options, local: false, background: true, signal: controller.signal }, dependencies);
     // A message rewritten mid-pick (for example by a post-generation agent) gets one fresh attempt instead of leaving no memories.
     const endWork = beginServerWork();
-    const job = run().catch(error => error?.status === 409 ? run() : Promise.reject(error))
+    const job = run().catch(error => error?.status === 409 && !controller.signal.aborted ? run() : Promise.reject(error))
         .finally(() => {
             running.delete(key);
+            controllers.delete(key);
             endWork();
         });
     running.set(key, job);
-    job.catch(error => console.warn('Mewmory background recall:', error.message));
+    job.catch(error => { if (!controller.signal.aborted) console.warn('Mewmory background recall:', error.message); });
     return job;
 }
 
@@ -114,6 +122,7 @@ async function selectMemories(state, directories, config, documents, scene, allD
     let error = '';
     let fallbackUsed = false;
     const select = async (role, repair = false) => {
+        signal?.throwIfAborted();
         const dataTypes = [...new Set(['chat', ...documents.map(document => document.dataType),
             ...(candidates.some(candidate => candidate.currentOverviews.length) ? ['memory'] : [])])];
         const result = await call(directories, config, role,
@@ -129,6 +138,7 @@ async function selectMemories(state, directories, config, documents, scene, allD
             error = '';
             break;
         } catch (failure) {
+            signal?.throwIfAborted();
             error = failure.message;
             if ([403, 409].includes(failure.status)) break;
         }
@@ -142,7 +152,7 @@ async function selectMemories(state, directories, config, documents, scene, allD
             || linkedIds.has(document.recordId))).sort((a, b) => Number(b.kind === 'source') - Number(a.kind === 'source')).slice(0, 12);
         documents = [...new Map([...documents, ...expansion].map(document => [document.id, document])).values()];
         candidates = candidateInput(state, documents, asOf);
-        try { status = await select('selector'); } catch (failure) { error = failure.message; }
+        try { status = await select('selector'); } catch (failure) { signal?.throwIfAborted(); error = failure.message; }
     }
     if ((error || status.status !== 'complete') && config.roles.fallback.enabled) {
         fallbackUsed = true;
@@ -150,6 +160,7 @@ async function selectMemories(state, directories, config, documents, scene, allD
             status = await select('fallback');
             error = '';
         } catch (failure) {
+            signal?.throwIfAborted();
             error = failure.message;
         }
     }
@@ -159,6 +170,7 @@ async function selectMemories(state, directories, config, documents, scene, allD
 
 export async function recall(directories, locator, {
     asOf = Infinity, query: manualQuery = '', tokenizer = {}, signal, local = false, background = false, operationId,
+    retained = [], marker = null,
 } = {}, { call = callJsonRole, embedFn = embed, loadState = loadCurrentState, mutate = mutateState,
     scheduleBackground = true, readConfiguration = readConfig } = {}) {
     const config = readConfiguration(directories);
@@ -174,10 +186,12 @@ export async function recall(directories, locator, {
     const counter = await getCounter(config.writerTokenizer, tokenizer);
     const usage = [];
     let indexError = '';
+    signal?.throwIfAborted();
     if (!local) try {
         const indexed = await updateIndex(state, directories, config, { signal, embedFn });
         usage.push(...indexed.usage);
     } catch (error) {
+        signal?.throwIfAborted();
         indexError = error.message;
     }
     const scene = state.timeline.filter(ref => sourceEligible(state, ref, asOf)).slice(-retrieval.queryMessages).map(ref => {
@@ -187,9 +201,21 @@ export async function recall(directories, locator, {
     if (manualQuery) scene.push({ id: 'inspection-query', speaker: 'Author search', text: text(manualQuery, 'Search', 6000) });
     const query = scene.map(cue => cue.speaker + ': ' + cue.text).join('\n');
     const allDocuments = searchDocuments(state, asOf, config);
+    const retainedByRef = new Map(retained.map(item => [refKey(item.ref), String(item.text || '').replace(/\r\n/g, '\n')]));
+    const coverageSignature = hash(retained.map(item => [refKey(item.ref), item.text]));
+    const matching = allDocuments.filter(document => document.kind === 'source' && document.dataType === 'chat'
+        && document.refs.length === 1 && document.text
+        && retainedByRef.get(refKey(document.refs[0]))?.includes(document.text.replace(/\r\n/g, '\n')));
+    let proof = [...new Map(matching.map(document => [document.text,
+        { sourceRef: document.refs[0], passageText: document.text }])).values()];
+    // A partial proof must never suppress a document whose final presence cannot be checked.
+    if ((!marker && local) || Buffer.byteLength(JSON.stringify(proof), 'utf8') > 512 * 1024) proof = [];
+    let suppressedIds = new Set(proof.length ? matching.map(document => document.id) : []);
+    let allowedDocuments = allDocuments.filter(document => !suppressedIds.has(document.id));
     let vector = null;
     if (!local && retrieval.mode !== 'keyword' && query.trim() && config.roles.embedding.enabled && state.index.version === roleVersion(config, 'embedding')) {
         try {
+            signal?.throwIfAborted();
             const result = await embedFn(directories, config, [query], { query: true, signal, dataTypes: ['chat'] });
             usage.push(result.usage);
             vector = result.vectors[0];
@@ -199,15 +225,17 @@ export async function recall(directories, locator, {
                 fail('The query vector has a different size from the index. Set a new model revision and rebuild the index.', 502);
             }
         } catch (error) {
+            signal?.throwIfAborted();
             indexError = error.message;
         }
     }
-    const forced = forcedMatches(state, allDocuments, query, asOf);
-    const candidates = [...new Map([...forced, ...hybridCandidates(allDocuments, query, vector,
+    let forced = forcedMatches(state, allowedDocuments, query, asOf);
+    let candidates = [...new Map([...forced, ...hybridCandidates(allowedDocuments, query, vector,
         state.index.vectors, config.candidateLimit, retrieval)].map(document => [document.id, document])).values()];
     const cached = local && state.recalls.findLast(item => item.status === 'complete' && item.asOf <= asOf
-        && item.sourceCount <= sourceCount && item.validationFingerprint === recallFingerprint(state, config, item.sourceCount));
-    const selection = local ? {
+        && item.sourceCount <= sourceCount && item.coverageSignature === coverageSignature
+        && item.validationFingerprint === recallFingerprint(state, config, item.sourceCount));
+    let selection = local ? {
         status: { status: 'local', selections: cached?.selections || [], rejections: [], needsEvidence: [] },
         documents: candidates, usage: [], fallbackUsed: false, error: '',
     } : !config.roles.selector.enabled ? {
@@ -215,17 +243,40 @@ export async function recall(directories, locator, {
             relevanceType: 'direct', currentCueRefs: scene.map(cue => cue.id), memoryEvidenceRefs: document.refs.map(refKey),
             justification: 'Selected by ranked retrieval; AI selection is switched off.' })), rejections: [], needsEvidence: [] },
         documents: candidates, usage: [], fallbackUsed: false, error: '',
-    } : await selectMemories(state, directories, config, candidates, scene, allDocuments, asOf, signal, call);
+    } : await selectMemories(state, directories, config, candidates, scene, allowedDocuments, asOf, signal, call);
     usage.push(...selection.usage);
     await loadState(directories, locator);
-    const rankedIds = [...new Set([...selection.status.selections.map(item => item.recordId), ...(local ? candidates.map(document => document.id) : [])])];
-    const selectedIds = new Set([...forced.map(document => document.id), ...rankedIds.slice(0, retrieval.resultLimit)]);
+    let rankedIds = [...new Set([...selection.status.selections.map(item => item.recordId), ...(local ? candidates.map(document => document.id) : [])])]
+        .filter(id => allowedDocuments.some(document => document.id === id));
+    let selectedIds = new Set([...forced.map(document => document.id), ...rankedIds.slice(0, retrieval.resultLimit)]);
     // Use one coherent completed snapshot; the model never supplies assembled memory text.
-    const currentById = new Map(allDocuments.map(document => [document.id, document]));
-    const currentDocuments = expandNeighbours([...selectedIds].map(id => currentById.get(id)).filter(Boolean), allDocuments, retrieval.neighbourChunks);
-    const assembly = assembleContext(state, currentDocuments, {
-        asOf, counter, memoryTokens: config.memoryTokens, forcedIds: forced.map(document => document.id),
-    });
+    const assemble = (documents, ids, required) => {
+        const byId = new Map(documents.map(document => [document.id, document]));
+        const expanded = expandNeighbours([...ids].map(id => byId.get(id)).filter(Boolean), documents, retrieval.neighbourChunks);
+        return { expanded, value: assembleContext(state, expanded, {
+            asOf, counter, memoryTokens: config.memoryTokens, forcedIds: required.map(document => document.id),
+        }) };
+    };
+    let { expanded: currentDocuments, value: assembly } = assemble(allowedDocuments, selectedIds, forced);
+    let fallbackAssembly = assembly;
+    if (proof.length && local) {
+        const fallbackForced = forcedMatches(state, allDocuments, query, asOf);
+        const fallbackCandidates = hybridCandidates(allDocuments, query, vector, state.index.vectors, config.candidateLimit, retrieval);
+        const fallbackIds = new Set([...fallbackForced.map(document => document.id),
+            ...[...new Set([...(cached?.selections || []).map(item => item.recordId), ...fallbackCandidates.map(item => item.id)])].slice(0, retrieval.resultLimit)]);
+        fallbackAssembly = assemble(allDocuments, fallbackIds, fallbackForced).value;
+        if (Buffer.byteLength(JSON.stringify(proof) + fallbackAssembly.memoryText + fallbackAssembly.factsText + fallbackAssembly.interviewText, 'utf8') > 512 * 1024) {
+            proof = [];
+            suppressedIds = new Set();
+            allowedDocuments = allDocuments;
+            forced = fallbackForced;
+            candidates = fallbackCandidates;
+            rankedIds = [...fallbackIds];
+            selectedIds = fallbackIds;
+            ({ expanded: currentDocuments, value: assembly } = assemble(allDocuments, fallbackIds, fallbackForced));
+            selection = { ...selection, documents: candidates };
+        }
+    }
     const inspection = {
         id: operationId || hash([Date.now(), fingerprint, scene]), at: Date.now(), asOf: Number.isFinite(asOf) ? asOf : state.timeline.length - 1,
         status: selection.status.status, fallbackUsed: selection.fallbackUsed,
@@ -237,9 +288,9 @@ export async function recall(directories, locator, {
             keywordFallback: retrieval.mode !== 'keyword' && !vector, aiSelection: !local && config.roles.selector.enabled,
             documents: allDocuments.length, indexed: Object.keys(state.index.vectors).length, selected: assembly.selected,
             expanded: currentDocuments.filter(document => !selectedIds.has(document.id)).map(document => document.id),
-            limited: rankedIds.slice(retrieval.resultLimit) },
+            limited: rankedIds.slice(retrieval.resultLimit), proposedPassagesSkipped: suppressedIds.size },
         forcedIds: forced.map(document => document.id), omitted: assembly.omitted, usage,
-        sourceCount, validationFingerprint, background,
+        sourceCount, validationFingerprint, background, coverageSignature,
     };
     const retainedJobs = operationId ? new Set(listJobs(directories, { includeDismissed: true }).map(job => job.id)) : null;
     mutate(directories, locator, current => {
@@ -258,6 +309,9 @@ export async function recall(directories, locator, {
         if (!background) current.preview = { ...assembly, fingerprint };
         addUsage(current, usage);
     });
-    if (local && scheduleBackground) recallInBackground(directories, locator, { asOf: Math.min(asOf, timelineLength - 1), query: manualQuery, tokenizer }, { call, embedFn });
-    return { enabled: true, ...assembly, inspection, fingerprint, validationFingerprint };
+    if (local && scheduleBackground) recallInBackground(directories, locator, { asOf: Math.min(asOf, timelineLength - 1), query: manualQuery, tokenizer, retained }, { call, embedFn });
+    return { enabled: true, ...assembly, inspection, fingerprint, validationFingerprint,
+        ...(local && marker ? { suppression: { marker, proof, fallbackMemoryText: fallbackAssembly.memoryText, fallbackFactsText: fallbackAssembly.factsText,
+            fallbackInterviewText: fallbackAssembly.interviewText,
+            proposedPassagesSkipped: suppressedIds.size } } : {}) };
 }

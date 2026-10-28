@@ -20,6 +20,7 @@ export function defaultConfig() {
     return {
         revision: 0, defaultsVersion: 2, localOnly: false, autoUpdate: true, historyWindow: 30000,
         memoryTokens: 6000, batchMessages: 12, candidateLimit: 24,
+        historyMode: 'tokens', recentMessages: 10, historyBatchMessages: 5, historyCatchUp: 'reply',
         writerTokenizer: 'auto', excludeHistory: true, autoHide: false, autoHideTokens: 30000, enableNewChats: false,
         retrieval: { ...RAG_DEFAULTS }, fallbackProfileIds: [], sharedProfileId: '', sharedModelOverride: '',
         roles: Object.fromEntries(ROLE_NAMES.map(name => [name, {
@@ -97,11 +98,17 @@ export function validateConfig(input) {
         if (typeof input[key] !== 'boolean') fail(key + ' must be switched on or off.');
         result[key] = input[key];
     }
-    result.historyWindow = integer(input.historyWindow, 'Recent chat target, tokens', 1024, 200000);
+    result.historyWindow = integer(input.historyWindow, 'Recent chat allowance, tokens', 1024, 200000);
+    result.historyMode = input.historyMode === undefined ? 'tokens' : input.historyMode;
+    if (!['tokens', 'messages'].includes(result.historyMode)) fail('Choose whether to keep recent chat by tokens or messages.');
+    result.historyCatchUp = input.historyCatchUp === undefined ? 'reply' : input.historyCatchUp;
+    if (!['reply', 'wait'].includes(result.historyCatchUp)) fail('Choose whether to reply immediately or wait for memory.');
+    result.recentMessages = integer(input.recentMessages === undefined ? 10 : input.recentMessages, 'Recent messages to keep', 1, 100000);
+    result.historyBatchMessages = integer(input.historyBatchMessages === undefined ? 5 : input.historyBatchMessages, 'Older messages per group', 1, 10000);
     result.autoHideTokens = integer(input.autoHideTokens, 'Hide messages beyond, tokens', 1024, 2000000);
-    result.memoryTokens = integer(input.memoryTokens, 'Selected memory budget, tokens', 256, 64000);
-    result.batchMessages = integer(input.batchMessages, 'Messages per update', 1, 24);
-    result.candidateLimit = integer(input.candidateLimit, 'Recall candidates', 4, 64);
+    result.memoryTokens = integer(input.memoryTokens, 'Space for recalled memories, tokens', 256, 64000);
+    result.batchMessages = integer(input.batchMessages, 'Maximum messages per memory request', 1, 24);
+    result.candidateLimit = integer(input.candidateLimit, 'Search matches considered for recall', 4, 64);
     result.retrieval = validateRetrieval(input.retrieval);
     result.fallbackProfileIds = validateFallbackProfiles(input.fallbackProfileIds);
     result.sharedProfileId = text(input.sharedProfileId || '', 'Connection profile for all roles', 250, true);
@@ -130,10 +137,10 @@ export function validateConfig(input) {
                 ...(name === 'embedding' ? { provider } : {}),
                 modelOverride: text(role.modelOverride, 'Model override', 250, true),
                 modelRevision: text(role.modelRevision, 'Model revision', 250, true), allowRemote,
-                contextTokens: integer(role.contextTokens, 'Context limit, tokens', 1024, 2000000),
-                maxOutputTokens: integer(role.maxOutputTokens, 'Output limit, tokens', name === 'embedding' ? 0 : 128, 64000),
+                contextTokens: integer(role.contextTokens, 'Model context size, tokens', 1024, 2000000),
+                maxOutputTokens: integer(role.maxOutputTokens, 'Maximum response length, tokens', name === 'embedding' ? 0 : 128, 64000),
                 timeoutMs: Number.isSafeInteger(role.timeoutMs) && role.timeoutMs >= 1000 && role.timeoutMs <= 300000 ? role.timeoutMs
-                    : fail('Timeout, seconds must be between 1 and 300.'),
+                    : fail('Request timeout, seconds must be between 1 and 300.'),
                 tokenizer: role.tokenizer,
                 allowedData: [...new Set(list(role.allowedData, 'Allowed data', SOURCE_TYPES.length))],
                 queryPrefix: prefix(role.queryPrefix, 'Query prefix'),
@@ -141,7 +148,7 @@ export function validateConfig(input) {
             };
             if (!TOKENIZERS.includes(role.tokenizer)) fail('Choose a token counter for this role from the list.');
             if (result.roles[name].allowedData.some(type => !SOURCE_TYPES.includes(type))) fail('Choose what this role may read from the list.');
-            if (role.maxOutputTokens >= role.contextTokens) fail('Output limit, tokens must be lower than Context limit, tokens.');
+            if (role.maxOutputTokens >= role.contextTokens) fail('Maximum response length, tokens must be lower than Model context size, tokens.');
         } catch (error) {
             fail(ROLE_LABELS[name] + ': ' + error.message, error.status);
         }
@@ -168,6 +175,10 @@ function readSavedConfig(directories) {
     config.retrieval = { ...RAG_DEFAULTS, ...config.retrieval };
     config.autoHide ??= false;
     config.autoHideTokens ??= 30000;
+    config.historyMode ??= 'tokens';
+    config.historyCatchUp ??= 'reply';
+    config.recentMessages ??= 10;
+    config.historyBatchMessages ??= 5;
     config.enableNewChats ??= false;
     config.fallbackProfileIds ??= [];
     config.sharedProfileId ??= '';
@@ -263,6 +274,9 @@ export function saveConfig(directories, input) {
     withChatFileLocks([filename, secretsFile], () => {
         const current = readJson(filename, null) || defaultConfig();
         if (input.revision !== current.revision) fail('Mewmory settings were changed in another tab. Reload the page, then save again.', 409);
+        for (const key of ['historyMode', 'recentMessages', 'historyBatchMessages', 'historyCatchUp']) {
+            if (input[key] === undefined) validated[key] = current[key] ?? defaultConfig()[key];
+        }
         const previousSecrets = credentials.length && fs.existsSync(secretsFile) ? fs.readFileSync(secretsFile) : null;
         try {
             for (const [name, value] of credentials) {
@@ -436,6 +450,7 @@ export async function callJsonRole(directories, config, name, contract, input, {
             + (name === 'extractor' ? ', or reduce Messages per update.' : '.'), 409);
     }
     const attempt = async connectionRole => {
+        signal?.throwIfAborted();
         const result = await requestModel(directories, config, name, {
             messages, stream: false, max_tokens: role.maxOutputTokens, temperature: 0.2,
         }, dataTypes, signal, connectionRole);
@@ -458,6 +473,7 @@ export async function callJsonRole(directories, config, name, contract, input, {
         try {
             return await attempt(null);
         } catch (error) {
+            signal?.throwIfAborted();
             // Only a model-side failure moves on; cancellations, limits and permission problems stop here.
             if (error.status !== 502) throw error;
             primaryError = error;
@@ -465,9 +481,11 @@ export async function callJsonRole(directories, config, name, contract, input, {
     }
     const fallbacks = fallbackRoles(directories, config, name, dataTypes);
     for (const fallback of fallbacks) {
+        signal?.throwIfAborted();
         try {
             return await attempt(fallback);
         } catch (error) {
+            signal?.throwIfAborted();
             if (error.status !== 502) throw error;
         }
     }

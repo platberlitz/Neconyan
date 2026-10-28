@@ -19,6 +19,13 @@ import { createFinishReasonScan, forwardFetchResponse } from '../src/util.js';
 
 jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: strings => strings.join('') }));
 
+const callGenericPopup = jest.fn(async () => null);
+jest.unstable_mockModule('../public/scripts/popup.js', () => ({
+    callGenericPopup, POPUP_TYPE: { CONFIRM: 2 },
+    POPUP_RESULT: { AFFIRMATIVE: 1, NEGATIVE: 0, CANCELLED: null, CUSTOM1: 1001 },
+}));
+
+
 let account = 'alice';
 const chat = [];
 let nativeEligible = true;
@@ -101,6 +108,7 @@ const refusalCalls = () => debugSpy.mock.calls.filter(([message]) => message ===
 const acceptedCalls = () => debugSpy.mock.calls.filter(([message]) => message === 'Roleplay workflow accepted');
 
 beforeEach(() => {
+    callGenericPopup.mockReset().mockResolvedValue(null);
     account = 'alice';
     // The module holds this array, so the fixture edits it in place.
     chat.length = 0;
@@ -201,6 +209,7 @@ test('a solo submission logs exactly one accepted line after the server accepts'
     await workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' });
     expect(acceptedCalls()).toHaveLength(1);
     expect(acceptedCalls()[0][1]).toEqual({ name: 'roleplay.reply' });
+    expect(callGenericPopup).not.toHaveBeenCalled();
     // Stop the observed job so its preview poller does not outlive the suite.
     await observers.get('solo-accepted').onStop('done');
 });

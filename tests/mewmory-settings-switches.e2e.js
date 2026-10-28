@@ -7,8 +7,8 @@ test.setTimeout(120000);
 // eslint-disable-next-line playwright/no-skipped-test -- These tests change the saved Mewmory configuration.
 test.skip(process.env.NECONYAN_MEWMORY_TEST_DISPOSABLE !== '1', 'Use a disposable Neconyan server.');
 
-const AUTO_HIDE = 'Hide old messages automatically';
-const HIDE_THRESHOLD = 'Hide older messages when the visible chat reaches, tokens';
+const AUTO_HIDE = 'Hide old messages automatically at a token threshold';
+const HIDE_THRESHOLD = 'Hide older messages at this chat size, tokens';
 
 async function load(page) {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -45,6 +45,10 @@ async function resetSettings(page) {
         ...config,
         enableNewChats: false,
         autoHide: false,
+        historyMode: 'tokens',
+        historyCatchUp: 'reply',
+        recentMessages: 10,
+        historyBatchMessages: 5,
         autoHideTokens: 30000,
         fallbackProfileIds: [],
         sharedProfileId: '',
@@ -57,6 +61,47 @@ async function resetSettings(page) {
         }])),
     };
     return saveConfig(page, reset);
+}
+
+async function messageWindowSettingsSave({ page }) {
+    await load(page);
+    await resetSettings(page);
+    const workspace = await openSettings(page);
+    const mode = workspace.getByLabel('Choose recent chat by', { exact: true });
+    const catchUp = workspace.getByLabel('When memory is behind', { exact: true });
+    const status = workspace.locator('#mewmory-settings-status');
+    await expect(mode).toHaveValue('tokens');
+    await expect(catchUp).toHaveValue('reply');
+    await expect(workspace.getByText('Keep any older messages Mewmory has not recorded yet, so the reply can start. They leave context after memory catches up.')).toBeVisible();
+    await catchUp.selectOption('wait');
+    await expect(workspace.getByText('Record the older messages before sending the reply. This can run memory updates even when automatic updates are off. Catch-up may continue after the reply starts. You can stop waiting.')).toBeVisible();
+    await expect.poll(async () => (await readConfig(page)).config.historyCatchUp, { timeout: 15000 }).toBe('wait');
+    await catchUp.selectOption('reply');
+    await expect.poll(async () => (await readConfig(page)).config.historyCatchUp, { timeout: 15000 }).toBe('reply');
+    await expect(workspace.getByLabel('Recent chat allowance, tokens', { exact: true })).toBeVisible();
+    await expect(workspace.getByLabel('Keep at least this many recent messages', { exact: true })).toHaveCount(0);
+    await mode.selectOption('messages');
+    const recent = workspace.getByLabel('Keep at least this many recent messages', { exact: true });
+    const group = workspace.getByLabel('Remove older chat in groups of', { exact: true });
+    await expect(recent).toHaveValue('10');
+    await expect(group).toHaveValue('5');
+    await expect(workspace.locator('#mewmory-history-example')).toContainText('At 15, leave out the oldest 5');
+    await expect.poll(async () => (await readConfig(page)).config.historyMode, { timeout: 15000 }).toBe('messages');
+    await recent.fill('12');
+    await group.fill('4');
+    await expect(workspace.locator('#mewmory-history-example')).toContainText('At 16, leave out the oldest 4');
+    await expect.poll(async () => {
+        const saved = (await readConfig(page)).config;
+        return [saved.recentMessages, saved.historyBatchMessages];
+    }, { timeout: 15000 }).toEqual([12, 4]);
+    await expect(status).toHaveText('Configuration saved.', { timeout: 15000 });
+    expect((await readConfig(page)).config).toMatchObject({ historyMode: 'messages', recentMessages: 12, historyBatchMessages: 4 });
+    await mode.selectOption('tokens');
+    await expect.poll(async () => (await readConfig(page)).config.historyMode, { timeout: 15000 }).toBe('tokens');
+    await mode.selectOption('messages');
+    await expect(recent).toHaveValue('12');
+    await expect(group).toHaveValue('4');
+    await resetSettings(page);
 }
 
 async function settingsSaveAutomatically({ page }) {
@@ -326,6 +371,7 @@ const RETRY_TITLE = 'a failed save keeps the draft and saves it when retried';
 const CONFLICT_TITLE = 'a revision conflict keeps local edits and merges the newer server copy';
 const RAPID_TITLE = 'rapid edits and panel navigation keep the newest draft and send one request';
 const OLD_SERVER_TITLE = 'a server still running older code is reported instead of silently dropping a switch';
+const WINDOW_TITLE = 'message mode saves its own recent window without changing token mode';
 
 test.describe('desktop', () => {
     test.use({ viewport: { width: 1280, height: 900 } });
@@ -336,6 +382,7 @@ test.describe('desktop', () => {
     test(OLD_SERVER_TITLE, oldServerIsReported);
     test(FALLBACK_TITLE, fallbackConnectionsSaveInOrder);
     test(SHARED_TITLE, sharedProfileDrivesEveryRole);
+    test(WINDOW_TITLE, messageWindowSettingsSave);
 });
 
 test.describe('touch phone', () => {
@@ -344,4 +391,5 @@ test.describe('touch phone', () => {
     test(FALLBACK_TITLE, fallbackConnectionsSaveInOrder);
     test(SHARED_TITLE, sharedProfileDrivesEveryRole);
     test(OLD_SERVER_TITLE, oldServerIsReported);
+    test(WINDOW_TITLE, messageWindowSettingsSave);
 });

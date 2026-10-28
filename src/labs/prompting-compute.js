@@ -15,6 +15,7 @@ import { applyWrap } from '../../public/scripts/extensions/third-party/Neconyan-
 import { isTaggablePromptIdentifier } from '../../public/scripts/extensions/third-party/Neconyan-PromptTags/src/sections.js';
 import { createRoleplayLoreMacros } from '../generation/roleplay-lore-macros.js';
 import { supportsChatImages, supportsChatSignatures, supportsChatTools, supportsInterleavedToolReasoning } from '../../public/scripts/chat-input-capabilities.js';
+import { cleanMewmoryCountView, finaliseMewmoryContext } from '../../public/scripts/mewmory/prompt-proof.js';
 
 const emptyLore = () => ({ worldInfoBefore: '', worldInfoAfter: '', EMEntries: [], ANBeforeEntries: [], ANAfterEntries: [], WIDepthEntries: [], outletEntries: {} });
 function testRegex(pattern, text) {
@@ -63,6 +64,7 @@ export async function compilePromptingCapture({ context: plan, material, scene =
             WIDepthEntries: placement.atDepth, outletEntries: placement.outlets };
     }
     const memory = plan.memory ? await prepareMemory({ records, preparedContent: prepared.content }) : null;
+    if (memory?.waiting) throw new Error('This frozen prompt needs memory to catch up before it can be analysed. Update memories in the chat, then capture it again.');
     const excluded = new Set(memory?.excludedIndices ?? []);
     const retained = records.slice(1).map((_record, index) => index).filter(index => !excluded.has(index));
     const remap = entries => entries.flatMap(entry => {
@@ -123,8 +125,8 @@ export async function compilePromptingCapture({ context: plan, material, scene =
         });
         limit = builder.exampleCount;
         combinedPrompt = builder.render(selected, limit);
-        while (await tokenCount(combinedPrompt) > plan.maxContext && (selected.length > 1 || limit > 0)) {
-            if (!snapshot.pinExamples && limit > 0) limit--; else if (selected.length > 1) selected.shift(); else break;
+        while (await tokenCount(cleanMewmoryCountView(combinedPrompt, memory?.suppression?.marker)) > plan.maxContext && (selected.length > 1 || limit > 0)) {
+            if (!snapshot.pinExamples && limit > 0) limit--; else if (!memory?.enabled && selected.length > 1) selected.shift(); else break;
             combinedPrompt = builder.render(selected, limit);
         }
     } else {
@@ -135,10 +137,22 @@ export async function compilePromptingCapture({ context: plan, material, scene =
             built = await assembleRoleplayChatPrompt(selected, snapshot, material, lore,
                 { ...options, exampleLimit: limit, onSection: section => rawSections.push(section) });
             messages = built.messages;
-            if (await tokenCount(messages) <= plan.maxContext) break;
+            if (await tokenCount(cleanMewmoryCountView(messages, memory?.suppression?.marker)) <= plan.maxContext) break;
             if (limit === Infinity) limit = built.exampleCount;
-            if (!snapshot.pinExamples && limit > 0) limit--; else if (selected.length > 1) selected.shift(); else break;
+            if (!snapshot.pinExamples && limit > 0) limit--; else if (!memory?.enabled && selected.length > 1) selected.shift(); else break;
         } while (true);
+    }
+    if (memory?.enabled && memory.suppression) {
+        const final = finaliseMewmoryContext(messages ?? combinedPrompt, memory);
+        if (messages) messages = final.prompt;
+        else combinedPrompt = final.prompt;
+        const rewriteSectionText = value => typeof value === 'string'
+            ? cleanMewmoryCountView(value.replace(memory.memoryText, final.memoryText), memory.suppression.marker) : value;
+        rawSections = rawSections.map(section => ({ ...section,
+            content: typeof section.content === 'string' ? rewriteSectionText(section.content)
+                : Array.isArray(section.content) ? section.content.map(message => ({ ...message,
+                    content: Array.isArray(message.content) ? message.content.map(part => part.type === 'text'
+                        ? { ...part, text: rewriteSectionText(part.text) } : part) : rewriteSectionText(message.content) })) : section.content }));
     }
     const total = await tokenCount(messages ?? combinedPrompt);
     if (total > plan.maxContext) throw new Error('The pinned prompt does not fit its saved context limit.');
