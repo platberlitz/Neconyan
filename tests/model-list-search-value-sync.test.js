@@ -104,7 +104,7 @@ function createRuntime() {
         Node: FakeNode,
         HTMLSelectElement: FakeSelect,
         HTMLOptGroupElement: class extends FakeNode { },
-        MutationObserver: class { observe() { } disconnect() { } },
+        MutationObserver: class { observe() { } disconnect() { } takeRecords() { return []; } },
         CSS: { escape: value => String(value).replace(/["\\]/g, '\\$&') },
         Event: FakeEvent,
         t: strings => strings[0],

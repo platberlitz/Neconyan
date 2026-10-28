@@ -83,25 +83,44 @@ export function addLocaleData(localeId, data) {
  */
 const observer = new MutationObserver(mutations => {
     if (!hasLocaleData) return;
+    const roots = new Set();
+    const translatedRoots = new Set();
+    const attributes = new Set();
     mutations.forEach(mutation => {
         mutation.addedNodes.forEach(node => {
             if (node.nodeType === Node.ELEMENT_NODE && node instanceof Element) {
-                if (node.hasAttribute('data-i18n')) {
-                    translateElement(node);
-                }
-                node.querySelectorAll('[data-i18n]').forEach(element => {
-                    translateElement(element);
-                });
-                localizeControls(node, localeData || {});
+                roots.add(node);
+                translatedRoots.add(node);
             } else if (node.nodeType === Node.TEXT_NODE && node.parentElement) {
-                localizeControls(node.parentElement, localeData || {});
+                roots.add(node.parentElement);
             }
         });
         if (mutation.attributeName === 'data-i18n' && mutation.target instanceof Element) {
-            translateElement(mutation.target);
+            attributes.add(mutation.target);
         }
     });
+    // A panel can be inserted and filled in the same turn. Walk its final subtree
+    // once, rather than revisiting it for every child or text node added to it.
+    for (const root of connectedMutationRoots(translatedRoots)) {
+        if (root.hasAttribute('data-i18n')) translateElement(root);
+        root.querySelectorAll('[data-i18n]').forEach(translateElement);
+    }
+    for (const root of connectedMutationRoots(roots)) {
+        localizeControls(root, localeData || {});
+    }
+    for (const element of attributes) {
+        if (element.isConnected) translateElement(element);
+    }
 });
+
+function* connectedMutationRoots(roots) {
+    for (const root of roots) {
+        if (!root.isConnected) continue;
+        let parent = root.parentElement;
+        while (parent && !roots.has(parent)) parent = parent.parentElement;
+        if (!parent) yield root;
+    }
+}
 
 /**
  * Translates a template string with named arguments
@@ -308,7 +327,7 @@ async function getMissingTranslations() {
  * @returns {Document|string} Translated root, in the same format as the input (Document or HTML string)
  */
 export function applyLocale(root = document) {
-    if (!hasEntries(localeData) && !hasEntries(scopedData)) {
+    if (!hasLocaleData) {
         return root;
     }
 

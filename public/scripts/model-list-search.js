@@ -64,6 +64,9 @@ export function attachModelListSearch(select, options = {}) {
     select.hidden = true;
 
     const list = { select, root, input, results, options: { ...options }, value: select.value, render, focus, syncPressed };
+    let rows = new WeakMap();
+    let available = [];
+    let searchText = new WeakMap();
     lists.set(select, list);
 
     // Programmatic .val() calls do not fire a change event. Sync before the
@@ -74,7 +77,7 @@ export function attachModelListSearch(select, options = {}) {
     function choose(value) {
         select.value = value;
         select.dispatchEvent(new Event('change', { bubbles: true }));
-        render();
+        syncPressed();
     }
 
     function isListed(option) {
@@ -139,11 +142,16 @@ export function attachModelListSearch(select, options = {}) {
     }
 
     function createRow(option) {
+        const cached = rows.get(option);
+        if (cached) {
+            updatePressed(cached);
+            return cached;
+        }
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'nn-model-list-option';
         button.dataset.modelId = option.value;
-        button.setAttribute('aria-pressed', String(select.value === option.value));
+        button.setAttribute('aria-pressed', String(list.value === option.value));
         button.disabled = select.disabled;
         const label = document.createElement('span');
         label.className = 'nn-model-list-label';
@@ -167,21 +175,32 @@ export function attachModelListSearch(select, options = {}) {
             favourite.title = t`Favourite`;
             button.append(favourite);
         }
+        rows.set(option, button);
         return button;
     }
 
-    function render() {
+    function render({ invalidate = true } = {}) {
+        // A caller can replace options and dispatch input in the same turn,
+        // before the observer has delivered those source changes.
+        if (!invalidate && observer.takeRecords().length) invalidate = true;
+        if (invalidate) {
+            rows = new WeakMap();
+            searchText = new WeakMap();
+            const seen = new Set();
+            // Native option reads and normalisation only change with the source,
+            // not with each keystroke in the search field.
+            available = [...select.options].filter(option => {
+                if (!isListed(option) || seen.has(option.value)) return false;
+                seen.add(option.value);
+                searchText.set(option, `${option.value} ${getText(option)}`.toLocaleLowerCase());
+                return true;
+            });
+        }
         list.value = select.value;
         const focusedValue = results.contains(document.activeElement) ? document.activeElement.dataset.modelId : null;
         const terms = input.value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
-        const seen = new Set();
-        const available = [...select.options].filter(option => {
-            if (!isListed(option) || seen.has(option.value)) return false;
-            seen.add(option.value);
-            return true;
-        });
         const matches = available.filter(option => {
-            const text = `${option.value} ${getText(option)}`.toLocaleLowerCase();
+            const text = searchText.get(option);
             return terms.every(term => text.includes(term));
         });
         clear.disabled = !input.value;
@@ -210,8 +229,13 @@ export function attachModelListSearch(select, options = {}) {
     function syncPressed() {
         list.value = select.value;
         for (const button of getButtons()) {
-            button.setAttribute('aria-pressed', String(button.dataset.modelId === select.value));
+            updatePressed(button);
         }
+    }
+
+    function updatePressed(button) {
+        const pressed = String(button.dataset.modelId === list.value);
+        if (button.getAttribute('aria-pressed') !== pressed) button.setAttribute('aria-pressed', pressed);
     }
 
     function getButtons() {
@@ -231,12 +255,12 @@ export function attachModelListSearch(select, options = {}) {
     }
 
     input.addEventListener('input', () => {
-        render();
+        render({ invalidate: false });
         results.scrollTop = 0;
     });
     clear.addEventListener('click', () => {
         input.value = '';
-        render();
+        render({ invalidate: false });
         results.scrollTop = 0;
         input.focus();
     });
@@ -250,7 +274,7 @@ export function attachModelListSearch(select, options = {}) {
             event.preventDefault();
             event.stopPropagation();
             input.value = '';
-            render();
+            render({ invalidate: false });
             input.focus();
         } else if (event.target === input && event.key === 'Enter') {
             event.preventDefault();
@@ -274,7 +298,8 @@ export function attachModelListSearch(select, options = {}) {
         select.addEventListener('change', syncPressed);
         select.addEventListener('input', syncPressed);
     }
-    new MutationObserver(render).observe(select, {
+    const observer = new MutationObserver(() => render());
+    observer.observe(select, {
         childList: true,
         subtree: true,
         characterData: true,
