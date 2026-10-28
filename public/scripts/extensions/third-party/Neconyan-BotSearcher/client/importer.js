@@ -380,8 +380,10 @@ function operationSignal(signal, timeoutMs) {
 
 function assertCanWrite(signal) {
     signal?.throwIfAborted();
-    // Both flags are supplied by the host, including non-streaming UI requests.
-    if (globalThis.document?.body?.dataset.generating === 'true' || context().streamingProcessor) {
+    const processor = context().streamingProcessor;
+    // A finished processor can remain while the host saves the reply. The body
+    // flag also protects non-streaming requests and unfinished follow-up work.
+    if (globalThis.document?.body?.dataset.generating === 'true' || (processor && !processor.isFinished)) {
         throw new Error('generation_active');
     }
 }
