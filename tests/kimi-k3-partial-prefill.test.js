@@ -163,11 +163,11 @@ describe('prefill stays the last message', () => {
             { role: 'system', content: 'main' },
             { role: 'user', content: 'hi' },
             prefill,
-            { role: 'system', content: '[Mewmory: active NPC reference]' },
-            { role: 'system', content: '[Mewmory: retrieved story context]' },
+            { role: 'system', content: '[Mewmory: character references]' },
+            { role: 'system', content: '[Mewmory: recalled story context]' },
         ];
         expect(keepLast(chat, USER_PREFILL).map(message => message.content)).toEqual([
-            'main', 'hi', '[Mewmory: active NPC reference]', '[Mewmory: retrieved story context]', USER_PREFILL,
+            'main', 'hi', '[Mewmory: character references]', '[Mewmory: recalled story context]', USER_PREFILL,
         ]);
     });
 

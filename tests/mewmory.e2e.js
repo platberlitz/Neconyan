@@ -297,13 +297,14 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     const writer = calls.findLast(call => call.model === 'mewmory-writer');
     expect(writer).toBeTruthy();
     const writingPrompt = JSON.stringify(writer.messages);
-    expect(writingPrompt).toContain('Mewmory: active NPC reference');
+    expect(writingPrompt).toContain('Mewmory: character references');
     expect(writingPrompt).toContain('Her objection has softened');
     expect(writingPrompt).not.toContain('INSPECT ONLY');
     expect(writingPrompt).not.toContain('SEARCH ONLY');
     const saved = await post('/api/chats/get', { avatar_url: avatar, file_name: chatName });
     expect(saved.slice(1, 8).map(message => message.mes)).toEqual(fixture.messages.map(message => message.mes));
-    expect(JSON.stringify(saved)).not.toContain('Mewmory: retrieved story context');
+    expect(JSON.stringify(saved)).not.toContain('Mewmory: recalled story context');
+    expect(JSON.stringify(saved)).not.toContain('Mewmory: character references');
     const callsBeforeOverflow = calls.filter(call => call.model === 'mewmory-writer').length;
     const capacityError = await page.evaluate(async () => {
         const app = await import('/script.js');
@@ -338,8 +339,8 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     const textCalls = await (await page.request.get(provider.replace(/\/v1$/, '') + '/fixture/calls')).json();
     const textWriter = textCalls.findLast(call => call.model === 'text-writer');
     expect(textWriter).toBeTruthy();
-    expect(textWriter.prompt).toContain('Mewmory: active NPC reference');
-    expect(textWriter.prompt).toContain('Owner: Mara');
+    expect(textWriter.prompt).toContain('Mewmory: character references');
+    expect(textWriter.prompt).toContain('Character: Mara');
     expect(textWriter.prompt).not.toContain('INSPECT ONLY');
     await page.locator('#neconyan-workspace-rail [data-neconyan-route="mewmory"]').click();
     await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
@@ -451,7 +452,7 @@ for (const width of [1280, 393]) {
         await expect.poll(() => page.evaluate(async () => (await import('/script.js')).is_send_press)).toBe(false);
         const calls = await (await page.request.get(provider.replace(/\/v1$/, '') + '/fixture/calls')).json();
         const prompt = JSON.stringify(calls.findLast(call => call.model === 'mewmory-writer').messages);
-        expect(prompt).toContain('Mewmory: retrieved story context');
+        expect(prompt).toContain('Mewmory: recalled story context');
         expect(prompt).toContain(marker);
         await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
         await expect(heading).toHaveText(branch);
