@@ -99,6 +99,7 @@ import {
 } from '../script.js';
 import { getQueuedChatSaveAbortReason } from './chat-save-guard.js';
 import { getChatBackupSaveOptions } from './chat-backup-sequence.js';
+import { roleplaySaveNotice } from './roleplay-reply-notice.js';
 import { beginRoleplaySave, confirmRoleplayOverwrite, finishRoleplaySave, rememberRoleplayRead, roleplayAccountStamp, sendRoleplayLifecycle, sendRoleplaySave } from './roleplay-save-chain.js';
 import { printTagList, createTagMapFromList, applyTagsOnCharacterSelect, tag_map, applyTagsOnGroupSelect, printTagFilters, tag_filter_type } from './tags.js';
 import { FILTER_TYPES, FilterHelper } from './filters.js';
@@ -1735,7 +1736,7 @@ async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = fals
         const isIntegrityError = errorData?.error === 'integrity' && !force
             && (errorData.roleplay?.source || Number.isSafeInteger(errorData.roleplay?.vacancy));
         if (!isIntegrityError) {
-            toastr.error(t`Could not reach the server, so your changes may not be saved. Check your connection, then reload the page to avoid losing them.`, t`Group Chat could not be saved`);
+            toastr.error(roleplaySaveNotice(errorData) || t`Could not reach the server, so your changes may not be saved. Check your connection, then reload the page to avoid losing them.`, t`Group Chat could not be saved`);
             console.error('Group chat could not be saved', response);
             if (throwOnError) {
                 throw new Error('Group chat could not be saved');

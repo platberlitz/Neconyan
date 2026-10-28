@@ -59,6 +59,7 @@ import { normalizeCharacterChatName, resolveCharacterChatNameForLoad } from './s
 import { getDebouncedChatSaveAbortReason, getQueuedChatSaveAbortReason } from './scripts/chat-save-guard.js';
 import { getChatBackupSaveOptions } from './scripts/chat-backup-sequence.js';
 import { fetchWithCsrfRetry } from './scripts/csrf-token-refresh.js';
+import { roleplaySaveNotice } from './scripts/roleplay-reply-notice.js';
 import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplayLifecycle, sendRoleplaySave } from './scripts/roleplay-save-chain.js';
 import { getCharacterDefinitionFormValues, getSuspiciousEmptyCharacterDefinitionSave } from './scripts/character-save-guard.js';
 // Neconyan: keep model-produced chat filenames behind a strict, independently tested parser.
@@ -13338,7 +13339,8 @@ async function saveChatImmediately(...args) {
             && (errorData.roleplay?.source || Number.isSafeInteger(errorData.roleplay?.vacancy));
         if (!isIntegrityError) {
             const errorMessage = typeof errorData?.error === 'string' ? errorData.error : result.statusText;
-            throw new Error(errorMessage || 'Chat save failed');
+            const notice = roleplaySaveNotice(errorData);
+            throw Object.assign(new Error(errorMessage || 'Chat save failed'), notice ? { saveNotice: notice } : {});
         }
 
         const popupResult = await Popup.show.input(
@@ -13361,7 +13363,7 @@ async function saveChatImmediately(...args) {
         return await saveChatImmediately({ chatName, withMetadata, metadataSnapshot: metadata, mesId, force: true, chatData, throwOnError, deferBackup, deferSequenceId, allowShrink, activeChatName, characterName, avatarUrl, wasGroupChat, scheduledGeneration, scheduledCharacterId, scheduledGroupId, scheduledChatId, account, roleplaySave, mewmoryHidePolicy });
     } catch (error) {
         console.error(error);
-        toastr.error(t`Check your connection to Neconyan, then reload the page to avoid losing changes.`, t`Chat could not be saved`);
+        toastr.error(error?.saveNotice || t`Check your connection to Neconyan, then reload the page to avoid losing changes.`, t`Chat could not be saved`);
         if (throwOnError) {
             throw error;
         }

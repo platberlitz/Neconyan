@@ -9,6 +9,8 @@ import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finis
 
 const source = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8');
 const ast = parse(source, { ecmaVersion: 'latest', sourceType: 'module' });
+const noticeSource = readFileSync(new URL('../public/scripts/roleplay-reply-notice.js', import.meta.url), 'utf8');
+const noticeAst = parse(noticeSource, { ecmaVersion: 'latest', sourceType: 'module' });
 
 function createSaveRuntime(group = false) {
     let releaseQueue;
@@ -62,6 +64,8 @@ function createSaveRuntime(group = false) {
         const node = ast.body.map(node => node.declaration ?? node).find(node => node.id?.name === name);
         vm.runInContext(source.slice(node.start, node.end), runtime);
     }
+    const noticeNode = noticeAst.body.map(node => node.declaration ?? node).find(node => node.id?.name === 'roleplaySaveNotice');
+    vm.runInContext(noticeSource.slice(noticeNode.start, noticeNode.end), runtime);
     let runtimeSource = source;
     let runtimeAst = ast;
     if (group) {
@@ -214,6 +218,19 @@ describe('real chat save queue', () => {
             expect(bodies[1].roleplay.source.revision).toBe(10);
             expect(bodies[2].roleplay.source.revision).toBe(11);
             expect(runtime.window.location.reload).not.toHaveBeenCalled();
+        });
+
+        test(`${kind} a full Roleplay store says so instead of blaming the connection`, async () => {
+            const { runtime, releaseQueue } = createSaveRuntime(group);
+            runtime.fetch.mockImplementationOnce(async () => ({ ok: false, status: 507, json: async () => ({ error: 'roleplay_store_full' }) }));
+            const saved = enqueue(runtime);
+            releaseQueue();
+            await expect(saved).rejects.toThrow();
+            expect(runtime.fetch).toHaveBeenCalledTimes(1);
+            expect(runtime.toastr.error).toHaveBeenCalledTimes(1);
+            const [message] = runtime.toastr.error.mock.calls[0];
+            expect(message).toContain('ran out of room to record saves');
+            expect(message).not.toMatch(/connection/i);
         });
     }
 });
