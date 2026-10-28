@@ -69,14 +69,16 @@ for (const view of views) {
                         await page.evaluate(theme => window.NeconyanShell.applyTheme(theme), theme);
                         if (theme !== 'calico') await page.waitForFunction(() => document.querySelector('link[data-sb-shell-style="windows-98"]')?.sheet);
                     });
-                    for (const tab of ['characters', 'groups', 'import', 'persona']) {
+                    for (const [tab, key] of [['characters', 'character-library'], ['groups', 'group-library'], ['import', 'character-import'], ['persona', 'persona']]) {
                         await test.step(`${theme} ${tab} intro`, async () => {
                             await page.evaluate(tab => window.NeconyanShell.openTab('characters', tab), tab);
-                            const intro = page.locator('.neconyan-tool-page-intro:visible').filter({ has: page.locator('.neconyan-page-intro-toggle') }).first();
+                            // The previous page can still be visible while the requested tab opens.
+                            const toggle = page.locator(`.neconyan-page-intro-toggle[aria-controls="neconyan-page-intro-${key}"]`);
+                            const intro = page.locator('.neconyan-tool-page-intro').filter({ has: toggle });
                             await expect(intro).toBeVisible();
+                            await expect(toggle).toBeVisible();
                             if (view.phone) await applyIOSOnlyCss(page);
                             await expectReadable(intro, true);
-                            const toggle = intro.locator('.neconyan-page-intro-toggle');
                             await toggle.click();
                             await expect(toggle).toHaveAttribute('aria-expanded', 'true');
                             await expect(intro.locator('.neconyan-tool-page-copy')).toBeVisible();
