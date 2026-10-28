@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { fixture } from './roleplay-transactions-fixture.js';
 
 const { readRoleplayChat, captureRoleplaySource } = await import('../src/generation/roleplay-source.js');
-const { readRoleplayAccount, resetRoleplayAccount } = await import('../src/roleplay-store.js');
+const { readRoleplayAccount, resetRoleplayAccount, roleplayHash } = await import('../src/roleplay-store.js');
 const { admitRoleplayJob, applyRoleplayJobEffect, voidRoleplayJob } = await import('../src/roleplay-jobs.js');
 const { getJob, requestCancellation } = await import('../src/jobs/store.js');
 const { prepareNativeChatWrite, publishNativeChatWrite } = await import('../src/endpoints/chats.js');
@@ -13,6 +13,7 @@ const host = { prepare: prepareNativeChatWrite, publish: publishNativeChatWrite 
 
 const stamp = scope => ({ accountId: scope.accountId, dataEpoch: scope.dataEpoch });
 const messages = f => readRoleplayChat(f.scope, f.locator).records.slice(1);
+const roleplayHashFor = (f, operationKey) => roleplayHash([f.scope.accountId, 'roleplay-job', operationKey]);
 
 function admit(f, operationKey, effect, anchor = {}) {
     const source = captureRoleplaySource(f.scope, { locator: f.locator, ...anchor });
@@ -117,6 +118,57 @@ test('moved anchors, foreign jobs, withdrawn jobs and older incarnations are ref
     assert.throws(() => applyRoleplayJobEffect(next, stamp(next), { operationKey: 'late', jobId: late.jobId, output: { message: { mes: 'x' } } }, host),
         { code: 'ROLEPLAY_JOB_REJECTED' });
     assert.equal(fs.existsSync(f.filename), false);
+});
+
+test('a new admission returns the room held by cancelled and pruned jobs, but keeps retryable and live ones', async t => {
+    const f = fixture(t);
+    const { mutateJobs, jobKey: ledgerKey, setJobState } = await import('../src/jobs/store.js');
+    const receipt = (key) => readRoleplayAccount(f.scope).submissions[roleplayHashFor(f, key)];
+    const cancelled = admit(f, 'cancelled', 'append');
+    const pruned = admit(f, 'pruned', 'append');
+    const failed = admit(f, 'failed', 'append');
+    const live = admit(f, 'live', 'append');
+    requestCancellation(f.scope.directories, cancelled.jobId);
+    mutateJobs(f.scope.directories, store => { delete store.jobs[ledgerKey(pruned.jobId)]; return {}; });
+    setJobState(f.scope.directories, failed.jobId, 'failed', { error: { message: 'Provider error' } });
+    for (const key of ['cancelled', 'pruned', 'failed', 'live']) assert.equal(receipt(key).state, 'accepted');
+
+    admit(f, 'next', 'append');
+    assert.deepEqual([receipt('cancelled').state, receipt('cancelled').reservedReceiptBytes], ['void', 0]);
+    assert.deepEqual([receipt('pruned').state, receipt('pruned').reservedReceiptBytes], ['void', 0]);
+    assert.equal(receipt('failed').state, 'accepted');
+    assert.ok(receipt('failed').reservedReceiptBytes > 0);
+    assert.equal(receipt('live').state, 'accepted');
+    // The live job still writes normally afterwards.
+    applyRoleplayJobEffect(f.scope, stamp(f.scope), { operationKey: 'live', jobId: live.jobId, output: { message: { name: 'Nova', mes: 'Still saved' } } }, host);
+    assert.equal(messages(f).at(-1).mes, 'Still saved');
+});
+
+test('stopped replies whose jobs were pruned no longer fill the store and refuse every new reply', async t => {
+    const f = fixture(t);
+    const { withRoleplayAccountLock, roleplayLease, saveRoleplayAccount, ROLEPLAY_STORE_MAX_BYTES } = await import('../src/roleplay-store.js');
+    const { randomUUID } = await import('node:crypto');
+    const reserved = 72 * 1024;
+    // As many as the file accepts, which leaves less than the emergency reserve for a new admission.
+    const count = Math.floor((ROLEPLAY_STORE_MAX_BYTES - 128 * 1024) / reserved);
+    const keys = Array.from({ length: count }, (_, index) => roleplayHashFor(f, `stopped-${index}`));
+    const { instanceId } = captureRoleplaySource(f.scope, { locator: f.locator });
+    // Admitted replies that stopped without output, long after the jobs ledger dropped them.
+    withRoleplayAccountLock(f.scope, lease => {
+        const { state } = roleplayLease(lease);
+        for (const key of keys) {
+            state.submissions[key] = { accountId: state.accountId, dataEpoch: state.dataEpoch, intentHash: 'a'.repeat(64),
+                jobId: randomUUID(), targetInstanceId: instanceId, state: 'accepted', reservedReceiptBytes: reserved, effects: {} };
+        }
+        saveRoleplayAccount(lease);
+    });
+    const next = admit(f, 'after-stops', 'append');
+    assert.equal(next.state, 'accepted');
+    const submissions = readRoleplayAccount(f.scope).submissions;
+    const stopped = keys.map(key => submissions[key]);
+    assert.ok(stopped.every(value => value.state === 'void' && value.reservedReceiptBytes === 0));
+    applyRoleplayJobEffect(f.scope, stamp(f.scope), { operationKey: 'after-stops', jobId: next.jobId, output: { message: { name: 'Nova', mes: 'Back again' } } }, host);
+    assert.equal(messages(f).at(-1).mes, 'Back again');
 });
 
 test('a completed job replays after its chat is deleted without recreating it', async t => {

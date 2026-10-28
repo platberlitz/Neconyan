@@ -61,6 +61,33 @@ export function roleplayHidingModels(directories, jobId) {
     return [saved.record];
 }
 
+/**
+ * An admitted job holds its reservation until it writes. A job that was
+ * cancelled, or that has left the jobs ledger, can never write, so its room is
+ * returned and the receipt stays as void evidence. Failed and interrupted jobs
+ * can still be retried, so they keep theirs until the ledger prunes them.
+ */
+function releaseUnwritableReservations(lease) {
+    const { state, scope } = roleplayLease(lease);
+    let released = 0;
+    try {
+        for (const receipt of Object.values(state.submissions)) {
+            if (receipt?.state !== 'accepted' || typeof receipt.jobId !== 'string' || !(receipt.reservedReceiptBytes > 0)) continue;
+            const job = getJob(scope.directories, receipt.jobId);
+            if (job && !(job.state === 'cancelled' && job.cancellation?.requested)) continue;
+            receipt.state = 'void';
+            receipt.reservedReceiptBytes = 0;
+            released += 1;
+        }
+    } catch (error) {
+        // An unreadable ledger proves nothing about its jobs; keep every reservation.
+        console.warn('[Roleplay] Could not check admitted jobs for released space:', error.message);
+        return 0;
+    }
+    if (released) saveRoleplayAccount(lease);
+    return released;
+}
+
 function assertOperationKey(operationKey) {
     if (typeof operationKey !== 'string' || !operationKey || operationKey.length > 200) throw invalid('This Roleplay job has an invalid ID.');
 }
@@ -96,6 +123,7 @@ export function admitRoleplayJob(base, account, { operationKey, effect, source, 
         if (!prior) {
             if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay action must finish first.');
             assertRoleplaySourceLocked(lease, source);
+            releaseUnwritableReservations(lease);
             state.submissions[keyHash] = { accountId: state.accountId, dataEpoch: state.dataEpoch, intentHash, jobId: null,
                 targetInstanceId: source.instanceId, state: 'preparing', reservedReceiptBytes: ADMISSION_RESERVE_BYTES, effects: {} };
             try {
