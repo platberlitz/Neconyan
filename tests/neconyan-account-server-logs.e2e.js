@@ -289,13 +289,17 @@ test('Server keeps dirty update state visible and source details collapsed', asy
     await expect(panel.locator('.sb-server-note[data-tone="danger"]')).toContainText('local changes');
     await expect(panel.locator('.sb-server-source-details')).not.toHaveAttribute('open', '');
     await expect(panel.locator('.sb-server-source-details')).toContainText('Tracking');
+    const changedFiles = panel.locator('.sb-server-note').filter({ has: page.getByText('Changed files: 12', { exact: true }) });
+    await expect(changedFiles).toBeVisible();
+    for (let index = 0; index < 12; index++) {
+        await expect(changedFiles.getByText(`public/scripts/long-nested-directory/changed-workspace-file-${index}.js`, { exact: true })).toBeVisible();
+    }
     await expect(panel.locator('.sb-server-action', { hasText: 'Update & Restart' })).toBeDisabled();
     const restart = panel.getByRole('button', { name: 'Restart server', exact: true });
     await restart.scrollIntoViewIfNeeded();
     await expect(restart).toBeInViewport();
     const restartBounds = await restart.boundingBox();
     expect(restartBounds.y + restartBounds.height).toBeLessThanOrEqual(900);
-    await expect(panel.locator('.sb-server-source-details')).toContainText('changed-workspace-file-11.js');
 });
 
 for (const phone of [true, false]) {

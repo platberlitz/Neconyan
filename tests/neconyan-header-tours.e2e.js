@@ -117,6 +117,12 @@ for (const layout of layouts) {
             const root = page.locator('#left-nav-panel');
             const launch = root.locator('.sb-shell-header .neconyan-tool-tour-button');
             await expect(launch).toHaveAttribute('aria-label', 'Start Nori\'s Presets tour');
+            // Hidden prompt controls render on first opening. Include them in both snapshots.
+            await page.locator('#openai-tab-btn-prompts').click();
+            await expect(page.locator('#completion_prompt_manager_list')).toBeVisible();
+            await expect(root.locator('#completion_prompt_manager_popup_entry_form_prompt')).toBeAttached();
+            await page.locator('#openai-tab-btn-parameters').click();
+            await expect(page.locator('#openai-tab-btn-parameters')).toHaveAttribute('aria-selected', 'true');
             const values = () => root.locator('.sb-shell-panel-active').evaluate(panel => [...panel.querySelectorAll('input, select, textarea')].map(el => ({ id: el.id, value: el.value, checked: el.checked })));
             const before = await values();
             const presetWrites = [];

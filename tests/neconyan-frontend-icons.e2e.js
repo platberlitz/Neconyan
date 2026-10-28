@@ -9,6 +9,12 @@ async function expand(page, selector) {
     if (await header.getAttribute('aria-expanded') !== 'true') await header.click();
 }
 
+function clearUnreadReplies(store) {
+    for (const thread of Object.values(store?.characters || {})) {
+        for (const branch of Object.values(thread.branches || {})) branch.unread = 0;
+    }
+}
+
 for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 }]) {
     test.describe(`assistant icons at ${viewport.width}px`, () => {
         test.use({ viewport, hasTouch: viewport.width < 768, isMobile: viewport.width < 768, serviceWorkers: 'block' });
@@ -20,6 +26,8 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                 settings.firstRun = false;
                 settings.accountStorage['NeconyanTutorialStatus.v1'] = 'skipped';
                 settings.accountStorage.WelcomePage_PanelMode = 'full';
+                // An unchanged store response keeps the copy loaded with settings.
+                clearUnreadReplies(settings.extension_settings.neconyan_conversation);
                 if (firstLoad) {
                     for (const id of ['miso', 'taro', 'nori']) delete settings.accountStorage[`neconyanAssistantGender:${id}`];
                     firstLoad = false;
@@ -29,9 +37,7 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             await page.route('**/api/neconyan-conversation/store/get', async route => {
                 const response = await route.fetch({ maxRetries: 2 });
                 const data = await response.json();
-                for (const thread of Object.values(data.store?.characters || {})) {
-                    for (const branch of Object.values(thread.branches || {})) branch.unread = 0;
-                }
+                clearUnreadReplies(data.store);
                 await route.fulfill({ response, json: data });
             });
             await page.goto('/');
