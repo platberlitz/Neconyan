@@ -485,7 +485,7 @@ test('the tier-1 decision keeps its boolean export, its optional collector and t
 
 test('only the Generate decision point emits the tier-1 refusal, the overswipe probe collects silently', () => {
     expect(scriptSource).toContain('await nativeRoleplayWorkflowFor(\'swipe\', generationOptions ?? {}, () => {})');
-    const decision = scriptSource.match(/preparedNativeRoleplay \?\? await nativeRoleplayWorkflowFor\(type, \{[\s\S]*?\}\);/);
+    const decision = scriptSource.match(/preparedNativeRoleplay \?\? nativeRoleplayWorkflowFor\(type, \{[\s\S]*?\}\);/);
     expect(decision).not.toBeNull();
     expect(decision[0]).not.toContain('() => {}');
     expect(scriptSource).toContain('reason => console.debug(\'Roleplay workflow refused\', { type, reason })');

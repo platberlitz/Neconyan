@@ -4714,6 +4714,13 @@ function onGenerationStopped(generationContext) {
  * @param {boolean} dryRun
  */
 async function onGenerationAfterCommands(generationType, options, dryRun) {
+    // A plain send settles its Roleplay workflow decision after the user's message
+    // is shown, so this event carries the final value. The group host dispatch is
+    // skipped here as it is in onGenerationStarted.
+    if (!dryRun && !options?.isAuxiliaryGeneration && normalizeGenerationType(generationType) !== 'quiet'
+        && !(getContext()?.groupId && !is_group_generating)) {
+        isNativeRoleplayGeneration = Boolean(options?.nativeRoleplay);
+    }
     if (options?.nativeRoleplay || options?.isAuxiliaryGeneration || normalizeGenerationType(generationType) === 'quiet') {
         return;
     }
