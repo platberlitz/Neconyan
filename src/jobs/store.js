@@ -1119,7 +1119,7 @@ function recoverUnknownHelperReplies(directories, jobs, { hold = false } = {}) {
             .filter(candidate => candidate?.type === 'roleplay.candidate');
         if (candidates.some(candidate => candidate.id !== child.id && candidate.state !== 'completed')) continue;
         const stop = readStoredArtifact(directories, child.id, 'roleplay-agent-stop');
-        if (stop !== undefined && (stop?.reason !== 'failed' || stop?.intentHash !== intentHash)) continue;
+        if (stop !== undefined && (!['failed', 'refused'].includes(stop?.reason) || stop?.intentHash !== intentHash)) continue;
         try {
             if (stop === undefined) {
                 writeStoredArtifact(directories, child.id, 'roleplay-agent-stop', { intentHash, reason: 'failed' });

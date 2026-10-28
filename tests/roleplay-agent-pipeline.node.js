@@ -413,6 +413,41 @@ for (const guard of [true, false]) {
     });
 }
 
+const MAIN_REPLY_REFUSAL = 'I cannot fulfill this request. The prompt contains instructions to generate highly explicit sexual content. '
+    + 'My safety policies strictly prohibit the generation of sexually explicit content, regardless of framing or context.';
+
+for (const [effect, guard] of [['append', true], ['continue', true], ['append', false]]) {
+    test(`a refused ${effect} main reply ${guard ? 'is kept without running Agents or Companions' : 'still runs Agents when the refusal guard is off'}`, async t => {
+        const f = prepared(t, [
+            { id: 'rewrite', phase: 'post', prompt: 'REWRITE', postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64 } },
+            { id: 'side', category: 'companion', prompt: 'SIDE', conditions: { generationTypes: ['normal', 'continue'] } },
+        ], { effect, translation: true, globalSettings: guard ? {} : { promptTransformRefusalGuard: false } });
+        const agentCalls = [];
+        let translations = 0;
+        await f.run({ generate: paid('main', () => MAIN_REPLY_REFUSAL),
+            generateAgent: paid('agent', ({ stepNamespace }) => {
+                agentCalls.push(stepNamespace);
+                return 'Agent output';
+            }),
+            translationFetch: async () => { translations++; return new Response(JSON.stringify({ translatedText: 'Refus' })); } });
+        const saved = f.saved();
+        const reply = saved.at(-1);
+        if (guard) {
+            assert.deepEqual(agentCalls, []);
+            assert.equal(reply.mes, effect === 'continue' ? `Answer${MAIN_REPLY_REFUSAL}` : MAIN_REPLY_REFUSAL);
+            assert.equal(reply.extra.inChatAgentCompanionResults?.side, undefined);
+            assert.deepEqual(readArtifact(f.directories, f.jobId, 'roleplay-agent-stop'),
+                { intentHash: roleplayHash(f.context().job.intent), reason: 'refused' });
+            assert.equal(translations, 1, 'a refusal stop is not the owner\'s Stop');
+        } else {
+            assert.ok(agentCalls.length >= 2, 'the rewrite and the Companion both run');
+            assert.equal(readArtifact(f.directories, f.jobId, 'roleplay-agent-stop'), undefined);
+        }
+        await f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') });
+        assert.deepEqual(f.saved(), saved);
+    });
+}
+
 for (const effect of ['append', 'continue', 'swipe']) {
     test(`a native ${effect} reply saves automatic Companion cleanup with its successful note`, async t => {
         const f = prepared(t, [{ id: 'side', category: 'companion', prompt: 'SIDE',
