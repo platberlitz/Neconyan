@@ -1093,6 +1093,26 @@ describe('in-chat agent post-processing runner', () => {
         expect(runCompanionStage).toHaveBeenCalledWith(expect.objectContaining({ messageIndex: 2 }));
     });
 
+    test('takes the Roleplay owner from the after-commands event when a plain send settles it late', async () => {
+        const companionAgent = createCompanionAgent();
+        enabledAgents = [companionAgent];
+        chat.push({ mes: 'Question', name: 'User', is_user: true, extra: {} });
+        const runCompanionStage = jest.fn(async () => []);
+        const injectCompanionFeedbackPrompts = jest.fn();
+        const { initAgentRunner, registerCompanionRuntime } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        registerCompanionRuntime({ runCompanionStage, injectCompanionFeedbackPrompts });
+        initAgentRunner();
+
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', { nativeRoleplay: false }, false);
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', { nativeRoleplay: true }, false);
+        chat.push({ mes: 'Server reply', name: 'Assistant', is_user: false, extra: {} });
+        await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length);
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 1, 'normal');
+        expect(injectCompanionFeedbackPrompts).not.toHaveBeenCalled();
+        expect(runCompanionStage).not.toHaveBeenCalled();
+        expect(generateQuietPrompt).not.toHaveBeenCalled();
+    });
+
     test('routes manual companion runs through registered runtime', async () => {
         const companionAgent = createCompanionAgent({ companion: { trigger: 'manual' } });
         enabledAgents = [companionAgent];

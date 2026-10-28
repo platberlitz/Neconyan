@@ -407,6 +407,41 @@ describe('owned host generation flow', () => {
         expect(draft.textarea.value).toBe('');
     });
 
+    test('a plain send shows the user message before the Roleplay routing decision settles', async () => {
+        const { context, textarea, requests, eventSource } = makeRuntime({ composer: 'Hello there.' });
+        let settle;
+        context.nativeRoleplayWorkflowFor = jest.fn(() => new Promise(resolve => { settle = resolve; }));
+        const runNativeRoleplayGeneration = jest.fn(async () => ({ native: true, state: 'completed' }));
+        const events = [];
+        eventSource.on(event_types.GENERATION_STARTED, (_type, options) => events.push(['started', options.nativeRoleplay]));
+        eventSource.on(event_types.GENERATION_AFTER_COMMANDS, (_type, options) => events.push(['after', options.nativeRoleplay]));
+        const generation = context.Generate('normal');
+        for (let tick = 0; tick < 50 && !context.sendMessageAsUser.mock.calls.length; tick++) await new Promise(resolve => setTimeout(resolve, 0));
+        expect(context.sendMessageAsUser).toHaveBeenCalledWith('Hello there.', '');
+        expect(textarea.value).toBe('');
+        expect(events).toEqual([['started', false]]);
+        settle({ name: 'roleplay.reply', workflows: { runNativeRoleplayGeneration } });
+        await expect(generation).resolves.toEqual({ native: true, state: 'completed' });
+        expect(events).toEqual([['started', false], ['after', true]]);
+        expect(runNativeRoleplayGeneration).toHaveBeenCalledTimes(1);
+        expect(requests).toHaveLength(0);
+    });
+
+    test('a regenerate still waits for the routing decision before it touches the chat', async () => {
+        const { context, eventSource } = makeRuntime();
+        let settle;
+        context.nativeRoleplayWorkflowFor = jest.fn(() => new Promise(resolve => { settle = resolve; }));
+        const started = jest.fn();
+        eventSource.on(event_types.GENERATION_STARTED, started);
+        const generation = context.Generate('regenerate', { suppressAutoContinue: true });
+        for (let tick = 0; tick < 10; tick++) await new Promise(resolve => setTimeout(resolve, 0));
+        expect(started).not.toHaveBeenCalled();
+        expect(context.removeLastMessage).not.toHaveBeenCalled();
+        settle(null);
+        await generation;
+        expect(started).toHaveBeenCalledTimes(1);
+    });
+
     test('suppression does not delete the preceding assistant message or consume attachments on a normal request', async () => {
         const { context, textarea } = makeRuntime({ composer: '/echo untouched' });
         context.hasPendingFileAttachment = () => true;

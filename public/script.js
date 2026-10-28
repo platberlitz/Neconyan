@@ -9136,9 +9136,16 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         console.log('Generate entered');
         // Neconyan Stage 9: one decision for this call site, taken before the host
         // touches the chat, so the destructive browser steps and the server workflow
-        // cannot disagree about who owns this generation.
-        const nativeRoleplay = dryRun ? null : preparedNativeRoleplay ?? await nativeRoleplayWorkflowFor(type, { automatic_trigger, force_name2,
+        // cannot disagree about who owns this generation. A plain send has no
+        // destructive step and saves the user's own message the same way on both
+        // paths, so it shows that message while the routing check (a server round
+        // trip for Notebook context) finishes, and settles the decision before
+        // GENERATION_AFTER_COMMANDS, the first step where the paths differ.
+        const nativeDecision = dryRun ? null : preparedNativeRoleplay ?? nativeRoleplayWorkflowFor(type, { automatic_trigger, force_name2,
             quiet_prompt, force_chid, jsonSchema, depth, suppressUserMessage, preserveLastMessage, cacheScope, signal, skipNativeRoleplay });
+        const deferNativeDecision = type === 'normal' && typeof nativeDecision?.then === 'function';
+        if (deferNativeDecision) nativeDecision.then(null, () => {});
+        let nativeRoleplay = deferNativeDecision ? null : await nativeDecision;
         // A replacement the server owns is durable before the browser forgets the old
         // text, so the host must not delete the message it is about to replace.
         const nativeReplacement = Boolean(nativeRoleplay) && (type === 'regenerate' || type === 'swipe');
@@ -9220,6 +9227,11 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
 
         // Submit without waiting for paint: background mobile tabs suspend animation frames.
         if (!isCurrent()) return;
+        if (deferNativeDecision) {
+            nativeRoleplay = await nativeDecision;
+            if (!isCurrent()) return;
+            requestControls.nativeRoleplay = Boolean(nativeRoleplay);
+        }
 
         // Occurs only if the generation is not aborted due to slash commands execution
         const companionFeedbackTarget = companionHistoryTarget
