@@ -710,7 +710,7 @@ const TOOL_PAGES = Object.freeze({
                 id: 'scope',
                 targets: ['.mewmory-heading'],
                 title: 'Which chat this is',
-                body: 'The top line shows which chat Mewmory is looking at. **Refresh** reloads its memories after you edit messages elsewhere.',
+                body: 'The top line shows which chat Mewmory is looking at and whether it is up to date. **Refresh** reloads its memories after you edit messages elsewhere.\nJust below, the status card has the on and off switch for this chat and shows how many messages are remembered, how many are waiting and whether search is ready.',
                 emptyBody: 'Open a saved Roleplay chat to inspect its memories. You can still set up the models in **Settings** without a chat. We will walk through those controls too.',
                 hint: 'No chat, no memories. Even I need material.',
             },
@@ -719,7 +719,7 @@ const TOOL_PAGES = Object.freeze({
                 targets: ['.mewmory-tabs'],
                 optional: true,
                 title: 'The five tabs',
-                body: '**Now** shows current facts and events. **Pawspective** tracks what each character thinks and knows. **Archive** lets you search older memories. **Recall** explains which memories were selected for a reply. **Settings** controls the models, privacy and space used for memory.\nYou can click these tabs yourself, or use **Next** to follow along. The tour does not change or save your configuration.',
+                body: '**Now** shows what goes into your next reply and who is in the scene. **Pawspective** tracks what each character thinks and knows. **Archive** searches every memory and the original messages. **Recall** explains which memories were picked for a reply, and why. **Settings** controls the models, privacy and space used for memory, plus upkeep for this chat.\nThe line under the tabs says what the open tab is for. You can click these tabs yourself, or use **Next** to follow along. The tour does not change or save your configuration.',
                 hint: 'Check Recall when a character forgets something. It tells you exactly why.',
             },
             {
@@ -727,7 +727,7 @@ const TOOL_PAGES = Object.freeze({
                 tab: '#mewmory-tab-now',
                 targets: ['#mewmory-pane-now'],
                 title: 'Reading and fixing memories',
-                body: 'With a saved chat open, **Now** shows the memories for that story. Turn on **Use Mewmory in this chat** when you want it to remember this chat. That switch does not turn it on for other chats.\nEdit a wrong memory instead of keeping an incorrect fact. If this page is empty, open a saved Roleplay chat first; you can still follow the Settings steps now.',
+                body: 'With a saved chat open, **Now** starts with **Memories and passages selected for this reply**: press **Preview next memory** to see what Mewmory would add. Turn on **Use Mewmory in this chat** in the status card when you want it to remember this chat. That switch does not turn it on for other chats.\nBadges on each memory show when it is pinned, edited by you or not used in replies. Edit a wrong memory instead of keeping an incorrect fact. If this page is empty, open a saved Roleplay chat first; you can still follow the Settings steps now.',
                 hint: 'Wrong notes are worse than no notes. Correct them.',
             },
             {
@@ -739,7 +739,7 @@ const TOOL_PAGES = Object.freeze({
             {
                 id: 'archive', tab: '#mewmory-tab-archive', targets: ['#mewmory-pane-archive'],
                 title: 'Find an older memory',
-                body: '**Archive** searches the chat’s stored memories. Use its filters to narrow the type or search text. Older messages are not deleted when Mewmory leaves them out of the reply prompt.\nCheck the source before editing or deleting a memory. Those actions change the saved story; the tour only shows where they are.',
+                body: '**Archive** searches the chat’s stored memories and original messages. Type into the search bar and press **Search archive**; the best matches appear first, and **Clear search** goes back to the full list. Older messages are not deleted when Mewmory leaves them out of the reply prompt.\nCheck the source before editing or deleting a memory. Those actions change the saved story; the tour only shows where they are.',
                 hint: 'Check what actually happened before correcting the record.',
             },
             {
