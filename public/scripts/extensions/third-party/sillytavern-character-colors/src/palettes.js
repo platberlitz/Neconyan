@@ -1341,6 +1341,12 @@ function compositeSurfaceOver(base, target = document.querySelector('#chat .mes_
     return surface;
 }
 
+// Dialogue colours are read on character messages, and user bubbles can have a different
+// background. Measuring whichever message happened to be drawn first flipped between the two
+// as a truncated chat scrolled, and each flip rewrote and saved every message in the chat,
+// which cancelled any reply the server was preparing for it.
+const CHARACTER_MESSAGE_TEXT_SELECTOR = '#chat .mes:not([is_user="true"]):not([is_system="true"]) .mes_text';
+
 export function getContrastSurfaceColor() {
     // A forced theme mode pins the readability target too; otherwise a misdetected
     // page surface silently drags every color back toward the wrong pole.
@@ -1353,7 +1359,7 @@ export function getContrastSurfaceColor() {
     const fallback = theme === 'dark'
         ? { r: 32, g: 35, b: 40, a: 1 }
         : { r: 245, g: 245, b: 245, a: 1 };
-    const message = document.querySelector('#chat .mes_text');
+    const message = document.querySelector(CHARACTER_MESSAGE_TEXT_SELECTOR) || document.querySelector('#chat .mes_text');
     if (message) {
         cachedContrastSurface = rgbToHex(compositeSurfaceOver(fallback, message));
         rememberMessageSurface(theme, cachedContrastSurface);
