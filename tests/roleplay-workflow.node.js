@@ -144,7 +144,7 @@ for (const uncertain of [false, true]) {
         updateJob(f.dirs, f.jobId, { state: 'running' });
         const { childJobId } = await runRoleplayWorkflowJob(f.context());
         const reason = uncertain ? 'The connection to your model provider closed before a complete reply was received.'
-            : 'The Roleplay source changed after this work was prepared.';
+            : 'The chat was saved by another change (an edit, a new message, or an extension rewriting messages) after this was requested, so it was stopped instead of saving over that change. Try again.';
         updateJob(f.dirs, childJobId, { state: uncertain ? 'interrupted' : 'failed',
             error: { code: uncertain ? 'JOB_FAILED' : 'ROLEPLAY_SOURCE_CHANGED', message: reason, status: uncertain ? 502 : 409 },
             recoverability: uncertain ? 'unknown-outcome' : 'resumable' });

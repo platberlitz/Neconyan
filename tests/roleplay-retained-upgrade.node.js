@@ -296,14 +296,14 @@ test('an edited source keeps the saved reply and reports the conflict without ov
         throw new Error('The main model must not run again.');
     } }), /source (?:changed|differs)|protected identity/i);
     assert.equal(mainCalls, 0);
-    const failure = Object.assign(new Error('The Roleplay source changed after this work was prepared.'),
+    const failure = Object.assign(new Error('The chat was saved by another change (an edit, a new message, or an extension rewriting messages) after this was requested, so it was stopped instead of saving over that change. Try again.'),
         { code: 'ROLEPLAY_SOURCE_CHANGED', status: 409 });
     setJobState(f.dirs, child.id, 'failed', { error: { code: failure.code, message: failure.message, status: failure.status } });
     recoverWaitingRoleplayWorkflow({ directories: f.dirs, owner: f.f.scope.owner, job: getJob(f.dirs, f.jobId) });
 
     const parent = getJob(f.dirs, f.jobId);
     assert.equal(parent.state, 'interrupted');
-    assert.match(parent.error.message, /source changed/i);
+    assert.match(parent.error.message, /after this was requested/i);
     assert.equal(parent.dismissed, false);
     assert.equal(getJob(f.dirs, child.id).dismissed, false);
     assert.equal(f.records().at(-1).mes, 'Independent edit that must survive.');
