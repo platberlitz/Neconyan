@@ -1,20 +1,21 @@
 import {
-    characters, chat, chat_metadata, flushPendingChatSaves, getChatGeneration, getCurrentChatId,
-    getRequestHeaders, saveMetadata, this_chid,
+    characters, chat, chat_metadata, flushPendingChatSaves, getChat, getChatGeneration, getCurrentChatId,
+    getRequestHeaders, saveChatConditional, saveMetadata, this_chid,
 } from '../../script.js';
-import { hideChatMessageRanges } from '../chats.js';
 import { Popup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
-import { selected_group } from '../group-chats.js';
+import { getGroupChat, selected_group } from '../group-chats.js';
+import { getRoleplaySourceId, roleplayAccountStamp } from '../roleplay-save-chain.js';
 import { eventSource, event_types } from '../events.js';
 import { getFriendlyTokenizerName } from '../tokenizers.js';
-import { overflowFingerprint, overflowPlan, overflowRanges, visibleMessageIndices } from './overflow-policy.js';
+import { overflowFingerprint, overflowPlan, visibleMessageIndices } from './overflow-policy.js';
 import { flushMewmoryConfigAutosave } from './config-autosave.js';
 import { conversationState } from '../neconyan-conversation/state.js';
 import { cancelJob } from '../jobs.js';
 import { uuidv4 } from '../utils.js';
-import { setPreparedMewmoryContext } from '../extensions/in-chat-agents/agent-context-macros.js';
+import { getPreparedMewmoryContext, setPreparedMewmoryContext } from '../extensions/in-chat-agents/agent-context-macros.js';
 import { t, translate } from '../i18n.js';
 import { hasRestrictedGroupHistory } from '../group-chat-visibility.js';
+import { MEWMORY_CATCH_UP_TIMEOUT_MS, observeMewmoryCatchUp } from './catch-up.js';
 
 export const mewmory = {
     config: null, view: null, stories: [], error: '', loading: false, busy: false, backfilling: false, preparing: false,
@@ -28,6 +29,8 @@ let refreshVersion = 0;
 let latestRefresh;
 let pendingEnable;
 let autoHiding = false;
+let restoringVisibility = false;
+let pendingDisable = null;
 
 export function getMewmoryLocator() {
     if (conversationState.conversationWorkspaceOpen) return null;
@@ -119,14 +122,74 @@ async function refreshCurrentChat(filters, { signal }) {
 
 export async function changeMewmory(route, data = {}, { scope = getMewmoryScope(), signal } = {}) {
     const locator = getMewmoryLocator();
-    const result = await requestMewmory(route, { locator, revision: mewmory.view?.revision, ...data }, { scope, signal });
+    const disabling = route === 'enabled' && data.enabled === false;
+    let request = { locator, revision: mewmory.view?.revision, ...data };
+    if (disabling) {
+        if (!await flushPendingChatSaves({ silent: true })) throw new Error('This chat has unsaved changes. Save it before turning off Mewmory.');
+        if (scope !== getMewmoryScope()) throw new Error('The active chat changed.');
+        if (!pendingDisable || pendingDisable.scope !== scope) pendingDisable = {
+            scope, operationKey: uuidv4(), branchId: mewmory.view?.branchId, account: roleplayAccountStamp().account,
+            sourceInstanceId: getRoleplaySourceId(locator),
+        };
+        if (!pendingDisable.sourceInstanceId) throw new Error('Reload this chat before turning off Mewmory.');
+        request = { ...request, ...pendingDisable };
+        delete request.scope;
+        restoringVisibility = true;
+    }
+    let result;
+    try {
+        result = await requestMewmory(route, request, { scope, signal });
+    } catch (error) {
+        if (disabling && scope === getMewmoryScope()) await refreshMewmory();
+        throw error;
+    } finally {
+        if (disabling) restoringVisibility = false;
+    }
     if (scope === getMewmoryScope()) {
         if (result.locator && (!mewmory.view || result.revision >= mewmory.view.revision)) mewmory.view = result;
         if (result.config && (!mewmory.config || result.config.revision >= mewmory.config.revision)) mewmory.config = result.config;
         mewmory.error = '';
         notifyMewmory();
     }
+    if (disabling && scope === getMewmoryScope()) {
+        pendingDisable = null;
+        await refreshRestoredChat(locator, result.visibilityRestore?.instanceId);
+    }
     return result;
+}
+
+/** Reload the saved result without navigating through a path that saves the old buffer. */
+async function refreshRestoredChat(locator, instanceId = '') {
+    const stamp = roleplayAccountStamp();
+    const version = selectionVersion;
+    const generation = getChatGeneration();
+    const group = selected_group;
+    // Both direct readers emit CHAT_CHANGED once after replacing the saved chat.
+    const current = () => (selectionVersion === version || selectionVersion === version + 1) && getChatGeneration() === generation + 1
+        && key(getMewmoryLocator()) === key(locator) && roleplayAccountStamp() === stamp;
+    const options = { navigationGuard: current, expectedSourceId: instanceId || '', switchMenu: false };
+    const loaded = locator.group
+        ? await getGroupChat(group, true, { ...options, readOnlyRoute: true })
+        : await getChat({ ...options, exactChat: locator.chat });
+    if (loaded === false || !current()) throw new Error('Messages were restored, but this chat could not be refreshed. Reload it to see them.');
+    await refreshMewmory();
+}
+
+export async function retryMewmoryVisibilityRestore() {
+    const scope = getMewmoryScope();
+    const locator = getMewmoryLocator();
+    if (!locator) throw new Error('Open the chat whose messages need restoring.');
+    if (!await flushPendingChatSaves({ silent: true })) throw new Error('This chat has unsaved changes. Save it before retrying.');
+    restoringVisibility = true;
+    try {
+        const result = await requestMewmory('visibility/restore', { locator }, { scope });
+        if (result.visibilityRestore?.status !== 'complete') throw new Error('Mewmory could not finish restoring messages. Try again.');
+        pendingDisable = null;
+        await refreshRestoredChat(locator, result.visibilityRestore?.instanceId);
+        return true;
+    } finally {
+        restoringVisibility = false;
+    }
 }
 
 export async function stopMewmoryBackfill() {
@@ -145,11 +208,14 @@ export async function stopMewmoryBackfill() {
 
 function currentHidingPolicy() {
     return JSON.stringify([mewmory.config?.autoHideTokens, mewmory.config?.writerTokenizer,
-        getFriendlyTokenizerName(), Boolean(mewmory.config?.autoHide), Boolean(mewmory.view?.enabled)]);
+        getFriendlyTokenizerName(), Boolean(mewmory.config?.autoHide), Boolean(mewmory.view?.enabled),
+        mewmory.view?.lastDisableId || '', mewmory.config?.historyMode, mewmory.config?.excludeHistory,
+        mewmory.config?.recentMessages, mewmory.config?.historyBatchMessages]);
 }
 
 function currentChatSnapshot() {
-    return { scope: getMewmoryScope(), messages: chat.slice(), fingerprint: overflowFingerprint(chat), policy: currentHidingPolicy() };
+    return { scope: getMewmoryScope(), messages: chat.slice(), fingerprint: overflowFingerprint(chat),
+        policy: currentHidingPolicy(), lastDisableId: mewmory.view?.lastDisableId || '' };
 }
 
 function isSameChatSnapshot(snapshot) {
@@ -197,10 +263,27 @@ export async function getOverflowMessages(limit = mewmory.config?.autoHideTokens
     return { limit: plan.limit, indices: plan.changed ? [] : plan.indices };
 }
 
-async function hideMessages(indices, snapshot, scope) {
+async function hideMessages(indices, snapshot, scope, automatic = false) {
     if (!indices.length || scope !== getMewmoryScope() || !isSameChatSnapshot(snapshot)) return 0;
-    const saved = await hideChatMessageRanges(overflowRanges(indices), { keepInMewmory: true });
-    return saved ? indices.length : 0;
+    return hideMessageWindow(scope, automatic, snapshot.lastDisableId);
+}
+
+/** Both policies delegate the decision to the protected server save. */
+async function hideMessageWindow(scope, automatic = false, lastDisableId = mewmory.view?.lastDisableId || '') {
+    const locator = getMewmoryLocator();
+    if (!locator || scope !== getMewmoryScope() || restoringVisibility) return 0;
+    const before = chat.map(message => ({ isSystem: Boolean(message.is_system), id: message.mewmory_id,
+        date: message.send_date, name: message.name, user: message.is_user }));
+    const saved = await saveChatConditional({ mewmoryHidePolicy: { type: automatic ? 'automatic' : 'manual',
+        lastDisableId }, skipUnchanged: false, throwOnError: true });
+    if (!saved || scope !== getMewmoryScope()) return 0;
+    await refreshRestoredChat(locator);
+    return chat.reduce((total, message, index) => {
+        const prior = before[index];
+        return total + Number(Boolean(prior && !prior.isSystem && message.is_system && message.extra?.mewmoryKeepHidden
+            && prior.id === message.mewmory_id && prior.date === message.send_date
+            && prior.name === message.name && prior.user === message.is_user));
+    }, 0);
 }
 
 export async function hideOverflowMessages({ limit } = {}) {
@@ -215,6 +298,13 @@ export async function hideOverflowMessages({ limit } = {}) {
     if (!mewmory.config) {
         await refreshMewmory();
         if (scope !== getMewmoryScope()) return 0;
+    }
+    if (mewmory.config?.historyMode === 'messages') {
+        if (!mewmory.config.excludeHistory) {
+            toastr.info('Turn on leaving older messages out of replies before hiding them.');
+            return 0;
+        }
+        return hideMessageWindow(scope);
     }
     const value = limit ?? mewmory.config?.autoHideTokens;
     if (!(value > 0)) {
@@ -255,7 +345,7 @@ export async function hideOverflowMessages({ limit } = {}) {
  * pass. Only runs where Mewmory is on, so the hidden messages stay remembered.
  */
 export async function hideOverflowAutomatically({ refresh = false, limit } = {}) {
-    if (autoHiding || !getMewmoryLocator()) return 0;
+    if (autoHiding || restoringVisibility || !getMewmoryLocator()) return 0;
     const scope = getMewmoryScope();
     autoHiding = true;
     try {
@@ -282,6 +372,10 @@ export async function hideOverflowAutomatically({ refresh = false, limit } = {})
             if (scope !== getMewmoryScope()) return 0;
         }
         if (!mewmory.view?.enabled || !mewmory.config?.autoHide) return 0;
+        if (mewmory.config.historyMode === 'messages') {
+            if (!mewmory.config.excludeHistory) return 0;
+            return await hideMessageWindow(scope, true);
+        }
         const value = limit ?? mewmory.config.autoHideTokens;
         if (!(value > 0)) return 0;
         const plan = await getOverflowPlan(value, scope);
@@ -290,7 +384,7 @@ export async function hideOverflowAutomatically({ refresh = false, limit } = {})
             return 0;
         }
         if (!plan.indices.length) return 0;
-        const hidden = await hideMessages(plan.indices, plan.snapshot, scope);
+        const hidden = await hideMessages(plan.indices, plan.snapshot, scope, true);
         if (hidden) {
             toastr.info('Hid ' + hidden + ' older ' + (hidden === 1 ? 'message' : 'messages') + ' after reaching '
                 + value.toLocaleString() + ' tokens. Mewmory still remembers them.');
@@ -481,7 +575,15 @@ export function initMewmory() {
     scheduleUpdate();
 }
 
-export async function prepareMewmoryGeneration(messages, { signal } = {}) {
+export function syncMewmoryMacroUse(context) {
+    if (context?.locator?.chat && getMewmoryScope() === context.scope) context.mewmoryMacrosUsed = Boolean(getPreparedMewmoryContext(context.locator.chat)?.mewmoryMacrosUsed);
+}
+
+export function updatePreparedMewmoryPresentation(context) {
+    if (context?.locator?.chat && getMewmoryScope() === context.scope) setPreparedMewmoryContext(context.locator.chat, context);
+}
+
+export async function prepareMewmoryGeneration(messages, { signal, mewmoryCatchUpOverride } = {}) {
     const locator = getMewmoryLocator();
     setPreparedMewmoryContext(null, null);
     // Chat-wide records cannot prove which scene participants heard their sources.
@@ -500,19 +602,47 @@ export async function prepareMewmoryGeneration(messages, { signal } = {}) {
         if (!view) throw new Error(mewmory.error || 'Mewmory could not read this chat. Try again.');
         if (!view.enabled) return { enabled: false, chat: messages };
         const tokenizer = getFriendlyTokenizerName();
-        const result = await requestMewmory('prepare', {
+        const input = {
             locator, tokenizer, integrity: chat_metadata.integrity,
+            ...(mewmoryCatchUpOverride ? { mewmoryCatchUpOverride } : {}),
             history: messages.filter(message => Number.isInteger(message.mewmorySourceIndex)).map(message => ({
                 index: message.mewmorySourceIndex, text: String(message.name || '') + ': ' + String(message.mes || ''),
             })),
-        }, { signal });
+        };
+        let result = await requestMewmory('prepare', input, { signal });
+        if (result.waiting) {
+            if (!result.extractorEnabled || mewmory.config?.roles?.extractor?.error) {
+                throw Object.assign(new Error('Enable and configure Facts and events to record older messages, or reply now with the extra original messages.'), { code: 'MEWMORY_WAIT_FAILED' });
+            }
+            const snapshot = result.waitSnapshot;
+            const toast = toastr.info('Waiting for memory before replying…', 'Mewmory', { timeOut: 0, extendedTimeOut: 0 });
+            try {
+                await observeMewmoryCatchUp({ snapshot, deadline: Date.now() + MEWMORY_CATCH_UP_TIMEOUT_MS, signal,
+                    check: async (captured, { signal: requestSignal }) => {
+                        result = await requestMewmory('prepare', { ...input, mewmoryWaitSnapshot: captured }, { signal: requestSignal });
+                        return { ready: !result.waiting, pending: result.pending, processing: result.processing };
+                    },
+                    start: async (_captured, { signal: requestSignal }) => requestMewmory('process',
+                        { locator, all: true, checkpoint: true, background: true }, { signal: requestSignal }),
+                    onProgress: status => {
+                        if (Number.isSafeInteger(status.pending)) toast?.find('.toast-message').text('Waiting for memory before replying… ' + status.pending + ' older messages still need recording.');
+                    },
+                });
+            } catch (error) {
+                if (signal?.aborted) throw Object.assign(new Error('Stopped waiting for memory.'), { code: 'MEWMORY_WAIT_ABORTED' });
+                if (!signal?.aborted && !error.code) error.code = 'MEWMORY_WAIT_FAILED';
+                throw error;
+            } finally {
+                if (toast) toastr.clear(toast);
+            }
+        }
         if (getChatGeneration() !== generation || getMewmoryScope() !== currentKey) throw new Error('The active chat changed while memories were being picked. Send again.');
         const excluded = new Set(result.excludedIndices);
         mewmory.error = result.inspection?.error || result.inspection?.indexError || '';
         mewmory.view.preview = result;
         mewmory.view.previewCurrent = true;
         setPreparedMewmoryContext(locator.chat, result);
-        return { ...result, locator, tokenizer, chat: messages.filter(message => !excluded.has(message.mewmorySourceIndex)) };
+        return { ...result, locator, tokenizer, scope: currentKey, chat: messages.filter(message => !excluded.has(message.mewmorySourceIndex)) };
     } catch (error) {
         if (getMewmoryScope() === currentKey) mewmory.error = error.message;
         throw error;
@@ -524,15 +654,26 @@ export async function prepareMewmoryGeneration(messages, { signal } = {}) {
 
 export async function validateMewmoryGeneration(context, prompt, tokenBudget, { signal } = {}) {
     if (!context?.enabled) return;
-    const plainText = typeof prompt === 'string' ? prompt : prompt.map(message => typeof message.content === 'string'
-        ? message.content : JSON.stringify(message.content)).join('\n');
-    for (const block of [context.npcText, context.memoryText].filter(Boolean)) {
-        if (!plainText.replace(/\r/g, '').includes(block.replace(/\r/g, ''))) throw new Error('Your prompt settings removed the memories Mewmory added, so nothing was sent. Check that your prompt template keeps the Mewmory block.');
+    try {
+        const plainText = typeof prompt === 'string' ? prompt : prompt.map(message => typeof message.content === 'string'
+            ? message.content : JSON.stringify(message.content)).join('\n');
+        for (const block of [context.npcText, context.memoryText].filter(Boolean)) {
+            if (!plainText.replace(/\r/g, '').includes(block.replace(/\r/g, ''))) throw new Error('Your prompt settings removed the memories Mewmory added, so nothing was sent. Check that your prompt template keeps the Mewmory block.');
+        }
+        const serialized = typeof prompt === 'string' ? prompt : JSON.stringify(prompt);
+        const counted = await requestMewmory('tokens', { texts: [serialized], tokenizer: context.tokenizer }, { signal });
+        const total = counted?.counts?.[0];
+        if (!Number.isSafeInteger(total) || total < 0) throw new Error('Mewmory could not count the prepared prompt. Check the token counter for replies, then try again.');
+        if (total > tokenBudget) {
+            const waiting = context.history?.waitingForPreservation
+                ? ' Older messages have not been fully remembered, so they remain in the prompt.' : '';
+            throw new Error('Mewmory counted ' + total.toLocaleString('en-GB') + ' tokens in the prepared prompt, but only '
+                + tokenBudget.toLocaleString('en-GB') + ' fit before the reply. ' + waiting.trimStart()
+                + (waiting ? ' ' : '') + 'Increase the context size if your model supports it, reduce ‘Space for recalled memories, tokens’, or update memories for the whole chat.');
+        }
+        await requestMewmory('validate', { locator: context.locator, fingerprint: context.validationFingerprint }, { signal });
+    } catch (error) {
+        if (!signal?.aborted) toastr.error(error.message, 'Mewmory');
+        throw error;
     }
-    const serialized = typeof prompt === 'string' ? prompt : JSON.stringify(prompt);
-    const counted = await requestMewmory('tokens', { texts: [serialized], tokenizer: context.tokenizer }, { signal });
-    if (counted.counts[0] > tokenBudget) {
-        throw new Error('The memories plus the recent chat are too long for this model. Raise the context size, lower Selected memory budget, tokens, or use Catch up on this whole chat in Mewmory so older messages can be left out safely.');
-    }
-    await requestMewmory('validate', { locator: context.locator, fingerprint: context.validationFingerprint }, { signal });
 }

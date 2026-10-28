@@ -8,13 +8,14 @@ import { StreamingThinkingIndicator } from '../streaming-thinking.js';
 
 const labels = {
     preparing: 'Preparing reply…', generating: 'Writing reply…', agents: 'Running Agents…',
+    'waiting-memory': 'Waiting for memory before replying…',
     companions: 'Running Companions…', review: 'Waiting for your review…',
     translating: 'Translating reply…', speech: 'Preparing speech…', saving: 'Saving reply…',
 };
 const PREVIEW_SILENCE_MS = 5000;
 // Companion notes share the saved job artifact's 16 MiB limit.
 const MAX_PREVIEW_EVENT_LENGTH = 16 * 1024 * 1024;
-const FOLLOWED_STAGES = new Set(['preparing', 'generating', 'agents']);
+const FOLLOWED_STAGES = new Set(['preparing', 'waiting-memory', 'generating', 'agents']);
 // Everything the full message renderer treats as structure. Frames copy the
 // snapshot and reuse nested metadata references, so an equal reference means
 // that part is unchanged; the growing text is compared separately.
@@ -83,7 +84,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         const thinking = latest.stage === 'generating' && latest.reasoning && !latest.reasoning_finished;
         const elapsed = Math.max(0, performance.now() - receivedMonotonic);
         const now = (serverTime ?? receivedAt) + elapsed;
-        const finishedAt = latest.gen_finished || (['preparing', 'generating'].includes(latest.stage || 'preparing') ? now : serverTime ?? receivedAt);
+        const finishedAt = latest.gen_finished || (['preparing', 'waiting-memory', 'generating'].includes(latest.stage || 'preparing') ? now : serverTime ?? receivedAt);
         const reasoningDuration = typeof latest.reasoning_duration === 'number'
             ? latest.reasoning_duration + (thinking ? elapsed : 0) : undefined;
         if (node?.isConnected && latest === rendered && !thinking) {

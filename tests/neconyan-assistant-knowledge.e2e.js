@@ -258,7 +258,7 @@ for (const phone of [false, true]) {
                         ['Can I hide the message statistics below the avatar?', 'Settings → Appearance → Visual Toggles'],
                         ['Can Mewmory search without an AI selector?', 'ranked results go directly to the memory budget'],
                         ['Can Mewmory use native Vectorization?', 'Use chat retrieval in replies can stay off'],
-                        ['Why are Mewmory Data Bank file passages missing?', 'This role may read'],
+                        ['Why are Mewmory Data Bank file passages missing?', 'Sources this model may read'],
                         ['Where do I set the E5 query and document prefixes?', 'Trailing spaces and line breaks are preserved'],
                         ['Does Fix trackers repair reordered tracker fields locally?', 'Other repairs, transforms and companion runs may call models'],
                     ]) {
@@ -270,7 +270,7 @@ for (const phone of [false, true]) {
             }
             return { revision: KNOWLEDGE_REVISION, results };
         }, refreshedKnowledgeCases);
-        expect(references.revision).toBe(49);
+        expect(references.revision).toBe(50);
         expect(references.results).toHaveLength((13 + refreshedKnowledgeCases.length) * 9);
         expect(references.results.filter(result => !result.found)).toEqual([]);
     });

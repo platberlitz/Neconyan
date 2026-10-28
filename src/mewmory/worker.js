@@ -9,6 +9,10 @@ import { loadCurrentState } from './sources.js';
 import { chatPath, listStories, listStoriesGradually, mutateState, readStateShared, statePath } from './store.js';
 
 const running = new Map();
+/** Stop work for a disabled chat without waiting on a remote model. */
+export function abortMewmoryProcessing(directories, locator) {
+    running.get(statePath(directories, locator))?.controller.abort();
+}
 const MAX_RUNNING = 4;
 const STALE_SOURCE_RETRIES = 3;
 let wake = () => {};
@@ -20,6 +24,7 @@ const atCapacity = (directories, automatic) => running.size >= MAX_RUNNING
 // reconciled again only when one of those files changes, or every ten minutes as a safety net.
 const RECONCILE_REFRESH_MS = 10 * 60_000;
 const reconciled = new Map();
+const attemptedVisibilityRestores = new Set();
 const fileStamp = filename => {
     try {
         const stat = fs.statSync(filename);
@@ -137,6 +142,16 @@ export async function scanProcessing(directories, call, { reconcile = true } = {
         if (index) await yieldToRequests();
         if (running.has(key)) continue;
         try {
+            const restoreKey = story.visibilityRestore && key + ':' + story.visibilityRestore.operationKey;
+            if (restoreKey && story.visibilityRestore.status !== 'complete' && !attemptedVisibilityRestores.has(restoreKey)) {
+                attemptedVisibilityRestores.add(restoreKey);
+                const { roleplayAccountBase } = await import('../roleplay-store.js');
+                const base = roleplayAccountBase(directories);
+                if (base) {
+                    const { resumeVisibilityRestore } = await import('./visibility.js');
+                    try { resumeVisibilityRestore(base, story.locator); } catch { /* Retry remains visible per chat. */ }
+                }
+            }
             if (story.processing?.status === 'running' && (!story.enabled || (story.processing.automatic && !config.autoUpdate))) {
                 mutateState(directories, story.locator, state => {
                     if (state.processing?.status === 'running') Object.assign(state.processing, { status: 'complete', finishedAt: Date.now() });
@@ -187,6 +202,14 @@ export async function pauseInterruptedProcessing(getDirectories) {
     let paused = 0;
     for (const directories of await getDirectories()) {
         for (const story of listStories(directories)) {
+            if (story.visibilityRestore && story.visibilityRestore.status !== 'complete') {
+                const { roleplayAccountBase } = await import('../roleplay-store.js');
+                const base = roleplayAccountBase(directories);
+                if (base) {
+                    const { resumeVisibilityRestore } = await import('./visibility.js');
+                    try { resumeVisibilityRestore(base, story.locator); } catch { /* Keep the durable retry state. */ }
+                }
+            }
             if (story.processing?.status !== 'running') continue;
             try {
                 mutateState(directories, story.locator, state => {

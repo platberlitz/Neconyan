@@ -47,12 +47,12 @@ for (const phone of [false, true]) {
         await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
         const workspace = page.locator('#mewmory-workspace');
         await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
-        await workspace.getByLabel('Update automatically during play', { exact: true }).uncheck();
-        await workspace.getByLabel('Writer tokenizer', { exact: true }).selectOption('o200k_base');
-        await workspace.getByLabel('Passage size, characters', { exact: true }).fill('800');
-        await workspace.getByLabel('Passage overlap, characters', { exact: true }).fill('100');
-        await workspace.getByLabel('Meaning weight, 0 to 1', { exact: true }).fill('0.7');
-        await workspace.getByLabel('Maximum selected results', { exact: true }).fill('4');
+        await workspace.getByLabel('Update memories as I chat', { exact: true }).uncheck();
+        await workspace.getByLabel('Token counter for replies', { exact: true }).selectOption('o200k_base');
+        await workspace.getByLabel('Maximum passage length, characters', { exact: true }).fill('800');
+        await workspace.getByLabel('Text repeated between passages, characters', { exact: true }).fill('100');
+        await workspace.getByLabel('Preference for meaning matches', { exact: true }).fill('0.7');
+        await workspace.getByLabel('Maximum recalled results', { exact: true }).fill('4');
         await workspace.locator('#mewmory-role-embedding').click();
         await workspace.getByLabel('Enable this role', { exact: true }).check();
         await workspace.getByLabel('Embedding connection', { exact: true }).selectOption('native');
@@ -87,8 +87,8 @@ for (const phone of [false, true]) {
         await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
         // The completed refresh can replace the settings fields once after switching tabs.
         await expect(async () => {
-            await workspace.getByLabel('Passage size, characters', { exact: true }).scrollIntoViewIfNeeded();
-            await expect(workspace.getByLabel('Passage size, characters', { exact: true })).toBeInViewport();
+            await workspace.getByLabel('Maximum passage length, characters', { exact: true }).scrollIntoViewIfNeeded();
+            await expect(workspace.getByLabel('Maximum passage length, characters', { exact: true })).toBeInViewport();
         }).toPass({ timeout: 10000 });
         const geometry = await workspace.evaluate(element => ({ width: element.clientWidth, scroll: element.scrollWidth,
             font: getComputedStyle(element.querySelector('input')).fontSize,
@@ -104,7 +104,7 @@ for (const phone of [false, true]) {
         await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
         await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
         await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
-        await expect(workspace.getByLabel('Passage size, characters', { exact: true })).toHaveValue('800');
+        await expect(workspace.getByLabel('Maximum passage length, characters', { exact: true })).toHaveValue('800');
         await workspace.locator('#mewmory-role-embedding').click();
         await expect(workspace.getByLabel('Embedding connection', { exact: true })).toHaveValue('native');
         await expect(workspace.getByLabel('Document prefix, optional', { exact: true })).toHaveValue('passage: \n ');

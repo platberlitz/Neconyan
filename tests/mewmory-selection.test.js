@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { afterEach, beforeEach, expect, jest, test } from '@jest/globals';
 
 let chatId = 'first';
@@ -10,10 +11,34 @@ const saveMetadata = jest.fn(async () => true);
 let contextSize = 30;
 let popupAnswer = 1;
 let tokenizerHint = { tokenizerKey: 'openai' };
-const hideChatMessageRanges = jest.fn(async (ranges, options) => {
-    for (const [start, end] of ranges) {
-        for (let index = start; index <= end; index++) Object.assign(chat[index], { is_system: true, extra: { mewmoryKeepHidden: options?.keepInMewmory } });
+let serverChat = [];
+const savedHiddenRanges = jest.fn();
+const accountStamp = {};
+const saveChatConditional = jest.fn(async options => {
+    assert.match(options?.mewmoryHidePolicy?.type ?? '', /^(manual|automatic)$/);
+    assert.equal(typeof options.mewmoryHidePolicy.lastDisableId, 'string');
+    assert.equal(options.skipUnchanged, false);
+    assert.equal(options.throwOnError, true);
+    serverChat = structuredClone(chat);
+    const visible = serverChat.flatMap((message, index) => message.is_system ? [] : [index]);
+    const latest = serverChat.findLastIndex(message => !message.is_user && !message.is_system);
+    const total = visible.reduce((sum, index) => sum + String(serverChat[index].mes ?? '').length, 0);
+    const indices = total >= mewmory.config.autoHideTokens ? visible.filter(index => index < latest) : [];
+    const ranges = [];
+    for (const index of indices) {
+        const last = ranges.at(-1);
+        if (last && last[1] === index - 1) last[1] = index;
+        else ranges.push([index, index]);
+        serverChat[index].is_system = true;
+        serverChat[index].extra = { ...serverChat[index].extra, mewmoryKeepHidden: true };
     }
+    savedHiddenRanges(ranges, { keepInMewmory: true });
+    return true;
+});
+const getChat = jest.fn(async ({ navigationGuard }) => {
+    generation++;
+    if (!navigationGuard()) return false;
+    chat.splice(0, chat.length, ...structuredClone(serverChat));
     return true;
 });
 global.toastr = { info: jest.fn(), success: jest.fn(), warning: jest.fn(), error: jest.fn() };
@@ -21,13 +46,14 @@ jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHan
 jest.unstable_mockModule('../public/script.js', () => ({
     characters: [{ avatar: 'Mara.png' }], this_chid: 0, chat_metadata: chatMetadata, is_send_press: false,
     getCurrentChatId: () => chatId, getChatGeneration: () => generation, chat, getMaxContextTokens: () => contextSize,
-    flushPendingChatSaves: async () => true, getRequestHeaders: () => ({}), saveMetadata,
+    flushPendingChatSaves: async () => true, getRequestHeaders: () => ({}), saveMetadata, saveChatConditional, getChat,
 }));
-jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({ is_group_generating: false, selected_group: null }));
+jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({ is_group_generating: false, selected_group: null, getGroupChat: jest.fn() }));
+jest.unstable_mockModule('../public/scripts/roleplay-save-chain.js', () => ({ getRoleplaySourceId: () => '', roleplayAccountStamp: () => accountStamp }));
+jest.unstable_mockModule('../public/scripts/jobs.js', () => ({ cancelJob: jest.fn() }));
 jest.unstable_mockModule('../public/scripts/tokenizers.js', () => ({
     getFriendlyTokenizerName: () => tokenizerHint,
 }));
-jest.unstable_mockModule('../public/scripts/chats.js', () => ({ hideChatMessageRanges }));
 jest.unstable_mockModule('../public/scripts/popup.js', () => ({
     POPUP_TYPE: { CONFIRM: 'confirm' }, POPUP_RESULT: { AFFIRMATIVE: 1 }, Popup: class { show() { return popupAnswer; } },
 }));
@@ -43,7 +69,7 @@ jest.unstable_mockModule('../public/scripts/events.js', () => ({
         listeners.set(name, Object.assign((...args) => handlers.map(item => item(...args)), { handlers }));
     } },
 }));
-const { enableMewmoryForNewChat, getMewmoryLocator, getMewmoryScope, getOverflowMessages, hideOverflowAutomatically, hideOverflowMessages, initMewmory, mewmory, notifyMewmory, prepareMewmoryGeneration, processMewmory, refreshMewmory, requestMewmory, stopMewmoryBackfill } = await import('../public/scripts/mewmory/index.js');
+const { enableMewmoryForNewChat, getMewmoryLocator, getMewmoryScope, getOverflowMessages, hideOverflowAutomatically, hideOverflowMessages, initMewmory, mewmory, notifyMewmory, prepareMewmoryGeneration, processMewmory, refreshMewmory, requestMewmory, stopMewmoryBackfill, validateMewmoryGeneration } = await import('../public/scripts/mewmory/index.js');
 const { mewmoryConfigAutosave } = await import('../public/scripts/mewmory/config-autosave.js');
 const config = { revision: 1, roles: {}, autoHideTokens: 30 };
 const response = data => ({ ok: true, json: async () => data });
@@ -54,7 +80,10 @@ beforeEach(() => {
     conversationState.conversationWorkspaceOpen = false;
     for (const key of Object.keys(chatMetadata)) delete chatMetadata[key];
     saveMetadata.mockClear();
-    hideChatMessageRanges.mockClear();
+    savedHiddenRanges.mockClear();
+    saveChatConditional.mockClear();
+    getChat.mockClear();
+    serverChat = [];
     popupAnswer = 1;
     tokenizerHint = { tokenizerKey: 'openai' };
     for (const method of Object.values(global.toastr)) method.mockClear();
@@ -83,6 +112,26 @@ test('status labels are translated without changing the state used by the interf
     expect(button.dataset.mewmoryStatus).toBe('Needs attention');
     expect(button.title).toBe('Mewmory: Bitte überprüfen');
     expect(button.setAttribute).toHaveBeenCalledWith('aria-label', button.title);
+});
+
+test('a prompt over the protected memory budget shows the measured count and sends no validation', async () => {
+    fetch.mockImplementation(async (url) => {
+        if (url.endsWith('/tokens')) return response({ counts: [7100] });
+        throw new Error('An over-budget prompt must not proceed.');
+    });
+    const context = { enabled: true, locator: getMewmoryLocator(), npcText: '', memoryText: 'Saved context',
+        history: { waitingForPreservation: true }, tokenizer: {}, validationFingerprint: 'snapshot' };
+    await expect(validateMewmoryGeneration(context, 'Current chat\nSaved context', 6692)).rejects.toThrow(/7,100 tokens.*6,692/);
+    expect(global.toastr.error).toHaveBeenCalledWith(expect.stringMatching(/7,100 tokens.*6,692.*Older messages have not been fully remembered/), 'Mewmory');
+    expect(fetch.mock.calls.some(([url]) => url.endsWith('/validate'))).toBe(false);
+});
+
+test('a malformed prompt count is visibly rejected instead of passing the budget guard', async () => {
+    fetch.mockResolvedValue(response({ counts: [] }));
+    const context = { enabled: true, locator: getMewmoryLocator(), npcText: '', memoryText: '', tokenizer: {} };
+    await expect(validateMewmoryGeneration(context, 'Current chat', 6692)).rejects.toThrow(/could not count/);
+    expect(global.toastr.error).toHaveBeenCalledWith(expect.stringMatching(/could not count/), 'Mewmory');
+    expect(fetch.mock.calls.some(([url]) => url.endsWith('/validate'))).toBe(false);
 });
 
 test('new chats and branches load even without a listed archive or a mounted panel', async () => {
@@ -224,11 +273,15 @@ test('reaching the saved Mewmory trigger clears the older visible history and ke
     mewmory.config.autoHideTokens = 30;
     popupAnswer = 0;
     expect(await hideOverflowMessages()).toBe(0);
-    expect(hideChatMessageRanges).not.toHaveBeenCalled();
+    expect(savedHiddenRanges).not.toHaveBeenCalled();
+    expect(saveChatConditional).not.toHaveBeenCalled();
     popupAnswer = 1;
     expect(await hideOverflowMessages()).toBe(4);
-    expect(hideChatMessageRanges.mock.calls.map(call => call[0])).toEqual([[[0, 1], [3, 4]]]);
-    expect(hideChatMessageRanges.mock.calls.every(call => call[1]?.keepInMewmory === true)).toBe(true);
+    expect(saveChatConditional).toHaveBeenCalledWith({ mewmoryHidePolicy: { type: 'manual', lastDisableId: '' },
+        skipUnchanged: false, throwOnError: true });
+    expect(getChat).toHaveBeenCalledWith(expect.objectContaining({ exactChat: 'first' }));
+    expect(savedHiddenRanges.mock.calls.map(call => call[0])).toEqual([[[0, 1], [3, 4]]]);
+    expect(savedHiddenRanges.mock.calls.every(call => call[1]?.keepInMewmory === true)).toBe(true);
     expect(chat.map(message => Boolean(message.is_system))).toEqual([true, true, true, true, true, false, false]);
     // The preserved latest reply and the trailing user message remain below the trigger.
     expect(await hideOverflowMessages()).toBe(0);
@@ -240,7 +293,7 @@ test('manual hiding works with automatic hiding switched off and ignores the wri
     contextSize = 1;
     mewmory.config = { ...config, autoHide: false, autoHideTokens: 30 };
     expect(await hideOverflowMessages()).toBe(9);
-    expect(hideChatMessageRanges.mock.calls[0][0]).toEqual([[0, 8]]);
+    expect(savedHiddenRanges.mock.calls[0][0]).toEqual([[0, 8]]);
 });
 
 test('manual hiding flushes a pending autosaved threshold before counting', async () => {
@@ -260,7 +313,7 @@ test('manual hiding flushes a pending autosaved threshold before counting', asyn
         mewmory.config = { ...config, autoHide: false, autoHideTokens: 1000 };
         expect(await hideOverflowMessages()).toBe(3);
         expect(saved.autoHideTokens).toBe(45);
-        expect(hideChatMessageRanges.mock.calls.at(-1)[0]).toEqual([[0, 2]]);
+        expect(savedHiddenRanges.mock.calls.at(-1)[0]).toEqual([[0, 2]]);
     } finally {
         mewmoryConfigAutosave.configure({ readDraft: undefined, writeDraft: undefined, validate: undefined,
             save: undefined, load: undefined });
@@ -277,14 +330,14 @@ test('manual and automatic hiding use the same saved trigger for a small or huge
         reset();
         mewmory.config = { ...config, autoHide: false, autoHideTokens: 30 };
         await hideOverflowMessages();
-        ranges.push(hideChatMessageRanges.mock.calls.at(-1)[0]);
+        ranges.push(savedHiddenRanges.mock.calls.at(-1)[0]);
 
         reset();
         config.autoHide = true;
         mewmory.config = { ...config, autoHide: true, autoHideTokens: 30 };
         mewmory.view = { enabled: true, revision: 1, locator: getMewmoryLocator() };
         await hideOverflowAutomatically();
-        ranges.push(hideChatMessageRanges.mock.calls.at(-1)[0]);
+        ranges.push(savedHiddenRanges.mock.calls.at(-1)[0]);
         delete config.autoHide;
     }
     expect(ranges).toEqual([[[0, 2]], [[0, 2]], [[0, 2]], [[0, 2]]]);
@@ -296,11 +349,11 @@ test('manual hiding waits for the visible history to reach the trigger again and
         line(true, 'c'.repeat(20)), line(false, 'd'.repeat(20)));
     mewmory.config = { ...config, autoHide: false, autoHideTokens: 30 };
     expect(await hideOverflowMessages()).toBe(3);
-    expect(hideChatMessageRanges.mock.calls.at(-1)[0]).toEqual([[0, 2]]);
+    expect(savedHiddenRanges.mock.calls.at(-1)[0]).toEqual([[0, 2]]);
     expect(await hideOverflowMessages()).toBe(0);
     chat.push(line(true, 'e'.repeat(10)), line(false, 'f'.repeat(10)));
     expect(await hideOverflowMessages()).toBe(2);
-    expect(hideChatMessageRanges.mock.calls.at(-1)[0]).toEqual([[3, 4]]);
+    expect(savedHiddenRanges.mock.calls.at(-1)[0]).toEqual([[3, 4]]);
     expect(chat.map(message => Boolean(message.is_system))).toEqual([true, true, true, true, true, false]);
 });
 
@@ -310,7 +363,7 @@ test('automatic hiding refreshes the view and only runs where Mewmory is on and 
     const reset = () => chat.splice(0, chat.length, line(true, 'aaaaaaaaaa'), line(false, 'bbbbbbbbbb'), line(true, 'cccccccccc', { is_system: true }),
         line(false, 'dddddddddd'), line(true, 'eeeeeeeeee'), line(false, 'ffffffffff'), line(true, 'gggggggggg'));
     reset();
-    hideChatMessageRanges.mockClear();
+    savedHiddenRanges.mockClear();
     contextSize = 1;
     const locator = getMewmoryLocator();
     mewmory.config = { ...config, autoHide: false, autoHideTokens: 30 };
@@ -320,7 +373,7 @@ test('automatic hiding refreshes the view and only runs where Mewmory is on and 
     mewmory.config.autoHide = true;
     mewmory.view.enabled = false;
     expect(await hideOverflowAutomatically()).toBe(0);
-    expect(hideChatMessageRanges).not.toHaveBeenCalled();
+    expect(savedHiddenRanges).not.toHaveBeenCalled();
 
     mewmory.view = { enabled: true, revision: 2, locator };
     reset();
@@ -332,8 +385,8 @@ test('automatic hiding refreshes the view and only runs where Mewmory is on and 
     });
     listeners.get('GENERATION_ENDED')();
     await settle();
-    expect(hideChatMessageRanges.mock.calls.map(call => call[0])).toEqual([[[0, 1], [3, 4]]]);
-    expect(hideChatMessageRanges.mock.calls.every(call => call[1]?.keepInMewmory === true)).toBe(true);
+    expect(savedHiddenRanges.mock.calls.map(call => call[0])).toEqual([[[0, 1], [3, 4]]]);
+    expect(savedHiddenRanges.mock.calls.every(call => call[1]?.keepInMewmory === true)).toBe(true);
     expect(global.toastr.info).toHaveBeenLastCalledWith('Hid 4 older messages after reaching 30 tokens. Mewmory still remembers them.');
     expect(await hideOverflowAutomatically()).toBe(0);
 });
@@ -344,7 +397,7 @@ test('automatic hiding off does not flush incomplete settings or report a hiding
     expect(await hideOverflowAutomatically()).toBe(0);
     expect(flush).not.toHaveBeenCalled();
     expect(global.toastr.error).not.toHaveBeenCalled();
-    expect(hideChatMessageRanges).not.toHaveBeenCalled();
+    expect(savedHiddenRanges).not.toHaveBeenCalled();
 });
 
 test('an automatic hide waits for the refreshed view instead of treating the cleared view as switched off', async () => {
@@ -365,10 +418,10 @@ test('an automatic hide waits for the refreshed view instead of treating the cle
     initMewmory();
     listeners.get('GENERATION_ENDED')();
     await settle();
-    expect(hideChatMessageRanges).not.toHaveBeenCalled();
+    expect(savedHiddenRanges).not.toHaveBeenCalled();
     delayed.resolve();
     await settle();
-    expect(hideChatMessageRanges).toHaveBeenCalledTimes(1);
+    expect(savedHiddenRanges).toHaveBeenCalledTimes(1);
 });
 
 test('a delayed token count never hides messages after the same chat name switches character', async () => {
@@ -393,7 +446,7 @@ test('a delayed token count never hides messages after the same chat name switch
     character.avatar = 'Other.png';
     counts.resolve(response({ counts: [20, 20, 20] }));
     expect(await hiding).toBe(0);
-    expect(hideChatMessageRanges).not.toHaveBeenCalled();
+    expect(savedHiddenRanges).not.toHaveBeenCalled();
     character.avatar = 'Mara.png';
 });
 
@@ -414,7 +467,7 @@ test('an edit during counting cancels the hide instead of using the stale snapsh
     chat[0].mes = 'edited after counting started';
     counts.resolve(response({ counts: [20, 20, 20] }));
     expect(await hiding).toBe(0);
-    expect(hideChatMessageRanges).not.toHaveBeenCalled();
+    expect(savedHiddenRanges).not.toHaveBeenCalled();
     expect(global.toastr.warning).toHaveBeenCalledWith('The chat or hiding settings changed while Mewmory counted, so older messages were not hidden automatically.');
 });
 
@@ -436,7 +489,7 @@ test.each([
     change();
     counts.resolve(response({ counts: [10, 10, 10, 10] }));
     expect(await hiding).toBe(0);
-    expect(hideChatMessageRanges).not.toHaveBeenCalled();
+    expect(savedHiddenRanges).not.toHaveBeenCalled();
     expect(chat.every(message => !message.is_system)).toBe(true);
 });
 
@@ -450,7 +503,7 @@ test('manual confirmation cannot apply a plan after the hiding threshold changes
     mewmory.config.autoHideTokens = 1000;
     answer.resolve(1);
     expect(await hiding).toBe(0);
-    expect(hideChatMessageRanges).not.toHaveBeenCalled();
+    expect(savedHiddenRanges).not.toHaveBeenCalled();
     expect(global.toastr.warning).toHaveBeenCalledWith('The chat or hiding settings changed while the question was open, so nothing was hidden.');
 });
 
@@ -458,7 +511,7 @@ test('manual hiding explains when the latest protected reply alone reaches the t
     chat.splice(0, chat.length, { is_user: false, mes: 'x'.repeat(40) }, { is_user: true, mes: 'Afterwards' });
     mewmory.config = { ...config, autoHideTokens: 30 };
     expect(await hideOverflowMessages()).toBe(0);
-    expect(hideChatMessageRanges).not.toHaveBeenCalled();
+    expect(savedHiddenRanges).not.toHaveBeenCalled();
     expect(global.toastr.info).toHaveBeenCalledWith('This chat reached the hiding trigger, but no older messages can be hidden safely. The latest reply and messages after it stay visible.');
 });
 
@@ -472,7 +525,7 @@ test('automatic hiding uses the refreshed setting when the current chat view was
         return response({ locator: parsed.locator, enabled: true, revision: 1 });
     });
     expect(await hideOverflowAutomatically()).toBe(0);
-    expect(hideChatMessageRanges).not.toHaveBeenCalled();
+    expect(savedHiddenRanges).not.toHaveBeenCalled();
     expect(mewmory.config.autoHideTokens).toBe(1000);
 });
 
@@ -498,7 +551,7 @@ test('a new message during counting cancels the hide instead of hiding a stale b
     chat.push(line(false, 'late reply'));
     counts.resolve(response({ counts: [20, 20, 20] }));
     expect(await hiding).toBe(0);
-    expect(hideChatMessageRanges).not.toHaveBeenCalled();
+    expect(savedHiddenRanges).not.toHaveBeenCalled();
     expect(global.toastr.warning).toHaveBeenCalledWith('The chat or hiding settings changed while Mewmory counted, so older messages were not hidden automatically.');
 });
 

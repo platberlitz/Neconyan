@@ -22,12 +22,15 @@ import { getCounter } from '../mewmory/tokens.js';
 import { createRoleplayLoreMacros } from './roleplay-lore-macros.js';
 import { assembleRoleplayChatPrompt } from './roleplay-chat-prompt.js';
 import { prepareMewmoryPrompt } from '../mewmory/prepare.js';
+import { startProcessing } from '../mewmory/worker.js';
+import { MEWMORY_CATCH_UP_TIMEOUT_MS, observeMewmoryCatchUp } from '../../public/scripts/mewmory/catch-up.js';
 import { recallInBackground } from '../mewmory/retrieval.js';
 import { loadCurrentStateSync } from '../mewmory/sources.js';
 import { mutateState, normalizeLocator, readChat } from '../mewmory/store.js';
 import { generationFingerprint } from '../mewmory/context.js';
 import { readConfig } from '../mewmory/models.js';
 import { prepareAutomaticHiding } from '../mewmory/hiding.js';
+import { cleanMewmoryCountView, finaliseMewmoryContext } from '../../public/scripts/mewmory/prompt-proof.js';
 import { createRoleplayChatCounter, createRoleplayTextCounter } from './roleplay-budget.js';
 import { createRoleplayTextPrompt } from './roleplay-text-prompt.js';
 import { readRoleplayPromptContributions } from './roleplay-contributions.js';
@@ -114,7 +117,7 @@ function replyOutput(result, effect, name, material) {
 export async function runRoleplayReplyJob(context, { generate = runChatProfile, host = roleplayNativeHost,
     worldInfoHooks, modelCatalogue, contextLimit = getChatProfileContextLimit, promptBackend = resolveGenerationProfile,
     generatePathfinder, translationFetch, captionFetch, localCaption, captionWait, speechDependencies, generateAgent, agentRandom,
-    freshnessGate = createFreshnessGate } = {}) {
+    freshnessGate = createFreshnessGate, startMemoryProcessing = startProcessing } = {}) {
     const { job, directories, owner, signal } = context;
     const { roleplay, effect, source, request } = job.intent ?? {};
     const base = { owner, directories };
@@ -302,7 +305,14 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                     if (previous !== undefined && roleplayHash(previous) !== roleplayHash(baseProof)) throw roleplayError('ROLEPLAY_AGENT_RECOVERY', 'The saved Agent response source changed.', 409);
                     if (previous === undefined) writeArtifact(directories, job.id, 'roleplay-agent-output-base', baseProof);
                 });
-                const mewmory = request.serverPrompt ? withRoleplayAccount(base, account, () => readArtifact(directories, job.id, 'roleplay-mewmory')) ?? null : null;
+                const mewmory = request.serverPrompt ? withRoleplayAccount(base, account, () => {
+                    const saved = readArtifact(directories, job.id, 'roleplay-mewmory');
+                    const presentation = readArtifact(directories, job.id, 'roleplay-prompt')?.memoryPresentation;
+                    return saved?.enabled && presentation?.version === 1 && presentation.phase === 'terminal'
+                        ? { ...saved, memoryText: presentation.memoryText, factsText: presentation.factsText,
+                            interviewText: presentation.interviewText, presentationChoice: presentation.choice }
+                        : saved ?? null;
+                }) : null;
                 const options = { base, snapshot: request.worldInfo, records, metadataRecords: current.records, binding: request.binding, mewmory,
                     activeLore: roleplayAgentLoreText(selection), agentCache: cache,
                     macros: savedRoleplayMacroSnapshot(request.worldInfo, records), generationType: request.worldInfo.global.trigger,
@@ -505,6 +515,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         || request.maxTokens < 1 || request.maxTokens > 64000 || typeof request.characterName !== 'string'
         || !request.characterName || (request.stream !== undefined && typeof request.stream !== 'boolean')
         || (request.serverPrompt !== undefined && typeof request.serverPrompt !== 'boolean')
+        || (request.mewmoryCatchUpOverride !== undefined && request.mewmoryCatchUpOverride !== 'reply')
         || (request.modelOverride !== undefined && (typeof request.modelOverride !== 'string' || request.modelOverride.length > 256))
         || Buffer.byteLength(JSON.stringify(request)) > 2 * 1024 * 1024) {
         throw roleplayError('ROLEPLAY_INVALID', 'The accepted Roleplay generation input is invalid.', 400);
@@ -827,21 +838,67 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         }
         memory = readArtifact(directories, job.id, 'roleplay-mewmory');
         if (memory === undefined) {
-            memory = await prepareMewmoryPrompt(directories, { locator,
+            const memoryHistory = promptRecords.slice(1).flatMap((record, index) => vectors?.projection.removed.some(item => item.index === index)
+                || record.is_system && !record.extra?.tool_invocations
+                ? [] : [{ index, text: `${record.name || ''}: ${preparedHistory?.content[index] ?? record.mes ?? ''}` }]);
+            let wait = readArtifact(directories, job.id, 'mewmory-wait');
+            if (wait !== undefined && (!wait || wait.intentHash !== roleplayHash(job.intent)
+                || !Number.isFinite(wait.deadline) || !wait.snapshot || typeof wait.initiated !== 'boolean')) {
+                throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved memory wait needs recovery.', 503);
+            }
+            if (wait && Date.now() >= wait.deadline) throw roleplayError('MEWMORY_WAIT_TIMEOUT', 'Memory is still updating. Retry this reply or reply now with the extra original messages.', 409);
+            const memoryInput = { locator,
                 tokenizer: (countChat ?? countText).tokenizer,
-                history: promptRecords.slice(1).flatMap((record, index) => record.is_system && !record.extra?.tool_invocations
-                    ? [] : [{ index, text: `${record.name || ''}: ${preparedHistory?.content[index] ?? record.mes ?? ''}` }]),
-            }, signal, {
+                history: memoryHistory,
+                ...(request.mewmoryCatchUpOverride ? { mewmoryCatchUpOverride: request.mewmoryCatchUpOverride } : {}),
+            };
+            const memoryOptions = {
                 loadState: (directories, locator) => memoryAccess(() => loadCurrentStateSync(directories, locator)),
                 mutate: (directories, locator, operation) => memoryAccess(() => mutateState(directories, locator, operation)),
                 readSource: (directories, locator) => memoryAccess(() => readChat(directories, locator)),
                 scheduleBackground: false,
-            });
+            };
+            const prepare = snapshot => prepareMewmoryPrompt(directories,
+                { ...memoryInput, ...(snapshot ? { mewmoryWaitSnapshot: snapshot } : {}) }, signal, memoryOptions);
+            memory = await prepare(wait?.snapshot);
+            if (memory.waiting) {
+                publishRoleplayPreview(context, { stage: 'waiting-memory' });
+                if (!memory.extractorEnabled) throw roleplayError('MEWMORY_WAIT_FAILED', 'Enable and configure Facts and events, or reply now with extra original messages.', 409);
+                if (!wait) {
+                    wait = { intentHash: roleplayHash(job.intent), snapshot: memory.waitSnapshot,
+                        deadline: Date.now() + MEWMORY_CATCH_UP_TIMEOUT_MS, initiated: false };
+                    writeArtifact(directories, job.id, 'mewmory-wait', wait);
+                }
+                await observeMewmoryCatchUp({ snapshot: wait.snapshot, deadline: wait.deadline, initiated: wait.initiated, signal,
+                    check: async captured => {
+                        memory = await prepare(captured);
+                        return { ready: !memory.waiting, pending: memory.pending, processing: memory.processing };
+                    },
+                    onInitiated: () => {
+                        wait = { ...wait, initiated: true };
+                        writeArtifact(directories, job.id, 'mewmory-wait', wait);
+                    },
+                    start: async () => {
+                        memoryAccess(() => {});
+                        await startMemoryProcessing(directories, locator, { all: true, checkpoint: true });
+                    },
+                });
+            }
+            memory.presentationVersion = 1;
             writeArtifact(directories, job.id, 'roleplay-mewmory', memory);
             // The reply uses the last picked memories; the Recall selector refreshes them alongside it.
-            if (memory.enabled) recallInBackground(directories, normalised, {
-                asOf: memory.inspection.asOf, tokenizer: (countChat ?? countText).tokenizer,
-            });
+            if (memory.enabled) {
+                const state = memoryAccess(() => loadCurrentStateSync(directories, locator));
+                const offset = state.inheritedTimeline?.length || 0;
+                const excluded = new Set(memory.excludedIndices);
+                const retained = memoryHistory.filter(item => !excluded.has(item.index)).flatMap(item => {
+                    const ref = state.timeline[item.index + offset];
+                    return ref ? [{ ref, text: item.text }] : [];
+                });
+                recallInBackground(directories, normalised, {
+                    asOf: memory.inspection.asOf, tokenizer: (countChat ?? countText).tokenizer, retained,
+                });
+            }
         }
         if (!memory || typeof memory.enabled !== 'boolean' || !Array.isArray(memory.excludedIndices)
             || memory.excludedIndices.some(index => !Number.isSafeInteger(index) || index < 0 || index >= promptRecords.length - 1)
@@ -988,16 +1045,22 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         }
         return messages;
     };
-    const promptIdentity = request.serverPrompt && roleplayHash({ history: promptHash, worldInfo: request.worldInfo,
+    if (memory?.enabled && memory.presentationVersion !== 1) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'This saved memory preparation needs a fresh reply.', 503);
+    const promptIdentity = request.serverPrompt && roleplayHash({ writingPresentationVersion: 1, history: promptHash, worldInfo: request.worldInfo,
         binding: request.binding, maxTokens: request.maxTokens, effect, memory, contributions,
+        ...(request.mewmoryCatchUpOverride ? { mewmoryCatchUpOverride: request.mewmoryCatchUpOverride } : {}),
         ...(retrieval ? { pathfinderHash: retrieval.hash } : {}), ...(captions ? { captionsHash: captions.hash } : {}),
         ...(inputTranslation ? { inputTranslationHash: inputTranslation.hash } : {}), ...(agentPre ? { agentsHash: agentPre.hash } : {}),
         ...(vectors ? { vectorsHash: vectors.hash } : {}),
         ...(quickReply ? { quickReplyHash: quickReply.hash } : {}) });
     if (preparedPrompt !== undefined && (!preparedPrompt || preparedPrompt.identity !== promptIdentity
         || !Array.isArray(preparedPrompt.messages) || !preparedPrompt.macroState
+        || memory?.enabled && (preparedPrompt.memoryPresentation?.version !== 1
+            || preparedPrompt.memoryPresentation.phase !== (request.worldInfo?.agents ? 'working' : 'terminal')
+            || typeof preparedPrompt.memoryPresentation.memoryText !== 'string')
          || countText && typeof preparedText !== 'string'
          || preparedPrompt.hash !== roleplayHash({ messages: preparedPrompt.messages, macroState: preparedPrompt.macroState,
+             ...(preparedPrompt.memoryPresentation ? { memoryPresentation: preparedPrompt.memoryPresentation } : {}),
              ...(preparedText !== undefined ? { preparedText } : {}), ...(cfgValues ? { cfgValues } : {}),
              ...(retrieval ? { pathfinderHash: retrieval.hash } : {}), ...(captions ? { captionsHash: captions.hash } : {}),
              ...(inputTranslation ? { inputTranslationHash: inputTranslation.hash } : {}), ...(agentPre ? { agentsHash: agentPre.hash } : {}),
@@ -1016,8 +1079,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         const { count } = await getCounter(request.worldInfo.tokenizer);
         const budget = contextLimit(directories, request.binding) - request.maxTokens - (countText ? Number(promptMaterial.power?.token_padding ?? 0) : 0);
         const imageCost = image => getChatImageTokenCost(image, imageDetail);
-        const tokens = countText ? async () => Math.max(await countText(preparedText), cfgValues?.negativePrompt ? await countText(cfgValues.negativePrompt) : 0) : countChat ? prompt => countChat([...prompt, ...toolBudget])
-            : (async prompt => await count(prompt.map(message => [message.name, message.tool_call_id,
+        const tokens = countText ? async () => Math.max(await countText(cleanMewmoryCountView(preparedText, memory?.suppression?.marker)), cfgValues?.negativePrompt ? await countText(cfgValues.negativePrompt) : 0) : countChat ? prompt => countChat([...cleanMewmoryCountView(prompt, memory?.suppression?.marker), ...toolBudget])
+            : (async prompt => await count(cleanMewmoryCountView(prompt, memory?.suppression?.marker).map(message => [message.name, message.tool_call_id,
                 message.tool_calls && JSON.stringify(message.tool_calls),
                 Array.isArray(message.content) ? message.content.filter(part => part.type === 'text').map(part => part.text).join('\n')
                     : message.content].filter(Boolean).join('\n')).join('\n'))
@@ -1058,8 +1121,32 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             }
         }
     }
+    let memoryFinal = preparedPrompt?.memoryPresentation && memory?.enabled
+        ? { ...memory, memoryText: preparedPrompt.memoryPresentation.memoryText,
+            factsText: preparedPrompt.memoryPresentation.factsText, interviewText: preparedPrompt.memoryPresentation.interviewText,
+            presentationChoice: preparedPrompt.memoryPresentation.choice }
+        : memory;
+    const finaliseMemory = async (phase = 'terminal') => {
+        if (!memoryFinal?.enabled || !memoryFinal.suppression) return;
+        const result = finaliseMewmoryContext(countText ? preparedText : messages, memoryFinal, { phase });
+        if (countText) preparedText = result.prompt;
+        else messages = result.prompt;
+        memoryFinal = { ...memoryFinal, memoryText: result.memoryText, presentationChoice: result.choice,
+            ...(result.choice === 'fallback' ? { factsText: memoryFinal.suppression.fallbackFactsText,
+                interviewText: memoryFinal.suppression.fallbackInterviewText } : {}),
+            suppression: result.choice === 'fallback' ? { ...memoryFinal.suppression, proof: [], proposedPassagesSkipped: 0 } : memoryFinal.suppression };
+        const budget = contextLimit(directories, request.binding) - request.maxTokens - (countText ? Number(promptMaterial.power?.token_padding ?? 0) : 0);
+        const { count } = await getCounter(request.worldInfo.tokenizer);
+        const size = countText ? Math.max(await countText(cleanMewmoryCountView(preparedText, memoryFinal?.suppression?.marker)), cfgValues?.negativePrompt ? await countText(cfgValues.negativePrompt) : 0)
+            : await (countChat ? countChat([...cleanMewmoryCountView(messages, memoryFinal?.suppression?.marker), ...toolBudget]) : count(JSON.stringify([...cleanMewmoryCountView(messages, memoryFinal?.suppression?.marker), ...toolBudget])));
+        if (size > budget) throw roleplayError('ROLEPLAY_INVALID', 'The memories and recent chat do not fit the model context. Reduce the memory allowance or recent chat, or raise the context size.', 409);
+    };
+    if (request.serverPrompt && !preparedPrompt) await finaliseMemory(request.worldInfo?.agents ? 'working' : 'terminal');
     if (request.serverPrompt && !preparedPrompt) {
         const saved = { messages, macroState: macroEnvironment.captureState(), ...(preparedText !== undefined ? { preparedText } : {}),
+            ...(memoryFinal?.enabled ? { memoryPresentation: { version: 1, phase: request.worldInfo?.agents ? 'working' : 'terminal',
+                choice: memoryFinal.presentationChoice, memoryText: memoryFinal.memoryText,
+                factsText: memoryFinal.factsText, interviewText: memoryFinal.interviewText } } : {}),
             ...(cfgValues ? { cfgValues } : {}), ...(retrieval ? { pathfinderHash: retrieval.hash } : {}),
             ...(captions ? { captionsHash: captions.hash } : {}), ...(inputTranslation ? { inputTranslationHash: inputTranslation.hash } : {}),
             ...(vectors ? { vectorsHash: vectors.hash } : {}),
@@ -1076,11 +1163,12 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     };
     if (request.worldInfo?.agents) {
         const intercepted = await runRoleplayAgentInterceptors(context, { base, snapshot: request.worldInfo, records: initialRecords, binding: request.binding,
-            mewmory: memory ?? null, macros: acceptedMacros, generationType: request.worldInfo.global.trigger, assistantName: request.characterName,
+            mewmory: memoryFinal ?? null, macros: acceptedMacros, generationType: request.worldInfo.global.trigger, assistantName: request.characterName,
             assertCurrent: beforeDispatch, generate: generateAgent, timing: 'pre-generation', format: countText ? 'text' : 'chat',
             value: countText ? preparedText : messages });
         if (countText) preparedText = intercepted.value;
         else messages = intercepted.value;
+        await finaliseMemory();
         const { count } = await getCounter(request.worldInfo.tokenizer);
         const budget = contextLimit(directories, request.binding) - request.maxTokens - (countText ? Number(promptMaterial.power?.token_padding ?? 0) : 0);
         const size = countText ? Math.max(await countText(preparedText), cfgValues?.negativePrompt ? await countText(cfgValues.negativePrompt) : 0)
@@ -1088,6 +1176,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         if (size > budget) throw roleplayError('ROLEPLAY_INVALID', 'The Agent-modified prompt exceeds the bound context budget.', 409);
         const basePrompt = readArtifact(directories, job.id, 'roleplay-base-prompt');
         const final = { messages, macroState: basePrompt.macroState, ...(preparedText !== undefined ? { preparedText } : {}),
+            ...(memoryFinal?.enabled ? { memoryPresentation: { version: 1, phase: 'terminal', choice: memoryFinal.presentationChoice,
+                memoryText: memoryFinal.memoryText, factsText: memoryFinal.factsText, interviewText: memoryFinal.interviewText } } : {}),
             ...(cfgValues ? { cfgValues } : {}), ...(retrieval ? { pathfinderHash: retrieval.hash } : {}), ...(captions ? { captionsHash: captions.hash } : {}),
             ...(inputTranslation ? { inputTranslationHash: inputTranslation.hash } : {}),
             ...(vectors ? { vectorsHash: vectors.hash } : {}),

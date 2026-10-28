@@ -1,3 +1,4 @@
+import { cleanMewmoryCountView } from '../../mewmory/prompt-proof.js';
 // Shared by the browser runner and the server Roleplay runner, so keep it free of DOM and app imports.
 
 import { getTrackerMetadataKey } from './tracker-state.js';
@@ -45,7 +46,7 @@ function text(value) {
  */
 export function buildMewmoryMacros(context) {
     const enabled = Boolean(context?.enabled);
-    const full = enabled ? [text(context.npcText), text(context.memoryText)].filter(Boolean).join('\n\n') : '';
+    const full = enabled ? [text(context.npcText), text(cleanMewmoryCountView(context.memoryText, context.suppression?.marker))].filter(Boolean).join('\n\n') : '';
     return {
         'full-mewmory': full,
         'mewmory-facts': enabled ? text(context.factsText) : '',

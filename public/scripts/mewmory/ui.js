@@ -1,6 +1,6 @@
 import {
     changeMewmory, getMewmoryLocator, getMewmoryScope, hideOverflowMessages, initMewmory, mewmory, notifyMewmory,
-    processMewmory, refreshMewmory, requestMewmory, stopMewmoryBackfill,
+    processMewmory, refreshMewmory, requestMewmory, retryMewmoryVisibilityRestore, stopMewmoryBackfill,
 } from './index.js';
 import { getRequestHeaders } from '../../script.js';
 import { currentUser } from '../user.js';
@@ -10,10 +10,25 @@ import { dismissJob, retryJob } from '../jobs.js';
 import { mewmoryConfigAutosave } from './config-autosave.js';
 import { PREFIX_PRESETS, RAG_DEFAULTS } from './rag-settings.js';
 
+function displayedSkipReason(reason) {
+    if (reason === 'Entity ID is empty or too long.') return 'A character or object reference is missing or invalid.';
+    if (reason === 'Pawspective and \'what a character knows\' memories must belong to a character played by the AI, not to you.') {
+        return 'This entry could not be linked to a recognised AI-controlled character. Character knowledge and Pawspective entries require one.';
+    }
+    return reason;
+}
+
 const tabs = [['now', 'Now'], ['pawspective', 'Pawspective'], ['archive', 'Archive'], ['recall', 'Recall'], ['settings', 'Settings']];
 const kinds = { entity: 'NPC or entity reference', state: 'Current state', event: 'Event', relationship: 'Relationship fact',
     knowledge: 'Character knowledge', commitment: 'Promise or unresolved matter', interview: 'Pawspective interview', overview: 'Current subject view' };
 const roles = { extractor: 'Facts and events', pawspective: 'Pawspective interviews', embedding: 'Embeddings', selector: 'Recall selector', fallback: 'Recall fallback' };
+const roleDescriptions = {
+    extractor: 'Records what happened, character details, current states, knowledge and promises. It also decides when a Pawspective interview is warranted.',
+    pawspective: 'Uses what a character knows to explore a meaningful change in their perspective. Interviews are imaginary and did not happen in the story.',
+    embedding: 'Builds numerical search representations of saved text. Optional; keyword search works without this role.',
+    selector: 'Chooses from existing search matches for the current scene. It does not write or rewrite memories.',
+    fallback: 'Tries to choose memories when the first selector fails or cannot finish its selection. It still chooses only existing material.',
+};
 const MAX_FALLBACK_PROFILES = 10;
 const SHARED_PROFILE = 'mewmory:shared-profile';
 const SWITCHES = ['enableNewChats', 'autoUpdate', 'localOnly', 'excludeHistory', 'autoHide'];
@@ -244,6 +259,7 @@ function renderNow(root) {
         button('Add NPC reference', () => openEditor(null, 'entity')));
     root.append(actions);
     const cast = section('Active NPCs');
+    cast.append(node('p', 'mewmory-caption', 'Character references and current states sent with replies.'));
     cast.append(check('Choose active characters automatically', view.activeNpcIds === null,
         automatic => act(() => changeMewmory('scene', { activeNpcIds: automatic ? null : view.activeReferences.ids }))));
     if (view.activeNpcIds !== null) {
@@ -268,16 +284,17 @@ function renderNow(root) {
 function renderPreview(root) {
     const preview = mewmory.view?.preview;
     if (!preview) return;
-    const block = section('Memories sent with the next reply');
+    const block = section('Memories and passages selected for this reply');
     block.append(node('p', 'mewmory-caption', mewmory.view.previewCurrent
-        ? 'This text is added to the next reply. Why each memory was picked is shown in Recall.'
+        ? 'This is the latest prepared snapshot. A later reply may use different memories. Why each memory was picked is shown in Recall.'
         : 'This preview is out of date. Preview again to refresh it.'));
     const counts = node('dl', 'mewmory-tokens');
     for (const [label, value] of [['NPC details, tokens', preview.tokens?.npc], ['Picked memories, tokens', preview.tokens?.memory],
-        ['Recent chat kept, tokens', preview.history?.retainedTokens]]) {
+        ['Recent chat kept, tokens', preview.history?.retainedTokens], ['Recent chat in this prepared reply, messages', preview.history?.retainedMessages]]) {
         if (value !== undefined) counts.append(node('dt', '', label), node('dd', '', Number(value).toLocaleString()));
     }
     block.append(counts, node('pre', 'mewmory-prompt', [preview.npcText, preview.memoryText].filter(Boolean).join('\n\n') || 'No older memories were picked.'));
+    if (preview.history?.waitingForPreservation) block.append(node('p', 'mewmory-caption', 'Waiting for an older group to finish recording; keeping its original messages for now.'));
     root.append(block);
 }
 
@@ -329,6 +346,7 @@ function renderPawspective(root) {
 
 function renderArchive(root) {
     const view = mewmory.view;
+    root.append(node('p', 'mewmory-caption', 'Search saved memories and original sources. A search result is not necessarily used in a reply.'));
     const controls = node('div', 'mewmory-fields');
     const search = async () => {
         ui.offset = 0;
@@ -421,7 +439,9 @@ function renderRecall(root) {
         root.append(block);
     }
     if (run.forcedIds?.length) root.append(node('p', 'mewmory-caption', run.forcedIds.length + ' pinned memories or promises that this scene brings up were included automatically.'));
-    if (run.omitted?.length) root.append(node('p', 'mewmory-caption', run.omitted.length + ' memories did not fit in Selected memory budget, tokens.'));
+    if (run.omitted?.length) root.append(node('p', 'mewmory-caption', run.omitted.length + ' memories did not fit in Space for recalled memories, tokens.'));
+    if (Number.isInteger(run.retrieval?.alreadyPresentSkipped)) root.append(node('p', 'mewmory-caption', 'Original chat passages already present in this reply: ' + run.retrieval.alreadyPresentSkipped + ' skipped.'));
+    else if (Number.isInteger(run.retrieval?.proposedPassagesSkipped)) root.append(node('p', 'mewmory-caption', 'This prepared selection proposes skipping ' + run.retrieval.proposedPassagesSkipped + ' original chat passages already present. The final reply can use a fallback if the text changes.'));
     if (run.retrieval?.selected.length) {
         const included = section('Included passages and memories');
         for (const id of run.retrieval.selected) {
@@ -591,23 +611,29 @@ function incompleteConfigDraft(draft) {
     const add = (label, value) => {
         if (typeof value !== 'number' || !Number.isFinite(value)) missing.push(label);
     };
-    add('Recent chat target, tokens', draft.historyWindow);
-    add('Hide older messages when the visible chat reaches, tokens', draft.autoHideTokens);
-    add('Selected memory budget, tokens', draft.memoryTokens);
-    add('Messages per update', draft.batchMessages);
-    add('Recall candidates', draft.candidateLimit);
-    for (const [label, key] of [['Passage size, characters', 'chunkSize'], ['Passage overlap, characters', 'chunkOverlap'],
-        ['Recent messages to search with', 'queryMessages'], ['Meaning weight, 0 to 1', 'semanticWeight'],
-        ['Minimum meaning similarity, 0 to 1', 'minSimilarity'], ['Maximum selected results', 'resultLimit'],
-        ['Maximum matches per source', 'maxPerSource'], ['Neighbouring passages, each side', 'neighbourChunks'],
-        ['Passages per embedding request', 'batchSize']]) add(label, draft.retrieval?.[key]);
+    add('Recent chat allowance, tokens', draft.historyWindow);
+    add('Hide older messages at this chat size, tokens', draft.autoHideTokens);
+    add('Keep at least this many recent messages', draft.recentMessages);
+    add('Remove older chat in groups of', draft.historyBatchMessages);
+    add('Space for recalled memories, tokens', draft.memoryTokens);
+    add('Maximum messages per memory request', draft.batchMessages);
+    add('Search matches considered for recall', draft.candidateLimit);
+    for (const [label, key] of [['Maximum passage length, characters', 'chunkSize'], ['Text repeated between passages, characters', 'chunkOverlap'],
+        ['Recent messages used to find matches', 'queryMessages'], ['Preference for meaning matches', 'semanticWeight'],
+        ['Minimum meaning match score', 'minSimilarity'], ['Maximum recalled results', 'resultLimit'],
+        ['Maximum passages from one source', 'maxPerSource'], ['Nearby passages to include on each side', 'neighbourChunks'],
+        ['Passages per meaning-index request', 'batchSize']]) add(label, draft.retrieval?.[key]);
     for (const [name, role] of Object.entries(draft.roles || {})) {
         const label = roles[name] || name;
-        add(label + ': Context limit, tokens', role.contextTokens);
-        add(label + ': Output limit, tokens', role.maxOutputTokens);
-        add(label + ': Timeout, seconds', role.timeoutMs);
+        add(label + ': Model context size, tokens', role.contextTokens);
+        add(label + ': Maximum response length, tokens', role.maxOutputTokens);
+        add(label + ': Request timeout, seconds', role.timeoutMs);
     }
-    if (!missing.length) return '';
+    if (!missing.length) {
+        if (!Number.isSafeInteger(draft.recentMessages) || draft.recentMessages < 1 || draft.recentMessages > 100000) return 'Keep at least this many recent messages must be between 1 and 100000.';
+        if (!Number.isSafeInteger(draft.historyBatchMessages) || draft.historyBatchMessages < 1 || draft.historyBatchMessages > 10000) return 'Remove older chat in groups of must be between 1 and 10000.';
+        return '';
+    }
     const shown = missing.slice(0, 3).join('; ');
     const rest = missing.length - 3;
     return 'finish ' + shown + (rest > 0 ? ' and ' + rest + ' more number field' + (rest === 1 ? '' : 's') : '') + ' before this can save.';
@@ -629,6 +655,10 @@ function syncSettingsDraft() {
     if (!mewmory.config) return;
     if (!ui.draft) {
         ui.draft = structuredClone(mewmory.config);
+        ui.draft.historyMode ??= 'tokens';
+        ui.draft.historyCatchUp ??= 'reply';
+        ui.draft.recentMessages ??= 10;
+        ui.draft.historyBatchMessages ??= 5;
         ui.draft.retrieval = { ...RAG_DEFAULTS, ...ui.draft.retrieval };
     }
     mewmoryConfigAutosave.sync(mewmory.config, mewmory.config.account || currentUser?.handle || null);
@@ -718,6 +748,7 @@ window.addEventListener('neconyan:account-changing', () => {
 // A server still running older code drops switches it does not know and saves the rest.
 function confirmSavedSwitches(saved, expected) {
     if (SWITCHES.some(key => typeof expected[key] === 'boolean' && saved?.[key] !== expected[key])
+        || ['historyMode', 'recentMessages', 'historyBatchMessages', 'historyCatchUp'].some(key => expected[key] !== undefined && saved?.[key] !== expected[key])
         || (Array.isArray(expected.fallbackProfileIds) && !Array.isArray(saved?.fallbackProfileIds))
         || (expected.sharedProfileId && saved?.sharedProfileId !== expected.sharedProfileId)) {
         throw new Error('Neconyan was updated but is still running the old version. Restart Neconyan, then try again.');
@@ -730,7 +761,7 @@ function renderFallbackConnections(draft) {
     const fallbacks = draft.fallbackProfileIds ||= [];
     const profiles = new Map((mewmory.config.profiles || []).map(profile => [profile.id, profile.name]));
     const heading = node('div', 'mewmory-fallback-heading');
-    heading.append(node('span', '', 'Fallback connections'), node('small', 'mewmory-fallback-count', fallbacks.length + ' of ' + MAX_FALLBACK_PROFILES));
+    heading.append(node('span', '', 'Backup connections'), node('small', 'mewmory-fallback-count', fallbacks.length + ' of ' + MAX_FALLBACK_PROFILES));
     list.append(heading, node('p', 'mewmory-caption', 'When a role’s own connection fails, times out or sends back something unusable, Mewmory tries these saved profiles in order, each with its own model. Embeddings never fall back, because a different model would not match the saved search index. Each role’s remote and reading permissions still apply.'));
     const update = (change, focus) => {
         change(fallbacks);
@@ -805,47 +836,92 @@ function renderSettings(root) {
     if (!draft || !mewmory.config) return;
     const configField = (label, value, onChange, options = {}) => field(label, value, onChange, { ...options, autosave: true });
     const configCheck = (label, checked, onChange, disabled = false) => check(label, checked, onChange, disabled, { autosave: true });
-    const settings = section('Automatic memory');
+    const settings = section('Memory updates');
     settings.dataset.mewmoryTour = 'automatic';
-    settings.append(node('p', 'mewmory-caption', 'Model roles are shared by all your chats; turning Mewmory on is per chat. These models are set up separately from the model that writes replies.'),
-        configCheck('Turn on Mewmory in every new chat', draft.enableNewChats, value => { draft.enableNewChats = value; }),
-        configCheck('Update automatically during play', draft.autoUpdate, value => { draft.autoUpdate = value; }),
-        configCheck('Only use models on this computer', draft.localOnly, value => { draft.localOnly = value; }),
-        configCheck('Leave out older chat that Mewmory has already remembered', draft.excludeHistory, value => { draft.excludeHistory = value; }),
-        configCheck('Hide old messages automatically', draft.autoHide, value => { draft.autoHide = value; }));
+    settings.append(node('p', 'mewmory-caption', 'Mewmory records facts and character perspectives as you chat. Keeping recent messages in replies is a separate setting.'),
+        configCheck('Use Mewmory in new chats', draft.enableNewChats, value => { draft.enableNewChats = value; }),
+        node('p', 'mewmory-caption', 'Existing chats keep their own on/off choice.'),
+        configCheck('Update memories as I chat', draft.autoUpdate, value => { draft.autoUpdate = value; }),
+        node('p', 'mewmory-caption', 'Process new and edited messages, including those still included in replies. Updates run on the server.'),
+        configCheck('Use models running on this computer only', draft.localOnly, value => { draft.localOnly = value; }),
+        node('p', 'mewmory-caption', 'Prevents Mewmory model roles from sending story data to another computer.'),
+        configCheck('Replace older chat with Mewmory context', draft.excludeHistory, value => { draft.excludeHistory = value; render(); }),
+        node('p', 'mewmory-caption', 'Leave older messages out of replies only after Mewmory has recorded them. The original messages stay saved.'));
     const budgets = node('div', 'mewmory-fields');
-    budgets.append(
-        configField('Hide older messages when the visible chat reaches, tokens', draft.autoHideTokens, value => { draft.autoHideTokens = value; }, { type: 'number',
-            hint: 'When the visible chat history reaches this many tokens, older messages are hidden and the count starts again from what remains. Hiding repeats each time it reaches this size. The latest reply can stay visible. Mewmory still remembers hidden messages.' }),
-        configField('Recent chat target, tokens', draft.historyWindow, value => { draft.historyWindow = value; }, { type: 'number', hint: 'Chat only. NPC references, selected memory and the rest of your prompt need additional room.' }),
-        configField('Selected memory budget, tokens', draft.memoryTokens, value => { draft.memoryTokens = value; }, { type: 'number' }),
-        configField('Messages per update', draft.batchMessages, value => { draft.batchMessages = value; }, { type: 'number', hint: 'Smaller batches use less space in the Facts and events model.' }),
-        configField('Recall candidates', draft.candidateLimit, value => { draft.candidateLimit = value; }, { type: 'number' }),
-        configField('Writer tokenizer', draft.writerTokenizer, value => { draft.writerTokenizer = value; }, { options: tokenizers, hint: 'Counts tokens, the units models measure text in. Auto follows the app’s own setting; pick one yourself if your service only gives rough estimates.' }),
-    );
+    budgets.append(configField('Choose recent chat by', draft.historyMode, value => { draft.historyMode = value; render(); }, {
+        key: 'history-mode', options: [['tokens', 'Token allowance'], ['messages', 'Number of messages']],
+        hint: 'Tokens measure text length. Message counts are easier to predict, but long messages still need enough model context.',
+    }), configField('When memory is behind', draft.historyCatchUp, value => { draft.historyCatchUp = value; render(); }, {
+        key: 'history-catch-up', options: [['reply', 'Reply immediately'], ['wait', 'Wait for memory']], disabled: !draft.excludeHistory,
+        hint: draft.historyCatchUp === 'wait'
+            ? 'Record the older messages before sending the reply. This can run memory updates even when automatic updates are off. Catch-up may continue after the reply starts. You can stop waiting.'
+            : 'Keep any older messages Mewmory has not recorded yet, so the reply can start. They leave context after memory catches up.',
+    }));
+    if (draft.historyMode === 'messages') {
+        const example = node('p', 'mewmory-caption');
+        example.id = 'mewmory-history-example';
+        const updateExample = () => {
+            const x = draft.recentMessages;
+            const y = draft.historyBatchMessages;
+            example.textContent = Number.isSafeInteger(x) && x > 0 && Number.isSafeInteger(y) && y > 0
+                ? 'Keep ' + x + '–' + (x + y - 1) + ' messages. At ' + (x + y) + ', leave out the oldest ' + y + ' once remembered, leaving ' + x + '. More may remain while memory updates catch up.' : '';
+        };
+        budgets.append(configField('Keep at least this many recent messages', draft.recentMessages, value => { draft.recentMessages = value; updateExample(); }, {
+            type: 'number', key: 'recent-messages', hint: 'Include these messages in full with each reply. User messages and character replies count separately.',
+        }), configField('Remove older chat in groups of', draft.historyBatchMessages, value => { draft.historyBatchMessages = value; updateExample(); }, {
+            type: 'number', key: 'history-batch-messages', hint: 'Let extra messages accumulate, then leave out this many older messages together after they are remembered. This does not delay memory updates.',
+        }));
+        updateExample();
+        budgets.append(example);
+    } else {
+        budgets.append(configField('Recent chat allowance, tokens', draft.historyWindow, value => { draft.historyWindow = value; }, {
+            type: 'number', key: 'history-window', hint: 'Keep roughly this much original chat text. Character references, recalled memories and the rest of your prompt need additional room. Older chat stays until remembered.',
+        }));
+    }
+    budgets.append(configField('Space for recalled memories, tokens', draft.memoryTokens, value => { draft.memoryTokens = value; }, {
+        type: 'number', key: 'memory-tokens', hint: 'Maximum space for selected memories and original passages. Active character references need additional room.',
+    }), configField('Maximum messages per memory request', draft.batchMessages, value => { draft.batchMessages = value; }, {
+        type: 'number', key: 'batch-messages', hint: 'Read up to this many messages together when updating facts and character perspectives. A request can contain fewer. This does not set the recent-message window.',
+    }), configField('Search matches considered for recall', draft.candidateLimit, value => { draft.candidateLimit = value; }, {
+        type: 'number', key: 'candidate-limit', hint: 'How many possible matches to consider before choosing what helps the next reply.',
+    }), configField('Token counter for replies', draft.writerTokenizer, value => { draft.writerTokenizer = value; }, {
+        options: tokenizers, key: 'writer-tokenizer', hint: 'Match the model that writes replies. Auto follows the app setting. Counts can differ from your provider.',
+    }));
     settings.append(budgets);
+    if (draft.historyMode === 'messages') {
+        settings.append(configCheck('Also hide omitted messages in the saved chat', draft.autoHide, value => { draft.autoHide = value; }, !draft.excludeHistory),
+            node('p', 'mewmory-caption', draft.excludeHistory ? 'Use the same recent-message window. Hidden messages remain saved and searchable; you can show them again.'
+                : 'Turn on replacing older chat above to hide omitted messages automatically.'));
+    } else {
+        settings.append(configCheck('Hide old messages automatically at a token threshold', draft.autoHide, value => { draft.autoHide = value; }),
+            node('p', 'mewmory-caption', 'This is separate from the recent chat allowance. Hidden messages remain saved and searchable.'),
+            configField('Hide older messages at this chat size, tokens', draft.autoHideTokens, value => { draft.autoHideTokens = value; }, {
+                type: 'number', key: 'auto-hide-tokens', hint: 'At this size, hide older visible messages together. Keep the latest character reply and anything after it.',
+            }));
+    }
     root.append(settings);
-    const retrieval = section('Search and passages');
+    const retrieval = section('Finding relevant memories');
     const rag = draft.retrieval;
-    retrieval.append(node('p', 'mewmory-caption', 'Retrieval finds relevant saved text for the writer. Current replies use quick local search and completed recall; fresh meaning search and AI selection run in the background.'));
+    retrieval.append(node('p', 'mewmory-caption', 'Search recent scene cues against saved memories and original text. Complete passages already present in a reply are skipped when their presence can be confirmed. Replies use local search and completed AI selections while new AI searches run in the background.'));
     const ragFields = node('div', 'mewmory-fields');
-    ragFields.append(configField('Retrieval method', rag.mode, value => { rag.mode = value; }, { options: [['hybrid', 'Keywords and meaning'], ['keyword', 'Keywords'], ['semantic', 'Meaning, with keyword recovery']] }));
+    ragFields.append(configField('Search method', rag.mode, value => { rag.mode = value; }, { key: 'retrieval-mode', options: [['hybrid', 'Keywords and meaning'], ['keyword', 'Keywords'], ['semantic', 'Meaning, with keyword recovery']], hint: 'Meaning search needs Embeddings. Keyword search works without them.' }));
     for (const [key, label, hint] of [
-        ['chunkSize', 'Passage size, characters', 'Maximum size. Splitting prefers paragraphs, lines and words.'],
-        ['chunkOverlap', 'Passage overlap, characters', 'Repeated context between passages; less than half the passage size. Repeated text is removed from the final prompt.'],
-        ['queryMessages', 'Recent messages to search with', 'Between 1 and 12 accepted messages.'],
-        ['semanticWeight', 'Meaning weight, 0 to 1', 'Hybrid search only: 0 favours keywords, 1 favours meaning.'],
-        ['minSimilarity', 'Minimum meaning similarity, 0 to 1', 'Raise this to demand closer matches. Scores are not confidence percentages.'],
-        ['resultLimit', 'Maximum selected results', 'Before neighbouring passages are added. Pinned memories are always considered.'],
-        ['maxPerSource', 'Maximum matches per source', 'Keeps a long file from filling every candidate position.'],
-        ['neighbourChunks', 'Neighbouring passages, each side', '0 to 2. Adds nearby original text within the memory budget.'],
-        ['batchSize', 'Passages per embedding request', '1 to 10. Provider limits may lower this further.'],
+        ['chunkSize', 'Maximum passage length, characters', 'Split original sources into passages for search. Splitting prefers paragraphs and words.'],
+        ['chunkOverlap', 'Text repeated between passages, characters', 'Helps preserve context at passage boundaries. Must be less than half the passage length. Overlapping retrieved text is included once.'],
+        ['queryMessages', 'Recent messages used to find matches', 'Use the last 1–12 accepted messages as search cues. This does not change how many messages stay in the reply.'],
+        ['semanticWeight', 'Preference for meaning matches', '0 favours keywords; 1 favours meaning. Applies to combined search.'],
+        ['minSimilarity', 'Minimum meaning match score', 'Raise this to require closer meaning matches. This is not a confidence percentage.'],
+        ['resultLimit', 'Maximum recalled results', 'Maximum results before adding nearby passages. Results must also fit the memory allowance.'],
+        ['maxPerSource', 'Maximum passages from one source', 'Stops one long source from filling the search results.'],
+        ['neighbourChunks', 'Nearby passages to include on each side', 'Add 0–2 neighbouring passages where useful. Results share the memory allowance.'],
+        ['batchSize', 'Passages per meaning-index request', 'How many passages to send to the Embeddings service together, from 1–10. Provider limits can reduce this.'],
     ]) ragFields.append(configField(label, rag[key], value => { rag[key] = value; }, { type: 'number', key: 'rag-' + key, hint }));
     retrieval.append(ragFields, configCheck('Search attached files and the Data Bank', rag.includeFiles, value => { rag.includeFiles = value; }),
         node('p', 'mewmory-caption', 'Only files attached to this account, character or chat are searched. File passages are references for the writer, not knowledge automatically given to characters. Allow file access separately for each model role.'));
     root.append(retrieval);
-    const model = section('Model roles');
+    const model = section('Models used by Mewmory');
     model.dataset.mewmoryTour = 'models';
+    model.append(node('p', 'mewmory-caption', 'Each role has a different job. These connections are separate from the model that writes replies and are shared across chats.'));
     const allProfiles = mewmory.config.profiles || [];
     const sharedProfile = allProfiles.find(profile => profile.id === draft.sharedProfileId);
     const shared = node('div', 'mewmory-fields mewmory-shared-profile');
@@ -892,7 +968,7 @@ function renderSettings(root) {
     model.append(picker);
     const role = draft.roles[ui.role];
     const roleForm = node('fieldset', 'mewmory-role');
-    roleForm.append(node('legend', '', roles[ui.role]), configCheck('Enable this role', role.enabled, value => { role.enabled = value; }));
+    roleForm.append(node('legend', '', roles[ui.role]), node('p', 'mewmory-caption', roleDescriptions[ui.role]), configCheck('Enable this role', role.enabled, value => { role.enabled = value; }));
     const fields = node('div', 'mewmory-fields');
     const native = ui.role === 'embedding' && role.provider === 'native';
     if (ui.role === 'embedding') fields.append(configField('Embedding connection', role.provider || 'custom', value => {
@@ -943,11 +1019,11 @@ function renderSettings(root) {
         : modelName === savedRole.model ? savedRole.autoTokenizer : '';
     fields.append(
         configField('Model revision, optional', role.modelRevision, value => { role.modelRevision = value; }, { key: 'revision-' + ui.role }),
-        configField('Context limit, tokens', role.contextTokens, value => { role.contextTokens = value; }, { type: 'number', key: 'context-' + ui.role,
+        configField('Model context size, tokens', role.contextTokens, value => { role.contextTokens = value; }, { type: 'number', key: 'context-' + ui.role,
             hint: 'Tokens are pieces of text counted by the model. Each role has its own limit. Set this to what your model service supports; changing it does not increase the model’s actual limit.' }),
-        configField('Output limit, tokens', role.maxOutputTokens, value => { role.maxOutputTokens = value; }, { type: 'number', disabled: ui.role === 'embedding', key: 'output-' + ui.role,
+        configField('Maximum response length, tokens', role.maxOutputTokens, value => { role.maxOutputTokens = value; }, { type: 'number', disabled: ui.role === 'embedding', key: 'output-' + ui.role,
             hint: ui.role === 'embedding' ? '' : 'Space reserved for the reply. A larger value leaves less room for the request.' }),
-        configField('Timeout, seconds', typeof role.timeoutMs === 'number' ? role.timeoutMs / 1000 : '', value => { role.timeoutMs = value === '' ? '' : value * 1000; }, { type: 'number', key: 'timeout-' + ui.role }),
+        configField('Request timeout, seconds', typeof role.timeoutMs === 'number' ? role.timeoutMs / 1000 : '', value => { role.timeoutMs = value === '' ? '' : value * 1000; }, { type: 'number', key: 'timeout-' + ui.role }),
         configField('Tokenizer for this role', role.tokenizer, value => { role.tokenizer = value; render(); }, {
             options: tokenizers.map(value => value === 'auto' ? ['auto', 'Auto (match this model)'] : value), key: 'tokenizer-' + ui.role,
             hint: role.tokenizer === 'auto' ? (autoTokenizer ? 'Auto uses ' + autoTokenizer + '.' : 'Auto’s local tokenizer match appears after these settings save.')
@@ -966,7 +1042,7 @@ function renderSettings(root) {
     }
     roleForm.append(fields, configCheck('Allow sending story data to a service on another computer', role.allowRemote, value => { role.allowRemote = value; }));
     if (!native && !usesShared && !role.profileId) roleForm.append(configCheck('Remove the saved API key', role.clearKey, value => { role.clearKey = value; }));
-    const scope = section('This role may read');
+    const scope = section('Sources this model may read');
     scope.dataset.mewmoryTour = 'permissions';
     for (const [type, label] of [['chat', 'Chat messages'], ['character', 'Character cards'], ['lore', 'Enabled lore'], ['memory', 'Saved memories'], ['file', 'Attached files and Data Bank']]) {
         scope.append(configCheck(label, role.allowedData.includes(type), checked => {
@@ -975,7 +1051,7 @@ function renderSettings(root) {
         }));
     }
     roleForm.append(scope);
-    model.append(roleForm, renderFallbackConnections(draft), node('p', 'mewmory-caption', 'Recall selector and Recall fallback only pick from memories that already exist. Only use models on this computer applies to every role. Embeddings are optional; keyword search always works.'));
+    model.append(roleForm, renderFallbackConnections(draft), node('p', 'mewmory-caption', 'Recall selector and Recall fallback only pick from memories that already exist. Use models running on this computer only applies to every role. Embeddings are optional; keyword search always works.'));
     root.append(model);
     const actions = node('div', 'mewmory-actions');
     const retry = button('Retry saving', () => { void mewmoryConfigAutosave.retry(); }, { primary: true });
@@ -1004,20 +1080,24 @@ function renderHealth(root) {
     progress.max = Math.max(1, view.health.totalMessages);
     progress.value = view.health.totalMessages - view.health.pending;
     progress.setAttribute('aria-label', 'Messages processed');
-    health.append(progress, node('p', 'mewmory-caption', view.health.pending + ' messages waiting to be remembered. '
-        + (view.health.preservedThrough >= 0 ? 'Messages 1 to ' + (view.health.preservedThrough + 1) + ' are fully remembered, so they can be left out of the prompt.'
-            : 'No messages are fully remembered yet.')),
+    health.append(progress, node('p', 'mewmory-caption', 'Messages waiting for a memory update: ' + view.health.pending + '. '
+        + (view.health.preservedThrough >= 0 ? 'Messages 1 to ' + (view.health.preservedThrough + 1) + ' are fully recorded and can be left out of replies.'
+            : 'No messages are fully recorded yet.')
+        + (!mewmory.config.roles.extractor.enabled && view.health.pending ? ' Enable Facts and events to record them.' : '')),
     node('p', 'mewmory-caption', 'Search: ' + (view.health.indexStatus === 'lexical' ? 'keyword search only'
         : view.health.indexStatus === 'ready' ? 'meaning search (embeddings) and keyword search ready' : 'building meaning search (embeddings); keyword search works meanwhile')
         + (view.health.indexVersion ? ' · index ' + view.health.indexVersion.slice(0, 12) : '')),
     node('p', 'mewmory-caption', 'Older messages stay saved and searchable. If the memories plus recent chat cannot fit the writing model, the reply stops with an error instead of dropping them.'),
-    node('p', 'mewmory-caption', 'Hide old messages that no longer fit: once the visible chat reaches your hiding threshold, older messages are hidden and the count starts again. The latest reply can stay visible. Mewmory still remembers them.'));
+    node('p', 'mewmory-caption', mewmory.config.historyMode === 'messages'
+        ? 'The recent-message window controls which remembered messages can leave the reply. Optional hiding applies the same window to the saved chat.'
+        : 'The hiding threshold is separate from the recent chat allowance. At the threshold, older visible messages are hidden together and the latest reply can stay visible.'));
     const actions = node('div', 'mewmory-actions');
-    actions.append(button('Catch up on this whole chat', () => processMewmory({ all: true }), { disabled: mewmory.busy || !view.enabled }),
-        button('Check for missed details', () => processMewmory({ all: true, checkpoint: true }), { disabled: mewmory.busy || !view.enabled }),
-        button('Rebuild search index', () => act(scope => requestMewmory('index', { reset: true }, { scope })),
+    actions.append(button('Update memories for the whole chat', () => processMewmory({ all: true }), { disabled: mewmory.busy || !view.enabled }),
+        button('Review for missed details', () => processMewmory({ all: true, checkpoint: true }), { disabled: mewmory.busy || !view.enabled }),
+        button('Rebuild meaning search', () => act(scope => requestMewmory('index', { reset: true }, { scope })),
             { disabled: !mewmory.config.roles.embedding.enabled || mewmory.busy }),
-        button('Hide old messages that no longer fit', () => act(() => hideOverflowMessages())));
+        button(mewmory.config.historyMode === 'messages' ? 'Hide messages outside the recent window' : 'Hide old messages at the token threshold', () => act(() => hideOverflowMessages())));
+    health.append(node('p', 'mewmory-caption', 'Updating the whole chat includes recent messages and can make paid model requests. Reviewing missed details does not create a running story summary.'));
     if (mewmory.busy) actions.append(button('Stop updating', stopMewmoryBackfill));
     health.append(actions);
     if (view.operationsError) health.append(node('p', 'mewmory-caption', view.operationsError));
@@ -1031,12 +1111,14 @@ function renderHealth(root) {
     }
     if (view.health.jobs.length) health.append(node('h4', '', 'Recent updates'));
     for (const job of view.health.jobs.slice(-5).reverse()) {
-        health.append(node('p', 'mewmory-caption', (job.checkpoint ? 'Missed-details check' : 'Memory update') + ', messages '
+        health.append(node('p', 'mewmory-caption', (job.checkpoint ? 'Review for missed details' : 'Memory update') + ', messages '
             + (job.from + 1) + ' to ' + (job.through + 1) + ': '
             + ({ processing: 'running', complete: 'done', failed: 'didn’t finish', superseded: 'restarted with the newer message text' }[job.status] || job.status)
             + (job.error ? '. ' + job.error : '')
-            + (job.skipped ? '. ' + job.skipped + (job.skipped === 1 ? ' detail the model got wrong was' : ' details the model got wrong were')
-                + ' left out' + (job.skippedReasons?.length ? ', for example: ' + job.skippedReasons[0] : '.') : '')));
+            + (job.skipped ? '. ' + job.skipped + (job.skipped === 1
+                ? ' proposed entry was skipped because Mewmory could not save it'
+                : ' proposed entries were skipped because Mewmory could not save them')
+                + (job.skippedReasons?.length ? ', for example: ' + displayedSkipReason(job.skippedReasons[0]) : '.') : '')));
     }
     const usage = node('dl', 'mewmory-tokens');
     for (const [role, total] of Object.entries(view.health.usage)) {
@@ -1139,8 +1221,15 @@ function render() {
     const locator = getMewmoryLocator();
     heading.append(node('p', 'mewmory-caption mewmory-scope', locator?.chat || 'No Roleplay chat selected'),
         button('Refresh', () => act(() => refreshMewmory(filters()), { refresh: false })));
-    const status = node('p', 'mewmory-status', mewmory.error || (mewmory.loading ? 'Loading this chat’s memory…' : mewmory.busy || mewmory.preparing ? 'Updating memories…'
-        : mewmory.view?.enabled ? mewmory.config?.roles.extractor.enabled ? 'Up to date' : 'Facts and events is switched off. Original passages remain searchable.' : 'Off'));
+    const restoration = mewmory.view?.visibilityRestore;
+    const restoreMessage = restoration?.status === 'pending' ? 'Turning off Mewmory and showing its hidden messages…'
+        : restoration?.status === 'failed' ? 'Mewmory is off, but some messages could not be shown. Retry restoration.'
+            : restoration?.status === 'complete' && !mewmory.view?.enabled ? restoration.restored
+                ? 'Mewmory is off. Restored ' + restoration.restored + ' hidden messages.' : 'Mewmory is off. No messages needed restoring.' : '';
+    const status = node('p', 'mewmory-status', mewmory.error || restoreMessage || (mewmory.loading ? 'Loading this chat’s memory…' : mewmory.busy || mewmory.preparing ? 'Updating memories…'
+        : mewmory.view?.enabled ? mewmory.config?.roles.extractor.enabled
+            ? mewmory.view.health?.pending ? 'Messages are waiting for a memory update.' : 'Up to date'
+            : 'Facts and events is switched off. Original passages remain searchable.' : 'Off'));
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
     status.dataset.error = String(Boolean(mewmory.error));
@@ -1150,7 +1239,8 @@ function render() {
         root.append(check('Use Mewmory in this chat', mewmory.view.enabled, enabled => act(async () => {
             await changeMewmory('enabled', { enabled });
             window.dispatchEvent(new Event('mewmory:configured'));
-        })));
+        }), ['pending', 'failed'].includes(restoration?.status)), node('p', 'mewmory-caption', 'Turning this off shows messages hidden by Mewmory. Messages you hid yourself stay hidden. Saved memories are kept.'));
+        if (restoration?.status === 'failed') root.append(button('Retry restoration', () => act(() => retryMewmoryVisibilityRestore())));
     }
     const navigation = node('nav', 'mewmory-tabs');
     navigation.setAttribute('role', 'tablist');

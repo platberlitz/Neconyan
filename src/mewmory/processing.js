@@ -6,7 +6,7 @@ import {
 import { EXTRACTION_CONTRACT, PAWSPECTIVE_CONTRACT } from './contracts.js';
 import { callJsonRole, readConfig, ROLE_LABELS, roleVersion } from './models.js';
 import { loadCurrentState } from './sources.js';
-import { mutateState, statePath } from './store.js';
+import { mutateState, readStateShared, statePath } from './store.js';
 import { beginServerWork } from '../android-wake.js';
 
 const running = new Map();
@@ -15,7 +15,7 @@ export const processingVersion = config => hash([POLICY_VERSION, roleVersion(con
 
 function processingFingerprint(state, sourceCount) {
     return hash([sourceFingerprint({ ...state, timeline: state.timeline.slice(0, sourceCount) }),
-        state.enabled, state.activeNpcIds, state.sceneNpcIds, state.castHistory, state.records, state.audit, state.overrides]);
+        state.enabled, state.lastDisableId || '', state.activeNpcIds, state.sceneNpcIds, state.castHistory, state.records, state.audit, state.overrides]);
 }
 
 const memoryFingerprint = state => hash([state.enabled, state.activeNpcIds, state.sceneNpcIds, state.castHistory, state.records, state.audit, state.overrides]);
@@ -292,6 +292,13 @@ async function runBatch(directories, locator, options, call) {
     const config = readConfig(directories);
     let state = await loadCurrentState(directories, locator);
     if (!state.enabled) return state;
+    const lastDisableId = state.lastDisableId;
+    const assertEnabled = () => {
+        const current = readStateShared(directories, locator);
+        if (!current.enabled || current.lastDisableId !== lastDisableId
+            || ['pending', 'failed'].includes(current.visibilityRestore?.status)) fail('Mewmory was switched off while memories were updating.', 409);
+        options.signal?.throwIfAborted();
+    };
     const refs = pendingSources(state, config, options).slice(0, config.batchMessages);
     if (!refs.length) return state;
     const asOf = Math.max(...refs.map(ref => sourceAt(state, ref).sequence));
@@ -317,6 +324,7 @@ async function runBatch(directories, locator, options, call) {
         const input = extractionInput(state, refs, asOf, options.checkpoint);
         input.provenance = { policy: POLICY_VERSION, jobId, role: 'extractor', model: config.roles.extractor.model, modelRevision: config.roles.extractor.modelRevision };
         const dataTypes = [...new Set([...input.sources.map(source => source.type), ...(input.existing.length || input.authorOverrides.length ? ['memory'] : [])])];
+        assertEnabled();
         const extraction = await call(directories, config, 'extractor', EXTRACTION_CONTRACT, input, { dataTypes, signal: options.signal });
         usage.push(extraction.usage);
         const requestAsOf = request => Math.max(-1, ...request.refs.map(ref => sourceAt(state, ref).sequence));
@@ -335,6 +343,7 @@ async function runBatch(directories, locator, options, call) {
             if (state.records.some(record => record.kind === 'interview' && record.evidenceKey === evidenceKey && recordEligible(state, record, { asOf: interviewAsOf }))) continue;
             interview.provenance = { policy: POLICY_VERSION, jobId, role: 'pawspective',
                 model: config.roles.pawspective.model, modelRevision: config.roles.pawspective.modelRevision };
+            assertEnabled();
             const generated = await call(directories, config, 'pawspective', PAWSPECTIVE_CONTRACT, interview, { dataTypes: ['memory'], signal: options.signal });
             usage.push(generated.usage);
             const records = state.records;
@@ -352,6 +361,8 @@ async function runBatch(directories, locator, options, call) {
         await loadCurrentState(directories, locator);
         if (options.signal?.aborted) fail('Mewmory request cancelled.', 499);
         return mutateState(directories, locator, current => {
+            if (!current.enabled || current.lastDisableId !== lastDisableId
+                || ['pending', 'failed'].includes(current.visibilityRestore?.status)) fail('Mewmory was switched off while memories were updating.', 409);
             if (processingFingerprint(current, sourceCount) !== snapshotFingerprint || processingVersion(readConfig(directories)) !== policy) {
                 const error = new Error('The chat, Mewmory settings, or a memory you edited changed while this was running, so this result was discarded. It will be tried again.');
                 error.status = 409;

@@ -33,7 +33,10 @@ const { fingerprint } = await import('../public/scripts/extensions/third-party/N
 const { EMBED_KEY } = await import('../public/scripts/extensions/third-party/Neconyan-Prompting-Lab/src/constants.js');
 const { listLabRecovery, recoverLabPublication } = await import('../src/labs/recovery.js');
 const { captureLabChat } = await import('../src/labs/sources.js');
-const { capturePromptingContext } = await import('../src/labs/prompting-context.js');
+const { capturePromptingContext, promptingMaterial } = await import('../src/labs/prompting-context.js');
+const { capturePromptingSuite } = await import('../src/labs/prompting-suites.js');
+const { analysePromptingRun } = await import('../src/labs/prompting-compute.js');
+const { wrapMewmoryContext } = await import('../public/scripts/mewmory/prompt-proof.js');
 const roots = [];
 after(() => { cancelAutoSaves(); roots.forEach(root => fs.rmSync(root, { recursive: true, force: true })); });
 
@@ -414,6 +417,7 @@ test('scene prompts freeze Mewmory and preserve its live archive while omitting 
     const archive = fs.readFileSync(statePath(directories, f.body.locator), 'utf8');
     await runLabJob(f.context(accepted), { generate: async ({ messages }) => {
         assert.match(JSON.stringify(messages), /SAVED MEMORY: Nova planted lunar roses/);
+        assert.doesNotMatch(JSON.stringify(messages), /Mewmory context [^\]]+ (?:begin|end)|event:roses|as of message|Sources:/);
         assert.doesNotMatch(JSON.stringify(messages), /Later edited memory/);
         assert.equal(messages.some(message => message.role === 'user' && message.content.startsWith('OLD PASSAGE')), false);
         return { text: 'A saved memory was used.' };
@@ -457,6 +461,42 @@ test('an unknown scene turn preserves earlier replies and never sends that turn 
     assert.equal(readLabRecord(f.base, 'unknown-scene').partial.columns[0].turns[0].text, 'Saved first reply.');
     await assert.rejects(runLabJob(f.context(accepted), { generate }), /unknown|interrupted/i);
     assert.equal(calls, 2);
+});
+
+test('frozen Labs exports use the same clean primary or fallback text for sections and totals', async () => {
+    const f = fixture();
+    const settingsPath = path.join(f.base.directories.root, 'settings.json');
+    const settings = JSON.parse(fs.readFileSync(settingsPath));
+    settings.oai_settings = { ...JSON.parse(fs.readFileSync(new URL('./fixtures/openai-default-preset.json', import.meta.url))), ...settings.oai_settings };
+    fs.writeFileSync(settingsPath, JSON.stringify(settings));
+    const png = fs.readFileSync(new URL('../default/content/backgrounds/__transparent.png', import.meta.url));
+    fs.writeFileSync(path.join(f.base.directories.characters, 'nova.png'), writeCard(png, JSON.stringify({ name: 'Nova', description: 'An astronaut.', chat: 'scene' })));
+    await savedSuite(f);
+    const captured = await capturePromptingSuite(f.base, f.account, { suiteId: 'suite' });
+    const item = captured.cases[0];
+    assert.equal(item.error, undefined);
+    item.context.memory = { enabled: true };
+    const material = promptingMaterial(f.base.directories, item.context);
+    const marker = { open: '[memory frozen begin]', close: '[memory frozen end]' };
+    const primary = wrapMewmoryContext('PRIMARY reference', marker);
+    const fallback = wrapMewmoryContext('FALLBACK reference', marker);
+    const tokenCount = async value => typeof value === 'string' ? value.length : JSON.stringify(value).length;
+    for (const [choice, passage] of [['primary', 'The moon garden grows roses.'], ['fallback', 'absent passage']]) {
+        const memory = { enabled: true, npcText: '', memoryText: primary, excludedIndices: [], suppression: {
+            marker, fallbackMemoryText: fallback, proof: [{ passageText: passage }], proposedPassagesSkipped: 1,
+        } };
+        let calls = 0;
+        const run = await analysePromptingRun({ ...item, material, userMessage: item.testCase.userMessage }, tokenCount, async () => { calls++; return structuredClone(memory); });
+        assert.equal(calls, 2, 'both frozen compilations use the same snapshot');
+        const capture = run.capture;
+        const exported = JSON.stringify({ messages: capture.messages, combinedPrompt: capture.combinedPrompt, sections: capture.sections, sourceTexts: capture.sourceTexts });
+        assert.doesNotMatch(exported, /memory frozen (?:begin|end)/);
+        assert.match(exported, choice === 'primary' ? /PRIMARY reference/ : /FALLBACK reference/);
+        assert.doesNotMatch(exported, choice === 'primary' ? /FALLBACK reference/ : /PRIMARY reference/);
+        assert.equal(capture.tokenTable.total, await tokenCount(capture.messages ?? capture.combinedPrompt));
+        for (const section of capture.sections) assert.equal(section.tokens, section.content ? await tokenCount(section.content) : 0);
+        assert.ok(capture.sections.some(section => section.content.includes(choice === 'primary' ? 'PRIMARY reference' : 'FALLBACK reference')));
+    }
 });
 
 test('native prompt suites compile frozen sources, save checked runs, and do not resurrect a deleted run', async () => {

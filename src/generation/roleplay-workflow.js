@@ -44,7 +44,8 @@ const companionTurnLimit = (group, automatic) => automatic?.swipe?.enabled || au
 
 export function captureRoleplayWorkflowRequest(base, account, source, { avatar, binding, maxTokens = 128,
     effect = 'append', named = null, forcedAvatars, selectedSpeakerAvatar, random, generationId,
-    bundledMacros = null, browserMacros = null } = {}) {
+    bundledMacros = null, browserMacros = null, mewmoryCatchUpOverride } = {}) {
+    if (mewmoryCatchUpOverride !== undefined && mewmoryCatchUpOverride !== 'reply') throw error('Invalid memory catch-up choice.', 'ROLEPLAY_WORKFLOW_INVALID');
     if (named) {
         assertRoleplayNamedWorkflow(named);
         effect = named.effect;
@@ -82,6 +83,7 @@ export function captureRoleplayWorkflowRequest(base, account, source, { avatar, 
     const stream = (!binding.backend || binding.backend === 'chat')
         && resolveGenerationProfile(base.directories, binding).active?.stream_openai === true;
     return { version: 1, avatar: selectedAvatar, effect, binding, maxTokens, worldInfo, stream,
+        ...(mewmoryCatchUpOverride ? { mewmoryCatchUpOverride } : {}),
         capacity,
         ...(named ? { named } : {}),
         ...(group ? { group: { ...group, speakers } } : {}),
@@ -90,6 +92,7 @@ export function captureRoleplayWorkflowRequest(base, account, source, { avatar, 
 
 export function admitRoleplayWorkflowJob(base, account, { operationKey, source, request }) {
     if (request?.version !== 1 || !['append', 'continue', 'swipe', 'alternative', 'replace'].includes(request.effect)
+        || (request.mewmoryCatchUpOverride !== undefined && request.mewmoryCatchUpOverride !== 'reply')
         || !request.worldInfo || roleplayHash(request.worldInfo.source) !== roleplayHash(source)
         || !request.capacity || request.capacity.hash !== roleplayHash(Object.fromEntries(
         Object.entries(request.capacity).filter(([key]) => key !== 'hash')))
@@ -168,6 +171,7 @@ function childRequest(job, turn = 0, history = [], lineage = null, decision = nu
     if (decision) candidate.decisionHash = decision.hash;
     if (request.group) Object.assign(candidate, { groupHash: request.group.hash, speakerIndex });
     return { binding: request.binding, maxTokens: request.maxTokens, serverPrompt: true,
+        ...(request.mewmoryCatchUpOverride ? { mewmoryCatchUpOverride: request.mewmoryCatchUpOverride } : {}),
         ...(request.stream !== undefined ? { stream: request.stream } : {}),
         characterName: worldInfo.speakerNames.character, worldInfo, messages: [],
         ...(speaker?.modelOverride ? { modelOverride: speaker.modelOverride } : {}),
@@ -665,8 +669,9 @@ export function recoverWaitingRoleplayWorkflow({ job, directories, owner }) {
             ? child.error.message.trim().slice(0, 500) : 'A reply step stopped before it finished.';
         const uncertainty = child.recoverability === 'unknown-outcome'
             ? ' The provider may still have processed this request, so it was not retried automatically.' : '';
-        updateJob(directories, current.id, { state: 'interrupted', stage: 'child-needs-recovery',
-            error: { code: child.error?.code === 'GENERATION_BLOCKED' ? 'GENERATION_BLOCKED' : 'ROLEPLAY_WORKFLOW_CHILD', message: reason + uncertainty } });
+        const code = child.error?.code === 'GENERATION_BLOCKED' || String(child.error?.code || '').startsWith('MEWMORY_WAIT_')
+            ? child.error.code : 'ROLEPLAY_WORKFLOW_CHILD';
+        updateJob(directories, current.id, { state: 'interrupted', stage: 'child-needs-recovery', error: { code, message: reason + uncertainty } });
     }
 }
 

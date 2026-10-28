@@ -193,10 +193,21 @@ test('passages retain exact offsets, cover original text, expand neighbours and 
     const expanded = expandNeighbours([documents[1]], documents, 1);
     assert.equal(expanded.length, 3);
     const assembled = assembleContext(state, expanded, { counter, memoryTokens: 10000 });
-    const pieces = [...assembled.memoryText.matchAll(/characters (\d+)-(\d+)\][^\n]*\n([^]*?)(?=\n\n\[|$)/g)];
-    assert.ok(pieces.length >= 3, 'original source offsets accompany each inserted range');
-    const ranges = pieces.map(match => [Number(match[1]), Number(match[2])]).sort((a, b) => a[0] - b[0]);
-    assert.ok(ranges.every((range, index) => !index || range[0] >= ranges[index - 1][1]), 'no source character is inserted twice');
+    const pieces = [...assembled.memoryText.matchAll(/\[Earlier chat excerpt[^\]]*\]\n([^]*?)(?=\n\n\[Earlier chat excerpt|$)/g)].map(match => match[1]);
+    assert.ok(pieces.length >= 3, 'overlapping passages retain their visible content');
+    const coveredRanges = [];
+    const expectedPieces = [];
+    for (const document of expanded) {
+        let remaining = [[document.start, document.end]];
+        for (const [start, end] of coveredRanges) remaining = remaining.flatMap(([a, b]) => b <= start || a >= end ? [[a, b]]
+            : [...(a < start ? [[a, start]] : []), ...(b > end ? [[end, b]] : [])]);
+        for (const [start, end] of remaining) {
+            expectedPieces.push(original.slice(start, end));
+            coveredRanges.push([start, end]);
+        }
+    }
+    assert.deepEqual(pieces, expectedPieces, 'rendered text follows selected source ranges without repeated overlap');
+    assert.doesNotMatch(assembled.memoryText, /characters \d+-\d+|Sources:/);
     state.excludedSources.push(state.timeline[0].id);
     assert.equal(searchDocuments(state).length, 0);
     assert.equal(assembleContext(state, expanded, { counter }).memoryText, '');
@@ -706,7 +717,7 @@ test('a missing profile model names the role, preserves saved settings and accep
     assert.equal(facts.usage.tokenizer, 'cl100k_base');
     const invalid = publicConfig(directories);
     invalid.roles.extractor.contextTokens = 0;
-    assert.throws(() => saveConfig(directories, invalid), /Facts and events:.*Context limit, tokens/);
+    assert.throws(() => saveConfig(directories, invalid), /Facts and events:.*Model context size, tokens/);
 });
 
 test('saved context limits stay unchanged and size errors name the role, counts and setting', async t => {
@@ -1782,9 +1793,9 @@ test('synthetic gestures remain subjective, and old matches bring the present ov
     assert.ok(result.memoryText.includes(fixture.expectations.original_view) === false);
     assert.ok(result.memoryText.includes(fixture.expectations.current_view));
     assert.ok(result.memoryText.includes(current.interview[0].answer));
-    assert.ok(result.memoryText.includes('Historical Pawspective'));
-    assert.ok(result.memoryText.includes('Owner: Mara'));
-    assert.ok(result.memoryText.includes('Subjects: gift'));
+    assert.ok(result.memoryText.includes('Imaginary interview, outside the story'));
+    assert.ok(result.memoryText.includes('Character: Mara'));
+    assert.ok(result.memoryText.includes('Subjects: Unidentified subject'));
     assert.equal(result.memoryText.includes('SEARCH ONLY'), false);
     assert.equal(hash(state), before, 'retrieval never increases significance or rewrites a dossier');
     assert.ok(result.npcText.includes(fixture.expectations.appearance));
@@ -1793,7 +1804,7 @@ test('synthetic gestures remain subjective, and old matches bring the present ov
     assert.equal(result.interviewText.includes(fixture.expectations.appearance), false);
     assert.ok(result.factsText.startsWith(result.npcText));
     assert.equal(result.factsText.includes(current.interview[0].answer), false);
-    assert.equal(result.factsText.includes('Historical Pawspective'), false);
+    assert.equal(result.factsText.includes('Imaginary interview, outside the story'), false);
 });
 
 test('enabled but untriggered lore and rare source details are searchable; disabled lore cannot support recall', () => {
@@ -1968,14 +1979,26 @@ test('an old overview is labelled historical while the latest interpretation is 
     const { state } = giftHistory();
     const old = searchDocuments(state).find(document => document.kind === 'overview' && document.asOf === 2);
     const result = assembleContext(state, [old], { counter });
-    assert.equal(result.memoryText.match(/\[Current subjective view;/g)?.length, 1);
-    assert.ok(result.memoryText.includes('[Historical subjective view;'));
+    assert.equal(result.memoryText.match(/\[Current character viewpoint(?:;|\])/g)?.length, 1);
+    assert.ok(result.memoryText.includes('[Earlier character viewpoint'));
     assert.ok(result.memoryText.includes(fixture.expectations.original_view));
     assert.ok(result.memoryText.includes(fixture.expectations.current_view));
     assert.ok(result.memoryText.indexOf(fixture.expectations.current_view) < result.memoryText.indexOf(fixture.expectations.original_view));
     const past = assembleContext(state, [old], { counter, asOf: 2 });
     assert.equal(past.memoryText.includes(fixture.expectations.current_view), false);
-    assert.ok(past.memoryText.includes('[Current subjective view;'));
+    assert.ok(past.memoryText.includes('[Current character viewpoint'));
+});
+
+test('writer references omit generated record identities while retaining private provenance', () => {
+    const { state } = giftHistory();
+    const document = searchDocuments(state).find(item => item.kind === 'overview' && item.asOf === 2);
+    const sourceId = document.recordId;
+    const result = assembleContext(state, [document], { counter });
+    assert.ok(sourceId, 'the private selected record retains an identity');
+    assert.ok(state.records.some(record => record.id === sourceId && record.refs.length));
+    assert.equal(result.memoryText.includes(sourceId), false);
+    assert.doesNotMatch(result.memoryText, /Sources:|as of message \d+|characters \d+-\d+/);
+    assert.ok(result.memoryText.includes(fixture.expectations.original_view));
 });
 
 test('historical recall preserves the selected version and never substitutes later evidence or text', async t => {
@@ -2497,7 +2520,10 @@ test('recall gives the selector significance evidence and preserves its usefulne
         })), rejections: [], needsEvidence: [] }, usage: { role } };
     } });
     assert.deepEqual(result.selected, order);
-    assert.ok(result.memoryText.indexOf('event:receipt') < result.memoryText.indexOf('event:gift'));
+    assert.ok(result.memoryText.includes('Mara reconsidered the gift after reading its receipt.'));
+    assert.ok(result.memoryText.includes('Mara accepted the gift.'));
+    assert.ok(result.memoryText.indexOf('Mara reconsidered the gift after reading its receipt.') < result.memoryText.indexOf('Mara accepted the gift.'));
+    assert.doesNotMatch(result.memoryText, /event:receipt|event:gift/);
     assert.equal(result.memoryText.includes('INSPECT ONLY'), false);
 });
 

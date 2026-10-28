@@ -92,7 +92,7 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
         await workspace.getByLabel('Enable this role', { exact: true }).check();
         await workspace.getByLabel('Connection profile', { exact: true }).selectOption('mewmory-test-' + name);
         await expect(workspace.getByLabel('Tokenizer for this role')).toHaveValue('auto');
-        await expect(workspace.getByLabel('Timeout, seconds', { exact: true })).toHaveValue('300');
+        await expect(workspace.getByLabel('Request timeout, seconds', { exact: true })).toHaveValue('300');
         await expect(settingsStatus).toHaveText('Configuration saved.');
         expect((await post('/api/mewmory/config/get')).config.roles[name].enabled).toBe(true);
     }
@@ -133,16 +133,16 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     external.batchMessages = 4;
     const changed = await post('/api/mewmory/config/save', { config: external });
     await workspace.getByRole('button', { name: 'Refresh', exact: true }).click();
-    await expect(workspace.getByLabel('Messages per update')).toHaveValue('4');
-    await workspace.getByLabel('Messages per update').fill('0');
+    await expect(workspace.getByLabel('Maximum messages per memory request')).toHaveValue('4');
+    await workspace.getByLabel('Maximum messages per memory request').fill('0');
     changed.config.memoryTokens += 1;
     await post('/api/mewmory/config/save', { config: changed.config });
     await workspace.getByRole('button', { name: 'Refresh', exact: true }).click();
-    await expect(workspace.getByLabel('Messages per update')).toHaveValue('0');
+    await expect(workspace.getByLabel('Maximum messages per memory request')).toHaveValue('0');
     await expect(settingsStatus).toContainText('Settings were saved elsewhere');
     await workspace.getByRole('button', { name: 'Discard unsaved settings', exact: true }).click();
-    await expect(workspace.getByLabel('Messages per update')).toHaveValue('4');
-    await workspace.getByLabel('Messages per update').fill('3');
+    await expect(workspace.getByLabel('Maximum messages per memory request')).toHaveValue('4');
+    await workspace.getByLabel('Maximum messages per memory request').fill('3');
     await expect(settingsStatus).toHaveText('Configuration saved.');
     await workspace.getByLabel('Use Mewmory in this chat').check();
     await workspace.getByRole('tab', { name: 'Now', exact: true }).click();
@@ -343,7 +343,7 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     expect(textWriter.prompt).not.toContain('INSPECT ONLY');
     await page.locator('#neconyan-workspace-rail [data-neconyan-route="mewmory"]').click();
     await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
-    const rebuild = workspace.getByRole('button', { name: 'Rebuild search index', exact: true });
+    const rebuild = workspace.getByRole('button', { name: 'Rebuild meaning search', exact: true });
     await expect(rebuild).toBeEnabled();
     await page.request.post(fixtureUrl + '/fixture/hold', { data: { model: 'text-embedding-3-small' } });
     let indexJob;

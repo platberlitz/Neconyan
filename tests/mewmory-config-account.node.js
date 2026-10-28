@@ -78,3 +78,30 @@ test('config save and get identify the canonical account and reject a stale iden
     assert.equal(unheadered.status, 200, 'the read-only panel refresh remains compatible');
     assert.equal(unheadered.body.config.account, 'alice');
 });
+
+test('catch-up defaults to reply, validates its choice and preserves wait for a legacy save', async t => {
+    const { post } = await appFor(t, 'alice');
+    const headers = { 'X-Neconyan-Account': 'alice' };
+    assert.equal(defaultConfig().historyCatchUp, 'reply');
+    const oldConfig = defaultConfig();
+    delete oldConfig.historyCatchUp;
+    const legacy = await post('/config/save', { config: oldConfig }, headers);
+    assert.equal(legacy.status, 200);
+    assert.equal(legacy.body.config.historyCatchUp, 'reply');
+
+    const selected = await post('/config/save', { config: { ...legacy.body.config, historyCatchUp: 'wait' } }, headers);
+    assert.equal(selected.status, 200);
+    assert.equal(selected.body.config.historyCatchUp, 'wait');
+    const oldClient = { ...selected.body.config };
+    delete oldClient.historyCatchUp;
+    const preserved = await post('/config/save', { config: oldClient }, headers);
+    assert.equal(preserved.status, 200);
+    assert.equal(preserved.body.config.historyCatchUp, 'wait');
+
+    const invalid = await post('/config/save', { config: { ...preserved.body.config, historyCatchUp: 'later' } }, headers);
+    assert.equal(invalid.status, 400);
+    const stale = await post('/config/save', { config: { ...selected.body.config, historyCatchUp: 'reply' } }, headers);
+    assert.equal(stale.status, 409);
+    const saved = await post('/config/get', {}, headers);
+    assert.equal(saved.body.config.historyCatchUp, 'wait');
+});

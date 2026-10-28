@@ -9,8 +9,8 @@ test.setTimeout(240000);
 // eslint-disable-next-line playwright/no-skipped-test -- This test writes chats, Mewmory state and shared settings.
 test.skip(process.env.NECONYAN_MEWMORY_TEST_DISPOSABLE !== '1', 'Use a disposable Neconyan server.');
 
-const AUTO_HIDE = 'Hide old messages automatically';
-const HIDE_TRIGGER = 'Hide older messages when the visible chat reaches, tokens';
+const AUTO_HIDE = 'Hide old messages automatically at a token threshold';
+const HIDE_TRIGGER = 'Hide older messages at this chat size, tokens';
 const TRIGGER = 30000;
 const OLD_ROWS = 40;
 const BELOW_ROWS = 10;
