@@ -1,6 +1,7 @@
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 
-// Display-only state. It never supplies a prompt, a recovery proof or a chat write.
+// Display state. It never supplies a prompt or a recovery proof. The terminal
+// keeper may capture its text as a paid partial before it writes the chat.
 const previews = new Map();
 const listeners = new Map();
 const keyFor = (owner, id) => JSON.stringify([owner, id]);
@@ -30,7 +31,8 @@ export function publishRoleplayPreview(context, update) {
         try { listener(value); } catch { /* A disconnected viewer does not own the job. */ }
     }
     // Completed model text survives a browser or server reconnect. The write is
-    // display-only and not fsynced: a crash may lose this frame, never a paid result.
+    // display-only and not fsynced. A crash can lose a stopped partial frame
+    // before the terminal keeper captures it, but never a saved paid result.
     if ((update.stage && update.stage !== 'generating') || update.inChatAgentCompanionResults) {
         try { writeArtifact(directories, id, 'roleplay-preview', value, { durable: false }); } catch { /* A display failure cannot invalidate a paid reply. */ }
     }

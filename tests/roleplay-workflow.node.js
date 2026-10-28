@@ -15,10 +15,12 @@ const { runPathfinderToolJob } = await import('../src/generation/pathfinder-tool
 const { captureRoleplayWorkflowRequest, admitRoleplayWorkflowJob, runRoleplayWorkflowJob,
     recoverWaitingRoleplayWorkflow } = await import('../src/generation/roleplay-workflow.js');
 const { getJob, releaseJob, setJobState, updateJob, requestCancellation } = await import('../src/jobs/store.js');
-const { providerStep, readArtifact } = await import('../src/jobs/artifacts.js');
-const { readNativeMediaJobResult, readNativeMediaJobResultForOwner } = await import('../src/generation/media-jobs.js');
+const { providerStep, readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
+const { readNativeMediaJobResult, readNativeMediaJobResultForOwner, withNativeMediaReceipt } = await import('../src/generation/media-jobs.js');
 const { releaseStoppedRoleplayWorkflow } = await import('../src/generation/roleplay-workflow-cancellation.js');
 const { requestRoleplayAgentStop } = await import('../src/generation/roleplay-agent-stop.js');
+const { publishRoleplayPreview } = await import('../src/generation/roleplay-preview.js');
+const { KEPT_REPLY_ARTIFACT, keepRoleplayReply, preserveInterruptedRoleplayReply, preserveRoleplayWorkflowReply, readWorkflowReplyText, recordWorkflowReplyText } = await import('../src/generation/roleplay-kept-reply.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
 const { saveBlockedContinuationProof, verifyBlockedOutputProof } = await import('../src/generation/blocked-output-proof.js');
 const { enableMewmoryHiding } = await import('./mewmory-hiding-fixture.js');
@@ -208,6 +210,10 @@ test('a stopped reply keeps the chat while a write or child step is unfinished',
     assert.equal(release(receipt({})), null, 'a running child still owns the chat');
     updateJob(f.dirs, childJobId, { state: 'interrupted' });
     assert.deepEqual(release(receipt({})), { stopped: true, chatChanged: false });
+    writeArtifact(f.dirs, childJobId, KEPT_REPLY_ARTIFACT, { version: 1, state: 'done' });
+    assert.deepEqual(release(receipt({})), { stopped: true, chatChanged: true });
+    writeArtifact(f.dirs, childJobId, KEPT_REPLY_ARTIFACT, { version: 1, state: 'failed' });
+    assert.deepEqual(release(receipt({})), { stopped: true, chatChanged: false });
     assert.deepEqual(release(receipt({ 'speaker:0': { state: 'done' } })), { stopped: true, chatChanged: true });
     assert.equal(release(receipt({ final: { state: 'writing' } })), null, 'a half-written reply is never released');
     assert.equal(release({ state: 'preparing', jobId: null, effects: {} }), null);
@@ -315,6 +321,286 @@ test('automatic continuation saves chunks and publishes only the complete select
     assert.equal(f.records().length, 4);
     assert.ok(f.records().at(-1).mes.startsWith('The first saved sentence is short. The second sentence completes'));
     assert.equal(calls.count, 2);
+});
+
+test('a stopped second automatic turn keeps the completed first turn and the latest partial', async t => {
+    const f = prepared(t, 'append', { autoContinue: true, continueTarget: 100 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    await f.candidate('The first completed sentence. ', calls);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    assert.equal(readWorkflowReplyText({ directories: f.dirs, rootJobId: f.jobId, turn: 0 }).text,
+        'The first completed sentence. ');
+    const child = f.childJob(1);
+    updateJob(f.dirs, child.id, { state: 'running' });
+    publishRoleplayPreview({ owner: f.f.scope.owner, directories: f.dirs, job: child },
+        { stage: 'generating', text: ' A second part.', gen_started: '2026-10-29T10:00:00.000Z' });
+    requestCancellation(f.dirs, f.jobId, { reason: 'user_cancelled' });
+    const stopped = preserveInterruptedRoleplayReply({ owner: f.f.scope.owner, directories: f.dirs,
+        job: getJob(f.dirs, child.id), signal: AbortSignal.abort() },
+    Object.assign(new Error('The reply was stopped.'), { name: 'AbortError' }));
+    assert.equal(stopped.state, 'done');
+    assert.equal(f.records().at(-1).mes, 'The first completed sentence.  A second part.');
+    assert.equal(f.records().filter(record => record.mes === 'The first completed sentence. ').length, 0);
+});
+
+test('an automatic continuation chunk joins literally and keeps its target swipes', async t => {
+    const f = prepared(t, 'continue', { autoContinue: true, continueTarget: 100 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    await f.candidate(' smiled.', calls);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const child = f.childJob(1);
+    updateJob(f.dirs, child.id, { state: 'running' });
+    publishRoleplayPreview({ owner: f.f.scope.owner, directories: f.dirs, job: child },
+        { stage: 'generating', text: ' and waved.', gen_started: '2026-10-29T10:00:00.000Z' });
+    requestCancellation(f.dirs, f.jobId, { reason: 'user_cancelled' });
+    const kept = preserveInterruptedRoleplayReply({ owner: f.f.scope.owner, directories: f.dirs,
+        job: getJob(f.dirs, child.id), signal: AbortSignal.abort() },
+    Object.assign(new Error('The reply was stopped.'), { name: 'AbortError' }));
+    assert.equal(kept.state, 'done');
+    assert.equal(f.records()[2].mes, 'Answer smiled. and waved.');
+    assert.deepEqual(f.records()[2].swipes, ['Answer smiled. and waved.', 'Other']);
+    assert.equal(f.records()[2].swipe_id, 0);
+});
+
+for (const [continuedText, expected] of [
+    ['Answer ... and waved.', 'Answer smiled. ... and waved.'],
+    ['Answer smiled. and waved.', 'Answer smiled. and waved.'],
+]) test(`a mixed continuation joins through the saved prefix before a turn decision: ${continuedText}`, async t => {
+    const f = prepared(t, 'continue', { autoContinue: true, continueTarget: 1000 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    await f.candidate(' smiled.', calls);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const child = f.childJob(1);
+    // The later turn has a full continuedText while the saved prior turn keeps
+    // its authoritative continuation prefix and suffix.
+    const output = { text: ' and waved.', continuedText, extra: { token_count: 4 } };
+    const value = { intentHash: roleplayHash(child.intent), kind: 'text',
+        providerHash: roleplayHash({ text: ' and waved.' }), output };
+    writeArtifact(f.dirs, child.id, 'roleplay-candidate', { ...value, hash: roleplayHash(value) });
+    setJobState(f.dirs, child.id, 'completed');
+    const kept = keepRoleplayReply({ owner: f.f.scope.owner, directories: f.dirs,
+        job: getJob(f.dirs, child.id), signal: new AbortController().signal }, { reason: 'stopped', rootJobId: f.jobId });
+    assert.equal(kept.state, 'done');
+    assert.equal(f.records()[2].mes, expected);
+    assert.equal(f.records().length, 3);
+    assert.deepEqual(f.records()[2].swipes, [expected, 'Other']);
+    assert.equal(f.records()[2].mes.includes('AnswerAnswer'), false);
+});
+
+test('a mixed Agent full prefix and later continuation chunk joins without overlap guessing', async t => {
+    const f = prepared(t, 'continue', { autoContinue: true, continueTarget: 1000, agents: true });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    await f.candidate(' smiled.', calls, { generateAgent: async () => ({ text: 'Answer smiled.' }) });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const child = f.childJob(1);
+    updateJob(f.dirs, child.id, { state: 'running' });
+    publishRoleplayPreview({ owner: f.f.scope.owner, directories: f.dirs, job: child },
+        { stage: 'generating', text: ' ... and waved.', gen_started: '2026-10-29T10:00:00.000Z' });
+    requestCancellation(f.dirs, f.jobId, { reason: 'user_cancelled' });
+    const kept = preserveInterruptedRoleplayReply({ owner: f.f.scope.owner, directories: f.dirs,
+        job: getJob(f.dirs, child.id), signal: AbortSignal.abort() },
+    Object.assign(new Error('The reply was stopped.'), { name: 'AbortError' }));
+    assert.equal(kept.state, 'done');
+    assert.equal(f.records()[2].mes, 'Answer smiled. ... and waved.');
+    assert.equal(f.records().length, 3);
+    assert.deepEqual(f.records()[2].swipes, ['Answer smiled. ... and waved.', 'Other']);
+});
+
+test('a later Agent full continuation replaces the saved suffix instead of repeating it', async t => {
+    const f = prepared(t, 'continue', { autoContinue: true, continueTarget: 1000, agents: true });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    const decide = kind => (policy, output) => ({ kind,
+        textHash: roleplayHash(output?.continuedText ?? output?.text ?? '') });
+    await f.candidate(' smiled.', calls, { generateAgent: async () => ({ text: 'Answer smiled.' }) });
+    assert.equal((await runRoleplayWorkflowJob(f.context(), { decideCandidate: decide('continue') })).waiting, true);
+    await f.candidate(' and waved.', calls, { turn: 1,
+        generateAgent: async () => ({ text: 'Answer smiled. and waved.' }) });
+    await assert.rejects(runRoleplayWorkflowJob(f.context(), { decideCandidate: decide('final'),
+        beforeCommit: () => { throw new Error('The saved final write was refused.'); } }), /saved final write was refused/);
+    assert.equal(readWorkflowReplyText({ directories: f.dirs, rootJobId: f.jobId, turn: 1 }).text,
+        'Answer smiled. and waved.');
+    const records = f.records();
+    assert.equal(records.length, 3);
+    assert.equal(records[2].mes, 'Answer smiled. and waved.');
+    assert.deepEqual(records[2].swipes, ['Answer smiled. and waved.', 'Other']);
+});
+
+test('a saved raw continuation chunk and a later Agent full output join once', async t => {
+    const f = prepared(t, 'continue', { autoContinue: true, continueTarget: 1000 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    await f.candidate(' smiled.', calls);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const child = f.childJob(1);
+    // An older saved step kept only this turn's raw chunk, before the
+    // authoritative source prefix was recorded.
+    const prior = { version: 1, parentIntentHash: roleplayHash(getJob(f.dirs, f.jobId).intent), turn: 0,
+        selected: true, output: { text: ' smiled.' }, text: ' smiled.', chunk: true, textHash: roleplayHash(' smiled.') };
+    writeArtifact(f.dirs, f.jobId, 'roleplay-workflow-assembled:0', { ...prior, hash: roleplayHash(prior) });
+    const output = { text: ' and waved.', continuedText: 'Answer smiled. and waved.', extra: { token_count: 4 } };
+    const value = { intentHash: roleplayHash(child.intent), kind: 'text',
+        providerHash: roleplayHash({ text: ' and waved.' }), output };
+    writeArtifact(f.dirs, child.id, 'roleplay-candidate', { ...value, hash: roleplayHash(value) });
+    setJobState(f.dirs, child.id, 'completed');
+    const kept = keepRoleplayReply({ owner: f.f.scope.owner, directories: f.dirs,
+        job: getJob(f.dirs, child.id), signal: new AbortController().signal }, { reason: 'stopped', rootJobId: f.jobId });
+    assert.equal(kept.state, 'done');
+    const records = f.records();
+    assert.equal(records.length, 3);
+    assert.equal(records[2].mes, 'Answer smiled. and waved.');
+    assert.deepEqual(records[2].swipes, ['Answer smiled. and waved.', 'Other']);
+    assert.equal(records[2].swipe_id, 0);
+});
+
+test('a rejected later automatic turn keeps the earlier accepted continuation', async t => {
+    const f = prepared(t, 'continue', { autoContinue: true, continueTarget: 1000 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    await f.candidate(' smiled.', calls);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const root = getJob(f.dirs, f.jobId);
+    const child = f.childJob(1);
+    const output = { text: ' and waved.', continuedText: 'Answer smiled. and waved.' };
+    const value = { intentHash: roleplayHash(child.intent), kind: 'text',
+        providerHash: roleplayHash({ text: ' and waved.' }), output };
+    const candidate = { ...value, hash: roleplayHash(value) };
+    writeArtifact(f.dirs, child.id, 'roleplay-candidate', candidate);
+    setJobState(f.dirs, child.id, 'completed');
+    // This turn's alternative was rejected; the earlier accepted text stays.
+    const decision = { parentIntentHash: roleplayHash(root.intent), childJobId: child.id, candidateHash: candidate.hash,
+        turn: 1, outputHash: roleplayHash(output), decision: { kind: 'swipe', textHash: roleplayHash(' and waved.') } };
+    writeArtifact(f.dirs, f.jobId, 'roleplay-workflow-decision:1', { ...decision, hash: roleplayHash(decision) });
+    recordWorkflowReplyText(f.context(), root, 1, null, { selected: false });
+    const kept = preserveRoleplayWorkflowReply(f.context(), new Error('The reply failed after the rejection.'));
+    assert.equal(kept.state, 'done');
+    const records = f.records();
+    assert.equal(records.length, 3);
+    assert.equal(records[2].mes, 'Answer smiled.');
+    assert.deepEqual(records[2].swipes, ['Answer smiled.', 'Other']);
+    assert.equal(records.some(record => record.mes?.includes(' and waved.')), false);
+});
+
+test('a rejection of the accumulated reply never restores its earlier turns', async t => {
+    const f = prepared(t, 'continue', { autoContinue: true, continueTarget: 1000 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    await f.candidate(' smiled.', calls);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const root = getJob(f.dirs, f.jobId);
+    const child = f.childJob(1);
+    const output = { text: ' and waved.', continuedText: 'Answer smiled. and waved.' };
+    const value = { intentHash: roleplayHash(child.intent), kind: 'text',
+        providerHash: roleplayHash({ text: ' and waved.' }), output };
+    const candidate = { ...value, hash: roleplayHash(value) };
+    writeArtifact(f.dirs, child.id, 'roleplay-candidate', candidate);
+    setJobState(f.dirs, child.id, 'completed');
+    const decision = { parentIntentHash: roleplayHash(root.intent), childJobId: child.id, candidateHash: candidate.hash,
+        turn: 1, outputHash: roleplayHash(output),
+        decision: { kind: 'swipe', textHash: roleplayHash('Answer smiled. and waved.') } };
+    writeArtifact(f.dirs, f.jobId, 'roleplay-workflow-decision:1', { ...decision, hash: roleplayHash(decision) });
+    recordWorkflowReplyText(f.context(), root, 1, null, { selected: false });
+    const before = f.records();
+    assert.equal(preserveRoleplayWorkflowReply(f.context(), new Error('The whole reply was rejected.')), null);
+    assert.deepEqual(f.records(), before);
+    assert.equal(readArtifact(f.dirs, child.id, KEPT_REPLY_ARTIFACT), undefined);
+});
+
+test('a rejected automatic swipe candidate is never kept as a reply', async t => {
+    const f = prepared(t, 'append', { autoSwipe: true });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    await f.candidate('Short', calls);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    assert.equal(readArtifact(f.dirs, f.jobId, 'roleplay-workflow-decision:0').decision.kind, 'swipe');
+    const before = f.records();
+    assert.equal(preserveRoleplayWorkflowReply(f.context(), new Error('The saved swipe was refused.')), null);
+    assert.deepEqual(f.records(), before);
+});
+
+test('a refused second automatic turn keeps the completed first turn, not the refusal', async t => {
+    const f = prepared(t, 'append', { autoContinue: true, continueTarget: 100 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    await f.candidate('The accepted first sentence. ', calls);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const child = f.childJob(1);
+    const output = { message: { name: 'Nova', is_user: false, mes: 'Refused suffix',
+        extra: { generation_outcome: { status: 'blocked' } } } };
+    const value = { intentHash: roleplayHash(child.intent), kind: 'text', providerHash: roleplayHash({ text: 'Refused suffix' }), output };
+    writeArtifact(f.dirs, child.id, 'roleplay-candidate', { ...value, hash: roleplayHash(value) });
+    setJobState(f.dirs, child.id, 'completed');
+    preserveRoleplayWorkflowReply(f.context(), Object.assign(new Error('The reply was refused.'),
+        { code: 'ROLEPLAY_BLOCKED_RECOVERY' }));
+    assert.equal(f.records().at(-1).mes, 'The accepted first sentence. ');
+    assert.equal(f.records().some(record => record.mes === 'Refused suffix'), false);
+});
+
+test('a shutdown-aborted workflow root never writes a candidate before its retry', async t => {
+    const f = prepared(t);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    await f.candidate('A candidate that must wait for Retry.', calls);
+    const before = f.records();
+    const context = { ...f.context(), signal: AbortSignal.abort() };
+    assert.equal(preserveRoleplayWorkflowReply(context, Object.assign(new Error('The server stopped.'),
+        { code: 'INTERRUPTED' })), null);
+    assert.deepEqual(f.records(), before);
+});
+
+test('an uncertain workflow failure never becomes a second chat write', async t => {
+    const f = prepared(t);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    await f.candidate('A candidate with an uncertain write.', { count: 0 });
+    const before = f.records();
+    assert.equal(preserveRoleplayWorkflowReply(f.context(), Object.assign(new Error('The write is uncertain.'),
+        { code: 'ROLEPLAY_WRITE_UNCERTAIN' })), null);
+    assert.deepEqual(f.records(), before);
+});
+
+test('a candidate with a writing normal publication is never keeper-written', async t => {
+    const f = prepared(t);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    await f.candidate('A candidate with an owned write.', { count: 0 });
+    const child = f.childJob();
+    const candidate = readArtifact(f.dirs, child.id, 'roleplay-candidate');
+    withNativeMediaReceipt({ owner: f.f.scope.owner, directories: f.dirs, job: f.context().job }, ({ value, save }) => {
+        value.effects.final = { state: 'writing', candidateHash: candidate.hash };
+        save();
+    }, { checkSource: false });
+    const before = f.records();
+    assert.equal(preserveRoleplayWorkflowReply(f.context(), new Error('The parent acknowledgement was lost.')), null);
+    assert.deepEqual(f.records(), before);
+});
+
+test('a completed tool-turn candidate is never kept as reply preamble', async t => {
+    const f = prepared(t);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const child = f.childJob();
+    const value = { intentHash: roleplayHash(child.intent), kind: 'tool-turn', callsHash: roleplayHash({ calls: [] }) };
+    writeArtifact(f.dirs, child.id, 'roleplay-candidate', { ...value, hash: roleplayHash(value) });
+    setJobState(f.dirs, child.id, 'completed');
+    const before = f.records();
+    assert.equal(preserveRoleplayWorkflowReply(f.context(), new Error('The tool turn failed.')), null);
+    assert.deepEqual(f.records(), before);
 });
 
 test('a model tool turn completes an owned child and resumes a second bound model turn without provisional chat', async t => {
@@ -542,7 +828,7 @@ test('an unrelated chat edit after the owned final write cannot be reported as a
     assert.equal(getJob(f.dirs, f.jobId).state, 'running');
 });
 
-test('cancellation after the final candidate and before its protected publication keeps the old reply', async t => {
+test('cancellation after the final candidate and before its protected publication keeps the completed reply', async t => {
     const f = prepared(t);
     updateJob(f.dirs, f.jobId, { state: 'running' });
     await runRoleplayWorkflowJob(f.context());
@@ -551,14 +837,17 @@ test('cancellation after the final candidate and before its protected publicatio
     await assert.rejects(runRoleplayWorkflowJob(f.context(), { beforeCommit: () => {
         requestCancellation(f.dirs, f.jobId);
     } }), { code: 'ROLEPLAY_WORKFLOW_RECOVERY' });
-    assert.equal(f.records().length, 3);
-    assert.equal(f.records()[2].mes, 'Answer');
+    // The paid reply is kept once, as a new message, before the terminal job.
+    assert.equal(f.records().length, 4);
+    assert.equal(f.records()[3].mes, 'A complete but unpublished reply.');
+    assert.equal(f.records()[3].extra.roleplay_kept_reply.reason, 'stopped');
+    assert.equal(f.records()[3].extra.roleplay_kept_reply.rootJobId, f.jobId);
     assert.equal(getJob(f.dirs, f.jobId).cancellation.requested, true);
     assert.equal(calls.count, 1);
     await assert.rejects(runRoleplayWorkflowJob(f.context(), { beforeCommit: () => {
         throw new Error('A cancelled workflow was replayed');
     } }), { code: 'ROLEPLAY_WORKFLOW_RECOVERY' });
-    assert.equal(f.records().length, 3);
+    assert.equal(f.records().length, 4);
 });
 
 test('a changed accepted source or cancelled parent refuses before candidate work or a chat write', async t => {

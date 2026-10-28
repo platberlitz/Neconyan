@@ -9,6 +9,7 @@ const { SECRET_KEYS, writeSecret } = await import('../src/endpoints/secrets.js')
 const { captureRoleplayWorldInfo } = await import('../src/generation/world-info.js');
 const { captureChatProfile } = await import('../src/generation/profiles.js');
 const { runRoleplayReplyJob } = await import('../src/generation/roleplay-execution.js');
+const { requestRoleplayAgentStop } = await import('../src/generation/roleplay-agent-stop.js');
 const { captureRoleplaySource } = await import('../src/generation/roleplay-source.js');
 const { admitRoleplayJob } = await import('../src/roleplay-jobs.js');
 const { providerStep, readArtifact } = await import('../src/jobs/artifacts.js');
@@ -302,4 +303,34 @@ test('input translation does not retranslate older user history or an already tr
     assert.equal(old.worldInfo.inputTranslation, undefined);
     const pending = prepared(t, { autoMode: 'inputs', pendingInput: 'Hello', pendingDisplay: 'Bonjour' });
     assert.equal(pending.worldInfo.inputTranslation, undefined);
+});
+
+test('Stop after the main reply aborts translation even without Agents and saves the full reply', async t => {
+    const { f, jobId, run } = prepared(t);
+    let stopped = false;
+    let translationSignal = null;
+    await run({
+        generate: async ({ beforeDispatch }) => {
+            beforeDispatch();
+            return { text: 'The whole paid reply.' };
+        },
+        translationFetch: async (_url, options) => {
+            translationSignal = options.signal;
+            stopped = requestRoleplayAgentStop({ owner: f.scope.owner, directories: f.scope.directories,
+                job: getJob(f.scope.directories, jobId) });
+            assert.equal(stopped, true);
+            return new Promise((resolve, reject) => {
+                const abort = () => reject(options.signal.reason ?? new Error('Translation was aborted.'));
+                if (options.signal.aborted) abort();
+                else options.signal.addEventListener('abort', abort, { once: true });
+            });
+        },
+    });
+    assert.equal(translationSignal.aborted, true);
+    const saved = chat(f).at(-1);
+    assert.equal(saved.mes, 'The whole paid reply.');
+    assert.equal(saved.extra.display_text, undefined);
+    const stop = readArtifact(f.scope.directories, jobId, 'roleplay-agent-stop');
+    assert.equal(stop.reason, undefined, 'the owner stop is not recorded as an Agent failure');
+    assert.ok(readArtifact(f.scope.directories, jobId, 'roleplay-output'));
 });

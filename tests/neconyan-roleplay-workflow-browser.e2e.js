@@ -3,6 +3,7 @@ import { expect } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { startNativeReply } from './native-roleplay-helpers.js';
@@ -42,7 +43,7 @@ async function savedChat(account, name, firstMessageExtra = {}) {
     return { group: false, avatar: account.avatar, chat: name };
 }
 
-async function openChat(page, { avatar, chat }) {
+async function openChat(page, { avatar, chat }, greeting = 'Retained answer.') {
     const opened = await page.evaluate(async ({ avatar, chat }) => {
         const context = window.SillyTavern.getContext();
         const core = await import('/script.js');
@@ -53,7 +54,7 @@ async function openChat(page, { avatar, chat }) {
         return core.getCurrentChatId();
     }, { avatar, chat });
     expect(opened).toBe(chat);
-    await expect(page.locator('#chat .mes').first()).toContainText('Retained answer.');
+    await expect(page.locator('#chat .mes').first()).toContainText(greeting);
 }
 
 // A stale settings acknowledgement is refused once; the browser saves its settings and
@@ -212,6 +213,10 @@ for (const phone of [false, true]) {
         const { jobId } = await (await submitted).json();
         try {
             await expect(page.locator('#neconyan-roleplay-preview')).toContainText('The server', { timeout: 60000 });
+            const pageSaves = [];
+            page.on('request', request => {
+                if (new URL(request.url()).pathname === '/api/chats/save') pageSaves.push(request.postData());
+            });
             await dismissTour(page);
             await page.screenshot({ path: path.join('..', 'screenshots', `stopped-stream-${viewport}-before-stop.png`) });
             await page.evaluate(async () => (await import('/script.js')).stopGeneration());
@@ -228,6 +233,7 @@ for (const phone of [false, true]) {
             await openChat(page, locator);
             await expect(page.locator('#chat .mes').last()).toContainText('The server');
             expect(readRoleplayChat(native.scope, locator).records.filter(row => row.mes === 'The server ')).toHaveLength(1);
+            expect(pageSaves, 'The server keeps the reply without a browser chat save').toHaveLength(0);
         } finally {
             app.provider.mode.finishStream?.();
             await app.release();
@@ -306,6 +312,274 @@ for (const phone of [false, true]) {
             }
         });
     }
+
+    for (const departure of ['closed', 'another chat', 'hidden']) {
+        test(`${viewport} a reply stopped with the page ${departure} is kept by the server exactly once`, async ({ app }, info) => {
+            app.provider.mode.streamReply = { first: 'The server ', rest: 'wrote this reply.' };
+            const account = await app.account({ phone, activeConnection: true,
+                contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings(settings) {
+                    settings.oai_settings.stream_openai = true;
+                } });
+            if (phone) await installIPhoneSafari(account.context);
+            const native = owned(app);
+            const locator = await savedChat(account, `Away stop ${departure} ${viewport}`);
+            const other = departure === 'another chat' ? await savedChat(account, `Other chat ${viewport}`) : null;
+            let page = await account.open({ workspace: false, readyTimeout: 120000 });
+            await openChat(page, locator);
+            if (phone) await applyIOSOnlyCss(page);
+            const submitted = page.waitForResponse(acceptedSubmission);
+            await page.locator('#send_textarea').fill('Keep the text even if I leave.');
+            await startNativeReply(page);
+            const { jobId } = await (await submitted).json();
+            try {
+                await expect(page.locator('#neconyan-roleplay-preview')).toContainText('The server');
+                const pageSaves = [];
+                account.context.on('request', request => {
+                    if (new URL(request.url()).pathname === '/api/chats/save') pageSaves.push(request.postData());
+                });
+                if (departure === 'closed') await page.close();
+                else if (other) await openChat(page, other);
+                else await page.evaluate(() => {
+                    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+                    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+                    document.dispatchEvent(new Event('visibilitychange'));
+                });
+                // The server receives text the departed page has never seen.
+                app.provider.mode.writeStream('kept writing while you were away.');
+                // Read the real preview stream from a separate HTTP client as a barrier.
+                const controller = new AbortController();
+                const cookie = (await account.context.cookies()).map(item => `${item.name}=${item.value}`).join('; ');
+                const response = await fetch(`${app.url}/api/jobs/${jobId}/preview`, {
+                    signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]), headers: { Cookie: cookie },
+                });
+                try {
+                    expect(response.ok).toBe(true);
+                    const reader = response.body.getReader();
+                    let received = '';
+                    while (!received.includes('kept writing while you were away.')) {
+                        const { value, done } = await reader.read();
+                        if (done) throw new Error(`Preview ended before the server received the additional text: ${JSON.stringify(await account.job(jobId))}`);
+                        received += new TextDecoder().decode(value);
+                    }
+                } finally { controller.abort(); }
+                await account.post(`/api/jobs/${jobId}/cancel`);
+                expect((await terminal(account, jobId)).state).toBe('cancelled');
+                const kept = 'The server kept writing while you were away.';
+                const persistedBeforeReturn = readRoleplayChat(native.scope, locator).records;
+                if (departure === 'closed') page = await account.open({ workspace: false, readyTimeout: 120000 });
+                else if (departure === 'hidden') await page.evaluate(() => {
+                    delete document.visibilityState;
+                    delete document.hidden;
+                    document.dispatchEvent(new Event('visibilitychange'));
+                });
+                await openChat(page, locator);
+                if (phone) await applyIOSOnlyCss(page);
+                await dismissTour(page);
+                await page.locator('#chat .mes').last().scrollIntoViewIfNeeded();
+                await page.screenshot({ path: path.join('..', 'screenshots', `away-stop-${departure.replaceAll(' ', '-')}-${viewport}.png`) });
+                expect(persistedBeforeReturn.filter(row => row.mes === kept), 'Server saved all text before any page returned').toHaveLength(1);
+                await expect(page.locator('#chat .mes').last()).toContainText(kept);
+                await expect.poll(() => page.evaluate(async () => (await import('/script.js')).isGenerating())).toBe(false);
+                await page.reload({ waitUntil: 'domcontentloaded' });
+                await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: 120000 });
+                await openChat(page, locator);
+                await expect(page.locator('#chat .mes').last()).toContainText(kept);
+                expect(readRoleplayChat(native.scope, locator).records.filter(row => row.mes === kept)).toHaveLength(1);
+                expect(pageSaves, 'No page saves an incomplete copy after cancellation').toHaveLength(0);
+                expect(app.provider.calls).toHaveLength(1);
+            } catch (error) {
+                const diagnosticPath = info.outputPath('away-stop-diagnostics.json');
+                await fs.writeFile(diagnosticPath, JSON.stringify({
+                    job: await account.job(jobId),
+                    records: readRoleplayChat(native.scope, locator).records,
+                    serverOutput: app.serverOutput,
+                    page: page.isClosed() ? null : await page.evaluate(async () => {
+                        const core = await import('/script.js');
+                        return { chat: core.getCurrentChatId(), generating: core.isGenerating(), hidden: document.hidden,
+                            messages: core.chat.map(row => row.mes) };
+                    }),
+                }, null, 2));
+                await info.attach('away-stop-diagnostics', { path: diagnosticPath, contentType: 'application/json' });
+                throw error;
+            } finally {
+                app.provider.mode.finishStream?.();
+                await app.release();
+            }
+        });
+    }
+
+    test(`${viewport} a broken provider stream keeps its partial reply and shows the failure`, async ({ app }) => {
+        const partial = 'This reply was cut short by the provider.';
+        app.provider.mode.streamReply = { first: partial, rest: 'This must never arrive.' };
+        const account = await app.account({ phone, activeConnection: true,
+            contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings(settings) {
+                settings.oai_settings.stream_openai = true;
+            } });
+        if (phone) await installIPhoneSafari(account.context);
+        const native = owned(app);
+        const locator = await savedChat(account, `Failed partial ${viewport}`);
+        const page = await account.open({ workspace: false, readyTimeout: 120000 });
+        await openChat(page, locator);
+        if (phone) await applyIOSOnlyCss(page);
+        const submitted = page.waitForResponse(acceptedSubmission);
+        await page.locator('#send_textarea').fill('Keep what arrives if the connection fails.');
+        await startNativeReply(page);
+        const { jobId } = await (await submitted).json();
+        try {
+            await expect(page.locator('#neconyan-roleplay-preview')).toContainText(partial);
+            // Start recording only after setup has settled, so an unrelated startup
+            // toast cannot stand in for reporting this provider failure.
+            await page.evaluate(() => {
+                window.__replyFailureNotices = [];
+                const seen = new WeakSet(document.querySelectorAll('#toast-container .toast-error, #toast-container .toast-warning'));
+                window.__replyFailureObserver = new window.MutationObserver(() => {
+                    for (const notice of document.querySelectorAll('#toast-container .toast-error, #toast-container .toast-warning')) {
+                        if (!seen.has(notice)) {
+                            window.__replyFailureNotices.push(notice.textContent);
+                            seen.add(notice);
+                        }
+                    }
+                });
+                window.__replyFailureObserver.observe(document.body, { childList: true, subtree: true });
+            });
+            app.provider.mode.failStream();
+            // The workflow reports an interrupted child, preserving the provider
+            // failure without automatically repeating a possibly charged call.
+            const stopped = await terminal(account, jobId);
+            expect(stopped.state).toBe('interrupted');
+            expect(stopped.error.code).toBe('ROLEPLAY_WORKFLOW_CHILD');
+            await expect(page.locator('#chat .mes').last()).toContainText(partial);
+            await expect.poll(() => page.evaluate(() => window.__replyFailureNotices)).not.toEqual([]);
+            const notices = await page.evaluate(() => {
+                window.__replyFailureObserver.disconnect();
+                return window.__replyFailureNotices.join('\n');
+            });
+            expect(notices).not.toContain('Reply stopped');
+            expect(readRoleplayChat(native.scope, locator).records.filter(row => row.mes === partial)).toHaveLength(1);
+            await page.reload({ waitUntil: 'domcontentloaded' });
+            await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: 120000 });
+            await openChat(page, locator);
+            await expect(page.locator('#chat .mes').last()).toContainText(partial);
+            expect(app.provider.calls).toHaveLength(1);
+        } finally {
+            app.provider.mode.finishStream?.();
+            await app.release();
+        }
+    });
+
+    test(`${viewport} editing the chat and leaving during Agents keeps the completed reply and reasoning`, async ({ app }) => {
+        app.provider.mode.streamReply = { first: 'The server ', rest: 'wrote this reply.', reasoning: 'Keep this reasoning too.' };
+        app.provider.mode.reply = { choices: [{ message: { content: 'A Companion note.' }, finish_reason: 'stop' }] };
+        app.provider.mode.hold = 'unused-named-model';
+        const account = await app.account({ phone, activeConnection: true,
+            contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings(settings) {
+                settings.oai_settings.stream_openai = true;
+                settings.extension_settings.inChatAgents = { globalSettings: { enabled: true, separateRecentChats: false,
+                    connectionProfile: 'durable', companionConcurrentWithPostGen: true } };
+            } });
+        if (phone) await installIPhoneSafari(account.context);
+        const native = owned(app);
+        await fs.mkdir(native.directories.inChatAgents, { recursive: true });
+        await fs.writeFile(path.join(native.directories.inChatAgents, 'edited-note.json'), JSON.stringify({
+            id: 'edited-note', name: 'Edited note', enabled: true, category: 'companion', execution: 'companion', prompt: 'Keep a note.',
+        }));
+        const locator = await savedChat(account, `Edited during Agents ${viewport}`);
+        let page = await account.open({ workspace: false, readyTimeout: 120000 });
+        await openChat(page, locator);
+        if (phone) await applyIOSOnlyCss(page);
+        const submitted = page.waitForResponse(acceptedSubmission);
+        await page.locator('#send_textarea').fill('Keep the answer if I edit another message.');
+        await startNativeReply(page);
+        const { jobId } = await (await submitted).json();
+        try {
+            await expect(page.locator('#neconyan-roleplay-preview')).toContainText('The server');
+            app.provider.mode.finishStream();
+            await expect.poll(() => app.provider.calls.length).toBe(2);
+            await expect(page.locator('#neconyan-roleplay-preview')).toContainText(ANSWER);
+            await page.evaluate(async () => {
+                const core = await import('/script.js');
+                core.chat[0].mes = 'Edited retained answer.';
+                await core.saveChat();
+            });
+            await page.close();
+            await app.release();
+            await terminal(account, jobId);
+            await expect.poll(() => readRoleplayChat(native.scope, locator).records.filter(row => row.mes === ANSWER).length).toBe(1);
+            const records = readRoleplayChat(native.scope, locator).records;
+            expect(records[1].mes).toBe('Edited retained answer.');
+            expect(records.at(-1).extra.reasoning).toBe('Keep this reasoning too.');
+            page = await account.open({ workspace: false, readyTimeout: 120000 });
+            await openChat(page, locator, 'Edited retained answer.');
+            await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
+            await page.reload({ waitUntil: 'domcontentloaded' });
+            await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: 120000 });
+            await openChat(page, locator, 'Edited retained answer.');
+            await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
+            expect(readRoleplayChat(native.scope, locator).records.filter(row => row.mes === ANSWER)).toHaveLength(1);
+        } finally {
+            app.provider.mode.finishStream?.();
+            await app.release();
+        }
+    });
+
+    test(`${viewport} streamed text paints promptly and steadily before completion`, async ({ app }, info) => {
+        app.provider.mode.streamReply = { first: 'First words', rest: ' Finished.' };
+        const account = await app.account({ phone, activeConnection: true,
+            contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings(settings) {
+                settings.oai_settings.stream_openai = true;
+            } });
+        if (phone) await installIPhoneSafari(account.context);
+        const locator = await savedChat(account, `Paint timing ${viewport}`);
+        const page = await account.open({ workspace: false, readyTimeout: 120000 });
+        await openChat(page, locator);
+        if (phone) await applyIOSOnlyCss(page);
+        await page.evaluate(() => {
+            window.replyPaints = [];
+            let previous = '';
+            const sample = () => {
+                const text = document.querySelector('#neconyan-roleplay-preview .mes_text')?.textContent || '';
+                if (text && text !== previous) {
+                    window.replyPaints.push({ text, at: Date.now() });
+                    previous = text;
+                }
+                window.replyPaintFrame = window.requestAnimationFrame(sample);
+            };
+            window.replyPaintFrame = window.requestAnimationFrame(sample);
+        });
+        const submitted = page.waitForResponse(acceptedSubmission);
+        await page.locator('#send_textarea').fill('Show each part as it arrives.');
+        await startNativeReply(page);
+        const { jobId } = await (await submitted).json();
+        try {
+            await expect.poll(() => page.evaluate(() => window.replyPaints.some(paint => paint.text.includes('First words')))).toBe(true);
+            const sent = [];
+            for (let index = 1; index <= 6; index++) {
+                const text = ` part${index}`;
+                sent.push({ text, at: Date.now() });
+                app.provider.mode.writeStream(text);
+                await delay(250);
+            }
+            await expect(page.locator('#neconyan-roleplay-preview')).toContainText('part6');
+            await expect.poll(() => page.evaluate(() => window.replyPaints.some(paint => paint.text.includes('part6')))).toBe(true);
+            const paints = await page.evaluate(() => window.replyPaints);
+            const firstPaintMs = paints.find(paint => paint.text.includes('First words')).at - app.provider.calls[0].firstTokenAt;
+            const chunkPaintMs = sent.map(chunk => paints.find(paint => paint.text.includes(chunk.text.trim())).at - chunk.at);
+            const timingPath = info.outputPath('stream-paint-timing.json');
+            await fs.writeFile(timingPath, JSON.stringify({ viewport, firstPaintMs, chunkPaintMs, paints, sent }, null, 2));
+            await info.attach('stream-paint-timing', { contentType: 'application/json', path: timingPath });
+            expect(firstPaintMs, 'First provider text reaches a foreground animation frame promptly').toBeLessThan(2000);
+            expect(Math.max(...chunkPaintMs), 'Each streamed part reaches a foreground animation frame promptly').toBeLessThan(1500);
+            expect(new Set(sent.map(chunk => paints.find(paint => paint.text.includes(chunk.text.trim())).at)).size).toBeGreaterThanOrEqual(3);
+            expect(app.provider.calls[0].completedAt).toBeNull();
+            app.provider.mode.finishStream();
+            await account.settled(jobId);
+            await expect(page.locator('#chat .mes').last()).toContainText('part6 Finished.');
+        } finally {
+            await page.evaluate(() => window.cancelAnimationFrame(window.replyPaintFrame));
+            app.provider.mode.finishStream?.();
+            await app.release();
+        }
+    });
 
     test(`${viewport} leaving before the first token submits without a paint and finishes with the page frozen`, async ({ app }) => {
         app.provider.mode.hold = 'conversation-fixture';

@@ -524,6 +524,8 @@ test('cancelling a root interrupts a running vector grandchild before another st
         await ready;
         const response = await request('POST', `/api/jobs/${root.id}/cancel`);
         assert.equal(response.status, 200);
+        assert.equal(getJob(aliceDirs, root.id).state, 'cancelled',
+            'a vector grandchild never defers the reply root terminal state');
         await running;
         assert.equal(aborted, true);
         assert.equal(getJob(aliceDirs, vectors.id).state, 'cancelled');

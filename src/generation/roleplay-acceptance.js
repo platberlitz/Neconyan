@@ -19,13 +19,14 @@ import { roleplayAccountBase, saveRoleplayAccount, withRoleplayAccount } from '.
 import { getJob, releaseJob } from '../jobs/store.js';
 import { captureRoleplaySourceFromSavedChatLocked, readRoleplayChatLocked } from './roleplay-source.js';
 import { captureGenerationBinding, getChatProfileContextLimit } from './profiles.js';
-import { readNativeMediaJobResultForOwner } from './media-jobs.js';
+import { readNativeMediaJobPublicationForOwner, readNativeMediaJobResultForOwner } from './media-jobs.js';
 import { captureRoleplayNamedWorkflow, ROLEPLAY_WORKFLOW_NAMES } from './roleplay-workflow-named.js';
 import { admitRoleplayWorkflowJob, captureRoleplayWorkflowRequest, MAX_WORKFLOW_TOKENS } from './roleplay-workflow.js';
 import { closeUnstartedRoleplayWorkflow } from './roleplay-workflow-cancellation.js';
 import { admitAgentJob, captureAgentRequest } from './agent-jobs.js';
 import { normalizeBrowserMacroNames } from '../macros/browser-only.js';
 import { getRoleplaySourceMessageRevision } from '../../public/scripts/neconyan-conversation/roleplay-source.js';
+import { readRoleplayKeptReply, reconcileRoleplayKeptReplyFamily, roleplayKeptReplyPending, ROLEPLAY_REPLY_CAPABILITY } from './roleplay-kept-reply.js';
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const MAX_KEY_LENGTH = 256;
@@ -284,6 +285,7 @@ export async function acceptRoleplayNamedWorkflow(request, body = {}) {
     return { key: submission.key, name: submission.name, jobId: accepted.jobId ?? null,
         created: accepted.created !== false, state: accepted.state ?? null,
         ...(accepted.result ? { result: accepted.result } : {}),
+        capabilities: { ...ROLEPLAY_REPLY_CAPABILITY },
         write: { instanceId: captured.source.instanceId, revision: captured.source.revision } };
 }
 
@@ -356,6 +358,7 @@ export async function acceptRoleplayGroupTurn(request, body = {}) {
     return { key: submission.key, name: 'group.reply', jobId: accepted.jobId ?? null,
         created: accepted.created !== false, state: accepted.state ?? null,
         ...(accepted.result ? { result: accepted.result } : {}),
+        capabilities: { ...ROLEPLAY_REPLY_CAPABILITY },
         write: { instanceId: source.instanceId, revision: source.revision } };
 }
 
@@ -437,6 +440,14 @@ export function readRoleplayWorkflowReceipt(request, key) {
     if (receipt?.state === 'accepted' && closeUnstartedRoleplayWorkflow({ ...base, job: getJob(base.directories, receipt.jobId) })) {
         receipt = readNativeMediaJobResultForOwner(base, { operationKey });
     }
+    if (receipt?.jobId && roleplayKeptReplyPending({ directories: base.directories, jobId: receipt.jobId })) {
+        try { reconcileRoleplayKeptReplyFamily({ directories: base.directories, owner: base.owner, jobId: receipt.jobId }); } catch { /* Readback still reports pending. */ }
+    }
+    const publication = readNativeMediaJobPublicationForOwner(base, { operationKey });
     return { key: operationKey, accepted: Boolean(receipt), state: receipt?.state ?? null,
-        jobId: receipt?.jobId ?? null, result: receipt?.result ?? null };
+        jobId: receipt?.jobId ?? null, result: receipt?.result ?? null,
+        publication: publication?.publication ?? 'none',
+        capabilities: { ...ROLEPLAY_REPLY_CAPABILITY },
+        keptReply: receipt?.jobId ? readRoleplayKeptReply({ directories: base.directories, jobId: receipt.jobId }) : null,
+        keptReplyPending: receipt?.jobId ? roleplayKeptReplyPending({ directories: base.directories, jobId: receipt.jobId }) : false };
 }

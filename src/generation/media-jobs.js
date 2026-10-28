@@ -176,6 +176,22 @@ export function readNativeMediaJobResultForOwner(base, { operationKey } = {}) {
     });
 }
 
+/**
+ * Publication state for a readback that must not fail just because an effect is
+ * still uncertain. `none` means no normal chat write has started.
+ */
+export function readNativeMediaJobPublicationForOwner(base, { operationKey } = {}) {
+    if (typeof operationKey !== 'string' || !operationKey || operationKey.length > 256) return null;
+    return withRoleplayAccount(base, null, (lease, account) => {
+        const { value } = readReceipt(receiptPath(base, account, operationKey));
+        if (!value || roleplayHash(value.account) !== roleplayHash(stamp(account))) return null;
+        const effects = Object.values(value.effects ?? {});
+        return { state: value.state, jobId: value.jobId ?? null,
+            publication: effects.some(effect => effect.state === 'done') ? 'done'
+                : effects.some(effect => effect.state === 'writing') ? 'writing' : 'none' };
+    });
+}
+
 export function finishNativeMediaJob(context, result, { checkSource = true, checkLocked } = {}) {
     if (Buffer.byteLength(JSON.stringify(result)) > 128 * 1024) throw fail('The media result record is too large.', 'MEDIA_INVALID');
     roleplayHash(result);

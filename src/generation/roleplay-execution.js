@@ -53,8 +53,9 @@ import { stageBoundModelToolCalls } from './roleplay-tool-dispatch.js';
 import { createRoleplayStreamPreview, publishRoleplayPreview } from './roleplay-preview.js';
 import { applyRoleplayVectorFiles, prepareRoleplayVectors } from './roleplay-vectors.js';
 import { prepareRoleplayNoteContext, prepareRoleplayNotebooks } from '../notebooks/context.js';
-import { markRoleplayAgentsFailed, roleplayAgentsStopped, roleplayAgentsStoppedByOwner } from './roleplay-agent-stop.js';
+import { isRoleplayAgentStop, markRoleplayAgentsFailed, roleplayAgentsStopped, roleplayAgentsStoppedByOwner, withRoleplayAgentStop } from './roleplay-agent-stop.js';
 import { assertRoleplayBundledMacrosCaptured } from './roleplay-bundled-macros.js';
+import { preserveInterruptedRoleplayReply, recordRoleplayMainReplyComplete } from './roleplay-kept-reply.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
 const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
@@ -114,7 +115,7 @@ function replyOutput(result, effect, name, material) {
 }
 
 /** A private worker for a fully admitted, paused Roleplay job; browser cutover is a later stage. */
-export async function runRoleplayReplyJob(context, { generate = runChatProfile, host = roleplayNativeHost,
+async function executeRoleplayReplyJob(context, { generate = runChatProfile, host = roleplayNativeHost,
     worldInfoHooks, modelCatalogue, contextLimit = getChatProfileContextLimit, promptBackend = resolveGenerationProfile,
     generatePathfinder, translationFetch, captionFetch, localCaption, captionWait, speechDependencies, generateAgent, agentRandom,
     freshnessGate = createFreshnessGate, startMemoryProcessing = startProcessing } = {}) {
@@ -179,6 +180,14 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         let output = replyOutput(result, effect, request.characterName, result.generation);
         let reply = output.message ?? output.messages?.[0] ?? output;
         if (blocked) reply.extra.generation_outcome = blocked;
+        // The paid main reply is complete from here on. A late Stop turns into
+        // a soft stop for optional postprocessing instead of cancelling text
+        // that is already paid for. A marker failure must not lose the reply.
+        if (!blocked) {
+            try { recordRoleplayMainReplyComplete(context, output); } catch (markerError) {
+                console.warn('[Roleplay] The completed reply marker could not be saved.', markerError?.message ?? markerError);
+            }
+        }
         // Tell the reader the main reply finished before macro hashing, token
         // counting or any Agent preparation takes the event loop. Pending cards
         // are a display prediction built from the same eligibility rule the run
@@ -408,13 +417,18 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         if (!blocked && request.worldInfo?.translation && !roleplayAgentsStoppedByOwner(context)) {
             publishRoleplayPreview(context, { stage: 'translating' });
             try {
-                await translateIncomingRoleplayOutput(context, { base, snapshot: request.worldInfo,
-                    effect: { type: effect }, output, assertSource, fetchImpl: translationFetch ?? fetch });
+                await withRoleplayAgentStop(context, scoped => translateIncomingRoleplayOutput(scoped, { base, snapshot: request.worldInfo,
+                    effect: { type: effect }, output, assertSource, fetchImpl: translationFetch ?? fetch }), { ownerOnly: true });
             } catch (error) {
                 // The main reply is already paid for. Translation is an optional
-                // presentation layer, so its failure must not discard it.
+                // presentation layer, so its failure - including a deliberate
+                // Stop - must not discard it.
                 if (signal.aborted) throw error;
-                console.warn('[Roleplay] Translation failed after the reply finished; saving the reply without it.', error?.message ?? error);
+                if (isRoleplayAgentStop(error) || roleplayAgentsStoppedByOwner(context)) {
+                    console.info('[Roleplay] Translation stopped by the owner; saving the completed reply without it.');
+                } else {
+                    console.warn('[Roleplay] Translation failed after the reply finished; saving the reply without it.', error?.message ?? error);
+                }
             }
         }
         if (!blocked && request.worldInfo?.speech && !roleplayAgentsStoppedByOwner(context)) {
@@ -423,16 +437,20 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 const speechRecords = assertSource().records;
                 const message = output.message ?? output.messages?.[0] ?? output;
                 const text = effect === 'continue' ? output.continuedText ?? String(speechRecords[source.message.index + 1].mes ?? '') + output.text : message.mes ?? output.text;
-                const narration = await generateSavedSpeech(context, { effectId: 'roleplay', policy: request.worldInfo.speech, account,
+                const narration = await withRoleplayAgentStop(context, scoped => generateSavedSpeech(scoped, { effectId: 'roleplay', policy: request.worldInfo.speech, account,
                     text, displayText: message.extra?.display_text || '', speaker: { name: request.characterName, avatar: request.worldInfo.avatar },
                     snapshot: { macros: savedRoleplayMacroSnapshot(request.worldInfo, selectRoleplayPromptRecords(speechRecords, source, effect)) },
                     assertSourceLocked: lease => assertRoleplaySourceLocked(lease, source, { effect }),
-                }, speechDependencies);
+                }, speechDependencies), { ownerOnly: true });
                 if (narration) message.extra = { ...message.extra, server_narration: narration };
             } catch (error) {
                 // Speech is optional too; a failed narration keeps the reply.
                 if (signal.aborted) throw error;
-                console.warn('[Roleplay] Speech failed after the reply finished; saving the reply without it.', error?.message ?? error);
+                if (isRoleplayAgentStop(error) || roleplayAgentsStoppedByOwner(context)) {
+                    console.info('[Roleplay] Speech stopped by the owner; saving the completed reply without it.');
+                } else {
+                    console.warn('[Roleplay] Speech failed after the reply finished; saving the reply without it.', error?.message ?? error);
+                }
             }
         }
         if (selection && roleplayHash({ sticky: {}, cooldown: {}, ...request.worldInfo.metadata.timedWorldInfo }) !== roleplayHash(selection.timedWorldInfo)) {
@@ -1230,6 +1248,20 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
     // the state before dispatch and recover it from their saved request.
     if (readArtifact(directories, job.id, 'roleplay-macro-commit') === undefined) prepareRoleplayMacroCommit(context, macroEnvironment.captureState());
     return finish(result, worldInfo);
+}
+
+export async function runRoleplayReplyJob(context, options = {}) {
+    try {
+        return await executeRoleplayReplyJob(context, options);
+    } catch (error) {
+        // The server is the single writer for a stopped or failed reply. Keep
+        // the longest paid text before the terminal job state can remove the
+        // display preview; the original failure still owns the job status.
+        try { preserveInterruptedRoleplayReply(context, error); } catch (keepError) {
+            console.warn('[Roleplay] The stopped reply could not be preserved.', keepError?.message ?? keepError);
+        }
+        throw error;
+    }
 }
 
 export function registerRoleplayReplyJob(options = {}) {

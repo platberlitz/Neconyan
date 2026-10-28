@@ -1,6 +1,7 @@
 import { getJob, providerRecoverySteps, TERMINAL_STATES } from '../jobs/store.js';
 import { roleplayHash } from '../roleplay-store.js';
 import { withNativeMediaReceipt } from './media-jobs.js';
+import { readRoleplayKeptReply } from './roleplay-kept-reply.js';
 
 /**
  * Release an earlier reply's claim on a chat once it can no longer run or write.
@@ -21,7 +22,8 @@ export function releaseStoppedRoleplayWorkflow({ owner, directories }) {
         } else if (!value.jobId) {
             return null;
         }
-        return { stopped: true, chatChanged: Object.keys(value.effects).length > 0 };
+        const kept = job ? readRoleplayKeptReply({ directories, jobId: job.id }) : null;
+        return { stopped: true, chatChanged: Object.keys(value.effects).length > 0 || kept?.state === 'done' };
     };
 }
 

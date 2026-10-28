@@ -348,6 +348,274 @@ describe('a reply the server did not save stays in the chat', () => {
         expect(await stopWith('roleplay.reply', 'cancelled', null)).toBe(0);
         expect(chat).toHaveLength(2);
     });
+
+    test('a server kept reply is reloaded and the page never saves its stale preview', async () => {
+        const accepted = await workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' });
+        await waitFor(() => previews.has(accepted.jobId));
+        const stop = previews.get(accepted.jobId).stop;
+        stop.reply = jest.fn(() => shown('Half a reply'));
+        receiptHandler = () => response(200, { key: 'k', accepted: true, state: 'accepted', jobId: accepted.jobId,
+            result: null, capabilities: { keptReply: 1 }, keptReply: { state: 'done', messageIndex: 3, reason: 'stopped' } });
+        const savesBefore = saved.length;
+        const reloadsBefore = reloads.length;
+        await observers.get(accepted.jobId).onSnapshot({ state: 'cancelled', error: { message: 'The reply was stopped.' } });
+        await waitFor(() => reloads.length > reloadsBefore);
+        expect(await accepted.finished).toBeNull();
+        expect(stop.reply).not.toHaveBeenCalled();
+        expect(saved).toHaveLength(savesBefore);
+        expect(addOneMessage).not.toHaveBeenCalled();
+        expect(reloads.length).toBeGreaterThan(reloadsBefore);
+    });
+
+    test('a keeper still writing is awaited before the page decides the reply is lost', async () => {
+        const accepted = await workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' });
+        await waitFor(() => previews.has(accepted.jobId));
+        const stop = previews.get(accepted.jobId).stop;
+        stop.reply = jest.fn(() => shown('Half a reply'));
+        let calls = 0;
+        receiptHandler = () => {
+            calls += 1;
+            return response(200, { key: 'k', accepted: true, state: 'accepted', jobId: accepted.jobId, result: null,
+                capabilities: { keptReply: 1 },
+                keptReply: calls === 1 ? null : { state: 'done', messageIndex: 3, reason: 'stopped' },
+                keptReplyPending: calls === 1 });
+        };
+        const savesBefore = saved.length;
+        const reloadsBefore = reloads.length;
+        await observers.get(accepted.jobId).onSnapshot({ state: 'cancelled', error: { message: 'The reply was stopped.' } });
+        await waitFor(() => reloads.length > reloadsBefore);
+        expect(calls).toBeGreaterThanOrEqual(2);
+        expect(stop.reply).not.toHaveBeenCalled();
+        expect(saved).toHaveLength(savesBefore);
+        expect(reloads.length).toBeGreaterThan(reloadsBefore);
+    });
+
+    test('a submission that advertised the keeper never saves its preview when the receipt read fails', async () => {
+        submitHandler = async body => response(202, { key: body.key, jobId: 'job-keeper', created: true,
+            capabilities: { keptReply: 1 } });
+        const pending = workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' });
+        await waitFor(() => previews.has('job-keeper'));
+        const stop = previews.get('job-keeper').stop;
+        stop.reply = jest.fn(() => shown('Half a reply'));
+        stop.hasText = () => true;
+        receiptHandler = () => response(503, { error: 'Receipt temporarily unavailable.' });
+        const savesBefore = saved.length;
+        const reloadsBefore = reloads.length;
+        await observers.get('job-keeper').onSnapshot({ state: 'cancelled', error: { message: 'The reply was stopped.' } });
+        await waitFor(() => reloads.length > reloadsBefore, 6000);
+        await pending;
+        expect(stop.reply).not.toHaveBeenCalled();
+        expect(saved).toHaveLength(savesBefore);
+        expect(reloads.length).toBeGreaterThan(reloadsBefore);
+        expect(globalThis.toastr.error).not.toHaveBeenCalled();
+    });
+
+    test('a kept failed reply still shows the real reason and says the text was saved', async () => {
+        const accepted = await workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' });
+        await waitFor(() => previews.has(accepted.jobId));
+        const stop = previews.get(accepted.jobId).stop;
+        stop.reply = jest.fn(() => shown('Half a reply'));
+        receiptHandler = () => response(200, { key: 'k', accepted: true, state: 'accepted', jobId: accepted.jobId,
+            result: null, capabilities: { keptReply: 1 }, keptReply: { state: 'done', messageIndex: 3, reason: 'failed' } });
+        const savesBefore = saved.length;
+        await observers.get(accepted.jobId).onSnapshot({ state: 'failed',
+            error: { message: 'The connection to your model provider closed.' } });
+        await waitFor(() => globalThis.toastr.error.mock.calls.length > 0);
+        expect(stop.reply).not.toHaveBeenCalled();
+        expect(saved).toHaveLength(savesBefore);
+        expect(globalThis.toastr.error).toHaveBeenCalledTimes(1);
+        const [message, title] = globalThis.toastr.error.mock.calls[0];
+        expect(title).toBe('Reply failed');
+        expect(message).toContain('The connection to your model provider closed.');
+        expect(message).toContain('saved in this chat');
+    });
+
+    test('a kept cancellation stays quiet', async () => {
+        const accepted = await workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' });
+        await waitFor(() => previews.has(accepted.jobId));
+        const stop = previews.get(accepted.jobId).stop;
+        stop.reply = jest.fn(() => shown('Half a reply'));
+        receiptHandler = () => response(200, { key: 'k', accepted: true, state: 'accepted', jobId: accepted.jobId,
+            result: null, capabilities: { keptReply: 1 }, keptReply: { state: 'done', messageIndex: 3, reason: 'stopped' } });
+        await observers.get(accepted.jobId).onSnapshot({ state: 'cancelled', error: { message: 'The reply was stopped.' } });
+        await waitFor(() => reloads.length > 0);
+        expect(stop.reply).not.toHaveBeenCalled();
+        expect(globalThis.toastr.error).not.toHaveBeenCalled();
+    });
+
+    test('a restart interruption keeps the page preview only when no publication or keeper text exists', async () => {
+        const accepted = await workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' });
+        await waitFor(() => previews.has(accepted.jobId));
+        const stop = previews.get(accepted.jobId).stop;
+        stop.reply = jest.fn(() => shown('Half a reply'));
+        receiptHandler = () => response(200, { key: 'k', accepted: true, state: 'accepted', jobId: accepted.jobId,
+            result: null, publication: 'none', capabilities: { keptReply: 1 }, keptReply: null, keptReplyPending: false });
+        const savesBefore = saved.length;
+        await observers.get(accepted.jobId).onSnapshot({ state: 'interrupted',
+            error: { message: 'The server stopped before this reply finished.' } });
+        await waitFor(() => saved.length > savesBefore);
+        expect(chat.at(-1).mes).toBe('Half a reply');
+    });
+
+    test('a restart interruption with a normal publication never saves the page preview', async () => {
+        const accepted = await workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' });
+        await waitFor(() => previews.has(accepted.jobId));
+        const stop = previews.get(accepted.jobId).stop;
+        stop.reply = jest.fn(() => shown('Half a reply'));
+        receiptHandler = () => response(200, { key: 'k', accepted: true, state: 'accepted', jobId: accepted.jobId,
+            result: null, publication: 'done', capabilities: { keptReply: 1 }, keptReply: null, keptReplyPending: false });
+        const savesBefore = saved.length;
+        await observers.get(accepted.jobId).onSnapshot({ state: 'interrupted',
+            error: { message: 'The server stopped before this reply finished.' } });
+        await waitFor(() => reloads.length > 0);
+        expect(stop.reply).not.toHaveBeenCalled();
+        expect(saved).toHaveLength(savesBefore);
+    });
+
+    test('a kept reply whose reload was deferred while hidden is shown on return', async () => {
+        const accepted = await workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' });
+        await waitFor(() => previews.has(accepted.jobId));
+        const stop = previews.get(accepted.jobId).stop;
+        stop.reply = jest.fn(() => shown('Half a reply'));
+        receiptHandler = () => response(200, { key: 'k', accepted: true, state: 'accepted', jobId: accepted.jobId,
+            result: null, capabilities: { keptReply: 1 }, keptReply: { state: 'done', messageIndex: 3, reason: 'stopped' } });
+        const reloadsBefore = reloads.length;
+        globalThis.document.visibilityState = 'hidden';
+        await observers.get(accepted.jobId).onSnapshot({ state: 'cancelled', error: null });
+        await settle();
+        expect(reloads).toHaveLength(reloadsBefore);
+        globalThis.document.visibilityState = 'visible';
+        await workflows.resumeNativeRoleplayWorkflowObservation({ attachOnly: true });
+        await waitFor(() => reloads.length > reloadsBefore);
+        expect(stop.reply).not.toHaveBeenCalled();
+    });
+
+    test('a kept failure while hidden shows exactly one notice on return', async () => {
+        const accepted = await workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' });
+        await waitFor(() => previews.has(accepted.jobId));
+        const stop = previews.get(accepted.jobId).stop;
+        stop.reply = jest.fn(() => shown('Half a reply'));
+        receiptHandler = () => response(200, { key: 'k', accepted: true, state: 'accepted', jobId: accepted.jobId,
+            result: null, capabilities: { keptReply: 1 }, keptReply: { state: 'done', messageIndex: 3, reason: 'failed' } });
+        globalThis.document.visibilityState = 'hidden';
+        await observers.get(accepted.jobId).onSnapshot({ state: 'failed',
+            error: { message: 'The connection to your model provider closed.' } });
+        await settle();
+        expect(globalThis.toastr.error).not.toHaveBeenCalled();
+        globalThis.document.visibilityState = 'visible';
+        await workflows.resumeNativeRoleplayWorkflowObservation({ attachOnly: true });
+        await waitFor(() => globalThis.toastr.error.mock.calls.length === 1);
+        expect(globalThis.toastr.error.mock.calls[0][0]).toContain('saved in this chat');
+        await settle();
+        expect(globalThis.toastr.error).toHaveBeenCalledTimes(1);
+    });
+
+    test('a stop before the first token does not reload or lock the chat', async () => {
+        const accepted = await workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' });
+        await waitFor(() => previews.has(accepted.jobId));
+        const stop = previews.get(accepted.jobId).stop;
+        stop.hasText = () => false;
+        receiptHandler = () => response(200, { key: 'k', accepted: true, state: 'accepted', jobId: accepted.jobId,
+            result: null, capabilities: { keptReply: 1 }, keptReply: null, keptReplyPending: false });
+        const reloadsBefore = reloads.length;
+        const savesBefore = saved.length;
+        await observers.get(accepted.jobId).onSnapshot({ state: 'cancelled', error: null });
+        await accepted.finished;
+        expect(reloads).toHaveLength(reloadsBefore);
+        expect(saved).toHaveLength(savesBefore);
+        expect(globalThis.toastr.error).not.toHaveBeenCalled();
+    });
+
+    test('a reattached preview subscribes before its capability probe returns', async () => {
+        listJobs.mockResolvedValue([{ id: 'probing', type: 'media.roleplay-workflow', state: 'running',
+            intent: { media: { operationKey: 'key-probing' }, source: { locator: { chat: 'roleplay', avatar: 'nova.png', group: false } },
+                request: { named: { name: 'roleplay.reply' } } } }]);
+        let release;
+        receiptHandler = () => new Promise(resolve => { release = () => resolve(response(200, {
+            accepted: true, state: 'accepted', jobId: 'probing', result: null, capabilities: { keptReply: 1 } })); });
+        const resumed = workflows.resumeNativeRoleplayWorkflowObservation();
+        await waitFor(() => observers.has('probing'));
+        expect(observers.has('probing')).toBe(true);
+        release();
+        await resumed;
+        await settle();
+    });
+
+    test('a reattached observer learns the keeper capability before a failed receipt read', async () => {
+        listJobs.mockResolvedValue([{ id: 'reattached', type: 'media.roleplay-workflow', state: 'running',
+            intent: { media: { operationKey: 'key-reattached' }, source: { locator: { chat: 'roleplay', avatar: 'nova.png', group: false } },
+                request: { named: { name: 'roleplay.reply' } } } }]);
+        let receiptCalls = 0;
+        let releaseProbe;
+        receiptHandler = () => {
+            receiptCalls += 1;
+            if (receiptCalls === 1) return new Promise(resolve => { releaseProbe = () => resolve(response(200, {
+                accepted: true, state: 'accepted', jobId: 'reattached', result: null, capabilities: { keptReply: 1 } })); });
+            return response(503, { error: 'Receipt temporarily unavailable.' });
+        };
+        await workflows.resumeNativeRoleplayWorkflowObservation();
+        expect(observers.has('reattached')).toBe(true);
+        await waitFor(() => previews.has('reattached'));
+        const display = previews.get('reattached');
+        display.stop.reply = jest.fn(() => ({ name: 'Nova', avatar: 'nova.png', text: 'Half a reply',
+            send_date: '2026-10-27T10:00:00.000Z', gen_started: '2026-10-27T10:00:00.000Z',
+            gen_finished: '2026-10-27T10:00:05.000Z', extra: {} }));
+        display.hasText = () => true;
+        const savesBefore = saved.length;
+        const terminal = observers.get('reattached').onSnapshot({ state: 'failed',
+            error: { message: 'The connection to your model provider closed.' } });
+        await settle();
+        expect(releaseProbe).toBeDefined();
+        releaseProbe();
+        await terminal;
+        await waitFor(() => reloads.length > 0, 6000);
+        expect(display.stop.reply).not.toHaveBeenCalled();
+        expect(saved).toHaveLength(savesBefore);
+    });
+
+    test('a keeper failure is reported without saving the preview', async () => {
+        const accepted = await workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' });
+        await waitFor(() => previews.has(accepted.jobId));
+        const stop = previews.get(accepted.jobId).stop;
+        stop.reply = jest.fn(() => shown('Half a reply'));
+        receiptHandler = () => response(200, { key: 'k', accepted: true, state: 'accepted', jobId: accepted.jobId,
+            result: null, capabilities: { keptReply: 1 },
+            keptReply: { state: 'failed', messageIndex: null, reason: 'stopped', error: { code: 'ROLEPLAY_STORE_FULL', message: 'The saved store is full.' } } });
+        const savesBefore = saved.length;
+        await observers.get(accepted.jobId).onSnapshot({ state: 'failed', error: { message: 'The reply failed.' } });
+        await waitFor(() => globalThis.toastr.error.mock.calls.some(([, title]) => title === 'Reply failed'));
+        expect(stop.reply).not.toHaveBeenCalled();
+        expect(saved).toHaveLength(savesBefore);
+        expect(globalThis.toastr.error).toHaveBeenCalledWith(expect.stringContaining('Neconyan still has the text saved'), 'Reply failed');
+    });
+
+    test('a saved longer server tail is never duplicated by a stale preview', async () => {
+        const accepted = await workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' });
+        await waitFor(() => previews.has(accepted.jobId));
+        const stop = previews.get(accepted.jobId).stop;
+        stop.reply = () => shown('Half a reply');
+        reloadHandler = () => { chat.push({ name: 'Nova', is_user: false, mes: 'Half a reply, complete',
+            gen_started: '2026-10-27T10:00:00.000Z', extra: { model: 'model-a' } }); };
+        const savesBefore = saved.length;
+        await observers.get(accepted.jobId).onSnapshot({ state: 'cancelled', error: { message: 'The reply was stopped.' } });
+        await waitFor(() => chat.length === 3);
+        expect(await accepted.finished).toBeNull();
+        expect(chat.filter(message => String(message.mes).startsWith('Half a reply'))).toHaveLength(1);
+        expect(chat[2].mes).toBe('Half a reply, complete');
+        expect(saved).toHaveLength(savesBefore);
+    });
+
+    test('a different generation with similar opening text is not treated as the same reply', async () => {
+        const accepted = await workflows.submitRoleplayWorkflow({ name: 'roleplay.reply' });
+        await waitFor(() => previews.has(accepted.jobId));
+        const stop = previews.get(accepted.jobId).stop;
+        stop.reply = () => shown('Half a reply');
+        reloadHandler = () => { chat.push({ name: 'Nova', is_user: false, mes: 'Half a reply, complete',
+            gen_started: '2026-10-27T09:00:00.000Z', extra: { model: 'model-a' } }); };
+        await observers.get(accepted.jobId).onSnapshot({ state: 'cancelled', error: { message: 'The reply was stopped.' } });
+        await waitFor(() => chat.length === 4);
+        expect(chat[3].mes).toBe('Half a reply');
+    });
 });
 
 test('a refused replacement restores the same display without changing the saved source', async () => {
@@ -385,7 +653,7 @@ test.each(['failed', 'interrupted', 'conflict', 'cancelled'].flatMap(state => [
         await observation.onSnapshot(snapshot);
     }
     await expect(pending).resolves.toBeNull();
-    expect(requests.filter(entry => entry.url.includes('/workflow/receipt'))).toHaveLength(0);
+    expect(requests.filter(entry => entry.url.includes('/workflow/receipt'))).toHaveLength(1);
     expect(display.stop).toHaveBeenCalledTimes(1);
     expect(globalThis.toastr.error).toHaveBeenCalledTimes(message ? 1 : 0);
     expect(reloads).toHaveLength(0);
@@ -942,6 +1210,17 @@ test('a busy native lane keeps the browser path unless the host already committe
     await first;
 });
 
+test('opening another chat detaches the page without cancelling the running workflow', async () => {
+    submitHandler = async body => response(202, { key: body.key, jobId: 'job-detached', created: true });
+    const pending = workflows.runNativeRoleplayGeneration('normal', { committed: true });
+    await waitFor(() => requests.some(entry => entry.url.endsWith('/workflow/submit')));
+    currentChatId = 'another-chat';
+    await eventSource.emit(event_types.CHAT_CHANGED, 'another-chat');
+    await expect(pending).resolves.toMatchObject({ native: true, state: 'detached', detached: true });
+    expect(cancelJob).not.toHaveBeenCalled();
+    await observers.get('job-detached').onStop('done');
+});
+
 test('stopping the host generation cancels the accepted workflow instead of leaving it running', async () => {
     const controller = new AbortController();
     const pending = workflows.runNativeRoleplayGeneration('regenerate', { committed: true, signal: controller.signal });
@@ -1004,7 +1283,7 @@ test('chat-open discovery after idempotent init attaches to a running workflow, 
     jobControls.mock.calls.at(-1)[1]();
     expect(cancelJob).toHaveBeenCalledWith('running-on-open', { account: 'alice', reason: 'user_cancelled' });
     expect(listJobs).toHaveBeenCalledTimes(2);
-    expect(requests.filter(entry => entry.url.includes('/workflow/receipt'))).toHaveLength(0);
+    expect(requests.filter(entry => entry.url.includes('/workflow/receipt'))).toHaveLength(1);
     expect(reloads).toEqual([]);
 
     // The completion reload emits CHAT_CHANGED itself; discovery must not run redundantly during that reload.
@@ -1434,7 +1713,8 @@ test.each([
     // Chat switch attaches only to the running group job and skips finished-job readback.
     await groupWorkflows.resumeNativeRoleplayWorkflowObservation({ attachOnly: true });
     expect(observers.has('group-running')).toBe(shouldMatch);
-    expect(requests.filter(entry => entry.url.includes('/workflow/receipt'))).toHaveLength(0);
+    // One capability probe accompanies a new attachment; it never reads back a result.
+    expect(requests.filter(entry => entry.url.includes('/workflow/receipt'))).toHaveLength(shouldMatch ? 1 : 0);
     expect(reloads).toEqual([]);
 
     // Visible/return discovery reads back the finished group job for the matching group.

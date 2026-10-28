@@ -42,9 +42,10 @@ function hasUnfinishedReasoning(preview) {
 }
 
 /**
- * Display only: the preview itself never enters the chat array or a chat save.
- * `stop.reply()` hands its last text to the observer, which keeps a reply the
- * server stopped or refused to write instead of letting it vanish.
+ * Display only: the preview node itself never enters the chat array or a chat
+ * save. `stop.reply()` hands its last text to the observer, which may keep a
+ * reply when the server reports no keeper text (an older server or a retryable
+ * restart), instead of letting the visible text vanish.
  */
 export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, onStage, name, messageIndex }) {
     let node = null;
@@ -356,5 +357,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         return { name: latest.name || 'Reply', avatar: latest.avatar || '', text: latest.text, send_date: sentAt,
             gen_started: latest.gen_started || sentAt, gen_finished: latest.gen_finished || new Date(receivedAt || Date.now()).toISOString(), extra };
     };
+    // Whether anything was shown, without exposing the text to a fallback save.
+    stop.hasText = () => Boolean(latest && /\S/.test(latest.text || ''));
     return stop;
 }
