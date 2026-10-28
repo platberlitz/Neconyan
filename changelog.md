@@ -8,6 +8,7 @@
 - PR #287 (2026-10-24) `fix(storage): prevent false authoring save conflicts on exfat drives`
 - PR #289 (2026-10-24) `fix(generation): stop agents when a provider ends a reply with an error`
 - PR #312 (2026-10-27) `fix(sync): repair legacy data for github folder sync`
+- PR #322 (2026-10-28) `feat(mewmory): add recent-message windows and clearer controls`
 
 ## v1.3.8
 
