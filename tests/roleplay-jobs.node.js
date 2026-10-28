@@ -200,6 +200,49 @@ test('a browser save also returns the room held by stopped replies when the stor
     assert.equal(getJob(f.scope.directories, live.jobId).state, 'waiting');
 });
 
+test('every save trims old receipts but keeps finished job results, open replies and recent saves', async t => {
+    const f = fixture(t);
+    const { withRoleplayAccountLock, roleplayLease, saveRoleplayAccount } = await import('../src/roleplay-store.js');
+    const { commitSingleChatWrite } = await import('../src/roleplay-lifecycle.js');
+    const { randomUUID } = await import('node:crypto');
+    const save = operationKey => {
+        const records = [...readRoleplayChat(f.scope, f.locator).records, { name: 'Nova', is_user: false, mes: operationKey }];
+        return commitSingleChatWrite(f.scope, { operationKey, mode: 'update', source: f.source(), records, backup: { deferBackup: true } }, host);
+    };
+    const finished = admit(f, 'finished', 'append');
+    applyRoleplayJobEffect(f.scope, stamp(f.scope), { operationKey: 'finished', jobId: finished.jobId, output: { message: { mes: 'Done' } } }, host);
+    const stopped = admit(f, 'stopped', 'append');
+    requestCancellation(f.scope.directories, stopped.jobId);
+    voidRoleplayJob(f.scope, stamp(f.scope), { operationKey: 'stopped', jobId: stopped.jobId });
+    admit(f, 'live', 'append');
+    save('browser');
+    const browserKey = roleplayHash([f.scope.accountId, 'chat-write', 'browser']);
+    const forge = (prefix, count, receipt) => Array.from({ length: count }, (_, index) => [roleplayHashFor(f, `${prefix}-${index}`), receipt()]);
+    let oldSaves, goneJobs, recentSaves;
+    withRoleplayAccountLock(f.scope, lease => {
+        const { state } = roleplayLease(lease);
+        const write = structuredClone(state.submissions[browserKey]);
+        for (const effect of Object.values(write.effects)) delete effect.cleanup;
+        // Every forged save sits at the chat's current revision, so only its age can drop it.
+        oldSaves = forge('old-save', 40, () => structuredClone(write));
+        goneJobs = forge('gone-job', 20, () => ({ accountId: state.accountId, dataEpoch: state.dataEpoch, intentHash: 'a'.repeat(64),
+            jobId: randomUUID(), targetInstanceId: write.targetInstanceId, state: 'void', reservedReceiptBytes: 0, effects: {} }));
+        recentSaves = forge('recent-save', 511, () => structuredClone(write));
+        for (const [keyHash, receipt] of [...oldSaves, ...goneJobs, ...recentSaves]) state.submissions[keyHash] = receipt;
+        saveRoleplayAccount(lease);
+    });
+    save('after');
+    const submissions = readRoleplayAccount(f.scope).submissions;
+    assert.equal(submissions[browserKey], undefined);
+    assert.ok([...oldSaves, ...goneJobs].every(([keyHash]) => submissions[keyHash] === undefined));
+    assert.ok(recentSaves.every(([keyHash]) => submissions[keyHash]));
+    assert.equal(submissions[roleplayHashFor(f, 'finished')].state, 'closed');
+    // A stopped reply still in the job list keeps its receipt until the list forgets the job.
+    assert.equal(submissions[roleplayHashFor(f, 'stopped')].state, 'void');
+    assert.equal(submissions[roleplayHashFor(f, 'live')].state, 'accepted');
+    assert.equal(messages(f).at(-1).mes, 'after');
+});
+
 test('a completed job replays after its chat is deleted without recreating it', async t => {
     const f = fixture(t);
     const append = admit(f, 'append', 'append');

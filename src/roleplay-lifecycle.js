@@ -174,7 +174,19 @@ function finishedState(state, pending, physical) {
  */
 const CHAT_RECEIPT_KEEP_REVISIONS = 16;
 
-function prunableChatWriteReceipts(state, scope, keepKeyHash) {
+/**
+ * Receipts only hand a lost response back to a retrying client, which retries within moments, so past the newest
+ * ones the store keeps just what a replay could still need. Without this, every chat ever saved kept its last
+ * receipts forever and a busy account filled its store.
+ */
+const RECEIPT_KEEP_RECENT = 512;
+
+function settledReceiptEffect(receipt) {
+    const effects = Object.keys(receipt.effects);
+    return effects.length === 1 ? effects[0] : null;
+}
+
+function prunableReceipts(state, scope, keepKeyHash) {
     const pins = pinnedImageRepairReceipts(scope, state);
     if (pins === null) return [];
     const kept = new Set([keepKeyHash, ...pins]);
@@ -186,13 +198,32 @@ function prunableChatWriteReceipts(state, scope, keepKeyHash) {
         try { operationKey = getJob(scope.directories, receipt.jobId)?.intent?.roleplay?.operationKey; } catch { return []; }
         if (typeof operationKey === 'string' && operationKey && operationKey.length <= 200) kept.add(key(state, `job:${operationKey}`));
     }
-    return Object.entries(state.submissions).filter(([keyHash, receipt]) => {
-        if (kept.has(keyHash) || receipt.state !== 'closed' || receipt.jobId !== null || receipt.outcome?.kind !== undefined) return false;
-        const effects = Object.keys(receipt.effects);
-        if (effects.length !== 1 || effects[0] !== EFFECT_KEY) return false;
-        const resource = state.resources[receipt.targetInstanceId];
-        return resource.status !== 'live' || resource.revision - receipt.effects[EFFECT_KEY].appliedRevision >= CHAT_RECEIPT_KEEP_REVISIONS;
-    }).map(([keyHash]) => keyHash);
+    const entries = Object.entries(state.submissions);
+    const recentFrom = entries.length - RECEIPT_KEEP_RECENT;
+    const pruned = [];
+    for (const [index, [keyHash, receipt]] of entries.entries()) {
+        if (kept.has(keyHash)) continue;
+        const old = index < recentFrom;
+        if (receipt.jobId !== null) {
+            // A finished job's receipt is its lasting result, but a stopped one whose job is gone has nothing to report or apply.
+            if (!old || receipt.state !== 'void') continue;
+            let job;
+            try { job = getJob(scope.directories, receipt.jobId); } catch { return []; }
+            if (!job) pruned.push(keyHash);
+            continue;
+        }
+        if (receipt.state !== 'closed') continue;
+        const effect = settledReceiptEffect(receipt);
+        if (effect === EFFECT_KEY && receipt.outcome?.kind === undefined) {
+            const resource = state.resources[receipt.targetInstanceId];
+            if (old || resource.status !== 'live'
+                || resource.revision - receipt.effects[EFFECT_KEY].appliedRevision >= CHAT_RECEIPT_KEEP_REVISIONS) pruned.push(keyHash);
+        } else if (old && effect === GROUP_EFFECT_KEY && receipt.outcome?.kind === 'group') {
+            // A replayed group update must still match the group's exact revision, so it cannot apply twice.
+            pruned.push(keyHash);
+        }
+    }
+    return pruned;
 }
 
 function preparedFromPayload(pending, bytes) {
@@ -295,10 +326,10 @@ function applyPending(lease, host) {
     } catch (error) { throw Object.assign(error, { chatCommitted: true, integrity: pending.after.integrity }); }
     const result = resultFor(pending);
     const final = finishedState(state, pending, file.physical);
-    const pruned = prunableChatWriteReceipts(final, scope, pending.operationKeyHash).map(keyHash => {
-        const effect = final.submissions[keyHash].effects[EFFECT_KEY];
+    const pruned = prunableReceipts(final, scope, pending.operationKeyHash).flatMap(keyHash => {
+        const effects = Object.values(final.submissions[keyHash].effects);
         delete final.submissions[keyHash];
-        return effect;
+        return effects;
     });
     Object.assign(state, final);
     try { saveRoleplayAccount(lease); } catch (error) { throw Object.assign(error, { chatCommitted: true, integrity: pending.after.integrity }); }
