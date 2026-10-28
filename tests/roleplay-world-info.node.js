@@ -834,7 +834,7 @@ test('a reply job refused for a connection that cannot receive images keeps the 
     };
     backend = { source: 'custom', active: { ...blankChatControls, media_inlining: false } };
     assert.deepEqual(await storedFailure('no-vision'), { message: connectionCannotReceiveImages, code: 'ROLEPLAY_IMAGE_INPUT', status: 409 });
-    // Any other invalid reply keeps the ordinary code, which the page shows as 'Reply stopped'.
+    // Any other invalid reply keeps the ordinary code, which the page shows as 'Reply failed'.
     backend = { source: 'custom', active: { ...blankChatControls, media_inlining: true, inline_image_quality: 'sharp' } };
     assert.deepEqual(await storedFailure('bad-detail'), { message: 'The saved image detail setting is invalid.', code: 'ROLEPLAY_INVALID', status: 409 });
 });

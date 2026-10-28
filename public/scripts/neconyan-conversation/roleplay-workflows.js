@@ -29,6 +29,7 @@ import { beginRoleplayReplacement } from './roleplay-replacement.js';
 import { withAbortSignal } from '../abort.js';
 import { imageInputIssueDetail, isImageInputIssue, roleplayImageOrigin } from '../prompt-media-policy.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
+import { roleplayReplyNotice } from '../roleplay-reply-notice.js';
 
 const WORKFLOW_EVENT = 'neconyan:roleplay-workflow-finished';
 const IMAGE_REFUSED_EVENT = 'neconyan:image-input-refused';
@@ -661,7 +662,10 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
             // The origin is the workflow's own chat and account, as given when it was accepted or found in the job record.
             if (isImageInputIssue(value.error)) globalThis.dispatchEvent(new CustomEvent(IMAGE_REFUSED_EVENT, { detail: imageInputIssueDetail(value.error, roleplayImageOrigin(locator, account)) }));
             else if (value.error?.code === 'GENERATION_BLOCKED') globalThis.toastr?.warning?.(generationBlockedNotice(false));
-            else if (message) globalThis.toastr?.error?.(message, 'Reply stopped');
+            else if (message) {
+                const notice = roleplayReplyNotice(value.error, value.state);
+                globalThis.toastr?.error?.(notice.message, notice.title);
+            }
             stop(value.state);
         } else {
             if (value.result?.result?.generationOutcome || value.result?.generationOutcome) globalThis.toastr?.warning?.(generationBlockedNotice(true, value.result?.result?.generationOutcome ?? value.result?.generationOutcome));
@@ -1094,7 +1098,10 @@ export async function runNativeRoleplayGeneration(type, { committed = false, pag
         }
     } catch (error) {
         // An image refusal has already raised its own notice (postSubmission), so it gets no second, generic toast.
-        if (!isImageInputIssue(error)) globalThis.toastr?.error?.(error?.message || 'The Roleplay workflow could not be started.', 'Nothing was generated');
+        if (!isImageInputIssue(error)) {
+            const notice = roleplayReplyNotice(error?.message ? error : 'The reply could not be started.', 'refused');
+            globalThis.toastr?.error?.(notice.message, notice.title);
+        }
         return { native: true, name, key: null, jobId: null, state: 'refused', result: null, refused: true };
     } finally {
         busyName = null;

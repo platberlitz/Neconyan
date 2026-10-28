@@ -216,7 +216,7 @@ for (const [viewport, phone] of [['desktop', false], ['phone', true]]) {
         await expect.poll(() => app.provider.calls.length).toBe(1);
         await app.release();
         await setup.account.settled(jobId, 'interrupted');
-        await expect(page.locator('.toast-error')).toContainText('Reply stopped');
+        await expect(page.locator('.toast-error')).toContainText('Reply interrupted');
         await expect(page.locator('.toast-error')).toContainText('The connection to your model provider closed before a complete reply was received.');
         await expect(page.locator('.toast-error')).toContainText('not retried automatically');
         await expect.poll(() => page.evaluate(async () => {
