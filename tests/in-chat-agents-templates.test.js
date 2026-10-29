@@ -82,6 +82,7 @@ const sourceFilenames = [
     'time-tracker.json',
     'user-agency-guard.json',
     'visual-map-companion.json',
+    'vitals-companion.json',
     'what-the-town-knows.json',
     'world-detail.json',
 ];
@@ -163,6 +164,13 @@ function findCatalogTemplate(catalog, templateId) {
 function renderPositionTrackerOutput(source) {
     const tracker = readTemplate('position-tracker-companion.json');
     return applyRegexScriptList(source, tracker.regexScripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, {
+        isMarkdown: true,
+    });
+}
+
+function renderVitalsOutput(source) {
+    const vitals = readTemplate('vitals-companion.json');
+    return applyRegexScriptList(source, vitals.regexScripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, {
         isMarkdown: true,
     });
 }
@@ -881,6 +889,81 @@ describe('in-chat agent bundled templates', () => {
         expect(places[1]).not.toContain('Mara');
         expect(html).toContain('>Position map</div>');
         expect(html.match(/<div\b/g).length).toBe(html.match(/<\/div>/g).length);
+    });
+
+    test('ships Vitals as a library-only, Flash-sized companion that feeds the main reply', () => {
+        const catalog = readTemplate('index.json');
+        const vitals = findCatalogTemplate(catalog, 'tpl-vitals-companion');
+        expect(vitals).toEqual(readTemplate('vitals-companion.json'));
+        expect(vitals).toEqual(expect.objectContaining({
+            category: 'companion',
+            execution: 'companion',
+            phase: 'post',
+            enabled: false,
+            icon: 'fa-heart-pulse',
+        }));
+        expect(vitals.companion).toEqual(expect.objectContaining({
+            trigger: 'auto',
+            displayMode: 'panel',
+            format: 'html',
+            rawPrompt: true,
+            includeHistory: true,
+            historyDepth: 1,
+            feedback: { enabled: true, depth: 1 },
+            maxTokens: 64000,
+        }));
+        expect(vitals.companion.contextMessages).toBeLessThanOrEqual(6);
+        expect(vitals.prompt.length).toBeLessThan(2500);
+        for (const stat of ['Health', 'Satiety', 'Hydration', 'Energy', 'Morale']) {
+            expect(vitals.prompt).toContain(`bar|${stat}|value|change|reason`);
+        }
+        expect(vitals.prompt).toContain('tracker-none');
+        expect(readIndexSetBody('BUNDLED_REGEX_POST_DEFAULT_EXCLUDED_TEMPLATE_IDS')).toContain('VITALS_TEMPLATE_ID');
+        expect(readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS')).not.toContain('\'tpl-vitals-companion\'');
+        const companionGroup = JSON.parse(fs.readFileSync(new URL('groups.json', templateDir), 'utf8'))
+            .find(group => group.id === 'grp-companions');
+        expect(companionGroup.agentTemplateIds).toContain('tpl-vitals-companion');
+    });
+
+    test('renders Vitals lines as tiered bars with changes and status chips', () => {
+        const html = renderVitalsOutput([
+            '```',
+            'vitals|Ash|Bruised and hungry, but still pushing on',
+            'bar|Health|18|-12|took a club to the ribs',
+            'bar|Satiety|41%|-6|no food since dawn',
+            'bar|Hydration|57|+15|drank from the stream',
+            'bar|Energy|100/100|0|steady',
+            'bar|Morale|75|+4|escaped the bandits',
+            'bar|Luck|lucky',
+            'status|Bruised ribs|bad',
+            'status|Adrenaline|Good',
+            'status|Soaked',
+            'vitals-end',
+            '```',
+        ].join('\n'));
+
+        expect(html).not.toMatch(/```|vitals\||bar[|~]|status\||vitals-end|\[\[vitals-change/);
+        expect(html).toContain('>Ash</div>');
+        expect(html).toContain('>Bruised and hungry, but still pushing on</div>');
+        expect(html.match(/>Critical<\/small>/g)).toHaveLength(1);
+        expect(html.match(/>Low<\/small>/g)).toHaveLength(1);
+        expect(html.match(/>Fair<\/small>/g)).toHaveLength(1);
+        expect(html.match(/>Good<\/small>/g)).toHaveLength(2);
+        expect(html).toContain('width:18%');
+        expect(html).toContain('width:41%');
+        expect(html).toContain('width:100%');
+        for (const icon of ['fa-heart-pulse', 'fa-drumstick-bite', 'fa-droplet', 'fa-bolt', 'fa-face-smile', 'fa-circle-half-stroke']) {
+            expect(html).toContain(`fa-solid ${icon}`);
+        }
+        expect(html.match(/fa-caret-down"><\/i>\d+/g)).toEqual(['fa-caret-down"></i>12', 'fa-caret-down"></i>6']);
+        expect(html.match(/fa-caret-up"><\/i>\d+/g)).toEqual(['fa-caret-up"></i>15', 'fa-caret-up"></i>4']);
+        expect(html).toContain('>lucky</b>');
+        expect(html).toContain('fa-triangle-exclamation" style="font-size:.9em"></i>Bruised ribs</span>');
+        expect(html).toContain('fa-circle-check" style="font-size:.9em"></i>Adrenaline</span>');
+        expect(html).toContain('fa-circle-info" style="font-size:.9em"></i>Soaked</span>');
+        expect(html.match(/<div\b/g).length).toBe(html.match(/<\/div>/g).length);
+
+        expect(renderVitalsOutput('tracker-none')).toContain('No vitals to show yet');
     });
 
     test('renders orphan greentext continuation lines inside the Chatroom interface', () => {
