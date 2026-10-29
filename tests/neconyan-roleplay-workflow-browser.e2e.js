@@ -375,10 +375,12 @@ for (const phone of [false, true]) {
                 await openChat(page, locator);
                 if (phone) await applyIOSOnlyCss(page);
                 await dismissTour(page);
-                await page.locator('#chat .mes').last().scrollIntoViewIfNeeded();
+                // Returning to the chat lets the kept-reply refresh redraw this list. Wait for
+                // the retained row, then scroll the stable container the redraw cannot detach.
+                await expect(page.locator('#chat .mes').last()).toContainText(kept);
+                await page.locator('#chat').evaluate(node => { node.scrollTop = node.scrollHeight; node.dispatchEvent(new Event('scroll')); });
                 await page.screenshot({ path: path.join('..', 'screenshots', `away-stop-${departure.replaceAll(' ', '-')}-${viewport}.png`) });
                 expect(persistedBeforeReturn.filter(row => row.mes === kept), 'Server saved all text before any page returned').toHaveLength(1);
-                await expect(page.locator('#chat .mes').last()).toContainText(kept);
                 await expect.poll(() => page.evaluate(async () => (await import('/script.js')).isGenerating())).toBe(false);
                 await page.reload({ waitUntil: 'domcontentloaded' });
                 await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: 120000 });
