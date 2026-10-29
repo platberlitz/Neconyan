@@ -2,21 +2,99 @@
 
 ## v1.4.0
 
+### Highlights
+- Group scenes now have a **Scene Director** that picks up to three speakers or hands the scene back to you. **Let them talk** continues for one to eight replies, **Ensemble** writes a whole scene in one request and splits it into character messages, and you can mark who is present, keep whispers to their recipient, give any member a Narrator or game master role, and regenerate as another member. Characters also keep to their own lines by default. The Director makes its own model request before a reply when it is on, so a small, fast profile helps.
+- **Where replies are written** under Settings > Chat & messages > Replies lets you keep supported solo, group and guided replies in the browser (the default) or on the server; a server reply, including its after-reply Agents, finishes after you close the page or your phone sleeps. Replies that use Notebook context still go to the server even when you pick the browser. If that route cannot include your page prompts, Neconyan explains why instead of generating a reply missing instructions.
+- The standalone **iPhone app** is now in the project: it bundles Node.js, the server and the interface, keeps chats and settings on the phone, and needs no other computer. Backup ZIPs picked in the app are copied into its storage and imported by the server, and page-written replies keep going with silent audio when you leave. The project includes an unsigned device build and an iOS release workflow that produces the IPA for sideloading; it is not an App Store build.
+- **Mewmory** can keep recent chat by message count instead of tokens, starting at 10 messages and removing older ones in batches of 5 once they are recorded. Every tab opens with a status card, the next reply's memories sit at the top of Now, and Archive leads with search. Fallback connections and one shared profile now cover every text role, trackers are restated in Mewmory's own words, and new memories keep two to four sentences of detail.
+- **Agents** gains **Vitals**, a game-style Companion for Health, Satiety, Hydration, Energy and Morale that arrives installed but switched off. **Help me choose** asks Taro four questions and recommends agents without an AI request, Companion notes can open in draggable, collapsible windows, and the list now sorts by plain-language type instead of two competing filters.
+- **Prompt Adherence Checker** is a new after-reply agent, off until enabled, that rewrites lines against the prompts switched on in the active preset. **Parallel Off-Screen (Extended)** is a new tracker, also off, that writes three short off-screen scenes. Refusals now skip after-reply Agents and Companions, and tracker runs try saved fallback connections when a reply is unusable. The new checker, tracker and Vitals make their own model requests when they run, as do the other rewrite agents and trackers.
+- **Dice Roller** is on by default, with its dice button first beside the message box. Roll d4 to d100 with up to four dice, a bonus, difficulty and advantage or disadvantage; the result adds a short roll line and a system note so the model writes the outcome as settled fact without mentioning dice or numbers. Switch it off under Extensions > Manage extensions.
+- **Time Machine** is now a list and detail view with snapshot cards, kind filters, a history timeline and field-by-field comparisons; phones swap between the list and one snapshot instead of squeezing both. **Quick Image Gen** puts status, prompt, Style, Configuration and Generate in one Create card, with Gallery, History, Logs and Quick setup underneath and settings behind tabs.
+- **Google Font** now has separate pickers for body text, headings, chat messages and code, each with presets and a custom Google Font option, plus **Reset all fonts**. The sidebar has a **Reorder** button beside Workspace, and buttons can move between sections, such as Persona into Workspace.
+- **Stay open in the background** is an opt-in Android browser switch, off by default, that plays a sound too quiet to hear while Neconyan is hidden so Chrome is less likely to unload the tab. It costs battery, shows a media notification and can pause music in other apps, and it is hidden in the Android app.
+- **Server replies** no longer keep their reserved 72 KiB after you stop them or once they drop out of job history, so the no-room error from those abandoned reservations no longer blocks new replies. Failure cards now say what happened instead of showing 'Reply stopped' and the server's internal wording, and replies survive stops and navigation.
+- Account backups and imports no longer stop at the old fixed 8 GiB limits or 32 GiB retained-file quotas, Android's **Update APK** control works again, and Visual Novel Mode now works in Ripple and keeps the composer on screen on phones.
+- Phones do less work: touch handlers no longer cancel taps after a ghost touch, closed panels and lab pages no longer leave the page inert, and Agents, Regex Agent Themes, chat watchers and hidden polls stop rebuilding work in the background. A chat load that stalls for eight seconds now offers Home instead of leaving its loading dialogue over the page.
+- **Kimi K3.1 Pro** is recognised for partial prefill, reasoning and reply cleanup, including `kimi-k3.1-pro` and `kimi-k3.1-pro-highspeed`, and both IDs are in the native Moonshot model list.
+
 ### Merged Staging PRs
+- PR #265 (2026-10-21) `fix(agents): stop swipes rerunning agents from an earlier reply`
+- PR #266 (2026-10-21) `fix(agents): stop rerun agents staying blocked after a finished reply`
+- PR #267 (2026-10-21) `feat(expressions): let the agent name the character on shared cards`
+- PR #268 (2026-10-21) `fix(chat-styles): fill the Ripple avatar frame with the expression`
+- PR #269 (2026-10-21) `fix(scratchpad): make composer actions icon-only`
+- PR #270 (2026-10-21) `fix(generation): keep partial text and stop agents on provider filter`
+- PR #271 (2026-10-22) `feat(groups): add directed scenes, whispers and ensemble replies`
+- PR #272 (2026-10-21) `fix(generation): save agent-edited continuations and stop blocked ret…`
+- PR #273 (2026-10-22) `feat(agents): add Prompt Adherence Checker for enabled preset prompts`
+- PR #274 (2026-10-22) `fix(groups): tidy the group editor, greetings, speaker bar and director`
+- PR #275 (2026-10-22) `feat(mobile): help Neconyan stay open in the background on Android`
+- PR #276 (2026-10-22) `fix(botsearcher): keep {{user}} in private JannyAI imports`
+- PR #278 (2026-10-22) `fix(scratchpad): share story messages whole or not at all`
+- PR #280 (2026-10-22) `fix(mewmory): omit the Gemini 3 thinking level when no effort is set`
+- PR #281 (2026-10-23) `fix(roleplay): reconnect unchanged files after moving data`
+- PR #282 (2026-10-23) `fix(distiller): recover from failed and cleared jobs`
+- PR #283 (2026-10-23) `feat(sidebar): add a reorder button and allow moves between sections`
 - PR #285 (2026-10-23) `fix(authors-note): stop typing in the note scanning the whole page`
 - PR #286 (2026-10-23) `fix(termux): retry transfer checks after temporary timestamp changes`
 - PR #287 (2026-10-24) `fix(storage): prevent false authoring save conflicts on exfat drives`
+- PR #288 (2026-10-24) `feat(kimi): add K3.1 Pro partial prefill support`
 - PR #289 (2026-10-24) `fix(generation): stop agents when a provider ends a reply with an error`
+- PR #290 (2026-10-24) `feat(mewmory): add fallback and shared profiles, restate trackers`
+- PR #291 (2026-10-24) `feat: add Parallel Off-Screen (Extended) tracker`
+- PR #292 (2026-10-25) `feat(chat): choose where replies are generated`
+- PR #293 (2026-10-25) `perf: reduce repeated chat, settings and navigation work`
+- PR #294 (2026-10-25) `feat(quick-image-gen): rework the panel around a create card and settings tabs`
+- PR #295 (2026-10-26) `fix(ios): tidy the top bar and composer in the home-screen app`
+- PR #296 (2026-10-26) `fix(ios): keep status-bar sampling active without a safe-area inset`
+- PR #297 (2026-10-26) `fix(ios): keep composer corners clear of the screen edge`
+- PR #298 (2026-10-26) `fix(backup): allow account downloads beyond fixed binary quotas`
+- PR #299 (2026-10-26) `fix(settings): tighten category tab spacing`
+- PR #300 (2026-10-26) `fix(android): restore apk update controls`
+- PR #301 (2026-10-26) `fix(import): remove fixed archive and retained-file size quotas`
+- PR #302 (2026-10-26) `fix(server): apply auto-stash choices and show changed files`
+- PR #303 (2026-10-26) `fix(updater): ignore generated account backup downloads`
+- PR #304 (2026-10-26) `fix(agents): keep companion actions in one row on ios`
+- PR #305 (2026-10-26) `feat(time-machine): rework the popup into a list and detail layout`
+- PR #306 (2026-10-27) `fix(agents): finish manual Agent actions on the server`
+- PR #307 (2026-10-27) `feat(compact-mode): make Compact Mode compact everywhere`
+- PR #308 (2026-10-27) `fix(visual-novel): make Visual Novel Mode work in Ripple and on phones`
+- PR #309 (2026-10-27) `feat(appearance): choose Google Fonts for headings, chat and code`
+- PR #310 (2026-10-27) `fix(agents): keep Send usable while Agents finish a reply`
+- PR #311 (2026-10-27) `feat(ios): add a standalone sideloadable iPhone app`
 - PR #312 (2026-10-27) `fix(sync): repair legacy data for github folder sync`
+- PR #313 (2026-10-27) `ci(ios): build the iphone app for main releases`
+- PR #314 (2026-10-27) `fix(agents): stop redrawn companion cards from resaving the chat`
+- PR #315 (2026-10-27) `fix(agents): preserve accepted input when retrying companions`
+- PR #316 (2026-10-27) `fix(roleplay): keep replies the server stopped or could not save`
+- PR #317 (2026-10-27) `fix(roleplay): use the Agents stop while server Companions run`
+- PR #318 (2026-10-27) `perf(phone): fix tap-swallowing freezes and trim main-thread work`
+- PR #319 (2026-10-28) `fix(send): show the user's message before the Roleplay routing check`
+- PR #320 (2026-10-28) `perf(frontend): reuse templates, translations and model rows`
+- PR #321 (2026-10-28) `perf(backend): reuse unchanged catalogue and image settings reads`
 - PR #322 (2026-10-28) `feat(mewmory): add recent-message windows and clearer controls`
-
-## v1.3.8
-
-### Merged Staging PRs
-- PR #272 (2026-10-21) `fix(generation): save agent-edited continuations and stop blocked ret…`
-- PR #278 (2026-10-22) `fix(scratchpad): share story messages whole or not at all`
-- PR #280 (2026-10-22) `fix(mewmory): omit the Gemini 3 thinking level when no effort is set`
-- PR #282 (2026-10-23) `fix(distiller): recover from failed and cleared jobs`
+- PR #323 (2026-10-28) `feat(mewmory): make status, next reply and search easy to find`
+- PR #324 (2026-10-28) `test(mewmory): match the new prompt labels`
+- PR #325 (2026-10-28) `fix: repair prompt rendering and staging test failures`
+- PR #326 (2026-10-28) `fix(agents): run Companions in the page when the server has no room`
+- PR #327 (2026-10-28) `fix(roleplay): stop colour rewrites cancelling server replies`
+- PR #328 (2026-10-28) `fix(roleplay): free space held by unsaved replies and explain failures`
+- PR #329 (2026-10-28) `fix(roleplay): free room held by stopped replies on every write`
+- PR #330 (2026-10-28) `fix(roleplay): preserve regex rules on recovered server replies`
+- PR #331 (2026-10-28) `fix(roleplay): retain server replies across stops and navigation`
+- PR #332 (2026-10-29) `fix(botsearcher): allow imports after a reply finishes`
+- PR #333 (2026-10-29) `fix(agents): skip after-reply agents when the reply is a refusal`
+- PR #334 (2026-10-29) `feat: add Vitals companion and Dice Roller extension`
+- PR #335 (2026-10-29) `fix(personas): keep scenario note toggles from jumping the viewport`
+- PR #336 (2026-10-29) `fix(connections): remove outdated reply formats`
+- PR #337 (2026-10-29) `feat(agents): add draggable collapsible companion windows`
+- PR #338 (2026-10-29) `fix(agents): keep the companion run button accented in every shell style`
+- PR #339 (2026-10-29) `feat(agents): add taro's agent recommendations`
+- PR #340 (2026-10-29) `fix(agents): keep Send working while Agents finish a streamed reply`
+- PR #341 (2026-10-29) `feat(agents): sort agents by plain-language type`
+- PR #342 (2026-10-29) `fix(agents): try fallbacks for unusable tracker replies`
+- PR #343 (2026-10-29) `fix(custom-css): refresh accent and font prompt guidance`
 
 ## v1.3.7
 
