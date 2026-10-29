@@ -31,6 +31,8 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                 window.getStoredPanelLauncher = () => 'handle';
                 window.captureVisibleMessageAnchor = () => null;
                 window.restoreVisibleMessageAnchor = () => {};
+                // companion-panel.js imports this from companion-windows.js, which this fixture does not load.
+                window.refreshCompanionWindows = () => {};
                 window.captureMessageTargetState = () => ({});
                 window.isMessageTargetCurrent = () => true;
                 window.toastr = { error: message => { window.saveError = message; } };
