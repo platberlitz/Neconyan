@@ -69,6 +69,79 @@ the PR against staging and validate the resulting APK on the reporting device.
 
 ## Release preparation: 1.0.0
 
+### 29 October: 1.4.0 merged, release blocked by browser checks
+
+I fast-forwarded application PR #344 into staging at `95581bc9` and handbook
+PR neconyan-docs#2 into its main branch at `beb35cb7`. Handbook publication run
+`40865305039` passed, followed by 28 live checks across fourteen changed pages on
+desktop and touch-phone viewports. Historical source snapshots stayed historical.
+Main in this repository remains on the published 1.3.7 commit, `6e0269d0`.
+
+The retained local checks passed: 590 unit suites with 8,174 passed tests and
+three existing skips, 3,275 server checks plus ten final assistant knowledge
+checks, 106 Mewmory checks, both lint commands, frontend budgets and the build.
+All nine assistant variants passed desktop and phone retrieval checks; 112
+affected unit checks passed after the help settled. PR checks `40859992024`
+passed at `95581bc9`. Nineteen additional Mewmory browser checks passed with a
+fresh disposable server for each file and no skips.
+
+The first release browser run, `40865337550`, passed group 1: 134 tests at
+`95581bc9`. The other fifteen groups couldn't install Playwright browsers on
+GitHub's newly selected Ubuntu 26.04 image. Commit `5275bf93` pins those groups
+to supported Ubuntu 24.04 while retaining group 1's required Ubuntu 22.04.
+Run `40867699100` checks only groups 2-16 at that corrected commit. Group 1's
+result remains valid because its runner and application code didn't change.
+
+At the 12:24 UTC stop, groups 1, 2, 3, 4 and 9 had passed; groups 5, 6, 7, 8
+and 16 had failed; groups 10-15 were still running. The ten completed groups
+contained 1,298 passed checks, nine failures, thirty existing skips and three
+checks that didn't run. These are partial results, not release approval.
+
+Two test corrections are verified separately from that run. Commit `a8f026d6`
+supplies the missing Companion-window dependency in the extracted-function
+fixture; its full file passed all eight checks. Commit `adf320f3` measures the
+phone rail's visible clipped edge rather than an off-screen child's rectangle.
+At 320x568 the real gap is 6 pixels, not the old formula's -40. The corrected
+file, compact-phone case and narrow-composer smoke case all passed, with clean
+affected-file lint. Dice and Options are visible; Extensions occupies the next
+slot in the existing sideways-scroll rail. These are Chromium touch checks with
+an iPhone user agent, not physical-iPhone or WebKit verification. Those fixes
+cover three of the nine recorded failures; the older CI result stays failed.
+
+Six failures still need diagnosis or repair:
+
+- Group 5: `frontend-performance.e2e.js` recorded 1,001 startup resources
+  against a strict limit below 1,000. The retained list includes a second
+  loading-cat image entry and both versioned and unversioned TTS entry modules.
+  Both duplications pre-date this release. A new shared speech-provider module
+  would add a resource of its own, so that proposal alone wouldn't pass. I
+  haven't raised the limit, filtered resources or merged an unverified refactor.
+- Group 7: the Presets tour in `neconyan-header-tours.e2e.js` exceeded its
+  five-minute timeout. The final error came from closing an already-closed
+  browser context; that doesn't establish the original cause. Three later
+  header-tour checks didn't run.
+- Group 8: `neconyan-native-extensions.e2e.js` expected seven built-in entries
+  and found eight. Identify the extra entry before changing the expectation.
+- Group 16: both desktop and phone Kobold connection-change checks in
+  `text-generation-parity.e2e.js` received a non-iterable value where they
+  expected the 'Save the active connection' error text.
+- Group 16: `time-machine-save-recovery.e2e.js` didn't observe the expected
+  conflict response within ten seconds during its held-read case.
+
+Commit `11a59bc9` separately corrects the changelog's Agent request-cost and
+Mewmory prompt-omission wording. All follow-up changes through `adf320f3` are
+on staging. No application code changed after the retained browser candidate.
+The failed-job logs and the 12:24 snapshot are retained in the release workspace;
+GitHub's corresponding failure artifacts have a fourteen-day retention period.
+
+I stopped local testing and waiting at the one-hour limit. The already-started
+GitHub jobs can finish, but no further runs were dispatched. No 1.4.0 tag, native
+build or release was published, and staging stays on 1.4.0. Resume by collecting
+the unfinished groups and resolving the recorded failures, retaining valid
+passing results. Then follow the matching Android/iPhone builds, twelve-asset
+verification, publication and next-version steps. The personal instance wasn't
+deployed.
+
 ### 21 October: 1.3.7 release, staging starts 1.3.8
 
 I completed the release-readiness review in PR #264 and fast-forwarded staging
