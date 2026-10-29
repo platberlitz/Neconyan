@@ -891,7 +891,7 @@ describe('in-chat agent bundled templates', () => {
         expect(html.match(/<div\b/g).length).toBe(html.match(/<\/div>/g).length);
     });
 
-    test('ships Vitals as a library-only, Flash-sized companion that feeds the main reply', () => {
+    test('seeds Vitals by default, switched off, as a Flash-sized companion that feeds the main reply', () => {
         const catalog = readTemplate('index.json');
         const vitals = findCatalogTemplate(catalog, 'tpl-vitals-companion');
         expect(vitals).toEqual(readTemplate('vitals-companion.json'));
@@ -919,7 +919,8 @@ describe('in-chat agent bundled templates', () => {
         }
         expect(vitals.prompt).toContain('tracker-none');
         expect(readIndexSetBody('BUNDLED_REGEX_POST_DEFAULT_EXCLUDED_TEMPLATE_IDS')).toContain('VITALS_TEMPLATE_ID');
-        expect(readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS')).not.toContain('\'tpl-vitals-companion\'');
+        expect(readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS')).toContain('\'tpl-vitals-companion\'');
+        expect(readIndexSetBody('HIDDEN_TEMPLATE_BROWSER_IDS')).not.toContain('\'tpl-vitals-companion\'');
         const companionGroup = JSON.parse(fs.readFileSync(new URL('groups.json', templateDir), 'utf8'))
             .find(group => group.id === 'grp-companions');
         expect(companionGroup.agentTemplateIds).toContain('tpl-vitals-companion');

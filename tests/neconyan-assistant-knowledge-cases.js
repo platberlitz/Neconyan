@@ -268,7 +268,7 @@ export const refreshedKnowledgeCases = [
     ['What does Visual Map show?', 'agents.map-companions', 'a travel trail for anyone who moved'],
     ['What do In scene and Nearby mean in Position Tracker?', 'agents.map-companions', 'In scene, Nearby, Away or Unknown'],
     ['Are Position Tracker notes added to later prompts?', 'agents.map-companions', 'not added to later reply prompts'],
-    ['How do I add the Vitals companion with Health and Satiety bars?', 'agents.vitals-companion', 'Browse library, search Vitals'],
+    ['How do I turn on the Vitals companion with Health and Satiety bars?', 'agents.vitals-companion', 'comes already installed in every account'],
     ['Does the AI see my Vitals Hydration and Morale?', 'agents.vitals-companion', 'added to the next reply prompt'],
     ['How do I turn on Dice Roller?', 'tools.dice-roller', 'under Built-in features'],
     ['What does a partial success mean on a dice roll?', 'tools.dice-roller', 'succeeds with a cost'],
