@@ -214,6 +214,13 @@ const PAGE_ROLES = ['system', 'user', 'assistant'];
 const MAX_PAGE_PROMPTS = 32;
 const MAX_PAGE_BYTES = 120 * 1024;
 const SETTINGS_PROOF_ATTEMPTS = 10;
+/** The browser generation type each workflow stands in for, for interceptors that read the saved chat. */
+const WORKFLOW_GENERATION_TYPES = Object.freeze({
+    'roleplay.reply': 'normal', 'group.reply': 'normal', 'guided.response': 'normal',
+    'roleplay.swipe': 'swipe', 'guided.swipe': 'swipe',
+    'roleplay.correct': 'regenerate', 'guided.regenerate': 'regenerate', 'guided.correction': 'regenerate',
+    'roleplay.continue': 'continue', 'story.passage': 'continue',
+});
 
 /**
  * The prompt additions only this page knows about (a Dialogue Colours instruction,
@@ -236,6 +243,11 @@ export async function capturePagePrompts(name, collector = null) {
             continue;
         }
         if (interceptor.key === 'vectors_rearrangeChat') {
+            continue;
+        }
+        if (interceptor.key === 'necoDiceRollerInterceptor') {
+            // The dice note comes from the saved chat alone, so it travels as a page prompt.
+            await globalThis[interceptor.key](null, 0, () => {}, WORKFLOW_GENERATION_TYPES[name] ?? 'quiet');
             continue;
         }
         return refuse('interceptor');

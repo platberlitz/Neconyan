@@ -10,6 +10,7 @@ const BUILT_IN_EXTENSION_DESCRIPTIONS = Object.freeze({
     'attachments': 'Attach files and web pages to a chat or character so replies can draw on them.',
     'caption': 'Describes the images you send, so models that only read text can follow along.',
     'connection-manager': 'Saves connection profiles, so you can switch API, model and preset in one go.',
+    'dice-roller': 'Roll animated dice for what you attempt; the AI writes the success or failure into the story.',
     'expressions': 'Shows character sprites that change with the mood of each reply.',
     'gallery': 'Keeps a gallery of images for each character.',
     'guided-generations': 'Steer the next reply, swipe or impersonation with a short instruction.',

@@ -46,6 +46,10 @@ const stylesheets = [
         name: 'CSS snippets',
         url: new URL('../public/scripts/extensions/css-snippets/style.css', import.meta.url),
     },
+    {
+        name: 'dice roller',
+        url: new URL('../public/scripts/extensions/dice-roller/style.css', import.meta.url),
+    },
 ].map(stylesheet => ({
     ...stylesheet,
     source: readFileSync(fileURLToPath(stylesheet.url), 'utf8').replace(/\r\n/g, '\n'),

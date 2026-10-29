@@ -1,0 +1,523 @@
+.neco-dice {
+    --neco-dice-ink: var(--neco-ink, var(--SmartThemeBodyColor));
+    --neco-dice-muted: var(--neco-muted, color-mix(in oklch, var(--SmartThemeBodyColor) 72%, transparent));
+    --neco-dice-surface: var(--neco-surface, var(--SmartThemeBlurTintColor));
+    --neco-dice-raised: var(--neco-raised, color-mix(in oklch, var(--SmartThemeBlurTintColor) 80%, var(--SmartThemeBodyColor) 8%));
+    --neco-dice-border: var(--neco-border, var(--SmartThemeBorderColor));
+    --neco-dice-accent: var(--neco-ginger, var(--SmartThemeQuoteColor));
+    --neco-dice-tone: var(--neco-dice-accent);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: min(460px, 100%);
+    margin-inline: auto;
+    color: var(--neco-dice-ink);
+    text-align: start;
+}
+
+.neco-dice[data-outcome="critical-success"] {
+    --neco-dice-tone: oklch(80% 0.15 85);
+}
+
+.neco-dice[data-outcome="success"] {
+    --neco-dice-tone: oklch(72% 0.15 152);
+}
+
+.neco-dice[data-outcome="partial"] {
+    --neco-dice-tone: oklch(76% 0.14 62);
+}
+
+.neco-dice[data-outcome="failure"] {
+    --neco-dice-tone: oklch(64% 0.18 25);
+}
+
+.neco-dice[data-outcome="critical-failure"] {
+    --neco-dice-tone: oklch(56% 0.2 18);
+}
+
+.neco-dice-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid color-mix(in oklch, var(--neco-dice-tone) 38%, var(--neco-dice-border));
+    border-radius: 8px;
+    background:
+        radial-gradient(circle at 50% 38%, color-mix(in oklch, var(--neco-dice-tone) 18%, transparent), transparent 62%),
+        var(--neco-dice-surface);
+}
+
+.neco-dice-roll {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 132px;
+    min-height: 116px;
+    padding: 6px 12px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+
+.neco-dice-roll:focus-visible {
+    outline: 2px solid var(--neco-dice-accent);
+    outline-offset: 2px;
+}
+
+.neco-dice-tray {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.neco-dice-die {
+    --neco-dice-size: 96px;
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: var(--neco-dice-size);
+    height: var(--neco-dice-size);
+}
+
+.neco-dice-tray[data-count="2"] .neco-dice-die {
+    --neco-dice-size: 80px;
+}
+
+.neco-dice-tray[data-count="3"] .neco-dice-die,
+.neco-dice-tray[data-count="4"] .neco-dice-die {
+    --neco-dice-size: 64px;
+}
+
+.neco-dice-shape {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    fill: color-mix(in oklch, var(--neco-dice-raised) 76%, var(--neco-dice-tone) 24%);
+    stroke: color-mix(in oklch, var(--neco-dice-tone) 82%, var(--neco-dice-ink));
+    stroke-width: 3;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 4px 8px color-mix(in oklch, var(--SmartThemeShadowColor, black) 40%, transparent));
+}
+
+.neco-dice-shape path,
+.neco-dice-shape polygon + polygon,
+.neco-dice-shape rect + rect {
+    fill: none;
+    stroke-width: 1.5;
+    opacity: 0.55;
+}
+
+.neco-dice-shape .neco-dice-shape-ring {
+    fill: none;
+    stroke-width: 1.5;
+    stroke-dasharray: 4 6;
+    opacity: 0.6;
+}
+
+.neco-dice-die[data-sides="100"]::after {
+    content: '%';
+    position: absolute;
+    inset-block-end: 14%;
+    font-size: 0.8em;
+    font-weight: 700;
+    color: var(--neco-dice-muted);
+}
+
+.neco-dice-face {
+    position: relative;
+    font-size: calc(var(--neco-dice-size) * 0.32);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    color: var(--neco-dice-ink);
+    text-shadow: 0 1px 2px color-mix(in oklch, var(--neco-dice-raised) 80%, transparent);
+}
+
+.neco-dice-die[data-sides="4"] .neco-dice-face {
+    translate: 0 14%;
+}
+
+.neco-dice:not([data-outcome=""]) .neco-dice-shape {
+    filter:
+        drop-shadow(0 0 10px color-mix(in oklch, var(--neco-dice-tone) 55%, transparent))
+        drop-shadow(0 4px 8px color-mix(in oklch, var(--SmartThemeShadowColor, black) 40%, transparent));
+}
+
+.neco-dice-die[data-face="max"] .neco-dice-face {
+    color: color-mix(in oklch, oklch(80% 0.15 85) 70%, var(--neco-dice-ink));
+}
+
+.neco-dice-die[data-face="min"] .neco-dice-face {
+    color: color-mix(in oklch, oklch(64% 0.18 25) 70%, var(--neco-dice-ink));
+}
+
+.neco-dice-burst {
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: 120px;
+    height: 120px;
+    margin: -60px 0 0 -60px;
+    border: 3px solid var(--neco-dice-tone);
+    border-radius: 50%;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.neco-dice-result {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-height: 2.8em;
+    text-align: center;
+}
+
+.neco-dice-outcome {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 1.15em;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    color: color-mix(in oklch, var(--neco-dice-tone) 72%, var(--neco-dice-ink));
+}
+
+.neco-dice-breakdown {
+    font-size: 0.9em;
+    font-variant-numeric: tabular-nums;
+    color: var(--neco-dice-muted);
+}
+
+.neco-dice-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.neco-dice-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 18px;
+}
+
+.neco-dice-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    margin: 0;
+}
+
+.neco-dice-label {
+    font-size: 0.85em;
+    font-weight: 700;
+    color: var(--neco-dice-muted);
+}
+
+.neco-dice-action.text_pole {
+    margin: 0;
+    width: 100%;
+    border-radius: 6px;
+}
+
+.neco-dice-segmented {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.neco-dice-segment,
+.neco-dice-step {
+    min-height: 32px;
+    padding: 4px 10px;
+    border: 1px solid var(--neco-dice-border);
+    border-radius: 6px;
+    background: var(--neco-dice-raised);
+    color: var(--neco-dice-ink);
+    font: inherit;
+    font-size: 0.9em;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.neco-dice-segment:hover,
+.neco-dice-step:hover:not(:disabled) {
+    border-color: var(--neco-dice-accent);
+}
+
+.neco-dice-segment:focus-visible,
+.neco-dice-step:focus-visible {
+    outline: 2px solid var(--neco-dice-accent);
+    outline-offset: 2px;
+}
+
+.neco-dice-segment[aria-pressed="true"] {
+    border-color: var(--neco-dice-accent);
+    background: color-mix(in oklch, var(--neco-dice-accent) 22%, var(--neco-dice-raised));
+    color: var(--neco-dice-ink);
+    box-shadow: inset 0 0 0 1px var(--neco-dice-accent);
+}
+
+.neco-dice-step:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.neco-dice-stepper {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.neco-dice-step {
+    min-width: 32px;
+    padding: 4px 8px;
+}
+
+.neco-dice-stepper-value {
+    min-width: 2.4em;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+
+.neco-dice-target {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85em;
+    color: var(--neco-dice-muted);
+}
+
+.neco-dice-target-input.text_pole {
+    width: 5.5em;
+    margin: 0;
+    border-radius: 6px;
+}
+
+.neco-dice-target-input[hidden] {
+    display: none;
+}
+
+.neco-dice-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.neco-dice-actions .menu_button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: auto;
+    margin: 0;
+    white-space: nowrap;
+}
+
+.neco-dice-actions .menu_button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.neco-dice-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 2px 8px;
+    border: 1px solid color-mix(in oklch, var(--neco-dice-chip-tone) 55%, transparent);
+    border-radius: 10px;
+    background: color-mix(in oklch, var(--neco-dice-chip-tone) 14%, transparent);
+    font-weight: 600;
+    --neco-dice-chip-tone: var(--neco-ginger, var(--SmartThemeQuoteColor));
+}
+
+.neco-dice-chip > i {
+    color: var(--neco-dice-chip-tone);
+}
+
+.neco-dice-chip[data-outcome="critical-success"] {
+    --neco-dice-chip-tone: oklch(80% 0.15 85);
+}
+
+.neco-dice-chip[data-outcome="success"] {
+    --neco-dice-chip-tone: oklch(72% 0.15 152);
+}
+
+.neco-dice-chip[data-outcome="partial"] {
+    --neco-dice-chip-tone: oklch(76% 0.14 62);
+}
+
+.neco-dice-chip[data-outcome="failure"] {
+    --neco-dice-chip-tone: oklch(64% 0.18 25);
+}
+
+.neco-dice-chip[data-outcome="critical-failure"] {
+    --neco-dice-chip-tone: oklch(56% 0.2 18);
+}
+
+.neco-dice-settings-hint {
+    margin: 4px 0 8px;
+    color: var(--neco-muted, inherit);
+    font-size: 0.9em;
+}
+
+.neco-dice.is-rolling .neco-dice-die {
+    animation: neco-dice-tumble 900ms cubic-bezier(0.16, 0.84, 0.3, 1) var(--neco-dice-delay, 0ms) both;
+}
+
+.neco-dice[data-outcome="critical-success"] .neco-dice-burst {
+    animation: neco-dice-burst 760ms ease-out both;
+}
+
+.neco-dice[data-outcome="success"] .neco-dice-burst {
+    animation: neco-dice-ring 560ms ease-out both;
+}
+
+.neco-dice[data-outcome="critical-failure"] .neco-dice-tray {
+    animation: neco-dice-shake 420ms ease-out both;
+}
+
+.neco-dice-result > * {
+    animation: neco-dice-rise 240ms ease-out both;
+}
+
+@keyframes neco-dice-tumble {
+    from {
+        opacity: 0.4;
+        transform: translateY(-18px) rotate(-540deg) scale(0.78);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+@keyframes neco-dice-burst {
+    from {
+        opacity: 0.9;
+        transform: scale(0.5);
+        box-shadow: 0 0 0 0 color-mix(in oklch, var(--neco-dice-tone) 60%, transparent);
+    }
+
+    to {
+        opacity: 0;
+        transform: scale(1.9);
+        box-shadow: 0 0 0 18px color-mix(in oklch, var(--neco-dice-tone) 0%, transparent);
+    }
+}
+
+@keyframes neco-dice-ring {
+    from {
+        opacity: 0.6;
+        transform: scale(0.7);
+    }
+
+    to {
+        opacity: 0;
+        transform: scale(1.35);
+    }
+}
+
+@keyframes neco-dice-shake {
+    0% {
+        transform: translateX(0);
+    }
+
+    20% {
+        transform: translateX(-6px) rotate(-3deg);
+    }
+
+    40% {
+        transform: translateX(5px) rotate(2deg);
+    }
+
+    60% {
+        transform: translateX(-3px) rotate(-1deg);
+    }
+
+    80% {
+        transform: translateX(2px);
+    }
+
+    100% {
+        transform: translateX(0);
+    }
+}
+
+@keyframes neco-dice-rise {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+@media screen and (max-width: 1000px), (pointer: coarse) {
+    .neco-dice-segment,
+    .neco-dice-step {
+        min-height: 44px;
+    }
+
+    .neco-dice-step {
+        min-width: 44px;
+    }
+
+    .neco-dice-actions .menu_button {
+        min-height: 44px;
+    }
+
+    .neco-dice-stage {
+        padding: 8px;
+    }
+
+    .neco-dice-roll {
+        min-height: 88px;
+    }
+
+    .neco-dice-die {
+        --neco-dice-size: 72px;
+    }
+
+    .neco-dice-tray[data-count="2"] .neco-dice-die {
+        --neco-dice-size: 64px;
+    }
+
+    .neco-dice-tray[data-count="3"] .neco-dice-die,
+    .neco-dice-tray[data-count="4"] .neco-dice-die {
+        --neco-dice-size: 56px;
+    }
+
+    .neco-dice-actions {
+        position: sticky;
+        inset-block-end: 0;
+        z-index: 1;
+        padding-block: 8px;
+        background: var(--neco-dice-surface);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .neco-dice.is-rolling .neco-dice-die,
+    .neco-dice[data-outcome="critical-success"] .neco-dice-burst,
+    .neco-dice[data-outcome="success"] .neco-dice-burst,
+    .neco-dice[data-outcome="critical-failure"] .neco-dice-tray,
+    .neco-dice-result > * {
+        animation: none;
+    }
+}
