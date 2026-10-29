@@ -122,16 +122,16 @@ describe('dice roller rules', () => {
 });
 
 describe('dice roller wiring', () => {
-    test('ships as an opt-in core extension with a generate interceptor', () => {
+    test('ships switched on as a core extension with a generate interceptor', () => {
         const manifest = JSON.parse(readRepoFile('public/scripts/extensions/dice-roller/manifest.json'));
         expect(manifest).toMatchObject({
             display_name: 'Dice Roller',
             js: 'index.js',
             css: 'style.css',
             generate_interceptor: 'necoDiceRollerInterceptor',
-            bundled_opt_in: true,
             hooks: { activate: 'activate' },
         });
+        expect(manifest).not.toHaveProperty('bundled_opt_in');
         expect(manifest.description).not.toMatch(/\u2014/);
 
         const entry = readRepoFile('public/scripts/extensions/dice-roller/index.js');

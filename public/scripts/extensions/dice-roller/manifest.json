@@ -9,7 +9,6 @@
     "version": "1.0.0",
     "description": "Roll animated dice for what your character attempts. The result lands in your message as a success, partial success or failure, and the AI is told to write that outcome as settled fact. Short enough for Flash models.",
     "generate_interceptor": "necoDiceRollerInterceptor",
-    "bundled_opt_in": true,
     "hooks": {
         "activate": "activate"
     },
