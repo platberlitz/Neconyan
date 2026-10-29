@@ -27,8 +27,8 @@ function button(label, className = 'menu_button') {
     return node;
 }
 
-function plural(count, singular, pluralWord) {
-    return count === 1 ? singular : pluralWord;
+function switchedOnMessage(count) {
+    return count === 1 ? t`Switched on 1 agent.` : t`Switched on ${count} agents.`;
 }
 
 function costLabel(cost) {
@@ -370,7 +370,7 @@ export function createTaroGuide({ root, deps = {} }) {
         if (!primaryButton) return;
         const count = selectedPickCount();
         primaryButton.textContent = count
-            ? t`Switch on ${count} ${plural(count, 'agent', 'agents')}`
+            ? (count === 1 ? t`Switch on 1 agent` : t`Switch on ${count} agents`)
             : t`Choose at least one agent`;
         primaryButton.disabled = busy || Boolean(blockedReason()) || count === 0;
         primaryButton.setAttribute('aria-busy', String(busy));
@@ -380,13 +380,16 @@ export function createTaroGuide({ root, deps = {} }) {
         if (!result) return '';
         const budget = result.budget;
         if (budget.mode === 'free') {
+            if (budget.activeExtraCount === 1) return t`No extra requests: this pass adds none. 1 extra-request agent is already on.`;
             return budget.activeExtraCount
-                ? t`No extra requests: this pass adds none. ${budget.activeExtraCount} extra-request ${plural(budget.activeExtraCount, 'agent is', 'agents are')} already on.`
+                ? t`No extra requests: this pass adds none. ${budget.activeExtraCount} extra-request agents are already on.`
                 : t`No extra requests: picks either add prompt text or wait for a manual Run.`;
         }
         if (budget.mode === 'light') {
             const remaining = Math.max(0, budget.remainingExtraRequests);
-            return t`${budget.label}: ${remaining} of two extra-request ${plural(remaining, 'slot is', 'slots are')} free for new picks. ${budget.activeExtraCount} already on.`;
+            return remaining === 1
+                ? t`${budget.label}: 1 of two extra-request slots is free for new picks. ${budget.activeExtraCount} already on.`
+                : t`${budget.label}: ${remaining} of two extra-request slots are free for new picks. ${budget.activeExtraCount} already on.`;
         }
         return t`${budget.label}: every matching agent can be suggested, up to ${TARO_GUIDE_MAX_NEW_PICKS} new ones.`;
     }
@@ -497,7 +500,7 @@ export function createTaroGuide({ root, deps = {} }) {
             ? element('div', 'ica--taro-guide-applied')
             : null;
         if (applied) {
-            applied.append(element('span', '', t`Switched on ${undoState.count} ${plural(undoState.count, 'agent', 'agents')}.`));
+            applied.append(element('span', '', switchedOnMessage(undoState.count)));
             const undo = button(t`Undo`, 'menu_button');
             undo.id = 'ica--taro-guide-undo';
             undo.disabled = busy;
@@ -561,7 +564,7 @@ export function createTaroGuide({ root, deps = {} }) {
             // The default scope is used only when the page cannot report one.
         }
         busy = true;
-        setStatus(t`Switching on ${selected.length} ${plural(selected.length, 'agent', 'agents')}…`, 'working');
+        setStatus(selected.length === 1 ? t`Switching on 1 agent…` : t`Switching on ${selected.length} agents…`, 'working');
         render();
         try {
             const outcome = await deps.switchOn(selected.map(pick => pick.templateId), { scope, workspaceIdentity: identity });
@@ -575,12 +578,13 @@ export function createTaroGuide({ root, deps = {} }) {
                 identity,
                 scope,
             } : null;
-            setStatus(
-                ids.length
-                    ? t`Switched on ${ids.length} ${plural(ids.length, 'agent', 'agents')}.${stillCurrent ? '' : ' The chat changed while that saved, so check the chat you meant to set up.'}`
-                    : t`Nothing needed switching on. The recommended agents were already on.`,
-                'saved',
-            );
+            let message = ids.length
+                ? switchedOnMessage(ids.length)
+                : t`Nothing needed switching on. The recommended agents were already on.`;
+            if (ids.length && !stillCurrent) {
+                message += ' ' + t`The chat changed while that saved, so check the chat you meant to set up.`;
+            }
+            setStatus(message, 'saved');
             deps.onApplied?.();
             computeResults();
             view = 'results';
@@ -598,16 +602,17 @@ export function createTaroGuide({ root, deps = {} }) {
         if (busy || !undoState) return;
         const current = undoState;
         busy = true;
-        setStatus(t`Switching off ${current.count} ${plural(current.count, 'agent', 'agents')}…`, 'working');
+        setStatus(current.count === 1 ? t`Switching off 1 agent…` : t`Switching off ${current.count} agents…`, 'working');
         render();
         try {
             if (typeof current.undo !== 'function') throw new Error(t`That change cannot be undone from here.`);
             await current.undo();
             undoState = null;
             const libraryNote = current.createdCount
-                ? t` Any agents Taro added to the library stay there, switched off.`
+                ? t`Any agents Taro added to the library stay there, switched off.`
                 : '';
-            setStatus(t`Switched off ${current.count} ${plural(current.count, 'agent', 'agents')}.${libraryNote}`, 'saved');
+            const message = current.count === 1 ? t`Switched off 1 agent.` : t`Switched off ${current.count} agents.`;
+            setStatus([message, libraryNote].filter(Boolean).join(' '), 'saved');
             deps.onApplied?.();
             computeResults();
         } catch (error) {
