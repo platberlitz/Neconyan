@@ -39,10 +39,22 @@ test('A dirty pronoun draft cannot overwrite the newly selected persona', async 
 
 test('Shorthand and frozen previews produce real results without leaving saved state', async ({ app }) => {
     const { page, account, workbench } = await openMacros(app);
+    // The rail is ready before startup finishes. Wait for the app-ready event, or
+    // startup account-storage writes can schedule their delayed settings save
+    // after the flush below and land while previews are being measured.
+    await page.waitForFunction(async () => {
+        const { eventSource, event_types } = await import('/scripts/events.js');
+        return eventSource.autoFireLastArgs.has(event_types.APP_READY);
+    }, undefined, { timeout: 60000 });
     await selectMacroCharacter(page, account.avatar);
-    // Flush startup settings before measuring sandbox writes. Hidden prompt previews
-    // are deferred, so selection need not create a validation-cache write.
-    expect(await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }))).toBe(true);
+    // Flush startup settings before measuring sandbox writes, and cancel any save
+    // still waiting on its debounce: the immediate save carries the same state.
+    expect(await page.evaluate(async () => {
+        const core = await import('/script.js');
+        const { cancelDebounce } = await import('/scripts/utils.js');
+        cancelDebounce(core.saveSettingsDebounced);
+        return core.saveSettings(0, { returnResult: true });
+    })).toBe(true);
     await page.clock.install();
     await page.clock.fastForward(2000);
     const saves = [];
