@@ -6,21 +6,20 @@ test.skip(process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1', 'Requires a
 test.setTimeout(120000);
 
 for (const phone of [false, true]) {
-    test(`${phone ? 'phone' : 'desktop'} Kobold connection changes invalidate the saved acknowledgement`, async ({ app }) => {
+    test(`${phone ? 'phone' : 'desktop'} connection changes invalidate the saved acknowledgement`, async ({ app }) => {
         const account = await app.account({ phone });
         const page = await account.open();
         await page.evaluate(async () => {
-            const core = await import('/script.js');
-            const { kai_settings } = await import('/scripts/kai-settings.js');
-            core.changeMainAPI('kobold');
-            kai_settings.api_server = 'http://127.0.0.1:6001';
+            const { oai_settings } = await import('/scripts/openai.js');
+            // The fixture's active connection is an OpenAI-compatible custom endpoint.
+            oai_settings.custom_url = 'http://127.0.0.1:6001';
         });
         const first = await acknowledgeActiveSettings(page);
         expect(first.settingsRevision).toBeGreaterThan(0);
         const changed = await page.evaluate(async () => {
             const core = await import('/script.js');
-            const { kai_settings } = await import('/scripts/kai-settings.js');
-            kai_settings.api_server = 'http://127.0.0.1:6002';
+            const { oai_settings } = await import('/scripts/openai.js');
+            oai_settings.custom_url = 'http://127.0.0.1:6002';
             try { return core.getActiveGenerationAcknowledgement(); } catch (error) { return error.message; }
         });
         expect(changed).toContain('Save the active connection');

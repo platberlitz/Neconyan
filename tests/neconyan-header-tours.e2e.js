@@ -20,7 +20,7 @@ async function openPage(page, shell, tab, key) {
     return root;
 }
 
-test('Presets tour follows Text Completion, NovelAI and KoboldAI controls', async ({ browser }, testInfo) => {
+test('Presets tour follows the Text Completion preset controls', async ({ browser }, testInfo) => {
     test.setTimeout(300000);
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, baseURL: testInfo.project.use.baseURL, reducedMotion: 'reduce', serviceWorkers: 'block' });
     try {
@@ -29,24 +29,28 @@ test('Presets tour follows Text Completion, NovelAI and KoboldAI controls', asyn
         await expect(page.locator('body')).toHaveClass(/neconyan-rail-ready/, { timeout: 120000 });
         const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
         if (await skip.isVisible()) await skip.click();
-        for (const [backend, selector] of [['textgenerationwebui', '#settings_preset_textgenerationwebui'], ['novel', '#settings_preset_novel'], ['kobold', '#settings_preset']]) {
-            await openPage(page, 'left', 'api', 'connections');
-            await page.locator('#main_api').selectOption(backend);
-            const root = await openPage(page, 'left', 'presets', 'presets');
-            await expect(root.locator(selector)).toBeVisible();
-            await root.locator('.sb-shell-header .neconyan-tool-tour-button').click();
-            const card = page.locator('#neconyan-tool-tour');
-            for (const step of ['welcome', 'choose', 'save', 'copy', 'files', 'done']) {
-                await expect(card).toHaveAttribute('data-step', step);
-                await expect(card.locator('.neconyan-tool-tour-count')).toHaveText(/of 6$/);
-                await expect(page.locator('.neconyan-tool-tour-target')).toHaveCount(1);
-                await card.locator('[data-tool-tour-next]').click();
-            }
-            await expect(card).toHaveCount(0);
-        }
         await openPage(page, 'left', 'api', 'connections');
-        await page.locator('#main_api').selectOption('openai');
-    } finally { await context.close(); }
+        const formats = page.locator('#main_api');
+        // NovelAI and KoboldAI Classic were retired; saved values migrate to Chat Completion.
+        await expect(formats.locator('option')).toHaveText(['Chat Completion', 'Text Completion']);
+        await formats.selectOption('textgenerationwebui');
+        const root = await openPage(page, 'left', 'presets', 'presets');
+        await expect(root.locator('#settings_preset_textgenerationwebui')).toBeVisible();
+        await root.locator('.sb-shell-header .neconyan-tool-tour-button').click();
+        const card = page.locator('#neconyan-tool-tour');
+        for (const step of ['welcome', 'choose', 'save', 'copy', 'files', 'done']) {
+            await expect(card).toHaveAttribute('data-step', step);
+            await expect(card.locator('.neconyan-tool-tour-count')).toHaveText(/of 6$/);
+            await expect(page.locator('.neconyan-tool-tour-target')).toHaveCount(1);
+            await card.locator('[data-tool-tour-next]').click();
+        }
+        await expect(card).toHaveCount(0);
+        await openPage(page, 'left', 'api', 'connections');
+        await formats.selectOption('openai');
+    } finally {
+        // Teardown must not replace the assertion or action that actually failed.
+        await context.close().catch(() => {});
+    }
 });
 
 async function assertHeader(root) {
