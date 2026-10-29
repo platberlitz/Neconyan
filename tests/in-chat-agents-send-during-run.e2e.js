@@ -7,16 +7,25 @@ test.setTimeout(180000);
 test.skip(process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1', 'Requires a disposable agent fixture.');
 
 const cases = [
-    { kind: 'post', phone: false, rewritesReply: true },
-    { kind: 'companion', phone: true, rewritesReply: false },
+    { kind: 'post', phone: false, rewritesReply: true, stream: false },
+    { kind: 'companion', phone: true, rewritesReply: false, stream: false },
+    { kind: 'post', phone: true, rewritesReply: true, stream: true },
+    { kind: 'companion', phone: false, rewritesReply: false, stream: true },
 ];
 
-for (const { kind, phone, rewritesReply } of cases) {
-    test(`a non-streamed reply unlocks Send while a ${kind} Agent runs on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
+for (const { kind, phone, rewritesReply, stream } of cases) {
+    test(`a ${stream ? 'streamed' : 'non-streamed'} reply unlocks Send while a ${kind} Agent runs on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
         app.provider.mode.hold = 'held-agent';
         app.provider.mode.reply = body => ({ choices: [{ message: { role: 'assistant',
             content: body.model === 'held-agent' ? 'Agent output.' : 'Main reply.' } }] });
-        const account = await app.account({ phone, activeConnection: true });
+        if (stream) {
+            app.provider.mode.streamReply = body => body.model === 'held-agent'
+                ? { first: 'Agent ', rest: 'output.' }
+                : { first: 'Main ', rest: 'reply.' };
+        }
+        const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
+            saved.oai_settings.stream_openai = stream;
+        } });
         const page = await account.open({ workspace: false });
         // eslint-disable-next-line playwright/no-networkidle -- Inspect after the disposable preview finishes startup.
         await page.waitForLoadState('networkidle');
@@ -45,9 +54,15 @@ for (const { kind, phone, rewritesReply } of cases) {
                 messages: core.chat.map(message => `${message.is_user ? 'user' : 'char'}: ${message.mes}`) };
         });
         const heldAgentCalls = () => app.provider.calls.filter(call => call.model === 'held-agent').length;
+        const finishStreams = () => app.provider.calls.forEach(call => call.finishStream?.());
 
         await page.locator('#send_textarea').fill('First message.');
         await page.locator('#send_but').click();
+        if (stream) {
+            await expect.poll(() => app.provider.calls.some(call => call.stream && call.model !== 'held-agent' && call.firstTokenAt),
+                { timeout: 60000 }).toBe(true);
+            finishStreams();
+        }
         await expect.poll(heldAgentCalls, { timeout: 60000 }).toBeGreaterThan(0);
 
         await expect.poll(async () => (await chatState()).generating, { timeout: 15000 }).toBe(false);
@@ -65,6 +80,7 @@ for (const { kind, phone, rewritesReply } of cases) {
 
         await app.release();
         await expect.poll(async () => {
+            finishStreams();
             const state = await chatState();
             return !state.generating && !state.agentsActive;
         }, { timeout: 60000 }).toBe(true);

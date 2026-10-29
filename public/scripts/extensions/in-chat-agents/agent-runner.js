@@ -5168,9 +5168,11 @@ async function onMessageReceived(messageIndex, generationType, generationContext
         return;
     }
 
-    // The host awaits this listener before it unlocks Send, so a pass started
-    // while it still holds the send must run from the queue, not inline.
-    if (document.body?.dataset?.generating === 'true') {
+    // The host awaits this listener before it releases Send, so a pass started
+    // while it still holds the send must run from the queue, not inline. A
+    // streamed reply unlocks the UI first, but its processor is still
+    // finalising this message and holds the send until the listener returns.
+    if (document.body?.dataset?.generating === 'true' || getStreamingTarget(numericMessageIndex)) {
         deferPostProcessing(numericMessageIndex, generationType, activationSnapshot);
         return;
     }
