@@ -234,6 +234,8 @@ describe('companion floating windows', () => {
         expect(first).toMatch(/data-action="cwin-collapse"[^>]*aria-expanded="true"/);
         expect(first).toContain('data-action="cwin-close"');
         expect(first).toContain('data-action="cwin-run-latest"');
+        // Shell styles repaint every .menu_button except the shared primary class, so Run latest must carry it.
+        expect(first).toMatch(/class="[^"]*\bmenu_button_primary\b[^"]*"[^>]*data-action="cwin-run-latest"/);
         expect(first).toContain('data-action="cwin-regenerate"');
         expect(first).toContain('data-action="cwin-show"');
         expect(first).toContain('Formatted note');

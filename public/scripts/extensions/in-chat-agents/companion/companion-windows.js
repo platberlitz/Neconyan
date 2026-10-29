@@ -489,7 +489,7 @@ export function buildCompanionWindowHtml({
                 <div class="ica--cwin-note" data-role="cwin-note">${noteContent}</div>
                 ${pausedNote}
                 <div class="ica--cwin-actions" role="group" aria-label="Companion window actions">
-                    <button type="button" class="menu_button ica--cwin-action ica--cwin-action--primary" data-action="cwin-run-latest" data-cwin-focus="run-latest"${runDisabled} title="Run this companion on the latest reply">
+                    <button type="button" class="menu_button menu_button_primary ica--cwin-action ica--cwin-action--primary" data-action="cwin-run-latest" data-cwin-focus="run-latest"${runDisabled} title="Run this companion on the latest reply">
                         <i class="fa-solid fa-play" aria-hidden="true"></i><span>Run latest</span>
                     </button>
                     <button type="button" class="menu_button ica--cwin-action" data-action="cwin-regenerate" data-cwin-focus="regenerate"${regenerateDisabled} title="Write this note again from its message">
