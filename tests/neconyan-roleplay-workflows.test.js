@@ -1021,6 +1021,29 @@ test('group page additions keep the browser because the group payload cannot car
     expect(await workflows.groupPagePromptsBlocked()).toBe(true);
 });
 
+test('the dice result travels to server replies as a page prompt', async () => {
+    interceptors.push({ name: 'dice-roller', key: 'necoDiceRollerInterceptor' });
+    const types = [];
+    globalThis.necoDiceRollerInterceptor = jest.fn(async (chat, _size, _abort, type) => {
+        types.push({ chat, type });
+        extensionPrompts.neco_dice_roller = { value: '[Dice result for Alice]\nPick the lock: SUCCESS.', position: 1, depth: 0, scan: false, role: 0 };
+    });
+    try {
+        expect(await workflows.capturePagePrompts('roleplay.reply')).toEqual([
+            { key: 'neco_dice_roller', content: '[Dice result for Alice]\nPick the lock: SUCCESS.', position: 1, depth: 0, role: 'system' },
+        ]);
+        await workflows.capturePagePrompts('roleplay.swipe');
+        await workflows.capturePagePrompts('story.passage');
+        await workflows.capturePagePrompts('unknown.workflow');
+        expect(types).toEqual([
+            { chat: null, type: 'normal' }, { chat: null, type: 'swipe' },
+            { chat: null, type: 'continue' }, { chat: null, type: 'quiet' },
+        ]);
+    } finally {
+        delete globalThis.necoDiceRollerInterceptor;
+    }
+});
+
 test('page text a control hands over resolves its macros or keeps the browser path', () => {
     expect(workflows.resolvePageText(' Rewrite {{user}}\'s reply. ')).toBe('Rewrite Alice\'s reply.');
     expect(workflows.resolvePageText('Roll {{roll:d6}}')).toBeNull();
