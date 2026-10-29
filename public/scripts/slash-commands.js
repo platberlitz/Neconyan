@@ -152,18 +152,6 @@ export const UNIQUE_APIS = [];
 function setupConnectAPIMap() {
     /** @type {Record<string, ConnectAPIMap>} */
     const result = {
-        // Default APIs not contained inside text gen / chat gen
-        'kobold': {
-            selected: 'kobold',
-            button: '#api_button',
-        },
-        'horde': {
-            selected: 'koboldhorde',
-        },
-        'novel': {
-            selected: 'novel',
-            button: '#api_button_novel',
-        },
         'koboldcpp': {
             selected: 'textgenerationwebui',
             button: '#api_button_textgenerationwebui',
