@@ -4,6 +4,7 @@
   "description": "A game-style HUD for your character: Health, Satiety, Hydration, Energy and Morale bars with changes, reasons and status effects, carried forward between replies and short enough for Flash models",
   "icon": "fa-heart-pulse",
   "category": "companion",
+  "subcategory": "stats-visuals",
   "tags": [
     "vitals",
     "hud",

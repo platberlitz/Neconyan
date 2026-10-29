@@ -995,12 +995,15 @@ describe('in-chat agent bundled templates', () => {
         expect(unknownSubcategories).toEqual([]);
     });
 
-    test('assigns tracker and content templates to modal subcategories', () => {
+    test('assigns tracker, writing and companion templates to modal subcategories', async () => {
+        const { AGENT_SUBCATEGORIES } = await importAgentStore();
         const catalog = readTemplate('index.json');
 
-        for (const template of catalog.filter(template => ['tracker', 'content'].includes(template.category))) {
+        for (const template of catalog.filter(template => ['tracker', 'content', 'companion'].includes(template.category))) {
             expect(typeof template.subcategory).toBe('string');
             expect(template.subcategory.trim()).not.toBe('');
+            expect({ id: template.id, category: AGENT_SUBCATEGORIES[template.subcategory]?.category })
+                .toEqual({ id: template.id, category: template.category });
         }
     });
 

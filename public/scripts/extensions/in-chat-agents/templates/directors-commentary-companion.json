@@ -4,6 +4,7 @@
   "description": "The story's narrator steps out from behind the page: deadpan, sceptical commentary on what works, what falls flat and what's plain ridiculous, delivered in a selectable Narration Voice",
   "icon": "fa-clapperboard",
   "category": "companion",
+  "subcategory": "story-notes",
   "tags": [
     "commentary",
     "scene",

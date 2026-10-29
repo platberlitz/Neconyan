@@ -4,6 +4,7 @@
   "description": "Side note card for subtext, leverage, trust shifts, and emotional consequences",
   "icon": "fa-people-arrows",
   "category": "companion",
+  "subcategory": "story-notes",
   "tags": [
     "relationship",
     "subtext",

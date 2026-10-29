@@ -4,6 +4,7 @@
     "description": "Draws the scene as an illustrated map: the place holding {{user}} at the centre, nearby places laid out by direction, character pins, a travel trail and a compass. Built from simple lines, so fast models handle it well.",
     "icon": "fa-map",
     "category": "companion",
+    "subcategory": "stats-visuals",
     "tags": [
         "map",
         "locations",

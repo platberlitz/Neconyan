@@ -973,7 +973,6 @@ const MOBILE_DOCUMENT_PAN_HORIZONTAL_SCROLL_SELECTOR = [
     '#sb-persona-picker',
     '.group_speaker_list',
     '.ica--agent-tabs',
-    '.ica--category-chips',
     '.me-tabs',
     '.me-ref-chips',
     '.world_info_view_filters',

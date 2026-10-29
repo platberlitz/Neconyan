@@ -124,20 +124,16 @@
             <div class="ica--manage-layout">
             <aside class="ica--manage-nav" aria-label="Agent list filters">
             <div id="ica--agentTabs" class="ica--agent-tabs" role="tablist" aria-orientation="vertical" aria-label="Agent list tabs">
-                <button type="button" class="ica--agent-tab is-active" data-tab="all" role="tab" aria-selected="true" tabindex="0">All</button>
-                <button type="button" class="ica--agent-tab" data-tab="quick" role="tab" aria-selected="false" tabindex="-1"><i class="fa-solid fa-star fa-xs" aria-hidden="true"></i> Pinned</button>
-                <button type="button" class="ica--agent-tab" data-tab="pre" role="tab" aria-selected="false" tabindex="-1">Before reply</button>
-                <button type="button" class="ica--agent-tab" data-tab="post" role="tab" aria-selected="false" tabindex="-1">After reply</button>
-                <button type="button" class="ica--agent-tab" data-tab="companion" role="tab" aria-selected="false" tabindex="-1"><i class="fa-solid fa-user-astronaut fa-xs" aria-hidden="true"></i> Companions</button>
+                <button type="button" class="ica--agent-tab is-active" data-tab="all" role="tab" aria-selected="true" tabindex="0"><i class="fa-solid fa-layer-group fa-fw" aria-hidden="true"></i><span class="ica--agent-tab-label">All agents</span><span class="ica--agent-tab-count"></span></button>
+                <button type="button" class="ica--agent-tab" data-tab="on" role="tab" aria-selected="false" tabindex="-1"><i class="fa-solid fa-toggle-on fa-fw" aria-hidden="true"></i><span class="ica--agent-tab-label">Switched on</span><span class="ica--agent-tab-count"></span></button>
+                <button type="button" class="ica--agent-tab" data-tab="quick" role="tab" aria-selected="false" tabindex="-1"><i class="fa-solid fa-star fa-fw" aria-hidden="true"></i><span class="ica--agent-tab-label">Pinned</span><span class="ica--agent-tab-count"></span></button>
             </div>
             <label class="ica--agent-view-select-label">
                 <span class="sr-only">Agent list view</span>
                 <select id="ica--agentViewSelect" class="text_pole" aria-label="Agent list view">
-                    <option value="all">All</option>
+                    <option value="all">All agents</option>
+                    <option value="on">Switched on</option>
                     <option value="quick">Pinned</option>
-                    <option value="pre">Before reply</option>
-                    <option value="post">After reply</option>
-                    <option value="companion">Companions</option>
                 </select>
             </label>
             </aside>
@@ -149,16 +145,12 @@
                     <span class="sr-only">Search agents</span>
                     <input type="text" id="ica--search" class="text_pole" placeholder="Search agents" title="Search names, descriptions and tags" />
                 </label>
-                <label class="ica--category-field">
-                    <span class="sr-only">Filter by category</span>
-                    <select id="ica--categoryFilter" class="text_pole">
-                        <option value="">All categories</option>
-                        <option value="tracker">Tracker</option>
-                        <option value="randomizer">Randomizer</option>
-                        <option value="content">Content</option>
-                        <option value="tool">Tool</option>
-                        <option value="companion">Companion</option>
-                        <option value="custom">Custom</option>
+                <label class="ica--timing-field">
+                    <span class="sr-only">Filter by when agents run</span>
+                    <select id="ica--timingFilter" class="text_pole" title="Show agents by when they run">
+                        <option value="">Any time</option>
+                        <option value="pre">Before the reply</option>
+                        <option value="post">After the reply</option>
                     </select>
                 </label>
             </div>

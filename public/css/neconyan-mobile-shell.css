@@ -3367,8 +3367,8 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
     }
 }
 
-/* Agents: the rail owns the width, so the agent filters and the editor sections become
-   labelled scrolling button rows instead of dropdowns on phones. */
+/* Agents: the rail owns the width, so the agent views and types and the editor sections
+   become labelled scrolling button rows instead of dropdowns on phones. */
 body.neconyan #left-nav-panel #ica--settings .ica--manage-nav .ica--agent-tabs {
     display: flex;
     flex-direction: row;
@@ -3395,44 +3395,6 @@ body.neconyan #left-nav-panel #ica--settings .ica--manage-nav .ica--agent-tab {
     white-space: nowrap;
 }
 body.neconyan #ica--settings .ica--agent-view-select-label { display: none; }
-body.neconyan #ica--settings .ica--category-field { display: none; }
-body.neconyan #ica--settings .ica--category-chips {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: 4px;
-    width: 100%;
-    min-width: 0;
-    padding: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-    touch-action: pan-x;
-    overscroll-behavior-x: contain;
-}
-body.neconyan #ica--settings .ica--category-chips::-webkit-scrollbar { display: none; }
-body.neconyan #ica--settings .ica--category-chips .ica--category-chip {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-    min-height: 44px;
-    padding: 0 12px;
-    border: 1px solid var(--neco-border);
-    border-radius: 8px;
-    background: var(--neco-surface);
-    color: var(--neco-muted);
-    font-family: inherit;
-    font-size: 12px;
-    white-space: nowrap;
-    cursor: pointer;
-}
-body.neconyan #ica--settings .ica--category-chips .ica--category-chip.is-active {
-    border-color: var(--neco-ginger);
-    color: var(--neco-ink);
-    background: color-mix(in oklch, var(--neco-ginger) 16%, var(--neco-surface));
-}
 body.neconyan .popup:has(#ica--editor) .ica--editor-tabs {
     display: flex;
     flex-direction: row;
@@ -3518,7 +3480,7 @@ body.neconyan #right-nav-panel .neconyan-character-library-footer .sb-character-
 body.neconyan #sheld .sb-conversation-timeline { gap: 10px; }
 
 /* Keep touch rails usable from either their buttons or the space between them. */
-body.neconyan :is(.ica--category-chips, .world_info_view_filters) {
+body.neconyan .world_info_view_filters {
     touch-action: pan-x;
     overscroll-behavior-x: contain;
 }

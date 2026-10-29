@@ -4,6 +4,7 @@
   "description": "EchoChamber-style live audience reactions for the latest reply, rendered as a styled companion chat feed with selectable chat styles",
   "icon": "fa-comments",
   "category": "companion",
+  "subcategory": "chat-apps",
   "tags": [
     "chatroom",
     "reactions",

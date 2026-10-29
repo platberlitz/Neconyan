@@ -1,4 +1,4 @@
-/* global window, document, openBulkEditPopup, refreshAgentReferenceOptions, syncCategoryChips */
+/* global window, document, openBulkEditPopup, refreshAgentReferenceOptions */
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { parse } from 'acorn';
@@ -20,8 +20,7 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             page.on('pageerror', error => { throw error; });
             const popup = read('../public/index.html').match(/<template id="popup_template"[\s\S]*?<\/template>/)[0];
             const bulk = read(`${agentPath}settings.html`).match(/<template id="ica--bulkEditPopup"[\s\S]*?<\/template>/)[0];
-            await page.setContent(`<button id="open">Edit selected agents</button>${popup}${bulk}<select multiple id="references" aria-label="Related agents"></select>
-                <div id="ica--settings"><label class="ica--category-field">Category<select id="ica--categoryFilter"><option value="">All</option><option value="tracker">Trackers</option></select></label></div>`);
+            await page.setContent(`<button id="open">Edit selected agents</button>${popup}${bulk}<select multiple id="references" aria-label="Related agents"></select>`);
             await page.addScriptTag({ content: read('../public/lib/jquery-3.5.1.min.js') });
             await page.evaluate(() => {
                 Object.assign(window, {
@@ -44,7 +43,7 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             await page.addScriptTag({ content: [
                 declarations('../public/scripts/utils.js', ['escapeHtml', 'clamp']),
                 declarations('../public/scripts/popup.js', ['POPUP_TYPE', 'POPUP_RESULT', 'showPopupHelper', 'Popup', 'PopupUtils', 'fixToastrForDialogs', 'getTopmostModalLayer']),
-                declarations(`${agentPath}index.js`, ['openBulkEditPopup', 'applyBulkEdit', 'refreshAgentReferenceOptions', 'syncCategoryChips']),
+                declarations(`${agentPath}index.js`, ['openBulkEditPopup', 'applyBulkEdit', 'refreshAgentReferenceOptions']),
             ].join('\n') });
             await page.evaluate(() => { document.getElementById('open').onclick = () => { window.dialogFinished = openBulkEditPopup(); }; });
         });
@@ -85,14 +84,6 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             await expect(page.getByLabel('Related agents')).toHaveValues([]);
             await page.evaluate(() => refreshAgentReferenceOptions(window.$('#references'), window.options, ['Agent-A'], ['agent-a']));
             await expect(page.getByLabel('Related agents')).toHaveValues(['agent-a']);
-        });
-
-        test('category controls follow the phone breakpoint without a list refresh', async ({ page }) => {
-            await page.evaluate(() => syncCategoryChips(''));
-            await page.setViewportSize({ width: 1280, height: 900 });
-            await expect(page.getByRole('group', { name: 'Filter by category' })).toBeHidden();
-            await page.setViewportSize({ width: 393, height: 852 });
-            await expect(page.getByRole('group', { name: 'Filter by category' })).toBeVisible();
         });
     });
 }

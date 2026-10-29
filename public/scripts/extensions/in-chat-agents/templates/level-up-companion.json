@@ -4,6 +4,7 @@
   "description": "Track major milestones and emit level-up blocks when earned",
   "icon": "",
   "category": "companion",
+  "subcategory": "stats-visuals",
   "execution": "companion",
   "tags": [],
   "version": 1,

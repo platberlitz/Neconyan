@@ -53,8 +53,8 @@ describe('in-chat agents workspace redesign', () => {
     });
 
     test('renders pinned agents through the same sortable rows as every other filter', () => {
-        expect(indexSource).toContain('if (activeTab === \'quick\')');
-        expect(indexSource).toContain('agents = agents.filter(agent => Boolean(agent.favorite));');
+        expect(indexSource).toContain('if (tab === \'quick\') return Boolean(agent.favorite);');
+        expect(indexSource).toContain('agents = agents.filter(agent => agentMatchesAgentListView(agent, activeTab));');
         expect(indexSource).toContain('setupCategorySortable(items[0]);');
         expect(indexSource).not.toContain('const showQuickSection');
         expect(indexSource).not.toContain('ica--quick-grid');

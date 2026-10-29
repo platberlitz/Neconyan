@@ -4,6 +4,7 @@
   "description": "Shows in-story texts or letters sent to the user as a phone inbox or parchment companion view, and stays hidden when no message arrives",
   "icon": "fa-mobile-screen-button",
   "category": "companion",
+  "subcategory": "chat-apps",
   "tags": [
     "messages",
     "phone",

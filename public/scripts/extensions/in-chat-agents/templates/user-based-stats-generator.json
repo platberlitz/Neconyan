@@ -4,6 +4,7 @@
   "description": "Generate and maintain a persona-informed RPG stat sheet for {{user}}",
   "icon": "",
   "category": "companion",
+  "subcategory": "stats-visuals",
   "execution": "companion",
   "tags": [],
   "version": 1,

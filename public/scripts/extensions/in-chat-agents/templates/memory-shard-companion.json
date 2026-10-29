@@ -4,6 +4,7 @@
   "description": "Auto-compresses history into a compact, resumable memory shard once the chat reaches ~30k tokens, feeds the latest shard back into context, and can hide the story it has absorbed",
   "icon": "fa-brain",
   "category": "companion",
+  "subcategory": "story-notes",
   "tags": [
     "memory",
     "summary",

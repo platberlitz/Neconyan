@@ -802,8 +802,10 @@ export function resolveCompanionConnectionProfile(profileId = '') {
 
 /**
  * Checks whether an agent belongs on the given agent-list tab.
+ * Category tabs ('tracker', 'content', 'companion' and so on) match the group
+ * the agent is listed under; 'pre' and 'post' match when it runs.
  * @param {InChatAgent} agent
- * @param {'all'|'pre'|'post'|'companion'|string} tab
+ * @param {'all'|'pre'|'post'|string} tab
  * @returns {boolean}
  */
 export function agentMatchesListTab(agent, tab) {
@@ -812,10 +814,8 @@ export function agentMatchesListTab(agent, tab) {
             return !isCompanionAgent(agent) && ['pre', 'both'].includes(agent?.phase);
         case 'post':
             return !isCompanionAgent(agent) && ['post', 'both'].includes(agent?.phase);
-        case 'companion':
-            return isCompanionAgent(agent);
         default:
-            return true;
+            return Object.hasOwn(AGENT_CATEGORIES, tab) ? getAgentListKind(agent) === tab : true;
     }
 }
 
@@ -1193,29 +1193,45 @@ export function normalizeAgentCategory(category = '', sourceTemplateId = '', nam
 }
 
 /**
- * Category display order and labels.
+ * Category display order, group names and one-line descriptions.
  */
 export const AGENT_CATEGORIES = {
-    tracker: { label: 'Tracker', icon: 'fa-chart-line' },
-    randomizer: { label: 'Randomizer', icon: 'fa-dice' },
-    content: { label: 'Content', icon: 'fa-film' },
-    tool: { label: 'Tool', icon: 'fa-screwdriver-wrench' },
-    companion: { label: 'Companion', icon: 'fa-user-astronaut' },
-    custom: { label: 'Custom', icon: 'fa-puzzle-piece' },
+    tracker: { label: 'Trackers', icon: 'fa-chart-line', description: 'Keep a running record of the scene, characters and progress.' },
+    randomizer: { label: 'Randomisers', icon: 'fa-dice', description: 'Roll a surprise twist into the next reply.' },
+    content: { label: 'Writing', icon: 'fa-feather-pointed', description: 'Shape how replies read: prose, point of view and story direction.' },
+    tool: { label: 'Tools', icon: 'fa-screwdriver-wrench', description: 'Give the model a tool it can call while replying.' },
+    companion: { label: 'Companions', icon: 'fa-user-astronaut', description: 'Post a separate note beside the chat after each reply.' },
+    custom: { label: 'Custom', icon: 'fa-puzzle-piece', description: 'Agents you made or imported yourself.' },
 };
 
 /**
  * Modal-only template subgroup labels.
  */
 export const AGENT_SUBCATEGORIES = {
-    world: { category: 'tracker', label: 'World & Scene', icon: 'fa-map' },
-    characters: { category: 'tracker', label: 'Character State', icon: 'fa-users' },
-    progress: { category: 'tracker', label: 'Player Progress', icon: 'fa-trophy' },
-    'player-choices': { category: 'tracker', label: 'Player Choices', icon: 'fa-list-check' },
-    'prose-quality': { category: 'content', label: 'Prose Quality', icon: 'fa-feather' },
-    pov: { category: 'content', label: 'Point of View', icon: 'fa-user-pen' },
-    behaviour: { category: 'content', label: 'Behaviour & Tone', icon: 'fa-masks-theater' },
+    world: { category: 'tracker', label: 'World & scene', icon: 'fa-map' },
+    characters: { category: 'tracker', label: 'Characters', icon: 'fa-users' },
+    progress: { category: 'tracker', label: 'Player progress', icon: 'fa-trophy' },
+    'player-choices': { category: 'tracker', label: 'Player choices', icon: 'fa-list-check' },
+    'prose-quality': { category: 'content', label: 'Prose', icon: 'fa-feather' },
+    pov: { category: 'content', label: 'Point of view', icon: 'fa-user-pen' },
+    behaviour: { category: 'content', label: 'Story direction', icon: 'fa-masks-theater' },
+    'story-notes': { category: 'companion', label: 'Story notes', icon: 'fa-clapperboard' },
+    'chat-apps': { category: 'companion', label: 'Chats & messages', icon: 'fa-comments' },
+    'stats-visuals': { category: 'companion', label: 'Stats & visuals', icon: 'fa-chart-simple' },
 };
+
+/**
+ * Returns the My agents group an agent is listed under.
+ * @param {Partial<InChatAgent>} agent
+ * @returns {string}
+ */
+export function getAgentListKind(agent) {
+    if (isCompanionAgent(agent)) {
+        return 'companion';
+    }
+    const category = String(agent?.category ?? '');
+    return Object.hasOwn(AGENT_CATEGORIES, category) ? category : 'custom';
+}
 
 function escapeRegexLiteral(value) {
     return String(value ?? '').replaceAll('/', '\\/');

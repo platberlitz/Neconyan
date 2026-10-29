@@ -4,6 +4,7 @@
   "description": "Draws a live map of where every character is, grouped by place with their exact spot, what they are doing and how close they are to you, and carries positions forward between replies",
   "icon": "fa-map-location-dot",
   "category": "companion",
+  "subcategory": "stats-visuals",
   "tags": [
     "positions",
     "map",

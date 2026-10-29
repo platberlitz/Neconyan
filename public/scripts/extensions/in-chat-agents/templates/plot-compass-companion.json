@@ -4,6 +4,7 @@
   "description": "Set a Plot Objective on the note card or in this agent's settings and it plans how the story gets there: progress, next developments, obstacles, and a suggested move each turn",
   "icon": "fa-compass",
   "category": "companion",
+  "subcategory": "story-notes",
   "tags": [
     "plot",
     "objective",

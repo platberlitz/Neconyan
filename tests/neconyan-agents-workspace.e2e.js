@@ -85,7 +85,7 @@ async function openFullEditor(page) {
 }
 
 async function openCardQuickSettings(page) {
-    const allTab = page.locator('#ica--settings').getByRole('tab', { name: 'All', exact: true });
+    const allTab = page.locator('#ica--agentTabs .ica--agent-tab[data-tab="all"]');
     if (await allTab.getAttribute('aria-selected') !== 'true') await allTab.click();
     const card = page.locator('#ica--agentList .ica--agent-card').first();
     await card.locator('.ica--card-primary-actions .ica--btn-settings').click();
@@ -114,7 +114,7 @@ for (const width of [1280, 393]) {
             try {
                 for (const agent of agents) expect((await page.request.post('/api/in-chat-agents/save', { headers: requestHeaders, data: agent })).ok()).toBe(true);
                 await openAgents(page);
-                await page.locator('#ica--settings').getByRole('tab', { name: 'All', exact: true }).click();
+                await page.locator('#ica--agentTabs .ica--agent-tab[data-tab="all"]').click();
                 await page.locator('#ica--search').fill('Version check:');
                 for (const agent of agents) {
                     const card = page.locator(`[data-agent-id="${agent.id}"]`);
