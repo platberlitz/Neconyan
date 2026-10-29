@@ -4481,7 +4481,10 @@ body.neconyan .ica--standalone-title { display: none; }
     #ica--settings .ica--search-field { width: 100%; min-width: 0; flex: auto; }
     #ica--settings .ica--toolbar-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
     #ica--settings .ica--toolbar-actions > button { justify-content: center; width: 100%; min-width: 0; margin: 0; white-space: normal; }
-    #ica--settings .ica--toolbar-actions > [data-neconyan-cat-control] { grid-column: 1 / -1; }
+    #ica--settings .ica--toolbar-actions > #ica--addAgent,
+    #ica--settings .ica--toolbar-actions > #ica--templates,
+    #ica--settings .ica--toolbar-actions > #ica--askTaro { grid-column: 1 / -1; }
+    #ica--settings .ica--toolbar-actions > button { min-height: 44px; }
     #ica--settings .ica--more-tools { width: 100%; margin: 0; }
     #ica--settings .ica--more-tools > summary { justify-content: center; }
     #ica--settings .ica--more-tools[open] { grid-column: 1 / -1; }
@@ -4844,5 +4847,389 @@ body.neconyan .ica--standalone-title { display: none; }
     #ica--editor .ica--editor-titlebar > div > p:not(.ica--editor-summary),
     #ica--editor .ica--editor-title-status {
         display: none;
+    }
+}
+
+/* ── Taro's inline agent guide ─────────────────────── */
+
+.ica--taro-guide {
+    margin: 8px 0 16px;
+    padding: 16px;
+    border: 1px solid var(--ica-focus, var(--SmartThemeQuoteColor));
+    border-radius: var(--sb-radius-lg, 16px);
+    background: var(--ica-raised, var(--SmartThemeBlurTintColor));
+    color: var(--SmartThemeBodyColor);
+}
+
+.ica--taro-guide[hidden] {
+    display: none;
+}
+
+.ica--taro-guide-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.ica--taro-guide-portrait {
+    flex: 0 0 auto;
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    background: var(--ica-soft, var(--SmartThemeQuoteColor));
+    object-fit: cover;
+}
+
+.ica--taro-guide-copy {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.ica--taro-guide-kicker {
+    margin: 0;
+    color: var(--ica-muted, var(--SmartThemeEmColor));
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+#ica--settings .ica--taro-guide .ica--taro-guide-title {
+    margin: 2px 0 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    color: var(--SmartThemeBodyColor);
+    font-size: calc(var(--mainFontSize) * 1.15);
+    line-height: 1.2;
+}
+
+.ica--taro-guide-lead {
+    margin: 8px 0 0;
+    color: var(--ica-muted, var(--SmartThemeEmColor));
+    line-height: 1.35;
+}
+
+.ica--taro-guide-close {
+    flex: 0 0 auto;
+    margin-left: auto;
+    min-height: 44px;
+}
+
+.ica--taro-guide-body {
+    margin-top: 14px;
+}
+
+.ica--taro-guide-progress {
+    margin: 0 0 8px;
+    color: var(--ica-muted, var(--SmartThemeEmColor));
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.ica--taro-guide-form {
+    display: grid;
+    gap: 12px;
+}
+
+.ica--taro-guide-fieldset {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.ica--taro-guide-fieldset legend {
+    padding: 0;
+    font-size: calc(var(--mainFontSize) * 1.02);
+    font-weight: 700;
+}
+
+.ica--taro-guide-help {
+    margin: 6px 0 10px;
+    color: var(--ica-muted, var(--SmartThemeEmColor));
+    line-height: 1.35;
+}
+
+.ica--taro-guide-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-height: 44px;
+    margin-bottom: 6px;
+    padding: 10px 12px;
+    border: 1px solid var(--ica-border, var(--SmartThemeBorderColor));
+    border-radius: 12px;
+    background: var(--ica-surface, var(--SmartThemeBlurTintColor));
+    cursor: pointer;
+}
+
+.ica--taro-guide-option input {
+    flex: 0 0 auto;
+    margin: 3px 0 0;
+}
+
+.ica--taro-guide-option-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.ica--taro-guide-option-copy small {
+    color: var(--ica-muted, var(--SmartThemeEmColor));
+    line-height: 1.3;
+}
+
+.ica--taro-guide-option:has(input:checked) {
+    border-color: var(--neco-ginger, var(--SmartThemeQuoteColor));
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 10%, var(--ica-surface, var(--SmartThemeBlurTintColor)));
+}
+
+.ica--taro-guide-option:has(:focus-visible) {
+    outline: 2px solid var(--ica-focus, var(--SmartThemeQuoteColor));
+    outline-offset: 2px;
+}
+
+.ica--taro-guide-option--explicit {
+    margin-top: 10px;
+    border-style: dashed;
+}
+
+.ica--taro-guide-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.ica--taro-guide-actions .menu_button {
+    min-height: 44px;
+}
+
+.ica--taro-guide-primary {
+    min-width: min(100%, 220px);
+}
+
+.ica--taro-guide-scope,
+.ica--taro-guide-budget,
+.ica--taro-guide-paused,
+.ica--taro-guide-blocked {
+    margin: 6px 0 0;
+    line-height: 1.4;
+}
+
+.ica--taro-guide-scope,
+.ica--taro-guide-budget {
+    color: var(--ica-muted, var(--SmartThemeEmColor));
+}
+
+.ica--taro-guide-paused {
+    padding: 8px 10px;
+    border: 1px solid var(--ica-border, var(--SmartThemeBorderColor));
+    border-radius: 10px;
+    background: var(--ica-soft, var(--SmartThemeQuoteColor));
+}
+
+.ica--taro-guide-blocked {
+    color: var(--fullred, var(--SmartThemeQuoteColor));
+    font-weight: 600;
+}
+
+.ica--taro-guide-notes {
+    margin: 8px 0 0;
+    padding-left: 18px;
+    line-height: 1.4;
+}
+
+.ica--taro-guide-rows {
+    display: grid;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.ica--taro-guide-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-height: 44px;
+    padding: 10px 12px;
+    border: 1px solid var(--ica-border, var(--SmartThemeBorderColor));
+    border-radius: 12px;
+    background: var(--ica-surface, var(--SmartThemeBlurTintColor));
+}
+
+.ica--taro-guide-row.is-already-on {
+    background: var(--ica-soft, var(--SmartThemeQuoteColor));
+}
+
+.ica--taro-guide-row input {
+    flex: 0 0 auto;
+    margin: 3px 0 0;
+}
+
+.ica--taro-guide-row:has(:focus-visible) {
+    outline: 2px solid var(--ica-focus, var(--SmartThemeQuoteColor));
+    outline-offset: 2px;
+}
+
+.ica--taro-guide-row-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.ica--taro-guide-row-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.ica--taro-guide-badge {
+    padding: 1px 7px;
+    border: 1px solid var(--ica-border, var(--SmartThemeBorderColor));
+    border-radius: 999px;
+    background: var(--ica-soft, var(--SmartThemeQuoteColor));
+    color: var(--SmartThemeBodyColor);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.ica--taro-guide-cost {
+    color: var(--ica-muted, var(--SmartThemeEmColor));
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.ica--taro-guide-cost--before,
+.ica--taro-guide-cost--after,
+.ica--taro-guide-cost--manual {
+    color: var(--SmartThemeBodyColor);
+}
+
+.ica--taro-guide-reasons {
+    color: var(--SmartThemeBodyColor);
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.ica--taro-guide-empty {
+    margin: 0;
+    color: var(--ica-muted, var(--SmartThemeEmColor));
+}
+
+.ica--taro-guide-skipped {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--ica-border, var(--SmartThemeBorderColor));
+}
+
+.ica--taro-guide-skipped summary {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.ica--taro-guide-skipped ul {
+    margin: 4px 0 0;
+    padding-left: 18px;
+    line-height: 1.4;
+}
+
+.ica--taro-guide-skipped li {
+    display: grid;
+    gap: 2px;
+    margin-bottom: 6px;
+}
+
+.ica--taro-guide-skipped li span {
+    color: var(--ica-muted, var(--SmartThemeEmColor));
+}
+
+.ica--taro-guide-applied {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--neco-ginger, var(--SmartThemeQuoteColor));
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 10%, var(--ica-surface, var(--SmartThemeBlurTintColor)));
+    font-weight: 600;
+}
+
+.ica--taro-guide-status {
+    margin: 10px 0 0;
+    line-height: 1.4;
+}
+
+.ica--taro-guide-status:empty {
+    display: none;
+}
+
+.ica--taro-guide-status[data-tone="saved"],
+.ica--taro-guide-status[data-tone="warn"] {
+    color: var(--SmartThemeBodyColor);
+    font-weight: 600;
+}
+
+.ica--taro-guide-status[data-tone="error"] {
+    color: var(--fullred, var(--SmartThemeQuoteColor));
+    font-weight: 600;
+}
+
+@media (max-width: 768px) {
+    #ica--settings .ica--taro-guide {
+        margin: 6px 0 12px;
+        padding: 12px;
+        border-radius: 14px;
+    }
+
+    .ica--taro-guide-header {
+        gap: 8px;
+    }
+
+    .ica--taro-guide-portrait {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+    }
+
+    .ica--taro-guide-lead {
+        margin-top: 6px;
+    }
+
+    .ica--taro-guide-body {
+        margin-top: 10px;
+    }
+
+    .ica--taro-guide-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .ica--taro-guide-actions .menu_button,
+    .ica--taro-guide-primary {
+        width: 100%;
+        min-width: 0;
+        margin: 0;
+        justify-content: center;
+    }
+
+    .ica--taro-guide-primary {
+        grid-column: 1 / -1;
+    }
+
+    .ica--taro-guide-option,
+    .ica--taro-guide-row {
+        padding: 10px;
     }
 }

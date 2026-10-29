@@ -857,6 +857,13 @@ const TOOL_PAGES = Object.freeze({
                 hint: 'Start from the library. Writing everything yourself is how people end up writing it twice.',
             },
             {
+                id: 'taro-guide', tab: '.ica--workspace-tab[data-workspace-view="manage"]', optional: true,
+                targets: ['#ica--askTaro'],
+                title: 'Let Taro ask first',
+                body: '**Help me choose** asks four short questions: what you are playing, what the reply should do better, what to keep track of, and how many extra requests you allow.\nTaro then lists agents with a reason for each one and says whether it adds prompt text or makes an extra request. Nothing is switched on until you tick the ones you want and press **Switch on**. You can change the answers, close the guide, or undo the switches it made.',
+                hint: 'I ask. You decide. Then I take the blame if the prose is still bad.',
+            },
+            {
                 id: 'setups', tab: '.ica--workspace-tab[data-workspace-view="manage"]', open: '#ica--moreTools > summary',
                 targets: ['.ica--setup-controls'],
                 title: 'Saved setups',
@@ -988,7 +995,7 @@ const TOOL_PAGES = Object.freeze({
                 id: 'done',
                 targets: ['.neconyan-tool-tour-button'],
                 title: 'That is the whole page',
-                body: 'Start with one agent from the library, run it once by hand, then switch it on. Open **Edit** when you want to change when it runs, which model it uses or what it does to the reply.\nPress **Tour** whenever you want this walk again.',
+                body: 'Start with one agent from the library, or let **Help me choose** suggest a small set from your answers. Run one by hand, then switch it on. Open **Edit** when you want to change when it runs, which model it uses or what it does to the reply.\nPress **Tour** whenever you want this walk again.',
                 hint: 'Now, about that cigarette.',
             },
         ],
