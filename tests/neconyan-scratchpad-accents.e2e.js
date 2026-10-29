@@ -1,8 +1,19 @@
-/* global document, getComputedStyle */
+/* global document, getComputedStyle, window, requestAnimationFrame */
 /* eslint-disable playwright/no-conditional-in-test -- Viewport setup and named accent variants share the same contrast checks. */
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+
+// Theme and accent changes animate the button fill and its inherited label colour separately.
+// Sampling before both transitions finish can pair the new fill with the previous label.
+async function settleColours(page) {
+    await page.evaluate(async () => {
+        await Promise.all(document.getAnimations()
+            .filter(animation => animation instanceof window.CSSTransition)
+            .map(animation => animation.finished.catch(() => {})));
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    });
+}
 
 for (const phone of [false, true]) {
     test(`${phone ? 'iPhone stand-in' : 'desktop'} reply modes stay readable with default, pale and dark accents`, async ({ app }) => {
@@ -26,6 +37,7 @@ for (const phone of [false, true]) {
                 if (accent) await page.locator(`.sb-accent-profile-apply[aria-label="Apply ${accent} accent profile"]`).evaluate(element => element.click());
                 for (const pressed of [true, false]) {
                     await expect(page.locator('.scratchpad-random')).toHaveAttribute('aria-pressed', String(pressed));
+                    await settleColours(page);
                     for (const selector of ['.scratchpad-random', '.scratchpad-round-table', '.scratchpad-send']) {
                         const measured = await page.locator(selector).evaluate(async element => {
                             const { contrastRatio } = await import('/scripts/theme-contrast.js');

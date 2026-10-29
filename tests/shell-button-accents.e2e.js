@@ -133,7 +133,9 @@ for (const phone of [false, true]) {
                         await primary.evaluate(el => el.classList.add('active'));
                         await check(primary, `${label}/active`);
                         await primary.evaluate(el => el.classList.remove('active'));
-                        for (const [backend, id] of [['kobold', 'api_button'], ['novel', 'api_button_novel'], ['textgenerationwebui', 'api_button_textgenerationwebui'], ['openai', 'api_button_openai']]) {
+                        // Only the reply formats #main_api still offers. Playwright retries a missing
+                        // option until the test times out, so a removed format must not stay here.
+                        for (const [backend, id] of [['textgenerationwebui', 'api_button_textgenerationwebui'], ['openai', 'api_button_openai']]) {
                             await page.locator('#main_api').selectOption(backend);
                             await expect(page.locator(`#${id}`)).toBeVisible();
                             await check(page.locator(`#${id}`), `${label}/${backend} Connect`);
