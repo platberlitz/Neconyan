@@ -2348,6 +2348,7 @@
         "description": "Matches character replies and new persona messages to their expressions. Personas use their own saved expression sets. Can also generate missing character sprites.",
         "icon": "fa-face-smile-beam",
         "category": "companion",
+        "subcategory": "stats-visuals",
         "tags": [
             "expressions",
             "emotions",
@@ -2413,6 +2414,7 @@
         "description": "Side note card for contradictions, unresolved setup, and state changes that may matter next",
         "icon": "fa-clipboard-check",
         "category": "companion",
+        "subcategory": "story-notes",
         "tags": [
             "continuity",
             "memory",
@@ -2474,6 +2476,7 @@
         "description": "Side note card for subtext, leverage, trust shifts, and emotional consequences",
         "icon": "fa-people-arrows",
         "category": "companion",
+        "subcategory": "story-notes",
         "tags": [
             "relationship",
             "subtext",
@@ -2535,6 +2538,7 @@
         "description": "The story's narrator steps out from behind the page: deadpan, sceptical commentary on what works, what falls flat and what's plain ridiculous, delivered in a selectable Narration Voice",
         "icon": "fa-clapperboard",
         "category": "companion",
+        "subcategory": "story-notes",
         "tags": [
             "commentary",
             "scene",
@@ -2596,6 +2600,7 @@
         "description": "Manual side note card: interview the character about the latest scene, in character, off the record",
         "icon": "fa-microphone-lines",
         "category": "companion",
+        "subcategory": "story-notes",
         "tags": [
             "interview",
             "character",
@@ -2657,6 +2662,7 @@
         "description": "Manual side note card: drafts one-concept lorebook entries with trigger keys from new facts established in the scene",
         "icon": "fa-book-atlas",
         "category": "companion",
+        "subcategory": "story-notes",
         "tags": [
             "lorebook",
             "world info",
@@ -2718,6 +2724,7 @@
         "description": "Auto-compresses history into a compact, resumable memory shard once the chat reaches ~30k tokens, feeds the latest shard back into context, and can hide the story it has absorbed",
         "icon": "fa-brain",
         "category": "companion",
+        "subcategory": "story-notes",
         "tags": [
             "memory",
             "summary",
@@ -2783,6 +2790,7 @@
         "description": "Set a Plot Objective on the note card or in this agent's settings and it plans how the story gets there: progress, next developments, obstacles, and a suggested move each turn",
         "icon": "fa-compass",
         "category": "companion",
+        "subcategory": "story-notes",
         "tags": [
             "plot",
             "objective",
@@ -2848,6 +2856,7 @@
         "description": "EchoChamber-style live audience reactions for the latest reply, rendered as a styled companion chat feed with selectable chat styles",
         "icon": "fa-comments",
         "category": "companion",
+        "subcategory": "chat-apps",
         "tags": [
             "chatroom",
             "reactions",
@@ -3016,6 +3025,7 @@
         "description": "Manual private aside chat with the character or characters in the scene, kept outside the roleplay transcript",
         "icon": "fa-comments",
         "category": "companion",
+        "subcategory": "chat-apps",
         "tags": [
             "chat",
             "aside",
@@ -3099,6 +3109,7 @@
         "description": "Shows in-story texts or letters sent to the user as a phone inbox or parchment companion view, and stays hidden when no message arrives",
         "icon": "fa-mobile-screen-button",
         "category": "companion",
+        "subcategory": "chat-apps",
         "tags": [
             "messages",
             "phone",
@@ -3267,6 +3278,7 @@
         "description": "Draws a live map of where every character is, grouped by place with their exact spot, what they are doing and how close they are to you, and carries positions forward between replies",
         "icon": "fa-map-location-dot",
         "category": "companion",
+        "subcategory": "stats-visuals",
         "tags": [
             "positions",
             "map",
@@ -3504,6 +3516,7 @@
         "description": "A game-style HUD for your character: Health, Satiety, Hydration, Energy and Morale bars with changes, reasons and status effects, carried forward between replies and short enough for Flash models",
         "icon": "fa-heart-pulse",
         "category": "companion",
+        "subcategory": "stats-visuals",
         "tags": [
             "vitals",
             "hud",
@@ -3930,6 +3943,7 @@
         "description": "Draws the scene as an illustrated map: the place holding {{user}} at the centre, nearby places laid out by direction, character pins, a travel trail and a compass. Built from simple lines, so fast models handle it well.",
         "icon": "fa-map",
         "category": "companion",
+        "subcategory": "stats-visuals",
         "tags": [
             "map",
             "locations",
@@ -4681,6 +4695,7 @@
         "description": "Track major milestones and emit level-up blocks when earned",
         "icon": "",
         "category": "companion",
+        "subcategory": "stats-visuals",
         "execution": "companion",
         "tags": [],
         "version": 1,
@@ -4810,6 +4825,7 @@
         "description": "Generate and maintain a persona-informed RPG stat sheet for {{user}}",
         "icon": "",
         "category": "companion",
+        "subcategory": "stats-visuals",
         "execution": "companion",
         "tags": [],
         "version": 1,

@@ -4,6 +4,7 @@
   "description": "Side note card for contradictions, unresolved setup, and state changes that may matter next",
   "icon": "fa-clipboard-check",
   "category": "companion",
+  "subcategory": "story-notes",
   "tags": [
     "continuity",
     "memory",

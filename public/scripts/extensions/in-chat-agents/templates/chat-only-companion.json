@@ -4,6 +4,7 @@
   "description": "Manual private aside chat with the character or characters in the scene, kept outside the roleplay transcript",
   "icon": "fa-comments",
   "category": "companion",
+  "subcategory": "chat-apps",
   "tags": [
     "chat",
     "aside",

@@ -22,7 +22,7 @@ async function openWorkspace(page) {
     await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
     const legacyImages = page.locator('dialog[open]').filter({ hasText: 'Quick Image Gen found legacy browser-only settings' });
     if (await legacyImages.isVisible()) await legacyImages.locator('.popup-button-cancel').click();
-    await page.locator('#ica--settings').getByRole('tab', { name: 'All', exact: true }).click();
+    await page.locator('#ica--agentTabs .ica--agent-tab[data-tab="all"]').click();
 }
 
 async function storedAgents(page) {

@@ -408,7 +408,6 @@ describe('mobile shell lifecycle wiring', () => {
         for (const [rootSelector, railSelector] of [
             ['#sheld', '.group_speaker_list'],
             ['#left-nav-panel', '.ica--agent-tabs'],
-            ['#left-nav-panel', '.ica--category-chips'],
             ['#right-nav-panel', '.me-tabs'],
             ['#right-nav-panel', '.me-ref-chips'],
             ['#right-nav-panel', '.world_info_view_filters'],

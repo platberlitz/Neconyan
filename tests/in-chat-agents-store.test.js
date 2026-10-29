@@ -838,6 +838,24 @@ describe('in-chat agent scoped enabled state', () => {
         expect(store.agentMatchesListTab(companionAgent, 'all')).toBe(true);
     });
 
+    test('sorts agents into one list type each, with companions and unknown types kept apart', async () => {
+        const store = await importStore();
+        const tracker = { category: 'tracker', phase: 'pre' };
+        const writing = { category: 'content', phase: 'post' };
+        const trackerCompanion = { category: 'tracker', phase: 'post', execution: 'companion' };
+        const unknown = { category: 'mystery', phase: 'pre' };
+
+        expect(store.getAgentListKind(tracker)).toBe('tracker');
+        expect(store.getAgentListKind(writing)).toBe('content');
+        expect(store.getAgentListKind(trackerCompanion)).toBe('companion');
+        expect(store.getAgentListKind(unknown)).toBe('custom');
+        expect(store.agentMatchesListTab(tracker, 'tracker')).toBe(true);
+        expect(store.agentMatchesListTab(trackerCompanion, 'tracker')).toBe(false);
+        expect(store.agentMatchesListTab(trackerCompanion, 'companion')).toBe(true);
+        expect(store.agentMatchesListTab(unknown, 'custom')).toBe(true);
+        expect(store.agentMatchesListTab(writing, 'randomizer')).toBe(false);
+    });
+
     test('resolves companion connection profiles through the dedicated default', async () => {
         const store = await importStore();
         store.setGlobalSettings({ connectionProfile: 'default-profile', companionConnectionProfile: 'cheap-profile' });

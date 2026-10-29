@@ -4,6 +4,7 @@
   "description": "Manual side note card: interview the character about the latest scene, in character, off the record",
   "icon": "fa-microphone-lines",
   "category": "companion",
+  "subcategory": "story-notes",
   "tags": [
     "interview",
     "character",

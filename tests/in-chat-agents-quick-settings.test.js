@@ -59,26 +59,42 @@ describe('agent shortcuts', () => {
         expect(refreshed).toEqual(['one']);
     });
 
-    test('selection uses the same search, category, pinned and execution filters as the list', () => {
-        const values = { '#ica--search': '', '#ica--categoryFilter': '' };
+    test('selection uses the same search, view, type and timing filters as the list', () => {
+        const values = { '#ica--search': '', '#ica--timingFilter': '' };
         let tab = 'all';
         const agents = [
-            { id: 'a', name: 'Scene', description: '', tags: [], favorite: true, category: 'tracker', execution: 'companion' },
-            { id: 'b', name: 'Other', description: 'scene', tags: [], favorite: false, category: 'custom', execution: 'inline' },
-            { id: 'c', name: 'Third', description: '', tags: ['SCENE'], favorite: true, category: 'custom', execution: 'companion' },
+            { id: 'a', name: 'Scene', description: '', tags: [], favorite: true, enabled: true, category: 'tracker', phase: 'pre', execution: 'inline' },
+            { id: 'b', name: 'Other', description: 'scene', tags: [], favorite: false, enabled: false, category: 'custom', phase: 'post', execution: 'inline' },
+            { id: 'c', name: 'Third', description: '', tags: ['SCENE'], favorite: true, enabled: true, category: 'custom', phase: 'post', execution: 'companion' },
         ];
+        const isCompanionAgent = agent => agent.execution === 'companion';
         const runtime = vm.createContext({
             $: selector => ({ val: () => values[selector] }),
             getActiveAgentListTab: () => tab,
-            agentMatchesListTab: (agent, value) => agent.execution === value,
+            isCompanionAgent,
+            isAgentEnabledForCurrentScope: agent => agent.enabled,
+            agentMatchesListTab: (agent, value) => {
+                if (value === 'pre' || value === 'post') return !isCompanionAgent(agent) && agent.phase === value;
+                if (value === 'companion') return isCompanionAgent(agent);
+                return isCompanionAgent(agent) ? false : agent.category === value;
+            },
         });
-        vm.runInContext(extract(index, 'getFilteredAgentList'), runtime);
+        for (const name of ['agentMatchesTimingFilter', 'agentMatchesAgentListView', 'getFilteredAgentList']) {
+            vm.runInContext(extract(index, name), runtime);
+        }
         values['#ica--search'] = 'scene';
         expect(runtime.getFilteredAgentList(agents).map(agent => agent.id)).toEqual(['a', 'b', 'c']);
         tab = 'quick';
         expect(runtime.getFilteredAgentList(agents).map(agent => agent.id)).toEqual(['a', 'c']);
-        values['#ica--categoryFilter'] = 'custom';
+        tab = 'on';
+        expect(runtime.getFilteredAgentList(agents).map(agent => agent.id)).toEqual(['a', 'c']);
+        tab = 'custom';
+        expect(runtime.getFilteredAgentList(agents).map(agent => agent.id)).toEqual(['b']);
+        tab = 'all';
+        values['#ica--timingFilter'] = 'post';
+        expect(runtime.getFilteredAgentList(agents).map(agent => agent.id)).toEqual(['b', 'c']);
+        values['#ica--timingFilter'] = 'pre';
         tab = 'companion';
-        expect(runtime.getFilteredAgentList(agents).map(agent => agent.id)).toEqual(['c']);
+        expect(runtime.getFilteredAgentList(agents).map(agent => agent.id)).toEqual([]);
     });
 });

@@ -4,6 +4,7 @@
   "description": "Matches character replies and new persona messages to their expressions. Personas use their own saved expression sets. Can also generate missing character sprites.",
   "icon": "fa-face-smile-beam",
   "category": "companion",
+  "subcategory": "stats-visuals",
   "tags": [
     "expressions",
     "emotions",

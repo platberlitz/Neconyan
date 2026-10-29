@@ -71,6 +71,7 @@ import {
     loadBuiltinGroups,
     loadCustomGroups,
     agentMatchesListTab,
+    getAgentListKind,
     applyCompanionContextAccessDefaults,
     applyCompanionPanelDisplayDefault,
     applyTrackerCompanionAutoLoopDefaults,
@@ -1797,14 +1798,6 @@ function getTemplateRegexCount(template) {
     return Array.isArray(template?.regexScripts) ? template.regexScripts.length : 0;
 }
 
-const TEMPLATE_BROWSER_CATEGORY_LABELS = {
-    tracker: 'Trackers',
-    randomizer: 'Randomizers',
-    content: 'Content',
-    companion: 'Companions',
-    tool: 'Tools',
-};
-
 function getTemplateBrowserCategoryOrder(templateList = templates) {
     // Neconyan: 'custom' stays in AGENT_CATEGORIES as a fallback for user/saved
     // agents even though no bundled templates ship in that category anymore.
@@ -1815,7 +1808,11 @@ function getTemplateBrowserCategoryOrder(templateList = templates) {
 }
 
 function getTemplateCategoryLabel(category) {
-    return TEMPLATE_BROWSER_CATEGORY_LABELS[category] ?? AGENT_CATEGORIES[category]?.label ?? 'Custom';
+    return AGENT_CATEGORIES[category]?.label ?? AGENT_CATEGORIES.custom.label;
+}
+
+function getTemplateCategoryDescription(category) {
+    return AGENT_CATEGORIES[category]?.description ?? '';
 }
 
 function getTemplateSubcategoryInfo(subcategory) {
@@ -1846,6 +1843,7 @@ function getTemplateSearchHaystack(template) {
         template?.name,
         template?.description,
         tags,
+        template?.category,
         categoryLabel,
         subcategoryLabel,
     ].join(' ').toLowerCase();
@@ -3269,7 +3267,8 @@ async function runRerunAgentsFromButton(messageIndex, button) {
 }
 
 const AGENT_LIST_TAB_STORAGE_KEY = 'ica--agent-list-tab';
-const AGENT_LIST_TABS = ['all', 'quick', 'pre', 'post', 'companion'];
+const AGENT_LIST_VIEW_TABS = ['all', 'on', 'quick'];
+const AGENT_LIST_TABS = [...AGENT_LIST_VIEW_TABS, ...Object.keys(AGENT_CATEGORIES)];
 
 function getActiveAgentListTab() {
     try {
@@ -3277,6 +3276,83 @@ function getActiveAgentListTab() {
         return AGENT_LIST_TABS.includes(stored) ? stored : 'all';
     } catch {
         return 'all';
+    }
+}
+
+/**
+ * Timing is a secondary filter beside the type tabs. Companions always run after
+ * the reply, so they count as after-reply agents here.
+ */
+function agentMatchesTimingFilter(agent, timing) {
+    if (timing === 'pre') return agentMatchesListTab(agent, 'pre');
+    if (timing === 'post') return isCompanionAgent(agent) || agentMatchesListTab(agent, 'post');
+    return true;
+}
+
+function agentMatchesAgentListView(agent, tab) {
+    if (tab === 'quick') return Boolean(agent.favorite);
+    if (tab === 'on') return isAgentEnabledForCurrentScope(agent);
+    return agentMatchesListTab(agent, tab);
+}
+
+function buildAgentListTabMarkup(tab, icon, label, count) {
+    return `<button type="button" class="ica--agent-tab" data-tab="${escapeHtml(tab)}" role="tab" aria-selected="false" tabindex="-1"><i class="fa-solid ${escapeHtml(icon)} fa-fw" aria-hidden="true"></i><span class="ica--agent-tab-label">${escapeHtml(label)}</span><span class="ica--agent-tab-count">${count}</span></button>`;
+}
+
+/**
+ * Builds the type tabs (Trackers, Writing, Companions...) for the kinds the user
+ * actually has, and refreshes the counts on every tab and the phone/tablet select.
+ */
+function syncAgentListKindTabs(agents, activeTab) {
+    const strip = document.getElementById('ica--agentTabs');
+    const select = document.getElementById('ica--agentViewSelect');
+    const kindCounts = new Map();
+    for (const agent of agents) {
+        const kind = getAgentListKind(agent);
+        kindCounts.set(kind, (kindCounts.get(kind) ?? 0) + 1);
+    }
+    const kinds = Object.keys(AGENT_CATEGORIES).filter(kind => kindCounts.has(kind) || kind === activeTab);
+    const viewCounts = {
+        all: agents.length,
+        on: agents.filter(agent => isAgentEnabledForCurrentScope(agent)).length,
+        quick: agents.filter(agent => agent.favorite).length,
+    };
+    const viewLabels = { all: 'All agents', on: 'Switched on', quick: 'Pinned' };
+
+    if (strip instanceof HTMLElement) {
+        for (const tab of AGENT_LIST_VIEW_TABS) {
+            const count = strip.querySelector(`.ica--agent-tab[data-tab="${tab}"] .ica--agent-tab-count`);
+            if (count) count.textContent = String(viewCounts[tab]);
+        }
+        const signature = kinds.map(kind => `${kind}:${kindCounts.get(kind) ?? 0}`).join('|');
+        if (strip.dataset.kindSignature !== signature) {
+            strip.dataset.kindSignature = signature;
+            strip.querySelectorAll('.ica--agent-tab-kinds').forEach(element => element.remove());
+            if (kinds.length > 0) {
+                const markup = kinds.map(kind => {
+                    const info = AGENT_CATEGORIES[kind];
+                    return buildAgentListTabMarkup(kind, info.icon, info.label, kindCounts.get(kind) ?? 0);
+                }).join('');
+                strip.insertAdjacentHTML('beforeend', `<div class="ica--agent-tab-kinds" role="presentation"><span class="ica--agent-tab-heading" aria-hidden="true">Types</span>${markup}</div>`);
+            }
+        }
+    }
+
+    if (select instanceof HTMLSelectElement) {
+        const options = [
+            ...AGENT_LIST_VIEW_TABS.map(tab => [tab, `${viewLabels[tab]} (${viewCounts[tab]})`]),
+            ...kinds.map(kind => [kind, `${AGENT_CATEGORIES[kind].label} (${kindCounts.get(kind) ?? 0})`]),
+        ];
+        const signature = options.map(([value, label]) => `${value}\u0000${label}`).join('\u0001');
+        if (select.dataset.signature !== signature) {
+            select.dataset.signature = signature;
+            select.replaceChildren(...options.map(([value, label]) => {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = label;
+                return option;
+            }));
+        }
     }
 }
 
@@ -3297,62 +3373,6 @@ function syncAgentTabStrip(activeTab) {
     });
     const select = document.getElementById('ica--agentViewSelect');
     if (select && 'value' in select) select.value = activeTab;
-}
-
-/**
- * Phones hide the category <select> and show these chips instead. Built lazily next to
- * the field so this extension stays the single owner of the agents filter markup.
- */
-function syncCategoryChips(activeCategory) {
-    const field = document.querySelector('#ica--settings .ica--category-field');
-    const select = document.getElementById('ica--categoryFilter');
-    if (!(field instanceof HTMLElement) || !(select instanceof HTMLSelectElement)) {
-        return;
-    }
-
-    let row = field.parentElement?.querySelector('.ica--category-chips');
-    if (!(row instanceof HTMLElement)) {
-        row = document.createElement('div');
-        row.className = 'ica--category-chips';
-        row.setAttribute('role', 'group');
-        row.setAttribute('aria-label', 'Filter by category');
-        field.after(row);
-        row.addEventListener('click', (event) => {
-            const chip = event.target.closest('.ica--category-chip');
-            if (!chip) return;
-            select.value = chip.dataset.category || '';
-            renderAgentList();
-        });
-        if (typeof window.matchMedia === 'function') {
-            const media = window.matchMedia('(max-width: 768px)');
-            const updateVisibility = () => {
-                if (!row.isConnected) media.removeEventListener('change', updateVisibility);
-                else row.hidden = !media.matches;
-            };
-            media.addEventListener('change', updateVisibility);
-        }
-    }
-
-    const wanted = String(activeCategory ?? select.value ?? '');
-    // The phone stylesheet shows the chip row; the attribute is managed here so the
-    // desktop layout never needs a hiding rule of its own.
-    row.hidden = !(typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 768px)').matches);
-    const signature = Array.from(select.options).map(option => `${option.value}\u0000${option.textContent}`).join('\u0001') + `\u0002${wanted}`;
-    if (row.dataset.signature === signature) {
-        return;
-    }
-    row.dataset.signature = signature;
-    row.replaceChildren(...Array.from(select.options, (option) => {
-        const chip = document.createElement('button');
-        chip.type = 'button';
-        chip.className = 'ica--category-chip';
-        chip.dataset.category = option.value;
-        chip.textContent = option.textContent;
-        const isActive = option.value === wanted;
-        chip.classList.toggle('is-active', isActive);
-        chip.setAttribute('aria-pressed', String(isActive));
-        return chip;
-    }));
 }
 
 /**
@@ -3459,7 +3479,7 @@ function updateAgentOverview(agentList = getVisibleInChatAgents()) {
 function getFilteredAgentList(allAgents = sortAgentsByOrder(getVisibleInChatAgents())) {
     const activeTab = getActiveAgentListTab();
     const searchTerm = ($('#ica--search').val() || '').toString().toLowerCase();
-    const categoryFilter = ($('#ica--categoryFilter').val() || '').toString();
+    const timingFilter = ($('#ica--timingFilter').val() || '').toString();
     let agents = [...allAgents];
     if (searchTerm) {
         agents = agents.filter(a =>
@@ -3468,12 +3488,8 @@ function getFilteredAgentList(allAgents = sortAgentsByOrder(getVisibleInChatAgen
             a.tags.some(t => t.toLowerCase().includes(searchTerm)),
         );
     }
-    if (categoryFilter) agents = agents.filter(a => a.category === categoryFilter);
-    if (activeTab === 'quick') {
-        agents = agents.filter(agent => Boolean(agent.favorite));
-    } else if (activeTab !== 'all') {
-        agents = agents.filter(a => agentMatchesListTab(a, activeTab));
-    }
+    if (timingFilter) agents = agents.filter(agent => agentMatchesTimingFilter(agent, timingFilter));
+    if (activeTab !== 'all') agents = agents.filter(agent => agentMatchesAgentListView(agent, activeTab));
     return agents;
 }
 
@@ -3499,26 +3515,26 @@ function renderAgentList() {
     const allAgents = sortAgentsByOrder(getVisibleInChatAgents());
     updateAgentOverview(allAgents);
     const activeTab = getActiveAgentListTab();
+    syncAgentListKindTabs(allAgents, activeTab);
     syncAgentTabStrip(activeTab);
 
     const searchTerm = ($('#ica--search').val() || '').toString().toLowerCase();
-    const categoryFilter = ($('#ica--categoryFilter').val() || '').toString();
-    syncCategoryChips(categoryFilter);
+    const timingFilter = ($('#ica--timingFilter').val() || '').toString();
     const agents = getFilteredAgentList(allAgents);
     for (const id of selectedAgentIds) if (!allAgents.some(agent => agent.id === id)) selectedAgentIds.delete(id);
     updateBulkBar();
 
-    // Group by category
+    // Group by the same kinds the type tabs use, so a companion never hides under Trackers.
     const grouped = {};
     for (const cat of Object.keys(AGENT_CATEGORIES)) {
-        const catAgents = agents.filter(a => a.category === cat);
+        const catAgents = agents.filter(agent => getAgentListKind(agent) === cat);
         if (catAgents.length > 0) {
             grouped[cat] = catAgents;
         }
     }
 
     if (Object.keys(grouped).length === 0) {
-        const filtered = Boolean(searchTerm || categoryFilter || activeTab !== 'all');
+        const filtered = Boolean(searchTerm || timingFilter || activeTab !== 'all');
         const emptyState = $(`
             <div class="ica--empty-state" role="status">
                 <img class="ica--empty-illustration" src="img/neconyan/${filtered ? 'curious-search' : 'cozy-library'}.webp" alt="" width="536" height="510" aria-hidden="true" loading="lazy" decoding="async">
@@ -3532,7 +3548,7 @@ function renderAgentList() {
         `);
         emptyState.find('.ica--clear-agent-filters').on('click', () => {
             $('#ica--search').val('');
-            $('#ica--categoryFilter').val('');
+            $('#ica--timingFilter').val('');
             setActiveAgentListTab('all');
             renderAgentList();
         });
@@ -3555,8 +3571,9 @@ function renderAgentList() {
             <button type="button" class="ica--category-header${collapsedCategories.has(cat) ? ' collapsed' : ''}" aria-expanded="${!collapsedCategories.has(cat)}">
                 <i class="fa-solid fa-chevron-down ica--chevron"></i>
                 <i class="fa-solid ${catInfo.icon}"></i>
-                ${catInfo.label}
+                <span class="ica--category-label">${escapeHtml(catInfo.label)}</span>
                 <span class="ica--category-count">${catAgents.length}</span>
+                <span class="ica--category-description">${escapeHtml(catInfo.description ?? '')}</span>
             </button>
         `);
         header.on('click', function () {
@@ -3615,7 +3632,6 @@ function renderAgentList() {
                             <span class="ica--card-desc">${escapeHtml(desc)}</span>
                         </div>
                         <div class="ica--card-header-actions">
-                            <span class="ica--card-execution">${companionExecution ? 'Companion note' : 'Prompt or reply'}</span>
                             <span class="ica--card-phase">${escapeHtml(getAgentCardPhaseLabel(agent))}</span>
                             <button type="button" class="ica--card-favorite ica--quick-chip-pin ${agent.favorite ? 'is-active' : ''}" title="${agent.favorite ? 'Remove from Pinned' : 'Add to Pinned'}" aria-label="${agent.favorite ? 'Remove from Pinned' : 'Add to Pinned'}">
                                 <i class="fa-solid fa-star"></i>
@@ -5254,7 +5270,7 @@ async function openTemplateBrowser() {
     `);
     const pillRow = filterBar.find('.ica--template-pill-row');
     const categorySelect = filterBar.find('.ica--template-category-select');
-    categorySelect.append($('<option>').val('').text('All categories'));
+    categorySelect.append($('<option>').val('').text('All types'));
     for (const category of categoryOrder) categorySelect.append($('<option>').val(category).text(getTemplateCategoryLabel(category)));
     const templateResults = $('<div class="ica--template-results"></div>');
     const allPill = $(`
@@ -5277,12 +5293,8 @@ async function openTemplateBrowser() {
     }
 
     function buildTemplateCard(tpl) {
-        const catInfo = AGENT_CATEGORIES[tpl.category] || AGENT_CATEGORIES.custom;
         const regexCount = getTemplateRegexCount(tpl);
         const alreadyAdded = hasMatchingAgentSnapshot(buildAgentFromTemplate(tpl), getAgents());
-        const trackerBadge = tpl.category === 'tracker'
-            ? '<span class="ica--card-pill"><i class="fa-solid fa-chart-line fa-xs"></i> Bundled tracker</span>'
-            : '';
         const addedBadge = alreadyAdded
             ? '<span class="ica--card-pill"><i class="fa-solid fa-check fa-xs"></i> Added</span>'
             : '';
@@ -5290,12 +5302,10 @@ async function openTemplateBrowser() {
             <div class="ica--template-card${alreadyAdded ? ' ica--template-card--added' : ''}" data-id="${escapeHtml(tpl.id)}">
                 <div class="ica--template-card-header">
                     <span class="ica--template-card-name">${escapeHtml(tpl.name)} <span class="ica--card-pill ica--card-pill--version">v${escapeHtml(getTemplateVersionValue(tpl))}</span></span>
-                    <span class="ica--template-card-category"><i class="fa-solid ${catInfo.icon}"></i> ${escapeHtml(catInfo.label)}</span>
                 </div>
                 <div class="ica--template-card-description">${escapeHtml(tpl.description)}</div>
                 <div class="ica--template-card-badges">
                     ${addedBadge}
-                    ${trackerBadge}
                     ${regexCount > 0 ? `<span class="ica--card-pill"><i class="fa-solid fa-wand-magic-sparkles fa-xs"></i> ${buildRegexTemplateLabel(regexCount)}</span>` : ''}
                 </div>
                 <button type="button" class="menu_button ica--template-add">${alreadyAdded ? 'Add another' : 'Add agent'}</button>
@@ -5360,13 +5370,17 @@ async function openTemplateBrowser() {
                 </div>
             </div>
         `);
+        const categoryDescription = getTemplateCategoryDescription(category);
+        if (categoryDescription) {
+            categorySection.append($('<p class="ica--template-category-description"></p>').text(categoryDescription));
+        }
 
-        if (searchActive || !['tracker', 'content'].includes(category)) {
+        const subcategories = getTemplateSubcategoriesForCategory(category);
+        if (searchActive || subcategories.length === 0) {
             appendTemplateGrid(categorySection, searchActive ? sortTemplatesByName(categoryTemplates) : categoryTemplates);
             return categorySection;
         }
 
-        const subcategories = getTemplateSubcategoriesForCategory(category);
         const knownSubcategoryIds = new Set(subcategories.map(([subcategoryId]) => subcategoryId));
         const directTemplates = categoryTemplates.filter(template => !knownSubcategoryIds.has(String(template.subcategory ?? '').trim()));
         if (directTemplates.length > 0) {
@@ -6863,7 +6877,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
 // ===================== Initialization =====================
 
 (async function () {
-    const settingsHtml = await renderTemplateAsync('/scripts/extensions/in-chat-agents/settings.html?v=20261029a-taro-guide', {}, true, true, true);
+    const settingsHtml = await renderTemplateAsync('/scripts/extensions/in-chat-agents/settings.html?v=20261029b-agent-types', {}, true, true, true);
     if (!settingsHtml) {
         console.warn('[InChatAgents] Could not load the settings template.');
         return;
@@ -7238,9 +7252,9 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         const tabs = $('#ica--agentTabs .ica--agent-tab').toArray();
         const currentIndex = tabs.indexOf(this);
         let nextIndex = currentIndex;
-        if (event.key === 'ArrowDown') {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
             nextIndex = (currentIndex + 1) % tabs.length;
-        } else if (event.key === 'ArrowUp') {
+        } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
             nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
         } else if (event.key === 'Home') {
             nextIndex = 0;
@@ -7252,12 +7266,13 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
 
         stopEvent(event);
         const nextTab = tabs[nextIndex];
-        setActiveAgentListTab(nextTab.dataset.tab || 'all');
+        const nextTabId = nextTab.dataset.tab || 'all';
+        setActiveAgentListTab(nextTabId);
         renderAgentList();
-        nextTab.focus();
+        document.querySelector(`#ica--agentTabs .ica--agent-tab[data-tab="${CSS.escape(nextTabId)}"]`)?.focus();
     });
     $('#ica--search').on('input', renderAgentList);
-    $('#ica--categoryFilter').on('change', renderAgentList);
+    $('#ica--timingFilter').on('change', renderAgentList);
 
     // Wire up connection profile dropdown
     populateProfileDropdown();

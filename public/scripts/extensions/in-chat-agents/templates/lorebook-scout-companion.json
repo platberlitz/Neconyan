@@ -4,6 +4,7 @@
   "description": "Manual side note card: drafts one-concept lorebook entries with trigger keys from new facts established in the scene",
   "icon": "fa-book-atlas",
   "category": "companion",
+  "subcategory": "story-notes",
   "tags": [
     "lorebook",
     "world info",

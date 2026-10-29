@@ -881,15 +881,15 @@ const TOOL_PAGES = Object.freeze({
                 id: 'filters', tab: '.ica--workspace-tab[data-workspace-view="manage"]', optional: true,
                 targets: ['#ica--agentTabs', '#ica--search'],
                 title: 'Find an agent',
-                body: '**All**, **Pinned**, **Before reply**, **After reply** and **Companions** sort the list by when an agent runs. The search box and category filter narrow it further.\nFilters only change what you see. They never switch an agent off.',
+                body: '**All agents**, **Switched on** and **Pinned** sit at the top. Under **Types**, **Trackers**, **Writing**, **Companions** and the rest show one kind of agent at a time, with a count beside each. The search box and the **Any time** menu, which picks agents that run before or after the reply, narrow it further.\nFilters only change what you see. They never switch an agent off.',
                 hint: 'Hidden is not off. People mix those up constantly.',
             },
             {
                 id: 'card', tab: '.ica--workspace-tab[data-workspace-view="manage"]',
                 targets: ['#ica--agentList .ica--agent-card .ica--card-header', '#ica--agentList'],
                 title: 'Reading an agent card',
-                body: 'The switch on the left turns this agent on or off. Beside the name, the card shows whether its result goes into the **Prompt or reply** or a **Companion note**, and whether it runs before or after the reply.\nThe small labels underneath only appear when they matter: a chance to run below 100%, a reply rewrite, its own connection or model, or an update. The star pins it, and the handle lets you drag it into a new position.',
-                emptyBody: 'Your agent list is empty, so there is no card to show yet. Use **Browse library** or **Create agent** first.\nEach card has a switch, shows where each result goes and when it runs, and lists its main settings underneath.',
+                body: 'The switch on the left turns this agent on or off. Beside the name, the card shows when it runs: before the reply, after it, or as a companion note.\nThe small labels underneath only appear when they matter: a chance to run below 100%, a reply rewrite, its own connection or model, or an update. The star pins it, and the handle lets you drag it into a new position.',
+                emptyBody: 'Your agent list is empty, so there is no card to show yet. Use **Browse library** or **Create agent** first.\nEach card has a switch, shows when it runs, and lists its main settings underneath.',
                 hint: 'Read the labels. They tell you most of the story without opening anything.',
             },
             {
