@@ -69,6 +69,95 @@ the PR against staging and validate the resulting APK on the reporting device.
 
 ## Release preparation: 1.0.0
 
+### 29 October: 1.4.0 published and 1.4.1 started
+
+The earlier blocked-release entry below is historical. I finished the remaining
+browser corrections and fast-forwarded main to the settled release commit,
+`5f9229c49524019497bd8b3f983dda8ed2cda997`. Application PR #344 and handbook
+PR neconyan-docs#2 are merged. Handbook commit `beb35cb7` was published by
+run `40865305039`; all fourteen changed pages passed live desktop and touch-phone
+checks, with no horizontal overflow or page errors. Historical documentation
+snapshots weren't relabelled as current.
+
+Browser evidence combines group 1 from `40865337550` at `95581bc9` with groups
+2-16 from `40867699100` at `5275bf93`: 2,096 passed checks, thirteen failures,
+32 existing skips and three blocked tour checks. The original failed runs stay
+failed. Every failed and blocked case subsequently passed a focused check of its
+correction; passing unrelated groups weren't rerun. Nineteen Mewmory cases that
+need disposable data also passed separately, using a fresh server for each file.
+No new skips or reduced assertions were introduced.
+
+The verified corrections are:
+
+- `5275bf93` pins groups 2-16 to Ubuntu 24.04. Their first attempt failed before
+  tests because Playwright didn't support the newly selected Ubuntu 26.04 image.
+  Group 1 retains Ubuntu 22.04 and its passing real-crash assertion.
+- `a8f026d6` supplies the missing Companion-window dependency in a fixture that
+  extracts functions without their imports. All eight reorder checks passed.
+- `adf320f3` measures the phone rail's visible clipped boundary. The corrected
+  spacing case, compact-phone case and narrow-composer case passed. At 320 pixels,
+  Dice and Options are visible and Extensions is one sideways swipe away.
+- `f1ce3216` updates Presets and connection-acknowledgement checks for the two
+  supported reply formats, and identifies Dice Roller as the eighth built-in
+  extension. All six affected shell checks and both connection cases passed.
+- `3b3c65de` observes the held Time Machine save's actual conflict response inside
+  the page. Its focused check passed with exactly one changed save, the 409
+  response, the recovery deadline and unchanged local/server indexes. The old
+  competing-save explanation remains inferred, not reproduced.
+- `a7430928` removes retired reply-format selections from the accent checks and
+  waits for CSS colour transitions before reading Scratchpad contrast. All four
+  desktop/phone checks passed. The original transient low-contrast sample wasn't
+  reproduced; the timing explanation remains inferred.
+- `c3818485` scrolls the stable chat container after the retained reply is visible,
+  instead of holding a message element that can be replaced. Desktop and phone
+  checks passed with exactly one retained reply. The original redraw timing is
+  inferred from the completed job and saved reply, not a captured trace.
+- `292093ec` defers disabled speech providers until settings are opened or speech
+  is enabled. Review also caught and corrected empty disabled-provider controls
+  and immediate narration readiness. The final startup-resource check passed its
+  unchanged below-1,000 limit; an exact final count wasn't retained. Enabled
+  Roleplay/Conversation narration and the new disabled-settings, voice-list and
+  refresh case passed. The new case's setup errors were corrected before passing;
+  its final refresh check requires a fresh success event and readiness update.
+
+Retained broad checks comprise 590 unit suites with 8,174 passed tests and three
+existing skips, 3,275 server checks plus ten assistant-knowledge checks, and 106
+Mewmory checks. All nine assistant variants passed desktop/phone retrieval checks,
+with 112 affected unit checks after the help update. After the final speech
+change, 172 affected unit tests and 56 speech/server checks passed, followed by
+root lint, test lint, frontend budgets and the frontend build. These are scoped
+combined results, not a claim that every suite ran again at the final commit.
+
+The main push queued duplicate full browser run `40886809411`; it was cancelled
+after the retained and focused coverage was complete. The README mirror run
+`40886809319` passed without changing the release commit.
+
+Android run `40886800583` passed the signed build, WebView fixture and Android 11,
+13 and 15 lifecycle/native checks. The optional native-baseline comparison job
+kept its existing conditional skip. iPhone run `40886806377` passed storage/path
+checks, the real 13 GiB import, the packaged device IPA checks, and simulator
+startup and relaunch. These results cover emulators and a simulator, not physical
+phones. Both builds used the exact release commit above, with no retries.
+
+Independent verification passed all twelve files from those two build artifacts:
+eight Android checksum entries and two iPhone checksum entries; both Android APK
+signatures against the existing official certificate; ZIP and native 16 KiB
+alignment checks; embedded version, commit and frontend contents; and exact
+provenance comparisons. All 4,411 source ZIP files matched `git archive` of the
+release commit, including paths, contents and file modes. The iPhone verifier
+checked 1,941 frontend assets and confirmed the unsigned 1.4.0 device package.
+The annotated `v1.4.0` tag points to the exact commit used by both builds.
+
+[Neconyan 1.4.0](https://github.com/platberlitz/Neconyan/releases/tag/v1.4.0)
+is public and marked latest. I downloaded all twelve published assets again;
+every file matched the verified build byte for byte, and GitHub's SHA-256 digests
+and recorded sizes matched too.
+
+Commit `470d6757` starts staging 1.4.1, updating the root package, both root lock
+entries and the three package-boundary expectations. All six boundary checks
+and the test's lint passed. Main and the release tag stay on the verified 1.4.0
+commit. Release preparation didn't deploy to the running personal instance.
+
 ### 29 October: 1.4.0 merged, release blocked by browser checks
 
 I fast-forwarded application PR #344 into staging at `95581bc9` and handbook
