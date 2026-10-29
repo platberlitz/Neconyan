@@ -1226,22 +1226,50 @@ function renderPersonaAppendices() {
         renderPersonaAppendixChips(activeChips, activeAppendices);
     }
 
-    // Neconyan: retain open notes through list refreshes, but not persona switches.
-    const expandedIds = new Set(list.dataset.avatarId === user_avatar
-        ? Array.from(list.querySelectorAll('details[open]'), details => details.closest('.persona-appendix-card').dataset.appendixId)
-        : []);
+    // Keep note controls attached so refreshes preserve focus, open notes and scroll anchoring.
+    // A different persona starts with its own, collapsed cards.
+    if (list.dataset.avatarId !== user_avatar) {
+        list.replaceChildren();
+    }
     list.dataset.avatarId = user_avatar;
-    list.replaceChildren();
 
     if (!appendices.length) {
         const empty = document.createElement('div');
         empty.className = 'persona-appendices-empty text_muted';
         empty.textContent = t`No Scenario Notes yet. Add one for things like Genshin, modern AU, or route-specific details.`;
-        list.appendChild(empty);
+        list.replaceChildren(empty);
         return;
     }
 
-    for (const appendix of appendices) {
+    const cards = new Map(Array.from(list.querySelectorAll('.persona-appendix-card'), card => [card.dataset.appendixId, card]));
+    const appendixIds = new Set(appendices.map(appendix => appendix.id));
+    for (const child of Array.from(list.children)) {
+        if (!appendixIds.has(child.dataset.appendixId)) {
+            child.remove();
+        }
+    }
+
+    for (const [index, appendix] of appendices.entries()) {
+        const existing = cards.get(appendix.id);
+        if (existing) {
+            const checkbox = existing.querySelector('.persona_appendix_toggle');
+            checkbox.checked = activeIds.has(appendix.id);
+            checkbox.setAttribute('aria-label', appendix.name);
+            const name = existing.querySelector('.persona-appendix-name');
+            if (name.textContent !== appendix.name) {
+                name.textContent = appendix.name;
+            }
+            const description = existing.querySelector('.persona-appendix-description');
+            const text = appendix.description?.trim() || t`[No Scenario Note text]`;
+            if (description.textContent !== text) {
+                description.textContent = text;
+            }
+            if (list.children[index] !== existing) {
+                list.insertBefore(existing, list.children[index] ?? null);
+            }
+            continue;
+        }
+
         const card = document.createElement('article');
         card.className = 'persona-appendix-card';
         card.dataset.appendixId = appendix.id;
@@ -1259,7 +1287,6 @@ function renderPersonaAppendices() {
 
         const details = document.createElement('details');
         details.className = 'persona-appendix-details';
-        details.open = expandedIds.has(appendix.id);
 
         const name = document.createElement('summary');
         name.className = 'persona-appendix-name';
@@ -1287,7 +1314,7 @@ function renderPersonaAppendices() {
 
         actions.append(editButton, deleteButton);
         card.append(label, details, actions);
-        list.appendChild(card);
+        list.insertBefore(card, list.children[index] ?? null);
     }
 }
 
