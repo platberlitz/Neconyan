@@ -53,6 +53,8 @@ import {
     LEGACY_AGENT_MAX_TOKENS,
     normalizeAgentCategory,
     getAgentChatScopeLabel,
+    getActiveAgentChatScope,
+    isAgentEnabledForScope,
     getPromptTransformMode,
     isTrackerFixAgent,
     isPathfinderSubmoduleEnabled,
@@ -135,6 +137,7 @@ import { attachTextareaFullscreen } from './textarea-fullscreen.js';
 import { openAgentQuickSettings } from './quick-settings.js';
 import { bindCompanionQuickControls, buildCompanionQuickControlsHtml } from './companion/companion-quick-controls.js';
 import { renderTemplateAsync } from '../../templates.js';
+import { TARO_GUIDE_MAX_NEW_PICKS, chooseInstalledCopy, copiesForTemplate, getTaroUndoBlockReason } from './agent-recommendations.js';
 
 const MODULE_NAME = 'in-chat-agents';
 
@@ -144,6 +147,9 @@ let templateBrowserSearchValue = '';
 let templateBrowserOpening = false;
 const AGENT_WORKSPACE_VIEWS = ['manage', 'connections'];
 const AGENT_WORKSPACE_VIEW_STORAGE_KEY = 'ica--workspace-view';
+const TARO_GUIDE_STORAGE_KEY = 'ica--taro-guide';
+let taroGuide = null;
+let taroGuideOpening = false;
 
 function agentAction(action) {
     return async function (event) {
@@ -176,6 +182,162 @@ async function refreshSavedAgents(ids) {
     refreshCompanionPanel();
     updateCompanionButtonVisibility();
     updateRerunAgentsButtonVisibility();
+    notifyTaroGuide();
+}
+
+function notifyTaroGuide() {
+    if (typeof document === 'undefined' || typeof document.dispatchEvent !== 'function' || typeof CustomEvent !== 'function') return;
+    document.dispatchEvent(new CustomEvent('neconyan:agents-changed'));
+}
+
+function getTaroGuideBlockedReason() {
+    if (getAgentLibraryErrors().length) {
+        return `Repair the incomplete agent library before switching agents on: ${getAgentLibraryErrors().map(item => item.file).join(', ')}.`;
+    }
+    if (hasPendingAgentRecovery()) return 'A setup load was interrupted. Finish recovery before switching agents on.';
+    if (agentLibraryLoading || !agentLibraryReady) return 'Wait for the agent library and saved setups to finish loading.';
+    if (!areAgentsLoaded()) return 'The agent library is not loaded. Retry loading it before switching agents on.';
+    if (!templates.length && templateLoadError) return 'The bundled agent library could not be loaded, so Taro cannot recommend an agent yet. Try again.';
+    if (!templates.length) return 'The bundled agent library is empty, so Taro has nothing to recommend. Reinstall or repair the extension.';
+    return '';
+}
+
+function getTaroGuideTemplates() {
+    return getVisibleTemplateBrowserTemplates();
+}
+
+function getTaroGuideInstalledAgents(template) {
+    return copiesForTemplate(getVisibleInChatAgents(), template);
+}
+
+async function switchOnTaroRecommendations(templateIds, { scope = getActiveAgentChatScope(), workspaceIdentity = getAgentWorkspaceIdentity() } = {}) {
+    const blocked = getTaroGuideBlockedReason();
+    if (blocked) throw new Error(blocked);
+    if (!isCurrentAgentWorkspace(workspaceIdentity)) throw new Error('The chat changed before Taro could switch anything on. Open the guide in this chat and try again.');
+
+    const ids = [...new Set((Array.isArray(templateIds) ? templateIds : [])
+        .map(id => String(id ?? '').trim())
+        .filter(Boolean))];
+    if (!ids.length) return { ids: [], undo: null, createdCount: 0 };
+    if (ids.length > TARO_GUIDE_MAX_NEW_PICKS) {
+        throw new Error(`Taro can switch on at most ${TARO_GUIDE_MAX_NEW_PICKS} new agents at once.`);
+    }
+
+    const availableTemplates = getTaroGuideTemplates();
+    const agentsToEnable = [];
+    const createdIds = [];
+    for (const templateId of ids) {
+        const template = availableTemplates.find(item => String(item?.id ?? '').trim() === templateId);
+        if (!template) throw new Error(`The bundled agent ${templateId} is not in the loaded library. Reload the page and try again.`);
+        if (HIDDEN_TEMPLATE_BROWSER_IDS.has(templateId) || REMOVED_BUNDLED_TEMPLATE_IDS.has(templateId)) {
+            throw new Error(`The bundled agent ${template.name} is not available in this version.`);
+        }
+
+        let copies = getTaroGuideInstalledAgents(template);
+        if (!copies.length) {
+            const created = buildAgentFromTemplate(template);
+            // The library guard keeps a successful server write from being dropped
+            // from the local list when the chat changes mid-save.
+            await saveAgent(created, {
+                isCurrent: () => areAgentsLoaded() && !getAgentLibraryErrors().length && !hasPendingAgentRecovery(),
+            });
+            createdIds.push(created.id);
+            if (!isCurrentAgentWorkspace(workspaceIdentity)) {
+                renderAgentList();
+                throw new Error('The chat changed while Taro was adding an agent. It is in the library, switched off. Run the guide again in this chat.');
+            }
+            const savedCopy = getAgentById(created.id);
+            if (!savedCopy) {
+                renderAgentList();
+                throw new Error('The agent was added to the library, but it could not be shown here. Reload the page before running the guide again.');
+            }
+            copies = [savedCopy];
+        }
+
+        const chosen = chooseInstalledCopy(copies, agent => isAgentEnabledForScope(agent, scope));
+        if (!chosen || isAgentEnabledForScope(chosen, scope)) continue;
+        if (chosen?.id) agentsToEnable.push(chosen.id);
+    }
+
+    const uniqueIds = [...new Set(agentsToEnable)];
+    if (!uniqueIds.length) return { ids: [], undo: null, createdCount: createdIds.length };
+    if (!isCurrentAgentWorkspace(workspaceIdentity)) {
+        renderAgentList();
+        throw new Error('The chat changed before Taro could switch the agents on. Any agents it added stay in the library, switched off.');
+    }
+
+    await saveAgentEnabledState(uniqueIds, true, scope);
+    const undoGuard = captureAgentSaveGuard(uniqueIds);
+    try {
+        await refreshSavedAgents(uniqueIds);
+    } catch (error) {
+        console.error('[InChatAgents] Agents were switched on, but the list could not refresh.', error);
+    }
+    const undo = async () => {
+        const blockedUndo = getTaroUndoBlockReason({
+            workspaceCurrent: isCurrentAgentWorkspace(workspaceIdentity),
+            scope: getActiveAgentChatScope(),
+            expectedScope: scope,
+            guardCurrent: undoGuard(),
+        });
+        if (blockedUndo) throw new Error(blockedUndo);
+        await saveAgentEnabledState(uniqueIds, false, scope);
+        try {
+            await refreshSavedAgents(uniqueIds);
+        } catch (error) {
+            console.error('[InChatAgents] Agents were switched off, but the list could not refresh.', error);
+        }
+    };
+
+    return { ids: uniqueIds, undo, createdCount: createdIds.length };
+}
+
+async function openTaroGuide() {
+    if (taroGuide?.isOpen) {
+        if (taroGuide.isBusy) return;
+        taroGuide.close();
+        return;
+    }
+    if (taroGuideOpening) return;
+    taroGuideOpening = true;
+    try {
+        if (!templates.length && !agentLibraryLoading) await loadTemplates();
+        if (!templates.length && !agentLibraryLoading) {
+            throw new Error(templateLoadError
+                ? 'The bundled agent library could not be loaded, so Taro cannot recommend an agent yet. Try again.'
+                : 'The bundled agent library is empty, so Taro has nothing to recommend. Reinstall or repair the extension.');
+        }
+        if (!taroGuide) {
+            const root = document.getElementById('ica--taroGuide');
+            if (!(root instanceof HTMLElement)) throw new Error('The guide section is missing from the Agents page.');
+            const { createTaroGuide } = await import('./taro-guide.js');
+            taroGuide = createTaroGuide({
+                root,
+                deps: {
+                    getAgents: () => getVisibleInChatAgents(),
+                    getTemplates: getTaroGuideTemplates,
+                    isEnabled: agent => isAgentEnabledForCurrentScope(agent),
+                    getScope: () => getActiveAgentChatScope(),
+                    getScopeLabel: () => getAgentChatScopeLabel(),
+                    isSeparateScopes: () => Boolean(getGlobalSettings().separateRecentChats),
+                    isGloballyPaused: () => !areAgentsGloballyEnabled(),
+                    getBlockedReason: getTaroGuideBlockedReason,
+                    switchOn: switchOnTaroRecommendations,
+                    isWorkspaceCurrent: isCurrentAgentWorkspace,
+                    getWorkspaceIdentity: getAgentWorkspaceIdentity,
+                    loadAnswers: () => accountStorage.getItem(TARO_GUIDE_STORAGE_KEY),
+                    saveAnswers: value => accountStorage.setItem(TARO_GUIDE_STORAGE_KEY, JSON.stringify(value)),
+                    onApplied: notifyTaroGuide,
+                },
+            });
+        }
+        taroGuide.open();
+    } catch (error) {
+        console.error('[InChatAgents] Taro\'s guide could not be opened.', error);
+        toastr.error(escapeHtml(error?.message || 'The guide could not be opened. Reload and try again.'));
+    } finally {
+        taroGuideOpening = false;
+    }
 }
 
 async function editSelectedAgents(update, name) {
@@ -434,6 +596,7 @@ async function retryAgentSetupLoading() {
     } finally {
         agentLibraryLoading = false;
         renderAgentSetupControls();
+        notifyTaroGuide();
     }
 }
 
@@ -1268,6 +1431,10 @@ function toggleGlobalAgents() {
     } else {
         toastr.info(enabled ? 'In-Chat Agents enabled.' : 'In-Chat Agents disabled.');
     }
+    // Kept inline so the workspace test can run this function on its own.
+    if (typeof document !== 'undefined' && typeof document.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+        document.dispatchEvent(new CustomEvent('neconyan:agents-changed'));
+    }
 }
 
 function populateSeparateRecentChatsToggle() {
@@ -1287,6 +1454,7 @@ async function toggleAgentEnabled(agent) {
     syncToolAgentRegistrations();
     renderAgentList();
     updateCompanionButtonVisibility();
+    notifyTaroGuide();
 }
 
 async function toggleAgentFavorite(agent) {
@@ -6695,7 +6863,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
 // ===================== Initialization =====================
 
 (async function () {
-    const settingsHtml = await renderTemplateAsync('/scripts/extensions/in-chat-agents/settings.html?v=20260927i', {}, true, true, true);
+    const settingsHtml = await renderTemplateAsync('/scripts/extensions/in-chat-agents/settings.html?v=20261029a-taro-guide', {}, true, true, true);
     if (!settingsHtml) {
         console.warn('[InChatAgents] Could not load the settings template.');
         return;
@@ -6825,6 +6993,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
     } finally {
         agentLibraryLoading = false;
         renderAgentSetupControls();
+        notifyTaroGuide();
     }
 
     // Initialize the pipeline runner
@@ -6911,6 +7080,9 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
     $('#ica--importFile').on('change', agentAction(handleImport));
     $('#ica--exportAll').on('click', handleExportAll);
     $('#ica--templates').on('click', agentAction(openTemplateBrowser));
+    $('#ica--askTaro').on('click', () => {
+        void openTaroGuide();
+    });
     $('#ica--fixTrackers').on('click', async function () {
         if (showFixTrackersUnavailableToast()) {
             updateFixTrackersButtonVisibility();
@@ -7376,6 +7548,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
             updateRerunAgentsButtonVisibility();
             updateCompanionButtonVisibility();
             updateAgentTokenCounter();
+            if (eventName === event_types.CHAT_CHANGED) notifyTaroGuide();
         });
     }
     updateFixTrackersButtonVisibility();

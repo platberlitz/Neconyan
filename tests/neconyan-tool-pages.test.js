@@ -382,7 +382,7 @@ describe('Agents page tour led by Taro', () => {
 
     test('walks the page, the agent editor and the shared defaults in order', () => {
         const ids = getToolTourSteps('agents', { isShown: () => true }).map(step => step.id);
-        expect(ids).toEqual(['welcome', 'overview', 'create', 'setups', 'more-tools', 'filters', 'card', 'card-actions',
+        expect(ids).toEqual(['welcome', 'overview', 'create', 'taro-guide', 'setups', 'more-tools', 'filters', 'card', 'card-actions',
             'editor-basics', 'editor-conditions', 'editor-before', 'editor-reply', 'editor-companion', 'editor-instructions',
             'editor-regex', 'editor-save', 'connections', 'rhythm', 'context', 'pawthfinder', 'glossary', 'done']);
         expect(getToolPage('agents').assistant).toBe('taro');

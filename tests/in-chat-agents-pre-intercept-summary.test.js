@@ -154,6 +154,8 @@ beforeAll(async () => {
         applyAgentSetupPreset: jest.fn(),
         initializeScopedAgentEnableState: jest.fn(() => false),
         isAgentEnabledForCurrentScope: jest.fn(() => false),
+        isAgentEnabledForScope: jest.fn(() => false),
+        getActiveAgentChatScope: jest.fn(() => 'individual'),
         normalizeAgentCategory: jest.fn(value => value),
         getAgentChatScopeLabel: jest.fn(() => 'Individual chat'),
         getPromptTransformMode: jest.fn(() => 'rewrite'),
