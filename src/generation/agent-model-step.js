@@ -23,7 +23,7 @@ function canTryFallback(context, error) {
 
 /**
  * Runs the Agent's own connection, then each saved fallback connection in order when the
- * previous one fails or returns nothing. Every attempt is its own saved step, and a failed
+ * previous one fails, is cut off or returns unusable output. Every attempt is its own saved step, and a failed
  * attempt is recorded so a restart continues with the next connection instead of repeating it.
  * Fallbacks never reuse the Agent's model override, which belongs to its own connection.
  */
@@ -40,7 +40,7 @@ async function runAgentModelWithFallbacks(context, options) {
     const attempts = [{ binding: options.binding, modelOverride: options.modelOverride ?? '', name: options.name, profileLabel: '' },
         ...fallbacks.map((item, index) => ({ binding: item.binding, modelOverride: '', name: `${options.name}:fallback:${index + 1}`,
             profileLabel: String(item.profileLabel || item.binding.profileId || '') }))];
-    let lastError = null, emptyResult = null;
+    let lastError = null, rejectedResult = null;
     for (const [index, attempt] of attempts.entries()) {
         const last = index === attempts.length - 1;
         const failedKey = `agent-model:${attempt.name}:failed`;
@@ -54,12 +54,14 @@ async function runAgentModelWithFallbacks(context, options) {
         try {
             const result = await runSingleAgentModelStep(context, { ...options, ...attempt });
             const labelled = index > 0 ? { ...result, fallbackIndex: index, fallbackLabel: attempt.profileLabel } : result;
-            if (labelled.text.trim() || labelled.lengthLimited || last) return labelled;
-            emptyResult ??= labelled;
+            if (labelled.text.trim() && !labelled.lengthLimited && (!options.acceptOutput || options.acceptOutput(labelled.text))) return labelled;
+            // Saved unsuccessful replies remain available to the caller's repair/error handling.
+            // Replaying this step reads them from disk instead of sending the requests again.
+            rejectedResult ??= labelled;
         } catch (error) {
             if (!canTryFallback(context, error)) throw error;
             if (last) {
-                if (emptyResult) return emptyResult;
+                if (rejectedResult) return rejectedResult;
                 throw error;
             }
             lastError = error;
@@ -67,6 +69,7 @@ async function runAgentModelWithFallbacks(context, options) {
             console.warn(`[Agents] ${options.name} failed on connection ${attempt.binding?.profileId || 'main model'}; trying fallback ${index + 1}.`, error?.message ?? error);
         }
     }
+    if (rejectedResult) return rejectedResult;
     throw lastError ?? fail('Every Agent connection failed.');
 }
 
