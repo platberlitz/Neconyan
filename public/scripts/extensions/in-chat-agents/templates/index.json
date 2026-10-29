@@ -3499,6 +3499,432 @@
         }
     },
     {
+        "id": "tpl-vitals-companion",
+        "name": "Vitals",
+        "description": "A game-style HUD for your character: Health, Satiety, Hydration, Energy and Morale bars with changes, reasons and status effects, carried forward between replies and short enough for Flash models",
+        "icon": "fa-heart-pulse",
+        "category": "companion",
+        "tags": [
+            "vitals",
+            "hud",
+            "stats",
+            "survival",
+            "tracker",
+            "flash"
+        ],
+        "version": 1,
+        "author": "Neconyan",
+        "prompt": "You are a game HUD. Track {{user}}'s vitals from the story. Read the latest reply first, then the recent chat. Your previous notes hold the last values: start from them and change only what the story justifies.\n\nOutput exactly these lines and nothing else:\nvitals|{{user}}|one short line on how {{user}} is doing\nbar|Health|value|change|reason\nbar|Satiety|value|change|reason\nbar|Hydration|value|change|reason\nbar|Energy|value|change|reason\nbar|Morale|value|change|reason\nstatus|condition|bad or good\nvitals-end\n\nRules:\n- value is a whole number from 0 to 100. 100 is perfect. 0 is collapse.\n- change is the difference from your previous notes: +5, -10 or 0. With no previous notes, judge the values from the story and write 0.\n- reason is 2 to 6 words saying why it moved. Write steady when change is 0.\n- Health drops with wounds, poison and illness, and recovers slowly with rest or treatment.\n- Satiety drops slowly as time passes and with hard work, and rises when {{user}} eats.\n- Hydration drops faster than Satiety, more in heat or effort, and rises when {{user}} drinks.\n- Energy drops with effort, fear and late hours, and rises with rest and sleep.\n- Morale follows mood: wins, kindness and comfort raise it; losses, pain and fear lower it.\n- Keep it believable. Most replies move a stat by 0 to 10. Only big events move it more.\n- Add 0 to 4 status lines for conditions that matter right now, such as Bleeding, Exhausted, Well fed or Soaked. End each with bad or good.\n- Use / instead of | inside fields. Write numbers without %.\n- When {{user}} is not in the story yet, write this single line instead: tracker-none\n\nExample with invented events (use the real story):\nvitals|{{user}}|Bruised and hungry, but still pushing on\nbar|Health|68|-12|took a club to the ribs\nbar|Satiety|41|-6|no food since dawn\nbar|Hydration|57|+15|drank from the stream\nbar|Energy|33|-9|long uphill chase\nbar|Morale|72|+4|escaped the bandits\nstatus|Bruised ribs|bad\nstatus|Adrenaline|good\nvitals-end",
+        "phase": "post",
+        "execution": "companion",
+        "companion": {
+            "trigger": "auto",
+            "displayMode": "panel",
+            "format": "html",
+            "rawPrompt": true,
+            "contextMessages": 6,
+            "includeCharacterCard": false,
+            "includePersona": true,
+            "includeWorldInfo": false,
+            "includeAuthorsNote": false,
+            "includeSystemPrompt": false,
+            "includeHistory": true,
+            "historyDepth": 1,
+            "feedback": {
+                "enabled": true,
+                "depth": 1
+            },
+            "batch": false,
+            "maxTokens": 64000,
+            "chatHistoryPlacement": "source"
+        },
+        "regexScripts": [
+            {
+                "id": "vitals-fence-cleanup",
+                "scriptName": "Vitals - code fence cleanup",
+                "findRegex": "/^[ \\t]*```[\\w-]*[ \\t]*$\\n?/gm",
+                "replaceString": "",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            },
+            {
+                "id": "vitals-open",
+                "scriptName": "Vitals - card open",
+                "findRegex": "/^[ \\t]*(?:VITALS|vitals)\\|([^|\\n]*)\\|?([^|\\n]*?)[ \\t]*$/gm",
+                "replaceString": "<div style=\"margin:10px auto;max-width:520px;padding:12px;border-radius:20px;border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor) 24%, transparent);background:radial-gradient(circle at 88% 0%,color-mix(in srgb,var(--SmartThemeQuoteColor) 14%, transparent),transparent 55%),color-mix(in srgb,var(--SmartThemeBlurTintColor) 84%, transparent);box-shadow:0 14px 34px color-mix(in srgb,var(--SmartThemeShadowColor) 24%, transparent);font-family:var(--mainFontFamily, system-ui, sans-serif);color:var(--SmartThemeBodyColor);line-height:1.4\"><div style=\"display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-bottom:9px;border-bottom:1px dashed color-mix(in srgb,var(--SmartThemeQuoteColor) 28%, transparent)\"><span style=\"flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:color-mix(in srgb,var(--SmartThemeQuoteColor) 20%, transparent);border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor) 38%, transparent);color:var(--SmartThemeQuoteColor)\"><i class=\"fa-solid fa-user-shield\"></i></span><div style=\"min-width:0;flex:1\"><div style=\"font-size:.68em;letter-spacing:.14em;text-transform:uppercase;opacity:.62\">Vitals</div><div style=\"font-weight:800;font-size:1.04em;overflow-wrap:anywhere\">$1</div><div style=\"font-size:.8em;opacity:.78;font-style:italic;overflow-wrap:anywhere\">$2</div></div></div><div style=\"display:flex;flex-wrap:wrap;gap:6px\">",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            },
+            {
+                "id": "vitals-icon-health",
+                "scriptName": "Vitals - health icon",
+                "findRegex": "/^([ \\t]*)bar\\|(\\s*(?:health|hp|life|hit points)\\s*\\|)/gim",
+                "replaceString": "$1bar~fa-heart-pulse|$2",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            },
+            {
+                "id": "vitals-icon-satiety",
+                "scriptName": "Vitals - satiety icon",
+                "findRegex": "/^([ \\t]*)bar\\|(\\s*(?:satiety|hunger|food|fullness|nourishment)\\s*\\|)/gim",
+                "replaceString": "$1bar~fa-drumstick-bite|$2",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            },
+            {
+                "id": "vitals-icon-hydration",
+                "scriptName": "Vitals - hydration icon",
+                "findRegex": "/^([ \\t]*)bar\\|(\\s*(?:hydration|thirst|water)\\s*\\|)/gim",
+                "replaceString": "$1bar~fa-droplet|$2",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            },
+            {
+                "id": "vitals-icon-energy",
+                "scriptName": "Vitals - energy icon",
+                "findRegex": "/^([ \\t]*)bar\\|(\\s*(?:energy|stamina|fatigue|rest)\\s*\\|)/gim",
+                "replaceString": "$1bar~fa-bolt|$2",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            },
+            {
+                "id": "vitals-icon-morale",
+                "scriptName": "Vitals - morale icon",
+                "findRegex": "/^([ \\t]*)bar\\|(\\s*(?:morale|mood|spirit|sanity|composure)\\s*\\|)/gim",
+                "replaceString": "$1bar~fa-face-smile|$2",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            },
+            {
+                "id": "vitals-icon-other",
+                "scriptName": "Vitals - other stat icon",
+                "findRegex": "/^([ \\t]*)bar\\|/gim",
+                "replaceString": "$1bar~fa-circle-half-stroke|",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            },
+            {
+                "id": "vitals-bar-critical",
+                "scriptName": "Vitals - critical bar",
+                "findRegex": "/^[ \\t]*bar~(fa-[\\w-]+)\\|\\s*([^|\\n]+?)\\s*\\|\\s*(\\d|1\\d|2[0-4])(?:\\s*(?:%|\\/\\s*100))?\\s*(?:\\|\\s*([^|\\n]*?)\\s*)?(?:\\|\\s*([^\\n]*?)\\s*)?$/gim",
+                "replaceString": "<div style=\"flex:1 1 100%;display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:3px 9px;padding:7px 9px;border-radius:12px;background:color-mix(in srgb,oklch(64% .2 25) 8%, transparent);border-left:3px solid oklch(64% .2 25)\"><span style=\"grid-row:span 3;align-self:start;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;color:oklch(64% .2 25);background:color-mix(in srgb,oklch(64% .2 25) 18%, transparent);box-shadow:0 0 0 1px color-mix(in srgb,oklch(64% .2 25) 45%, transparent)\"><i class=\"fa-solid $1\"></i></span><div style=\"display:flex;flex-wrap:wrap;align-items:center;gap:3px 7px;min-width:0\"><b style=\"overflow-wrap:anywhere\">$2</b><small style=\"font-size:.64em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 7px;border-radius:999px;color:color-mix(in oklch,oklch(64% .2 25) 50%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(64% .2 25) 18%, transparent);border:1px solid color-mix(in srgb,oklch(64% .2 25) 42%, transparent)\">Critical</small>[[vitals-change:$4]]</div><b style=\"font-variant-numeric:tabular-nums;font-size:1.05em;color:color-mix(in oklch,oklch(64% .2 25) 55%, var(--SmartThemeBodyColor))\">$3</b><div style=\"grid-column:2 / 4;height:9px;border-radius:999px;background:color-mix(in srgb,var(--SmartThemeBodyColor) 11%, transparent);overflow:hidden\"><div style=\"width:$3%;height:100%;border-radius:inherit;background:linear-gradient(90deg,color-mix(in srgb,oklch(64% .2 25) 62%, transparent),oklch(64% .2 25));box-shadow:0 0 8px color-mix(in srgb,oklch(64% .2 25) 55%, transparent)\"></div></div><div style=\"grid-column:2 / 4;font-size:.76em;opacity:.72;font-style:italic;overflow-wrap:anywhere\">$5</div></div>",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            },
+            {
+                "id": "vitals-bar-low",
+                "scriptName": "Vitals - low bar",
+                "findRegex": "/^[ \\t]*bar~(fa-[\\w-]+)\\|\\s*([^|\\n]+?)\\s*\\|\\s*(2[5-9]|[34]\\d)(?:\\s*(?:%|\\/\\s*100))?\\s*(?:\\|\\s*([^|\\n]*?)\\s*)?(?:\\|\\s*([^\\n]*?)\\s*)?$/gim",
+                "replaceString": "<div style=\"flex:1 1 100%;display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:3px 9px;padding:7px 9px;border-radius:12px;background:color-mix(in srgb,oklch(76% .15 62) 8%, transparent);border-left:3px solid oklch(76% .15 62)\"><span style=\"grid-row:span 3;align-self:start;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;color:oklch(76% .15 62);background:color-mix(in srgb,oklch(76% .15 62) 18%, transparent);box-shadow:0 0 0 1px color-mix(in srgb,oklch(76% .15 62) 45%, transparent)\"><i class=\"fa-solid $1\"></i></span><div style=\"display:flex;flex-wrap:wrap;align-items:center;gap:3px 7px;min-width:0\"><b style=\"overflow-wrap:anywhere\">$2</b><small style=\"font-size:.64em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 7px;border-radius:999px;color:color-mix(in oklch,oklch(76% .15 62) 50%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(76% .15 62) 18%, transparent);border:1px solid color-mix(in srgb,oklch(76% .15 62) 42%, transparent)\">Low</small>[[vitals-change:$4]]</div><b style=\"font-variant-numeric:tabular-nums;font-size:1.05em;color:color-mix(in oklch,oklch(76% .15 62) 55%, var(--SmartThemeBodyColor))\">$3</b><div style=\"grid-column:2 / 4;height:9px;border-radius:999px;background:color-mix(in srgb,var(--SmartThemeBodyColor) 11%, transparent);overflow:hidden\"><div style=\"width:$3%;height:100%;border-radius:inherit;background:linear-gradient(90deg,color-mix(in srgb,oklch(76% .15 62) 62%, transparent),oklch(76% .15 62));box-shadow:0 0 8px color-mix(in srgb,oklch(76% .15 62) 55%, transparent)\"></div></div><div style=\"grid-column:2 / 4;font-size:.76em;opacity:.72;font-style:italic;overflow-wrap:anywhere\">$5</div></div>",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            },
+            {
+                "id": "vitals-bar-fair",
+                "scriptName": "Vitals - fair bar",
+                "findRegex": "/^[ \\t]*bar~(fa-[\\w-]+)\\|\\s*([^|\\n]+?)\\s*\\|\\s*(5\\d|6\\d|7[0-4])(?:\\s*(?:%|\\/\\s*100))?\\s*(?:\\|\\s*([^|\\n]*?)\\s*)?(?:\\|\\s*([^\\n]*?)\\s*)?$/gim",
+                "replaceString": "<div style=\"flex:1 1 100%;display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:3px 9px;padding:7px 9px;border-radius:12px;background:color-mix(in srgb,oklch(80% .14 100) 8%, transparent);border-left:3px solid oklch(80% .14 100)\"><span style=\"grid-row:span 3;align-self:start;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;color:oklch(80% .14 100);background:color-mix(in srgb,oklch(80% .14 100) 18%, transparent);box-shadow:0 0 0 1px color-mix(in srgb,oklch(80% .14 100) 45%, transparent)\"><i class=\"fa-solid $1\"></i></span><div style=\"display:flex;flex-wrap:wrap;align-items:center;gap:3px 7px;min-width:0\"><b style=\"overflow-wrap:anywhere\">$2</b><small style=\"font-size:.64em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 7px;border-radius:999px;color:color-mix(in oklch,oklch(80% .14 100) 50%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(80% .14 100) 18%, transparent);border:1px solid color-mix(in srgb,oklch(80% .14 100) 42%, transparent)\">Fair</small>[[vitals-change:$4]]</div><b style=\"font-variant-numeric:tabular-nums;font-size:1.05em;color:color-mix(in oklch,oklch(80% .14 100) 55%, var(--SmartThemeBodyColor))\">$3</b><div style=\"grid-column:2 / 4;height:9px;border-radius:999px;background:color-mix(in srgb,var(--SmartThemeBodyColor) 11%, transparent);overflow:hidden\"><div style=\"width:$3%;height:100%;border-radius:inherit;background:linear-gradient(90deg,color-mix(in srgb,oklch(80% .14 100) 62%, transparent),oklch(80% .14 100));box-shadow:0 0 8px color-mix(in srgb,oklch(80% .14 100) 55%, transparent)\"></div></div><div style=\"grid-column:2 / 4;font-size:.76em;opacity:.72;font-style:italic;overflow-wrap:anywhere\">$5</div></div>",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            },
+            {
+                "id": "vitals-bar-good",
+                "scriptName": "Vitals - good bar",
+                "findRegex": "/^[ \\t]*bar~(fa-[\\w-]+)\\|\\s*([^|\\n]+?)\\s*\\|\\s*(100|[89]\\d|7[5-9])(?:\\s*(?:%|\\/\\s*100))?\\s*(?:\\|\\s*([^|\\n]*?)\\s*)?(?:\\|\\s*([^\\n]*?)\\s*)?$/gim",
+                "replaceString": "<div style=\"flex:1 1 100%;display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:3px 9px;padding:7px 9px;border-radius:12px;background:color-mix(in srgb,oklch(74% .15 152) 8%, transparent);border-left:3px solid oklch(74% .15 152)\"><span style=\"grid-row:span 3;align-self:start;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;color:oklch(74% .15 152);background:color-mix(in srgb,oklch(74% .15 152) 18%, transparent);box-shadow:0 0 0 1px color-mix(in srgb,oklch(74% .15 152) 45%, transparent)\"><i class=\"fa-solid $1\"></i></span><div style=\"display:flex;flex-wrap:wrap;align-items:center;gap:3px 7px;min-width:0\"><b style=\"overflow-wrap:anywhere\">$2</b><small style=\"font-size:.64em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 7px;border-radius:999px;color:color-mix(in oklch,oklch(74% .15 152) 50%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(74% .15 152) 18%, transparent);border:1px solid color-mix(in srgb,oklch(74% .15 152) 42%, transparent)\">Good</small>[[vitals-change:$4]]</div><b style=\"font-variant-numeric:tabular-nums;font-size:1.05em;color:color-mix(in oklch,oklch(74% .15 152) 55%, var(--SmartThemeBodyColor))\">$3</b><div style=\"grid-column:2 / 4;height:9px;border-radius:999px;background:color-mix(in srgb,var(--SmartThemeBodyColor) 11%, transparent);overflow:hidden\"><div style=\"width:$3%;height:100%;border-radius:inherit;background:linear-gradient(90deg,color-mix(in srgb,oklch(74% .15 152) 62%, transparent),oklch(74% .15 152));box-shadow:0 0 8px color-mix(in srgb,oklch(74% .15 152) 55%, transparent)\"></div></div><div style=\"grid-column:2 / 4;font-size:.76em;opacity:.72;font-style:italic;overflow-wrap:anywhere\">$5</div></div>",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            },
+            {
+                "id": "vitals-bar-other",
+                "scriptName": "Vitals - unrated bar",
+                "findRegex": "/^[ \\t]*bar~(fa-[\\w-]+)\\|\\s*([^|\\n]+?)\\s*(?:\\|\\s*([^|\\n]*?)\\s*)?(?:\\|\\s*([^|\\n]*?)\\s*)?(?:\\|\\s*([^\\n]*?)\\s*)?$/gim",
+                "replaceString": "<div style=\"flex:1 1 100%;display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:3px 9px;padding:7px 9px;border-radius:12px;background:color-mix(in srgb,var(--SmartThemeBodyColor) 5%, transparent);border-left:3px solid color-mix(in srgb,var(--SmartThemeBodyColor) 35%, transparent)\"><span style=\"grid-row:span 2;align-self:start;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:color-mix(in srgb,var(--SmartThemeBodyColor) 10%, transparent)\"><i class=\"fa-solid $1\"></i></span><div style=\"display:flex;flex-wrap:wrap;align-items:center;gap:3px 7px;min-width:0\"><b style=\"overflow-wrap:anywhere\">$2</b>[[vitals-change:$4]]</div><b style=\"font-variant-numeric:tabular-nums;overflow-wrap:anywhere\">$3</b><div style=\"grid-column:2 / 4;font-size:.76em;opacity:.72;font-style:italic;overflow-wrap:anywhere\">$5</div></div>",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            },
+            {
+                "id": "vitals-change-up",
+                "scriptName": "Vitals - rising change",
+                "findRegex": "/\\[\\[vitals-change:\\s*\\+\\s*(\\d+)\\s*%?\\s*\\]\\]/g",
+                "replaceString": "<small style=\"display:inline-flex;align-items:center;gap:3px;font-size:.7em;font-weight:700;font-variant-numeric:tabular-nums;padding:1px 6px;border-radius:999px;color:color-mix(in oklch,oklch(74% .15 152) 55%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(74% .15 152) 16%, transparent)\"><i class=\"fa-solid fa-caret-up\"></i>$1</small>",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            },
+            {
+                "id": "vitals-change-down",
+                "scriptName": "Vitals - falling change",
+                "findRegex": "/\\[\\[vitals-change:\\s*[-\\u2212\\u2013]\\s*(\\d+)\\s*%?\\s*\\]\\]/g",
+                "replaceString": "<small style=\"display:inline-flex;align-items:center;gap:3px;font-size:.7em;font-weight:700;font-variant-numeric:tabular-nums;padding:1px 6px;border-radius:999px;color:color-mix(in oklch,oklch(64% .2 25) 55%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(64% .2 25) 16%, transparent)\"><i class=\"fa-solid fa-caret-down\"></i>$1</small>",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            },
+            {
+                "id": "vitals-change-steady",
+                "scriptName": "Vitals - steady change",
+                "findRegex": "/\\[\\[vitals-change:[^\\]\\n]*\\]\\]/g",
+                "replaceString": "",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            },
+            {
+                "id": "vitals-status-bad",
+                "scriptName": "Vitals - bad status",
+                "findRegex": "/^[ \\t]*(?:STATUS|status)\\|\\s*([^|\\n]+?)\\s*\\|\\s*(?:bad|negative|debuff|harmful)\\s*$/gim",
+                "replaceString": "<span style=\"flex:none;display:inline-flex;align-items:center;gap:5px;margin-top:2px;font-size:.76em;font-weight:600;padding:3px 9px;border-radius:999px;color:color-mix(in oklch,oklch(64% .2 25) 50%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(64% .2 25) 14%, transparent);border:1px solid color-mix(in srgb,oklch(64% .2 25) 40%, transparent)\"><i class=\"fa-solid fa-triangle-exclamation\" style=\"font-size:.9em\"></i>$1</span>",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            },
+            {
+                "id": "vitals-status-good",
+                "scriptName": "Vitals - good status",
+                "findRegex": "/^[ \\t]*(?:STATUS|status)\\|\\s*([^|\\n]+?)\\s*\\|\\s*(?:good|positive|buff|helpful)\\s*$/gim",
+                "replaceString": "<span style=\"flex:none;display:inline-flex;align-items:center;gap:5px;margin-top:2px;font-size:.76em;font-weight:600;padding:3px 9px;border-radius:999px;color:color-mix(in oklch,oklch(74% .15 152) 50%, var(--SmartThemeBodyColor));background:color-mix(in srgb,oklch(74% .15 152) 14%, transparent);border:1px solid color-mix(in srgb,oklch(74% .15 152) 40%, transparent)\"><i class=\"fa-solid fa-circle-check\" style=\"font-size:.9em\"></i>$1</span>",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            },
+            {
+                "id": "vitals-status-other",
+                "scriptName": "Vitals - other status",
+                "findRegex": "/^[ \\t]*(?:STATUS|status)\\|\\s*([^|\\n]+?)\\s*(?:\\|[^\\n]*)?$/gim",
+                "replaceString": "<span style=\"flex:none;display:inline-flex;align-items:center;gap:5px;margin-top:2px;font-size:.76em;font-weight:600;padding:3px 9px;border-radius:999px;color:color-mix(in oklch,var(--SmartThemeQuoteColor) 50%, var(--SmartThemeBodyColor));background:color-mix(in srgb,var(--SmartThemeQuoteColor) 14%, transparent);border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor) 40%, transparent)\"><i class=\"fa-solid fa-circle-info\" style=\"font-size:.9em\"></i>$1</span>",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            },
+            {
+                "id": "vitals-close",
+                "scriptName": "Vitals - card close",
+                "findRegex": "/^[ \\t]*(?:VITALS_END|vitals-end)[ \\t]*$/gm",
+                "replaceString": "</div></div>",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            },
+            {
+                "id": "vitals-none",
+                "scriptName": "Vitals - nothing to track",
+                "findRegex": "/^[ \\t]*tracker-none[ \\t]*$/gm",
+                "replaceString": "<div style=\"margin:8px auto;max-width:520px;padding:8px 12px;border-radius:14px;border:1px dashed color-mix(in srgb,var(--SmartThemeQuoteColor) 30%, transparent);font-size:.82em;opacity:.7;text-align:center\"><i class=\"fa-solid fa-user-shield\" style=\"margin-right:6px\"></i>No vitals to show yet</div>",
+                "trimStrings": [],
+                "placement": [
+                    2
+                ],
+                "disabled": false,
+                "markdownOnly": true,
+                "promptOnly": false,
+                "runOnEdit": true,
+                "substituteRegex": 0,
+                "minDepth": null,
+                "maxDepth": null
+            }
+        ],
+        "injection": {
+            "position": 1,
+            "depth": 1,
+            "role": 0,
+            "order": 118,
+            "scan": false
+        },
+        "postProcess": {
+            "enabled": false,
+            "type": "regex",
+            "regexFind": "",
+            "regexReplace": "",
+            "regexFlags": "g",
+            "appendText": "",
+            "extractPattern": "",
+            "extractVariable": ""
+        },
+        "enabled": false,
+        "conditions": {
+            "triggerKeywords": [],
+            "triggerProbability": 100,
+            "generationTypes": [
+                "normal",
+                "continue"
+            ]
+        }
+    },
+    {
         "id": "tpl-visual-map-companion",
         "name": "Visual Map",
         "description": "Draws the scene as an illustrated map: the place holding {{user}} at the centre, nearby places laid out by direction, character pins, a travel trail and a compass. Built from simple lines, so fast models handle it well.",

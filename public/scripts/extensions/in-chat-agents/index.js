@@ -641,6 +641,7 @@ const CHATROOM_TEMPLATE_ID = 'tpl-chatroom-companion';
 const MESSAGE_INBOX_TEMPLATE_ID = 'tpl-message-inbox-companion';
 const POSITION_TRACKER_TEMPLATE_ID = 'tpl-position-tracker-companion';
 const VISUAL_MAP_TEMPLATE_ID = 'tpl-visual-map-companion';
+const VITALS_TEMPLATE_ID = 'tpl-vitals-companion';
 const DIRECTORS_COMMENTARY_TEMPLATE_ID = 'tpl-directors-commentary-companion';
 const PLOT_COMPASS_TEMPLATE_ID = 'tpl-plot-compass-companion';
 const LEVEL_UP_COMPANION_TEMPLATE_ID = 'tpl-level-up-companion';
@@ -686,6 +687,7 @@ const BUNDLED_REGEX_POST_DEFAULT_EXCLUDED_TEMPLATE_IDS = new Set([
     MESSAGE_INBOX_TEMPLATE_ID,
     POSITION_TRACKER_TEMPLATE_ID,
     VISUAL_MAP_TEMPLATE_ID,
+    VITALS_TEMPLATE_ID,
 ]);
 const BUNDLED_PROMPT_TRANSFORM_IMPERSONATE_TEMPLATE_IDS = new Set([
     'tpl-prose-polisher',
