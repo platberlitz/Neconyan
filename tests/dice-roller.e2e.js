@@ -10,11 +10,25 @@ const SCREENSHOTS = process.env.NECONYAN_DICE_SCREENSHOTS || '';
 const ROLL = '🎲 Pick the lock - rolled 18 vs 12 (1d20: 18) - SUCCESS';
 const DIRECTIVE = '[Dice result for User]\nPick the lock: SUCCESS.';
 
-function enableDice(saved, location) {
-    const settings = saved.extension_settings;
-    settings.disabledExtensions = (settings.disabledExtensions || []).filter(name => name !== 'dice-roller');
-    settings.bundledOptInProcessedExtensions = [...new Set([...(settings.bundledOptInProcessedExtensions || []), 'dice-roller'])];
+// Dice Roller is left exactly as a fresh account has it, so these tests also prove it starts switched on.
+function useReplyLocation(saved, location) {
     saved.power_user.reply_generation_location = location;
+}
+
+async function measureContrast(locator) {
+    return locator.evaluate(async element => {
+        const { contrastRatio } = await import('/scripts/theme-contrast.js');
+        const canvas = document.createElement('canvas').getContext('2d');
+        const channels = colour => {
+            canvas.clearRect(0, 0, 1, 1);
+            canvas.fillStyle = colour;
+            canvas.fillRect(0, 0, 1, 1);
+            return [...canvas.getImageData(0, 0, 1, 1).data].slice(0, 3);
+        };
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return { ratio: contrastRatio(channels(style.color), channels(style.backgroundColor)), color: style.color, background: style.backgroundColor, height: rect.height };
+    });
 }
 
 async function openChat(account) {
@@ -41,11 +55,26 @@ for (const [location, phone] of [['browser', false], ['server', true]]) {
     const viewport = phone ? 'phone' : 'desktop';
     test(`${viewport} dice roll reaches the ${location} reply as a settled result`, async ({ app }) => {
         const account = await app.account({ phone, activeConnection: true, contextOptions: { reducedMotion: 'no-preference' },
-            configureSettings: saved => enableDice(saved, location) });
+            configureSettings: saved => useReplyLocation(saved, location) });
         const page = await openChat(account);
         const composerButton = page.locator('#neco-dice-composer-button');
         await expect(composerButton).toBeVisible();
         await expect(page.locator('#neco-dice-wand-button')).toHaveCount(1);
+        // Until it is first opened, the button is tinted in the accent and pulses so people notice it.
+        await expect(composerButton).toHaveAttribute('data-new', 'true');
+        const look = await composerButton.evaluate(element => {
+            const neighbour = [...element.parentElement.children].find(child => child !== element && child.tagName === 'DIV' && child.offsetParent);
+            return {
+                first: [...element.parentElement.children].filter(child => child !== element && child.offsetParent).every(child => child.getBoundingClientRect().left > element.getBoundingClientRect().left),
+                background: getComputedStyle(element).backgroundColor,
+                neighbour: neighbour ? getComputedStyle(neighbour).backgroundColor : null,
+                animation: getComputedStyle(element).animationName,
+            };
+        });
+        expect(look.first, JSON.stringify(look)).toBe(true);
+        expect(look.neighbour, JSON.stringify(look)).not.toBeNull();
+        expect(look.background, JSON.stringify(look)).not.toBe(look.neighbour);
+        expect(look.animation).toBe('neco-dice-hint');
         await shot(page, `dice-${viewport}-composer.png`);
 
         // 0.85 lands every d20 on 18.
@@ -54,6 +83,8 @@ for (const [location, phone] of [['browser', false], ['server', true]]) {
         const panel = page.locator('.neco-dice');
         await expect(panel).toBeVisible();
         await expect(panel).toHaveAttribute('data-outcome', 'success');
+        await expect(composerButton).not.toHaveAttribute('data-new', /./);
+        expect(await page.evaluate(async () => (await import('/scripts/extensions.js')).extension_settings['dice-roller']?.introduced)).toBe(true);
         await panel.getByLabel('What are you attempting?').fill('Pick the lock');
         await panel.locator('.neco-dice-roll').click();
         await expect(panel).toHaveClass(/is-rolling/);
@@ -90,12 +121,20 @@ for (const [location, phone] of [['browser', false], ['server', true]]) {
         expect(promptText(app.provider.calls.at(-1)).join('\n')).not.toContain('[Dice result for');
         expect(await page.evaluate(() => document.querySelectorAll('.neco-dice-popup').length)).toBe(0);
         expect(await page.evaluate(() => typeof window.necoDiceRollerInterceptor)).toBe('function');
+
+        // A fresh account also comes with the Vitals companion installed and switched off.
+        const vitals = await page.evaluate(async () => {
+            const { getAgents } = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+            return getAgents().filter(agent => agent.sourceTemplateId === 'tpl-vitals-companion').map(agent => ({ name: agent.name, enabled: agent.enabled }));
+        });
+        expect(vitals).toEqual([{ name: 'Vitals', enabled: false }]);
     });
 
     test(`${viewport} dice buttons stay readable with default, pale and dark accents`, async ({ app }) => {
-        const account = await app.account({ phone, configureSettings: saved => enableDice(saved, location) });
+        const account = await app.account({ phone, configureSettings: saved => useReplyLocation(saved, location) });
         const page = await openChat(account);
         await page.addStyleTag({ content: '#toast-container { display: none; }' });
+        const composerButton = page.locator('#neco-dice-composer-button');
         await page.locator('#neco-dice-composer-button').click();
         const panel = page.locator('.neco-dice');
         await expect(panel).toHaveAttribute('data-outcome', /./);
@@ -113,20 +152,11 @@ for (const [location, phone] of [['browser', false], ['server', true]]) {
             await page.locator('#themes').selectOption({ label: theme }, { force: true });
             for (const accent of [null, 'Pearl', 'Midnight Ink']) {
                 if (accent) await page.locator(`.sb-accent-profile-apply[aria-label="Apply ${accent} accent profile"]`).evaluate(element => element.click());
+                const composer = await measureContrast(composerButton);
+                results.push({ theme, accent, name: 'composer dice', ...composer });
+                expect(composer.ratio, JSON.stringify(results.at(-1))).toBeGreaterThanOrEqual(4.5);
                 for (const [name, selector] of controls) {
-                    const measured = await panel.locator(selector).first().evaluate(async element => {
-                        const { contrastRatio } = await import('/scripts/theme-contrast.js');
-                        const canvas = document.createElement('canvas').getContext('2d');
-                        const channels = colour => {
-                            canvas.clearRect(0, 0, 1, 1);
-                            canvas.fillStyle = colour;
-                            canvas.fillRect(0, 0, 1, 1);
-                            return [...canvas.getImageData(0, 0, 1, 1).data].slice(0, 3);
-                        };
-                        const style = getComputedStyle(element);
-                        const rect = element.getBoundingClientRect();
-                        return { ratio: contrastRatio(channels(style.color), channels(style.backgroundColor)), color: style.color, background: style.backgroundColor, height: rect.height };
-                    });
+                    const measured = await measureContrast(panel.locator(selector).first());
                     results.push({ theme, accent, name, ...measured });
                     expect(measured.ratio, JSON.stringify(results.at(-1))).toBeGreaterThanOrEqual(4.5);
                     expect(measured.height, name).toBeGreaterThanOrEqual(phone ? 44 : 32);

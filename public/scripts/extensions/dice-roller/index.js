@@ -54,6 +54,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     partials: true,
     composerButton: true,
     rollOnOpen: true,
+    introduced: false,
 });
 
 const OUTCOME_LABELS = Object.freeze({
@@ -507,6 +508,11 @@ export async function openDicePanel() {
         return;
     }
     loadSettings();
+    if (!settings.introduced) {
+        settings.introduced = true;
+        saveSettings();
+        document.getElementById(COMPOSER_BUTTON_ID)?.removeAttribute('data-new');
+    }
     const panel = buildPanel();
     const popup = new Popup(panel.root, POPUP_TYPE.DISPLAY, '', {
         allowVerticalScrolling: true,
@@ -578,6 +584,9 @@ function ensureComposerButton() {
         title: 'Roll dice',
         'aria-label': 'Roll dice',
     });
+    if (!settings.introduced) {
+        button.dataset.new = 'true';
+    }
     button.addEventListener('click', () => void openDicePanel());
     button.addEventListener('keydown', event => {
         if (event.key === 'Enter' || event.key === ' ') {

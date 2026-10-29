@@ -521,3 +521,34 @@
         animation: none;
     }
 }
+
+body #send_form #leftSendForm > div#neco-dice-composer-button.interactable {
+    border: 1px solid var(--neco-ginger, var(--SmartThemeQuoteColor));
+    background: color-mix(in oklch, var(--neco-ginger, var(--SmartThemeQuoteColor)) 22%, var(--neco-raised, var(--SmartThemeBlurTintColor)));
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    opacity: 1;
+}
+
+body #send_form #leftSendForm > div#neco-dice-composer-button.interactable:is(:hover, :focus-visible) {
+    background: color-mix(in oklch, var(--neco-ginger, var(--SmartThemeQuoteColor)) 34%, var(--neco-raised, var(--SmartThemeBlurTintColor)));
+}
+
+body #send_form #leftSendForm > div#neco-dice-composer-button.interactable[data-new="true"] {
+    animation: neco-dice-hint 1.8s ease-out 0.6s 4;
+}
+
+@keyframes neco-dice-hint {
+    from {
+        box-shadow: 0 0 0 0 color-mix(in oklch, var(--neco-ginger, var(--SmartThemeQuoteColor)) 70%, transparent);
+    }
+
+    to {
+        box-shadow: 0 0 0 10px transparent;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body #send_form #leftSendForm > div#neco-dice-composer-button.interactable[data-new="true"] {
+        animation: none;
+    }
+}
