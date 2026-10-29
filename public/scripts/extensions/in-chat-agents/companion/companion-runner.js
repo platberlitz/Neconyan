@@ -1837,7 +1837,18 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
             }
             onGenerationStart?.();
             onGenerationStart = null;
-            const response = await requestPromptTransform(repair ? markTrackerRepairRunAgent(agent) : agent, promptMessages, companion.maxTokens, { diagnosticHandle }).catch(markCompanionConnectionFailure);
+            const acceptOutput = agent.category !== 'tracker' ? undefined : output => {
+                const text = capResultContent(output);
+                const display = trackerDisplayOptions(agent, messageIndex);
+                if (repair) return !!normalizeCompanionTrackerRepairPayload(agent, text, { ...display, previousText: previous }).payload;
+                if (repairPass) return !!getCompanionTrackerAutoRepairPayload(agent, text, {
+                    ...display, previousText: sections.find(section => section.title === 'Current companion agent note')?.content,
+                });
+                return inspectCompanionTrackerOutput(agent, text, display).action === 'keep';
+            };
+            const response = await requestPromptTransform(repair ? markTrackerRepairRunAgent(agent) : agent, promptMessages, companion.maxTokens, {
+                diagnosticHandle, acceptOutput, cancelRevision, isCurrent: isTargetCurrent,
+            }).catch(markCompanionConnectionFailure);
 
             if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
                 throw new DOMException('Companion run cancelled.', 'AbortError');

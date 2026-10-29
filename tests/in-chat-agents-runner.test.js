@@ -3681,6 +3681,43 @@ describe('in-chat agent post-processing runner', () => {
         });
         const prompts = () => generateQuietPrompt.mock.calls.map(call => call[0].quietPrompt);
 
+        test('tries all four saved fallbacks after errors, cut-off, malformed and empty tracker replies', async () => {
+            const tracker = { ...makeTracker('fallback-tracker'), connectionProfile: 'primary' };
+            enabledAgents = [tracker];
+            globalSettings.companionConnectionFallbacks = ['limited', 'malformed', 'empty', 'working'];
+            connectionManagerRequestService = {
+                constructPrompt: jest.fn(messages => messages),
+                sendRequest: jest.fn(async profileId => {
+                    if (profileId === 'primary') throw new Error('Provider overloaded');
+                    if (profileId === 'limited') return { content: block, lengthLimited: true };
+                    if (profileId === 'malformed') return { content: `[WORLD|Market]\n${roleplay}` };
+                    return { content: profileId === 'working' ? block : '' };
+                }),
+            };
+            const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+            chat.push({ mes: 'Assistant reply', name: 'Assistant', is_user: false, is_system: false, extra: {} });
+
+            const result = await companionRunner.runCompanionAgentOnMessage(tracker.id, 0);
+
+            expect(result).toEqual(expect.objectContaining({ status: 'done', content: block }));
+            expect(connectionManagerRequestService.sendRequest.mock.calls.map(call => call[0]))
+                .toEqual(['primary', 'limited', 'malformed', 'empty', 'working']);
+        });
+
+        test('a no-change tracker reply does not spend another fallback request', async () => {
+            const tracker = { ...makeTracker('unchanged-tracker'), connectionProfile: 'primary' };
+            enabledAgents = [tracker];
+            globalSettings.companionConnectionFallbacks = ['backup'];
+            connectionManagerRequestService = { sendRequest: jest.fn(async () => ({ content: 'tracker-none' })) };
+            const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+            chat.push({ mes: 'Assistant reply', name: 'Assistant', is_user: false, is_system: false, extra: {} });
+
+            const result = await companionRunner.runCompanionAgentOnMessage(tracker.id, 0);
+
+            expect(result.status).toBe('done');
+            expect(connectionManagerRequestService.sendRequest).toHaveBeenCalledTimes(1);
+        });
+
         test('regenerates a tracker reply that carries roleplay', async () => {
             const tracker = makeTracker('roleplay-tracker');
             enabledAgents = [tracker];
@@ -3725,17 +3762,23 @@ describe('in-chat agent post-processing runner', () => {
             expect(prompts()[1]).toContain('Mira wandered past the stalls');
         });
 
-        test('keeps the previous note when the automatic repair also fails', async () => {
+        test.each([false, true])('keeps the previous note when automatic repair fails (fallbacks: %s)', async withFallbacks => {
             const tracker = makeTracker('unrepairable-tracker');
             enabledAgents = [tracker];
             generateQuietPrompt.mockResolvedValue(`[WORLD|Culture|Market]\n${roleplay}`);
+            if (withFallbacks) {
+                tracker.connectionProfile = 'primary';
+                globalSettings.companionConnectionFallbacks = ['backup'];
+                connectionManagerRequestService = { sendRequest: jest.fn(async () => ({ content: `[WORLD|Culture|Market]\n${roleplay}` })) };
+            }
             const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
             chat.push({ mes: 'Assistant reply', name: 'Assistant', is_user: false, is_system: false, extra: {} });
             companionRunner.setCompanionResult(chat[0], tracker, { status: 'done', content: block });
 
             const result = await companionRunner.runCompanionAgentOnMessage(tracker.id, 0);
 
-            expect(generateQuietPrompt).toHaveBeenCalledTimes(2);
+            const calls = withFallbacks ? connectionManagerRequestService.sendRequest.mock.calls.map(call => call[0]) : generateQuietPrompt.mock.calls.map(() => 'main');
+            expect(calls).toEqual(withFallbacks ? ['primary', 'backup', 'primary', 'backup'] : ['main', 'main']);
             expect(result).toEqual(expect.objectContaining({ content: block }));
             expect(chat[0].extra.inChatAgentCompanionResults[tracker.id].content).toBe(block);
         });
@@ -9295,6 +9338,25 @@ describe('in-chat agent post-processing runner', () => {
         ]));
     });
 
+    test('manual tracker fix tries the next repair connection after an invalid non-empty reply', async () => {
+        usePreExtractTracker();
+        globalSettings.trackerRepairConnectionProfile = 'repair';
+        globalSettings.trackerRepairConnectionFallbacks = ['backup'];
+        const block = '[STATUS|Assistant|Recovered|Mild]\ndetail: Ready to continue.\n[/STATUS]';
+        connectionManagerRequestService = {
+            sendRequest: jest.fn(async profileId => ({ content: profileId === 'repair' ? 'No tracker was produced.' : block })),
+        };
+        const { runTrackerFixOnMessage } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        chat.push({ name: 'Assistant', mes: 'Fresh reply without a tracker.', is_user: false, extra: {} });
+
+        await runTrackerFixOnMessage(0);
+
+        expect(connectionManagerRequestService.sendRequest.mock.calls.map(call => call[0])).toEqual(['repair', 'backup']);
+        expect(chat[0].mes).toContain(block);
+        expect(chat[0].mes).toContain('Fresh reply without a tracker.');
+        expect(globalThis.toastr.warning).not.toHaveBeenCalled();
+    });
+
     test.each(['header', 'field order'])('manual tracker fix repairs relationship %s using the actual card rules', async kind => {
         usePreExtractTracker();
         const template = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/relationship-tracker.json', import.meta.url)));
@@ -10055,6 +10117,19 @@ describe('in-chat agent post-processing runner', () => {
         globalSettings.connectionFallbacks = [];
         await expect(requestPromptTransform({ id: 'post', connectionProfile: 'primary' }, messages, 100)).rejects.toThrow('Provider overloaded');
         warn.mockRestore();
+    });
+
+    test.each(['limited', 'invalid'])('saved fallbacks continue after a %s non-empty reply', async kind => {
+        globalSettings.connectionFallbacks = ['backup'];
+        connectionManagerRequestService = {
+            sendRequest: jest.fn(async profileId => ({ content: profileId === 'backup' ? 'Complete' : 'Broken', lengthLimited: profileId === 'primary' && kind === 'limited' })),
+        };
+        const { requestPromptTransform } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const response = await requestPromptTransform({ id: 'post', connectionProfile: 'primary' }, [], 100, {
+            acceptOutput: text => kind !== 'invalid' || text === 'Complete',
+        });
+        expect(response).toEqual(expect.objectContaining({ output: 'Complete', profileId: 'backup' }));
+        expect(connectionManagerRequestService.sendRequest.mock.calls.map(call => call[0])).toEqual(['primary', 'backup']);
     });
 
     test('Fix trackers uses its own connection, fallbacks and time limit, then stops counting as running', async () => {

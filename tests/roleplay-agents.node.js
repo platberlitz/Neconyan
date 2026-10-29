@@ -427,7 +427,27 @@ test('an empty Agent reply tries the fallback, and every connection failing keep
         generate: modelResponse(({ binding }) => { throw Object.assign(new Error(`${binding.profileId} refused`), { status: 400 }); }) }), /aux refused/);
 });
 
-test('Agent model inputs, macros and limited results are saved once and never invoke a fallback', async t => {
+test('limited and invalid Agent replies advance through saved fallbacks and replay without new calls', async t => {
+    for (const kind of ['limited', 'invalid']) {
+        const f = prepared(t);
+        const aux = { kind: 'profile', ...captureChatProfile(f.directories, 'aux') };
+        const calls = [];
+        const options = { base: f.scope, account: f.account, name: kind, identity: roleplayHash(kind), binding: f.binding, maxTokens: 64, macros: {},
+            fallbacks: [{ binding: aux, profileLabel: 'Backup' }], buildMessages: () => [{ role: 'user', content: 'Write' }],
+            acceptOutput: text => kind !== 'invalid' || text === 'Complete',
+            generate: modelResponse(({ binding }) => {
+                calls.push(binding.profileId);
+                return { text: binding.profileId === 'aux' ? 'Complete' : 'Broken', finishReason: kind === 'limited' && binding.profileId === 'main' ? 'length' : 'stop' };
+            }) };
+        const result = await runAgentModelStep(f.context, options);
+        assert.equal(result.text, 'Complete');
+        assert.deepEqual(calls, ['main', 'aux']);
+        const replay = await runAgentModelStep(f.context, { ...options, generate: () => assert.fail('A saved attempt was sent again') });
+        assert.deepEqual(replay, result);
+    }
+});
+
+test('Agent model inputs, macros and limited results without fallbacks are saved once', async t => {
     const f = prepared(t);
     let builds = 0, calls = 0;
     const options = { base: f.scope, account: f.account, name: 'rewrite', identity: roleplayHash({ task: 'rewrite' }), binding: f.binding,

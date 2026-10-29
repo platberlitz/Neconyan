@@ -31,7 +31,7 @@ const controls = { prompts: [{ identifier: 'main', role: 'system', system_prompt
 prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'worldInfoBefore', enabled: true }, { identifier: 'chatHistory', enabled: true }] }] };
 const companion = (id, options = {}) => ({ id, name: id.toUpperCase(), enabled: true, category: 'companion', execution: 'companion',
     phase: 'pre', prompt: `TASK_${id.toUpperCase()}`, companion: { includeWorldInfo: false, ...options } });
-function prepared(t, agents, { global = {}, effect = 'append', changeRecords, extraCard = false, imagePolicy = false, previewParent = null } = {}) {
+function prepared(t, agents, { global = {}, profiles = [], effect = 'append', changeRecords, extraCard = false, imagePolicy = false, previewParent = null } = {}) {
     const f = fixture(t), directories = f.scope.directories;
     directories.worlds = path.join(directories.root, 'worlds');
     directories.inChatAgents = path.join(directories.root, 'InChatAgents');
@@ -47,7 +47,7 @@ function prepared(t, agents, { global = {}, effect = 'append', changeRecords, ex
         world_info_settings: { world_info: { globalSelect: ['Bells'] }, world_info_budget: 200 },
         oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1' },
         extension_settings: { note: { default: 'Saved author note' }, connectionManager: { profiles: [{ id: 'main', name: 'Saved Main',
-            api: 'custom', model: 'fixture', 'api-url': 'http://127.0.0.1:18000/v1' }] },
+            api: 'custom', model: 'fixture', 'api-url': 'http://127.0.0.1:18000/v1' }, ...profiles] },
         inChatAgents: { globalSettings: { enabled: true, connectionProfile: 'main', postMainInterceptShowMessageFirst: false, ...global } } } };
     fs.writeFileSync(path.join(directories.root, 'settings.json'), JSON.stringify(settings));
     for (const agent of agents) fs.writeFileSync(path.join(directories.inChatAgents, `${agent.id}.json`), JSON.stringify(agent));
@@ -531,6 +531,26 @@ test('a compatible image copy survives the companion prompt and its post-process
 });
 const trackerRoleplay = 'Mira wandered past the stalls, trailing her fingers over the bolts of silk. "You will not find better '
     + 'cloth this side of the river," the merchant called after her, and she laughed despite herself.';
+
+test('native trackers exhaust unusable replies in saved order before accepting the fourth fallback', async t => {
+    const ids = ['limited', 'malformed', 'empty', 'working'];
+    const f = prepared(t, [trackerCompanion('world')], {
+        global: { companionConnectionFallbacks: ids },
+        profiles: ids.map(id => ({ id, name: id, api: 'custom', model: 'fixture', 'api-url': 'http://127.0.0.1:18000/v1' })),
+    });
+    const calls = [];
+    await f.run({ generate: paid('main', 'Main reply'), generateAgent: paid('agent', ({ binding }) => {
+        calls.push(binding.profileId);
+        if (binding.profileId === 'main') throw new Error('Provider overloaded');
+        if (binding.profileId === 'limited') return { text: trackerBlock, finishReason: 'length' };
+        if (binding.profileId === 'malformed') return { text: `[WORLD|Market]\n${trackerRoleplay}` };
+        return { text: binding.profileId === 'working' ? trackerBlock : '' };
+    }) });
+    const result = f.rows().at(-1).extra.inChatAgentCompanionResults.world;
+    assert.deepEqual(calls, ['main', ...ids]);
+    assert.equal(result.status, 'done');
+    assert.equal(result.content, trackerBlock);
+});
 
 test('native tracker Companions regenerate a reply that carries roleplay', async t => {
     const f = prepared(t, [trackerCompanion('world')]);

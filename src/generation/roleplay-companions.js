@@ -280,7 +280,9 @@ export async function runRoleplayCompanions(context, options) {
         let model = null;
         const ask = async (repair, extra, suffix) => {
             const prompt = singleCompanionPrompt({ ...input, repair }, agent, extra);
-            model = await runModel(agent, `${stepName}:${suffix}`, prompt, agent.companion.maxTokens);
+            model = await runModel(agent, `${stepName}:${suffix}`, prompt, agent.companion.maxTokens, [agent], text => repair
+                ? !!getCompanionTrackerAutoRepairPayload(agent, content(text), { ...displayOptions, previousText: broken })
+                : inspectCompanionTrackerOutput(agent, content(text), displayOptions).action === 'keep');
             usage.push(await usageOf(prompt, model.text));
             return model.lengthLimited ? null : content(model.text);
         };
@@ -335,11 +337,11 @@ export async function runRoleplayCompanions(context, options) {
         if (references(agent).includes(MEMORY_SHARD_TEMPLATE_ID) && coverage) record.contextCoverage = coverage;
         return storeResult(agent, runIdentity, record, true);
     };
-    const runModel = (agent, name, prompt, maxTokens, diagnosticAgents = [agent]) => runAgentModelStep(shared, { base, account: snapshot.account, name,
+    const runModel = (agent, name, prompt, maxTokens, diagnosticAgents = [agent], acceptOutput) => runAgentModelStep(shared, { base, account: snapshot.account, name,
         diagnostic: diagnosticAgents.map(item => ({ id: item.id, sourceTemplateId: item.sourceTemplateId, phase: 'companions' })),
         identity: roleplayHash({ identity, agents: name, messages: prompt.messages }), binding: agent.binding ?? binding,
         modelOverride: agent.binding ? agent.modelOverride : '', fallbacks: agent.fallbacks, maxTokens, macros: options.macros, tokenizer: snapshot.tokenizer,
-        fallbackContext: snapshot.maxContext, assertCurrent, generate, buildMessages: () => prompt.messages });
+        fallbackContext: snapshot.maxContext, assertCurrent, generate, acceptOutput, buildMessages: () => prompt.messages });
     const runSingle = async (agent, sections, suffix = '') => {
         const runIdentity = roleplayHash({ identity, agent: agent.id, sections, suffix });
         const cached = saved(context, snapshot.account, `roleplay-companion:${agent.id}`, runIdentity);
@@ -357,7 +359,10 @@ export async function runRoleplayCompanions(context, options) {
         if (agent.companion.includeWorldInfo) input.worldInfo = await worldInfoText();
         const prompt = singleCompanionPrompt({ ...input, repair: isRepairTarget(agent) }, agent, extra);
         const stepName = `companion:${agent.id}${suffix}`;
-        const model = await runModel(agent, stepName, prompt, agent.companion.maxTokens);
+        const acceptOutput = agent.category !== 'tracker' ? undefined : text => isRepairTarget(agent)
+            ? !!normalizeCompanionTrackerRepairPayload(agent, content(text), { ...trackerDisplayOptions(agent), previousText: prior?.content }).payload
+            : inspectCompanionTrackerOutput(agent, content(text), trackerDisplayOptions(agent)).action === 'keep';
+        const model = await runModel(agent, stepName, prompt, agent.companion.maxTokens, [agent], acceptOutput);
         return finishResult(agent, model.text, model, prompt, runIdentity, null, prompt.coverage, sections, stepName);
     };
     const runUnit = async (group, sections) => {

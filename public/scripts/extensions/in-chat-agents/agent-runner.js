@@ -3712,7 +3712,7 @@ async function requestProfilePromptTransform(isRuntimeAllowed, CMRS, profileId, 
     try {
         primaryResponse = await CMRS.sendRequest(profileId, promptMessages, maxTokens, requestOptions);
         const primaryOutput = extractProfileResponseText(primaryResponse);
-        if (primaryOutput.trim()) {
+        if (primaryOutput.trim() || primaryResponse?.lengthLimited) {
             return {
                 output: primaryOutput,
                 runner: 'profile',
@@ -3898,8 +3898,8 @@ export async function requestPromptTransform(agent, promptMessages, maxTokens, o
                 requestAbortController.signal.removeEventListener('abort', abortAttempt);
             }
         };
-        // Saved fallback connections are tried in order when the Agent's own connection fails or
-        // returns nothing. They use their own model, never the Agent's model override.
+        // Check usable output before accepting a connection, including caller-specific tracker
+        // validation. Fallbacks use their own model, never the Agent's model override.
         const attempts = [
             { profileId, modelOverride },
             ...getAgentConnectionFallbacks(agent, profileId).map(fallbackId => ({ profileId: fallbackId, modelOverride: '' })),
@@ -3913,7 +3913,7 @@ export async function requestPromptTransform(agent, promptMessages, maxTokens, o
         };
 
         try {
-            let emptyResponse = null;
+            let rejectedResponse = null;
             let lastError = null;
             for (const [index, attempt] of attempts.entries()) {
                 const target = describePromptTransformTarget(attempt.profileId, attempt.profileId ? 'profile' : 'main');
@@ -3935,15 +3935,17 @@ export async function requestPromptTransform(agent, promptMessages, maxTokens, o
                 if (index > 0) {
                     response = { ...response, fallbackIndex: index, fallbackFrom: profileId };
                 }
-                if (String(response?.output ?? '').trim() || response?.lengthLimited) {
+                const output = String(response?.output ?? '');
+                if (output.trim() && !response?.lengthLimited && (!options.acceptOutput || options.acceptOutput(output))) {
                     return settle(response);
                 }
-                emptyResponse ??= response;
+                // Keep the original result for existing repair/error handling if every connection fails.
+                rejectedResponse ??= response;
                 if (index < attempts.length - 1) {
-                    console.warn(`[InChatAgents] ${agent?.name || 'Agent'} returned nothing from ${target}; trying the next fallback connection.`);
+                    console.warn(`[InChatAgents] ${agent?.name || 'Agent'} returned an incomplete or unusable reply from ${target}; trying the next fallback connection.`);
                 }
             }
-            if (emptyResponse) return settle(emptyResponse);
+            if (rejectedResponse) return settle(rejectedResponse);
             throw lastError;
         } finally {
             options.signal?.removeEventListener('abort', abortFromCaller);
@@ -4095,7 +4097,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
                 agent,
                 helperRequest.promptMessages,
                 maxTokens,
-                { allowAssistantPrefillTail: helperRequest.allowAssistantPrefillTail, runtimeAgents: options.runtimeAgents, diagnosticHandle },
+                { allowAssistantPrefillTail: helperRequest.allowAssistantPrefillTail, runtimeAgents: options.runtimeAgents, diagnosticHandle, acceptOutput: options.acceptOutput },
             );
             const promptOutputText = stripEchoedPartialPrefill(
                 unwrapAssistantResponseWrapper(response.output).trim(),
@@ -6760,6 +6762,10 @@ async function executeTrackerFixOnMessage(submittedTarget, cancelRevision) {
             const result = await runPromptTransformAgent(repairAgent, message, generationType, currentPromptTransformText, messageIndex, {
                 applyToMessage: false,
                 cancelRevision: fixCancelRevision,
+                acceptOutput: text => {
+                    const repaired = inspectTrackerRepairState(agent, unwrapAssistantResponseWrapper(text).trim(), message.name);
+                    return repaired.status === 'valid' && repaired.payloads.length >= inspection.blocks.length;
+                },
             });
             if (!isFixTargetCurrent() || result.status === 'stale-target') return null;
             const repaired = inspectTrackerRepairState(agent, result.outputText, message.name);
