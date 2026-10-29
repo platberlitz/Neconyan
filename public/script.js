@@ -13933,7 +13933,10 @@ export async function openCharacterChat(file_name) {
 ////////// OPTIMZED MAIN API CHANGE FUNCTION ////////////
 
 export function changeMainAPI(api = null) {
-    const selectedVal = api ?? $('#main_api').val();
+    const requestedApi = api ?? $('#main_api').val();
+    // Retired reply formats in saved settings or extension calls use the default.
+    const selectedVal = ['openai', 'textgenerationwebui'].includes(requestedApi) ? requestedApi : 'openai';
+    $('#main_api').val(selectedVal);
     //console.log(selectedVal);
     const apiElements = {
         'koboldhorde': {
@@ -14231,19 +14234,10 @@ export async function getSettings(initLoaderHandle = null, initialData = null) {
         $('#amount_gen').val(amount_gen);
         $('#amount_gen_counter').val(amount_gen);
 
-        //Load which API we are using
-        if (settings.main_api == undefined) {
-            settings.main_api = 'openai';
-        }
-
-        if (settings.main_api == 'poe') {
-            settings.main_api = 'openai';
-        }
-
-        main_api = settings.main_api;
-        $('#main_api').val(main_api);
+        // Restore a supported reply format before using the saved selection.
+        changeMainAPI(settings.main_api ?? 'openai');
+        settings.main_api = main_api;
         $(`#main_api option[value=${main_api}]`).attr('selected', 'true');
-        changeMainAPI();
         if (shouldRestoreTextGenStatusOnStartup({ mainApi: main_api, serverUrl: getTextGenServer() })) {
             startStatusLoading();
             getStatusTextgen();
