@@ -67,6 +67,8 @@ describe('Neconyan Custom CSS AI helper', () => {
                 '--neco-ginger': element === body ? ' #aabbcc ' : '',
                 '--neco-on-accent': element === body ? '#111111' : '',
                 '--sb-font-display': 'Fredoka One',
+                '--sb-font-chat': element === body ? ' Lora ' : '',
+                '--monoFontFamily': element === body ? 'Fira Code, monospace' : '',
             })[name] ?? '',
         }) });
         try {
@@ -74,6 +76,8 @@ describe('Neconyan Custom CSS AI helper', () => {
             expect(user.content).toContain('--neco-ginger: #aabbcc;');
             expect(user.content).toContain('--neco-on-accent: #111111;');
             expect(user.content).toContain('--sb-font-display: Fredoka One;');
+            expect(user.content).toContain('--sb-font-chat: Lora;');
+            expect(user.content).toContain('--monoFontFamily: Fira Code, monospace;');
             expect(helper.getCustomCssPaletteSnapshot(root)).toBe('--sb-font-display: Fredoka One;');
             expect(helper.getCustomCssPaletteSnapshot(null)).toBe('');
         } finally {
@@ -106,6 +110,34 @@ describe('Neconyan Custom CSS AI helper', () => {
         expect(powerUser).toMatch(/dataset\.sbTextTone = /);
         expect(powerUser).toMatch(/dataset\.neconyanCalicoTone = isDarkCalico \? 'dark' : isLightCalico \? 'light' : 'custom'/);
         expect(powerUser).toMatch(/dataset\.neconyanAccent = isThemeAccent \? 'theme' : 'custom'/);
+    });
+
+    test('covers every selectable font role in the prompt and palette snapshot', async () => {
+        const { helper } = await importHelper();
+        const { CUSTOM_CSS_AI_PALETTE_VARIABLES } = await import('../public/scripts/neconyan-custom-css-core.js');
+        const [system] = helper.buildCustomCssAIMessages({ instruction: 'Larger chat text', paletteSnapshot: '' });
+        const powerUser = fs.readFileSync(new URL('../public/scripts/power-user.js', import.meta.url), 'utf8');
+        const roles = powerUser.match(/const GOOGLE_FONT_ROLES = Object\.freeze\(\{([\s\S]*?)\n\}\);/)[1];
+        const variables = [...roles.matchAll(/cssVariable: '([^']+)'/g)].map(match => match[1]);
+
+        expect(variables).toHaveLength(4);
+        for (const variable of variables) {
+            expect(CUSTOM_CSS_AI_PALETTE_VARIABLES).toContain(variable);
+            expect(system.content).toContain(variable);
+        }
+        expect(system.content).toContain('var(--sb-font-chat, var(--mainFontFamily))');
+        expect(system.content).toContain('four independently selected font roles');
+    });
+
+    test('keeps the contrast-matched primary fill through hover and active states', async () => {
+        const { helper } = await importHelper();
+        const [system] = helper.buildCustomCssAIMessages({ instruction: 'Softer buttons', paletteSnapshot: '' });
+
+        expect(system.content).toContain('keep --neco-ginger as the solid primary fill in normal, hover and active states');
+        expect(system.content).toContain('with --neco-on-accent for text');
+        expect(system.content).toContain('Show hover and active feedback through borders or inset shadows');
+        expect(system.content).toContain('--neco-ginger-hover can be much lighter');
+        expect(system.content).not.toContain('use --neco-ginger and --neco-ginger-hover for primary fills');
     });
 
     test('submits one retained server job and adopts its settings write', async () => {

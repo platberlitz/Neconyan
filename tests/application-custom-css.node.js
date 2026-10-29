@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { fixture } from './roleplay-transactions-fixture.js';
+import { CUSTOM_CSS_AI_SYSTEM_PROMPT } from '../public/scripts/neconyan-custom-css-core.js';
 
 const { acceptApplicationOperation, runOperation } = await import('../src/operations/jobs.js');
 await import('../src/operations/custom-css.js');
@@ -35,6 +36,7 @@ test('one accepted CSS job saves into settings after the page is gone and never 
     let calls = 0;
     const generate = async options => {
         calls++;
+        assert.deepEqual(options.messages[0], { role: 'system', content: CUSTOM_CSS_AI_SYSTEM_PROMPT });
         assert.match(options.messages[1].content, /Rounder buttons/);
         assert.match(options.messages[1].content, /\.old \{ color: red; \}/);
         assert.match(options.messages[1].content, /--neco-ink: #222;/);
