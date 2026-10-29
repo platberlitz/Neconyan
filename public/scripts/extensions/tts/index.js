@@ -97,6 +97,8 @@ let audioQueuePumpPromise = null;
 let ttsPlaybackEpoch = 0;
 let ttsGenerationAbortController = null;
 let unregisterTtsCapability = null;
+let ttsSettingsVisibilityObserver = null;
+let ttsDeferredProviderLoadStarted = false;
 
 const DEFAULT_VOICE_MARKER = '[Default Voice]';
 const DISABLED_VOICE_MARKER = 'disabled';
@@ -263,6 +265,10 @@ async function onNarrateText(args, text) {
     }
 
     audioElement.src = '/sounds/silence.mp3';
+
+    if (extension_settings.tts.enabled) {
+        await ensureTtsProviderLoaded();
+    }
 
     // To load all characters in the voice map, set unrestricted to true
     await initVoiceMap(true);
@@ -589,6 +595,7 @@ async function onTtsVoicesClick() {
     let popupText = '';
 
     try {
+        await ensureTtsProviderLoaded();
         const voiceIds = await ttsProvider.fetchTtsVoiceObjects();
 
         for (const voice of voiceIds) {
@@ -1131,10 +1138,10 @@ function setTtsStatus(status, success) {
 }
 
 function onRefreshClick() {
-    Promise.all([
+    ensureTtsProviderLoaded().then(() => Promise.all([
         ttsProvider.onRefreshClick(),
         // updateVoiceMap()
-    ]).then(() => {
+    ])).then(() => {
         extension_settings.tts[ttsProviderName] = ttsProvider.settings;
         saveSettingsDebounced();
         setTtsStatus('Successfully applied settings', true);
@@ -1155,6 +1162,11 @@ function onEnableClick() {
     updateUiAudioPlayState();
     saveSettingsDebounced();
     $('body').toggleClass('tts', extension_settings.tts.enabled);
+    if (extension_settings.tts.enabled) {
+        void ensureTtsProviderLoaded().catch(error => {
+            console.warn('TTS provider initialization failed; it will be retried on demand.', error);
+        });
+    }
 }
 
 
@@ -1800,6 +1812,45 @@ export function deactivate() {
     resetTtsPlayback();
     unregisterTtsCapability?.();
     unregisterTtsCapability = null;
+    ttsSettingsVisibilityObserver?.disconnect();
+    ttsSettingsVisibilityObserver = null;
+}
+
+function loadDeferredTtsProvider(reason) {
+    if (ttsDeferredProviderLoadStarted) return;
+    ttsDeferredProviderLoadStarted = true;
+    void ensureTtsProviderLoaded().catch(error => {
+        ttsDeferredProviderLoadStarted = false;
+        console.warn('TTS provider initialization failed; it will be retried on demand.', reason, error);
+    });
+}
+
+function observeTtsSettingsVisibility() {
+    const providerHost = document.getElementById('tts_container');
+    const drawerHost = providerHost?.closest('.drawer-content');
+    const shellPanel = providerHost?.closest('.sb-shell-panel');
+    const settingsHost = providerHost?.closest('#extensions_settings');
+    const drawerToggle = document.querySelector('#extensions-settings-button > .drawer-toggle');
+    const targets = [providerHost, drawerHost, shellPanel, settingsHost]
+        .filter((target, index, list) => target instanceof Element && list.indexOf(target) === index);
+
+    if (!targets.length) return;
+
+    if (typeof IntersectionObserver !== 'function') {
+        [providerHost, drawerHost, shellPanel, settingsHost, drawerToggle].filter(Boolean).forEach(target => {
+            target.addEventListener('click', () => loadDeferredTtsProvider('settings interaction'), { once: true });
+        });
+        return;
+    }
+
+    ttsSettingsVisibilityObserver?.disconnect();
+    ttsSettingsVisibilityObserver = new IntersectionObserver(entries => {
+        if (!entries.some(entry => entry.isIntersecting)) return;
+        ttsSettingsVisibilityObserver?.disconnect();
+        ttsSettingsVisibilityObserver = null;
+        loadDeferredTtsProvider('settings visible');
+    });
+    for (const target of targets) ttsSettingsVisibilityObserver.observe(target);
 }
 
 async function initializeTtsExtension() {
@@ -1841,10 +1892,15 @@ async function initializeTtsExtension() {
     loadSettings(); // Depends on Extension Controls and loadTtsProvider
     // Shell/listeners never wait on provider readiness. A provider failure is
     // logged and retried by the next narration/readiness request.
-    ttsProviderReadinessPromise = loadTtsProvider(extension_settings.tts.currentProvider);
-    void ttsProviderReadinessPromise.catch(error => {
-        console.warn('TTS provider initialization failed; it will be retried on demand.', error);
-    });
+    // Disabled TTS must not download a provider module during cold start.
+    if (extension_settings.tts.enabled) {
+        ttsProviderReadinessPromise = loadTtsProvider(extension_settings.tts.currentProvider);
+        void ttsProviderReadinessPromise.catch(error => {
+            console.warn('TTS provider initialization failed; it will be retried on demand.', error);
+        });
+    } else {
+        observeTtsSettingsVisibility();
+    }
     addAudioControl(); // Depends on Extension Controls
     setInterval(wrapper.update.bind(wrapper), UPDATE_INTERVAL); // Init depends on all the things
     eventSource.on(event_types.MESSAGE_SWIPED, resetTtsPlayback);

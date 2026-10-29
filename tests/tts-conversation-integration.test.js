@@ -848,9 +848,50 @@ describe('TTS Conversation integration', () => {
         expect(registerCallIndex).toBeGreaterThan(initStart);
         expect(shellAssignIndex).toBeGreaterThan(registerCallIndex);
         // Provider load failures are non-fatal for shell initialization.
-        expect(ttsSource).toContain('ttsProviderReadinessPromise = loadTtsProvider(extension_settings.tts.currentProvider);');
+        // Disabled TTS must not download a provider module during cold start.
+        expect(ttsSource).toMatch(/if \(extension_settings\.tts\.enabled\) \{\s*ttsProviderReadinessPromise = loadTtsProvider\(extension_settings\.tts\.currentProvider\);/);
         expect(ttsSource).toContain('void ttsProviderReadinessPromise.catch(');
         // Direct import of the QIG entrypoint stays banned in the shared registry world.
         expect(ttsSource).toContain('registerExtensionCapability(\'tts\'');
+    });
+
+    test('enabling TTS loads the provider deferred during cold start', async () => {
+        const control = {
+            is: jest.fn(() => true),
+            toggleClass: jest.fn(),
+        };
+        const context = createTtsContext({
+            $: jest.fn(() => control),
+            console: { warn: jest.fn() },
+            ensureTtsProviderLoaded: jest.fn(async () => {}),
+            extension_settings: { tts: { enabled: false } },
+            saveSettingsDebounced: jest.fn(),
+            updateUiAudioPlayState: jest.fn(),
+        });
+        evaluateInContext('onEnableClick', context);
+
+        context.onEnableClick();
+        await Promise.resolve();
+
+        expect(context.extension_settings.tts.enabled).toBe(true);
+        expect(context.ensureTtsProviderLoaded).toHaveBeenCalledTimes(1);
+        expect(context.saveSettingsDebounced).toHaveBeenCalledTimes(1);
+    });
+
+    test('/speak loads a deferred provider before building the voice map', async () => {
+        const order = [];
+        const context = createTtsContext({
+            audioElement: { src: '' },
+            ensureTtsProviderLoaded: jest.fn(async () => { order.push('provider'); }),
+            extension_settings: { tts: { enabled: true } },
+            initVoiceMap: jest.fn(async () => {
+                order.push('voice-map');
+                throw new Error('stop after voice map');
+            }),
+        });
+        evaluateInContext('onNarrateText', context);
+
+        await expect(context.onNarrateText({}, 'Hello.')).rejects.toThrow('stop after voice map');
+        expect(order).toEqual(['provider', 'voice-map']);
     });
 });

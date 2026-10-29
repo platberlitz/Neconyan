@@ -53,3 +53,60 @@ test('saved TTS provider loads only when selected and narrates roleplay and conv
     // Selecting one saved provider must not pull in the other 26 built-in modules.
     expect(await loadedProviderModules()).toEqual(['openai-compatible']);
 });
+
+test('disabled TTS keeps its provider deferred until settings are opened', async ({ app }) => {
+    // Each test owns a fresh server; account() logs in to its existing default user.
+    const account = await app.account();
+    await account.context.addInitScript(() => globalThis.performance.setResourceTimingBufferSize(2000));
+    const page = await account.open({ workspace: false });
+
+    const providerModules = () => page.evaluate(() => performance.getEntriesByType('resource')
+        .map(entry => new globalThis.URL(entry.name).pathname)
+        .filter(pathname => /^\/scripts\/extensions\/tts\/[^/]+\.js$/.test(pathname)));
+    const loadedProviderModules = async () => (await providerModules())
+        .map(providerModuleFromPath)
+        .filter(name => name && !['index', 'kokoro-worker'].includes(name));
+
+    await page.waitForFunction(() => globalThis._ttsExtensionInitialized
+        && globalThis.document.querySelector('#tts_enabled')
+        && globalThis.document.querySelectorAll('#tts_provider option').length > 0);
+    await page.evaluate(() => new Promise(resolve => globalThis.setTimeout(resolve, 500)));
+    expect(await loadedProviderModules()).toEqual([]);
+
+    await page.evaluate(() => {
+        const tab = globalThis.document.getElementById('sb-shell-tab-right-extensions');
+        if (tab) tab.click();
+        else globalThis.document.querySelector('#extensions-settings-button > .drawer-toggle')?.click();
+    });
+    await page.getByRole('button', { name: 'Built-in', exact: true }).click();
+    await expect(page.locator('#tts_container')).toBeVisible();
+    if (!await page.locator('#tts_enabled').isVisible()) {
+        await page.getByRole('button', { name: 'Expand TTS', exact: true }).click();
+    }
+
+    await expect.poll(async () => (await loadedProviderModules()).includes('system'), { timeout: 30000 }).toBe(true);
+    await expect(page.locator('#tts_provider_settings')).toBeVisible();
+    await expect.poll(() => page.locator('#tts_provider_settings').evaluate(element => element.textContent.trim().length)).toBeGreaterThan(0);
+    await expect(page.locator('#tts_enabled')).not.toBeChecked();
+
+    await page.locator('#tts_enabled').check();
+    await expect(page.locator('#tts_enabled')).toBeChecked();
+
+    await page.locator('#tts_voices').click();
+    const popup = page.locator('dialog.popup[open]');
+    await expect(popup).toBeVisible();
+    await expect(popup).not.toContainText('Could not load voices list');
+    await page.keyboard.press('Escape');
+    await expect(popup).toBeHidden();
+
+    // Refresh applies the settings, then rebuilds the voice map and replaces its
+    // short-lived success label with the provider-ready label.
+    const appliedSettings = page.waitForEvent('console', {
+        predicate: message => message.type() === 'info' && message.text().startsWith('Saved settings System '),
+    });
+    await page.locator('#tts_status').evaluate(element => { element.textContent = ''; });
+    await page.locator('#tts_refresh').click();
+    await appliedSettings;
+    await expect(page.locator('#tts_status')).toHaveText('TTS Provider Loaded');
+    expect(await loadedProviderModules()).toEqual(['system']);
+});
