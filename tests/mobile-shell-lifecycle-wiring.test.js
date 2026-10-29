@@ -509,6 +509,19 @@ describe('mobile shell lifecycle wiring', () => {
         expect(shouldBlockMobileDocumentPan(closedWorkspaceAtTopPullDownMove.event, { touchStart: closedWorkspaceAtTopPullDownMove.touchStart })).toBe(true);
     });
 
+    test('keeps companion window header drags out of the document pan gesture', () => {
+        const windowSurface = createElementStub({
+            matches: selector => selectorListIncludes(selector, '.ica--cwin'),
+        });
+        const windowHead = createElementStub({
+            parentElement: windowSurface,
+            matches: selector => selectorListIncludes(selector, '.ica--cwin-head'),
+        });
+        const move = createTouchMove(windowHead, { x: 24, y: -30 });
+
+        expect(shouldBlockMobileDocumentPan(move.event, { touchStart: move.touchStart })).toBe(true);
+    });
+
     test('does not hand guarded control gestures to a scroll owner outside the guard', () => {
         const documentScroller = createElementStub({
             scrollHeight: 2000,

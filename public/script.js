@@ -21218,6 +21218,8 @@ jQuery(async function () {
             '#sbwil-page',
             '#neconyan-chat-route',
             '#neconyan-chat-link-settings',
+            // Companion windows float beside every drawer and must not close them on press.
+            '.ica--cwin',
             '#world_popup',
             '.ui-widget',
             '.text_pole',

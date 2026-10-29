@@ -962,6 +962,7 @@ const MOBILE_DOCUMENT_PAN_GUARD_SELECTOR = [
     '.sb-shell-header',
     '.ica--tpanel',
     '.ica--tpanel-handle',
+    '.ica--cwin',
 ].join(', ');
 
 const MOBILE_DOCUMENT_PAN_HORIZONTAL_SCROLL_SELECTOR = [
@@ -1020,6 +1021,8 @@ const MOBILE_DOCUMENT_PAN_CONTROL_SELECTOR = [
     '.select2-selection',
     '#ica--tracker-panel-handle',
     '.ica--tpanel-handle',
+    // The window header is the drag target; a page pan would steal the gesture.
+    '.ica--cwin-head',
 ].join(', ');
 
 const MOBILE_DOCUMENT_PAN_MIN_GESTURE_PX = 3;

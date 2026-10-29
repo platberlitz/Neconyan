@@ -1882,6 +1882,295 @@ button.ica--card-pill--version-update {
     padding-bottom: calc(7px + env(safe-area-inset-bottom, 0px));
 }
 
+/* ── Companion floating windows ───────────────────────────────── */
+
+.ica--cwin-layer {
+    position: fixed;
+    inset: 0;
+    /* Above normal shell chrome (1000), below ordinary drawers (1100) and sheets. */
+    z-index: calc(var(--sb-z-shell-panel, 1100) - 1);
+    overflow: visible;
+    pointer-events: none;
+    contain: layout style;
+}
+
+.ica--cwin-layer[hidden] {
+    display: none;
+}
+
+.ica--cwin {
+    position: absolute;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    width: 320px;
+    max-width: calc(100vw - 16px);
+    overflow: hidden;
+    pointer-events: auto;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor, transparent));
+    border-radius: 12px;
+    background: var(--neco-surface, var(--SmartThemeBlurTintColor, transparent));
+    box-shadow: 0 10px 28px color-mix(in srgb, var(--neco-ink, var(--SmartThemeBodyColor, transparent)) 22%, transparent);
+    color: var(--neco-ink, var(--SmartThemeBodyColor, inherit));
+}
+
+.ica--cwin[data-front="true"] {
+    z-index: 2;
+    box-shadow: 0 14px 34px color-mix(in srgb, var(--neco-ink, var(--SmartThemeBodyColor, transparent)) 30%, transparent);
+}
+
+.ica--cwin[data-collapsed="true"] {
+    width: 260px;
+}
+
+.ica--cwin-head {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 40px;
+    padding: 4px 4px 4px 6px;
+    border-bottom: 1px solid var(--neco-border, var(--SmartThemeBorderColor, transparent));
+    background: var(--neco-raised, var(--SmartThemeBlurTintColor, transparent));
+    cursor: grab;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.ica--cwin[data-collapsed="true"] .ica--cwin-head {
+    border-bottom: 0;
+}
+
+.ica--cwin-grip,
+.ica--cwin-icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    min-height: 32px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--neco-muted, var(--SmartThemeBodyColor, inherit));
+    font: inherit;
+    line-height: 1;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.ica--cwin-grip {
+    cursor: grab;
+}
+
+.ica--cwin-grip:active {
+    cursor: grabbing;
+}
+
+.ica--cwin-grip:hover,
+.ica--cwin-grip:focus-visible,
+.ica--cwin-icon-button:hover,
+.ica--cwin-icon-button:focus-visible {
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor, transparent)) 18%, transparent);
+    color: var(--neco-ink, var(--SmartThemeBodyColor, inherit));
+}
+
+.ica--cwin-grip:focus-visible,
+.ica--cwin-icon-button:focus-visible,
+.ica--cwin-action:focus-visible {
+    outline: 2px solid var(--neco-ginger, var(--SmartThemeQuoteColor, transparent));
+    outline-offset: 2px;
+}
+
+.ica--cwin-heading {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-weight: 600;
+    font-size: calc(var(--mainFontSize, 15px) * 0.93);
+}
+
+.ica--cwin-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ica--cwin-status {
+    flex: 0 0 auto;
+    max-width: 76px;
+    overflow: hidden;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor, transparent)) 13%, transparent);
+    color: var(--neco-muted, var(--SmartThemeBodyColor, inherit));
+    font-size: calc(var(--mainFontSize, 15px) * 0.72);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ica--cwin-status[data-tone="ready"] {
+    color: var(--neco-ginger, var(--SmartThemeQuoteColor, inherit));
+}
+
+.ica--cwin-status[data-tone="running"] {
+    color: var(--neco-ginger-hover, var(--neco-ginger, var(--SmartThemeQuoteColor, inherit)));
+}
+
+.ica--cwin-status[data-tone="error"] {
+    color: var(--sb-danger, var(--neco-ginger, var(--SmartThemeQuoteColor, inherit)));
+}
+
+.ica--cwin-status[data-tone="off"],
+.ica--cwin-status[data-tone="empty"] {
+    color: var(--neco-muted, var(--SmartThemeBodyColor, inherit));
+    opacity: 0.72;
+}
+
+.ica--cwin-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+    padding: 9px 12px 12px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.ica--cwin[data-collapsed="true"] .ica--cwin-body,
+.ica--cwin[data-temporary-collapse="true"] .ica--cwin-body {
+    display: none;
+}
+
+.ica--cwin-source {
+    color: var(--neco-muted, var(--SmartThemeBodyColor, inherit));
+    font-size: calc(var(--mainFontSize, 15px) * 0.72);
+    font-weight: 600;
+    opacity: 0.7;
+}
+
+.ica--cwin-note {
+    overflow-wrap: anywhere;
+    font-size: calc(var(--mainFontSize, 15px) * 0.88);
+}
+
+.ica--cwin-note > :first-child {
+    margin-top: 0;
+}
+
+.ica--cwin-note > :last-child {
+    margin-bottom: 0;
+}
+
+.ica--cwin-empty,
+.ica--cwin-paused {
+    margin: 0;
+    color: var(--neco-muted, var(--SmartThemeBodyColor, inherit));
+    font-size: calc(var(--mainFontSize, 15px) * 0.82);
+}
+
+.ica--cwin-paused {
+    padding: 7px 9px;
+    border: 1px dashed var(--neco-border, var(--SmartThemeBorderColor, transparent));
+    border-radius: 8px;
+}
+
+.ica--cwin-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 2px;
+}
+
+.ica--cwin .ica--cwin-action {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    min-height: 34px;
+    margin: 0;
+    padding: 5px 10px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor, transparent));
+    border-radius: 8px;
+    background: var(--neco-surface, var(--SmartThemeBlurTintColor, transparent));
+    box-shadow: none;
+    color: var(--neco-ink, var(--SmartThemeBodyColor, inherit));
+    font: inherit;
+    font-size: calc(var(--mainFontSize, 15px) * 0.78);
+    font-weight: 600;
+    line-height: 1.15;
+    white-space: nowrap;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.ica--cwin .ica--cwin-action:hover:not(:disabled),
+.ica--cwin .ica--cwin-action:focus-visible:not(:disabled) {
+    border-color: var(--neco-ginger, var(--SmartThemeQuoteColor, transparent));
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor, transparent)) 12%, var(--neco-surface, var(--SmartThemeBlurTintColor, transparent)));
+}
+
+.ica--cwin .ica--cwin-action:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+/* The theme's .menu_button:not(.disabled):not([disabled]) background is more specific. */
+body .ica--cwin .ica--cwin-action.ica--cwin-action--primary {
+    border-color: var(--neco-ginger, var(--SmartThemeQuoteColor, transparent));
+    background: var(--neco-ginger, var(--SmartThemeQuoteColor, transparent));
+    color: var(--neco-on-accent, var(--SmartThemeBodyColor, inherit));
+}
+
+body .ica--cwin .ica--cwin-action.ica--cwin-action--primary:hover:not(:disabled),
+body .ica--cwin .ica--cwin-action.ica--cwin-action--primary:focus-visible:not(:disabled) {
+    border-color: var(--neco-ginger-hover, var(--neco-ginger, var(--SmartThemeQuoteColor, transparent)));
+    background: var(--neco-ginger, var(--SmartThemeQuoteColor, transparent));
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--neco-on-accent, var(--SmartThemeBodyColor, transparent)) 35%, transparent);
+}
+
+@media (max-width: 768px) {
+    .ica--cwin {
+        width: min(360px, calc(100vw - 16px));
+    }
+
+    .ica--cwin[data-collapsed="true"] {
+        width: min(260px, calc(100vw - 16px));
+    }
+
+    .ica--cwin-head {
+        gap: 2px;
+        min-height: 52px;
+        padding: 4px;
+    }
+
+    .ica--cwin-grip,
+    .ica--cwin-icon-button {
+        width: 44px;
+        min-width: 44px;
+        height: 44px;
+        min-height: 44px;
+    }
+
+    .ica--cwin-status {
+        max-width: 64px;
+    }
+
+    .ica--cwin .ica--cwin-action {
+        min-height: 44px;
+        padding-inline: 9px;
+    }
+}
+
 
 /* ── Template Browser ───────────────────────────────── */
 

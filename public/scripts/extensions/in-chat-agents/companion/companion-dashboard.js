@@ -31,6 +31,7 @@ import {
 } from './companion-runner.js';
 import { resolveCompanionContentMacros } from './companion-macros.js';
 import { isConversationModeActive, openCompanionPanel } from './companion-panel.js';
+import { openCompanionWindow } from './companion-windows.js';
 import {
     MEMORY_SHARD_TEMPLATE_ID,
     getCompanionReferenceIds,
@@ -300,6 +301,7 @@ export function buildCompanionAgentRowHtml(agent, { mode = 'normal', batchSummar
             <div class="ica--cdash-row-actions">
                 ${buildRowActionHtml('toggle-history', 'fa-clock-rotate-left', 'Keep in history', { title: keptInHistory ? 'Its notes are sent with later prompts. Press to stop.' : 'Send its notes with later prompts', pressed: keptInHistory })}
                 ${buildRowActionHtml('run', 'fa-play', 'Run', { title: 'Run this companion on the last assistant reply', ariaLabel: 'Run companion', disabled: runDisabled })}
+                ${buildRowActionHtml('window', 'fa-window-restore', 'Window', { title: 'Open a floating window that stays beside the chat', ariaLabel: 'Open floating window' })}
                 ${buildRowActionHtml('edit', 'fa-pen-to-square', 'Edit', { title: 'Edit companion', ariaLabel: 'Edit companion' })}
                 ${buildRowActionHtml('to-inline', 'fa-right-left', 'To prompt or reply', { title: 'Make this a prompt or reply agent again', ariaLabel: 'Make prompt or reply agent' })}
             </div>
@@ -769,6 +771,14 @@ async function handleDashboardAction(event, root, rerender) {
         } finally {
             button.prop('disabled', false);
         }
+        return;
+    }
+
+    if (action === 'window') {
+        if (!openCompanionWindow(agent.id)) {
+            return;
+        }
+        await closeDashboard();
         return;
     }
 

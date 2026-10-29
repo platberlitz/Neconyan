@@ -15,6 +15,8 @@ describe('companion tracker panel', () => {
     let hiddenAgentIds;
     let powerUser;
     let translatedKeys;
+    let initCompanionWindowsMock;
+    let formatCompanionContentMock;
 
     function createEventSource() {
         const handlers = new Map();
@@ -37,6 +39,8 @@ describe('companion tracker panel', () => {
 
     async function importPanel() {
         jest.resetModules();
+        initCompanionWindowsMock = jest.fn();
+        formatCompanionContentMock = jest.fn((agentId, result) => `<formatted>${result.content}</formatted>`);
 
         await jest.unstable_mockModule('../public/scripts/ui-motion.js', () => ({
             setUiVisibility: jest.fn((element, open, apply) => apply(open)),
@@ -44,6 +48,7 @@ describe('companion tracker panel', () => {
 
         await jest.unstable_mockModule('../public/script.js', () => ({
             chat,
+            getCurrentChatId: jest.fn(() => 'chat-1'),
             getShortModelName: jest.fn(model => String(model ?? '').split('/').pop()),
         }));
 
@@ -125,6 +130,12 @@ describe('companion tracker panel', () => {
             runCompanionViewAction: jest.fn((button, action) => action()),
         }));
 
+        await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/companion/companion-windows.js', () => ({
+            initCompanionWindows: initCompanionWindowsMock,
+            openCompanionWindow: jest.fn(() => true),
+            refreshCompanionWindows: jest.fn(),
+        }));
+
         await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js', () => ({
             COMPANION_RESULTS_UPDATED_EVENT: 'companion_results_updated',
             captureCompanionResultTarget: jest.fn(() => () => true),
@@ -146,7 +157,7 @@ describe('companion tracker panel', () => {
             buildLastRunErrorNotice: jest.fn(() => ''),
             cleanCompanionAgentName: jest.fn(name => String(name ?? '').trim() || 'Companion'),
             editCompanionResult: jest.fn(async () => {}),
-            formatCompanionContent: jest.fn((agentId, result) => `<formatted>${result.content}</formatted>`),
+            formatCompanionContent: formatCompanionContentMock,
             insertChoiceIntoMessageInput: jest.fn(() => true),
             isSilentCompanionAgent: jest.fn(agent => String(agent?.sourceTemplateId ?? agent?.id ?? '') === 'tpl-message-inbox-companion'),
             isSuppressedCompanionResult: jest.fn((agentId, result) =>
@@ -414,6 +425,7 @@ describe('companion tracker panel', () => {
         expect(html).toContain('data-action="panel-jump"');
         expect(html).toContain('data-action="panel-lock"');
         expect(html).toContain('data-action="panel-run-latest"');
+        expect(html).toContain('data-action="panel-open-window"');
         expect(html).toContain('data-action="panel-regenerate-all"');
         expect(html).toContain('data-message-index="0"');
         expect(html).toContain('Input');
@@ -1018,6 +1030,17 @@ describe('companion tracker panel', () => {
             'message_deleted',
             'message_swiped',
         ]));
+        expect(initCompanionWindowsMock).toHaveBeenCalledTimes(1);
+        const windowHooks = initCompanionWindowsMock.mock.calls[0][0];
+        expect(windowHooks.getLivePreview()).toBeNull();
+        expect(windowHooks.formatEntry('agent-1', { preview: {}, result: { status: 'done', content: 'note' } }))
+            .toContain('<formatted>note');
+        expect(formatCompanionContentMock).toHaveBeenCalledWith(
+            'agent-1',
+            expect.objectContaining({ content: 'note' }),
+            {},
+            '.ica--cwin-body ',
+        );
     });
 
     test('keeps the panel open on outside clicks while locked', async () => {
