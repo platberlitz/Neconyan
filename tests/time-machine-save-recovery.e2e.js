@@ -1,4 +1,4 @@
-/* global document, window */
+/* global document, location, window */
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import {
@@ -43,6 +43,46 @@ async function renderDrawer(page) {
         document.body.append(host);
         (await import(extension + '/src/ui.js')).renderDrawer(host);
     }, EXTENSION);
+}
+
+/**
+ * Start a settings save and observe the page's own fetch response. The 409 is read
+ * where the app reads it, so the bounded-conflict assertion does not depend on a
+ * Playwright event arriving before the recovery deadline.
+ */
+async function changeSettingsAndObserveSave(page, id, changes, sentinelKey) {
+    return page.evaluate(async ({ id, changes, sentinelKey }) => {
+        const [{ power_user }, core] = await Promise.all([import('/scripts/power-user.js'), import('/script.js')]);
+        window.__tmRecovery ??= { saves: {}, observedSaves: [] };
+        window.__tmRecovery.observedSaves = [];
+        const originalFetch = window.fetch;
+        window.fetch = async function (...args) {
+            const url = typeof args[0] === 'string' ? args[0] : args[0]?.url ?? '';
+            const isSettingsSave = new URL(url, location.href).pathname === '/api/settings/save';
+            let body = null;
+            if (isSettingsSave) {
+                try { body = JSON.parse(args[1]?.body ?? 'null'); } catch { /* metadata only */ }
+            }
+            const sentAt = Date.now();
+            const response = await originalFetch.apply(this, args);
+            if (isSettingsSave) {
+                window.__tmRecovery.observedSaves.push({
+                    status: response.status,
+                    sentAt,
+                    doneAt: Date.now(),
+                    settingsRevision: body?._settingsRevision ?? null,
+                    sentinels: { [sentinelKey]: body?.power_user?.[sentinelKey] ?? null },
+                });
+            }
+            return response;
+        };
+        for (const [key, value] of Object.entries(changes)) power_user[key] = value;
+        const state = window.__tmRecovery.saves[id] = { state: 'pending' };
+        core.saveSettings(0, { returnResult: true }).then(
+            value => Object.assign(state, { state: 'resolved', value }),
+            error => Object.assign(state, { state: 'rejected', name: error?.name ?? 'Error' }));
+        return { requested: true };
+    }, { id, changes, sentinelKey });
 }
 
 test('direct recovery completes while terminal delivery is held and keeps local Time Machine edits', async ({ app }) => {
@@ -196,7 +236,7 @@ test('a held capture submission does not delay a settings save or a provider rep
     }
 });
 
-test('held recovery reads give a bounded conflict and leave the complete local index untouched', async ({ app }) => {
+test('held recovery reads give a bounded conflict and leave the complete local index untouched', async ({ app }, info) => {
     test.setTimeout(300000);
     const account = await app.account();
     const page = await account.open({ workspace: false });
@@ -219,15 +259,26 @@ test('held recovery reads give a bounded conflict and leave the complete local i
         expect(heldServer.settingsRevision).toBe(record.result.settingsRevision);
         expect(heldServer.tm.lastCommit).toBe(record.result.module.lastCommit);
 
-        await changeSettings(page, 'collide', { [S1]: !s1 });
-        await expect.poll(() => saves.some(entry => entry.sentinels?.[S1] === !s1 && entry.status === 409), { timeout: 10000 }).toBe(true);
-        const refused = saves.find(entry => entry.sentinels?.[S1] === !s1 && entry.status === 409);
+        // The test owns the refusal. A debounced background save must not take the
+        // first 409 slot and leave the explicit save waiting behind the gate.
+        await page.evaluate(async () => {
+            const core = await import('/script.js');
+            const { cancelDebounce } = await import('/scripts/utils.js');
+            cancelDebounce(core.saveSettingsDebounced);
+        });
+        await changeSettingsAndObserveSave(page, 'collide', { [S1]: !s1 }, S1);
+        await expect.poll(() => page.evaluate(() => window.__tmRecovery.observedSaves[0]?.status), { timeout: 10000 }).toBe(409);
+        const observed = await page.evaluate(() => window.__tmRecovery.observedSaves);
+        await info.attach('observed-settings-saves', { contentType: 'application/json', body: JSON.stringify(observed) });
+        expect(observed).toHaveLength(1);
+        expect(observed[0].sentinels[S1]).toBe(!s1);
+        const refused = observed[0];
         const dialogMs = await firstDialogMs(page, RECOVERY_DEADLINE_MS + 10000);
         expect(gate.records.filter(entry => entry.held).length).toBeGreaterThan(0);
         expect(dialogMs).not.toBeNull();
         expect(dialogMs - refused.doneAt).toBeGreaterThanOrEqual(RECOVERY_DEADLINE_MS - 2500);
         expect(dialogMs - refused.doneAt).toBeLessThanOrEqual(RECOVERY_DEADLINE_MS + 4000);
-        expect(saves.filter(entry => entry.sentinels?.[S1] === !s1).map(entry => entry.status)).toEqual([409]);
+        expect((await page.evaluate(() => window.__tmRecovery.observedSaves)).map(entry => entry.status)).toEqual([409]);
 
         gate.release();
         await expect.poll(async () => (await captureState(page))?.state, { timeout: 60000 }).not.toBe('pending');
