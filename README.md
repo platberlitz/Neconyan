@@ -146,13 +146,13 @@ Everything runs on the phone, so there's no Termux or computer involved. Leave a
 
 There's a standalone iPhone app now too. Same idea as the Android one: the server, your chats and your settings all live on the phone, so you don't need a computer running Neconyan. It isn't on the App Store, so you sideload it yourself.
 
-1. Download the file ending in `-ios-unsigned.ipa` from the [latest release](https://github.com/platberlitz/Neconyan/releases/latest).
+1. Open the [release page](https://github.com/platberlitz/Neconyan/releases/latest) and download the file ending in `-ios-unsigned.ipa` if that release includes one. If it doesn't, use the [browser setup](#opening-it-on-your-phone) instead.
 2. Pick it in a sideloading tool like [iloader](https://github.com/nab138/iloader). The tool signs it with your Apple account and installs it. You'll need iOS 17 or newer.
 3. Open Neconyan and connect a model from **Connections**, same as everywhere else.
 
 A free Apple account has to re-sign the app every seven days and only lets you sideload three apps. To update, install the new IPA over the old one with the same Apple account, and your chats stay put. Deleting the app deletes your chats with it, so export an account backup first if you're switching sideloading tools.
 
-Imports keep going when you switch apps or lock the phone. Pick the backup with the app's own **Import Backup ZIP** button, confirm, and the server takes it from there, playing silence so iOS doesn't freeze it while it works, and you can check back whenever. Replies keep going too, the same as in a desktop browser tab: if you leave mid-reply, the page plays its own silent sound until the reply's written, saved and any Agents after it have run. You might see 'Neconyan is finishing a reply' on the lock screen while it does, and music from another app can pause until it's done. iOS can still close the app if the phone runs short on memory, and a 13 GB backup needs about twice that free while it's being copied in. [iPhone setup, limits and build instructions.](ios/README.md)
+Imports keep going when you switch apps or lock the phone. Pick the backup with the app's own **Import Backup ZIP** button, confirm, and the server takes it from there, playing silence so iOS doesn't freeze it while it works, and you can check back whenever. Replies keep going too, the same as in a desktop browser tab: if you leave mid-reply, the page plays its own silent sound until the reply's written, saved and any Agents after it have run. You might see 'Neconyan is finishing a reply' on the lock screen while it does, and music from another app can pause until it's done. iOS can still close the app if the phone runs short on memory. Leave about twice the backup's size free while it's being copied in. [iPhone setup, limits and build instructions.](ios/README.md)
 
 ### On a computer
 

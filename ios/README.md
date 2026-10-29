@@ -6,7 +6,7 @@ You still choose your own model provider. The app doesn't include a local langua
 
 ## Installing it
 
-Every release has an **unsigned device IPA**, the file ending in `-ios-unsigned.ipa` on the [releases page](https://github.com/platberlitz/Neconyan/releases/latest). Select it in your sideloading tool, such as iloader. The tool signs it for your Apple account before installing it. `SHA256SUMS-ios` and `provenance-ios.json` sit next to it if you want to check the file matches the release commit.
+If a release includes an iPhone build, its **unsigned device IPA** is the file ending in `-ios-unsigned.ipa` on the [releases page](https://github.com/platberlitz/Neconyan/releases/latest). Select that release's file in your sideloading tool, such as iloader. The tool signs it for your Apple account before installing it. `SHA256SUMS-ios` and `provenance-ios.json` let you check the file matches the release commit. If no IPA is listed, that release has no iPhone download; use the [browser setup](../README.md#opening-it-on-your-phone) or the test-build workflow below.
 
 The 'iOS Release Build' GitHub Actions workflow makes it: it builds the IPA, runs a 13 GiB import and starts the app in Apple's iPhone simulator. Run it by hand on any branch for a test build; the files are under **Artifacts** as `ios-release-<commit>`, for signed-in GitHub accounts only.
 
