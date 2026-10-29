@@ -2519,6 +2519,10 @@ async function removeRedundantBundledAgentDuplicates() {
         await deleteAgent(agentId);
     }
 
+    if (redundantIds.length > 0) {
+        refreshCompanionPanel();
+    }
+
     return redundantIds.length;
 }
 
@@ -2531,6 +2535,10 @@ async function refreshBundledAgentsFromLatestTemplates() {
 
     for (const update of updates) {
         await saveAgent(update.agent);
+    }
+
+    if (updates.length > 0 || redundantIds.length > 0) {
+        refreshCompanionPanel();
     }
 
     return {
@@ -3644,6 +3652,7 @@ function renderAgentList() {
                     if (!isCurrent()) throw new Error('The agent changed. Reopen its deletion confirmation.');
                     await deleteAgentBatch([agent.id]);
                     renderAgentList();
+                    refreshCompanionPanel();
                 }
             }));
 

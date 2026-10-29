@@ -3388,6 +3388,25 @@ describe('in-chat agent post-processing runner', () => {
         expect(normalMessages[0].content).not.toContain('Repair mode: produce the requested result');
     });
 
+    test('shares one model request when two surfaces run the same companion at once', async () => {
+        const agent = createCompanionAgent({ id: 'shared-run-companion' });
+        enabledAgents = [agent];
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        chat.push({ mes: 'Assistant reply', name: 'Assistant', is_user: false, is_system: false, extra: {} });
+
+        let release;
+        generateQuietPrompt.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+        const first = companionRunner.runCompanionAgentOnMessage(agent.id, 0);
+        const second = companionRunner.runCompanionAgentOnMessage(agent.id, 0);
+
+        expect(second).toBe(first);
+        await waitFor(() => Boolean(release));
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        release('One shared note');
+        await expect(first).resolves.toEqual(expect.objectContaining({ status: 'done', content: 'One shared note' }));
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+    });
+
     test('normalizes a valid tracker companion without calling the model', async () => {
         const tracker = createCompanionAgent({
             id: 'valid-tracker-companion',

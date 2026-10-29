@@ -1816,7 +1816,7 @@ async function cleanUpCompanionTrackerOutput(agent, attempt, generate, extraCont
     return { ...attempt, rawContent: payload };
 }
 
-async function runSingleCompanionAgent(agent, messageIndex, generationType, cancelRevision, { repair = false, extraContextSections = [], allowUserMessage = false, previousContent = null, previousResult = null, run = null, initialOutput = null, diagnosticParent = null } = {}) {
+async function runSingleCompanionAgent(agent, messageIndex, generationType, cancelRevision, { repair = false, extraContextSections = [], allowUserMessage = false, previousContent = null, previousResult = null, run = null, initialOutput = null, diagnosticParent = null, onGenerationStart = null } = {}) {
     let diagnosticHandle = diagnosticParent, diagnosticOutcome = 'done';
     try { if (!diagnosticParent) diagnosticHandle = globalThis.NeconyanCrashDiagnostics?.beginAgent?.({ id: agent.id, sourceTemplateId: agent.sourceTemplateId, phase: repair ? 'repair' : 'companions' }); } catch { /* Optional diagnostics. */ }
     try {
@@ -1835,6 +1835,8 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
             if (!areAgentsGloballyEnabled() || !isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
                 throw new DOMException('Companion run cancelled.', 'AbortError');
             }
+            onGenerationStart?.();
+            onGenerationStart = null;
             const response = await requestPromptTransform(repair ? markTrackerRepairRunAgent(agent) : agent, promptMessages, companion.maxTokens, { diagnosticHandle }).catch(markCompanionConnectionFailure);
 
             if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
@@ -2483,7 +2485,50 @@ async function runCompanionsOnServer(agents, messageIndex, { repair = false } = 
     return agents.map(agent => results[agent.id]);
 }
 
-export async function runCompanionAgentOnMessage(agentId, messageIndex, { cancelRevision = getAgentGenerationCancelRevision(), repair = false, extraContextSections = [], pendingContent = '', allowUserMessage = true } = {}) {
+const companionAgentRunsInFlight = new Map();
+
+/**
+ * Every per-agent manual run, from cards, the panel, the dashboard or a floating window,
+ * arrives here. Until the first run actually reaches its model request (which can be
+ * delayed by a server hand-off), another surface pressing the same agent and message
+ * shares that run instead of issuing a duplicate request. Once generation has started,
+ * a later press is the existing explicit regeneration/supersede path.
+ */
+export function runCompanionAgentOnMessage(agentId, messageIndex, options = {}) {
+    const key = JSON.stringify([getCurrentChatId(), messageIndex, agentId]);
+    const pending = companionAgentRunsInFlight.get(key);
+    if (pending) {
+        return pending.promise;
+    }
+
+    const entry = {
+        promise: null,
+        release() {
+            if (companionAgentRunsInFlight.get(key) === entry) {
+                companionAgentRunsInFlight.delete(key);
+            }
+        },
+    };
+    const runOptions = {
+        ...options,
+        onGenerationStart() {
+            entry.release();
+            options.onGenerationStart?.();
+        },
+    };
+    companionAgentRunsInFlight.set(key, entry);
+    let request;
+    try {
+        request = Promise.resolve(runCompanionAgentOnMessageInternal(agentId, messageIndex, runOptions));
+    } catch (error) {
+        request = Promise.reject(error);
+    }
+    const tracked = request.finally(() => entry.release());
+    entry.promise = tracked;
+    return tracked;
+}
+
+async function runCompanionAgentOnMessageInternal(agentId, messageIndex, { cancelRevision = getAgentGenerationCancelRevision(), repair = false, extraContextSections = [], pendingContent = '', allowUserMessage = true, onGenerationStart = null } = {}) {
     const agent = getAgentById(agentId);
     const message = chat[messageIndex];
     const isTargetCurrent = captureCompanionTarget(messageIndex);
@@ -2535,6 +2580,7 @@ export async function runCompanionAgentOnMessage(agentId, messageIndex, { cancel
             previousContent,
             previousResult: run.previousResult,
             run,
+            onGenerationStart,
         });
 
         if (!isTargetCurrent() || !run.isCurrent()) return !chat.includes(message) ? run.previousResult ?? undefined : null;

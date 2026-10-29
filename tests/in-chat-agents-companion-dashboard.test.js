@@ -143,6 +143,10 @@ describe('companion dashboard', () => {
             openCompanionPanel: openCompanionPanelMock,
         }));
 
+        await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/companion/companion-windows.js', () => ({
+            openCompanionWindow: jest.fn(() => true),
+        }));
+
         // The real i18n.js needs more of power-user.js than this suite provides. This one records each key and returns the English text.
         await jest.unstable_mockModule('../public/scripts/i18n.js', () => ({
             t: (strings, ...values) => {
@@ -207,6 +211,8 @@ describe('companion dashboard', () => {
         expect(companionsSection).toContain('Scene Notes');
         expect(companionsSection).toContain('data-action="to-inline"');
         expect(companionsSection).toContain('<span>Run</span>');
+        expect(companionsSection).toContain('<span>Window</span>');
+        expect(companionsSection).toContain('data-action="window"');
         expect(companionsSection).toContain('<span>Edit</span>');
         expect(companionsSection).toContain('manual');
         expect(companionsSection).toContain('batch');

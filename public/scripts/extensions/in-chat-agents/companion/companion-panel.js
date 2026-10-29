@@ -10,6 +10,7 @@ import { escapeHtml } from '../../../utils.js';
 import { captureMessageTargetState, isMessageTargetCurrent } from '../agent-runner.js';
 import { getAgentResultModelName } from '../model-label.js';
 import { replaceCompanionView, runCompanionViewAction } from './view-state.js';
+import { initCompanionWindows, openCompanionWindow, refreshCompanionWindows } from './companion-windows.js';
 import {
     areAgentsGloballyEnabled,
     getAgents,
@@ -114,6 +115,7 @@ function syncConversationModePanelVisibility() {
         closeCompanionPanel();
     }
     updateCompanionPanelHandleVisibility();
+    refreshCompanionWindows();
 }
 
 function observeConversationModeState() {
@@ -641,7 +643,7 @@ function buildCompanionTokenUsagePillsHtml(result = {}) {
     return pills ? `<span class="ica--tpanel-agent-token-pills">${pills}</span>` : '';
 }
 
-function buildPanelEntryBody(agentId, entry) {
+function buildCompanionEntryBody(agentId, entry, stylePrefix) {
     const status = String(entry.result.status ?? 'done');
     if (status === 'pending') {
         return '<div class="ica--companion-pending"><i class="fa-solid fa-spinner fa-spin"></i><span>Updating…</span></div>';
@@ -651,7 +653,11 @@ function buildPanelEntryBody(agentId, entry) {
         return `<div class="ica--companion-error">${escapeHtml(entry.result.error || 'Companion run failed.')}</div>`;
     }
 
-    return buildLastRunErrorNotice(entry.result) + formatCompanionContent(agentId, entry.result, entry.preview ?? chat[entry.messageIndex], '.ica--tpanel-agent-body ');
+    return buildLastRunErrorNotice(entry.result) + formatCompanionContent(agentId, entry.result, entry.preview ?? chat[entry.messageIndex], stylePrefix);
+}
+
+function buildPanelEntryBody(agentId, entry) {
+    return buildCompanionEntryBody(agentId, entry, '.ica--tpanel-agent-body ');
 }
 
 function buildChatOnlyComposer(state) {
@@ -747,6 +753,9 @@ function buildPanelAgentSection(state) {
     const settingsButton = state.agent
         ? '<button type="button" class="ica--cdash-action" data-action="panel-edit" title="Open this companion\'s full editor" aria-label="Open full editor"><i class="fa-solid fa-gear"></i></button>'
         : '';
+    const windowButton = state.agent
+        ? '<button type="button" class="ica--cdash-action" data-action="panel-open-window" title="Open a floating window that stays beside the chat" aria-label="Open floating window"><i class="fa-solid fa-window-restore"></i></button>'
+        : '';
     const runLatestButton = state.agent && !livePreview?.element.isConnected
         ? `<button type="button" class="ica--cdash-action" data-action="panel-run-latest" title="Run this companion on the latest assistant reply" aria-label="Run companion"${runDisabled}><i class="fa-solid fa-play"></i></button>`
         : '';
@@ -764,7 +773,7 @@ function buildPanelAgentSection(state) {
             <section class="ica--tpanel-agent" data-agent-id="${escapeHtml(agentId)}" data-hidden="${isHidden}" data-search-text="${searchText}">
                 <div class="ica--tpanel-agent-head">
                     <span class="ica--tpanel-agent-name"><i class="fa-solid ${escapeHtml(icon)}"></i><span>${escapeHtml(name)}</span></span>
-                    <span class="ica--tpanel-agent-actions">${dragHandleButton}${hiddenButton}${runLatestButton}${settingsButton}</span>
+                    <span class="ica--tpanel-agent-actions">${dragHandleButton}${hiddenButton}${runLatestButton}${windowButton}${settingsButton}</span>
                 </div>
                 <div class="ica--cdash-empty">No state yet. It will appear after the next reply${getCompanionConfig(state.agent).trigger === 'manual' ? ' you run it on' : ''}.</div>
                 ${buildPanelEntryControls(state)}
@@ -823,6 +832,7 @@ function buildPanelAgentSection(state) {
                     ${runLatestButton}${rerunButtons}
                     ${!latest.preview && canSendToLorebook && String(latest.result?.status ?? 'done') === 'done' ? '<button type="button" class="ica--cdash-action" data-action="panel-send-to-lorebook" title="Send this state to the attached lorebook" aria-label="Send state to lorebook"><i class="fa-solid fa-book-medical"></i></button>' : ''}
                     ${latest.preview ? '' : '<button type="button" class="ica--cdash-action" data-action="panel-edit-note" title="Edit this note by hand (for example, type your Plot Compass objective)" aria-label="Edit note"><i class="fa-solid fa-pen-to-square"></i></button>'}
+                    ${windowButton}
                     ${settingsButton}
                     ${latest.preview ? '' : '<button type="button" class="ica--cdash-action" data-action="panel-jump" title="Scroll to the source message" aria-label="Scroll to source message"><i class="fa-solid fa-comment-dots"></i></button>'}
                 </span>
@@ -1052,6 +1062,7 @@ export function refreshCompanionPanel() {
     if (panelOpen) {
         renderPanel();
     }
+    refreshCompanionWindows();
 }
 
 // The top bar button is removed rather than hidden, so the bar's extension slot really empties
@@ -1272,6 +1283,19 @@ async function handlePanelAction(event) {
 
     const section = button.closest('.ica--tpanel-agent');
     const agentId = section.attr('data-agent-id') || '';
+
+    if (action === 'panel-open-window') {
+        if (!agentId) {
+            toastr.warning('No companion selected.');
+            return;
+        }
+        // The panel sits above the floating window; close it only after the window exists.
+        if (!openCompanionWindow(agentId)) {
+            return;
+        }
+        closeCompanionPanel();
+        return;
+    }
 
     if (action === 'panel-hide') {
         if (!agentId) {
@@ -1558,12 +1582,14 @@ export function initCompanionPanel() {
         const changed = livePreview?.element !== detail.element || signature !== previewResultsSignature;
         livePreview = detail;
         previewResultsSignature = signature;
+        if (changed) refreshCompanionWindows();
         if (changed && panelOpen) renderPanel();
     });
     document.addEventListener('neconyan:roleplay-preview-removed', ({ detail }) => {
         if (livePreview?.element !== detail.element) return;
         livePreview = null;
         previewResultsSignature = '';
+        refreshCompanionWindows();
         if (panelOpen) renderPanel();
     });
     $(document.body).append('<div id="ica--tracker-panel" class="ica--tpanel" data-edge="right" role="region" aria-label="Companions" aria-hidden="true"></div>');
@@ -1661,6 +1687,12 @@ export function initCompanionPanel() {
     });
     bindHandleDrag($('#ica--tracker-panel-handle')[0]);
 
+    initCompanionWindows({
+        getLivePreview: () => (livePreview?.element.isConnected ? livePreview.message : null),
+        formatEntry: (agentId, entry) => buildCompanionEntryBody(agentId, entry, '.ica--cwin-body '),
+        isConversationModeActive,
+    });
+
     if (!$('#ica_tracker_panel_wand_item').length) {
         const menuItem = $(`
             <div id="ica_tracker_panel_wand_item" class="list-group-item flex-container flexGap5 interactable" title="Open the Companion panel" tabindex="0">
@@ -1678,7 +1710,7 @@ export function initCompanionPanel() {
         if (!panelOpen || panelLocked || Date.now() - panelOpenedAt < 250) {
             return;
         }
-        if (event.target?.closest?.(`#ica--tracker-panel, #ica--tracker-panel-handle, #${TOPBAR_LAUNCHER_ID}`)) {
+        if (event.target?.closest?.(`#ica--tracker-panel, #ica--tracker-panel-handle, #ica--cwin-layer, .ica--cwin, #${TOPBAR_LAUNCHER_ID}`)) {
             return;
         }
         closeCompanionPanel();
@@ -1688,12 +1720,15 @@ export function initCompanionPanel() {
         if (panelOpen) {
             renderPanel();
         }
+        refreshCompanionWindows();
         updateCompanionPanelHandleVisibility();
     });
 
     const refreshEvents = [event_types.CHAT_CHANGED, event_types.MESSAGE_DELETED, event_types.MESSAGE_SWIPED].filter(Boolean);
     for (const eventName of refreshEvents) {
         eventSource.on(eventName, () => {
+            // Chat changes must reach the windows synchronously; a stale note is worse than a repaint.
+            refreshCompanionWindows();
             if (panelOpen) {
                 renderPanel();
             }
