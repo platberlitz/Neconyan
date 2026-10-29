@@ -10,7 +10,15 @@ function getComposerSpacing(page) {
         const textarea = document.getElementById('send_textarea');
         const form = document.getElementById('send_form');
         const bar = document.getElementById('form_sheld');
+        const leftRail = document.getElementById('leftSendForm');
         const textareaRect = textarea?.getBoundingClientRect();
+        const leftRailRect = leftRail?.getBoundingClientRect();
+        const leftRailStyle = leftRail ? getComputedStyle(leftRail) : null;
+        const leftRailOverflowX = leftRailStyle?.overflowX ?? '';
+        const leftRailClipsControls = ['auto', 'clip', 'hidden', 'scroll'].includes(leftRailOverflowX);
+        const leftRailClipRight = leftRailRect
+            ? leftRailRect.right - Number.parseFloat(leftRailStyle.borderRightWidth)
+            : 0;
         const getVisibleControls = id => Array.from(document.getElementById(id)?.children ?? [])
             .filter(element => {
                 const rect = element.getBoundingClientRect();
@@ -24,13 +32,23 @@ function getComposerSpacing(page) {
             !rightmost || element.getBoundingClientRect().right > rightmost.getBoundingClientRect().right ? element : rightmost
         ), null);
 
-        if (!composer || !form || !bar || !rightmostLeftControl || !textareaRect || rightControlRects.length === 0) {
+        if (!composer || !form || !bar || !leftRail || !rightmostLeftControl || !textareaRect || rightControlRects.length === 0) {
             return null;
         }
 
+        const leftControlRight = Math.max(...leftControlRects.map(rect => rect.right));
+        // The left rail is a horizontal scrollport with two visible slots. A control scrolled
+        // past its clip edge paints nowhere the textarea can meet, so clearance runs to that
+        // edge; a rail that does not clip still measures its furthest control.
+        const leftRailVisibleRight = leftRailClipsControls
+            ? Math.min(leftControlRight, leftRailClipRight)
+            : leftControlRight;
+        const leftRailOverflowIsClipped = leftControlRight <= leftRailClipRight || leftRailClipsControls;
+
         return {
             columnGap: Number.parseFloat(getComputedStyle(composer).columnGap),
-            leftClearance: textareaRect.left - Math.max(...leftControlRects.map(rect => rect.right)),
+            leftClearance: textareaRect.left - leftRailVisibleRight,
+            leftRailOverflowIsClipped,
             leftControlBorderRadius: getComputedStyle(rightmostLeftControl).borderTopRightRadius,
             rightClearance: Math.min(...rightControlRects.map(rect => rect.left)) - textareaRect.right,
             textareaWidth: textareaRect.width,
@@ -87,6 +105,9 @@ test.describe('mobile composer spacing at 320x568', () => {
             const defaultState = await getComposerSpacing(page);
 
             expect(defaultState).not.toBeNull();
+            // Overflow beyond the rail is acceptable only while the rail clips it. If the
+            // overflow becomes visible, the clearance above measures the control itself.
+            expect(defaultState.leftRailOverflowIsClipped).toBe(true);
             // Phones put the border and rounded corners on the outer bar, not the inner row.
             expect(Number.parseFloat(defaultState.composerBorderRadius)).toBe(0);
             expect(Number.parseFloat(defaultState.composerBorderTopWidth)).toBe(0);
