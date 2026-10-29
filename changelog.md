@@ -95,6 +95,7 @@
 - PR #341 (2026-10-29) `feat(agents): sort agents by plain-language type`
 - PR #342 (2026-10-29) `fix(agents): try fallbacks for unusable tracker replies`
 - PR #343 (2026-10-29) `fix(custom-css): refresh accent and font prompt guidance`
+- PR #344 (2026-10-29) `chore(release): prepare 1.4.0 readiness`
 
 ## v1.3.7
 
