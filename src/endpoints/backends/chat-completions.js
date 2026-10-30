@@ -743,12 +743,15 @@ async function sendMakerSuiteRequest(request, response) {
         if (enableImageModality) {
             generationConfig.responseModalities = ['text', 'image'];
             if (enableImageConfig) {
-                generationConfig.imageConfig = {};
+                const imageConfig = {};
                 if (imageSize && isImageSizeModel(model)) {
-                    generationConfig.imageConfig.imageSize = imageSize;
+                    imageConfig.imageSize = imageSize;
                 }
                 if (aspectRatio) {
-                    generationConfig.imageConfig.aspectRatio = aspectRatio;
+                    imageConfig.aspectRatio = aspectRatio;
+                }
+                if (Object.keys(imageConfig).length > 0) {
+                    generationConfig.imageConfig = imageConfig;
                 }
             }
         }
