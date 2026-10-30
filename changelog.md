@@ -5,6 +5,7 @@
 ### Merged Staging PRs
 - PR #345 (2026-10-30) `fix(gemini): omit the image settings when none are set`
 - PR #346 (2026-10-30) `fix(agents): report fallback errors instead of a blank companion reply`
+- PR #347 (2026-10-30) `fix(gemini): send empty image settings when none are saved`
 
 ## v1.4.0
 
