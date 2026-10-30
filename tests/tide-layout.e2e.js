@@ -1,4 +1,4 @@
-/* global window, document, getComputedStyle, HTMLImageElement */
+/* global window, document, getComputedStyle, HTMLImageElement, MutationObserver */
 /* eslint-disable playwright/no-force-option -- Appearance controls live in a closed native drawer. */
 /* eslint-disable playwright/no-conditional-in-test, playwright/no-conditional-expect -- The AC7/AC8 fixture loops over literal DOM shapes. */
 import fs from 'node:fs/promises';
@@ -13,6 +13,112 @@ const BLOCK_SHAPE = '<p></p><details><summary>Day 130</summary><p>Nested</p></de
 const PARAGRAPH_SHAPES = '<p>Closing line of the reply.</p><p></p><p><br></p><p>  </p><p>a<br>b</p><p>Text<br></p><p><span></span></p>';
 const NOTES = { note: { agentName: 'NPC Profile', status: 'done', content: 'Nova keeps the ledger in the back room.\n\nNOVA FINAL NOTES MARKER', collapsed: false } };
 const overlaps = (a, b) => !(a.right <= b.left + 0.5 || b.right <= a.left + 0.5 || a.bottom <= b.top + 0.5 || b.bottom <= a.top + 0.5);
+
+/** Save real message HTML so Showdown and the message sanitiser build the tested DOM. */
+async function seedFlexibleDetails(page, avatar) {
+    await page.evaluate(async avatarName => {
+        const context = window.SillyTavern.getContext();
+        await context.getCharacters();
+        await context.selectCharacterById(context.characters.findIndex(character => character.avatar === avatarName));
+        const details = '<details><summary style="display:flex"><span style="width:0;flex-grow:1">World daily status</span></summary><p>The current workroom status.</p></details>';
+        const short = 'A short ordinary paragraph.';
+        const prose = 'Nova set the notebook on the desk. The rain should pass before midnight. '.repeat(3);
+        const rows = [false, true].flatMap(isUser => [
+            `${prose}\n\n${short}\n\n${details}`,
+            details,
+            `${short}\n\n<details><summary>World status</summary><p>The room is quiet.</p></details>`,
+            short,
+        ].map(mes => ({ name: isUser ? 'You' : 'Nova', is_user: isUser, is_system: false,
+            send_date: '2026-10-19T10:50:00Z', mes, extra: {} })));
+        context.chat.splice(0, context.chat.length, ...rows);
+        await context.saveChat();
+        await context.reloadCurrentChat();
+        await window.NeconyanShell.activateMode('roleplay');
+    }, avatar);
+    await page.locator('#chat_display').selectOption(STYLE, { force: true });
+    await expect(page.locator('#chat > .mes')).toHaveCount(8);
+}
+
+/** Assert the flexible label is readable and direct children remain inside the row. */
+async function assertFlexibleDetails(page, width) {
+    for (const id of [0, 1, 4, 5]) {
+        const row = page.locator(`#chat > .mes[mesid="${id}"]`);
+        const details = row.locator('.mes_text > details');
+        await expect(details).toHaveCount(1);
+        const layout = await row.evaluate(element => {
+            const text = element.querySelector('.mes_text');
+            const details = text.querySelector(':scope > details');
+            const summary = details.querySelector(':scope > summary');
+            const label = summary.querySelector(':scope > span');
+            const container = element.querySelector(':scope > .nn-tide-container');
+            const controls = element.querySelector('.nn-response-controls');
+            const box = node => node?.getBoundingClientRect().toJSON();
+            return { row: box(element), text: box(text), details: box(details), summary: box(summary), label: box(label),
+                container: box(container), controls: box(controls), controlsVisible: controls && getComputedStyle(controls).display !== 'none',
+                textScrollWidth: text.scrollWidth, textClientWidth: text.clientWidth,
+                detailsScrollWidth: details.scrollWidth, detailsClientWidth: details.clientWidth };
+        });
+        expect(layout.label.width, `readable summary at ${width}px, row ${id}`).toBeGreaterThan(80);
+        expect(layout.label.height, `bounded summary height at ${width}px, row ${id}`).toBeLessThan(60);
+        expect(layout.summary.height, `bounded heading height at ${width}px, row ${id}`).toBeLessThan(65);
+        expect(layout.details.left).toBeGreaterThanOrEqual(layout.row.left - 1);
+        expect(layout.details.right).toBeLessThanOrEqual(layout.row.right + 1);
+        // The row's decorative sleeping-cat tail intentionally overhangs; the reading content must not.
+        expect(layout.textScrollWidth).toBeLessThanOrEqual(layout.textClientWidth + 2);
+        expect(layout.detailsScrollWidth).toBeLessThanOrEqual(layout.detailsClientWidth + 2);
+        if (width > 768) {
+            expect(layout.container).not.toBeNull();
+            expect(layout.details.left).toBeGreaterThanOrEqual(layout.container.left - 1);
+            expect(layout.details.right).toBeLessThanOrEqual(layout.container.right + 1);
+            expect(layout.details.bottom).toBeLessThanOrEqual(layout.container.bottom + 1);
+            if (layout.controlsVisible && layout.controls.height) expect(layout.controls.top).toBeGreaterThanOrEqual(layout.details.bottom - 1);
+        }
+    }
+    for (const [withDetails, plain] of [[2, 3], [6, 7]]) {
+        const paragraphWidth = id => page.locator(`#chat > .mes[mesid="${id}"] .mes_text > p`).first().evaluate(element => element.getBoundingClientRect().width);
+        expect(Math.abs(await paragraphWidth(withDetails) - await paragraphWidth(plain)), `ordinary paragraph at ${width}px`).toBeLessThanOrEqual(1);
+        await expect(page.locator(`#chat > .mes[mesid="${withDetails}"] .mes_text > details > summary`)).toHaveText('World status');
+    }
+}
+
+test('Tide keeps saved flexible details headings readable on desktop and phone', async ({ app }) => {
+    test.setTimeout(240000);
+    const account = await app.account();
+    const page = await account.open({ workspace: false });
+    await seedFlexibleDetails(page, account.avatar);
+    for (const width of [1280, 900, 769, 768]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.waitForTimeout(400);
+        await assertFlexibleDetails(page, width);
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    for (const id of [0, 1, 4, 5]) {
+        const details = page.locator(`#chat > .mes[mesid="${id}"] .mes_text > details`);
+        await details.locator('summary').click();
+        await expect(details).toHaveAttribute('open', '');
+        await expect(details.locator('p')).toHaveText('The current workroom status.');
+        await expect(details.locator('p')).toBeVisible();
+        await page.waitForTimeout(400);
+        await assertFlexibleDetails(page, 1280);
+        await details.locator('summary').click();
+        await expect(details).not.toHaveAttribute('open', '');
+    }
+    await page.evaluate(async () => window.SillyTavern.getContext().reloadCurrentChat());
+    await expect(page.locator('#chat > .mes')).toHaveCount(8);
+    await assertFlexibleDetails(page, 1280);
+    await page.locator('#chat_display').selectOption('0', { force: true });
+    await expect(page.locator('body')).not.toHaveClass(/tidestyle/);
+    await page.locator('#chat_display').selectOption(STYLE, { force: true });
+    await expect(page.locator('body')).toHaveClass(/tidestyle/);
+    await page.waitForTimeout(400);
+    await assertFlexibleDetails(page, 1280);
+
+    const phone = await app.account({ phone: true });
+    const phonePage = await phone.open({ workspace: false });
+    await seedFlexibleDetails(phonePage, phone.avatar);
+    await phonePage.waitForTimeout(400);
+    await assertFlexibleDetails(phonePage, 393);
+});
 
 /** Seeds one assistant reply (reasoning, details, block shapes, Notes) and a user reply with real saved swipes. */
 async function seedChat(page, avatar) {
@@ -898,6 +1004,45 @@ test('Tide below bars and narrow clusters share one size on both roles', async (
         })).toBe('0px 0px 0px 0px');
         await page.locator('#show_swipe_num_all_messages').evaluate(element => { element.checked = false; element.dispatchEvent(new Event('input', { bubbles: true })); });
     }
+});
+
+test('Tide export keeps saved flexible details headings readable in the screenshot', async ({ app }, info) => {
+    test.setTimeout(180000);
+    const account = await app.account(), page = await account.open({ workspace: false });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await seedFlexibleDetails(page, account.avatar);
+    await page.evaluate(() => {
+        window.tideFlexibleExportGeometry = [];
+        new MutationObserver(() => {
+            const surface = document.querySelector('#chat .sb-message-screenshot-surface');
+            if (!surface) return;
+            const rows = [...surface.querySelectorAll('.mes[mesid]')].map(row => {
+                const summary = row.querySelector('.mes_text > details > summary');
+                return summary ? { id: row.getAttribute('mesid'), box: summary.getBoundingClientRect().toJSON() } : null;
+            }).filter(Boolean);
+            window.tideFlexibleExportGeometry.push(rows);
+        }).observe(document.querySelector('#chat'), { childList: true, subtree: true });
+    });
+    await page.locator('#chat > .mes[mesid="0"] .mes_screenshot').dispatchEvent('click');
+    await expect(page.locator('.message_screenshot_popup')).toBeVisible();
+    await page.locator('#message_screenshot_start_id').fill('0');
+    await page.locator('#message_screenshot_end_id').fill('5');
+    const downloading = page.waitForEvent('download', { timeout: 60000 });
+    await page.locator('.message_screenshot_popup .popup-button-ok').click();
+    const download = await downloading, file = info.outputPath('tide-flexible-details.png');
+    await download.saveAs(file);
+    const png = PNG.sync.read(await fs.readFile(file));
+    expect(png.width).toBeGreaterThan(200);
+    expect(png.height).toBeGreaterThan(120);
+    const snapshots = await page.evaluate(() => window.tideFlexibleExportGeometry);
+    const captured = snapshots.find(rows => ['0', '1', '4', '5'].every(id => rows.some(row => row.id === id)));
+    expect(captured, 'the actual screenshot surface contains all four saved details rows').toBeDefined();
+    for (const id of ['0', '1', '4', '5']) {
+        const summary = captured.find(row => row.id === id).box;
+        expect(summary.width, `readable exported summary in row ${id}`).toBeGreaterThan(80);
+        expect(summary.height, `bounded exported summary height in row ${id}`).toBeLessThan(65);
+    }
+    await info.attach('Tide flexible details screenshot', { path: file, contentType: 'image/png' });
 });
 
 test('Tide export shows the container, the header plate and the cat, and hides the controls', async ({ app }, info) => {
