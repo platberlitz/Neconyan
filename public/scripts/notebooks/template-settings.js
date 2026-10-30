@@ -16,6 +16,15 @@ export function savedTemplates() {
     }
 }
 
+/** Reads the saved templates without throwing. When they cannot be read, only Blank note is returned and nothing stored is changed. */
+export function readSavedTemplates() {
+    try {
+        return { templates: savedTemplates(), unreadable: false };
+    } catch {
+        return { templates: [{ ...NOTE_TEMPLATES[0] }], unreadable: true };
+    }
+}
+
 export function saveTemplates(items, expectedAccount) {
     if (getCurrentUserHandle() !== expectedAccount) throw new Error('The account changed. Open Templates again.');
     const templates = normaliseTemplates(items);

@@ -4,7 +4,7 @@ import { newOperationId, notesDownload, notesUpload } from './api.js';
 import { button, choiceRow, clear, field, formatTime, h } from './dom.js';
 import { formatDiff } from './line-diff.js';
 import { NOTE_TEMPLATES, templateById } from './templates.js';
-import { savedTemplates } from './template-settings.js';
+import { readSavedTemplates } from './template-settings.js';
 import { parsePropertyValue, propertyInput } from './property-values.js';
 import { proposalLabel, userPhrase } from './user-text.js';
 import { t } from '../i18n.js';
@@ -194,13 +194,14 @@ export async function deleteFolder(app, folder) {
 export async function newNote(app) {
     const account = app.state.account;
     const notebookId = app.state.notebookId;
-    let saved;
-    try { saved = savedTemplates(); } catch (error) { app.toast('error', error.message); return; }
+    let { templates: saved, unreadable } = readSavedTemplates();
     const titleId = fieldId('title');
     const title = textInput(titleId, '', 'Untitled');
     let template = 'blank';
     const templates = h('div');
+    const unreadableNotice = h('p', { class: 'notes-notice', role: 'alert', text: 'Your saved templates could not be read, so only Blank note is offered. Nothing has been deleted. Choose Manage templates to restore the defaults.' });
     function refreshTemplates() {
+        unreadableNotice.hidden = !unreadable;
         clear(templates);
         templates.append(choiceRow('Start from', saved.map(item => [item.id, item.label, !NOTE_TEMPLATES.some(base => base.id === item.id && base.label === item.label)]), template, value => { template = value; }));
     }
@@ -209,7 +210,9 @@ export async function newNote(app) {
         const { manageTemplates } = await import('./template-manager.js');
         if (app.state.account !== account || app.state.notebookId !== notebookId) return;
         if (!(await manageTemplates(app))) return;
-        saved = savedTemplates();
+        const fresh = readSavedTemplates();
+        saved = fresh.templates;
+        unreadable = fresh.unreadable;
         if (!saved.some(item => item.id === template)) template = 'blank';
         refreshTemplates();
     }, { icon: 'fa-pen-to-square' });
@@ -217,7 +220,7 @@ export async function newNote(app) {
     const content = h('div', { class: 'notes-dialog' },
         h('h3', { text: 'New note' }),
         field('Name', title, userPhrase`It goes in ${folder}. You can rename or move it later.`),
-        templates, manage);
+        templates, unreadableNotice, manage);
     const { ok } = await dialog(content, { okButton: 'Create note', cancelButton: 'Cancel', onOpen: () => title.focus() });
     if (!ok || app.state.account !== account || app.state.notebookId !== notebookId) return;
     const chosen = templateById(template, saved);

@@ -212,6 +212,42 @@ for (const phone of [false, true]) {
         expect((await account.post('/api/notebooks/notes/read', created)).note.text).toBe(templateText);
     });
 
+    test(`Notebook templates that cannot be read still allow Blank notes and Restore defaults on ${layout}`, async ({ app }) => {
+        const { page } = await openFeedbackNote(app, { phone });
+        const root = page.locator('#neconyan-notes');
+        const popup = page.locator('.popup:visible').last();
+        const unreadable = scope => scope.getByRole('alert').filter({ hasText: 'could not be read' });
+        const stored = () => page.evaluate(async () => (await import('/scripts/util/AccountStorage.js')).accountStorage.getItem('neconyan_note_templates'));
+        await page.evaluate(async () => (await import('/scripts/util/AccountStorage.js')).accountStorage.setItem('neconyan_note_templates', '{broken'));
+        await setPane(page, 'nav');
+        await root.locator('.notes-create-row').getByRole('button', { name: 'New note', exact: true }).click();
+        await expect(unreadable(popup)).toBeVisible();
+        const choices = popup.getByRole('group', { name: 'Start from' }).getByRole('button');
+        await expect(choices).toHaveCount(1);
+        await expect(choices.first()).toHaveText('Blank note');
+        await popup.getByRole('button', { name: 'Create note', exact: true }).click();
+        await expect.poll(() => sourceText(page)).toBe('');
+        expect(await stored()).toBe('{broken');
+
+        await setPane(page, 'nav');
+        await root.locator('.notes-create-row').getByRole('button', { name: 'New note', exact: true }).click();
+        await popup.getByRole('button', { name: 'Manage templates', exact: true }).click();
+        const manager = page.locator('.notes-template-manager');
+        await expect(unreadable(manager)).toBeVisible();
+        await expect(manager.getByRole('button', { name: 'Add template', exact: true })).toBeDisabled();
+        await popup.getByRole('button', { name: 'Save templates', exact: true }).click();
+        await expect(manager).toBeVisible();
+        expect(await stored()).toBe('{broken');
+        await manager.getByRole('button', { name: 'Restore default templates', exact: true }).click();
+        await popup.getByRole('button', { name: 'Restore defaults', exact: true }).click();
+        await expect(unreadable(manager)).toBeHidden();
+        await popup.getByRole('button', { name: 'Save templates', exact: true }).click();
+        await expect(popup.getByRole('button', { name: 'Scene plan', exact: true })).toBeVisible();
+        await expect(unreadable(popup)).toBeHidden();
+        expect(JSON.parse(await stored()).templates).toHaveLength(4);
+        await popup.getByRole('button', { name: 'Cancel', exact: true }).click();
+    });
+
     test(`Notebook property rows add several fields before one safe save on ${layout}`, async ({ app }) => {
         const text = '---\npopulation: 12\nopen: true\nmembers: [one, two]\nnested:\n    value: keep # retained nested comment\n---\n# Field notes\n\nA plan.\n';
         const { page, account, notebookId, noteId } = await openFeedbackNote(app, { phone, text });

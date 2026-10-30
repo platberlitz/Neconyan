@@ -23,7 +23,7 @@ Background updates do not switch the notebook you chose or replace its list with
 
 In **New note**, press **Manage templates** to edit a template's name, suggested note name and Markdown contents. **Add template** makes another choice; **Remove template** removes the selected choice. **Save templates** keeps these choices for your account across notebooks and devices. **Cancel** discards the changes in this dialog.
 
-**Blank note** is always available and cannot be changed or removed. **Restore default templates** asks before replacing your choices with Character draft, Location, Scene plan and Session journal. Changing or removing a template never changes notes already made from it.
+**Blank note** is always available and cannot be changed or removed. **Restore default templates** asks before replacing your choices with Character draft, Location, Scene plan and Session journal. Changing or removing a template never changes notes already made from it. If your saved templates cannot be read, **New note** says so and offers only **Blank note**; nothing is deleted, and **Manage templates** then lets you use **Restore default templates**.
 
 There can be up to 40 editable templates, each with at most 64 KiB of text, and 512 KiB altogether. Templates are copied as written; they do not run scripts, substitute macros, publish lore or change AI access.
 

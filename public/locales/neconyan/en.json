@@ -18028,6 +18028,8 @@
   "Only empty folders can be removed.": "Only empty folders can be removed.",
   "Start from": "Start from",
   "Manage templates": "Manage templates",
+  "Your saved templates could not be read, so only Blank note is offered. Nothing has been deleted. Choose Manage templates to restore the defaults.": "Your saved templates could not be read, so only Blank note is offered. Nothing has been deleted. Choose Manage templates to restore the defaults.",
+  "Your saved templates could not be read, and they have not been changed. Choose Restore default templates to replace them, or Cancel to keep them as they are.": "Your saved templates could not be read, and they have not been changed. Choose Restore default templates to replace them, or Cancel to keep them as they are.",
   "It goes in ${0}. You can rename or move it later.": "It goes in ${0}. You can rename or move it later.",
   "Type the thought. The first line becomes its name.": "Type the thought. The first line becomes its name.",
   "Into the Inbox": "Into the Inbox",
