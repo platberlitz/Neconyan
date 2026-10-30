@@ -195,7 +195,8 @@ function grantFor(lease, grantId, at) {
     if (!grantId) return null;
     if (typeof grantId !== 'string' || !/^g_[a-f0-9]{24}$/.test(grantId)) throw denied();
     const grant = readGrants(lease, at).entries[grantId];
-    if (!grant) throw new NotebookError('GRANT_EXPIRED', 'That shared item has expired. Share it again to continue.', 403);
+    /* A missing grant was ended by its owner, timed out, or was the oldest of 100. Nothing records which, so the wording must be true for all three. */
+    if (!grant) throw new NotebookError('GRANT_EXPIRED', 'That note or selection is no longer shared. Share it again to continue.', 403);
     return grant;
 }
 
