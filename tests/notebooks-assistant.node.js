@@ -338,3 +338,28 @@ test('assistant reads and single-note grants never expand embedded target data',
     assert.ok(!JSON.stringify(links).includes(target));
     assert.doesNotMatch(JSON.stringify(links), /A hidden body/);
 });
+
+test('an ended share tells the reader to share it again', t => {
+    const { run, notebookId, create, capture } = prepared(t);
+    const text = 'Private start.\nShare this line.\nPrivate end.\n';
+    const noteId = create('Ended share', text);
+    const start = text.indexOf('Share this line.');
+    const grant = run(lease => assistant.createGrantLocked(lease, { notebookId, noteId, scope: 'selection', selection: { start, end: start + 'Share this line.'.length }, operations: ['read', 'edit'] }));
+    const captured = capture('edit-note-selection', { notebookId, noteId, grantId: grant.id, find: 'Share this line.', replace: 'Changed.' });
+    const stored = run(lease => assistant.storeProposalLocked(lease, { proposal: captured.proposal, callId: 'call-ended-share' }));
+    run(lease => assistant.revokeGrantLocked(lease, grant.id));
+    const ended = error => error.code === 'GRANT_EXPIRED' && error.message === 'That shared item has expired. Share it again to continue.';
+    assert.throws(() => run(lease => assistant.decideProposalLocked(lease, { proposalId: stored.proposalId, proposalHash: stored.proposalHash, decision: 'allow', actor: { kind: 'user' } })), ended);
+    assert.throws(() => capture('read-note', { notebookId, noteId, grantId: grant.id }), ended);
+});
+
+test('a changed selection tells the reader to share it again', t => {
+    const { run, notebookId, create, capture } = prepared(t);
+    const noteId = create('Changed share', 'Before.\nShare this line.\nAfter.\n');
+    const start = 'Before.\n'.length;
+    const grant = run(lease => assistant.createGrantLocked(lease, { notebookId, noteId, scope: 'selection', selection: { start, end: start + 'Share this line.'.length }, operations: ['read'] }));
+    const revision = run(lease => store.readNoteLocked(lease, { notebookId, noteId })).entry.hash;
+    run(lease => store.updateNoteLocked(lease, { operationId: op('rewrite'), notebookId, noteId, expectedRevision: revision, changes: [{ type: 'replace_all', markdown: 'Something else entirely.\n' }] }));
+    assert.throws(() => capture('read-note', { notebookId, noteId, grantId: grant.id }),
+        error => error.code === 'NOTE_SELECTION_STALE' && error.message === 'The shared selection changed. Share it again to continue.');
+});

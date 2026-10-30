@@ -195,7 +195,7 @@ function grantFor(lease, grantId, at) {
     if (!grantId) return null;
     if (typeof grantId !== 'string' || !/^g_[a-f0-9]{24}$/.test(grantId)) throw denied();
     const grant = readGrants(lease, at).entries[grantId];
-    if (!grant) throw new NotebookError('GRANT_EXPIRED', 'That shared item has expired. Ask the owner to share it again.', 403);
+    if (!grant) throw new NotebookError('GRANT_EXPIRED', 'That shared item has expired. Share it again to continue.', 403);
     return grant;
 }
 
@@ -215,7 +215,7 @@ function grantSelection(lease, grant, noteText) {
     const index = typeof shared === 'string' && shared.length === end - start && sectionHash(shared) === hash
         ? noteText.indexOf(shared) : -1;
     if (index === -1 || noteText.indexOf(shared, index + 1) !== -1) {
-        throw new NotebookError('NOTE_SELECTION_STALE', 'The shared selection changed. Ask the owner to share it again.', 409);
+        throw new NotebookError('NOTE_SELECTION_STALE', 'The shared selection changed. Share it again to continue.', 409);
     }
     return { start: index, end: index + shared.length, text: shared };
 }
