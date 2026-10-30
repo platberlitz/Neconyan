@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.4.1
+
+### Merged Staging PRs
+- PR #345 (2026-10-30) `fix(gemini): omit the image settings when none are set`
+
 ## v1.4.0
 
 ### Highlights
