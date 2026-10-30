@@ -427,6 +427,27 @@ test('an empty Agent reply tries the fallback, and every connection failing keep
         generate: modelResponse(({ binding }) => { throw Object.assign(new Error(`${binding.profileId} refused`), { status: 400 }); }) }), /aux refused/);
 });
 
+test('a blank Agent reply never hides why the fallback failed', async t => {
+    const setup = name => {
+        const f = prepared(t);
+        const aux = { kind: 'profile', ...captureChatProfile(f.directories, 'aux') };
+        return { f, options: { base: f.scope, account: f.account, name, identity: roleplayHash(name), binding: f.binding, maxTokens: 64, macros: {},
+            assertCurrent() {}, fallbacks: [{ binding: aux, profileLabel: 'Backup' }], buildMessages: () => [{ role: 'user', content: 'Write' }] } };
+    };
+    const busy = setup('blank-then-busy');
+    await assert.rejects(runAgentModelStep(busy.f.context, { ...busy.options, generate: modelResponse(({ binding }) => {
+        if (binding.profileId === 'main') return { text: '' };
+        throw Object.assign(new Error('aux is busy'), { status: 429 });
+    }) }), /aux is busy/);
+    const fenced = setup('fenced');
+    const filled = await runAgentModelStep(fenced.f.context, { ...fenced.options, isEmptyOutput: text => !text.replace(/```[^\n]*/g, '').trim(),
+        generate: modelResponse(({ binding }) => ({ text: binding.profileId === 'main' ? '```html\n\n```' : 'Filled' })) });
+    assert.equal(filled.text, 'Filled', 'a reply the caller counts as empty tries the fallback');
+    const blank = setup('all-blank');
+    const kept = await runAgentModelStep(blank.f.context, { ...blank.options, generate: modelResponse(() => ({ text: ' ' })) });
+    assert.equal(kept.profileId, blank.f.binding.profileId, 'when every connection is blank the first blank reply is kept');
+});
+
 test('limited and invalid Agent replies advance through saved fallbacks and replay without new calls', async t => {
     for (const kind of ['limited', 'invalid']) {
         const f = prepared(t);

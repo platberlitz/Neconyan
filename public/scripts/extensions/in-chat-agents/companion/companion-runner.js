@@ -495,6 +495,11 @@ function capResultContent(value = '') {
     return stripMarkdownFence(value).slice(0, MAX_COMPANION_RESULT_CHARS);
 }
 
+// A reply that is blank once its code fence is removed leaves nothing to show, so the next connection gets a turn.
+function isEmptyCompanionOutput(value) {
+    return !capResultContent(value);
+}
+
 function getProfileLabel(agent, responseProfileId = '') {
     const profileId = String(responseProfileId || resolveAgentConnectionProfile(agent) || '').trim();
     if (!profileId) {
@@ -1847,7 +1852,7 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
                 return inspectCompanionTrackerOutput(agent, text, display).action === 'keep';
             };
             const response = await requestPromptTransform(repair ? markTrackerRepairRunAgent(agent) : agent, promptMessages, companion.maxTokens, {
-                diagnosticHandle, acceptOutput, cancelRevision, isCurrent: isTargetCurrent,
+                diagnosticHandle, acceptOutput, isEmptyOutput: isEmptyCompanionOutput, cancelRevision, isCurrent: isTargetCurrent,
             }).catch(markCompanionConnectionFailure);
 
             if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {

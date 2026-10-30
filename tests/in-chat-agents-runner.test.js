@@ -3704,6 +3704,32 @@ describe('in-chat agent post-processing runner', () => {
                 .toEqual(['primary', 'limited', 'malformed', 'empty', 'working']);
         });
 
+        test('a blank first reply does not hide why the fallback connections failed', async () => {
+            const companion = { ...createCompanionAgent({ id: 'blank-then-busy', category: 'companion' }), connectionProfile: 'primary' };
+            enabledAgents = [companion];
+            globalSettings.companionConnectionFallbacks = ['fenced', 'busy'];
+            let busyReply = null;
+            connectionManagerRequestService = {
+                constructPrompt: jest.fn(messages => messages),
+                sendRequest: jest.fn(async profileId => {
+                    if (profileId === 'primary') return { content: '' };
+                    if (profileId === 'fenced') return { content: '```html\n\n```' };
+                    if (busyReply) return { content: busyReply };
+                    throw Object.assign(new Error('Too Many Requests'), { status: 429 });
+                }),
+            };
+            const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+            chat.push({ mes: 'Assistant reply', name: 'Assistant', is_user: false, is_system: false, extra: {} });
+
+            const failed = await companionRunner.runCompanionAgentOnMessage(companion.id, 0);
+            expect(connectionManagerRequestService.sendRequest.mock.calls.map(call => call[0])).toEqual(['primary', 'fenced', 'busy']);
+            expect(failed).toEqual(expect.objectContaining({ status: 'error', error: 'Too Many Requests', failureKind: 'api' }));
+
+            busyReply = 'Note from the last connection';
+            const recovered = await companionRunner.runCompanionAgentOnMessage(companion.id, 0);
+            expect(recovered).toEqual(expect.objectContaining({ status: 'done', content: busyReply, profileId: 'busy' }));
+        });
+
         test('a no-change tracker reply does not spend another fallback request', async () => {
             const tracker = { ...makeTracker('unchanged-tracker'), connectionProfile: 'primary' };
             enabledAgents = [tracker];
@@ -10116,6 +10142,26 @@ describe('in-chat agent post-processing runner', () => {
 
         globalSettings.connectionFallbacks = [];
         await expect(requestPromptTransform({ id: 'post', connectionProfile: 'primary' }, messages, 100)).rejects.toThrow('Provider overloaded');
+        warn.mockRestore();
+    });
+
+    test('a blank reply never hides a fallback error, but stays the answer when every connection is blank', async () => {
+        globalSettings.connectionFallbacks = ['busy'];
+        let busyFails = true;
+        connectionManagerRequestService = {
+            sendRequest: jest.fn(async profileId => {
+                if (profileId === 'busy' && busyFails) throw Object.assign(new Error('Too Many Requests'), { status: 429 });
+                return { content: '  ' };
+            }),
+        };
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const { requestPromptTransform } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+
+        await expect(requestPromptTransform({ id: 'post', connectionProfile: 'primary' }, [], 100)).rejects.toThrow('Too Many Requests');
+        busyFails = false;
+        await expect(requestPromptTransform({ id: 'post', connectionProfile: 'primary' }, [], 100))
+            .resolves.toEqual(expect.objectContaining({ output: '  ', profileId: 'primary' }));
+        expect(connectionManagerRequestService.sendRequest.mock.calls.at(-1)[0]).toBe('busy');
         warn.mockRestore();
     });
 
