@@ -996,7 +996,7 @@ function renderSettings(root) {
         settings.append(configCheck('Hide old messages automatically at a token threshold', draft.autoHide, value => { draft.autoHide = value; }),
             node('p', 'mewmory-caption', 'This is separate from the recent chat allowance. Hidden messages remain saved and searchable.'),
             configField('Hide older messages at this chat size, tokens', draft.autoHideTokens, value => { draft.autoHideTokens = value; }, {
-                type: 'number', key: 'auto-hide-tokens', hint: 'At this size, hide older visible messages together. Keep the latest character reply and anything after it.',
+                type: 'number', key: 'auto-hide-tokens', hint: 'At this size, hide older visible messages together. Keep the latest character reply, anything after it, and messages Mewmory has not read yet.',
             }));
     }
     root.append(settings);

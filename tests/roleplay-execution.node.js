@@ -340,8 +340,9 @@ test('a bound swipe follows a renamed chat and tolerates an unrelated later appe
     const saved = readRoleplayChat(f.scope, destination);
     assert.equal(saved.records[42].mes, 'Bound swipe');
     assert.equal(saved.records.at(-1).mes, 'Unrelated');
-    assert.ok(saved.records.slice(1, -1).every(record => record.is_system && record.extra?.mewmoryKeepHidden === true),
+    assert.ok(saved.records.slice(1, 42).every(record => record.is_system && record.extra?.mewmoryKeepHidden === true),
         'the renamed chat should still clear its older backlog');
+    assert.ok(!saved.records[42].is_system, 'a fresh swipe Mewmory has not read yet stays in the prompt');
     assert.ok(!saved.records.at(-1).is_system);
     assert.equal(calls, 1);
 });

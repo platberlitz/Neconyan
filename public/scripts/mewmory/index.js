@@ -237,21 +237,30 @@ async function countMessages(texts, scope) {
     return result.counts;
 }
 
+const OVERFLOW_COUNT_ATTEMPTS = 3;
+
 /**
- * Counts one snapshot of the chat with the Mewmory writer tokenizer. `changed`
- * reports that a message was edited, added, deleted or reloaded, or that another
- * chat became active, while the count was running; such a plan is never applied.
+ * Counts the chat with the Mewmory writer tokenizer. Agents, trackers and reply
+ * readback often touch the chat while the count runs, so a count that went
+ * stale is redone against the current chat. `changed` reports that the chat
+ * kept changing on every attempt, that a hiding setting changed, or that
+ * another chat became active; such a plan is never applied.
  */
 async function getOverflowPlan(limit, scope = getMewmoryScope()) {
-    const snapshot = currentChatSnapshot();
+    let snapshot = currentChatSnapshot();
     if (!(limit > 0)) return { limit, indices: [], snapshot, changed: false };
-    if (scope !== getMewmoryScope()) return { limit, indices: [], snapshot, changed: true };
-    const visible = visibleMessageIndices(snapshot.messages);
-    const counts = await countMessages(visible.map(index => String(snapshot.messages[index]?.mes ?? '')), scope);
-    if (scope !== getMewmoryScope() || !isSameChatSnapshot(snapshot)) {
-        return { limit, indices: [], snapshot, changed: true };
+    const policy = snapshot.policy;
+    for (let attempt = 0; attempt < OVERFLOW_COUNT_ATTEMPTS; attempt++) {
+        if (scope !== getMewmoryScope() || policy !== currentHidingPolicy()) break;
+        snapshot = currentChatSnapshot();
+        const visible = visibleMessageIndices(snapshot.messages);
+        const counts = await countMessages(visible.map(index => String(snapshot.messages[index]?.mes ?? '')), scope);
+        if (scope === getMewmoryScope() && isSameChatSnapshot(snapshot)) {
+            return { ...overflowPlan(snapshot.messages, limit, counts),
+                totalTokens: counts.reduce((total, count) => total + count, 0), snapshot, changed: false };
+        }
     }
-    return { ...overflowPlan(snapshot.messages, limit, counts), totalTokens: counts.reduce((total, count) => total + count, 0), snapshot, changed: false };
+    return { limit, indices: [], snapshot, changed: true };
 }
 
 /**
@@ -324,19 +333,31 @@ export async function hideOverflowMessages({ limit } = {}) {
                 + value.toLocaleString() + ' tokens yet, so nothing needs hiding.');
         return 0;
     }
-    const answer = await new Popup('This chat reached your Mewmory hiding trigger of ' + value.toLocaleString() + ' tokens. Hide all '
+    const answer = await new Popup('This chat reached your Mewmory hiding trigger of ' + value.toLocaleString() + ' tokens. Hide the '
         + plan.indices.length + ' older visible ' + (plan.indices.length === 1 ? 'message' : 'messages')
         + ' in one go? The latest reply and any messages after it stay visible, and counting starts again from what remains. '
-        + 'Mewmory keeps reading the hidden messages, so their memories stay. You can unhide them any time with the eye button on a message.',
+        + (mewmory.config?.roles?.extractor?.enabled
+            ? 'Messages Mewmory has not finished reading stay visible until it has, so nothing drops out of its memory. ' : '')
+        + 'You can unhide messages any time with the eye button on a message.',
     POPUP_TYPE.CONFIRM).show();
     if (answer !== POPUP_RESULT.AFFIRMATIVE) return 0;
     const again = await getOverflowPlan(value, scope);
-    if (again.changed || !isSameChatSnapshot(plan.snapshot) || JSON.stringify(again.indices) !== JSON.stringify(plan.indices)) {
+    if (again.changed || again.snapshot.policy !== plan.snapshot.policy
+        || JSON.stringify(again.indices) !== JSON.stringify(plan.indices)) {
         toastr.warning('The chat or hiding settings changed while the question was open, so nothing was hidden.');
         return 0;
     }
+    const chatKey = key(getMewmoryLocator());
     const hidden = await hideMessages(again.indices, again.snapshot, scope);
-    if (hidden) toastr.success('Hid ' + hidden + ' older ' + (hidden === 1 ? 'message' : 'messages') + ' from the prompt.');
+    const waiting = again.indices.length - hidden;
+    if (hidden) {
+        toastr.success('Hid ' + hidden + ' older ' + (hidden === 1 ? 'message' : 'messages') + ' from the prompt.'
+            + (waiting > 0 ? ' ' + waiting + ' more ' + (waiting === 1 ? 'stays' : 'stay') + ' visible until Mewmory has read '
+                + (waiting === 1 ? 'it' : 'them') + '.' : ''));
+    } else if (chatKey === key(getMewmoryLocator())) {
+        // Reloading the saved chat starts a new chat generation, so compare the chat itself.
+        toastr.info('Nothing was hidden yet: Mewmory has not finished reading the older messages. They stay visible until it has.');
+    }
     return hidden;
 }
 
@@ -385,12 +406,9 @@ export async function hideOverflowAutomatically({ refresh = false, limit } = {})
         }
         const value = limit ?? mewmory.config.autoHideTokens;
         if (!(value > 0)) return 0;
+        // A chat that keeps changing is left alone; the next reply tries again.
         const plan = await getOverflowPlan(value, scope);
-        if (plan.changed) {
-            toastr.warning('The chat or hiding settings changed while Mewmory counted, so older messages were not hidden automatically.');
-            return 0;
-        }
-        if (!plan.indices.length) return 0;
+        if (plan.changed || !plan.indices.length) return 0;
         const hidden = await hideMessages(plan.indices, plan.snapshot, scope, true);
         if (hidden) {
             toastr.info('Hid ' + hidden + ' older ' + (hidden === 1 ? 'message' : 'messages') + ' after reaching '
