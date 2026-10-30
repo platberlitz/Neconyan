@@ -19,6 +19,7 @@
 - PR #358 (2026-10-30) `fix(quick-image-gen): send NovelAI V4 prompt structures for V5 models`
 - PR #359 (2026-10-30) `fix(lorebooks): give the Lorebook settings bar a solid background`
 - PR #360 (2026-10-30) `fix(agents): wait for scrolling to stop before clearing older notes`
+- PR #361 (2026-10-30) `fix(chat): never leave swiping locked after a refused or failed swipe`
 
 ## v1.4.0
 
