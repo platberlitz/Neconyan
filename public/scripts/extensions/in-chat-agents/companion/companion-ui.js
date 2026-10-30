@@ -1,5 +1,5 @@
 import { DOMPurify, showdown } from '../../../../lib.js';
-import { chat, changeMessageBelowReader, changeMessagesBelowReader, saveChatDebounced, substituteParams, substituteParamsExtended } from '../../../../script.js';
+import { chat, changeMessageBelowReader, changeMessagesBelowReader, runWhenChatScrollSettles, saveChatDebounced, substituteParams, substituteParamsExtended } from '../../../../script.js';
 import { encodeStyleTags, decodeStyleTags } from '../../../chats.js';
 import { eventSource, event_types } from '../../../events.js';
 import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../popup.js';
@@ -657,6 +657,20 @@ function renderAllCompanionResults() {
     });
 }
 
+let renderAllCompanionResultsQueued = false;
+
+// Cleanup removes older notes above the reader. Wait for their scroll to stop
+// so the anchor restore lands (iOS Safari drops it mid-scroll), and fold
+// several cleanups into one redraw.
+function scheduleRenderAllCompanionResults() {
+    if (renderAllCompanionResultsQueued) return;
+    renderAllCompanionResultsQueued = true;
+    runWhenChatScrollSettles(() => {
+        renderAllCompanionResultsQueued = false;
+        renderAllCompanionResults();
+    });
+}
+
 function hasRunnableCompanionAgents() {
     return areAgentsGloballyEnabled() && getEnabledAgents().some(agent => {
         return isCompanionAgent(agent) && String(agent.prompt ?? '').trim();
@@ -1061,7 +1075,7 @@ export function initCompanionCardUi() {
         if (Number.isInteger(messageIndex)) {
             renderCompanionResultsForMessage(messageIndex);
         } else {
-            renderAllCompanionResults();
+            scheduleRenderAllCompanionResults();
         }
         updateCompanionButtonVisibility();
     });
