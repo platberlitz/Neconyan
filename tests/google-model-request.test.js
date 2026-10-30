@@ -183,4 +183,29 @@ describe('Google model request compatibility', () => {
         expect(response.status).toBe(200);
         expect(capturedBody.generationConfig.imageConfig).toEqual({ imageSize: '2K' });
     });
+
+    test.each(['gemini-2.5-flash-image', 'gemini-2.5-flash-image-preview'])(
+        'sends no image configuration for %s when only a resolution is sent',
+        async (model) => {
+            const response = await makeRequest(model, {
+                request_images: true,
+                request_image_resolution: '2K',
+            });
+
+            expect(response.status).toBe(200);
+            expect(capturedBody.generationConfig.responseModalities).toEqual(['text', 'image']);
+            expect(capturedBody.generationConfig).not.toHaveProperty('imageConfig');
+        },
+    );
+
+    test('drops the resolution but keeps the aspect ratio for a non-Gemini 3 image model', async () => {
+        const response = await makeRequest('gemini-2.5-flash-image', {
+            request_images: true,
+            request_image_aspect_ratio: '16:9',
+            request_image_resolution: '2K',
+        });
+
+        expect(response.status).toBe(200);
+        expect(capturedBody.generationConfig.imageConfig).toEqual({ aspectRatio: '16:9' });
+    });
 });
