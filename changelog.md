@@ -22,6 +22,7 @@
 - PR #361 (2026-10-30) `fix(chat): never leave swiping locked after a refused or failed swipe`
 - PR #362 (2026-10-30) `fix(appearance): persist shell style with account settings`
 - PR #363 (2026-10-30) `fix(tide): keep collapsible panels readable`
+- PR #364 (2026-10-30) `fix(mewmory): preserve reading progress and avoid redundant work`
 
 ## v1.4.0
 
