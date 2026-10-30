@@ -8,6 +8,7 @@
 - PR #347 (2026-10-30) `fix(gemini): send empty image settings when none are saved`
 - PR #348 (2026-10-30) `fix(scratchpad): keep the reply when a notebook file is damaged`
 - PR #349 (2026-10-30) `fix(gemini): leave out empty image settings for older image models`
+- PR #350 (2026-10-30) `fix(scratchpad): stop always adding the note title to note discussions`
 
 ## v1.4.0
 
