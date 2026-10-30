@@ -2,7 +2,7 @@ import { inflateRawSync } from 'node:zlib';
 
 import { getClosestSupportedImageSize } from '../../public/scripts/extensions/quick-image-gen/lib/provider-capabilities.js';
 import { isNovelAICompatibleProxyUrl, isOpenAIChatCompletionsEndpoint } from '../../public/scripts/extensions/quick-image-gen/lib/provider-adapters.js';
-import { buildNovelAIProxyRequestUrl, findEmbeddedPngRange } from '../../public/scripts/extensions/quick-image-gen/lib/hosted-provider.js';
+import { buildNovelAIProxyRequestUrl, findEmbeddedPngRange, isNovelAIV3OrNewerModel, isNovelAIV4PromptModel } from '../../public/scripts/extensions/quick-image-gen/lib/hosted-provider.js';
 import { assertSafeConfigurableEndpoint } from '../../public/scripts/extensions/quick-image-gen/lib/network-runtime.js';
 import { MAX_IMAGE_BYTES } from '../../public/scripts/extensions/quick-image-gen/lib/security.js';
 
@@ -28,7 +28,7 @@ export function buildNovelAIRequest(settings, prompt, negative) {
     if (!model || !Number.isSafeInteger(settings.seed) || settings.seed < 0) throw new Error('NovelAI has invalid saved model or seed.');
     const width = dimension(settings.width);
     const height = dimension(settings.height);
-    const newer = model.includes('diffusion-3') || model.includes('diffusion-4');
+    const newer = isNovelAIV3OrNewerModel(model);
     const sampler = settings.sampler === 'ddim' && newer ? 'ddim_v3' : samplers[settings.sampler] || 'k_euler_ancestral';
     const proxy = String(settings.naiProxyUrl || '').trim();
     if (proxy && isNovelAICompatibleProxyUrl(proxy)) {
@@ -48,7 +48,7 @@ export function buildNovelAIRequest(settings, prompt, negative) {
         seed: settings.seed, n_samples: 1, ucPreset: 0, qualityToggle: false, negative_prompt: negative,
         params_version: 3, legacy: false, controlnet_strength: 1, dynamic_thresholding: false,
         cfg_rescale: 0, noise_schedule: 'native' };
-    if (model.includes('-4')) Object.assign(parameters, {
+    if (isNovelAIV4PromptModel(model)) Object.assign(parameters, {
         v4_prompt: { caption: { base_caption: prompt, char_captions: [] }, use_coords: false, use_order: true },
         v4_negative_prompt: { caption: { base_caption: negative, char_captions: [] }, legacy_uc: false },
         characterPrompts: [], skip_cfg_above_sigma: null,
