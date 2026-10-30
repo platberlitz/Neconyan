@@ -12,6 +12,8 @@ let contextSize = 30;
 let popupAnswer = 1;
 let tokenizerHint = { tokenizerKey: 'openai' };
 let serverChat = [];
+// How many leading overflow messages the server has finished reading and may hide.
+let serverReadLimit = Infinity;
 const savedHiddenRanges = jest.fn();
 const accountStamp = {};
 const saveChatConditional = jest.fn(async options => {
@@ -23,7 +25,7 @@ const saveChatConditional = jest.fn(async options => {
     const visible = serverChat.flatMap((message, index) => message.is_system ? [] : [index]);
     const latest = serverChat.findLastIndex(message => !message.is_user && !message.is_system);
     const total = visible.reduce((sum, index) => sum + String(serverChat[index].mes ?? '').length, 0);
-    const indices = total >= mewmory.config.autoHideTokens ? visible.filter(index => index < latest) : [];
+    const indices = (total >= mewmory.config.autoHideTokens ? visible.filter(index => index < latest) : []).slice(0, serverReadLimit);
     const ranges = [];
     for (const index of indices) {
         const last = ranges.at(-1);
@@ -85,6 +87,7 @@ beforeEach(() => {
     saveChatConditional.mockClear();
     getChat.mockClear();
     serverChat = [];
+    serverReadLimit = Infinity;
     popupAnswer = 1;
     tokenizerHint = { tokenizerKey: 'openai' };
     for (const method of Object.values(global.toastr)) method.mockClear();
@@ -287,6 +290,21 @@ test('reaching the saved Mewmory trigger clears the older visible history and ke
     expect(chat.map(message => Boolean(message.is_system))).toEqual([true, true, true, true, true, false, false]);
     // The preserved latest reply and the trailing user message remain below the trigger.
     expect(await hideOverflowMessages()).toBe(0);
+});
+
+test('manual hiding says which older messages stay visible until Mewmory has read them', async () => {
+    const line = (is_user, mes) => ({ is_user, mes });
+    chat.splice(0, chat.length, ...Array.from({ length: 6 }, (_, index) => line(index % 2 === 0, 'x'.repeat(10))));
+    mewmory.config = { ...config, autoHide: false, autoHideTokens: 30 };
+    serverReadLimit = 0;
+    expect(await hideOverflowMessages()).toBe(0);
+    expect(global.toastr.info).toHaveBeenCalledWith(expect.stringContaining('Mewmory has not finished reading the older messages'));
+    expect(global.toastr.warning).not.toHaveBeenCalled();
+
+    serverReadLimit = 2;
+    expect(await hideOverflowMessages()).toBe(2);
+    expect(global.toastr.success).toHaveBeenCalledWith('Hid 2 older messages from the prompt. 3 more stay visible until Mewmory has read them.');
+    expect(chat.map(message => Boolean(message.is_system))).toEqual([true, true, false, false, false, false]);
 });
 
 test('manual hiding works with automatic hiding switched off and ignores the writing preset context size', async () => {
@@ -492,12 +510,17 @@ test('a delayed token count never hides messages after the same chat name switch
     character.avatar = 'Mara.png';
 });
 
-test('an edit during counting cancels the hide instead of using the stale snapshot', async () => {
-    const counts = Promise.withResolvers();
+test('an edit during counting recounts the current chat instead of using the stale snapshot', async () => {
+    const first = Promise.withResolvers();
+    const counted = [];
     fetch.mockImplementation(async (url, { body }) => {
         const parsed = JSON.parse(body);
         if (url.endsWith('config/get')) return response({ config: { ...config, autoHide: true }, stories: [] });
-        if (url.endsWith('/tokens')) return counts.promise;
+        if (url.endsWith('/tokens')) {
+            counted.push(parsed.texts);
+            if (counted.length === 1) return first.promise;
+            return response({ counts: parsed.texts.map(text => String(text).length) });
+        }
         return response({ locator: parsed.locator, enabled: true, revision: 1 });
     });
     const line = (is_user, mes) => ({ is_user, mes });
@@ -507,10 +530,34 @@ test('an edit during counting cancels the hide instead of using the stale snapsh
     const hiding = hideOverflowAutomatically();
     await settle();
     chat[0].mes = 'edited after counting started';
-    counts.resolve(response({ counts: [20, 20, 20] }));
-    expect(await hiding).toBe(0);
+    first.resolve(response({ counts: [20, 20, 20] }));
+    await hiding;
+    expect(counted).toHaveLength(2);
+    expect(counted[1][0]).toBe('edited after counting started');
+    expect(savedHiddenRanges).toHaveBeenCalledTimes(1);
+    expect(global.toastr.warning).not.toHaveBeenCalled();
+});
+
+test('a chat that keeps changing while it is counted is left alone without a warning', async () => {
+    let calls = 0;
+    fetch.mockImplementation(async (url, { body }) => {
+        const parsed = JSON.parse(body);
+        if (url.endsWith('config/get')) return response({ config: { ...config, autoHide: true }, stories: [] });
+        if (url.endsWith('/tokens')) {
+            chat[1].mes += ' (tracker update ' + ++calls + ')';
+            return response({ counts: parsed.texts.map(text => String(text).length) });
+        }
+        return response({ locator: parsed.locator, enabled: true, revision: 1 });
+    });
+    const line = (is_user, mes) => ({ is_user, mes });
+    chat.splice(0, chat.length, line(true, 'a'.repeat(20)), line(false, 'b'.repeat(20)), line(true, 'c'.repeat(20)));
+    mewmory.config = { ...config, autoHide: true, autoHideTokens: 30 };
+    mewmory.view = { enabled: true, revision: 1, locator: getMewmoryLocator() };
+    expect(await hideOverflowAutomatically()).toBe(0);
+    expect(calls).toBe(3);
     expect(savedHiddenRanges).not.toHaveBeenCalled();
-    expect(global.toastr.warning).toHaveBeenCalledWith('The chat or hiding settings changed while Mewmory counted, so older messages were not hidden automatically.');
+    expect(global.toastr.warning).not.toHaveBeenCalled();
+    expect(global.toastr.error).not.toHaveBeenCalled();
 });
 
 test.each([
@@ -576,12 +623,17 @@ const settle = async () => {
 };
 const enabledCalls = () => fetch.mock.calls.filter(([url]) => url.endsWith('/enabled'));
 
-test('a new message during counting cancels the hide instead of hiding a stale boundary', async () => {
-    const counts = Promise.withResolvers();
+test('a new message during counting is counted again instead of hiding a stale boundary', async () => {
+    const first = Promise.withResolvers();
+    const counted = [];
     fetch.mockImplementation(async (url, { body }) => {
         const parsed = JSON.parse(body);
         if (url.endsWith('config/get')) return response({ config: { ...config, autoHide: true }, stories: [] });
-        if (url.endsWith('/tokens')) return counts.promise;
+        if (url.endsWith('/tokens')) {
+            counted.push(parsed.texts);
+            if (counted.length === 1) return first.promise;
+            return response({ counts: parsed.texts.map(text => String(text).length) });
+        }
         return response({ locator: parsed.locator, enabled: true, revision: 1 });
     });
     const line = (is_user, mes) => ({ is_user, mes });
@@ -591,10 +643,11 @@ test('a new message during counting cancels the hide instead of hiding a stale b
     const hiding = hideOverflowAutomatically();
     await settle();
     chat.push(line(false, 'late reply'));
-    counts.resolve(response({ counts: [20, 20, 20] }));
-    expect(await hiding).toBe(0);
-    expect(savedHiddenRanges).not.toHaveBeenCalled();
-    expect(global.toastr.warning).toHaveBeenCalledWith('The chat or hiding settings changed while Mewmory counted, so older messages were not hidden automatically.');
+    first.resolve(response({ counts: [20, 20, 20] }));
+    await hiding;
+    expect(counted.map(texts => texts.length)).toEqual([3, 4]);
+    expect(savedHiddenRanges).toHaveBeenCalledTimes(1);
+    expect(global.toastr.warning).not.toHaveBeenCalled();
 });
 
 test('every new chat turns Mewmory on once, and switching it off afterwards sticks', async () => {
