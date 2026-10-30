@@ -280,6 +280,15 @@
     }
 }
 
+/* Details with flexible headings need a definite reading width, even when alone. */
+body.neconyan.tidestyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #sheld:not([data-sbtw-mode='on']):not([data-sb-conversation-mode='on']) #chat .mes:not(.smallSysMes, [is_system='true']) > .mes_block > .mes_text:has(> details) {
+    width: 100%;
+
+    > details {
+        width: 100%;
+    }
+}
+
 /* Tide changes only control paint and alignment; its reading bubbles stay native. */
 body.neconyan.tidestyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) {
     --deep-swipe-arrow-opacity: 1;
