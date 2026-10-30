@@ -23,7 +23,8 @@ export async function createChatGenerationParameters(settings, model, type, mess
         user_name: context.userName, char_name: context.characterName, group_names: context.getGroupNames(),
         include_reasoning: context.getIncludeReasoning(), reasoning_effort: context.getReasoningEffort(),
         enable_web_search: Boolean(settings.enable_web_search), request_images: Boolean(settings.request_images),
-        request_image_resolution: String(settings.request_image_resolution), request_image_aspect_ratio: String(settings.request_image_aspect_ratio),
+        // Absent image settings mean no preference: send '', never the text "undefined".
+        request_image_resolution: String(settings.request_image_resolution ?? ''), request_image_aspect_ratio: String(settings.request_image_aspect_ratio ?? ''),
         custom_prompt_post_processing: settings.custom_prompt_post_processing, verbosity: context.getVerbosity(),
         cacheScope: cacheScope ?? (type === 'quiet' ? 'auxiliary' : 'main'),
     };
