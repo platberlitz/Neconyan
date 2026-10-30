@@ -10,6 +10,7 @@
 - PR #349 (2026-10-30) `fix(gemini): leave out empty image settings for older image models`
 - PR #350 (2026-10-30) `fix(scratchpad): stop always adding the note title to note discussions`
 - PR #351 (2026-10-30) `fix(notebooks): offer Blank note when saved templates can't be read`
+- PR #352 (2026-10-30) `fix(notebooks): tidy share-again messages and the Back to note label`
 
 ## v1.4.0
 
