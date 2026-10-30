@@ -503,6 +503,7 @@ export const power_user = {
     movingUIPreset: '',
     noShadows: false,
     theme: NECONYAN_DARK_THEME_NAME,
+    neconyan_shell_style: null,
 
     gestures: true,
     reply_generation_location: 'browser',
@@ -2808,6 +2809,8 @@ function getExampleMessagesBehavior() {
 
 //MARK: loadPowerUser
 export async function loadPowerUserSettings(settings, data) {
+    // An absent preference must not retain a previously loaded account's style.
+    power_user.neconyan_shell_style = null;
     const defaultStscript = JSON.parse(JSON.stringify(power_user.stscript));
     const hasAccentProfileSeedVersion = settings.power_user !== undefined && Object.hasOwn(settings.power_user, 'sb_accent_profiles_seed_version');
     const savedPowerUserSettings = settings.power_user && typeof settings.power_user === 'object'
