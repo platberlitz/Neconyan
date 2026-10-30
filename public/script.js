@@ -790,6 +790,41 @@ let lastChatPointerUpAt = 0;
 function isRecentChatTap() {
     return Date.now() - lastChatPointerUpAt < CHAT_TAP_RESIZE_GRACE_MS;
 }
+
+const CHAT_SCROLL_SETTLE_QUIET_MS = 180;
+const CHAT_SCROLL_SETTLE_INPUT_WINDOW_MS = 3000;
+const CHAT_SCROLL_SETTLE_MAX_WAIT_MS = 6000;
+let chatScrollTouchActive = false;
+let lastChatScrollInputAt = 0;
+let lastChatScrollEventAt = 0;
+
+// A finger on the chat, or momentum still running from one, counts as moving.
+function isChatScrollInMotion(now = Date.now()) {
+    if (chatScrollTouchActive) return true;
+    return now - lastChatScrollInputAt < CHAT_SCROLL_SETTLE_INPUT_WINDOW_MS
+        && now - lastChatScrollEventAt < CHAT_SCROLL_SETTLE_QUIET_MS;
+}
+
+/**
+ * Run a change that moves content above the reader once their scroll has
+ * stopped. iOS Safari drops scrollTop corrections made during a drag or
+ * momentum scroll, so the anchor restore would be lost and the chat would jump.
+ * Runs at once when the chat is still; gives up waiting after a few seconds.
+ * @param {() => void} callback Change to apply.
+ */
+export function runWhenChatScrollSettles(callback) {
+    if (typeof callback !== 'function') return;
+    const startedAt = Date.now();
+    const attempt = () => {
+        const now = Date.now();
+        if (isChatScrollInMotion(now) && now - startedAt < CHAT_SCROLL_SETTLE_MAX_WAIT_MS) {
+            setTimeout(attempt, CHAT_SCROLL_SETTLE_QUIET_MS);
+            return;
+        }
+        callback();
+    };
+    attempt();
+}
 export let abortStatusCheck = new AbortController();
 export let charDragDropHandler = null;
 export let chatDragDropHandler = null;
@@ -20079,10 +20114,19 @@ jQuery(async function () {
     chatElementScroll.addEventListener('touchcancel', releaseMobileChatTouchScroll, { passive: true });
     chatElementScroll.addEventListener('wheel', markMobileChatWheelScroll, { passive: true });
     chatElementScroll.addEventListener('pointerup', () => { lastChatPointerUpAt = Date.now(); }, { passive: true, capture: true });
+    const markChatScrollInput = (event) => {
+        lastChatScrollInputAt = Date.now();
+        if (event.type === 'touchstart') chatScrollTouchActive = true;
+        if (event.type === 'touchend' || event.type === 'touchcancel') chatScrollTouchActive = event.touches?.length > 0;
+    };
+    ['touchstart', 'touchmove', 'touchend', 'touchcancel', 'wheel'].forEach(type => {
+        chatElementScroll.addEventListener(type, markChatScrollInput, { passive: true, capture: true });
+    });
     document.addEventListener('wheel', routeShellWheelToChat, { passive: false, capture: true });
     setupMobileChatViewportObserver(markMobileViewportScroll);
 
     const chatScrollHandler = function () {
+        lastChatScrollEventAt = Date.now();
         refreshObservedChatMessageResizeViewportStates();
 
         if (isChatLoadBottomLockActive() && !isChatScrolledNearBottom()) {

@@ -218,6 +218,7 @@ exports[`public/script.js named export surface matches the parser-derived export
   "resetChatState",
   "restoreHeldChatReadingPosition",
   "resultCheckStatus",
+  "runWhenChatScrollSettles",
   "saveCharacterDebounced",
   "saveChat",
   "saveChatConditional",

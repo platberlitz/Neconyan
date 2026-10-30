@@ -162,6 +162,47 @@ for (const phone of [false, true]) {
             expect(forwardJumps(frames)).toEqual([]);
         });
 
+        test('clearing an older note waits for the reader to stop scrolling', async ({ page }) => {
+            const olderId = await page.evaluate(async ({ EVENT, done }) => {
+                const context = window.SillyTavern.getContext();
+                const index = context.chat.length - 5;
+                const message = context.chat[index];
+                message.is_user = false;
+                message.name = 'Miso';
+                message.extra = { ...(message.extra || {}), inChatAgentCompanionResults: done };
+                await context.eventSource.emit(EVENT, { messageIndex: index });
+                return index;
+            }, { EVENT, done: companionNote('done', 30) });
+            const olderLedger = page.locator(`.mes[mesid="${olderId}"] .ica--companion-ledger`);
+            await expect(olderLedger).toHaveCount(1);
+            const readingId = olderId + 3;
+            await page.evaluate(index => {
+                const chat = document.querySelector('#chat');
+                const text = chat.querySelector(`.mes[mesid="${index}"] .mes_text`);
+                chat.scrollTop += text.getBoundingClientRect().top - chat.getBoundingClientRect().top - 80;
+                chat.dispatchEvent(new Event('scroll'));
+            }, readingId);
+            await waitForAnimationFrames(page, 6);
+            const textBefore = await markerTop(page, `.mes[mesid="${readingId}"] .mes_text`);
+
+            // Auto clean-up removes the older note and asks for a full redraw while a finger is on the chat.
+            await page.evaluate(async ({ EVENT, index }) => {
+                const context = window.SillyTavern.getContext();
+                document.querySelector('#chat').dispatchEvent(new Event('touchstart', { bubbles: true }));
+                delete context.chat[index].extra.inChatAgentCompanionResults;
+                await context.eventSource.emit(EVENT, {});
+            }, { EVENT, index: olderId });
+            // eslint-disable-next-line playwright/no-wait-for-timeout
+            await page.waitForTimeout(600);
+            await expect(olderLedger).toHaveCount(1);
+            expect(Math.abs(await markerTop(page, `.mes[mesid="${readingId}"] .mes_text`) - textBefore)).toBeLessThanOrEqual(3);
+
+            await page.evaluate(() => document.querySelector('#chat').dispatchEvent(new Event('touchend', { bubbles: true })));
+            await expect(olderLedger).toHaveCount(0);
+            await waitForAnimationFrames(page, 6);
+            expect(Math.abs(await markerTop(page, `.mes[mesid="${readingId}"] .mes_text`) - textBefore)).toBeLessThanOrEqual(3);
+        });
+
         test('opening a chat whose last reply has notes lands at the bottom', async ({ page }) => {
             const lastId = await page.evaluate(async (done) => {
                 const context = window.SillyTavern.getContext();

@@ -38,6 +38,7 @@ describe('companion card ui', () => {
     let jqueryObject;
     let powerUser;
     let batchReaderChange;
+    let settleScroll;
 
     async function importCompanionUi() {
         jest.resetModules();
@@ -70,6 +71,7 @@ describe('companion card ui', () => {
             chat,
             changeMessageBelowReader: jest.fn((_element, mutate) => mutate()),
             changeMessagesBelowReader: (batchReaderChange = jest.fn((_elements, mutate) => mutate())),
+            runWhenChatScrollSettles: (settleScroll = jest.fn(callback => callback())),
             saveChatDebounced: jest.fn(),
             substituteParams: jest.fn((value, options = {}) => String(value ?? '')
                 .replaceAll('{{user}}', 'Traveler')
@@ -797,5 +799,41 @@ describe('companion card ui', () => {
         expect(selectors).not.toContain('.mes[mesid="5"]');
         expect(batchReaderChange).toHaveBeenCalledTimes(1);
         expect(batchReaderChange.mock.calls[0][0]).toHaveLength(2);
+    });
+
+    test('waits for the reader to stop scrolling before redrawing every note', async () => {
+        const { initCompanionCardUi } = await importCompanionUi();
+        chat.push(
+            { name: 'Assistant', mes: 'first', is_user: false, is_system: false },
+            { name: 'Assistant', mes: 'second', is_user: false, is_system: false },
+        );
+        globalThis.document.querySelectorAll.mockReturnValue([0, 1].map(index => ({ getAttribute: () => String(index) })));
+
+        initCompanionCardUi();
+        batchReaderChange.mockClear();
+        const pending = [];
+        settleScroll.mockImplementation(callback => pending.push(callback));
+
+        await eventSource.emit('companion_results_updated', {});
+        await eventSource.emit('companion_results_updated', {});
+        expect(settleScroll).toHaveBeenCalledTimes(1);
+        expect(batchReaderChange).not.toHaveBeenCalled();
+
+        pending.shift()();
+        expect(batchReaderChange).toHaveBeenCalledTimes(1);
+
+        await eventSource.emit('companion_results_updated', {});
+        expect(settleScroll).toHaveBeenCalledTimes(2);
+    });
+
+    test('draws a single finished note straight away', async () => {
+        const { initCompanionCardUi } = await importCompanionUi();
+        chat.push({ name: 'Assistant', mes: 'reply', is_user: false, is_system: false });
+
+        initCompanionCardUi();
+        settleScroll.mockClear();
+
+        await eventSource.emit('companion_results_updated', { messageIndex: 0 });
+        expect(settleScroll).not.toHaveBeenCalled();
     });
 });
