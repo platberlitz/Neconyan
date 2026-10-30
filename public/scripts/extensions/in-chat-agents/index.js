@@ -6877,7 +6877,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
 // ===================== Initialization =====================
 
 (async function () {
-    const settingsHtml = await renderTemplateAsync('/scripts/extensions/in-chat-agents/settings.html?v=20261029b-agent-types', {}, true, true, true);
+    const settingsHtml = await renderTemplateAsync('/scripts/extensions/in-chat-agents/settings.html?v=20261030a-lorebook-bar', {}, true, true, true);
     if (!settingsHtml) {
         console.warn('[InChatAgents] Could not load the settings template.');
         return;
