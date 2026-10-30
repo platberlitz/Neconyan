@@ -18588,9 +18588,10 @@ export async function swipe(event, direction, { source, repeated, message = chat
     if ([SWIPE_SOURCE.DELETE, SWIPE_SOURCE.BACK, SWIPE_SOURCE.AUTO_SWIPE, SWIPE_SOURCE.SLASH_COMMAND, SWIPE_SOURCE.SWIPE_PICKER].includes(source)) {
         console.info(`The ${direction} swipe source on message #${mesId} is ${source}, Most checks have been bypassed. `);
     } else {
-        //Only show an error if swipes are not hidden and a message is generating.
-        if (isGenerating() && (swipes && !swipesHidden && (swipeState === SWIPE_STATE.NONE))) {
-            toastr.warning(t`Cannot switch replies while a reply is being written. Stop the reply and try again.`, t`Reply switch stopped`);
+        // Neconyan: a switch refused while a reply is being written says why. Generate() hides the swipe
+        // buttons for the whole reply, so hidden swipes are no reason to stay silent.
+        if (isGenerating() && swipes) {
+            toastr.warning(t`Cannot switch replies while a reply is being written. Stop the reply and try again.`, t`Reply switch stopped`, { preventDuplicates: true });
             return;
         }
         //Only allow one concurrent swipe.
@@ -18607,7 +18608,6 @@ export async function swipe(event, direction, { source, repeated, message = chat
     // Cancel pending save to prevent accidental swipe_id overwrites.
     cancelDebouncedChatSave();
 
-    swipeState = SWIPE_STATE.SWIPING;
     let generation;
     let isOverswipeReplacement = false;
 
@@ -18961,129 +18961,139 @@ export async function swipe(event, direction, { source, repeated, message = chat
         await settleSwipeReplacementAnchor(swipeViewportUpdate);
     }
 
-    if (mesId === Number(this_edit_mes_id)) {
-        closeMessageEditor();
-    }
-    if (isStreamingEnabled() && streamingProcessor) {
-        streamingProcessor.onStopStreaming();
-    }
-
-    if (isHordeGenerationNotAllowed()) {
-        return unblockGeneration();
-    }
-
-    //If the swipe is not being deleted.
-    if (source != SWIPE_SOURCE.DELETE && source != SWIPE_SOURCE.BACK) {
-        // Make sure ad-hoc changes to extras are saved before swiping away
-        syncMesToSwipe(mesId);
-
-        if (chat[mesId].swipe_id === undefined) {              // if there is no swipe-message in the last spot of the chat array
-            chat[mesId].swipe_id = 0;                        // set it to id 0
-            chat[mesId].swipes = [];                         // empty the array
-            chat[mesId].swipe_info = [];
-            chat[mesId].swipes[0] = chat[mesId].mes;  //assign swipe array with last chat[mesId] from chat
-            chat[mesId].swipe_info[0] = {
-                'send_date': chat[mesId].send_date,
-                'gen_started': chat[mesId].gen_started,
-                'gen_finished': chat[mesId].gen_finished,
-                'extra': structuredClone(chat[mesId].extra),
-            };
+    // Neconyan: from here on every exit releases the swipe lock, including a refusal or a thrown error.
+    swipeState = SWIPE_STATE.SWIPING;
+    try {
+        if (mesId === Number(this_edit_mes_id)) {
+            closeMessageEditor();
         }
-        // If the user is holding down the key and we're at the last or first swipe, don't do anything.
-        let isLastSwipe = (direction === SWIPE_DIRECTION.RIGHT) ? (chat[mesId].swipe_id === Math.max(0, chat[mesId].swipes.length - 1)) : chat[mesId].swipe_id === 0;
-        if (source === SWIPE_SOURCE.KEYBOARD && repeated && isLastSwipe) {
-            await endSwipe();
-            return;
-        }
-    } else if (source == SWIPE_SOURCE.DELETE || source == SWIPE_SOURCE.BACK) {
-        //If the swipe is being deleted or reverted.
-        await standardSwipe(newSwipeId);
-        return;
-    }
-
-    //If swiping left.
-    if (direction === SWIPE_DIRECTION.LEFT) {
-        if (forceSwipeId == null) newSwipeId--;
-        //Loop to last swipe if negative.
-        if (newSwipeId < 0) {
-            newSwipeId = Math.max(0, chat[mesId].swipes.length - 1);
-        }
-        //Limit swipe_id to swipes.
-        if (newSwipeId > chat[mesId].swipes.length - 1) {
-            toastr.warning(t`The reply number for message #${mesId} was ${newSwipeId}, which is not valid. It has been reset to ${chat[mesId].swipes.length - 1}.`);
-            chat[mesId].swipe_id = chat[mesId].swipes.length - 1;
-            await endSwipe();
-            return;
-        }
-        await standardSwipe(newSwipeId);
-        return;
-    } else if (direction === SWIPE_DIRECTION.RIGHT) {
-        //If swiping right.
-        // make new slot in array
-        if (forceSwipeId == null) newSwipeId++;
-
-        //Minimum of zero.
-        if (newSwipeId < 0) {
-            toastr.warning(t`The reply number for message #${mesId} was ${newSwipeId}, which is not valid. It has been reset to the first reply.`);
-            chat[mesId].swipe_id = 0;
-            await endSwipe();
-            return;
+        if (isStreamingEnabled() && streamingProcessor) {
+            streamingProcessor.onStopStreaming();
         }
 
-        //If overswiping.
-        if (newSwipeId >= chat[mesId].swipes.length) {
-            newSwipeId = chat[mesId].swipes.length;
+        if (isHordeGenerationNotAllowed()) {
+            return unblockGeneration();
+        }
 
-            //Update the swipe_id.
-            chat[mesId].swipe_id = newSwipeId;
+        //If the swipe is not being deleted.
+        if (source != SWIPE_SOURCE.DELETE && source != SWIPE_SOURCE.BACK) {
+            // Make sure ad-hoc changes to extras are saved before swiping away
+            syncMesToSwipe(mesId);
 
-            const overswipe = getOverswipeBehavior(mesId);
-
-            //Cancel the generation.
-            if (overswipe == OVERSWIPE_BEHAVIOR.NONE) {
-                //Cancel swipe.
-                chat[mesId].swipe_id = originalSwipeId;
+            if (chat[mesId].swipe_id === undefined) {              // if there is no swipe-message in the last spot of the chat array
+                chat[mesId].swipe_id = 0;                        // set it to id 0
+                chat[mesId].swipes = [];                         // empty the array
+                chat[mesId].swipe_info = [];
+                chat[mesId].swipes[0] = chat[mesId].mes;  //assign swipe array with last chat[mesId] from chat
+                chat[mesId].swipe_info[0] = {
+                    'send_date': chat[mesId].send_date,
+                    'gen_started': chat[mesId].gen_started,
+                    'gen_finished': chat[mesId].gen_finished,
+                    'extra': structuredClone(chat[mesId].extra),
+                };
+            }
+            // If the user is holding down the key and we're at the last or first swipe, don't do anything.
+            let isLastSwipe = (direction === SWIPE_DIRECTION.RIGHT) ? (chat[mesId].swipe_id === Math.max(0, chat[mesId].swipes.length - 1)) : chat[mesId].swipe_id === 0;
+            if (source === SWIPE_SOURCE.KEYBOARD && repeated && isLastSwipe) {
                 await endSwipe();
                 return;
-            } else if (overswipe == OVERSWIPE_BEHAVIOR.REGENERATE) {
-                // Decide before blanking the saved reply or advancing its swipe id.
-                // The server owns the replacement, including a refused or failed run.
-                chat[mesId].swipe_id = originalSwipeId;
-                const target = chat[mesId];
-                const generationAtStart = chatGeneration;
-                // This probe only learns whether the swipe can run natively. When it
-                // refuses, Generate re-evaluates below and emits the one refusal line,
-                // so the probe collects silently instead of logging twice.
-                const native = mesId === chat.length - 1 ? await nativeRoleplayWorkflowFor('swipe', generationOptions ?? {}, () => {}) : null;
-                if (chat[mesId] !== target || chatGeneration !== generationAtStart) {
-                    swipeState = SWIPE_STATE.NONE;
-                    showSwipeButtons();
-                    return;
-                }
-                if (native) {
-                    is_send_press = true;
-                    generation = Generate('swipe', { ...generationOptions, preparedNativeRoleplay: native });
+            }
+        } else if (source == SWIPE_SOURCE.DELETE || source == SWIPE_SOURCE.BACK) {
+            //If the swipe is being deleted or reverted.
+            await standardSwipe(newSwipeId);
+            return;
+        }
+
+        //If swiping left.
+        if (direction === SWIPE_DIRECTION.LEFT) {
+            if (forceSwipeId == null) newSwipeId--;
+            //Loop to last swipe if negative.
+            if (newSwipeId < 0) {
+                newSwipeId = Math.max(0, chat[mesId].swipes.length - 1);
+            }
+            //Limit swipe_id to swipes.
+            if (newSwipeId > chat[mesId].swipes.length - 1) {
+                toastr.warning(t`The reply number for message #${mesId} was ${newSwipeId}, which is not valid. It has been reset to ${chat[mesId].swipes.length - 1}.`);
+                chat[mesId].swipe_id = chat[mesId].swipes.length - 1;
+                await endSwipe();
+                return;
+            }
+            await standardSwipe(newSwipeId);
+            return;
+        } else if (direction === SWIPE_DIRECTION.RIGHT) {
+            //If swiping right.
+            // make new slot in array
+            if (forceSwipeId == null) newSwipeId++;
+
+            //Minimum of zero.
+            if (newSwipeId < 0) {
+                toastr.warning(t`The reply number for message #${mesId} was ${newSwipeId}, which is not valid. It has been reset to the first reply.`);
+                chat[mesId].swipe_id = 0;
+                await endSwipe();
+                return;
+            }
+
+            //If overswiping.
+            if (newSwipeId >= chat[mesId].swipes.length) {
+                newSwipeId = chat[mesId].swipes.length;
+
+                //Update the swipe_id.
+                chat[mesId].swipe_id = newSwipeId;
+
+                const overswipe = getOverswipeBehavior(mesId);
+
+                //Cancel the generation.
+                if (overswipe == OVERSWIPE_BEHAVIOR.NONE) {
+                    //Cancel swipe.
+                    chat[mesId].swipe_id = originalSwipeId;
                     await endSwipe();
                     return;
+                } else if (overswipe == OVERSWIPE_BEHAVIOR.REGENERATE) {
+                    // Decide before blanking the saved reply or advancing its swipe id.
+                    // The server owns the replacement, including a refused or failed run.
+                    chat[mesId].swipe_id = originalSwipeId;
+                    const target = chat[mesId];
+                    const generationAtStart = chatGeneration;
+                    // This probe only learns whether the swipe can run natively. When it
+                    // refuses, Generate re-evaluates below and emits the one refusal line,
+                    // so the probe collects silently instead of logging twice.
+                    const native = mesId === chat.length - 1 ? await nativeRoleplayWorkflowFor('swipe', generationOptions ?? {}, () => {}) : null;
+                    if (chat[mesId] !== target || chatGeneration !== generationAtStart) {
+                        swipeState = SWIPE_STATE.NONE;
+                        showSwipeButtons();
+                        return;
+                    }
+                    if (native) {
+                        is_send_press = true;
+                        generation = Generate('swipe', { ...generationOptions, preparedNativeRoleplay: native });
+                        await endSwipe();
+                        return;
+                    }
+                    chat[mesId].swipe_id = newSwipeId;
+                    //Regenerate the message
+                    clearMessageData(chat[mesId]);
+                    let run_generate = true;
+                    //Generate.
+                    // Neconyan: skip the slide-out so the message blanks to "..." instantly on regenerate,
+                    // instead of keeping the previous generation visible during the slide-out animation.
+                    await animateSwipe(run_generate, true);
+                    await endSwipe();
+                    return;
+                } else if (overswipe == OVERSWIPE_BEHAVIOR.LOOP || overswipe == OVERSWIPE_BEHAVIOR.PRISTINE_GREETING) {
+                    // Loop to the first swipe.
+                    isOverswipeReplacement = true;
+                    newSwipeId = 0;
                 }
-                chat[mesId].swipe_id = newSwipeId;
-                //Regenerate the message
-                clearMessageData(chat[mesId]);
-                let run_generate = true;
-                //Generate.
-                // Neconyan: skip the slide-out so the message blanks to "..." instantly on regenerate,
-                // instead of keeping the previous generation visible during the slide-out animation.
-                await animateSwipe(run_generate, true);
-                await endSwipe();
-                return;
-            } else if (overswipe == OVERSWIPE_BEHAVIOR.LOOP || overswipe == OVERSWIPE_BEHAVIOR.PRISTINE_GREETING) {
-                // Loop to the first swipe.
-                isOverswipeReplacement = true;
-                newSwipeId = 0;
             }
+            await standardSwipe(newSwipeId);
+            return;
         }
-        await standardSwipe(newSwipeId);
-        return;
+    } finally {
+        if (swipeState === SWIPE_STATE.SWIPING) {
+            swipeState = SWIPE_STATE.NONE;
+            delete document.body.dataset.swiping;
+            showSwipeButtons();
+        }
     }
 }
 
