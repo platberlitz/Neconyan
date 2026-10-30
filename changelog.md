@@ -20,6 +20,7 @@
 - PR #359 (2026-10-30) `fix(lorebooks): give the Lorebook settings bar a solid background`
 - PR #360 (2026-10-30) `fix(agents): wait for scrolling to stop before clearing older notes`
 - PR #361 (2026-10-30) `fix(chat): never leave swiping locked after a refused or failed swipe`
+- PR #362 (2026-10-30) `fix(appearance): persist shell style with account settings`
 
 ## v1.4.0
 
