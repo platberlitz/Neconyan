@@ -196,3 +196,18 @@ describe('deferred recovery anchor failures', () => {
         expect(preWriteFiles().some(name => fs.readFileSync(path.join(backups, name), 'utf8').includes('another writer'))).toBe(true);
     });
 });
+
+describe('Mewmory hide result reporting', () => {
+    test.each([false, true])('a throwing hide callback cannot fail a successful save (group: %s)', async group => {
+        const { save } = createClient(group);
+        const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const callback = jest.fn(() => { throw new Error('callback failure'); });
+        try {
+            await expect(save({ mewmoryHidePolicy: { type: 'manual', lastDisableId: '' },
+                onMewmoryHideSaved: callback })).resolves.toBe(true);
+            expect(callback).toHaveBeenCalledTimes(1);
+        } finally {
+            warning.mockRestore();
+        }
+    });
+});

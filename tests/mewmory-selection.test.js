@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, jest, test } from '@jest/globals';
 
 let chatId = 'first';
 let generation = 1;
+let chatEnabled = false;
 const listeners = new Map();
 const conversationState = { conversationWorkspaceOpen: false };
 const chat = [];
@@ -16,16 +17,26 @@ let serverChat = [];
 let serverReadLimit = Infinity;
 const savedHiddenRanges = jest.fn();
 const accountStamp = {};
+const { messageHistoryPlan } = await import('../public/scripts/mewmory/history-policy.js');
 const saveChatConditional = jest.fn(async options => {
     assert.match(options?.mewmoryHidePolicy?.type ?? '', /^(manual|automatic)$/);
     assert.equal(typeof options.mewmoryHidePolicy.lastDisableId, 'string');
     assert.equal(options.skipUnchanged, false);
     assert.equal(options.throwOnError, true);
+    const before = structuredClone(serverChat);
     serverChat = structuredClone(chat);
     const visible = serverChat.flatMap((message, index) => message.is_system ? [] : [index]);
-    const latest = serverChat.findLastIndex(message => !message.is_user && !message.is_system);
-    const total = visible.reduce((sum, index) => sum + String(serverChat[index].mes ?? '').length, 0);
-    const indices = (total >= mewmory.config.autoHideTokens ? visible.filter(index => index < latest) : []).slice(0, serverReadLimit);
+    let indices;
+    if (mewmory.config?.historyMode === 'messages') {
+        const ordinary = visible.filter(index => !serverChat[index]?.extra?.nn_generation_failed);
+        const plan = messageHistoryPlan(ordinary, mewmory.config.recentMessages ?? 10,
+            mewmory.config.historyBatchMessages ?? 5, () => true);
+        indices = plan.excluded.slice(0, serverReadLimit);
+    } else {
+        const latest = serverChat.findLastIndex(message => !message.is_user && !message.is_system);
+        const total = visible.reduce((sum, index) => sum + String(serverChat[index].mes ?? '').length, 0);
+        indices = (total >= mewmory.config.autoHideTokens ? visible.filter(index => index < latest) : []).slice(0, serverReadLimit);
+    }
     const ranges = [];
     for (const index of indices) {
         const last = ranges.at(-1);
@@ -35,6 +46,7 @@ const saveChatConditional = jest.fn(async options => {
         serverChat[index].extra = { ...serverChat[index].extra, mewmoryKeepHidden: true };
     }
     savedHiddenRanges(ranges, { keepInMewmory: true });
+    options.onMewmoryHideSaved?.({ roleplay: { changed: JSON.stringify(serverChat) !== JSON.stringify(before) } });
     return true;
 });
 const getChat = jest.fn(async ({ navigationGuard }) => {
@@ -56,8 +68,9 @@ jest.unstable_mockModule('../public/scripts/jobs.js', () => ({ cancelJob: jest.f
 jest.unstable_mockModule('../public/scripts/tokenizers.js', () => ({
     getFriendlyTokenizerName: () => tokenizerHint,
 }));
+const popupShow = jest.fn(() => popupAnswer);
 jest.unstable_mockModule('../public/scripts/popup.js', () => ({
-    POPUP_TYPE: { CONFIRM: 'confirm' }, POPUP_RESULT: { AFFIRMATIVE: 1 }, Popup: class { show() { return popupAnswer; } },
+    POPUP_TYPE: { CONFIRM: 'confirm' }, POPUP_RESULT: { AFFIRMATIVE: 1 }, Popup: class { show() { return popupShow(); } },
 }));
 jest.unstable_mockModule('../public/scripts/utils.js', () => ({ uuidv4: () => 'memory-test-submission' }));
 jest.unstable_mockModule('../public/scripts/i18n.js', () => ({
@@ -76,10 +89,15 @@ const { mewmoryConfigAutosave } = await import('../public/scripts/mewmory/config
 const { setAgentWorkProbe } = await import('../public/scripts/extensions/in-chat-agents/agent-work-state.js');
 const config = { revision: 1, roles: {}, autoHideTokens: 30 };
 const response = data => ({ ok: true, json: async () => data });
+const enabledChatView = () => {
+    chatEnabled = true;
+    return { enabled: true, revision: 1, locator: getMewmoryLocator() };
+};
 
 beforeEach(() => {
     generation++;
     chatId = 'first';
+    chatEnabled = false;
     conversationState.conversationWorkspaceOpen = false;
     for (const key of Object.keys(chatMetadata)) delete chatMetadata[key];
     saveMetadata.mockClear();
@@ -89,6 +107,7 @@ beforeEach(() => {
     serverChat = [];
     serverReadLimit = Infinity;
     popupAnswer = 1;
+    popupShow.mockClear();
     tokenizerHint = { tokenizerKey: 'openai' };
     for (const method of Object.values(global.toastr)) method.mockClear();
     config.autoHideTokens = 30;
@@ -99,7 +118,7 @@ beforeEach(() => {
         const parsed = JSON.parse(body);
         if (url.endsWith('config/get')) return response({ config, stories: [] });
         if (url.endsWith('/tokens')) return response({ counts: parsed.texts.map(text => String(text).length) });
-        return response({ locator: parsed.locator, enabled: false, revision: 1 });
+        return response({ locator: parsed.locator, enabled: chatEnabled || Boolean(mewmory.view?.enabled), revision: mewmory.view?.revision ?? 1 });
     });
     Object.assign(mewmory, { view: null, config: null, stories: [], error: '', loading: false, busy: false, backfilling: false });
 });
@@ -173,6 +192,159 @@ test('newer refreshes win within the same chat, and successful loading clears an
     mewmory.error = 'Earlier failure';
     await refreshMewmory();
     expect(mewmory.error).toBe('');
+});
+
+test('concurrent refreshes for the same chat and filters share one inspection', async () => {
+    const first = refreshMewmory({ query: 'same' });
+    const second = refreshMewmory({ query: 'same' });
+    expect(second).toBe(first);
+    await Promise.all([first, second]);
+    expect(fetch.mock.calls.filter(([url]) => url.endsWith('config/get'))).toHaveLength(1);
+    expect(fetch.mock.calls.filter(([url]) => url.endsWith('inspect'))).toHaveLength(1);
+});
+
+test('a shared refresh failure is reported once and the next refresh tries again', async () => {
+    fetch.mockRejectedValueOnce(new Error('Mewmory is offline'));
+    const first = refreshMewmory();
+    const second = refreshMewmory();
+    expect(second).toBe(first);
+    await Promise.all([first, second]);
+    expect(mewmory.error).toBe('Mewmory is offline');
+    expect(fetch.mock.calls.filter(([url]) => url.endsWith('config/get'))).toHaveLength(1);
+
+    await refreshMewmory();
+    expect(mewmory.error).toBe('');
+    expect(fetch.mock.calls.filter(([url]) => url.endsWith('config/get'))).toHaveLength(2);
+});
+
+test('a signal-bearing refresh is never joined by a plain refresh', async () => {
+    const gate = Promise.withResolvers();
+    let inspects = 0;
+    fetch.mockImplementation(async (url, { body }) => {
+        const parsed = JSON.parse(body);
+        if (url.endsWith('config/get')) return response({ config, stories: [] });
+        if (url.endsWith('inspect')) {
+            inspects++;
+            await gate.promise;
+            return response({ locator: parsed.locator, enabled: true, revision: inspects });
+        }
+        return response({});
+    });
+    const controller = new AbortController();
+    const prepared = refreshMewmory(undefined, { signal: controller.signal });
+    await settle();
+    const plain = refreshMewmory();
+    expect(plain).not.toBe(prepared);
+    await settle();
+    expect(inspects).toBe(2);
+    gate.resolve();
+    await Promise.all([prepared, plain]);
+});
+
+test('different filters and a forced refresh each inspect again', async () => {
+    const gate = Promise.withResolvers();
+    fetch.mockImplementation(async (url, { body }) => {
+        const parsed = JSON.parse(body);
+        if (url.endsWith('config/get')) return response({ config, stories: [] });
+        if (url.endsWith('inspect')) {
+            await gate.promise;
+            return response({ locator: parsed.locator, enabled: true, revision: 2 });
+        }
+        return response({});
+    });
+    const first = refreshMewmory({ query: 'old' });
+    await settle();
+    const second = refreshMewmory({ query: 'new' });
+    await settle();
+    const forced = refreshMewmory({ query: 'new' }, { force: true });
+    await settle();
+    expect(second).not.toBe(first);
+    expect(forced).not.toBe(second);
+    gate.resolve();
+    await Promise.all([first, second, forced]);
+    expect(fetch.mock.calls.filter(([url]) => url.endsWith('inspect'))
+        .map(([, options]) => JSON.parse(options.body).query)).toEqual(['old', 'new', 'new']);
+});
+
+test('a server mutation cannot be hidden by an older in-flight inspection', async () => {
+    const gate = Promise.withResolvers();
+    let inspects = 0;
+    fetch.mockImplementation(async (url, { body }) => {
+        const parsed = JSON.parse(body);
+        if (url.endsWith('config/get')) return response({ config, stories: [] });
+        if (url.endsWith('inspect')) {
+            inspects++;
+            if (inspects === 1) await gate.promise;
+            return response({ locator: parsed.locator, enabled: true, revision: inspects });
+        }
+        return response({ locator: parsed.locator, enabled: true, revision: 2 });
+    });
+    const first = refreshMewmory();
+    await settle();
+    await requestMewmory('process', { all: true });
+    const second = refreshMewmory();
+    await settle();
+    expect(second).not.toBe(first);
+    expect(inspects).toBe(2);
+    gate.resolve();
+    await Promise.all([first, second]);
+    expect(mewmory.view.revision).toBe(2);
+});
+
+test('a configuration change starts a fresh inspection instead of reusing an older one', async () => {
+    initMewmory();
+    const gate = Promise.withResolvers();
+    let inspects = 0;
+    fetch.mockImplementation(async (url, { body }) => {
+        const parsed = JSON.parse(body);
+        if (url.endsWith('config/get')) return response({ config, stories: [] });
+        if (url.endsWith('inspect')) {
+            inspects++;
+            const revision = inspects;
+            if (inspects === 1) await gate.promise;
+            return response({ locator: parsed.locator, enabled: true, revision });
+        }
+        return response({});
+    });
+    const first = refreshMewmory();
+    await settle();
+    global.window.dispatchEvent(new Event('mewmory:configured'));
+    await settle();
+    expect(inspects).toBe(2);
+    gate.resolve();
+    await first;
+    await settle();
+    expect(mewmory.view.revision).toBe(2);
+});
+
+test('an account change is not served by an older inspection', async () => {
+    const gate = Promise.withResolvers();
+    let inspects = 0;
+    accountStamp.account = { accountId: 'first', dataEpoch: 1 };
+    try {
+        fetch.mockImplementation(async (url, { body }) => {
+            const parsed = JSON.parse(body);
+            if (url.endsWith('config/get')) return response({ config, stories: [] });
+            if (url.endsWith('inspect')) {
+                inspects++;
+                const revision = inspects;
+                if (inspects === 1) await gate.promise;
+                return response({ locator: parsed.locator, enabled: true, revision });
+            }
+            return response({});
+        });
+        const first = refreshMewmory();
+        await settle();
+        accountStamp.account = { accountId: 'second', dataEpoch: 1 };
+        const second = refreshMewmory();
+        await settle();
+        expect(second).not.toBe(first);
+        expect(inspects).toBe(2);
+        gate.resolve();
+        await Promise.all([first, second]);
+    } finally {
+        delete accountStamp.account;
+    }
 });
 
 test('a multi-step action cannot send its next request to another chat', async () => {
@@ -262,12 +434,118 @@ test('generation waits for the newest overlapping refresh instead of treating a 
     expect(mewmory.error).toBe('');
 });
 
+test('message-count automatic hiding checks the recent window before a protected save', async () => {
+    const line = (is_user, mes) => ({ is_user, mes });
+    chat.splice(0, chat.length, ...Array.from({ length: 12 }, (_, index) => line(index % 2 === 0, 'x'.repeat(10))));
+    mewmory.config = { ...config, autoHide: true, historyMode: 'messages', excludeHistory: true,
+        recentMessages: 10, historyBatchMessages: 5 };
+    mewmory.view = enabledChatView();
+    expect(await hideOverflowAutomatically()).toBe(0);
+    expect(saveChatConditional).not.toHaveBeenCalled();
+    expect(getChat).not.toHaveBeenCalled();
+
+    chat.push(line(true, 'y'.repeat(10)), line(false, 'z'.repeat(10)), line(true, 'y'.repeat(10)));
+    expect(await hideOverflowAutomatically()).toBe(5);
+    expect(saveChatConditional).toHaveBeenCalledTimes(1);
+    expect(getChat).toHaveBeenCalledTimes(1);
+    expect(chat.slice(0, 5).every(message => message.is_system)).toBe(true);
+});
+
+test('a hide the server leaves unchanged does not reload the chat', async () => {
+    chat.splice(0, chat.length, ...Array.from({ length: 4 }, (_, index) => ({ is_user: index % 2 === 0, mes: 'x'.repeat(10) })));
+    serverChat = structuredClone(chat);
+    mewmory.config = { ...config, autoHideTokens: 30 };
+    mewmory.view = enabledChatView();
+    serverReadLimit = 0;
+    expect(await hideOverflowMessages()).toBe(0);
+    expect(saveChatConditional).toHaveBeenCalledTimes(1);
+    expect(getChat).not.toHaveBeenCalled();
+    expect(global.toastr.info).toHaveBeenCalledWith(expect.stringContaining('Mewmory has not finished reading the older messages'));
+});
+
+test('manual hiding refuses a chat where Mewmory is off before asking or saving', async () => {
+    chat.splice(0, chat.length, ...Array.from({ length: 4 }, (_, index) => ({ is_user: index % 2 === 0, mes: 'x'.repeat(10) })));
+    mewmory.config = { ...config, autoHideTokens: 30 };
+    mewmory.view = { enabled: false, revision: 1, locator: getMewmoryLocator() };
+    expect(await hideOverflowMessages()).toBe(0);
+    expect(popupShow).not.toHaveBeenCalled();
+    expect(saveChatConditional).not.toHaveBeenCalled();
+    expect(getChat).not.toHaveBeenCalled();
+    expect(global.toastr.info).toHaveBeenCalledWith(expect.stringContaining('Use Mewmory in this chat'));
+});
+
+test('manual message-count hiding explains a window with nothing to hide and reports what it hid', async () => {
+    const line = (is_user, mes) => ({ is_user, mes });
+    chat.splice(0, chat.length, ...Array.from({ length: 12 }, (_, index) => line(index % 2 === 0, 'x'.repeat(10))));
+    mewmory.config = { ...config, historyMode: 'messages', excludeHistory: true, recentMessages: 10, historyBatchMessages: 5 };
+    mewmory.view = enabledChatView();
+    expect(await hideOverflowMessages()).toBe(0);
+    expect(saveChatConditional).not.toHaveBeenCalled();
+    expect(global.toastr.info).toHaveBeenCalledWith(expect.stringContaining('recent-message window'));
+
+    chat.push(line(true, 'y'.repeat(10)), line(false, 'z'.repeat(10)), line(true, 'y'.repeat(10)));
+    expect(await hideOverflowMessages()).toBe(5);
+    expect(saveChatConditional).toHaveBeenCalledTimes(1);
+    expect(global.toastr.success).toHaveBeenCalledWith(expect.stringContaining('Hid 5 older messages from the prompt'));
+});
+
+test('hiding messages names the settings as they appear in the panel', async () => {
+    chat.splice(0, chat.length, ...Array.from({ length: 4 }, (_, index) => ({ is_user: index % 2 === 0, mes: 'x'.repeat(10) })));
+    mewmory.config = { ...config, autoHideTokens: 0 };
+    mewmory.view = enabledChatView();
+    expect(await hideOverflowMessages()).toBe(0);
+    expect(global.toastr.error).toHaveBeenCalledWith(expect.stringContaining('Hide older messages at this chat size, tokens'));
+
+    mewmory.config = { ...config, historyMode: 'messages', excludeHistory: false };
+    expect(await hideOverflowMessages()).toBe(0);
+    expect(global.toastr.info).toHaveBeenCalledWith(expect.stringContaining('Replace older chat with Mewmory context'));
+
+    fetch.mockResolvedValue(response({ counts: [] }));
+    await expect(getOverflowMessages()).rejects.toThrow(/Token counter for replies/);
+});
+
+test('a saved automatic-hiding setting that is off needs no reply-time refresh', async () => {
+    initMewmory();
+    mewmory.config = { ...config, autoHide: false };
+    mewmory.view = enabledChatView();
+    fetch.mockClear();
+    listeners.get('GENERATION_ENDED')();
+    await settle();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(savedHiddenRanges).not.toHaveBeenCalled();
+});
+
+test('a pending settings save that switches automatic hiding on is honoured before the reply-time decision', async () => {
+    mewmoryConfigAutosave.abandonAccount();
+    let draft = { ...config, autoHide: true, autoHideTokens: 30, revision: 1 };
+    let saved;
+    mewmoryConfigAutosave.configure({
+        readDraft: () => draft,
+        writeDraft: value => { draft = value; },
+        validate: () => '',
+        save: async value => { saved = { ...value, revision: 2 }; mewmory.config = saved; return saved; },
+        load: async () => saved,
+    });
+    try {
+        mewmory.config = { ...config, autoHide: false, autoHideTokens: 30 };
+        mewmory.view = enabledChatView();
+        chat.splice(0, chat.length, ...Array.from({ length: 4 }, (_, index) => ({ is_user: index % 2 === 0, mes: 'x'.repeat(10) })));
+        expect(await hideOverflowAutomatically()).toBe(3);
+        expect(saved.autoHide).toBe(true);
+        expect(savedHiddenRanges).toHaveBeenCalledTimes(1);
+    } finally {
+        mewmoryConfigAutosave.configure({ readDraft: undefined, writeDraft: undefined, validate: undefined,
+            save: undefined, load: undefined });
+    }
+});
+
 test('reaching the saved Mewmory trigger clears the older visible history and keeps the latest reply', async () => {
     const line = (is_user, mes, extra = {}) => ({ is_user, mes, ...extra });
     chat.splice(0, chat.length, line(true, 'aaaaaaaaaa'), line(false, 'bbbbbbbbbb'), line(true, 'cccccccccc', { is_system: true }),
         line(false, 'dddddddddd'), line(true, 'eeeeeeeeee'), line(false, 'ffffffffff'), line(true, 'gggggggggg'));
     contextSize = 100000;
     mewmory.config = { ...config, autoHide: false, autoHideTokens: 30 };
+    mewmory.view = enabledChatView();
     expect((await getOverflowMessages()).indices).toEqual([0, 1, 3, 4]);
 
     mewmory.config.autoHideTokens = 1;
@@ -282,8 +560,8 @@ test('reaching the saved Mewmory trigger clears the older visible history and ke
     expect(saveChatConditional).not.toHaveBeenCalled();
     popupAnswer = 1;
     expect(await hideOverflowMessages()).toBe(4);
-    expect(saveChatConditional).toHaveBeenCalledWith({ mewmoryHidePolicy: { type: 'manual', lastDisableId: '' },
-        skipUnchanged: false, throwOnError: true });
+    expect(saveChatConditional).toHaveBeenCalledWith(expect.objectContaining({ mewmoryHidePolicy: { type: 'manual', lastDisableId: '' },
+        skipUnchanged: false, throwOnError: true, onMewmoryHideSaved: expect.any(Function) }));
     expect(getChat).toHaveBeenCalledWith(expect.objectContaining({ exactChat: 'first' }));
     expect(savedHiddenRanges.mock.calls.map(call => call[0])).toEqual([[[0, 1], [3, 4]]]);
     expect(savedHiddenRanges.mock.calls.every(call => call[1]?.keepInMewmory === true)).toBe(true);
@@ -296,6 +574,7 @@ test('manual hiding says which older messages stay visible until Mewmory has rea
     const line = (is_user, mes) => ({ is_user, mes });
     chat.splice(0, chat.length, ...Array.from({ length: 6 }, (_, index) => line(index % 2 === 0, 'x'.repeat(10))));
     mewmory.config = { ...config, autoHide: false, autoHideTokens: 30 };
+    mewmory.view = enabledChatView();
     serverReadLimit = 0;
     expect(await hideOverflowMessages()).toBe(0);
     expect(global.toastr.info).toHaveBeenCalledWith(expect.stringContaining('Mewmory has not finished reading the older messages'));
@@ -312,6 +591,7 @@ test('manual hiding works with automatic hiding switched off and ignores the wri
     chat.splice(0, chat.length, ...Array.from({ length: 10 }, (_, index) => line(index % 2 === 0, 'x'.repeat(10))));
     contextSize = 1;
     mewmory.config = { ...config, autoHide: false, autoHideTokens: 30 };
+    mewmory.view = enabledChatView();
     expect(await hideOverflowMessages()).toBe(9);
     expect(savedHiddenRanges.mock.calls[0][0]).toEqual([[0, 8]]);
 });
@@ -331,6 +611,7 @@ test('manual hiding flushes a pending autosaved threshold before counting', asyn
     });
     try {
         mewmory.config = { ...config, autoHide: false, autoHideTokens: 1000 };
+        mewmory.view = enabledChatView();
         expect(await hideOverflowMessages()).toBe(3);
         expect(saved.autoHideTokens).toBe(45);
         expect(savedHiddenRanges.mock.calls.at(-1)[0]).toEqual([[0, 2]]);
@@ -349,6 +630,7 @@ test('manual and automatic hiding use the same saved trigger for a small or huge
         contextSize = size;
         reset();
         mewmory.config = { ...config, autoHide: false, autoHideTokens: 30 };
+        mewmory.view = enabledChatView();
         await hideOverflowMessages();
         ranges.push(savedHiddenRanges.mock.calls.at(-1)[0]);
 
@@ -368,6 +650,7 @@ test('manual hiding waits for the visible history to reach the trigger again and
     chat.splice(0, chat.length, line(true, 'a'.repeat(20)), line(false, 'b'.repeat(20)),
         line(true, 'c'.repeat(20)), line(false, 'd'.repeat(20)));
     mewmory.config = { ...config, autoHide: false, autoHideTokens: 30 };
+    mewmory.view = enabledChatView();
     expect(await hideOverflowMessages()).toBe(3);
     expect(savedHiddenRanges.mock.calls.at(-1)[0]).toEqual([[0, 2]]);
     expect(await hideOverflowMessages()).toBe(0);
@@ -585,6 +868,7 @@ test.each([
 test('manual confirmation cannot apply a plan after the hiding threshold changes', async () => {
     chat.splice(0, chat.length, ...Array.from({ length: 4 }, (_, index) => ({ is_user: index % 2 === 0, mes: 'x'.repeat(10) })));
     mewmory.config = { ...config, autoHideTokens: 30 };
+    mewmory.view = enabledChatView();
     const answer = Promise.withResolvers();
     popupAnswer = answer.promise;
     const hiding = hideOverflowMessages();
@@ -599,6 +883,7 @@ test('manual confirmation cannot apply a plan after the hiding threshold changes
 test('manual hiding explains when the latest protected reply alone reaches the trigger', async () => {
     chat.splice(0, chat.length, { is_user: false, mes: 'x'.repeat(40) }, { is_user: true, mes: 'Afterwards' });
     mewmory.config = { ...config, autoHideTokens: 30 };
+    mewmory.view = enabledChatView();
     expect(await hideOverflowMessages()).toBe(0);
     expect(savedHiddenRanges).not.toHaveBeenCalled();
     expect(global.toastr.info).toHaveBeenCalledWith('This chat reached the hiding trigger, but no older messages can be hidden safely. The latest reply and messages after it stay visible.');

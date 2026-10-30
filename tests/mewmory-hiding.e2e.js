@@ -249,8 +249,83 @@ async function hidingRegression({ page }) {
     await expect(page.locator('#chat .mes').last()).toContainText(autoTrailing.mes.slice(0, 60));
 }
 
+async function disabledControlsRegression({ page }) {
+    page.setDefaultTimeout(30000);
+    const width = page.viewportSize().width;
+    const suffix = Date.now() + '-' + width;
+    await load(page);
+    const { post } = await api(page);
+    const config = (await post('/api/mewmory/config/get')).config;
+    Object.assign(config, { autoUpdate: false, excludeHistory: false, autoHide: false, enableNewChats: false, historyMode: 'tokens' });
+    for (const [name, role] of Object.entries(config.roles)) {
+        Object.assign(role, {
+            enabled: name === 'embedding', profileId: '', modelOverride: '',
+            ...(name === 'embedding'
+                ? { provider: 'custom', endpoint: 'http://127.0.0.1:1/v1', model: 'test' }
+                : { endpoint: '', model: '' }),
+        });
+    }
+    const saved = await saveConfig(page, config);
+    expect(saved.roles.embedding.enabled).toBe(true);
+
+    const created = await page.request.post('/api/characters/create', {
+        headers: await headersFor(page),
+        data: {
+            ch_name: 'Mara controls ' + suffix,
+            description: 'Mara checks which Mewmory controls are available.',
+            first_mes: 'The memory panel is open.',
+        },
+    });
+    const createdText = await created.text();
+    expect(created.ok(), createdText).toBe(true);
+    const avatar = createdText;
+    const chatName = 'Mewmory controls ' + suffix;
+    const vacant = await page.request.post('/api/chats/get', {
+        headers: await headersFor(page),
+        data: { avatar_url: avatar, file_name: chatName, allow_create: true },
+    });
+    expect(vacant.ok(), await vacant.text()).toBe(true);
+    const vacancy = JSON.parse(vacant.headers()['x-neconyan-roleplay']);
+    const initial = await page.request.post('/api/chats/save', {
+        headers: await headersFor(page),
+        data: {
+            avatar_url: avatar, file_name: chatName,
+            chat: [{ chat_metadata: {} }, row(0, false, 'The memory panel is open.')],
+            roleplay: { account: vacancy.account, vacancy: vacancy.vacancy, operationKey: randomUUID() },
+        },
+    });
+    expect(initial.ok(), await initial.text()).toBe(true);
+
+    await openChat(page, avatar, chatName);
+    await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
+    const workspace = page.locator('#mewmory-workspace');
+    const toggle = workspace.getByLabel('Use Mewmory in this chat');
+    await expect(toggle).toBeVisible();
+    await expect(toggle).not.toBeChecked();
+
+    await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
+    const hide = workspace.getByRole('button', { name: /Hide old messages/i });
+    const rebuild = workspace.getByRole('button', { name: 'Rebuild meaning search', exact: true });
+    await expect(hide).toBeDisabled();
+    await expect(rebuild).toBeDisabled();
+
+    await workspace.getByRole('tab', { name: 'Recall', exact: true }).click();
+    const preview = workspace.getByRole('button', { name: 'Preview which memories would be picked', exact: true });
+    await expect(preview).toBeDisabled();
+
+    await toggle.check();
+    await expect.poll(async () => page.evaluate(async () => (await import('/scripts/mewmory/index.js')).mewmory.view?.enabled)).toBe(true);
+    await expect(preview).toBeEnabled();
+    await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
+    await expect(hide).toBeEnabled();
+    await expect(rebuild).toBeEnabled();
+}
+
 test.describe('desktop 1280x900', () => {
     test.use({ viewport: { width: 1280, height: 900 }, hasTouch: false, isMobile: false });
+    test('Mewmory gates upkeep and recall preview controls on the chat switch', async ({ page }) => {
+        await disabledControlsRegression({ page });
+    });
     test('Mewmory clears the 30,000-token history trigger, repeats it and reloads the saved batch', async ({ page }) => {
         await hidingRegression({ page });
     });
@@ -258,6 +333,9 @@ test.describe('desktop 1280x900', () => {
 
 test.describe('touch phone 393x852', () => {
     test.use({ viewport: { width: 393, height: 852 }, hasTouch: true, isMobile: true });
+    test('Mewmory gates upkeep and recall preview controls on the chat switch', async ({ page }) => {
+        await disabledControlsRegression({ page });
+    });
     test('Mewmory clears the 30,000-token history trigger, repeats it and reloads the saved batch', async ({ page }) => {
         await hidingRegression({ page });
     });

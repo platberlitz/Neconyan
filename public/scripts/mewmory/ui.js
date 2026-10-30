@@ -1,6 +1,6 @@
 import {
-    changeMewmory, getMewmoryLocator, getMewmoryScope, hideOverflowMessages, initMewmory, mewmory, notifyMewmory,
-    processMewmory, refreshMewmory, requestMewmory, retryMewmoryVisibilityRestore, stopMewmoryBackfill,
+    changeMewmory, getMewmoryLocator, getMewmoryScope, hideOverflowMessages, initMewmory, MEWMORY_CONFIG_CHANGED_KEY,
+    mewmory, notifyMewmory, processMewmory, refreshMewmory, requestMewmory, retryMewmoryVisibilityRestore, stopMewmoryBackfill,
 } from './index.js';
 import { getRequestHeaders } from '../../script.js';
 import { currentUser } from '../user.js';
@@ -161,7 +161,8 @@ function filters() {
     return {};
 }
 
-async function act(action, { refresh = true } = {}) {
+/** Runs one panel action, then refreshes from the server. Exported for focused lifecycle tests. */
+export async function act(action, { refresh = true } = {}) {
     if (ui.running) return;
     const scope = getMewmoryScope();
     ui.running = scope;
@@ -170,7 +171,9 @@ async function act(action, { refresh = true } = {}) {
         await action(scope);
         if (scope !== getMewmoryScope()) return;
         mewmory.error = '';
-        if (refresh) await refreshMewmory(filters());
+        // The action may have changed job or config state through another route, so
+        // an inspection that started before it must never answer this refresh.
+        if (refresh) await refreshMewmory(filters(), { force: true });
     } catch (error) {
         if (scope === getMewmoryScope()) mewmory.error = error.message;
     } finally {
@@ -478,7 +481,8 @@ function renderArchive(root) {
 }
 
 function renderRecall(root) {
-    root.append(button('Preview which memories would be picked', () => act(() => requestMewmory('recall', { tokenizer: getFriendlyTokenizerName() })), { primary: true }));
+    root.append(button('Preview which memories would be picked', () => act(() => requestMewmory('recall', { tokenizer: getFriendlyTokenizerName() })),
+        { primary: true, disabled: !mewmory.view?.enabled }));
     const run = mewmory.view.recalls.at(-1);
     if (!run) {
         empty(root, 'Nothing to show yet', 'Preview memories or write the next reply to see what was picked and why.');
@@ -638,7 +642,8 @@ function renderEditor(root) {
 
 function configErrorMessage(message) {
     const text = typeof message === 'string' && message ? message : 'Mewmory settings could not be saved. Check your connection and try again.';
-    return text.replaceAll('Hide messages beyond, tokens', 'Hide older messages when the visible chat reaches, tokens');
+    // Older servers still name this field the old way; map it to the label the panel shows.
+    return text.replaceAll('Hide messages beyond, tokens', 'Hide older messages at this chat size, tokens');
 }
 
 function accountMismatchError(message) {
@@ -791,6 +796,11 @@ function handleConfigState() {
 function handleConfigSaved(saved) {
     if (!mewmory.config || saved.revision >= mewmory.config.revision) mewmory.config = saved;
     window.dispatchEvent(new Event('mewmory:configured'));
+    try {
+        window.localStorage?.setItem(MEWMORY_CONFIG_CHANGED_KEY, String(saved.revision ?? Date.now()));
+    } catch {
+        // Other tabs still pick the saved config up on their next ordinary Mewmory refresh.
+    }
 }
 
 function scheduleConfigSave(options) {
@@ -1172,6 +1182,15 @@ function renderSettings(root) {
     renderHealth(root);
 }
 
+/**
+ * Manual hiding only needs Mewmory on for this chat. A memory update can keep
+ * running: hiding does not change source identity, and the server-side update
+ * does not depend on this browser reload.
+ */
+export function manualHideDisabled(view) {
+    return !view?.enabled;
+}
+
 function renderHealth(root) {
     const view = mewmory.view;
     if (!view) return;
@@ -1197,8 +1216,9 @@ function renderHealth(root) {
     actions.append(button('Update memories for the whole chat', () => processMewmory({ all: true }), { disabled: mewmory.busy || !view.enabled }),
         button('Review for missed details', () => processMewmory({ all: true, checkpoint: true }), { disabled: mewmory.busy || !view.enabled }),
         button('Rebuild meaning search', () => act(scope => requestMewmory('index', { reset: true }, { scope })),
-            { disabled: !mewmory.config.roles.embedding.enabled || mewmory.busy }),
-        button(mewmory.config.historyMode === 'messages' ? 'Hide messages outside the recent window' : 'Hide old messages at the token threshold', () => act(() => hideOverflowMessages())));
+            { disabled: !mewmory.config.roles.embedding.enabled || mewmory.busy || !view.enabled }),
+        button(mewmory.config.historyMode === 'messages' ? 'Hide messages outside the recent window' : 'Hide old messages at the token threshold',
+            () => act(() => hideOverflowMessages()), { disabled: manualHideDisabled(view) }));
     health.append(node('p', 'mewmory-caption', 'Updating the whole chat includes recent messages and can make paid model requests. Reviewing missed details does not create a running story summary.'));
     if (mewmory.busy) actions.append(button('Stop updating', stopMewmoryBackfill));
     health.append(actions);

@@ -45,6 +45,7 @@ async function resetSettings(page) {
         ...config,
         enableNewChats: false,
         autoHide: false,
+        excludeHistory: true,
         historyMode: 'tokens',
         historyCatchUp: 'reply',
         recentMessages: 10,
@@ -72,6 +73,7 @@ async function messageWindowSettingsSave({ page }) {
     const status = workspace.locator('#mewmory-settings-status');
     await expect(mode).toHaveValue('tokens');
     await expect(catchUp).toHaveValue('reply');
+    await expect(catchUp).toBeEnabled();
     await expect(workspace.getByText('Keep any older messages Mewmory has not recorded yet, so the reply can start. They leave context after memory catches up.')).toBeVisible();
     await catchUp.selectOption('wait');
     await expect(workspace.getByText('Record the older messages before sending the reply. This can run memory updates even when automatic updates are off. Catch-up may continue after the reply starts. You can stop waiting.')).toBeVisible();
