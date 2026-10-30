@@ -23,6 +23,7 @@ const { router } = await import('../src/endpoints/scratchpad.js');
 const notebooks = await import('../src/notebooks/store.js');
 const notebookAssistant = await import('../src/notebooks/assistant.js');
 const { applyPolicyPatch } = await import('../src/notebooks/permissions.js');
+const bridge = await import('../src/scratchpad/notebooks.js');
 const { readRoleplayChat } = await import('../src/generation/roleplay-source.js');
 const { commitRoleplayLifecycleLocked } = await import('../src/roleplay-lifecycle.js');
 const { roleplayNativeHost } = await import('../src/endpoints/chats.js');
@@ -972,6 +973,37 @@ test('server-built note context reaches the provider and finished suggestions re
         assert.equal(notebookAssistant.listProposalsLocked(lease).length, 1);
     });
 });
+
+for (const file of ['policies.json', 'manifest.json']) {
+    test(`a damaged notebook ${file} keeps the finished reply, and Review reports the damage until it is repaired`, async t => {
+        const a = account(t);
+        const note = sharedNote(a);
+        const session = startSession(a, { notes: [{ notebookId: note.notebookId, noteId: note.noteId }] });
+        const control = path.join(a.directories.root, 'notebook-control', note.notebookId, file);
+        const intact = fs.readFileSync(control);
+        const warn = t.mock.method(console, 'warn', () => {});
+        const suggestion = { type: 'notebook', action: 'append-note', args: { notebookId: note.notebookId, noteId: note.noteId, expectedRevision: note.revision, markdown: 'Another idea.' } };
+        const text = `Useful advice.\n\`\`\`scratchpad-change\n${JSON.stringify(suggestion)}\n\`\`\``;
+        registerScratchpadJobs({ generate: async () => {
+            fs.writeFileSync(control, '{ not json');
+            return { text };
+        } });
+        const body = sendBody(session);
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        await runJob(getJob(a.directories, accepted.job.id));
+        assert.equal(getJob(a.directories, accepted.job.id).state, 'completed');
+        const reply = a.read(SOURCE).sessions[0].messages.at(-1);
+        assert.equal(reply.state, 'done');
+        assert.equal(reply.text, text);
+        assert.equal(reply.error, undefined);
+        assert.equal(reply.notebookProposals, undefined);
+        assert.ok(warn.mock.calls.some(call => call.arguments.includes('NOTEBOOK_CONTROL_DAMAGED')), 'the skipped suggestion is logged');
+        const review = () => store.withScratchpad(a.base, lease => bridge.prepareNotebookProposalLocked(lease, SOURCE, { sessionId: session.id, messageId: reply.id, index: 0 }));
+        assert.throws(review, error => error.code === 'NOTEBOOK_CONTROL_DAMAGED');
+        fs.writeFileSync(control, intact);
+        assert.match(review().proposalId, /^p_[a-f0-9]{24}$/);
+    });
+}
 
 for (const kind of ['text', 'permissions']) {
     test(`a note ${kind} change during send refuses the outdated snapshot before any provider call`, async t => {

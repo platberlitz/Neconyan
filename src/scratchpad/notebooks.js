@@ -92,8 +92,9 @@ export function captureReplyNotebookProposalsLocked(lease, bucket, session, mess
             results.push(prepareNotebookProposalLocked(lease, bucket.source,
                 { sessionId: session.id, messageId: message.id, index: part.index }, { bucket, save: false }));
         } catch (error) {
-            if (error.code === 'NOTEBOOK_RECONCILING' || ![400, 403, 404, 409, 413].includes(error.status)) throw error;
-            /* An invalid or no-longer-authorised suggestion must not discard the answer. Review reports its exact error. */
+            if (error.code === 'NOTEBOOK_RECONCILING') throw error;
+            /* A suggestion that cannot be prepared must not discard a finished answer; only the indexing retry above must still propagate. Review prepares it again and reports the error. */
+            if (![400, 403, 404, 409, 413].includes(error.status)) console.warn('[Scratchpad] A note suggestion could not be prepared:', error.code ?? error.name ?? 'error');
         }
     }
     return results;
