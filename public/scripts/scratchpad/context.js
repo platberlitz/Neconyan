@@ -495,7 +495,8 @@ function swipeNote(messages) {
 export async function buildContext({ source, settings, pendingText = '', sessionText = '' }) {
     requireCurrentSource(source);
     if (source.kind === 'notebook') return {
-        text: `Notebook discussion: ${source.label}\nOnly the explicitly shared notes are included. No story messages, persona, character cards or lorebooks are shared.`,
+        // No note title here: it reaches the model only inside a note entry the server can still read.
+        text: 'Notebook discussion\nOnly the explicitly shared notes are included. No story messages, persona, character cards or lorebooks are shared.',
         names: { user: name1, character: '' }, lore: { books: [], entries: [] }, messageCount: 0, swipeCount: 0, totalMessages: 0, picked: false, preset: null, leftOut: 0,
         capabilities: { lore: false, character: false, chat: false, members: [] },
         targets: [],

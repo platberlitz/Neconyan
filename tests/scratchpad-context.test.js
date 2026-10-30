@@ -215,6 +215,25 @@ describe('Scratchpad source context', () => {
         expect(context.capabilities).toMatchObject({ lore: false, character: false, chat: false });
         expect(loadWorldInfo).not.toHaveBeenCalled();
     });
+
+    test.each([
+        ['while the note is shared', { depth: 2, notes: [{ notebookId: 'nb', noteId: 'note', grantId: 'grant-1' }] }],
+        ['after Stop sharing', { depth: 2, notes: [] }],
+        ['when the session has no saved notes', { depth: 2 }],
+    ])('a note discussion never sends the note title to the model %s', async (state, noteSettings) => {
+        setNotebookSource({ notebookId: 'nb', noteId: 'note', title: 'Saved plan' });
+        const context = await buildContext({ source: currentSource(), settings: noteSettings });
+        expect(context.text).toMatch(/^Notebook discussion\nOnly the explicitly shared notes are included\./);
+        expect(JSON.stringify(context)).not.toContain('Saved plan');
+    });
+
+    test('a note discussion keeps its title as the label shown to the user and stored with its sessions', () => {
+        setNotebookSource({ notebookId: 'nb', noteId: 'note', title: 'Saved plan' });
+        const source = currentSource();
+        expect(source).toMatchObject({ kind: 'notebook', key: 'notebook:nb:note', label: 'Saved plan' });
+        expect(wireSource(source)).toMatchObject({ kind: 'notebook', key: 'notebook:nb:note', label: 'Saved plan' });
+    });
+
     test('Conversation reads its own characters, persona, override and attached books', async () => {
         const context = await buildContext({ source: currentSource(), settings });
         expect(context.lore.books).toEqual(expect.arrayContaining(['Nova lore', 'Conversation lore', 'Extra lore', 'Global lore', 'Persona lore']));
@@ -611,7 +630,7 @@ describe('Scratchpad shared context budget', () => {
         characters[0].data.description = 'E'.repeat(1_450_000);
         setNotebookSource({ notebookId: 'nb', noteId: 'note', title: 'Saved plan' });
         const notebook = await buildContext({ source: currentSource(), settings });
-        expect(notebook.text).toContain('Notebook discussion: Saved plan');
+        expect(notebook.text).toMatch(/^Notebook discussion\n/);
         expect(notebook.leftOut).toBe(0);
         expect(notebook.messageCount).toBe(0);
     });
