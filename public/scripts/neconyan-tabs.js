@@ -34,11 +34,11 @@ import { createSearchMatcher } from './util/fuzzy-search.js';
 import { searchSavedContent, openSavedSearchResult } from './account-search.js';
 import { hasChangedAttributeValue } from './util/attribute-mutations.js';
 import { copyText, flashHighlight, showFontAwesomePicker } from './utils.js';
-import { characters, chat, flushCharacterSaveDebounced, flushPendingChatSavesForNavigation, getChatGeneration, getCurrentChatId, getGeneratingModel, getOneCharacter, getShortModelName, getThumbnailUrl, getThumbnailUrlForViewport, is_send_press, parseAvatarSource, refreshCsrfToken, saveSettingsDebounced, scrollReopenedChatToBottom, selectCharacterById, selectRightMenuWithAnimation, this_chid } from '../script.js';
+import { characters, chat, flushCharacterSaveDebounced, flushPendingChatSavesForNavigation, getChatGeneration, getCurrentChatId, getGeneratingModel, getOneCharacter, getShortModelName, getThumbnailUrl, getThumbnailUrlForViewport, is_send_press, parseAvatarSource, refreshCsrfToken, saveSettingsDebounced, scrollReopenedChatToBottom, selectCharacterById, selectRightMenuWithAnimation, settingsReady, this_chid } from '../script.js';
 import { is_group_generating, selected_group } from './group-chats.js';
 import { eventSource, event_types } from './events.js';
 import { extension_settings, extensionNames, findExtension, getExtensionManifest, getExtensionType } from './extensions.js';
-import { getCurrentUserHandle } from './user.js';
+import { currentUser, getCurrentUserHandle } from './user.js';
 import { bindClearJobHistoryButton } from './job-history-cleanup.js';
 import { getAssistantIconSrc } from './neconyan-assistant-art.js';
 import { isSimpleModeEnabled, setSimpleModeEnabled, SIMPLE_MODE_EVENT } from './neconyan-simple-mode.js';
@@ -68,6 +68,7 @@ const NN_STORAGE_KEYS = Object.freeze({
     desktopShellSnapToChatWidth: 'sb-desktop-shell-snap-to-chat-width',
     characterDrawerRightLocked: 'sb-character-drawer-right-locked',
     theme: 'sb-theme',
+    themeAccount: 'sb-theme-account',
     kittyless: 'sb-kittyless',
     tourButtonsHidden: 'sb-tour-buttons-hidden',
     surfaceTransparency: 'sb-surface-transparency',
@@ -5390,6 +5391,63 @@ function syncShellStyleStylesheet(themeId) {
     }
 }
 
+// An explicit selection made before account settings arrive must survive hydration.
+let pendingShellTheme = null;
+
+function getEstablishedShellThemeAccount() {
+    return currentUser?.handle || (settingsReady ? getCurrentUserHandle() : null);
+}
+
+function isValidShellTheme(themeId) {
+    return NN_THEMES.some(theme => theme.id === themeId);
+}
+
+function rememberShellThemeMirror(themeId, account) {
+    safeSetItem(NN_STORAGE_KEYS.theme, themeId);
+    if (account) safeSetItem(NN_STORAGE_KEYS.themeAccount, account);
+    flushNnStorageWrites();
+}
+
+function reconcileShellThemeSettings() {
+    if (!settingsReady) return;
+
+    const account = getEstablishedShellThemeAccount();
+    let ignoreLegacy = false;
+    if (pendingShellTheme) {
+        const pending = pendingShellTheme;
+        pendingShellTheme = null;
+        if (!pending.account || pending.account === account) {
+            power_user.neconyan_shell_style = pending.theme;
+            rememberShellThemeMirror(pending.theme, account);
+            setShellTheme(pending.theme, { persist: false });
+            saveSettingsDebounced();
+            return;
+        }
+        // The pending choice belongs to a different established account.
+        ignoreLegacy = true;
+        safeRemoveItem(NN_STORAGE_KEYS.theme);
+        flushNnStorageWrites();
+    }
+
+    const savedTheme = power_user.neconyan_shell_style;
+    const legacyTheme = safeGetItem(NN_STORAGE_KEYS.theme);
+    const legacyAccount = safeGetItem(NN_STORAGE_KEYS.themeAccount);
+    const canMigrate = !ignoreLegacy && (savedTheme === null || savedTheme === undefined)
+        && isValidShellTheme(legacyTheme) && (!legacyAccount || legacyAccount === account);
+    const nextTheme = canMigrate ? legacyTheme : normalizeTheme(savedTheme);
+
+    if (canMigrate) {
+        power_user.neconyan_shell_style = nextTheme;
+    }
+    // Do not create a legacy value for an absent preference: a later settings
+    // event could otherwise mistake the provisional default for a user choice.
+    if (canMigrate || (savedTheme !== null && savedTheme !== undefined)) {
+        rememberShellThemeMirror(nextTheme, account);
+    }
+    setShellTheme(nextTheme, { persist: false });
+    if (canMigrate) saveSettingsDebounced();
+}
+
 function setShellTheme(themeId, { persist = true } = {}) {
     const nextTheme = normalizeTheme(themeId);
 
@@ -5399,7 +5457,14 @@ function setShellTheme(themeId, { persist = true } = {}) {
     syncKittylessStylesheet();
 
     if (persist) {
-        safeSetItem(NN_STORAGE_KEYS.theme, nextTheme);
+        const account = getEstablishedShellThemeAccount();
+        rememberShellThemeMirror(nextTheme, settingsReady ? account : null);
+        if (settingsReady) {
+            power_user.neconyan_shell_style = nextTheme;
+            saveSettingsDebounced();
+        } else {
+            pendingShellTheme = { theme: nextTheme, account };
+        }
     }
 
     updateThemePickerUi();
@@ -21044,6 +21109,7 @@ function initAll() {
     bindCharacterEditorExitButton();
     bindCharacterDrawerStateObserver();
     setShellTheme(nnState.theme, { persist: false });
+    if (settingsReady) reconcileShellThemeSettings();
     setFrontendIconPreference(nnState.frontendIcon, { persist: false });
     setSurfaceTransparency(nnState.surfaceTransparency, { persist: false });
     setPaperTextureEnabled(nnState.paperTextureEnabled, { persist: false });
@@ -21332,6 +21398,9 @@ export async function consumeNeconyanRoute() {
     const nextQuery = params.toString();
     window.history.replaceState(window.history.state, '', `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash}`);
 }
+
+// Settings may arrive before or after the shell DOM is initialised.
+eventSource.on(event_types.SETTINGS_LOADED, reconcileShellThemeSettings);
 
 // Init shell UI as soon as DOM is ready.
 // Also re-trigger on APP_READY as a safety net for slow-loading environments.
