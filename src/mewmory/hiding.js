@@ -9,7 +9,7 @@ import { captureSavedTokenizer } from '../generation/saved-token-counter.js';
 import { hash, refKey, sourceEligible, syncSources } from './core.js';
 import { readConfig } from './models.js';
 import { processingVersion } from './processing.js';
-import { readContextSourcesSync } from './sources.js';
+import { readContextSourcesSync, roleIdentityChanged } from './sources.js';
 import { readJsonShared, readStateShared, sourceSyncOptions } from './store.js';
 import { getCounter, getTokenizerModel } from './tokens.js';
 
@@ -165,23 +165,31 @@ export function prepareMessageHidingPolicy(directories, locator, { manual = fals
  * never publishes uncommitted sources. A message counts as preserved once
  * Mewmory has finished reading it, or when it is not a memory source at all.
  */
-function preservationCheck(records, archivedState, config, contextSources, sourceOptions = {}) {
+function preservationCheck(records, archivedState, config, contextSources, sourceOptions = {}, { checkpoint = config.excludeHistory !== false } = {}) {
     const shadow = structuredClone(archivedState);
     const messages = records.slice(1);
     syncSources(shadow, messages, contextSources, sourceOptions);
     const offset = shadow.inheritedTimeline?.length || 0;
     const policy = processingVersion(config);
+    // Hiding can run without loadCurrentStateSync, so it must apply the same identity check.
+    // A changed profile source or model means the stored marks belong to another reader.
+    const identityChanged = roleIdentityChanged(archivedState, config);
+    // Message-mode hiding always needs preservation checkpoints. Token-mode hiding
+    // normally has no checkpoints when history exclusion is off, so it uses the
+    // ordinary processed marks the worker writes for every finished batch.
+    const marks = checkpoint ? shadow.checkpoints : shadow.coverage;
     return {
         messages,
         isPreserved: index => {
+            if (identityChanged) return false;
             const ref = shadow.timeline[index + offset];
-            return Boolean(ref && (!sourceEligible(shadow, ref) || shadow.checkpoints[refKey(ref)] === policy));
+            return Boolean(ref && (!sourceEligible(shadow, ref) || marks[refKey(ref)] === policy));
         },
     };
 }
 
 export function planPreservedMessageHiding(records, archivedState, config, contextSources, sourceOptions = {}) {
-    const { messages, isPreserved } = preservationCheck(records, archivedState, config, contextSources, sourceOptions);
+    const { messages, isPreserved } = preservationCheck(records, archivedState, config, contextSources, sourceOptions, { checkpoint: true });
     const visible = visibleMessageIndices(messages).filter(index => !messages[index]?.extra?.nn_generation_failed);
     return messageHistoryPlan(visible, config.recentMessages, config.historyBatchMessages, isPreserved).excluded;
 }
@@ -195,7 +203,8 @@ export function planPreservedMessageHiding(records, archivedState, config, conte
  */
 export function planPreservedOverflowHiding(records, archivedState, config, contextSources, sourceOptions, indices) {
     if (!config.roles?.extractor?.enabled) return indices;
-    const { isPreserved } = preservationCheck(records, archivedState, config, contextSources, sourceOptions);
+    const { isPreserved } = preservationCheck(records, archivedState, config, contextSources, sourceOptions,
+        { checkpoint: config.excludeHistory !== false });
     const kept = [];
     for (const index of indices) {
         if (!isPreserved(index)) break;

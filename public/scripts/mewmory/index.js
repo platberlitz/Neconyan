@@ -8,7 +8,8 @@ import { getRoleplaySourceId, roleplayAccountStamp } from '../roleplay-save-chai
 import { eventSource, event_types } from '../events.js';
 import { getFriendlyTokenizerName } from '../tokenizers.js';
 import { overflowFingerprint, overflowPlan, visibleMessageIndices } from './overflow-policy.js';
-import { flushMewmoryConfigAutosave } from './config-autosave.js';
+import { messageHistoryPlan } from './history-policy.js';
+import { flushMewmoryConfigAutosave, mewmoryConfigAutosave } from './config-autosave.js';
 import { conversationState } from '../neconyan-conversation/state.js';
 import { cancelJob } from '../jobs.js';
 import { uuidv4 } from '../utils.js';
@@ -21,6 +22,8 @@ import { MEWMORY_CATCH_UP_TIMEOUT_MS, observeMewmoryCatchUp } from './catch-up.j
 export const mewmory = {
     config: null, view: null, stories: [], error: '', loading: false, busy: false, backfilling: false, preparing: false,
 };
+/** Written when the settings panel saves, so another tab refreshes its cached config without a reply-time request. */
+export const MEWMORY_CONFIG_CHANGED_KEY = 'neconyan.mewmory.config.changed';
 const NEW_CHAT_MARK = 'mewmory_new_chat';
 let initialized = false;
 let timer;
@@ -28,6 +31,7 @@ let viewKey = '';
 let selectionVersion = 0;
 let refreshVersion = 0;
 let latestRefresh;
+let activeRefresh = null;
 let pendingEnable;
 let autoHiding = false;
 let restoringVisibility = false;
@@ -59,24 +63,70 @@ export function notifyMewmory() {
     }
 }
 
-export async function requestMewmory(route, data = {}, { signal, scope = getMewmoryScope() } = {}) {
-    if (scope !== getMewmoryScope()) throw new Error('The active chat changed.');
-    if (route === 'recall' || route === 'index') data = { background: true, submissionKey: uuidv4(), ...data };
-    const response = await fetch('/api/mewmory/' + route, {
-        method: 'POST', headers: getRequestHeaders(), signal,
-        body: JSON.stringify({ locator: getMewmoryLocator(), ...data }),
-    });
-    const result = await response.json().catch(() => ({}));
-    if (scope !== getMewmoryScope()) throw new Error('The active chat changed.');
-    if (!response.ok) throw Object.assign(new Error(result.error || 'Mewmory could not reach the server. Check your connection and try again.'), { status: response.status });
-    if (result.job) scheduleUpdate();
-    return result;
+const READ_ONLY_MEWMORY_ROUTES = new Set(['config/get', 'inspect', 'source/get', 'validate', 'tokens', 'search', 'export']);
+
+/** Mutations may change what the next inspect returns, so an older result is no longer joinable. */
+function invalidateMewmoryRefresh() {
+    activeRefresh = null;
 }
 
+export async function requestMewmory(route, data = {}, { signal, scope = getMewmoryScope() } = {}) {
+    const invalidates = !READ_ONLY_MEWMORY_ROUTES.has(route);
+    try {
+        if (scope !== getMewmoryScope()) throw new Error('The active chat changed.');
+        if (route === 'recall' || route === 'index') data = { background: true, submissionKey: uuidv4(), ...data };
+        const response = await fetch('/api/mewmory/' + route, {
+            method: 'POST', headers: getRequestHeaders(), signal,
+            body: JSON.stringify({ locator: getMewmoryLocator(), ...data }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (scope !== getMewmoryScope()) throw new Error('The active chat changed.');
+        if (!response.ok) throw Object.assign(new Error(result.error || 'Mewmory could not reach the server. Check your connection and try again.'), { status: response.status });
+        if (result.job) scheduleUpdate();
+        return result;
+    } finally {
+        if (invalidates) invalidateMewmoryRefresh();
+    }
+}
+
+function refreshFilterKey(value) {
+    if (Array.isArray(value)) return '[' + value.map(refreshFilterKey).join(',') + ']';
+    if (value && typeof value === 'object') {
+        return '{' + Object.keys(value).sort().map(name => JSON.stringify(name) + ':' + refreshFilterKey(value[name])).join(',') + '}';
+    }
+    return JSON.stringify(value) ?? 'undefined';
+}
+
+function currentAccountKey() {
+    try {
+        const account = roleplayAccountStamp().account;
+        return JSON.stringify([account?.accountId || '', account?.dataEpoch ?? 0]);
+    } catch {
+        return '';
+    }
+}
+
+/**
+ * Coalesces only identical refreshes that are still in flight. A signal-bearing
+ * refresh is never joined, because its caller alone may abort it. Callers that
+ * know the server changed pass `force`, and mutation requests invalidate the
+ * active entry so a pre-mutation inspection is never reused.
+ */
 export function refreshMewmory(filters = mewmory.filters || {}, options = {}) {
     const scope = getMewmoryScope();
+    const signal = options.signal;
+    const key = JSON.stringify([scope, currentAccountKey(), refreshFilterKey(filters)]);
+    if (!options.force && activeRefresh?.key === key && activeRefresh.signal === signal) {
+        mewmory.filters = filters;
+        return activeRefresh.promise;
+    }
     const pending = refreshCurrentChat(filters, options).then(view => scope === getMewmoryScope() && latestRefresh !== pending ? latestRefresh : view);
     latestRefresh = pending;
+    const entry = { key, signal, promise: pending };
+    activeRefresh = entry;
+    void pending.finally(() => {
+        if (activeRefresh === entry) activeRefresh = null;
+    }).catch(() => {});
     return pending;
 }
 
@@ -173,7 +223,7 @@ async function refreshRestoredChat(locator, instanceId = '') {
         ? await getGroupChat(group, true, { ...options, readOnlyRoute: true })
         : await getChat({ ...options, exactChat: locator.chat });
     if (loaded === false || !current()) throw new Error('Messages were restored, but this chat could not be refreshed. Reload it to see them.');
-    await refreshMewmory();
+    await refreshMewmory(undefined, { force: true });
 }
 
 export async function retryMewmoryVisibilityRestore() {
@@ -232,7 +282,7 @@ async function countMessages(texts, scope) {
     const result = await requestMewmory('tokens', { texts, tokenizer: getFriendlyTokenizerName() }, { scope });
     if (!Array.isArray(result?.counts) || result.counts.length !== texts.length
         || result.counts.some(count => !Number.isFinite(count) || count < 0)) {
-        throw new Error('Mewmory could not count this chat with your writer tokenizer. Check Writer tokenizer in Mewmory settings, then try again.');
+        throw new Error('Mewmory could not count this chat with your writer tokenizer. Check Token counter for replies in Mewmory settings, then try again.');
     }
     return result.counts;
 }
@@ -278,15 +328,42 @@ async function hideMessages(indices, snapshot, scope, automatic = false) {
     return hideMessageWindow(scope, automatic, snapshot.lastDisableId);
 }
 
+function viewForCurrentChat(locator = getMewmoryLocator()) {
+    if (!mewmory.view || !locator) return null;
+    return JSON.stringify(mewmory.view.locator) === JSON.stringify(locator) ? mewmory.view : null;
+}
+
+/** Visible messages the protected save may hide, matching the server's own filter. */
+function visibleChatMessages() {
+    return visibleMessageIndices(chat).filter(index => !chat[index]?.extra?.nn_generation_failed);
+}
+
+/**
+ * The optimistic message-count plan: every visible message is assumed to be
+ * remembered. This is only a necessary condition before asking the server to
+ * hide; the protected save still keeps anything it has not finished reading.
+ */
+function plannedMessageHiding() {
+    return messageHistoryPlan(visibleChatMessages(), mewmory.config?.recentMessages ?? 10,
+        mewmory.config?.historyBatchMessages ?? 5, () => true);
+}
+
 /** Both policies delegate the decision to the protected server save. */
 async function hideMessageWindow(scope, automatic = false, lastDisableId = mewmory.view?.lastDisableId || '') {
     const locator = getMewmoryLocator();
     if (!locator || scope !== getMewmoryScope() || restoringVisibility) return 0;
     const before = chat.map(message => ({ isSystem: Boolean(message.is_system), id: message.mewmory_id,
         date: message.send_date, name: message.name, user: message.is_user }));
-    const saved = await saveChatConditional({ mewmoryHidePolicy: { type: automatic ? 'automatic' : 'manual',
-        lastDisableId }, skipUnchanged: false, throwOnError: true });
+    let saveResult;
+    const saved = await saveChatConditional({
+        mewmoryHidePolicy: { type: automatic ? 'automatic' : 'manual', lastDisableId },
+        skipUnchanged: false, throwOnError: true,
+        onMewmoryHideSaved: result => { saveResult = result; },
+    });
     if (!saved || scope !== getMewmoryScope()) return 0;
+    // Only an explicit unchanged response proves there is nothing to reload; an
+    // older server that does not report `changed` keeps the safe reload.
+    if (saveResult?.roleplay?.changed === false) return 0;
     await refreshRestoredChat(locator);
     return chat.reduce((total, message, index) => {
         const prior = before[index];
@@ -298,6 +375,22 @@ async function hideMessageWindow(scope, automatic = false, lastDisableId = mewmo
 
 export async function hideOverflowMessages({ limit } = {}) {
     const scope = getMewmoryScope();
+    const locator = getMewmoryLocator();
+    if (!locator) return 0;
+    let view = viewForCurrentChat(locator);
+    if (!view) {
+        await refreshMewmory(undefined, { force: true });
+        if (scope !== getMewmoryScope()) return 0;
+        view = viewForCurrentChat(locator);
+    }
+    if (!view) {
+        toastr.error(mewmory.error || 'Mewmory could not read this chat. Try again.');
+        return 0;
+    }
+    if (!view.enabled) {
+        toastr.info('Mewmory is off for this chat. Turn on Use Mewmory in this chat before hiding older messages.');
+        return 0;
+    }
     const flushed = await flushMewmoryConfigAutosave();
     if (scope !== getMewmoryScope()) return 0;
     if (!flushed.ok) {
@@ -306,19 +399,39 @@ export async function hideOverflowMessages({ limit } = {}) {
         return 0;
     }
     if (!mewmory.config) {
-        await refreshMewmory();
+        await refreshMewmory(undefined, { force: true });
         if (scope !== getMewmoryScope()) return 0;
-    }
-    if (mewmory.config?.historyMode === 'messages') {
-        if (!mewmory.config.excludeHistory) {
-            toastr.info('Turn on leaving older messages out of replies before hiding them.');
+        if (!mewmory.config) {
+            toastr.error(mewmory.error || 'Mewmory settings could not be read. Try again.');
             return 0;
         }
-        return hideMessageWindow(scope);
+    }
+    if (mewmory.config.historyMode === 'messages') {
+        if (!mewmory.config.excludeHistory) {
+            toastr.info('Turn on Replace older chat with Mewmory context before hiding them.');
+            return 0;
+        }
+        const plan = plannedMessageHiding();
+        if (!plan.excluded.length) {
+            toastr.info('This chat is still inside the recent-message window, so nothing needed hiding.');
+            return 0;
+        }
+        const chatKey = key(getMewmoryLocator());
+        const hidden = await hideMessageWindow(scope);
+        if (chatKey !== key(getMewmoryLocator())) return 0;
+        const waiting = plan.excluded.length - hidden;
+        if (hidden) {
+            toastr.success('Hid ' + hidden + ' older ' + (hidden === 1 ? 'message' : 'messages') + ' from the prompt.'
+                + (waiting > 0 ? ' ' + waiting + ' more ' + (waiting === 1 ? 'stays' : 'stay') + ' visible until Mewmory has read '
+                    + (waiting === 1 ? 'it' : 'them') + '.' : ''));
+        } else {
+            toastr.info('Nothing was hidden yet: Mewmory has not finished reading the older messages. They stay visible until it has.');
+        }
+        return hidden;
     }
     const value = limit ?? mewmory.config?.autoHideTokens;
     if (!(value > 0)) {
-        toastr.error('Set Hide older messages when the visible chat reaches, tokens in Mewmory settings before hiding old messages.');
+        toastr.error('Set Hide older messages at this chat size, tokens in Mewmory settings before hiding old messages.');
         return 0;
     }
     const plan = await getOverflowPlan(value, scope);
@@ -362,20 +475,27 @@ export async function hideOverflowMessages({ limit } = {}) {
 }
 
 /**
- * After a reply, refreshes the chat's Mewmory view and, once the visible history
- * reaches the saved hiding trigger, hides every older eligible message in one
- * pass. Only runs where Mewmory is on, so the hidden messages stay remembered.
+ * After a reply, hides older messages once the visible history reaches the saved
+ * trigger. The saved configuration is reused, so a reply does not inspect the
+ * chat when automatic hiding is off; only an unknown or mismatched state is loaded.
+ * Only runs where Mewmory is on, so the hidden messages stay remembered.
  */
-export async function hideOverflowAutomatically({ refresh = false, limit } = {}) {
+export async function hideOverflowAutomatically({ limit } = {}) {
     if (autoHiding || restoringVisibility || !getMewmoryLocator()) return 0;
     const scope = getMewmoryScope();
     autoHiding = true;
     try {
-        if (refresh || !mewmory.config) {
+        if (!mewmory.config) {
             await refreshMewmory();
             if (scope !== getMewmoryScope()) return 0;
         }
-        if (!mewmory.config?.autoHide) return 0;
+        if (!mewmory.config?.autoHide) {
+            // The panel may have just switched hiding on while its autosave is still queued.
+            // With nothing pending, the saved setting is authoritative and no inspection is needed.
+            if (!mewmoryConfigAutosave.state().pending) return 0;
+            const pendingSave = await flushMewmoryConfigAutosave();
+            if (scope !== getMewmoryScope() || !pendingSave.ok || !mewmory.config?.autoHide) return 0;
+        }
         if (!mewmory.view && mewmory.error) {
             toastr.error('Could not hide older messages automatically: ' + mewmory.error);
             return 0;
@@ -402,6 +522,9 @@ export async function hideOverflowAutomatically({ refresh = false, limit } = {})
         }
         if (mewmory.config.historyMode === 'messages') {
             if (!mewmory.config.excludeHistory) return 0;
+            // Only groups the server can clear are worth a protected save. The
+            // server still decides which messages it has finished reading.
+            if (!plannedMessageHiding().excluded.length) return 0;
             return await hideMessageWindow(scope, true);
         }
         const value = limit ?? mewmory.config.autoHideTokens;
@@ -559,6 +682,7 @@ export function initMewmory() {
         mewmory.view = null;
         mewmory.error = '';
         mewmory.filters = {};
+        invalidateMewmoryRefresh();
         void refreshMewmory();
         scheduleUpdate();
     };
@@ -572,7 +696,7 @@ export function initMewmory() {
         event_types.MESSAGE_SENT, event_types.CHARACTER_EDITED, event_types.CHARACTER_DELETED, event_types.WORLDINFO_UPDATED,
         event_types.WORLDINFO_SETTINGS_UPDATED, event_types.WORLDINFO_DELETED,
     ]) {
-        eventSource.on(event, () => scheduleUpdate());
+        eventSource.on(event, () => { invalidateMewmoryRefresh(); scheduleUpdate(); });
     }
     eventSource.on(event_types.GENERATION_STARTED, (_type, options, dryRun) => {
         if (!dryRun && pendingEnable?.scope === getMewmoryScope() && !pendingEnable.timedOut) {
@@ -580,7 +704,7 @@ export function initMewmory() {
         }
     });
     eventSource.on(event_types.GENERATION_STOPPED, stopPendingEnableWait);
-    eventSource.on(event_types.GENERATION_ENDED, () => void hideOverflowAutomatically({ refresh: true }));
+    eventSource.on(event_types.GENERATION_ENDED, () => void hideOverflowAutomatically());
     eventSource.on(event_types.CHAT_CREATED, created);
     eventSource.on(event_types.GROUP_CHAT_CREATED, created);
     // Chats without a greeting never announce themselves, so their first message counts as the start.
@@ -596,7 +720,14 @@ export function initMewmory() {
             || chat.filter(message => message.is_user).length !== 1) return;
         return enableMewmoryForNewChat();
     });
-    window.addEventListener('mewmory:configured', () => { void refreshMewmory(); scheduleUpdate(); });
+    window.addEventListener('mewmory:configured', () => { invalidateMewmoryRefresh(); void refreshMewmory(); scheduleUpdate(); });
+    window.addEventListener('storage', event => {
+        if (event.key !== MEWMORY_CONFIG_CHANGED_KEY || !event.newValue) return;
+        const revision = Number(event.newValue);
+        if (!Number.isSafeInteger(revision) || revision <= (Number(mewmory.config?.revision) || 0)) return;
+        invalidateMewmoryRefresh();
+        void refreshMewmory(undefined, { force: true });
+    });
     scheduleUpdate();
 }
 
@@ -622,6 +753,7 @@ export async function prepareMewmoryGeneration(messages, { signal, mewmoryCatchU
         if (pendingEnable?.scope === currentKey && !pendingEnable.timedOut) await awaitPendingEnable(currentKey, signal);
         if (!await flushPendingChatSaves({ silent: true })) throw new Error('This chat has unsaved changes. Save it, then send again so Mewmory can add memories.');
         if (getChatGeneration() !== generation || getMewmoryScope() !== currentKey) throw new Error('The active chat changed.');
+        invalidateMewmoryRefresh();
         const view = await refreshMewmory(undefined, { signal });
         if (getMewmoryScope() !== currentKey) throw new Error('The active chat changed.');
         if (!view) throw new Error(mewmory.error || 'Mewmory could not read this chat. Try again.');
@@ -688,7 +820,7 @@ export async function validateMewmoryGeneration(context, prompt, tokenBudget, { 
         const serialized = typeof prompt === 'string' ? prompt : JSON.stringify(prompt);
         const counted = await requestMewmory('tokens', { texts: [serialized], tokenizer: context.tokenizer }, { signal });
         const total = counted?.counts?.[0];
-        if (!Number.isSafeInteger(total) || total < 0) throw new Error('Mewmory could not count the prepared prompt. Check the token counter for replies, then try again.');
+        if (!Number.isSafeInteger(total) || total < 0) throw new Error('Mewmory could not count the prepared prompt. Check Token counter for replies, then try again.');
         if (total > tokenBudget) {
             const waiting = context.history?.waitingForPreservation
                 ? ' Older messages have not been fully remembered, so they remain in the prompt.' : '';

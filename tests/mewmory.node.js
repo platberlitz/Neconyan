@@ -749,7 +749,7 @@ test('Auto matches the role model independently, handles model families and reta
     assert.equal(auto.name, 'gpt-4o');
     assert.equal(explicit.name, 'cl100k_base');
     assert.equal(auto.count('猫 🐾 café\nFacts and events'), matching.count('猫 🐾 café\nFacts and events'));
-    await assert.rejects(getCounter('auto', { tokenizerKey: 'api_current' }), /local writer tokenizer/);
+    await assert.rejects(getCounter('auto', { tokenizerKey: 'api_current' }), /Token counter for replies/);
 });
 
 test('saved profiles keep keyless connections anonymous, enforce bindings, and reject redirects for every request role', async t => {
@@ -1441,7 +1441,7 @@ test('automatic hiding and new-chat switching start off, fill in for older setti
     assert.equal(readConfig(directories).autoHideTokens, 12000);
     assert.equal(readConfig(directories).enableNewChats, true);
     const current = publicConfig(directories);
-    assert.throws(() => saveConfig(directories, { ...current, autoHideTokens: 100 }), /Hide messages beyond, tokens/);
+    assert.throws(() => saveConfig(directories, { ...current, autoHideTokens: 100 }), /Hide older messages at this chat size, tokens/);
     assert.throws(() => saveConfig(directories, { ...current, enableNewChats: 'yes' }), /enableNewChats must be switched on or off/);
 });
 
@@ -2000,6 +2000,9 @@ test('undoing an unchanged author save leaves another record’s correction and 
 
 test('same-time interviews with different knowledge stay eligible and preservation never accepts an invalid replacement', async t => {
     const { directories } = disk(t, fixture.messages.slice(0, 3));
+    const config = defaultConfig();
+    Object.assign(config.roles.pawspective, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    saveConfig(directories, config);
     await loadCurrentState(directories, locator);
     mutateState(directories, locator, state => {
         state.enabled = true;

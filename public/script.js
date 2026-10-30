@@ -13272,6 +13272,7 @@ async function saveChatImmediately(...args) {
         account,
         roleplaySave,
         mewmoryHidePolicy = undefined,
+        onMewmoryHideSaved = undefined,
     } = options;
 
     if (account !== undefined && account !== getCurrentUserHandle()) return false;
@@ -13356,6 +13357,13 @@ async function saveChatImmediately(...args) {
             if (isActiveChatSave && typeof responseData?.integrity === 'string' && responseData.integrity) {
                 chat_metadata.integrity = responseData.integrity;
             }
+            if (mewmoryHidePolicy) {
+                try {
+                    onMewmoryHideSaved?.(responseData);
+                } catch (error) {
+                    console.warn('Mewmory hide result callback failed after the chat was saved.', error);
+                }
+            }
             return true;
         }
 
@@ -13395,7 +13403,7 @@ async function saveChatImmediately(...args) {
         }
 
         confirmRoleplayOverwrite(roleplaySave, uuidv4());
-        return await saveChatImmediately({ chatName, withMetadata, metadataSnapshot: metadata, mesId, force: true, chatData, throwOnError, deferBackup, deferSequenceId, allowShrink, activeChatName, characterName, avatarUrl, wasGroupChat, scheduledGeneration, scheduledCharacterId, scheduledGroupId, scheduledChatId, account, roleplaySave, mewmoryHidePolicy });
+        return await saveChatImmediately({ chatName, withMetadata, metadataSnapshot: metadata, mesId, force: true, chatData, throwOnError, deferBackup, deferSequenceId, allowShrink, activeChatName, characterName, avatarUrl, wasGroupChat, scheduledGeneration, scheduledCharacterId, scheduledGroupId, scheduledChatId, account, roleplaySave, mewmoryHidePolicy, onMewmoryHideSaved });
     } catch (error) {
         console.error(error);
         toastr.error(error?.saveNotice || t`Check your connection to Neconyan, then reload the page to avoid losing changes.`, t`Chat could not be saved`);

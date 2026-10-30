@@ -14,7 +14,7 @@ export async function getCounter(choice = 'o200k_base', hint = {}) {
             choice = getTokenizerModel(String(hint.tokenizerName || ''));
         }
         if (!choice || ['none', 'api_current', 'api_kobold', 'api_textgenerationwebui', 'best_match'].includes(choice)) {
-            fail('Choose a local writer tokenizer (the tool that counts tokens, the units models measure text in) in Mewmory settings. Mewmory will not trim older chat using a rough character-count estimate.', 409);
+            fail('Choose a Token counter for replies (the tool that counts tokens, the units models measure text in) in Mewmory settings. Mewmory will not trim older chat using a rough character-count estimate.', 409);
         }
     }
     if (['o200k_base', 'cl100k_base', 'gpt2'].includes(choice)) {

@@ -1662,6 +1662,7 @@ function saveGroupChat(groupId, shouldSaveGroup, force = false, throwOnError = f
             deferSequenceId: options.deferSequenceId,
             allowShrink: Boolean(options.allowShrink),
             mewmoryHidePolicy: options.mewmoryHidePolicy,
+            onMewmoryHideSaved: options.onMewmoryHideSaved,
             scheduledGeneration: currentGeneration,
             account,
             roleplaySave,
@@ -1687,7 +1688,7 @@ export async function waitForQueuedGroupChatSaves() {
     }
 }
 
-async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = false, throwOnError = false, chatId, chatData, metadata, deferBackup = false, deferSequenceId, allowShrink = false, scheduledGeneration, account, roleplaySave, mewmoryHidePolicy }) {
+async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = false, throwOnError = false, chatId, chatData, metadata, deferBackup = false, deferSequenceId, allowShrink = false, scheduledGeneration, account, roleplaySave, mewmoryHidePolicy, onMewmoryHideSaved }) {
     if (account !== undefined && account !== getCurrentUserHandle()) return false;
     const group = groups.find(x => x.id == groupId);
     if (!group) {
@@ -1761,7 +1762,7 @@ async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = fals
         }
 
         confirmRoleplayOverwrite(roleplaySave, uuidv4());
-        return await saveGroupChatImmediately({ groupId, shouldSaveGroup, force: true, throwOnError, chatId, chatData: chatMessages, metadata: metadataForSave, deferBackup, deferSequenceId, allowShrink, scheduledGeneration, account, roleplaySave, mewmoryHidePolicy });
+        return await saveGroupChatImmediately({ groupId, shouldSaveGroup, force: true, throwOnError, chatId, chatData: chatMessages, metadata: metadataForSave, deferBackup, deferSequenceId, allowShrink, scheduledGeneration, account, roleplaySave, mewmoryHidePolicy, onMewmoryHideSaved });
     }
 
     const responseData = response.data;
@@ -1769,6 +1770,13 @@ async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = fals
     rememberQueuedGroupChatIntegrity(chatId, responseData?.integrity);
     if (isActiveGroupChatSave && typeof responseData?.integrity === 'string' && responseData.integrity) {
         chat_metadata.integrity = responseData.integrity;
+    }
+    if (mewmoryHidePolicy) {
+        try {
+            onMewmoryHideSaved?.(responseData);
+        } catch (error) {
+            console.warn('Mewmory hide result callback failed after the group chat was saved.', error);
+        }
     }
 
     if (shouldSaveGroup) {

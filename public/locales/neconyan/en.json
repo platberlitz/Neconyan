@@ -1,4 +1,11 @@
 {
+  "Mewmory could not read this chat. Try again.": "Mewmory could not read this chat. Try again.",
+  "Mewmory is off for this chat. Turn on Use Mewmory in this chat before hiding older messages.": "Mewmory is off for this chat. Turn on Use Mewmory in this chat before hiding older messages.",
+  "Mewmory settings could not be read. Try again.": "Mewmory settings could not be read. Try again.",
+  "Turn on Replace older chat with Mewmory context before hiding them.": "Turn on Replace older chat with Mewmory context before hiding them.",
+  "This chat is still inside the recent-message window, so nothing needed hiding.": "This chat is still inside the recent-message window, so nothing needed hiding.",
+  "Nothing was hidden yet: Mewmory has not finished reading the older messages. They stay visible until it has.": "Nothing was hidden yet: Mewmory has not finished reading the older messages. They stay visible until it has.",
+  "Set Hide older messages at this chat size, tokens in Mewmory settings before hiding old messages.": "Set Hide older messages at this chat size, tokens in Mewmory settings before hiding old messages.",
     "The signed-in account changed. Reload the page before saving Mewmory settings.": "The signed-in account changed. Reload the page before saving Mewmory settings.",
   "Hide older messages when the visible chat reaches, tokens": "Hide older messages when the visible chat reaches, tokens",
   "When the visible chat history reaches this many tokens, older messages are hidden and the count starts again from what remains. Hiding repeats each time it reaches this size. The latest reply can stay visible. Mewmory still remembers hidden messages.": "When the visible chat history reaches this many tokens, older messages are hidden and the count starts again from what remains. Hiding repeats each time it reaches this size. The latest reply can stay visible. Mewmory still remembers hidden messages.",

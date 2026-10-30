@@ -135,15 +135,16 @@ export function expandNeighbours(documents, allDocuments, count = 0) {
 
 /** Build a new vector space separately; queries use lexical recovery until its document side is ready. */
 export async function updateIndex(state, directories, config, { signal, limit = 32, embedFn = embed } = {}) {
-    if (!config.roles.embedding.enabled) return { usage: [], remaining: 0 };
-    const documents = searchDocuments(state, Infinity, config).filter(document => config.roles.embedding.allowedData.includes(document.dataType));
     const version = roleVersion(config, 'embedding');
+    if (!config.roles.embedding.enabled) return { usage: [], remaining: 0, paid: {}, version };
+    const documents = searchDocuments(state, Infinity, config).filter(document => config.roles.embedding.allowedData.includes(document.dataType));
     const sameVersion = state.index.version === version;
     const existing = sameVersion ? state.index.vectors : state.index.build?.version === version ? state.index.build.vectors : {};
     const next = Object.fromEntries(documents.filter(document => existing[document.id]?.textHash === hash(document.searchText))
         .map(document => [document.id, existing[document.id]]));
     const missing = documents.filter(document => !next[document.id]);
     const usage = [];
+    const paid = {};
     const policy = config.roles.embedding.nativePolicy;
     const batchSize = Math.min(config.retrieval?.batchSize || 10, policy?.source === 'vertexai' ? policy.settings.model.startsWith('gemini-embedding-') ? 1 : 5 : 10);
     let dimension = Object.values(next)[0]?.vector.length;
@@ -157,10 +158,44 @@ export async function updateIndex(state, directories, config, { signal, limit = 
         dimension ||= result.vectors[0]?.length;
         if (result.vectors.length !== batch.length || !dimension || result.vectors.some(vector => !Array.isArray(vector) || vector.length !== dimension
             || !vector.some(value => value !== 0) || vector.some(value => !Number.isFinite(value)))) fail('Embedding dimensions changed or a vector was invalid. Set a new model revision and rebuild the index.', 502);
-        batch.forEach((document, offset) => { next[document.id] = { textHash: hash(document.searchText), vector: result.vectors[offset] }; });
+        batch.forEach((document, offset) => {
+            const entry = { textHash: hash(document.searchText), vector: result.vectors[offset] };
+            next[document.id] = entry;
+            paid[document.id] = entry;
+        });
     }
     const remaining = Math.max(0, missing.length - limit);
     if (!remaining || sameVersion) state.index = { version, vectors: next, pending: remaining > 0 };
     else state.index = { ...state.index, pending: true, build: { version, vectors: next } };
-    return { usage, remaining };
+    return { usage, remaining, paid, version };
+}
+
+/**
+ * Keep paid vectors from one or more index snapshots, but only where the embedding role still has
+ * the same version, the document is still current and allowed, and its search text is unchanged.
+ * Later snapshots take precedence when two entries describe the same current text; an earlier
+ * valid entry is still used if the later one is stale. Used when a record or message changes
+ * while a background recall is still embedding the batch.
+ */
+export function mergeVectorIndex(state, config, indexes = [state.index]) {
+    const version = roleVersion(config, 'embedding');
+    const allowedData = config.roles.embedding.allowedData || [];
+    const documents = searchDocuments(state, Infinity, config)
+        .filter(document => allowedData.includes(document.dataType));
+    const candidates = new Map();
+    for (const index of indexes) {
+        const vectors = index?.version === version ? index.vectors : index?.build?.version === version ? index.build.vectors : {};
+        for (const [id, entry] of Object.entries(vectors || {})) {
+            const list = candidates.get(id) || [];
+            list.push(entry);
+            candidates.set(id, list);
+        }
+    }
+    const vectors = {};
+    for (const document of documents) {
+        const textHash = hash(document.searchText);
+        const entry = candidates.get(document.id)?.findLast(candidate => candidate?.textHash === textHash);
+        if (entry) vectors[document.id] = entry;
+    }
+    return { version, vectors, remaining: documents.length - Object.keys(vectors).length };
 }

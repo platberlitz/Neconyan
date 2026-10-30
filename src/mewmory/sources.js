@@ -4,9 +4,9 @@ import sanitize from 'sanitize-filename';
 import { read as readCharacterCard } from '../character-card-parser.js';
 import { readWorldInfoFile } from '../endpoints/worldinfo.js';
 import { fail, hash, POLICY_VERSION, purgeSources, sourceAt } from './core.js';
-import { readConfig } from './models.js';
+import { readConfig, legacyRoleVersion, resolvedRoleIdentity, roleVersion } from './models.js';
 import { processingVersion } from './processing.js';
-import { captureBranchMemory, mutateState, readChatShared, readJsonShared, readStateShared, synchronize } from './store.js';
+import { captureBranchMemory, readChatShared, readJsonShared, readStateShared, synchronize } from './store.js';
 import { fileCollections } from '../operations/vector-sources.js';
 
 const cardTextCache = new Map();
@@ -118,19 +118,91 @@ export async function loadCurrentState(directories, locator) {
     return loadCurrentStateSync(directories, locator);
 }
 
+const PROCESSING_ROLES = ['extractor', 'pawspective'];
+
+/** True when a resolved profile-backed source or model differs from the one stored for this semantic role version. */
+export function roleIdentityChanged(state, config) {
+    return PROCESSING_ROLES.some(name => {
+        const live = resolvedRoleIdentity(config, name);
+        const stored = state.roleIdentities?.[name];
+        const saved = typeof stored === 'string' ? stored : stored?.[roleVersion(config, name)];
+        return Boolean(live && saved != null && saved !== live);
+    });
+}
+
 export function loadCurrentStateSync(directories, locator) {
     const source = readChatShared(directories, locator);
     const context = readContextSourcesSync(directories, locator, undefined, source);
-    const state = synchronize(directories, locator, context, source);
     const config = readConfig(directories);
+    const policy = processingVersion(config);
+    const roleKeys = Object.fromEntries(PROCESSING_ROLES.map(name => [name, roleVersion(config, name)]));
+    const identities = Object.fromEntries(PROCESSING_ROLES.map(name => [name, resolvedRoleIdentity(config, name)]));
+    // Preserve existing coverage when upgrading a policy that included request timeouts or
+    // operational role settings. Both formulas are rebuilt from the current configuration.
     const legacyPolicy = hash([POLICY_VERSION, ...['extractor', 'pawspective'].map(name => hash([config.localOnly, config.roles[name]]))]);
-    return mutateState(directories, locator, current => {
-        // Preserve existing coverage when upgrading the policy that included request timeouts.
-        for (const coverage of [current.coverage, current.checkpoints]) {
-            for (const key of Object.keys(coverage)) if (coverage[key] === legacyPolicy) coverage[key] = processingVersion(config);
+    const legacyCurrentPolicy = hash([POLICY_VERSION, ...['extractor', 'pawspective'].map(name => legacyRoleVersion(config, name))]);
+    return synchronize(directories, locator, context, source, current => {
+        const identitiesChanged = [];
+        const books = {};
+        for (const name of PROCESSING_ROLES) {
+            const stored = current.roleIdentities?.[name];
+            if (typeof stored === 'string') {
+                // Migrate the earlier single-identity archive shape to one entry per semantic role version.
+                books[name] = { [roleKeys[name]]: stored };
+                identitiesChanged.push(name);
+            } else {
+                books[name] = stored && typeof stored === 'object' ? { ...stored } : {};
+            }
         }
+        const policies = { ...(current.rolePolicies || {}) };
+        const clearedPolicies = new Set();
+        for (const name of PROCESSING_ROLES) {
+            const live = identities[name];
+            if (!live) continue;
+            const key = roleKeys[name];
+            const previous = books[name][key];
+            if (previous == null) {
+                // Archives written before identities were tracked start from the current
+                // connection instead of being treated as a change.
+                books[name][key] = live;
+                identitiesChanged.push(name);
+            } else if (previous !== live) {
+                // The same semantic role version now resolves to a different source or model.
+                // Delete only marks produced with the old connection, never another stored version.
+                books[name][key] = live;
+                identitiesChanged.push(name);
+                clearedPolicies.add(policy);
+                for (const [savedPolicy, snapshot] of Object.entries(policies)) {
+                    const saved = snapshot?.[name];
+                    if (saved?.key === key && saved.identity === previous) clearedPolicies.add(savedPolicy);
+                }
+            }
+        }
+        for (const coverage of [current.coverage, current.checkpoints]) {
+            for (const key of Object.keys(coverage)) {
+                if (coverage[key] === legacyPolicy || coverage[key] === legacyCurrentPolicy) coverage[key] = policy;
+            }
+        }
+        if (clearedPolicies.size) {
+            for (const coverage of [current.coverage, current.checkpoints]) {
+                for (const key of Object.keys(coverage)) if (clearedPolicies.has(coverage[key])) delete coverage[key];
+            }
+        }
+        policies[policy] = Object.fromEntries(PROCESSING_ROLES.map(name => {
+            const saved = policies[policy]?.[name];
+            // A temporary profile failure leaves the live identity null. Keep the last nonempty
+            // identity for the same semantic role version so a later return to it can still detect
+            // that the profile actually changed while it was away.
+            const identity = identities[name]
+                ?? (saved?.key === roleKeys[name] ? saved.identity : null);
+            return [name, { key: roleKeys[name], identity }];
+        }));
+        const used = new Set([policy, ...Object.values(current.coverage), ...Object.values(current.checkpoints)]);
+        for (const key of Object.keys(policies)) if (!used.has(key)) delete policies[key];
+        if (identitiesChanged.length) current.roleIdentities = books;
+        current.rolePolicies = policies;
         return purgeMissingContextSources(directories, current);
-    }, state.revision);
+    });
 }
 
 export function purgeMissingContextSources(directories, state) {

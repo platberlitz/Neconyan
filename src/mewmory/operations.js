@@ -3,10 +3,10 @@ import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { providerStep, readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { fail, hash, object, text } from './core.js';
 import { generationFingerprint } from './context.js';
-import { callJsonRole, embed, readConfig, roleVersion } from './models.js';
+import { callJsonRole, embed, readConfig } from './models.js';
 import { addUsage } from './processing.js';
 import { recall } from './retrieval.js';
-import { searchDocuments, updateIndex } from './search.js';
+import { mergeVectorIndex, updateIndex } from './search.js';
 import { loadCurrentState } from './sources.js';
 import { mutateState, normalizeLocator } from './store.js';
 
@@ -27,6 +27,7 @@ export async function startOperation(directories, owner, operation, body) {
         return { job: previous, created: false };
     }
     const state = await loadCurrentState(directories, locator);
+    if (!state.enabled) fail('Turn on Mewmory for this chat first.', 409);
     const config = readConfig(directories);
     const accepted = acceptJob(directories, { owner, type: 'mewmory.' + operation, submissionKey: key,
         intent, target: targetFor(locator, state.branchId),
@@ -91,14 +92,10 @@ export function registerMewmoryOperations({ call = callJsonRole, embedFn = embed
                     assertCurrent(current, readConfig(directories), job);
                     if (current.indexOperation !== job.id) fail('Memory search changed while it was being rebuilt. Start the rebuild again.', 409);
                     // Keep paid vectors for unchanged documents, even when new messages arrive.
-                    const version = roleVersion(config, 'embedding');
-                    const vectors = index => index.version === version ? index.vectors : index.build?.version === version ? index.build.vectors : {};
-                    const combined = { ...vectors(current.index), ...vectors(state.index) };
-                    const documents = searchDocuments(current, Infinity, config).filter(document => config.roles.embedding.allowedData.includes(document.dataType));
-                    const valid = Object.fromEntries(documents.filter(document => combined[document.id]?.textHash === hash(document.searchText))
-                        .map(document => [document.id, combined[document.id]]));
-                    result.remaining = config.roles.embedding.enabled ? documents.length - Object.keys(valid).length : 0;
-                    current.index = { version, vectors: valid, pending: result.remaining > 0 };
+                    // The freshly rebuilt copy goes last so its entries win over older ones.
+                    const merged = mergeVectorIndex(current, config, [current.index, state.index]);
+                    result.remaining = config.roles.embedding.enabled ? merged.remaining : 0;
+                    current.index = { version: merged.version, vectors: merged.vectors, pending: result.remaining > 0 };
                     addUsage(current, result.usage);
                 }, undefined, { existingOnly: true });
                 await progress({ stage: 'index', completed: 0, total: result.remaining });
