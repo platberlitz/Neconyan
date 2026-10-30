@@ -341,7 +341,7 @@ export async function runRoleplayCompanions(context, options) {
         diagnostic: diagnosticAgents.map(item => ({ id: item.id, sourceTemplateId: item.sourceTemplateId, phase: 'companions' })),
         identity: roleplayHash({ identity, agents: name, messages: prompt.messages }), binding: agent.binding ?? binding,
         modelOverride: agent.binding ? agent.modelOverride : '', fallbacks: agent.fallbacks, maxTokens, macros: options.macros, tokenizer: snapshot.tokenizer,
-        fallbackContext: snapshot.maxContext, assertCurrent, generate, acceptOutput, buildMessages: () => prompt.messages });
+        fallbackContext: snapshot.maxContext, assertCurrent, generate, acceptOutput, isEmptyOutput: text => !content(text), buildMessages: () => prompt.messages });
     const runSingle = async (agent, sections, suffix = '') => {
         const runIdentity = roleplayHash({ identity, agent: agent.id, sections, suffix });
         const cached = saved(context, snapshot.account, `roleplay-companion:${agent.id}`, runIdentity);

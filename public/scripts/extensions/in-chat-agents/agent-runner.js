@@ -3912,8 +3912,11 @@ export async function requestPromptTransform(agent, promptMessages, maxTokens, o
             return response;
         };
 
+        const isEmptyOutput = output => !output.trim() || options.isEmptyOutput?.(output) === true;
+
         try {
             let rejectedResponse = null;
+            let emptyResponse = null;
             let lastError = null;
             for (const [index, attempt] of attempts.entries()) {
                 const target = describePromptTransformTarget(attempt.profileId, attempt.profileId ? 'profile' : 'main');
@@ -3936,17 +3939,21 @@ export async function requestPromptTransform(agent, promptMessages, maxTokens, o
                     response = { ...response, fallbackIndex: index, fallbackFrom: profileId };
                 }
                 const output = String(response?.output ?? '');
-                if (output.trim() && !response?.lengthLimited && (!options.acceptOutput || options.acceptOutput(output))) {
+                const empty = !response?.lengthLimited && isEmptyOutput(output);
+                if (!empty && !response?.lengthLimited && (!options.acceptOutput || options.acceptOutput(output))) {
                     return settle(response);
                 }
                 // Keep the original result for existing repair/error handling if every connection fails.
-                rejectedResponse ??= response;
+                if (empty) emptyResponse ??= response;
+                else rejectedResponse ??= response;
                 if (index < attempts.length - 1) {
                     console.warn(`[InChatAgents] ${agent?.name || 'Agent'} returned an incomplete or unusable reply from ${target}; trying the next fallback connection.`);
                 }
             }
             if (rejectedResponse) return settle(rejectedResponse);
-            throw lastError;
+            // A blank reply must not hide why the fallback connections failed.
+            if (lastError) throw lastError;
+            return settle(emptyResponse);
         } finally {
             options.signal?.removeEventListener('abort', abortFromCaller);
             activeAgentRequestAbortControllers.delete(requestAbortController);
