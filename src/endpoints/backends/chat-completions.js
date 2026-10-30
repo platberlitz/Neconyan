@@ -682,8 +682,9 @@ async function sendMakerSuiteRequest(request, response) {
     // Neconyan divergence: a bare String() turns an absent effort into "undefined", which Gemini 3 would forward as a thinking level.
     const reasoningEffort = String(request.body.reasoning_effort ?? '');
     const includeReasoning = Boolean(request.body.include_reasoning);
-    const aspectRatio = String(request.body.request_image_aspect_ratio);
-    const imageSize = String(request.body.request_image_resolution);
+    // Neconyan divergence: a bare String() turns absent image settings into "undefined", which would reach Gemini as the aspect ratio and image size.
+    const aspectRatio = String(request.body.request_image_aspect_ratio ?? '');
+    const imageSize = String(request.body.request_image_resolution ?? '');
     const isGemma = model.includes('gemma');
     const isLearnLM = model.includes('learnlm');
 
