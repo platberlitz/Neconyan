@@ -348,9 +348,17 @@ test('an ended share tells the reader to share it again', t => {
     const captured = capture('edit-note-selection', { notebookId, noteId, grantId: grant.id, find: 'Share this line.', replace: 'Changed.' });
     const stored = run(lease => assistant.storeProposalLocked(lease, { proposal: captured.proposal, callId: 'call-ended-share' }));
     run(lease => assistant.revokeGrantLocked(lease, grant.id));
-    const ended = error => error.code === 'GRANT_EXPIRED' && error.message === 'That shared item has expired. Share it again to continue.';
+    const ended = error => error.code === 'GRANT_EXPIRED' && error.message === 'That note or selection is no longer shared. Share it again to continue.';
     assert.throws(() => run(lease => assistant.decideProposalLocked(lease, { proposalId: stored.proposalId, proposalHash: stored.proposalHash, decision: 'allow', actor: { kind: 'user' } })), ended);
     assert.throws(() => capture('read-note', { notebookId, noteId, grantId: grant.id }), ended);
+});
+
+test('a share that timed out reads the same as one the owner ended', t => {
+    const { run, notebookId, create, capture } = prepared(t);
+    const noteId = create('Timed out share', 'Shared words.\n');
+    const grant = run(lease => assistant.createGrantLocked(lease, { notebookId, noteId, scope: 'note', operations: ['read'], minutes: 1 }, Date.now() - 5 * 60000));
+    assert.throws(() => capture('read-note', { notebookId, noteId, grantId: grant.id }),
+        error => error.code === 'GRANT_EXPIRED' && error.message === 'That note or selection is no longer shared. Share it again to continue.');
 });
 
 test('a changed selection tells the reader to share it again', t => {
