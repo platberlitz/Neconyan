@@ -104,7 +104,14 @@ for (const phone of [false, true]) {
         // harmless no-op, so Stop can be tested without a model request or artificial checkpoint.
         await page.route('**/api/mewmory/process', route => route.fulfill({ json: {} }));
         await page.locator('#send_textarea').fill('Second question.');
+        const prepareResponse = page.waitForResponse(response => {
+            if (response.request().method() !== 'POST') return false;
+            if (new URL(response.url()).pathname !== '/api/mewmory/prepare') return false;
+            return response.request().postData()?.includes('Second question.') === true;
+        }, { timeout: 30000 });
         await page.evaluate(() => { void import('/script.js').then(core => core.Generate('normal', { skipNativeRoleplay: true })); });
+        const prepared = await prepareResponse;
+        expect((await prepared.json()).waiting).toBe(true);
         await expect(page.getByText(/Waiting for memory before replying/)).toBeVisible();
         await page.locator('#send_textarea').fill('Draft stays here.');
         await attachPendingFile(page, 'draft-note.txt');
