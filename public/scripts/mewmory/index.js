@@ -13,6 +13,7 @@ import { conversationState } from '../neconyan-conversation/state.js';
 import { cancelJob } from '../jobs.js';
 import { uuidv4 } from '../utils.js';
 import { getPreparedMewmoryContext, setPreparedMewmoryContext } from '../extensions/in-chat-agents/agent-context-macros.js';
+import { isAgentWorkPending, waitForAgentWorkIdle } from '../extensions/in-chat-agents/agent-work-state.js';
 import { t, translate } from '../i18n.js';
 import { hasRestrictedGroupHistory } from '../group-chat-visibility.js';
 import { MEWMORY_CATCH_UP_TIMEOUT_MS, observeMewmoryCatchUp } from './catch-up.js';
@@ -372,6 +373,12 @@ export async function hideOverflowAutomatically({ refresh = false, limit } = {})
             if (scope !== getMewmoryScope()) return 0;
         }
         if (!mewmory.view?.enabled || !mewmory.config?.autoHide) return 0;
+        // Hiding reloads the chat, which cancels agents still working on it.
+        while (isAgentWorkPending()) {
+            if (!await waitForAgentWorkIdle({ isCancelled: () => scope !== getMewmoryScope() })) return 0;
+            await refreshMewmory();
+            if (scope !== getMewmoryScope() || !mewmory.view?.enabled || !mewmory.config?.autoHide) return 0;
+        }
         if (mewmory.config.historyMode === 'messages') {
             if (!mewmory.config.excludeHistory) return 0;
             return await hideMessageWindow(scope, true);

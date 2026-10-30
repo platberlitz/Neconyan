@@ -99,6 +99,7 @@ import {
 import { buildPromptTransformSynthesisMessages, composePromptTransformDraft, runPromptTransformStages } from './prompt-transform-synthesis.js';
 import { isLikelyMainReplyRefusal, isLikelyPromptTransformRefusal } from './prompt-transform-refusal.js';
 import { runAgentActionOnServer } from './server-agent-actions.js';
+import { setAgentWorkProbe } from './agent-work-state.js';
 
 const PROMPT_KEY_PREFIX = 'inchat_agent_';
 const AUTHORS_NOTE_PROMPT_KEY = '2_floating_prompt';
@@ -152,6 +153,7 @@ let generationStopRequested = false;
 const deferredPostProcessingQueue = new Map();
 let deferredPostProcessingTimeout = null;
 let latestAssistantPostProcessingFallbackTimeout = null;
+let scheduledPostProcessingRetryCount = 0;
 let latestAssistantPostProcessingFallbackDeadline = 0;
 let postGenerationRecoveryTimeout = null;
 let missedGenerationEndRecoveryTimeout = null;
@@ -406,7 +408,9 @@ function warnPostProcessingInterrupted(message, detail = '') {
 // replaced reply, and it must never fight a generation that is already running.
 function schedulePostProcessingRetry(messageIndex, generationType, activationSnapshot, message, { cancelRevision, targetState, retryAttempt, failureDetail, deadline }) {
     const retryDeadline = deadline ?? Date.now() + POST_PROCESSING_RETRY_WAIT_WINDOW_MS;
+    scheduledPostProcessingRetryCount++;
     setTimeout(() => {
+        scheduledPostProcessingRetryCount--;
         if (generationStopRequested || agentGenerationCancelRevision !== cancelRevision || !areAgentsGloballyEnabled()) {
             return;
         }
@@ -439,6 +443,17 @@ function escapeToastHtml(value) {
 
 export function isAgentGenerationActive() {
     return internalPromptTransformDepth > 0 || manualAgentRunQueues.some(queue => queue.processing || queue.runs.length > 0) || parallelManualRunCount > 0 || activePathfinderRetrievalAbortControllers.size > 0;
+}
+
+// Anything that reloads the chat (Mewmory hiding older messages) checks this
+// first, because a reload cancels every agent still working on the reply.
+function isAgentWorkPending() {
+    return isAgentGenerationActive()
+        || isGenerationInProgress
+        || postProcessingInFlightKeys.size > 0
+        || deferredPostProcessingQueue.size > 0
+        || scheduledPostProcessingRetryCount > 0
+        || latestAssistantPostProcessingFallbackTimeout !== null;
 }
 
 export function onAgentGenerationStateChanged(listener) {
@@ -6265,6 +6280,7 @@ export function initAgentRunner() {
 
     agentRunnerInitialized = true;
     setAgentGenerationContextProvider(getAgentGenerationContext);
+    setAgentWorkProbe(isAgentWorkPending);
     initPostGenerationRecoveryHooks();
     setPromptStorePersistHook(() => { void persistPathfinderRuntimeSettingsToAgent(); });
 

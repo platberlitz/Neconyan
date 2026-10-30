@@ -42,7 +42,7 @@ function installRunner(events) {
         console,
         eventSource: events, event_types,
         agentRunnerInitialized: false, pathfinderRetrievalCacheRevision: 0, pathfinderToolRevision: 0, isPathfinderSelfWrite,
-        initPostGenerationRecoveryHooks() {}, setAgentGenerationContextProvider() {}, getAgentGenerationContext() {},
+        initPostGenerationRecoveryHooks() {}, setAgentGenerationContextProvider() {}, setAgentWorkProbe() {}, isAgentWorkPending: () => false, getAgentGenerationContext() {},
         setPromptStorePersistHook() {}, abortActivePathfinderRetrieval() {}, clearPathfinderRetrievalToast() {}, clearPathfinderExtensionPrompts() {},
         syncToolAgentRegistrations: jest.fn(), getAgents: () => [], isPathfinderToolAgent: () => false,
         getPathfinderRuntimeSettings: getSettings, replacePathfinderRuntimeSettings: replaceSettings,

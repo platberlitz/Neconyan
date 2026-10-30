@@ -71,6 +71,7 @@ jest.unstable_mockModule('../public/scripts/events.js', () => ({
 }));
 const { enableMewmoryForNewChat, getMewmoryLocator, getMewmoryScope, getOverflowMessages, hideOverflowAutomatically, hideOverflowMessages, initMewmory, mewmory, notifyMewmory, prepareMewmoryGeneration, processMewmory, refreshMewmory, requestMewmory, stopMewmoryBackfill, validateMewmoryGeneration } = await import('../public/scripts/mewmory/index.js');
 const { mewmoryConfigAutosave } = await import('../public/scripts/mewmory/config-autosave.js');
+const { setAgentWorkProbe } = await import('../public/scripts/extensions/in-chat-agents/agent-work-state.js');
 const config = { revision: 1, roles: {}, autoHideTokens: 30 };
 const response = data => ({ ok: true, json: async () => data });
 
@@ -100,6 +101,7 @@ beforeEach(() => {
     Object.assign(mewmory, { view: null, config: null, stories: [], error: '', loading: false, busy: false, backfilling: false });
 });
 afterEach(() => {
+    setAgentWorkProbe(null);
     jest.useRealTimers();
     jest.restoreAllMocks();
 });
@@ -389,6 +391,46 @@ test('automatic hiding refreshes the view and only runs where Mewmory is on and 
     expect(savedHiddenRanges.mock.calls.every(call => call[1]?.keepInMewmory === true)).toBe(true);
     expect(global.toastr.info).toHaveBeenLastCalledWith('Hid 4 older messages after reaching 30 tokens. Mewmory still remembers them.');
     expect(await hideOverflowAutomatically()).toBe(0);
+});
+
+test('automatic hiding waits for running agents before it saves and reloads the chat', async () => {
+    const line = (is_user, mes) => ({ is_user, mes });
+    const reset = () => chat.splice(0, chat.length, line(true, 'a'.repeat(20)), line(false, 'b'.repeat(20)),
+        line(true, 'c'.repeat(20)), line(false, 'd'.repeat(20)));
+    fetch.mockImplementation(async (url, { body }) => {
+        const parsed = JSON.parse(body);
+        if (url.endsWith('config/get')) return response({ config, stories: [] });
+        if (url.endsWith('/tokens')) return response({ counts: parsed.texts.map(text => String(text).length) });
+        return response({ locator: parsed.locator, enabled: true, revision: 2 });
+    });
+    const pause = () => new Promise(resolve => setTimeout(resolve, 600));
+    let agentsWorking = true;
+    setAgentWorkProbe(() => agentsWorking);
+    config.autoHide = true;
+    reset();
+    mewmory.config = { ...config, autoHide: true, autoHideTokens: 30 };
+    mewmory.view = { enabled: true, revision: 1, locator: getMewmoryLocator() };
+
+    const hiding = hideOverflowAutomatically();
+    await pause();
+    expect(saveChatConditional).not.toHaveBeenCalled();
+    expect(getChat).not.toHaveBeenCalled();
+    agentsWorking = false;
+    expect(await hiding).toBe(3);
+    expect(saveChatConditional).toHaveBeenCalledTimes(1);
+    expect(savedHiddenRanges.mock.calls.at(-1)[0]).toEqual([[0, 2]]);
+
+    saveChatConditional.mockClear();
+    getChat.mockClear();
+    agentsWorking = true;
+    reset();
+    mewmory.view = { enabled: true, revision: 2, locator: getMewmoryLocator() };
+    const switched = hideOverflowAutomatically();
+    await pause();
+    chatId = 'second';
+    expect(await switched).toBe(0);
+    expect(saveChatConditional).not.toHaveBeenCalled();
+    expect(getChat).not.toHaveBeenCalled();
 });
 
 test('automatic hiding off does not flush incomplete settings or report a hiding error', async () => {
