@@ -12,6 +12,7 @@
 - PR #351 (2026-10-30) `fix(notebooks): offer Blank note when saved templates can't be read`
 - PR #352 (2026-10-30) `fix(notebooks): tidy share-again messages and the Back to note label`
 - PR #353 (2026-10-30) `fix(mewmory): wait for running agents before hiding older messages`
+- PR #354 (2026-10-30) `fix(mewmory): stop auto-hide skipping replies and hiding unread messages`
 
 ## v1.4.0
 
