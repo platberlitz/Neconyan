@@ -5,7 +5,8 @@ import test from 'node:test';
 import { fixture } from './roleplay-transactions-fixture.js';
 import { readRoleplayChat } from '../src/generation/roleplay-source.js';
 import { commitRoleplayLifecycleLocked, commitSingleChatWrite, reconcilePendingChatWrite } from '../src/roleplay-lifecycle.js';
-import { roleplayNativeHost } from '../src/endpoints/chats.js';
+import express from 'express';
+import { roleplayNativeHost, router as chatsRouter } from '../src/endpoints/chats.js';
 import { readRoleplayAccount, withRoleplayAccountLock } from '../src/roleplay-store.js';
 import * as store from '../src/scratchpad/store.js';
 
@@ -121,6 +122,49 @@ test('an existing canonical Scratchpad wins over a legacy candidate and accounts
     const other = fixture(t, false, 'scratchpad-other');
     assert.equal(read(other, source).sessions.length, 0);
 });
+
+// The rename route answers a damaged Scratchpad file with the file's own explanation, and writes nothing.
+async function renameThroughRoute(f, to) {
+    const app = express();
+    app.use(express.json());
+    app.use((request, _response, next) => {
+        request.user = { profile: { handle: f.scope.owner }, directories: f.scope.directories };
+        next();
+    });
+    app.use('/api/chats', chatsRouter);
+    const server = await new Promise(resolve => { const listening = app.listen(0, '127.0.0.1', () => resolve(listening)); });
+    try {
+        const response = await fetch(`http://127.0.0.1:${server.address().port}/api/chats/rename`, { method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ avatar_url: f.locator.avatar, original_file: `${f.locator.chat}.jsonl`, renamed_file: `${to}.jsonl`,
+                is_group: false, roleplay: { operationKey: `rename-route:${to}` } }) });
+        return { status: response.status, body: await response.json() };
+    } finally {
+        await new Promise(resolve => server.close(resolve));
+    }
+}
+
+for (const [damage, spoil, message] of [
+    ['identity registry', f => fs.writeFileSync(path.join(f.scope.directories.root, 'scratchpad', 'identities.json'), '{damaged'),
+        'Scratchpad\'s saved chat identities could not be read. The original files were kept.'],
+    ['session file', (f, legacy) => fs.writeFileSync(store.scratchpadFile(f.scope.directories.root, legacy), '{damaged'),
+        'This Scratchpad file could not be read.'],
+]) {
+    test(`a damaged Scratchpad ${damage} makes the rename route say so and change nothing`, async t => {
+        const f = fixture(t, false, 'scratchpad-damaged-route');
+        readRoleplayChat(f.scope, f.locator);
+        const legacy = legacySource(f);
+        seed(f, legacy);
+        const before = fs.readFileSync(f.filename);
+        spoil(f, legacy);
+        const { status, body } = await renameThroughRoute(f, 'Renamed');
+        assert.equal(status, 422);
+        assert.deepEqual(body, { error: 'scratchpad_damaged', code: 'SCRATCHPAD_DAMAGED', message });
+        assert.deepEqual(fs.readFileSync(f.filename), before);
+        assert.equal(fs.existsSync(path.join(path.dirname(f.filename), 'Renamed.jsonl')), false);
+        assert.equal(readRoleplayAccount(f.scope).pending, null);
+    });
+}
 
 test('a damaged identity registry refuses a rename without changing either file', t => {
     const f = fixture(t, false, 'scratchpad-damaged-identity');

@@ -1493,6 +1493,8 @@ function sendRoleplayError(response, error) {
     if (error instanceof InvalidChatDataError) return response.status(400).send({ error: error.message });
     if (code?.startsWith('ROLEPLAY_')) return response.status(409).send({ error: code.slice(9).toLowerCase(), code });
     console.error('Protected chat request failed:', error);
+    // A damaged Scratchpad file refuses a chat move before anything is written. Its message names no path, so the browser may show it.
+    if (code === 'SCRATCHPAD_DAMAGED') return response.status(422).send({ error: 'scratchpad_damaged', code, message: error.message });
     return response.status(503).send({ error: 'roleplay_recovery_required', code: 'ROLEPLAY_IO_ERROR' });
 }
 
