@@ -17,6 +17,9 @@ import { t, translate } from './i18n.js';
  */
 export const localizedError = message => Object.assign(new Error(message), { localized: true });
 
+/** The sentence shown above the server's own wording when a saved change record is not as expected (an integrity failure, INT-01). The review window says the same words. */
+const integrityExplanation = () => t`Neconyan stopped because its saved change records are not as expected. Some steps may already have completed and have not been reversed. Check Change history before trying again, and show the details below to whoever runs this server.`;
+
 export const promptAttachmentHash = value => sha256(canonicalPromptMedia(value));
 
 // A refusal the browser raised is reported once per error object. A server reply was already reported by the route that read it, so its
@@ -94,7 +97,8 @@ export async function preflightImageInput(url, mode, { library = false } = {}) {
     if (owner !== getCurrentUserHandle() || stamp !== roleplayAccountStamp()) throw new Error(t`You switched accounts while the image was being inserted, so it was not inserted.`);
     if (!response.ok) {
         // The server's reason is a whole message, so it goes through the exact lookup before it joins the sentence.
-        const reason = result.error ? translate(result.error) : t`This image needs a compatible copy before it can be sent.`;
+        const reason = result.error && result.integrity === true ? `${integrityExplanation()} ${result.error}`
+            : result.error ? translate(result.error) : t`This image needs a compatible copy before it can be sent.`;
         const sentence = library
             ? t`The library image cannot be sent as it is. To insert library images, choose Show only or Use a description under 'Library images in replies'.`
             : t`The image cannot be sent as it is. It stays in the gallery; to insert it now, choose Show only or Use a description.`;
@@ -115,6 +119,7 @@ export async function validatePromptImageCopies(copies) {
             body: JSON.stringify({ account: stamp.account, copies: copies.slice(index, index + 6) }) });
         const result = await response.json();
         if (owner !== getCurrentUserHandle() || stamp !== roleplayAccountStamp()) throw localizedError(t`You switched accounts while images were being checked. Try again.`);
-        if (!response.ok) throw localizedError(result.error ? translate(result.error) : t`Compatible copies could not be checked. Try again, or review them in Review chat images.`);
+        if (!response.ok) throw localizedError(result.error && result.integrity === true ? `${integrityExplanation()}\n${result.error}`
+            : result.error ? translate(result.error) : t`Compatible copies could not be checked. Try again, or review them in Review chat images.`);
     }
 }
