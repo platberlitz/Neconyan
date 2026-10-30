@@ -15,7 +15,7 @@ const { getJob, recoverJobs, releaseJob, requestCancellation, setJobState, updat
 const { readArtifact, providerStep } = await import('../src/jobs/artifacts.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
 const { requestRoleplayAgentStop } = await import('../src/generation/roleplay-agent-stop.js');
-const { enableMewmoryHiding } = await import('./mewmory-hiding-fixture.js');
+const { enableMewmoryHiding, rememberSavedChat } = await import('./mewmory-hiding-fixture.js');
 
 const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', system_prompt: true },
     { identifier: 'chatHistory', marker: true, system_prompt: true }],
@@ -151,6 +151,8 @@ test('group speakers keep their owned identities while clearing older history be
     const firstWrite = readArtifact(f.dirs, f.jobId, 'roleplay-workflow-speaker:0');
     const nextLineage = readArtifact(f.dirs, f.jobId, 'roleplay-workflow-group-lineage:1');
     assert.equal(firstWrite.result.rawHash, nextLineage.source.rawHash);
+    // Mewmory reads the first speaker's reply before the second one lands.
+    rememberSavedChat(f.dirs, f.f.locator);
     await f.completeCandidate(1, { avatar: 'Other.png', name: 'Other', modelOverride: 'fixture-override',
         reply: 'Second speaker reply' }, count);
     const completed = await runRoleplayWorkflowJob(f.context());

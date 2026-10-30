@@ -12,7 +12,7 @@ import { setConfigFilePath } from '../src/util.js';
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const {
     continueState, eligibleRecords, forkState, hash, newState, putRecord, recordEligible,
-    POLICY_VERSION, ROLE_NAMES, sourceAt, syncSources, undoRecord, validateRecord,
+    POLICY_VERSION, refKey, ROLE_NAMES, sourceAt, syncSources, undoRecord, validateRecord,
 } = await import('../src/mewmory/core.js');
 const { activeReferences, assembleContext, generationFingerprint } = await import('../src/mewmory/context.js');
 const { callJsonRole, defaultConfig, embed, isLocalEndpoint, validateEndpoint, saveConfig } = await import('../src/mewmory/models.js');
@@ -1111,6 +1111,15 @@ function giftHistory() {
     return { state, original, current };
 }
 
+/** Marks the given chat records as fully read by Mewmory, as a finished extraction would. */
+function rememberMessages(directories, locator, records) {
+    mutateState(directories, locator, state => {
+        syncSources(state, records.slice(1), []);
+        const version = processingVersion(readConfig(directories));
+        for (const ref of state.timeline) state.checkpoints[refKey(ref)] = version;
+    });
+}
+
 function disk(t, messages = fixture.messages) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mewmory-test-'));
     t.after(() => fs.rmSync(root, { force: true, recursive: true }));
@@ -1137,12 +1146,56 @@ test('server automatic hiding skips disabled settings and keeps the latest reply
     assert.equal(policy.limit, defaultConfig().autoHideTokens);
     const records = [{ chat_metadata: {} }, { is_user: true, mes: 'o'.repeat(20) },
         { is_user: false, mes: 'r'.repeat(20) }, { is_user: true, mes: 'later' }];
-    const hidden = applyOverflowHiding(records, { limit: 15, count: text => text.length });
+    rememberMessages(directories, locator, records);
+    const lengthPolicy = limit => ({ limit, count: text => text.length, directories, locator });
+    const hidden = applyOverflowHiding(records, lengthPolicy(15));
     assert.deepEqual(hidden.records.map(record => record.is_system ?? false), [false, true, false, false]);
     assert.equal(hidden.records[1].extra.mewmoryKeepHidden, true);
     assert.equal(hidden.records[2].mes, 'r'.repeat(20));
     assert.equal(hidden.hidden, 1);
-    assert.equal(applyOverflowHiding(records, { limit: 1000, count: text => text.length }).records, records);
+    assert.equal(applyOverflowHiding(records, lengthPolicy(1000)).records, records);
+});
+
+test('token hiding keeps messages Mewmory has not finished reading in the prompt', async t => {
+    const { directories } = disk(t);
+    const locator = { chat: 'Gift', avatar: 'Mara.png', group: false };
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    saveConfig(directories, { ...config, autoUpdate: false, autoHide: true, writerTokenizer: 'o200k_base' });
+    mutateState(directories, locator, state => { state.enabled = true; }, 0);
+    const records = [{ chat_metadata: {} },
+        { is_user: true, send_date: 'one', mes: 'a'.repeat(20) },
+        { is_user: false, send_date: 'two', mes: 'b'.repeat(20) },
+        { is_user: true, send_date: 'three', mes: 'c'.repeat(20) },
+        { is_user: false, send_date: 'four', mes: 'latest reply' }];
+    const policy = { limit: 15, count: text => text.length, directories, locator };
+    assert.equal(applyOverflowHiding(records, policy).hidden, 0, 'nothing is hidden before Mewmory reads it');
+
+    rememberMessages(directories, locator, records.slice(0, 3));
+    const partial = applyOverflowHiding(records, policy);
+    assert.equal(partial.hidden, 2, 'only the remembered run is hidden');
+    assert.deepEqual(partial.records.map(record => record.is_system ?? false), [false, true, true, false, false]);
+
+    const edited = structuredClone(records);
+    edited[1].mes = 'an agent rewrote this after Mewmory read it';
+    assert.equal(applyOverflowHiding(edited, policy).hidden, 0, 'a rewritten message must be read again first');
+
+    rememberMessages(directories, locator, records);
+    assert.equal(applyOverflowHiding(records, policy).hidden, 3);
+});
+
+test('token hiding does not wait for reading when the Facts and events reader is off', async t => {
+    const { directories } = disk(t);
+    const locator = { chat: 'Gift', avatar: 'Mara.png', group: false };
+    const config = defaultConfig();
+    config.roles.extractor.enabled = false;
+    saveConfig(directories, { ...config, autoHide: true, writerTokenizer: 'o200k_base' });
+    mutateState(directories, locator, state => { state.enabled = true; }, 0);
+    const records = [{ chat_metadata: {} },
+        { is_user: true, send_date: 'one', mes: 'a'.repeat(20) },
+        { is_user: false, send_date: 'two', mes: 'latest reply' }];
+    const policy = { limit: 15, count: text => text.length, directories, locator };
+    assert.equal(applyOverflowHiding(records, policy).hidden, 1, 'nothing would ever be read, so waiting would never end');
 });
 
 test('automatic hiding rechecks settings, tokenizer choice, threshold and chat state at the write', async t => {
@@ -1154,6 +1207,7 @@ test('automatic hiding rechecks settings, tokenizer choice, threshold and chat s
     assert.equal(policy.limit, 1024);
     const records = () => [{ chat_metadata: {} }, { is_user: true, mes: 'old ' + 'word '.repeat(3000) },
         { is_user: false, mes: 'latest reply' }];
+    rememberMessages(directories, locator, records());
     assert.equal(applyOverflowHiding(records(), policy).hidden, 1);
 
     saveConfig(directories, { ...readConfig(directories), autoHide: false });

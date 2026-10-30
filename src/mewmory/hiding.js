@@ -160,19 +160,48 @@ export function prepareMessageHidingPolicy(directories, locator, { manual = fals
     return policy;
 }
 
-/** Plan against a clone of the proposed saved vector; never publish uncommitted sources. */
-export function planPreservedMessageHiding(records, archivedState, config, contextSources, sourceOptions = {}) {
+/**
+ * A preservation test over a clone of the proposed saved vector, so planning
+ * never publishes uncommitted sources. A message counts as preserved once
+ * Mewmory has finished reading it, or when it is not a memory source at all.
+ */
+function preservationCheck(records, archivedState, config, contextSources, sourceOptions = {}) {
     const shadow = structuredClone(archivedState);
     const messages = records.slice(1);
     syncSources(shadow, messages, contextSources, sourceOptions);
     const offset = shadow.inheritedTimeline?.length || 0;
     const policy = processingVersion(config);
+    return {
+        messages,
+        isPreserved: index => {
+            const ref = shadow.timeline[index + offset];
+            return Boolean(ref && (!sourceEligible(shadow, ref) || shadow.checkpoints[refKey(ref)] === policy));
+        },
+    };
+}
+
+export function planPreservedMessageHiding(records, archivedState, config, contextSources, sourceOptions = {}) {
+    const { messages, isPreserved } = preservationCheck(records, archivedState, config, contextSources, sourceOptions);
     const visible = visibleMessageIndices(messages).filter(index => !messages[index]?.extra?.nn_generation_failed);
-    const plan = messageHistoryPlan(visible, config.recentMessages, config.historyBatchMessages, index => {
-        const ref = shadow.timeline[index + offset];
-        return Boolean(ref && (!sourceEligible(shadow, ref) || shadow.checkpoints[refKey(ref)] === policy));
-    });
-    return plan.excluded;
+    return messageHistoryPlan(visible, config.recentMessages, config.historyBatchMessages, isPreserved).excluded;
+}
+
+/**
+ * Token-mode hiding keeps every message Mewmory has not finished reading in
+ * the prompt. Only the oldest run of already-remembered messages is hidden;
+ * the rest stay visible and a later reply hides them once they are recorded.
+ * With the Facts and events reader off nothing is ever recorded, so waiting
+ * would stop hiding for good; the trigger then hides as it always has.
+ */
+export function planPreservedOverflowHiding(records, archivedState, config, contextSources, sourceOptions, indices) {
+    if (!config.roles?.extractor?.enabled) return indices;
+    const { isPreserved } = preservationCheck(records, archivedState, config, contextSources, sourceOptions);
+    const kept = [];
+    for (const index of indices) {
+        if (!isPreserved(index)) break;
+        kept.push(index);
+    }
+    return kept;
 }
 
 /**
@@ -187,17 +216,25 @@ export function applyOverflowHiding(records, policy, locator = policy?.locator) 
     try {
         if (policy.guard && !policy.guard(locator)) return { records, hidden: 0 };
         const messages = records.slice(1);
-        let indices;
-        if (policy.mode === 'messages') {
+        const archive = () => {
             const state = readStateShared(policy.directories, locator);
             const config = readConfig(policy.directories);
             const source = { metadata: records[0].chat_metadata ?? {}, messages };
             const context = readContextSourcesSync(policy.directories, locator, state, source);
-            indices = planPreservedMessageHiding(records, state, config, context, sourceSyncOptions(policy.directories, messages));
+            return { state, config, context, options: sourceSyncOptions(policy.directories, messages) };
+        };
+        let indices;
+        if (policy.mode === 'messages') {
+            const { state, config, context, options } = archive();
+            indices = planPreservedMessageHiding(records, state, config, context, options);
         } else {
             const visible = visibleMessageIndices(messages);
             const counts = visible.map(index => policy.count(messages[index]?.mes));
             indices = overflowPlan(messages, policy.limit, counts).indices;
+            if (indices.length) {
+                const { state, config, context, options } = archive();
+                indices = planPreservedOverflowHiding(records, state, config, context, options, indices);
+            }
         }
         if (!indices.length) return { records, hidden: 0 };
         const next = records.slice();
