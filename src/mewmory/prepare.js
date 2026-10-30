@@ -117,14 +117,6 @@ export async function prepareMewmoryPrompt(directories, body, signal, {
         const ref = state.timeline[item.index + offset];
         return ref ? [{ ref, text: item.text }] : [];
     });
-    const nonce = deterministicMarker ? hash([state.branchId, body.history, config.revision]).slice(0, 32) : randomUUID();
-    const marker = { open: '[Mewmory context ' + nonce + ' begin]', close: '[Mewmory context ' + nonce + ' end]' };
-    const context = await recall(directories, locator, { asOf, tokenizer: body.tokenizer || {}, signal, local: true, retained, marker }, { loadState, mutate, scheduleBackground, readConfiguration });
-    context.memoryText = wrapMewmoryContext(context.memoryText, marker);
-    context.suppression.fallbackMemoryText = wrapMewmoryContext(context.suppression.fallbackMemoryText, marker);
-    if (generationFingerprint(await loadState(directories, locator), readConfiguration(directories)) !== snapshot) {
-        fail('The chat, Mewmory settings, or a memory you edited changed while the reply was being prepared. Reload and send again.', 409);
-    }
     const historyUsage = {
         originalTokens: history.reduce((sum, item) => sum + item.tokens, 0),
         retainedTokens: history.filter(item => !excluded.has(item.index)).reduce((sum, item) => sum + item.tokens, 0),
@@ -134,9 +126,37 @@ export async function prepareMewmoryPrompt(directories, body, signal, {
         excludedMessages, excludedToolRows, removalBatchMessages: config.historyBatchMessages,
         waitingForPreservation,
     };
-    mutate(directories, locator, current => {
-        if (current.preview?.fingerprint === context.fingerprint) current.preview.history = historyUsage;
-    });
+    const nonce = deterministicMarker ? hash([state.branchId, body.history, config.revision]).slice(0, 32) : randomUUID();
+    const marker = { open: '[Mewmory context ' + nonce + ' begin]', close: '[Mewmory context ' + nonce + ' end]' };
+    // Each preparation owns one preview, even when two concurrent preparations share a fingerprint.
+    const previewId = randomUUID();
+    // Reuse the state loaded above, let recall write the preview and its history usage together,
+    // and skip recall's pre-commit source sync because the final check below reads the chat again.
+    const context = await recall(directories, locator, {
+        asOf, tokenizer: body.tokenizer || {}, signal, local: true, retained, marker,
+        state, precommitSync: false, previewHistory: historyUsage, previewId,
+    }, { loadState, mutate, scheduleBackground, readConfiguration });
+    if (!context.enabled) fail('Mewmory was turned off while this reply was being prepared. Retry this reply.', 409);
+    if (!context.suppression) fail('Mewmory could not finish preparing its memory context. Retry this reply.', 409);
+    context.memoryText = wrapMewmoryContext(context.memoryText, marker);
+    context.suppression.fallbackMemoryText = wrapMewmoryContext(context.suppression.fallbackMemoryText, marker);
+    // Recall has already committed a preview beside its history. If the final source check
+    // rejects this preparation, remove exactly that preview so a stale pick is not left on screen.
+    const rejectPreparation = message => {
+        try {
+            mutate(directories, locator, current => {
+                if (current.preview?.previewId === previewId) current.preview = null;
+            });
+        } catch {
+            // Keep the original 409; the final check is the safety boundary, not this cleanup.
+        }
+        fail(message, 409);
+    };
+    const currentState = await loadState(directories, locator);
+    if (!currentState.enabled) rejectPreparation('Mewmory was turned off while this reply was being prepared. Retry this reply.');
+    if (generationFingerprint(currentState, readConfiguration(directories)) !== snapshot) {
+        rejectPreparation('The chat, Mewmory settings, or a memory you edited changed while the reply was being prepared. Reload and send again.');
+    }
     return {
         ...context, excludedIndices,
         history: historyUsage,

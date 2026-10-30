@@ -5,7 +5,7 @@ import { SELECTION_CONTRACT } from './contracts.js';
 import { assemblyFingerprint, assembleContext, currentOverviews, generationFingerprint } from './context.js';
 import { callJsonRole, embed, readConfig, roleVersion } from './models.js';
 import { addUsage } from './processing.js';
-import { expandNeighbours, hybridCandidates, searchDocuments, terms, updateIndex } from './search.js';
+import { expandNeighbours, hybridCandidates, mergeVectorIndex, searchDocuments, terms, updateIndex } from './search.js';
 import { RAG_DEFAULTS } from '../../public/scripts/mewmory/rag-settings.js';
 import { loadCurrentState } from './sources.js';
 import { mutateState, statePath } from './store.js';
@@ -170,12 +170,13 @@ async function selectMemories(state, directories, config, documents, scene, allD
 
 export async function recall(directories, locator, {
     asOf = Infinity, query: manualQuery = '', tokenizer = {}, signal, local = false, background = false, operationId,
-    retained = [], marker = null,
+    retained = [], marker = null, state: preparedState = null, precommitSync = true, previewHistory = null, previewId = null,
 } = {}, { call = callJsonRole, embedFn = embed, loadState = loadCurrentState, mutate = mutateState,
     scheduleBackground = true, readConfiguration = readConfig } = {}) {
     const config = readConfiguration(directories);
     const retrieval = { ...RAG_DEFAULTS, ...config.retrieval };
-    const state = await loadState(directories, locator);
+    // Prompt preparation already reconciled this state; standalone and background calls read their own.
+    const state = preparedState || await loadState(directories, locator);
     if (!state.enabled) return { enabled: false, npcText: '', memoryText: '', tokens: { npc: 0, memory: 0 } };
     const fingerprint = assemblyFingerprint(state, config);
     const timelineLength = state.timeline.length;
@@ -186,10 +187,14 @@ export async function recall(directories, locator, {
     const counter = await getCounter(config.writerTokenizer, tokenizer);
     const usage = [];
     let indexError = '';
+    let paidVectors = {};
+    let paidVersion = null;
     signal?.throwIfAborted();
     if (!local) try {
         const indexed = await updateIndex(state, directories, config, { signal, embedFn });
         usage.push(...indexed.usage);
+        paidVectors = indexed.paid || {};
+        paidVersion = indexed.version || null;
     } catch (error) {
         signal?.throwIfAborted();
         indexError = error.message;
@@ -245,7 +250,9 @@ export async function recall(directories, locator, {
         documents: candidates, usage: [], fallbackUsed: false, error: '',
     } : await selectMemories(state, directories, config, candidates, scene, allowedDocuments, asOf, signal, call);
     usage.push(...selection.usage);
-    await loadState(directories, locator);
+    // A prompt caller checks the source and fingerprint again right after this returns, so it can
+    // skip this second source sync. Standalone and background recalls keep every check.
+    if (precommitSync) await loadState(directories, locator);
     let rankedIds = [...new Set([...selection.status.selections.map(item => item.recordId), ...(local ? candidates.map(document => document.id) : [])])]
         .filter(id => allowedDocuments.some(document => document.id === id));
     let selectedIds = new Set([...forced.map(document => document.id), ...rankedIds.slice(0, retrieval.resultLimit)]);
@@ -302,11 +309,31 @@ export async function recall(directories, locator, {
         const indexState = background ? { ...current, timeline: current.timeline.slice(0, timelineLength) } : current;
         if (!local && assemblyFingerprint(indexState, config) === fingerprint && hash(current.index) === indexSnapshot) {
             current.index = { ...state.index, pending: state.index.pending || current.timeline.length > timelineLength };
+        } else if (!local && background) {
+            // Merge only vectors paid for by this run. The snapshot loaded before updateIndex may
+            // contain old vectors that an index rebuild has reset in the meantime, and bringing
+            // them back would undo that reset.
+            const indexes = [current.index];
+            if (paidVersion && Object.keys(paidVectors).length) indexes.push({ version: paidVersion, vectors: paidVectors });
+            const merged = mergeVectorIndex(current, config, indexes);
+            const complete = merged.remaining === 0 && current.timeline.length <= timelineLength;
+            if (current.index.version === merged.version) {
+                current.index = { version: merged.version, vectors: merged.vectors,
+                    pending: merged.remaining > 0 || current.timeline.length > timelineLength };
+            } else if (complete) {
+                current.index = { version: merged.version, vectors: merged.vectors, pending: false };
+            } else {
+                // A recall pays for at most one batch. Keep the working index active and stage the
+                // partial new model under build, exactly as updateIndex does, until a full rebuild.
+                current.index = { ...current.index, pending: true,
+                    build: { version: merged.version, vectors: merged.vectors } };
+            }
         }
         if (operationId && current.recallReceipts?.includes(operationId)) return;
         if (operationId) current.recallReceipts = [...(current.recallReceipts || []).filter(id => retainedJobs.has(id)), operationId];
         current.recalls = [...current.recalls.slice(-9), inspection];
-        if (!background) current.preview = { ...assembly, fingerprint };
+        if (!background) current.preview = { ...assembly, fingerprint,
+            ...(previewId ? { previewId } : {}), ...(previewHistory ? { history: previewHistory } : {}) };
         addUsage(current, usage);
     });
     if (local && scheduleBackground) recallInBackground(directories, locator, { asOf: Math.min(asOf, timelineLength - 1), query: manualQuery, tokenizer, retained }, { call, embedFn });

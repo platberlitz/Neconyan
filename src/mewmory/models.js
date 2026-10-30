@@ -68,17 +68,29 @@ function prefix(value, label) {
     return value;
 }
 
+const RETRIEVAL_LABELS = {
+    chunkSize: 'Maximum passage length, characters',
+    chunkOverlap: 'Text repeated between passages, characters',
+    queryMessages: 'Recent messages used to find matches',
+    semanticWeight: 'Preference for meaning matches',
+    minSimilarity: 'Minimum meaning match score',
+    resultLimit: 'Maximum recalled results',
+    maxPerSource: 'Maximum passages from one source',
+    neighbourChunks: 'Nearby passages to include on each side',
+    batchSize: 'Passages per meaning-index request',
+};
+
 function validateRetrieval(input = {}) {
     object(input, 'Retrieval settings');
     const result = { ...RAG_DEFAULTS, ...input };
     if (!['hybrid', 'keyword', 'semantic'].includes(result.mode)) fail('Choose hybrid, keyword or semantic search.');
     for (const [key, min, max] of [['chunkSize', 256, 12000], ['chunkOverlap', 0, 4000], ['queryMessages', 1, 12],
         ['resultLimit', 1, 64], ['maxPerSource', 1, 64], ['neighbourChunks', 0, 2], ['batchSize', 1, 10]]) {
-        integer(result[key], key, min, max);
+        integer(result[key], RETRIEVAL_LABELS[key], min, max);
     }
-    if (result.chunkOverlap >= result.chunkSize / 2) fail('Passage overlap must be less than half the passage size.');
+    if (result.chunkOverlap >= result.chunkSize / 2) fail('Text repeated between passages must be less than half the maximum passage length.');
     for (const key of ['semanticWeight', 'minSimilarity']) {
-        if (typeof result[key] !== 'number' || !Number.isFinite(result[key]) || result[key] < 0 || result[key] > 1) fail(key + ' must be between 0 and 1.');
+        if (typeof result[key] !== 'number' || !Number.isFinite(result[key]) || result[key] < 0 || result[key] > 1) fail(RETRIEVAL_LABELS[key] + ' must be between 0 and 1.');
     }
     if (typeof result.includeFiles !== 'boolean') fail('Attached-file retrieval must be switched on or off.');
     return Object.fromEntries(Object.keys(RAG_DEFAULTS).map(key => [key, result[key]]));
@@ -103,9 +115,9 @@ export function validateConfig(input) {
     if (!['tokens', 'messages'].includes(result.historyMode)) fail('Choose whether to keep recent chat by tokens or messages.');
     result.historyCatchUp = input.historyCatchUp === undefined ? 'reply' : input.historyCatchUp;
     if (!['reply', 'wait'].includes(result.historyCatchUp)) fail('Choose whether to reply immediately or wait for memory.');
-    result.recentMessages = integer(input.recentMessages === undefined ? 10 : input.recentMessages, 'Recent messages to keep', 1, 100000);
-    result.historyBatchMessages = integer(input.historyBatchMessages === undefined ? 5 : input.historyBatchMessages, 'Older messages per group', 1, 10000);
-    result.autoHideTokens = integer(input.autoHideTokens, 'Hide messages beyond, tokens', 1024, 2000000);
+    result.recentMessages = integer(input.recentMessages === undefined ? 10 : input.recentMessages, 'Keep at least this many recent messages', 1, 100000);
+    result.historyBatchMessages = integer(input.historyBatchMessages === undefined ? 5 : input.historyBatchMessages, 'Remove older chat in groups of', 1, 10000);
+    result.autoHideTokens = integer(input.autoHideTokens, 'Hide older messages at this chat size, tokens', 1024, 2000000);
     result.memoryTokens = integer(input.memoryTokens, 'Space for recalled memories, tokens', 256, 64000);
     result.batchMessages = integer(input.batchMessages, 'Maximum messages per memory request', 1, 24);
     result.candidateLimit = integer(input.candidateLimit, 'Search matches considered for recall', 4, 64);
@@ -113,7 +125,7 @@ export function validateConfig(input) {
     result.fallbackProfileIds = validateFallbackProfiles(input.fallbackProfileIds);
     result.sharedProfileId = text(input.sharedProfileId || '', 'Connection profile for all roles', 250, true);
     result.sharedModelOverride = result.sharedProfileId ? text(input.sharedModelOverride || '', 'Model override for all roles', 250, true) : '';
-    if (!TOKENIZERS.includes(input.writerTokenizer)) fail('Choose a token counter for your main writer from the list.');
+    if (!TOKENIZERS.includes(input.writerTokenizer)) fail('Choose a token counter for replies from the list.');
     result.writerTokenizer = input.writerTokenizer;
     object(input.roles, 'Model roles');
     for (const name of ROLE_NAMES) {
@@ -296,12 +308,55 @@ export function saveConfig(directories, input) {
     return publicConfig(directories);
 }
 
+const ROLE_IDENTITY_VERSION = 'mewmory-role-2';
+
+/**
+ * What the role reads and which model reads it. Operational limits, permissions and a temporarily
+ * unreachable profile are handled per request, not by treating every stored memory as unread.
+ * A role without a profile keeps its endpoint and model in its identity. A profile-backed role
+ * keeps the profile id, override and revision: its resolved model and URL disappear whenever the
+ * profile is temporarily broken or removed, so including them would discard all stored progress.
+ */
 export function roleVersion(config, name) {
     if (name === 'embedding') {
         const { endpoint, model, modelRevision, queryPrefix, documentPrefix, profileId, nativePolicy } = config.roles.embedding;
         return hash({ endpoint, model, modelRevision, queryPrefix, documentPrefix, profileId, ...(nativePolicy ? { nativePolicy } : {}) });
     }
+    const role = connectionRole(config, config.roles[name]);
+    const direct = !role.profileId;
+    return hash({
+        version: ROLE_IDENTITY_VERSION,
+        enabled: role.enabled === true,
+        profileId: role.profileId || '',
+        modelOverride: role.modelOverride || '',
+        modelRevision: role.modelRevision || '',
+        ...(direct ? { endpoint: role.endpoint || '', model: role.model || '' } : {}),
+    });
+}
+
+/** The fingerprint stored by earlier releases, kept so their coverage can be migrated in place. */
+export function legacyRoleVersion(config, name) {
+    if (name === 'embedding') {
+        const { endpoint, model, modelRevision, queryPrefix, documentPrefix, profileId, nativePolicy } = config.roles.embedding;
+        return hash({ endpoint, model, modelRevision, queryPrefix, documentPrefix, profileId, ...(nativePolicy ? { nativePolicy } : {}) });
+    }
     return hash([config.localOnly, { ...connectionRole(config, config.roles[name]), timeoutMs: undefined }]);
+}
+
+/**
+ * The connection a profile-backed role resolved to for this request. Its model and URL cannot live
+ * in roleVersion because they disappear while a profile is broken, but they still describe the
+ * model that wrote a batch. Archives remember this hash and clear processed marks when it changes.
+ * Null means the role is off, has no profile, or the profile cannot be resolved right now.
+ */
+export function resolvedRoleIdentity(config, name) {
+    const role = config.roles[name];
+    if (!role?.enabled || !role.profileId || !role.connection) return null;
+    return hash({
+        source: role.connection.api || '',
+        endpoint: String(role.connection.endpoint || '').trim().replace(/\/+$/, ''),
+        model: String(role.connection.model || '').trim(),
+    });
 }
 
 function authorizeRole(config, name, dataTypes) {

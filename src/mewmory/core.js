@@ -377,6 +377,10 @@ export function forkState(parent, locator, through, messages) {
     state.preview = null;
     state.jobs = [];
     state.processing = null;
+    // The parent's unfinished message restoration belongs to the parent's chat.
+    // The child chat rows are the branch save's own snapshot; this memory-state
+    // fork must not rewrite their visibility flags.
+    state.visibilityRestore = null;
     state.coverage = {};
     state.checkpoints = {};
     state.activeNpcIds = null;
@@ -404,6 +408,8 @@ export function continueState(parent, locator, messages) {
     state.preview = null;
     state.jobs = [];
     state.processing = null;
+    // The parent's unfinished message restoration belongs to the parent's chat.
+    state.visibilityRestore = null;
     state.activeNpcIds = null;
     state.revision = 0;
     const context = state.contextSources.map(ref => ({

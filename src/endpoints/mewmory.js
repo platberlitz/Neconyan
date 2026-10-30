@@ -294,6 +294,7 @@ route('/index', async (directories, body, signal, owner) => {
     if (body.background === true) return startOperation(directories, owner, 'index', body);
     const locator = normalizeLocator(body.locator);
     const state = await loadCurrentState(directories, locator);
+    if (!state.enabled) fail('Turn on Mewmory for this chat first.', 409);
     if (body.reset === true) state.index = { version: '', vectors: {}, pending: true };
     const result = await updateIndex(state, directories, readConfig(directories), { signal });
     mutateState(directories, locator, () => { addUsage(state, result.usage); return state; }, state.revision);

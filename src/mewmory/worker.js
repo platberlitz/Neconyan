@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { beginServerWork } from '../android-wake.js';
 import { fail, hash, sourceFingerprint } from './core.js';
-import { readConfig } from './models.js';
+import { readConfig, resolvedRoleIdentity } from './models.js';
 import { isStaleSourceError, pendingSources, processBatch, processingVersion } from './processing.js';
 import { loadCurrentState } from './sources.js';
 import { chatPath, listStories, listStoriesGradually, mutateState, readStateShared, statePath } from './store.js';
@@ -44,7 +44,12 @@ const directoryStamp = directory => {
 };
 const sharedInputs = (directories, config) => hash([config, fileStamp(path.join(directories.root, 'settings.json')),
     ...[directories.characters, directories.groups, directories.worlds, directories.files].map(directoryStamp)]);
-const fingerprint = (state, config) => hash([sourceFingerprint(state), processingVersion(config), config.revision, state.overrides, state.excludedSources]);
+const resolvedIdentities = config => ({ extractor: resolvedRoleIdentity(config, 'extractor'),
+    pawspective: resolvedRoleIdentity(config, 'pawspective') });
+// A failed story is retried only after something that affects its result changed. Connection Manager
+// model and URL edits live outside the Mewmory config revision, so include their resolved identities.
+const fingerprint = (state, config) => hash([sourceFingerprint(state),
+    processingVersion(config, resolvedIdentities(config)), config.revision, state.overrides, state.excludedSources]);
 // Reading and saving a large story takes tens of milliseconds each; awaiting a finished promise does not let
 // page requests in, so background work steps aside between those steps.
 const yieldToRequests = () => new Promise(resolve => setImmediate(resolve));

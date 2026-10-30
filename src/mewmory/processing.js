@@ -4,14 +4,20 @@ import {
     strings, uniqueRefs, validateRecord, validateRefs,
 } from './core.js';
 import { EXTRACTION_CONTRACT, PAWSPECTIVE_CONTRACT } from './contracts.js';
-import { callJsonRole, readConfig, ROLE_LABELS, roleVersion } from './models.js';
+import { callJsonRole, readConfig, resolvedRoleIdentity, ROLE_LABELS, roleVersion } from './models.js';
 import { loadCurrentState } from './sources.js';
 import { mutateState, readStateShared, statePath } from './store.js';
 import { beginServerWork } from '../android-wake.js';
 
+// startProcessing owns production admission, but processBatch is exported for tests and
+// future callers. This separate map joins another direct call to processBatch, so two
+// direct callers cannot pay for the same extraction twice or race its memory write. The
+// beginServerWork reference below likewise covers direct calls, not only the worker.
 const running = new Map();
 const objectiveKinds = ['entity', 'state', 'event', 'relationship', 'knowledge', 'commitment'];
-export const processingVersion = config => hash([POLICY_VERSION, roleVersion(config, 'extractor'), roleVersion(config, 'pawspective')]);
+export const processingVersion = (config, identities = null) => hash([POLICY_VERSION,
+    roleVersion(config, 'extractor'), roleVersion(config, 'pawspective'),
+    ...(identities ? [identities.extractor ?? null, identities.pawspective ?? null] : [])]);
 
 function processingFingerprint(state, sourceCount) {
     return hash([sourceFingerprint({ ...state, timeline: state.timeline.slice(0, sourceCount) }),
@@ -148,7 +154,7 @@ function modelOutput(name, action) {
 }
 
 /** A wrong detail from the model is left out and noted in skipped; only a reply Mewmory cannot read at all fails the batch. */
-export function applyExtraction(state, output, input, skipped = []) {
+export function applyExtraction(state, output, input, skipped = [], interviewSkipped = skipped) {
     object(output, 'Extraction');
     const refs = new Set(input.sources.map(refKey));
     const batch = new Map(input.sources.map(source => [source.id, { id: source.id, revision: source.revision }]));
@@ -200,7 +206,7 @@ export function applyExtraction(state, output, input, skipped = []) {
             }];
         } catch (error) {
             if (![400, 409].includes(error.status)) throw error;
-            skipped.push(error.message);
+            interviewSkipped.push(error.message);
             return [];
         }
     });
@@ -290,6 +296,10 @@ export function applyInterview(state, request, output, input, jobId) {
 
 async function runBatch(directories, locator, options, call) {
     const config = readConfig(directories);
+    const roleKeys = Object.fromEntries(['extractor', 'pawspective']
+        .map(name => [name, roleVersion(config, name)]));
+    const identities = Object.fromEntries(['extractor', 'pawspective']
+        .map(name => [name, resolvedRoleIdentity(config, name)]));
     let state = await loadCurrentState(directories, locator);
     if (!state.enabled) return state;
     const lastDisableId = state.lastDisableId;
@@ -320,6 +330,7 @@ async function runBatch(directories, locator, options, call) {
     const auditLength = state.audit.length;
     const usage = [];
     const skipped = [];
+    const pawspectiveEnabled = config.roles.pawspective.enabled;
     try {
         const input = extractionInput(state, refs, asOf, options.checkpoint);
         input.provenance = { policy: POLICY_VERSION, jobId, role: 'extractor', model: config.roles.extractor.model, modelRevision: config.roles.extractor.modelRevision };
@@ -328,8 +339,14 @@ async function runBatch(directories, locator, options, call) {
         const extraction = await call(directories, config, 'extractor', EXTRACTION_CONTRACT, input, { dataTypes, signal: options.signal });
         usage.push(extraction.usage);
         const requestAsOf = request => Math.max(-1, ...request.refs.map(ref => sourceAt(state, ref).sequence));
-        const requests = modelOutput('extractor', () => applyExtraction(state, extraction.value, input, skipped)).sort((a, b) => requestAsOf(a) - requestAsOf(b));
-        for (const request of requests) {
+        // A suggestion from a switched-off interview role is ignored, not reported as a skipped
+        // interview: the author did not ask this work to run, so nothing failed. Record errors
+        // from the extractor itself still reach the job's skipped count.
+        const requests = modelOutput('extractor', () => applyExtraction(state, extraction.value, input, skipped,
+            pawspectiveEnabled ? skipped : [])).sort((a, b) => requestAsOf(a) - requestAsOf(b));
+        // Pawspective is optional: an extractor may suggest interviews, but a disabled
+        // role must not turn that suggestion into a failed batch and lose the facts.
+        if (pawspectiveEnabled) for (const request of requests) {
             const interviewAsOf = requestAsOf(request);
             let interview;
             try {
@@ -363,10 +380,18 @@ async function runBatch(directories, locator, options, call) {
         return mutateState(directories, locator, current => {
             if (!current.enabled || current.lastDisableId !== lastDisableId
                 || ['pending', 'failed'].includes(current.visibilityRestore?.status)) fail('Mewmory was switched off while memories were updating.', 409);
-            if (processingFingerprint(current, sourceCount) !== snapshotFingerprint || processingVersion(readConfig(directories)) !== policy) {
+            const currentConfig = readConfig(directories);
+            const currentIdentities = Object.fromEntries(['extractor', 'pawspective']
+                .map(name => [name, resolvedRoleIdentity(currentConfig, name)]));
+            // A profile can resolve to another model without changing processingVersion because
+            // its model and URL are tracked per archive instead. Discard a batch built with the old one.
+            const identityChanged = Object.entries(identities).some(([name, identity]) => identity
+                && currentIdentities[name] && identity !== currentIdentities[name]);
+            if (processingFingerprint(current, sourceCount) !== snapshotFingerprint
+                || processingVersion(currentConfig) !== policy || identityChanged) {
                 const error = new Error('The chat, Mewmory settings, or a memory you edited changed while this was running, so this result was discarded. It will be tried again.');
                 error.status = 409;
-                error.staleSource = memoryFingerprint(current) === snapshotMemory && processingVersion(readConfig(directories)) === policy;
+                error.staleSource = !identityChanged && memoryFingerprint(current) === snapshotMemory && processingVersion(currentConfig) === policy;
                 throw error;
             }
             // Keep appended sources, concurrent recall, indexing and usage; this batch owns only its memory changes.
@@ -375,6 +400,34 @@ async function runBatch(directories, locator, options, call) {
             current.sceneNpcIds = state.sceneNpcIds;
             current.castHistory = state.castHistory;
             current.index.pending ||= state.audit.length > auditLength;
+            // Remember the connection that actually wrote this batch, so a later profile change
+            // clears these marks even though it leaves processingVersion alone. Identities are kept
+            // per semantic role version, so switching away and back does not forget the old one.
+            const roleIdentities = { ...(current.roleIdentities || {}) };
+            let identitiesChanged = false;
+            for (const [name, identity] of Object.entries(identities)) {
+                if (!identity) continue;
+                const stored = roleIdentities[name];
+                const book = typeof stored === 'string' ? { [roleKeys[name]]: stored } : { ...(stored || {}) };
+                if (book[roleKeys[name]] !== identity) {
+                    book[roleKeys[name]] = identity;
+                    roleIdentities[name] = book;
+                    identitiesChanged = true;
+                }
+            }
+            if (identitiesChanged) current.roleIdentities = roleIdentities;
+            const previousPolicy = current.rolePolicies?.[policy];
+            current.rolePolicies = {
+                ...(current.rolePolicies || {}),
+                [policy]: Object.fromEntries(['extractor', 'pawspective'].map(name => {
+                    const saved = previousPolicy?.[name];
+                    // A profile that was already broken when the batch started must not replace a
+                    // known identity for this policy. Reuse it only when the role version matches.
+                    const identity = identities[name]
+                        ?? (saved?.key === roleKeys[name] ? saved.identity : null);
+                    return [name, { key: roleKeys[name], identity }];
+                })),
+            };
             for (const ref of refs) {
                 current.coverage[refKey(ref)] = policy;
                 if (options.checkpoint) current.checkpoints[refKey(ref)] = policy;

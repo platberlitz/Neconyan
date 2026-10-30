@@ -450,14 +450,18 @@ export function sourceSyncOptions(directories, messages) {
     return { trackerAgentIds };
 }
 
-export function synchronize(directories, locator, context = [], source = readChatShared(directories, locator)) {
+export function synchronize(directories, locator, context = [], source = readChatShared(directories, locator), extraChange) {
     locator = normalizeLocator(locator);
     // Native saves take this lock first too; never reconcile a chat snapshot read before it.
     return withChatFileLocks([chatPath(directories, locator)], () => {
         captureBranchMemory(directories, locator, source);
         // Older saved results predate the category snapshot; resolve them from the saved Agent library.
         const options = sourceSyncOptions(directories, source.messages);
-        return mutateState(directories, locator, state => syncSources(state, source.messages, context, options));
+        return mutateState(directories, locator, state => {
+            syncSources(state, source.messages, context, options);
+            // Archive upkeep that must share the same clone and write as the source sync.
+            return extraChange ? extraChange(state) || state : state;
+        });
     });
 }
 
