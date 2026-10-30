@@ -13,6 +13,7 @@
 - PR #352 (2026-10-30) `fix(notebooks): tidy share-again messages and the Back to note label`
 - PR #353 (2026-10-30) `fix(mewmory): wait for running agents before hiding older messages`
 - PR #354 (2026-10-30) `fix(mewmory): stop auto-hide skipping replies and hiding unread messages`
+- PR #355 (2026-10-30) `test(mewmory): wait for the accent fade before measuring contrast`
 - PR #359 (2026-10-30) `fix(lorebooks): give the Lorebook settings bar a solid background`
 - PR #360 (2026-10-30) `fix(agents): wait for scrolling to stop before clearing older notes`
 
