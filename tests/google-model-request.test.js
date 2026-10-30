@@ -140,4 +140,47 @@ describe('Google model request compatibility', () => {
         expect(response.status).toBe(200);
         expect(capturedBody.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 });
     });
+
+    test.each(['gemini-3-pro-image-preview', 'gemini-2.5-flash-image'])(
+        'sends no image configuration for %s when no image settings are sent',
+        async (model) => {
+            const response = await makeRequest(model, { request_images: true });
+
+            expect(response.status).toBe(200);
+            expect(capturedBody.generationConfig.responseModalities).toEqual(['text', 'image']);
+            expect(capturedBody.generationConfig).not.toHaveProperty('imageConfig');
+            expect(JSON.stringify(capturedBody)).not.toContain('undefined');
+        },
+    );
+
+    test('forwards a chosen aspect ratio and resolution to a Gemini 3 image model', async () => {
+        const response = await makeRequest('gemini-3-pro-image-preview', {
+            request_images: true,
+            request_image_aspect_ratio: '16:9',
+            request_image_resolution: '2K',
+        });
+
+        expect(response.status).toBe(200);
+        expect(capturedBody.generationConfig.imageConfig).toEqual({ imageSize: '2K', aspectRatio: '16:9' });
+    });
+
+    test('forwards only the aspect ratio when no resolution is sent', async () => {
+        const response = await makeRequest('gemini-2.5-flash-image', {
+            request_images: true,
+            request_image_aspect_ratio: '16:9',
+        });
+
+        expect(response.status).toBe(200);
+        expect(capturedBody.generationConfig.imageConfig).toEqual({ aspectRatio: '16:9' });
+    });
+
+    test('forwards only the resolution when no aspect ratio is sent', async () => {
+        const response = await makeRequest('gemini-3-pro-image-preview', {
+            request_images: true,
+            request_image_resolution: '2K',
+        });
+
+        expect(response.status).toBe(200);
+        expect(capturedBody.generationConfig.imageConfig).toEqual({ imageSize: '2K' });
+    });
 });
