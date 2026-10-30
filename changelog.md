@@ -23,6 +23,7 @@
 - PR #362 (2026-10-30) `fix(appearance): persist shell style with account settings`
 - PR #363 (2026-10-30) `fix(tide): keep collapsible panels readable`
 - PR #364 (2026-10-30) `fix(mewmory): preserve reading progress and avoid redundant work`
+- PR #365 (2026-10-30) `fix(chat): say why a rename is refused when Scratchpad is damaged`
 
 ## v1.4.0
 
