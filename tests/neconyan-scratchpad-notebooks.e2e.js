@@ -225,6 +225,10 @@ async function checkNoteSelection({ app }, access, { holdSave = false } = {}) {
     await page.getByRole('tab', { name: 'Context', exact: true }).click();
     await page.getByRole('button', { name: 'Stop sharing', exact: true }).click();
     await expect(page.locator('.scratchpad-notes')).toContainText('No saved notes are shared');
+    await finishReply(page, account, app, 'Anything left to share?', ' Nothing is shared now.');
+    const afterStop = JSON.stringify(app.provider.calls.find(call => call.messages?.at(-1)?.content === 'Anything left to share?').messages);
+    expect(afterStop).toContain('Notebook discussion');
+    expect(afterStop).not.toContain('Private plan');
     expect((await account.post('/api/notebooks/assistant/grants/list')).grants).toHaveLength(0);
     expect((await account.post('/api/notebooks/policies/get', { notebookId })).policy.assistant).toBe(access);
     await page.getByRole('button', { name: 'Back to Notes', exact: true }).click();
