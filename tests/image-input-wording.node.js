@@ -281,11 +281,13 @@ const clientSource = read('public/scripts/prompt-media-client.js');
 const stamp = { account: 'account-stamp' };
 // The helper is one line, so it is cut from the source as it stands rather than copied.
 const localizedErrorSource = clientSource.split('\n').find(line => line.startsWith('export const localizedError = ')).replace('export ', '');
+const integrityExplanationSource = clientSource.split('\n').find(line => line.startsWith('const integrityExplanation = '))?.replace('const integrityExplanation = ', '').replace(/;$/, '') ?? 'undefined';
 function clientHost(overrides = {}) {
     const lookups = [];
     let reads = 0;
     const host = { lookups, t: tag, translate: (text, key) => { lookups.push([text, key]); return text; },
         localizedError: vm.runInNewContext(`(${localizedErrorSource.replace('const localizedError = ', '').replace(/;$/, '')})`, { Object, Error }),
+        integrityExplanation: vm.runInNewContext(`(${integrityExplanationSource})`, { t: tag }),
         effectiveBrowserPromptMediaContext: async () => ({ account: 'include', chat: 'include', inlineImages: true }),
         getCurrentUserHandle: () => (reads++ ? host.after ?? 'alice' : 'alice'), roleplayAccountStamp: () => stamp, getRequestHeaders: () => ({}),
         fetch: async () => ({ ok: false, json: async () => ({ error: 'Server reason.' }) }), JSON, ...overrides };
@@ -332,6 +334,40 @@ test('the copy check says what to do when it cannot run, and shows a server reas
     await assert.rejects(check(explained)([{}]), { message: 'Server reason.', localized: true });
     assert.deepEqual(explained.lookups, [['Server reason.', undefined]]);
     assert.equal(await check(clientHost())([]), undefined);
+});
+
+// An integrity failure (INT-01) gets the same explanation on the two image checks as in the review window, then the server's English detail as written.
+const INT_01 = 'Neconyan stopped because its saved change records are not as expected. Some steps may already have completed and have not been reversed. Check Change history before trying again, and show the details below to whoever runs this server.';
+const integrityRefusal = { ok: false, json: async () => ({ error: 'The immutable image record changed.', integrity: true }) };
+
+test('an integrity failure on the insertion check gets the explanation, then the detail as written', async () => {
+    const host = clientHost({ fetch: async () => integrityRefusal });
+    await assert.rejects(cut(host, 'export async function preflightImageInput(')('/user/images/a.png', 'include'), error => {
+        assert.equal(error.sentence, WORDING['QIG-19.1']);
+        assert.equal(error.reason, `${INT_01} The immutable image record changed.`);
+        assert.equal(error.message, `${error.sentence}\n${error.reason}`);
+        return true;
+    });
+    // The detail is the server's English as written: it is not looked up.
+    assert.deepEqual(host.lookups, []);
+});
+
+test('an integrity failure on the copy check gets the explanation, then the detail as written', async () => {
+    const host = clientHost({ fetch: async () => integrityRefusal });
+    await assert.rejects(cut(host, 'export async function validatePromptImageCopies(')([{}]), { message: `${INT_01}\nThe immutable image record changed.`, localized: true });
+    assert.deepEqual(host.lookups, []);
+});
+
+test('only a failure the server tags as an integrity failure gets the explanation', async () => {
+    const untagged = clientHost({ fetch: async () => ({ ok: false, json: async () => ({ error: 'Server reason.', integrity: 'true' }) }) });
+    await assert.rejects(cut(untagged, 'export async function validatePromptImageCopies(')([{}]), { message: 'Server reason.', localized: true });
+    assert.deepEqual(untagged.lookups, [['Server reason.', undefined]]);
+});
+
+test('the review window and the image checks say the integrity explanation in the same words', () => {
+    for (const file of ['public/scripts/prompt-media-ui.js', 'public/scripts/prompt-media-client.js']) {
+        assert.ok(read(file).includes(`t\`${INT_01}\``), `${file} does not say INT-01`);
+    }
 });
 
 // The toast text is read by insertFailureLines and built by twoLineToastHtml, cut from their sources and run against a stand-in lookup.
