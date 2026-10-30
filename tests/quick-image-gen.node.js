@@ -1221,6 +1221,7 @@ test('NovelAI native ZIP and V4 embedded PNG use saved dimensions, sampler, seed
     const { model, parameters } = JSON.parse(calls[0].options.body);
     assert.equal(model, settings.naiModel);
     assert.deepEqual([parameters.width, parameters.height, parameters.sampler], [832, 576, 'ddim_v3']);
+    assert.equal(parameters.params_version, 3);
     assert.equal(parameters.v4_prompt.caption.base_caption, input.prompt);
     assert.equal(parameters.seed, readArtifact(directories, context.job.id, 'input:quick-image:novelai:zip').seed);
     assert.ok(!JSON.stringify(readArtifact(directories, context.job.id, 'provider:quick-image:novelai:zip')).includes(settings.naiKey));
@@ -1232,6 +1233,50 @@ test('NovelAI native ZIP and V4 embedded PNG use saved dimensions, sampler, seed
         fetch: async () => new Response(Buffer.concat([Buffer.from('msgpack:'), Buffer.from(PNG_BASE64, 'base64')])) });
     assert.equal(embedded.base64, PNG_BASE64);
 });
+
+for (const model of ['nai-diffusion-5-full', 'nai-diffusion-5-curated', 'NAI-DIFFUSION-5-FULL']) {
+    test(`NovelAI V5 model ${model} sends the V4 prompt structures, ddim_v3 and one paid request`, async () => {
+        const directories = tempRoot();
+        const settings = { provider: 'novelai', naiKey: 'novelai-private-key', naiModel: model,
+            width: 832, height: 1216, sampler: 'ddim', steps: 28, cfgScale: 5, seed: 12 };
+        saveImageSettings(directories, settings);
+        const calls = [];
+        const input = { effectId: 'novelai:v5', prompt: 'a starry mountain', negative: 'fog',
+            settingsFingerprint: quickImageGenSettingsFingerprint(settings), fetch: async (url, options) => {
+                calls.push({ url, options });
+                return new Response(novelaiZip(Buffer.from(PNG_BASE64, 'base64')), { status: 200 });
+            } };
+        const image = await generateQuickImageGenJobImage(jobContext(directories), input);
+        assert.equal(image.base64, PNG_BASE64);
+        assert.equal(calls.length, 1);
+        const { model: sent, parameters } = JSON.parse(calls[0].options.body);
+        assert.equal(sent, model);
+        assert.equal(parameters.sampler, 'ddim_v3');
+        assert.equal(parameters.params_version, 3);
+        assert.deepEqual(parameters.v4_prompt, { caption: { base_caption: 'a starry mountain', char_captions: [] }, use_coords: false, use_order: true });
+        assert.deepEqual(parameters.v4_negative_prompt, { caption: { base_caption: 'fog', char_captions: [] }, legacy_uc: false });
+        assert.deepEqual(parameters.characterPrompts, []);
+    });
+}
+
+for (const [model, sampler] of [['nai-diffusion-3', 'ddim_v3'], ['nai-diffusion-2', 'ddim']]) {
+    test(`NovelAI model ${model} keeps the older request body`, async () => {
+        const directories = tempRoot();
+        const settings = { provider: 'novelai', naiKey: 'novelai-private-key', naiModel: model,
+            width: 832, height: 1216, sampler: 'ddim', steps: 28, cfgScale: 5, seed: 13 };
+        saveImageSettings(directories, settings);
+        const calls = [];
+        await generateQuickImageGenJobImage(jobContext(directories), { effectId: 'novelai:older', prompt: 'hills', negative: 'fog',
+            settingsFingerprint: quickImageGenSettingsFingerprint(settings), fetch: async (url, options) => {
+                calls.push({ url, options });
+                return new Response(novelaiZip(Buffer.from(PNG_BASE64, 'base64')), { status: 200 });
+            } });
+        const { parameters } = JSON.parse(calls[0].options.body);
+        assert.equal(parameters.sampler, sampler);
+        assert.equal(parameters.v4_prompt, undefined);
+        assert.equal(parameters.v4_negative_prompt, undefined);
+    });
+}
 
 test('NovelAI chat and generate proxies keep their saved key on the exact origin only', async () => {
     const directories = tempRoot();

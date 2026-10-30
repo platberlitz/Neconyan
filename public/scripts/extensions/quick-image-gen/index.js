@@ -161,6 +161,8 @@ import {
     getCivitaiWorkflowImageUrls,
     getRetryAfterMs,
     HOSTED_PROVIDER_IDS,
+    isNovelAIV3OrNewerModel,
+    isNovelAIV4PromptModel,
     isTransientProviderStatus,
     isTrustedProviderOutputUrl,
     looksLikeSsePayload,
@@ -7795,7 +7797,7 @@ async function genNovelAI(prompt, negative, s, signal, options = {}) {
     normalizeSize(s);
     const effectiveDimensions = { width: s.width, height: s.height };
     const withEffectiveDimensions = (url, dimensions = effectiveDimensions) => ({ url, effectiveRequest: { parameters: dimensions } });
-    const isV4 = s.naiModel.includes("-4");
+    const isV4 = isNovelAIV4PromptModel(s.naiModel);
     // Map SillyTavern sampler names to NovelAI API format
     const samplerMap = {
         "euler_a": "k_euler_ancestral", "euler": "k_euler",
@@ -7809,7 +7811,7 @@ async function genNovelAI(prompt, negative, s, signal, options = {}) {
         "plms": "k_euler", "uni_pc": "k_euler", "uni_pc_bh2": "k_euler",
         "lcm": "k_euler", "deis": "k_euler", "restart": "k_euler"
     };
-    const isV3OrNewer = s.naiModel.includes("diffusion-3") || s.naiModel.includes("diffusion-4");
+    const isV3OrNewer = isNovelAIV3OrNewerModel(s.naiModel);
     const sampler = (s.sampler === "ddim" && isV3OrNewer)
         ? "ddim_v3"
         : (samplerMap[s.sampler] || "k_euler_ancestral");

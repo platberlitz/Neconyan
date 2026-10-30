@@ -192,6 +192,19 @@ export function buildNovelAIProxyRequestUrl(value, mode = "generate") {
     }
 }
 
+/**
+ * NovelAI model names are free text. From V4 on the request must carry the V4 prompt structures, and V5 uses the same body but its
+ * name has no "-4". A name containing "-4" keeps working as before, so an alias such as "novelai-4.5" on a proxy is not cut off.
+ */
+export function isNovelAIV4PromptModel(model) {
+    return /-4|diffusion-5/i.test(String(model ?? ""));
+}
+
+/** Whether the older "ddim" sampler name must be sent as "ddim_v3" (V3 and newer). */
+export function isNovelAIV3OrNewerModel(model) {
+    return /diffusion-[345]/i.test(String(model ?? ""));
+}
+
 export function looksLikeSsePayload(value) {
     const text = String(value || "").trim();
     if (/^https?:\/\/\S+$/i.test(text) || /^data:image\//i.test(text)) return false;
