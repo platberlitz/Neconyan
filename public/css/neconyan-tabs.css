@@ -7083,6 +7083,8 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     padding: 10px 12px;
     border: 1px solid color-mix(in srgb, var(--sb-shell-border) 78%, transparent);
     border-radius: var(--sb-radius-md, 12px);
+    background: var(--neco-surface);
+    color: var(--neco-ink);
     cursor: pointer;
     font-weight: 700;
 }
