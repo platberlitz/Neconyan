@@ -1,18 +1,22 @@
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
 import { button, clear, field, h } from './dom.js';
 import { NOTE_TEMPLATES, normaliseTemplates, TEMPLATE_LIMITS } from './templates.js';
-import { saveTemplates, savedTemplates } from './template-settings.js';
+import { readSavedTemplates, saveTemplates } from './template-settings.js';
+import { uiText } from '../ui-text.js';
+
+const UNREADABLE = uiText('Your saved templates could not be read, and they have not been changed. Choose Restore default templates to replace them, or Cancel to keep them as they are.');
 
 export async function manageTemplates(app) {
     const account = app.state.account;
-    let items;
-    try { items = savedTemplates().filter(item => item.id !== 'blank'); } catch (error) { app.toast('error', error.message); return false; }
+    const stored = readSavedTemplates();
+    let unreadable = stored.unreadable;
+    let items = stored.templates.filter(item => item.id !== 'blank');
     let selected = items[0]?.id ?? 'blank';
     const select = h('select', { class: 'notes-input notes-template-select', 'aria-label': 'Saved template' });
     const label = h('input', { class: 'text_pole notes-input', maxlength: '80', 'aria-label': 'Template name' });
     const title = h('input', { class: 'text_pole notes-input', maxlength: '160', 'aria-label': 'Suggested note name' });
     const text = h('textarea', { class: 'text_pole notes-input notes-template-text', rows: '12', 'aria-label': 'Template contents' });
-    const error = h('p', { class: 'notes-notice', role: 'alert', hidden: true });
+    const error = h('p', { class: 'notes-notice', role: 'alert', hidden: !unreadable, text: unreadable ? UNREADABLE : null });
     function capture() {
         const item = items.find(item => item.id === selected);
         if (item) Object.assign(item, { label: label.value, title: title.value, text: text.value });
@@ -26,7 +30,7 @@ export async function manageTemplates(app) {
         title.value = item.title;
         text.value = item.text;
         for (const control of [label, title, text, remove]) control.disabled = selected === 'blank';
-        add.disabled = items.length >= TEMPLATE_LIMITS.count;
+        add.disabled = unreadable || items.length >= TEMPLATE_LIMITS.count;
     }
     select.addEventListener('change', () => { capture(); selected = select.value; render(); });
     const add = button('Add template', () => {
@@ -43,7 +47,7 @@ export async function manageTemplates(app) {
         const answer = await callGenericPopup(h('p', { text: 'Replace this template list with the supplied defaults? Notes already created from templates are kept.' }), POPUP_TYPE.CONFIRM, '', { okButton: 'Restore defaults', cancelButton: 'Keep my templates' });
         if (answer !== POPUP_RESULT.AFFIRMATIVE || app.state.account !== account) return;
         items = NOTE_TEMPLATES.filter(item => item.id !== 'blank').map(item => ({ ...item }));
-        selected = items[0].id; render();
+        selected = items[0].id; unreadable = false; error.hidden = true; render();
     });
     render();
     const result = await callGenericPopup(h('div', { class: 'notes-dialog notes-template-manager' },
@@ -54,6 +58,7 @@ export async function manageTemplates(app) {
         wide: true, large: true, okButton: 'Save templates', cancelButton: 'Cancel',
         onClosing: popup => {
             if (popup.result !== POPUP_RESULT.AFFIRMATIVE) return true;
+            if (unreadable) { error.hidden = false; error.textContent = UNREADABLE; return false; }
             try {
                 capture();
                 normaliseTemplates(items);
