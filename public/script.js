@@ -19393,7 +19393,10 @@ export async function renameGroupOrCharacterChat({ characterId, groupId, oldFile
             const response = await sendRoleplayLifecycle('/api/chats/rename', requestBody, uuidv4(),
                 payload => fetch('/api/chats/rename', { method: 'POST', body: payload, headers: getRequestHeaders() }));
             if (!response.ok) {
-                throw new Error('Unsuccessful chat rename request.');
+                // A damaged Scratchpad file is refused with its own explanation; keep it for the popup below.
+                const refusal = await response.json().catch(() => null);
+                throw Object.assign(new Error('Unsuccessful chat rename request.'),
+                    refusal?.code === 'SCRATCHPAD_DAMAGED' && typeof refusal.message === 'string' ? { serverMessage: refusal.message } : {});
             }
             const data = await response.json();
             if (data.error || !data.sanitizedFileName) {
@@ -19458,7 +19461,18 @@ export async function renameGroupOrCharacterChat({ characterId, groupId, oldFile
         return { oldFileName: getChatBaseName(oldFileName), newFileName: actualNewFileName };
     } catch (error) {
         await delay(500);
-        await callGenericPopup('An error has occurred. Chat was not renamed.', POPUP_TYPE.TEXT);
+        if (typeof error?.serverMessage === 'string') {
+            // The server's explanation is its own English, shown as written under the general sentence.
+            const notice = document.createElement('div');
+            const detail = document.createElement('p');
+            detail.setAttribute('data-i18n-ignore', '');
+            detail.setAttribute('translate', 'no');
+            detail.textContent = error.serverMessage;
+            notice.append('An error has occurred. Chat was not renamed.', detail);
+            await callGenericPopup(notice, POPUP_TYPE.TEXT);
+        } else {
+            await callGenericPopup('An error has occurred. Chat was not renamed.', POPUP_TYPE.TEXT);
+        }
         throw error;
     } finally {
         await loaderHandle?.hide();
