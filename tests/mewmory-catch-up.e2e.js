@@ -33,6 +33,14 @@ async function checkRecoveryButtons(page, info, phone) {
                 };
                 const ancestors = [];
                 for (let node = element; node; node = node.parentElement) ancestors.push(node);
+                // An accent change fades the fill over a CSS transition while the ink snaps. Read the colours only once the button and
+                // everything it sits on have stopped animating; animations that never end (ambient decoration) are left out.
+                for (let round = 0; round < 10; round += 1) {
+                    const running = ancestors.flatMap(node => node.getAnimations())
+                        .filter(animation => animation.effect?.getComputedTiming().endTime !== Infinity);
+                    if (!running.length) break;
+                    await Promise.allSettled(running.map(animation => animation.finished));
+                }
                 context.clearRect(0, 0, 1, 1);
                 for (const node of ancestors.reverse()) {
                     context.fillStyle = window.getComputedStyle(node).backgroundColor;
