@@ -1,4 +1,4 @@
-const NN_SW_CACHE_VERSION = 'neconyan-cache-v20261030-tide-details-b';
+const NN_SW_CACHE_VERSION = 'neconyan-cache-v20261030b-rail-targets';
 // Storage revision for the service worker caches. It is separate from the
 // stylesheet query version so old entries can be evicted without touching CSS.
 const NN_SW_CACHE_EPOCH = '20261018a-native-startup';
