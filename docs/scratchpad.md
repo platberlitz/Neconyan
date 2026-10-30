@@ -19,7 +19,7 @@ Without a visible chat, you get **General Scratchpad**: one session list for you
 
 Roleplay sessions are shared across all chats for the same character. Conversation sessions are shared across branches for the same character or group within the active persona, separately from Roleplay sessions and other personas. Groups keep their own Roleplay list, separate from their members' solo sessions. Switching chats changes the context Scratchpad reads, not the saved sessions. Existing chat-specific sessions appear together automatically, including replies already in progress. Sessions stay private in your account's Scratchpad storage; exporting a character card does not include them.
 
-**Ask Scratchpad** opens sessions belonging to the note, not the open chat. It saves unfinished note edits before sharing, offers a 30-minute read-only grant and lets you explicitly allow proposed edits. Selected text shares only that exact passage. The open story, character cards, persona, linked notes and attachments are not included. **Back to Notes** returns to the source note. Permanent AI access settings stay unchanged.
+**Ask Scratchpad** opens sessions belonging to the note, not the open chat. It saves unfinished note edits before sharing, offers a 30-minute read-only grant and lets you explicitly allow proposed edits. Selected text shares only that exact passage. The open story, character cards, persona, linked notes and attachments are not included. **Back to note** returns to the source note. Permanent AI access settings stay unchanged.
 
 ## Talking
 

@@ -995,7 +995,7 @@ function renderHeader() {
     app.el.portrait.src = assistantPortrait(assistant);
     app.el.sourceLabel.textContent = app.source ? app.source.label : t`No chat open`;
     app.el.newSession.disabled = !app.source;
-    app.el.close.querySelector('span').textContent = app.source?.kind === 'notebook' ? t`Back to Notes` : app.source?.kind === 'general' ? t`Close` : t`Back to chat`;
+    app.el.close.querySelector('span').textContent = app.source?.kind === 'notebook' ? t`Back to note` : app.source?.kind === 'general' ? t`Close` : t`Back to chat`;
     const participants = sessionAssistants(session);
     const roundTable = session?.settings.roundTable === true;
     app.el.roundTable.setAttribute('aria-pressed', String(roundTable));

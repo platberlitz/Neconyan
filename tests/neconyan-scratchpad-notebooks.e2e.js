@@ -231,7 +231,7 @@ async function checkNoteSelection({ app }, access, { holdSave = false } = {}) {
     expect(afterStop).not.toContain('Private plan');
     expect((await account.post('/api/notebooks/assistant/grants/list')).grants).toHaveLength(0);
     expect((await account.post('/api/notebooks/policies/get', { notebookId })).policy.assistant).toBe(access);
-    await page.getByRole('button', { name: 'Back to Notes', exact: true }).click();
+    await page.getByRole('button', { name: 'Back to note', exact: true }).click();
     await expect.poll(() => sourceText(page)).toBe('Private beginning. Shared passage. Private ending.');
 }
 
