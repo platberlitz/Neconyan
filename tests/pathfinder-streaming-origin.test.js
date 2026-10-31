@@ -73,6 +73,16 @@ async function stream(type = 'normal') {
 }
 
 describe('streaming message origin', () => {
+    test('records a provider length stop without turning an ordinary reply into a local prose limit', async () => {
+        const { processor } = await stream();
+        processor.generator = async function* () {
+            yield { text: '', swipes: [], toolCalls: [], state: { reasoning: 'Still thinking', finishReason: 'length' } };
+        };
+        await processor.generate();
+        expect(processor.providerLengthStop).toBe(true);
+        expect(processor.finishReason).toBeNull();
+    });
+
     test('shows a waiting indicator before output and clears it on the first prose', async () => {
         const { processor, thinking } = await stream();
         expect(thinking.update).toHaveBeenLastCalledWith(processor.messageDom, true);

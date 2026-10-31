@@ -63,9 +63,15 @@ globalThis.dispatchEvent = jest.fn(event => globalEvents.dispatchEvent(event));
 globalThis.document = Object.assign(new EventTarget(), { visibilityState: 'visible' });
 jest.unstable_mockModule('../public/scripts/events.js', () => ({ event_types, eventSource }));
 
+const extensionNames = [];
+const extensionStates = new Map();
+const extensionManifests = new Map();
 jest.unstable_mockModule('../public/scripts/extensions.js', () => ({
     activeGenerationInterceptors: () => interceptors,
     extension_settings: extensionSettings,
+    extensionNames,
+    findExtension: name => extensionStates.get(name) ?? null,
+    getExtensionManifest: name => extensionManifests.get(name) ?? null,
 }));
 
 // The loaded extension's own resolver; the capture must call exactly this.
@@ -171,6 +177,9 @@ beforeEach(() => {
     for (const key of Object.keys(extensionPrompts)) delete extensionPrompts[key];
     for (const key of Object.keys(chatMetadata)) delete chatMetadata[key];
     for (const key of Object.keys(extensionSettings)) delete extensionSettings[key];
+    extensionNames.length = 0;
+    extensionStates.clear();
+    extensionManifests.clear();
     interceptors.length = 0;
     delete globalThis.DialogueColorsInterceptor;
     delete globalThis.__dialogueColorsRuntime_v1;
@@ -984,6 +993,55 @@ test.each([
     expect(await workflows.runNativeRoleplayGeneration('swipe', { committed: true }))
         .toMatchObject({ state: 'refused', refused: true });
     expect(requests).toHaveLength(0);
+});
+
+test('an active Doom suite keeps ordinary replies on the browser path', async () => {
+    const name = 'third-party/Dooms-Enhancement-Suite';
+    extensionNames.push(name);
+    extensionStates.set(name, { name, enabled: true });
+    extensionManifests.set(name, { display_name: 'Doom\'s Enhancement Suite', homePage: 'https://github.com/DangerDaza/Dooms-Enhancement-Suite' });
+    extensionSettings[name] = { enabled: true };
+    expect(workflows.activeDoomsEnhancementSuite()).toBe(name);
+    expect(await workflows.capturePagePrompts('roleplay.reply')).toBeNull();
+    expect(await workflows.runNativeRoleplayGeneration('normal')).toBeNull();
+    expect(await workflows.groupPagePromptsBlocked()).toBe(true);
+    expect(requests).toHaveLength(0);
+});
+
+test('a renamed Doom install is identified by its manifest, not its folder', async () => {
+    const name = 'third-party/Dooms-Renamed';
+    extensionNames.push(name);
+    extensionStates.set(name, { name, enabled: true });
+    extensionManifests.set(name, { display_name: 'Renamed Tracker', homepage: 'https://github.com/DangerDaza/Dooms-Enhancement-Suite/' });
+    extensionSettings[name] = { enabled: true };
+    expect(workflows.activeDoomsEnhancementSuite()).toBe(name);
+    expect(await workflows.capturePagePrompts('roleplay.reply')).toBeNull();
+});
+
+test('a disabled Doom suite leaves the native path eligible', async () => {
+    const name = 'third-party/Dooms-Enhancement-Suite';
+    extensionNames.push(name);
+    extensionManifests.set(name, { homePage: 'https://github.com/DangerDaza/Dooms-Enhancement-Suite' });
+    extensionStates.set(name, { name, enabled: false });
+    extensionSettings[name] = { enabled: true };
+    expect(workflows.activeDoomsEnhancementSuite()).toBeNull();
+    expect(await workflows.capturePagePrompts('roleplay.reply')).toEqual([]);
+});
+
+test('a Doom suite switched off inside its own settings leaves the native path eligible', async () => {
+    const name = 'third-party/Dooms-Enhancement-Suite';
+    extensionNames.push(name);
+    extensionStates.set(name, { name, enabled: true });
+    extensionManifests.set(name, { homePage: 'https://github.com/DangerDaza/Dooms-Enhancement-Suite' });
+    extensionSettings[name] = { enabled: false };
+    expect(workflows.activeDoomsEnhancementSuite()).toBeNull();
+    expect(await workflows.capturePagePrompts('roleplay.reply')).toEqual([]);
+});
+
+test('stale Doom settings after an uninstall do not keep the browser path', async () => {
+    extensionSettings['third-party/Dooms-Enhancement-Suite'] = { enabled: true };
+    expect(workflows.activeDoomsEnhancementSuite()).toBeNull();
+    expect(await workflows.capturePagePrompts('roleplay.reply')).toEqual([]);
 });
 
 test('kept-note blocks left by a browser prompt preview do not disable server-owned replies', async () => {

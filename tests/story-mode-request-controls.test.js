@@ -9,7 +9,7 @@ import vm from 'node:vm';
 import * as generationOutcome from '../public/scripts/generation-outcome.js';
 import { rememberGroupSpeaker, restoreGroupSpeaker } from '../public/scripts/group-chat-speakers.js';
 import { parse } from 'acorn';
-import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse, requestUsesReasoning } from '../public/scripts/generation-request-controls.js';
+import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse, reasoningOnlyWarningKind, requestUsesReasoning } from '../public/scripts/generation-request-controls.js';
 import { createChatGenerationParameters } from '../public/scripts/chat-provider-parameters.js';
 import { cleanGeneratedText, normalizeContentText as normalizeContentTextPure, createRawPrompt as createRawPromptPure, extractMessageFromData as extractMessageFromDataPure, extractJsonFromData as extractJsonFromDataPure } from '../public/scripts/generation-format.js';
 import { textgen_types, createTextProviderParameters, replaceMacrosInList as replaceListMacros } from '../public/scripts/text-provider-parameters.js';
@@ -121,7 +121,7 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
         $: () => dom, chatElement: { find: () => ({}) },
         eventSource, event_types,
         resolveGenerationOutputBufferState, resolveGenerationUnblockState, resolveStopGenerationState, isSlashCommandText,
-        applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse,
+        applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse, reasoningOnlyWarningKind,
         createChatGenerationParameters, normalizeContentTextPure, createRawPromptPure, cleanGeneratedText, extractMessageFromDataPure, extractJsonFromDataPure,
         createTextProviderParameters, replaceListMacros,
         resolveChatReasoningEffort,
@@ -375,6 +375,12 @@ describe('request-local output controls', () => {
         }
         expect(isGenerationLengthFinish({ delta: { stop_reason: 'max_tokens' } })).toBe(true);
         expect(isGenerationLengthFinish({ candidates: [{ finishReason: 'MAX_TOKENS' }] })).toBe(true);
+    });
+
+    test('reasoning-only warning names a provider length stop instead of a finished reply', () => {
+        expect(reasoningOnlyWarningKind({ lengthStop: true })).toBe('length');
+        expect(reasoningOnlyWarningKind({ lengthStop: false })).toBe('reasoning');
+        expect(reasoningOnlyWarningKind()).toBe('reasoning');
     });
 });
 

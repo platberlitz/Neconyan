@@ -239,6 +239,7 @@ export function startMewmoryWorker(getDirectories, call, { firstScanDelayMs = 0 
     let pending = false;
     let scheduled;
     let firstUser = 0;
+    let started = false;
     const scan = async (reconcile = true) => {
         if (scanning) {
             pending = true;
@@ -260,7 +261,9 @@ export function startMewmoryWorker(getDirectories, call, { firstScanDelayMs = 0 
         }
     };
     wake = () => {
-        if (scheduled) return;
+        // The startup delay owns the first scan. A job that finishes after an
+        // earlier worker stopped must not pull this worker into its grace period.
+        if (!started || scheduled) return;
         scheduled = setImmediate(() => {
             scheduled = null;
             void scan(false);
@@ -269,6 +272,7 @@ export function startMewmoryWorker(getDirectories, call, { firstScanDelayMs = 0 
     };
     let timer;
     const begin = () => {
+        started = true;
         timer = setInterval(() => void scan(), 15000);
         timer.unref();
         void scan();
@@ -277,6 +281,7 @@ export function startMewmoryWorker(getDirectories, call, { firstScanDelayMs = 0 
     if (delay) delay.unref();
     else begin();
     return () => {
+        started = false;
         clearTimeout(delay);
         clearInterval(timer);
         clearImmediate(scheduled);
