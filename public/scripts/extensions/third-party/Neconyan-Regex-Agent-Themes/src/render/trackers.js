@@ -3,14 +3,29 @@
  * Each takes a spec plus resolved tokens and returns a single-line `replaceString`.
  */
 
-import { accentAt, alpha } from '../tokens.js';
+import { accentAt } from '../tokens.js';
 import {
     bodyPanel, chip, collapsible, decl, decorative, headerChip, pairSlot, part,
     pill, row, section, slot, statTile, surfaceFill,
 } from './parts.js';
+import { renderRelationshipBond, renderRelationshipTracker } from './relationship.js';
+import {
+    renderLiminalBanner, renderLiminalCensus, renderLiminalCertificate,
+    renderLiminalChip, renderLiminalCommittee, renderLiminalLedgerRow,
+    renderLiminalLore, renderLiminalMeanwhile, renderLiminalPrewrap,
+    renderLiminalWinds,
+} from './ethereality.js';
 
 /** Archetypes A and B: a header chip over one or two body rows. */
 export function renderPanel(spec, tokens, options) {
+    if (spec.variant === 'liminal-banner') return renderLiminalBanner(spec, tokens, options);
+    if (spec.variant === 'liminal-lore') return renderLiminalLore(spec, tokens, options);
+    if (spec.variant === 'liminal-ledger-row') return renderLiminalLedgerRow(spec, tokens, options);
+    if (spec.variant === 'liminal-certificate') return renderLiminalCertificate(spec, tokens, options);
+    if (spec.variant === 'liminal-committee') return renderLiminalCommittee(spec, tokens, options);
+    if (spec.variant === 'liminal-meanwhile') return renderLiminalMeanwhile(spec, tokens, options);
+    if (spec.variant === 'liminal-prewrap') return renderLiminalPrewrap(spec, tokens, options);
+
     const rows = spec.rows
         .map((rowSpec, index) => row(rowSpec, tokens, spec.accent, index))
         .join('');
@@ -20,6 +35,8 @@ export function renderPanel(spec, tokens, options) {
 
 /** Archetype C: a header chip over a stack of labelled sections. */
 export function renderProfile(spec, tokens, options) {
+    if (spec.variant === 'liminal-census') return renderLiminalCensus(spec, tokens, options);
+
     const open = resolveOpen(spec, options);
 
     if (spec.tier === 'minor') {
@@ -52,6 +69,8 @@ export function renderProfile(spec, tokens, options) {
  * to an empty string, so unused slots must render as removable empty elements.
  */
 export function renderSlots(spec, tokens, options) {
+    if (spec.variant === 'liminal-winds') return renderLiminalWinds(spec, tokens, options);
+
     const open = resolveOpen(spec, options);
     const items = spec.slots.map((slotSpec, index) => {
         const accentIndex = spec.rainbow ? spec.accent + index : spec.accent;
@@ -69,6 +88,9 @@ export function renderSlots(spec, tokens, options) {
 
 /** Archetype E: a responsive stat grid, a condition pill, and a change row. */
 export function renderStatcard(spec, tokens, options) {
+    if (spec.key === 'relationship-bond') return renderRelationshipBond(spec, tokens, options);
+    if (spec.key === 'relationship') return renderRelationshipTracker(spec, tokens, options);
+
     const open = resolveOpen(spec, options);
 
     const grid = `<dl${part('grid')}${decl({
@@ -106,6 +128,7 @@ export function renderStatcard(spec, tokens, options) {
 
 /** Archetype F: an inline chip. Stock uses a span for references and a div for changes. */
 export function renderChip(spec, tokens) {
+    if (spec.variant === 'liminal-chip') return renderLiminalChip(spec, tokens);
     return chip(spec, tokens, { tag: spec.key === 'npc-rel' ? 'div' : 'span' });
 }
 

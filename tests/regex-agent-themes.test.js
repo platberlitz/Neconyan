@@ -92,6 +92,12 @@ describe('bundled tracker contracts', () => {
         const rendered = applyList(SAMPLES['relationship-bond'].full, built.scripts);
         expect(rendered).toContain('/thumbnail/portrait?name=Mira&amp;char={{char}}');
         expect(rendered).toContain('Tell her who sent you');
+        expect(rendered).toContain('Route Progress');
+        expect(rendered).toContain('Keepsake Memory');
+        expect(rendered).toContain('Would Say Yes To');
+        expect(rendered).toContain('Turning Point');
+        expect(rendered).toContain('Next Threshold');
+        expect(rendered).toContain('data-rat-part="stepper"');
         expect(rendered).toMatch(/<details data-rat-part="row"[^>]*><summary>.*?Unsaid:.*?<\/summary><span data-rat-part="row-value">I hoped you would stay<\/span><\/details>/);
         expect(rendered.match(/role="progressbar"/g)).toHaveLength(4);
         expect(rendered).not.toContain('[METER');
@@ -99,17 +105,24 @@ describe('bundled tracker contracts', () => {
     });
 
     for (const [id, text, values, parts] of [
-        ['tpl-the-ledger', '[LEDGER|Mira|A lost hour|Before dawn]\ncontext: The clerk is waiting\n[/LEDGER]', ['Mira', 'A lost hour', 'Before dawn', 'The clerk is waiting'], {}],
-        ['tpl-the-census', '[CENSUS:LODGER|Mira]\nb: Archivist\n[/CENSUS]', ['Mira', 'Archivist'], { section: 1 }],
-        ['tpl-doors-fate-checks', '[DOORS]\n1. Take the stairs [LUCK 12]\n2. Knock\n[/DOORS]', ['Take the stairs [LUCK 12]', 'Knock'], {}],
-        ['tpl-four-winds', '[WINDS]\nA. North\nB. South\n[/WINDS]', ['A. North', 'B. South'], { slot: 2 }],
+        ['tpl-the-ledger', '[LEDGER|Mira|A lost hour|Before dawn]\ncontext: The clerk is waiting\n[/LEDGER]', ['Mira', 'A lost hour', 'Before dawn', 'The clerk is waiting', 'OWED TO THE STRANGE', 'What Is Owed', 'audit'], { row: 2 }],
+        ['tpl-the-census', '[CENSUS:LODGER|Mira]\nb: Archivist\n[/CENSUS]', ['Mira', 'Archivist', 'LODGER', 'filed, provisionally'], { section: 1 }],
+        ['tpl-doors-fate-checks', '[DOORS]\n1. Take the stairs [LUCK 12]\n2. Knock\n[/DOORS]', ['Take the stairs [LUCK 12]', 'Knock', 'THE CORRIDOR', 'one is ajar'], { row: 1 }],
+        ['tpl-four-winds', '[WINDS]\nA. North\nB. South\n[/WINDS]', ['A. North', 'B. South', 'The Four Winds', 'choose a weather'], { slot: 2 }],
+        ['tpl-drift-tracker', '[DRIFT|SLIGHTLY ASKANCE|A faint tilt in the floorboards]\nThe staircase has one more step than yesterday.\n[/DRIFT]', ['SLIGHTLY ASKANCE', 'A faint tilt in the floorboards', 'The staircase has one more step than yesterday.', 'D R I F T'], { row: 1 }],
+        ['tpl-clock-is-lying', '[HOUR|3:14 PM|The Hour of Unmailed Letters|the pendulum hesitates]\nnote: All wristwatches in the parlour agree to disagree.\n[/HOUR]', ['3:14 PM', 'The Hour of Unmailed Letters', 'the pendulum hesitates', 'The Clock Is Lying'], { row: 1 }],
+        ['tpl-small-miracles', '[CERT|The Teacup That Refused to Cool|Domestic Grace|staying warm through three chapters]\nstamp: Witnessed by the parlour cat\n[/CERT]', ['The Teacup That Refused to Cool', 'Domestic Grace', 'staying warm through three chapters', 'Witnessed by the parlour cat', 'Certificate of Miracle', 'E. Thistlewood'], { row: 2 }],
+        ['tpl-the-committee', '[VOICE|The Brigadier|LOUD|Alarmed]\nsays: We must fortify the umbrella stand at once.\n[/VOICE]', ['The Brigadier', 'LOUD', 'Alarmed', 'We must fortify the umbrella stand at once.', 'MINUTES WERE TAKEN, THEN LOST'], { row: 1 }],
+        ['tpl-thought-cabinet', '[THOUGHT|The Architecture of Regret|INTERNALIZING|2h remaining]\nnote: Every hallway eventually leads back to the kitchen.\n[/THOUGHT]', ['The Architecture of Regret', 'INTERNALIZING', '2h remaining', 'Tenancy Report', 'FURNITURE MAY SHIFT IN TRANSIT'], { row: 1 }],
+        ['tpl-the-becoming', '[BECOMING|A Tourist|Someone Who Knows the Postman|WEARING THIN]\nnote: You stopped checking the street signs.\n[/BECOMING]', ['A Tourist', 'Someone Who Knows the Postman', 'WEARING THIN', 'Evidence', 'THE COAT REMEMBERS EVERY SHOULDER'], { row: 1 }],
+        ['tpl-meanwhile-impossibly', '[ELSEWHERE|The Municipal Greenhouse|3 miles north]\n- The ferns are whispering in Latin.\n- A watering can floats three inches off the bench.\n- Nobody has unlocked the gate since Tuesday.\n[/ELSEWHERE]', ['The Municipal Greenhouse', '3 miles north', 'IMPOSSIBLY', 'The ferns are whispering in Latin.'], { row: 3 }],
     ]) {
         test(`${id} renders current Ethereal output`, () => {
             const built = buildAgentScripts(id, scriptsFor(id), theme);
             const rendered = applyList(text, built.scripts);
             expect(rendered).toContain('data-rat=');
             for (const value of values) expect(rendered).toContain(value);
-            expect(rendered).not.toMatch(/\[\/?(?:LEDGER|CENSUS|DOORS|WINDS)/);
+            expect(rendered).not.toMatch(/\[\/?(?:LEDGER|CENSUS|DOORS|WINDS|DRIFT|HOUR|CERT|VOICE|THOUGHT|BECOMING|ELSEWHERE)/);
             for (const [part, count] of Object.entries(parts)) expect(rendered.match(new RegExp(`data-rat-part="${part}"`, 'g'))).toHaveLength(count);
         });
     }
