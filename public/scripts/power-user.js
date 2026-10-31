@@ -62,7 +62,7 @@ import { resetTokenCache, tokenizers } from './tokenizers.js';
 import { BIAS_CACHE } from './logit-bias.js';
 import { renderTemplateAsync } from './templates.js';
 
-import { countOccurrences, debounce, delay, download, getFileText, getSanitizedFilename, getStringHash, isOdd, isTrueBoolean, onlyUnique, resetScrollHeight, shuffle, sortMoments, stringToRange, timestampToMoment } from './utils.js';
+import { countOccurrences, debounce, delay, download, getFileText, getSanitizedFilename, getStringHash, isOdd, isTrueBoolean, onlyUnique, resetScrollHeight, shuffle, sortMoments, stringToRange, timestampToMoment, uuidv4 } from './utils.js';
 import { FILTER_TYPES } from './filters.js';
 import { SlashCommand } from './slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from './slash-commands/SlashCommandArgument.js';
@@ -84,7 +84,7 @@ import { setSlashCommandParserSettingsGetter } from './slash-commands/SlashComma
 import { persona_description_positions as _persona_description_positions } from './personas.js';
 import { generateCustomCssWithAI, resolveCustomCssAIProfile } from './neconyan-custom-css-ai.js';
 import { populateConnectionProfileSelect } from './extensions/in-chat-agents/profile-utils.js';
-import { resolveMovingUIViewportState, matchesMovingUIViewport } from './moving-ui-viewport.js';
+import { resolveMovingUIViewportState, matchesMovingUIViewport, readMovingUIDevice } from './moving-ui-viewport.js';
 import { ANDROID_STREAMING_SETTING_DEFAULTS, ANDROID_STREAMING_SETTINGS_INITIALIZED_KEY, initializeAndroidStreamingSettings } from './mobile-streaming.js';
 import {
     createDefaultLowMemoryPreferences,
@@ -3178,12 +3178,7 @@ const appliedMovingUIElements = new Set();
 function getMovingUIViewport() {
     if (!movingUIDevice) {
         // This identity is browser-local, unlike account settings shared across devices.
-        try {
-            movingUIDevice = localStorage.getItem('neconyan-moving-ui-device') || crypto.randomUUID();
-            localStorage.setItem('neconyan-moving-ui-device', movingUIDevice);
-        } catch {
-            movingUIDevice = crypto.randomUUID();
-        }
+        movingUIDevice = readMovingUIDevice(() => localStorage, uuidv4);
     }
     return {
         device: movingUIDevice,
