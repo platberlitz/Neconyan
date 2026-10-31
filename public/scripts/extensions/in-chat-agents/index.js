@@ -2141,15 +2141,34 @@ async function updateAllAgentsFromSourceTemplates() {
     toastr.success(`Updated ${changes.length} agent(s) to their latest templates.`);
 }
 
+const DISMISSED_AGENT_UPDATES_STORAGE_KEY = 'ica--dismissed-template-updates';
+
+function getAgentUpdateNoticeKeys() {
+    return getAgentsWithTemplateUpdates().map(agent => JSON.stringify([
+        agent.id, agent.sourceTemplateId, getTemplateVersionValue(findSourceTemplateForAgent(agent)),
+    ]));
+}
+
+function dismissAgentUpdates() {
+    accountStorage.setItem(DISMISSED_AGENT_UPDATES_STORAGE_KEY, JSON.stringify(getAgentUpdateNoticeKeys()));
+    updateUpdateAllButtonVisibility();
+}
+
 function updateUpdateAllButtonVisibility() {
-    const outdatedCount = getAgentsWithTemplateUpdates().length;
-    const button = $('#ica--updateAllAgents');
-    button.prop('hidden', outdatedCount === 0);
-    button.find('.ica--update-banner-title').text(outdatedCount === 1 ? '1 agent update ready' : `${outdatedCount} agent updates ready`);
-    button.find('.ica--update-banner-help').text(outdatedCount === 1
+    const updates = getAgentUpdateNoticeKeys();
+    let dismissed = [];
+    try {
+        const saved = JSON.parse(accountStorage.getItem(DISMISSED_AGENT_UPDATES_STORAGE_KEY));
+        if (Array.isArray(saved)) dismissed = saved;
+    } catch { /* A damaged preference must not hide updates. */ }
+    const outdatedCount = updates.length;
+    const banner = $('#ica--updateBanner');
+    banner.prop('hidden', !updates.some(key => !dismissed.includes(key)));
+    banner.find('.ica--update-banner-title').text(outdatedCount === 1 ? '1 agent update ready' : `${outdatedCount} agent updates ready`);
+    banner.find('.ica--update-banner-help').text(outdatedCount === 1
         ? 'A newer version of one of your built-in agents is available.'
         : 'Newer versions of your built-in agents are available.');
-    button.attr('title', `Update ${outdatedCount} agent(s) that have a newer version`);
+    $('#ica--updateAllAgents').attr('title', `Update ${outdatedCount} agent(s) that have a newer version`);
 }
 
 const neconyanAgents = Object.assign(globalThis.NeconyanAgents || {}, {
@@ -7070,6 +7089,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         void openPathfinder();
     });
     $('#ica--updateAllAgents').on('click', agentAction(() => updateAllAgentsFromSourceTemplates()));
+    $('#ica--dismissUpdates').on('click', dismissAgentUpdates);
     $('#ica--companionsDashboard').on('click', agentAction(() => openCompanionDashboard()));
     $('#ica--convertAllTrackers').on('click', agentAction(async () => {
         const inlineTrackers = getAgents().filter(agent => agent.category === 'tracker' && !isCompanionAgent(agent) && !isPathfinderAgent(agent)).map(agent => structuredClone(agent));

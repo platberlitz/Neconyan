@@ -165,7 +165,7 @@ for (const width of [1280, 393]) {
                 for (const agent of agents) expect((await page.request.post('/api/in-chat-agents/save', { headers: requestHeaders, data: agent })).ok()).toBe(true);
                 await openAgents(page);
                 if (await skipTour.isVisible()) await skipTour.click();
-                const banner = page.locator('#ica--updateAllAgents');
+                const banner = page.locator('#ica--updateBanner');
                 await expect(banner).toBeVisible();
                 await expect(banner.locator('.ica--update-banner-title')).toHaveText(/^\d+ agent updates? ready$/);
                 await expect(banner).toContainText('Update all');
@@ -179,7 +179,7 @@ for (const width of [1280, 393]) {
                 expect(geometry.banner.x).toBeGreaterThanOrEqual(geometry.page.x - 1);
                 expect(geometry.banner.right).toBeLessThanOrEqual(geometry.page.right + 1);
                 await capture(page, info, 'agent-update-banner');
-                await banner.click();
+                await page.locator('#ica--updateAllAgents').click();
                 const popup = page.locator('dialog.popup:visible');
                 await expect(popup.locator('.ica--update-all-warning')).toContainText('your own edits');
                 for (const agent of agents) await expect(popup.locator('.ica--update-all-list')).toContainText(`${agent.name}: v1`);
@@ -193,6 +193,57 @@ for (const width of [1280, 393]) {
                     expect(updated?.version).toBe(template.version);
                     expect(updated?.phaseLocked).toBe(false);
                 }
+            } finally {
+                for (const agent of agents) await page.request.post('/api/in-chat-agents/delete', { headers: requestHeaders, data: { id: agent.id } });
+            }
+        });
+
+        test('dismissing agent updates survives reloads and only new updates restore the banner', async ({ page }, info) => {
+            await openAgents(page);
+            const template = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/knowledge-guard.json', import.meta.url)));
+            const agents = ['first', 'second'].map((label, index) => ({
+                ...template, version: 1, phaseLocked: true, sourceTemplateId: template.id,
+                name: `Dismiss check: ${label}`, id: `dismiss-updates-${width}-${Date.now()}-${index}`,
+            }));
+            const requestHeaders = await headers(page);
+            const banner = page.locator('#ica--updateBanner');
+            const dismiss = async () => {
+                const saved = page.waitForResponse(response => response.url().endsWith('/api/settings/save')
+                    && Boolean(response.request().postDataJSON()?.accountStorage?.['ica--dismissed-template-updates']));
+                await page.getByRole('button', { name: 'Dismiss', exact: true }).click();
+                await expect(banner).toBeHidden();
+                await expect(page.locator('dialog.popup:visible')).toHaveCount(0);
+                await saved;
+            };
+            try {
+                expect((await page.request.post('/api/in-chat-agents/save', { headers: requestHeaders, data: agents[0] })).ok()).toBe(true);
+                await openAgents(page);
+                await expect(banner).toBeVisible();
+                await capture(page, info, 'agent-update-dismiss');
+                await dismiss();
+                await openAgents(page);
+                await expect(banner).toBeHidden();
+                await page.locator('#ica--agentTabs .ica--agent-tab[data-tab="all"]').click();
+                await page.locator('#ica--search').fill(agents[0].name);
+                await expect(page.locator(`[data-agent-id="${agents[0].id}"] .ica--card-pill--version-update`)).toBeVisible();
+                const saved = await (await page.request.post('/api/in-chat-agents/list', { headers: requestHeaders, data: {} })).json();
+                expect(saved.find(agent => agent.id === agents[0].id)).toMatchObject({ version: 1, phaseLocked: true, name: agents[0].name });
+
+                expect((await page.request.post('/api/in-chat-agents/save', { headers: requestHeaders, data: agents[1] })).ok()).toBe(true);
+                await openAgents(page);
+                await expect(banner).toBeVisible();
+                await dismiss();
+                await page.request.post('/api/in-chat-agents/delete', { headers: requestHeaders, data: { id: agents[1].id } });
+                await openAgents(page);
+                await expect(banner).toBeHidden();
+
+                await page.route('**/in-chat-agents/templates/index.json?*', async route => {
+                    const response = await route.fetch();
+                    const templates = await response.json();
+                    await route.fulfill({ response, json: templates.map(item => item.id === template.id ? { ...item, version: item.version + 1 } : item) });
+                });
+                await openAgents(page);
+                await expect(banner).toBeVisible();
             } finally {
                 for (const agent of agents) await page.request.post('/api/in-chat-agents/delete', { headers: requestHeaders, data: { id: agent.id } });
             }

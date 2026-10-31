@@ -1,13 +1,16 @@
 <div id="ica--settings" class="ica--settings" data-workspace-view="manage">
     <div class="ica--inner">
-        <button type="button" id="ica--updateAllAgents" class="ica--update-banner" title="Update every agent that has a newer version" hidden>
+        <div id="ica--updateBanner" class="ica--update-banner" hidden>
             <span class="ica--update-banner-icon" aria-hidden="true"><i class="fa-solid fa-arrow-up"></i></span>
             <span class="ica--update-banner-copy">
                 <strong class="ica--update-banner-title">Agent updates ready</strong>
                 <span class="ica--update-banner-help">Newer versions of your built-in agents are available.</span>
             </span>
-            <span class="ica--update-banner-action">Update all</span>
-        </button>
+            <div class="ica--update-banner-actions">
+                <button type="button" id="ica--updateAllAgents" class="menu_button menu_button_primary" title="Update every agent that has a newer version">Update all</button>
+                <button type="button" id="ica--dismissUpdates" class="menu_button" title="Hide this banner until new agent updates are available">Dismiss</button>
+            </div>
+        </div>
         <div class="ica--workspace-layout">
         <nav id="ica--workspaceNav" class="ica--workspace-nav" aria-label="In-Chat Agents workspace">
             <h2 class="ica--standalone-title">In-Chat Agents</h2>

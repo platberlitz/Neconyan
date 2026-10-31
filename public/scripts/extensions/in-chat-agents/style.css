@@ -2541,32 +2541,13 @@ body .ica--cwin .ica--cwin-action.ica--cwin-action--primary:focus-visible:not(:d
     color: var(--neco-ink, var(--SmartThemeBodyColor));
     font: inherit;
     text-align: start;
-    cursor: pointer;
-    transition: border-color 0.15s ease-out, background-color 0.15s ease-out;
 }
 
 .ica--update-banner[hidden] {
     display: none;
 }
 
-.ica--update-banner:hover,
-.ica--update-banner:focus-visible {
-    border-color: var(--neco-ginger, var(--SmartThemeQuoteColor));
-    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 22%, var(--neco-surface, transparent));
-}
-
-.ica--update-banner:focus-visible {
-    outline: 2px solid var(--neco-ginger, var(--SmartThemeQuoteColor));
-    outline-offset: 2px;
-}
-
-.ica--update-banner:disabled {
-    cursor: progress;
-    opacity: 0.7;
-}
-
-.ica--update-banner-icon,
-.ica--update-banner-action {
+.ica--update-banner-icon {
     flex: 0 0 auto;
     background: var(--neco-ginger, var(--SmartThemeQuoteColor));
     color: var(--neco-on-accent, var(--SmartThemeBodyColor));
@@ -2599,18 +2580,16 @@ body .ica--cwin .ica--cwin-action.ica--cwin-action--primary:focus-visible:not(:d
     line-height: 1.35;
 }
 
-.ica--update-banner-action {
+.ica--update-banner-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
     margin-inline-start: auto;
-    padding: 6px 14px;
-    border-radius: 999px;
-    font-weight: 700;
-    white-space: nowrap;
 }
 
-@media (prefers-reduced-motion: reduce) {
-    .ica--update-banner {
-        transition: none;
-    }
+#ica--settings .ica--update-banner-actions .menu_button {
+    min-height: 44px;
+    margin: 0;
 }
 
 .ica--tool-list {
