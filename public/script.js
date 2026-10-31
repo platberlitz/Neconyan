@@ -377,7 +377,7 @@ import { compressRequest, setRequestCompressionConfig } from './scripts/request-
 import { canJumpToSwipeForMessage, canOpenSwipePickerForMessage, initSwipePicker } from './scripts/swipe-picker.js';
 import { bindIOSFastTapSendButton, isIOSWebKitPlatform } from './scripts/mobile-send-button.js';
 import { formatMobileStreamingPreview, getMobileStreamingBottomPinBehavior, getStreamingUpdateInterval, isAndroidStreamingPlatform, shouldReduceStreamingDomWork, shouldUsePlainTextStreamingPreview } from './scripts/mobile-streaming.js';
-import { fetchResumable, setGenerationContext, releaseGenerationContext, listRecoverableGenerations, openHeldGeneration, discardGeneration } from './scripts/resumable-generation.js';
+import { fetchResumable, setGenerationContext, releaseGenerationContext, listRecoverableGenerations, openHeldGeneration, discardGeneration, heldReplyHasMore } from './scripts/resumable-generation.js';
 import { captureRecoveryAnchor, getHeldReplyTarget } from './scripts/held-generation-recovery.js';
 import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse } from './scripts/generation-request-controls.js';
 import { cleanGeneratedText, createRawPrompt as createRawPromptPure, normalizeContentText as normalizeContentTextPure, extractMessageFromData as extractMessageFromDataPure, extractJsonFromData as extractJsonFromDataPure } from './scripts/generation-format.js';
@@ -8300,7 +8300,10 @@ class StreamingProcessor {
         await this.finalizeIntermediaryMessage(messageId, text, { unlockUI: true });
         if (!this.#isCurrent(messageId)) return;
 
-        await saveChatWithHeldReply(this.recoveryContext, () => this.#isCurrent(messageId));
+        // Neconyan: a reply cut short leaves the server copy unclaimed when the server holds more of it.
+        const keepHeld = this.outcome?.status === 'truncated' && await heldReplyHasMore(this.recoveryContext, getRequestHeaders());
+        if (!this.#isCurrent(messageId)) return;
+        await saveChatWithHeldReply(this.recoveryContext, () => this.#isCurrent(messageId), { keepHeld });
         if (!this.#isCurrent(messageId)) return;
 
         const isAborted = this.abortController.signal.aborted;
@@ -10634,7 +10637,8 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                     if (activeStreamingProcessor.outcome) {
                         const partial = getMessage;
                         notifyBlocked(Boolean(partial.trim()), activeStreamingProcessor.outcome);
-                        if (!partial.trim()) await restoreBlockedAttempt();
+                        // Neconyan: a reply cut short keeps its attempt even before any text, so its reasoning and the server copy survive.
+                        if (!partial.trim() && activeStreamingProcessor.outcome.status !== 'truncated') await restoreBlockedAttempt();
                         else if (shouldBufferOutput) {
                             await saveReply({ type: isContinue ? 'appendFinal' : type,
                                 getMessage: cleanUpMessage({ getMessage: (isContinue ? continue_mag : '') + partial, isContinue, displayIncompleteSentences: true }),
@@ -11719,8 +11723,10 @@ function scheduleHeldGenerationRecovery() {
 }
 
 /** A received body is not a saved reply. Acknowledge only after the chat write succeeds. */
-async function saveChatWithHeldReply(context, isCurrent = () => true) {
+async function saveChatWithHeldReply(context, isCurrent = () => true, { keepHeld = false } = {}) {
     if (!isCurrent()) return false;
+    // Neconyan: a reply cut short stays unclaimed, so recovery can replace it with the rest the server holds.
+    if (keepHeld) return saveChatConditional();
     const message = chat.at(-1);
     if (context?.id && message && !message.is_user) {
         message.extra ??= {};

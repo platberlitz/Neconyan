@@ -432,6 +432,31 @@ export async function listRecoverableGenerations(headers) {
 }
 
 /**
+ * Neconyan: whether the server holds more of this page's reply than the page received, or is still
+ * writing it. A failed lookup counts as more, so the server copy is kept rather than lost.
+ * @param {Record<string, any>|null} context The context passed to setGenerationContext
+ * @param {Record<string, string>} headers Request headers (CSRF token)
+ * @returns {Promise<boolean>}
+ */
+export async function heldReplyHasMore(context, headers) {
+    const request = ownedReplies.get(context?.id);
+    if (!request) {
+        return false;
+    }
+    try {
+        const response = await postControl(LIST_URL, headers, {});
+        if (!response.ok) {
+            return true;
+        }
+        const data = await response.json();
+        const job = (Array.isArray(data?.jobs) ? data.jobs : []).find(entry => entry?.id === request.id);
+        return Boolean(job) && (job.status === 'running' || Number(job.size) > request.received);
+    } catch {
+        return true;
+    }
+}
+
+/**
  * The caller has finished processing this reply. A failed chat save leaves the server copy available.
  * @param {Record<string, any>|null} context The context passed to setGenerationContext
  */

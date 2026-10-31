@@ -1,5 +1,5 @@
 import { cleanMewmoryCountView, createMewmoryBudgetMessage } from './mewmory/prompt-proof.js';
-import { classifyGenerationOutcome, generationErrorEnvelope, providerBlockedError } from './generation-outcome.js';
+import { classifyGenerationOutcome, generationErrorEnvelope, providerBlockedError, streamCompletionSignal, truncatedGenerationOutcome } from './generation-outcome.js';
 import { appendAutoAppendReasoningInstruction } from './chat-reasoning-instruction.js';
 import { supportsChatImages, supportsChatVideo, supportsChatAudio, supportsChatSignatures, selectToolHistoryReasoning, supportsInterleavedToolReasoning } from './chat-input-capabilities.js';
 import { getChatImageTokenCost } from './chat-prompt-tokens.js';
@@ -5412,12 +5412,21 @@ export function readChatCompletionStream(response, { canMultiSwipe = false, chat
         const swipes = [];
         const toolCalls = [];
         const state = { reasoning: '', reasoning_tokens: 0, images: [], signature: '', toolSignatures: {} };
+        let completed = false;
         while (true) {
             const { done, value } = await reader.read();
-            if (done) return;
+            if (done) {
+                // Neconyan: a body that ends without the provider's finish signal was cut short. Say so once.
+                if (completed || state.outcome) return;
+                state.outcomes ??= {};
+                state.outcome = state.outcomes[0] = truncatedGenerationOutcome();
+                yield { text, swipes, logprobs: null, toolCalls, state };
+                return;
+            }
             const rawData = value.data;
             if (rawData === '[DONE]') return;
             const parsed = JSON.parse(rawData);
+            completed ||= streamCompletionSignal(parsed);
             state.outcomes ??= {};
             const choices = Array.isArray(parsed.choices) ? parsed.choices : null;
             const frames = choices?.length ? choices.map((choice, index) => ({ ...parsed, choices: [{ ...choice, index: choice.index ?? index }] })) : [parsed];
