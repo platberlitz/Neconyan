@@ -8,6 +8,7 @@ import { OWNED_SCRIPT_PREFIX } from '../constants.js';
 import { accentAt, alpha, resolveTheme } from '../tokens.js';
 import { pairSlot, section, slot } from './parts.js';
 import { renderChip, renderPanel, renderProfile, renderSlots, renderStatcard } from './trackers.js';
+import { censusSection, windSlot } from './ethereality.js';
 import { renderBold, renderStream, renderTerminal, renderTranscript } from './companions.js';
 
 const RENDERERS = Object.freeze({
@@ -79,21 +80,32 @@ export function buildCleanupFindRegex(targetSpec, theme, options = {}) {
     const patterns = [];
 
     if (targetSpec.archetype === ARCHETYPES.SLOTS && targetSpec.slots.length) {
-        const first = targetSpec.slots[0];
-        const markup = targetSpec.kv
-            ? pairSlot(first, tokens, targetSpec.accent, 0)
-            : slot(first, tokens, targetSpec.accent, 0);
-        patterns.push(emptyMarkupPattern(markup));
+        if (targetSpec.variant === 'liminal-winds') {
+            const choice = Boolean(targetSpec.choice);
+            for (const s of targetSpec.slots.slice(1)) {
+                patterns.push(emptyMarkupPattern(windSlot(s, tokens, { choice })));
+            }
+        } else {
+            const first = targetSpec.slots[0];
+            const markup = targetSpec.kv
+                ? pairSlot(first, tokens, targetSpec.accent, 0)
+                : slot(first, tokens, targetSpec.accent, 0);
+            patterns.push(emptyMarkupPattern(markup));
+        }
     }
 
     if (targetSpec.archetype === ARCHETYPES.PROFILE) {
+        const accent = accentAt(tokens, targetSpec.accent);
         for (const index of targetSpec.optionalSections ?? []) {
             const sectionSpec = targetSpec.sections[index];
             if (sectionSpec) {
-                patterns.push(emptyMarkupPattern(section(sectionSpec, tokens, {
-                    tier: targetSpec.tier,
-                    index,
-                })));
+                const markup = targetSpec.variant === 'liminal-census'
+                    ? censusSection(sectionSpec, tokens, accent)
+                    : section(sectionSpec, tokens, {
+                        tier: targetSpec.tier,
+                        index,
+                    });
+                patterns.push(emptyMarkupPattern(markup));
             }
         }
     }
