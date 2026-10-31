@@ -1486,12 +1486,26 @@ import { t } from './i18n.js';
                     button = document.createElement('button');
                     button.type = 'button';
                     button.className = 'menu_button sb-extensions-tool';
+                    const icon = document.createElement('i');
+                    icon.className = 'sb-extensions-tool-icon fa-solid fa-sliders';
+                    icon.setAttribute('aria-hidden', 'true');
+                    const label = document.createElement('span');
+                    label.className = 'sb-extensions-tool-label';
+                    const arrow = document.createElement('i');
+                    arrow.className = 'sb-extensions-tool-arrow fa-solid fa-chevron-right';
+                    arrow.setAttribute('aria-hidden', 'true');
+                    button.append(icon, label, arrow);
                     button.addEventListener('click', () => {
                         openIncludedToolSettings(state.allGroups.find(group => group.key === button.dataset.extensionId));
                     });
                 }
+                const iconName = getIncludedToolDefinition(info)?.icon || 'fa-sliders';
+                const iconClassName = `sb-extensions-tool-icon fa-solid ${iconName}`;
+                const icon = button.querySelector('.sb-extensions-tool-icon');
+                const label = button.querySelector('.sb-extensions-tool-label');
+                if (icon && icon.className !== iconClassName) icon.className = iconClassName;
+                if (label && label.textContent !== info.name) label.textContent = info.name;
                 button.dataset.extensionId = info.key;
-                if (button.textContent !== info.name) button.textContent = info.name;
                 button.title = t`Opens the ${info.name} settings page`;
                 return button;
             });
