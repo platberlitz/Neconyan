@@ -348,7 +348,64 @@ test('Built-in Extensions links bundled tools to their own settings pages', asyn
     const promptTags = tools.getByRole('button', { name: 'Prompt Tags', exact: true });
     await expect(promptTags).toBeVisible();
     await expect(promptTags).toHaveAttribute('title', 'Opens the Prompt Tags settings page');
-    await promptTags.click();
+    await expect(promptTags.locator('.sb-extensions-tool-icon')).toHaveClass(/fa-tags/);
+    await expect(promptTags.locator('.sb-extensions-tool-icon')).toHaveAttribute('aria-hidden', 'true');
+    await expect(promptTags.locator('.sb-extensions-tool-label')).toHaveText('Prompt Tags');
+    await expect(promptTags.locator('.sb-extensions-tool-arrow')).toHaveAttribute('aria-hidden', 'true');
+    const desktopLayout = await tools.locator('.sb-extensions-tools-list').evaluate(list => {
+        const items = [...list.querySelectorAll('.sb-extensions-tool')];
+        const rects = items.map(item => item.getBoundingClientRect());
+        const firstRow = rects.filter(rect => Math.abs(rect.top - rects[0].top) < 2);
+        return {
+            display: getComputedStyle(list).display,
+            firstRowColumns: firstRow.length,
+            minHeight: Math.min(...rects.map(rect => rect.height)),
+            clipped: items.some(item => item.scrollWidth > item.clientWidth + 1),
+        };
+    });
+    expect(desktopLayout).toEqual({
+        display: 'grid',
+        firstRowColumns: 3,
+        minHeight: expect.any(Number),
+        clipped: false,
+    });
+    expect(desktopLayout.minHeight).toBeGreaterThanOrEqual(44);
+    const search = page.locator('.sb-extensions-search');
+    await search.fill('Prompt Tags');
+    await expect(tools.locator('.sb-extensions-tool')).toHaveCount(1);
+    await search.clear();
+    await expect(tools.locator('.sb-extensions-tool').nth(1)).toBeVisible();
+    await page.setViewportSize({ width: 393, height: 852 });
+    const phoneFirstRow = await tools.locator('.sb-extensions-tools-list').evaluate(list => {
+        const rects = [...list.querySelectorAll('.sb-extensions-tool')].map(item => item.getBoundingClientRect());
+        return rects.filter(rect => Math.abs(rect.top - rects[0].top) < 2).length;
+    });
+    expect(phoneFirstRow).toBe(2);
+    await page.evaluate(() => window.NeconyanShell.openTab('right', 'settings'));
+    const phoneSettingsLayout = await page.locator('#user-settings-block').evaluate(block => {
+        const layout = block.querySelector('.sb-settings-layout');
+        const navColumn = block.querySelector('.sb-settings-nav-column');
+        const tabsNav = block.querySelector('.sb-settings-tabs-nav');
+        return {
+            layoutDisplay: getComputedStyle(layout).display,
+            layoutDirection: getComputedStyle(layout).flexDirection,
+            navPosition: getComputedStyle(navColumn).position,
+            tabsDirection: getComputedStyle(tabsNav).flexDirection,
+            tabsWrap: getComputedStyle(tabsNav).flexWrap,
+        };
+    });
+    expect(phoneSettingsLayout).toEqual({
+        layoutDisplay: 'flex',
+        layoutDirection: 'column',
+        navPosition: 'static',
+        tabsDirection: 'row',
+        tabsWrap: 'nowrap',
+    });
+    await page.evaluate(() => window.NeconyanShell.openTab('right', 'extensions'));
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.getByRole('button', { name: 'Built-in', exact: true }).click();
+    await promptTags.focus();
+    await page.keyboard.press('Enter');
     await expect(page.locator('#user-settings-block')).toHaveAttribute('data-sb-active-tab', 'included-tool');
     await expect(page.locator('#user-settings-block .sb-shell-title')).toHaveText('Prompt Tags');
     await page.evaluate(() => window.NeconyanShell.openTab('right', 'extensions'));

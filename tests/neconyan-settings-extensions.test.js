@@ -8,6 +8,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const source = readFileSync(path.join(repoRoot, 'public', 'scripts', 'neconyan-settings-tabs.js'), 'utf8');
 const shellSource = readFileSync(path.join(repoRoot, 'public', 'scripts', 'neconyan-tabs.js'), 'utf8');
 const cssSource = readFileSync(path.join(repoRoot, 'public', 'css', 'neconyan.css'), 'utf8');
+const mobileCssSource = readFileSync(path.join(repoRoot, 'public', 'css', 'neconyan-mobile-shell.css'), 'utf8');
 
 function getFunctionSource(name) {
     return source.match(new RegExp(`^    function ${name}\\([\\s\\S]*?^    }`, 'm'))?.[0] ?? '';
@@ -194,8 +195,15 @@ describe('Neconyan settings and extension controllers', () => {
         expect(context.getIncludedToolGroups(groups, 'third-party')).toEqual([]);
         expect(source).toContain('master.append(masterHeading, scope, searchInput, mobileSelect, mobilePin, count, tools, list);');
         expect(source).toContain('const toolGroups = getIncludedToolGroups(state.allGroups, state.scope)');
+        expect(source).toContain('button.append(icon, label, arrow);');
+        expect(source).toContain('const iconName = getIncludedToolDefinition(info)?.icon || \'fa-sliders\';');
+        expect(source).toContain('if (label && label.textContent !== info.name) label.textContent = info.name;');
         expect(source).toContain('openIncludedToolSettings(state.allGroups.find(group => group.key === button.dataset.extensionId));');
         expect(source).toContain('tools.hidden = !toolButtons.length;');
+        expect(cssSource).toContain('grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr));');
+        expect(cssSource).toContain('body.neconyan #rm_extensions_block .sb-extensions-tool {\n    display: grid;\n    grid-template-columns: 16px minmax(0, 1fr) 12px;');
+        expect(mobileCssSource).toContain('body.neconyan #rm_extensions_block .sb-extensions-tools-list {\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n    grid-auto-rows: auto;\n    gap: 6px;\n}');
+        expect(mobileCssSource).toContain('body.neconyan #rm_extensions_block .sb-extensions-tool:last-child:nth-child(odd) {\n    grid-column: 1 / -1;\n}');
     });
 
     // Jest stops a test at its first failed assertion, so each defect assertion has a test of its own:

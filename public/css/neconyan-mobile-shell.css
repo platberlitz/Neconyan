@@ -3614,3 +3614,67 @@ body.neconyan #open_chat_expressions .expression_buttons > .menu_button > span {
 }
 
 body.neconyan .stih--history { padding: 12px; }
+
+body.neconyan #user-settings-block :is(.sb-settings-layout, .sb-extensions-layout),
+body.neconyan #user-settings-block #rm_extensions_block .extensions_block {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+body.neconyan #user-settings-block :is(.sb-settings-nav-column, .sb-extensions-master) {
+    position: static;
+    width: 100%;
+}
+/* Phones: settings categories are labelled tabs in one scrolling row (one tap, no dropdown). */
+body.neconyan #user-settings-block .sb-settings-tabs-nav {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 4px;
+    margin: 0;
+    padding: 0 0 4px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+}
+body.neconyan #user-settings-block .sb-settings-tabs-nav::-webkit-scrollbar { display: none; }
+body.neconyan #user-settings-block .sb-settings-tabs-nav .sb-settings-tab-btn {
+    width: auto;
+    flex: 0 0 auto;
+    justify-content: center;
+    padding: 0 12px;
+    white-space: nowrap;
+}
+body.neconyan #user-settings-block .sb-settings-search {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 6px;
+}
+body.neconyan #user-settings-block .sb-settings-search-label { display: block; }
+body.neconyan #user-settings-block :is(.sb-settings-detail, .sb-extension-detail),
+body.neconyan #user-settings-block #rm_extensions_block .extensions_block > .sb-extensions-layout > .sb-extensions-master {
+    width: 100%;
+}
+body.neconyan #rm_extensions_block .sb-extensions-tools {
+    gap: 6px;
+    padding-bottom: 10px;
+}
+body.neconyan #rm_extensions_block .sb-extensions-tools-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: auto;
+    gap: 6px;
+}
+body.neconyan #user-settings-block #rm_extensions_block .sb-extensions-tool {
+    grid-template-columns: 14px minmax(0, 1fr) 10px;
+    gap: 6px;
+    padding: 6px 8px;
+}
+body.neconyan #rm_extensions_block .sb-extensions-tool:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+}
+@media (max-width: 21.25rem) {
+    body.neconyan #rm_extensions_block .sb-extensions-tools-list {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

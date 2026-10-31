@@ -1511,6 +1511,9 @@ body.neconyan .sb-extension-master-item {
     width: 100%;
     justify-content: flex-start;
     padding: 10px 12px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--neco-muted);
     overflow-wrap: anywhere;
     text-align: left;
     white-space: normal;
@@ -1519,6 +1522,10 @@ body.neconyan .sb-settings-tab-btn[aria-current='page'],
 body.neconyan .sb-extension-master-item[aria-current='true'] {
     color: var(--neco-ink);
     border-color: var(--neco-ginger);
+    background: var(--neco-raised);
+}
+body.neconyan .sb-extension-master-item:hover {
+    color: var(--neco-ink);
     background: var(--neco-raised);
 }
 body.neconyan .sb-settings-category-select,
@@ -1536,11 +1543,45 @@ body.neconyan .sb-extension-master-row {
     gap: 4px;
     min-width: 0;
 }
-body.neconyan .sb-extension-master-row .sb-extension-master-item { width: 100%; }
-body.neconyan .sb-extensions-tools { display: grid; gap: 6px; }
+body.neconyan .sb-extensions-tools {
+    display: grid;
+    gap: 8px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--neco-border);
+}
 body.neconyan .sb-extensions-tools-heading { color: var(--neco-muted); font-size: 12px; font-weight: 600; }
-body.neconyan .sb-extensions-tools-list { display: flex; flex-wrap: wrap; gap: 6px; }
-body.neconyan .sb-extensions-tools-list .sb-extensions-tool { min-height: 44px; margin: 0; }
+body.neconyan .sb-extensions-tools-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr));
+    grid-auto-rows: 1fr;
+    gap: 8px;
+}
+body.neconyan #rm_extensions_block .sb-extensions-tool {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr) 12px;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    margin: 0;
+    padding: 8px 12px;
+    text-align: left;
+    white-space: normal;
+}
+body.neconyan .sb-extensions-tool {
+    background: var(--neco-surface);
+    border: 1px solid var(--neco-border);
+    color: var(--neco-ink);
+}
+body.neconyan .sb-extensions-tool:is(:hover, :focus-visible) {
+    background: var(--neco-raised);
+    border-color: var(--neco-ginger);
+}
+body.neconyan .sb-extensions-tool-label { min-width: 0; overflow-wrap: anywhere; line-height: 1.25; }
+body.neconyan .sb-extensions-tool > :is(.sb-extensions-tool-icon, .sb-extensions-tool-arrow) { color: var(--neco-muted); font-size: 12px; }
+body.neconyan .sb-extensions-tool:is(:hover, :focus-visible) > :is(.sb-extensions-tool-icon, .sb-extensions-tool-arrow) { color: currentColor; }
 body.neconyan .sb-extension-pin {
     display: inline-flex;
     align-items: center;
@@ -1631,15 +1672,6 @@ body.neconyan .sb-extensions-search {
     min-height: 44px;
     width: 100%;
 }
-body.neconyan .sb-extension-master-item {
-    border: 1px solid transparent;
-    background: transparent;
-    color: var(--neco-muted);
-}
-body.neconyan .sb-extension-master-item:hover {
-    color: var(--neco-ink);
-    background: var(--neco-raised);
-}
 body.neconyan .sb-extension-detail {
     min-width: 0;
     overflow-x: hidden;
@@ -1716,60 +1748,6 @@ body.neconyan #rm_extensions_block .extensions_block > .sb-extensions-layout > .
 body.neconyan #rm_extensions_block .extensions_block > :is(#extensions_settings, #extensions_settings2) > .extension_container {
     grid-column: 1;
     min-width: 0;
-}
-
-@media (max-width: 768px) {
-    body.neconyan .sb-settings-layout,
-    body.neconyan .sb-extensions-layout {
-        display: flex;
-        flex-direction: column;
-        gap: 14px;
-    }
-    body.neconyan :is(.sb-settings-nav-column, .sb-extensions-master) {
-        position: static;
-        width: 100%;
-    }
-    /* Phones: settings categories are labelled tabs in one scrolling row (one tap, no dropdown). */
-    body.neconyan .sb-settings-tabs-nav {
-        display: flex;
-        flex-direction: row;
-        flex-wrap: nowrap;
-        align-items: center;
-        gap: 4px;
-        margin: 0;
-        padding: 0 0 4px;
-        overflow-x: auto;
-        overflow-y: hidden;
-        scrollbar-width: none;
-    }
-    body.neconyan .sb-settings-tabs-nav::-webkit-scrollbar { display: none; }
-    body.neconyan .sb-settings-tabs-nav .sb-settings-tab-btn {
-        width: auto;
-        flex: 0 0 auto;
-        justify-content: center;
-        padding: 0 12px;
-        white-space: nowrap;
-    }
-    body.neconyan .sb-settings-search {
-        align-items: stretch;
-        flex-direction: column;
-        gap: 6px;
-    }
-    body.neconyan .sb-settings-search-label {
-        display: block;
-    }
-    body.neconyan .sb-settings-detail,
-    body.neconyan .sb-extension-detail {
-        width: 100%;
-    }
-    body.neconyan #rm_extensions_block .extensions_block {
-        display: flex;
-        flex-direction: column;
-        gap: 14px;
-    }
-    body.neconyan #rm_extensions_block .extensions_block > .sb-extensions-layout > .sb-extensions-master {
-        width: 100%;
-    }
 }
 
 body.neconyan #rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p {
