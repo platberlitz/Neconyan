@@ -10,6 +10,42 @@ export function matchesMovingUIViewport(saved, current) {
         Number.isFinite(saved[key]) && saved[key] > 0 && saved[key] === current[key]);
 }
 
+/**
+ * Reads the browser-local MovingUI device identity, generating and storing one
+ * when storage is missing or unavailable. Storage failures never block startup.
+ *
+ * @param {() => Storage} getStorage Returns the storage object; the property access itself may throw.
+ * @param {() => string} createId Generates a new device identity.
+ * @param {string} [key='neconyan-moving-ui-device'] Storage key.
+ * @returns {string} The stored or newly generated device identity.
+ */
+export function readMovingUIDevice(getStorage, createId, key = 'neconyan-moving-ui-device') {
+    let storage = null;
+    try {
+        storage = getStorage();
+    } catch {
+        return createId();
+    }
+
+    let storedId = null;
+    try {
+        storedId = storage?.getItem(key) ?? null;
+    } catch {
+        storedId = null;
+    }
+    if (storedId) {
+        return storedId;
+    }
+
+    const deviceId = createId();
+    try {
+        storage?.setItem(key, deviceId);
+    } catch {
+        // The generated identity still works for this session when storage is read-only.
+    }
+    return deviceId;
+}
+
 function parsePixelValue(value) {
     if (typeof value === 'number' && Number.isFinite(value)) {
         return value;

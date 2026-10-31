@@ -1,6 +1,28 @@
 import { describe, expect, test } from '@jest/globals';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { resolveMovingUIViewportState, scaleMovingUIViewportState, matchesMovingUIViewport } from '../public/scripts/moving-ui-viewport.js';
+import { resolveMovingUIViewportState, scaleMovingUIViewportState, matchesMovingUIViewport, readMovingUIDevice } from '../public/scripts/moving-ui-viewport.js';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const readSource = (...parts) => readFileSync(path.join(repoRoot, ...parts), 'utf8').replace(/\r\n/g, '\n');
+
+function createMemoryStorage(initial = {}) {
+    const values = new Map(Object.entries(initial));
+    const writes = [];
+    return {
+        values,
+        writes,
+        storage: {
+            getItem: key => values.has(key) ? values.get(key) : null,
+            setItem: (key, value) => {
+                values.set(key, value);
+                writes.push([key, value]);
+            },
+        },
+    };
+}
 
 describe('deliberate MovingUI layout ownership', () => {
     const viewport = { device: 'browser-a', width: 1280, height: 900, screenWidth: 1920, screenHeight: 1080, pixelRatio: 1 };
@@ -17,6 +39,86 @@ describe('deliberate MovingUI layout ownership', () => {
         const phone = { ...viewport, width: 393 };
         expect(matchesMovingUIViewport(phone, phone)).toBe(false);
         expect(matchesMovingUIViewport({ ...viewport, height: null }, viewport)).toBe(false);
+    });
+});
+
+describe('MovingUI device identity', () => {
+    test('keeps a stored identity without generating or rewriting it', () => {
+        const { storage, writes } = createMemoryStorage({ 'neconyan-moving-ui-device': 'device-a' });
+
+        expect(readMovingUIDevice(() => storage, () => {
+            throw new Error('must not generate an identity');
+        })).toBe('device-a');
+        expect(writes).toEqual([]);
+    });
+
+    test('generates and persists one identity when none is stored', () => {
+        for (const initial of [{}, { 'neconyan-moving-ui-device': '' }]) {
+            const { storage, writes, values } = createMemoryStorage(initial);
+            let created = 0;
+            const createId = () => `generated-${++created}`;
+
+            expect(readMovingUIDevice(() => storage, createId)).toBe('generated-1');
+            expect(created).toBe(1);
+            expect(writes).toEqual([['neconyan-moving-ui-device', 'generated-1']]);
+            expect(values.get('neconyan-moving-ui-device')).toBe('generated-1');
+
+            expect(readMovingUIDevice(() => storage, createId)).toBe('generated-1');
+            expect(created).toBe(1);
+        }
+    });
+
+    test('falls back to one in-memory identity when storage access throws', () => {
+        let created = 0;
+        const createId = () => `generated-${++created}`;
+        const blockedRead = {
+            getItem: () => {
+                throw new Error('storage is blocked');
+            },
+            setItem: () => {},
+        };
+
+        expect(readMovingUIDevice(() => {
+            throw new Error('localStorage is blocked');
+        }, createId)).toBe('generated-1');
+        expect(readMovingUIDevice(() => blockedRead, createId)).toBe('generated-2');
+        expect(created).toBe(2);
+    });
+
+    test('keeps the generated identity when the browser refuses to store it', () => {
+        const { storage } = createMemoryStorage();
+        storage.setItem = () => {
+            throw new Error('storage is read-only');
+        };
+
+        expect(readMovingUIDevice(() => storage, () => 'generated-1')).toBe('generated-1');
+    });
+
+    test('preserves a stored identity even when writes are blocked', () => {
+        const storage = {
+            getItem: () => 'device-a',
+            setItem: () => {
+                throw new Error('storage is read-only');
+            },
+        };
+
+        expect(readMovingUIDevice(() => storage, () => {
+            throw new Error('must not generate an identity');
+        })).toBe('device-a');
+    });
+});
+
+describe('MovingUI device identity startup wiring', () => {
+    const powerUserSource = readSource('public', 'scripts', 'power-user.js');
+
+    test('reads the device identity through the startup-safe helper', () => {
+        expect(powerUserSource).toMatch(/import \{[^}]*\buuidv4\b[^}]*\} from '\.\/utils\.js';/);
+        expect(powerUserSource).toMatch(/import \{[^}]*\breadMovingUIDevice\b[^}]*\} from '\.\/moving-ui-viewport\.js';/);
+
+        const viewport = powerUserSource.slice(powerUserSource.indexOf('function getMovingUIViewport()'));
+        const body = viewport.slice(0, viewport.indexOf('\n}\n'));
+        expect(body).toContain('readMovingUIDevice(() => localStorage, uuidv4)');
+        expect(body).not.toContain('randomUUID');
     });
 });
 
