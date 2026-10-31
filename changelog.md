@@ -24,6 +24,7 @@
 - PR #363 (2026-10-30) `fix(tide): keep collapsible panels readable`
 - PR #364 (2026-10-30) `fix(mewmory): preserve reading progress and avoid redundant work`
 - PR #365 (2026-10-30) `fix(chat): say why a rename is refused when Scratchpad is damaged`
+- PR #366 (2026-10-31) `fix(rail): give the phone rail icon buttons a 44px tap area`
 
 ## v1.4.0
 
