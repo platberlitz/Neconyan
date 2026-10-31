@@ -609,6 +609,56 @@ test('a delayed worker leaves startup alone, then catches up', async t => {
     }
 });
 
+test('a late previous job cannot wake the next worker during its startup grace period', async t => {
+    const previous = disk(t);
+    const next = disk(t);
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    config.autoUpdate = true;
+    for (const { directories } of [previous, next]) {
+        saveConfig(directories, config);
+        await loadCurrentState(directories, locator);
+        mutateState(directories, locator, state => { state.enabled = true; });
+    }
+    let release;
+    const hold = new Promise(resolve => { release = resolve; });
+    const previousCall = async () => {
+        await hold;
+        return { value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role: 'extractor' } };
+    };
+    await startProcessing(previous.directories, locator, { all: true, automatic: true }, previousCall);
+
+    // Only the startup delay is fake. setImmediate stays real so a leaked wake
+    // can schedule its scan during the assertion.
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    let scans = 0;
+    let calls = 0;
+    const nextCall = async () => {
+        calls++;
+        return { value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role: 'extractor' } };
+    };
+    const stop = startMewmoryWorker(async () => { scans++; return [next.directories]; }, nextCall, { firstScanDelayMs: 300 });
+    const flushImmediate = () => new Promise(resolve => setImmediate(resolve));
+    try {
+        release();
+        await waitForProcessing(previous.directories, locator);
+        await flushImmediate();
+        await flushImmediate();
+        assert.equal(scans, 0, 'the startup grace period owns the first scan');
+        assert.equal(calls, 0, 'a late job cannot start memory work during the startup grace period');
+
+        t.mock.timers.tick(300);
+        for (let attempt = 0; attempt < 20 && !readState(next.directories, locator).processing; attempt++) await flushImmediate();
+        await waitForProcessing(next.directories, locator);
+        assert.equal(scans, 1, 'the delayed worker scans once its grace period ends');
+        assert.ok(calls > 0, 'the delayed worker catches up after startup');
+    } finally {
+        stop();
+        t.mock.timers.reset();
+        await waitForProcessing(next.directories, locator);
+    }
+});
+
 test('story listings and chat reads reuse files that have not changed', async t => {
     const { directories } = disk(t);
     await loadCurrentState(directories, locator);
