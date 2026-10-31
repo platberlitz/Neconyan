@@ -2513,6 +2513,85 @@ body .ica--cwin .ica--cwin-action.ica--cwin-action--primary:focus-visible:not(:d
     font-size: calc(var(--mainFontSize) * 0.9);
 }
 
+.ica--update-all-warning {
+    margin: 10px 0 0;
+    padding: 8px 10px;
+    border-inline-start: 3px solid var(--neco-ginger, var(--SmartThemeQuoteColor));
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 12%, transparent);
+    text-align: start;
+    font-size: calc(var(--mainFontSize) * 0.9);
+}
+
+.ica--update-all-edited {
+    color: var(--ica-muted, inherit);
+}
+
+.ica--update-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 12px;
+    width: 100%;
+    margin: 0;
+    padding: 10px 12px;
+    border: 1px solid color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 55%, transparent);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 14%, var(--neco-surface, transparent));
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font: inherit;
+    text-align: start;
+}
+
+.ica--update-banner[hidden] {
+    display: none;
+}
+
+.ica--update-banner-icon {
+    flex: 0 0 auto;
+    background: var(--neco-ginger, var(--SmartThemeQuoteColor));
+    color: var(--neco-on-accent, var(--SmartThemeBodyColor));
+}
+
+.ica--update-banner-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 2em;
+    height: 2em;
+    border-radius: 50%;
+}
+
+.ica--update-banner-copy {
+    display: flex;
+    flex: 1 1 14em;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.ica--update-banner-title {
+    font-size: calc(var(--mainFontSize) * 1.02);
+    line-height: 1.25;
+}
+
+.ica--update-banner-help {
+    color: var(--ica-muted, inherit);
+    font-size: calc(var(--mainFontSize) * 0.8);
+    line-height: 1.35;
+}
+
+.ica--update-banner-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-inline-start: auto;
+}
+
+#ica--settings .ica--update-banner-actions .menu_button {
+    min-height: 44px;
+    margin: 0;
+}
+
 .ica--tool-list {
     display: flex;
     flex-direction: column;

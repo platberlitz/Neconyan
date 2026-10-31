@@ -2107,11 +2107,16 @@ async function updateAllAgentsFromSourceTemplates() {
     const names = outdatedAgents
         .map(agent => {
             const template = findSourceTemplateForAgent(agent);
-            return `<li>${escapeHtml(agent.name || template.name)}: v${escapeHtml(getAgentVersionValue(agent))} &rarr; v${escapeHtml(getTemplateVersionValue(template))}</li>`;
+            const editedNote = agent.phaseLocked ? ' <em class="ica--update-all-edited">(edited by you)</em>' : '';
+            return `<li>${escapeHtml(agent.name || template.name)}: v${escapeHtml(getAgentVersionValue(agent))} &rarr; v${escapeHtml(getTemplateVersionValue(template))}${editedNote}</li>`;
         })
         .join('');
+    const editedCount = outdatedAgents.filter(agent => agent.phaseLocked).length;
+    const editedWarning = editedCount > 0
+        ? `<p class="ica--update-all-warning">${editedCount === 1 ? 'One of these agents has' : `${editedCount} of these agents have`} your own edits. Updating replaces ${editedCount === 1 ? 'its' : 'their'} prompt and settings with the new version.</p>`
+        : '';
     const result = await new Popup(
-        `Update ${outdatedAgents.length} agent(s) to their latest templates? Your companion settings, context choices, enabled state, pin, order and profile overrides will be kept.<ul class="ica--update-all-list">${names}</ul>`,
+        `Update ${outdatedAgents.length} agent(s) to their latest templates? Your companion settings, context choices, enabled state, pin, order and profile overrides will be kept.${editedWarning}<ul class="ica--update-all-list">${names}</ul>`,
         POPUP_TYPE.CONFIRM,
     ).show();
 
@@ -2122,7 +2127,7 @@ async function updateAllAgentsFromSourceTemplates() {
     const changes = [];
     for (const oldAgent of outdatedAgents) {
         const agent = getAgentById(oldAgent.id);
-        if (!agent || agent.phaseLocked) continue;
+        if (!agent) continue;
         const template = findSourceTemplateForAgent(agent);
         if (!template) {
             continue;
@@ -2136,12 +2141,34 @@ async function updateAllAgentsFromSourceTemplates() {
     toastr.success(`Updated ${changes.length} agent(s) to their latest templates.`);
 }
 
+const DISMISSED_AGENT_UPDATES_STORAGE_KEY = 'ica--dismissed-template-updates';
+
+function getAgentUpdateNoticeKeys() {
+    return getAgentsWithTemplateUpdates().map(agent => JSON.stringify([
+        agent.id, agent.sourceTemplateId, getTemplateVersionValue(findSourceTemplateForAgent(agent)),
+    ]));
+}
+
+function dismissAgentUpdates() {
+    accountStorage.setItem(DISMISSED_AGENT_UPDATES_STORAGE_KEY, JSON.stringify(getAgentUpdateNoticeKeys()));
+    updateUpdateAllButtonVisibility();
+}
+
 function updateUpdateAllButtonVisibility() {
-    const outdatedCount = getAgentsWithTemplateUpdates().length;
-    const button = $('#ica--updateAllAgents');
-    button.toggle(outdatedCount > 0);
-    button.find('span').text(`Update All (${outdatedCount})`);
-    button.attr('title', `Update ${outdatedCount} agent(s) whose bundled template has a newer version`);
+    const updates = getAgentUpdateNoticeKeys();
+    let dismissed = [];
+    try {
+        const saved = JSON.parse(accountStorage.getItem(DISMISSED_AGENT_UPDATES_STORAGE_KEY));
+        if (Array.isArray(saved)) dismissed = saved;
+    } catch { /* A damaged preference must not hide updates. */ }
+    const outdatedCount = updates.length;
+    const banner = $('#ica--updateBanner');
+    banner.prop('hidden', !updates.some(key => !dismissed.includes(key)));
+    banner.find('.ica--update-banner-title').text(outdatedCount === 1 ? '1 agent update ready' : `${outdatedCount} agent updates ready`);
+    banner.find('.ica--update-banner-help').text(outdatedCount === 1
+        ? 'A newer version of one of your built-in agents is available.'
+        : 'Newer versions of your built-in agents are available.');
+    $('#ica--updateAllAgents').attr('title', `Update ${outdatedCount} agent(s) that have a newer version`);
 }
 
 const neconyanAgents = Object.assign(globalThis.NeconyanAgents || {}, {
@@ -7062,6 +7089,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         void openPathfinder();
     });
     $('#ica--updateAllAgents').on('click', agentAction(() => updateAllAgentsFromSourceTemplates()));
+    $('#ica--dismissUpdates').on('click', dismissAgentUpdates);
     $('#ica--companionsDashboard').on('click', agentAction(() => openCompanionDashboard()));
     $('#ica--convertAllTrackers').on('click', agentAction(async () => {
         const inlineTrackers = getAgents().filter(agent => agent.category === 'tracker' && !isCompanionAgent(agent) && !isPathfinderAgent(agent)).map(agent => structuredClone(agent));
