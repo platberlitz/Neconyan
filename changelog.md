@@ -36,6 +36,7 @@
 - PR #376 (2026-10-31) `fix(regex-themes): preserve accent button contrast across shells`
 - PR #377 (2026-10-31) `perf: reduce repeated work in chat search and reply cleanup`
 - PR #378 (2026-10-31) `fix(extensions): align tool settings navigation`
+- PR #379 (2026-10-31) `feat(agents): add chatroom polls, events and direct viewer replies`
 
 ## v1.4.0
 
