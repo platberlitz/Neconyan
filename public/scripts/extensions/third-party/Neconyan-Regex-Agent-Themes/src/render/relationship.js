@@ -329,6 +329,8 @@ export function renderRelationshipBond(spec, tokens, options = {}) {
         'border-radius': tokens.radius.row,
         'box-shadow': tokens.shadow.body === 'none' ? '' : `0 4px 12px ${alpha('#000000', 0.16)}`,
         transform: 'rotate(-0.45deg)',
+        outline: '1px solid transparent',
+        'backface-visibility': 'hidden',
         'margin-bottom': tokens.space.gap,
         'overflow-wrap': 'anywhere',
     })}>`
