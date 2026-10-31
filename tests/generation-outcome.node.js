@@ -109,3 +109,12 @@ test('an error finish keeps partial text, drops tools and re-emits the provider 
     assert.equal(empty.choices[0].message.content, '');
     assert.equal(empty.choices[0].finish_reason, 'MALFORMED_RESPONSE');
 });
+
+test('a reply cut short keeps its outcome and keeps automatic work suppressed', () => {
+    const message = {};
+    const outcome = { version: 1, status: 'truncated', reason: 'incomplete_stream' };
+    applyGenerationOutcome(message, outcome);
+    assert.deepEqual(message.extra.generation_outcome, outcome);
+    assert.notEqual(message.extra.generation_outcome, outcome);
+    assert.equal(messageAutomaticGenerationSuppressed(message), true);
+});

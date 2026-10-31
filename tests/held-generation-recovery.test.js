@@ -150,4 +150,16 @@ describe('recovery and save acknowledgement', () => {
         expect(host.listRecoverableGenerations).not.toHaveBeenCalled();
         expect(host.setTimeout).toHaveBeenCalled();
     });
+
+    test('a reply cut short is saved without claiming the server copy, so recovery can complete it', async () => {
+        const { host } = recoveryHost();
+        host.chat.push({ mes: 'Partial', is_user: false, gen_started: new Date(1000), extra: {} });
+        expect(await host.saveChatWithHeldReply({ id: 'held-reply' }, () => true, { keepHeld: true })).toBe(true);
+        expect(host.saveChatConditional).toHaveBeenCalledTimes(1);
+        expect(host.discardGeneration).not.toHaveBeenCalled();
+        expect(host.chat.at(-1).extra.resumable_generation_id).toBeUndefined();
+        await host.recoverHeldGenerations();
+        expect(host.saveReply).toHaveBeenCalledWith(expect.objectContaining({ type: 'appendFinal', getMessage: 'Final reply' }));
+        expect(host.discardGeneration).toHaveBeenCalledTimes(1);
+    });
 });

@@ -1238,6 +1238,8 @@ function forwardResumableFetchBody(from, to, generation, onDisconnect = null) {
     from.body.on('error', error => {
         if (!isRequestCancellationError(error)) {
             console.warn('Streaming request failed:', error?.message ?? error);
+            // Neconyan: the same report the non-resumable path gives, for callers that collect it.
+            to.reportStreamError?.(error);
         }
         finish();
     });

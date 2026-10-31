@@ -2,6 +2,7 @@ import { t } from './i18n.js';
 import { messageGenerationBlocked } from './generation-outcome.js';
 
 export function generationBlockedNotice(hasText = true, outcome = null) {
+    if (outcome?.status === 'truncated') return t`The connection ended before this reply finished, so it may be incomplete. Automatic agents were not run.`;
     if (outcome?.status === 'error') return t`The provider ended this reply with an error. Automatic agents were not run.`;
     return hasText
         ? t`The provider stopped this reply because of a content filter. Automatic agents were not run.`
@@ -15,7 +16,7 @@ export function renderGenerationOutcome(element, message) {
     root.querySelector('.generation_outcome')?.remove();
     const outcome = message?.extra?.generation_outcome;
     // The legacy provider_error status stays silent, as the explicit stream-error notice already covers it.
-    const error = outcome?.version === 1 && outcome.status === 'error' && outcome.reason !== 'provider_error';
+    const error = outcome?.version === 1 && ['error', 'truncated'].includes(outcome.status) && outcome.reason !== 'provider_error';
     if (!messageGenerationBlocked(message) && !error) return;
     const status = document.createElement('small');
     status.className = 'generation_outcome';

@@ -604,6 +604,20 @@ describe('resumable generations and the disconnect guards', () => {
         expect(response.writableEnded).toBe(true);
     });
 
+    test('an upstream failure mid-reply is reported and still ends the held reply', async () => {
+        jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const { request, response, generation } = registerGeneration('forward-upstream-error');
+        response.reportStreamError = jest.fn();
+        const upstreamBody = new PassThrough();
+        const collected = collect(generation);
+        await forwardFetchResponse(new Response(upstreamBody), response, request);
+        upstreamBody.write('data: first\n\n');
+        upstreamBody.destroy(new Error('socket hang up'));
+        await expect(collected).resolves.toBe('data: first\n\n');
+        expect(response.reportStreamError).toHaveBeenCalledWith(expect.objectContaining({ message: 'socket hang up' }));
+        expect(generation.done).toBe(true);
+    });
+
     test('observeRequestCancellation ignores client disconnects and aborts on an explicit cancel', () => {
         const { request, response, generation } = registerGeneration('observe-1');
         const controller = new AbortController();

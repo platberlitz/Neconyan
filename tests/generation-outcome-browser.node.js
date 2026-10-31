@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
-import { classifyGenerationOutcome, generationErrorEnvelope, providerBlockedError } from '../public/scripts/generation-outcome.js';
+import * as outcomes from '../public/scripts/generation-outcome.js';
 const source = fs.readFileSync(new URL('../public/scripts/openai.js', import.meta.url), 'utf8');
 const extract = name => source.slice(source.indexOf(`export function ${name}`), source.indexOf('\n/**', source.indexOf(`export function ${name}`))).replace('export function', 'function');
 const eventSource = fs.readFileSync(new URL('../public/scripts/sse-stream.js', import.meta.url), 'utf8');
 const EventSourceStream = vm.runInNewContext(eventSource.slice(eventSource.indexOf('class EventSourceStream'), eventSource.indexOf('/**\n * Gets a delay')) + '\nEventSourceStream;', { TextDecoderStream, TransformStream, MessageEvent });
-const sandbox = { classifyGenerationOutcome, generationErrorEnvelope, providerBlockedError,
+const sandbox = { ...outcomes,
     getEventSourceStream: () => new EventSourceStream(),
     ToolManager: { parseToolCalls: (calls, parsed) => calls.push(...(parsed.choices?.[0]?.delta?.tool_calls ?? [])) },
     getStreamingReply: (parsed, state) => { state.reasoning += parsed.choices?.[0]?.delta?.reasoning ?? ''; return parsed.choices?.[0]?.delta?.content ?? parsed.delta?.text ?? ''; },
@@ -77,5 +77,17 @@ test('browser reader classifies provider error endings and parses no tools after
         assert.deepEqual(result.state.outcome, { version: 1, status: 'error', reason: 'error' });
         assert.equal(result.toolCalls.length, 0);
         assert.equal(sandbox.warnings.length, warnings);
+    }
+});
+
+test('browser reader marks a stream that ends without a finish signal as cut short, and only that stream', async () => {
+    const partial = encode({ choices: [{ index: 0, delta: { content: 'The reply ends in the middle of' } }] });
+    const cut = await read(partial);
+    assert.equal(cut.text, 'The reply ends in the middle of');
+    assert.deepEqual(cut.state.outcome, { version: 1, status: 'truncated', reason: 'incomplete_stream' });
+    for (const ending of ['data: [DONE]\n\n', encode({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }),
+        encode({ type: 'message_stop' }), encode({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }),
+        encode({ candidates: [{ finishReason: 'STOP' }] }), encode({ type: 'message-end', delta: { finish_reason: 'COMPLETE' } })]) {
+        assert.equal((await read(partial + ending)).state.outcome ?? null, null, ending);
     }
 });

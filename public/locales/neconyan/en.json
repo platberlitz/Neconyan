@@ -5418,6 +5418,7 @@
   "A reply that ran in the background failed.": "A reply that ran in the background failed.",
   "Restoring a reply that finished in the background...": "Restoring a reply that finished in the background...",
   "A reply that finished in the background had no text to restore.": "A reply that finished in the background had no text to restore.",
+  "The connection ended before this reply finished, so it may be incomplete. Automatic agents were not run.": "The connection ended before this reply finished, so it may be incomplete. Automatic agents were not run.",
   "Could not save the current chat before switching chats. Try again in a moment.": "Could not save the current chat before switching chats. Try again in a moment.",
   "Chat save failed": "Chat save failed",
   "Could not save the character. Open the editor and try Save now before switching chats.": "Could not save the character. Open the editor and try Save now before switching chats.",

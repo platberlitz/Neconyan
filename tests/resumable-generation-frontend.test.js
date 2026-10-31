@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 
-const { fetchResumable, onGenerationActivity, reconnectStaleGenerations, setGenerationContext, releaseGenerationContext, listRecoverableGenerations, openHeldGeneration, discardGeneration } = await import('../public/scripts/resumable-generation.js');
+const { fetchResumable, onGenerationActivity, reconnectStaleGenerations, setGenerationContext, releaseGenerationContext, listRecoverableGenerations, openHeldGeneration, discardGeneration, heldReplyHasMore } = await import('../public/scripts/resumable-generation.js');
 const customRequestSource = readFileSync(new URL('../public/scripts/custom-request.js', import.meta.url), 'utf8');
 
 const RESUME_URL = '/api/resumable-generations/resume';
@@ -307,5 +307,26 @@ describe('held generation context', () => {
         expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ id: 'held', offset: 0 });
         expect(response.headers.get('content-type')).toBe('application/json');
         await expect(response.json()).resolves.toEqual({ choices: [] });
+    });
+
+    test('tells whether the server holds more of a reply than the page received', async () => {
+        const body = 'data: a\n\n';
+        fetchMock.mockResolvedValueOnce(new Response(bodyFrom([body]), { status: 200 }));
+        const controller = new AbortController();
+        const context = { v: 2 };
+        setGenerationContext(controller.signal, context);
+        await (await fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}', signal: controller.signal })).text();
+        const answer = job => {
+            fetchMock.mockResolvedValueOnce(Response.json({ jobs: job ? [job] : [] }));
+            return heldReplyHasMore(context, {});
+        };
+        await expect(answer({ id: context.id, status: 'finished', size: body.length })).resolves.toBe(false);
+        await expect(answer({ id: context.id, status: 'finished', size: body.length + 5 })).resolves.toBe(true);
+        await expect(answer({ id: context.id, status: 'running', size: body.length })).resolves.toBe(true);
+        await expect(answer(null)).resolves.toBe(false);
+        fetchMock.mockResolvedValueOnce(new Response(null, { status: 503 }));
+        await expect(heldReplyHasMore(context, {})).resolves.toBe(true);
+        releaseGenerationContext(context);
+        await expect(heldReplyHasMore(context, {})).resolves.toBe(false);
     });
 });
