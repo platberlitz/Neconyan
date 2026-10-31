@@ -40,13 +40,26 @@ function deferred() {
 class FakeElement {
     hidden = false;
     attributes = {};
+    style = { display: 'none' };
+    classList = (() => {
+        const names = new Set();
+        return {
+            contains: name => names.has(name),
+            add: name => names.add(name),
+            remove: name => names.delete(name),
+        };
+    })();
     setAttribute(name, value) { this.attributes[name] = String(value); }
     removeAttribute(name) { delete this.attributes[name]; }
 }
 
 function createHost({ agentsExtension = false } = {}) {
     const events = new EventEmitter();
-    const elements = { send_but: new FakeElement() };
+    const elements = {
+        send_but: new FakeElement(),
+        send_form: new FakeElement(),
+        mes_stop: new FakeElement(),
+    };
     const agentsStop = { press: () => {} };
     if (agentsExtension) {
         // Mirrors the Agents extension: a background reply shows its stop and borrows the reply's cancel.
@@ -136,12 +149,21 @@ function createHost({ agentsExtension = false } = {}) {
     context.$ = selector => ({
         '#send_textarea': input,
         '#send_form': {
-            addClass() { buttons.generatingClass = true; },
-            removeClass() { buttons.generatingClass = false; },
+            addClass(name) {
+                if (name !== 'sb-generating-controls') return;
+                elements.send_form.classList.add(name);
+                buttons.generatingClass = true;
+            },
+            removeClass(name) {
+                if (name !== 'sb-generating-controls') return;
+                elements.send_form.classList.remove(name);
+                buttons.generatingClass = false;
+            },
             toggleClass(name, on) { if (name === 'sb-roleplay-background') buttons.background = Boolean(on); },
         },
         '#mes_stop': { css(value) {
-            if (typeof value === 'string') return buttons.generatingClass && buttons.visible ? 'flex' : 'none';
+            if (typeof value === 'string') return elements.mes_stop.style.display;
+            elements.mes_stop.style.display = value.display;
             buttons.visible = value.display !== 'none';
         } },
     }[selector]);

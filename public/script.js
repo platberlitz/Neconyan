@@ -7771,7 +7771,14 @@ function hideStopButton({ emitGenerationEnded = true } = {}) {
     // Neconyan: read visibility before dropping the class. On mobile, mobile-styles.css forces
     // `#send_form:not(.sb-generating-controls) #mes_stop` to display:none !important, so checking
     // after removeClass always reads 'none' and GENERATION_ENDED would never be emitted.
-    const wasVisible = $('#mes_stop').css('display') !== 'none';
+    // The generating class and the inline display are exactly what showStopButton() writes, so
+    // they answer the same question without jQuery's computed-style read. That read forced a
+    // style recalculation whenever Agents had just written to the chat, at every reply end.
+    const sendForm = document.getElementById('send_form');
+    const stopButton = document.getElementById('mes_stop');
+    const stopDisplay = stopButton?.style?.display;
+    const wasVisible = Boolean(sendForm?.classList?.contains('sb-generating-controls'))
+        || stopDisplay === 'flex' || stopDisplay === 'inline-flex';
     $('#send_form').removeClass('sb-generating-controls');
     if (wasVisible) {
         $('#mes_stop').css({ 'display': 'none' });
