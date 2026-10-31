@@ -379,7 +379,7 @@ import { bindIOSFastTapSendButton, isIOSWebKitPlatform } from './scripts/mobile-
 import { formatMobileStreamingPreview, getMobileStreamingBottomPinBehavior, getStreamingUpdateInterval, isAndroidStreamingPlatform, shouldReduceStreamingDomWork, shouldUsePlainTextStreamingPreview } from './scripts/mobile-streaming.js';
 import { fetchResumable, setGenerationContext, releaseGenerationContext, listRecoverableGenerations, openHeldGeneration, discardGeneration, heldReplyHasMore } from './scripts/resumable-generation.js';
 import { captureRecoveryAnchor, getHeldReplyTarget } from './scripts/held-generation-recovery.js';
-import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse } from './scripts/generation-request-controls.js';
+import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse, reasoningOnlyWarningKind } from './scripts/generation-request-controls.js';
 import { cleanGeneratedText, createRawPrompt as createRawPromptPure, normalizeContentText as normalizeContentTextPure, extractMessageFromData as extractMessageFromDataPure, extractJsonFromData as extractJsonFromDataPure } from './scripts/generation-format.js';
 import { generationSettingsSnapshot } from './scripts/generation-settings.js';
 import {
@@ -7862,6 +7862,8 @@ class StreamingProcessor {
         this.requestControls = requestControls;
         this.maxOutputTokens = Number.isFinite(requestControls.maxOutputTokens) && requestControls.maxOutputTokens > 0 ? requestControls.maxOutputTokens : 0;
         this.finishReason = null;
+        // Neconyan: a provider length stop is a fact even when no local prose cap applies.
+        this.providerLengthStop = false;
         this.lastRawText = null;
         this.lastReasoningPrefix = null;
         this.limitedOutput = null;
@@ -7915,6 +7917,9 @@ class StreamingProcessor {
         if (this.outcome) {
             suppressAutomaticGeneration(this.agentGenerationContext);
             if (this.message) applyGenerationOutcome(this.message, this.outcome);
+        }
+        if (state?.finishReason === 'length') {
+            this.providerLengthStop = true;
         }
         if (!this.maxOutputTokens || (isFinal && this.lastRawText === null)) {
             return false;
@@ -10676,7 +10681,10 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                     const isStreamWithToolCalls = Array.isArray(activeStreamingProcessor.toolCalls) && activeStreamingProcessor.toolCalls.length;
 
                     if (isStreamFinished && !isStreamWithToolCalls && isReasoningOnlyStream) {
-                        toastr.warning(t`The model finished reasoning but returned no reply text.`);
+                        const lengthStop = activeStreamingProcessor.providerLengthStop || activeStreamingProcessor.finishReason === 'length';
+                        toastr.warning(reasoningOnlyWarningKind({ lengthStop }) === 'length'
+                            ? t`The reply ran out of Max Response Length while the model was still reasoning. Raise Max Response Length or lower the reasoning effort, then try again.`
+                            : t`The model finished reasoning but returned no reply text.`);
                     }
                     if (canPerformToolCalls && isStreamFinished && isStreamWithToolCalls) {
                         const hasToolCalls = ToolManager.hasToolCalls(activeStreamingProcessor.toolCalls);
@@ -10886,7 +10894,10 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             }
 
             if (!getMessage.trim() && reasoning && type !== 'quiet') {
-                toastr.warning(t`The model finished reasoning but returned no reply text.`);
+                const lengthStop = isGenerationLengthFinish(data);
+                toastr.warning(reasoningOnlyWarningKind({ lengthStop }) === 'length'
+                    ? t`The reply ran out of Max Response Length while the model was still reasoning. Raise Max Response Length or lower the reasoning effort, then try again.`
+                    : t`The model finished reasoning but returned no reply text.`);
             }
 
             if (isContinue) {

@@ -5419,6 +5419,7 @@
   "Nothing was generated": "Nothing was generated",
   "Neconyan server cannot be reached": "Neconyan server cannot be reached",
   "The model finished reasoning but returned no reply text.": "The model finished reasoning but returned no reply text.",
+  "The reply ran out of Max Response Length while the model was still reasoning. Raise Max Response Length or lower the reasoning effort, then try again.": "The reply ran out of Max Response Length while the model was still reasoning. Raise Max Response Length or lower the reasoning effort, then try again.",
   "Character not found: ${0}": "Character not found: ${0}",
   "Failed to duplicate character": "Failed to duplicate character",
   "A reply that finished in the background no longer matched the chat and was dropped.": "A reply that finished in the background no longer matched the chat and was dropped.",

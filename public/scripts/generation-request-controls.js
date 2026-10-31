@@ -96,6 +96,17 @@ export function isGenerationLengthFinish(data) {
     return ['length', 'max_tokens', 'MAX_TOKENS'].includes(reason) || data?.stopped_limit === true;
 }
 
+/**
+ * Which reasoning-only warning fits the reply. A provider length stop means the
+ * model did not finish, so the warning must ask for a larger response budget
+ * rather than claim it finished with nothing to say.
+ * @param {{lengthStop?: boolean}} [options] Provider length-stop facts.
+ * @returns {'length'|'reasoning'} Warning kind.
+ */
+export function reasoningOnlyWarningKind({ lengthStop = false } = {}) {
+    return lengthStop ? 'length' : 'reasoning';
+}
+
 export function limitGenerationProse(text, maxOutputTokens, template, reasoningPrefix = '', isStreaming = false) {
     const cap = positiveLimit(maxOutputTokens);
     if (!cap) {
