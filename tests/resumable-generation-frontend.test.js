@@ -7,6 +7,7 @@ const customRequestSource = readFileSync(new URL('../public/scripts/custom-reque
 
 const RESUME_URL = '/api/resumable-generations/resume';
 const CANCEL_URL = '/api/resumable-generations/cancel';
+const STATUS_URL = '/api/resumable-generations/status';
 const encoder = new TextEncoder();
 
 /**
@@ -175,6 +176,87 @@ describe('fetchResumable', () => {
         await expect(text).resolves.toBe('data: a\n\ndata: b\n\ndata: [DONE]\n\n');
         expect(callsTo(RESUME_URL)).toHaveLength(1);
         expect(JSON.parse(callsTo(RESUME_URL)[0][1].body).offset).toBe('data: a\n\n'.length);
+    });
+
+    describe('while the page stays visible', () => {
+        beforeEach(() => {
+            jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+        });
+
+        afterEach(() => {
+            jest.useRealTimers();
+        });
+
+        function quietStream(status) {
+            fetchMock.mockImplementation(async (url, init) => {
+                if (url === STATUS_URL) return status();
+                if (url === CANCEL_URL) return new Response(null, { status: 204 });
+                if (url === RESUME_URL) return resumeResponse(['data: b\n\n', 'data: [DONE]\n\n']);
+                return new Response(bodyFrom(['data: a\n\n'], { hang: true, signal: init.signal }), { status: 200 });
+            });
+        }
+
+        test('a quiet connection is checked on a timer and reattached when the server holds more', async () => {
+            quietStream(() => Response.json({ done: false, headersReady: true, size: 'data: a\n\ndata: b\n\n'.length }));
+            const controller = new AbortController();
+            try {
+                const response = await fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}', signal: controller.signal });
+                const text = response.text().catch(error => error);
+                await jest.advanceTimersByTimeAsync(10000);
+                expect(callsTo(STATUS_URL)).toHaveLength(0);
+                await jest.advanceTimersByTimeAsync(15000);
+                expect(callsTo(STATUS_URL)).toHaveLength(1);
+                expect(callsTo(RESUME_URL)).toHaveLength(1);
+                expect(JSON.parse(callsTo(RESUME_URL)[0][1].body).offset).toBe('data: a\n\n'.length);
+                await expect(text).resolves.toBe('data: a\n\ndata: b\n\ndata: [DONE]\n\n');
+            } finally {
+                controller.abort();
+            }
+        });
+
+        test('a quiet connection is left alone while the provider is still thinking', async () => {
+            quietStream(() => Response.json({ done: false, headersReady: true, size: 'data: a\n\n'.length }));
+            const controller = new AbortController();
+            try {
+                const response = await fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}', signal: controller.signal });
+                response.text().catch(() => undefined);
+                await jest.advanceTimersByTimeAsync(40000);
+                expect(callsTo(STATUS_URL)).toHaveLength(2);
+                expect(callsTo(RESUME_URL)).toHaveLength(0);
+            } finally {
+                controller.abort();
+            }
+        });
+
+        test('resuming stops after a bounded number of attempts and says the connection was lost', async () => {
+            const failure = new TypeError('Load failed');
+            fetchMock.mockImplementation(async () => {
+                throw failure;
+            });
+            const outcome = fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}' }).catch(error => error);
+            await jest.advanceTimersByTimeAsync(10 * 60 * 1000);
+            const error = await outcome;
+            expect(error.code).toBe('GENERATION_CONNECTION_LOST');
+            expect(error.cause).toBe(failure);
+            expect(callsTo(RESUME_URL)).toHaveLength(20);
+        });
+
+        test('a lost connection leaves the held reply on the server for recovery and sends no cancel', async () => {
+            const controller = new AbortController();
+            const context = { v: 2, chatId: 'chat', type: 'normal' };
+            setGenerationContext(controller.signal, context);
+            fetchMock.mockImplementation(async (url) => {
+                if (url === '/api/resumable-generations/list') return Response.json({ jobs: [{ id: context.id, status: 'finished' }] });
+                throw new TypeError('Load failed');
+            });
+            const outcome = fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}', signal: controller.signal }).catch(error => error);
+            await jest.advanceTimersByTimeAsync(10 * 60 * 1000);
+            await outcome;
+            // The page saves what arrived, then aborts its own request (StreamingProcessor.onErrorStreaming).
+            controller.abort();
+            expect(callsTo(CANCEL_URL)).toHaveLength(0);
+            expect(await listRecoverableGenerations({})).toEqual([{ id: context.id, status: 'finished' }]);
+        });
     });
 });
 

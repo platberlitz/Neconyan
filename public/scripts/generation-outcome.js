@@ -58,6 +58,9 @@ export function streamCompletionSignal(data) {
     return data.type === 'message_stop' || data.type === 'message-end' || data.delta?.stop_reason != null;
 }
 
+/** Neconyan: the error code of a reply whose connection could not be resumed. */
+export const GENERATION_CONNECTION_LOST = 'GENERATION_CONNECTION_LOST';
+
 // Request identity covers refusal before any message exists; persisted metadata covers recovery.
 const suppressedRequests = new Set();
 const requestKey = context => context ? JSON.stringify([context.chatId, context.runId, context.cancelRevision]) : null;

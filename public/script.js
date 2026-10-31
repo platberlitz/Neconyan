@@ -1,4 +1,4 @@
-import { classifyGenerationOutcome, isBlockedGeneration, applyGenerationOutcome, suppressAutomaticGeneration } from './scripts/generation-outcome.js';
+import { classifyGenerationOutcome, isBlockedGeneration, applyGenerationOutcome, suppressAutomaticGeneration, GENERATION_CONNECTION_LOST, truncatedGenerationOutcome } from './scripts/generation-outcome.js';
 import { generationBlockedNotice, renderGenerationOutcome } from './scripts/generation-outcome-ui.js';
 import { initPromptMediaControls, projectBrowserPromptMedia, validatePromptImageCopies, reportBrowserImageRefusal, isReportedImageRefusal } from './scripts/prompt-media-client.js';
 import { promptMediaText, promptImageCopyDescriptor } from './scripts/prompt-media-policy.js';
@@ -8313,7 +8313,7 @@ class StreamingProcessor {
         playMessageSound();
     }
 
-    async onErrorStreaming() {
+    async onErrorStreaming(error = null) {
         suppressAutomaticGeneration(this.agentGenerationContext);
         this.thinkingIndicator.clear();
         if (this.isFinished || !this.#isCurrent(this.messageId, true)) {
@@ -8322,8 +8322,13 @@ class StreamingProcessor {
 
         if (this.message && chat[this.messageId] === this.message) {
             this.message.extra ??= {};
-            this.message.extra.generation_outcome = { version: 1, status: 'error', reason: 'provider_error' };
+            // Neconyan: a connection that could not be resumed keeps what arrived and says it may be incomplete.
+            const lost = error?.code === GENERATION_CONNECTION_LOST;
+            this.message.extra.generation_outcome = lost ? truncatedGenerationOutcome('connection_lost') : { version: 1, status: 'error', reason: 'provider_error' };
             syncMesToSwipe(this.messageId);
+            if (lost) renderGenerationOutcome(chatElement.find(`.mes[mesid="${this.messageId}"]`), this.message);
+            // Neconyan: the same warning toast that a cut-short reply shows on the reader's path (notifyBlocked).
+            if (lost) toastr.warning(generationBlockedNotice(true, this.message.extra.generation_outcome));
             await saveChatConditional();
         }
         this.abortController.abort();
@@ -8531,7 +8536,7 @@ class StreamingProcessor {
 
             if (!this.isFinished) {
                 console.error(err);
-                await this.onErrorStreaming();
+                await this.onErrorStreaming(err);
             }
             return this.result;
         } finally {

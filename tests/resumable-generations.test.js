@@ -862,6 +862,36 @@ describe('resumable generation routes', () => {
         }
     });
 
+    test('status tells a page whether its connection has fallen behind the reply', async () => {
+        const id = 'route-status-1';
+        const original = await fetch(`${baseUrl}/generate`, { method: 'POST', headers: { 'X-Generation-Id': id } });
+        await original.body.getReader().read();
+        const running = await postJson('/api/resumable-generations/status', { id });
+        expect(running.status).toBe(200);
+        await expect(running.json()).resolves.toEqual({ done: false, headersReady: true, size: 'first-'.length });
+        pendingHandlers.get(id)();
+        await waitUntil(() => testExports.generations.get(`route-tester:${id}`)?.done);
+        await expect((await postJson('/api/resumable-generations/status', { id })).json())
+            .resolves.toEqual({ done: true, headersReady: true, size: 'first-second-done'.length });
+        expect((await postJson('/api/resumable-generations/status', { id: 'nobody-home' })).status).toBe(404);
+    });
+
+    test('a resume waiting for a reply that never starts answers 504 in bounded time', async () => {
+        const id = 'route-header-timeout';
+        const original = startGeneration(id, '?hold=1');
+        testExports.resumeHeaderWaitMs = 200;
+        try {
+            const resumed = await postJson('/api/resumable-generations/resume', { id, offset: 0 }, { signal: AbortSignal.timeout(3000) })
+                .catch(error => error);
+            expect(resumed.status).toBe(504);
+        } finally {
+            testExports.resumeHeaderWaitMs = testExports.RESUME_HEADER_WAIT_MS;
+            heldReleases.get(id)();
+            pendingHandlers.get(id)();
+            await (await original).text();
+        }
+    });
+
     const encodeContext = (context) => Buffer.from(JSON.stringify(context), 'utf8').toString('base64');
 
     test('list shows only jobs that carried a context, with attach state, and discard drops them', async () => {
