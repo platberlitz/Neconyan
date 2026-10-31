@@ -975,6 +975,10 @@
 html body.neconyan #neconyan-workspace-rail { z-index: calc(var(--sb-z-shell-panel) + 20); }
 html body.neconyan .neconyan-rail-drawer-scrim { z-index: calc(var(--sb-z-shell-panel) + 10); }
 
+/* The small icon buttons in the drawer's headings (Quick Actions, Recent) get a 44px touch target. The negative block margin keeps each
+   heading as tall as before, and the centred content keeps each icon in the middle of its button. The html selector beats neconyan.css. */
+html body.neconyan #neconyan-workspace-rail .neconyan-rail-icon-button { width: 44px; min-height: 44px; margin-block: -8px; justify-content: center; }
+
 @supports (-webkit-touch-callout: none) {
     @media screen and (max-width: 768px) {
         /* iOS lifts #top-settings-holder to the popout layer, so the menu drawer
