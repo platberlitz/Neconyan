@@ -419,6 +419,13 @@ function getChatroomOutputContractPrompt(style) {
         'Use the username/handle in field 2. Use a real short audience label in field 3, or leave field 3 blank instead of the literal word meta.',
         'Keep labels, IDs, scores, dashes, bullets, markdown, and extra pipe fields out of the post/comment text.',
         'The panel renders each post as two stacked parts: Username on one line, then Post/comment below it.',
+        'Optional extra lines, placed between chatroom-style and chatroom-end:',
+        'chatroom-reply|Username|short label|205|Replying_To|Post/comment that answers that handle',
+        'chatroom-poll|Username|Poll question',
+        'chatroom-option|Option text|60',
+        'chatroom-option|Other option text|40',
+        'chatroom-event|Short room event, such as a pinned post, a raid, or slow mode',
+        'A direct reply has exactly six fields, with the handle being answered in field 5. A poll line comes right before its two to four option lines, and the option percentages add up to about 100.',
     ].join('\n');
 }
 
@@ -1821,7 +1828,7 @@ async function cleanUpCompanionTrackerOutput(agent, attempt, generate, extraCont
     return { ...attempt, rawContent: payload };
 }
 
-async function runSingleCompanionAgent(agent, messageIndex, generationType, cancelRevision, { repair = false, extraContextSections = [], allowUserMessage = false, previousContent = null, previousResult = null, run = null, initialOutput = null, diagnosticParent = null, onGenerationStart = null } = {}) {
+async function runSingleCompanionAgent(agent, messageIndex, generationType, cancelRevision, { repair = false, extraContextSections = [], allowUserMessage = false, previousContent = null, previousResult = null, run = null, initialOutput = null, diagnosticParent = null, onGenerationStart = null, transformContent = null } = {}) {
     let diagnosticHandle = diagnosticParent, diagnosticOutcome = 'done';
     try { if (!diagnosticParent) diagnosticHandle = globalThis.NeconyanCrashDiagnostics?.beginAgent?.({ id: agent.id, sourceTemplateId: agent.sourceTemplateId, phase: repair ? 'repair' : 'companions' }); } catch { /* Optional diagnostics. */ }
     try {
@@ -1882,6 +1889,10 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
             let content = await applyCompanionOutputPostPassesToContent(agent, rawContent, messageIndex, cancelRevision);
             if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
                 throw new DOMException('Companion run cancelled.', 'AbortError');
+            }
+            // A caller-supplied finishing step, such as appending a Chatroom reply to its feed.
+            if (typeof transformContent === 'function') {
+                content = capResultContent(transformContent(content));
             }
             // An empty-output sentinel yields no payload here, which is deliberate: repair is the manual
             // fix for a malformed block, so "nothing changed" must roll back to the stored tracker state
@@ -2544,7 +2555,7 @@ export function runCompanionAgentOnMessage(agentId, messageIndex, options = {}) 
     return tracked;
 }
 
-async function runCompanionAgentOnMessageInternal(agentId, messageIndex, { cancelRevision = getAgentGenerationCancelRevision(), repair = false, extraContextSections = [], pendingContent = '', allowUserMessage = true, onGenerationStart = null } = {}) {
+async function runCompanionAgentOnMessageInternal(agentId, messageIndex, { cancelRevision = getAgentGenerationCancelRevision(), repair = false, extraContextSections = [], pendingContent = '', allowUserMessage = true, onGenerationStart = null, transformContent = null } = {}) {
     const agent = getAgentById(agentId);
     const message = chat[messageIndex];
     const isTargetCurrent = captureCompanionTarget(messageIndex);
@@ -2573,7 +2584,7 @@ async function runCompanionAgentOnMessageInternal(agentId, messageIndex, { cance
             return getCompanionResults(message)[agent.id];
         }
     }
-    if (extraContextSections.length === 0 && !pendingContent) {
+    if (extraContextSections.length === 0 && !pendingContent && !transformContent) {
         const remote = await runCompanionsOnServer([agent], messageIndex, { repair });
         if (remote) return remote[0] ?? null;
     }
@@ -2597,6 +2608,7 @@ async function runCompanionAgentOnMessageInternal(agentId, messageIndex, { cance
             previousResult: run.previousResult,
             run,
             onGenerationStart,
+            transformContent,
         });
 
         if (!isTargetCurrent() || !run.isCurrent()) return !chat.includes(message) ? run.previousResult ?? undefined : null;

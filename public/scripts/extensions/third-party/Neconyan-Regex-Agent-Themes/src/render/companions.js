@@ -137,6 +137,10 @@ export function renderStream(spec, tokens, options) {
     switch (spec.role) {
         case 'open': return streamShell(spec, tokens);
         case 'close': return '</div>'.repeat(spec.depth);
+        case 'viewer': return streamViewerRow(spec, tokens);
+        case 'poll': return streamPollCard(spec, tokens);
+        case 'option': return streamPollOption(spec, tokens);
+        case 'event': return streamEventRow(spec, tokens);
         default: return streamRow(spec, tokens, options);
     }
 }
@@ -288,23 +292,118 @@ function streamRow(spec, tokens, options) {
         })}>$${spec.meta.g}</small>`
         : '';
 
+    const replyLine = spec.replyTo
+        ? `<small${part('stream-reply')}${decl({
+            display: 'block', 'max-width': '100%', color: tokens.on.muted,
+            'font-size': tokens.type.labelSize, overflow: 'hidden',
+            'text-overflow': 'ellipsis', 'white-space': 'nowrap',
+        })}>↪ replying to <b>@$${spec.replyTo.g}</b></small>`
+        : '';
+
+    const replyBorder = spec.replyTo
+        ? (useHue ? `2px solid oklch(70% .14 $${spec.hue.g} / .55)` : `2px solid ${alpha(accent, 0.55)}`)
+        : '';
+
     // The parchment variant sets its byline as a baseline-aligned row rather than a pill.
     if (spec.variant === 'block') {
-        return `<article${rootAttrs(spec, tokens)}${part('stream-row')}${decl({ padding: '3px 0 0' })}>`
+        return `<article${rootAttrs(spec, tokens)}${part('stream-row')}${decl({
+            padding: spec.replyTo ? '3px 0 0 10px' : '3px 0 0',
+            'border-left': replyBorder,
+        })}>`
             + `<div${decl({
                 display: 'flex', 'align-items': 'baseline', 'justify-content': 'space-between',
                 gap: tokens.space.gap, 'margin-bottom': '4px', color: tokens.on.label,
             })}><b${part('stream-name')}>$${spec.speaker.g}</b>${meta}</div>`
+            + replyLine
             + bodySpan + '</article>';
     }
 
     return `<article${rootAttrs(spec, tokens)}${part('stream-row')}${decl({
         display: 'flex', 'flex-direction': 'column', gap: tokens.space.rowGap,
         'align-items': 'flex-start', 'max-width': '100%',
+        'padding-left': spec.replyTo ? '10px' : '',
+        'border-left': replyBorder,
     })}>`
         + `<div${decl({ display: 'flex', 'align-items': 'center', gap: '6px', 'max-width': '100%', 'min-width': '0' })}>`
         + name + meta + '</div>'
+        + replyLine
         + bodySpan + '</article>';
+}
+
+function streamViewerRow(spec, tokens) {
+    const accent = accentAt(tokens, spec.accent);
+    const nameBackground = dynamicBackground(tokens, [alpha(accent, 0.28)]);
+    return `<article${rootAttrs(spec, tokens)}${part('stream-row')}${decl({
+        display: 'flex', 'flex-direction': 'column', gap: tokens.space.rowGap,
+        'align-items': 'flex-end', 'max-width': '100%', 'margin-left': 'auto',
+    })}>`
+        + `<div${decl({ display: 'flex', 'align-items': 'center', gap: '6px', 'max-width': '100%', 'min-width': '0' })}>`
+        + `<small${part('stream-meta')}${decl({ color: tokens.on.muted, 'font-size': tokens.type.labelSize })}>you</small>`
+        + `<b${part('stream-name')}${decl({
+            display: 'inline-block', 'max-width': '170px', overflow: 'hidden',
+            'text-overflow': 'ellipsis', 'white-space': 'nowrap',
+            padding: tokens.space.chipPad, 'border-radius': tokens.radius.pill,
+            background: nameBackground, border: `1px solid ${alpha(accent, 0.55)}`,
+            color: tokens.on.safety,
+        })}>$${spec.speaker.g}</b></div>`
+        + `<span${part('stream-text')}${decl({
+            display: 'block', 'max-width': '92%',
+            padding: `${tokens.space.rowPadY} ${tokens.space.rowPadX}`,
+            'border-radius': tokens.radius.row,
+            background: surfaceFill(tokens, alpha(accent, 0.16)),
+            border: `1px solid ${alpha(accent, 0.42)}`,
+            color: tokens.on.body, 'font-family': tokens.type.bodyFamily,
+            'font-size': tokens.type.bodySize, 'white-space': 'pre-wrap',
+            'overflow-wrap': 'anywhere',
+        })}>$${spec.body.g}</span></article>`;
+}
+
+function streamPollCard(spec, tokens) {
+    const accent = accentAt(tokens, spec.accent);
+    return `<div${rootAttrs(spec, tokens)}${part('stream-poll')}${decl({
+        display: 'flex', 'flex-direction': 'column', gap: '4px', 'max-width': '100%',
+        'margin-top': '4px', padding: `${tokens.space.rowPadY} ${tokens.space.rowPadX}`,
+        'border-radius': tokens.radius.row,
+        background: surfaceFill(tokens, tokens.surface.rowAlt),
+        border: `1px solid ${alpha(accent, 0.34)}`,
+        color: tokens.on.body, 'font-family': tokens.type.bodyFamily,
+    })}>`
+        + `<div${decl({ display: 'flex', 'align-items': 'center', gap: '6px', 'flex-wrap': 'wrap', 'font-size': tokens.type.labelSize })}>`
+        + `<span${decl({
+            'font-weight': '700', padding: tokens.space.pillPad, 'border-radius': tokens.radius.pill,
+            background: surfaceFill(tokens, alpha(accent, 0.26)), color: tokens.on.strong,
+        })}>📊 POLL</span>`
+        + `<span${decl({ color: tokens.on.muted })}>by $${spec.speaker.g} · tap an option to vote</span></div>`
+        + `<b${decl({ display: 'block', 'overflow-wrap': 'anywhere', color: tokens.on.strong })}>$${spec.body.g}</b></div>`;
+}
+
+function streamPollOption(spec, tokens) {
+    const accent = accentAt(tokens, spec.accent);
+    const fill = alpha(accent, 0.28);
+    const track = surfaceFill(tokens, tokens.surface.row);
+    return `<button type="button"${rootAttrs(spec, tokens, ['chatroom-poll-option'])}${part('stream-option')} title="Put this vote in the chatroom reply box"${decl({
+        display: 'flex', 'align-items': 'center', 'justify-content': 'space-between',
+        gap: '10px', width: '100%', margin: '0',
+        padding: `${tokens.space.rowPadY} ${tokens.space.rowPadX}`,
+        'border-radius': tokens.radius.slot,
+        border: `1px solid ${alpha(accent, 0.28)}`,
+        background: `linear-gradient(90deg,${fill} $${spec.percent.g}%,${track} $${spec.percent.g}%)`,
+        color: tokens.on.body, font: 'inherit', 'text-align': 'left', cursor: 'pointer',
+    })}>`
+        + `<span class="chatroom-poll-label"${decl({ 'min-width': '0', 'overflow-wrap': 'anywhere' })}>$${spec.label.g}</span>`
+        + `<b${decl({ flex: '0 0 auto', 'font-size': tokens.type.labelSize, color: tokens.on.strong })}>$${spec.percent.g}%</b></button>`;
+}
+
+function streamEventRow(spec, tokens) {
+    const accent = accentAt(tokens, spec.accent);
+    return `<div${rootAttrs(spec, tokens)}${part('stream-event')}${decl({
+        'align-self': 'center', 'max-width': '94%',
+        padding: tokens.space.pillPad, 'border-radius': tokens.radius.pill,
+        border: `1px dashed ${alpha(accent, 0.45)}`,
+        background: surfaceFill(tokens, alpha(accent, 0.1)),
+        color: tokens.on.muted, 'font-size': tokens.type.labelSize,
+        'text-align': 'center', 'overflow-wrap': 'anywhere',
+    })}>⚡ $${spec.body.g}</div>`;
 }
 
 /** Archetype I: one speaker-labelled turn in a plain transcript. */

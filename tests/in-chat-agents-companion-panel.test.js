@@ -158,6 +158,9 @@ describe('companion tracker panel', () => {
             cleanCompanionAgentName: jest.fn(name => String(name ?? '').trim() || 'Companion'),
             editCompanionResult: jest.fn(async () => {}),
             formatCompanionContent: formatCompanionContentMock,
+            getChatroomReplyRunOptions: jest.fn((agentId, messageIndex, viewerText) => ({
+                extraContextSections: [{ title: 'Viewer reply', content: viewerText }],
+            })),
             insertChoiceIntoMessageInput: jest.fn(() => true),
             isSilentCompanionAgent: jest.fn(agent => String(agent?.sourceTemplateId ?? agent?.id ?? '') === 'tpl-message-inbox-companion'),
             isSuppressedCompanionResult: jest.fn((agentId, result) =>

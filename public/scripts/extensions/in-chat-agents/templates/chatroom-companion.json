@@ -10,9 +10,9 @@
     "reactions",
     "audience"
   ],
-  "version": 1,
+  "version": 2,
   "author": "Neconyan",
-  "prompt": "React to the latest assistant reply and recent context as an audience chat. Scene continuation stay unwritten. The latest user message is a visible post in the room: treat it as a comment said out loud that everyone can see, and let commenters read it, quote it, agree, push back, or reply to it directly alongside their reactions to the assistant reply. All chatroom voices must stay authentic to how people speak online; using emojis, all caps, hate comments, slang, weird comments, image descriptions. Each commenter must have a different idiolect to differentiate them and offer something unique, funny, and/or insightful.\n\n[Selected Chatroom Style] is the exact format for the active style. The selected style may also be custom. If the selected style is custom, follow [Custom Chatroom Style] instead. If custom is selected and [Custom Chatroom Style] is empty, use mixed.\n\nIf [Chatroom Extra Character Cards] is present, use those cards as mandatory out-of-scene reactors. The current active character remains separate from those cards. For in-world or mixed styles, they can comment using their card voice, relationships, and knowledge as chat voices. Use corresponding appropriate labels.\n\nOutput format:\nFirst line: chatroom-style|active-style\nMessage lines: chatroom|Username|label|tone|Post/comment\nFinal line: chatroom-end\n\nUse the selected active style in chatroom-style. For custom styles, write chatroom-style|custom unless the custom instruction explicitly gives a short style label. Tone is one of these hue numbers: 18, 42, 92, 150, 205, 265, 315. Rotate tones so adjacent speakers have different name-chip colors. Keep Username and label short, with no pipe characters. Keep each post/comment short and specific to the latest reply. Each chatroom line is one complete post, with the post/comment field on one line. Keep the post/comment field clean: no labels, IDs, scores, dashes, bullets, markdown, or extra pipes inside it.\n\nAuthenticity rules: give every speaker a fresh handle, username, anon tag, or character name that fits the active style and current story. Commenters may react to each other, disagree, misunderstand, hype, analyze, panic, or get petty. Favor scene-specific reactions over generic memes. Use slang sparingly and only when it fits the style. For anonymous board styles, use distinct post labels instead of repeating Anon alone; when a message starts with >, write one greentext post in that row only and put the next post in a new row with a different post label.\n\nStyle notes:\n- mixed: blend two or three of the other styles to fit the story genre and tone. Vary handles and voices.\n- in-world: use characters already present or nearby as commenters. Use their established voices, relationships, and in-world knowledge. They react as themselves, not as audience. Only use handles already in the scene, not new ones.\n- discord/twitch: fast chat energy with mods, lurkers, backseat drivers, hype, and skeptics. Username handles.\n- twitter/x: quote-post energy, bad takes, ratios, community-note pedants, stans, receipts, and reply guys. Include handles and engagement labels like ratio, pinned, or community note.\n- reddit: comment-section argument spiral with OP, throwaways, mods, pedants, armchair experts, downvote dogpiles, edit notes, unnecessary hostility, petty dunking, and users fighting over semantics or inventing motives for no reason. Use the label field for top comment, OP reply, mod note, edited, controversial, or a short score like -42. Make the replies petty and toxic where funny, but keep every take tied to the actual scene.\n- ao3/wattpad: reader comments, reread notes, quote reactions, theories, bookmark energy, and fandom meta.\n- newsroom: anchors, producers, field correspondents, chyrons, pundits, and hot takes. Dry institutional voice.\n- thread-board/4chan: anonymous post energy with OP/anons, greentext fragments, blunt skepticism, bait accusations, wild theories, checked energy, and board-thread pacing. Use unique post labels instead of repeating Anon.\n- infomercial: commenters act in the style of infomercial wording, with over-the-top testimonials, hard-selling infomercial speakers and hosts, amazed studio-audience watchers, before-and-after claims, limited-time-offer hype, and call-now urgency. Use labels like host, testimonial, audience, or announcer.\n- custom: follow [Custom Chatroom Style] closely, but keep the same hard interface and keep reactions grounded in the actual scene.",
+  "prompt": "Run a live audience chatroom that watches this story as it happens. React to the latest assistant reply and recent context as an audience chat; the scene itself stays with the main story, so every line here is the audience talking. The latest user message is a visible post in the room: treat it as a comment said out loud that everyone can see, and let commenters read it, quote it, agree, push back, or reply to it directly alongside their reactions to the assistant reply. All chatroom voices must stay authentic to how people speak online; using emojis, all caps, hate comments, slang, weird comments, image descriptions. Each commenter must have a different idiolect to differentiate them and offer something unique, funny, and/or insightful. Make the room feel alive: people notice small details, call back to earlier posts, run bits, argue, switch sides, and pile onto good takes.\n\n[Selected Chatroom Style] is the exact format for the active style. The selected style may also be custom. If the selected style is custom, follow [Custom Chatroom Style] instead. If custom is selected and [Custom Chatroom Style] is empty, use mixed.\n\nIf [Chatroom Extra Character Cards] is present, use those cards as mandatory out-of-scene reactors. The current active character remains separate from those cards. For in-world or mixed styles, they can comment using their card voice, relationships, and knowledge as chat voices. Use corresponding appropriate labels.\n\nOutput format:\nFirst line: chatroom-style|active-style\nMessage lines: chatroom|Username|label|tone|Post/comment\nFinal line: chatroom-end\n\nRoom extras: mix in one or two of these when the moment earns it, and keep plain message lines as the backbone of the feed.\n- Direct reply: chatroom-reply|Username|label|tone|Replying-to|Post/comment. Put the handle of the other poster being answered in the Replying-to field. Use it for comebacks, corrections, dunks, and side threads.\n- Poll: chatroom-poll|Username|Question, followed right away by two to four chatroom-option|Option|percent lines. Percent is a whole number from 0 to 100, and the options of one poll add up to about 100. Polls suit predictions, ships, who is lying, and what happens next. Keep options short and funny, and run one poll per feed at most. The viewer can tap an option to vote.\n- Room event: chatroom-event|Short event text. Use it for a pinned post, a mod timing someone out, a raid, gifted subs, an award, slow mode, a post going viral, or a sudden flood of new viewers. Match the event to the active style.\n\nViewer replies: when [Viewer reply] appears, the viewer just posted into the room and [Current chatroom] holds the feed they posted into. Follow [Chatroom reply task]: answer the viewer first with chatroom-reply lines that use their name in the Replying-to field, react to exactly what they said, then let the room carry on. chatroom-you lines in [Current chatroom] are the viewer's own posts, which the app writes, so new lines use chatroom, chatroom-reply, chatroom-poll, chatroom-option, and chatroom-event.\nUse the selected active style in chatroom-style. For custom styles, write chatroom-style|custom unless the custom instruction explicitly gives a short style label. Tone is one of these hue numbers: 18, 42, 92, 150, 205, 265, 315. Rotate tones so adjacent speakers have different name-chip colors. Keep Username and label short, with no pipe characters. Keep each post/comment short and specific to the latest reply. Each chatroom line is one complete post, with the post/comment field on one line. Keep the post/comment field clean: no labels, IDs, scores, dashes, bullets, markdown, or extra pipes inside it.\n\nAuthenticity rules: give every speaker a fresh handle, username, anon tag, or character name that fits the active style and current story. Commenters may react to each other, disagree, misunderstand, hype, analyze, panic, or get petty. Favor scene-specific reactions over generic memes. Use slang sparingly and only when it fits the style. For anonymous board styles, use distinct post labels instead of repeating Anon alone; when a message starts with >, write one greentext post in that row only and put the next post in a new row with a different post label.\n\nStyle notes:\n- mixed: blend two or three of the other styles to fit the story genre and tone. Vary handles and voices.\n- in-world: use characters already present or nearby as commenters. Use their established voices, relationships, and in-world knowledge. They react as themselves, not as audience. Only use handles already in the scene, not new ones.\n- discord/twitch: fast chat energy with mods, lurkers, backseat drivers, hype, and skeptics. Username handles.\n- twitter/x: quote-post energy, bad takes, ratios, community-note pedants, stans, receipts, and reply guys. Include handles and engagement labels like ratio, pinned, or community note.\n- reddit: comment-section argument spiral with OP, throwaways, mods, pedants, armchair experts, downvote dogpiles, edit notes, unnecessary hostility, petty dunking, and users fighting over semantics or inventing motives for no reason. Use the label field for top comment, OP reply, mod note, edited, controversial, or a short score like -42. Make the replies petty and toxic where funny, but keep every take tied to the actual scene.\n- ao3/wattpad: reader comments, reread notes, quote reactions, theories, bookmark energy, and fandom meta.\n- newsroom: anchors, producers, field correspondents, chyrons, pundits, and hot takes. Dry institutional voice.\n- thread-board/4chan: anonymous post energy with OP/anons, greentext fragments, blunt skepticism, bait accusations, wild theories, checked energy, and board-thread pacing. Use unique post labels instead of repeating Anon.\n- infomercial: commenters act in the style of infomercial wording, with over-the-top testimonials, hard-selling infomercial speakers and hosts, amazed studio-audience watchers, before-and-after claims, limited-time-offer hype, and call-now urgency. Use labels like host, testimonial, audience, or announcer.\n- custom: follow [Custom Chatroom Style] closely, but keep the same hard interface and keep reactions grounded in the actual scene.",
   "phase": "post",
   "execution": "companion",
   "companion": {
@@ -110,6 +110,91 @@
       "scriptName": "Chatroom legacy message row",
       "findRegex": "/^(?:CHATROOM|chatroom)\\|([^|\\n]+)\\|([^|\\n]*)\\|([^|\\n][^\\n]*)$/gm",
       "replaceString": "<div style=\"display:flex;flex-direction:column;gap:5px;align-items:flex-start;max-width:100%\"><div style=\"display:flex;align-items:center;gap:6px;max-width:100%;min-width:0\"><b style=\"display:inline-block;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px 9px;border-radius:999px;background:linear-gradient(135deg,color-mix(in srgb,var(--SmartThemeQuoteColor) 24%, transparent),color-mix(in srgb,var(--SmartThemeEmColor) 18%, transparent));border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor) 30%, transparent);color:var(--SmartThemeBodyColor)\">$1</b><small style=\"opacity:.66;font-size:.76em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap\">$2</small></div><span style=\"display:block;max-width:100%;padding:8px 10px;border-radius:13px;background:color-mix(in srgb,var(--SmartThemeBodyColor) 8%, transparent);border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor) 16%, transparent);word-break:break-word\">$3</span></div>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "chatroom-reply-row",
+      "scriptName": "Chatroom Direct Reply Row",
+      "findRegex": "/^chatroom-reply\\|([^|\\n]+)\\|([^|\\n]*)\\|([0-9]{1,3})\\|([^|\\n]+)\\|([^\\n]*)$/gm",
+      "replaceString": "<div style=\"display:flex;flex-direction:column;gap:5px;align-items:flex-start;max-width:100%;padding-left:10px;border-left:2px solid oklch(70% .14 $3 / .55)\"><div style=\"display:flex;align-items:center;gap:6px;max-width:100%;min-width:0\"><b style=\"display:inline-block;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px 9px;border-radius:999px;background:linear-gradient(135deg,oklch(66% .15 $3 / .32),oklch(48% .12 $3 / .18));border:1px solid oklch(70% .14 $3 / .52);color:var(--SmartThemeBodyColor)\">$1</b><small style=\"opacity:.66;font-size:.76em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap\">$2</small></div><small style=\"display:block;max-width:100%;font-size:.76em;opacity:.78;overflow:hidden;text-overflow:ellipsis;white-space:nowrap\">↪ replying to <b>@$4</b></small><span style=\"display:block;max-width:100%;padding:8px 10px;border-radius:13px;background:color-mix(in srgb,var(--SmartThemeBodyColor) 8%, transparent);border:1px solid oklch(70% .14 $3 / .32);word-break:break-word\">$5</span></div>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "chatroom-viewer-row",
+      "scriptName": "Chatroom Viewer Post Row",
+      "findRegex": "/^chatroom-you\\|([^|\\n]+)\\|([^\\n]*)$/gm",
+      "replaceString": "<div style=\"display:flex;flex-direction:column;gap:5px;align-items:flex-end;max-width:100%;margin-left:auto\"><div style=\"display:flex;align-items:center;gap:6px;max-width:100%;min-width:0\"><small style=\"opacity:.66;font-size:.76em\">you</small><b style=\"display:inline-block;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px 9px;border-radius:999px;background:color-mix(in srgb,var(--neco-ginger, var(--SmartThemeQuoteColor)) 30%, transparent);border:1px solid color-mix(in srgb,var(--neco-ginger, var(--SmartThemeQuoteColor)) 62%, transparent);color:var(--SmartThemeBodyColor)\">$1</b></div><span style=\"display:block;max-width:92%;padding:8px 10px;border-radius:13px;background:color-mix(in srgb,var(--neco-ginger, var(--SmartThemeQuoteColor)) 16%, transparent);border:1px solid color-mix(in srgb,var(--neco-ginger, var(--SmartThemeQuoteColor)) 42%, transparent);word-break:break-word\">$2</span></div>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "chatroom-poll-card",
+      "scriptName": "Chatroom Poll Card",
+      "findRegex": "/^chatroom-poll\\|([^|\\n]+)\\|([^\\n]*)$/gm",
+      "replaceString": "<div style=\"display:flex;flex-direction:column;gap:4px;max-width:100%;margin-top:4px;padding:9px 11px;border-radius:13px;background:color-mix(in srgb,var(--SmartThemeQuoteColor) 12%, transparent);border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor) 34%, transparent)\"><div style=\"display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:.76em\"><span style=\"font-weight:700;padding:2px 7px;border-radius:999px;background:color-mix(in srgb,var(--SmartThemeQuoteColor) 28%, transparent)\">📊 POLL</span><span style=\"opacity:.72\">by $1 · tap an option to vote</span></div><b style=\"display:block;word-break:break-word\">$2</b></div>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "chatroom-poll-option",
+      "scriptName": "Chatroom Poll Option",
+      "findRegex": "/^chatroom-option\\|([^|\\n]+)\\|([0-9]{1,3})$/gm",
+      "replaceString": "<button type=\"button\" class=\"chatroom-poll-option\" title=\"Put this vote in the chatroom reply box\" style=\"display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;margin:0;padding:7px 11px;border-radius:10px;border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor) 28%, transparent);background:linear-gradient(90deg,color-mix(in srgb,var(--SmartThemeQuoteColor) 30%, transparent) $2%,color-mix(in srgb,var(--SmartThemeBodyColor) 5%, transparent) $2%);color:var(--SmartThemeBodyColor);font:inherit;text-align:left;cursor:pointer\"><span class=\"chatroom-poll-label\" style=\"min-width:0;word-break:break-word\">$1</span><b style=\"flex:0 0 auto;font-size:.86em;opacity:.86\">$2%</b></button>",
+      "trimStrings": [],
+      "placement": [
+        2
+      ],
+      "disabled": false,
+      "markdownOnly": true,
+      "promptOnly": false,
+      "runOnEdit": true,
+      "substituteRegex": 0,
+      "minDepth": null,
+      "maxDepth": null
+    },
+    {
+      "id": "chatroom-event-row",
+      "scriptName": "Chatroom Room Event",
+      "findRegex": "/^chatroom-event\\|([^\\n]+)$/gm",
+      "replaceString": "<div style=\"align-self:center;max-width:94%;padding:4px 12px;border-radius:999px;border:1px dashed color-mix(in srgb,var(--SmartThemeQuoteColor) 45%, transparent);background:color-mix(in srgb,var(--SmartThemeQuoteColor) 9%, transparent);font-size:.78em;text-align:center;opacity:.9;word-break:break-word\">⚡ $1</div>",
       "trimStrings": [],
       "placement": [
         2

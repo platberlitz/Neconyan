@@ -605,9 +605,15 @@ describe('in-chat agent bundled templates', () => {
             feedback: { enabled: false, depth: 1 },
             maxTokens: 64000,
         }));
-        expect(chatroom.regexScripts).toHaveLength(6);
+        expect(chatroom.regexScripts).toHaveLength(11);
         expect(chatroom.prompt).toContain('chatroom-style|active-style');
         expect(chatroom.prompt).toContain('chatroom|Username|label|tone|Post/comment');
+        expect(chatroom.prompt).toContain('chatroom-reply|Username|label|tone|Replying-to|Post/comment');
+        expect(chatroom.prompt).toContain('chatroom-poll|Username|Question');
+        expect(chatroom.prompt).toContain('chatroom-option|Option|percent');
+        expect(chatroom.prompt).toContain('chatroom-event|Short event text');
+        expect(chatroom.prompt).toContain('[Viewer reply]');
+        expect(chatroom.prompt).toContain('[Current chatroom]');
         expect(chatroom.prompt).toContain('post/comment field on one line');
         expect(chatroom.prompt).toContain('Keep the post/comment field clean');
         expect(chatroom.prompt).toContain('[Chatroom Extra Character Cards]');
@@ -618,6 +624,11 @@ describe('in-chat agent bundled templates', () => {
         expect(chatroom.prompt).toContain('- reddit:');
         expect(chatroom.regexScripts.map(script => script.id)).toContain('chatroom-message-row-greentext');
         expect(chatroom.regexScripts.map(script => script.id)).toContain('chatroom-greentext-continuation');
+        expect(chatroom.regexScripts.map(script => script.id)).toContain('chatroom-reply-row');
+        expect(chatroom.regexScripts.map(script => script.id)).toContain('chatroom-viewer-row');
+        expect(chatroom.regexScripts.map(script => script.id)).toContain('chatroom-poll-card');
+        expect(chatroom.regexScripts.map(script => script.id)).toContain('chatroom-poll-option');
+        expect(chatroom.regexScripts.map(script => script.id)).toContain('chatroom-event-row');
         expect(chatroom.prompt).not.toContain('No NSFW chat styles');
         expect(chatroom.prompt).not.toContain('targeted slurs');
 
@@ -981,6 +992,32 @@ describe('in-chat agent bundled templates', () => {
         expect(html).toContain('display:flex;flex-direction:column');
         expect(html).not.toContain('grid-template-columns:minmax(86px,auto) 1fr');
         expect(html).not.toMatch(/^>spend your free time/m);
+    });
+
+    test('renders direct replies, viewer posts, polls, options, and room events inside the Chatroom interface', () => {
+        const html = renderChatroomOutput([
+            'chatroom-style|discord/twitch',
+            'chatroom|ModBot|mod|150|Keep eyes on the roof.',
+            'chatroom-you|Alex|Did someone just open the hatch?',
+            'chatroom-reply|NightWatch|regular|205|Alex|Yeah, that was the courier sneaking out.',
+            'chatroom-poll|ModBot|Where does the courier run next?',
+            'chatroom-option|Across the canal|64',
+            'chatroom-option|Into the bell tower|36',
+            'chatroom-event|ModBot pinned the rooftop poll',
+            'chatroom-end',
+        ].join('\n'));
+
+        expect(html).toContain('Did someone just open the hatch?');
+        expect(html).toContain('replying to <b>@Alex</b>');
+        expect(html).toContain('Yeah, that was the courier sneaking out.');
+        expect(html).toContain('Where does the courier run next?');
+        expect(html).toContain('class="chatroom-poll-option"');
+        expect(html).toContain('class="chatroom-poll-label"');
+        expect(html).toContain('Across the canal');
+        expect(html).toContain('64%');
+        expect(html).toContain('ModBot pinned the rooftop poll');
+        expect(html).not.toMatch(/^chatroom(?:-style|-reply|-you|-poll|-option|-event|-end)/m);
+        expect(html.match(/<div\b/g).length).toBe(html.match(/<\/div>/g).length);
     });
 
     test('uses only known modal subcategories in the catalog', async () => {

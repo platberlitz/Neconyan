@@ -78,7 +78,7 @@ export const SAMPLES = Object.freeze({
         full: '[NPC:REL|Mira Vance|Now willing to be seen with you in public]',
     },
     chatroom: {
-        full: 'CHATROOM_STYLE|dockside\nCHATROOM|ezra|foreman|28|Night shift is short two hands.\nCHATROOM|mira|archivist|312|>implying the guild will notice\nCHATROOM|clerk|new|190|I can cover the ledger until dawn.\nCHATROOM_END',
+        full: 'CHATROOM_STYLE|dockside\nCHATROOM|ezra|foreman|28|Night shift is short two hands.\nCHATROOM|mira|archivist|312|>implying the guild will notice\nchatroom-reply|clerk|new|190|ezra|I can cover the ledger until dawn.\nchatroom-poll|ezra|Who watches the south gate tonight?\nchatroom-option|The clerk|64\nchatroom-option|Nobody at all|36\nchatroom-event|ezra pinned the shift poll\nCHATROOM_END',
     },
     'inbox-phone': {
         full: 'PHONE_START|Mira Vance|3 unread\nPHONE_TEXT|Mira|21:41|Are you still on the roof?\nPHONE_TEXT|Mira|21:44|The courier asked for you by name.\nPHONE_END',
