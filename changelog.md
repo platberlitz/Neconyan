@@ -26,6 +26,7 @@
 - PR #365 (2026-10-30) `fix(chat): say why a rename is refused when Scratchpad is damaged`
 - PR #366 (2026-10-31) `fix(rail): give the phone rail icon buttons a 44px tap area`
 - PR #367 (2026-10-31) `fix(generation): say when a streamed reply ends early and keep the rest`
+- PR #368 (2026-10-31) `fix(generation): never cancel a running reply to make room for a new one`
 
 ## v1.4.0
 
