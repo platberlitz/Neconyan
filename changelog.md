@@ -34,6 +34,7 @@
 - PR #374 (2026-10-31) `feat(authors-note): redesign panel and surface persona notes`
 - PR #375 (2026-10-31) `perf(qig): speed up png validation`
 - PR #376 (2026-10-31) `fix(regex-themes): preserve accent button contrast across shells`
+- PR #377 (2026-10-31) `perf: reduce repeated work in chat search and reply cleanup`
 
 ## v1.4.0
 
