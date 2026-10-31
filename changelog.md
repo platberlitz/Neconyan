@@ -37,6 +37,7 @@
 - PR #377 (2026-10-31) `perf: reduce repeated work in chat search and reply cleanup`
 - PR #378 (2026-10-31) `fix(extensions): align tool settings navigation`
 - PR #379 (2026-10-31) `feat(agents): add chatroom polls, events and direct viewer replies`
+- PR #380 (2026-10-31) `feat(agents): show an update banner that updates every agent`
 
 ## v1.4.0
 
