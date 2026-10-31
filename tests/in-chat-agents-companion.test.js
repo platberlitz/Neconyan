@@ -547,6 +547,31 @@ describe('companion card ui', () => {
         expect(html).not.toContain('reply|42|She looks exhausted.');
     });
 
+    test.each(['|', '/'])('renders a labelled Chatroom reply target before the comment (%s)', async separator => {
+        const chatroomTemplate = readTemplate('chatroom-companion.json');
+        agents.push({
+            id: 'chatroom',
+            name: 'Chatroom',
+            sourceTemplateId: 'tpl-chatroom-companion',
+            execution: 'companion',
+            regexScripts: chatroomTemplate.regexScripts,
+        });
+        const { formatCompanionContent } = await importCompanionUi();
+        const content = [
+            'chatroom-style|reddit',
+            `chatroom-reply|gravel_voice_truther|comment|18|Replying-to|fullerton_library${separator}the bed slat creaked "low" like it also remembers.`,
+            'chatroom-end',
+        ].join('\n');
+
+        for (const stylePrefix of ['.ica--companion-body ', '.ica--tpanel-agent-body ']) {
+            const html = formatCompanionContent('chatroom', { content, format: 'html' }, { name: 'Assistant' }, stylePrefix);
+            expect(html).toContain('replying to <b>@fullerton_library</b>');
+            expect(html).toContain('the bed slat creaked "low" like it also remembers.');
+            expect(html).not.toContain('@Replying-to');
+            expect(html).not.toContain('fullerton_library/');
+        }
+    });
+
     test('renders content unchanged when the agent no longer exists', async () => {
         const { formatCompanionContent } = await importCompanionUi();
 

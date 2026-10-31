@@ -84,8 +84,20 @@ function normalizeChatroomReplyLine(line, parts) {
     const speaker = normalizeChatroomField(parts[1]);
     const meta = normalizeChatroomField(parts[2]);
     const tone = normalizeChatroomTone(parts[3]);
-    const target = normalizeChatroomField(parts[4]).replace(/^@+/, '');
-    const message = normalizeChatroomField(parts.slice(5).join('|'));
+    let target = normalizeChatroomField(parts[4]).replace(/^@+/, '');
+    let messageText = parts.slice(5).join('|');
+
+    // Some models copy the field label before the actual handle. Older saved feeds
+    // may already have flattened the extra pipe to a slash. Recover before escaping
+    // so both the display regex and subsequent reply context see the same six fields.
+    if (/^replying[-_ ]to$/i.test(target)) {
+        const labelledTarget = messageText.match(/^\s*@?([\p{L}\p{N}_.-]+)\s*[|/]\s*(\S[\s\S]*)$/u);
+        if (labelledTarget) {
+            target = labelledTarget[1];
+            messageText = labelledTarget[2];
+        }
+    }
+    const message = normalizeChatroomField(messageText);
 
     if (!speaker || !message) {
         return line;

@@ -2378,7 +2378,8 @@ describe('in-chat agent post-processing runner', () => {
         expect(selectedMessages[0].content).toContain('[Selected Chatroom Style]\nthread-board/4chan');
         expect(selectedMessages[0].content).toContain('[Chatroom Output Contract]');
         expect(selectedMessages[0].content).toContain('chatroom|Username|short label|18|Post/comment text');
-        expect(selectedMessages[0].content).toContain('chatroom-reply|Username|short label|205|Replying_To|Post/comment that answers that handle');
+        expect(selectedMessages[0].content).toContain('chatroom-reply|NightWatch|regular|205|Alex|That was the courier sneaking out.');
+        expect(selectedMessages[0].content).toContain('Field 5 contains only the actual handle being answered');
         expect(selectedMessages[0].content).toContain('chatroom-poll|Username|Poll question');
         expect(selectedMessages[0].content).toContain('chatroom-option|Option text|60');
         expect(selectedMessages[0].content).toContain('chatroom-event|Short room event, such as a pinned post, a raid, or slow mode');

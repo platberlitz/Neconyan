@@ -256,6 +256,8 @@ test('native companions see the processed reply, saved lore, original notes and 
         assert.match(text, /Saved author note/);
         assert.match(text, /Chatroom Extra Character Cards/);
         assert.match(text, /Whisper softly/);
+        assert.ok(text.includes('chatroom-reply|NightWatch|regular|205|Alex|That was the courier sneaking out.'));
+        assert.match(text, /Field 5 contains only the actual handle being answered/);
         return { text: 'initial note' };
     }) });
     const row = f.rows().at(-1), result = row.extra.inChatAgentCompanionResults.side;

@@ -34,12 +34,12 @@ export function getChatroomOutputContractPrompt(style) {
         'Keep labels, IDs, scores, dashes, bullets, markdown, and extra pipe fields out of the post/comment text.',
         'The panel renders each post as two stacked parts: Username on one line, then Post/comment below it.',
         'Optional extra lines, placed between chatroom-style and chatroom-end:',
-        'chatroom-reply|Username|short label|205|Replying_To|Post/comment that answers that handle',
+        'chatroom-reply|NightWatch|regular|205|Alex|That was the courier sneaking out.',
         'chatroom-poll|Username|Poll question',
         'chatroom-option|Option text|60',
         'chatroom-option|Other option text|40',
         'chatroom-event|Short room event, such as a pinned post, a raid, or slow mode',
-        'A direct reply has exactly six fields, with the handle being answered in field 5. A poll line comes right before its two to four option lines, and the option percentages add up to about 100.',
+        'A direct reply has exactly six fields. Field 5 contains only the actual handle being answered (Alex in the example), and field 6 contains only the reply text. Replace the example handles and text with your own. A poll line comes right before its two to four option lines, and the option percentages add up to about 100.',
     ].join('\n');
 }
 
