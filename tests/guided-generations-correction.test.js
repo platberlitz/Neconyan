@@ -9,6 +9,7 @@ describe('Guided Correction', () => {
     let generate;
     let textarea;
     let workflows;
+    let routing;
 
     beforeEach(async () => {
         jest.resetModules();
@@ -90,6 +91,11 @@ describe('Guided Correction', () => {
             extension_settings: extensionSettings,
             getContext: jest.fn(() => context),
         }));
+        routing = {
+            prefersServerReplies: jest.fn(() => false),
+            requiresServerReply: jest.fn(async () => false),
+        };
+        await jest.unstable_mockModule('../public/scripts/browser-reply-routing.js', () => routing);
         // The shell's named-workflow module is replaced so the browser path stays
         // deterministic and no real import outlives the test environment.
         workflows = {
@@ -349,6 +355,7 @@ describe('Guided Correction', () => {
             intent: { prompt: { text: 'CORRECT: make the reply more suspicious', depth: 2, role: 'system', scan: true } },
             page: [],
         });
+        expect(routing.requiresServerReply).not.toHaveBeenCalled();
         expect(generate).not.toHaveBeenCalled();
         expect(context.executeSlashCommandsWithOptions.mock.calls.map(call => call[0])).toEqual([]);
         expect(context.deleteMessage).not.toHaveBeenCalled();
@@ -384,7 +391,51 @@ describe('Guided Correction', () => {
         await guidedCorrection();
 
         expect(workflows.submitRoleplayWorkflow).not.toHaveBeenCalled();
+        expect(routing.requiresServerReply).toHaveBeenCalledTimes(1);
         expect(generate).toHaveBeenCalledTimes(1);
         expect(context.chat[1].mes).toBe('Browser correction');
+    });
+
+    test('a mandatory browser fallback is rejected when Notebook context needs the server', async () => {
+        context.chat.push({ is_user: true, mes: 'Prompt' }, { name: 'Bot', mes: 'Original reply' });
+        workflows.ready = true;
+        workflows.capturePagePrompts.mockResolvedValueOnce(null);
+        routing.requiresServerReply.mockResolvedValueOnce(true);
+
+        const { guidedCorrection } = await import('../public/scripts/extensions/guided-generations/scripts/guidedCorrection.js');
+        await guidedCorrection();
+
+        expect(workflows.submitRoleplayWorkflow).not.toHaveBeenCalled();
+        expect(routing.requiresServerReply).toHaveBeenCalledTimes(1);
+        expect(generate).not.toHaveBeenCalled();
+        expect(context.executeSlashCommandsWithOptions).not.toHaveBeenCalled();
+        expect(context.deleteMessage).not.toHaveBeenCalled();
+        expect(context.chat.map(message => message.mes)).toEqual(['Prompt', 'Original reply']);
+        expect(globalThis.toastr.error).toHaveBeenCalledWith(
+            'The selected Notebook context cannot be combined with these page prompts. Nothing was generated.',
+            'Guided Correction',
+        );
+    });
+
+    test('switching chats while checking the mandatory fallback does not regenerate in the new chat', async () => {
+        context.chatId = 'original';
+        context.chat.push({ name: 'Bot', mes: 'Old reply' });
+        workflows.ready = true;
+        workflows.capturePagePrompts.mockResolvedValueOnce(null);
+        routing.requiresServerReply.mockImplementationOnce(async () => {
+            context = { ...context, chatId: 'different', chat: [{ name: 'Other', mes: 'Different reply' }] };
+            textarea.value = 'Different draft';
+            return true;
+        });
+
+        const { guidedRegenerate } = await import('../public/scripts/extensions/guided-generations/scripts/guidedCorrection.js');
+        await guidedRegenerate();
+
+        expect(routing.requiresServerReply).toHaveBeenCalledTimes(1);
+        expect(workflows.submitRoleplayWorkflow).not.toHaveBeenCalled();
+        expect(generate).not.toHaveBeenCalled();
+        expect(textarea.value).toBe('Different draft');
+        expect(context.chat[0].mes).toBe('Different reply');
+        expect(globalThis.toastr.error).not.toHaveBeenCalled();
     });
 });

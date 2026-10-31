@@ -15,7 +15,7 @@ import { generationBlockedNotice } from '../generation-outcome-ui.js';
  */
 import { activateSendButtons, addOneMessage, chat, chat_metadata, deactivateSendButtons, extension_prompts, getActiveGenerationAcknowledgement, getCurrentChatId, getRequestHeaders, getThumbnailUrl, isChatSaving, isGenerating, keepChatReadingPositionOnNextLoad, refreshCurrentChatFromSaved, refreshSwipeButtons, saveChatConditional, saveSettings, setRoleplayJobControls, substituteParams, syncMesToSwipe, updateMessageBlock, willRunNativeRoleplayWorkflow } from '../../script.js';
 import { event_types, eventSource } from '../events.js';
-import { activeGenerationInterceptors, extension_settings } from '../extensions.js';
+import { activeGenerationInterceptors, extension_settings, extensionNames, findExtension, getExtensionManifest } from '../extensions.js';
 import { COMPANION_HISTORY_PROMPT_KEY_PREFIX } from '../extensions/in-chat-agents/companion/companion-shared.js';
 import { selected_group } from '../group-chats.js';
 import { cancelJob, listJobs, observeJob, TERMINAL } from '../jobs.js';
@@ -222,6 +222,59 @@ const WORKFLOW_GENERATION_TYPES = Object.freeze({
     'roleplay.continue': 'continue', 'story.passage': 'continue',
 });
 
+const DOOMS_EXTENSION_ID = 'third-party/Dooms-Enhancement-Suite';
+const DOOMS_DISPLAY_NAME = 'Doom\'s Enhancement Suite';
+const DOOMS_HOME_PAGE_PATH = '/dangerdaza/dooms-enhancement-suite';
+
+function normalizedExtensionId(value) {
+    return String(value ?? '').replace(/^\/+/, '').toLowerCase();
+}
+
+function isDoomsExtensionName(name) {
+    return normalizedExtensionId(name) === normalizedExtensionId(DOOMS_EXTENSION_ID);
+}
+
+function isDoomsExtensionManifest(manifest) {
+    if (!manifest || typeof manifest !== 'object') return false;
+    const homepage = manifest.homepage ?? manifest.homePage;
+    if (typeof homepage === 'string') {
+        try {
+            const url = new URL(homepage);
+            if (['http:', 'https:'].includes(url.protocol)
+                && ['github.com', 'www.github.com'].includes(url.hostname.toLowerCase())
+                && url.pathname.replace(/\/+$/, '').toLowerCase() === DOOMS_HOME_PAGE_PATH) {
+                return true;
+            }
+        } catch {
+            // A malformed homepage is not an identity match.
+        }
+    }
+    return manifest.display_name === DOOMS_DISPLAY_NAME;
+}
+
+/**
+ * Doom's Enhancement Suite writes prompt and tracker state from browser callbacks
+ * the server replay cannot reproduce. While it is installed, enabled and switched
+ * on inside its own settings, keep ordinary replies on the browser path. Its
+ * manifest identity, not its function names, survives a renamed install; the
+ * manager's installed list keeps a stale saved settings key from matching after
+ * an uninstall.
+ * @returns {string|null} The installed extension name, or null when native is safe.
+ */
+export function activeDoomsEnhancementSuite() {
+    const candidates = new Set([DOOMS_EXTENSION_ID, ...(Array.isArray(extensionNames) ? extensionNames : [])]);
+    for (const candidate of candidates) {
+        const manifest = getExtensionManifest(candidate);
+        if (!manifest || (!isDoomsExtensionName(candidate) && !isDoomsExtensionManifest(manifest))) continue;
+        const installed = findExtension(candidate);
+        if (!installed?.enabled) continue;
+        const saved = extension_settings?.[installed.name];
+        if (saved && typeof saved === 'object' && saved.enabled === false) continue;
+        return installed.name;
+    }
+    return null;
+}
+
 /**
  * The prompt additions only this page knows about (a Dialogue Colours instruction,
  * a /inject note, a summary), resolved exactly as the browser prompt would have
@@ -237,6 +290,7 @@ export async function capturePagePrompts(name, collector = null) {
         else logRoleplayRefusal({ name, reason: label });
         return null;
     };
+    if (activeDoomsEnhancementSuite()) return refuse('dooms-enhancement-suite');
     for (const interceptor of activeGenerationInterceptors()) {
         if (interceptor.key === 'DialogueColorsInterceptor') {
             if (await dialogueColorsReady()) await globalThis[interceptor.key]([], 0, () => {}, 'normal');

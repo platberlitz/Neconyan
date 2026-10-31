@@ -44,6 +44,9 @@ globalThis.dispatchEvent = jest.fn();
 jest.unstable_mockModule('../public/scripts/extensions.js', () => ({
     activeGenerationInterceptors: () => interceptors,
     extension_settings: {},
+    extensionNames: [],
+    findExtension: () => null,
+    getExtensionManifest: () => null,
 }));
 
 jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => account }));
@@ -135,7 +138,7 @@ afterEach(() => {
     testExports.setTotalBufferedBytes(0);
 });
 
-// MARK: tier 2, the six capturePagePrompts refusal sites
+// MARK: tier 2, the capturePagePrompts refusal sites
 
 const TIER_TWO_CASES = [
     ['an interceptor the page cannot replay', () => { interceptors.push({ key: 'otherInterceptor' }); }, 'interceptor'],

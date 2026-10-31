@@ -85,10 +85,11 @@ async function submitGuidedWorkflow(name, prompt) {
         const current = getContext();
         return current?.chat === chat && current?.chatId === chatId && current?.groupId === groupId;
     };
+    const mandatory = mandatoryServerGuidedWorkflows.has(name);
     let serverRequired = false;
     let preferServer = false;
     let requiresServerReply = null;
-    if (!mandatoryServerGuidedWorkflows.has(name)) {
+    if (!mandatory) {
         // The built-in helper carries its own help reference and tools in the page;
         // server prompts have neither, so optional guided actions stay in the browser.
         if (isNeconyanAssistant(currentCharacter())) return false;
@@ -102,10 +103,15 @@ async function submitGuidedWorkflow(name, prompt) {
         }
     }
     // A preferred server path may fall back to the browser only when no Notebook
-    // requirement needs the server's prompt.
+    // requirement needs the server's prompt. Mandatory replacements check lazily:
+    // their normal path is the server, so this runs only once a fallback is known.
     const serverMustOwn = async () => {
         if (serverRequired) return true;
-        if (!preferServer) return false;
+        if (!preferServer && !mandatory) return false;
+        if (typeof requiresServerReply !== 'function') {
+            const routing = await import('../../../browser-reply-routing.js');
+            requiresServerReply = routing.requiresServerReply;
+        }
         serverRequired = await requiresServerReply();
         return serverRequired;
     };
