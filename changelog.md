@@ -32,6 +32,7 @@
 - PR #372 (2026-10-31) `fix(startup): load desktop sessions over plain http`
 - PR #373 (2026-10-31) `fix(roleplay): preserve partial prose and thinking-only replies`
 - PR #374 (2026-10-31) `feat(authors-note): redesign panel and surface persona notes`
+- PR #375 (2026-10-31) `perf(qig): speed up png validation`
 
 ## v1.4.0
 
