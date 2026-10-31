@@ -88,7 +88,7 @@ export const PLOT_COMPASS_OBJECTIVE_MAX_CHARS = 2000;
  * @returns {string}
  */
 export function getAgentTemplateId(agent = {}) {
-    return String(agent?.sourceTemplateId ?? agent?.id ?? '').trim();
+    return String(agent?.sourceTemplateId || agent?.id || '').trim();
 }
 
 export function getCompanionReferenceIds(agent = {}) {

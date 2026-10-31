@@ -307,7 +307,7 @@ Each companion also shows its message number, estimated **Input** and **Output**
 
 **Private side chat** (Chat Only): press **Send aside** to talk to the companion without touching the main chat.
 
-**Respond to the chatroom** (Chatroom): press **Send reply** to answer the chatroom. It stays out of the main chat too.
+**Respond to the chatroom** (Chatroom): press **Send reply** to post into the live feed and get direct replies from the room below it, without touching the main chat. When a feed includes a poll, click an option to put a vote into the reply box.
 
 **Hide summarised messages** (Memory Shard): hides the unchanged messages that shard summarised from future prompts. They stay visible in the chat and you can unhide them later.
 

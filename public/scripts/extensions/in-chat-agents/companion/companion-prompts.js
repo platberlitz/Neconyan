@@ -33,6 +33,13 @@ export function getChatroomOutputContractPrompt(style) {
         'Use the username/handle in field 2. Use a real short audience label in field 3, or leave field 3 blank instead of the literal word meta.',
         'Keep labels, IDs, scores, dashes, bullets, markdown, and extra pipe fields out of the post/comment text.',
         'The panel renders each post as two stacked parts: Username on one line, then Post/comment below it.',
+        'Optional extra lines, placed between chatroom-style and chatroom-end:',
+        'chatroom-reply|Username|short label|205|Replying_To|Post/comment that answers that handle',
+        'chatroom-poll|Username|Poll question',
+        'chatroom-option|Option text|60',
+        'chatroom-option|Other option text|40',
+        'chatroom-event|Short room event, such as a pinned post, a raid, or slow mode',
+        'A direct reply has exactly six fields, with the handle being answered in field 5. A poll line comes right before its two to four option lines, and the option percentages add up to about 100.',
     ].join('\n');
 }
 

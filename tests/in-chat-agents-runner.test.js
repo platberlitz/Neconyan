@@ -2378,6 +2378,10 @@ describe('in-chat agent post-processing runner', () => {
         expect(selectedMessages[0].content).toContain('[Selected Chatroom Style]\nthread-board/4chan');
         expect(selectedMessages[0].content).toContain('[Chatroom Output Contract]');
         expect(selectedMessages[0].content).toContain('chatroom|Username|short label|18|Post/comment text');
+        expect(selectedMessages[0].content).toContain('chatroom-reply|Username|short label|205|Replying_To|Post/comment that answers that handle');
+        expect(selectedMessages[0].content).toContain('chatroom-poll|Username|Poll question');
+        expect(selectedMessages[0].content).toContain('chatroom-option|Option text|60');
+        expect(selectedMessages[0].content).toContain('chatroom-event|Short room event, such as a pinned post, a raid, or slow mode');
         expect(selectedMessages[0].content).toContain('Each post line has exactly five pipe-separated fields.');
         expect(selectedMessages[0].content).toContain('Use a real short audience label in field 3');
         expect(selectedMessages[0].content).toContain('Keep labels, IDs, scores, dashes, bullets, markdown, and extra pipe fields out of the post/comment text.');

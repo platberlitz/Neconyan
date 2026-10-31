@@ -45,6 +45,7 @@ import {
     cleanCompanionAgentName,
     editCompanionResult,
     formatCompanionContent,
+    getChatroomReplyRunOptions,
     insertChoiceIntoMessageInput,
     isSuppressedCompanionResult,
 } from './companion-ui.js';
@@ -1407,12 +1408,11 @@ async function handlePanelAction(event) {
         button.prop('disabled', true);
         inputField.prop('disabled', true);
         try {
-            const result = await runCompanionAgentOnMessage(agentId, lastAssistantIndex, {
-                extraContextSections: [{
-                    title: 'Viewer reply',
-                    content: userInput,
-                }],
-            });
+            const result = await runCompanionAgentOnMessage(
+                agentId,
+                lastAssistantIndex,
+                getChatroomReplyRunOptions(agentId, lastAssistantIndex, userInput),
+            );
             if (result?.status === 'done' && !result.lastRunError) inputField.val('');
         } finally {
             button.prop('disabled', false);
