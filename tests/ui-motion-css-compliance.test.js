@@ -35,6 +35,10 @@ const stylesheets = [
         url: new URL('../public/css/neconyan-chat-writing.css', import.meta.url),
     },
     {
+        name: 'author\'s note panel',
+        url: new URL('../public/css/neconyan-authors-note.css', import.meta.url),
+    },
+    {
         name: 'input history',
         url: new URL('../public/scripts/extensions/input-history/style.css', import.meta.url),
     },
