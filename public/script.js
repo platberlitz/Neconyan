@@ -21312,6 +21312,7 @@ jQuery(async function () {
             '#neconyan-chat-link-settings',
             // Companion windows float beside every drawer and must not close them on press.
             '.ica--cwin',
+            '#floatingPrompt',
             '#world_popup',
             '.ui-widget',
             '.text_pole',

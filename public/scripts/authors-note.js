@@ -6,10 +6,11 @@ import {
     event_types,
     extension_prompt_roles,
     extension_prompt_types,
+    getThumbnailUrl,
     saveSettingsDebounced,
     this_chid,
 } from '../script.js';
-import { getGroupMembers, getSelectedGroupSpeakerAvatar, selected_group } from './group-chats.js';
+import { getGroupMembers, getSelectedGroupSpeakerAvatar, groups, selected_group } from './group-chats.js';
 import { extension_settings, getContext, saveMetadataDebounced } from './extensions.js';
 import { getCharaFilename, debounce, delay, uuidv4 } from './utils.js';
 import { POPUP_RESULT, Popup } from './popup.js';
@@ -600,6 +601,118 @@ function renderPersonaNoteLabel() {
     $('#extension_floating_persona_name').text(name ? t`Saved for ${name}.` : t`Select a persona to use this note.`);
 }
 
+const VALID_AN_TABS = new Set(['chat', 'character', 'persona', 'defaults']);
+
+export function setAuthorsNoteTab(tabName) {
+    const target = VALID_AN_TABS.has(tabName) ? tabName : 'chat';
+    findInNotePanel('[data-an-tab]').each(function () {
+        const active = $(this).attr('data-an-tab') === target;
+        $(this).toggleClass('is-active', active).attr('aria-selected', String(active));
+    });
+    findInNotePanel('[data-an-panel]').each(function () {
+        const active = $(this).attr('data-an-panel') === target;
+        $(this).toggleClass('is-active', active).prop('hidden', !active);
+    });
+}
+
+function renderNoteTargetsAndSummary() {
+    renderPersonaNoteLabel();
+
+    const context = getContext();
+    const personaAvatar = getPersonaAvatar();
+    const personaName = personaAvatar ? power_user.personas?.[personaAvatar] || personaAvatar : '';
+    const personaThumb = personaAvatar ? getThumbnailUrl('persona', personaAvatar) : '';
+
+    $('#an_persona_title').text(personaName || t`Persona Author's Note (Private)`);
+    $('#an_persona_avatar').attr('src', personaThumb).attr('alt', personaName).prop('hidden', !personaThumb);
+
+    const charAvatar = getEditableCharacterNoteAvatar();
+    const groupRecord = context.groupId ? groups.find(item => item.id === context.groupId) : null;
+    const charName = groupRecord?.name
+        || (context.characterId !== undefined ? context.characters?.[context.characterId]?.name : '')
+        || '';
+    const charThumb = !context.groupId && charAvatar ? getThumbnailUrl('avatar', charAvatar) : '';
+    $('#an_chara_name').text(charName || t`Character Author's Note (Private)`);
+    $('#an_chara_avatar').attr('src', charThumb).attr('alt', charName).prop('hidden', !charThumb);
+
+    const perPersonaHint = personaName
+        ? t`Each persona keeps its own profile choice for this character. Currently choosing the profile for ${personaName}.`
+        : t`Each persona keeps its own profile choice for this character. Switching persona switches the profile.`;
+    $('#an_chara_per_persona_hint').text(perPersonaHint);
+
+    const hasChat = Boolean(context.groupId || charAvatar);
+    const interval = getAuthorsNoteInterval();
+    const chatPrompt = hasChat ? String(getAuthorsNotePrompt() ?? '').trim() : '';
+    const chatActive = hasChat && interval > 0 && Boolean(chatPrompt);
+
+    const charaEntry = hasChat ? noteSlots.chara.getReadable() : null;
+    const charaView = getNoteView(charaEntry, { perPersona: true });
+    const charaActive = Boolean(hasChat && charaEntry?.useChara && String(charaView.profile.prompt ?? '').trim());
+
+    const personaEntry = noteSlots.persona.getReadable();
+    const personaView = getNoteView(personaEntry, { perPersona: false });
+    const personaActive = Boolean(personaAvatar && personaEntry?.useNote && String(personaView.profile.prompt ?? '').trim());
+
+    const defaultsActive = Boolean(String(extension_settings.note?.default ?? '').trim());
+
+    findInNotePanel('[data-an-tab="chat"]').toggleClass('has-note', chatActive);
+    findInNotePanel('[data-an-tab="character"]').toggleClass('has-note', charaActive);
+    findInNotePanel('[data-an-tab="persona"]').toggleClass('has-note', personaActive);
+    findInNotePanel('[data-an-tab="defaults"]').toggleClass('has-note', defaultsActive);
+
+    const statusBadge = !hasChat
+        ? t`No chat open`
+        : interval <= 0
+            ? t`Disabled`
+            : interval === 1
+                ? t`Every message`
+                : t`Every ${interval} messages`;
+    $('#an_chat_status_badge').text(statusBadge).toggleClass('is-muted', !hasChat || interval <= 0);
+
+    const personaStatus = !personaAvatar
+        ? t`Select a persona to use this note.`
+        : personaEntry?.useNote
+            ? (String(personaView.profile.prompt ?? '').trim()
+                ? t`Active (${personaView.profile.name})`
+                : t`Enabled (${personaView.profile.name}, empty)`)
+            : (String(personaView.profile.prompt ?? '').trim()
+                ? t`Saved (${personaView.profile.name}, off)`
+                : t`Follows your persona across chats`);
+    $('#persona_author_note_status').text(personaStatus);
+    const personaButtonActive = Boolean(personaEntry?.useNote && String(personaView.profile.prompt ?? '').trim());
+    $('#persona_author_note_button').toggleClass('has-note', personaButtonActive).attr('aria-pressed', String(personaButtonActive));
+
+    const activeSources = [];
+    const replaced = (charaActive && Number(charaView.profile.position) === chara_note_position.replace)
+        || (personaActive && Number(personaView.profile.position) === chara_note_position.replace);
+    if (chatActive && !replaced) {
+        activeSources.push(t`This chat`);
+    }
+    if (charaActive) {
+        activeSources.push(`${charName || t`Character`} (${charaView.profile.name})`);
+    }
+    if (personaActive) {
+        activeSources.push(`${personaName || t`Persona`} (${personaView.profile.name})`);
+    }
+
+    const $summary = $('#an_in_use');
+    if (!hasChat) {
+        $summary.text(personaActive
+            ? t`Persona note (${personaView.profile.name}) is ready and will apply once you open a chat.`
+            : t`Open a chat to edit its note, or set a Persona or New chats note here.`);
+        $summary.toggleClass('is-active', personaActive);
+    } else if (interval <= 0) {
+        $summary.text(t`Insertion frequency is 0, so no Author's Note is sent in this chat.`);
+        $summary.removeClass('is-active');
+    } else if (activeSources.length) {
+        $summary.text(`${t`Active in this chat:`} ${activeSources.join(' + ')}`);
+        $summary.addClass('is-active');
+    } else {
+        $summary.text(t`No Author's Note text is active for this chat yet.`);
+        $summary.removeClass('is-active');
+    }
+}
+
 function setNoteTextCommand(_, text) {
     if (text) {
         $('#extension_floating_prompt').val(text).trigger('input');
@@ -783,16 +896,19 @@ function loadSettings() {
         extension_settings.note.defaultRole = getDefaultRole();
     }
 
-    $('#extension_floating_prompt').val(getAuthorsNotePrompt());
+    const hasChat = Boolean(getContext().groupId || getEditableCharacterNoteAvatar());
+    const chatPrompt = getAuthorsNotePrompt();
+    $('#extension_floating_prompt').val(chatPrompt);
     $('#extension_floating_interval').val(getAuthorsNoteInterval());
     $('#extension_floating_allow_wi_scan').prop('checked', extension_settings.note.allowWIScan ?? false);
     $('#extension_floating_depth').val(getAuthorsNoteDepth());
     $('#extension_floating_role').val(getAuthorsNoteRole());
     findInNotePanel(`input[name="extension_floating_position"][value="${getAuthorsNotePosition()}"]`).prop('checked', true);
+    findInNotePanel('#extension_floating_prompt, #extension_floating_interval, #extension_floating_depth, #extension_floating_role, input[name="extension_floating_position"]').prop('disabled', !hasChat);
 
     renderNoteSlot('chara');
     renderNoteSlot('persona');
-    renderPersonaNoteLabel();
+    renderNoteTargetsAndSummary();
 
     $('#extension_floating_default').val(extension_settings.note.default);
     $('#extension_default_depth').val(extension_settings.note.defaultDepth);
@@ -857,13 +973,22 @@ export function setFloatingPrompt() {
     $('#extension_floating_counter').text(shouldAddPrompt ? '0' : messagesTillInsertion);
 }
 
-function onANMenuItemClick() {
-    if (!selected_group && this_chid === undefined) {
+export function openAuthorsNotePanel(tabName = '') {
+    const hasChat = Boolean(selected_group || this_chid !== undefined);
+    if (!hasChat && !tabName && !getPersonaAvatar()) {
         toastr.warning(t`Select a character before trying to use Author's Note`, '', { timeOut: 5000 });
-        return;
+        return false;
     }
 
-    //show AN if it's hidden
+    loadSettings();
+    setNoteSlotDisabled('chara');
+    setNoteSlotDisabled('persona');
+
+    const initialTab = tabName || (hasChat ? '' : (getPersonaAvatar() ? 'persona' : 'defaults'));
+    if (initialTab) {
+        setAuthorsNoteTab(initialTab);
+    }
+
     const $ANcontainer = $('#floatingPrompt');
     if ($ANcontainer.css('display') !== 'flex') {
         $ANcontainer.addClass('resizing');
@@ -884,6 +1009,20 @@ function onANMenuItemClick() {
             $ANcontainer.addClass('resizing');
             $('#ANBlockToggle').trigger('click');
         }
+    }
+    return true;
+}
+
+function onANMenuItemClick() {
+    if (!selected_group && this_chid === undefined) {
+        toastr.warning(t`Select a character before trying to use Author's Note`, '', { timeOut: 5000 });
+        return;
+    }
+
+    //show AN if it's hidden
+    const $ANcontainer = $('#floatingPrompt');
+    if ($ANcontainer.css('display') !== 'flex') {
+        openAuthorsNotePanel();
     } else {
         //hide AN if it's already displayed
         $ANcontainer.addClass('resizing');
@@ -979,6 +1118,40 @@ export function initAuthorsNote() {
         setTimeout(function () { $('#floatingPrompt').hide(); }, animation_duration);
     });
     $('#option_toggle_AN').on('click', onANMenuItemClick);
+    findInNotePanel('[data-an-tab]').on('click', function () {
+        setAuthorsNoteTab(String($(this).attr('data-an-tab') || 'chat'));
+    });
+    findInNotePanel('.an-tabs').on('keydown', function (event) {
+        const tabs = Array.from(this.querySelectorAll('[role="tab"]'));
+        const index = tabs.indexOf(event.target);
+        if (index < 0 || !tabs.length) {
+            return;
+        }
+        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+            event.preventDefault();
+            const next = tabs[(index + 1) % tabs.length];
+            next?.focus();
+            setAuthorsNoteTab(String(next?.getAttribute('data-an-tab') || 'chat'));
+        } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            const prev = tabs[(index - 1 + tabs.length) % tabs.length];
+            prev?.focus();
+            setAuthorsNoteTab(String(prev?.getAttribute('data-an-tab') || 'chat'));
+        }
+    });
+    $(document).on('click', '#persona_author_note_button, #persona_author_note_open_button', function () {
+        openAuthorsNotePanel('persona');
+    });
+    $('#an_open_persona_management').on('click', function () {
+        $('#ANClose').trigger('click');
+        if (globalThis.NeconyanShell?.openTab) {
+            globalThis.NeconyanShell.openTab('characters', 'persona');
+            return;
+        }
+        if (!$('#PersonaManagement').hasClass('openDrawer')) {
+            $('#persona-management-button > .drawer-toggle').trigger('click');
+        }
+    });
 
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'note',

@@ -517,7 +517,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261030b-rail-targets';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261031a-authors-note';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -20794,6 +20794,7 @@ function openPersonaPicker({ focus = true } = {}) {
 
     picker.appendChild(optionsList);
     renderPersonaPickerAppendixControls(picker, context, currentAvatarId);
+    renderPersonaPickerAuthorsNoteControls(picker, context, currentAvatarId);
 
     const bubble = document.getElementById('sb-persona-bubble');
     if (bubble instanceof HTMLElement) {
@@ -20890,6 +20891,45 @@ function renderPersonaPickerAppendixControls(picker, context, avatarId) {
     }
 
     section.appendChild(controls);
+    picker.appendChild(section);
+}
+
+function renderPersonaPickerAuthorsNoteControls(picker, context, avatarId) {
+    if (!avatarId) {
+        return;
+    }
+
+    const personas = context?.powerUserSettings?.personas ?? {};
+    const personaName = personas[avatarId] || avatarId;
+    const personaNotes = context?.extensionSettings?.note?.persona;
+    const entry = personaNotes && typeof personaNotes === 'object' ? personaNotes[avatarId] : null;
+    const enabled = Boolean(entry?.useNote);
+    const hasPrompt = Boolean(String(entry?.prompt ?? '').trim());
+    const section = createElement('section', {
+        className: 'sb-persona-picker-appendices sb-persona-picker-authors-note',
+        attrs: { 'aria-label': `Author's Note for ${personaName}` },
+    });
+    const header = createElement('div', { className: 'sb-persona-picker-appendices-header' });
+    const title = createElement('strong', { text: 'Author\'s Note' });
+    const status = createElement('span', {
+        className: 'sb-persona-picker-appendices-count',
+        text: enabled && hasPrompt ? 'On' : hasPrompt ? 'Off (saved)' : 'Off',
+    });
+    const editButton = createElement('button', {
+        className: 'sb-persona-picker-manage menu_button menu_button_icon',
+        attrs: {
+            id: 'sb-persona-picker-authors-note-button',
+            type: 'button',
+            title: 'Open Persona Author\'s Note',
+        },
+    });
+    editButton.innerHTML = '<i class="fa-solid fa-feather-pointed fa-fw" aria-hidden="true"></i><span>Edit</span>';
+    editButton.addEventListener('click', () => {
+        closePersonaPicker();
+        document.getElementById('persona_author_note_open_button')?.click();
+    });
+    header.append(title, status, editButton);
+    section.appendChild(header);
     picker.appendChild(section);
 }
 

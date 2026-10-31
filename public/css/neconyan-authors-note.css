@@ -1,0 +1,639 @@
+/* Author's Note panel (#floatingPrompt): tabbed Neconyan card layout, in-use summary,
+   segmented placement controls and persona/character target headers. */
+
+body.neconyan:not(.sbterm) #floatingPrompt {
+    z-index: calc(var(--sb-z-popout, 4000) + 5);
+    gap: 12px;
+    padding: 18px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 12px;
+    background: var(--neco-surface, var(--SmartThemeBlurTintColor));
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    box-shadow: 0 16px 40px color-mix(in srgb, var(--neco-charcoal, var(--SmartThemeShadowColor)) 52%, transparent);
+    overflow: hidden;
+}
+
+@media (min-width: 769px) {
+    body.neconyan:not(.sbterm) #floatingPrompt:not(.maximized) {
+        left: max(16px, calc(100dvw - 476px));
+        width: min(460px, calc(100dvw - 32px));
+    }
+
+    body.neconyan:not(.sbterm) #floatingPrompt.maximized {
+        left: 0;
+    }
+}
+
+body.neconyan #floatingPrompt > .panelControlBar {
+    position: static;
+    inset: auto;
+    z-index: auto;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    transition: none;
+}
+
+body.neconyan #floatingPrompt #floatingPromptheader {
+    margin-top: 4px;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    opacity: 0.75;
+    cursor: grab;
+}
+
+body.neconyan #floatingPrompt .an-panel-head {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+body.neconyan #floatingPrompt .an-panel-title {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font-family: 'Fredoka One', var(--mainFontFamily), sans-serif;
+    font-size: 18px;
+    font-weight: 400;
+    line-height: 1.2;
+}
+
+body.neconyan #floatingPrompt .an-panel-lede {
+    margin: 0;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+body.neconyan #floatingPrompt .an-panel-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+body.neconyan #floatingPrompt #floatingPromptMaximize,
+body.neconyan #floatingPrompt #ANClose {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    min-width: 36px;
+    height: 36px;
+    min-height: 36px;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 8px;
+    background: var(--neco-raised, var(--SmartThemeBlurTintColor));
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font-size: 14px;
+    opacity: 1;
+    cursor: pointer;
+    transition: background-color 140ms ease-out, border-color 140ms ease-out;
+}
+
+body.neconyan #floatingPrompt #floatingPromptMaximize .floating_panel_maximize {
+    margin: 0;
+    font-size: 14px;
+    opacity: 1;
+}
+
+body.neconyan #floatingPrompt #floatingPromptMaximize:hover,
+body.neconyan #floatingPrompt #ANClose:hover {
+    border-color: var(--neco-ginger, var(--SmartThemeQuoteColor));
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 16%, var(--neco-raised, var(--SmartThemeBlurTintColor)));
+}
+
+body.neconyan #floatingPrompt #floatingPromptMaximize:focus-visible,
+body.neconyan #floatingPrompt #ANClose:focus-visible {
+    outline: 2px solid var(--neco-ginger, var(--SmartThemeQuoteColor));
+    outline-offset: 2px;
+}
+
+body.neconyan #floatingPrompt .an-in-use {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    margin: 0;
+    padding: 8px 12px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 8px;
+    background: var(--neco-raised, var(--SmartThemeBlurTintColor));
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+body.neconyan #floatingPrompt .an-in-use::before {
+    flex: 0 0 auto;
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--neco-border, var(--SmartThemeBorderColor));
+    content: '';
+}
+
+body.neconyan #floatingPrompt .an-in-use.is-active {
+    border-color: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 52%, var(--neco-border, var(--SmartThemeBorderColor)));
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 14%, var(--neco-raised, var(--SmartThemeBlurTintColor)));
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+}
+
+body.neconyan #floatingPrompt .an-in-use.is-active::before {
+    background: var(--neco-ginger, var(--SmartThemeQuoteColor));
+}
+
+body.neconyan #floatingPrompt .an-tabs.sb-shell-nav {
+    flex: 0 0 auto;
+    gap: 4px;
+    margin: 0;
+    padding: 4px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 10px;
+}
+
+body.neconyan #floatingPrompt .an-tabs.sb-shell-nav > .sb-shell-tab {
+    flex: 1 1 0;
+    justify-content: center;
+    gap: 5px;
+    min-width: max-content;
+    min-height: 38px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    font-size: 12px;
+    overflow: visible;
+}
+
+body.neconyan #floatingPrompt .an-tabs.sb-shell-nav > .sb-shell-tab i {
+    flex: 0 0 auto;
+    width: auto;
+}
+
+body.neconyan #floatingPrompt .an-tab-dot {
+    display: none;
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--neco-ginger, var(--SmartThemeQuoteColor));
+}
+
+body.neconyan #floatingPrompt .an-tabs > .sb-shell-tab.has-note .an-tab-dot {
+    display: inline-block;
+}
+
+body.neconyan #floatingPrompt .an-panels {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0;
+    padding-right: 2px;
+    overflow-y: auto;
+}
+
+body.neconyan #floatingPrompt .an-card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 0;
+    padding: 2px 0 4px;
+}
+
+body.neconyan #floatingPrompt .an-card[hidden] {
+    display: none;
+}
+
+body.neconyan #floatingPrompt .an-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 8px;
+    background: var(--neco-raised, var(--SmartThemeBlurTintColor));
+}
+
+body.neconyan #floatingPrompt .an-card-head-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+body.neconyan #floatingPrompt .an-card-title {
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+body.neconyan #floatingPrompt .an-card-desc {
+    margin: 0;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+body.neconyan #floatingPrompt .an-badge {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    min-height: 24px;
+    padding: 2px 10px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 10px;
+    background: var(--neco-surface, var(--SmartThemeBlurTintColor));
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+body.neconyan #floatingPrompt .an-badge.is-custom {
+    border-color: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 55%, var(--neco-border, var(--SmartThemeBorderColor)));
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 16%, var(--neco-surface, var(--SmartThemeBlurTintColor)));
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+}
+
+body.neconyan #floatingPrompt .an-target-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 8px;
+    background: var(--neco-raised, var(--SmartThemeBlurTintColor));
+}
+
+body.neconyan #floatingPrompt .an-target-avatar {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: var(--neco-avatar-img-radius, 50%);
+    background: var(--neco-surface, var(--SmartThemeBlurTintColor));
+    object-fit: cover;
+}
+
+body.neconyan #floatingPrompt .an-target-copy {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+body.neconyan #floatingPrompt .an-target-copy strong {
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.neconyan #floatingPrompt .an-target-copy small {
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 12px;
+    line-height: 1.35;
+    opacity: 1;
+}
+
+body.neconyan #floatingPrompt .an-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+body.neconyan #floatingPrompt .an-field-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+body.neconyan #floatingPrompt .an-field-label {
+    margin: 0;
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+body.neconyan #floatingPrompt .an-field-hint {
+    margin: 0;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+body.neconyan #floatingPrompt .extension_token_counter {
+    margin: 0;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 12px;
+    font-weight: 600;
+}
+
+body.neconyan #floatingPrompt textarea.text_pole {
+    width: 100%;
+    min-height: 108px;
+    margin: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 6px;
+    background: var(--neco-raised, var(--SmartThemeBlurTintColor));
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font-size: 14px;
+    line-height: 1.5;
+    resize: vertical;
+}
+
+body.neconyan #floatingPrompt select.text_pole {
+    width: 100%;
+    min-height: 38px;
+    margin: 0;
+    padding: 6px 10px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 6px;
+    background: var(--neco-raised, var(--SmartThemeBlurTintColor));
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font-size: 13px;
+}
+
+body.neconyan #floatingPrompt .an-profile-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+body.neconyan #floatingPrompt .an-profile-actions > .menu_button,
+body.neconyan #floatingPrompt #an_open_persona_management {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: max-content;
+    max-width: 100%;
+    min-height: 36px;
+    margin: 0;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+body.neconyan #floatingPrompt .an-segmented.floating_prompt_radio_group {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin: 0;
+    padding: 4px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 10px;
+    background: var(--neco-raised, var(--SmartThemeBlurTintColor));
+}
+
+body.neconyan #floatingPrompt .an-segmented > label.an-segment {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    margin: 0;
+    padding: 6px 8px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.25;
+    text-align: center;
+    cursor: pointer;
+    transition: background-color 140ms ease-out, border-color 140ms ease-out, color 140ms ease-out;
+}
+
+body.neconyan #floatingPrompt .an-segmented > label.an-segment > input[type="radio"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+body.neconyan #floatingPrompt .an-segmented > label.an-segment:hover {
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 10%, var(--neco-surface, var(--SmartThemeBlurTintColor)));
+}
+
+body.neconyan #floatingPrompt .an-segmented > label.an-segment:has(> input:checked) {
+    border-color: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 65%, var(--neco-border, var(--SmartThemeBorderColor)));
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 18%, var(--neco-surface, var(--SmartThemeBlurTintColor)));
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 26%, transparent);
+}
+
+body.neconyan #floatingPrompt .an-segmented > label.an-segment:has(> input:focus-visible) {
+    outline: 2px solid var(--neco-ginger, var(--SmartThemeQuoteColor));
+    outline-offset: 2px;
+}
+
+body.neconyan #floatingPrompt .an-segmented > label.an-segment:has(> input:disabled) {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+body.neconyan #floatingPrompt .an-segmented > .an-depth-row {
+    display: none;
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    padding: 8px 8px 4px;
+    border-top: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+}
+
+body.neconyan #floatingPrompt .an-segmented:has(input[value="1"]:checked) > .an-depth-row {
+    display: flex;
+}
+
+body.neconyan #floatingPrompt .an-inline-field {
+    display: inline-flex;
+    flex: 1 1 140px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0;
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font-size: 13px;
+    font-weight: 600;
+}
+
+body.neconyan #floatingPrompt .an-inline-field > input.text_pole,
+body.neconyan #floatingPrompt .an-row > input.text_pole {
+    width: 84px;
+    min-height: 36px;
+    margin: 0;
+    padding: 4px 8px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 6px;
+    background: var(--neco-surface, var(--SmartThemeBlurTintColor));
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font-size: 13px;
+    text-align: center;
+}
+
+body.neconyan #floatingPrompt .an-inline-field > select.text_pole {
+    width: auto;
+    min-width: 112px;
+    min-height: 36px;
+    background: var(--neco-surface, var(--SmartThemeBlurTintColor));
+}
+
+body.neconyan #floatingPrompt .an-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 8px;
+    background: var(--neco-raised, var(--SmartThemeBlurTintColor));
+}
+
+body.neconyan #floatingPrompt .an-row-copy {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+body.neconyan #floatingPrompt .an-counter-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--neco-raised, var(--SmartThemeBlurTintColor)) 65%, var(--neco-surface, var(--SmartThemeBlurTintColor)));
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 12px;
+    font-weight: 600;
+}
+
+body.neconyan #floatingPrompt .an-switch-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-height: 44px;
+    margin: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 8px;
+    background: var(--neco-raised, var(--SmartThemeBlurTintColor));
+    cursor: pointer;
+}
+
+body.neconyan #floatingPrompt .an-switch-row > input[type="checkbox"] {
+    flex: 0 0 auto;
+    margin-top: 2px;
+}
+
+body.neconyan #floatingPrompt .an-switch-copy {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+body.neconyan #floatingPrompt .an-switch-copy > small {
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.35;
+}
+
+body.neconyan:not(.sbterm) #persona_author_note_button.has-note {
+    border-color: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 62%, var(--neco-border, var(--SmartThemeBorderColor)));
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 16%, var(--neco-raised, var(--SmartThemeBlurTintColor)));
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+}
+
+body.neconyan:not(.sbterm) #persona_author_note_button.has-note i {
+    color: var(--neco-ginger, var(--SmartThemeQuoteColor));
+}
+
+@media (max-width: 768px) {
+    body.neconyan:not(.sbterm) #floatingPrompt {
+        padding: 12px;
+        border-radius: 0 0 20px 20px;
+    }
+
+    body.neconyan #floatingPrompt > .panelControlBar {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    body.neconyan #floatingPrompt #floatingPromptheader,
+    body.neconyan #floatingPrompt #floatingPromptMaximize {
+        display: none;
+    }
+
+    body.neconyan #floatingPrompt #ANClose {
+        width: 44px;
+        min-width: 44px;
+        height: 44px;
+        min-height: 44px;
+    }
+
+    body.neconyan #floatingPrompt .an-tabs.sb-shell-nav {
+        padding: 4px;
+        gap: 3px;
+    }
+
+    body.neconyan #floatingPrompt .an-tabs.sb-shell-nav > .sb-shell-tab {
+        min-height: 44px;
+        padding: 8px 6px;
+        gap: 4px;
+        font-size: 12px;
+    }
+
+    body.neconyan #floatingPrompt .an-profile-actions > .menu_button,
+    body.neconyan #floatingPrompt #an_open_persona_management,
+    body.neconyan #floatingPrompt .an-segmented > label.an-segment,
+    body.neconyan #floatingPrompt select.text_pole,
+    body.neconyan #floatingPrompt .an-inline-field > input.text_pole,
+    body.neconyan #floatingPrompt .an-row > input.text_pole {
+        min-height: 44px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.neconyan #floatingPrompt #floatingPromptMaximize,
+    body.neconyan #floatingPrompt #ANClose,
+    body.neconyan #floatingPrompt .an-segmented > label.an-segment {
+        transition: none;
+    }
+}
