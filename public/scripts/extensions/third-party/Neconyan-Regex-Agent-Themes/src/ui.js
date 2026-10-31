@@ -797,7 +797,7 @@ function renderBrowseFilters(settings, entries, families) {
             uiState.mode = filter.id;
             rerenderBrowse();
         }, {
-            className: 'menu_button rat-chip',
+            className: `menu_button rat-chip${pressed ? ' menu_button_primary' : ''}`,
             focusKey: `mode-${filter.id}`,
             ariaLabel: `${filter.label}, ${count} ${count === 1 ? 'theme' : 'themes'}`,
         });
@@ -867,7 +867,7 @@ function renderPreviewStage(settings, selected, ordered) {
         current ? 'Current default' : 'Apply this theme',
         () => applyTheme(selected.slug),
         {
-            className: 'menu_button rat-stage-apply',
+            className: 'menu_button menu_button_primary rat-stage-apply',
             focusKey: 'stage-apply',
             ariaLabel: current
                 ? `${selected.name} is the current default theme`

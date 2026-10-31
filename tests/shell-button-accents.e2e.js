@@ -45,6 +45,99 @@ async function colours(locator) {
 }
 
 for (const phone of [false, true]) {
+    test(`Regex Agent Themes uses accent pairs on every shell on ${phone ? 'phone' : 'desktop'}`, async ({ browser }, info) => {
+        test.setTimeout(240000);
+        const context = await browser.newContext({
+            baseURL: info.project.use.baseURL,
+            viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 },
+            hasTouch: phone, isMobile: phone, serviceWorkers: 'block', reducedMotion: 'reduce',
+        });
+        const findings = [];
+        try {
+            const page = await context.newPage();
+            await page.route('**/api/characters/all', route => route.fulfill({ json: [] }));
+            await page.route('**/api/settings/get', async route => {
+                const response = await route.fetch();
+                const data = await response.json();
+                const settings = JSON.parse(data.settings || await readFile(new URL('../default/content/settings.json', import.meta.url), 'utf8'));
+                settings.firstRun = false;
+                settings.extension_settings ||= {};
+                settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
+                settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', WelcomePage_PanelMode: 'full' };
+                await route.fulfill({ response, json: { ...data, settings: JSON.stringify(settings) } });
+            });
+            await page.route('**/api/settings/save', acknowledgeSettingsSave);
+            await page.goto('/');
+            await page.waitForFunction(() => window.NeconyanShell && document.querySelector('#rat_drawer') && !document.querySelector('#preloader'));
+            await page.evaluate(() => NeconyanShell.openIncludedTool('third-party/Neconyan-Regex-Agent-Themes'));
+            await page.locator('#rat_toggle_browse').click();
+            const apply = page.locator('#rat_drawer .rat-stage-apply');
+            await expect(apply).toBeDisabled();
+            await page.locator('#rat_drawer [data-focus-key="mode-light"]').click();
+            await expect(page.locator('#rat_drawer [data-focus-key="mode-light"]')).toHaveAttribute('aria-pressed', 'true');
+            await page.locator('#rat_drawer [data-focus-key="mode-all"]').click();
+            await expect(page.locator('#rat_drawer [data-focus-key="mode-light"]')).not.toHaveClass(/menu_button_primary/);
+            await page.locator('#rat_drawer [data-focus-key="stage-next"]').click();
+            await expect(apply).toBeEnabled();
+            await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; animation: none !important; }' });
+            for (const shell of shells.filter(shell => shell !== 'calico')) await page.addStyleTag({ url: `/css/shell-styles/${shell}.css` });
+            await page.addStyleTag({ url: '/css/neconyan-kittyless.css' });
+            await apply.evaluate(element => {
+                const reference = document.createElement('button');
+                reference.id = 'regex-accent-reference';
+                reference.className = 'menu_button menu_button_primary';
+                reference.hidden = true;
+                element.parentElement.append(reference);
+            });
+            const reference = page.locator('#regex-accent-reference');
+            const selected = page.locator('#rat_drawer .rat-chip[aria-pressed="true"]');
+            const check = async (control, label) => {
+                const value = await colours(control);
+                const pair = await colours(reference);
+                const minimum = Math.min(...value.stops.map(stop => contrastRatio(value.ink, stop)));
+                if (minimum < 4.5 || value.ink !== pair.ink || JSON.stringify(value.stops) !== JSON.stringify(pair.stops)
+                    || value.children.some(ink => ink !== value.ink)) findings.push({ label, minimum, ...value, pair });
+                expect(await control.evaluate(element => [...element.children].every(child => getComputedStyle(child).opacity === '1')), `${label}: counts keep full contrast`).toBe(true);
+                if (phone) expect((await control.boundingBox()).height, `${label}: phone tap height`).toBeGreaterThanOrEqual(44);
+            };
+            for (const theme of ['Neconyan Calico Dark', 'Neconyan Calico']) {
+                for (const profile of [null, 'Mint Glass', 'Plum Wine']) {
+                    await page.evaluate(name => jQuery('#themes').val(name).trigger('change'), theme);
+                    await expect(page.locator('#themes')).toHaveValue(theme);
+                    if (profile) await page.locator(`.sb-accent-profile-apply[aria-label="Apply ${profile} accent profile"]`).evaluate(el => el.click());
+                    for (const shell of shells) {
+                        await page.evaluate(shell => {
+                            document.documentElement.dataset.sbTheme = shell;
+                            if (shell === 'kittyless') document.documentElement.dataset.sbKittyless = 'true';
+                            else delete document.documentElement.dataset.sbKittyless;
+                        }, shell);
+                        for (const [name, control] of [['apply', apply], ['selected filter', selected]]) {
+                            const label = `${theme}/${profile || 'default'}/${shell}/${name}`;
+                            await control.scrollIntoViewIfNeeded();
+                            await page.mouse.move(0, 0);
+                            await check(control, `${label}/rest`);
+                            await control.focus();
+                            await page.keyboard.press('Shift');
+                            await check(control, `${label}/focus`);
+                            await control.hover();
+                            await check(control, `${label}/hover`);
+                            await page.mouse.down();
+                            await check(control, `${label}/pressed`);
+                            // Release away from the control so the audit does not apply a tracker theme.
+                            await page.mouse.move(0, 0);
+                            await page.mouse.up();
+                            await control.evaluate(element => element.blur());
+                        }
+                    }
+                }
+            }
+            await info.attach('regex-accent-audit', { body: JSON.stringify(findings, null, 2), contentType: 'application/json' });
+            expect(findings.map(({ label, minimum }) => ({ label, minimum })), 'Regex Agent Themes keeps the shared accent fill and matching ink').toEqual([]);
+        } finally {
+            await context.close();
+        }
+    });
+
     test(`accent button pairs across every shell on ${phone ? 'phone' : 'desktop'}`, async ({ browser }, info) => {
         test.setTimeout(240000);
         const context = await browser.newContext({

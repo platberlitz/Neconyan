@@ -740,21 +740,9 @@
     font-size: 0.88em;
 }
 
-#rat_drawer .rat-mode-chips .rat-chip[aria-pressed='true'] {
-    border-color: var(--neco-ginger, var(--SmartThemeQuoteColor));
-    background: var(--neco-ginger, var(--SmartThemeQuoteColor));
-    color: var(--neco-on-accent, var(--SmartThemeBodyColor));
-}
-
-#rat_drawer .rat-mode-chips .rat-chip[aria-pressed='true']:hover {
-    border-color: var(--neco-ginger-hover, var(--neco-ginger, var(--SmartThemeQuoteColor)));
-    background: var(--neco-ginger-hover, var(--neco-ginger, var(--SmartThemeQuoteColor)));
-}
-
 #rat_drawer .rat-chip-count {
     font-size: 0.86em;
     font-variant-numeric: tabular-nums;
-    opacity: 0.78;
 }
 
 #rat_drawer .rat-preview-stage {
@@ -849,15 +837,7 @@
 }
 
 #rat_drawer .rat-stage-apply:not(:disabled) {
-    border-color: var(--neco-ginger, var(--SmartThemeQuoteColor));
-    background: var(--neco-ginger, var(--SmartThemeQuoteColor));
-    color: var(--neco-on-accent, var(--SmartThemeBodyColor));
     font-weight: 600;
-}
-
-#rat_drawer .rat-stage-apply:not(:disabled):hover {
-    border-color: var(--neco-ginger-hover, var(--neco-ginger, var(--SmartThemeQuoteColor)));
-    background: var(--neco-ginger-hover, var(--neco-ginger, var(--SmartThemeQuoteColor)));
 }
 
 #rat_drawer .rat-gallery-summary {
