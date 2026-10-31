@@ -1,5 +1,13 @@
 <div id="ica--settings" class="ica--settings" data-workspace-view="manage">
     <div class="ica--inner">
+        <button type="button" id="ica--updateAllAgents" class="ica--update-banner" title="Update every agent that has a newer version" hidden>
+            <span class="ica--update-banner-icon" aria-hidden="true"><i class="fa-solid fa-arrow-up"></i></span>
+            <span class="ica--update-banner-copy">
+                <strong class="ica--update-banner-title">Agent updates ready</strong>
+                <span class="ica--update-banner-help">Newer versions of your built-in agents are available.</span>
+            </span>
+            <span class="ica--update-banner-action">Update all</span>
+        </button>
         <div class="ica--workspace-layout">
         <nav id="ica--workspaceNav" class="ica--workspace-nav" aria-label="In-Chat Agents workspace">
             <h2 class="ica--standalone-title">In-Chat Agents</h2>
@@ -90,10 +98,6 @@
                                 <button type="button" id="ica--setupRefresh" class="menu_button" hidden>Retry loading</button>
                             </div>
                             <strong class="ica--more-tools-heading">Tools</strong>
-                            <button type="button" id="ica--updateAllAgents" class="menu_button menu_button_icon" title="Update every agent whose bundled template has a newer version" style="display:none">
-                                <i class="fa-solid fa-arrow-up-right-dots" aria-hidden="true"></i>
-                                <span>Update templates</span>
-                            </button>
                             <button type="button" id="ica--companionsDashboard" class="menu_button menu_button_icon" title="Open Companion activity: see, run and manage companion agents">
                                 <i class="fa-solid fa-user-astronaut" aria-hidden="true"></i>
                                 <span>Companion activity</span>
