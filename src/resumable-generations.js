@@ -348,18 +348,21 @@ function getGenerationKey(request, id) {
 }
 
 /**
- * Makes room for a new registration. An over-cap profile gives up its own oldest entries,
- * finished ones first; globally only finished replies are fair game. Another profile's live
- * generation is never discarded to make room - that would let anyone cancel anyone else's
- * model call.
+ * Makes room for a new registration. An over-cap profile gives up its own oldest finished reply,
+ * then one it has already cancelled; globally only finished replies are fair game. A reply that is
+ * still being written is never discarded to make room - that would cancel a model call, the
+ * profile's own or anyone else's - so the new request is served without resume support instead.
  * @param {string} handle Profile handle of the incoming registration
- * @returns {boolean} Whether a new registration fits the global cap
+ * @returns {boolean} Whether a new registration fits the caps
  */
 function trimRegistry(handle) {
     const prefix = `${handle}:`;
     let owned = [...generations.entries()].filter(([key]) => key.startsWith(prefix));
     while (owned.length >= MAX_GENERATIONS_PER_PROFILE) {
-        const victim = (owned.find(([, generation]) => generation.done) ?? owned[0])[1];
+        const victim = (owned.find(([, generation]) => generation.done) ?? owned.find(([, generation]) => generation.cancelled))?.[1];
+        if (!victim) {
+            return false;
+        }
         victim.forceDiscard();
         owned = owned.filter(([, generation]) => generation !== victim);
     }
