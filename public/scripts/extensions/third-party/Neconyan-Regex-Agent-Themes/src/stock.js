@@ -1200,6 +1200,101 @@ export const STOCK = [
     },
     {
         "templateId": "tpl-chatroom-companion",
+        "scriptId": "chatroom-reply-row",
+        "scriptName": "Chatroom Direct Reply Row",
+        "family": "companion",
+        "source": "chatroom-companion.json",
+        "findRegex": "/^chatroom-reply\\|([^|\\n]+)\\|([^|\\n]*)\\|([0-9]{1,3})\\|([^|\\n]+)\\|([^\\n]*)$/gm",
+        "groups": 5,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "<div style=\"display:flex;flex-direction:column;gap:5px;align-items:flex-start;max-width:100%;padding-left:10px;border-left:2px solid oklch(70% .14 $3 / .55)\"><div style=\"display:flex;align-items:center;gap:6px;max-width:100%;min-width:0\"><b style=\"display:inline-block;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px 9px;border-radius:999px;background:linear-gradient(135deg,oklch(66% .15 $3 / .32),oklch(48% .12 $3 / .18));border:1px solid oklch(70% .14 $3 / .52);color:var(--SmartThemeBodyColor)\">$1</b><small style=\"opacity:.66;font-size:.76em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap\">$2</small></div><small style=\"display:block;max-width:100%;font-size:.76em;opacity:.78;overflow:hidden;text-overflow:ellipsis;white-space:nowrap\">↪ replying to <b>@$4</b></small><span style=\"display:block;max-width:100%;padding:8px 10px;border-radius:13px;background:color-mix(in srgb,var(--SmartThemeBodyColor) 8%, transparent);border:1px solid oklch(70% .14 $3 / .32);word-break:break-word\">$5</span></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-chatroom-companion",
+        "scriptId": "chatroom-viewer-row",
+        "scriptName": "Chatroom Viewer Post Row",
+        "family": "companion",
+        "source": "chatroom-companion.json",
+        "findRegex": "/^chatroom-you\\|([^|\\n]+)\\|([^\\n]*)$/gm",
+        "groups": 2,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "<div style=\"display:flex;flex-direction:column;gap:5px;align-items:flex-end;max-width:100%;margin-left:auto\"><div style=\"display:flex;align-items:center;gap:6px;max-width:100%;min-width:0\"><small style=\"opacity:.66;font-size:.76em\">you</small><b style=\"display:inline-block;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px 9px;border-radius:999px;background:color-mix(in srgb,var(--neco-ginger, var(--SmartThemeQuoteColor)) 30%, transparent);border:1px solid color-mix(in srgb,var(--neco-ginger, var(--SmartThemeQuoteColor)) 62%, transparent);color:var(--SmartThemeBodyColor)\">$1</b></div><span style=\"display:block;max-width:92%;padding:8px 10px;border-radius:13px;background:color-mix(in srgb,var(--neco-ginger, var(--SmartThemeQuoteColor)) 16%, transparent);border:1px solid color-mix(in srgb,var(--neco-ginger, var(--SmartThemeQuoteColor)) 42%, transparent);word-break:break-word\">$2</span></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-chatroom-companion",
+        "scriptId": "chatroom-poll-card",
+        "scriptName": "Chatroom Poll Card",
+        "family": "companion",
+        "source": "chatroom-companion.json",
+        "findRegex": "/^chatroom-poll\\|([^|\\n]+)\\|([^\\n]*)$/gm",
+        "groups": 2,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "<div style=\"display:flex;flex-direction:column;gap:4px;max-width:100%;margin-top:4px;padding:9px 11px;border-radius:13px;background:color-mix(in srgb,var(--SmartThemeQuoteColor) 12%, transparent);border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor) 34%, transparent)\"><div style=\"display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:.76em\"><span style=\"font-weight:700;padding:2px 7px;border-radius:999px;background:color-mix(in srgb,var(--SmartThemeQuoteColor) 28%, transparent)\">📊 POLL</span><span style=\"opacity:.72\">by $1 · tap an option to vote</span></div><b style=\"display:block;word-break:break-word\">$2</b></div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-chatroom-companion",
+        "scriptId": "chatroom-poll-option",
+        "scriptName": "Chatroom Poll Option",
+        "family": "companion",
+        "source": "chatroom-companion.json",
+        "findRegex": "/^chatroom-option\\|([^|\\n]+)\\|([0-9]{1,3})$/gm",
+        "groups": 2,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "<button type=\"button\" class=\"chatroom-poll-option\" title=\"Put this vote in the chatroom reply box\" style=\"display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;margin:0;padding:7px 11px;border-radius:10px;border:1px solid color-mix(in srgb,var(--SmartThemeQuoteColor) 28%, transparent);background:linear-gradient(90deg,color-mix(in srgb,var(--SmartThemeQuoteColor) 30%, transparent) $2%,color-mix(in srgb,var(--SmartThemeBodyColor) 5%, transparent) $2%);color:var(--SmartThemeBodyColor);font:inherit;text-align:left;cursor:pointer\"><span class=\"chatroom-poll-label\" style=\"min-width:0;word-break:break-word\">$1</span><b style=\"flex:0 0 auto;font-size:.86em;opacity:.86\">$2%</b></button>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-chatroom-companion",
+        "scriptId": "chatroom-event-row",
+        "scriptName": "Chatroom Room Event",
+        "family": "companion",
+        "source": "chatroom-companion.json",
+        "findRegex": "/^chatroom-event\\|([^\\n]+)$/gm",
+        "groups": 1,
+        "flags": "gm",
+        "delimited": true,
+        "replaceString": "<div style=\"align-self:center;max-width:94%;padding:4px 12px;border-radius:999px;border:1px dashed color-mix(in srgb,var(--SmartThemeQuoteColor) 45%, transparent);background:color-mix(in srgb,var(--SmartThemeQuoteColor) 9%, transparent);font-size:.78em;text-align:center;opacity:.9;word-break:break-word\">⚡ $1</div>",
+        "placement": [
+            2
+        ],
+        "markdownOnly": true,
+        "promptOnly": false,
+        "minDepth": null,
+        "maxDepth": null
+    },
+    {
+        "templateId": "tpl-chatroom-companion",
         "scriptId": "chatroom-shell-close",
         "scriptName": "Chatroom shell close",
         "family": "companion",

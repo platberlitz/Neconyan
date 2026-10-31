@@ -21,6 +21,7 @@ import {
 } from '../agent-store.js';
 import { AGENT_REGEX_PLACEMENT, applyRegexScriptList } from '../regex-scripts.js';
 import { resolveCompanionContentMacros } from './companion-macros.js';
+import { CHATROOM_FEED_PROBE_RE, buildChatroomReplyRunOptions, normalizeChatroomField, normalizeChatroomGeneratedLine } from './chatroom-feed.js';
 import { isLorebookAgent, sendCompanionResultToLorebook } from './lorebook-sender.js';
 import {
     COMPANION_RESULTS_UPDATED_EVENT,
@@ -56,80 +57,8 @@ let companionUiInitialized = false;
 let companionMarkdownConverter = null;
 const companionMessageRuns = new Set();
 
-function normalizeChatroomField(value = '') {
-    return String(value ?? '').replaceAll('|', '/').replaceAll(/\r?\n/g, ' ').trim();
-}
-
 // Hues the template instructs the model to use.
 const CHATROOM_VALID_TONES = new Set(['18', '42', '92', '150', '205', '265', '315']);
-const CHATROOM_TONE_RE = /^[0-9]{1,3}$/;
-const CHATROOM_MESSAGE_PREFIX_RE = /^([^|\n]{1,48})\|([0-9]{1,3})\|([\s\S]+)$/;
-
-function normalizeChatroomMessageParts(meta = '', tone = '', message = '') {
-    let nextMeta = normalizeChatroomField(meta);
-    let nextTone = String(tone ?? '').trim();
-    let nextMessage = String(message ?? '').trim();
-    const shiftedMessage = nextMessage.match(CHATROOM_MESSAGE_PREFIX_RE);
-
-    if (shiftedMessage) {
-        const shiftedMeta = normalizeChatroomField(shiftedMessage[1]);
-        const shiftedTone = shiftedMessage[2].trim();
-
-        if (!nextMeta || nextMeta.toLowerCase() === 'meta' || /^[+-]?\d+$/.test(nextMeta)) {
-            nextMeta = shiftedMeta;
-        }
-        if (!CHATROOM_TONE_RE.test(nextTone)) {
-            nextTone = shiftedTone;
-        }
-        nextMessage = shiftedMessage[3].trim();
-    }
-
-    return { meta: nextMeta, tone: nextTone, message: nextMessage };
-}
-
-function normalizeChatroomGeneratedLine(line = '') {
-    const trimmed = String(line ?? '').trim();
-
-    if (/^(?:CHATROOM_STYLE|chatroom-style)\|/i.test(trimmed)) {
-        const [, style = 'mixed'] = trimmed.split('|');
-        return `chatroom-style|${normalizeChatroomField(style) || 'mixed'}`;
-    }
-
-    if (/^(?:CHATROOM_END|chatroom-end)$/i.test(trimmed)) {
-        return 'chatroom-end';
-    }
-
-    if (!/^(?:CHATROOM|chatroom)\|/i.test(trimmed)) {
-        return line;
-    }
-
-    const parts = trimmed.split('|');
-    if (parts.length < 5) {
-        return line;
-    }
-
-    const speaker = parts[1];
-    let meta = parts[2];
-    let tone = parts[3];
-    let messageParts = parts.slice(4);
-
-    if (!CHATROOM_TONE_RE.test(String(tone ?? '').trim()) && CHATROOM_TONE_RE.test(String(parts[4] ?? '').trim())) {
-        meta = parts[3];
-        tone = parts[4];
-        messageParts = parts.slice(5);
-    }
-
-    const normalized = normalizeChatroomMessageParts(meta, tone, messageParts.join('|'));
-    const cleanSpeaker = normalizeChatroomField(speaker);
-    const cleanTone = CHATROOM_TONE_RE.test(normalized.tone) ? normalized.tone : '18';
-    const cleanMessage = normalizeChatroomField(normalized.message);
-
-    if (!cleanSpeaker || !cleanMessage) {
-        return line;
-    }
-
-    return `chatroom|${cleanSpeaker}|${normalizeChatroomField(normalized.meta)}|${cleanTone}|${cleanMessage}`;
-}
 
 function normalizeChatroomContent(content = '') {
     const text = String(content ?? '').replaceAll(/\r\n?/g, '\n').trim();
@@ -137,7 +66,7 @@ function normalizeChatroomContent(content = '') {
         return content;
     }
 
-    if (/^(?:CHATROOM_STYLE|chatroom-style|CHATROOM|chatroom)\|/m.test(text)) {
+    if (CHATROOM_FEED_PROBE_RE.test(text)) {
         return text.split('\n').map(normalizeChatroomGeneratedLine).join('\n');
     }
 
@@ -774,6 +703,34 @@ async function sendChatOnlyAside({ agentId, messageIndex, transcript = '', userI
     }
 }
 
+export function getChatroomReplyRunOptions(agentId, messageIndex, viewerText) {
+    const previousContent = getCompanionResults(chat[messageIndex])?.[agentId]?.content ?? '';
+    let viewerName = '';
+    try {
+        viewerName = substituteParams('{{user}}');
+    } catch {
+        viewerName = '';
+    }
+    return buildChatroomReplyRunOptions({ previousContent, viewerName, viewerText });
+}
+
+const CHATROOM_POLL_OPTION_SELECTOR = '.custom-chatroom-poll-option';
+
+/** Puts a vote for a tapped poll option into that chatroom's reply box. */
+export function prefillChatroomPollVote(optionElement) {
+    const labelElement = optionElement?.querySelector?.('.custom-chatroom-poll-label');
+    const label = String(labelElement?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    const inputElement = optionElement?.closest?.('.ica--companion-card, .ica--tpanel-agent')
+        ?.querySelector?.('[data-role="chatroom-reply-input"]');
+    if (!label || !inputElement) {
+        return false;
+    }
+
+    inputElement.value = normalizeChatroomReply(`I vote ${label}`);
+    inputElement.focus?.();
+    return true;
+}
+
 async function sendChatroomUserReply({ agentId, messageIndex, userInput = '', button = null, inputField = null } = {}) {
     const agent = getAgentById(agentId);
     if (!agent || !isChatroomAgent(agent)) {
@@ -795,12 +752,11 @@ async function sendChatroomUserReply({ agentId, messageIndex, userInput = '', bu
     button?.prop?.('disabled', true);
     inputField?.prop?.('disabled', true);
     try {
-        const result = await runCompanionAgentOnMessage(agentId, messageIndex, {
-            extraContextSections: [{
-                title: 'Viewer reply',
-                content: normalizedInput,
-            }],
-        });
+        const result = await runCompanionAgentOnMessage(
+            agentId,
+            messageIndex,
+            getChatroomReplyRunOptions(agentId, messageIndex, normalizedInput),
+        );
         if (result?.status === 'done' && !result.lastRunError) inputField?.val?.('');
         renderCompanionResultsForMessage(messageIndex);
     } finally {
@@ -1064,6 +1020,12 @@ export function initCompanionCardUi() {
         event.preventDefault();
         event.stopPropagation();
         insertChoiceIntoMessageInput(this.dataset?.icaChoiceText ?? this.textContent);
+    });
+    $(document).on('click', CHATROOM_POLL_OPTION_SELECTOR, function (event) {
+        if (prefillChatroomPollVote(this)) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
     });
     document.addEventListener('toggle', event => {
         if (event.target?.classList?.contains('ica--companion-card')) {

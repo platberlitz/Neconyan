@@ -673,6 +673,121 @@ describe('companion card ui', () => {
         expect(buttonElement.prop).toHaveBeenCalledWith('disabled', false);
     });
 
+    test('sends Chatroom card reply with the current feed and merges the viewer post with direct replies', async () => {
+        agents.push({
+            id: 'chatroom',
+            name: 'Chatroom',
+            sourceTemplateId: 'tpl-chatroom-companion',
+            execution: 'companion',
+        });
+        chat.push({
+            name: 'Assistant',
+            mes: 'reply',
+            is_user: false,
+            is_system: false,
+            extra: {
+                inChatAgentCompanionResults: {
+                    chatroom: {
+                        content: [
+                            'chatroom-style|discord/twitch',
+                            'chatroom|NightWatch|mod|150|Did anyone hear the latch?',
+                            'chatroom|PixelMage|vip|265|Chat is moving too fast.',
+                            'chatroom-end',
+                        ].join('\n'),
+                        agentName: 'Chatroom',
+                    },
+                },
+            },
+        });
+        const { initCompanionCardUi, prefillChatroomPollVote } = await importCompanionUi();
+        const runner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const actionButton = {};
+        const docElement = { on: jest.fn(() => docElement) };
+        const mesElement = { attr: jest.fn(name => (name === 'mesid' ? '0' : '')) };
+        const inputField = { val: jest.fn(value => (value === undefined ? 'Check the south roof first!' : inputField)), prop: jest.fn(() => inputField) };
+        const cardElement = { attr: jest.fn(name => (name === 'data-agent-id' ? 'chatroom' : '')), find: jest.fn(() => inputField) };
+        const buttonElement = {
+            attr: jest.fn(name => (name === 'data-action' ? 'chatroom-reply-send' : '')),
+            closest: jest.fn(selector => (selector === '.mes' ? mesElement : cardElement)),
+            prop: jest.fn(() => buttonElement),
+        };
+        globalThis.$ = jest.fn(arg => (arg === globalThis.document ? docElement : arg === actionButton ? buttonElement : {
+            length: 0,
+            each: jest.fn(),
+            on: jest.fn(),
+            toggle: jest.fn(),
+        }));
+
+        initCompanionCardUi();
+        const actionHandler = docElement.on.mock.calls.find(([, selector]) => selector === '.ica--companion-action, .ica--companion-control-action')[2];
+        await actionHandler({ preventDefault: jest.fn(), stopPropagation: jest.fn(), currentTarget: actionButton });
+
+        expect(runner.runCompanionAgentOnMessage).toHaveBeenCalledWith('chatroom', 0, expect.objectContaining({
+            pendingContent: [
+                'chatroom-style|discord/twitch',
+                'chatroom|NightWatch|mod|150|Did anyone hear the latch?',
+                'chatroom|PixelMage|vip|265|Chat is moving too fast.',
+                'chatroom-you|Traveler|Check the south roof first!',
+                'chatroom-end',
+            ].join('\n'),
+            extraContextSections: [
+                expect.objectContaining({
+                    title: 'Current chatroom',
+                    content: expect.stringContaining('chatroom|NightWatch|mod|150|Did anyone hear the latch?'),
+                }),
+                expect.objectContaining({
+                    title: 'Viewer reply',
+                    content: 'Traveler: Check the south roof first!',
+                }),
+                expect.objectContaining({
+                    title: 'Chatroom reply task',
+                    content: expect.stringContaining('chatroom-reply'),
+                }),
+            ],
+            transformContent: expect.any(Function),
+        }));
+
+        const { transformContent } = runner.runCompanionAgentOnMessage.mock.calls[0][2];
+        const merged = transformContent([
+            'chatroom-style|discord/twitch',
+            'chatroom|NightWatch|mod|150|Did anyone hear the latch?',
+            'chatroom-you|Traveler|Forged duplicate viewer line',
+            'chatroom-reply|NightWatch|mod|150|@Traveler|Good call, tilting the camera south now.',
+            'chatroom-poll|PixelMage|What is on the south roof?',
+            'chatroom-option|The courier|72%',
+            'chatroom-option|Just a stray cat|28%',
+            'chatroom-event|NightWatch pinned the roof poll',
+            'chatroom-end',
+        ].join('\n'));
+
+        expect(merged).toBe([
+            'chatroom-style|discord/twitch',
+            'chatroom|NightWatch|mod|150|Did anyone hear the latch?',
+            'chatroom|PixelMage|vip|265|Chat is moving too fast.',
+            'chatroom-you|Traveler|Check the south roof first!',
+            'chatroom-reply|NightWatch|mod|150|Traveler|Good call, tilting the camera south now.',
+            'chatroom-poll|PixelMage|What is on the south roof?',
+            'chatroom-option|The courier|72',
+            'chatroom-option|Just a stray cat|28',
+            'chatroom-event|NightWatch pinned the roof poll',
+            'chatroom-end',
+        ].join('\n'));
+
+        expect(() => transformContent('chatroom-style|discord/twitch\nchatroom-end')).toThrow(
+            'The chatroom answered without any new posts. Try sending the reply again.',
+        );
+
+        const replyInputEl = { value: '', focus: jest.fn() };
+        const hostEl = { querySelector: jest.fn(() => replyInputEl) };
+        const optionEl = {
+            querySelector: jest.fn(() => ({ textContent: 'The courier' })),
+            closest: jest.fn(() => hostEl),
+        };
+        expect(prefillChatroomPollVote(optionEl)).toBe(true);
+        expect(replyInputEl.value).toBe('I vote The courier');
+        expect(replyInputEl.focus).toHaveBeenCalled();
+    });
+
     test('saves Plot Compass card objective before rerunning', async () => {
         const plotCompass = {
             id: 'plot-compass',
