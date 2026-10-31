@@ -39,6 +39,15 @@ function getFunctionSource(name, { exported = false } = {}) {
 // `#send_form:not(.sb-generating-controls) #mes_stop { display: none !important; }`
 function createMobileStopButtonDom() {
     const state = { generatingClass: true, inlineDisplay: 'flex' };
+    const sendForm = {
+        classList: { contains: name => name === 'sb-generating-controls' && state.generatingClass },
+    };
+    const stopButton = {
+        style: { get display() { return state.inlineDisplay; } },
+    };
+    const document = {
+        getElementById: id => ({ send_form: sendForm, mes_stop: stopButton }[id] ?? null),
+    };
     const elements = {
         '#send_form': {
             removeClass: () => { state.generatingClass = false; },
@@ -53,7 +62,7 @@ function createMobileStopButtonDom() {
         },
     };
 
-    return { $: selector => elements[selector], state };
+    return { $: selector => elements[selector], state, document };
 }
 
 function getSourceBetween(startMarker, endMarker) {
@@ -125,10 +134,11 @@ describe('generation lifecycle wiring', () => {
     test('emits GENERATION_ENDED once even when the mobile stylesheet hides the stop button on class removal', () => {
         const hideSource = getFunctionSource('hideStopButton');
         const emitted = [];
-        const { $, state } = createMobileStopButtonDom();
+        const { $, state, document } = createMobileStopButtonDom();
 
         vm.runInNewContext(`${hideSource}\nhideStopButton();\nhideStopButton();`, {
             $,
+            document,
             eventSource: { emit: (...args) => emitted.push(args) },
             event_types: { GENERATION_ENDED: 'generation_ended' },
             chat: { length: 3 },
