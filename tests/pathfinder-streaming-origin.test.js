@@ -112,6 +112,22 @@ describe('streaming message origin', () => {
         expect(context.saveChatConditional).toHaveBeenCalledTimes(1);
     });
 
+    test('a connection that could not be resumed keeps the text, marks it as cut short and shows the notice', async () => {
+        const { context, processor } = await stream();
+        context.renderGenerationOutcome = jest.fn();
+        context.chatElement = { find: jest.fn(() => 'message element') };
+        context.generationBlockedNotice = jest.fn(() => 'the notice');
+        context.toastr = { warning: jest.fn() };
+        await processor.onErrorStreaming(Object.assign(new Error('lost'), { code: 'GENERATION_CONNECTION_LOST' }));
+        expect(context.chat[0].swipe_info[0].extra.generation_outcome).toEqual({ version: 1, status: 'truncated', reason: 'connection_lost' });
+        expect(context.renderGenerationOutcome).toHaveBeenCalledWith('message element', context.chat[0]);
+        // The same sentence also shows once as the warning toast that a cut-short reply shows in Build B.
+        expect(context.generationBlockedNotice).toHaveBeenCalledWith(true, { version: 1, status: 'truncated', reason: 'connection_lost' });
+        expect(context.toastr.warning).toHaveBeenCalledTimes(1);
+        expect(context.toastr.warning).toHaveBeenCalledWith('the notice');
+        expect(context.saveChatConditional).toHaveBeenCalledTimes(1);
+    });
+
     test('continues updating the original message and swipe through normal stream completion', async () => {
         const { context, processor } = await stream();
         await processor.generate();

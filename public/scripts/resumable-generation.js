@@ -7,6 +7,7 @@
  * uninterrupted response. Aborting the request's signal cancels the generation for real.
  */
 import { createReplyKeepAlive } from './background-keep-alive.js';
+import { GENERATION_CONNECTION_LOST } from './generation-outcome.js';
 
 const GENERATION_ID_HEADER = 'X-Generation-Id';
 const GENERATION_CONTEXT_HEADER = 'X-Generation-Context';
@@ -14,10 +15,16 @@ const RESUME_URL = '/api/resumable-generations/resume';
 const CANCEL_URL = '/api/resumable-generations/cancel';
 const LIST_URL = '/api/resumable-generations/list';
 const DISCARD_URL = '/api/resumable-generations/discard';
+const STATUS_URL = '/api/resumable-generations/status';
 const RESUME_RETRY_DELAYS_MS = Object.freeze([0, 1000, 2000, 5000]);
-const MAX_RESUME_ATTEMPTS = 60;
+/** About a minute and a half of failed attempts; then the reply stops and says the connection was lost. */
+const MAX_RESUME_ATTEMPTS = 20;
 /** A stream with no bytes for this long when the page becomes visible again gets reconnected. */
 const STALE_STREAM_MS = 5000;
+/** On a visible page, a connection with no bytes for this long is checked with the server. */
+const QUIET_STREAM_MS = 15000;
+const WATCHDOG_INTERVAL_MS = 5000;
+const STATUS_TIMEOUT_MS = 10000;
 const SKIPPED_RESPONSE_HEADERS = new Set(['content-encoding', 'content-length', 'transfer-encoding']);
 
 /** @type {Map<string, ResumableRequest>} */
@@ -27,6 +34,8 @@ const ownedReplies = new Map();
 /** @type {Set<(busy: boolean) => void>} */
 const activityListeners = new Set();
 let generationBusy = false;
+/** @type {ReturnType<typeof setInterval>|null} */
+let watchdogTimer = null;
 /**
  * Chat/message-slot descriptions keyed by the abort signal the generation will be sent with.
  * Generate() fills this right before the request goes out; the wrapper reads it once.
@@ -182,12 +191,21 @@ class ResumableRequest {
         }
         this.received = 0;
         this.lastByteAt = Date.now();
+        /** Whether the current connection has answered with headers */
+        this.hasResponse = false;
+        this.nextCheckAt = 0;
+        this.checking = false;
+        /** The server does not know this id (served without resume support), so there is nothing to check */
+        this.untracked = false;
+        /** The resume loop gave up; what the server holds is left for recovery, not cancelled */
+        this.connectionLost = false;
         this.finished = false;
         /** @type {AbortController|null} */
         this.connection = null;
         this.handleAbort = () => this.cancel();
         this.outerSignal?.addEventListener('abort', this.handleAbort, { once: true });
         activeRequests.set(this.id, this);
+        updateWatchdog();
         notifyGenerationActivity();
     }
 
@@ -205,6 +223,8 @@ class ResumableRequest {
         this.connection?.abort();
         const connection = new AbortController();
         this.connection = connection;
+        this.hasResponse = false;
+        this.lastByteAt = Date.now();
         if (this.aborted) {
             connection.abort(abortError(this.outerSignal));
         }
@@ -218,6 +238,7 @@ class ResumableRequest {
         let response;
         try {
             response = await this.connect(this.url, { ...this.init, headers: this.requestHeaders });
+            this.hasResponse = true;
         } catch (error) {
             if (this.aborted) {
                 this.finish();
@@ -321,6 +342,7 @@ class ResumableRequest {
             }
 
             if (response.ok && response.body) {
+                this.hasResponse = true;
                 return {
                     status: Number(response.headers.get('X-Generation-Status')) || 200,
                     statusText: response.headers.get('X-Generation-Status-Text') ?? '',
@@ -331,12 +353,15 @@ class ResumableRequest {
             if (response.status >= 500) {
                 continue;
             }
-            break;
+            // The reply is gone, or never arrived. Let the original failure surface.
+            this.finish();
+            throw cause;
         }
 
-        // The reply is gone, or never arrived. Let the original failure surface.
+        // Neconyan: the server could not be reached for any attempt. Stop waiting and say why.
+        this.connectionLost = true;
         this.finish();
-        throw cause;
+        throw Object.assign(new Error('The connection to the server was lost before the reply finished.', { cause }), { code: GENERATION_CONNECTION_LOST });
     }
 
     /**
@@ -350,6 +375,11 @@ class ResumableRequest {
         this.release();
         this.hasContext = false;
         this.connection?.abort(abortError(this.outerSignal));
+        if (this.connectionLost) {
+            // Neconyan: the resume loop already gave up, so this abort is the page's own clean-up after
+            // saving what arrived. Cancelling would hide the server's copy from recovery for good.
+            return;
+        }
         fetch(CANCEL_URL, {
             method: 'POST',
             headers: this.controlHeaders,
@@ -370,6 +400,7 @@ class ResumableRequest {
         }
         this.finished = true;
         activeRequests.delete(this.id);
+        updateWatchdog();
         if (!this.hasContext) {
             this.release();
         }
@@ -386,6 +417,49 @@ class ResumableRequest {
         }
         this.connection?.abort();
     }
+
+    /**
+     * Neconyan: asks the server whether a quiet connection has fallen behind and drops it if so, so
+     * the reader falls into resume(). A provider that is still thinking is left alone.
+     * @param {number} [now] Current time
+     * @returns {Promise<void>}
+     */
+    async checkIfQuiet(now = Date.now()) {
+        if (this.finished || this.aborted || this.checking || this.untracked
+            || now - this.lastByteAt < QUIET_STREAM_MS || now < this.nextCheckAt) {
+            return;
+        }
+        this.checking = true;
+        this.nextCheckAt = now + QUIET_STREAM_MS;
+        const connection = this.connection;
+        const timeout = new AbortController();
+        const timer = setTimeout(() => timeout.abort(), STATUS_TIMEOUT_MS);
+        let behind;
+        try {
+            const response = await fetch(STATUS_URL, {
+                method: 'POST',
+                headers: this.controlHeaders,
+                body: JSON.stringify({ id: this.id }),
+                cache: 'no-store',
+                signal: timeout.signal,
+            });
+            if (response.status === 404) {
+                this.untracked = true;
+                return;
+            }
+            const status = response.ok ? await response.json() : null;
+            behind = Boolean(status) && (Number(status.size) > this.received || (status.headersReady && !this.hasResponse) || status.done);
+        } catch {
+            // The server cannot be reached either: let resume() retry it.
+            behind = true;
+        } finally {
+            clearTimeout(timer);
+            this.checking = false;
+        }
+        if (behind && this.connection === connection && !this.finished) {
+            connection?.abort();
+        }
+    }
 }
 
 /**
@@ -395,6 +469,31 @@ class ResumableRequest {
 export function reconnectStaleGenerations(now = Date.now()) {
     for (const request of [...activeRequests.values()]) {
         request.reconnectIfStale(now);
+    }
+}
+
+/**
+ * Neconyan: checks every in-flight generation that has gone quiet while the page is visible. It runs
+ * on a timer while anything is in flight, because a connection that dies without an error is
+ * otherwise only noticed when the page becomes visible again.
+ * @param {number} [now] Current time
+ */
+function checkQuietGenerations(now = Date.now()) {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return;
+    }
+    for (const request of [...activeRequests.values()]) {
+        request.checkIfQuiet(now).catch(() => undefined);
+    }
+}
+
+function updateWatchdog() {
+    if (activeRequests.size > 0 && !watchdogTimer) {
+        watchdogTimer = setInterval(() => checkQuietGenerations(), WATCHDOG_INTERVAL_MS);
+        watchdogTimer.unref?.();
+    } else if (activeRequests.size === 0 && watchdogTimer) {
+        clearInterval(watchdogTimer);
+        watchdogTimer = null;
     }
 }
 

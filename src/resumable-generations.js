@@ -44,6 +44,9 @@ const generations = new Map();
 let sweepTimer = null;
 /** Every byte currently mirrored into the registry, across all profiles. */
 let totalBufferedBytes = 0;
+/** Neconyan: a resume waits at most this long for the reply to start answering; the client then asks again. */
+const RESUME_HEADER_WAIT_MS = 60 * 1000;
+let resumeHeaderWaitMs = RESUME_HEADER_WAIT_MS;
 
 /**
  * @param {unknown} chunk Anything a handler may pass to response.write()
@@ -660,11 +663,18 @@ router.post('/resume', async (request, response) => {
         wait.cancel();
         unsubscribe();
     });
+    const giveUp = setTimeout(wait.cancel, resumeHeaderWaitMs);
     await wait.promise;
+    clearTimeout(giveUp);
 
     if (disconnected || response.destroyed || response.writableEnded) {
         cleanup();
         return;
+    }
+    if (!generation.headersReady && !generation.done) {
+        // Still waiting for the provider: a defined answer the client retries, not an open-ended wait.
+        cleanup();
+        return response.sendStatus(504);
     }
     if (!generation.headersReady) {
         cleanup();
@@ -716,6 +726,18 @@ router.post('/resume', async (request, response) => {
             unsubscribe();
         }
     }
+});
+
+/**
+ * Neconyan: lets a page whose connection has gone quiet check whether it has fallen behind the reply.
+ */
+router.post('/status', (request, response) => {
+    const generation = findGeneration(request);
+    if (!generation) {
+        return response.sendStatus(404);
+    }
+    response.setHeader('Cache-Control', 'no-store');
+    return response.json({ done: generation.done, headersReady: generation.headersReady, size: generation.size });
 });
 
 router.post('/cancel', (request, response) => {
@@ -772,8 +794,15 @@ export const testExports = {
     MAX_BUFFER_BYTES,
     MAX_TOTAL_BUFFER_BYTES,
     MAX_RESUME_CLIENTS,
+    RESUME_HEADER_WAIT_MS,
     generations,
     sweepGenerations,
+    get resumeHeaderWaitMs() {
+        return resumeHeaderWaitMs;
+    },
+    set resumeHeaderWaitMs(value) {
+        resumeHeaderWaitMs = value;
+    },
     get totalBufferedBytes() {
         return totalBufferedBytes;
     },
