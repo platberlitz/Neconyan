@@ -29,6 +29,7 @@
 - PR #368 (2026-10-31) `fix(generation): never cancel a running reply to make room for a new one`
 - PR #369 (2026-10-31) `fix(generation): catch stalled streams and bound resume waits`
 - PR #370 (2026-10-31) `fix: support Doom tracker and explain replies cut off while reasoning`
+- PR #372 (2026-10-31) `fix(startup): load desktop sessions over plain http`
 
 ## v1.4.0
 
