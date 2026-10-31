@@ -5010,6 +5010,12 @@ async function adoptSavedChatTail(signal) {
     const [header, ...saved] = records;
     let first = 0;
     while (first < Math.min(chat.length, saved.length) && JSON.stringify(saved[first]) === JSON.stringify(chat[first])) first++;
+    const replacementIndex = Number(chatElement[0].querySelector('[data-roleplay-replacement]')?.dataset?.roleplayReplacement);
+    const hasReplacement = Number.isSafeInteger(replacementIndex) && replacementIndex >= 0 && replacementIndex < chat.length;
+    // A failed swipe can append a kept reply instead of replacing its source.
+    // Redraw the detached original too, or the gap makes the appended row look
+    // outside the visible window and leaves it undrawn after adopting the data.
+    if (hasReplacement && first < saved.length) first = Math.min(first, replacementIndex);
     const pendingRedraw = savedChatRedraw?.isCurrent() ? savedChatRedraw : null;
     if (pendingRedraw) first = 0;
 
@@ -5018,7 +5024,8 @@ async function adoptSavedChatTail(signal) {
     const scrollVersion = chatScrollVersion;
     const { renderedMessageCount, firstMessageId, lastMessageId } = getRenderedChatMessageWindow();
     const windowSize = getChatRenderWindowSize();
-    const wasShowingTail = pendingRedraw?.wasShowingTail ?? lastMessageId === chat.length - 1;
+    const wasShowingTail = pendingRedraw?.wasShowingTail
+        ?? (lastMessageId === chat.length - 1 || hasReplacement && replacementIndex === chat.length - 1);
     // Reading a long preview can be far from the bottom. Include its saved row
     // in the bounded window so restoring that reading position can find it.
     const wasReadingSavedTail = readingAnchor && Number(readingAnchor.messageId) === saved.length - 1
@@ -7920,12 +7927,10 @@ class StreamingProcessor {
         }
         if (state?.finishReason === 'length') {
             this.providerLengthStop = true;
+            this.finishReason = 'length';
         }
         if (!this.maxOutputTokens || (isFinal && this.lastRawText === null)) {
             return false;
-        }
-        if (state?.finishReason === 'length') {
-            this.finishReason = 'length';
         }
         const rawText = isFinal ? this.lastRawText : this.result;
         const prefix = isFinal ? this.lastReasoningPrefix : this.promptReasoning?.prefixIncomplete && !this.pendingReasoning ? this.promptReasoning.prefixReasoningFormatted : '';
@@ -10872,7 +10877,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             // Neconyan: non-streaming reasoners keep their preset allowance; only separated prose is capped locally.
             const reasoningPrefix = promptReasoning.prefixIncomplete && !reasoning ? promptReasoning.prefixReasoningFormatted : '';
             const limitedOutput = limitGenerationProse(getMessage, maxOutputTokens, power_user.reasoning, reasoningPrefix);
-            limitedOutput.limited ||= Number.isFinite(maxOutputTokens) && maxOutputTokens > 0 && isGenerationLengthFinish(data);
+            limitedOutput.limited ||= isGenerationLengthFinish(data);
             getMessage = limitedOutput.text;
             const inlineReasoning = reasoningPrefix && limitedOutput.reasoning.startsWith(promptReasoning.prefixReasoning)
                 ? limitedOutput.reasoning.slice(promptReasoning.prefixReasoning.length)
@@ -11826,6 +11831,7 @@ async function applyHeldGeneration(job, headers, isCurrent) {
     let title = '';
     let generationOutcome = null;
     let choiceOutcomes = {};
+    let providerLengthStop = false;
     if (ctx.streaming) {
         let last = null;
         const read = {
@@ -11845,6 +11851,7 @@ async function applyHeldGeneration(job, headers, isCurrent) {
         swipes = last?.swipes ?? [];
         generationOutcome = last?.state?.outcome ?? null;
         choiceOutcomes = last?.state?.outcomes ?? {};
+        providerLengthStop = last?.state?.finishReason === 'length';
     } else {
         let data = await response.json();
         if (ctx.api === 'koboldhorde' && data.id) {
@@ -11852,6 +11859,7 @@ async function applyHeldGeneration(job, headers, isCurrent) {
             data = await waitForHordeTask(data.id, { get aborted() { return !isCurrent(); } }, false, false);
         }
         generationOutcome = classifyGenerationOutcome(data);
+        providerLengthStop = isGenerationLengthFinish(data);
         choiceOutcomes = Object.fromEntries((data.choices ?? []).map((choice, index) => [choice.index ?? index, classifyGenerationOutcome(data, choice.index ?? index)]));
         if (data?.error && !generationOutcome) {
             toastr.error(t`A reply that ran in the background failed.`);
@@ -11874,7 +11882,7 @@ async function applyHeldGeneration(job, headers, isCurrent) {
         toastr.warning(generationBlockedNotice(Boolean(getMessage.trim()), generationOutcome));
         if (!getMessage.trim()) return discard();
     }
-    getMessage = cleanUpMessage({ getMessage, isImpersonate: false, isContinue, displayIncompleteSentences: Boolean(generationOutcome) });
+    getMessage = cleanUpMessage({ getMessage, isImpersonate: false, isContinue, displayIncompleteSentences: providerLengthStop || Boolean(generationOutcome) });
     reasoning = getRegexedString(reasoning, regex_placement.REASONING);
     if (!getMessage.trim() && !reasoning.trim() && !imageUrls.length) {
         toastr.warning(t`A reply that finished in the background had no text to restore.`);

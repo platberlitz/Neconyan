@@ -296,6 +296,60 @@ test('a truncated bound provider stream interrupts the job without saving a part
     }
 });
 
+test('thinking-only provider results are kept once without successful delivery or another paid call', async t => {
+    for (const stream of [false, true]) for (const reason of ['stop', 'length']) {
+        await t.test(`${stream ? 'stream' : 'JSON'} ${reason}`, async t => {
+            const f = fixture(t);
+            fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({ _settingsRevision: 1,
+                main_api: 'openai', active_generation: { api: 'openai', source: 'custom', model: 'fixture' },
+                oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000', custom_model: 'fixture', show_thoughts: true },
+                power_user: { custom_stopping_strings: '[]' } }));
+            const binding = captureGenerationBinding(f.scope.directories, { kind: 'active' }, { settingsRevision: 1 });
+            const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+            const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'thinking-only', effect: 'append',
+                source: captureRoleplaySource(f.scope, { locator: f.locator }),
+                request: { binding, messages: [{ role: 'user', content: 'Hi' }], maxTokens: 32, characterName: 'Nova', stream } });
+            releaseJob(f.scope.directories, jobId);
+            const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories, owner: f.scope.owner,
+                signal: new AbortController().signal };
+            const usage = { prompt_tokens: 12, completion_tokens: 32, completion_tokens_details: { reasoning_tokens: 32 } };
+            let calls = 0;
+            const generate = options => runChatProfile({ ...options, fetch: async () => {
+                calls++;
+                const message = { content: '', reasoning_content: 'A paid thought, without an answer.' };
+                return stream ? { ok: true, status: 200, statusText: 'OK', body: Readable.from([
+                    `data: ${JSON.stringify({ choices: [{ index: 0, delta: message }] })}\n\n`,
+                    `data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: reason }] })}\n\n`,
+                    `data: ${JSON.stringify({ choices: [], usage })}\n\n`, 'data: [DONE]\n\n',
+                ]) } : new Response(JSON.stringify({ choices: [{ index: 0, message, finish_reason: reason }], usage }));
+            } });
+            const checkFailure = error => {
+                assert.equal(error.code, 'GENERATION_NO_ANSWER');
+                assert.match(error.message, /thinking but no reply text/);
+                assert.equal(error.message.includes('output limit'), reason === 'length');
+                return true;
+            };
+            await assert.rejects(runRoleplayReplyJob(context, { generate }), checkFailure);
+            const saved = readRoleplayChat(f.scope, f.locator);
+            assert.equal(saved.records.length, f.records.length + 1);
+            const last = saved.records.at(-1);
+            assert.equal(last.mes, '');
+            assert.equal(last.extra.reasoning, 'A paid thought, without an answer.');
+            assert.equal(last.extra.generation_finish_reason, reason);
+            assert.deepEqual(last.extra.generation_usage, usage);
+            assert.equal(last.extra.generation_outcome.status, 'error');
+            assert.equal(last.extra.roleplay_kept_reply.reason, 'failed');
+            assert.equal(readArtifact(f.scope.directories, jobId, 'roleplay-main-complete'), undefined);
+            assert.equal(readArtifact(f.scope.directories, jobId, 'roleplay-output'), undefined);
+            const reference = readArtifact(f.scope.directories, jobId, 'roleplay-main-provider');
+            assert.equal(readArtifact(f.scope.directories, jobId, reference.step).response.choices[0].finish_reason, reason);
+            await assert.rejects(runRoleplayReplyJob({ ...context, job: getJob(f.scope.directories, jobId) }, { generate }), checkFailure);
+            assert.equal(readRoleplayChat(f.scope, f.locator).revision, saved.revision);
+            assert.equal(calls, 1);
+        });
+    }
+});
+
 test('a bound reply respects disabled reasoning while retaining the generated text', async t => {
     const { f, context } = accepted(t);
     await runRoleplayReplyJob(context, { generate: async () => ({ text: 'Visible',
@@ -305,6 +359,60 @@ test('a bound reply respects disabled reasoning while retaining the generated te
     const saved = readRoleplayChat(f.scope, f.locator).records.at(-1);
     assert.equal(saved.mes, 'Visible');
     assert.equal(saved.extra.reasoning, undefined);
+});
+
+test('native replies separate configured inline thinking before delivery and preserve visible prose', async t => {
+    const cases = [
+        { name: 'closed thinking', content: '<think>Inline thought.</think>', reason: 'stop', text: '', thinking: 'Inline thought.' },
+        { name: 'unclosed thinking', content: '<think>Inline thought.', reason: 'length', text: '', thinking: 'Inline thought.' },
+        { name: 'mixed prose', content: '<think>Inline thought.</think>The door opens and', reason: 'length', text: 'The door opens and', thinking: 'Inline thought.' },
+        { name: 'disabled parsing', content: '<think>Literal text.</think>', reason: 'stop', autoParse: false, text: '<think>Literal text.</think>' },
+        { name: 'hidden thinking only', content: '', field: 'Paid hidden thought.', reason: 'length', showThoughts: false, text: '', thinking: 'Paid hidden thought.' },
+        { name: 'hidden thinking with prose', content: 'The visible reply.', field: 'Hidden thought.', reason: 'stop', showThoughts: false, text: 'The visible reply.' },
+    ];
+    for (const stream of [false, true]) for (const scenario of cases) {
+        await t.test(`${stream ? 'SSE' : 'JSON'} ${scenario.name}`, async t => {
+            const f = fixture(t);
+            fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({ _settingsRevision: 1,
+                main_api: 'openai', active_generation: { api: 'openai', source: 'custom', model: 'fixture' },
+                oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000', custom_model: 'fixture',
+                    show_thoughts: scenario.showThoughts !== false },
+                power_user: { custom_stopping_strings: '[]', reasoning: { auto_parse: scenario.autoParse !== false,
+                    prefix: '<think>', suffix: '</think>' } } }));
+            const binding = captureGenerationBinding(f.scope.directories, { kind: 'active' }, { settingsRevision: 1 });
+            const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+            const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'inline-thinking', effect: 'append',
+                source: captureRoleplaySource(f.scope, { locator: f.locator }),
+                request: { binding, messages: [{ role: 'user', content: 'Hi' }], maxTokens: 32, characterName: 'Nova', stream } });
+            releaseJob(f.scope.directories, jobId);
+            const context = { job: getJob(f.scope.directories, jobId), directories: f.scope.directories, owner: f.scope.owner,
+                signal: new AbortController().signal };
+            let calls = 0;
+            const generate = options => runChatProfile({ ...options, fetch: async () => {
+                calls++;
+                const message = { content: scenario.content, ...(scenario.field ? { reasoning_content: scenario.field } : {}) };
+                return stream ? { ok: true, status: 200, statusText: 'OK', body: Readable.from([
+                    `data: ${JSON.stringify({ choices: [{ index: 0, delta: message }] })}\n\n`,
+                    `data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: scenario.reason }] })}\n\n`,
+                    'data: [DONE]\n\n',
+                ]) } : new Response(JSON.stringify({ choices: [{ index: 0, message, finish_reason: scenario.reason }] }));
+            } });
+            for (let attempt = 0; attempt < 2; attempt++) {
+                if (!scenario.text) await assert.rejects(runRoleplayReplyJob(context, { generate }), { code: 'GENERATION_NO_ANSWER' });
+                else await runRoleplayReplyJob(context, { generate });
+            }
+            const saved = readRoleplayChat(f.scope, f.locator).records;
+            assert.equal(saved.length, f.records.length + 1);
+            assert.equal(saved.at(-1).mes, scenario.text);
+            assert.equal(saved.at(-1).extra.reasoning, scenario.thinking);
+            assert.equal(Boolean(readArtifact(f.scope.directories, jobId, 'roleplay-main-complete')), Boolean(scenario.text));
+            assert.equal(calls, 1);
+            const reference = readArtifact(f.scope.directories, jobId, 'roleplay-main-provider');
+            const provider = readArtifact(f.scope.directories, jobId, reference.step);
+            assert.equal(provider.text, scenario.text);
+            assert.equal(provider.response.choices[0].message.content, scenario.content, 'the paid provider response stays intact');
+        });
+    }
 });
 
 test('a stale source is refused before any provider work', async t => {
@@ -487,7 +595,7 @@ test('native no-text block retains a definite provider result and cannot redispa
         calls++;
         const step = 'provider:' + 'd'.repeat(64);
         await options.onProviderStep(step);
-        const result = { text: '', response: { choices: [{ finish_reason: 'content_filter', message: { content: '' } }] } };
+        const result = { text: '', response: { choices: [{ finish_reason: 'content_filter', message: { content: '', reasoning_content: 'Before the refusal' } }] } };
         writeArtifact(f.scope.directories, context.job.id, step, result);
         return result;
     };

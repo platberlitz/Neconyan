@@ -57,6 +57,7 @@ import { isRoleplayAgentStop, markRoleplayAgentsFailed, markRoleplayAgentsRefuse
 import { isLikelyMainReplyRefusal } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-refusal.js';
 import { assertRoleplayBundledMacrosCaptured } from './roleplay-bundled-macros.js';
 import { preserveInterruptedRoleplayReply, recordRoleplayMainReplyComplete } from './roleplay-kept-reply.js';
+import { reasoningOnlyResult } from './reasoning-only-result.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
 const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
@@ -93,9 +94,9 @@ function replyOutput(result, effect, name, material) {
     const controls = { mainApi: material?.backend === 'text' ? 'textgenerationwebui' : 'openai',
         textGenType: material?.source, chatCompletionSource: material?.source,
         showThoughts: material?.backend === 'text' || material?.showThoughts };
-    const reasoning = material ? extractProviderReasoning(response, controls) : response?.choices?.[0]?.message?.reasoning_content
+    const reasoning = result.reasoning ?? (material ? extractProviderReasoning(response, controls) : response?.choices?.[0]?.message?.reasoning_content
         ?? response?.choices?.[0]?.message?.reasoning ?? response?.thinking
-        ?? response?.content?.filter?.(part => part.type === 'thinking').map(part => part.thinking).join('\n\n');
+        ?? response?.content?.filter?.(part => part.type === 'thinking').map(part => part.thinking).join('\n\n'));
     if (typeof reasoning === 'string' && Buffer.byteLength(reasoning) > MAX_REPLY_BYTES) {
         throw roleplayError('ROLEPLAY_INVALID', 'The generated Roleplay reasoning is too large.', 502);
     }
@@ -178,6 +179,8 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                 || result?.response?.candidates?.some?.(candidate => candidate.content?.parts?.some(part => part.functionCall)))) {
             throw roleplayError('ROLEPLAY_TOOLS_PENDING', 'The saved provider result needs the native tool workflow before a reply can be written.', 409);
         }
+        const thinkingOnly = reasoningOnlyResult(result);
+        if (thinkingOnly) throw roleplayError('GENERATION_NO_ANSWER', thinkingOnly.message, 502);
         let output = replyOutput(result, effect, request.characterName, result.generation);
         let reply = output.message ?? output.messages?.[0] ?? output;
         if (blocked) reply.extra.generation_outcome = blocked;
@@ -1219,7 +1222,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
     publishRoleplayPreview(context, { stage: 'generating', inChatAgents });
     const { count: countPreview } = await getCounter(request.worldInfo?.tokenizer);
     const preview = createRoleplayStreamPreview(context, countPreview);
-    const result = await Promise.resolve().then(() => generate({ context: base, jobContext: context, binding: request.binding, messages,
+    const result = await Promise.resolve().then(() => generate({ context: base, jobContext: context, binding: request.binding, messages, parseInlineReasoning: true,
         onStream: preview.publish,
         maxTokens: request.maxTokens, userName, characterName: request.characterName,
         generationType: request.serverPrompt ? request.worldInfo.global.trigger : 'quiet',

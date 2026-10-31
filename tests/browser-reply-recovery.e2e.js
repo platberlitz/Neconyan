@@ -50,6 +50,36 @@ async function expectSavedOnce(page, account, app, id, model = MODEL) {
 
 for (const phone of [false, true]) {
     const viewport = phone ? 'phone' : 'desktop';
+    test(`${viewport} restores inline thinking and unfinished prose after a provider length stop`, async ({ app }) => {
+        test.setTimeout(180000);
+        const prose = 'She opens the door and';
+        const content = '<think>Plan the room.</think>' + prose;
+        app.provider.mode.hold = MODEL;
+        app.provider.mode.reply = { choices: [{ message: { content }, finish_reason: 'length' }] };
+        app.provider.mode.streamEvents = [{ choices: [{ delta: { content } }] }, { choices: [{ delta: {}, finish_reason: 'length' }] }];
+        const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
+            saved.oai_settings.stream_openai = phone;
+            saved.power_user.trim_sentences = true;
+            Object.assign(saved.power_user.reasoning ??= {}, { auto_parse: true, prefix: '<think>', suffix: '</think>' });
+        } });
+        const page = await openChat(account);
+        const id = await startBrowserReply(page);
+        await expect.poll(() => app.provider.calls.filter(call => call.model === MODEL).length).toBe(1);
+        await page.close();
+        await app.release();
+        const returned = await openChat(account);
+        await expect(returned.locator('#chat .mes[mesid]').last().locator('.mes_text')).toHaveText(prose, { timeout: 30000 });
+        await expect.poll(async () => (await heldReplies(account)).some(job => job.id === id)).toBe(false);
+        await returned.close();
+        const reopened = await openChat(account);
+        await expect.poll(() => reopened.evaluate(async () => (await import('/script.js')).chat.at(-1)?.mes)).toBe(prose);
+        const messages = await reopened.evaluate(async () => (await import('/script.js')).chat);
+        expect(messages).toHaveLength(3);
+        expect(messages.at(-1).extra.reasoning).toBe('Plan the room.');
+        expect(messages.at(-1).extra.resumable_generation_id).toBe(id);
+        expect(app.provider.calls.filter(call => call.model === MODEL)).toHaveLength(1);
+    });
+
     test(`${viewport} browser reply survives closing before provider headers and returning before completion`, async ({ app }) => {
         test.setTimeout(180000);
         app.provider.mode.hold = MODEL;

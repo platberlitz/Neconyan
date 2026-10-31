@@ -3,6 +3,8 @@ import { messageGenerationBlocked } from './generation-outcome.js';
 
 export function generationBlockedNotice(hasText = true, outcome = null) {
     if (outcome?.status === 'truncated') return t`The connection ended before this reply finished, so it may be incomplete. Automatic agents were not run.`;
+    if (outcome?.status === 'error' && outcome.reason === 'reasoning_only_length') return t`The provider reached its output limit after returning thinking but no reply text. Automatic agents were not run.`;
+    if (outcome?.status === 'error' && outcome.reason === 'reasoning_only') return t`The provider returned thinking but no reply text. Automatic agents were not run.`;
     if (outcome?.status === 'error') return t`The provider ended this reply with an error. Automatic agents were not run.`;
     return hasText
         ? t`The provider stopped this reply because of a content filter. Automatic agents were not run.`

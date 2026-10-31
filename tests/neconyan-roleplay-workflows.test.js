@@ -705,7 +705,7 @@ test('a finished reply hands the reader\'s place to the reload and clears it aft
     expect(reloads).toEqual([2]);
 });
 
-test('a finished reply anchors its own text and keeps the message above as a fallback', () => {
+test.each([null, 2])('a finished reply anchors its own text, using the kept message index when supplied: %s', keptIndex => {
     const previewText = { getBoundingClientRect: () => ({ top: 360, bottom: 520 }) };
     const preview = {
         getBoundingClientRect: () => ({ top: 320, bottom: 640 }),
@@ -732,8 +732,8 @@ test('a finished reply anchors its own text and keeps the message above as a fal
     const original = globalThis.document.querySelector;
     globalThis.document.querySelector = selector => selector === '#chat' ? chatNode : null;
     try {
-        expect(workflows.finishedReplyReadingAnchor()).toEqual({
-            messageId: 1,
+        expect(workflows.finishedReplyReadingAnchor(keptIndex === null ? null : { keptReply: { messageIndex: keptIndex } })).toEqual({
+            messageId: keptIndex ?? 1,
             offsetTop: 260,
             part: '.mes_text',
             fallback: { messageId: '0', offsetTop: 80 },

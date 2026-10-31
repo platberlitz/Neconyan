@@ -18,6 +18,16 @@ const sandbox = { ...outcomes,
 vm.createContext(sandbox);
 vm.runInContext(extract('tryParseStreamingError') + '\n' + extract('readChatCompletionStream'), sandbox);
 const encode = frame => 'data: ' + JSON.stringify(frame) + '\n\n';
+const outcomeUi = fs.readFileSync(new URL('../public/scripts/generation-outcome-ui.js', import.meta.url), 'utf8');
+const notice = vm.runInNewContext(outcomeUi.replace(/^import .*;$/gm, '').replaceAll('export function', 'function') + '\ngenerationBlockedNotice;', {
+    t: parts => parts.join(''),
+});
+test('saved thinking-only failures distinguish output limits from ordinary completion and provider errors', () => {
+    const outcome = reason => ({ version: 1, status: 'error', reason });
+    assert.equal(notice(false, outcome('reasoning_only_length')), 'The provider reached its output limit after returning thinking but no reply text. Automatic agents were not run.');
+    assert.equal(notice(false, outcome('reasoning_only')), 'The provider returned thinking but no reply text. Automatic agents were not run.');
+    assert.equal(notice(false, outcome('error')), 'The provider ended this reply with an error. Automatic agents were not run.');
+});
 async function read(raw, canMultiSwipe = true) {
     const bytes = new TextEncoder().encode(raw);
     const body = new ReadableStream({ start(controller) { for (let i = 0; i < bytes.length; i += 7) controller.enqueue(bytes.slice(i, i + 7)); controller.close(); } });
