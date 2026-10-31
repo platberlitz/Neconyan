@@ -145,7 +145,7 @@ describe('resumable generation registry', () => {
         expect(generation.done).toBe(true);
     });
 
-    test('evicting an active generation cancels, finishes, and releases it', () => {
+    test('discarding an active generation cancels, finishes, and releases it', () => {
         const { response, generation } = registerGeneration('capacity-active');
         response.write('buffered');
         const subscriber = {
@@ -157,9 +157,7 @@ describe('resumable generation registry', () => {
         const cancelHook = jest.fn(() => response.end());
         generation.onCancel(cancelHook);
 
-        for (let index = 0; index < testExports.MAX_GENERATIONS; index++) {
-            registerGeneration(`capacity-${index}`);
-        }
+        generation.forceDiscard();
 
         expect(cancelHook).toHaveBeenCalledTimes(1);
         expect(subscriber.onFail).toHaveBeenCalledTimes(1);
@@ -172,6 +170,7 @@ describe('resumable generation registry', () => {
     });
 
     test('evicting a finished generation does not cancel it', () => {
+        jest.spyOn(console, 'warn').mockImplementation(() => undefined);
         const { response, generation } = registerGeneration('capacity-finished');
         const cancelHook = jest.fn();
         generation.onCancel(cancelHook);
@@ -472,7 +471,8 @@ describe('registry capacity', () => {
         expect(testExports.generations.size).toBe(testExports.MAX_GENERATIONS);
     });
 
-    test('an over-cap profile gives up its own oldest live generation', () => {
+    test('an over-cap profile keeps its live generations and serves the newest without resume support', () => {
+        jest.spyOn(console, 'warn').mockImplementation(() => undefined);
         const first = registerGeneration('own-000000');
         const cancelHook = jest.fn();
         first.generation.onCancel(cancelHook);
@@ -481,13 +481,32 @@ describe('registry capacity', () => {
         }
         expect(testExports.generations.size).toBe(testExports.MAX_GENERATIONS_PER_PROFILE);
 
-        registerGeneration('own-newest');
+        const newest = registerGeneration('own-newest');
 
-        expect(cancelHook).toHaveBeenCalledTimes(1);
-        expect(first.generation.cancelled).toBe(true);
-        expect(first.generation.done).toBe(true);
-        expect(testExports.generations.has('tester:own-000000')).toBe(false);
-        expect(testExports.generations.has('tester:own-newest')).toBe(true);
+        expect(newest.generation).toBeUndefined();
+        expect(cancelHook).not.toHaveBeenCalled();
+        expect(first.generation.cancelled).toBe(false);
+        expect(first.generation.done).toBe(false);
+        expect(testExports.generations.has('tester:own-000000')).toBe(true);
+        expect(testExports.generations.has('tester:own-newest')).toBe(false);
+        expect(testExports.generations.size).toBe(testExports.MAX_GENERATIONS_PER_PROFILE);
+    });
+
+    test('an over-cap profile makes room from its finished replies first, then from ones it already cancelled', () => {
+        const finished = registerGeneration('own-finished');
+        finished.response.end('cached');
+        const stopped = registerGeneration('own-stopped');
+        stopped.generation.cancel();
+        for (let index = 2; index < testExports.MAX_GENERATIONS_PER_PROFILE; index++) {
+            registerGeneration(`own-${String(index).padStart(6, '0')}`);
+        }
+
+        expect(registerGeneration('own-after-finished').generation).toBeDefined();
+        expect(testExports.generations.has('tester:own-finished')).toBe(false);
+        expect(testExports.generations.has('tester:own-stopped')).toBe(true);
+
+        expect(registerGeneration('own-after-stopped').generation).toBeDefined();
+        expect(testExports.generations.has('tester:own-stopped')).toBe(false);
         expect(testExports.generations.size).toBe(testExports.MAX_GENERATIONS_PER_PROFILE);
     });
 
