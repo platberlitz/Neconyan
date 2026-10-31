@@ -33,6 +33,7 @@
 - PR #373 (2026-10-31) `fix(roleplay): preserve partial prose and thinking-only replies`
 - PR #374 (2026-10-31) `feat(authors-note): redesign panel and surface persona notes`
 - PR #375 (2026-10-31) `perf(qig): speed up png validation`
+- PR #376 (2026-10-31) `fix(regex-themes): preserve accent button contrast across shells`
 
 ## v1.4.0
 
