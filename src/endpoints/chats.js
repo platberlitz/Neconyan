@@ -12,6 +12,7 @@ import _ from 'lodash';
 import { acquireChatFileLock, withChatFileLocks } from '../chat-file-lock.js';
 import { cachedFilePath, createFileSummaryCache, createLimiter, fileStatIdentity, sameFileStatIdentity } from '../file-summary-cache.js';
 import { collectRecentChatFiles, selectRecentChatFiles } from '../chat-library-inventory.js';
+import { createChatSearchMatcher } from '../chat-search-matcher.js';
 import validateAvatarUrlMiddleware from '../middleware/validateFileName.js';
 import { renameChatFile } from '../chat-rename.js';
 import { captureBranchMemory, chatMemoryExists, removeChatMemory, renameChatMemory } from '../mewmory/store.js';
@@ -2479,7 +2480,7 @@ router.post('/search', validateAvatarUrlMiddleware, async function (request, res
         };
 
         for (const chatFile of chatFiles) {
-            const matcher = query ? hasTextMatch : null;
+            const matcher = query ? createChatSearchMatcher(fragments) : null;
             const chatInfo = await getChatInfo(chatFile, {}, false, matcher);
             const hasMatch = chatInfo.match || hasTextMatch([chatInfo.file_id ?? '']);
 

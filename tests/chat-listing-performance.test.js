@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { setConfigFilePath } from '../src/util.js';
+import { createChatSearchMatcher } from '../src/chat-search-matcher.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const diskCacheEnvironmentKey = 'SILLYTAVERN_PERFORMANCE_USEDISKCACHE';
@@ -388,6 +389,53 @@ describe('chat summary cache', () => {
 
         await expect(getChatInfo(path.join(directories.chats, 'Nova', 'Missing.jsonl'))).resolves.toEqual({});
         expect(errorSpy).toHaveBeenCalled();
+    });
+});
+
+describe('incremental chat search', () => {
+    test('checks each appended message once and remembers matches across messages', () => {
+        const matcher = createChatSearchMatcher(['first', 'last', 'last']);
+        let reads = 0;
+        const messages = [];
+        for (let index = 0; index < 1000; index++) {
+            const text = index === 0 ? 'FIRST' : index === 999 ? 'LAST' : 'ordinary text';
+            Object.defineProperty(messages, index, { get() { reads++; return text; } });
+            expect(matcher(messages)).toBe(index === 999);
+        }
+        expect(reads).toBe(1000);
+        expect(matcher(messages)).toBe(true);
+        expect(reads).toBe(1000);
+    });
+
+    test('does not rescan accumulated messages for a missing fragment', () => {
+        const matcher = createChatSearchMatcher(['absent']);
+        let reads = 0;
+        const messages = [];
+        for (let index = 0; index < 1000; index++) {
+            Object.defineProperty(messages, index, { get() { reads++; return 'ordinary'; } });
+            expect(matcher(messages)).toBe(false);
+        }
+        expect(reads).toBe(1000);
+        expect(createChatSearchMatcher([])([])).toBe(true);
+    });
+
+    test('preserves cross-message, filename and per-file query boundaries', async () => {
+        const write = (name, texts) => writeChat(path.join(directories.chats, 'Nova', `${name}.jsonl`), {},
+            texts.map(mes => ({ name: 'Nova', mes })));
+        write('Across messages', ['ALPHA', 'ordinary', 'BETA']);
+        write('Only alpha', ['alpha']);
+        write('Only beta', ['beta']);
+        write('alpha', ['beta']);
+        write('alpha beta title', ['ordinary']);
+        write('Empty alpha beta', []);
+        const response = await postJson('/api/chats/search', { avatar_url: 'Nova.png', query: '  ALPHA beta alpha  ' });
+        expect(response.status).toBe(200);
+        expect(response.body.map(chat => chat.file_name).sort()).toEqual([
+            'Across messages', 'Empty alpha beta', 'alpha beta title',
+        ]);
+        expect(response.body.find(chat => chat.file_name === 'Across messages')).toMatchObject({
+            message_count: 3, preview_message: 'BETA',
+        });
     });
 });
 
