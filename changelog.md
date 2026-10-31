@@ -30,6 +30,7 @@
 - PR #369 (2026-10-31) `fix(generation): catch stalled streams and bound resume waits`
 - PR #370 (2026-10-31) `fix: support Doom tracker and explain replies cut off while reasoning`
 - PR #372 (2026-10-31) `fix(startup): load desktop sessions over plain http`
+- PR #374 (2026-10-31) `feat(authors-note): redesign panel and surface persona notes`
 
 ## v1.4.0
 
