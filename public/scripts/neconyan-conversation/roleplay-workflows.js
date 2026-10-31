@@ -540,7 +540,7 @@ function readback(key, name, options) {
  * row is anchored only when the preview still shows that same child. An
  * incomplete group preview falls back to the preceding row instead of
  * applying unsaved preview text to the first saved speaker.
- * @param {{result?: {childJobId?: string, speakers?: Array<object>}|null}|null} [receipt] Saved workflow receipt, when one is available.
+ * @param {{result?: {childJobId?: string, speakers?: Array<object>}|null, keptReply?: {messageIndex?: number}}|null} [receipt] Saved workflow receipt, when one is available.
  * @returns {{messageId: string|number, offsetTop: number, part: string|null, fallback: {messageId: string|number, offsetTop: number}|null}|null}
  */
 export function finishedReplyReadingAnchor(receipt = null) {
@@ -557,6 +557,10 @@ export function finishedReplyReadingAnchor(receipt = null) {
     const fallback = above
         ? { messageId: above.getAttribute('mesid'), offsetTop: above.getBoundingClientRect().top - chatTop }
         : null;
+    // Recovery may append thinking beside the unchanged swipe source. The
+    // receipt identifies that new row even though it has not been drawn yet.
+    const keptIndex = receipt?.keptReply?.messageIndex;
+    if (Number.isSafeInteger(keptIndex) && keptIndex >= 0) return { messageId: keptIndex, offsetTop, part, fallback };
     const replacement = chatNode.querySelector('[data-roleplay-replacement]');
     const speakers = receipt?.result?.speakers;
     if (!replacement && Array.isArray(speakers) && speakers.length > 0) {

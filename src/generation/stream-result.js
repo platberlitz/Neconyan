@@ -17,6 +17,8 @@ export function createGenerationStream(onUpdate, { allowTools = false } = {}) {
     let bytes = 0;
     let text = '';
     let reasoning = '';
+    let finishReason;
+    let usage;
     let signature = '';
     let complete = false;
     let outcome = null;
@@ -49,6 +51,10 @@ export function createGenerationStream(onUpdate, { allowTools = false } = {}) {
         if (chunk.choices?.length && !choice || chunk.candidates?.length && !candidate) return;
         if (choice) chunk = { ...chunk, choices: [choice] };
         if (candidate) chunk = { ...chunk, candidates: [candidate] };
+        const reason = choice?.finish_reason ?? candidate?.finishReason ?? chunk.delta?.stop_reason ?? chunk.stop_reason;
+        if (reason != null) finishReason = reason;
+        // OpenAI-compatible providers commonly send usage in a final choices: [] frame.
+        if (chunk.usage && typeof chunk.usage === 'object' && !Array.isArray(chunk.usage)) usage = { ...usage, ...chunk.usage };
         if (!outcome && (parts?.some(part => part?.inlineData) || !tools && (delta?.tool_calls?.length || parts?.some(part => part?.functionCall)
             || chunk.content_block?.type === 'tool_use' || chunk.item?.type === 'function_call'))) {
             unsupportedOutput = true;
@@ -96,8 +102,8 @@ export function createGenerationStream(onUpdate, { allowTools = false } = {}) {
             if (pending) { accept(pending.replace(/\r\n/g, '\n')); pending = ''; }
             if (unsupportedOutput && !outcome) throw new Error('The AI service sent a kind of output that a Roleplay reply cannot save.');
             const toolCalls = outcome ? [] : tools?.finish() ?? [];
-            if (!complete || !outcome && !text.trim() && !toolCalls.length) throw new Error('The AI service ended the reply before it was finished.');
-            return { choices: [{ ...(outcome ? { finish_reason: outcome.reason } : {}), text, reasoning, message: { content: text, reasoning_content: reasoning, reasoning,
+            if (!complete || !outcome && !text.trim() && !reasoning.trim() && !toolCalls.length) throw new Error('The AI service ended the reply before it was finished.');
+            return { ...(usage ? { usage } : {}), choices: [{ ...(outcome || finishReason != null ? { finish_reason: outcome?.reason ?? finishReason } : {}), text, reasoning, message: { content: text, reasoning_content: reasoning, reasoning,
                 ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
                 ...(signature ? { reasoning_details: [{ id: 'thought', type: 'reasoning.encrypted', data: signature }] } : {}) } }],
             content: [{ type: 'thinking', thinking: reasoning }, { type: 'text', text }], thinking: reasoning,

@@ -80,7 +80,9 @@ describe('streaming message origin', () => {
         };
         await processor.generate();
         expect(processor.providerLengthStop).toBe(true);
-        expect(processor.finishReason).toBeNull();
+        expect(processor.finishReason).toBe('length');
+        expect(processor.maxOutputTokens).toBe(0);
+        expect(processor.requestAbortController.signal.aborted).toBe(false);
     });
 
     test('shows a waiting indicator before output and clears it on the first prose', async () => {

@@ -778,6 +778,41 @@ describe('owned host generation flow', () => {
         expect(eventSource.emit.mock.calls.some(([name]) => name === event_types.GENERATION_STOPPED)).toBe(false);
     });
 
+    test.each(['nonstream', 'stream', 'buffer'])('preserves an ordinary provider length stop without a request-local cap: %s', async mode => {
+        const { context, eventSource } = makeRuntime({ stream: mode !== 'nonstream', buffer: mode === 'buffer' });
+        context.power_user.trim_sentences = true;
+        load(context, 'scripts/sentence-boundaries.js', ['trimToEndSentence']);
+        load(context, 'script.js', ['cleanUpMessage']);
+        const content = 'She opens the door and';
+        const frame = value => `data: ${JSON.stringify(value)}\n\n`;
+        context.fetchResumable.mockImplementation(async () => mode === 'nonstream'
+            ? new Response(JSON.stringify({ choices: [{ message: { content }, finish_reason: 'length' }] }))
+            : new Response(frame({ choices: [{ delta: { content } }] }) + frame({ choices: [{ delta: {}, finish_reason: 'length' }] }) + 'data: [DONE]\n\n'));
+        const received = [];
+        eventSource.on(event_types.MESSAGE_RECEIVED, () => received.push(context.chat[0].mes));
+        const result = await context.Generate('continue', { suppressUserMessage: true, suppressAutoContinue: true });
+        expect(result.finishReason).toBe('length');
+        expect(context.chat[0].mes).toBe('Existing prose. She opens the door and');
+        expect(context.chat[0].swipes[context.chat[0].swipe_id]).toBe(context.chat[0].mes);
+        expect(received).toEqual(['Existing prose. She opens the door and']);
+        expect(context.fetchResumable).toHaveBeenCalledTimes(1);
+    });
+
+    test.each(['nonstream', 'stream'])('still honours sentence trimming on an ordinary normal stop: %s', async mode => {
+        const { context } = makeRuntime({ stream: mode !== 'nonstream', buffer: mode === 'buffer' });
+        context.power_user.trim_sentences = true;
+        load(context, 'scripts/sentence-boundaries.js', ['trimToEndSentence']);
+        load(context, 'script.js', ['cleanUpMessage']);
+        const content = 'She opens the door. Then she';
+        const frame = value => `data: ${JSON.stringify(value)}\n\n`;
+        context.fetchResumable.mockImplementation(async () => mode === 'nonstream'
+            ? new Response(JSON.stringify({ choices: [{ message: { content }, finish_reason: 'stop' }] }))
+            : new Response(frame({ choices: [{ delta: { content } }] }) + frame({ choices: [{ delta: {}, finish_reason: 'stop' }] }) + 'data: [DONE]\n\n'));
+        const result = await context.Generate('continue', { suppressUserMessage: true, suppressAutoContinue: true });
+        expect(result.finishReason).toBeNull();
+        expect(context.chat[0].mes.trim()).toBe('Existing prose. She opens the door.');
+    });
+
     test.each([false, true])('explicit streamed error is visible once and suppresses follow-up work, buffering: %s', async buffer => {
         const { context, eventSource } = makeRuntime({ stream: true, buffer });
         load(context, 'scripts/openai.js', ['tryParseStreamingError']);

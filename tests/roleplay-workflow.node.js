@@ -323,6 +323,58 @@ test('automatic continuation saves chunks and publishes only the complete select
     assert.equal(calls.count, 2);
 });
 
+test('a thinking-only workflow fails before Agents or automatic continuation and keeps one message', async t => {
+    const f = prepared(t, 'append', { agents: true, autoContinue: true });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    let agentCalls = 0;
+    const response = { choices: [{ finish_reason: 'length', message: { content: '', reasoning_content: 'Thinking without a story.' } }] };
+    await assert.rejects(f.candidate('', calls, { response, generateAgent: async () => { agentCalls++; return { text: 'Incorrect rewrite' }; } }),
+        { code: 'GENERATION_NO_ANSWER' });
+    const child = f.childJob();
+    assert.equal(readArtifact(f.dirs, child.id, 'roleplay-candidate'), undefined);
+    assert.equal(readArtifact(f.dirs, child.id, 'roleplay-main-complete'), undefined);
+    assert.equal(readArtifact(f.dirs, f.jobId, 'roleplay-workflow-decision:0'), undefined);
+    assert.equal(f.records().at(-1).mes, '');
+    assert.equal(f.records().at(-1).extra.reasoning, 'Thinking without a story.');
+    // The keeper has changed the chat. Replaying this old candidate must fail
+    // its source check before it can dispatch another request.
+    await assert.rejects(f.candidate('', calls, { response, generateAgent: async () => { agentCalls++; return { text: 'Incorrect rewrite' }; } }),
+        { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    assert.equal(calls.count, 1);
+    assert.equal(agentCalls, 0);
+    assert.equal(f.records().length, 4);
+    assert.equal(getJob(f.dirs, f.jobId).children.length, 1);
+});
+
+for (const effect of ['append', 'continue']) for (const complete of [true, false]) {
+    test(`a thinking-only automatic continuation keeps its accepted ${effect} prefix (complete: ${complete})`, async t => {
+        const f = prepared(t, effect, { autoContinue: true, continueTarget: 100 });
+        updateJob(f.dirs, f.jobId, { state: 'running' });
+        await runRoleplayWorkflowJob(f.context());
+        const calls = { count: 0 };
+        await f.candidate(' smiled.', calls);
+        assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+        const child = f.childJob(1);
+        if (complete) {
+            await assert.rejects(f.candidate('', calls, { turn: 1, response: { choices: [{ finish_reason: 'length',
+                message: { content: '', reasoning_content: 'Thinking after the accepted prefix.' } }] } }), { code: 'GENERATION_NO_ANSWER' });
+        } else {
+            updateJob(f.dirs, child.id, { state: 'running' });
+            const context = { owner: f.f.scope.owner, directories: f.dirs, job: getJob(f.dirs, child.id) };
+            publishRoleplayPreview(context, { text: '', reasoning: 'Thinking after the accepted prefix.', stage: 'generating' });
+            assert.equal(preserveInterruptedRoleplayReply(context, new Error('Incomplete stream')).state, 'done');
+        }
+        const saved = f.records().at(-1);
+        assert.equal(saved.mes, effect === 'continue' ? 'Answer smiled.' : ' smiled.');
+        assert.equal(saved.extra.reasoning, 'Thinking after the accepted prefix.');
+        assert.equal(saved.extra.generation_outcome.reason, complete ? 'reasoning_only_length' : 'incomplete_stream');
+        assert.equal(f.records().length, effect === 'continue' ? 3 : 4);
+        assert.equal(calls.count, complete ? 2 : 1);
+    });
+}
+
 test('a stopped second automatic turn keeps the completed first turn and the latest partial', async t => {
     const f = prepared(t, 'append', { autoContinue: true, continueTarget: 100 });
     updateJob(f.dirs, f.jobId, { state: 'running' });

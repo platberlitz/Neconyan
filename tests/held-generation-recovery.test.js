@@ -3,6 +3,7 @@ import { describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import * as generationOutcome from '../public/scripts/generation-outcome.js';
+import { isGenerationLengthFinish } from '../public/scripts/generation-request-controls.js';
 import { captureRecoveryAnchor, getHeldReplyTarget } from '../public/scripts/held-generation-recovery.js';
 
 const source = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8');
@@ -72,7 +73,7 @@ function recoveryHost() {
     const chat = [userMessage()];
     const job = { id: 'held-reply', context: contextFor(chat), status: 'finished', attached: false };
     const host = vm.createContext({
-        ...generationOutcome,
+        ...generationOutcome, isGenerationLengthFinish,
         chat, chatGeneration: 0, chatId: 'chat-a', this_chid: 0, selected_group: null,
         characters: [{ avatar: 'avatar.png' }], is_send_press: false, activeGenerationRun: null,
         document: { visibilityState: 'visible' }, console, generation_started: null,
@@ -99,6 +100,22 @@ function recoveryHost() {
 }
 
 describe('recovery and save acknowledgement', () => {
+    test.each([false, true])('retains unfinished prose after a provider length stop, streaming: %s', async streaming => {
+        const { host, job } = recoveryHost();
+        const text = 'She opens the door and';
+        job.context.streaming = streaming;
+        host.openHeldGeneration.mockResolvedValue(Response.json({ text, choices: [{ finish_reason: 'length' }] }));
+        host.readChatCompletionStream = () => async function* () {
+            yield { text, state: { finishReason: 'length' } };
+        };
+        host.cleanUpMessage = jest.fn(({ getMessage, displayIncompleteSentences }) => displayIncompleteSentences ? getMessage : '');
+        await host.recoverHeldGenerations();
+        expect(host.saveReply).toHaveBeenCalledWith(expect.objectContaining({ getMessage: text }));
+        expect(host.discardGeneration).toHaveBeenCalledTimes(1);
+        await host.recoverHeldGenerations();
+        expect(host.saveReply).toHaveBeenCalledTimes(1);
+    });
+
     test('returning before completion schedules another pass and later saves exactly once', async () => {
         const { host, job } = recoveryHost();
         job.status = 'running';

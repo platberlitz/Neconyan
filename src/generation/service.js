@@ -24,6 +24,7 @@ import { getNanoGptServiceTiers, isNanoGptPayg } from '../../public/scripts/serv
 import { createMacroEnvironment } from '../macros/index.js';
 import { runLegacyProfile } from './legacy-request.js';
 import { validFunctionTools } from '../../public/scripts/chat-input-capabilities.js';
+import { reasoningOnlyResult, separateConfiguredReasoning } from './reasoning-only-result.js';
 
 const transportFields = ['proxy_password', 'custom_include_headers', 'custom_include_body', 'reverse_proxy', 'custom_url', 'api_server', 'azure_base_url'];
 const withoutTransport = payload => Object.fromEntries(Object.entries(payload).filter(([key]) => !transportFields.includes(key)));
@@ -155,7 +156,7 @@ export async function fetchChatProfileModels({ context, material, signal, fetch:
 /** Execute a bound Chat Completion profile without browser globals or credential persistence. */
 export async function runChatProfile({ context, binding, messages, maxTokens, macroEnvironment,
     ephemeralStops = [], userName = 'User', characterName = 'Character', groupNames = [],
-    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, preparedMessages = false, onProviderStep, onStream, functionTools = [], generationType = 'quiet', stepNamespace = '', captureMacroState = false,
+    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, preparedMessages = false, onProviderStep, onStream, functionTools = [], generationType = 'quiet', stepNamespace = '', captureMacroState = false, parseInlineReasoning = false,
 } = {}) {
     if (!context?.directories) fail('A generation context is required.', 400);
     if (typeof stepNamespace !== 'string' || stepNamespace.length > 512) fail('The saved generation step identity is invalid.', 400);
@@ -263,20 +264,21 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
         const generation = { backend: binding.backend || 'chat', source: material.source,
             ...modelField(payload.model || modelOverride || material.profile.model),
             showThoughts: Boolean(material.active.show_thoughts || material.active.auto_append_reasoning_tags) };
+        const reasoningSettings = parseInlineReasoning ? material.power.reasoning : null;
         const call = async () => {
             if (!dispatchValidation) {
                 try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
             }
             const requestPayload = payload;
-            const result = await runTextGeneration({ context, backend: binding.backend, payload: requestPayload, signal, fetch: fetchImpl, validatePrompt,
+            const result = separateConfiguredReasoning(await runTextGeneration({ context, backend: binding.backend, payload: requestPayload, signal, fetch: fetchImpl, validatePrompt,
                 beforeDispatch: dispatchValidation ? beforeDispatch : undefined,
-                onStream: onStream && (value => onStream({ ...value, generation })),
-                anonymousCustom: binding.backend === 'text' ? !material.secretId : payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy, boundProfile: true });
-            if (result.outcome) return { ...result, generation: { ...generation, ...result.timing } };
+                onStream: onStream && (value => onStream({ ...separateConfiguredReasoning(value, reasoningSettings, material.source), generation })),
+                anonymousCustom: binding.backend === 'text' ? !material.secretId : payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy, boundProfile: true }), reasoningSettings, material.source);
+            if (result.outcome || reasoningOnlyResult({ ...result, generation })) return { ...result, generation: { ...generation, ...result.timing } };
             if (raw && rawOptions.jsonSchema) return { ...result, generation: { ...generation, ...result.timing }, text: extractJsonFromData(result.response, {
                 mainApi: 'openai', chatCompletionSource: material.source, returnInvalidJson: rawOptions.jsonSchema.returnInvalid,
             }) };
-            const rawText = raw ? extractMessageFromData(result.response, binding.backend === 'text' ? 'textgenerationwebui' : 'openai') : result.text;
+            const rawText = raw && result.reasoning === undefined ? extractMessageFromData(result.response, binding.backend === 'text' ? 'textgenerationwebui' : 'openai') : result.text;
             const text = raw ? cleanGeneratedText(applyActiveRegex(removePartialStops(rawText, cleanupStops), regexScripts), {
                 power: material.power, mainApi: binding.backend === 'text' ? 'textgenerationwebui' : 'openai',
                 name1: userName, name2: characterName, groupNames, trimNames: rawOptions.trimNames !== false,
@@ -313,14 +315,16 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
     const generation = { backend: 'chat', source: material.source,
         ...modelField(payload.model || modelOverride || material.profile.model),
         showThoughts: Boolean(material.active.show_thoughts || material.active.auto_append_reasoning_tags) };
+    const reasoningSettings = parseInlineReasoning ? material.power.reasoning : null;
     const call = async () => {
         if (!dispatchValidation) {
             try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
         }
         return runTextGeneration({ context, backend: 'chat', payload, signal, fetch: fetchImpl, validatePrompt,
             beforeDispatch: dispatchValidation ? beforeDispatch : undefined,
-            onStream: onStream && (value => onStream({ ...value, generation })),
+            onStream: onStream && (value => onStream({ ...separateConfiguredReasoning(value, reasoningSettings, material.source), generation })),
             anonymousCustom: payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy, boundProfile: true })
+            .then(result => separateConfiguredReasoning(result, reasoningSettings, material.source))
             .then(result => ({ ...result, text: result.outcome ? result.text : cleanGeneratedText(removePartialStops(result.text,
                 Array.isArray(payload.stop) ? payload.stop : []), { power: material.power,
                 mainApi: 'openai', name1: userName, name2: characterName, groupNames, displayIncompleteSentences: true }),

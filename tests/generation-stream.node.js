@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import './roleplay-transactions-fixture.js';
 import { assembleGenerationStream, createGenerationStream } from '../src/generation/stream-result.js';
 import { MAX_GENERATION_STREAM_BYTES, MAX_GENERATION_TEXT_BYTES } from '../src/generation/stream-limits.js';
+import { reasoningOnlyResult, separateConfiguredReasoning } from '../src/generation/reasoning-only-result.js';
 const { runBackendRequest, createCapturingResponse } = await import('../src/endpoints/conversation-generation.js');
 const { handleChatCompletionsGenerate } = await import('../src/endpoints/backends/chat-completions.js');
 const { forwardFetchResponse } = await import('../src/util.js');
@@ -126,6 +127,77 @@ test('native streaming waits for upstream completion and assembles reasoning', a
     const response = await runBackendRequest({ headers: {}, socket: new EventEmitter() }, handler, { stream: true });
     assert.equal(response.choices[0].message.content, 'Hello');
     assert.equal(response.choices[0].message.reasoning_content, 'Why not?');
+});
+
+test('completed thinking-only streams preserve their explicit finish and usage without inventing prose', () => {
+    for (const reason of ['stop', 'length']) {
+        const usage = { prompt_tokens: 20, completion_tokens: 32, completion_tokens_details: { reasoning_tokens: 32 } };
+        const response = assembleGenerationStream(event({ choices: [{ index: 0, delta: { reasoning_content: 'Still thinking' } }] })
+            + event({ choices: [{ index: 0, delta: {}, finish_reason: reason }] })
+            + event({ choices: [], usage }) + 'data: [DONE]\n\n');
+        assert.equal(response.choices[0].message.content, '');
+        assert.equal(response.choices[0].message.reasoning_content, 'Still thinking');
+        assert.equal(response.choices[0].finish_reason, reason);
+        assert.deepEqual(response.usage, usage);
+    }
+});
+
+test('thinking-only EOF and malformed terminal frames remain failures', () => {
+    const partial = event({ choices: [{ delta: { reasoning_content: 'Unfinished thought' } }] });
+    assert.throws(() => assembleGenerationStream(partial), /ended the reply before it was finished/);
+    assert.throws(() => assembleGenerationStream(partial + 'data: {"choices":['), /could not be read/);
+    assert.throws(() => assembleGenerationStream(partial
+        + event({ choices: [{ index: 1, delta: {}, finish_reason: 'stop' }] })), /ended the reply before it was finished/);
+});
+
+test('prose at the output limit retains usage and only the selected choice determines refusal', () => {
+    const usage = { prompt_tokens: 5, completion_tokens: 32, total_tokens: 37 };
+    const response = assembleGenerationStream(event({ choices: [
+        { index: 1, delta: { content: 'Wrong answer' }, finish_reason: 'content_filter' },
+        { index: 0, delta: { content: 'Actual answer', reasoning_content: 'Thought' }, finish_reason: 'length' },
+    ], usage }));
+    assert.equal(response.choices[0].message.content, 'Actual answer');
+    assert.equal(response.choices[0].finish_reason, 'length');
+    assert.deepEqual(response.usage, usage);
+    const refusal = assembleGenerationStream(event({ choices: [
+        { index: 1, delta: { content: 'Wrong answer' }, finish_reason: 'stop' },
+        { index: 0, delta: {}, finish_reason: 'content_filter' },
+    ] }) + event({ choices: [], usage }));
+    assert.equal(refusal.choices[0].message.content, '');
+    assert.equal(refusal.choices[0].finish_reason, 'content_filter');
+    assert.deepEqual(refusal.usage, usage);
+});
+
+test('thinking-only classification uses the selected choice and excludes refusals and tool turns', () => {
+    const result = { text: '', generation: { source: 'custom' }, response: { choices: [
+        { index: 1, finish_reason: 'length', message: { reasoning_content: 'An unselected thought' } },
+        { index: 0, finish_reason: 'stop', message: { reasoning_content: 'The selected thought' } },
+    ] } };
+    assert.equal(reasoningOnlyResult(result).reasoning, 'The selected thought');
+    assert.equal(reasoningOnlyResult(result).extra.generation_outcome.reason, 'reasoning_only');
+    delete result.response.choices[1].message.reasoning_content;
+    assert.equal(reasoningOnlyResult(result), null, 'an unselected thought cannot become the result');
+    result.response.choices[1].message.reasoning_content = 'The selected thought';
+    result.response.choices[1].finish_reason = 'content_filter';
+    assert.equal(reasoningOnlyResult(result), null, 'an explicit refusal keeps its own failure handling');
+    result.response.choices[1].finish_reason = 'tool_calls';
+    result.response.choices[1].message.tool_calls = [{ id: 'call', type: 'function', function: { name: 'CreateCharacter', arguments: '{}' } }];
+    assert.equal(reasoningOnlyResult(result), null, 'thinking alongside a tool call is not a missing answer');
+});
+
+test('configured inline thinking separates a leading block without rewriting prose or inventing delimiters', () => {
+    const settings = { auto_parse: true, prefix: '<thought>', suffix: '</thought>' };
+    assert.deepEqual(separateConfiguredReasoning({ text: '<thought>Still thinking', reasoning: '' }, settings),
+        { text: '', reasoning: 'Still thinking' });
+    assert.deepEqual(separateConfiguredReasoning({ text: '  <thought>Plan</thought>  Exact prose and', reasoning: 'Provider thought' }, settings),
+        { text: '  Exact prose and', reasoning: 'Provider thought\n\nPlan' });
+    for (const text of ['<think>Different delimiters</think>', 'Prose first <thought>Quoted thought</thought>']) {
+        const result = { text };
+        assert.equal(separateConfiguredReasoning(result, settings), result);
+    }
+    const result = { text: '<thought>Literal text</thought>' };
+    assert.equal(separateConfiguredReasoning(result, { ...settings, auto_parse: false }), result);
+    assert.equal(separateConfiguredReasoning(result, { ...settings, suffix: '' }), result);
 });
 
 test('a provider refusal keeps its upstream status behind the safe client status', async () => {

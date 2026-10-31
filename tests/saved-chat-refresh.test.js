@@ -117,6 +117,49 @@ test('an unchanged read preserves the detached original for a cancelled replacem
     expect(chat.at(-1).mes).toBe('Original reply.');
 });
 
+test.each([1, 2])('a kept thinking-only append redraws the detached source at %s and the new reply', async replacementIndex => {
+    const { runtime, read, redraw, remove, chat } = fixture();
+    chat.splice(0, chat.length, ...Array.from({ length: 3 }, (_, index) => ({ mes: `Original ${index}.`,
+        swipes: ['Older alternative.', `Original ${index}.`], swipe_id: 1, extra: {} })));
+    const originals = structuredClone(chat);
+    const kept = { mes: '', extra: { reasoning: 'Paid thinking.',
+        generation_outcome: { version: 1, status: 'error', reason: 'reasoning_only' } } };
+    const visible = [0, 1, 2].filter(index => index !== replacementIndex);
+    runtime.getRenderedChatMessageWindow = () => ({ renderedMessageCount: visible.length,
+        firstMessageId: visible[0], lastMessageId: visible.at(-1) });
+    runtime.chatElement[0].querySelector = selector => {
+        if (selector === '[data-roleplay-replacement]') return { dataset: { roleplayReplacement: String(replacementIndex) } };
+        return /^\.mes\[mesid="(\d+)"\]$/.test(selector) && visible.includes(Number(selector.match(/\d+/)[0])) ? {} : null;
+    };
+    read.mockResolvedValue({ records: [{}, ...originals, kept], evidence: {} });
+    let rendered;
+    redraw.mockImplementation(async ({ startIndex, onCommit }) => {
+        rendered = chat.slice(startIndex, startIndex + runtime.getChatRenderWindowSize());
+        onCommit();
+    });
+    await runtime.refreshCurrentChatFromSaved();
+    expect(redraw).toHaveBeenCalledTimes(1);
+    expect(rendered).toContainEqual(originals[replacementIndex]);
+    expect(rendered.at(-1)).toEqual(kept);
+    expect(chat.slice(0, 3)).toEqual(originals);
+    expect(remove).toHaveBeenCalledWith('[data-roleplay-replacement]');
+});
+
+test('a detached tail still follows its kept appended reply when earlier metadata fills the render window', async () => {
+    const { runtime, read, redraw, chat } = fixture();
+    chat.splice(0, chat.length, ...Array.from({ length: 50 }, (_, index) => ({ mes: `Reply ${index}.` })));
+    runtime.getRenderedChatMessageWindow = () => ({ renderedMessageCount: 49, firstMessageId: 0, lastMessageId: 48 });
+    runtime.chatElement[0].querySelector = selector => selector === '[data-roleplay-replacement]'
+        ? { dataset: { roleplayReplacement: '49' } } : selector.startsWith('.mes') ? {} : null;
+    runtime.chatElement[0].clientHeight = 700;
+    runtime.isChatScrolledNearBottom = () => false;
+    runtime.takeChatReloadReadingAnchor = () => ({ messageId: 50, offsetTop: 100 });
+    read.mockResolvedValue({ records: [{}, ...chat.map(message => ({ ...message, extra: {} })),
+        { mes: '', extra: { reasoning: 'Kept thinking.' } }], evidence: {} });
+    await runtime.refreshCurrentChatFromSaved();
+    expect(redraw).toHaveBeenCalledWith(expect.objectContaining({ startIndex: 1, replaceRenderedWindow: true, atomic: true }));
+});
+
 test.each([true, false])('a full window follows the saved tail only while reading at the bottom: %s', async nearBottom => {
     const { runtime, read, redraw, chat } = fixture();
     chat.splice(0, chat.length, ...Array.from({ length: 50 }, (_, index) => ({ mes: `Reply ${index}.` })));

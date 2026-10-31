@@ -30,6 +30,7 @@ import { commitSingleChatWriteLocked, reconcileRoleplayChatWriteIfPending } from
 import { roleplayNativeHost } from '../endpoints/chats.js';
 import { withNativeMediaReceipt } from './media-jobs.js';
 import { readRoleplayPreview } from './roleplay-preview.js';
+import { reasoningOnlyResult } from './reasoning-only-result.js';
 
 export const KEPT_REPLY_ARTIFACT = 'roleplay-kept-reply';
 export const MAIN_COMPLETE_ARTIFACT = 'roleplay-main-complete';
@@ -147,6 +148,9 @@ function previewAgentSnapshot(preview) {
 
 const textBytes = text => Buffer.byteLength(text ?? '');
 const isText = value => typeof value === 'string' && value.trim().length > 0 && textBytes(value) <= MAX_TEXT_BYTES;
+const isThinkingOnly = value => typeof value?.text === 'string' && !value.text.trim()
+    && textBytes(value.text) <= MAX_TEXT_BYTES && isText(value.reasoning);
+const isKeptContent = value => isText(value?.text) || isThinkingOnly(value);
 
 function messageOf(output) {
     return output?.message ?? output?.messages?.[0] ?? output;
@@ -220,13 +224,22 @@ function readAgentBaseText({ directories, job }) {
     return hash === roleplayHash(data) ? saved.value : '';
 }
 
-function readProviderText({ directories, job }) {
+function readProviderReply({ directories, job }) {
     const reference = readArtifact(directories, job.id, 'roleplay-main-provider');
-    if (reference?.intentHash !== roleplayHash(job.intent) || !/^provider:[a-f0-9]{64}$/.test(reference?.step ?? '')) return '';
+    if (reference?.intentHash !== roleplayHash(job.intent) || !/^provider:[a-f0-9]{64}$/.test(reference?.step ?? '')) return null;
     const completed = readArtifact(directories, job.id, reference.step);
     const result = job.intent?.request?.binding?.backend === 'horde' && completed?.id
         ? readArtifact(directories, job.id, 'horde-result:' + reference.step.slice(9)) : completed;
-    return typeof result?.text === 'string' && isText(result.text) ? result.text : '';
+    const thinkingOnly = reasoningOnlyResult(result);
+    if (thinkingOnly && isText(thinkingOnly.reasoning)) {
+        const generation = result.generation ?? {};
+        return { text: '', chunk: false, reasoning: thinkingOnly.reasoning, extra: thinkingOnly.extra,
+            timings: timingsOf(generation), model: generation.model, api: generation.source,
+            reasoningDuration: generation.reasoning_duration };
+    }
+    return isText(result?.text) ? { text: result.text, chunk: job.intent?.effect === 'continue', reasoning: '',
+        extra: {}, timings: {}, model: undefined, api: undefined, tokenCount: undefined,
+        reasoningTokens: undefined, reasoningDuration: undefined } : null;
 }
 
 function capturedFromOutput(output, effect, source) {
@@ -278,19 +291,19 @@ export function collectRoleplayKeptReply({ directories, job, rootJobId = null })
         }
     }
     if (!captured) {
-        const provider = readProviderText({ directories, job });
+        const provider = readProviderReply({ directories, job });
         if (provider) {
             source = 'provider';
-            captured = { text: provider, chunk: effect === 'continue', reasoning: '', extra: {}, timings: {},
-                model: undefined, api: undefined, tokenCount: undefined, reasoningTokens: undefined, reasoningDuration: undefined };
+            captured = provider;
         }
     }
-    if (!captured && preview && isText(preview.text)) {
+    if (!captured && preview && isKeptContent(preview)) {
         source = 'preview';
         const inChatAgents = previewAgentSnapshot(preview);
         const extra = cleanExtra({ reasoning: preview.reasoning, reasoning_duration: preview.reasoning_duration,
             reasoning_tokens: preview.reasoning_tokens, token_count: preview.token_count, model: preview.generation?.model,
-            api: preview.generation?.source, ...(inChatAgents ? { inChatAgents } : {}) });
+            api: preview.generation?.source, ...(inChatAgents ? { inChatAgents } : {}),
+            ...(isThinkingOnly(preview) ? { generation_outcome: { version: 1, status: 'truncated', reason: 'incomplete_stream' } } : {}) });
         captured = { text: preview.text, chunk: effect === 'continue', reasoning: preview.reasoning || '',
             extra, timings: { ...(preview.gen_started ? { gen_started: preview.gen_started } : {}),
                 ...(preview.gen_finished ? { gen_finished: preview.gen_finished } : {}) },
@@ -350,6 +363,13 @@ export function collectRoleplayKeptReply({ directories, job, rootJobId = null })
             captured = priorContinuation
                 ? { ...capturedPrior, text: priorContinuation.prefix + priorContinuation.suffix, chunk: false }
                 : { ...capturedPrior, chunk: priorAssembled.chunk === true };
+            source = 'assembled-prior';
+        } else if (isThinkingOnly(captured)) {
+            // A thinking-only continuation never replaces already accepted prose.
+            const capturedPrior = capturedFromOutput(priorAssembled.output, effect, 'assembled-prior');
+            captured = { ...capturedPrior, ...captured,
+                text: priorContinuation ? priorContinuation.prefix + priorContinuation.suffix : capturedPrior.text,
+                chunk: priorContinuation ? false : priorAssembled.chunk === true };
             source = 'assembled-prior';
         } else if (isText(captured.text)) {
             if (priorContinuation) {
@@ -554,6 +574,13 @@ function adoptRecord(records, record, index, placement) {
 }
 
 function placeReply(records, reply, intent, identity) {
+    // Keep the failed thinking separately. A rerun, swipe or continuation must
+    // never select a blank alternative or overwrite the existing story.
+    if (isThinkingOnly(reply)) {
+        const existing = records.findIndex((record, index) => index > 0 && markedElsewhere(record, identity));
+        if (existing > 0) return adoptRecord(records, records[existing], existing - 1, 'append');
+        return appendRecord(records, reply, identity);
+    }
     const effect = intent.effect;
     const targetIndex = Number.isSafeInteger(intent.source?.message?.index) ? intent.source.message.index
         : Number.isSafeInteger(intent.source?.range?.start) ? intent.source.range.start : null;
@@ -676,7 +703,7 @@ function replyIdentity({ job, rootJobId, intentHash, reason, text, previewText }
 }
 
 function capturedValue(value) {
-    if (!value || value.version !== 1 || typeof value.text !== 'string' || !value.text.trim()) return null;
+    if (!value || value.version !== 1 || !isKeptContent(value)) return null;
     return value;
 }
 
@@ -774,10 +801,12 @@ export function keepRoleplayReply(context, { reason = 'stopped', rootJobId = nul
         // before the first token. Do not invent a chat message.
         return null;
     }
-    if (collected.extra?.generation_outcome) return null;
+    const outcome = collected.extra?.generation_outcome;
+    if (outcome && !['reasoning_only', 'reasoning_only_length'].includes(outcome.reason)
+        && !((isThinkingOnly(collected) || collected.source === 'assembled-prior' && isText(collected.reasoning))
+            && outcome.status === 'truncated' && outcome.reason === 'incomplete_stream')) return null;
     let record = existingText(saved, collected);
-    if (!isText(record.text)) return null;
-    if (intent.effect === 'continue' && record.chunk && record.text.trim() === '') return null;
+    if (!isKeptContent(record)) return null;
     const captured = { ...replyIdentity({ job, rootJobId: root, intentHash: identity, reason,
         text: record.text, previewText: record.witness }), source: record.source,
     name: record.name, avatar: record.avatar, reasoning: record.reasoning,
@@ -795,7 +824,7 @@ export function keepRoleplayReply(context, { reason = 'stopped', rootJobId = nul
             const latest = readArtifact(directories, job.id, KEPT_REPLY_ARTIFACT) ?? captured;
             if (latest.state === 'done' || latest.state === 'failed') return keptReplySummary(latest);
             const reply = existingText(latest, record);
-            if (!isText(reply.text)) return null;
+            if (!isKeptContent(reply)) return null;
             const { state } = roleplayLease(lease);
             const resource = state.resources[intent.source.instanceId];
             if (resource?.status !== 'live' || resource.accountId !== state.accountId

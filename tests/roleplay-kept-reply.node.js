@@ -123,6 +123,69 @@ test('a mid-stream Stop keeps the partial reply and its reasoning exactly once',
     assert.equal(readArtifact(f.dirs, child.id, KEPT_REPLY_ARTIFACT).state, 'done');
 });
 
+test('thinking-only failed replies preserve existing story and selected swipes', async t => {
+    for (const effect of ['append', 'continue', 'swipe', 'alternative']) {
+        await t.test(effect, async t => {
+            const f = prepared(t, { effect });
+            const child = await f.child();
+            const before = f.records();
+            const step = 'provider:' + 'e'.repeat(64);
+            writeArtifact(f.dirs, child.id, 'roleplay-main-provider', { intentHash: roleplayHash(child.intent), step });
+            writeArtifact(f.dirs, child.id, step, { text: '', response: { choices: [{ index: 0, finish_reason: 'length',
+                message: { content: '', reasoning_content: 'The reply budget ended during thinking.' } }], usage: { completion_tokens: 32 } } });
+            const error = Object.assign(new Error('No answer.'), { code: 'GENERATION_NO_ANSWER' });
+            const kept = preserveInterruptedRoleplayReply(f.context(child), error);
+            assert.equal(kept.state, 'done');
+            const saved = f.records();
+            assert.deepEqual(saved.slice(1, before.length), before.slice(1), 'the story and selected swipe are untouched');
+            assert.equal(saved.length, before.length + 1);
+            assert.equal(saved.at(-1).mes, '');
+            assert.equal(saved.at(-1).extra.reasoning, 'The reply budget ended during thinking.');
+            assert.equal(saved.at(-1).extra.generation_outcome.reason, 'reasoning_only_length');
+            assert.equal(readArtifact(f.dirs, child.id, 'roleplay-main-complete'), undefined);
+            preserveInterruptedRoleplayReply(f.context(child), error);
+            assert.deepEqual(f.records(), saved);
+            // Reconcile a crash after the chat write but before its receipt was saved.
+            const done = readArtifact(f.dirs, child.id, KEPT_REPLY_ARTIFACT);
+            writeArtifact(f.dirs, child.id, KEPT_REPLY_ARTIFACT, { ...done, state: 'writing', committedAt: null });
+            setJobState(f.dirs, child.id, 'failed');
+            assert.equal(reconcileRoleplayKeptReply({ directories: f.dirs, owner: f.f.scope.owner, jobId: child.id }).state, 'done');
+            assert.deepEqual(f.records(), saved);
+        });
+    }
+});
+
+test('thinking-only preview from a failed stream is kept as incomplete, never as a completed reply', async t => {
+    const f = prepared(t);
+    const child = await f.child();
+    publishRoleplayPreview(f.context(child), { stage: 'generating', text: '', reasoning: 'Interrupted thinking' });
+    const kept = preserveInterruptedRoleplayReply(f.context(child), new Error('The AI service ended the reply before it was finished.'));
+    assert.equal(kept.state, 'done');
+    assert.equal(f.records().at(-1).mes, '');
+    assert.equal(f.records().at(-1).extra.reasoning, 'Interrupted thinking');
+    assert.deepEqual(f.records().at(-1).extra.generation_outcome, { version: 1, status: 'truncated', reason: 'incomplete_stream' });
+    assert.equal(readArtifact(f.dirs, child.id, 'roleplay-main-complete'), undefined);
+    assert.equal(readArtifact(f.dirs, child.id, 'roleplay-output'), undefined);
+});
+
+test('a thinking-only captured record recovers after its provider and preview are unavailable', async t => {
+    const f = prepared(t);
+    const child = await f.child();
+    writeArtifact(f.dirs, child.id, KEPT_REPLY_ARTIFACT, { version: 1, state: 'captured', jobId: child.id,
+        rootJobId: f.jobId, intentHash: roleplayHash(child.intent), text: '', textHash: roleplayHash(''),
+        reason: 'failed', source: 'provider', name: 'Nova', reasoning: 'Durable thinking',
+        extra: { generation_outcome: { version: 1, status: 'error', reason: 'reasoning_only' }, generation_finish_reason: 'stop' },
+        timings: {}, chunk: false });
+    setJobState(f.dirs, child.id, 'failed');
+    const kept = reconcileRoleplayKeptReply({ directories: f.dirs, owner: f.f.scope.owner, jobId: child.id });
+    assert.equal(kept.state, 'done');
+    const saved = f.records();
+    assert.equal(saved.at(-1).mes, '');
+    assert.equal(saved.at(-1).extra.reasoning, 'Durable thinking');
+    reconcileRoleplayKeptReply({ directories: f.dirs, owner: f.f.scope.owner, jobId: child.id });
+    assert.deepEqual(f.records(), saved);
+});
+
 test('a cancelled workflow root stays non-terminal until its running child and keeper finish', async t => {
     const f = prepared(t);
     const child = await f.child();
