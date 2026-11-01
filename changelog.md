@@ -42,6 +42,7 @@
 - PR #382 (2026-11-01) `feat(themes): ship Regex Agent tracker themes as UI themes`
 - PR #383 (2026-11-01) `feat(settings): add automatic theme palette previews`
 - PR #384 (2026-11-01) `fix(composer): follow the accent on the XP send button`
+- PR #385 (2026-11-01) `fix(generation): report connection loss before a reply appears`
 
 ## v1.4.0
 
