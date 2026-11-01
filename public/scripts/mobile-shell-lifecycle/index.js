@@ -944,6 +944,7 @@ const MOBILE_DOCUMENT_PAN_GUARD_SELECTOR = [
     '#sb-mobile-chat-tools-panel',
     '#sb-bottom-chat-bar',
     '#sb-persona-picker',
+    '#sb-bottom-chat-picker',
     '#select2-sb-bottom-chat-select-container',
     '[aria-labelledby="select2-sb-bottom-chat-select-container"]',
     '.select2-selection',

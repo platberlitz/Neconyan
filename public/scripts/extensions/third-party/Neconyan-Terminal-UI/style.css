@@ -1457,13 +1457,13 @@ body.sbterm.sbterm-avatar-tinted .sb-persona-option > .sb-persona-option-avatar 
     mix-blend-mode: multiply;
 }
 
-body.sbterm #sb-bottom-chat-select {
+body.sbterm #sb-bottom-chat-picker-button {
     background: transparent !important;
     border-color: transparent !important;
     color: var(--sbterm-fg-dim) !important;
 }
 
-body.sbterm #sb-bottom-chat-select:is(:hover, :focus-visible) {
+body.sbterm #sb-bottom-chat-picker-button:is(:hover, :focus-visible) {
     color: var(--sbterm-fg) !important;
     border-block-end-color: var(--sbterm-border) !important;
 }
