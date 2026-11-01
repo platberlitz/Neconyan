@@ -16,7 +16,9 @@ await jest.unstable_mockModule('../node_modules/write-file-atomic/lib/index.js',
 await jest.unstable_mockModule('../src/endpoints/assets.js', () => ({
     validateAssetFileName: () => ({}),
 }));
+const actualUtil = await import('../src/util.js');
 await jest.unstable_mockModule('../src/util.js', () => ({
+    ...actualUtil,
     clientRelativePath: () => '/files/memory.txt',
     getImageBuffers: jest.fn(),
 }));
