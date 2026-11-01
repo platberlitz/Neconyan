@@ -2,6 +2,7 @@ import { renderRoleplayStory } from './roleplay-text-format.js';
 import { applyDesktopResponseControls, normaliseDesktopResponseControls } from './desktop-response-controls.js';
 import { Fuse, Handlebars } from '../lib.js';
 import { accessibleTheme } from './theme-contrast.js';
+import { createUiThemePicker } from './neconyan-ui-theme-picker.js';
 import { resolveCustomStoppingStrings } from './chat-request-controls.js';
 import { fixGeneratedMarkdown } from './generation-format.js';
 
@@ -78,7 +79,7 @@ import { extractDominantColor, generateThemePalette, deriveBackgroundName } from
 import { DEFAULT_REASONING_TEMPLATE, loadReasoningTemplates } from './reasoning.js';
 import { bindModelTemplates } from './chat-templates.js';
 import { IMAGE_OVERSWIPE, MEDIA_DISPLAY } from './constants.js';
-import { t } from './i18n.js';
+import { t, translate } from './i18n.js';
 import { getBackgroundPath, isCustomBackgroundUrl } from './backgrounds.js';
 import { setSlashCommandParserSettingsGetter } from './slash-commands/SlashCommandParserConfig.js';
 import { persona_description_positions as _persona_description_positions } from './personas.js';
@@ -688,6 +689,21 @@ setSlashCommandParserSettingsGetter(() => ({
 }));
 
 let themes = [];
+let uiThemePicker;
+
+function syncUiThemePicker() {
+    const host = document.getElementById('nn-ui-theme-gallery');
+    const select = document.getElementById('themes');
+    if (!host || !select) return;
+    uiThemePicker ??= createUiThemePicker(host, {
+        onSelect: name => $('#themes').val(name).trigger('change'),
+        translate,
+    });
+    uiThemePicker.update(themes, power_user.theme);
+    select.value = power_user.theme ?? '';
+    select.hidden = true;
+    host.hidden = false;
+}
 let movingUIPresets = [];
 /** @type {ContextSettings[]} */
 export let context_presets = [];
@@ -2678,6 +2694,7 @@ function applyTheme(name) {
 
     power_user.theme = theme.name;
     syncNeconyanPaletteAttribute();
+    if (typeof syncUiThemePicker === 'function') syncUiThemePicker();
     // Imported theme variables must not replace the font selected in Google Font.
     applyGoogleFonts();
 
@@ -3120,6 +3137,7 @@ export async function loadPowerUserSettings(settings, data) {
     $('#media_display').val(power_user.media_display);
     $('#image_overswipe').val(power_user.image_overswipe);
 
+    $('#themes').empty();
     for (const theme of themes) {
         const option = document.createElement('option');
         option.value = theme.name;
@@ -3127,6 +3145,8 @@ export async function loadPowerUserSettings(settings, data) {
         option.selected = theme.name == power_user.theme;
         $('#themes').append(option);
     }
+
+    syncUiThemePicker();
 
     for (const movingUIPreset of movingUIPresets) {
         const option = document.createElement('option');
@@ -3904,12 +3924,13 @@ async function deleteTheme() {
 
     if (themeIndex !== -1) {
         themes.splice(themeIndex, 1);
-        $(`#themes option[value="${themeName}"]`).remove();
+        $('#themes option').filter((_, option) => option.value === themeName).remove();
         power_user.theme = themes[0]?.name;
         saveSettingsDebounced();
         if (power_user.theme) {
             applyTheme(power_user.theme);
         }
+        syncUiThemePicker();
         toastr.success('Theme deleted.');
     }
 }
@@ -4007,10 +4028,11 @@ async function saveTheme(name = undefined, theme = undefined) {
         $('#themes').append(option);
     } else {
         themes[themeIndex] = theme;
-        $(`#themes option[value="${name}"]`).prop('selected', true);
+        $('#themes option').filter((_, option) => option.value === name).prop('selected', true);
     }
 
     power_user.theme = name;
+    syncUiThemePicker();
     saveSettingsDebounced();
 
     return theme;

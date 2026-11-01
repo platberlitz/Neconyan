@@ -378,7 +378,7 @@ for (const width of [393, 1280, 320]) {
             await page.screenshot({ path: `${screenshotDir}/theme-alignment-${width}.png` });
             const geometry = await block.evaluate(element => {
                 const rect = element.getBoundingClientRect();
-                const select = element.querySelector('#themes').getBoundingClientRect();
+                const select = element.querySelector('#nn-ui-theme-gallery').getBoundingClientRect();
                 const buttons = [...element.querySelectorAll('.menu_button')].map(button => {
                     const box = button.getBoundingClientRect();
                     return { x: box.x, y: box.y, right: box.right, width: box.width, height: box.height };
