@@ -1,5 +1,5 @@
-/* Sidebar reordering: the Reorder button beside Workspace, the Reset and Done bar, and drop zones for empty sections.
-   Loaded as a deferred sheet; nothing here is needed until someone turns reordering on. */
+/* Sidebar editing: the pens beside each section, the Restore defaults and Done bar, the remove buttons and drop zones for empty sections.
+   Loaded as a deferred sheet; nothing here is needed until someone starts editing. */
 
 body.neconyan #neconyan-workspace-rail .neconyan-rail-reorder-bar {
     position: sticky;
@@ -71,14 +71,49 @@ body.neconyan #neconyan-workspace-rail.neconyan-rail-is-reordering .neconyan-rai
     }
 }
 
-/* An emptied section stays a place to drop buttons back into while reordering, and steps aside otherwise. */
+/* The X sits just before the grip, each with a full-size touch target. */
+body.neconyan #neconyan-workspace-rail .neconyan-rail-reordering .neconyan-rail-remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 44px;
+    height: 44px;
+    margin: -7px 0 -7px auto;
+    color: var(--neco-muted);
+    cursor: pointer;
+}
+
+body.neconyan #neconyan-workspace-rail .neconyan-rail-reordering .neconyan-rail-remove:hover {
+    color: var(--neco-ginger);
+}
+
+body.neconyan #neconyan-workspace-rail .neconyan-rail-reordering .neconyan-rail-remove + .neconyan-rail-grip {
+    margin-left: 0;
+}
+
+/* A removed button stays in place while editing, faded, so it can be added back with +. */
+body.neconyan #neconyan-workspace-rail .neconyan-rail-reordering > [data-neconyan-rail-removed] {
+    border-style: dashed;
+    border-color: var(--neco-border);
+}
+
+body.neconyan #neconyan-workspace-rail .neconyan-rail-reordering > [data-neconyan-rail-removed] > :not(.neconyan-rail-remove) {
+    opacity: 0.45;
+}
+
+/* Ink rather than the accent keeps + readable when the accent is dark. */
+body.neconyan #neconyan-workspace-rail .neconyan-rail-reordering > [data-neconyan-rail-removed] > .neconyan-rail-remove {
+    color: var(--neco-ink);
+}
+
+/* An emptied section stays a place to drop buttons back into while editing, and steps aside otherwise. */
 body.neconyan #neconyan-workspace-rail.neconyan-rail-is-reordering [data-neconyan-rail-group]:not(:has(> .neconyan-rail-button:not([hidden]))) {
     min-height: 44px;
     border: 1px dashed var(--neco-border);
     border-radius: 6px;
 }
 
-body.neconyan #neconyan-workspace-rail:not(.neconyan-rail-is-reordering) .neconyan-rail-advanced:has(> [data-neconyan-rail-group]):not(:has(> [data-neconyan-rail-group] > .neconyan-rail-button:not([hidden]))) {
+body.neconyan #neconyan-workspace-rail:not(.neconyan-rail-is-reordering) .neconyan-rail-advanced:has(> [data-neconyan-rail-group]):not(:has(> [data-neconyan-rail-group] > .neconyan-rail-button:not([hidden], [data-neconyan-rail-removed]))) {
     display: none;
 }
 
