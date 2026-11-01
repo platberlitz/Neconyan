@@ -11,6 +11,7 @@ import { buildAssistantKnowledge, getAssistantKnowledgeBudget } from '../public/
 import { isChatNavigationBlocked } from '../public/scripts/chat-navigation-flight.js';
 import { isSlashCommandText } from '../public/scripts/slash-commands/SlashCommandRuntimeUtils.js';
 import { captureRecoveryAnchor } from '../public/scripts/held-generation-recovery.js';
+import { substituteWorldInfoGreeting } from '../public/scripts/world-info-scan-chat.js';
 
 await jest.unstable_mockModule('../public/script.js', () => ({ chat: [], getCurrentChatId: () => 'chat-a' }));
 await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-store.js', () => ({ isPathfinderSubmoduleEnabled: () => true }));
@@ -127,7 +128,7 @@ function createHost({ agentsExtension = false } = {}) {
         getMaxPromptTokens: () => 4096, runGenerationInterceptors: jest.fn(async () => false),
         prepareMewmoryGeneration: jest.fn(async messages => ({ chat: messages, enabled: false })),
         validateMewmoryGeneration: jest.fn(),
-        getGuidanceScale: () => null, parseMesExamples: () => [], buildWorldInfoScanChat: () => [],
+        getGuidanceScale: () => null, parseMesExamples: () => [], buildWorldInfoScanChat: () => [], substituteWorldInfoGreeting,
         checkWorldInfo: jest.fn(async () => ({ worldInfoBefore: 'Native town lore.', worldInfoAfter: '', allActivatedEntries: new Set([{ world: 'Lore', uid: 1 }]) })),
         setOpenAIMessages: messages => messages, setOpenAIMessageExamples: messages => messages,
         addChatsPreamble: text => text, addChatsSeparator: text => text, getTokenCountAsync: async () => 0,
@@ -209,6 +210,139 @@ function createHost({ agentsExtension = false } = {}) {
 }
 
 afterEach(() => jest.restoreAllMocks());
+
+function connectionFailureHost(streaming = false) {
+    const host = createHost();
+    // The original empty-chat harness does not enter per-message prompt assembly.
+    Object.assign(host.context, {
+        projectBrowserPromptMedia: records => ({ records, decisions: [] }),
+        validatePromptImageCopies: async () => {},
+        promptMediaText: record => record.mes,
+        resolveRegexScriptsForSnapshot: () => [],
+        appendFileContent: async () => '',
+        shouldRetainContextAtDepth: () => true,
+        stripOocBlocksFromContext: text => text,
+        stripHtmlTagsFromContext: text => text,
+        hasPromptPayload: message => Boolean(message.mes),
+        PromptReasoning: class {
+            addToMessage(text) { return text; }
+            isLimitReached() { return false; }
+            removePrefix(text) { return text; }
+        },
+    });
+    host.context.sendMessageAsUser = jest.fn(async text => {
+        host.context.chat.push({ name: 'User', mes: text, is_user: true, extra: {} });
+    });
+    host.context.isStreamingEnabled = () => streaming;
+    host.context.shouldBufferMainGenerationOutput = async () => false;
+    host.context.StreamingProcessor = class {
+        constructor() {
+            this.message = null;
+            this.messageId = -1;
+            this.abortController = new AbortController();
+        }
+        onStopStreaming() { this.abortController.abort(); }
+    };
+    host.context.sendStreamingRequest = jest.fn();
+    const request = streaming ? host.context.sendStreamingRequest : host.context.sendGenerationRequest;
+    return { ...host, request };
+}
+
+function connectionLost() {
+    return Object.assign(new Error('connection lost'), { code: generationOutcome.GENERATION_CONNECTION_LOST });
+}
+
+describe('initial connection failure feedback', () => {
+    test.each([false, true])('shows one notice and rethrows for an explicit send (streaming %s)', async streaming => {
+        const host = connectionFailureHost(streaming);
+        const failure = connectionLost();
+        failure.error = { message: 'generic provider error' };
+        host.request.mockRejectedValueOnce(failure);
+        host.input.value = 'Original prompt';
+        const outcome = await host.generate('normal', { suppressUserMessage: false }).catch(error => error);
+        expect(outcome.message).toBe(failure.message);
+        expect(outcome).toBe(failure);
+        expect(host.request).toHaveBeenCalledTimes(1);
+        expect(host.context.toastr.error).toHaveBeenCalledTimes(1);
+        expect(host.context.toastr.error).toHaveBeenCalledWith(
+            'The connection to the server was lost. Check your connection and try again.',
+            'Reply stopped', { timeOut: 10000, extendedTimeOut: 20000 },
+        );
+        expect(host.context.chat.at(-1).mes).toBe('Original prompt');
+    });
+
+    test.each(['Stop', 'chat change', 'new generation', 'account change'])('does not show a late notice after %s', async reason => {
+        const host = connectionFailureHost();
+        const started = deferred();
+        const pendingReply = deferred();
+        let account = 'test-user';
+        host.context.getCurrentUserHandle = () => account;
+        host.request.mockImplementationOnce(() => { started.resolve(); return pendingReply.promise; });
+        const pending = host.generate('normal', { suppressUserMessage: false }).catch(error => error);
+        await started.promise;
+        if (reason === 'Stop') host.context.stopGeneration();
+        if (reason === 'chat change') { host.context.chatId = 'chat-b'; host.context.chatGeneration++; }
+        if (reason === 'new generation') host.context.activeGenerationRun = { controller: new AbortController(), type: 'normal' };
+        if (reason === 'account change') account = 'other-user';
+        const failure = connectionLost();
+        pendingReply.reject(failure);
+        await expect(pending).resolves.toBe(failure);
+        expect(host.context.toastr.error).not.toHaveBeenCalled();
+    });
+
+    test.each([
+        ['automatic', { automatic_trigger: true }],
+        ['nested', { depth: 1 }],
+        ['suppressed input', { suppressUserMessage: true }],
+    ])('does not show the initial-send notice for %s', async (_name, options) => {
+        const host = connectionFailureHost();
+        const failure = connectionLost();
+        host.request.mockRejectedValueOnce(failure);
+        await expect(host.generate('normal', { suppressUserMessage: false, ...options })).rejects.toBe(failure);
+        expect(host.request).toHaveBeenCalledTimes(1);
+        expect(host.context.toastr.error).not.toHaveBeenCalled();
+    });
+
+    test('retains the provider JSON error notice', async () => {
+        const host = connectionFailureHost();
+        const failure = { error: { message: 'Provider unavailable' } };
+        host.request.mockRejectedValueOnce(failure);
+        await expect(host.generate('normal', { suppressUserMessage: false })).rejects.toBe(failure);
+        expect(host.context.toastr.error).toHaveBeenCalledTimes(1);
+        expect(host.context.toastr.error).toHaveBeenCalledWith('Provider unavailable', 'Text generation error', expect.any(Object));
+    });
+
+    test('preserves earlier chat and a fresh draft during a non-streaming failure', async () => {
+        const host = connectionFailureHost();
+        const started = deferred();
+        const pendingReply = deferred();
+        host.context.chat.push({ name: 'Assistant', mes: 'Earlier reply', is_user: false, extra: {} });
+        host.request.mockImplementationOnce(() => { started.resolve(); return pendingReply.promise; });
+        host.input.value = 'Original prompt';
+        const pending = host.generate('normal', { suppressUserMessage: false }).catch(error => error);
+        await Promise.race([started.promise, pending.then(error => { throw error; })]);
+        host.input.value = 'Fresh draft';
+        const failure = connectionLost();
+        pendingReply.reject(failure);
+        await expect(pending).resolves.toBe(failure);
+        expect(host.input.value).toBe('Fresh draft');
+        expect(host.context.chat.map(message => message.mes)).toEqual(['Earlier reply', 'Original prompt']);
+        expect(host.context.toastr.error).toHaveBeenCalledTimes(1);
+    });
+
+    test('does not show an initial-send notice once the stream created a message', async () => {
+        const host = connectionFailureHost(true);
+        host.context.StreamingProcessor = class {
+            constructor() { this.message = {}; this.messageId = 1; this.abortController = new AbortController(); }
+            onStopStreaming() { this.abortController.abort(); }
+        };
+        const failure = connectionLost();
+        host.request.mockRejectedValueOnce(failure);
+        await expect(host.generate('normal', { suppressUserMessage: false })).rejects.toBe(failure);
+        expect(host.request).toHaveBeenCalledTimes(1);
+        expect(host.context.toastr.error).not.toHaveBeenCalled();
+    });
+});
 
 describe('Pathfinder integration with the real extracted host generation flow', () => {
     test('a reopened server reply owns Send and Stop until it settles, while commands remain usable', async () => {
