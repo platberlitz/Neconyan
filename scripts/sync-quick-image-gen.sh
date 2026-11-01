@@ -387,11 +387,11 @@ fi
 
 if [[ -n "$METADATA_FILE" ]]; then
     {
-        printf 'QIG_VERSION=%s\n' "$UPSTREAM_VERSION"
-        printf 'QIG_COMMIT=%s\n' "$UPSTREAM_COMMIT"
-        printf 'QIG_SHORT_COMMIT=%s\n' "$UPSTREAM_SHORT_COMMIT"
-        printf 'QIG_REF=%s\n' "$UPSTREAM_REF"
-        printf 'QIG_REPO=%s\n' "$UPSTREAM_REPO"
+        printf 'QIG_VERSION=%q\n' "$UPSTREAM_VERSION"
+        printf 'QIG_COMMIT=%q\n' "$UPSTREAM_COMMIT"
+        printf 'QIG_SHORT_COMMIT=%q\n' "$UPSTREAM_SHORT_COMMIT"
+        printf 'QIG_REF=%q\n' "$UPSTREAM_REF"
+        printf 'QIG_REPO=%q\n' "$UPSTREAM_REPO"
     } > "$METADATA_FILE"
 fi
 

@@ -1,5 +1,10 @@
 import fetch from 'node-fetch';
 import { SECRET_KEYS, readSecret } from '../endpoints/secrets.js';
+import {
+    assertSameOriginHttpUrl,
+    buildChutesEmbeddingBaseUrl,
+    parseHttpBaseUrl,
+} from '../endpoints/provider-url-validation.js';
 import { OPENROUTER_HEADERS } from '../constants.js';
 import { createSingleVectorFn, extractOpenAIEmbeddings, readEmbeddingResponse } from './common.js';
 
@@ -92,6 +97,17 @@ export async function requestOpenAIBatchVector(texts, source, directories, model
         throw new Error('Unknown source');
     }
 
+    const modelName = model || config.model;
+    let url;
+    if (urlOverride) {
+        url = parseHttpBaseUrl(urlOverride, 'vector provider URL').toString().replace(/\/$/, '');
+    } else if (source === 'chutes') {
+        url = buildChutesEmbeddingBaseUrl(modelName);
+    } else {
+        url = parseHttpBaseUrl(config.url.replace('{{MODEL}}', modelName), 'vector provider URL').toString().replace(/\/$/, '');
+    }
+    const endpointUrl = assertSameOriginHttpUrl(`${url}/embeddings`, url, 'vector provider URL').toString();
+
     const key = readSecret(directories, config.secretKey);
 
     if (!key) {
@@ -99,8 +115,6 @@ export async function requestOpenAIBatchVector(texts, source, directories, model
         throw new Error('No API key found');
     }
 
-    const modelName = model || config.model;
-    const url = urlOverride || config.url.replace('{{MODEL}}', modelName);
     const body = {
         input: texts,
         model: modelName,
@@ -110,7 +124,7 @@ export async function requestOpenAIBatchVector(texts, source, directories, model
         config.processBody(body);
     }
 
-    const response = await fetchImpl(`${url}/embeddings`, {
+    const response = await fetchImpl(endpointUrl, {
         signal,
         method: 'POST',
         headers: {

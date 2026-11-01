@@ -2,11 +2,13 @@ import path from 'node:path';
 
 import fetch from 'node-fetch';
 import ipaddr from 'ipaddr.js';
+import storage from 'node-persist';
 
 import { readAuthoringFileLocked, writeAuthoringFileLocked } from '../authoring-store.js';
 import { roleplayLease } from '../roleplay-store.js';
 import { isDefiniteProviderRefusal, providerRefused } from '../jobs/artifacts.js';
 import { SECRET_KEYS, SecretManager, readSecret } from '../endpoints/secrets.js';
+import { PinnedAddressAgent, validateOutboundTarget } from '../safe-http.js';
 import { ScratchpadError } from './store.js';
 import {
     MAX_SEARCH_URL_CHARS,
@@ -43,8 +45,28 @@ export const MAX_WEB_SEARCH_PROMPT_BYTES = 12 * 1024;
 const CONFIG_FILE_LIMIT = 16 * 1024;
 const MAX_RESULT_NODES = 500;
 
-const PRIVATE_IP_RANGES = new Set(['unspecified', 'loopback', 'linkLocal', 'uniqueLocal', 'private', 'carrierGradeNat',
-    'reserved', 'deprecatedSiteLocal']);
+const PRIVATE_IP_RANGES = new Set([
+    'unspecified',
+    'loopback',
+    'linkLocal',
+    'uniqueLocal',
+    'private',
+    'carrierGradeNat',
+    'reserved',
+    'broadcast',
+    'multicast',
+    'benchmarking',
+    'amt',
+    'teredo',
+    '6to4',
+    'as112',
+    'deprecatedSiteLocal',
+    'as112v6',
+    'orchid2',
+    'droneRemoteIdProtocolEntityTags',
+    'ietfProtocolAssignments',
+    'discard',
+]);
 
 const PROVIDER_KEY = {
     brave: () => SECRET_KEYS.BRAVE_SEARCH,
@@ -530,11 +552,26 @@ function providerBody(provider, payload) {
     return collectResultCandidates(payload?.data ?? payload?.results);
 }
 
+async function isAdminAccountOwner(directories) {
+    if (!directories?.root) return false;
+    const handle = path.basename(path.resolve(directories.root));
+    if (!handle) return false;
+    try {
+        const user = await storage.getItem(`user:${handle}`);
+        if (user && typeof user === 'object') {
+            return user.admin === true;
+        }
+    } catch {
+        // Storage not initialized (e.g. single-user mode where default-user is admin)
+    }
+    return handle === 'default-user';
+}
+
 /**
  * One search request. Callers persist this result before using it; a thrown
  * definite refusal is marked so the job never re-sends it after a restart.
  */
-export async function performWebSearch(plan, { directories, signal, fetch: fetchImpl = fetch, timeoutMs = WEB_SEARCH_TIMEOUT_MS } = {}) {
+export async function performWebSearch(plan, { directories, signal, fetch: fetchImpl = fetch, timeoutMs = WEB_SEARCH_TIMEOUT_MS, allowPrivate, lookupAddresses } = {}) {
     const provider = plan?.provider;
     if (!WEB_SEARCH_PROVIDERS.includes(provider) || provider === 'off') throw localRefusal('Choose a web search provider in Context.');
     let key = '';
@@ -598,11 +635,34 @@ export async function performWebSearch(plan, { directories, signal, fetch: fetch
     }
     let response;
     try {
-        response = await fetchImpl(url.href, { ...options, redirect: 'error', signal: requestSignal });
+        let agent;
+        if ((provider === 'searxng' || provider === 'custom') && (fetchImpl === fetch || lookupAddresses)) {
+            const effectiveAllowPrivate = typeof allowPrivate === 'boolean' ? allowPrivate : await isAdminAccountOwner(directories);
+            if (!effectiveAllowPrivate && isPrivateHost(url.hostname)) {
+                throw providerRefused(new WebSearchError('Only an administrator can point web search at a private or local address.', 'SCRATCHPAD_WEB_SEARCH_PRIVATE', { definite: true }));
+            }
+            const validated = await validateOutboundTarget(url, {
+                allowPrivate: effectiveAllowPrivate,
+                lookupAddresses,
+            });
+            agent = new PinnedAddressAgent({
+                allowPrivate: effectiveAllowPrivate,
+                lookupAddresses: async () => validated.addresses,
+            });
+        }
+        response = await fetchImpl(url.href, {
+            ...options,
+            redirect: 'error',
+            signal: requestSignal,
+            ...(agent && fetchImpl === fetch ? { agent } : {}),
+        });
     } catch (error) {
         if (signal?.aborted) throw abortReason(signal);
         if (timeoutSignal.aborted) throw new WebSearchError('The web search timed out after 20 seconds.', 'SCRATCHPAD_WEB_SEARCH_TIMEOUT');
         if (error instanceof WebSearchError) throw error;
+        if (error?.code === 'SAFE_HTTP_PRIVATE_IP' || error?.code === 'SAFE_HTTP_PRIVATE_HOST') {
+            throw providerRefused(new WebSearchError('Only an administrator can point web search at a private or local address.', 'SCRATCHPAD_WEB_SEARCH_PRIVATE', { definite: true }));
+        }
         if (/redirect/i.test(String(error?.message || ''))) {
             throw new WebSearchError('The search service redirected the request, which Scratchpad does not follow. Check the saved address.', 'SCRATCHPAD_WEB_SEARCH_REDIRECT');
         }

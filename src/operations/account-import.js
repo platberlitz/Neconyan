@@ -269,5 +269,10 @@ async function runCapturedImport(context, plan, dependencies) {
 }
 
 registerOperation('account-import', { label: 'Import saved account data', capture: captureAccountImport, run: runAccountImport,
+    authorize: (request, input) => {
+        if (['folder', 'extensions'].includes(input?.mode) && request.user?.profile?.admin !== true) {
+            throw operationError('Only an administrator can import from a server folder path.', 403);
+        }
+    },
     target: () => ({ kind: 'account', id: 'import' }), canRecover: () => true,
     canRefuse: value => value.importReady !== true });

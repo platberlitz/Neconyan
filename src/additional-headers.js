@@ -1,4 +1,5 @@
 import { TEXTGEN_TYPES, OPENROUTER_HEADERS, FEATHERLESS_HEADERS } from './constants.js';
+import { isAllowedTextGenSecretTarget } from './endpoints/provider-url-validation.js';
 import { SECRET_KEYS, readSecret } from './endpoints/secrets.js';
 import { getConfigValue } from './util.js';
 
@@ -248,7 +249,9 @@ export function setAdditionalHeadersByType(requestHeaders, type, server, directo
     };
 
     const getHeaders = headerGetters[type];
-    const headers = getHeaders ? getHeaders(directories, secretId) : {};
+    const headers = (getHeaders && isAllowedTextGenSecretTarget(type, server))
+        ? getHeaders(directories, secretId)
+        : {};
 
     if (allowHostOverrides && typeof server === 'string' && server.length > 0) {
         try {

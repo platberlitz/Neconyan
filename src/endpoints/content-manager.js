@@ -6,7 +6,6 @@ import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 
 import express from 'express';
-import fetch from 'node-fetch';
 import sanitize from 'sanitize-filename';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 
@@ -20,6 +19,64 @@ import { assertUntrackedRoleplayFiles, roleplayAccountBase, roleplayLease, valid
 import { commitRoleplayLifecycleLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
 import { writeAuthoringFileLocked } from '../authoring-store.js';
 import { assertNativeMediaTargetIdle } from '../generation/media-jobs.js';
+import { isLocalOrInternalHostname, safeFetchFollowRedirects } from '../safe-http.js';
+
+const MAX_CONTENT_IMPORT_BYTES = 50 * 1024 * 1024;
+const CHUB_ALLOWED_HOSTS = new Set([
+    'api.chub.ai',
+    'gateway.chub.ai',
+    'chub.ai',
+    'www.chub.ai',
+    'characterhub.org',
+    'www.characterhub.org',
+    'avatars.charhub.io',
+]);
+const PYGMALION_ALLOWED_HOSTS = new Set([
+    'server.pygmalion.chat',
+    'assets.pygmalion.chat',
+    'pygmalion.chat',
+    'www.pygmalion.chat',
+]);
+const JANNY_ALLOWED_HOSTS = new Set([
+    'api.jannyai.com',
+    'jannyai.com',
+    'www.jannyai.com',
+    'image.jannyai.com',
+    'search.jannyai.com',
+]);
+const BOTBOORU_ALLOWED_HOSTS = new Set([
+    'botbooru.com',
+    'www.botbooru.com',
+]);
+const AICC_ALLOWED_HOSTS = new Set([
+    'aicharactercards.com',
+    'www.aicharactercards.com',
+]);
+const RISU_ALLOWED_HOSTS = new Set([
+    'realm.risuai.net',
+    'sv.risuai.xyz',
+]);
+const PERCHANCE_ALLOWED_HOSTS = new Set([
+    'user.uploads.dev',
+    'user-uploads.dev',
+    'user-uploads.perchance.org',
+    'perchance.org',
+    'www.perchance.org',
+]);
+
+function isHostInSetOrWhitelisted(host, allowedSet) {
+    const clean = String(host || '').toLowerCase();
+    return allowedSet.has(clean) || isHostWhitelisted(clean);
+}
+
+function isJannyAllowedHost(host) {
+    const clean = String(host || '').toLowerCase();
+    return JANNY_ALLOWED_HOSTS.has(clean)
+        || clean.endsWith('.jannyai.com')
+        || clean === 'janitorai.com'
+        || clean.endsWith('.janitorai.com')
+        || isHostWhitelisted(clean);
+}
 
 const contentDirectory = path.join(serverDirectory, 'default/content');
 const scaffoldDirectory = path.join(serverDirectory, 'default/scaffold');
@@ -1747,9 +1804,11 @@ function getContentLog(contentLogPath) {
 
 async function downloadChubLorebook(id) {
     const [lorebooks, creatorName, projectName] = id.split('/');
-    const result = await fetch(`https://api.chub.ai/api/${lorebooks}/${creatorName}/${projectName}`, {
+    const result = await safeFetchFollowRedirects(`https://api.chub.ai/api/${lorebooks}/${creatorName}/${projectName}`, {
         method: 'GET',
         headers: { 'Accept': 'application/json', 'User-Agent': USER_AGENT },
+        maxBytes: MAX_CONTENT_IMPORT_BYTES,
+        isAllowedHost: (host) => isHostInSetOrWhitelisted(host, CHUB_ALLOWED_HOSTS),
     });
 
     if (!result.ok) {
@@ -1767,9 +1826,11 @@ async function downloadChubLorebook(id) {
     }
 
     const downloadUrl = `https://api.chub.ai/api/v4/projects/${projectId}/repository/files/raw%252Fsillytavern_raw.json/raw`;
-    const downloadResult = await fetch(downloadUrl, {
+    const downloadResult = await safeFetchFollowRedirects(downloadUrl, {
         method: 'GET',
         headers: { 'Accept': 'application/json', 'User-Agent': USER_AGENT },
+        maxBytes: MAX_CONTENT_IMPORT_BYTES,
+        isAllowedHost: (host) => isHostInSetOrWhitelisted(host, CHUB_ALLOWED_HOSTS),
     });
 
     if (!downloadResult.ok) {
@@ -1793,9 +1854,11 @@ async function downloadChubLorebook(id) {
  */
 async function tryDownloadChubCharacterCard(url, name) {
     try {
-        const downloadResult = await fetch(url, {
+        const downloadResult = await safeFetchFollowRedirects(url, {
             method: 'GET',
             headers: { 'Accept': 'image/png,image/*;q=0.8,*/*;q=0.5', 'User-Agent': USER_AGENT },
+            maxBytes: MAX_CONTENT_IMPORT_BYTES,
+            isAllowedHost: (host) => isHostInSetOrWhitelisted(host, CHUB_ALLOWED_HOSTS),
         });
 
         if (downloadResult.ok) {
@@ -1829,9 +1892,11 @@ async function downloadChubCharacter(id) {
         return directCard;
     }
 
-    const result = await fetch(`https://api.chub.ai/api/characters/${creatorName}/${projectName}?full=true`, {
+    const result = await safeFetchFollowRedirects(`https://api.chub.ai/api/characters/${creatorName}/${projectName}?full=true`, {
         method: 'GET',
         headers: { 'Accept': 'application/json', 'User-Agent': USER_AGENT },
+        maxBytes: MAX_CONTENT_IMPORT_BYTES,
+        isAllowedHost: (host) => isHostInSetOrWhitelisted(host, CHUB_ALLOWED_HOSTS),
     });
 
     if (!result.ok) {
@@ -1897,17 +1962,23 @@ async function downloadChubCharacter(id) {
     const avatarUrl = node?.avatar_url;
 
     if (avatarUrl) {
-        const downloadResult = await fetch(avatarUrl, {
-            method: 'GET',
-            headers: { 'Accept': 'image/png,image/*;q=0.8,*/*;q=0.5', 'User-Agent': USER_AGENT },
-        });
-        if (downloadResult.ok) {
-            const avatarBuffer = Buffer.from(await downloadResult.arrayBuffer());
-            if (isPngBuffer(avatarBuffer)) {
-                imageBuffer = avatarBuffer;
-            } else {
-                console.warn('Chub avatar is not a PNG, using default avatar for fallback card', downloadResult.headers.get('content-type'));
+        try {
+            const downloadResult = await safeFetchFollowRedirects(avatarUrl, {
+                method: 'GET',
+                headers: { 'Accept': 'image/png,image/*;q=0.8,*/*;q=0.5', 'User-Agent': USER_AGENT },
+                maxBytes: MAX_CONTENT_IMPORT_BYTES,
+                isAllowedHost: (host) => isHostInSetOrWhitelisted(host, CHUB_ALLOWED_HOSTS),
+            });
+            if (downloadResult.ok) {
+                const avatarBuffer = Buffer.from(await downloadResult.arrayBuffer());
+                if (isPngBuffer(avatarBuffer)) {
+                    imageBuffer = avatarBuffer;
+                } else {
+                    console.warn('Chub avatar is not a PNG, using default avatar for fallback card', downloadResult.headers.get('content-type'));
+                }
             }
+        } catch (avatarError) {
+            console.warn('Failed to fetch Chub avatar URL, using default avatar for fallback card', getErrorMessage(avatarError));
         }
     }
 
@@ -1979,9 +2050,11 @@ function parseBotbooruUrl(url) {
  * @returns {Promise<BotbooruParsedUrl>} Resolved Botbooru import target
  */
 async function resolveBotbooruShortLink(slug) {
-    const result = await fetch(`https://botbooru.com/api/q/${encodeURIComponent(slug)}/resolve`, {
+    const result = await safeFetchFollowRedirects(`https://botbooru.com/api/q/${encodeURIComponent(slug)}/resolve`, {
         method: 'GET',
         headers: { 'Accept': 'application/json', 'User-Agent': USER_AGENT },
+        maxBytes: MAX_CONTENT_IMPORT_BYTES,
+        isAllowedHost: (host) => isHostInSetOrWhitelisted(host, BOTBOORU_ALLOWED_HOSTS),
     });
 
     if (!result.ok) {
@@ -2025,9 +2098,11 @@ async function downloadBotbooruCharacter(parsed) {
         downloadUrl.search = target.search;
     }
 
-    const result = await fetch(downloadUrl, {
+    const result = await safeFetchFollowRedirects(downloadUrl, {
         method: 'GET',
         headers: { 'Accept': 'image/png,image/*;q=0.8,*/*;q=0.5', 'User-Agent': USER_AGENT },
+        maxBytes: MAX_CONTENT_IMPORT_BYTES,
+        isAllowedHost: (host) => isHostInSetOrWhitelisted(host, BOTBOORU_ALLOWED_HOSTS),
     });
 
     if (!result.ok) {
@@ -2055,7 +2130,10 @@ async function downloadBotbooruCharacter(parsed) {
  * @returns {Promise<{buffer: Buffer, fileName: string, fileType: string}>}
  */
 async function downloadPygmalionCharacter(id) {
-    const result = await fetch(`https://server.pygmalion.chat/api/export/character/${id}/v2`);
+    const result = await safeFetchFollowRedirects(`https://server.pygmalion.chat/api/export/character/${id}/v2`, {
+        maxBytes: MAX_CONTENT_IMPORT_BYTES,
+        isAllowedHost: (host) => isHostInSetOrWhitelisted(host, PYGMALION_ALLOWED_HOSTS),
+    });
 
     if (!result.ok) {
         const text = await result.text();
@@ -2080,7 +2158,13 @@ async function downloadPygmalionCharacter(id) {
             throw new Error('Failed to download avatar');
         }
 
-        const avatarResult = await fetch(avatarUrl);
+        const avatarResult = await safeFetchFollowRedirects(avatarUrl, {
+            maxBytes: MAX_CONTENT_IMPORT_BYTES,
+            isAllowedHost: (host) => isHostInSetOrWhitelisted(host, PYGMALION_ALLOWED_HOSTS),
+        });
+        if (!avatarResult.ok) {
+            throw new Error(`Failed to download avatar: ${avatarResult.status}`);
+        }
         const avatarBuffer = Buffer.from(await avatarResult.arrayBuffer());
 
         const cardBuffer = write(avatarBuffer, JSON.stringify(characterData));
@@ -2168,19 +2252,27 @@ async function downloadJannyCharacter(uuid) {
     // This endpoint is being guarded behind Bot Fight Mode of Cloudflare
     // So hosted ST on Azure/AWS/GCP/Collab might get blocked by IP
     // Should work normally on self-host PC/Android
-    const result = await fetch('https://api.jannyai.com/api/v1/download', {
+    const result = await safeFetchFollowRedirects('https://api.jannyai.com/api/v1/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             'characterId': uuid,
         }),
+        maxBytes: MAX_CONTENT_IMPORT_BYTES,
+        isAllowedHost: (host) => isJannyAllowedHost(host),
     });
 
     if (result.ok) {
         /** @type {any} */
         const downloadResult = await result.json();
         if (downloadResult.status === 'ok') {
-            const imageResult = await fetch(downloadResult.downloadUrl);
+            const imageResult = await safeFetchFollowRedirects(downloadResult.downloadUrl, {
+                maxBytes: MAX_CONTENT_IMPORT_BYTES,
+                isAllowedHost: (host) => isJannyAllowedHost(host),
+            });
+            if (!imageResult.ok) {
+                throw new Error(`Failed to download Janny character image: ${imageResult.status}`);
+            }
             const buffer = Buffer.from(await imageResult.arrayBuffer());
             const fileName = `${sanitize(uuid)}.png`;
             const fileType = imageResult.headers.get('content-type');
@@ -2205,7 +2297,10 @@ async function downloadJannyCharacter(uuid) {
 async function downloadAICCCharacter(id) {
     const apiURL = `https://aicharactercards.com/wp-json/pngapi/v1/image/${id}`;
     try {
-        const response = await fetch(apiURL);
+        const response = await safeFetchFollowRedirects(apiURL, {
+            maxBytes: MAX_CONTENT_IMPORT_BYTES,
+            isAllowedHost: (host) => isHostInSetOrWhitelisted(host, AICC_ALLOWED_HOSTS),
+        });
         if (!response.ok) {
             throw new Error(`Failed to download character: ${response.statusText}`);
         }
@@ -2256,14 +2351,26 @@ function parseAICC(url) {
 /**
  * Download character card from generic url.
  * @param {String} url
+ * @param {{ allowPrivate?: boolean }} [options]
  */
-async function downloadGenericPng(url) {
+async function downloadGenericPng(url, { allowPrivate = false } = {}) {
     try {
-        const result = await fetch(url);
+        const initialHost = getHostFromUrl(url).replace(/^\[|\]$/g, '').toLowerCase();
+        const initialWasLocal = isLocalOrInternalHostname(initialHost);
+        const result = await safeFetchFollowRedirects(url, {
+            maxRedirects: 3,
+            maxBytes: MAX_CONTENT_IMPORT_BYTES,
+            isAllowedHost: (hopHost) => isHostWhitelisted(hopHost),
+            allowPrivateForUrl: (hopUrl) => {
+                if (!allowPrivate || !initialWasLocal) return false;
+                const hopHost = hopUrl.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+                return isHostWhitelisted(hopHost) && isLocalOrInternalHostname(hopHost);
+            },
+        });
 
         if (result.ok) {
             const buffer = Buffer.from(await result.arrayBuffer());
-            let fileName = sanitize(result.url.split('?')[0].split('/').reverse()[0]);
+            let fileName = sanitize((result.url || url).split('?')[0].split('/').reverse()[0]);
             const contentType = result.headers.get('content-type') || 'image/png'; //yoink it from AICC function lol
 
             // The `importCharacter()` function detects the MIME (content-type) of the file
@@ -2310,7 +2417,10 @@ function parseRisuUrl(url) {
  * @returns {Promise<{buffer: Buffer, fileName: string, fileType: string}>}
  */
 async function downloadRisuCharacter(uuid) {
-    const result = await fetch(`https://realm.risuai.net/api/v1/download/png-v3/${uuid}?non_commercial=true`);
+    const result = await safeFetchFollowRedirects(`https://realm.risuai.net/api/v1/download/png-v3/${uuid}?non_commercial=true`, {
+        maxBytes: MAX_CONTENT_IMPORT_BYTES,
+        isAllowedHost: (host) => isHostInSetOrWhitelisted(host, RISU_ALLOWED_HOSTS),
+    });
 
     if (!result.ok) {
         const text = await result.text();
@@ -2365,8 +2475,10 @@ async function downloadPerchanceCharacter(slug) {
     try {
         const charURL = `${perchanceBaseURL}/${slug}`;
         console.log('Downloading Perchance character from URL:', charURL);
-        const result = await fetch(charURL, {
+        const result = await safeFetchFollowRedirects(charURL, {
             headers: { 'Content-Type': 'application/json', 'User-Agent': USER_AGENT },
+            maxBytes: MAX_CONTENT_IMPORT_BYTES,
+            isAllowedHost: (host) => isHostInSetOrWhitelisted(host, PERCHANCE_ALLOWED_HOSTS),
         });
 
         //decompress gzipped content
@@ -2434,7 +2546,7 @@ async function downloadPerchanceCharacter(slug) {
  */
 async function extractPerchanceCharacterFromGz(result) {
     const compressedBuffer = await result.arrayBuffer();
-    const decompressedBuffer = zlib.gunzipSync(compressedBuffer);
+    const decompressedBuffer = zlib.gunzipSync(compressedBuffer, { maxOutputLength: 16 * 1024 * 1024 });
 
     // inside the gz file, there is a file of the same name without extensions, but it is a json file
 
@@ -2485,7 +2597,17 @@ async function fetchPerchanceAvatar(avatarUrl, isAvatarBase64) {
 
     // Fetch avatar from URL
     console.log('Fetching Perchance avatar from URL:', avatarUrl);
-    const avatarResponse = await fetch(avatarUrl, { headers: { 'User-Agent': USER_AGENT } });
+    let avatarResponse;
+    try {
+        avatarResponse = await safeFetchFollowRedirects(avatarUrl, {
+            headers: { 'User-Agent': USER_AGENT },
+            maxBytes: MAX_CONTENT_IMPORT_BYTES,
+            isAllowedHost: (host) => isHostInSetOrWhitelisted(host, PERCHANCE_ALLOWED_HOSTS),
+        });
+    } catch (avatarError) {
+        console.warn('Failed to fetch Perchance avatar safely, using default avatar:', getErrorMessage(avatarError));
+        return defaultAvatarBuffer;
+    }
 
     if (avatarResponse.ok) {
         const avatarContentType = avatarResponse.headers.get('content-type');
@@ -2695,7 +2817,7 @@ router.post('/importURL', async (request, response) => {
         } else if (isGeneric) {
             console.info('Downloading from generic url:', url);
             type = 'character';
-            result = await downloadGenericPng(url);
+            result = await downloadGenericPng(url, { allowPrivate: request.user?.profile?.admin === true });
         } else {
             console.error(`Received an import for "${getHostFromUrl(url)}", but site is not whitelisted. This domain must be added to the config key "whitelistImportDomains" to allow import from this source.`);
             return response.sendStatus(404);
@@ -2713,6 +2835,12 @@ router.post('/importURL', async (request, response) => {
         if (error?.code === JANNY_CLOUDFLARE_ERROR_CODE) {
             response.set('X-Neconyan-Import-Error', JANNY_CLOUDFLARE_ERROR_CODE);
             return response.status(502).type('text/plain').send(getErrorMessage(error));
+        }
+        if (error?.status === 403 || error?.code === 'SAFE_HTTP_PRIVATE_HOST' || error?.code === 'SAFE_HTTP_PRIVATE_IP') {
+            return response.status(403).type('text/plain').send(getErrorMessage(error));
+        }
+        if (error?.status === 404 || error?.code === 'SAFE_HTTP_HOST_NOT_WHITELISTED') {
+            return response.sendStatus(404);
         }
         console.error('Importing custom content failed', error);
         return response.status(500).type('text/plain').send(getErrorMessage(error));

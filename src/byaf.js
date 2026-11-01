@@ -4,6 +4,12 @@ import urlJoin from 'url-join';
 import { DEFAULT_AVATAR_PATH } from './constants.js';
 import { extractFileFromZipBuffer } from './util.js';
 
+const BYAF_MAX_JSON_BYTES = 16 * 1024 * 1024;
+const BYAF_MAX_IMAGE_BYTES = 64 * 1024 * 1024;
+const BYAF_MAX_TOTAL_IMAGE_BYTES = 256 * 1024 * 1024;
+const BYAF_MAX_SCENARIOS = 64;
+const BYAF_MAX_IMAGES = 128;
+
 /**
  * A parser for BYAF (Backyard Archive Format) files.
  */
@@ -145,7 +151,7 @@ export class ByafParser {
             throw new Error('This BYAF file does not say which character it contains.');
         }
 
-        const characterBuffer = await extractFileFromZipBuffer(this.#data, characterPath);
+        const characterBuffer = await extractFileFromZipBuffer(this.#data, characterPath, { maxEntryBytes: BYAF_MAX_JSON_BYTES });
         if (!characterBuffer) {
             throw new Error('This BYAF file is damaged: its character data could not be read.');
         }
@@ -175,8 +181,8 @@ export class ByafParser {
 
         const scenarios = [];
 
-        for (const scenarioPath of scenariosArray) {
-            const scenarioBuffer = await extractFileFromZipBuffer(this.#data, scenarioPath);
+        for (const scenarioPath of scenariosArray.slice(0, BYAF_MAX_SCENARIOS)) {
+            const scenarioBuffer = await extractFileFromZipBuffer(this.#data, scenarioPath, { maxEntryBytes: BYAF_MAX_JSON_BYTES });
             if (!scenarioBuffer) {
                 console.warn('Warning: failed to extract BYAF scenario JSON');
             }
@@ -214,7 +220,8 @@ export class ByafParser {
         }
 
         const imageBuffers = [];
-        for (const image of characterImages) {
+        let totalImageBytes = 0;
+        for (const image of characterImages.slice(0, BYAF_MAX_IMAGES)) {
             const imagePath = image?.path;
             if (!imagePath) {
                 console.warn('Warning: BYAF character image path is empty');
@@ -222,12 +229,20 @@ export class ByafParser {
             }
 
             const fullImagePath = urlJoin(path.dirname(characterPath), imagePath);
-            const imageBuffer = await extractFileFromZipBuffer(this.#data, fullImagePath);
+            const remainingBytes = BYAF_MAX_TOTAL_IMAGE_BYTES - totalImageBytes;
+            if (remainingBytes <= 0) {
+                console.warn('Warning: BYAF character images exceeded total unpacked size limit');
+                break;
+            }
+            const imageBuffer = await extractFileFromZipBuffer(this.#data, fullImagePath, {
+                maxEntryBytes: Math.min(BYAF_MAX_IMAGE_BYTES, remainingBytes),
+            });
             if (!imageBuffer) {
                 console.warn('Warning: failed to extract BYAF character image');
                 continue;
             }
 
+            totalImageBytes += imageBuffer.length;
             imageBuffers.push({ filename: path.basename(imagePath), image: imageBuffer, label: image?.label || '' });
         }
         if (imageBuffers.length === 0) {
@@ -280,17 +295,26 @@ export class ByafParser {
     async getChatBackgrounds(character, scenarios) {
         // Implementation for extracting chat backgrounds from BYAF data
         const backgrounds = [];
+        let totalBgBytes = 0;
         let i = 1;
         for (const scenario of scenarios) {
             const bgImagePath = scenario?.backgroundImage;
             if (bgImagePath) {
-                const data = await extractFileFromZipBuffer(this.#data, bgImagePath);
+                const remainingBytes = BYAF_MAX_TOTAL_IMAGE_BYTES - totalBgBytes;
+                if (remainingBytes <= 0) {
+                    console.warn('Warning: BYAF chat backgrounds exceeded total unpacked size limit');
+                    break;
+                }
+                const data = await extractFileFromZipBuffer(this.#data, bgImagePath, {
+                    maxEntryBytes: Math.min(BYAF_MAX_IMAGE_BYTES, remainingBytes),
+                });
                 if (data) {
                     const existingIndex = backgrounds.findIndex(bg => bg.data.compare(data) === 0);
                     if (existingIndex !== -1) {
                         backgrounds[existingIndex].paths.push(bgImagePath);
                         continue; // Skip adding a new background since it already exists
                     }
+                    totalBgBytes += data.length;
                     backgrounds.push({
                         name: `${character?.name} bg ${i++}` || '',
                         data: data,
@@ -308,7 +332,7 @@ export class ByafParser {
      * @private
      */
     async getManifest() {
-        const manifestBuffer = await extractFileFromZipBuffer(this.#data, 'manifest.json');
+        const manifestBuffer = await extractFileFromZipBuffer(this.#data, 'manifest.json', { maxEntryBytes: BYAF_MAX_JSON_BYTES });
         if (!manifestBuffer) {
             throw new Error('This BYAF file is damaged: its details file (manifest.json) could not be read.');
         }

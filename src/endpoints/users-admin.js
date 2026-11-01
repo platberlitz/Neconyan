@@ -1,4 +1,5 @@
 import fs, { promises as fsPromises } from 'node:fs';
+import path from 'node:path';
 
 import storage from 'node-persist';
 import express from 'express';
@@ -12,10 +13,13 @@ import {
     getAllUserHandles,
     getPasswordSalt,
     getPasswordHash,
+    isAcceptablePasswordInput,
     getUserDirectories,
     ensurePublicDirectoriesExist,
 } from '../users.js';
 import { DEFAULT_USER } from '../constants.js';
+import { isPathUnderParent } from '../util.js';
+import { validateOwner } from '../jobs/store.js';
 import { recreateRoleplayAccount, resetRoleplayAccount, settleRoleplayAccountReset, roleplayAccountBase, roleplayStoreDirectory } from '../roleplay-store.js';
 import { bootstrapRoleplayAccount } from '../roleplay-lifecycle.js';
 import { roleplayNativeHost } from './chats.js';
@@ -179,6 +183,11 @@ router.post('/create', requireAdminMiddleware, async (request, response) => {
             return response.status(400).json({ error: 'Some details are missing. Fill in every field and try again.' });
         }
 
+        if (request.body.password !== undefined && request.body.password !== '' && !isAcceptablePasswordInput(request.body.password)) {
+            console.warn('Create user failed: Invalid password input');
+            return response.status(400).json({ error: 'That password is not valid.' });
+        }
+
         const handles = await getAllUserHandles();
         const handle = slugify(request.body.handle);
 
@@ -230,30 +239,65 @@ router.post('/create', requireAdminMiddleware, async (request, response) => {
 
 router.post('/delete', requireAdminMiddleware, async (request, response) => {
     try {
-        if (!request.body.handle) {
+        const handle = request.body?.handle;
+        if (!handle) {
             console.warn('Delete user failed: Missing required fields');
             return response.status(400).json({ error: 'Some details are missing. Fill in every field and try again.' });
         }
 
-        if (request.body.handle === request.user.profile.handle) {
+        try {
+            validateOwner(handle);
+        } catch {
+            console.warn('Delete user failed: Invalid handle');
+            return response.status(400).json({ error: 'That user name is not valid.' });
+        }
+
+        if (handle !== handle.trim() || handle.startsWith('_') || handle.startsWith('.')) {
+            console.warn('Delete user failed: Reserved or invalid handle');
+            return response.status(400).json({ error: 'That user name is not valid.' });
+        }
+
+        if (handle === request.user.profile.handle) {
             console.warn('Delete user failed: Cannot delete yourself');
             return response.status(400).json({ error: 'You cannot delete your own account.' });
         }
 
-        if (request.body.handle === DEFAULT_USER.handle) {
+        if (handle === DEFAULT_USER.handle) {
             console.warn('Delete user failed: Cannot delete default user');
             return response.status(400).json({ error: 'The default user cannot be deleted, because the app needs it as a fallback.' });
         }
 
-        const directories = getUserDirectories(request.body.handle);
+        if (typeof globalThis.DATA_ROOT !== 'string' || !globalThis.DATA_ROOT.trim()) {
+            return response.sendStatus(500);
+        }
+        const resolvedDataRoot = path.resolve(globalThis.DATA_ROOT);
+        const expectedRoot = path.resolve(resolvedDataRoot, handle);
+        if (expectedRoot === resolvedDataRoot || path.dirname(expectedRoot) !== resolvedDataRoot
+            || path.basename(expectedRoot) !== handle || !isPathUnderParent(resolvedDataRoot, expectedRoot)) {
+            console.warn('Delete user failed: Handle escapes data root');
+            return response.status(400).json({ error: 'That user name is not valid.' });
+        }
+
+        /** @type {import('../users.js').User} */
+        const user = await storage.getItem(toKey(handle));
+        if (!user || user.handle !== handle) {
+            console.error('Delete user failed: User not found');
+            return response.status(404).json({ error: 'That user could not be found.' });
+        }
+
+        const directories = getUserDirectories(handle);
+        if (path.resolve(directories.root) !== expectedRoot) {
+            console.error('Delete user failed: Resolved user directory mismatch');
+            return response.status(400).json({ error: 'That user name is not valid.' });
+        }
         // Retire protected records (receipts and old jobs kept) before the user record goes, so a failure keeps the user.
         const account = roleplayAccountBase(directories);
         if (account) resetRoleplayAccount(account, null, request.body.purge ? 'purge' : 'retire');
 
-        await storage.removeItem(toKey(request.body.handle));
+        await storage.removeItem(toKey(handle));
 
         if (request.body.purge) {
-            console.info('Deleting data directories for', request.body.handle);
+            console.info('Deleting data directories for', handle);
             await fsPromises.rm(directories.root, { recursive: true, force: true });
         }
 

@@ -1,15 +1,17 @@
 import path from 'node:path';
 import fs from 'node:fs';
-import { finished } from 'node:stream/promises';
+import { pipeline } from 'node:stream/promises';
 
 import mime from 'mime-types';
 import express from 'express';
 import sanitize from 'sanitize-filename';
-import fetch from 'node-fetch';
 
 import { UNSAFE_EXTENSIONS } from '../constants.js';
 import { clientRelativePath, isValidUrl } from '../util.js';
 import { getHostFromUrl, isHostWhitelisted } from './content-manager.js';
+import { isLocalOrInternalHostname, safeFetchFollowRedirects } from '../safe-http.js';
+
+const MAX_ASSET_DOWNLOAD_BYTES = 100 * 1024 * 1024;
 
 const VALID_CATEGORIES = ['bgm', 'ambient', 'blip', 'live2d', 'vrm', 'character', 'temp'];
 
@@ -224,8 +226,32 @@ router.post('/download', async (request, response) => {
         const file_path = path.join(request.user.directories.assets, category, request.body.filename);
         console.info('Request received to download', url, 'to', file_path);
 
-        // Download to temp
-        const res = await fetch(url);
+        const initialHost = String(host || '').replace(/^\[|\]$/g, '').toLowerCase();
+        const initialWasLocal = isLocalOrInternalHostname(initialHost);
+        const isAdminUser = request.user?.profile?.admin === true;
+
+        // Download to temp, re-validating every redirect hop against the domain whitelist and private IP policy
+        let res;
+        try {
+            res = await safeFetchFollowRedirects(url, {
+                maxRedirects: 3,
+                maxBytes: MAX_ASSET_DOWNLOAD_BYTES,
+                isAllowedHost: (hopHost) => isHostWhitelisted(hopHost),
+                allowPrivateForUrl: (hopUrl) => {
+                    if (!isAdminUser || !initialWasLocal) return false;
+                    const hopHost = hopUrl.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+                    return isHostWhitelisted(hopHost) && isLocalOrInternalHostname(hopHost);
+                },
+            });
+        } catch (fetchError) {
+            if (fetchError?.code === 'SAFE_HTTP_HOST_NOT_WHITELISTED' || fetchError?.status === 404) {
+                return response.sendStatus(404);
+            }
+            if (fetchError?.status === 403) {
+                return response.sendStatus(403);
+            }
+            throw fetchError;
+        }
         if (!res.ok || res.body === null) {
             throw new Error(`Unexpected response ${res.statusText}`);
         }
@@ -234,9 +260,14 @@ router.post('/download', async (request, response) => {
         if (fs.existsSync(temp_path)) {
             await fs.promises.unlink(temp_path);
         }
-        const fileStream = fs.createWriteStream(destination, { flags: 'wx' });
-        // @ts-ignore
-        await finished(res.body.pipe(fileStream));
+        try {
+            const fileStream = fs.createWriteStream(destination, { flags: 'wx' });
+            // @ts-ignore
+            await pipeline(res.body, fileStream);
+        } catch (streamError) {
+            await fs.promises.unlink(destination).catch(() => {});
+            throw streamError;
+        }
 
         if (category === 'character') {
             const fileContent = fs.readFileSync(temp_path);

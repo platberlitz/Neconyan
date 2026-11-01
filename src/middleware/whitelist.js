@@ -73,7 +73,14 @@ export default async function getWhitelistMiddleware() {
          * @returns {boolean} True if the IP matches any whitelist entry
          */
         function isIPInWhitelist(whitelist, ip) {
-            return whitelist.some(x => ipMatching.matches(ip, ipMatching.getMatch(x)));
+            if (typeof ip !== 'string' || !ip) return false;
+            return whitelist.some(x => {
+                try {
+                    return ipMatching.matches(ip, ipMatching.getMatch(x));
+                } catch {
+                    return false;
+                }
+            });
         }
 
         //clientIp = req.connection.remoteAddress.split(':').pop();

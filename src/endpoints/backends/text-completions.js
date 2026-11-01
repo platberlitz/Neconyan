@@ -14,7 +14,8 @@ import {
 } from '../../constants.js';
 import { abortOnRequestClose, forwardFetchResponse, trimV1, getConfigValue, pollStreamingRequestConnection, summarizeLlmPayloadForLog } from '../../util.js';
 import { getResumableGeneration } from '../../resumable-generations.js';
-import { setAdditionalHeaders } from '../../additional-headers.js';
+import { setAdditionalHeaders, setAdditionalHeadersByType } from '../../additional-headers.js';
+import { isProviderUrlValidationError, parseHttpBaseUrl, validateTextGenServerUrl } from '../provider-url-validation.js';
 import { createHash } from 'node:crypto';
 
 export const router = express.Router();
@@ -177,13 +178,14 @@ async function abortKoboldCppRequest(request, url) {
 
 //************** Ooba/OpenAI text completions API
 router.post('/status', async function (request, response) {
-    if (!request.body) return response.sendStatus(400);
+    if (!request.body || !request.body.api_server) return response.sendStatus(400);
 
     try {
         if (request.body.api_server.indexOf('localhost') !== -1) {
             request.body.api_server = request.body.api_server.replace('localhost', '127.0.0.1');
         }
 
+        validateTextGenServerUrl(request.body.api_type, request.body.api_server);
         console.debug('Trying to connect to API', summarizeLlmPayloadForLog(request.body));
         const baseUrl = trimV1(request.body.api_server);
 
@@ -305,15 +307,20 @@ router.post('/status', async function (request, response) {
 
         return response.send({ result, data: data.data });
     } catch (error) {
+        if (isProviderUrlValidationError(error)) {
+            console.warn('Invalid Text Completion status server URL:', error.message);
+            return response.sendStatus(400);
+        }
         console.error(error);
         return response.sendStatus(500);
     }
 });
 
 router.post('/props', async function (request, response) {
-    if (!request.body.api_server) return response.sendStatus(400);
+    if (!request.body?.api_server) return response.sendStatus(400);
 
     try {
+        validateTextGenServerUrl(request.body.api_type, request.body.api_server);
         const baseUrl = trimV1(request.body.api_server);
         const args = {
             headers: {},
@@ -343,6 +350,10 @@ router.post('/props', async function (request, response) {
         console.debug(`Model properties: ${JSON.stringify(props)}`);
         return response.send(props);
     } catch (error) {
+        if (isProviderUrlValidationError(error)) {
+            console.warn('Invalid Text Completion props server URL:', error.message);
+            return response.sendStatus(400);
+        }
         console.error(error);
         return response.sendStatus(500);
     }
@@ -355,7 +366,7 @@ function getSafeCompletionErrorStatus(status) {
 
 // Neconyan divergence: export the existing handler so Conversation REST can reuse upstream text-generation flow without duplicating provider glue.
 export async function handleTextCompletionsGenerate(request, response) {
-    if (!request.body) return response.sendStatus(400);
+    if (!request.body || !request.body.api_server) return response.sendStatus(400);
 
     try {
         if (request.body.api_server.indexOf('localhost') !== -1) {
@@ -363,6 +374,7 @@ export async function handleTextCompletionsGenerate(request, response) {
         }
 
         const apiType = request.body.api_type;
+        validateTextGenServerUrl(apiType, request.body.api_server);
         const baseUrl = request.body.api_server;
         console.debug('Text completion request:', summarizeLlmPayloadForLog(request.body));
 
@@ -697,7 +709,7 @@ const tabby = express.Router();
 
 tabby.post('/download', async function (request, response) {
     try {
-        const baseUrl = String(request.body.api_server).replace(/\/$/, '');
+        const baseUrl = parseHttpBaseUrl(request.body?.api_server, 'TabbyAPI server URL').toString().replace(/\/$/, '');
 
         const args = {
             method: 'POST',
@@ -706,7 +718,9 @@ tabby.post('/download', async function (request, response) {
             timeout: 0,
         };
 
-        setAdditionalHeaders(request, args, baseUrl);
+        if (!request.anonymousCustom) {
+            setAdditionalHeadersByType(args.headers, TEXTGEN_TYPES.TABBY, baseUrl, request.user.directories, request.body.secret_id, !request.boundProfile);
+        }
 
         // Check key permissions
         const permissionResponse = await fetch(`${baseUrl}/v1/auth/permission`, {
@@ -734,6 +748,10 @@ tabby.post('/download', async function (request, response) {
 
         return response.send({ ok: true });
     } catch (error) {
+        if (isProviderUrlValidationError(error)) {
+            console.warn('Invalid TabbyAPI download server URL:', error.message);
+            return response.sendStatus(400);
+        }
         console.error(error);
         return response.sendStatus(500);
     }

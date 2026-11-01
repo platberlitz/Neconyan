@@ -2,16 +2,31 @@ import fetch from 'node-fetch';
 import { Router } from 'express';
 
 import { readSecret, SECRET_KEYS } from './secrets.js';
+import {
+    DEFAULT_VOLCENGINE_TTS_ENDPOINT,
+    isProviderUrlValidationError,
+    validateVolcengineTtsEndpoint,
+} from './provider-url-validation.js';
 
 export const router = Router();
 
 
 router.post('/generate-voice', async (req, res) => {
     try {
-        let provider_endpoint = req.body.provider_endpoint;
+        let provider_endpoint = req.body?.provider_endpoint;
         if (!provider_endpoint) {
             console.warn('Volcengine endpoint not set, use default endpoint instead');
-            provider_endpoint = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional';
+            provider_endpoint = DEFAULT_VOLCENGINE_TTS_ENDPOINT;
+        }
+        const validatedEndpoint = validateVolcengineTtsEndpoint(provider_endpoint);
+
+        const resourceId = req.body?.resource_id;
+        const text = req.body?.text;
+        const voice_speaker = req.body?.voice_speaker;
+
+        if (!resourceId || !text || !voice_speaker) {
+            console.warn('Volcengine generate-voice request missing required parameters resourceId or text or voice_speaker');
+            return res.sendStatus(400);
         }
 
         const appId = readSecret(req.user.directories, SECRET_KEYS.VOLCENGINE_APP_ID);
@@ -22,16 +37,7 @@ router.post('/generate-voice', async (req, res) => {
             return res.sendStatus(403);
         }
 
-        const resourceId = req.body.resource_id;
-        const text = req.body.text;
-        const voice_speaker = req.body.voice_speaker;
-
-        if (!resourceId || !text || !voice_speaker) {
-            console.warn('Volcengine generate-voice request missing required parameters resourceId or text or voice_speaker');
-            return res.sendStatus(400);
-        }
-
-        const response = await fetch(provider_endpoint, {
+        const response = await fetch(validatedEndpoint, {
             method: 'POST',
             headers: {
                 'X-Api-App-Id': appId || '',
@@ -130,6 +136,10 @@ router.post('/generate-voice', async (req, res) => {
         res.set('Content-Type', 'audio/mpeg');
         res.status(200).send(finalAudioData);
     } catch (error) {
+        if (isProviderUrlValidationError(error)) {
+            console.warn('Volcengine generate-voice invalid endpoint:', error.message);
+            return res.sendStatus(400);
+        }
         console.error('Volcengine generate-voice fetch failed', error);
         res.status(500).send('Could not generate the speech. Try again in a moment.');
     }

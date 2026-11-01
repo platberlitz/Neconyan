@@ -1264,7 +1264,7 @@ function buildReplacementHtml(match, pattern) {
     return tempDiv.innerHTML;
 }
 
-function executeRegexScriptForDebugging(script, text) {
+export function executeRegexScriptForDebugging(script, text) {
     let err;
     let originalRegex;
 
@@ -1273,7 +1273,7 @@ function executeRegexScriptForDebugging(script, text) {
         if (!originalRegex) throw new Error('Invalid regex string');
     } catch (e) {
         err = `Compile error: ${e.message}`;
-        return { output: text, highlightedOutput: text, error: err, charsCaptured: 0, charsAdded: 0, charsRemoved: 0 };
+        return { output: text, highlightedOutput: escapeHtml(text), error: err, charsCaptured: 0, charsAdded: 0, charsRemoved: 0 };
     }
 
     const globalRegex = new RegExp(originalRegex.source, originalRegex.flags.includes('g') ? originalRegex.flags : originalRegex.flags + 'g');
@@ -1442,7 +1442,8 @@ function populateDebuggerRuleList(container) {
                 return;
             }
             const scriptId = $(this).data('id');
-            const stepElement = $(`#step-result-${scriptId}`);
+            const targetStepId = `step-result-${scriptId}`;
+            const stepElement = $(document.getElementById(targetStepId));
             const container = $('#regex_debugger_steps_output');
 
             if (stepElement.length && container.length) {
@@ -1531,7 +1532,7 @@ async function onRegexDebuggerOpenClick() {
         let totalCharsRemoved = 0;
 
         orderedRuleIds.forEach(scriptId => {
-            const ruleElement = $(`#regex_debugger_rules [data-id="${scriptId}"]`);
+            const ruleElement = $('#regex_debugger_rules .regex-debugger-rule').filter((_, el) => $(el).data('id') === scriptId);
             if (!ruleElement.find('.rule-enabled').is(':checked')) return;
 
             const script = allScripts.find(s => s.id === scriptId);
@@ -1558,7 +1559,7 @@ async function onRegexDebuggerOpenClick() {
                 }
 
                 if (result.error) {
-                    stepHeader.append($(`<div class='warning_text text_rose-500'>${result.error}</div>`));
+                    stepHeader.append($('<div class="warning_text text_rose-500"></div>').text(result.error));
                 }
 
                 stepsOutput.append(stepElement);
@@ -1631,9 +1632,9 @@ async function onRegexDebuggerOpenClick() {
                 navPanel.find('a').removeClass('active');
                 $(this).addClass('active');
 
-                const targetId = $(this).data('target-id');
+                const targetId = String($(this).data('target-id') ?? '');
                 // The selector is now correct for the structure.
-                const targetElement = contentPanel.find(`#${targetId}`);
+                const targetElement = contentPanel.find('[id]').filter((_, el) => el.id === targetId);
 
                 if (targetElement.length) {
                     const scrollTo = contentPanel.scrollTop() + targetElement.position().top;

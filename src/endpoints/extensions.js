@@ -45,6 +45,90 @@ const MANUAL_SYNC_EXTENSIONS = new Map([
  */
 const OPTIONS = Object.freeze({ timeout: { block: 5 * 60 * 1000 } });
 
+function assertSafeExtensionTree(directoryPath, extensionRoot = directoryPath) {
+    const resolvedRoot = fs.realpathSync(extensionRoot);
+    for (const entry of fs.readdirSync(directoryPath, { withFileTypes: true })) {
+        if (directoryPath === extensionRoot && entry.name === '.git') {
+            continue;
+        }
+
+        const entryPath = path.join(directoryPath, entry.name);
+        const stat = fs.lstatSync(entryPath);
+        if (stat.isSymbolicLink()) {
+            throw new Error(`Extension cannot contain symbolic links: ${path.relative(extensionRoot, entryPath)}`);
+        }
+        const resolvedEntry = fs.realpathSync(entryPath);
+        const relativeToRoot = path.relative(resolvedRoot, resolvedEntry);
+        if (relativeToRoot === '..' || relativeToRoot.startsWith(`..${path.sep}`) || path.isAbsolute(relativeToRoot)) {
+            throw new Error(`Extension entry escapes extension root: ${path.relative(extensionRoot, entryPath)}`);
+        }
+        if (stat.isDirectory()) {
+            assertSafeExtensionTree(entryPath, extensionRoot);
+        } else if (!stat.isFile()) {
+            throw new Error(`Extension contains unsupported file type: ${path.relative(extensionRoot, entryPath)}`);
+        }
+    }
+}
+
+function isValidGitRefName(branch) {
+    return typeof branch === 'string'
+        && branch.length > 0
+        && branch.length <= 255
+        && branch === branch.trim()
+        && !branch.startsWith('-')
+        && !branch.startsWith('/')
+        && !branch.endsWith('/')
+        && !branch.endsWith('.lock')
+        && !branch.includes('..')
+        && !branch.includes('@{')
+        && !branch.includes('\\')
+        && !/[\x00-\x20\x7f~^:?*[]/.test(branch)
+        && branch.split('/').every(part => part.length > 0 && !part.startsWith('.') && !part.startsWith('-'));
+}
+
+function isAccessibleDirectory(directoryPath) {
+    try {
+        return fs.statSync(directoryPath).isDirectory();
+    } catch (error) {
+        if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR' || error?.code === 'ELOOP') {
+            console.warn(`Skipping inaccessible or broken extension directory at ${directoryPath}: ${error.message}`);
+            return false;
+        }
+        return false;
+    }
+}
+
+async function captureExtensionGitState(git) {
+    const commit = (await git.revparse(['HEAD']).catch(() => '')).trim();
+    const symbolicBranch = (await git.raw(['symbolic-ref', '-q', '--short', 'HEAD']).catch(() => '')).trim();
+    return {
+        commit,
+        symbolicBranch,
+        restoreTarget: symbolicBranch || commit,
+    };
+}
+
+async function restoreExtensionGitState(git, state, { createdBranch = '' } = {}) {
+    if (state.restoreTarget) {
+        await git.checkout([state.restoreTarget]).catch(() => {});
+    }
+    if (createdBranch && createdBranch !== state.symbolicBranch) {
+        await git.deleteLocalBranch(createdBranch, true).catch(() => {});
+    }
+}
+
+async function popOwnedStash(git, ownedStashSha) {
+    if (!ownedStashSha) {
+        return false;
+    }
+    const topStashSha = (await git.revparse(['refs/stash']).catch(() => '')).trim();
+    if (!topStashSha || topStashSha !== ownedStashSha) {
+        return false;
+    }
+    await git.stash(['pop']);
+    return true;
+}
+
 /**
  * This function extracts the extension information from the manifest file.
  * @param {string} extensionPath - The path of the extension folder
@@ -53,12 +137,19 @@ const OPTIONS = Object.freeze({ timeout: { block: 5 * 60 * 1000 } });
 async function getManifest(extensionPath) {
     const manifestPath = path.join(extensionPath, 'manifest.json');
 
-    // Check if manifest.json exists
-    if (!fs.existsSync(manifestPath)) {
+    // Check if manifest.json exists and is a regular file inside the extension's resolved root
+    const lstat = fs.lstatSync(manifestPath, { throwIfNoEntry: false });
+    if (!lstat || lstat.isSymbolicLink() || !lstat.isFile()) {
         throw new Error(`Manifest file not found at ${manifestPath}`);
     }
+    const realRoot = fs.realpathSync(extensionPath);
+    const realManifest = fs.realpathSync(manifestPath);
+    const rel = path.relative(realRoot, realManifest);
+    if (!rel || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+        throw new Error(`Manifest file escapes extension root at ${manifestPath}`);
+    }
 
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    const manifest = JSON.parse(fs.readFileSync(realManifest, 'utf8'));
     return manifest;
 }
 
@@ -351,6 +442,10 @@ router.post('/install', async (request, response) => {
             fs.mkdirSync(PUBLIC_DIRECTORIES.globalExtensions);
         }
 
+        if (branch !== undefined && branch !== '' && !isValidGitRefName(branch)) {
+            return response.status(400).send('That extension version name is not valid.');
+        }
+
         const basePath = global ? PUBLIC_DIRECTORIES.globalExtensions : request.user.directories.extensions;
         const extensionNameSanitized = sanitize(path.basename(parsedUrl.pathname, '.git'));
         if (!extensionNameSanitized) {
@@ -359,6 +454,14 @@ router.post('/install', async (request, response) => {
 
         if (rejectBundledThirdPartyExtension(extensionNameSanitized, response, 'installed')) {
             return;
+        }
+
+        try {
+            const { validateOutboundTarget } = await import('../safe-http.js');
+            await validateOutboundTarget(parsedUrl, { allowPrivate: request.user?.profile?.admin === true });
+        } catch (urlError) {
+            const status = urlError?.status === 403 ? 403 : 400;
+            return response.status(status).send(urlError.message || 'That extension address is not allowed.');
         }
 
         const extensionPath = path.join(basePath, extensionNameSanitized);
@@ -376,6 +479,7 @@ router.post('/install', async (request, response) => {
         console.info(`Extension has been cloned to ${extensionPath} from ${parsedUrl.href} at ${branch || '(default)'} branch`);
 
         try {
+            assertSafeExtensionTree(extensionPath);
             const manifest = await getManifest(extensionPath);
             if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
                 throw new Error('Manifest is not a valid JSON object.');
@@ -442,29 +546,71 @@ router.post('/update', async (request, response) => {
         const autoStash = getConfigValue('autoStashBeforePull', false, 'boolean');
         const gitStatus = await git.status();
         let stashed = false;
+        let ownedStashSha = '';
         let stashPopWarning = null;
 
         if (!gitStatus.isClean() && autoStash) {
             try {
+                const stashBefore = (await git.revparse(['refs/stash']).catch(() => '')).trim();
                 await git.stash(['push', '-m', `Neconyan auto-stash before extension update (${extensionName})`]);
-                stashed = true;
-                console.info(`Local changes stashed before updating extension at ${extensionPath}`);
+                const stashAfter = (await git.revparse(['refs/stash']).catch(() => '')).trim();
+                if (stashAfter && stashAfter !== stashBefore) {
+                    stashed = true;
+                    ownedStashSha = stashAfter;
+                    console.info(`Local changes stashed before updating extension at ${extensionPath}`);
+                }
             } catch (stashError) {
                 console.warn(`Failed to stash local changes for extension at ${extensionPath}`, stashError);
             }
         }
 
         const currentBranch = await git.branch();
+        const previousCommit = (await git.revparse(['HEAD']).catch(() => '')).trim();
+        let pulled = false;
         if (!isUpToDate) {
-            await git.pull('origin', currentBranch.current);
-            console.info(`Extension has been updated at ${extensionPath}`);
+            try {
+                await git.pull('origin', currentBranch.current);
+                pulled = true;
+                console.info(`Extension has been updated at ${extensionPath}`);
+            } catch (pullError) {
+                if (stashed && ownedStashSha) {
+                    await popOwnedStash(git, ownedStashSha).catch(popError => {
+                        console.warn(`Failed to restore stashed changes after failed extension pull at ${extensionPath}`, popError);
+                    });
+                }
+                throw pullError;
+            }
         } else {
             console.info(`Extension is up to date at ${extensionPath}`);
         }
 
-        if (stashed) {
+        try {
+            assertSafeExtensionTree(extensionPath);
+        } catch (treeError) {
+            let rollbackFailed = false;
+            if (pulled && previousCommit) {
+                try {
+                    await git.raw(['reset', '--keep', previousCommit]);
+                } catch (rollbackError) {
+                    rollbackFailed = true;
+                    console.error(`Failed to roll back unsafe extension update at ${extensionPath}; preserving local edits and stash.`, rollbackError);
+                    const combinedError = new Error(`Unsafe extension update rejected, and automatic rollback to ${previousCommit.slice(0, 7)} was refused to preserve local changes: ${rollbackError.message}`);
+                    combinedError.cause = { treeError, rollbackError };
+                    combinedError.rollbackFailed = true;
+                    throw combinedError;
+                }
+            }
+            if (!rollbackFailed && stashed && ownedStashSha) {
+                await popOwnedStash(git, ownedStashSha).catch(popError => {
+                    console.warn(`Failed to restore stashed changes after rejecting unsafe extension update at ${extensionPath}`, popError);
+                });
+            }
+            throw treeError;
+        }
+
+        if (stashed && ownedStashSha) {
             try {
-                await git.stash(['pop']);
+                await popOwnedStash(git, ownedStashSha);
                 console.info(`Stashed changes restored for extension at ${extensionPath}`);
             } catch (popError) {
                 stashPopWarning = `Extension updated, but local changes could not be restored: ${popError.message}. Changes remain in git stash.`;
@@ -479,6 +625,9 @@ router.post('/update', async (request, response) => {
         return response.send({ shortCommitHash, extensionPath, isUpToDate, remoteUrl, stashed, stashPopWarning });
     } catch (error) {
         console.error('Updating extension failed', error);
+        if (error?.rollbackFailed) {
+            return response.status(500).send('Could not safely roll back the rejected extension update without overwriting local changes. Local edits and stashes were preserved.');
+        }
         return response.status(500).send('Could not update the extension. Try again in a moment.');
     }
 });
@@ -545,11 +694,14 @@ router.post('/switch', async (request, response) => {
 
         const { extensionName, branch, global } = request.body;
         const extensionNameSanitized = sanitize(extensionName);
-        if (!extensionNameSanitized || !branch) {
+        if (!extensionNameSanitized || typeof branch !== 'string' || !branch) {
             return response.status(400).send('Choose an extension and a version first.');
         }
         if (rejectBundledThirdPartyExtension(extensionNameSanitized, response, 'switched')) {
             return;
+        }
+        if (!isValidGitRefName(branch)) {
+            return response.status(400).send('That extension version name is not valid.');
         }
 
         if (global && !request.user.profile.admin) {
@@ -568,17 +720,39 @@ router.post('/switch', async (request, response) => {
 
         const git = simpleGit({ baseDir: extensionPath, ...OPTIONS });
         const branches = await git.branchLocal();
+        const priorState = await captureExtensionGitState(git);
 
-        if (String(branch).startsWith('origin/')) {
-            const localBranch = branch.replace('origin/', '');
+        if (branch.startsWith('origin/')) {
+            const localBranch = branch.slice('origin/'.length);
+            if (!isValidGitRefName(localBranch)) {
+                return response.status(400).send('That extension version name is not valid.');
+            }
             if (branches.all.includes(localBranch)) {
                 console.info(`Branch ${localBranch} already exists locally, checking it out`);
                 await git.checkout(localBranch);
+                try {
+                    assertSafeExtensionTree(extensionPath);
+                } catch (treeError) {
+                    await restoreExtensionGitState(git, priorState);
+                    throw treeError;
+                }
                 return response.sendStatus(204);
+            }
+
+            const remoteBranches = await git.branch(['-r', '--list', 'origin/*']);
+            if (!remoteBranches.all.includes(branch)) {
+                console.error(`Remote branch ${branch} does not exist`);
+                return response.status(404).send(`That version (${branch}) is not on this server.`);
             }
 
             console.info(`Branch ${localBranch} does not exist locally, creating it from ${branch}`);
             await git.checkoutBranch(localBranch, branch);
+            try {
+                assertSafeExtensionTree(extensionPath);
+            } catch (treeError) {
+                await restoreExtensionGitState(git, priorState, { createdBranch: localBranch });
+                throw treeError;
+            }
             return response.sendStatus(204);
         }
 
@@ -588,14 +762,19 @@ router.post('/switch', async (request, response) => {
         }
 
         // Check if the branch is already checked out
-        const currentBranch = await git.branch();
-        if (currentBranch.current === branch) {
+        if (priorState.symbolicBranch === branch) {
             console.info(`Branch ${branch} is already checked out`);
             return response.sendStatus(204);
         }
 
         // Checkout the branch
         await git.checkout(branch);
+        try {
+            assertSafeExtensionTree(extensionPath);
+        } catch (treeError) {
+            await restoreExtensionGitState(git, priorState);
+            throw treeError;
+        }
         console.info(`Checked out branch ${branch} at ${extensionPath}`);
 
         return response.sendStatus(204);
@@ -679,6 +858,11 @@ router.post('/version', async (request, response) => {
         }
         if (isBundledThirdPartyExtension(extensionNameSanitized)) {
             return response.send({ currentBranchName: '', currentCommitHash: '', isUpToDate: true, remoteUrl: '' });
+        }
+
+        if (global && !request.user.profile.admin) {
+            console.error(`User ${request.user.profile.handle} does not have permission to check global extensions.`);
+            return response.status(403).send('You do not have permission to check global extensions.');
         }
 
         const basePath = global ? PUBLIC_DIRECTORIES.globalExtensions : request.user.directories.extensions;
@@ -832,14 +1016,14 @@ router.get('/discover', async function (request, response) {
     // Get all folders in system extensions folder, excluding third-party
     const builtInExtensions = fs
         .readdirSync(PUBLIC_DIRECTORIES.extensions)
-        .filter(f => fs.statSync(path.join(PUBLIC_DIRECTORIES.extensions, f)).isDirectory())
+        .filter(f => isAccessibleDirectory(path.join(PUBLIC_DIRECTORIES.extensions, f)))
         .filter(f => f !== 'third-party')
         .map(f => ({ type: getBuiltInExtensionType(f), name: f }));
 
     // Get all folders in local extensions folder
     const userExtensions = fs
         .readdirSync(path.join(request.user.directories.extensions))
-        .filter(f => fs.statSync(path.join(request.user.directories.extensions, f)).isDirectory())
+        .filter(f => isAccessibleDirectory(path.join(request.user.directories.extensions, f)))
         .filter(f => {
             if (!isNativeExtension(f)) {
                 return true;
@@ -854,7 +1038,7 @@ router.get('/discover', async function (request, response) {
     // In case of a conflict, the extension will be loaded from the user folder
     const globalExtensions = fs
         .readdirSync(PUBLIC_DIRECTORIES.globalExtensions)
-        .filter(f => fs.statSync(path.join(PUBLIC_DIRECTORIES.globalExtensions, f)).isDirectory())
+        .filter(f => isAccessibleDirectory(path.join(PUBLIC_DIRECTORIES.globalExtensions, f)))
         .map(f => ({ type: isNativeExtension(f) ? 'native' : 'global', name: `third-party/${f}` }))
         .filter(f => !userExtensions.some(e => e.name === f.name));
 
@@ -882,7 +1066,7 @@ router.get('/discover', async function (request, response) {
                 : extension.type === 'local' ? path.join(request.user.directories.extensions, extension.name.replace(/^third-party\//, ''))
                     : path.join(PUBLIC_DIRECTORIES.extensions, extension.name);
             try {
-                extension.manifest = JSON.parse(await fs.promises.readFile(path.join(directory, 'manifest.json'), 'utf8'));
+                extension.manifest = await getManifest(directory);
             } catch {
                 // Leave malformed/missing manifests to the existing client fallback.
             }

@@ -1,6 +1,10 @@
 import express from 'express';
 import fetch from 'node-fetch';
 import { readSecret, SECRET_KEYS } from './secrets.js';
+import { isProviderUrlValidationError, validateMiniMaxApiHost } from './provider-url-validation.js';
+import { normalizeImageSource } from '../../public/scripts/extensions/quick-image-gen/lib/security.js';
+import { MAX_AUDIO_BYTES } from '../jobs/audio-artifacts.js';
+import { safeFetchFollowRedirects } from '../safe-http.js';
 
 export const router = express.Router();
 
@@ -16,6 +20,42 @@ const getAudioMimeType = (format) => {
     return mimeTypes[format] || 'audio/mpeg';
 };
 
+/**
+ * Validates that a returned MiniMax audio download URL is a public HTTPS resource
+ * without embedded credentials or private/loopback hostnames.
+ * @param {unknown} rawUrl
+ * @param {string} apiOrigin
+ * @param {string[]} sensitiveValues
+ * @returns {string}
+ */
+export function validateMiniMaxAudioOutputUrl(rawUrl, apiOrigin, sensitiveValues = []) {
+    if (typeof rawUrl !== 'string' || !rawUrl.trim() || rawUrl.length > 8192) {
+        throw new Error('The returned MiniMax audio URL is missing or invalid.');
+    }
+    let parsed;
+    try {
+        parsed = new URL(rawUrl.trim(), apiOrigin);
+    } catch {
+        throw new Error('The returned MiniMax audio URL is invalid.');
+    }
+    if (
+        parsed.protocol !== 'https:'
+        || parsed.username
+        || parsed.password
+        || parsed.hash
+        || sensitiveValues.some(secret => secret && parsed.href.includes(secret))
+    ) {
+        throw new Error('The returned MiniMax audio URL is invalid or contains credentials.');
+    }
+    if (
+        parsed.origin !== apiOrigin
+        && !normalizeImageSource(parsed.href, { allowHttp: false, allowRelative: false, blockPrivateHosts: true })
+    ) {
+        throw new Error('The returned MiniMax audio URL is not a public HTTPS resource.');
+    }
+    return parsed.href;
+}
+
 router.post('/generate-voice', async (request, response) => {
     try {
         const {
@@ -30,7 +70,9 @@ router.post('/generate-voice', async (request, response) => {
             bitrate = 128000,
             format = 'mp3',
             language,
-        } = request.body;
+        } = request.body ?? {};
+
+        const validatedApiOrigin = validateMiniMaxApiHost(apiHost);
 
         const apiKey = readSecret(request.user.directories, SECRET_KEYS.MINIMAX);
         const groupId = readSecret(request.user.directories, SECRET_KEYS.MINIMAX_GROUP_ID);
@@ -64,7 +106,7 @@ router.post('/generate-voice', async (request, response) => {
             requestBody.lang = language;
         }
 
-        const apiUrl = `${apiHost}/v1/t2a_v2?GroupId=${groupId}`;
+        const apiUrl = `${validatedApiOrigin}/v1/t2a_v2?GroupId=${encodeURIComponent(groupId)}`;
 
         console.debug('MiniMax TTS Request:', {
             url: apiUrl,
@@ -198,13 +240,44 @@ router.post('/generate-voice', async (request, response) => {
             console.debug('MiniMax TTS: Received audio URL:', responseData.data.url);
 
             try {
-                const audioResponse = await fetch(responseData.data.url);
+                const safeAudioUrl = validateMiniMaxAudioOutputUrl(
+                    responseData.data.url,
+                    validatedApiOrigin,
+                    [apiKey, groupId],
+                );
+                const audioResponse = await safeFetchFollowRedirects(safeAudioUrl, {
+                    method: 'GET',
+                    allowPrivate: false,
+                    disallowIpLiterals: true,
+                    standardPortsOnly: true,
+                    maxRedirects: 0,
+                    maxBytes: MAX_AUDIO_BYTES,
+                    isAllowedHost: (_host, url) => url.protocol === 'https:',
+                    lookupAddresses: request.lookupAddresses,
+                    fetchImpl: request.fetch || fetch,
+                });
                 if (!audioResponse.ok) {
                     console.error('MiniMax TTS: Failed to fetch audio from URL:', audioResponse.status);
                     return response.status(500).json({ error: 'The audio could not be downloaded from MiniMax. Try again.' });
                 }
 
+                const contentType = String(audioResponse.headers?.get?.('content-type') || '').split(';')[0].trim().toLowerCase();
+                if (contentType && !['application/octet-stream', 'binary/octet-stream'].includes(contentType) && !/^audio\/[a-z0-9.+-]+$/.test(contentType)) {
+                    audioResponse.body?.destroy?.();
+                    console.error('MiniMax TTS: Audio URL returned non-audio content-type:', contentType);
+                    return response.status(500).json({ error: 'The audio could not be downloaded from MiniMax. Try again.' });
+                }
+
+                const declaredLength = Number(audioResponse.headers?.get?.('content-length'));
+                if (Number.isFinite(declaredLength) && declaredLength > MAX_AUDIO_BYTES) {
+                    audioResponse.body?.destroy?.();
+                    return response.status(500).json({ error: 'The audio could not be downloaded from MiniMax. Try again.' });
+                }
+
                 const audioBuffer = await audioResponse.arrayBuffer();
+                if (audioBuffer.byteLength > MAX_AUDIO_BYTES) {
+                    return response.status(500).json({ error: 'The audio could not be downloaded from MiniMax. Try again.' });
+                }
                 const mimeType = getAudioMimeType(format);
 
                 response.setHeader('Content-Type', mimeType);
@@ -222,6 +295,10 @@ router.post('/generate-voice', async (request, response) => {
             return response.status(500).json({ error: `MiniMax returned an error: ${errorMessage}` });
         }
     } catch (error) {
+        if (isProviderUrlValidationError(error)) {
+            console.warn('MiniMax TTS: Invalid API host:', error.message);
+            return response.status(400).json({ error: error.message });
+        }
         console.error('MiniMax TTS generation failed:', error);
         return response.status(500).json({ error: 'Could not generate the speech. Try again in a moment.' });
     }
