@@ -927,7 +927,7 @@ export function initRossMods() {
 
     // when a char is selected from the list, save their name as the auto-load character for next page load
     $(document).on('click', '.character_select', function () {
-        const characterId = $(this).attr('data-chid');
+        const characterId = Number($(this).attr('data-chid'));
         setActiveCharacter(characterId);
         setActiveGroup(null);
         saveSettingsDebounced();

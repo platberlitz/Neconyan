@@ -12,10 +12,13 @@ import {
     event_types,
     DEFAULT_PRINT_TIMEOUT,
     printCharacters,
+    selectCharacterById,
+    getThumbnailUrlForViewport,
+    default_avatar,
 } from '../script.js';
 import { FILTER_TYPES, FILTER_STATES, DEFAULT_FILTER_STATE, isFilterState, FilterHelper } from './filters.js';
 
-import { groupCandidatesFilter, groupMembersFilter, groups, selected_group } from './group-chats.js';
+import { groupCandidatesFilter, groupMembersFilter, groups, selected_group, openGroupById } from './group-chats.js';
 import { download, onlyUnique, parseJsonFile, uuidv4, getSortableDelay, flashHighlight, equalsIgnoreCaseAndAccents, includesIgnoreCaseAndAccents, removeFromArray, getFreeName, debounce, findChar, escapeHtml } from './utils.js';
 import { power_user } from './power-user.js';
 import { SlashCommandParser } from './slash-commands/SlashCommandParser.js';
@@ -30,6 +33,26 @@ import { renderTemplateAsync } from './templates.js';
 import { t, translate } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { enumTypes, SlashCommandEnumValue } from './slash-commands/SlashCommandEnumValue.js';
+import {
+    applyNotesImportPayload,
+    applyTagDragOrder,
+    buildTagManagerBackupPayload,
+    bulkAssignTagsToEntities,
+    bulkRemoveTagsFromEntities,
+    createTagDeletionSnapshot,
+    filterAndSortEntities,
+    filterAndSortTagRecords,
+    getEntityOrganizerNote,
+    getTagNote,
+    mergeTagsIntoPrimary,
+    pruneEntityOrganizerNotes,
+    renameEntityOrganizerNoteKey,
+    resolveTagKeyForEntity,
+    restoreTagDeletionSnapshot,
+    restoreTagsFromBackup,
+    setEntityOrganizerNote,
+    setTagNote,
+} from './neconyan-character-tag-manager.js';
 
 export {
     TAG_FOLDER_TYPES,
@@ -60,6 +83,50 @@ const GROUP_MEMBERS_FILTER_SELECTOR = '#rm_group_members_header ~ .rm_tag_contro
 const TAG_TEMPLATE = $('#tag_template .tag');
 const FOLDER_TEMPLATE = $('#bogus_folder_template .bogus_folder_select');
 const VIEW_TAG_TEMPLATE = $('#tag_view_template .tag_view_item');
+
+/**
+ * Ephemeral state for the open Character Tag Manager. It is reset every time the popup is
+ * opened, so nothing here is persisted or written to settings by itself.
+ */
+const tagManagerState = {
+    activeTab: 'tags',
+    mode: 'normal',
+    tagQuery: '',
+    tagFilter: 'all',
+    entityQuery: '',
+    entityFilter: 'all',
+    entitySort: 'alpha_asc',
+    selectedTagIds: new Set(),
+    mergePrimaryTagId: null,
+    selectedEntityKeys: new Set(),
+    selectedAssignTagIds: new Set(),
+    visibleEntityKeys: [],
+    openTagDrawerIds: new Set(),
+    openTagNoteIds: new Set(),
+    openEntityNoteKeys: new Set(),
+    lastTagDeletionSnapshot: null,
+    lastTagDeletionMessage: '',
+};
+
+function resetTagManagerState() {
+    tagManagerState.activeTab = 'tags';
+    tagManagerState.mode = 'normal';
+    tagManagerState.tagQuery = '';
+    tagManagerState.tagFilter = 'all';
+    tagManagerState.entityQuery = '';
+    tagManagerState.entityFilter = 'all';
+    tagManagerState.entitySort = 'alpha_asc';
+    tagManagerState.selectedTagIds.clear();
+    tagManagerState.mergePrimaryTagId = null;
+    tagManagerState.selectedEntityKeys.clear();
+    tagManagerState.selectedAssignTagIds.clear();
+    tagManagerState.visibleEntityKeys = [];
+    tagManagerState.openTagDrawerIds.clear();
+    tagManagerState.openTagNoteIds.clear();
+    tagManagerState.openEntityNoteKeys.clear();
+    tagManagerState.lastTagDeletionSnapshot = null;
+    tagManagerState.lastTagDeletionMessage = '';
+}
 
 /**
  * Gets the context information (selector and search input) for a filter helper.
@@ -254,7 +321,9 @@ export const tag_import_setting = {
 export const tag_sort_mode = {
     MANUAL: 'manual',
     ALPHABETICAL: 'alphabetical',
+    ALPHABETICAL_DESC: 'alphabetical_desc',
     BY_ENTRIES: 'by_entries',
+    BY_ENTRIES_ASC: 'by_entries_asc',
 };
 
 /**
@@ -620,6 +689,7 @@ function renameTagKey(oldKey, newKey) {
     const value = tag_map[oldKey];
     tag_map[newKey] = value || [];
     delete tag_map[oldKey];
+    renameEntityOrganizerNoteKey(power_user, oldKey, newKey);
     saveSettingsDebounced();
 }
 
@@ -683,42 +753,23 @@ function getTagKey() {
 
 /**
  * Gets the tag key for any provided entity/id/key. If a valid tag key is provided, it just returns this.
- * Robust method to find a valid tag key for any entity.
+ * Explicit character/group wrappers win; numbers are character indices first, strings are
+ * avatars first, then group ids, then string character indices.
  *
  * @param {object|number|string} entityOrKey An entity with id property (character, group, tag), or directly an id or tag key.
  * @returns {string|undefined} The tag key that can be found.
  */
 export function getTagKeyForEntity(entityOrKey) {
-    let x = entityOrKey;
-
-    // If it's an object and has an 'id' property, we take this for further processing
-    if (typeof x === 'object' && x !== null && 'id' in x) {
-        x = x.id;
+    const key = resolveTagKeyForEntity(entityOrKey, { characters, groups, tagMap: tag_map });
+    if (!key) {
+        return undefined;
     }
 
-    // Next lets check if its a valid character or character id, so we can swith it to its tag
-    let character;
-    if (!character && characters.indexOf(x) >= 0) character = x; // Check for char object
-    if (!character && !isNaN(parseInt(entityOrKey))) character = characters[x]; // check if its a char id
-    if (!character) character = characters.find(y => y.avatar === x); // check if its a char key
-
-    if (character) {
-        x = character.avatar;
+    if (!Object.hasOwn(tag_map, key)) {
+        tag_map[key] = [];
     }
 
-    // Uninitialized character tag map
-    if (character && !(x in tag_map)) {
-        tag_map[x] = [];
-        return x;
-    }
-
-    // We should hopefully have a key now. Let's check
-    if (x in tag_map) {
-        return x;
-    }
-
-    // If none of the above, we cannot find a valid tag key
-    return undefined;
+    return key;
 }
 
 /**
@@ -736,9 +787,14 @@ export function getTagKeyForEntityElement(element) {
     while (element.length && element.parent().length) {
         const grid = element.attr('data-grid');
         const chid = element.attr('data-chid');
-        if (grid || chid) {
-            const id = grid || chid;
-            return getTagKeyForEntity(id);
+
+        if (grid !== undefined && grid !== null && String(grid) !== '') {
+            return getTagKeyForEntity(String(grid));
+        }
+
+        if (chid !== undefined && chid !== null && String(chid) !== '') {
+            const numericChid = Number(chid);
+            return getTagKeyForEntity(Number.isNaN(numericChid) ? String(chid) : numericChid);
         }
 
         // Move up to the parent element
@@ -1684,8 +1740,10 @@ export function applyTagsOnGroupSelect(groupId = null) {
         return;
     }
 
-    groupId = groupId ?? (selected_group ? Number(selected_group) : undefined);
-    printTagList($('#groupTagList'), { forEntityOrKey: groupId, tagOptions: { removable: true } });
+    const targetGroupId = groupId !== null && groupId !== undefined
+        ? String(groupId)
+        : (selected_group ? String(selected_group) : undefined);
+    printTagList($('#groupTagList'), { forEntityOrKey: targetGroupId, tagOptions: { removable: true } });
     printTagFilters(tag_filter_type.group_candidates_list);
     printTagFilters(tag_filter_type.group_members_list);
 }
@@ -1709,37 +1767,284 @@ export function createTagInput(inputSelector, listSelector, tagListOptions = {})
 }
 
 async function onViewTagsListClick() {
+    resetTagManagerState();
+
     const html = $(document.createElement('div'));
     html.attr('id', 'tag_view_list');
     html.append(await renderTemplateAsync('tagManagement', { bogus_folders: power_user.bogus_folders }));
 
-    const tagContainer = $('<div class="tag_view_list_tags ui-sortable"></div>');
-    html.append(tagContainer);
+    let tagContainer = html.find('.tag_view_list_tags');
+    if (tagContainer.length === 0) {
+        tagContainer = $('<div class="tag_view_list_tags ui-sortable"></div>');
+        html.find('[data-tag-manager-panel="tags"]').append(tagContainer);
+    }
 
     const $sortModeSelect = html.find('#tag_sort_mode_select');
-    $sortModeSelect.val(power_user.tag_sort_mode);
+    $sortModeSelect.val(getTagManagerSortMode());
     $sortModeSelect.on('change', function () {
         const newMode = $(this).val().toString();
-        power_user.tag_sort_mode = newMode;
+        power_user.tag_sort_mode = Object.values(tag_sort_mode).includes(newMode) ? newMode : tag_sort_mode.MANUAL;
         saveSettingsDebounced();
-        printViewTagList(tagContainer);
+        printViewTagList(getTagManagerTagContainer());
+    });
+
+    html.find('#tag_view_filter_select').val(tagManagerState.tagFilter);
+    html.find('#tag_view_bogus_folders_toggle').prop('checked', Boolean(power_user.bogus_folders));
+    html.find('#tag_view_create_folder').val(TAG_FOLDER_DEFAULT_TYPE);
+
+    wireTagManagerStaticControls(html);
+
+    // show() appends the dialog synchronously, so the manager helpers can find the live
+    // nodes on the very first paint instead of waiting for a user interaction.
+    const popupPromise = callGenericPopup(html, POPUP_TYPE.TEXT, null, {
+        allowVerticalScrolling: true,
+        wide: true,
+        large: true,
+        okButton: t`Done`,
     });
 
     printViewTagList(tagContainer);
     makeTagListDraggable(tagContainer);
+    setTagManagerTab('tags');
+    renderTagManagerUndoBar();
 
-    await callGenericPopup(html, POPUP_TYPE.TEXT, null, { allowVerticalScrolling: true, wide: true, large: true });
+    await popupPromise;
+}
+
+function getTagManagerRoot() {
+    return $('#tag_view_list');
+}
+
+function buildTagManagerConfirmBody(message) {
+    return $('<p></p>')
+        .attr({ id: 'neconyan_tag_manager_confirm', class: 'neconyan-tag-manager-confirm' })
+        .text(message);
+}
+
+function setTagManagerBulkPanelOpen(open = true) {
+    getTagManagerRoot().find('#neconyan_tag_bulk_panel').prop('open', Boolean(open));
+}
+
+function assignTagToManagerEntity(tagId, entityKey) {
+    const result = bulkAssignTagsToEntities({ tagMap: tag_map, tagIds: [tagId], entityKeys: [entityKey] });
+    if (result.assignmentCount > 0) {
+        printCharactersDebounced();
+        saveSettingsDebounced();
+        applyCharacterTagsToMessageDivs();
+        updateTagManagerSummary();
+    }
+    return result;
+}
+
+function removeTagFromManagerEntity(tagId, entityKey) {
+    const result = bulkRemoveTagsFromEntities({ tagMap: tag_map, tagIds: [tagId], entityKeys: [entityKey] });
+    if (result.assignmentCount > 0) {
+        printCharactersDebounced();
+        saveSettingsDebounced();
+        applyCharacterTagsToMessageDivs();
+        updateTagManagerSummary();
+    }
+    return result;
+}
+
+function setTagManagerSnapshotEntry(target, key, value) {
+    Object.defineProperty(target, key, {
+        value,
+        writable: true,
+        enumerable: true,
+        configurable: true,
+    });
+}
+
+function getTagManagerTagContainer() {
+    return getTagManagerRoot().find('.tag_view_list_tags');
+}
+
+function getTagManagerSortMode() {
+    return Object.values(tag_sort_mode).includes(power_user.tag_sort_mode)
+        ? power_user.tag_sort_mode
+        : tag_sort_mode.MANUAL;
+}
+
+function wireTagManagerStaticControls(html) {
+    html.find('[data-tag-manager-tab]').on('click', function () {
+        setTagManagerTab($(this).attr('data-tag-manager-tab'));
+    });
+
+    html.find('[data-tag-manager-tab]').on('keydown', function (event) {
+        const tabs = [...html.find('[data-tag-manager-tab]')];
+        const index = tabs.indexOf(this);
+        let nextIndex = null;
+
+        if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
+        if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
+        if (event.key === 'Home') nextIndex = 0;
+        if (event.key === 'End') nextIndex = tabs.length - 1;
+
+        if (nextIndex === null) return;
+
+        event.preventDefault();
+        const nextTab = tabs[nextIndex];
+        $(nextTab).trigger('focus').trigger('click');
+    });
+
+    html.find('#tag_view_create_input').on('keydown', function (event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            onTagCreateClick();
+        }
+    });
+
+    html.find('#tag_view_search').on('input', function () {
+        tagManagerState.tagQuery = $(this).val().toString();
+        renderTagManagerTagsDebounced();
+    });
+    html.find('#tag_view_filter_select').on('change', function () {
+        tagManagerState.tagFilter = $(this).val().toString();
+        printViewTagList(getTagManagerTagContainer());
+    });
+    html.find('#tag_view_bogus_folders_toggle').on('change', function () {
+        setBogusFoldersEnabled($(this).prop('checked'));
+        printViewTagList(getTagManagerTagContainer());
+    });
+
+    html.find('.tag_view_merge_toggle').on('click', function () {
+        setTagManagerMode(tagManagerState.mode === 'merge' ? 'normal' : 'merge');
+    });
+    html.find('.tag_view_bulk_delete_toggle').on('click', function () {
+        setTagManagerMode(tagManagerState.mode === 'delete' ? 'normal' : 'delete');
+    });
+    html.find('.tag_view_merge_cancel, .tag_view_bulk_delete_cancel').on('click', function () {
+        setTagManagerMode('normal');
+    });
+    html.find('#tag_merge_primary').on('change', function () {
+        tagManagerState.mergePrimaryTagId = $(this).val()?.toString() || null;
+        printViewTagList(getTagManagerTagContainer());
+    });
+    html.find('#tag_merge_confirm').on('click', onTagMergeConfirmClick);
+    html.find('#tag_bulk_delete_confirm').on('click', onTagBulkDeleteConfirmClick);
+    html.find('.tag_view_undo').on('click', onTagManagerUndoClick);
+    html.find('.tag_view_undo_dismiss').on('click', () => {
+        tagManagerState.lastTagDeletionSnapshot = null;
+        tagManagerState.lastTagDeletionMessage = '';
+        renderTagManagerUndoBar();
+    });
+
+    html.find('#neconyan_assign_tag_search').on('input', function () {
+        renderTagManagerAssignChips();
+    });
+    html.find('.neconyan-assign-create-tag').on('click', onCreateAssignTagClick);
+    html.find('#neconyan_assign_new_tag').on('keydown', function (event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            onCreateAssignTagClick();
+        }
+    });
+    html.find('#neconyan_bulk_assign_tags_btn').on('click', () => onBulkTagEntitiesClick(false));
+    html.find('#neconyan_bulk_remove_tags_btn').on('click', () => onBulkTagEntitiesClick(true));
+    html.find('#neconyan_assign_clear_tags').on('click', () => {
+        tagManagerState.selectedAssignTagIds.clear();
+        renderTagManagerAssignChips();
+    });
+
+    html.find('#neconyan_tag_char_search').on('input', function () {
+        tagManagerState.entityQuery = $(this).val().toString();
+        renderTagManagerEntitiesDebounced();
+    });
+    html.find('#neconyan_tag_char_filter').on('change', function () {
+        tagManagerState.entityFilter = $(this).val().toString();
+        renderEntityPanel();
+    });
+    html.find('#neconyan_tag_char_sort').on('change', function () {
+        tagManagerState.entitySort = $(this).val().toString();
+        renderEntityPanel();
+    });
+    html.find('#neconyan_tag_char_select_all').on('click', () => {
+        for (const key of tagManagerState.visibleEntityKeys) {
+            tagManagerState.selectedEntityKeys.add(key);
+        }
+        getTagManagerRoot().find('.neconyan-tag-entity-select').prop('checked', true);
+        setTagManagerBulkPanelOpen(true);
+        updateTagManagerEntitySelectionUi();
+    });
+    html.find('#neconyan_tag_char_clear_selection').on('click', () => {
+        tagManagerState.selectedEntityKeys.clear();
+        getTagManagerRoot().find('.neconyan-tag-entity-select').prop('checked', false);
+        updateTagManagerEntitySelectionUi();
+    });
+}
+
+function setTagManagerTab(tab) {
+    const activeTab = tab === 'entities' ? 'entities' : 'tags';
+    tagManagerState.activeTab = activeTab;
+    const root = getTagManagerRoot();
+
+    root.find('[data-tag-manager-tab]').each(function () {
+        const isActive = $(this).attr('data-tag-manager-tab') === activeTab;
+        $(this).toggleClass('is-active', isActive).attr({
+            'aria-selected': String(isActive),
+            'tabindex': isActive ? '0' : '-1',
+        });
+    });
+
+    root.find('[data-tag-manager-panel]').each(function () {
+        $(this).prop('hidden', $(this).attr('data-tag-manager-panel') !== activeTab);
+    });
+
+    if (activeTab === 'entities') {
+        renderTagManagerAssignChips();
+        renderEntityPanel();
+    } else {
+        printViewTagList(getTagManagerTagContainer());
+    }
+}
+
+function setBogusFoldersEnabled(enabled) {
+    const next = Boolean(enabled);
+    getTagManagerRoot().find('#tag_view_bogus_folders_toggle').prop('checked', next);
+
+    if (Boolean(power_user.bogus_folders) === next) {
+        return;
+    }
+
+    power_user.bogus_folders = next;
+    const settingsToggle = $('#bogus_folders');
+
+    if (settingsToggle.length) {
+        settingsToggle.prop('checked', next).trigger('input');
+    } else {
+        saveSettingsDebounced();
+    }
+}
+
+function setTagManagerMode(mode) {
+    const nextMode = ['merge', 'delete'].includes(mode) ? mode : 'normal';
+    tagManagerState.mode = nextMode;
+    tagManagerState.selectedTagIds.clear();
+
+    if (nextMode !== 'normal') {
+        getTagManagerRoot().find('#neconyan_tag_maintenance').prop('open', true);
+    }
+
+    if (nextMode === 'merge') {
+        const primaryExists = tags.some(tag => String(tag.id) === String(tagManagerState.mergePrimaryTagId));
+        if (!primaryExists) {
+            tagManagerState.mergePrimaryTagId = tags[0]?.id ?? null;
+        }
+    } else if (nextMode !== 'merge') {
+        tagManagerState.mergePrimaryTagId = null;
+    }
+
+    printViewTagList(getTagManagerTagContainer());
 }
 
 function makeTagListDraggable(tagContainer) {
     const onTagsSort = () => {
-        tagContainer.find('.tag_view_item').each(function (i, tagElement) {
-            const id = $(tagElement).attr('id');
-            const tag = tags.find(x => x.id === id);
+        const visibleIds = tagContainer.find('.tag_view_item').map((_, tagElement) => String(tagElement.id)).get();
+        const counts = getTagAssignmentCounts();
+        const ordered = sortTags(tags, counts);
 
-            // Update the sort order
-            tag.sort_order = i;
-        });
+        applyTagDragOrder({ tags, orderedTags: ordered, visibleTagIds: visibleIds });
 
         // If tags were dragged manually, we have to disable auto sorting
         if (power_user.tag_sort_mode !== tag_sort_mode.MANUAL) {
@@ -1751,6 +2056,7 @@ function makeTagListDraggable(tagContainer) {
         // If the order of tags in display has changed, we need to redraw some UI elements. Do it debounced so it doesn't block and you can drag multiple tags.
         printCharactersDebounced();
         saveSettingsDebounced();
+        printViewTagList(tagContainer);
     };
 
     // @ts-ignore
@@ -1759,6 +2065,21 @@ function makeTagListDraggable(tagContainer) {
         stop: () => onTagsSort(),
         handle: '.drag-handle',
     });
+
+    updateTagManagerDragState(tagContainer);
+}
+
+function updateTagManagerDragState(tagContainer = getTagManagerTagContainer()) {
+    if (!tagContainer?.length || !tagContainer.hasClass('ui-sortable')) {
+        return;
+    }
+
+    try {
+        // @ts-ignore
+        tagContainer.sortable('option', 'disabled', tagManagerState.mode !== 'normal');
+    } catch (error) {
+        console.debug('Tag manager sortable is not ready yet', error);
+    }
 }
 
 /**
@@ -1784,16 +2105,20 @@ function compareTagsForSort(a, b, counts = null) {
     // default sort: alphabetical, case insensitive
     const defaultSort = a.name.toLowerCase().localeCompare(b.name.toLowerCase());
 
-    // sort on number of entries
-    if (power_user.tag_sort_mode === tag_sort_mode.BY_ENTRIES) {
+    // sort on number of entries, ascending or descending
+    if (power_user.tag_sort_mode === tag_sort_mode.BY_ENTRIES || power_user.tag_sort_mode === tag_sort_mode.BY_ENTRIES_ASC) {
         const aCount = counts instanceof Map ? (counts.get(a.id) || 0) : 0;
         const bCount = counts instanceof Map ? (counts.get(b.id) || 0) : 0;
-        return (bCount - aCount) || defaultSort;
+        const direction = power_user.tag_sort_mode === tag_sort_mode.BY_ENTRIES_ASC ? 1 : -1;
+        return ((aCount - bCount) * direction) || defaultSort;
     }
 
-    // alphabetical sort
+    // alphabetical sort, ascending or descending
     if (power_user.tag_sort_mode === tag_sort_mode.ALPHABETICAL) {
         return defaultSort;
+    }
+    if (power_user.tag_sort_mode === tag_sort_mode.ALPHABETICAL_DESC) {
+        return -defaultSort;
     }
 
     // manual sort
@@ -1816,112 +2141,150 @@ async function onTagRestoreFileSelect(e) {
         return;
     }
 
-    const data = await parseJsonFile(file);
+    let data;
 
-    if (!data) {
+    try {
+        data = await parseJsonFile(file);
+    } catch (error) {
+        console.warn('Tag restore: Could not read the file.', error);
+        toastr.warning('That file is not valid JSON. Choose a tag backup or a notes file.', 'Tag Restore');
+        $('#tag_view_restore_input').val('');
+        return;
+    }
+
+    if (!data || typeof data !== 'object') {
         toastr.warning('The file is empty', 'Tag Restore');
         console.log('Tag restore: File data empty.');
+        $('#tag_view_restore_input').val('');
         return;
     }
 
-    if (!data.tags || !data.tag_map || !Array.isArray(data.tags) || typeof data.tag_map !== 'object') {
-        toastr.warning('That file is not a tag backup. Choose a tag backup file.', 'Tag Restore');
+    const hasTagBackup = Array.isArray(data.tags) && data.tag_map && typeof data.tag_map === 'object' && !Array.isArray(data.tag_map);
+    const hasNotes = (data.tagNotes && typeof data.tagNotes === 'object')
+        || (data.charNotes && typeof data.charNotes === 'object')
+        || (data.character_tag_notes && typeof data.character_tag_notes === 'object');
+
+    if (hasTagBackup) {
+        await restoreTagManagerBackup(data);
+    } else if (hasNotes) {
+        await importTagManagerNotes(data);
+    } else {
+        toastr.warning('That file is not a tag backup or a notes file. Choose a tag backup or a notes file.', 'Tag Restore');
         console.log('Tag restore: Invalid file format.');
-        return;
     }
 
+    $('#tag_view_restore_input').val('');
+}
+
+async function restoreTagManagerBackup(data) {
     // Prompt user if they want to overwrite existing tags
     let overwrite = false;
     if (tags.length > 0) {
-        const result = await Popup.show.confirm('Tag Restore', 'You have existing tags. If the backup contains any of those tags, do you want the backup to overwrite their settings (Name, color, folder state, etc)?',
+        const result = await Popup.show.confirm('Tag Restore', buildTagManagerConfirmBody('You have existing tags. If the backup contains any of those tags, do you want the backup to overwrite their settings (Name, color, folder state, etc)?'),
             { okButton: 'Overwrite', cancelButton: 'Keep Existing' });
         overwrite = result === POPUP_RESULT.AFFIRMATIVE;
     }
 
-    const warnings = [];
-    /** @type {Map<string, string>} Map import tag ids with existing ids on overwrite */
-    const idToActualTagIdMap = new Map();
+    const restoreResult = restoreTagsFromBackup({
+        data,
+        tags,
+        tagMap: tag_map,
+        characters,
+        groups,
+        overwrite,
+    });
+    const warnings = [...restoreResult.warnings];
 
-    // Import tags
-    for (const tag of data.tags) {
-        if (!tag.id || !tag.name) {
-            warnings.push(`Tag object is invalid: ${JSON.stringify(tag)}.`);
-            continue;
-        }
+    const notesResult = applyNotesImportPayload({
+        payload: {
+            character_tag_notes: data.character_tag_notes,
+            tagNotes: data.tagNotes,
+            charNotes: data.charNotes,
+        },
+        tags,
+        characters,
+        groups,
+        powerUser: power_user,
+        overwrite,
+    });
+    warnings.push(...notesResult.skipped);
 
-        // Check against both existing id (direct match) and tag with the same name, which is not allowed.
-        let existingTag = tags.find(x => x.id === tag.id);
-        if (existingTag && !overwrite) {
-            warnings.push(`Tag '${tag.name}' with id ${tag.id} already exists.`);
-            continue;
-        }
-        existingTag = getTag(tag.name);
-        if (existingTag && !overwrite) {
-            warnings.push(`Tag with name '${tag.name}' already exists.`);
-            // Remember the tag id, so we can still import the tag map entries for this
-            idToActualTagIdMap.set(tag.id, existingTag.id);
-            continue;
-        }
-
-        if (existingTag) {
-            // On overwrite, we remove and re-add the tag
-            removeFromArray(tags, existingTag);
-            // And remember the ID if it was different, so we can update the tag map accordingly
-            if (existingTag.id !== tag.id) {
-                idToActualTagIdMap.set(existingTag.id, tag.id);
-            }
-        }
-
-        tags.push(tag);
-    }
-
-    // Import tag_map
-    for (const key of Object.keys(data.tag_map)) {
-        const tagIds = data.tag_map[key];
-
-        if (!Array.isArray(tagIds)) {
-            warnings.push(`Tag map for key ${key} is invalid: ${JSON.stringify(tagIds)}.`);
-            continue;
-        }
-
-        // Verify that the key points to a valid character or group.
-        const characterExists = characters.some(x => String(x.avatar) === String(key));
-        const groupExists = groups.some(x => String(x.id) === String(key));
-
-        if (!characterExists && !groupExists) {
-            warnings.push(`Tag map key ${key} does not exist as character or group.`);
-            continue;
-        }
-
-        // Get existing tag ids for this key or empty array.
-        const existingTagIds = tag_map[key] || [];
-
-        // Merge existing and new tag ids. Replace the ones mapped to a new id. Remove duplicates.
-        const combinedTags = existingTagIds.concat(tagIds)
-            .map(tagId => (idToActualTagIdMap.has(tagId)) ? idToActualTagIdMap.get(tagId) : tagId)
-            .filter(onlyUnique);
-
-        // Verify that all tags exist. Remove tags that don't exist.
-        tag_map[key] = combinedTags.filter(tagId => tags.some(y => String(y.id) === String(tagId)));
-    }
+    refreshTagManagerConsumers();
+    reprintTagManager();
 
     if (warnings.length) {
-        toastr.warning('Tags were restored with some warnings. Click this message for details.', 'Tag Restore', {
-            timeOut: toastr.options.timeOut * 2, // Display double the time
-            onclick: () => Popup.show.text('Tag Restore Warnings', `<samp class="justifyLeft">${DOMPurify.sanitize(warnings.join('\n'))}<samp>`, { allowVerticalScrolling: true }),
-        });
-        console.warn(`TAG RESTORE REPORT\n====================\n${warnings.join('\n')}`);
+        showTagRestoreWarnings('Tag Restore Warnings', warnings);
     } else {
         toastr.success('Tags restored successfully.', 'Tag Restore');
     }
+}
 
-    $('#tag_view_restore_input').val('');
+async function importTagManagerNotes(data) {
+    let overwrite = false;
+    const hasExistingNotes = Boolean(power_user?.character_tag_notes && Object.keys(power_user.character_tag_notes).length > 0)
+        || tags.some(tag => Boolean(getTagNote(tag)));
+
+    if (hasExistingNotes) {
+        const result = await Popup.show.confirm('Notes Restore', buildTagManagerConfirmBody('You already have notes. Replace a note when the imported file has a different one for the same tag, character or group?'),
+            { okButton: 'Overwrite', cancelButton: 'Keep Existing' });
+        overwrite = result === POPUP_RESULT.AFFIRMATIVE;
+    }
+
+    const result = applyNotesImportPayload({
+        payload: data,
+        tags,
+        characters,
+        groups,
+        powerUser: power_user,
+        overwrite,
+    });
+
+    const imported = result.importedTagNotes + result.importedEntityNotes;
+    if (imported > 0) {
+        saveSettingsDebounced();
+    }
+
+    reprintTagManager();
+
+    if (result.skipped.length) {
+        showTagRestoreWarnings('Notes Restore Warnings', result.skipped);
+    } else if (imported > 0) {
+        toastr.success('Notes imported.', 'Notes Restore');
+    } else {
+        toastr.info('No new notes to import. Existing notes were kept.', 'Notes Restore');
+    }
+}
+
+function showTagRestoreWarnings(title, warnings) {
+    toastr.warning('Some entries were skipped. Click this message for details.', title, {
+        timeOut: toastr.options.timeOut * 2, // Display double the time
+        onclick: () => Popup.show.text(title, `<samp class="justifyLeft">${DOMPurify.sanitize(warnings.join('\n'))}</samp>`, { allowVerticalScrolling: true }),
+    });
+    console.warn(`${title.toUpperCase()}\n====================\n${warnings.join('\n')}`);
+}
+
+function refreshTagManagerConsumers() {
     printCharactersDebounced();
     saveSettingsDebounced();
+    applyCharacterTagsToMessageDivs();
+    printTagFilters(tag_filter_type.character);
+    printTagFilters(tag_filter_type.group_candidates_list);
+    printTagFilters(tag_filter_type.group_members_list);
+}
 
-    // Reprint the tag management popup, without having it to be opened again
-    const tagContainer = $('#tag_view_list .tag_view_list_tags');
+function reprintTagManager() {
+    const tagContainer = getTagManagerTagContainer();
+    if (!tagContainer.length) {
+        return;
+    }
+
     printViewTagList(tagContainer);
+    updateTagManagerSummary();
+
+    if (tagManagerState.activeTab === 'entities') {
+        renderTagManagerAssignChips();
+        renderEntityPanel();
+    }
 }
 
 function onBackupRestoreClick() {
@@ -1934,58 +2297,111 @@ function onBackupRestoreClick() {
 function onTagsBackupClick() {
     const timestamp = new Date().toISOString().split('T')[0].replace(/-/g, '');
     const filename = `tags_${timestamp}.json`;
-    const data = {
-        tags: tags,
-        tag_map: tag_map,
-    };
+    const data = buildTagManagerBackupPayload({ tags, tagMap: tag_map, powerUser: power_user });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     download(blob, filename, 'application/json');
 }
 
 async function onTagsPruneClick() {
-    // Get tags which have zero tag map entries
-    const allTagsInTagMaps = new Set(Object.values(tag_map).flat());
-    const tagsToPrune = tags.filter(tag => !allTagsInTagMaps.has(tag.id));
+    const allEntityKeys = new Set([...characters.map(c => String(c.avatar)), ...groups.map(g => String(g.id))]);
+    const allAssignedTagIds = new Set();
+
+    for (const [key, tagIds] of Object.entries(tag_map)) {
+        if (!allEntityKeys.has(String(key)) || !Array.isArray(tagIds)) {
+            continue;
+        }
+        for (const tagId of tagIds) {
+            allAssignedTagIds.add(String(tagId));
+        }
+    }
+
+    // Get tags which have zero tag map entries on an existing character or group
+    const tagsToPrune = tags.filter(tag => !allAssignedTagIds.has(String(tag.id)));
 
     // Get tag maps referring to deleted entities
-    const allEntityKeys = new Set([...characters.map(c => String(c.avatar)), ...groups.map(g => String(g.id))]);
-    const tagMapsToPrune = Object.keys(tag_map).filter(key => !allEntityKeys.has(key));
+    const tagMapsToPrune = Object.keys(tag_map).filter(key => !allEntityKeys.has(String(key)));
+    const notesToPrune = Object.keys(power_user?.character_tag_notes ?? {}).filter(key => !allEntityKeys.has(String(key)));
 
-    if (!tagsToPrune.length && !tagMapsToPrune.length) {
+    if (!tagsToPrune.length && !tagMapsToPrune.length && !notesToPrune.length) {
         toastr.info(t`No unused tags or references found.`);
         return;
     }
 
-    const confirm = await Popup.show.confirm(t`Prune ${tagsToPrune.length} tags and ${tagMapsToPrune.length} references`, t`Are you sure you want to remove all unused tags and references to missing or deleted characters and groups?`);
+    const confirm = await Popup.show.confirm(
+        t`Prune ${tagsToPrune.length} tags, ${tagMapsToPrune.length} references and ${notesToPrune.length} notes`,
+        buildTagManagerConfirmBody(t`Are you sure you want to remove all unused tags and references to missing or deleted characters and groups?`),
+    );
 
     if (!confirm) {
         return;
     }
 
+    const snapshot = createTagDeletionSnapshot({ tags, tagMap: tag_map, tagIds: tagsToPrune.map(tag => tag.id) });
+
+    for (const key of tagMapsToPrune) {
+        setTagManagerSnapshotEntry(snapshot.orphanTagMapEntries, key, JSON.parse(JSON.stringify(tag_map[key])));
+    }
+
+    for (const key of notesToPrune) {
+        setTagManagerSnapshotEntry(snapshot.characterTagNotes, key, power_user.character_tag_notes[key]);
+    }
+
     for (const tag of tagsToPrune) {
-        tags.splice(tags.indexOf(tag), 1);
+        const index = tags.findIndex(item => String(item.id) === String(tag.id));
+        if (index !== -1) {
+            tags.splice(index, 1);
+        }
+        tagManagerState.selectedTagIds.delete(String(tag.id));
+        tagManagerState.openTagDrawerIds.delete(String(tag.id));
+        tagManagerState.openTagNoteIds.delete(String(tag.id));
     }
 
     for (const key of tagMapsToPrune) {
         delete tag_map[key];
     }
 
-    printCharactersDebounced();
-    saveSettingsDebounced();
+    const prunedNotes = pruneEntityOrganizerNotes(power_user, allEntityKeys);
 
-    // Reprint the tag management popup, without having it to be opened again
-    const tagContainer = $('#tag_view_list .tag_view_list_tags');
-    printViewTagList(tagContainer);
+    tagManagerState.lastTagDeletionSnapshot = snapshot;
+    tagManagerState.lastTagDeletionMessage = t`Pruned ${tagsToPrune.length} tags, ${tagMapsToPrune.length} references and ${prunedNotes} notes.`;
+    renderTagManagerUndoBar();
 
-    toastr.success(t`Unused tags pruned successfully.`);
+    refreshTagManagerConsumers();
+    reprintTagManager();
+
+    toastr.success(t`Unused tags${prunedNotes ? ' and notes' : ''} pruned successfully.`);
 }
 
 function onTagCreateClick() {
-    const tagName = getFreeName('New Tag', tags.map(x => x.name));
-    const tag = createNewTag(tagName);
-    printViewTagList($('#tag_view_list .tag_view_list_tags'));
+    const root = getTagManagerRoot();
+    const nameInput = root.find('#tag_view_create_input');
+    const folderSelect = root.find('#tag_view_create_folder');
+    const enteredName = nameInput.val()?.toString().trim() ?? '';
+    const tagName = enteredName || getFreeName('New Tag', tags.map(x => x.name));
+    const folderType = Object.keys(TAG_FOLDER_TYPES).includes(folderSelect.val()?.toString()) ? folderSelect.val().toString() : TAG_FOLDER_DEFAULT_TYPE;
+    const existing = getTag(tagName);
 
-    const tagElement = ($('#tag_view_list .tag_view_list_tags')).find(`.tag_view_item[id="${tag.id}"]`);
+    if (existing) {
+        toastr.warning(`A tag named '${existing.name}' already exists.`, 'Create Tag');
+        nameInput.val('').trigger('input');
+        flashHighlight(root.find(`.tag_view_item[id="${existing.id}"]`));
+        return;
+    }
+
+    const tag = createNewTag(tagName);
+    tag.folder_type = folderType;
+
+    if (folderType !== TAG_FOLDER_DEFAULT_TYPE) {
+        setBogusFoldersEnabled(true);
+    }
+
+    nameInput.val('').trigger('input');
+    folderSelect.val(TAG_FOLDER_DEFAULT_TYPE);
+
+    printViewTagList(getTagManagerTagContainer());
+    renderTagManagerAssignChips();
+
+    const tagElement = root.find(`.tag_view_list_tags .tag_view_item[id="${tag.id}"]`);
     const tagElementNode = tagElement[0];
     const tagList = tagElementNode?.closest?.('.tag_view_list_tags');
     if (tagElementNode instanceof HTMLElement && tagList instanceof HTMLElement) {
@@ -2000,6 +2416,7 @@ function onTagCreateClick() {
 
     printCharactersDebounced();
     saveSettingsDebounced();
+    updateTagManagerSummary();
 
     toastr.success('Tag created', 'Create Tag');
 }
@@ -2010,10 +2427,12 @@ function onTagCreateClick() {
  * @param {Tag} tag Tag object
  * @param {number} count Count of characters/groups using this tag
  */
-function appendViewTagToList(list, tag, count) {
+function appendViewTagToList(list, tag, count, record = null) {
     const template = VIEW_TAG_TEMPLATE.clone();
     template.attr('id', tag.id);
+    template.attr('data-tag-id', tag.id);
     template.find('.tag_view_counter_value').text(count);
+    template.find('.tag_view_counter span[data-i18n="tag_entries"]').text(count === 1 ? t`entry` : t`entries`);
     template.find('.tag_view_name').text(tag.name);
     template.find('.tag_view_name').addClass('tag');
 
@@ -2024,17 +2443,28 @@ function appendViewTagToList(list, tag, count) {
     const colorPickerId = tag.id + '-tag-color';
     const colorPicker2Id = tag.id + '-tag-color2';
 
-    if (!power_user.bogus_folders) {
-        template.find('.tag_as_folder').hide();
-    }
-
     const primaryColorPicker = $('<toolcool-color-picker></toolcool-color-picker>')
         .addClass('tag-color')
-        .attr({ id: colorPickerId, color: tag.color || 'rgba(0, 0, 0, 0.5)', 'data-default-color': 'rgba(0, 0, 0, 0.5)' });
+        .attr({
+            id: colorPickerId,
+            color: tag.color || 'rgba(0, 0, 0, 0.5)',
+            'data-default-color': 'rgba(0, 0, 0, 0.5)',
+            'button-width': '32px',
+            'button-height': '32px',
+            'button-padding': '2px',
+            'popup-position': 'right',
+        });
 
     const secondaryColorPicker = $('<toolcool-color-picker></toolcool-color-picker>')
         .addClass('tag-color2')
-        .attr({ id: colorPicker2Id, color: tag.color2 || power_user.main_text_color, 'data-default-color': power_user.main_text_color });
+        .attr({
+            id: colorPicker2Id,
+            color: tag.color2 || power_user.main_text_color,
+            'data-default-color': power_user.main_text_color,
+            'button-width': '32px',
+            'button-height': '32px',
+            'button-padding': '2px',
+        });
 
     template.find('.tag_view_color_picker[data-value="color"]').append(primaryColorPicker)
         .append($('<div class="fas fa-link fa-xs link_icon right_menu_button" title="Link to theme color"></div>'));
@@ -2052,20 +2482,120 @@ function appendViewTagToList(list, tag, count) {
         colorPicker[0].color = defaultColor;
     });
 
+    const folderSelect = template.find('.neconyan-tag-folder-select');
+    folderSelect.val(Object.keys(TAG_FOLDER_TYPES).includes(tag.folder_type) ? tag.folder_type : TAG_FOLDER_DEFAULT_TYPE);
+    folderSelect.on('change', function () {
+        const nextType = Object.keys(TAG_FOLDER_TYPES).includes($(this).val()?.toString())
+            ? $(this).val().toString()
+            : TAG_FOLDER_DEFAULT_TYPE;
+        tag.folder_type = nextType;
+
+        if (nextType !== TAG_FOLDER_DEFAULT_TYPE) {
+            setBogusFoldersEnabled(true);
+        }
+
+        updateDrawTagFolder(template, tag);
+        printCharactersDebounced();
+        saveSettingsDebounced();
+    });
+
     const getHideTooltip = () => tag.is_hidden_on_character_card ? t`Hide on character card` : t`Show on character card`;
     const hideToggle = template.find('.eye-toggle');
     hideToggle.toggleClass('fa-eye-slash', tag.is_hidden_on_character_card);
     hideToggle.toggleClass('fa-eye', !tag.is_hidden_on_character_card);
-    hideToggle.attr('title', getHideTooltip());
+    hideToggle.attr('title', getHideTooltip()).attr('aria-label', getHideTooltip());
 
     hideToggle.on('click', () => {
         tag.is_hidden_on_character_card = !tag.is_hidden_on_character_card;
         hideToggle.toggleClass('fa-eye-slash', tag.is_hidden_on_character_card);
         hideToggle.toggleClass('fa-eye', !tag.is_hidden_on_character_card);
-        hideToggle.attr('title', getHideTooltip());
+        hideToggle.attr('title', getHideTooltip()).attr('aria-label', getHideTooltip());
         printCharactersDebounced();
         saveSettingsDebounced();
     });
+
+    const selectionWrap = template.find('.neconyan-tag-select-wrap');
+    const selection = template.find('.neconyan-tag-select');
+    const isMergePrimary = tagManagerState.mode === 'merge' && String(tagManagerState.mergePrimaryTagId) === String(tag.id);
+    selection.prop('checked', tagManagerState.selectedTagIds.has(String(tag.id)));
+    selection.prop('disabled', isMergePrimary);
+    selection.attr('aria-label', tagManagerState.mode === 'merge'
+        ? `Merge '${tag.name}' into the kept tag`
+        : `Select '${tag.name}'`);
+    selectionWrap.prop('hidden', tagManagerState.mode === 'normal' || isMergePrimary);
+    template.toggleClass('is-merge-primary', isMergePrimary);
+    template.toggleClass('is-selected', selection.prop('checked'));
+    selection.on('change', function () {
+        const tagId = String(tag.id);
+        if ($(this).prop('checked')) {
+            tagManagerState.selectedTagIds.add(tagId);
+        } else {
+            tagManagerState.selectedTagIds.delete(tagId);
+        }
+        template.toggleClass('is-selected', $(this).prop('checked'));
+        updateTagManagerModeBars();
+    });
+
+    const assignedDrawer = template.find('.neconyan-tag-assigned-drawer');
+    const counter = template.find('.tag_view_counter');
+    const assignedCount = record?.count ?? count;
+    const openAssignedDrawer = () => {
+        tagManagerState.openTagDrawerIds.add(String(tag.id));
+        assignedDrawer.prop('hidden', false);
+        counter.attr('aria-expanded', 'true').addClass('is-active');
+        renderTagAssignedDrawer(tag, assignedDrawer);
+    };
+    const closeAssignedDrawer = () => {
+        tagManagerState.openTagDrawerIds.delete(String(tag.id));
+        assignedDrawer.prop('hidden', true);
+        counter.attr('aria-expanded', 'false').removeClass('is-active');
+    };
+    counter.on('click', () => {
+        if (assignedDrawer.prop('hidden')) {
+            openAssignedDrawer();
+        } else {
+            closeAssignedDrawer();
+        }
+    });
+
+    const note = getTagNote(tag);
+    const notePreview = template.find('.neconyan-tag-note-preview');
+    const noteDrawer = template.find('.neconyan-tag-note-drawer');
+    const noteToggle = template.find('.neconyan-tag-note-toggle');
+    const noteInput = template.find('.neconyan-tag-note-input');
+    const updateNotePreview = () => {
+        const currentNote = getTagNote(tag);
+        notePreview.text(currentNote).attr('title', currentNote).prop('hidden', !currentNote);
+        noteToggle.toggleClass('has-note', Boolean(currentNote));
+        const toggleLabel = currentNote ? t`Edit tag note` : t`Add tag note`;
+        noteToggle.attr('aria-label', toggleLabel).attr('title', toggleLabel);
+    };
+    const setNoteDrawerOpen = (open) => {
+        noteDrawer.prop('hidden', !open);
+        noteToggle.attr('aria-expanded', String(open)).toggleClass('is-active', open);
+        if (open) {
+            tagManagerState.openTagNoteIds.add(String(tag.id));
+            noteInput.val(getTagNote(tag));
+        } else {
+            tagManagerState.openTagNoteIds.delete(String(tag.id));
+        }
+    };
+    noteToggle.on('click', () => {
+        setNoteDrawerOpen(noteDrawer.prop('hidden'));
+    });
+    noteInput.on('input', () => {
+        const value = noteInput.val()?.toString() ?? '';
+        const preview = value.trim();
+        notePreview.text(preview).prop('hidden', !preview);
+
+        if (tags.includes(tag) && setTagNote(tag, value)) {
+            saveSettingsDebounced();
+            updateTagManagerSummary();
+        }
+        updateNotePreview();
+    });
+
+    updateNotePreview();
 
     list.append(template);
 
@@ -2086,6 +2616,18 @@ function appendViewTagToList(list, tag, count) {
     });
 
     updateDrawTagFolder(template, tag);
+    counter.attr('title', assignedCount === 1 ? t`Show the character or group with this tag` : t`Show characters and groups with this tag`);
+
+    if (tagManagerState.openTagDrawerIds.has(String(tag.id))) {
+        openAssignedDrawer();
+    }
+
+    if (tagManagerState.openTagNoteIds.has(String(tag.id))) {
+        setNoteDrawerOpen(true);
+    }
+
+    // The note value is only read when the drawer opens, so startup never writes a note.
+    noteInput.val(note);
 }
 
 function onTagAsFolderClick() {
@@ -2098,6 +2640,11 @@ function onTagAsFolderClick() {
     const currentTypeIndex = types.indexOf(tag.folder_type);
     tag.folder_type = types[(currentTypeIndex + 1) % types.length];
 
+    if (tag.folder_type !== TAG_FOLDER_DEFAULT_TYPE) {
+        setBogusFoldersEnabled(true);
+    }
+
+    element.find('.neconyan-tag-folder-select').val(tag.folder_type);
     updateDrawTagFolder(element, tag);
 
     // If folder display has changed, we have to redraw the character list, otherwise this folders state would not change
@@ -2124,9 +2671,15 @@ function updateDrawTagFolder(element, tag) {
 }
 
 async function onTagDeleteClick() {
-    const id = $(this).closest('.tag_view_item').attr('id');
-    const tag = tags.find(x => x.id === id);
-    const otherTags = sortTags(tags.filter(x => x.id !== id).map(x => ({ id: x.id, name: x.name })));
+    const element = $(this).closest('.tag_view_item');
+    const id = String(element.attr('id'));
+    const tag = tags.find(x => String(x.id) === id);
+
+    if (!tag) {
+        return;
+    }
+
+    const otherTags = sortTags(tags.filter(x => String(x.id) !== id).map(x => ({ id: x.id, name: x.name })));
 
     const popupContent = $(await renderTemplateAsync('deleteTag', { otherTags }));
 
@@ -2149,38 +2702,69 @@ async function onTagDeleteClick() {
     }
 
     const mergeTagId = $('#merge_tag_select').val() ? String($('#merge_tag_select').val()) : null;
+    let snapshot = null;
+    let message = '';
 
-    // Remove the tag from all entities that use it
-    // If we have a replacement tag, add that one instead
-    for (const key of Object.keys(tag_map)) {
-        if (tag_map[key].includes(id)) {
-            tag_map[key] = tag_map[key].filter(x => x !== id);
-            if (mergeTagId) tag_map[key].push(mergeTagId);
+    if (mergeTagId) {
+        const mergeResult = mergeTagsIntoPrimary({ tags, tagMap: tag_map, primaryTagId: mergeTagId, sourceTagIds: [id] });
+        snapshot = mergeResult.snapshot;
+        const mergeTarget = tags.find(x => String(x.id) === mergeTagId);
+        message = mergeTarget
+            ? t`Merged '${tag.name}' into '${mergeTarget.name}'.`
+            : t`Merged '${tag.name}'.`;
+    } else {
+        snapshot = createTagDeletionSnapshot({ tags, tagMap: tag_map, tagIds: [id] });
+
+        for (const key of Object.keys(tag_map)) {
+            if (!Array.isArray(tag_map[key])) {
+                continue;
+            }
+            tag_map[key] = tag_map[key].filter(tagId => String(tagId) !== id);
         }
+
+        const index = tags.findIndex(x => String(x.id) === id);
+        if (index !== -1) {
+            tags.splice(index, 1);
+        }
+
+        message = t`Deleted '${tag.name}'.`;
     }
 
-    const index = tags.findIndex(x => x.id === id);
-    tags.splice(index, 1);
-    $(`.tag[id="${id}"]`).remove();
+    tagManagerState.lastTagDeletionSnapshot = snapshot;
+    tagManagerState.lastTagDeletionMessage = message;
+    tagManagerState.selectedTagIds.delete(id);
+    tagManagerState.openTagDrawerIds.delete(id);
+    tagManagerState.openTagNoteIds.delete(id);
+
+    $(`.tag:not(.actionable)[id="${id}"]`).remove();
     $(`.tag_view_item[id="${id}"]`).remove();
 
-    toastr.success(`'${tag.name}' deleted${mergeTagId ? ` and merged into '${tags.find(x => x.id === mergeTagId).name}'` : ''}`, 'Delete Tag');
+    refreshTagManagerConsumers();
+    reprintTagManager();
+    renderTagManagerUndoBar();
 
-    printCharactersDebounced();
-    saveSettingsDebounced();
-
-    applyCharacterTagsToMessageDivs();
+    toastr.success(message.replace(/\.$/, ''), mergeTagId ? 'Merge Tag' : 'Delete Tag');
 }
 
 function onTagRenameInput() {
-    const id = $(this).closest('.tag_view_item').attr('id');
-    const newName = $(this).text();
-    const tag = tags.find(x => x.id === id);
+    const element = $(this);
+    const id = element.closest('.tag_view_item').attr('id');
+    const tag = tags.find(x => String(x.id) === String(id));
+    if (!tag) {
+        return;
+    }
+
+    const rawName = element.text();
+    const newName = rawName.replace(/\s+/g, ' ').trim();
+    element.attr('dirty', '');
+
+    if (!newName || newName === tag.name) {
+        return;
+    }
+
     tag.name = newName;
-    $(this).attr('dirty', '');
     $(`.tag[id="${id}"] .tag_name`).text(newName);
     saveSettingsDebounced();
-
     applyCharacterTagsToMessageDivs();
 }
 
@@ -2280,19 +2864,778 @@ function copyTags(data) {
 }
 
 /**
- * Prints the tag list in the view tags popup.
- * @param {JQuery<HTMLElement>} tagContainer Container element
- * @param {boolean} empty Whether to empty the container before printing
+ * Counts how many character and group entries use each tag.
+ * @returns {Map<string, number>} Counts by tag id
  */
-function printViewTagList(tagContainer, empty = true) {
-    if (empty) tagContainer.empty();
-    const everything = Object.values(tag_map).flat();
-    const counts = new Map(tags.map(tag => [tag.id, everything.filter(x => x === tag.id).length]));
-    const sortedTags = sortTags(tags, counts);
-    for (const tag of sortedTags) {
-        const count = counts.get(tag.id) || 0;
-        appendViewTagToList(tagContainer, tag, count);
+function getTagAssignmentCounts() {
+    const counts = new Map(tags.map(tag => [String(tag.id), 0]));
+
+    for (const tagIds of Object.values(tag_map)) {
+        if (!Array.isArray(tagIds)) {
+            continue;
+        }
+        for (const tagId of new Set(tagIds.map(id => String(id)))) {
+            if (counts.has(tagId)) {
+                counts.set(tagId, counts.get(tagId) + 1);
+            }
+        }
     }
+
+    return counts;
+}
+
+function getAssignedEntitiesForTagId(tagId) {
+    const entities = new Map();
+
+    for (const [key, tagIds] of Object.entries(tag_map)) {
+        if (!Array.isArray(tagIds) || !tagIds.some(id => String(id) === String(tagId))) {
+            continue;
+        }
+
+        const character = characters.find(item => String(item.avatar) === String(key));
+        if (character) {
+            entities.set(`character:${key}`, { key: String(key), name: character.name, type: 'character' });
+            continue;
+        }
+
+        const group = groups.find(item => String(item.id) === String(key));
+        if (group) {
+            entities.set(`group:${key}`, { key: String(key), name: group.name, type: 'group' });
+        }
+    }
+
+    return [...entities.values()].sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? ''), undefined, { sensitivity: 'base' }));
+}
+
+function getTagManagerEntityAvatarUrl(entity) {
+    if (entity.type === 'group') {
+        const group = groups.find(item => String(item.id) === String(entity.key));
+        return group?.avatar_url || default_avatar;
+    }
+
+    const character = characters.find(item => String(item.avatar) === String(entity.key));
+    return character?.avatar && character.avatar !== 'none'
+        ? getThumbnailUrlForViewport('avatar', character.avatar)
+        : default_avatar;
+}
+
+function closeTagManagerPopup() {
+    const okButton = getTagManagerRoot().closest('dialog.popup').find('.popup-button-ok')[0];
+    if (okButton instanceof HTMLElement) {
+        okButton.click();
+    }
+}
+
+function openTagManagerEntity(entity) {
+    closeTagManagerPopup();
+
+    if (entity.type === 'group') {
+        const group = groups.find(item => String(item.id) === String(entity.key));
+        void openGroupById(group?.id ?? String(entity.key), { switchMenu: true });
+        return;
+    }
+
+    const index = characters.findIndex(item => String(item.avatar) === String(entity.key));
+    if (index !== -1) {
+        void selectCharacterById(index, { switchMenu: true });
+    }
+}
+
+function renderTagAssignedDrawer(tag, drawer) {
+    drawer.empty();
+    const entities = getAssignedEntitiesForTagId(tag.id);
+
+    if (entities.length === 0) {
+        drawer.append($('<p class="neconyan-tag-empty"></p>').text(t`No characters or groups use this tag yet.`));
+        return;
+    }
+
+    for (const entity of entities) {
+        const row = $('<div class="neconyan-tag-assigned-row"></div>');
+        const avatar = $('<span class="neconyan-tag-assigned-avatar"></span>');
+        $('<img alt="" loading="lazy" decoding="async">').attr('src', getTagManagerEntityAvatarUrl(entity)).appendTo(avatar);
+        const identity = $('<span class="neconyan-tag-assigned-identity"></span>');
+        $('<span class="neconyan-tag-assigned-name"></span>').text(entity.name).appendTo(identity);
+        $('<span class="neconyan-tag-assigned-type"></span>').text(entity.type === 'group' ? t`Group` : t`Character`).appendTo(identity);
+        const actions = $('<span class="neconyan-tag-assigned-actions"></span>');
+        const openButton = $('<button type="button" class="menu_button"></button>').text(t`Open`);
+        openButton.on('click', () => openTagManagerEntity(entity));
+        const unassignButton = $('<button type="button" class="menu_button"></button>').text(t`Unassign`);
+        unassignButton.on('click', () => {
+            removeTagFromManagerEntity(tag.id, entity.key);
+            renderTagAssignedDrawer(tag, drawer);
+            updateTagManagerTagCardCount(tag);
+            renderTagManagerAssignChips();
+            if (tagManagerState.activeTab === 'entities') {
+                renderEntityPanel();
+            }
+        });
+        actions.append(openButton, unassignButton);
+        row.append(avatar, identity, actions);
+        drawer.append(row);
+    }
+}
+
+function updateTagManagerTagCardCount(tag) {
+    const count = getAssignedEntitiesForTagId(tag.id).length;
+    const card = getTagManagerTagContainer().find(`.tag_view_item[id="${tag.id}"]`);
+    card.find('.tag_view_counter_value').text(count);
+    card.find('.tag_view_counter span[data-i18n="tag_entries"]').text(count === 1 ? t`entry` : t`entries`);
+    card.find('.tag_view_counter').attr('title', count === 1 ? t`Show the character or group with this tag` : t`Show characters and groups with this tag`);
+}
+
+function updateTagManagerSummary() {
+    const summary = getTagManagerRoot().find('#neconyan_tag_manager_summary');
+    if (!summary.length) {
+        return;
+    }
+
+    summary.empty();
+    const folderCount = tags.filter(tag => isBogusFolder(tag)).length;
+    const tagNoteCount = tags.filter(tag => Boolean(getTagNote(tag))).length;
+    const entityKeys = new Set([
+        ...characters.map(character => String(character.avatar)),
+        ...groups.map(group => String(group.id)),
+    ]);
+    const entityNoteCount = Object.keys(power_user?.character_tag_notes ?? {})
+        .filter(key => entityKeys.has(key))
+        .length;
+    const noteCount = tagNoteCount + entityNoteCount;
+    const items = [
+        tags.length === 1 ? t`1 tag` : t`${tags.length} tags`,
+        folderCount === 1 ? t`1 folder` : t`${folderCount} folders`,
+        noteCount === 1 ? t`1 note` : t`${noteCount} notes`,
+    ];
+
+    items.forEach((item, index) => {
+        if (index > 0) {
+            summary.append($('<span aria-hidden="true"></span>').text('·'));
+        }
+        summary.append($('<span class="neconyan-tag-summary-item"></span>').text(item));
+    });
+}
+
+function renderTagManagerUndoBar() {
+    const root = getTagManagerRoot();
+    const bar = root.find('.neconyan-tag-undo-bar');
+    const hasSnapshot = Boolean(tagManagerState.lastTagDeletionSnapshot);
+
+    bar.prop('hidden', !hasSnapshot);
+    bar.find('.neconyan-tag-undo-text').text(hasSnapshot ? tagManagerState.lastTagDeletionMessage : '');
+}
+
+function renderTagManagerMergePrimaryOptions() {
+    const root = getTagManagerRoot();
+    const select = root.find('#tag_merge_primary');
+    if (!select.length) {
+        return;
+    }
+
+    select.empty();
+
+    if (tags.length === 0) {
+        $('<option value=""></option>').text(t`No tags yet`).appendTo(select);
+        tagManagerState.mergePrimaryTagId = null;
+        return;
+    }
+
+    const sorted = tags.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' }));
+    for (const tag of sorted) {
+        $('<option></option>').attr('value', tag.id).text(tag.name).appendTo(select);
+    }
+
+    const primaryExists = tags.some(tag => String(tag.id) === String(tagManagerState.mergePrimaryTagId));
+    if (!primaryExists) {
+        tagManagerState.mergePrimaryTagId = sorted[0].id;
+    }
+    select.val(tagManagerState.mergePrimaryTagId);
+
+    if (tagManagerState.mergePrimaryTagId) {
+        tagManagerState.selectedTagIds.delete(String(tagManagerState.mergePrimaryTagId));
+    }
+}
+
+function updateTagManagerModeBars() {
+    const root = getTagManagerRoot();
+    const mode = tagManagerState.mode;
+    const selectedCount = tagManagerState.selectedTagIds.size;
+    const hasPrimary = tags.some(tag => String(tag.id) === String(tagManagerState.mergePrimaryTagId));
+
+    root.find('.tag_view_merge_toggle')
+        .toggleClass('is-active', mode === 'merge')
+        .attr('aria-pressed', String(mode === 'merge'));
+    root.find('.tag_view_bulk_delete_toggle')
+        .toggleClass('is-active', mode === 'delete')
+        .attr('aria-pressed', String(mode === 'delete'));
+
+    root.find('.neconyan-tag-merge-bar').prop('hidden', mode !== 'merge');
+    root.find('.neconyan-tag-bulk-delete-bar').prop('hidden', mode !== 'delete');
+    root.find('#neconyan_tag_merge_count').text(selectedCount === 1 ? t`1 selected` : t`${selectedCount} selected`);
+    root.find('#neconyan_tag_bulk_delete_count').text(selectedCount === 1 ? t`1 selected` : t`${selectedCount} selected`);
+    root.find('#tag_merge_confirm').prop('disabled', selectedCount === 0 || !hasPrimary);
+    root.find('#tag_bulk_delete_confirm').prop('disabled', selectedCount === 0);
+    renderTagManagerUndoBar();
+}
+
+function printViewTagList(tagContainer, empty = true) {
+    const container = tagContainer?.jquery ? tagContainer : getTagManagerTagContainer();
+    if (!container.length) {
+        return;
+    }
+
+    if (tagManagerState.activeTab !== 'tags' && getTagManagerRoot().length) {
+        updateTagManagerSummary();
+        return;
+    }
+
+    if (empty) {
+        container.empty();
+    }
+
+    const records = filterAndSortTagRecords(tags, tag_map, characters, groups, {
+        query: tagManagerState.tagQuery,
+        filter: tagManagerState.tagFilter,
+        sortMode: getTagManagerSortMode(),
+    });
+
+    for (const record of records) {
+        appendViewTagToList(container, record.tag, record.count, record);
+    }
+
+    if (records.length === 0) {
+        container.append($('<p class="neconyan-tag-empty"></p>').text(t`No tags match. Try a different search, or create one above.`));
+    }
+
+    updateTagManagerSummary();
+    renderTagManagerMergePrimaryOptions();
+    updateTagManagerModeBars();
+    updateTagManagerDragState(container);
+}
+
+function renderTagManagerAssignChips() {
+    const root = getTagManagerRoot();
+    const container = root.find('.neconyan-assign-tag-chips');
+    if (!container.length) {
+        return;
+    }
+
+    if (tagManagerState.activeTab !== 'entities' && root.length) {
+        return;
+    }
+
+    container.empty();
+    const query = root.find('#neconyan_assign_tag_search').val()?.toString().trim().toLowerCase() ?? '';
+    const sorted = tags
+        .filter(tag => !query || tag.name.toLowerCase().includes(query) || getTagNote(tag).toLowerCase().includes(query))
+        .slice()
+        .sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' }));
+
+    for (const tag of sorted) {
+        const chip = $('<button type="button" class="neconyan-tag-assign-chip"></button>')
+            .attr('data-tag-id', tag.id)
+            .attr('aria-pressed', String(tagManagerState.selectedAssignTagIds.has(String(tag.id))));
+        chip.toggleClass('is-selected', tagManagerState.selectedAssignTagIds.has(String(tag.id)));
+        if (isBogusFolder(tag)) {
+            chip.append($('<i class="fa-solid fa-folder" aria-hidden="true"></i>'));
+        }
+        chip.append($('<span></span>').text(tag.name));
+        chip.on('click', () => {
+            const tagId = String(tag.id);
+            if (tagManagerState.selectedAssignTagIds.has(tagId)) {
+                tagManagerState.selectedAssignTagIds.delete(tagId);
+            } else {
+                tagManagerState.selectedAssignTagIds.add(tagId);
+            }
+            chip.toggleClass('is-selected', tagManagerState.selectedAssignTagIds.has(tagId))
+                .attr('aria-pressed', String(tagManagerState.selectedAssignTagIds.has(tagId)));
+            updateTagManagerAssignActions();
+        });
+        container.append(chip);
+    }
+
+    if (sorted.length === 0) {
+        container.append($('<p class="neconyan-tag-empty"></p>').text(t`No tags match that filter.`));
+    }
+
+    updateTagManagerAssignActions();
+}
+
+function updateTagManagerAssignActions() {
+    updateTagManagerAssignButtons();
+    updateTagManagerEntitySelectionUi();
+}
+
+function updateTagManagerAssignButtons() {
+    const root = getTagManagerRoot();
+    const tagCount = tagManagerState.selectedAssignTagIds.size;
+    const entityCount = tagManagerState.selectedEntityKeys.size;
+    const canApply = tagCount > 0 && entityCount > 0;
+
+    root.find('#neconyan_bulk_assign_tags_btn, #neconyan_bulk_remove_tags_btn').prop('disabled', !canApply);
+    root.find('#neconyan_bulk_assign_tags_btn').text(`${t`Assign tags`} (${tagCount})`);
+    root.find('#neconyan_bulk_remove_tags_btn').text(`${t`Remove tags`} (${tagCount})`);
+    root.find('#neconyan_assign_clear_tags').prop('disabled', tagCount === 0);
+}
+
+function updateTagManagerEntitySelectionUi() {
+    const root = getTagManagerRoot();
+    const count = tagManagerState.selectedEntityKeys.size;
+    root.find('#neconyan_tag_char_selection_count').text(count === 1 ? t`1 selected` : t`${count} selected`);
+    root.find('#neconyan_tag_char_clear_selection').prop('disabled', count === 0);
+    root.find('#neconyan_tag_char_select_all').prop('disabled', tagManagerState.visibleEntityKeys.length === 0);
+    updateTagManagerAssignButtons();
+}
+
+function onCreateAssignTagClick() {
+    const root = getTagManagerRoot();
+    const input = root.find('#neconyan_assign_new_tag');
+    const name = input.val()?.toString().trim() ?? '';
+
+    if (!name) {
+        toastr.warning('Give the new tag a name first.', 'Create Tag');
+        return;
+    }
+
+    let tag = getTag(name);
+    if (tag) {
+        toastr.info(`'${tag.name}' already exists, so it was picked instead.`, 'Create Tag');
+    } else {
+        tag = createNewTag(name);
+        saveSettingsDebounced();
+        printViewTagList(getTagManagerTagContainer());
+        updateTagManagerSummary();
+        toastr.success('Tag created', 'Create Tag');
+    }
+
+    tagManagerState.selectedAssignTagIds.add(String(tag.id));
+    input.val('');
+    renderEntityPanel();
+    renderTagManagerAssignChips();
+}
+
+function onBulkTagEntitiesClick(remove) {
+    const tagIds = [...tagManagerState.selectedAssignTagIds];
+    const entityKeys = [...tagManagerState.selectedEntityKeys];
+    if (tagIds.length === 0 || entityKeys.length === 0) {
+        return;
+    }
+
+    const result = remove
+        ? bulkRemoveTagsFromEntities({ tagMap: tag_map, tagIds, entityKeys })
+        : bulkAssignTagsToEntities({ tagMap: tag_map, tagIds, entityKeys });
+
+    if (result.assignmentCount === 0) {
+        toastr.info('Nothing to change for those characters and groups.');
+        return;
+    }
+
+    printCharactersDebounced();
+    saveSettingsDebounced();
+    applyCharacterTagsToMessageDivs();
+    updateTagManagerSummary();
+    renderEntityPanel();
+    renderTagManagerAssignChips();
+
+    toastr.success(remove ? 'Tags removed.' : 'Tags assigned.');
+}
+
+function getTagManagerEntityDescriptors() {
+    const characterEntities = characters.map((character, index) => ({
+        type: 'character',
+        key: String(character.avatar),
+        id: index,
+        name: character.name || t`Unnamed character`,
+        fav: character.fav === true || character.fav === 'true',
+        avatar: character.avatar,
+        description: character.description ?? '',
+        personality: character.personality ?? '',
+        scenario: character.scenario ?? '',
+        first_mes: character.first_mes ?? character.first_message ?? '',
+        creator_notes: character.creator_notes ?? character.creatorcomment ?? '',
+        allText: [
+            character.name,
+            character.description,
+            character.personality,
+            character.scenario,
+            character.first_mes,
+            character.first_message,
+            character.creator_notes,
+            character.creatorcomment,
+        ].filter(Boolean).join('\n'),
+    }));
+
+    const groupEntities = groups.map(group => ({
+        type: 'group',
+        key: String(group.id),
+        id: group.id,
+        name: group.name || t`Unnamed group`,
+        fav: group.fav === true || group.fav === 'true',
+        avatar_url: group.avatar_url || '',
+        description: group.description ?? '',
+        allText: [group.name, group.description].filter(Boolean).join('\n'),
+    }));
+
+    return [...characterEntities, ...groupEntities];
+}
+
+function getFilteredTagManagerEntities() {
+    return filterAndSortEntities(
+        getTagManagerEntityDescriptors(),
+        tags,
+        tag_map,
+        power_user?.character_tag_notes ?? {},
+        {
+            query: tagManagerState.entityQuery,
+            filter: tagManagerState.entityFilter,
+            sortMode: tagManagerState.entitySort,
+        },
+    );
+}
+
+function renderEntityPanel() {
+    const root = getTagManagerRoot();
+    const container = root.find('.neconyan-tag-entity-list');
+    if (!container.length) {
+        return;
+    }
+
+    if (tagManagerState.activeTab !== 'entities' && root.length) {
+        return;
+    }
+
+    container.empty();
+    const records = getFilteredTagManagerEntities();
+
+    tagManagerState.visibleEntityKeys = records.map(record => record.key);
+
+    for (const record of records) {
+        appendTagManagerEntityRow(container, record);
+    }
+
+    if (records.length === 0) {
+        container.append($('<p class="neconyan-tag-empty"></p>').text(t`No characters or groups match. Try a different search or filter.`));
+    }
+
+    updateTagManagerEntitySelectionUi();
+}
+
+function refreshTagManagerEntityRow(entityKey) {
+    const container = getTagManagerRoot().find('.neconyan-tag-entity-list');
+    if (!container.length) {
+        return;
+    }
+
+    if (['tag_count_desc', 'tag_count_asc'].includes(tagManagerState.entitySort)) {
+        renderEntityPanel();
+        return;
+    }
+
+    const existing = container.find('.neconyan-tag-entity-row').filter((_, element) => $(element).attr('data-entity-key') === String(entityKey)).first();
+    const record = getFilteredTagManagerEntities().find(item => item.key === String(entityKey));
+
+    if (!record) {
+        existing.remove();
+
+        if (container.find('.neconyan-tag-entity-row').length === 0) {
+            renderEntityPanel();
+            return;
+        }
+    } else if (existing.length) {
+        const temporary = $('<div></div>');
+        appendTagManagerEntityRow(temporary, record);
+        existing.replaceWith(temporary.children().first());
+    } else {
+        return;
+    }
+
+    tagManagerState.visibleEntityKeys = container.find('.neconyan-tag-entity-row')
+        .map((_, element) => $(element).attr('data-entity-key'))
+        .get();
+    updateTagManagerEntitySelectionUi();
+}
+
+function appendTagManagerEntityRow(container, record) {
+    const row = $('<div class="neconyan-tag-entity-row"></div>').attr('data-entity-key', record.key);
+    const main = $('<div class="neconyan-tag-entity-main"></div>');
+    const selectLabel = $('<label class="checkbox_label neconyan-tag-entity-check"></label>');
+    const checkbox = $('<input type="checkbox" class="neconyan-tag-entity-select">')
+        .prop('checked', tagManagerState.selectedEntityKeys.has(record.key))
+        .attr('aria-label', `Select '${record.name}'`);
+    checkbox.on('change', function () {
+        if ($(this).prop('checked')) {
+            tagManagerState.selectedEntityKeys.add(record.key);
+            setTagManagerBulkPanelOpen(true);
+        } else {
+            tagManagerState.selectedEntityKeys.delete(record.key);
+        }
+        updateTagManagerEntitySelectionUi();
+    });
+    selectLabel.append(checkbox);
+
+    const avatar = $('<span class="neconyan-tag-entity-avatar"></span>');
+    $('<img alt="" loading="lazy" decoding="async">').attr('src', getTagManagerEntityAvatarUrl(record)).appendTo(avatar);
+
+    const identity = $('<span class="neconyan-tag-entity-identity"></span>');
+    const nameLine = $('<span class="neconyan-tag-entity-name-line"></span>');
+    $('<span class="neconyan-tag-entity-name"></span>').text(record.name).appendTo(nameLine);
+    $('<span class="neconyan-tag-entity-badge"></span>').text(record.type === 'group' ? t`Group` : t`Character`).appendTo(nameLine);
+    if (record.fav) {
+        $('<span class="neconyan-tag-entity-fav" aria-label="Favourite"></span>').append('<i class="fa-solid fa-star" aria-hidden="true"></i>').appendTo(nameLine);
+    }
+    const meta = $('<span class="neconyan-tag-entity-meta"></span>');
+    meta.text(record.tagIds.length === 1 ? t`1 tag` : t`${record.tagIds.length} tags`);
+    if (record.folderTags.length > 0) {
+        meta.append(' · ');
+        meta.append($('<span></span>').text(record.folderTags.map(tag => tag.name).join(', ')));
+    }
+    identity.append(nameLine, meta);
+    const notePreview = $('<span class="neconyan-tag-entity-note-preview"></span>')
+        .text(record.note)
+        .prop('hidden', !record.note);
+    identity.append(notePreview);
+
+    const openButton = $('<button type="button" class="menu_button neconyan-tag-entity-open"></button>').text(t`Open`);
+    openButton.on('click', () => openTagManagerEntity(record));
+    const actions = $('<span class="neconyan-tag-entity-actions"></span>').append(openButton);
+
+    main.append(selectLabel, avatar, identity, actions);
+    row.append(main);
+
+    const chips = $('<div class="neconyan-tag-entity-chips"></div>');
+    for (const tag of record.assignedTags) {
+        const chip = $('<span class="neconyan-tag-entity-chip"></span>').toggleClass('is-folder', isBogusFolder(tag));
+        if (isBogusFolder(tag)) {
+            chip.append('<i class="fa-solid fa-folder" aria-hidden="true"></i>');
+        }
+        chip.append($('<span class="neconyan-tag-entity-chip-name"></span>').text(tag.name));
+        const removeButton = $('<button type="button" class="neconyan-tag-chip-remove"></button>')
+            .attr('aria-label', `Remove tag '${tag.name}'`)
+            .attr('title', `Remove '${tag.name}'`);
+        removeButton.append('<i class="fa-solid fa-xmark" aria-hidden="true"></i>');
+        removeButton.on('click', () => {
+            removeTagFromManagerEntity(tag.id, record.key);
+            refreshTagManagerEntityRow(record.key);
+        });
+        chip.append(removeButton);
+        chips.append(chip);
+    }
+
+    const unassignedTags = tags
+        .filter(tag => !record.tagIds.includes(String(tag.id)))
+        .slice()
+        .sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' }));
+
+    if (unassignedTags.length > 0) {
+        const addSelect = $('<select class="text_pole neconyan-tag-entity-add" aria-label="Add a tag"></select>');
+        const placeholder = $('<option value=""></option>').text(t`+ Tag`);
+        addSelect.append(placeholder);
+        let populated = false;
+
+        const populate = () => {
+            if (populated) {
+                return;
+            }
+            populated = true;
+            const fragment = document.createDocumentFragment();
+            for (const tag of unassignedTags) {
+                fragment.append(new Option(tag.name, String(tag.id)));
+            }
+            addSelect[0].append(fragment);
+            addSelect[0].selectedIndex = 0;
+        };
+
+        addSelect.on('focus pointerdown mousedown keydown', populate);
+        addSelect.on('change', function () {
+            const tag = tags.find(item => String(item.id) === String($(this).val()));
+            if (!tag) {
+                return;
+            }
+            assignTagToManagerEntity(tag.id, record.key);
+            refreshTagManagerEntityRow(record.key);
+        });
+        chips.append(addSelect);
+    } else if (record.assignedTags.length > 0) {
+        chips.append($('<span class="neconyan-tag-entity-all-tags"></span>').text(t`All tags assigned`));
+    }
+
+    if (record.assignedTags.length === 0) {
+        chips.append($('<span class="neconyan-tag-entity-no-tags"></span>').text(t`No tags yet`));
+    }
+
+    row.append(chips);
+
+    const noteToggle = $('<button type="button" class="menu_button neconyan-tag-entity-note-toggle"></button>')
+        .text(t`Notes`)
+        .attr('aria-expanded', String(tagManagerState.openEntityNoteKeys.has(record.key)))
+        .attr('title', record.note ? 'Edit organiser note' : 'Add organiser note')
+        .toggleClass('has-note', Boolean(record.note));
+    actions.append(noteToggle);
+    const noteDrawer = $('<div class="neconyan-tag-entity-note" hidden></div>');
+    const noteInput = $('<textarea class="text_pole" rows="3" placeholder="What you keep forgetting about this one."></textarea>')
+        .attr('aria-label', `Organiser note for '${record.name}'`);
+    noteInput.val(getEntityOrganizerNote(power_user, record.key));
+    const saveNote = () => {
+        const note = noteInput.val()?.toString() ?? '';
+        if (setEntityOrganizerNote(power_user, record.key, note)) {
+            saveSettingsDebounced();
+            noteToggle.toggleClass('has-note', Boolean(note.trim()));
+            noteToggle.attr('title', note.trim() ? 'Edit organiser note' : 'Add organiser note');
+            updateTagManagerSummary();
+        }
+    };
+    noteInput.on('input', () => {
+        saveNote();
+        const note = noteInput.val()?.toString().trim() ?? '';
+        notePreview.text(note).prop('hidden', !note);
+    });
+    noteDrawer.append(noteInput);
+    const setNoteOpen = open => {
+        noteDrawer.prop('hidden', !open);
+        noteToggle.attr('aria-expanded', String(open)).toggleClass('is-active', open);
+        if (open) {
+            tagManagerState.openEntityNoteKeys.add(record.key);
+        } else {
+            tagManagerState.openEntityNoteKeys.delete(record.key);
+        }
+    };
+    noteToggle.on('click', () => setNoteOpen(noteDrawer.prop('hidden')));
+
+    if (tagManagerState.openEntityNoteKeys.has(record.key)) {
+        setNoteOpen(true);
+    }
+
+    row.append(noteDrawer);
+    container.append(row);
+    return row;
+}
+
+const renderTagManagerTagsDebounced = debounce(() => {
+    const container = getTagManagerTagContainer();
+    if (container.length) {
+        printViewTagList(container);
+    }
+}, debounce_timeout.short);
+
+const renderTagManagerEntitiesDebounced = debounce(() => {
+    if (getTagManagerRoot().length) {
+        renderEntityPanel();
+    }
+}, debounce_timeout.short);
+
+async function onTagMergeConfirmClick() {
+    const sourceTagIds = [...tagManagerState.selectedTagIds].filter(id => String(id) !== String(tagManagerState.mergePrimaryTagId));
+    const primaryTag = tags.find(tag => String(tag.id) === String(tagManagerState.mergePrimaryTagId));
+
+    if (!primaryTag || sourceTagIds.length === 0) {
+        return;
+    }
+
+    const sourceNames = sourceTagIds
+        .map(id => tags.find(tag => String(tag.id) === id)?.name)
+        .filter(Boolean)
+        .map(name => `'${name}'`)
+        .join(', ');
+    const confirmed = await Popup.show.confirm(
+        'Merge Tags',
+        buildTagManagerConfirmBody(t`Merge ${sourceNames} into '${primaryTag.name}'? Their characters, groups and notes move to the kept tag.`),
+        { okButton: 'Merge', cancelButton: 'Cancel' },
+    );
+
+    if (!confirmed) {
+        return;
+    }
+
+    const result = mergeTagsIntoPrimary({
+        tags,
+        tagMap: tag_map,
+        primaryTagId: primaryTag.id,
+        sourceTagIds,
+    });
+
+    if (!result.snapshot || result.mergedCount === 0) {
+        toastr.info('Nothing to merge.');
+        return;
+    }
+
+    tagManagerState.lastTagDeletionSnapshot = result.snapshot;
+    tagManagerState.lastTagDeletionMessage = t`Merged ${result.mergedCount} tags into '${primaryTag.name}'.`;
+    tagManagerState.mode = 'normal';
+    tagManagerState.selectedTagIds.clear();
+    tagManagerState.mergePrimaryTagId = null;
+
+    refreshTagManagerConsumers();
+    reprintTagManager();
+    renderTagManagerUndoBar();
+    toastr.success('Tags merged.', 'Merge Tags');
+}
+
+async function onTagBulkDeleteConfirmClick() {
+    const tagIds = [...tagManagerState.selectedTagIds];
+    if (tagIds.length === 0) {
+        return;
+    }
+
+    const names = tagIds
+        .map(id => tags.find(tag => String(tag.id) === id)?.name)
+        .filter(Boolean)
+        .map(name => `'${name}'`)
+        .join(', ');
+    const confirmed = await Popup.show.confirm(
+        'Delete Tags',
+        buildTagManagerConfirmBody(t`Delete ${tagIds.length} tags (${names})? Their assignments are removed too, and Undo stays available in this window.`),
+        { okButton: 'Delete', cancelButton: 'Cancel' },
+    );
+
+    if (!confirmed) {
+        return;
+    }
+
+    const snapshot = createTagDeletionSnapshot({ tags, tagMap: tag_map, tagIds });
+
+    for (const key of Object.keys(tag_map)) {
+        if (!Array.isArray(tag_map[key])) {
+            continue;
+        }
+        tag_map[key] = tag_map[key].filter(id => !tagIds.some(tagId => String(tagId) === String(id)));
+    }
+
+    for (const tagId of tagIds) {
+        const index = tags.findIndex(tag => String(tag.id) === String(tagId));
+        if (index !== -1) {
+            tags.splice(index, 1);
+        }
+        tagManagerState.selectedTagIds.delete(String(tagId));
+        tagManagerState.openTagDrawerIds.delete(String(tagId));
+        tagManagerState.openTagNoteIds.delete(String(tagId));
+        $(`.tag:not(.actionable)[id="${tagId}"]`).remove();
+        $(`.tag_view_item[id="${tagId}"]`).remove();
+    }
+
+    tagManagerState.lastTagDeletionSnapshot = snapshot;
+    tagManagerState.lastTagDeletionMessage = t`Deleted ${tagIds.length} tags.`;
+    tagManagerState.mode = 'normal';
+
+    refreshTagManagerConsumers();
+    reprintTagManager();
+    renderTagManagerUndoBar();
+    toastr.success('Tags deleted.', 'Delete Tags');
+}
+
+function onTagManagerUndoClick() {
+    const snapshot = tagManagerState.lastTagDeletionSnapshot;
+    if (!snapshot) {
+        return;
+    }
+
+    const result = restoreTagDeletionSnapshot({ tags, tagMap: tag_map, snapshot, powerUser: power_user });
+    tagManagerState.lastTagDeletionSnapshot = null;
+    tagManagerState.lastTagDeletionMessage = '';
+
+    refreshTagManagerConsumers();
+    reprintTagManager();
+    renderTagManagerUndoBar();
+
+    toastr.success(`Restored ${result.restoredTags} tags and ${result.restoredAssignments} assignments.`, 'Undo');
 }
 
 function removeMissingTagFilters() {
@@ -2805,26 +4148,70 @@ export function initTags() {
     eventSource.on(event_types.CHARACTER_DUPLICATED, copyTags);
     eventSource.makeFirst(event_types.CHAT_CHANGED, () => selected_group ? applyTagsOnGroupSelect() : applyTagsOnCharacterSelect());
 
+    $(document).on('focusin', '#tag_view_list .tag_view_name', function () {
+        const tagId = $(this).closest('.tag_view_item').attr('id');
+        const tag = tags.find(item => String(item.id) === String(tagId));
+        if (tag) {
+            $(this).data('originalTagName', tag.name);
+        }
+    });
+
+    $(document).on('keydown', '#tag_view_list .tag_view_name', function (evt) {
+        if (evt.key === 'Enter') {
+            evt.preventDefault();
+            $(this).trigger('blur');
+        }
+    });
+
     $(document).on('focusout', '#tag_view_list .tag_view_name', (evt) => {
-        // Reorder/reprint tags, but only if the name actually has changed
-        if (!$(evt.target).is('[dirty]')) return;
+        const element = $(evt.target);
+        if (!element.is('[dirty]')) return;
 
-        // Remember the order, so we can flash highlight if it changed after reprinting
-        const tagId = ($(evt.target).closest('.tag_view_item')).attr('id');
-        const oldOrder = $('#tag_view_list .tag_view_item').map((_, el) => el.id).get();
+        const tagId = element.closest('.tag_view_item').attr('id');
+        const tag = tags.find(item => String(item.id) === String(tagId));
+        element.removeAttr('dirty');
+        if (!tag) return;
 
-        printViewTagList($('#tag_view_list .tag_view_list_tags'));
+        const rawName = element.text();
+        const newName = rawName.replace(/\s+/g, ' ').trim();
 
-        // If the new focus would've been inside the now redrawn tag list, we should at least move back the focus to the current name
-        // Otherwise tab-navigation gets a bit weird
-        if (evt.relatedTarget instanceof HTMLElement && $(evt.relatedTarget).closest('#tag_view_list')) {
-            $(`#tag_view_list .tag_view_item[id="${tagId}"] .tag_view_name`)[0]?.focus({ preventScroll: true });
+        if (!newName) {
+            const originalName = element.data('originalTagName');
+            const fallbackName = typeof originalName === 'string' && originalName.trim() ? originalName : tag.name;
+            tag.name = fallbackName;
+            element.text(fallbackName);
+            $(`.tag[id="${tagId}"] .tag_name`).text(fallbackName);
+            saveSettingsDebounced();
+            applyCharacterTagsToMessageDivs();
+            renderTagManagerMergePrimaryOptions();
+            renderTagManagerAssignChips();
+            return;
         }
 
-        const newOrder = $('#tag_view_list .tag_view_item').map((_, el) => el.id).get();
-        const orderChanged = !oldOrder.every((id, index) => id === newOrder[index]);
-        if (orderChanged) {
-            flashHighlight($(`#tag_view_list .tag_view_item[id="${tagId}"]`));
+        if (newName !== tag.name) {
+            tag.name = newName;
+            $(`.tag[id="${tagId}"] .tag_name`).text(newName);
+            saveSettingsDebounced();
+            applyCharacterTagsToMessageDivs();
+        }
+
+        element.text(newName);
+        renderTagManagerMergePrimaryOptions();
+        renderTagManagerAssignChips();
+
+        // Never rebuild the list under a click or while focus moved to another control
+        // inside it. That destroyed the pressed button between mousedown and mouseup.
+        const focusStayedInList = evt.relatedTarget instanceof HTMLElement
+            && $(evt.relatedTarget).closest('.tag_view_list_tags').length > 0;
+        if (focusStayedInList) {
+            return;
+        }
+
+        const needsReorder = getTagManagerSortMode() !== tag_sort_mode.MANUAL
+            || Boolean(tagManagerState.tagQuery)
+            || tagManagerState.tagFilter !== 'all';
+        if (needsReorder) {
+            printViewTagList($('#tag_view_list .tag_view_list_tags'));
         }
     });
 
