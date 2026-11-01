@@ -254,22 +254,40 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
         alert.addAction(UIAlertAction(title: "OK", style: .default))
         present(alert, animated: true)
     }
-    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+    private func presentJavaScriptDialog<T>(_ message: String, from frame: WKFrameInfo, defaultValue: T, completionHandler: @escaping (T) -> Void, configure: (UIAlertController, @escaping (T) -> Void) -> Void) {
+        var completed = false
+        let complete: (T) -> Void = { value in
+            guard !completed else { return }
+            completed = true
+            completionHandler(value)
+        }
+        guard frame.isMainFrame, let source = frame.request.url, isLocal(source),
+              !web.isHidden, pickReply == nil, presentedViewController == nil,
+              !isBeingPresented, !isBeingDismissed, viewIfLoaded?.window != nil else {
+            complete(defaultValue)
+            return
+        }
         let alert = UIAlertController(title: "Neconyan", message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler() })
+        configure(alert, complete)
         present(alert, animated: true)
+        if presentedViewController !== alert { complete(defaultValue) }
+    }
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+        presentJavaScriptDialog(message, from: frame, defaultValue: (), completionHandler: { _ in completionHandler() }) { alert, complete in
+            alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in complete(()) })
+        }
     }
     func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
-        let alert = UIAlertController(title: "Neconyan", message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(false) })
-        alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(true) })
-        present(alert, animated: true)
+        presentJavaScriptDialog(message, from: frame, defaultValue: false, completionHandler: completionHandler) { alert, complete in
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in complete(false) })
+            alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in complete(true) })
+        }
     }
     func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
-        let alert = UIAlertController(title: "Neconyan", message: prompt, preferredStyle: .alert)
-        alert.addTextField { $0.text = defaultText }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(nil) })
-        alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(alert.textFields?.first?.text ?? "") })
-        present(alert, animated: true)
+        presentJavaScriptDialog(prompt, from: frame, defaultValue: nil, completionHandler: completionHandler) { alert, complete in
+            alert.addTextField { $0.text = defaultText }
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in complete(nil) })
+            alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in complete(alert.textFields?.first?.text ?? "") })
+        }
     }
 }

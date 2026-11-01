@@ -5,7 +5,28 @@ import { color, getConfigValue } from '../util.js';
 
 const enableAccessLog = getConfigValue('logging.enableAccessLog', true, 'boolean');
 
+const MAX_KNOWN_IPS = 10000;
+const MAX_LOG_FIELD_LENGTH = 512;
+const CONTROL_CHARACTERS = /[\r\n\u0000-\u001f\u007f]+/g;
 const knownIPs = new Set();
+
+function sanitizeAccessLogField(value, fallback = 'unknown') {
+    if (value === undefined || value === null) return fallback;
+    const cleaned = String(value).replace(CONTROL_CHARACTERS, ' ').trim();
+    if (!cleaned) return fallback;
+    return cleaned.length > MAX_LOG_FIELD_LENGTH ? cleaned.slice(0, MAX_LOG_FIELD_LENGTH) : cleaned;
+}
+
+function rememberKnownIp(ip) {
+    if (knownIPs.has(ip)) return false;
+    while (knownIPs.size >= MAX_KNOWN_IPS) {
+        const oldest = knownIPs.values().next().value;
+        if (oldest === undefined) break;
+        knownIPs.delete(oldest);
+    }
+    knownIPs.add(ip);
+    return true;
+}
 
 export const getAccessLogPath = () => path.join(globalThis.DATA_ROOT, 'access.log');
 
@@ -32,13 +53,10 @@ export function migrateAccessLog() {
  */
 export default function accessLoggerMiddleware() {
     return function (req, res, next) {
-        const clientIp = getIpAddress(req, true);
-        const userAgent = req.headers['user-agent'];
+        const clientIp = sanitizeAccessLogField(getIpAddress(req, true));
+        const userAgent = sanitizeAccessLogField(req.headers['user-agent'], 'unknown');
 
-        if (!knownIPs.has(clientIp)) {
-            // Log new connection
-            knownIPs.add(clientIp);
-
+        if (rememberKnownIp(clientIp)) {
             // Write to access log if enabled
             if (enableAccessLog) {
                 console.info(color.yellow(`New connection from ${clientIp}; User Agent: ${userAgent}\n`));

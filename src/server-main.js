@@ -61,8 +61,8 @@ import { renderRegisteredDocsPage } from './docs-reader.js';
 import { serveCardScriptSandbox } from './card-script-sandbox.js';
 import { CARD_SCRIPT_SANDBOX_PATH } from '../public/scripts/card-script-sandbox/policy.js';
 import requireHttpsMiddleware from './middleware/requireHttps.js';
-import authRouter, { setAuthRouterBasicAuthMode } from './endpoints/auth.js';
-import { createSession, destroySession, validateCredentials, isSessionAuthEnabled } from './middleware/sessionAuth.js';
+import authRouter, { handleSessionAuthLogin, setAuthRouterBasicAuthMode } from './endpoints/auth.js';
+import { destroySession, isSessionAuthEnabled } from './middleware/sessionAuth.js';
 import getWhitelistMiddleware from './middleware/whitelist.js';
 import accessLoggerMiddleware, { getAccessLogPath, migrateAccessLog } from './middleware/accessLogWriter.js';
 import multerMonkeyPatch from './middleware/multerMonkeyPatch.js';
@@ -132,30 +132,6 @@ app.use(responseTime());
 app.use(createRequestTrace(process.env.NECONYAN_REQUEST_TRACE));
 setCrashContext({ requests: getRecentRequests, activity: getDiagnosticServerActivity });
 
-app.use('/api/auth', express.json({ limit: '32kb' }), express.urlencoded({ extended: false, limit: '32kb' }));
-app.use('/api/in-chat-agents', express.json({ limit: AGENT_STORAGE_LIMITS.presetBytes }), express.urlencoded({ extended: false, limit: AGENT_STORAGE_LIMITS.presetBytes }));
-// A job intent is bounded before the general parser so one account cannot feed
-// the dispatcher a ledger-sized body that would later break the read limit.
-app.use('/api/jobs', express.json({ limit: JOB_INTENT_LIMIT_BYTES }), express.urlencoded({ extended: false, limit: JOB_INTENT_LIMIT_BYTES }));
-// A named Roleplay workflow carries one instruction, one Story or Guided prompt
-// and the chat revisions it answers, so it stays far below the job intent size.
-// Image recovery controls are bounded before the broad legacy parsers. Compression cannot bypass admission bounds.
-app.use('/api/roleplay/images', (request, response, next) => {
-    if (request.method === 'POST' && !request.is('application/json')) return response.status(415).json({ error: 'Image recovery requires JSON.' });
-    if (request.get('content-encoding') && request.get('content-encoding') !== 'identity') return response.status(415).json({ error: 'Compressed image recovery requests are not supported.' });
-    next();
-});
-app.use('/api/roleplay/images/materialise', express.json({ limit: '2mb', inflate: false }));
-app.use('/api/roleplay/images', express.json({ limit: '64kb', inflate: false }));
-app.use('/api/roleplay', express.json({ limit: '256kb' }), express.urlencoded({ extended: false, limit: '256kb' }));
-app.use('/api/notebooks', express.json({ limit: '8mb' }), express.urlencoded({ extended: false, limit: '256kb' }));
-app.use('/api/scratchpad', express.json({ limit: '4mb' }), express.urlencoded({ extended: false, limit: '256kb' }));
-app.use('/api/meower', express.json({ limit: '32kb' }), express.urlencoded({ extended: false, limit: '32kb' }));
-app.use('/api/labs', express.json({ limit: '32mb' }), express.urlencoded({ extended: false, limit: '32mb' }));
-app.use('/api/operations', express.json({ limit: '32mb' }), express.urlencoded({ extended: false, limit: '32mb' }));
-app.use(express.json({ limit: '500mb' }));
-app.use(express.urlencoded({ extended: true, limit: '500mb' }));
-
 // CORS Settings //
 const corsEnabled = getConfigValue('cors.enabled', true, 'boolean');
 if (corsEnabled) {
@@ -189,33 +165,6 @@ app.use(requireHttpsMiddleware);
 
 app.get('/api/media-reference/:store/:id/:token', createImageReferenceHandler());
 
-// Session auth login/logout endpoints (registered before basic auth to allow unauthenticated login)
-if (isSessionAuthEnabled()) {
-    app.post('/api/auth/login', express.json(), async (req, res) => {
-        const { username, password } = req.body || {};
-        if (!username || !password) {
-            return res.status(400).json({ error: 'Username and password are required.' });
-        }
-        const valid = await validateCredentials(username, password);
-        if (!valid) {
-            return res.status(401).json({ error: 'Invalid credentials.' });
-        }
-        const token = createSession(username);
-        return res.json({ token });
-    });
-
-    app.post('/api/auth/logout', express.json(), (req, res) => {
-        const authHeader = req.headers.authorization;
-        if (authHeader) {
-            const [scheme, token] = authHeader.split(' ');
-            if (scheme === 'Bearer' && token) {
-                destroySession(token);
-            }
-        }
-        return res.json({ success: true });
-    });
-}
-
 const cookieSessionName = getCookieSessionName(globalThis.DATA_ROOT, cliArgs.port);
 app.use(cookieSession({
     name: cookieSessionName,
@@ -235,13 +184,6 @@ if (isBunRuntime()) {
     });
 }
 
-if (cliArgs.listen && cliArgs.basicAuthMode) {
-    setAuthRouterBasicAuthMode(true);
-    app.use(basicAuthMiddleware);
-} else {
-    setAuthRouterBasicAuthMode(false);
-}
-
 if (cliArgs.whitelistMode) {
     const whitelistMiddleware = await getWhitelistMiddleware();
     app.use(whitelistMiddleware);
@@ -249,11 +191,45 @@ if (cliArgs.whitelistMode) {
 
 app.use(hostWhitelistMiddleware);
 
+// Session auth login/logout endpoints (registered after IP/host admission, before basic auth to allow unauthenticated login)
+if (isSessionAuthEnabled()) {
+    app.post('/api/auth/login', express.json({ limit: '32kb', inflate: false }), handleSessionAuthLogin);
+
+    app.post('/api/auth/logout', express.json({ limit: '32kb', inflate: false }), (req, res) => {
+        const authHeader = req.headers.authorization;
+        if (authHeader) {
+            const [scheme, token] = authHeader.split(' ');
+            if (scheme === 'Bearer' && token) {
+                destroySession(token);
+            }
+        }
+        return res.json({ success: true });
+    });
+}
+
+if (cliArgs.listen && cliArgs.basicAuthMode) {
+    setAuthRouterBasicAuthMode(true);
+    app.use(basicAuthMiddleware);
+} else {
+    setAuthRouterBasicAuthMode(false);
+}
+
 if (cliArgs.listen) {
     app.use(accessLoggerMiddleware());
 }
 
 app.use(setUserDataMiddleware);
+
+// Pre-authentication sign-in and recovery routes use a small, non-inflating body parser.
+app.use('/api/auth', express.json({ limit: '32kb', inflate: false }), express.urlencoded({ extended: false, limit: '32kb', inflate: false }));
+app.use('/api/users', (request, response, next) => {
+    const publicPaths = new Set(['/list', '/login', '/recover-step1', '/recover-step2']);
+    if (!publicPaths.has(request.path)) return next();
+    return express.json({ limit: '32kb', inflate: false })(request, response, (err) => {
+        if (err) return next(err);
+        return express.urlencoded({ extended: false, limit: '32kb', inflate: false })(request, response, next);
+    });
+});
 
 function parseCookieHeaderNames(cookieHeader) {
     return String(cookieHeader || '')
@@ -303,8 +279,67 @@ function isSecureCookieRequest(request) {
     return Boolean(request.secure || request.protocol === 'https' || forwardedProto === 'https');
 }
 
+// CSRF Protection //
+function applyCsrfTokenHeaders(res) {
+    res.set({
+        'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'Vary': 'Cookie',
+    });
+}
+
+if (!cliArgs.disableCsrf) {
+    const csrfSyncProtection = csrfSync({
+        getTokenFromState: (req) => {
+            if (!req.session) {
+                console.error('(CSRF error) getTokenFromState: Session object not initialized');
+                return;
+            }
+            return req.session.csrfToken;
+        },
+        getTokenFromRequest: (req) => {
+            return req.headers['x-csrf-token']?.toString();
+        },
+        storeTokenInState: (req, token) => {
+            if (!req.session) {
+                console.error('(CSRF error) storeTokenInState: Session object not initialized');
+                return;
+            }
+            req.session.csrfToken = token;
+        },
+        skipCsrfProtection: (req) => {
+            if (!cliArgs.enableCorsProxy || !/^\/proxy\//.test(req.path)) return false;
+            return req.headers['sec-fetch-site'] === 'same-origin';
+        },
+        size: 32,
+    });
+
+    app.get('/csrf-token', (req, res) => {
+        applyCsrfTokenHeaders(res);
+        res.json({
+            'token': csrfSyncProtection.generateToken(req),
+        });
+    });
+
+    // Customize the error message
+    csrfSyncProtection.invalidCsrfTokenError.message = color.red('Invalid CSRF token. Please refresh the page and try again.');
+    csrfSyncProtection.invalidCsrfTokenError.stack = undefined;
+
+    app.use(csrfSyncProtection.csrfSynchronisedProtection);
+} else {
+    console.warn('\nCSRF protection is disabled. This will make your server vulnerable to CSRF attacks.\n');
+    app.get('/csrf-token', (req, res) => {
+        applyCsrfTokenHeaders(res);
+        res.json({
+            'token': 'disabled',
+        });
+    });
+}
+
 // Neconyan: Clear cookies & cache must also expire HttpOnly cookie-session data.
-app.post('/api/cookies/clear', express.json(), (request, response) => {
+// Mounted after CSRF protection so cross-site POSTs cannot clear a user's session.
+app.post('/api/cookies/clear', express.json({ limit: '32kb', inflate: false }), (request, response) => {
     const sessionName = cookieSessionName;
     const cookieNames = new Set([
         ...parseCookieHeaderNames(request.headers.cookie),
@@ -360,63 +395,6 @@ app.post('/api/cookies/clear', express.json(), (request, response) => {
         expirationAttempts,
     });
 });
-
-// CSRF Protection //
-function applyCsrfTokenHeaders(res) {
-    res.set({
-        'Cache-Control': 'no-store, no-cache, must-revalidate, private',
-        'Pragma': 'no-cache',
-        'Expires': '0',
-        'Vary': 'Cookie',
-    });
-}
-
-if (!cliArgs.disableCsrf) {
-    const csrfSyncProtection = csrfSync({
-        getTokenFromState: (req) => {
-            if (!req.session) {
-                console.error('(CSRF error) getTokenFromState: Session object not initialized');
-                return;
-            }
-            return req.session.csrfToken;
-        },
-        getTokenFromRequest: (req) => {
-            return req.headers['x-csrf-token']?.toString();
-        },
-        storeTokenInState: (req, token) => {
-            if (!req.session) {
-                console.error('(CSRF error) storeTokenInState: Session object not initialized');
-                return;
-            }
-            req.session.csrfToken = token;
-        },
-        skipCsrfProtection: (req) => {
-            return cliArgs.enableCorsProxy ? /^\/proxy\//.test(req.path) : false;
-        },
-        size: 32,
-    });
-
-    app.get('/csrf-token', (req, res) => {
-        applyCsrfTokenHeaders(res);
-        res.json({
-            'token': csrfSyncProtection.generateToken(req),
-        });
-    });
-
-    // Customize the error message
-    csrfSyncProtection.invalidCsrfTokenError.message = color.red('Invalid CSRF token. Please refresh the page and try again.');
-    csrfSyncProtection.invalidCsrfTokenError.stack = undefined;
-
-    app.use(csrfSyncProtection.csrfSynchronisedProtection);
-} else {
-    console.warn('\nCSRF protection is disabled. This will make your server vulnerable to CSRF attacks.\n');
-    app.get('/csrf-token', (req, res) => {
-        applyCsrfTokenHeaders(res);
-        res.json({
-            'token': 'disabled',
-        });
-    });
-}
 
 app.get(CARD_SCRIPT_SANDBOX_PATH, requireLoginMiddleware, serveCardScriptSandbox);
 
@@ -530,6 +508,28 @@ app.use('/api/auth', authRouter);
 
 // Everything below this line requires authentication
 app.use(requireLoginMiddleware);
+app.use('/api/in-chat-agents', express.json({ limit: AGENT_STORAGE_LIMITS.presetBytes }), express.urlencoded({ extended: false, limit: AGENT_STORAGE_LIMITS.presetBytes }));
+// A job intent is bounded before the general parser so one account cannot feed
+// the dispatcher a ledger-sized body that would later break the read limit.
+app.use('/api/jobs', express.json({ limit: JOB_INTENT_LIMIT_BYTES }), express.urlencoded({ extended: false, limit: JOB_INTENT_LIMIT_BYTES }));
+// A named Roleplay workflow carries one instruction, one Story or Guided prompt
+// and the chat revisions it answers, so it stays far below the job intent size.
+// Image recovery controls are bounded before the broad legacy parsers. Compression cannot bypass admission bounds.
+app.use('/api/roleplay/images', (request, response, next) => {
+    if (request.method === 'POST' && !request.is('application/json')) return response.status(415).json({ error: 'Image recovery requires JSON.' });
+    if (request.get('content-encoding') && request.get('content-encoding') !== 'identity') return response.status(415).json({ error: 'Compressed image recovery requests are not supported.' });
+    next();
+});
+app.use('/api/roleplay/images/materialise', express.json({ limit: '2mb', inflate: false }));
+app.use('/api/roleplay/images', express.json({ limit: '64kb', inflate: false }));
+app.use('/api/roleplay', express.json({ limit: '256kb' }), express.urlencoded({ extended: false, limit: '256kb' }));
+app.use('/api/notebooks', express.json({ limit: '8mb' }), express.urlencoded({ extended: false, limit: '256kb' }));
+app.use('/api/scratchpad', express.json({ limit: '4mb' }), express.urlencoded({ extended: false, limit: '256kb' }));
+app.use('/api/meower', express.json({ limit: '32kb' }), express.urlencoded({ extended: false, limit: '32kb' }));
+app.use('/api/labs', express.json({ limit: '32mb' }), express.urlencoded({ extended: false, limit: '32mb' }));
+app.use('/api/operations', express.json({ limit: '32mb' }), express.urlencoded({ extended: false, limit: '32mb' }));
+app.use(express.json({ limit: '500mb' }));
+app.use(express.urlencoded({ extended: true, limit: '500mb' }));
 app.post('/api/ping', (request, response) => {
     if (request.query.extend && request.session) {
         request.session.touch = Date.now();
@@ -552,7 +552,28 @@ if (cliArgs.enableCorsProxy) {
 const uploadsPath = path.join(cliArgs.dataRoot, UPLOADS_DIRECTORY);
 // Neconyan: avoid Bun's recursive mkdir bug on ReadOnly Windows directories.
 const uploadStorage = createUploadStorage(uploadsPath);
-app.use(multer({ storage: uploadStorage, limits: { fieldSize: 500 * 1024 * 1024 } }).single('avatar'));
+const defaultUploadMiddleware = multer({
+    storage: uploadStorage,
+    limits: {
+        fieldSize: 500 * 1024 * 1024,
+        fileSize: 500 * 1024 * 1024,
+        files: 1,
+    },
+}).single('avatar');
+const accountImportUploadMiddleware = multer({
+    storage: uploadStorage,
+    limits: {
+        fieldSize: 500 * 1024 * 1024,
+        fileSize: Number.MAX_SAFE_INTEGER,
+        files: 1,
+    },
+}).single('avatar');
+app.use((req, res, next) => {
+    const middleware = req.path === '/api/operations/import-input'
+        ? accountImportUploadMiddleware
+        : defaultUploadMiddleware;
+    middleware(req, res, next);
+});
 app.use(multerMonkeyPatch);
 
 app.get('/version', async function (_, response) {

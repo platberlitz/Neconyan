@@ -33,7 +33,7 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             }, { viewSource: read(`${companionPath}view-state.js`), cssSource: read('../node_modules/@adobe/css-tools/dist/esm/adobe-css-tools.mjs') });
             await page.addScriptTag({ content: [
                 declarations('../public/scripts/utils.js', ['escapeHtml']),
-                declarations('../public/scripts/chats.js', ['encodeStyleTags', 'decodeStyleTags']),
+                declarations('../public/scripts/chats.js', ['isExternalMediaUrl', 'stripCssCommentsQuoteAware', 'unescapeCssText', 'extractCssUrls', 'hasExternalCssUrl', 'sanitizeInlineStyleExternalMedia', 'encodeStyleTags', 'decodeStyleTags', 'addDOMPurifyHooks']),
                 declarations(`${companionPath}companion-ui.js`, ['sanitizeCompanionHtml', 'CHOICE_PREFIX_RE', 'CHOICE_LINE_RE', 'extractChoiceText', 'buildChoiceButtonHtml', 'wrapChoiceSegment', 'decorateStyledChoiceRows', 'decorateChoiceLines']),
             ].join('\n') });
         });
@@ -167,24 +167,89 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             await page.evaluate(() => {
                 window.executed = false;
                 const css = '/* </style><img src=x onerror="window.executed=true"> */ .note { color: red; }';
-                const untrusted = `<custom-style>${encodeURIComponent(css)}</custom-style><button data-action="panel-regenerate-all">Forged action</button>`;
+                const attrBreakoutCss = 'a { content: " > <b id=injected-from-style>ok</b>"; }';
+                const svgCss = '/* <b id=injected-from-svg>ok</b> */ .note { color: blue; }';
+                const untrusted = [
+                    `<custom-style>${encodeURIComponent(css)}</custom-style>`,
+                    `<div id="attr-holder" title='<custom-style>${encodeURIComponent(attrBreakoutCss)}</custom-style>'>safe</div>`,
+                    `<svg><desc><custom-style>${encodeURIComponent(svgCss)}</custom-style></desc></svg>`,
+                    '<button data-action="panel-regenerate-all">Forged action</button>',
+                ].join('');
                 document.getElementById('content').innerHTML = sanitizeCompanionHtml(untrusted);
             });
-            await expect(page.locator('#content img, #content [onerror], #content [data-action]')).toHaveCount(0);
+            await expect(page.locator('#content img, #content [onerror], #content [data-action], #content #injected-from-style, #content #injected-from-svg')).toHaveCount(0);
             await expect(page.locator('#content style')).toHaveCount(1);
+            await expect(page.locator('#content svg style')).toHaveCount(0);
             await expect(page.getByRole('button', { name: 'Forged action' })).toBeVisible();
             expect(await page.evaluate(() => window.executed)).toBe(false);
         });
 
-        test('ordinary tracker bullets stay text while numbered choices remain buttons', async ({ page }) => {
+        test('ordinary tracker bullets stay text while numbered choices remain buttons and attribute <br> cannot break out', async ({ page }) => {
             await page.evaluate(() => {
-                document.getElementById('content').innerHTML = decorateChoiceLines(sanitizeCompanionHtml(
-                    '<ul><li>Health: good</li><li>Weather: rain</li></ul><ol><li>Go outside</li><li>Stay here</li></ol>',
-                ));
+                document.getElementById('content').innerHTML = decorateChoiceLines(sanitizeCompanionHtml([
+                    '<ul><li>Health: good</li><li>Weather: rain</li></ul>',
+                    '<ol><li>Go outside</li><li>Stay here</li></ol>',
+                    '<p>1. First choice<br>2. Second choice</p>',
+                    '<p><span id="attr-br" title="a<br>1. <b id=injected-choice>ok</b>">text</span></p>',
+                ].join('')));
             });
             await expect(page.locator('#content ul button')).toHaveCount(0);
             await expect(page.locator('#content ol button')).toHaveCount(2);
+            await expect(page.locator('#content p button.ica--choice-line')).toHaveCount(2);
+            await expect(page.locator('#content #injected-choice')).toHaveCount(0);
+            await expect(page.locator('#content #attr-br')).toHaveAttribute('title', 'a<br>1. <b id=injected-choice>ok</b>');
             await expect(page.getByRole('button', { name: 'Go outside' })).toBeVisible();
+            await expect(page.getByRole('button', { name: '1. First choice' })).toBeVisible();
+        });
+
+        test('blocks outbound requests from inline styles, escaped CSS URLs, video poster and SVG image when external media is forbidden', async ({ page }) => {
+            const externalRequests = [];
+            await page.route('**/*', async route => {
+                const reqUrl = route.request().url();
+                if (reqUrl.includes('127.0.0.1:9999') || reqUrl.includes('example.invalid')) {
+                    externalRequests.push(reqUrl);
+                    await route.abort();
+                    return;
+                }
+                await route.continue();
+            });
+
+            await page.evaluate(() => {
+                window.getCurrentEntityId = () => 'test-entity';
+                window.accountStorage = { getItem: () => 'true', setItem: () => {} };
+                window.toastr = { warning: () => {}, clear: () => {} };
+                window.t = strings => strings.join('');
+                window.addDOMPurifyHooks();
+
+                const payload = [
+                    '<div id="inline-bg" style="color: rgb(12, 34, 56); background-image: url(http://127.0.0.1:9999/inline.png);">Styled</div>',
+                    '<div id="var-imageset" style="--u: \'//127.0.0.1:9999/var-imageset.png\'; background-image: image-set(var(--u) 1x); width: 10px; height: 10px;">x</div>',
+                    '<div id="comment-string" style="background-image: url(\'/local.png?a=/*\'), url(\'https://127.0.0.1:9999/comment-in-string.png?b=*/\'); width: 10px; height: 10px;">x</div>',
+                    '<div id="escaped-quote" style="background-image: url(\'//127.0.0.1:9999/escaped-quote.png?a=\\\'\'); width: 10px; height: 10px;">x</div>',
+                    '<div id="backslash-css" style="background-image: url(\'/\\\\127.0.0.1:9999/backslash-css.png\'); width: 10px; height: 10px;">x</div>',
+                    '<style>@IMPORT "http://127\\2e 0\\2e 0\\2e 1:9999/imp.css"; @keyframes kf { from { background-image: url(http://127.0.0.1:9999/keyframes.png); } to { background-image: url(http://127.0.0.1:9999/keyframes.png); } } .custom-box { color: rgb(20, 40, 60); background-image: url(//127.0.0.1:9999/proto.png); animation: kf 1s infinite; } .custom-esc { background-image: url(http\\://127.0.0.1:9999/escaped.png); }</style>',
+                    '<div class="box esc">Box</div>',
+                    '<video id="vid" poster="http://127.0.0.1:9999/poster.png"></video>',
+                    '<svg><image href="http://127.0.0.1:9999/svg.png"/></svg>',
+                    '<img src="/\\127.0.0.1:9999/backslash-img.png">',
+                    '<img src="https:127.0.0.1:9999/schemeless-https.png">',
+                    '<input type="image" src="http://127.0.0.1:9999/input-image.png">',
+                    '<table id="tbl" background="http://127.0.0.1:9999/table-bg.png"><tr><td id="cell" background="http://127.0.0.1:9999/td-bg.png">x</td></tr></table>',
+                ].join('');
+                document.getElementById('content').innerHTML = sanitizeCompanionHtml(payload);
+            });
+
+            await expect(page.locator('#content #inline-bg')).toHaveCSS('color', 'rgb(12, 34, 56)');
+            await expect(page.locator('#content #inline-bg')).toHaveCSS('background-image', 'none');
+            await expect(page.locator('#content .custom-box')).toHaveCSS('color', 'rgb(20, 40, 60)');
+            await expect(page.locator('#content .custom-box')).toHaveCSS('background-image', 'none');
+            await expect(page.locator('#content #vid')).not.toHaveAttribute('poster');
+            await expect(page.locator('#content svg image')).toHaveCount(0);
+            await expect(page.locator('#content img')).toHaveCount(0);
+            await expect(page.locator('#content input[type="image"]')).toHaveCount(0);
+            await expect(page.locator('#content #tbl')).not.toHaveAttribute('background');
+            await expect(page.locator('#content #cell')).not.toHaveAttribute('background');
+            expect(externalRequests).toHaveLength(0);
         });
 
         test('inline repair wrench fits the action row and repairs only its own note', async ({ page }) => {

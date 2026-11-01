@@ -59,6 +59,45 @@ const authLimiter = new RateLimiterMemory({
 });
 const challengeLimiter = new RateLimiterMemory({ points: 20, duration: 60 });
 
+/**
+ * Shared rate-limited handler for `POST /api/auth/login` when `sessionAuth.enabled` is true.
+ * Records the identity's `credentialVersion` so Bearer tokens are revoked on password change or account disablement.
+ * @param {import('express').Request} request
+ * @param {import('express').Response} response
+ */
+export async function handleSessionAuthLogin(request, response) {
+    const ip = getIp(request);
+    try {
+        const rateLimit = await authLimiter.get(ip);
+        if (rateLimit !== null && rateLimit.consumedPoints >= authLimiter.points) {
+            throw rateLimit;
+        }
+        const { username, password } = request.body || {};
+        if (!username || !password) {
+            return response.status(400).json({ error: 'Username and password are required.' });
+        }
+        const valid = await validateCredentials(username, password);
+        if (!valid) {
+            await authLimiter.consume(ip);
+            return response.status(401).json({ error: 'Invalid credentials.' });
+        }
+        const version = await getSessionCredentialVersion(username);
+        if (!version) {
+            return response.status(401).json({ error: 'Invalid credentials.' });
+        }
+        await authLimiter.delete(ip);
+        const token = createSession(username, { credentialVersion: version });
+        return response.json({ token });
+    } catch (error) {
+        if (error instanceof RateLimiterRes) {
+            console.error('Session auth login rate limited:', ip, request.originalUrl);
+            return retryAfter(response, error).status(429).json({ error: 'Too many attempts. Wait a minute and try again.' });
+        }
+        console.error('Session auth login error:', error);
+        return response.status(500).json({ error: 'Sign-in failed unexpectedly.' });
+    }
+}
+
 // In-memory, single-use challenge store: id → {challenge, kind, label, remember, username, expires}.
 // Entries are consumed atomically on use, so a captured response cannot be replayed.
 const challenges = new Map();

@@ -2,26 +2,27 @@ import fetch from 'node-fetch';
 import { Router } from 'express';
 
 import { readSecret, SECRET_KEYS } from './secrets.js';
+import { buildAzureSpeechUrl, isProviderUrlValidationError } from './provider-url-validation.js';
 
 export const router = Router();
 
 router.post('/list', async (req, res) => {
     try {
-        const key = readSecret(req.user.directories, SECRET_KEYS.AZURE_TTS);
-
-        if (!key) {
-            console.warn('Azure TTS API Key not set');
-            return res.sendStatus(403);
-        }
-
-        const region = req.body.region;
+        const region = req.body?.region;
 
         if (!region) {
             console.warn('Azure TTS region not set');
             return res.sendStatus(400);
         }
 
-        const url = `https://${region}.tts.speech.microsoft.com/cognitiveservices/voices/list`;
+        const url = buildAzureSpeechUrl(region, '/cognitiveservices/voices/list');
+
+        const key = readSecret(req.user.directories, SECRET_KEYS.AZURE_TTS);
+
+        if (!key) {
+            console.warn('Azure TTS API Key not set');
+            return res.sendStatus(403);
+        }
 
         const response = await fetch(url, {
             method: 'GET',
@@ -38,6 +39,10 @@ router.post('/list', async (req, res) => {
         const voices = await response.json();
         return res.json(voices);
     } catch (error) {
+        if (isProviderUrlValidationError(error)) {
+            console.warn('Invalid Azure TTS region', error.message);
+            return res.sendStatus(400);
+        }
         console.error('Azure Request failed', error);
         return res.sendStatus(500);
     }
@@ -45,6 +50,14 @@ router.post('/list', async (req, res) => {
 
 router.post('/generate', async (req, res) => {
     try {
+        const { text, voice, region } = req.body ?? {};
+        if (!text || !voice || !region) {
+            console.warn('Missing required parameters');
+            return res.sendStatus(400);
+        }
+
+        const url = buildAzureSpeechUrl(region, '/cognitiveservices/v1');
+
         const key = readSecret(req.user.directories, SECRET_KEYS.AZURE_TTS);
 
         if (!key) {
@@ -52,13 +65,6 @@ router.post('/generate', async (req, res) => {
             return res.sendStatus(403);
         }
 
-        const { text, voice, region } = req.body;
-        if (!text || !voice || !region) {
-            console.warn('Missing required parameters');
-            return res.sendStatus(400);
-        }
-
-        const url = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`;
         const lang = String(voice).split('-').slice(0, 2).join('-');
         const escapedText = String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='${lang}'><voice xml:lang='${lang}' name='${voice}'>${escapedText}</voice></speak>`;
@@ -82,6 +88,10 @@ router.post('/generate', async (req, res) => {
         res.set('Content-Type', 'audio/ogg');
         return res.send(audio);
     } catch (error) {
+        if (isProviderUrlValidationError(error)) {
+            console.warn('Invalid Azure TTS region', error.message);
+            return res.sendStatus(400);
+        }
         console.error('Azure Request failed', error);
         return res.sendStatus(500);
     }

@@ -622,6 +622,272 @@ export function encodeStyleTags(text) {
     });
 }
 
+export function isExternalMediaUrl(url) {
+    const normalized = String(url ?? '').replace(/[\u0000-\u0020]+/g, '').trim();
+    if (!normalized || normalized.startsWith('#')) {
+        return false;
+    }
+
+    const slashNormalized = normalized.replaceAll('\\', '/');
+    const lower = slashNormalized.toLowerCase();
+    if (lower.startsWith('data:')) {
+        return false;
+    }
+
+    const baseOrigin = (typeof window !== 'undefined' && window.location?.origin && window.location.origin !== 'null')
+        ? window.location.origin
+        : 'http://localhost';
+
+    if (lower.startsWith('blob:')) {
+        const blobBody = slashNormalized.slice(5);
+        return Boolean(blobBody && !blobBody.toLowerCase().startsWith(baseOrigin.toLowerCase()));
+    }
+
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(slashNormalized) || slashNormalized.startsWith('//')) {
+        try {
+            const parsed = new URL(slashNormalized, baseOrigin);
+            return parsed.origin !== baseOrigin;
+        } catch {
+            return true;
+        }
+    }
+
+    const schemeMatch = slashNormalized.match(/^([a-z][a-z0-9+.-]*):/i);
+    if (schemeMatch) {
+        const scheme = `${schemeMatch[1].toLowerCase()}:`;
+        if (scheme === 'data:' || scheme === 'javascript:' || scheme === 'about:') {
+            return false;
+        }
+        try {
+            const parsed = new URL(slashNormalized, baseOrigin);
+            return parsed.origin !== baseOrigin;
+        } catch {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function stripCssCommentsQuoteAware(value) {
+    const src = String(value ?? '');
+    let out = '';
+    let quote = '';
+    for (let i = 0; i < src.length; i++) {
+        const ch = src[i];
+        if (quote) {
+            out += ch;
+            if (ch === '\\' && i + 1 < src.length) {
+                out += src[++i];
+            } else if (ch === quote) {
+                quote = '';
+            }
+            continue;
+        }
+
+        if (ch === '\'' || ch === '"') {
+            quote = ch;
+            out += ch;
+            continue;
+        }
+
+        if (ch === '/' && src[i + 1] === '*') {
+            const end = src.indexOf('*/', i + 2);
+            if (end === -1) {
+                break;
+            }
+            i = end + 1;
+            continue;
+        }
+
+        out += ch;
+    }
+    return out;
+}
+
+function unescapeCssText(value) {
+    return stripCssCommentsQuoteAware(value)
+        .replace(/\\([0-9a-fA-F]{1,6})\s?|\\([\s\S])/g, (_, hex, ch) => {
+            if (hex) {
+                const codePoint = parseInt(hex, 16);
+                return Number.isFinite(codePoint) && codePoint > 0 && codePoint <= 0x10ffff
+                    ? String.fromCodePoint(codePoint)
+                    : '\ufffd';
+            }
+            return ch ?? '';
+        });
+}
+
+function extractCssUrls(value) {
+    const source = stripCssCommentsQuoteAware(value);
+    const urls = [];
+
+    const readQuoted = (str, startIdx) => {
+        const q = str[startIdx];
+        let token = '';
+        let i = startIdx + 1;
+        while (i < str.length) {
+            const ch = str[i];
+            if (ch === '\\' && i + 1 < str.length) {
+                token += ch + str[i + 1];
+                i += 2;
+                continue;
+            }
+            if (ch === q) {
+                i++;
+                break;
+            }
+            token += ch;
+            i++;
+        }
+        return { value: unescapeCssText(token).trim(), nextIndex: i };
+    };
+
+    for (let i = 0; i < source.length; i++) {
+        const ch = source[i];
+        if (ch === '\'' || ch === '"') {
+            const { value: quotedVal, nextIndex } = readQuoted(source, i);
+            if (quotedVal) {
+                urls.push(quotedVal);
+            }
+            i = nextIndex - 1;
+            continue;
+        }
+
+        if (ch === '(') {
+            let j = i - 1;
+            while (j >= 0 && /\s/.test(source[j])) j--;
+            const identEnd = j + 1;
+            while (j >= 0 && (/[a-zA-Z0-9_-]/.test(source[j]) || (j > 0 && source[j - 1] === '\\'))) {
+                if (j > 0 && source[j - 1] === '\\') j -= 2;
+                else j--;
+            }
+            const rawIdent = source.slice(j + 1, identEnd);
+            const fnName = unescapeCssText(rawIdent).toLowerCase();
+            if (fnName === 'url' || fnName.endsWith('-url')) {
+                let k = i + 1;
+                while (k < source.length && /\s/.test(source[k])) k++;
+                if (k < source.length && (source[k] === '\'' || source[k] === '"')) {
+                    const { value: urlVal, nextIndex } = readQuoted(source, k);
+                    if (urlVal) {
+                        urls.push(urlVal);
+                    }
+                    i = nextIndex - 1;
+                } else {
+                    let rawArg = '';
+                    while (k < source.length && source[k] !== ')') {
+                        if (source[k] === '\\' && k + 1 < source.length) {
+                            rawArg += source[k] + source[k + 1];
+                            k += 2;
+                            continue;
+                        }
+                        if (source[k] === '/' && source[k + 1] === '*') {
+                            const endComment = source.indexOf('*/', k + 2);
+                            if (endComment === -1) {
+                                k = source.length;
+                                break;
+                            }
+                            k = endComment + 2;
+                            continue;
+                        }
+                        rawArg += source[k];
+                        k++;
+                    }
+                    const unescapedArg = unescapeCssText(rawArg).trim();
+                    if (unescapedArg) {
+                        urls.push(unescapedArg);
+                    }
+                    i = k;
+                }
+            }
+        }
+    }
+
+    return urls;
+}
+
+export function hasExternalCssUrl(value) {
+    const candidates = extractCssUrls(value);
+    if (candidates.some(url => isExternalMediaUrl(url))) {
+        return true;
+    }
+
+    const rawTrimmed = String(value ?? '').trim();
+    const isDeclarationLike = /^[a-zA-Z_-][\w-]*\s*:/.test(rawTrimmed);
+    const unescaped = unescapeCssText(value).trim();
+    if ((!isDeclarationLike && isExternalMediaUrl(unescaped)) || /@import\b/i.test(unescaped)) {
+        return true;
+    }
+
+    const withoutQuoted = stripCssCommentsQuoteAware(value)
+        .replace(/'(?:\\[\s\S]|[^'\\])*'|"(?:\\[\s\S]|[^"\\])*"/g, ' ');
+    if (/https?:\/\//i.test(unescapeCssText(withoutQuoted))) {
+        return true;
+    }
+
+    return false;
+}
+
+function sanitizeInlineStyleExternalMedia(styleText) {
+    const source = stripCssCommentsQuoteAware(styleText);
+    const declarations = [];
+    let current = '';
+    let quote = '';
+    let parenDepth = 0;
+
+    for (let i = 0; i < source.length; i++) {
+        const ch = source[i];
+        if (quote) {
+            current += ch;
+            if (ch === '\\' && i + 1 < source.length) {
+                current += source[++i];
+            } else if (ch === quote) {
+                quote = '';
+            }
+            continue;
+        }
+
+        if (ch === '"' || ch === '\'') {
+            quote = ch;
+            current += ch;
+            continue;
+        }
+
+        if (ch === '(') {
+            parenDepth++;
+            current += ch;
+            continue;
+        }
+
+        if (ch === ')' && parenDepth > 0) {
+            parenDepth--;
+            current += ch;
+            continue;
+        }
+
+        if (ch === ';' && parenDepth === 0) {
+            if (current.trim()) {
+                declarations.push(current.trim());
+            }
+            current = '';
+            continue;
+        }
+
+        current += ch;
+    }
+
+    if (current.trim()) {
+        declarations.push(current.trim());
+    }
+
+    return declarations
+        .filter(decl => !hasExternalCssUrl(decl))
+        .join('; ');
+}
+
+const DISALLOWED_STYLE_ANCESTOR_SELECTOR = 'svg, math, textarea, title, option, noscript, script, style, iframe, xmp, noembed, noframes';
+const HTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
+
 /**
  * Sanitizes custom style tags in the message text to prevent DOM pollution.
  * @param {string} text Message text
@@ -631,20 +897,176 @@ export function encodeStyleTags(text) {
  * @copyright https://github.com/kwaroran/risuAI
  */
 export function decodeStyleTags(text, { prefix } = { prefix: '.mes_text ' }) {
-    const styleDecodeRegex = /<custom-style>(.+?)<\/custom-style>/gms;
-    const mediaAllowed = isExternalMediaAllowed();
+    const sourceText = String(text ?? '');
+    if (!/<custom-style[\s>]/i.test(sourceText)) {
+        return sourceText;
+    }
 
-    function sanitizeRule(rule) {
+    const mediaAllowed = isExternalMediaAllowed();
+    const disallowedAncestorSelector = typeof DISALLOWED_STYLE_ANCESTOR_SELECTOR !== 'undefined'
+        ? DISALLOWED_STYLE_ANCESTOR_SELECTOR
+        : 'svg, math, textarea, title, option, noscript, script, style, iframe, xmp, noembed, noframes';
+    const htmlNamespace = typeof HTML_NAMESPACE !== 'undefined'
+        ? HTML_NAMESPACE
+        : 'http://www.w3.org/1999/xhtml';
+
+    function unescapeSelectorText(val) {
+        if (typeof unescapeCssText === 'function') {
+            return unescapeCssText(val);
+        }
+        return String(val ?? '')
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .replace(/\\([0-9a-fA-F]{1,6})\s?|\\([\s\S])/g, (_, hex, ch) => {
+                if (hex) {
+                    const codePoint = parseInt(hex, 16);
+                    return Number.isFinite(codePoint) && codePoint > 0 && codePoint <= 0x10ffff
+                        ? String.fromCodePoint(codePoint)
+                        : '\ufffd';
+                }
+                return ch ?? '';
+            });
+    }
+
+    function checkExternalCssUrl(value) {
+        if (typeof hasExternalCssUrl === 'function') {
+            return hasExternalCssUrl(value);
+        }
+        const unescaped = unescapeSelectorText(value);
+        return unescaped.includes('://') || /(?:^|[^\w-])url\(\s*['"]?\s*\/\//i.test(unescaped) || unescaped.trim().startsWith('//');
+    }
+
+    function isImportRule(rule) {
+        if (!rule || rule.type === 'import') {
+            return true;
+        }
         if (Array.isArray(rule.selectors)) {
-            for (let i = 0; i < rule.selectors.length; i++) {
-                const selector = rule.selectors[i];
-                if (selector) {
-                    rule.selectors[i] = prefix + sanitizeSelector(selector);
+            return rule.selectors.some(sel => /@import\b/i.test(unescapeSelectorText(sel)));
+        }
+        return false;
+    }
+
+    function stripLeadingImportStatement(selector) {
+        const raw = String(selector ?? '');
+        if (!/@import\b/i.test(unescapeSelectorText(raw))) {
+            return raw;
+        }
+
+        let quote = '';
+        let parenDepth = 0;
+        let lastImportSemicolon = -1;
+        for (let i = 0; i < raw.length; i++) {
+            const ch = raw[i];
+            if (quote) {
+                if (ch === '\\' && i + 1 < raw.length) {
+                    i++;
+                } else if (ch === quote) {
+                    quote = '';
+                }
+                continue;
+            }
+            if (ch === '\'' || ch === '"') {
+                quote = ch;
+                continue;
+            }
+            if (ch === '(') {
+                parenDepth++;
+                continue;
+            }
+            if (ch === ')' && parenDepth > 0) {
+                parenDepth--;
+                continue;
+            }
+            if (ch === ';' && parenDepth === 0) {
+                const candidate = raw.slice(lastImportSemicolon + 1, i);
+                if (/@import\b/i.test(unescapeSelectorText(candidate))) {
+                    lastImportSemicolon = i;
                 }
             }
         }
+
+        if (lastImportSemicolon !== -1) {
+            const remainder = raw.slice(lastImportSemicolon + 1).trim();
+            return /@import\b/i.test(unescapeSelectorText(remainder)) ? '' : remainder;
+        }
+        return '';
+    }
+
+    function stripTopLevelImportStatements(cssSource) {
+        const raw = String(cssSource ?? '');
+        let out = '';
+        let i = 0;
+        while (i < raw.length) {
+            if (raw[i] === '\'' || raw[i] === '"') {
+                const q = raw[i];
+                out += raw[i++];
+                while (i < raw.length) {
+                    const ch = raw[i++];
+                    out += ch;
+                    if (ch === '\\' && i < raw.length) {
+                        out += raw[i++];
+                    } else if (ch === q) {
+                        break;
+                    }
+                }
+                continue;
+            }
+            if (raw[i] === '/' && raw[i + 1] === '*') {
+                const end = raw.indexOf('*/', i + 2);
+                if (end === -1) break;
+                out += raw.slice(i, end + 2);
+                i = end + 2;
+                continue;
+            }
+            if (raw[i] === '@') {
+                const slice = raw.slice(i, i + 64);
+                if (/^@\s*import\b/i.test(unescapeSelectorText(slice))) {
+                    let quote = '';
+                    let parenDepth = 0;
+                    i++;
+                    while (i < raw.length) {
+                        const ch = raw[i++];
+                        if (quote) {
+                            if (ch === '\\' && i < raw.length) i++;
+                            else if (ch === quote) quote = '';
+                            continue;
+                        }
+                        if (ch === '\'' || ch === '"') {
+                            quote = ch;
+                            continue;
+                        }
+                        if (ch === '(') {
+                            parenDepth++;
+                            continue;
+                        }
+                        if (ch === ')' && parenDepth > 0) {
+                            parenDepth--;
+                            continue;
+                        }
+                        if (parenDepth === 0 && (ch === ';' || ch === '\n')) {
+                            break;
+                        }
+                    }
+                    continue;
+                }
+            }
+            out += raw[i++];
+        }
+        return out;
+    }
+
+    function sanitizeRule(rule) {
+        if (Array.isArray(rule.selectors)) {
+            const nextSelectors = [];
+            for (let i = 0; i < rule.selectors.length; i++) {
+                const cleanedSelector = stripLeadingImportStatement(rule.selectors[i]);
+                if (cleanedSelector) {
+                    nextSelectors.push(prefix + sanitizeSelector(cleanedSelector));
+                }
+            }
+            rule.selectors = nextSelectors;
+        }
         if (!mediaAllowed && Array.isArray(rule.declarations) && rule.declarations.length > 0) {
-            rule.declarations = rule.declarations.filter(declaration => !declaration.value.includes('://'));
+            rule.declarations = rule.declarations.filter(declaration => !checkExternalCssUrl(declaration?.value));
         }
     }
 
@@ -683,25 +1105,74 @@ export function decodeStyleTags(text, { prefix } = { prefix: '.mes_text ' }) {
             sanitizeRule(ruleSet);
         }
 
+        if (Array.isArray(ruleSet.keyframes)) {
+            for (const keyframe of ruleSet.keyframes) {
+                sanitizeRuleSet(keyframe);
+            }
+        }
+
         if (Array.isArray(ruleSet.rules)) {
-            ruleSet.rules = ruleSet.rules.filter(rule => rule.type !== 'import');
+            ruleSet.rules = ruleSet.rules.filter(rule => rule && rule.type !== 'import');
 
             for (const mediaRule of ruleSet.rules) {
                 sanitizeRuleSet(mediaRule);
             }
+
+            ruleSet.rules = ruleSet.rules.filter(rule => {
+                if (rule.type === 'rule' && Array.isArray(rule.selectors) && rule.selectors.length === 0) {
+                    return false;
+                }
+                return !isImportRule(rule);
+            });
         }
     }
 
-    return text.replaceAll(styleDecodeRegex, (_, style) => {
-        try {
-            let styleCleaned = decodeURIComponent(style).replaceAll(/<br\/>/g, '');
-            const ast = css.parse(styleCleaned);
-            const sheet = ast?.stylesheet;
-            if (sheet) {
-                sanitizeRuleSet(ast.stylesheet);
+    function buildSanitizedStyleContent(encodedStyle) {
+        let styleCleaned = stripTopLevelImportStatements(decodeURIComponent(encodedStyle).replaceAll(/<br\s*\/?>/gi, ''));
+        const ast = css.parse(styleCleaned);
+        const sheet = ast?.stylesheet;
+        if (sheet) {
+            sanitizeRuleSet(ast.stylesheet);
+        }
+        // A '</' inside a comment or string would end the style element after sanitisation ran.
+        return css.stringify(ast).replaceAll('</', '<\\/');
+    }
+
+    if (typeof document !== 'undefined' && typeof document?.createElement === 'function') {
+        const template = document.createElement('template');
+        template.innerHTML = sourceText;
+        const root = template.content ?? template;
+        const customStyles = Array.from(root.querySelectorAll('custom-style'));
+        if (customStyles.length === 0) {
+            return sourceText;
+        }
+
+        for (const customStyleNode of customStyles) {
+            const invalidNamespace = Boolean(customStyleNode.namespaceURI && customStyleNode.namespaceURI !== htmlNamespace);
+            const invalidAncestor = typeof customStyleNode.closest === 'function'
+                && Boolean(customStyleNode.closest(disallowedAncestorSelector));
+            if (invalidNamespace || invalidAncestor) {
+                customStyleNode.remove();
+                continue;
             }
-            // A '</' inside a comment or string would end the style element after sanitisation ran.
-            return `<style>${css.stringify(ast).replaceAll('</', '<\\/')}</style>`;
+
+            try {
+                const cssText = buildSanitizedStyleContent(customStyleNode.innerHTML);
+                const styleEl = document.createElement('style');
+                styleEl.textContent = cssText;
+                customStyleNode.replaceWith(styleEl);
+            } catch (error) {
+                customStyleNode.replaceWith(document.createTextNode(`CSS ERROR: ${String(error)}`));
+            }
+        }
+
+        return template.innerHTML;
+    }
+
+    const styleDecodeRegex = /<custom-style>(.+?)<\/custom-style>/gms;
+    return sourceText.replaceAll(styleDecodeRegex, (_, style) => {
+        try {
+            return `<style>${buildSanitizedStyleContent(style)}</style>`;
         } catch (error) {
             return `CSS ERROR: ${escapeHtml(String(error))}`;
         }
@@ -2025,6 +2496,24 @@ export function addDOMPurifyHooks() {
                 }
                 break;
             }
+            case 'style': {
+                if (data.attrValue && !isExternalMediaAllowed()) {
+                    const sanitizedStyle = sanitizeInlineStyleExternalMedia(data.attrValue);
+                    if (!sanitizedStyle) {
+                        data.keepAttr = false;
+                    } else {
+                        data.attrValue = sanitizedStyle;
+                    }
+                }
+                break;
+            }
+            case 'background': {
+                if (data.attrValue && !isExternalMediaAllowed() && (isExternalMediaUrl(data.attrValue) || hasExternalCssUrl(data.attrValue))) {
+                    console.warn('External media blocked', data.attrValue);
+                    data.keepAttr = false;
+                }
+                break;
+            }
         }
     });
 
@@ -2075,27 +2564,33 @@ export function addDOMPurifyHooks() {
         }
 
         let mediaBlocked = false;
+        const tagName = String(node.tagName || '').toUpperCase();
 
-        switch (node.tagName) {
+        switch (tagName) {
             case 'AUDIO':
             case 'VIDEO':
             case 'SOURCE':
             case 'TRACK':
             case 'EMBED':
             case 'OBJECT':
-            case 'IMG': {
-                const isExternalUrl = (url) => (url.indexOf('://') > 0 || url.indexOf('//') === 0) && !url.startsWith(window.location.origin);
+            case 'IMG':
+            case 'INPUT':
+            case 'IMAGE':
+            case 'FEIMAGE': {
                 const src = node.getAttribute('src');
                 const data = node.getAttribute('data');
                 const srcset = node.getAttribute('srcset');
+                const poster = node.getAttribute('poster');
+                const href = node.getAttribute('href');
+                const xlinkHref = node.getAttribute('xlink:href');
 
                 if (srcset) {
                     const srcsetUrls = srcset.split(',');
 
                     for (const srcsetUrl of srcsetUrls) {
-                        const [url] = srcsetUrl.trim().split(' ');
+                        const [url] = srcsetUrl.trim().split(/\s+/);
 
-                        if (isExternalUrl(url)) {
+                        if (isExternalMediaUrl(url)) {
                             console.warn('External media blocked', url);
                             node.remove();
                             mediaBlocked = true;
@@ -2104,14 +2599,32 @@ export function addDOMPurifyHooks() {
                     }
                 }
 
-                if (src && isExternalUrl(src)) {
+                if (src && isExternalMediaUrl(src)) {
                     console.warn('External media blocked', src);
                     mediaBlocked = true;
                     node.remove();
                 }
 
-                if (data && isExternalUrl(data)) {
+                if (data && isExternalMediaUrl(data)) {
                     console.warn('External media blocked', data);
+                    mediaBlocked = true;
+                    node.remove();
+                }
+
+                if (poster && isExternalMediaUrl(poster)) {
+                    console.warn('External media blocked', poster);
+                    mediaBlocked = true;
+                    node.removeAttribute('poster');
+                }
+
+                if (href && isExternalMediaUrl(href)) {
+                    console.warn('External media blocked', href);
+                    mediaBlocked = true;
+                    node.remove();
+                }
+
+                if (xlinkHref && isExternalMediaUrl(xlinkHref)) {
+                    console.warn('External media blocked', xlinkHref);
                     mediaBlocked = true;
                     node.remove();
                 }

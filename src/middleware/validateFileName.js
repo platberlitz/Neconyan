@@ -1,15 +1,4 @@
-import path from 'node:path';
-
-export const forbiddenRegExp = path.sep === '/' ? /[/\x00]/ : /[/\x00\\]/;
-
-/**
- * Checks if an object has a toString method.
- * @param {object} o Object to check
- * @returns {boolean} True if the object has a toString method, false otherwise
- */
-function hasToString(o) {
-    return o != null && typeof o.toString === 'function';
-}
+export const forbiddenRegExp = /[/\\\x00]/;
 
 /**
  * Gets a middleware function that validates the field in the request body.
@@ -24,15 +13,18 @@ export function getFileNameValidationFunction(fieldName) {
     * @param {import('express').NextFunction} next Next middleware
     */
     return function validateAvatarUrlMiddleware(req, res, next) {
-        if (req.body && fieldName in req.body && (typeof req.body[fieldName] === 'string' || hasToString(req.body[fieldName]))) {
-            if (forbiddenRegExp.test(req.body[fieldName])) {
-                console.error('An error occurred while validating the request body', {
-                    handle: req.user.profile.handle,
-                    path: req.originalUrl,
-                    field: fieldName,
-                    value: req.body[fieldName],
-                });
-                return res.sendStatus(400);
+        if (req.body && fieldName in req.body) {
+            const value = req.body[fieldName];
+            if (value !== undefined && value !== null) {
+                if (typeof value !== 'string' || value === '.' || value === '..' || forbiddenRegExp.test(value)) {
+                    console.error('An error occurred while validating the request body', {
+                        handle: req.user?.profile?.handle,
+                        path: req.originalUrl,
+                        field: fieldName,
+                        value,
+                    });
+                    return res.sendStatus(400);
+                }
             }
         }
 

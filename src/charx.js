@@ -15,6 +15,9 @@ const CHARX_BACKGROUND_TYPES = new Set(['background']);
 
 // ZIP local file header signature: PK\x03\x04
 const ZIP_SIGNATURE = Buffer.from([0x50, 0x4B, 0x03, 0x04]);
+const CHARX_MAX_CARD_JSON_BYTES = 16 * 1024 * 1024;
+const CHARX_MAX_ASSET_ENTRY_BYTES = 64 * 1024 * 1024;
+const CHARX_MAX_TOTAL_ASSETS_BYTES = 256 * 1024 * 1024;
 
 /**
  * Find ZIP data start in buffer (handles SFX/self-extracting archives).
@@ -66,7 +69,7 @@ export class CharXParser {
      */
     async parse() {
         console.info('Importing from CharX');
-        const cardBuffer = await extractFileFromZipBuffer(this.#data, 'card.json');
+        const cardBuffer = await extractFileFromZipBuffer(this.#data, 'card.json', { maxEntryBytes: CHARX_MAX_CARD_JSON_BYTES });
 
         if (!cardBuffer) {
             throw new Error('This CharX file is damaged: its character card (card.json) could not be read.');
@@ -95,7 +98,10 @@ export class CharXParser {
 
         let extractedBuffers = new Map();
         if (archivePaths.size > 0) {
-            extractedBuffers = await extractFilesFromZipBuffer(this.#data, [...archivePaths]);
+            extractedBuffers = await extractFilesFromZipBuffer(this.#data, [...archivePaths], {
+                maxEntryBytes: CHARX_MAX_ASSET_ENTRY_BYTES,
+                maxTotalBytes: CHARX_MAX_TOTAL_ASSETS_BYTES,
+            });
         }
 
         /** @type {string|Buffer} */

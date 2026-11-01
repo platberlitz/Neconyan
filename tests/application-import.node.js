@@ -220,7 +220,7 @@ test('whole folder import validates retained inputs before replacing chats, card
     await runOperation(accepted.context);
     assert.equal(fs.existsSync(p.f.filename), false);
     fs.rmSync(path.join(p.base.directories.root, 'jobs'), { recursive: true });
-    const duplicate = await acceptApplicationOperation({ user: { profile: { handle: p.base.owner }, directories: p.base.directories }, get: () => undefined },
+    const duplicate = await acceptApplicationOperation({ user: { profile: { handle: p.base.owner, admin: true }, directories: p.base.directories }, get: () => undefined },
         { key: 'whole', kind: 'account-import', mode: 'folder', path: p.sourceRoot });
     assert.equal(duplicate.job, null);
     assert.equal(duplicate.record.state, 'completed');

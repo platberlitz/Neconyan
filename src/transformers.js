@@ -138,6 +138,45 @@ async function migrateCacheToDataDir() {
     }
 }
 
+const MODEL_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/;
+
+/**
+ * Validate a caller-supplied forceModel identifier so it cannot traverse cache_dir,
+ * reference absolute/Windows paths, or inject URL schemes/queries.
+ * Accepts either a 1-segment local model folder name or a 2-segment HuggingFace repo ID ("org/model").
+ * @param {unknown} forceModel
+ * @returns {string} Validated model identifier (or '' when omitted)
+ */
+export function validateForcedModelId(forceModel) {
+    if (forceModel === undefined || forceModel === null || forceModel === '') {
+        return '';
+    }
+    if (typeof forceModel !== 'string') {
+        throw new Error('Invalid local model identifier.');
+    }
+    const trimmed = forceModel.trim();
+    if (!trimmed) {
+        return '';
+    }
+    if (
+        trimmed.length > 193
+        || trimmed.includes('\\')
+        || trimmed.includes('..')
+        || trimmed.includes(':')
+        || trimmed.includes('?')
+        || trimmed.includes('#')
+        || trimmed.startsWith('/')
+        || trimmed.endsWith('/')
+    ) {
+        throw new Error('Invalid local model identifier.');
+    }
+    const segments = trimmed.split('/');
+    if (segments.length < 1 || segments.length > 2 || !segments.every(seg => MODEL_SEGMENT_PATTERN.test(seg))) {
+        throw new Error('Invalid local model identifier.');
+    }
+    return trimmed;
+}
+
 /**
  * Gets the transformers.js pipeline for a given task.
  * @param {import('sillytavern-transformers').PipelineType} task The task to get the pipeline for
@@ -146,9 +185,10 @@ async function migrateCacheToDataDir() {
  */
 export async function getPipeline(task, forceModel = '') {
     if (!Object.hasOwn(tasks, task)) throw new Error('Unsupported local model task.');
+    const validatedForceModel = validateForcedModelId(forceModel);
     await migrateCacheToDataDir();
 
-    const model = forceModel || getModelForTask(task);
+    const model = validatedForceModel || getModelForTask(task);
     if (tasks[task].pipeline) {
         if (tasks[task].currentModel === model) {
             return tasks[task].pipeline;
@@ -193,4 +233,5 @@ export default {
     getRawImage,
     getPipeline,
     runPipeline,
+    validateForcedModelId,
 };

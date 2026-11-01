@@ -3,26 +3,61 @@ import tls from 'node:tls';
 import http from 'node:http';
 import https from 'node:https';
 import dns from 'node:dns';
+import ipaddr from 'ipaddr.js';
 import ipMatch from 'ip-matching';
-import ipRegex from 'ip-regex';
 import { Agent } from 'agent-base';
 import { color } from './util.js';
 import { filterValidIpPatterns } from './express-common.js';
 
 const LOG_HEADER = '[Private Request Filter]';
 
+/**
+ * Non-public ipaddr.js range classifications that must be blocked unless explicitly whitelisted.
+ * Covers unspecified (0.0.0.0, ::), loopback (127.0.0.0/8, ::1), RFC1918 private,
+ * link-local (169.254.0.0/16, fe80::/10), unique-local (fc00::/7), carrier-grade NAT (100.64.0.0/10),
+ * multicast, broadcast, reserved, benchmarking, and deprecated site-local ranges.
+ */
+const NON_PUBLIC_IP_RANGES = new Set([
+    'unspecified',
+    'loopback',
+    'private',
+    'linkLocal',
+    'uniqueLocal',
+    'carrierGradeNat',
+    'reserved',
+    'broadcast',
+    'multicast',
+    'benchmarking',
+    'amt',
+    'teredo',
+    '6to4',
+    'as112',
+    'deprecatedSiteLocal',
+    'as112v6',
+    'orchid2',
+    'droneRemoteIdProtocolEntityTags',
+    'ietfProtocolAssignments',
+    'discard',
+]);
+
 /** @type {import('ip-matching').IPMatch[]} */
 const privateIpRanges = [
+    // Unspecified (IPv4)
+    ipMatch.getMatch('0.0.0.0/8'),
     // Loopback (IPv4)
     ipMatch.getMatch('127.0.0.0/8'),
     // Class A private network
     ipMatch.getMatch('10.0.0.0/8'),
+    // Carrier-Grade NAT (RFC 6598)
+    ipMatch.getMatch('100.64.0.0/10'),
     // Class B private network
     ipMatch.getMatch('172.16.0.0/12'),
     // Class C private network
     ipMatch.getMatch('192.168.0.0/16'),
     // Link-local address (IPv4)
     ipMatch.getMatch('169.254.0.0/16'),
+    // Unspecified (IPv6)
+    ipMatch.getMatch('::/128'),
     // Loopback (IPv6)
     ipMatch.getMatch('::1/128'),
     // Unique local address (IPv6)
@@ -30,6 +65,47 @@ const privateIpRanges = [
     // Link-local address (IPv6)
     ipMatch.getMatch('fe80::/10'),
 ];
+
+/**
+ * Unwraps brackets and IPv4-mapped IPv6 addresses (`::ffff:a.b.c.d` / `::ffff:7f00:1`)
+ * into a parsed ipaddr.js object, or returns null if the string is not a valid IP literal.
+ * @param {string} raw
+ * @returns {import('ipaddr.js').IPv4 | import('ipaddr.js').IPv6 | null}
+ */
+export function parseAndUnwrapIpAddress(raw) {
+    if (typeof raw !== 'string') return null;
+    const stripped = raw.trim().replace(/^\[|\]$/g, '');
+    if (!stripped || !ipaddr.isValid(stripped)) return null;
+    try {
+        let parsed = ipaddr.parse(stripped);
+        if (parsed.kind() === 'ipv6' && parsed instanceof ipaddr.IPv6 && parsed.isIPv4MappedAddress()) {
+            parsed = parsed.toIPv4Address();
+        }
+        return parsed;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Checks whether an IP address string is non-public (private, loopback, link-local,
+ * unspecified, CGNAT, multicast, reserved, or IPv4-mapped IPv6 equivalent).
+ * @param {string} address
+ * @returns {boolean}
+ */
+export function isNonPublicIpAddress(address) {
+    const parsed = parseAndUnwrapIpAddress(address);
+    if (!parsed) return false;
+    const canonical = parsed.toString();
+    if (NON_PUBLIC_IP_RANGES.has(parsed.range())) {
+        return true;
+    }
+    try {
+        return privateIpRanges.some(range => range.matches(canonical));
+    } catch {
+        return true;
+    }
+}
 
 /**
  * Custom HTTP/HTTPS agent that blocks requests to private IP addresses unless they are explicitly allowed in the private address whitelist.
@@ -88,7 +164,7 @@ class PrivateRequestAgent extends Agent {
      * @returns {boolean} Whether the given address is a private IP address.
      */
     #isPrivateIp(address) {
-        return privateIpRanges.some(range => range.matches(address));
+        return isNonPublicIpAddress(address);
     }
 
     /**
@@ -97,8 +173,16 @@ class PrivateRequestAgent extends Agent {
      * @returns {boolean} Whether the given address is allowed based on the private address whitelist.
      */
     #isAllowedPrivateAddress(address) {
+        const parsed = parseAndUnwrapIpAddress(address);
+        const candidates = parsed && parsed.toString() !== address ? [address, parsed.toString()] : [address];
         // Permit the request if the private IP address is in the whitelist
-        return this.privateAddressWhitelist.some(match => match.matches(address));
+        return this.privateAddressWhitelist.some(match => candidates.some(candidate => {
+            try {
+                return match.matches(candidate);
+            } catch {
+                return false;
+            }
+        }));
     }
 
     /**
@@ -125,12 +209,18 @@ class PrivateRequestAgent extends Agent {
          * @returns {net.Socket|tls.TLSSocket} A socket connected to the target host.
          */
         const connect = (hostOverride = null) => {
-            if (hostOverride) {
-                options.host = hostOverride;
-            }
             if (options.secureEndpoint) {
+                if (hostOverride) {
+                    if (!options.servername && options.host && !parseAndUnwrapIpAddress(String(options.host).replace(/^\[|\]$/g, ''))) {
+                        options.servername = String(options.host).replace(/^\[|\]$/g, '');
+                    }
+                    options.host = hostOverride;
+                }
                 return tls.connect(options);
             } else {
+                if (hostOverride) {
+                    options.host = hostOverride;
+                }
                 return net.connect(options);
             }
         };
@@ -171,16 +261,16 @@ class PrivateRequestAgent extends Agent {
             }
         };
 
-        const host = options.host;
+        const host = String(options.host || '').replace(/^\[|\]$/g, '');
 
         if (!host) {
             return raiseError('No host specified in request options', true);
         }
 
-        const isIp = ipRegex.v4({ exact: true }).test(host) || ipRegex.v6({ exact: true }).test(host);
+        const parsedLiteral = parseAndUnwrapIpAddress(host);
 
-        if (isIp) {
-            return validateIpAddress(host);
+        if (parsedLiteral) {
+            return validateIpAddress(parsedLiteral.toString());
         } else {
             const address = await lookupHost(host);
             if (!address) {
@@ -195,6 +285,8 @@ class PrivateRequestAgent extends Agent {
         }
     }
 }
+
+export { PrivateRequestAgent };
 
 /**
  * Initialize the private request filter by replacing the global HTTP and HTTPS agents with an instance of PrivateRequestAgent.

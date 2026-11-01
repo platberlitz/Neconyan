@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { RateLimiterMemory, RateLimiterRes } from 'rate-limiter-flexible';
 import { getConfigValue } from '../util.js';
-import { validateBrowserSession, validateCredentials, validateSession, isSessionAuthEnabled } from './sessionAuth.js';
+import { validateBrowserSession, validateCredentials, validateActiveSession, isSessionAuthEnabled } from './sessionAuth.js';
 import { getIpAddress, retryAfter } from '../express-common.js';
 import { serverDirectory } from '../server-directory.js';
 
@@ -114,7 +114,11 @@ const basicAuthMiddleware = async function (request, response, callback) {
     const authHeader = request.headers.authorization;
     if (request.path === '/login' || request.path === '/login.html') response.set(NO_STORE_HEADERS);
     try {
-        if (await validateBrowserSession(request) || isLoginRoute(request)) return callback();
+        if (await validateBrowserSession(request)) return callback();
+        if (isLoginRoute(request)) {
+            request.anonymousLoginRoute = true;
+            return callback();
+        }
     } catch (error) {
         console.error('Could not validate the remembered login:', error.message);
         return response.sendStatus(503);
@@ -126,7 +130,7 @@ const basicAuthMiddleware = async function (request, response, callback) {
         if (authHeader && isSessionAuthEnabled()) {
             const [scheme, token] = authHeader.split(' ');
             if (scheme === 'Bearer' && token) {
-                const session = validateSession(token);
+                const session = await validateActiveSession(token);
                 if (session) {
                     return callback();
                 }

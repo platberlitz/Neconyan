@@ -8,10 +8,22 @@ import sanitize from 'sanitize-filename';
 import { invalidateThumbnail } from './thumbnails.js';
 import { thumbnailDimensions, readMetadataIndex, renameMetadata, removeMetadata, getOrGenerateMetadataBatch } from './image-metadata.js';
 import { getImages } from '../util.js';
-import { MEDIA_REQUEST_TYPE } from '../constants.js';
+import { MEDIA_EXTENSIONS, MEDIA_REQUEST_TYPE } from '../constants.js';
 import { getFileNameValidationFunction } from '../middleware/validateFileName.js';
 
 export const router = express.Router();
+
+function isAllowedBackgroundFileName(filename) {
+    if (typeof filename !== 'string' || !filename || filename !== sanitize(filename)) {
+        return false;
+    }
+    const ext = path.extname(filename).toLowerCase().replace(/^\./, '');
+    if (!ext || !MEDIA_EXTENSIONS.includes(ext)) {
+        return false;
+    }
+    const mimeType = String(mime.lookup(filename) || '');
+    return (mimeType.startsWith('image/') || mimeType.startsWith('video/')) && mimeType !== 'image/svg+xml';
+}
 
 router.post('/all', async function (request, response) {
     try {
@@ -107,8 +119,14 @@ router.post('/rename', async function (request, response) {
     try {
         if (!request.body) return response.sendStatus(400);
 
-        const oldFileName = path.join(request.user.directories.backgrounds, sanitize(request.body.old_bg));
-        const newFileName = path.join(request.user.directories.backgrounds, sanitize(request.body.new_bg));
+        const oldBg = sanitize(String(request.body.old_bg ?? ''));
+        const newBg = sanitize(String(request.body.new_bg ?? ''));
+        if (!oldBg || !newBg || !isAllowedBackgroundFileName(oldBg) || !isAllowedBackgroundFileName(newBg)) {
+            return response.sendStatus(400);
+        }
+
+        const oldFileName = path.join(request.user.directories.backgrounds, oldBg);
+        const newFileName = path.join(request.user.directories.backgrounds, newBg);
 
         if (!fs.existsSync(oldFileName)) {
             console.error('BG file not found');
@@ -122,11 +140,11 @@ router.post('/rename', async function (request, response) {
 
         fs.copyFileSync(oldFileName, newFileName);
         fs.unlinkSync(oldFileName);
-        invalidateThumbnail(request.user.directories, 'bg', request.body.old_bg);
+        invalidateThumbnail(request.user.directories, 'bg', oldBg);
 
         // Update metadata for renamed image
-        const oldRelativePath = path.join('backgrounds', request.body.old_bg);
-        const newRelativePath = path.join('backgrounds', request.body.new_bg);
+        const oldRelativePath = path.join('backgrounds', oldBg);
+        const newRelativePath = path.join('backgrounds', newBg);
         await renameMetadata(request.user.directories.root, oldRelativePath, newRelativePath).catch(err => {
             console.warn('[Backgrounds] Failed to rename metadata:', err.message);
         });
@@ -148,7 +166,10 @@ async function uploadBackground(request, response, createOnly = false) {
         img_path = request.file && path.join(request.file.destination, request.file.filename);
         if (!request.body || !request.file) return response.sendStatus(400);
 
-        const filename = sanitize(request.file.originalname);
+        const filename = sanitize(String(request.file.originalname ?? ''));
+        if (!isAllowedBackgroundFileName(filename)) {
+            return response.sendStatus(400);
+        }
         fs.copyFileSync(img_path, path.join(request.user.directories.backgrounds, filename), createOnly ? fs.constants.COPYFILE_EXCL : 0);
         fs.unlinkSync(img_path);
         img_path = undefined;

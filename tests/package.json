@@ -13,9 +13,20 @@
         "@adobe/css-tools": "4.5.0",
         "@playwright/test": "1.60.0",
         "@types/jest": "^29.5.12",
+        "cheerio": "1.0.0-rc.12",
         "eslint": "^8.57.0",
         "eslint-plugin-jest": "^27.9.0",
         "eslint-plugin-playwright": "^2.3.0",
         "jest": "^29.7.0"
+    },
+    "overrides": {
+        "@babel/core": "7.29.7",
+        "brace-expansion": "1.1.21",
+        "browserslist": "4.29.5",
+        "picomatch": "2.3.2",
+        "@istanbuljs/load-nyc-config": {
+            "js-yaml": "3.15.2"
+        },
+        "js-yaml": "4.3.2"
     }
 }

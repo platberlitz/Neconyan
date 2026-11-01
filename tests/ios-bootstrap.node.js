@@ -74,3 +74,15 @@ test('iOS launch isolates the listener and retains private settings across launc
         fs.rmSync(directory, { recursive: true, force: true });
     }
 });
+
+test('iOS WKUIDelegate JavaScript dialogs require a local main frame and complete once when presentation is unavailable', () => {
+    const controller = fs.readFileSync(path.join(root, 'ios/App/BrowserController.swift'), 'utf8');
+    const dialogs = controller.slice(controller.indexOf('private func presentJavaScriptDialog'));
+    assert.match(dialogs, /var completed = false[\s\S]*?guard !completed else \{ return \}[\s\S]*?completed = true[\s\S]*?completionHandler\(value\)/);
+    assert.match(dialogs, /guard frame\.isMainFrame, let source = frame\.request\.url, isLocal\(source\),[\s\S]*?!web\.isHidden, pickReply == nil, presentedViewController == nil,[\s\S]*?!isBeingPresented, !isBeingDismissed, viewIfLoaded\?\.window != nil else \{[\s\S]*?complete\(defaultValue\)[\s\S]*?return[\s\S]*?\}/);
+    assert.match(dialogs, /present\(alert, animated: true\)\s+if presentedViewController !== alert \{ complete\(defaultValue\) \}/);
+    assert.match(dialogs, /runJavaScriptAlertPanelWithMessage[\s\S]*?presentJavaScriptDialog\(message, from: frame, defaultValue: \(\), completionHandler: \{ _ in completionHandler\(\) \}\)/);
+    assert.match(dialogs, /runJavaScriptConfirmPanelWithMessage[\s\S]*?presentJavaScriptDialog\(message, from: frame, defaultValue: false, completionHandler: completionHandler\)/);
+    assert.match(dialogs, /runJavaScriptTextInputPanelWithPrompt[\s\S]*?presentJavaScriptDialog\(prompt, from: frame, defaultValue: nil, completionHandler: completionHandler\)/);
+    assert.deepEqual(dialogs.match(/\bcompletionHandler\([^)]*\)/g), ['completionHandler(value)', 'completionHandler()']);
+});

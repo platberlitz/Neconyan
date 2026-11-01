@@ -5,6 +5,8 @@ import {
     initUserStorage,
     getPasswordSalt,
     getPasswordHash,
+    isAcceptablePasswordInput,
+    MAX_PASSWORD_LENGTH,
     toKey,
 } from './users.js';
 
@@ -49,6 +51,10 @@ export async function recoverPassword(configPath, userAccount, userPassword) {
     }
 
     if (userPassword) {
+        if (!isAcceptablePasswordInput(userPassword)) {
+            console.error(`Password must be a string of at most ${MAX_PASSWORD_LENGTH} UTF-8 bytes.`);
+            process.exit(1);
+        }
         console.log('Setting new password...');
         const salt = getPasswordSalt();
         const passwordHash = getPasswordHash(userPassword, salt);

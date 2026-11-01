@@ -355,10 +355,29 @@ function buildChoiceButtonHtml(innerHtml) {
 }
 
 function wrapChoiceSegment(segment) {
+    if (Array.isArray(segment)) {
+        const probe = document.createElement('div');
+        for (const node of segment) {
+            probe.appendChild(node.cloneNode(true));
+        }
+        const text = (probe.textContent ?? '').replace(/\s+/g, ' ').trim();
+        if (!CHOICE_LINE_RE.test(text) || probe.querySelector('button, a, details, input, select, textarea, style, svg, math')) {
+            return segment;
+        }
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'ica--choice-line';
+        button.title = 'Put this choice in the message box';
+        for (const node of segment) {
+            button.appendChild(node);
+        }
+        return [button];
+    }
+
     const probe = document.createElement('div');
     probe.innerHTML = segment;
     const text = probe.textContent.replace(/\s+/g, ' ').trim();
-    if (!CHOICE_LINE_RE.test(text) || probe.querySelector('button, a, details')) {
+    if (!CHOICE_LINE_RE.test(text) || probe.querySelector('button, a, details, style, svg, math')) {
         return segment;
     }
 
@@ -399,41 +418,71 @@ function decorateStyledChoiceRows(container) {
  * agent beautifier regexes. Runs after sanitization; only our own button wrapper is added.
  */
 export function decorateChoiceLines(html) {
-    if (typeof document?.createElement !== 'function') {
+    if (typeof document === 'undefined' || typeof document?.createElement !== 'function') {
         return html;
     }
+
+    const makeChoiceButton = (nodes) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'ica--choice-line';
+        button.title = 'Put this choice in the message box';
+        for (const node of nodes) {
+            button.appendChild(node);
+        }
+        return button;
+    };
 
     const container = document.createElement('div');
     container.innerHTML = html;
     decorateStyledChoiceRows(container);
 
     for (const item of container.querySelectorAll('ol > li')) {
-        if (!item.querySelector('button, a, ul, ol') && item.textContent.trim()) {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'ica--choice-line';
-            button.title = 'Put this choice in the message box';
-            button.innerHTML = item.innerHTML;
-            item.innerHTML = '';
-            item.appendChild(button);
+        if (!item.querySelector('button, a, ul, ol, style, svg, math') && item.textContent.trim()) {
+            const button = makeChoiceButton(Array.from(item.childNodes));
+            item.replaceChildren(button);
         }
     }
 
     for (const block of container.querySelectorAll('p, div')) {
-        if (block.querySelector('button, a, p, div, ul, ol')) {
+        if (block.querySelector('button, a, p, div, ul, ol, style, svg, math')) {
             continue;
         }
 
-        const segments = block.innerHTML.split(/<br\s*\/?>/i);
-        if (segments.length > 1) {
-            block.innerHTML = segments.map(wrapChoiceSegment).join('<br>');
+        const childNodes = Array.from(block.childNodes);
+        const groups = [[]];
+        const brNodes = [];
+        for (const node of childNodes) {
+            if (node.nodeType === 1 && node.tagName.toUpperCase() === 'BR') {
+                brNodes.push(node);
+                groups.push([]);
+            } else {
+                groups[groups.length - 1].push(node);
+            }
+        }
+
+        if (groups.length > 1) {
+            const fragment = document.createDocumentFragment();
+            groups.forEach((group, index) => {
+                for (const node of wrapChoiceSegment(group)) {
+                    fragment.appendChild(node);
+                }
+                if (index < brNodes.length) {
+                    fragment.appendChild(document.createElement('br'));
+                }
+            });
+            block.replaceChildren(fragment);
         }
     }
 
+    const nonInteractiveChoiceAncestorSelector = 'button, a, details, summary, style, script, svg, math, textarea, option, select, code, pre, custom-style';
     // Deepest-match pass for beautified markup: wrap any innermost element whose own text
     // reads as a single enumerated choice (e.g. a styled row div emitted by a regex script).
     const candidates = [...container.querySelectorAll('*')].filter(element => {
-        if (element.closest('button, a') || element.querySelector('button, a, br')) {
+        if (element.namespaceURI && element.namespaceURI !== 'http://www.w3.org/1999/xhtml') {
+            return false;
+        }
+        if (element.closest(nonInteractiveChoiceAncestorSelector) || element.querySelector('button, a, br, details, input, select, textarea, style, svg, math')) {
             return false;
         }
 
@@ -446,7 +495,8 @@ export function decorateChoiceLines(html) {
             continue;
         }
 
-        element.innerHTML = buildChoiceButtonHtml(element.innerHTML);
+        const button = makeChoiceButton(Array.from(element.childNodes));
+        element.replaceChildren(button);
     }
 
     return container.innerHTML;

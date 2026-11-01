@@ -5,7 +5,7 @@ import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import storage from 'node-persist';
 
 import { getConfigValue } from '../util.js';
-import { toKey, getPasswordHash } from '../users.js';
+import { toKey, isAcceptablePasswordInput, verifyPasswordHash } from '../users.js';
 
 export const SESSION_DURATION_MS = getConfigValue('sessionAuth.durationMinutes', 480, 'number') * 60 * 1000;
 const SESSION_AUTH_ENABLED = getConfigValue('sessionAuth.enabled', false, 'boolean');
@@ -135,7 +135,7 @@ export function isSessionAuthEnabled() {
  */
 export async function validateCredentials(username, password) {
     if (typeof username !== 'string' || !username || username.length > 320
-        || typeof password !== 'string' || !password || password.length > 4096) return false;
+        || !isAcceptablePasswordInput(password) || !password) return false;
     const perUserAuth = getConfigValue('perUserBasicAuth', false, 'boolean');
     const enableAccounts = getConfigValue('enableUserAccounts', false, 'boolean');
     const usePerUserAuth = perUserAuth && enableAccounts;
@@ -148,7 +148,7 @@ export async function validateCredentials(username, password) {
     }
 
     const user = await storage.getItem(toKey(username));
-    return !!(user?.enabled && user.password && user.password === getPasswordHash(password, user.salt));
+    return !!(user?.enabled && user.password && verifyPasswordHash(password, user.password, user.salt));
 }
 
 /**
@@ -171,6 +171,22 @@ export async function getSessionCredentialVersion(username) {
     const password = getConfigValue('basicAuthUser.password');
     if (username !== configuredUsername || typeof password !== 'string' || !password) return null;
     return credentialVersion(username, password);
+}
+
+/**
+ * Validates a Bearer or server session token against both expiry and current user credential version.
+ * @param {string} token
+ * @returns {Promise<{username: string, expires: number, credentialVersion?: string}|null>}
+ */
+export async function validateActiveSession(token) {
+    const session = validateSession(token);
+    if (!session) return null;
+    const version = await getSessionCredentialVersion(session.username);
+    if (!version || session.credentialVersion !== version) {
+        destroySession(token);
+        return null;
+    }
+    return session;
 }
 
 /** Validate browser tokens against the current credentials and keep every cookie rewrite within its original lifetime. */
