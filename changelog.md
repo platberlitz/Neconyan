@@ -39,6 +39,7 @@
 - PR #379 (2026-10-31) `feat(agents): add chatroom polls, events and direct viewer replies`
 - PR #380 (2026-10-31) `feat(agents): show an update banner that updates every agent`
 - PR #381 (2026-10-31) `feat(regex-agent-themes): restore faithful relationship and ethereality layouts`
+- PR #382 (2026-11-01) `feat(themes): ship Regex Agent tracker themes as UI themes`
 
 ## v1.4.0
 
