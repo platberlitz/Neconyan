@@ -48,6 +48,7 @@
 - PR #388 (2026-11-01) `fix(nanogpt): honour declared reasoning effort support`
 - PR #389 (2026-11-01) `feat(characters): add native tag and folder manager`
 - PR #390 (2026-11-01) `fix(sidebar): show edit controls in the phone drawer`
+- PR #391 (2026-11-01) `feat(reasoning): share supported effort choices across providers`
 - PR #392 (2026-11-01) `feat(authors-note): mix several character notes per persona`
 - PR #393 (2026-11-01) `fix(security): harden account, file and outbound request boundaries`
 - PR #394 (2026-11-01) `docs(help): point in-app help links at the Neconyan handbook`
