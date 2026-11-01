@@ -5968,7 +5968,7 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
             }
 
             if (entry.characterFilter && entry.characterFilter?.tags?.length > 0) {
-                const tagKey = getTagKeyForEntity(this_chid);
+                const tagKey = getTagKeyForEntity(characters[Number(this_chid)]);
 
                 if (tagKey) {
                     const tagMapEntry = context.tagMap[tagKey];

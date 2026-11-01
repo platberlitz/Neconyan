@@ -1,36 +1,203 @@
-<div class="title_restorable alignItemsBaseline">
+<div class="neconyan-tag-manager-header">
+    <div class="neconyan-tag-manager-heading">
         <h3 data-i18n="Tag Management">Tag Management</h3>
-        <div class="flex-container alignItemsBaseline">
-            <div class="menu_button menu_button_icon tag_view_prune" data-i18n="[title]Remove unused tags" title="Remove unused tags">
-                <i class="fa-solid fa-scissors"></i>
-                <span data-i18n="Prune">Prune</span>
-            </div>
-            <div class="menu_button menu_button_icon tag_view_backup" data-i18n="[title]Save your tags to a file" title="Save your tags to a file">
-                <i class="fa-solid fa-file-export"></i>
-                <span data-i18n="Backup">Backup</span>
-            </div>
-            <div class="menu_button menu_button_icon tag_view_restore" data-i18n="[title]Restore tags from a file" title="Restore tags from a file">
-                <i class="fa-solid fa-file-import"></i>
-                <span data-i18n="Restore">Restore</span>
-            </div>
-            <div class="menu_button menu_button_icon tag_view_create" data-i18n="[title]Create a new tag" title="Create a new tag">
-                <i class="fa-solid fa-plus"></i>
-                <span data-i18n="Create">Create</span>
-            </div>
-            <input type="file" id="tag_view_restore_input" hidden accept=".json">
-        </div>
+        <p class="neconyan-tag-manager-intro" data-i18n="Rename, file and merge tags. Everything here uses the tags already on your characters.">Rename, file and merge tags. Everything here uses the tags already on your characters.</p>
+        <div id="neconyan_tag_manager_summary" class="neconyan-tag-manager-summary" aria-live="polite"></div>
     </div>
-    <div class="justifyLeft m-b-1">
-        <div class="flex-container alignItemsBaseline">
-            <span data-i18n="Sort mode">Sort mode:</span>
-            <select id="tag_sort_mode_select" class="flex1 text_pole">
-                <option value="manual" data-i18n="Manual (Drag & Drop)">Manual (Drag & Drop)</option>
-                <option value="alphabetical" data-i18n="Alphabetical (A-Z)">Alphabetical (A-Z)</option>
-                <option value="by_entries" data-i18n="Most Used (By Count)">Most Used (By Count)</option>
+    <div class="neconyan-tag-manager-actions">
+        <button type="button" class="menu_button menu_button_icon tag_view_prune" data-i18n="[title]Remove unused tags" title="Remove unused tags">
+            <i class="fa-solid fa-scissors" aria-hidden="true"></i>
+            <span data-i18n="Prune">Prune</span>
+        </button>
+        <button type="button" class="menu_button menu_button_icon tag_view_backup" data-i18n="[title]Save your tags and notes to a file" title="Save your tags and notes to a file">
+            <i class="fa-solid fa-file-export" aria-hidden="true"></i>
+            <span data-i18n="Backup">Backup</span>
+        </button>
+        <button type="button" class="menu_button menu_button_icon tag_view_restore" data-i18n="[title]Restore tags and notes from a file" title="Restore tags and notes from a file">
+            <i class="fa-solid fa-file-import" aria-hidden="true"></i>
+            <span data-i18n="Restore">Restore</span>
+        </button>
+        <input type="file" id="tag_view_restore_input" hidden accept=".json">
+    </div>
+</div>
+
+<div class="neconyan-tag-manager-tabs" role="tablist" aria-label="Tag manager sections">
+    <button type="button" id="neconyan_tag_manager_tab_tags" class="neconyan-tag-manager-tab is-active" role="tab" aria-selected="true" aria-controls="neconyan_tag_manager_panel_tags" tabindex="0" data-tag-manager-tab="tags">
+        <i class="fa-solid fa-tags" aria-hidden="true"></i>
+        <span data-i18n="Tags & Folders">Tags &amp; Folders</span>
+    </button>
+    <button type="button" id="neconyan_tag_manager_tab_entities" class="neconyan-tag-manager-tab" role="tab" aria-selected="false" aria-controls="neconyan_tag_manager_panel_entities" tabindex="-1" data-tag-manager-tab="entities">
+        <i class="fa-solid fa-users" aria-hidden="true"></i>
+        <span data-i18n="Characters & Groups">Characters &amp; Groups</span>
+    </button>
+</div>
+
+<div class="neconyan-tag-undo-bar" hidden>
+    <span class="neconyan-tag-undo-text"></span>
+    <button type="button" class="menu_button menu_button_primary tag_view_undo" data-i18n="Undo">Undo</button>
+    <button type="button" class="menu_button tag_view_undo_dismiss" data-i18n="Dismiss">Dismiss</button>
+</div>
+
+<div id="neconyan_tag_manager_panel_tags" role="tabpanel" aria-labelledby="neconyan_tag_manager_tab_tags" data-tag-manager-panel="tags">
+    <div class="neconyan-tag-toolbar">
+        <label class="neconyan-tag-field neconyan-tag-toolbar-search">
+            <span class="sr-only" data-i18n="Search tags">Search tags</span>
+            <input id="tag_view_search" class="text_pole" type="search" autocomplete="off" aria-label="Search tags" placeholder="Name, note, or c:Narrator" data-i18n="[placeholder]Name, note, or c:Narrator">
+        </label>
+        <label class="neconyan-tag-field">
+            <span class="sr-only" data-i18n="Show">Show</span>
+            <select id="tag_view_filter_select" class="text_pole" aria-label="Show tags">
+                <option value="all" data-i18n="All tags">All tags</option>
+                <option value="folders" data-i18n="Folders only">Folders only</option>
+                <option value="open_folder" data-i18n="Open folders">Open folders</option>
+                <option value="closed_folder" data-i18n="Closed folders">Closed folders</option>
+                <option value="no_folder" data-i18n="No folder">No folder</option>
+                <option value="unused" data-i18n="Unused">Unused</option>
+                <option value="with_notes" data-i18n="With notes">With notes</option>
             </select>
-        </div>
-        <small>
-            <span data-i18n="Drag handle to reorder. Click name to rename. Click color to change display.">Drag handle to reorder. Click name to rename. Click color to change display.</span><br>
-            {{#if bogus_folders}}<span data-i18n="Click on the folder icon to use this tag as a folder.">Click on the folder icon to use this tag as a folder.</span><br>{{/if}}
-        </small>
+        </label>
+        <label class="neconyan-tag-field">
+            <span class="sr-only" data-i18n="Sort">Sort</span>
+            <select id="tag_sort_mode_select" class="text_pole" aria-label="Sort tags">
+                <option value="manual" data-i18n="Manual order">Manual order</option>
+                <option value="alphabetical" data-i18n="Alphabetical (A-Z)">Alphabetical (A-Z)</option>
+                <option value="alphabetical_desc" data-i18n="Alphabetical (Z-A)">Alphabetical (Z-A)</option>
+                <option value="by_entries" data-i18n="Most used">Most used</option>
+                <option value="by_entries_asc" data-i18n="Fewest used">Fewest used</option>
+            </select>
+        </label>
     </div>
+
+    <div class="neconyan-tag-create-bar">
+        <label class="neconyan-tag-field neconyan-tag-create-name">
+            <span class="sr-only" data-i18n="New tag">New tag</span>
+            <input id="tag_view_create_input" class="text_pole" type="text" maxlength="200" autocomplete="off" aria-label="New tag name" placeholder="e.g. slow burn" data-i18n="[placeholder]e.g. slow burn">
+        </label>
+        <label class="neconyan-tag-field neconyan-tag-create-folder">
+            <span class="sr-only" data-i18n="Folder">Folder</span>
+            <select id="tag_view_create_folder" class="text_pole" aria-label="Folder type for the new tag">
+                <option value="NONE" data-i18n="No folder">No folder</option>
+                <option value="OPEN" data-i18n="Open folder">Open folder</option>
+                <option value="CLOSED" data-i18n="Closed folder">Closed folder</option>
+            </select>
+        </label>
+        <button type="button" class="menu_button menu_button_icon menu_button_primary tag_view_create" data-i18n="[title]Create a new tag" title="Create a new tag">
+            <i class="fa-solid fa-plus" aria-hidden="true"></i>
+            <span data-i18n="Create">Create</span>
+        </button>
+    </div>
+
+    <details id="neconyan_tag_maintenance" class="neconyan-tag-maintenance">
+        <summary class="neconyan-tag-disclosure-summary">
+            <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+            <span data-i18n="Folder and bulk tools">Folder and bulk tools</span>
+        </summary>
+        <div class="neconyan-tag-maintenance-body">
+            <label class="checkbox_label neconyan-tag-folder-toggle">
+                <input id="tag_view_bogus_folders_toggle" type="checkbox">
+                <span data-i18n="Group library by folder tags">Group library by folder tags</span>
+            </label>
+
+            <small class="neconyan-tag-manager-hint">
+                <span data-i18n="Drag a tag to reorder it. Search names and notes, c: for a character or group, and a leading minus sign to exclude.">Drag a tag to reorder it. Search names and notes, c: for a character or group, and a leading minus sign to exclude.</span>
+            </small>
+
+            <div class="neconyan-tag-mode-bar">
+                <button type="button" class="menu_button menu_button_icon tag_view_merge_toggle" aria-pressed="false" data-i18n="[title]Merge tags into one tag" title="Merge tags into one tag">
+                    <i class="fa-solid fa-code-merge" aria-hidden="true"></i>
+                    <span data-i18n="Merge tags">Merge tags</span>
+                </button>
+                <button type="button" class="menu_button menu_button_icon tag_view_bulk_delete_toggle" aria-pressed="false" data-i18n="[title]Delete several tags at once" title="Delete several tags at once">
+                    <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
+                    <span data-i18n="Delete tags">Delete tags</span>
+                </button>
+            </div>
+
+            <div class="neconyan-tag-merge-bar" hidden>
+                <label class="neconyan-tag-field neconyan-tag-merge-primary">
+                    <span data-i18n="Keep">Keep</span>
+                    <select id="tag_merge_primary" class="text_pole"></select>
+                </label>
+                <span id="neconyan_tag_merge_count" class="neconyan-tag-mode-count">0 selected</span>
+                <button type="button" id="tag_merge_confirm" class="menu_button menu_button_primary tag_view_merge_confirm" disabled data-i18n="Merge selected">Merge selected</button>
+                <button type="button" class="menu_button tag_view_merge_cancel" data-i18n="Cancel">Cancel</button>
+            </div>
+
+            <div class="neconyan-tag-bulk-delete-bar" hidden>
+                <span id="neconyan_tag_bulk_delete_count" class="neconyan-tag-mode-count">0 selected</span>
+                <button type="button" id="tag_bulk_delete_confirm" class="menu_button menu_button_danger tag_view_bulk_delete_confirm" disabled data-i18n="Delete selected">Delete selected</button>
+                <button type="button" class="menu_button tag_view_bulk_delete_cancel" data-i18n="Cancel">Cancel</button>
+            </div>
+        </div>
+    </details>
+
+    <div class="tag_view_list_tags ui-sortable"></div>
+</div>
+
+<div id="neconyan_tag_manager_panel_entities" role="tabpanel" aria-labelledby="neconyan_tag_manager_tab_entities" data-tag-manager-panel="entities" hidden>
+    <div class="neconyan-tag-entity-toolbar">
+        <label class="neconyan-tag-field neconyan-tag-entity-search">
+            <span class="sr-only" data-i18n="Search characters and groups">Search characters and groups</span>
+            <input id="neconyan_tag_char_search" class="text_pole" type="search" autocomplete="off" aria-label="Search characters and groups" title="Commas mean either. A minus sign excludes. Quote a phrase. a: searches the whole card." placeholder="Name, t:tag, f:folder, a:text, n:note, -term" data-i18n="[placeholder]Name, t:tag, f:folder, a:text, n:note, -term">
+        </label>
+        <small class="neconyan-tag-manager-hint" data-i18n="Commas mean either. A minus sign excludes. Quote a phrase to keep it together. a: searches the whole card.">Commas mean either. A minus sign excludes. Quote a phrase to keep it together. a: searches the whole card.</small>
+        <label class="neconyan-tag-field">
+            <span class="sr-only" data-i18n="Show">Show</span>
+            <select id="neconyan_tag_char_filter" class="text_pole" aria-label="Show characters and groups">
+                <option value="all" data-i18n="Everything">Everything</option>
+                <option value="characters" data-i18n="Characters">Characters</option>
+                <option value="groups" data-i18n="Groups">Groups</option>
+                <option value="untagged" data-i18n="Untagged">Untagged</option>
+                <option value="tagged" data-i18n="Tagged">Tagged</option>
+                <option value="in_folder" data-i18n="In a folder">In a folder</option>
+                <option value="no_folder" data-i18n="Not in a folder">Not in a folder</option>
+                <option value="with_notes" data-i18n="With notes">With notes</option>
+                <option value="without_notes" data-i18n="Without notes">Without notes</option>
+                <option value="favorites" data-i18n="Favourites">Favourites</option>
+            </select>
+        </label>
+        <label class="neconyan-tag-field">
+            <span class="sr-only" data-i18n="Sort">Sort</span>
+            <select id="neconyan_tag_char_sort" class="text_pole" aria-label="Sort characters and groups">
+                <option value="alpha_asc" data-i18n="Name (A-Z)">Name (A-Z)</option>
+                <option value="alpha_desc" data-i18n="Name (Z-A)">Name (Z-A)</option>
+                <option value="tag_count_desc" data-i18n="Most tags">Most tags</option>
+                <option value="tag_count_asc" data-i18n="Fewest tags">Fewest tags</option>
+            </select>
+        </label>
+        <div class="neconyan-tag-entity-selection-actions">
+            <button type="button" id="neconyan_tag_char_select_all" class="menu_button" data-i18n="Select shown">Select shown</button>
+            <button type="button" id="neconyan_tag_char_clear_selection" class="menu_button" data-i18n="Clear selection">Clear selection</button>
+            <span id="neconyan_tag_char_selection_count" class="neconyan-tag-mode-count">0 selected</span>
+        </div>
+    </div>
+
+    <details id="neconyan_tag_bulk_panel" class="neconyan-tag-bulk-panel">
+        <summary class="neconyan-tag-disclosure-summary">
+            <i class="fa-solid fa-tags" aria-hidden="true"></i>
+            <span data-i18n="Bulk assign tags">Bulk assign tags</span>
+        </summary>
+        <div class="neconyan-tag-assign-box neconyan-tag-assign-bar">
+            <div class="neconyan-tag-assign-heading">
+                <strong data-i18n="Bulk tag">Bulk tag</strong>
+                <span data-i18n="Pick tags, then tick the characters and groups above.">Pick tags, then tick the characters and groups above.</span>
+            </div>
+            <label class="neconyan-tag-field">
+                <span class="sr-only" data-i18n="Find a tag">Find a tag</span>
+                <input id="neconyan_assign_tag_search" class="text_pole" type="search" autocomplete="off" aria-label="Find a tag" placeholder="Filter tags" data-i18n="[placeholder]Filter tags">
+            </label>
+            <div class="neconyan-assign-tag-chips" role="group" aria-label="Tags to assign"></div>
+            <div class="neconyan-tag-assign-create">
+                <input id="neconyan_assign_new_tag" class="text_pole" type="text" maxlength="200" autocomplete="off" aria-label="New tag name to assign" placeholder="New tag name" data-i18n="[placeholder]New tag name">
+                <button type="button" class="menu_button neconyan-assign-create-tag" data-i18n="Add tag">Add tag</button>
+            </div>
+            <div class="neconyan-tag-assign-actions">
+                <button type="button" id="neconyan_bulk_assign_tags_btn" class="menu_button menu_button_primary" disabled data-i18n="Assign tags">Assign tags</button>
+                <button type="button" id="neconyan_bulk_remove_tags_btn" class="menu_button" disabled data-i18n="Remove tags">Remove tags</button>
+                <button type="button" id="neconyan_assign_clear_tags" class="menu_button" disabled data-i18n="Clear tag picks">Clear tag picks</button>
+            </div>
+        </div>
+    </details>
+
+    <div class="neconyan-tag-entity-list"></div>
+</div>

@@ -355,3 +355,1283 @@ body.neconyan:not(.sbterm) #right-nav-panel #sb_character_import_panel #sb_chara
     font-size: 12px;
     line-height: 1.45;
 }
+
+/* Character Tag Manager. The dialog itself must stay opaque in every palette and Shell
+   Style, so the ID-bearing :has selector outranks the translucent Calico popup rule. */
+:root body.neconyan dialog.popup:has(#tag_view_list),
+:root body.neconyan dialog.popup:has(#tag_to_delete),
+:root body.neconyan dialog.popup:has(#neconyan_tag_manager_confirm),
+:root body.neconyan dialog.popup:has(.neconyan-tag-manager-confirm) {
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    border: 1px solid var(--neco-border);
+}
+
+:root body.neconyan dialog.popup:has(#tag_view_list) .popup-content {
+    padding-inline: 10px;
+}
+
+#tag_view_list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+    color: var(--neco-ink);
+    text-align: left;
+}
+
+#tag_view_list [hidden] {
+    display: none;
+}
+
+#tag_view_list *:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+#tag_view_list .neconyan-tag-manager-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 10px 14px;
+    padding: 2px 0 4px;
+    border-bottom: 1px solid var(--neco-border);
+}
+
+#tag_view_list .neconyan-tag-manager-heading {
+    flex: 1 1 220px;
+    min-width: 0;
+}
+
+#tag_view_list .neconyan-tag-manager-heading h3 {
+    margin: 0;
+    color: var(--neco-ink);
+    font-family: var(--sb-font-display);
+    font-size: 20px;
+    font-weight: 400;
+    line-height: 1.2;
+}
+
+#tag_view_list .neconyan-tag-manager-intro {
+    max-width: 48ch;
+    margin: 4px 0 0;
+    color: var(--neco-muted);
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+#tag_view_list .neconyan-tag-manager-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    margin-top: 6px;
+    color: var(--neco-muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#tag_view_list .neconyan-tag-manager-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-left: auto;
+}
+
+#tag_view_list .neconyan-tag-manager-actions .menu_button {
+    margin: 0;
+    min-height: 40px;
+}
+
+#tag_view_list .neconyan-tag-manager-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+}
+
+#tag_view_list .neconyan-tag-manager-tab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: auto;
+    max-width: 100%;
+    min-height: 44px;
+    padding: 6px 10px;
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--neco-raised) 55%, var(--neco-surface));
+    color: var(--neco-ink);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+#tag_view_list .neconyan-tag-manager-tab.is-active,
+#tag_view_list .neconyan-tag-manager-tab[aria-selected='true'] {
+    border-color: var(--neco-ginger);
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+#tag_view_list [data-tag-manager-panel] {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+}
+
+#tag_view_list .neconyan-tag-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    color: var(--neco-muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#tag_view_list .neconyan-tag-field input,
+#tag_view_list .neconyan-tag-field select {
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+}
+
+#tag_view_list .neconyan-tag-create-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 8px;
+}
+
+#tag_view_list .neconyan-tag-create-name {
+    flex: 1 1 170px;
+}
+
+#tag_view_list .neconyan-tag-create-folder {
+    flex: 0 1 150px;
+}
+
+#tag_view_list .tag_view_create {
+    flex: 0 0 auto;
+    margin: 0;
+    min-height: 44px;
+}
+
+#tag_view_list .neconyan-tag-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) repeat(2, minmax(0, 0.8fr));
+    align-items: end;
+    gap: 8px 10px;
+}
+
+#tag_view_list .neconyan-tag-toolbar-search {
+    grid-column: 1 / -1;
+}
+
+#tag_view_list .neconyan-tag-folder-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    margin: 0;
+    padding: 0 10px;
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--neco-raised) 35%, var(--neco-surface));
+    color: var(--neco-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+}
+
+#tag_view_list .neconyan-tag-folder-toggle input {
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    accent-color: var(--neco-ginger);
+}
+
+#tag_view_list .neconyan-tag-manager-hint {
+    display: block;
+    color: var(--neco-muted);
+    font-size: 11.5px;
+    line-height: 1.45;
+}
+
+#tag_view_list .neconyan-tag-mode-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+#tag_view_list .neconyan-tag-mode-bar .menu_button,
+#tag_view_list .neconyan-tag-merge-bar .menu_button,
+#tag_view_list .neconyan-tag-bulk-delete-bar .menu_button,
+#tag_view_list .neconyan-tag-undo-bar .menu_button {
+    margin: 0;
+    min-height: 44px;
+}
+
+#tag_view_list .neconyan-tag-mode-bar .menu_button.is-active {
+    border-color: color-mix(in srgb, var(--neco-ginger) 60%, var(--neco-border));
+    background: color-mix(in srgb, var(--neco-ginger) 16%, var(--neco-raised));
+    color: var(--neco-ink);
+}
+
+#tag_view_list .neconyan-tag-merge-bar,
+#tag_view_list .neconyan-tag-bulk-delete-bar,
+#tag_view_list .neconyan-tag-undo-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-raised) 60%, var(--neco-surface));
+}
+
+#tag_view_list .neconyan-tag-undo-bar {
+    border-color: color-mix(in srgb, var(--neco-ginger) 45%, var(--neco-border));
+    background: color-mix(in srgb, var(--neco-ginger) 10%, var(--neco-surface));
+}
+
+#tag_view_list .neconyan-tag-merge-primary {
+    flex: 1 1 170px;
+}
+
+#tag_view_list .neconyan-tag-mode-count {
+    align-self: center;
+    color: var(--neco-muted);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+#tag_view_list .neconyan-tag-undo-text {
+    flex: 1 1 160px;
+    align-self: center;
+    color: var(--neco-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+}
+
+#tag_view_list .tag_view_list_tags {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+#tag_view_list .tag_view_item {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    min-width: 0;
+    margin: 0;
+    padding: 10px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-raised) 32%, var(--neco-surface));
+}
+
+#tag_view_list .tag_view_item.is-selected {
+    border-color: color-mix(in srgb, var(--neco-ginger) 65%, var(--neco-border));
+    background: color-mix(in srgb, var(--neco-ginger) 9%, var(--neco-surface));
+}
+
+#tag_view_list .tag_view_item.is-merge-primary {
+    border-style: dashed;
+}
+
+#tag_view_list .neconyan-tag-item-main {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+#tag_view_list .neconyan-tag-select-wrap {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    min-height: 44px;
+    margin: 0;
+}
+
+#tag_view_list .neconyan-tag-select-wrap input {
+    width: 22px;
+    height: 22px;
+    margin: 0;
+    accent-color: var(--neco-ginger);
+}
+
+#tag_view_list .drag-handle {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+    min-height: 44px;
+    color: var(--neco-muted);
+    cursor: grab;
+}
+
+#tag_view_list .neconyan-tag-item-body {
+    display: flex;
+    flex: 1 1 150px;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+}
+
+#tag_view_list .tag_view_name {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    max-width: 100%;
+    min-height: 44px;
+    margin: 0;
+    padding: 6px 10px;
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.3;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    box-sizing: border-box;
+}
+
+#tag_view_list .neconyan-tag-item-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+#tag_view_list .tag_view_counter {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    width: auto;
+    max-width: 100%;
+    min-height: 44px;
+    margin: 0;
+    padding: 4px 10px;
+    border: 1px solid var(--neco-border);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--neco-raised) 55%, var(--neco-surface));
+    color: var(--neco-ink);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+#tag_view_list .tag_view_counter i {
+    color: var(--neco-muted);
+    font-size: 10px;
+}
+
+#tag_view_list .neconyan-tag-note-preview {
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--neco-muted);
+    font-size: 11.5px;
+    font-style: italic;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#tag_view_list .neconyan-tag-item-controls {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+
+#tag_view_list .neconyan-tag-item-controls > * {
+    flex: 0 0 auto;
+}
+
+#tag_view_list .neconyan-tag-item-controls .menu_button,
+#tag_view_list .neconyan-tag-item-controls .right_menu_button {
+    min-width: 44px;
+    min-height: 44px;
+    margin: 0;
+}
+
+#tag_view_list .tag_as_folder.right_menu_button {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    margin: 0;
+    padding: 0;
+}
+
+#tag_view_list .tag_as_folder .tag_folder_indicator {
+    top: -4px;
+    right: -4px;
+}
+
+#tag_view_list .neconyan-tag-folder-select {
+    flex: 0 1 150px;
+    width: auto;
+    max-width: 100%;
+    min-width: 110px;
+    min-height: 44px;
+    margin: 0;
+    font-size: 12px;
+}
+
+#tag_view_list .tag_view_color_picker {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 2px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-surface);
+}
+
+#tag_view_list .tag_view_color_picker toolcool-color-picker {
+    --tool-cool-color-picker-btn-bg: var(--neco-surface);
+    --tool-cool-color-picker-btn-border-color: var(--neco-border);
+    --tool-cool-color-picker-btn-border-color-inner: var(--neco-border);
+    --tool-cool-color-picker-btn-border-radius: 7px;
+    --tool-cool-color-picker-btn-border-radius-inner: 5px;
+    display: block;
+    width: 32px;
+    height: 32px;
+}
+
+#tag_view_list .tag_view_color_picker .link_icon {
+    position: static;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    min-height: 44px;
+    margin: 0;
+    padding: 0;
+    opacity: 0.65;
+}
+
+#tag_view_list .neconyan-tag-note-toggle {
+    color: var(--neco-muted);
+}
+
+#tag_view_list .neconyan-tag-note-toggle.is-active,
+#tag_view_list .neconyan-tag-note-toggle.has-note {
+    color: var(--neco-ginger);
+}
+
+#tag_view_list .neconyan-tag-assigned-drawer,
+#tag_view_list .neconyan-tag-note-drawer {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    padding-top: 8px;
+    border-top: 1px solid var(--neco-border);
+}
+
+#tag_view_list .neconyan-tag-note-label {
+    color: var(--neco-muted);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+#tag_view_list .neconyan-tag-note-input {
+    width: 100%;
+    min-height: 96px;
+    resize: vertical;
+}
+
+#tag_view_list .neconyan-tag-assigned-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--neco-border) 60%, transparent);
+}
+
+#tag_view_list .neconyan-tag-assigned-avatar {
+    flex: 0 0 auto;
+    width: 34px;
+    height: 34px;
+    overflow: hidden;
+    border-radius: 50%;
+    background: var(--neco-raised);
+}
+
+#tag_view_list .neconyan-tag-assigned-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+#tag_view_list .neconyan-tag-assigned-identity {
+    display: flex;
+    flex: 1 1 120px;
+    flex-direction: column;
+    min-width: 0;
+}
+
+#tag_view_list .neconyan-tag-assigned-name {
+    color: var(--neco-ink);
+    font-size: 13px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+#tag_view_list .neconyan-tag-assigned-type {
+    color: var(--neco-muted);
+    font-size: 11px;
+}
+
+#tag_view_list .neconyan-tag-assigned-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+#tag_view_list .neconyan-tag-assigned-actions .menu_button {
+    min-height: 44px;
+    margin: 0;
+}
+
+#tag_view_list .neconyan-tag-empty {
+    margin: 6px 0;
+    color: var(--neco-muted);
+    font-size: 12.5px;
+    line-height: 1.45;
+    text-align: left;
+}
+
+#tag_view_list .neconyan-tag-assign-box {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-raised) 45%, var(--neco-surface));
+}
+
+#tag_view_list .neconyan-tag-assign-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 8px;
+    font-size: 12.5px;
+}
+
+#tag_view_list .neconyan-tag-assign-heading strong {
+    color: var(--neco-ink);
+}
+
+#tag_view_list .neconyan-tag-assign-heading span {
+    color: var(--neco-muted);
+}
+
+#tag_view_list .neconyan-assign-tag-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-height: 190px;
+    overflow-y: auto;
+    padding: 2px;
+}
+
+#tag_view_list .neconyan-tag-assign-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: auto;
+    max-width: 100%;
+    min-height: 44px;
+    padding: 4px 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 999px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+#tag_view_list .neconyan-tag-assign-chip.is-selected {
+    border-color: var(--neco-ginger);
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+#tag_view_list .neconyan-tag-assign-create {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+#tag_view_list .neconyan-tag-assign-create input {
+    flex: 1 1 160px;
+    min-height: 44px;
+    margin: 0;
+}
+
+#tag_view_list .neconyan-tag-assign-create .menu_button {
+    min-height: 44px;
+    margin: 0;
+}
+
+#tag_view_list .neconyan-tag-assign-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+#tag_view_list .neconyan-tag-assign-actions .menu_button {
+    min-height: 44px;
+    margin: 0;
+}
+
+#tag_view_list .neconyan-tag-entity-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) repeat(2, minmax(0, 0.7fr));
+    align-items: end;
+    gap: 8px 10px;
+}
+
+#tag_view_list .neconyan-tag-entity-search {
+    grid-column: 1 / -1;
+}
+
+#tag_view_list .neconyan-tag-entity-toolbar .neconyan-tag-manager-hint {
+    grid-column: 1 / -1;
+}
+
+#tag_view_list .neconyan-tag-entity-selection-actions {
+    display: flex;
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+#tag_view_list .neconyan-tag-entity-selection-actions .menu_button {
+    min-height: 44px;
+    margin: 0;
+}
+
+#tag_view_list .neconyan-tag-entity-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#tag_view_list .neconyan-tag-entity-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-raised) 32%, var(--neco-surface));
+}
+
+#tag_view_list .neconyan-tag-entity-main {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+#tag_view_list .neconyan-tag-entity-check {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    margin: 0;
+}
+
+#tag_view_list .neconyan-tag-entity-check input {
+    width: 22px;
+    height: 22px;
+    margin: 0;
+    accent-color: var(--neco-ginger);
+}
+
+#tag_view_list .neconyan-tag-entity-avatar {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    overflow: hidden;
+    border-radius: 50%;
+    background: var(--neco-raised);
+}
+
+#tag_view_list .neconyan-tag-entity-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+#tag_view_list .neconyan-tag-entity-identity {
+    display: flex;
+    flex: 1 1 150px;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+#tag_view_list .neconyan-tag-entity-name-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+#tag_view_list .neconyan-tag-entity-name {
+    color: var(--neco-ink);
+    font-size: 14px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+#tag_view_list .neconyan-tag-entity-badge {
+    padding: 1px 7px;
+    border: 1px solid var(--neco-border);
+    border-radius: 999px;
+    background: var(--neco-raised);
+    color: var(--neco-muted);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+#tag_view_list .neconyan-tag-entity-fav {
+    color: var(--neco-ginger);
+    font-size: 12px;
+}
+
+#tag_view_list .neconyan-tag-entity-meta {
+    color: var(--neco-muted);
+    font-size: 12px;
+}
+
+#tag_view_list .neconyan-tag-entity-note-preview {
+    overflow: hidden;
+    color: var(--neco-muted);
+    font-size: 11.5px;
+    font-style: italic;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#tag_view_list .neconyan-tag-entity-open {
+    min-height: 44px;
+    margin: 0;
+}
+
+#tag_view_list .neconyan-tag-entity-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+#tag_view_list .neconyan-tag-entity-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+    min-height: 36px;
+    padding: 2px 4px 2px 10px;
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 45%, var(--neco-border));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--neco-ginger) 12%, var(--neco-surface));
+    color: var(--neco-ink);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#tag_view_list .neconyan-tag-entity-chip.is-folder {
+    background: color-mix(in srgb, var(--neco-ginger) 20%, var(--neco-surface));
+}
+
+#tag_view_list .neconyan-tag-entity-chip-name {
+    overflow-wrap: anywhere;
+}
+
+#tag_view_list .neconyan-tag-chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--neco-muted);
+    cursor: pointer;
+}
+
+#tag_view_list .neconyan-tag-chip-remove:hover,
+#tag_view_list .neconyan-tag-chip-remove:focus-visible {
+    background: color-mix(in srgb, var(--neco-ginger) 18%, transparent);
+    color: var(--neco-ink);
+}
+
+#tag_view_list .neconyan-tag-entity-add {
+    flex: 0 1 160px;
+    width: auto;
+    min-height: 44px;
+    margin: 0;
+}
+
+#tag_view_list .neconyan-tag-entity-all-tags,
+#tag_view_list .neconyan-tag-entity-no-tags {
+    color: var(--neco-muted);
+    font-size: 12px;
+}
+
+#tag_view_list .neconyan-tag-entity-note-toggle {
+    align-self: flex-start;
+    min-height: 44px;
+    margin: 0;
+}
+
+#tag_view_list .neconyan-tag-entity-note {
+    display: flex;
+    min-width: 0;
+}
+
+#tag_view_list .neconyan-tag-entity-note textarea {
+    width: 100%;
+    min-height: 100px;
+    resize: vertical;
+}
+
+@media (max-width: 768px) {
+    #tag_view_list .neconyan-tag-manager-header {
+        gap: 8px;
+    }
+
+    #tag_view_list .neconyan-tag-manager-actions {
+        width: 100%;
+        margin-left: 0;
+    }
+
+    #tag_view_list .neconyan-tag-manager-actions .menu_button {
+        flex: 1 1 auto;
+        min-height: 44px;
+    }
+
+    #tag_view_list .neconyan-tag-toolbar,
+    #tag_view_list .neconyan-tag-entity-toolbar {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #tag_view_list .neconyan-tag-folder-toggle,
+    #tag_view_list .neconyan-tag-entity-search,
+    #tag_view_list .neconyan-tag-entity-toolbar .neconyan-tag-manager-hint,
+    #tag_view_list .neconyan-tag-entity-selection-actions {
+        grid-column: 1 / -1;
+    }
+
+    #tag_view_list .tag_view_item,
+    #tag_view_list .neconyan-tag-entity-row,
+    #tag_view_list .neconyan-tag-assign-box {
+        padding: 8px;
+    }
+
+    #tag_view_list .neconyan-tag-item-body {
+        flex-basis: 100%;
+        order: 2;
+    }
+
+    #tag_view_list .neconyan-tag-item-controls {
+        order: 3;
+        width: 100%;
+    }
+
+    #tag_view_list .drag-handle,
+    #tag_view_list .neconyan-tag-select-wrap {
+        order: 1;
+    }
+
+    #tag_view_list .neconyan-tag-entity-chip {
+        min-height: 44px;
+    }
+
+    #tag_view_list .neconyan-tag-chip-remove {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+    }
+}
+
+/* The structural display rules above must never win over an explicit hidden attribute. */
+#tag_view_list [hidden] {
+    display: none;
+}
+
+@media (max-width: 768px) {
+    :root body.neconyan dialog.popup:has(#tag_view_list) {
+        padding: 8px;
+    }
+
+    :root body.neconyan dialog.popup:has(#tag_view_list) .popup-content {
+        padding-inline: 4px;
+    }
+
+    #tag_view_list {
+        gap: 8px;
+    }
+
+    #tag_view_list .neconyan-tag-manager-header {
+        padding-bottom: 2px;
+    }
+
+    #tag_view_list .neconyan-tag-manager-intro {
+        max-width: none;
+        font-size: 12px;
+        line-height: 1.35;
+    }
+
+    #tag_view_list .neconyan-tag-manager-summary {
+        margin-top: 3px;
+        font-size: 11.5px;
+    }
+
+    #tag_view_list .neconyan-tag-manager-actions .menu_button {
+        flex: 1 1 0;
+        min-width: 0;
+        padding-inline: 6px;
+        font-size: 12px;
+        gap: 4px;
+    }
+
+    #tag_view_list .neconyan-tag-manager-tab {
+        padding: 4px 6px;
+        font-size: 12px;
+        gap: 6px;
+    }
+
+    #tag_view_list .neconyan-tag-manager-hint {
+        display: none;
+    }
+
+    #tag_view_list .neconyan-tag-create-bar,
+    #tag_view_list .neconyan-tag-toolbar,
+    #tag_view_list .neconyan-tag-entity-toolbar {
+        gap: 6px;
+    }
+
+    #tag_view_list .neconyan-tag-mode-bar,
+    #tag_view_list .neconyan-tag-assign-actions,
+    #tag_view_list .neconyan-tag-entity-selection-actions {
+        gap: 4px;
+    }
+}
+
+/* Compact manager layout: search and the working lists come first; creation and bulk
+   maintenance stay reachable in native disclosures without consuming the first screen. */
+#tag_view_list .neconyan-tag-toolbar {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.8fr) minmax(0, 0.8fr);
+    align-items: end;
+    gap: 6px;
+}
+
+#tag_view_list .neconyan-tag-toolbar-search {
+    grid-column: auto;
+}
+
+#tag_view_list .neconyan-tag-create-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: end;
+    gap: 6px;
+}
+
+#tag_view_list .neconyan-tag-create-name {
+    min-width: 0;
+}
+
+#tag_view_list .neconyan-tag-create-folder {
+    width: auto;
+}
+
+#tag_view_list .neconyan-tag-create-folder select {
+    width: auto;
+    min-width: 96px;
+    max-width: 140px;
+}
+
+#tag_view_list .neconyan-tag-create-bar .tag_view_create {
+    min-height: 44px;
+    margin: 0;
+}
+
+#tag_view_list .neconyan-tag-maintenance,
+#tag_view_list .neconyan-tag-bulk-panel {
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-raised) 45%, var(--neco-surface));
+}
+
+#tag_view_list .neconyan-tag-disclosure-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 0 10px;
+    color: var(--neco-ink);
+    font-size: 12.5px;
+    font-weight: 700;
+    list-style: none;
+    cursor: pointer;
+}
+
+#tag_view_list .neconyan-tag-disclosure-summary::-webkit-details-marker {
+    display: none;
+}
+
+#tag_view_list .neconyan-tag-disclosure-summary::marker {
+    content: '';
+}
+
+#tag_view_list .neconyan-tag-disclosure-summary::after {
+    content: '\f078';
+    margin-left: auto;
+    color: var(--neco-muted);
+    font-family: 'Font Awesome 6 Free';
+    font-size: 11px;
+    font-weight: 900;
+}
+
+#tag_view_list details[open] > .neconyan-tag-disclosure-summary::after {
+    content: '\f077';
+}
+
+#tag_view_list .neconyan-tag-disclosure-summary > i {
+    color: var(--neco-ginger);
+    font-size: 12px;
+}
+
+#tag_view_list .neconyan-tag-maintenance-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 10px 10px;
+    border-top: 1px solid var(--neco-border);
+    padding-top: 10px;
+}
+
+#tag_view_list .neconyan-tag-bulk-panel > .neconyan-tag-assign-box {
+    margin: 0 10px 10px;
+}
+
+#tag_view_list .neconyan-tag-entity-toolbar {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.8fr) minmax(0, 0.8fr);
+    align-items: end;
+    gap: 6px;
+}
+
+#tag_view_list .neconyan-tag-entity-search {
+    grid-column: auto;
+}
+
+#tag_view_list .neconyan-tag-entity-toolbar .neconyan-tag-manager-hint {
+    display: none;
+}
+
+#tag_view_list .neconyan-tag-entity-selection-actions {
+    grid-column: 1 / -1;
+}
+
+#tag_view_list .neconyan-tag-item-main {
+    flex-wrap: nowrap;
+}
+
+#tag_view_list .neconyan-tag-item-body {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+#tag_view_list .tag_view_name {
+    flex: 1 1 160px;
+    width: auto;
+}
+
+#tag_view_list .neconyan-tag-item-meta {
+    flex: 0 0 auto;
+}
+
+#tag_view_list .neconyan-tag-note-preview {
+    max-width: 160px;
+}
+
+#tag_view_list .neconyan-tag-entity-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+#tag_view_list .neconyan-tag-entity-actions .menu_button {
+    min-height: 44px;
+    margin: 0;
+}
+
+#tag_view_list .neconyan-tag-entity-note-toggle {
+    align-self: center;
+    min-height: 44px;
+    margin: 0;
+}
+
+#tag_view_list .menu_button_danger {
+    border-color: color-mix(in srgb, var(--sb-danger, var(--neco-ginger)) 60%, var(--neco-border));
+    background: color-mix(in srgb, var(--sb-danger, var(--neco-ginger)) 18%, var(--neco-raised));
+    color: var(--neco-ink);
+}
+
+#tag_view_list .neconyan-tag-item-controls > :is(.right_menu_button, .tag_delete) {
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--neco-raised) 55%, var(--neco-surface));
+    color: var(--neco-ink);
+    filter: none;
+    opacity: 1;
+}
+
+#tag_view_list .neconyan-tag-item-controls > :is(.right_menu_button, .tag_delete):is(:hover, :focus-visible) {
+    border-color: color-mix(in srgb, var(--neco-ginger) 55%, var(--neco-border));
+    background: color-mix(in srgb, var(--neco-ginger) 14%, var(--neco-raised));
+    color: var(--neco-ink);
+}
+
+#tag_view_list .tag_view_counter.is-active,
+#tag_view_list .neconyan-tag-note-toggle.is-active,
+#tag_view_list .neconyan-tag-note-toggle.has-note,
+#tag_view_list .neconyan-tag-entity-note-toggle.is-active,
+#tag_view_list .neconyan-tag-entity-note-toggle.has-note {
+    border-color: color-mix(in srgb, var(--neco-ginger) 60%, var(--neco-border));
+    background: color-mix(in srgb, var(--neco-ginger) 16%, var(--neco-raised));
+    color: var(--neco-ink);
+}
+
+#tag_view_list .tag_delete:is(:hover, :focus-visible) {
+    border-color: color-mix(in srgb, var(--sb-danger, var(--neco-ginger)) 60%, var(--neco-border));
+    background: color-mix(in srgb, var(--sb-danger, var(--neco-ginger)) 16%, var(--neco-raised));
+}
+
+@media (max-width: 768px) {
+    #tag_view_list .neconyan-tag-manager-intro {
+        display: none;
+    }
+
+    #tag_view_list .neconyan-tag-manager-header {
+        gap: 6px;
+    }
+
+    #tag_view_list .neconyan-tag-manager-summary {
+        margin-top: 2px;
+    }
+
+    #tag_view_list .neconyan-tag-toolbar {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #tag_view_list .neconyan-tag-toolbar-search {
+        grid-column: 1 / -1;
+    }
+
+    #tag_view_list .neconyan-tag-create-bar {
+        grid-template-columns: minmax(0, 1fr) auto auto;
+    }
+
+    #tag_view_list .neconyan-tag-create-folder select {
+        min-width: 104px;
+        max-width: 112px;
+    }
+
+    #tag_view_list .neconyan-tag-entity-toolbar {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #tag_view_list .neconyan-tag-entity-search,
+    #tag_view_list .neconyan-tag-entity-selection-actions {
+        grid-column: 1 / -1;
+    }
+
+    #tag_view_list .neconyan-tag-item-main {
+        flex-wrap: wrap;
+    }
+
+    #tag_view_list .neconyan-tag-item-body {
+        flex: 1 1 150px;
+        order: 2;
+        flex-direction: row;
+        flex-wrap: nowrap;
+    }
+
+    #tag_view_list .tag_view_name {
+        flex: 1 1 100px;
+        width: auto;
+    }
+
+    #tag_view_list .neconyan-tag-item-meta {
+        flex: 0 0 auto;
+    }
+
+    #tag_view_list .neconyan-tag-note-preview {
+        display: none;
+    }
+
+    #tag_view_list .neconyan-tag-item-controls {
+        order: 3;
+        width: 100%;
+    }
+
+    #tag_view_list .neconyan-tag-entity-open,
+    #tag_view_list .neconyan-tag-entity-note-toggle {
+        min-height: 44px;
+    }
+
+    #tag_view_list .neconyan-tag-bulk-panel > .neconyan-tag-assign-box {
+        margin: 0 8px 8px;
+    }
+}
+
+#tag_view_list [hidden] {
+    display: none;
+}
