@@ -35,6 +35,25 @@ test('dark XP Olive is bundled with readable olive surfaces before and after con
     }
 });
 
+test('every fixed-palette Regex Agent tracker theme ships as a bundled UI theme', async () => {
+    const { THEMES } = await import('../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/themes/index.js');
+    const index = JSON.parse(readFileSync(new URL('../default/content/index.json', import.meta.url), 'utf8'));
+    const fixed = THEMES.filter(theme => theme.mode !== 'adaptive');
+    assert.equal(fixed.length, 115);
+    for (const tracker of fixed) {
+        const file = `themes/${tracker.name}.json`;
+        assert.ok(index.some(entry => entry.filename === file && entry.type === 'theme'), `${file} is registered`);
+        const source = JSON.parse(readFileSync(new URL(`../default/content/${file}`, import.meta.url), 'utf8'));
+        const theme = accessibleTheme(source);
+        assert.equal(source.name, tracker.name);
+        assert.equal(source.custom_css, theme.custom_css, `${file}: the portable JSON applies unchanged`);
+        assert.match(theme.custom_css, new RegExp(`color-scheme: ${tracker.mode};`), `${file}: keeps the tracker's ${tracker.mode} mode`);
+        for (const key of ['main_text_color', 'italics_text_color', 'underline_text_color', 'quote_text_color', 'blur_tint_color', 'chat_tint_color', 'user_mes_blur_tint_color', 'bot_mes_blur_tint_color', 'border_color']) {
+            assert.deepEqual(source[key].match(/\d+/g).slice(0, 3), theme[key].match(/\d+/g).slice(0, 3), `${file}: ${key} applies unchanged`);
+        }
+    }
+});
+
 test('near-black and translucent themes retain the normal accessible surface separation', () => {
     const source = JSON.parse(readFileSync(new URL('../default/content/themes/AMOLED Black.json', import.meta.url), 'utf8'));
     for (const blur_tint_color of ['rgba(1, 1, 1, 1)', 'rgba(0, 0, 0, 0.5)']) {

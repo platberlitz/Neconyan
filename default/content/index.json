@@ -300,6 +300,466 @@
         "type": "theme"
     },
     {
+        "filename": "themes/Arcade Cabinet.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Atomic Diner.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Aurora Drift.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Bauhaus Poster.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Bioluminescent Tide.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Biometric Lab.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Blueprint.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Botanical Plate.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Bubble Tea.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Campfire Flicker.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Candlelit Page.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Candy Gloss.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Carbon Fibre.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Cassette Future.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Celestial Chart.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Cherry Cola.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Chrome 98.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Chrome HUD.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Circuitry.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Clean Room.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Comet Trail.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Comic Panel.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Construction Paper.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Cottagecore Linen.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Datastream.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Dawn Glow.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Deep Sea Sonar.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Delft Porcelain.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/DOS Cobalt.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Dungeon Slate.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/E-Ink Reader.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Editorial Hairline.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Eldritch Deep.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Elven Gilt.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Ember Hearth.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Espresso Bar.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Firefly Glow.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Frost Rune.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Game Boy DMG.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Glass Frost.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Glitchwave.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Greenhouse Grid.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Grimoire.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Hazard Console.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Heat Haze.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Herbarium.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Holo Foil.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Hydrangea.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Ice Station.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Ink & Vellum.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Koi Pond Night.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Lantern Warmth.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Lava Lamp.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Legal Pad.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Lemon Sorbet.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Marshmallow.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Meadow Sway.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Memphis Pop.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Miami Deco.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Midnight Kawaii.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Midnight Library.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Mint Chip.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Monochrome Slate.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Moonlit Garden.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Moss Hollow.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Nebula Swirl.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Neo-Brutalist.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Neon Grid.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Neon Heartbeat.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Newsprint.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Night Orchid.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Nordic Frost.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Obsidian Ink.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Ocean Breath.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Paper Minimal.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Paper Tape.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Peach Fuzz.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Petal Breeze.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Phosphor Green.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Photocopy Zine.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Plasma Ring.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Plushie Felt.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Pressed Lavender.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Prism Haze.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Radar Sweep.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Rain on Glass.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Raygun Poster.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Riso Print.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Rose Gold Bloom.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Sakura Drift.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Signal Pulse.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Soap Bubble.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Soft Clay.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Stealth Ops.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Steampunk Brass.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Sticker Book.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Storm Charge.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Strawberry Milk.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Sunbeam Dust.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Sunflower Field.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Sunlit Mosaic.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Sunny Bento.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Swiss Grid.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Synthwave Drive.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Teletext.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Terminal Amber.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Terracotta Sun.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Tidepool Shimmer.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Ultraviolet Rave.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Vaporwave Sunset.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Velvet Noir.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/VFD Cyan.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Volcanic Glass.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Wildflower Press.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Witching Hour.json",
+        "type": "theme"
+    },
+    {
         "filename": "backgrounds/__transparent.png",
         "type": "background"
     },
