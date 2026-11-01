@@ -44,6 +44,7 @@
 - PR #384 (2026-11-01) `fix(composer): follow the accent on the XP send button`
 - PR #385 (2026-11-01) `fix(generation): report connection loss before a reply appears`
 - PR #386 (2026-11-01) `feat(sidebar): edit sections in place and remove buttons`
+- PR #388 (2026-11-01) `fix(nanogpt): honour declared reasoning effort support`
 
 ## v1.4.0
 
