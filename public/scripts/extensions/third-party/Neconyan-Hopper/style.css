@@ -604,11 +604,13 @@ body > #sheld[data-sbtw-mode='on'] ~ :where(*) :is(#ica--tracker-panel, #ica--tr
    button's left padding: 14.4px, which .sbtw-action-count matches inside a button. */
 .sbtw-action-group {
     display: inline-flex;
+    flex: 0 0 auto;
     align-items: center;
     gap: 0.2rem;
 }
 
 .sbtw-action-who {
+    flex: 0 0 auto;
     min-height: 0;
     padding: 0.3rem 0.3rem;
     border: none;
@@ -710,6 +712,7 @@ body > #sheld[data-sbtw-mode='on'] ~ :where(*) :is(#ica--tracker-panel, #ica--tr
 
 .sbtw-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
     margin-top: 0.5rem;
     max-width: 22rem;
@@ -717,6 +720,8 @@ body > #sheld[data-sbtw-mode='on'] ~ :where(*) :is(#ica--tracker-panel, #ica--tr
 
 .sbtw-action {
     display: inline-flex;
+    flex: 0 0 auto;
+    white-space: nowrap;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
@@ -801,6 +806,7 @@ body > #sheld[data-sbtw-mode='on'] ~ :where(*) :is(#ica--tracker-panel, #ica--tr
 
 .sbtw-reply-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.25rem;
     margin-top: 0.15rem;
 }
@@ -1032,6 +1038,7 @@ body > #sheld[data-sbtw-mode='on'] ~ :where(*) :is(#ica--tracker-panel, #ica--tr
 .sbtw-btn > i,
 .sbtw-action > i,
 .sbtw-delete > i {
+    flex-shrink: 0;
     width: 1em;
     line-height: 1;
     text-align: center;
@@ -1569,7 +1576,7 @@ body > #sheld[data-sbtw-mode='on'] ~ :where(*) :is(#ica--tracker-panel, #ica--tr
 
     .sbtw-actions,
     .sbtw-reply-actions {
-        gap: 1.5rem;
+        gap: 1.25rem 1.5rem;
     }
 
     .sbtw-action,
