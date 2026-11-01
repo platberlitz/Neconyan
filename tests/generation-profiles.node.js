@@ -18,6 +18,113 @@ const { createMacroEnvironment } = await import('../src/macros/index.js');
 const { readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
 const { hash } = await import('../src/mewmory/core.js');
 
+function nanoReasoningFixture(t, { metadata = false, preset = false, tier = 'default' } = {}) {
+    const fixture = textFixture(t);
+    const model = 'z-ai/glm-5.2:thinking';
+    const declaration = { source: 'nanogpt', model, reasoning_efforts: ['high', 'max'] };
+    Object.assign(fixture.profile, { id: 'nano', api: 'nanogpt', mode: 'cc', model, 'secret-id': 'nano-fixture-key',
+        'reasoning-effort': 'low', 'service-tier': tier });
+    Object.assign(fixture.settings, { _settingsRevision: 7, main_api: 'openai',
+        active_generation: { api: 'openai', source: 'nanogpt', model },
+        oai_settings: { chat_completion_source: 'nanogpt', nanogpt_model: model, reasoning_effort: 'low',
+            nanogpt_service_tier: tier, temp_openai: 1, top_p_openai: 1, n: 1,
+            ...(metadata ? { model_sampler_metadata: declaration } : {}) } });
+    fs.writeFileSync(path.join(fixture.root, 'secrets.json'), JSON.stringify({ api_key_nanogpt: [
+        { id: 'nano-fixture-key', value: 'nano-fixture-not-a-real-key', active: true },
+    ] }));
+    if (preset) {
+        fixture.directories.openAI_Settings = path.join(fixture.root, 'presets');
+        fs.mkdirSync(fixture.directories.openAI_Settings);
+        fixture.profile.preset = 'reasoning';
+        fs.writeFileSync(path.join(fixture.directories.openAI_Settings, 'reasoning.json'), JSON.stringify({
+            reasoning_effort: 'low', nanogpt_service_tier: tier,
+        }));
+    }
+    fixture.save();
+    return { ...fixture, model, declaration,
+        options: { context: { owner: 'tester', directories: fixture.directories }, messages: [{ role: 'user', content: 'Owned reasoning probe.' }], maxTokens: 128 } };
+}
+
+test('captured active NanoGPT declarations reject Low and retain deliberate final overrides without catalogue calls', async t => {
+    const fixture = nanoReasoningFixture(t, { metadata: true });
+    const binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 7 });
+    const before = fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8');
+    let calls = 0;
+    const options = { ...fixture.options, binding, fetch: async (_url, request) => {
+        calls++;
+        const payload = JSON.parse(request.body);
+        assert.equal(payload.reasoning.effort, 'high');
+        assert.equal(payload.model_sampler_metadata, undefined);
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'Declared reply.' } }] }));
+    } };
+    await assert.rejects(runChatProfile(options), /Low is not available.*High or Maximum/);
+    assert.equal(calls, 0);
+    assert.equal((await runChatProfile({ ...options, overridePayload: { reasoning_effort: 'high' } })).text, 'Declared reply.');
+    assert.equal(calls, 1);
+    assert.equal(resolveGenerationProfile(fixture.directories, binding).fingerprint, binding.fingerprint);
+    assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
+});
+
+test('already required NanoGPT tier catalogue transports its declaration through a saved preset', async t => {
+    const fixture = nanoReasoningFixture(t, { preset: true, tier: 'flex' });
+    const binding = captureChatProfile(fixture.directories, 'nano');
+    const before = fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8');
+    let catalogues = 0;
+    let generations = 0;
+    const options = { ...fixture.options, binding, fetch: async (url, request) => {
+        if (request.method === 'GET') {
+            catalogues++;
+            assert.match(String(url), /\/models/);
+            return new Response(JSON.stringify({ data: [{ id: fixture.model, reasoning_efforts: ['high', 'max'],
+                subscription: { included: false }, supported_service_tiers: ['flex'] }] }));
+        }
+        generations++;
+        assert.equal(JSON.parse(request.body).reasoning.effort, 'max');
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'Tier reply.' } }] }));
+    } };
+    await assert.rejects(runChatProfile(options), /Low is not available/);
+    assert.equal(catalogues, 1);
+    assert.equal(generations, 0);
+    assert.equal((await runChatProfile({ ...options, overridePayload: { reasoning_effort: 'max' } })).text, 'Tier reply.');
+    assert.equal(catalogues, 2, 'one existing tier catalogue lookup per request, with no extra reasoning lookup');
+    assert.equal(generations, 1);
+    assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
+    assert.equal(resolveGenerationProfile(fixture.directories, binding).fingerprint, binding.fingerprint);
+});
+
+test('prepared quiet NanoGPT requests retain explicit metadata and reject Low after recovery without fetching', async t => {
+    const fixture = nanoReasoningFixture(t);
+    const binding = captureChatProfile(fixture.directories, 'nano');
+    const before = fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8');
+    const job = acceptJob(fixture.directories, { owner: 'tester', type: 'test.profile', submissionKey: 'nano-prepared', intent: {} }).job;
+    const options = { ...fixture.options, binding, generationType: 'quiet',
+        overridePayload: { reasoning_effort: 'low', model_sampler_metadata: fixture.declaration },
+        jobContext: { directories: fixture.directories, job, signal: new AbortController().signal },
+        fetch: () => assert.fail('A known unsupported prepared request must not contact the provider') };
+    await assert.rejects(runChatProfile({ ...options, onProviderStep: () => { throw new Error('Owned stop before dispatch'); } }), /Owned stop/);
+    await assert.rejects(runChatProfile(options), /Low is not available/);
+    assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
+    assert.equal(resolveGenerationProfile(fixture.directories, binding).fingerprint, binding.fingerprint);
+});
+
+test('metadata-free default-tier quiet NanoGPT profiles retain legacy Low without adding catalogue requests', async t => {
+    const fixture = nanoReasoningFixture(t);
+    const binding = captureChatProfile(fixture.directories, 'nano');
+    let calls = 0;
+    const before = fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8');
+    const result = await runChatProfile({ ...fixture.options, binding, generationType: 'quiet', fetch: async (_url, request) => {
+        calls++;
+        assert.equal(String(request.method).toUpperCase(), 'POST');
+        const payload = JSON.parse(request.body);
+        assert.equal(payload.reasoning.effort, 'low');
+        assert.equal(payload.model_sampler_metadata, undefined);
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'Legacy reply.' } }] }));
+    } });
+    assert.equal(result.text, 'Legacy reply.');
+    assert.equal(calls, 1);
+    assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
+});
+
 test('acknowledged Kobold uses the saved endpoint and samplers exactly once', async t => {
     const fixture = textFixture(t);
     const previous = process.env.SILLYTAVERN_REQUESTOVERRIDES;

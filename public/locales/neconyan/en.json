@@ -1,4 +1,8 @@
 {
+  "scoped.nanogpt.reasoning.unavailable": "${0} (unavailable)",
+  "Reasoning Effort: ${0}, unavailable for this model. Choose ${1}.": "Reasoning Effort: ${0}, unavailable for this model. Choose ${1}.",
+  "This model supports ${0}. Choose one before sending.": "This model supports ${0}. Choose one before sending.",
+  "This model supports ${0}.": "This model supports ${0}.",
   "Selected theme": "Selected theme",
   "Filter themes by tone": "Filter themes by tone",
   "UI themes": "UI themes",

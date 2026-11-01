@@ -12,6 +12,7 @@ import { getLocalPromptCacheValue, isLikelyLocalServerUrl } from '../../../publi
 import { getLinkApiBaseUrl, getLinkApiRequestFormat } from '../../../public/scripts/linkapi-utils.js';
 import { applyGrokModelParameterConstraints, applyKimiK3ModelParameterConstraints, isKimiK3Model, filterChatCompletionSamplingParameters, zaiSupportsReasoningEffort } from '../../../public/scripts/openai-model-capabilities.js';
 import { applyGenerationRequestControls, requestUsesReasoning } from '../../../public/scripts/generation-request-controls.js';
+import { checkNanoGptReasoningEffort } from '../../../public/scripts/chat-request-controls.js';
 
 import {
     AIMLAPI_HEADERS,
@@ -2973,6 +2974,22 @@ export async function handleChatCompletionsGenerate(request, response) {
         // reasoning effort the frontend never validated, and the pass-through sources forward it
         // to the provider verbatim.
         applyReasoningEffortNormalization(request.body);
+        const reasoningSupport = checkNanoGptReasoningEffort({
+            source: request.body.chat_completion_source,
+            model: request.body.model,
+            metadata: request.body.model_sampler_metadata,
+            effort: request.body.reasoning_effort,
+        });
+        if (!reasoningSupport.supported) {
+            const labels = { none: 'None', min: 'Minimum', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra High', max: 'Maximum' };
+            const choices = reasoningSupport.supportedEfforts.map(value => labels[value]).join(' or ');
+            const selected = labels[request.body.reasoning_effort] ?? 'This reasoning level';
+            return response.status(400).json({ error: {
+                code: 'UNSUPPORTED_REASONING_EFFORT',
+                message: `${selected} is not available for this model. Choose ${choices} in Reasoning Effort, then try again.`,
+                supported_reasoning_efforts: reasoningSupport.supportedEfforts,
+            } });
+        }
         filterChatCompletionSamplingParameters(request.body, { stripMetadata: true });
 
         // Neconyan: apply Astra's reasoning-model request constraints before dispatch so

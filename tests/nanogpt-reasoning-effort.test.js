@@ -289,6 +289,71 @@ describe('outgoing chat completions', () => {
         expect(capturedHeaders).toEqual(originalHeaders);
     });
 
+    describe('NanoGPT declared reasoning levels', () => {
+        const model = 'z-ai/glm-5.2:thinking';
+        const metadata = { source: CHAT_COMPLETION_SOURCES.NANOGPT, model, reasoning_efforts: ['high', 'max'] };
+
+        test('rejects unsupported Low before adding the web-search suffix or contacting the provider', async () => {
+            const response = await makeRequest(CHAT_COMPLETION_SOURCES.NANOGPT, {
+                model, reasoning_effort: 'low', model_sampler_metadata: metadata, enable_web_search: true,
+            });
+            expect(response.status).toBe(400);
+            expect(await response.json()).toMatchObject({ error: { code: 'UNSUPPORTED_REASONING_EFFORT', message: expect.stringContaining('High') } });
+            expect(nodeFetchMock).not.toHaveBeenCalled();
+        });
+
+        test.each(['high', 'max'])('keeps declared %s and strips internal metadata from the native wire', async effort => {
+            const response = await makeRequest(CHAT_COMPLETION_SOURCES.NANOGPT, {
+                model, reasoning_effort: effort, model_sampler_metadata: metadata, enable_web_search: true,
+            });
+            expect(response.status).toBe(200);
+            expect(capturedBody.model).toBe(`${model}:online`);
+            expect(capturedBody.reasoning).toEqual({ effort });
+            expect(capturedBody).not.toHaveProperty('model_sampler_metadata');
+            expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+        });
+
+        test('requires the exact fingerprint of an explicitly selected online variant', async () => {
+            const response = await makeRequest(CHAT_COMPLETION_SOURCES.NANOGPT, {
+                model: `${model}:online`, reasoning_effort: 'low', model_sampler_metadata: metadata,
+            });
+            expect(response.status).toBe(200);
+            expect(capturedBody.reasoning).toEqual({ effort: 'low' });
+        });
+
+        test.each([
+            ['base variant', { ...metadata, model: 'z-ai/glm-5.2' }],
+            ['online variant', { ...metadata, model: `${model}:online` }],
+            ['another source', { ...metadata, source: CHAT_COMPLETION_SOURCES.OPENROUTER }],
+            ['empty declaration', { ...metadata, reasoning_efforts: [] }],
+            ['Auto and future only', { ...metadata, reasoning_efforts: ['auto', 'future-rung'] }],
+            ['malformed array', { ...metadata, reasoning_efforts: ['high', null] }],
+            ['missing metadata', undefined],
+        ])('retains legacy forwarding for %s', async (_name, declaration) => {
+            const response = await makeRequest(CHAT_COMPLETION_SOURCES.NANOGPT, {
+                model, reasoning_effort: 'low', model_sampler_metadata: declaration,
+            });
+            expect(response.status).toBe(200);
+            expect(capturedBody.reasoning).toEqual({ effort: 'low' });
+            expect(capturedBody).not.toHaveProperty('model_sampler_metadata');
+        });
+
+        test.each([undefined, '', 'auto'])('preserves omitted/legacy Auto effort %p with a known declaration', async effort => {
+            expect((await makeRequest(CHAT_COMPLETION_SOURCES.NANOGPT, {
+                model, reasoning_effort: effort, model_sampler_metadata: metadata,
+            })).status).toBe(200);
+            expect(capturedBody).not.toHaveProperty('reasoning');
+        });
+
+        test.each([['min', 'minimal'], ['none', 'none'], ['FutureRung', 'FutureRung']])('admits explicitly declared %s without changing its wire semantics', async (effort, wire) => {
+            expect((await makeRequest(CHAT_COMPLETION_SOURCES.NANOGPT, {
+                model, reasoning_effort: effort,
+                model_sampler_metadata: { ...metadata, reasoning_efforts: ['high', 'minimal', 'none', 'FutureRung'] },
+            })).status).toBe(200);
+            expect(capturedBody.reasoning).toEqual({ effort: wire });
+        });
+    });
+
     // NanoGPT documents none < minimal < low < medium < high < xhigh, and some models accept
     // max. Everything but min is spelled the same here, so it goes out untouched instead of
     // being shifted a rung down. min is the only name NanoGPT does not have, so it takes the

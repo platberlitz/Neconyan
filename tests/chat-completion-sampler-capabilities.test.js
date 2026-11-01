@@ -1,4 +1,5 @@
 import { describe, expect, test } from '@jest/globals';
+import { checkNanoGptReasoningEffort, getNanoGptReasoningCapabilities, resolveChatReasoningEffort } from '../public/scripts/chat-request-controls.js';
 
 import {
     buildChatCompletionSamplerMetadata,
@@ -22,6 +23,75 @@ const allSamplers = {
 function supported(source, model, metadata) {
     return getChatCompletionSamplerCapabilities({ source, model, metadata }).supported;
 }
+
+describe('NanoGPT declared reasoning capabilities', () => {
+    const model = 'z-ai/glm-5.2:thinking';
+    const metadata = { source: 'nanogpt', model, reasoning_efforts: ['high', 'max'] };
+    const check = (effort, declaration = metadata, identity = {}) => checkNanoGptReasoningEffort({ source: 'nanogpt', model, metadata: declaration, effort, ...identity });
+
+    test('retains the bound raw declaration without changing sampler metadata policy', () => {
+        const record = { reasoning_efforts: ['High', 'max'], supported_parameters: ['temperature'] };
+        const built = buildChatCompletionSamplerMetadata('nanogpt', model, record);
+        expect(built.reasoning_efforts).toEqual(['High', 'max']);
+        expect(built.reasoning_efforts).not.toBe(record.reasoning_efforts);
+        expect(supported('nanogpt', model, built)).toEqual(['temperature']);
+        expect(buildChatCompletionSamplerMetadata('nanogpt', model, { reasoning_efforts: 'high' }).reasoning_efforts).toBe('high');
+        expect(buildChatCompletionSamplerMetadata('openrouter', model, record)).not.toHaveProperty('reasoning_efforts');
+    });
+
+    test('marks known unsupported choices without changing the saved input or display resolver', () => {
+        const settings = { chat_completion_source: 'nanogpt', reasoning_effort: 'low' };
+        expect(check('low')).toMatchObject({ known: true, supported: false, supportedEfforts: ['high', 'max'] });
+        expect(resolveChatReasoningEffort(settings, model, [{ id: model, reasoning_efforts: ['high', 'max'] }])).toBe('low');
+        expect(settings.reasoning_effort).toBe('low');
+        expect(check(' HIGH ').supported).toBe(true);
+        expect(check('max').supported).toBe(true);
+        expect(check('none').supported).toBe(false);
+    });
+
+    test.each([
+        ['absent', undefined], ['null', null], ['array metadata', []],
+        ['missing declaration', { source: 'nanogpt', model }],
+        ['wrong source', { ...metadata, source: 'openrouter' }],
+        ['base variant', { ...metadata, model: 'z-ai/glm-5.2' }],
+        ['online variant', { ...metadata, model: `${model}:online` }],
+        ['string declaration', { ...metadata, reasoning_efforts: 'high,max' }],
+        ['mixed malformed array', { ...metadata, reasoning_efforts: ['high', null] }],
+        ['empty declaration', { ...metadata, reasoning_efforts: [] }],
+        ['blanks', { ...metadata, reasoning_efforts: [' ', ''] }],
+        ['Auto only', { ...metadata, reasoning_efforts: ['auto'] }],
+        ['future only', { ...metadata, reasoning_efforts: ['FutureRung', 'auto'] }],
+    ])('keeps compatibility for %s', (_name, declaration) => {
+        expect(checkNanoGptReasoningEffort({ source: 'nanogpt', model, metadata: declaration, effort: 'low' })).toMatchObject({ known: false, supported: true });
+    });
+
+    test('does not borrow a native declaration for another source or incomplete model identity', () => {
+        expect(check('low', metadata, { source: 'custom' })).toMatchObject({ known: false, supported: true });
+        expect(check('low', { source: 'nanogpt', reasoning_efforts: ['high'] }, { model: undefined }).known).toBe(false);
+    });
+
+    test.each([undefined, null, '', ' ', 'auto', ' AUTO '])('preserves legacy omission %p', effort => {
+        expect(check(effort).supported).toBe(true);
+    });
+
+    test('recognises Minimum aliases, explicit None and exact opaque mixed values without mutation', () => {
+        const declaration = Object.freeze({ source: 'nanogpt', model,
+            reasoning_efforts: Object.freeze(['minimal', ' None ', 'HIGH', 'FutureRung', 'high']) });
+        expect(getNanoGptReasoningCapabilities({ source: 'nanogpt', model, metadata: declaration })).toEqual({
+            known: true, declaredEfforts: ['min', 'none', 'high', 'FutureRung'], supportedEfforts: ['none', 'min', 'high'],
+        });
+        for (const effort of ['min', 'MINIMAL', 'none', 'FutureRung']) expect(check(effort, declaration).supported).toBe(true);
+        expect(check('futurerung', declaration).supported).toBe(false);
+        expect(declaration.reasoning_efforts).toEqual(['minimal', ' None ', 'HIGH', 'FutureRung', 'high']);
+    });
+
+    test('preserves ElectronHub omission semantics independently of NanoGPT enforcement', () => {
+        const settings = { chat_completion_source: 'electronhub', reasoning_effort: 'low' };
+        expect(resolveChatReasoningEffort(settings, model, [{ id: model, metadata: { supported_reasoning_efforts: ['low'] } }])).toBe('low');
+        expect(resolveChatReasoningEffort(settings, model, [{ id: model, metadata: { supported_reasoning_efforts: ['high'] } }])).toBeUndefined();
+        expect(resolveChatReasoningEffort(settings, model, [{ id: model }])).toBeUndefined();
+    });
+});
 
 describe('Chat Completion sampler capabilities', () => {
     test('uses conservative source defaults and independent Typical P support', () => {

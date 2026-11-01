@@ -20624,6 +20624,10 @@ function bindReasoningEffortSelect(select) {
 
     select.addEventListener('input', () => updateReasoningEffortButton());
     select.addEventListener('change', () => updateReasoningEffortButton());
+    select.addEventListener('neconyan-reasoning-availability-changed', () => {
+        closeReasoningEffortPicker({ restoreFocus: true });
+        updateReasoningEffortButton();
+    });
     select.dataset.sbReasoningBound = 'true';
 }
 
@@ -20644,17 +20648,18 @@ function updateReasoningEffortButton() {
 
     bindReasoningEffortSelect(select);
     const fullLabel = select.selectedOptions[0]?.textContent?.trim() || select.value;
-    const title = `${t`Reasoning Effort`}: ${fullLabel}`;
+    const unavailable = select.dataset.reasoningUnavailable === 'true';
+    const title = select.dataset.reasoningTitle || `${t`Reasoning Effort`}: ${fullLabel}`;
     button.title = title;
     button.setAttribute('aria-label', title);
     button.dataset.effort = select.value;
-    button.innerHTML = '<i class="fa-solid fa-brain" aria-hidden="true"></i><span></span>';
+    button.innerHTML = `<i class="fa-solid ${unavailable ? 'fa-triangle-exclamation' : 'fa-brain'}" aria-hidden="true"></i><span></span>`;
     button.querySelector('span').textContent = getReasoningEffortShortLabel(select.value);
 }
 
 function setReasoningEffort(value) {
     const select = getReasoningEffortSelect();
-    if (!select || select.value === value) {
+    if (!select || select.value === value || !Array.from(select.options).some(option => option.value === value && !option.disabled && !option.hidden)) {
         return;
     }
 
@@ -20687,14 +20692,17 @@ function openReasoningEffortPicker() {
         attrs: { role: 'listbox', 'aria-label': t`Reasoning Effort` },
     });
     for (const option of Array.from(select.options)) {
+        if (option.disabled || option.hidden) continue;
         const isActive = option.value === select.value;
         const item = createElement('button', {
             className: `sb-persona-option${isActive ? ' is-active' : ''}`,
-            attrs: { type: 'button', role: 'option', 'aria-selected': String(isActive) },
+            attrs: { type: 'button', role: 'option', 'aria-selected': String(isActive), 'aria-disabled': String(option.disabled) },
         });
+        item.disabled = option.disabled;
         item.innerHTML = `<i class="fa-solid ${isActive ? 'fa-check' : 'fa-brain'} fa-fw" aria-hidden="true"></i><span class="sb-persona-option-name"></span>`;
         item.querySelector('span').textContent = option.textContent?.trim() || option.value;
         item.addEventListener('click', () => {
+            if (option.disabled || option.hidden) return;
             setReasoningEffort(option.value);
             closeReasoningEffortPicker({ restoreFocus: true });
         });
@@ -20706,7 +20714,8 @@ function openReasoningEffortPicker() {
             closeReasoningEffortPicker({ restoreFocus: true });
         } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault();
-            const items = Array.from(picker.querySelectorAll('.sb-persona-option'));
+            const items = Array.from(picker.querySelectorAll('.sb-persona-option:not(:disabled)'));
+            if (!items.length) return;
             const index = items.indexOf(document.activeElement);
             const step = event.key === 'ArrowDown' ? 1 : -1;
             items[(index + step + items.length) % items.length]?.focus({ preventScroll: true });
@@ -20716,7 +20725,7 @@ function openReasoningEffortPicker() {
     document.body.appendChild(picker);
     button.setAttribute('aria-expanded', 'true');
     positionPersonaPicker(picker, button);
-    (picker.querySelector('.is-active') ?? picker.querySelector('button'))?.focus({ preventScroll: true });
+    (picker.querySelector('.is-active:not(:disabled)') ?? picker.querySelector('button:not(:disabled)'))?.focus({ preventScroll: true });
 }
 
 function closeReasoningEffortPicker({ restoreFocus = false } = {}) {
