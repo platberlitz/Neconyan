@@ -363,7 +363,7 @@ body.neconyan:not(.sbterm) #sheld[data-sb-conversation-mode='on'] #sb_conversati
 body.neconyan.neconyan-home-visible:not(.sbterm) #neconyan-home-host {
     background-color: transparent !important;
 }
-body.neconyan:not(.sbterm) :is(.sb-shell-root.openDrawer, #right-nav-panel.openDrawer) {
+body.neconyan:not(.sbterm) .sb-shell-root:where(.openDrawer):not(#right-nav-panel) {
     background-color: transparent !important;
 }
 body.neconyan:not(.sbterm) #right-nav-panel > :is(.scrollableInner, .scrollableInnerFull) {
@@ -495,7 +495,6 @@ body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.ch
 body.neconyan:not(.sbterm) #right-nav-panel.openDrawer > .sb-character-shell-header.neconyan-cat-panel {
     display: flex;
     flex: 0 0 auto;
-    height: auto;
     flex-direction: row;
     align-items: center;
     justify-content: flex-start;

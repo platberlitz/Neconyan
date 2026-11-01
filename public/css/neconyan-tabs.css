@@ -6972,10 +6972,6 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     align-items: center;
 }
 
-.neconyan-character-library > .neconyan-native-library-copy {
-    grid-row: span 2;
-}
-
 .neconyan-lorebook-library {
     margin-inline: 0;
     border-radius: var(--sb-radius-md, 12px);
@@ -7098,9 +7094,6 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
         grid-template-columns: 1fr;
     }
 
-    .neconyan-character-library > .neconyan-native-library-copy {
-        grid-row: auto;
-    }
 }
 
 @media (max-width: 620px) {
@@ -7164,22 +7157,6 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 
 #right-nav-panel .neconyan-character-library[hidden] {
     display: none;
-}
-
-#right-nav-panel .neconyan-character-library .neconyan-character-native-nav {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-start;
-    gap: 6px;
-    width: 100%;
-    padding: 0;
-    border: 0;
-    overflow: visible;
-}
-
-#right-nav-panel .neconyan-character-library .neconyan-character-native-nav .sb-shell-tab {
-    min-height: 40px;
-    flex: 0 1 auto;
 }
 
 #right-nav-panel .neconyan-character-library > #charListFixedTop {
@@ -7349,9 +7326,6 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
         min-height: var(--sb-mobile-touch-target, 44px);
     }
 
-    #right-nav-panel .neconyan-character-library .neconyan-character-native-nav .sb-shell-tab {
-        flex: 1 1 calc(50% - 6px);
-    }
 }
 
 @media screen and (min-width: 769px) {

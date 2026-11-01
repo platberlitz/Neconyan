@@ -90,6 +90,7 @@
 :root[data-sb-theme='windows-xp'][data-neconyan-ui-theme='windows-xp-olive-green'] body.neconyan:not(.sbterm) {
     --xp-hue: #6b7f3e;
     --xp-caption: linear-gradient(180deg, #c9d6a3 0, #93a663 8%, #7a8e4b 40%, #6d8142 88%, #61733a 96%, #4f5f2e 100%);
+    --xp-olive-caption-text-bg: #4f5f2e;
     --xp-caption-ink: #fff;
     --xp-frame: #6d8142;
     --xp-select: #6f8246;
@@ -346,6 +347,36 @@
 :root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) .sb-shell-header :is(.sb-shell-title, .sb-shell-kicker, .sb-shell-subtitle, .sb-shell-description, .neconyan-tool-page-description, h1, h2, h3, i):not(:is(.menu_button, .sb-shell-close) *) {
     color: var(--xp-caption-ink);
     text-shadow: none;
+}
+
+@media (min-width: 769px) {
+    /* The character workspace has a direct header, not an XP frame. */
+    :root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) #right-nav-panel.openDrawer > .sb-character-shell-header.neconyan-cat-panel {
+        background: var(--xp-caption);
+        color: var(--xp-caption-ink);
+        border-color: var(--xp-frame);
+        border-radius: 7px 7px 0 0;
+    }
+
+    :root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) #right-nav-panel.openDrawer > .sb-character-shell-header :is(.sb-shell-title, .sb-shell-subtitle, .sb-shell-description, .sb-shell-subtitle a, .sb-shell-description a) {
+        color: var(--xp-caption-ink);
+    }
+
+    :root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) #right-nav-panel.openDrawer > .sb-character-shell-header #sb_character_dock_toggle i {
+        color: inherit;
+    }
+
+    :root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='characters'], [data-menu-type='world-info']) > .sb-character-shell-header > .sb-shell-subtitle {
+        opacity: 1;
+    }
+
+    :root[data-sb-theme='windows-xp'][data-neconyan-accent='custom']:not([data-neconyan-ui-theme='windows-xp-blue'], [data-neconyan-ui-theme='windows-xp-olive-green'], [data-neconyan-ui-theme='windows-xp-silver'], [data-neconyan-ui-theme='windows-xp-royale'], [data-neconyan-ui-theme='windows-xp-zune'], [data-neconyan-ui-theme='windows-xp-royale-noir']) body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='characters'], [data-menu-type='world-info']) > .sb-character-shell-header.neconyan-cat-panel {
+        background: linear-gradient(var(--xp-deep), var(--xp-deep)) 0 6px / 100% calc(100% - 12px) no-repeat, var(--xp-caption);
+    }
+
+    :root[data-sb-theme='windows-xp'][data-neconyan-ui-theme='windows-xp-olive-green'] body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='characters'], [data-menu-type='world-info']) > .sb-character-shell-header.neconyan-cat-panel {
+        background: linear-gradient(var(--xp-olive-caption-text-bg), var(--xp-olive-caption-text-bg)) 0 6px / 100% calc(100% - 12px) no-repeat, var(--xp-caption);
+    }
 }
 
 :root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header .sb-shell-description {

@@ -210,6 +210,12 @@
     -webkit-backdrop-filter: blur(14px);
 }
 
+@media (min-width: 769px) {
+    :root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='characters'], [data-menu-type='world-info']) {
+        background: linear-gradient(var(--neco-rail), var(--neco-rail)), var(--neco-surface) !important;
+    }
+}
+
 :root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) :is(.sb-shell-frame, .sb-shell-main, .sb-shell-nav, .sb-character-shell-nav, .sb-shell-header) {
     background: transparent;
 }
