@@ -321,6 +321,7 @@ body.neconyan .popup .swipe_picker_hint {
 }
 
 @media (hover: hover) {
+    body.neconyan #sb-bottom-chat-picker-button:hover { border-color: var(--neco-ginger); }
     .swipe_picker_block:not([highlight]):hover {
         background: var(--neco-raised, var(--white30a));
     }
@@ -328,6 +329,13 @@ body.neconyan .popup .swipe_picker_hint {
     .swipe_picker_action:hover {
         border-color: var(--neco-ginger);
         color: var(--neco-ink);
+    }
+
+    body.neconyan .sb-chat-picker button.sb-chat-picker-row:hover,
+    body.neconyan .sb-chat-picker button.sb-chat-picker-close:hover,
+    body.neconyan .sb-chat-picker button.sb-chat-picker-retry:hover {
+        background: color-mix(in srgb, var(--neco-ginger) 10%, var(--neco-surface));
+        border-color: var(--neco-ginger);
     }
 }
 
@@ -564,3 +572,88 @@ body.neconyan dialog.language-choice-popup .popup-button-ok {
 /* The line under a button is small description text in the emphasis colour, which every bundled theme keeps readable. */
 #prompt-media-review .prompt-media-note { font-size: smaller; color: var(--SmartThemeEmColor); }
 #prompt-media-review [hidden] { display: none; }
+/* Chat browser: a separate scroll layer above the compact composer. */
+body.neconyan #sb-bottom-chat-bar #sb-bottom-chat-select[hidden] { display: none; }
+body.neconyan #sb-bottom-chat-picker-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    color: var(--neco-ink);
+    background: var(--neco-surface);
+    border-color: color-mix(in srgb, var(--neco-ginger) 35%, var(--neco-border));
+}
+body.neconyan #sb-bottom-chat-picker-button[aria-expanded="true"] { border-color: var(--neco-ginger); }
+.sb-bottom-chat-picker-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+body.neconyan .sb-chat-picker {
+    position: fixed;
+    z-index: calc(var(--sb-z-popout, 4000) + 10);
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    overflow: hidden;
+    padding: 12px;
+    gap: 10px;
+    border: 1px solid var(--neco-border);
+    border-radius: 16px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    box-shadow: 0 12px 32px color-mix(in srgb, var(--neco-canvas) 65%, transparent);
+    text-align: start;
+}
+.sb-chat-picker-header { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.sb-chat-picker-titles { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 3px; }
+body.neconyan .sb-chat-picker-title { font-size: 1rem; color: var(--neco-ink); }
+.sb-chat-picker-owner { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sb-chat-picker-owner, .sb-chat-picker-count { font-size: 0.75rem; color: var(--neco-muted); }
+body.neconyan .sb-chat-picker .sb-chat-picker-search {
+    box-sizing: border-box;
+    flex-shrink: 0;
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+    padding: 8px 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 9px;
+    color: var(--neco-ink);
+    background: var(--neco-canvas);
+    font: inherit;
+    font-size: max(1rem, 16px);
+}
+.sb-chat-picker-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
+body.neconyan .sb-chat-picker button {
+    font: inherit;
+    color: var(--neco-ink);
+    background: var(--neco-surface);
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 35%, var(--neco-border));
+    border-radius: 9px;
+    min-height: 44px;
+    cursor: pointer;
+}
+body.neconyan .sb-chat-picker .sb-chat-picker-row {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0 0 6px;
+    padding: 11px 12px;
+    text-align: start;
+    white-space: normal;
+}
+body.neconyan .sb-chat-picker .is-current {
+    background: color-mix(in srgb, var(--neco-ginger) 10%, var(--neco-surface));
+    border-color: var(--neco-ginger);
+}
+body.neconyan .sb-chat-picker .is-current { box-shadow: inset 3px 0 var(--neco-ginger); }
+.sb-chat-picker-row-heading { display: flex; align-items: start; gap: 8px; width: 100%; }
+.sb-chat-picker-row-title { min-width: 0; flex: 1; font-weight: 700; font-size: 0.875rem; line-height: 1.35; overflow-wrap: anywhere; }
+.sb-chat-picker-current { flex-shrink: 0; font-size: 0.6875rem; font-weight: 700; padding: 3px 6px; border-radius: 5px; background: var(--neco-surface); }
+.sb-chat-picker-row-meta, .sb-chat-picker-row-preview { color: var(--neco-muted); font-size: 0.75rem; line-height: 1.4; }
+.sb-chat-picker-row-meta { font-variant-numeric: tabular-nums; }
+.sb-chat-picker-row-preview { width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+body.neconyan .sb-chat-picker .sb-chat-picker-close,
+body.neconyan .sb-chat-picker .sb-chat-picker-retry { flex-shrink: 0; padding: 8px 12px; font-size: 0.8125rem; }
+body.neconyan .sb-chat-picker :is(button, input):focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: -2px; }
+.sb-chat-picker-status { margin: 0; font-size: 0.8125rem; color: var(--neco-muted); }
+body.neconyan .sb-chat-picker [hidden] { display: none; }

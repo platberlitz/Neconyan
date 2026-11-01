@@ -3453,7 +3453,7 @@ body.neconyan #right-nav-panel .neconyan-character-library-footer > .neconyan-ch
 body.neconyan #neconyan-home-skeleton { margin-inline: auto; max-width: none; }
 
 /* The chat-name pill: a roomier line box so text selection is not clipped by the pill. */
-body.neconyan #sb-bottom-chat-select { padding-block: 6px; line-height: 1.25; }
+body.neconyan #sb-bottom-chat-picker-button { padding-block: 6px; line-height: 1.25; }
 
 /* Rounded, paw-friendly corners for every bottom bar control. */
 body.neconyan #sb-bottom-chat-bar button { border-radius: 12px; }
