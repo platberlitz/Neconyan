@@ -53,7 +53,7 @@ async function expectXPCaption(page) {
     expect(caption.pinIcon).toBe(caption.pin);
 }
 
-async function expectDesktopChrome(page, tab) {
+async function expectDesktopChrome(page, tab, state) {
     await expect(page.locator('#right-nav-panel > .sb-character-shell-header > .sb-shell-title')).toBeVisible();
     await expect(page.locator('#right-nav-panel > .sb-character-shell-header > .sb-shell-subtitle')).toBeVisible();
     const geometry = await page.locator('#right-nav-panel').evaluate(root => {
@@ -96,11 +96,23 @@ async function expectDesktopChrome(page, tab) {
     expect(geometry.subtitleWeight).toBe('400');
     expect(geometry.title.box.right).toBeLessThanOrEqual(geometry.pin.box.left);
     expect(geometry.subtitle.box.right).toBeLessThanOrEqual(geometry.pin.box.left);
+    const label = `${tab}/${state}`;
+    const textCentre = (Math.min(geometry.title.box.top, geometry.subtitle.box.top)
+        + Math.max(geometry.title.box.bottom, geometry.subtitle.box.bottom)) / 2;
+    const headerCentre = (geometry.header.box.top + geometry.header.box.bottom) / 2;
+    const centre = control => (control.box.top + control.box.bottom) / 2;
     for (const control of [geometry.pin, geometry.close]) {
-        expect(control.box.width).toBe(44);
-        expect(control.box.height).toBe(44);
-        expect(control.box.top - geometry.header.box.top).toBe(4);
+        expect(control.box.width, label).toBe(44);
+        expect(control.box.height, label).toBe(44);
+        expect(Math.abs(centre(control) - textCentre), `${label} text centre`).toBeLessThanOrEqual(1);
+        expect(Math.abs(centre(control) - headerCentre), `${label} header centre`).toBeLessThanOrEqual(1);
+        expect(control.box.top, label).toBeGreaterThanOrEqual(geometry.header.box.top);
+        expect(control.box.bottom, label).toBeLessThanOrEqual(geometry.header.box.bottom);
+        expect(control.box.left, label).toBeGreaterThanOrEqual(geometry.header.box.left);
+        expect(control.box.right, label).toBeLessThanOrEqual(geometry.header.box.right);
     }
+    expect(Math.abs(centre(geometry.pin) - centre(geometry.close)), `${label} control centres`).toBeLessThanOrEqual(0.5);
+    expect(geometry.pin.box.right, `${label} control separation`).toBeLessThanOrEqual(geometry.close.box.left);
     expect(geometry.pinHit).toBe(true);
     expect(geometry.closeHit).toBe(true);
     if (tab === 'characters') {
@@ -110,6 +122,7 @@ async function expectDesktopChrome(page, tab) {
         expect(geometry.nav.display).toBe('none');
         expect(Math.abs(geometry.header.box.top - geometry.root.box.top)).toBeLessThanOrEqual(1);
     }
+    return geometry;
 }
 
 async function expectPaintCoversUnderlay(page) {
@@ -193,7 +206,7 @@ for (const phone of [false, true]) {
                 const close = panel.locator('#sb_character_shell_close');
                 await expect(close).toBeVisible();
                 await expect(close).toHaveAccessibleName(/close/i);
-                if (!phone) await expectDesktopChrome(page, tab);
+                if (!phone) await expectDesktopChrome(page, tab, style);
                 if (!phone && style === 'windows-xp') await expectXPCaption(page);
                 if (checkUnderlay) await expectPaintCoversUnderlay(page);
             }
@@ -232,8 +245,9 @@ test('desktop library captions fit expanded, collapsed and pinned panels', async
             }
             await page.evaluate(() => new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))));
             await page.evaluate(() => window.toastr?.remove());
-            await expectDesktopChrome(page, tab);
+            const geometry = await expectDesktopChrome(page, tab, state);
             if (state === 'pinned') {
+                if (tab === 'world-info') expect(geometry.subtitle.box.height, 'Pinned Lorebooks help wraps').toBeGreaterThan(18);
                 const chat = page.locator('#sheld');
                 await expect(chat).toBeVisible();
                 const chatBox = await chat.boundingBox();

@@ -3004,8 +3004,8 @@ body.neconyan #right-nav-panel.neconyan-character-workspace .neconyan-character-
                 font-size: calc(var(--mainFontSize) * 1.12);
             }
             > .sb-shell-subtitle { font-size: 12px; line-height: 18px; }
-            > .sb-shell-close { inset: 4px 18px auto auto; }
-            > #sb_character_dock_toggle { inset: 4px 72px auto auto; }
+            > .sb-shell-close { inset: calc(50% - 22px) 18px auto auto; }
+            > #sb_character_dock_toggle { inset: calc(50% - 22px) 72px auto auto; }
         }
     }
 }
