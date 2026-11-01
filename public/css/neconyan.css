@@ -271,7 +271,8 @@ body.neconyan #neconyan-workspace-rail button:focus-visible { outline: 2px solid
 body.neconyan .neconyan-rail-button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 body.neconyan .neconyan-rail-modes-label { margin-top: 14px; }
 body.neconyan .neconyan-rail-advanced { margin-top: 14px; }
-body.neconyan .neconyan-rail-grip { display: none; }
+body.neconyan :is(.neconyan-rail-grip, .neconyan-rail-remove),
+body.neconyan #neconyan-workspace-rail :not(.neconyan-rail-reordering) > [data-neconyan-rail-removed] { display: none; }
 body.neconyan .neconyan-rail-reordering .neconyan-rail-grip {
     display: flex; align-items: center; justify-content: center; flex: 0 0 44px; height: 44px;
     margin: -7px -10px -7px auto; cursor: grab; touch-action: none;

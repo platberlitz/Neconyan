@@ -188,7 +188,7 @@ describe('Neconyan workspace rail behavior', () => {
     });
 
     test('turning reordering off preserves orders and reset preserves the enabled setting', () => {
-        const state = { enabled: true, primary: ['model', 'home'], advanced: ['sampling', 'presets'], modes: ['story', 'roleplay'] };
+        const state = { enabled: true, primary: ['model', 'home'], advanced: ['sampling', 'presets'], modes: ['story', 'roleplay'], removed: ['lorebooks'] };
         const saved = [];
         const context = vm.createContext({
             neconyanRailOrder: state,
@@ -200,10 +200,29 @@ describe('Neconyan workspace rail behavior', () => {
         expect(saved[0]).toEqual({ ...state, enabled: false });
         expect(state.primary).toEqual(['model', 'home']);
         context.resetNeconyanRailOrder();
-        expect(state).toEqual({ enabled: false, primary: [], advanced: [], modes: [] });
+        expect(state).toEqual({ enabled: false, primary: [], advanced: [], modes: [], removed: [] });
         context.setNeconyanRailReordering(true);
         context.resetNeconyanRailOrder();
         expect(state.enabled).toBe(true);
+    });
+
+    test('removing a sidebar button records it once, adding it back clears it, and unknown ids are ignored', () => {
+        const state = { enabled: true, primary: [], removed: ['lorebooks'] };
+        const saved = [];
+        const context = vm.createContext({
+            neconyanRailOrder: state,
+            neconyanRailButtons: new Map([['lorebooks', {}], ['notes', {}]]),
+            applyNeconyanRailOrder() {}, saveNeconyanRailOrder: () => saved.push(structuredClone(state.removed)),
+        });
+        vm.runInContext(getWelcomeFunctionSource('setNeconyanRailButtonRemoved'), context);
+        context.setNeconyanRailButtonRemoved('notes', true);
+        context.setNeconyanRailButtonRemoved('notes', true);
+        expect(state.removed).toEqual(['lorebooks', 'notes']);
+        context.setNeconyanRailButtonRemoved('lorebooks', false);
+        expect(state.removed).toEqual(['notes']);
+        context.setNeconyanRailButtonRemoved('missing', true);
+        expect(state.removed).toEqual(['notes']);
+        expect(saved).toEqual([['lorebooks', 'notes'], ['lorebooks', 'notes'], ['notes']]);
     });
 
     test('closes the phone drawer after rail button taps even when the rail is built after the bindings', () => {

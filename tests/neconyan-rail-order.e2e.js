@@ -18,6 +18,9 @@ const order = (page, name) => page.locator(`${selector(name)} > button`).evaluat
 async function ready(page) {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+    // The intercepted settings carry no Quick Image Gen cache id, so its legacy import prompt can cover the page.
+    const legacy = page.locator('dialog.popup[open]').filter({ hasText: 'Quick Image Gen found legacy browser-only settings' });
+    await legacy.waitFor({ state: 'visible', timeout: 3000 }).then(() => legacy.getByRole('button', { name: 'Cancel', exact: true }).click(), () => {});
     // Tour progress saves are intercepted below, so a fresh preview offers the tour on every load.
     const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
     await skip.waitFor({ state: 'visible', timeout: 3000 }).then(() => skip.click(), () => {});
@@ -231,9 +234,13 @@ for (const phone of [false, true]) {
             const state = await storeOrder(page, { enabled: false, appearance: [...groups.appearance, ...groups.finer], finer: [] });
             await ready(page);
             await rail(page, phone);
-            const toggle = page.locator('[data-neconyan-rail-reorder-toggle]');
+            const toggle = page.locator('[data-neconyan-rail-reorder-toggle="primary"]');
             const bar = page.locator('[data-neconyan-rail-reorder-bar]');
             const troubleshooting = page.locator('section:has(> [data-neconyan-finer-nav])');
+            // Every section that holds sidebar buttons has its own pen.
+            expect(await page.locator('[data-neconyan-rail-reorder-toggle]').evaluateAll(pens => pens.map(pen => pen.dataset.neconyanRailReorderToggle)))
+                .toEqual(Object.keys(groups));
+            await expect(toggle).toHaveAttribute('aria-label', 'Edit sidebar');
             await expect(toggle).toBeVisible();
             await expect(toggle).toHaveAttribute('aria-pressed', 'false');
             await expect(bar).toBeHidden();
@@ -297,6 +304,97 @@ for (const phone of [false, true]) {
             for (const [name, defaults] of Object.entries(groups)) expect(await order(page, name)).toEqual(defaults);
             await expect(bar).toBeVisible();
             await expect.poll(() => JSON.parse(state.stored).lore).toEqual(groups.lore);
+            expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(phone ? 394 : 1281);
+            await page.unrouteAll({ behavior: 'ignoreErrors' });
+        });
+
+        test('pens on every section, remove with X, add back and Restore defaults', async ({ page }, info) => {
+            test.setTimeout(180000);
+            const state = await storeOrder(page, { enabled: false });
+            await ready(page);
+            await rail(page, phone);
+            const bar = page.locator('[data-neconyan-rail-reorder-bar]');
+            const status = page.locator('#neconyan-workspace-rail > [role="status"]');
+            const route = id => page.locator(`#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-route="${id}"]`);
+            const lorebooks = route('lorebooks');
+            await expect(lorebooks.locator('.neconyan-rail-remove')).toBeHidden();
+
+            // A pen on a collapsed section opens it and starts editing.
+            const lore = page.locator('[data-neconyan-section-toggle="lore"]');
+            await lore.evaluate(toggle => toggle.getAttribute('aria-expanded') === 'true' && toggle.click());
+            await expect(page.locator('[data-neconyan-lore-nav]')).toBeHidden();
+            const lorePen = page.locator('[data-neconyan-rail-reorder-toggle="lore"]');
+            await lorePen.scrollIntoViewIfNeeded();
+            const penTop = (await lorePen.boundingBox()).y;
+            await lorePen.click();
+            await expect(bar).toBeVisible();
+            await expect(lore).toHaveAttribute('aria-expanded', 'true');
+            await expect(page.locator('[data-neconyan-rail-reorder-toggle]')).toHaveCount(6);
+            for (const pen of await page.locator('[data-neconyan-rail-reorder-toggle]').all()) await expect(pen).toHaveAttribute('aria-pressed', 'true');
+            // The bar appears above the list without pushing the pressed pen away.
+            expect(Math.abs((await lorePen.boundingBox()).y - penTop)).toBeLessThanOrEqual(2);
+            await expect(bar.locator('.neconyan-rail-reorder-reset')).toHaveText('Restore defaults');
+            await expect(bar.locator('p')).toHaveText('Drag the grips to move buttons, even into another section. Press X to remove one.');
+
+            // Remove Lorebooks with its X. The drawer stays open on phones and nothing navigates.
+            await lorebooks.scrollIntoViewIfNeeded();
+            const remove = lorebooks.locator('.neconyan-rail-remove');
+            await expect(remove).toBeVisible();
+            const removeBox = await remove.boundingBox();
+            expect(removeBox.width).toBeGreaterThanOrEqual(44);
+            expect(removeBox.height).toBeGreaterThanOrEqual(44);
+            const gripBox = await lorebooks.locator('.neconyan-rail-grip').boundingBox();
+            expect(removeBox.x + removeBox.width).toBeLessThanOrEqual(gripBox.x + 1);
+            const lorebooksBox = await lorebooks.boundingBox();
+            expect(gripBox.x + gripBox.width).toBeLessThanOrEqual(lorebooksBox.x + lorebooksBox.width + 1);
+            await remove.click();
+            await expect(lorebooks).toHaveAttribute('data-neconyan-rail-removed', '');
+            await expect(remove).toHaveClass(/fa-plus/);
+            await expect(lorebooks).toBeVisible();
+            await expect(status).toHaveText('Lorebooks removed from the sidebar.');
+            await expect.poll(() => JSON.parse(state.stored).removed).toEqual(['lorebooks']);
+            await expect(page.locator('body')).toHaveClass(phone ? /neconyan-rail-drawer-open/ : /neconyan-rail-ready/);
+            await expect(page.locator('#world_popup')).toBeHidden();
+
+            // Delete removes the focused button too, and every button in a section can go.
+            for (const id of groups.finer) {
+                await route(id).focus();
+                await route(id).press('Delete');
+            }
+            await expect.poll(() => JSON.parse(state.stored).removed).toEqual(['lorebooks', ...groups.finer]);
+            await page.screenshot({ path: info.outputPath('editing-removed.png') });
+
+            await bar.locator('.neconyan-rail-reorder-done').click();
+            await expect(lorePen).toBeFocused();
+            await expect(lorebooks).toBeHidden();
+            await expect(page.locator('section:has(> [data-neconyan-finer-nav])')).toBeHidden();
+            await expect(route('notes')).toBeVisible();
+            await expect.poll(() => JSON.parse(state.stored).enabled).toBe(false);
+
+            // Removal survives a reload.
+            await ready(page);
+            await rail(page, phone);
+            await expect(lorebooks).toBeHidden();
+            await expect(page.locator('section:has(> [data-neconyan-finer-nav])')).toBeHidden();
+            await page.screenshot({ path: info.outputPath('after-removal.png') });
+
+            // While editing, a removed button can be added back with +.
+            await page.locator('[data-neconyan-rail-reorder-toggle="primary"]').click();
+            await expect(lorebooks).toBeVisible();
+            await lorebooks.locator('.neconyan-rail-remove').click();
+            await expect(lorebooks).not.toHaveAttribute('data-neconyan-rail-removed', '');
+            await expect(status).toHaveText('Lorebooks added back to the sidebar.');
+            await expect.poll(() => JSON.parse(state.stored).removed).toEqual(groups.finer);
+
+            // Restore defaults brings back every button and the default order.
+            await route('lorebooks').focus();
+            await route('lorebooks').press('Alt+ArrowDown');
+            await bar.locator('.neconyan-rail-reorder-reset').click();
+            await expect.poll(() => JSON.parse(state.stored).removed).toEqual([]);
+            for (const [name, defaults] of Object.entries(groups)) expect(await order(page, name)).toEqual(defaults);
+            await expect(page.locator('#neconyan-workspace-rail [data-neconyan-rail-removed]')).toHaveCount(0);
+            await bar.locator('.neconyan-rail-reorder-done').click();
+            await expect(page.locator('section:has(> [data-neconyan-finer-nav])')).toBeVisible();
             expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(phone ? 394 : 1281);
             await page.unrouteAll({ behavior: 'ignoreErrors' });
         });

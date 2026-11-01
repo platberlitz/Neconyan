@@ -1576,13 +1576,22 @@ function applyNeconyanRailOrder() {
     const enabled = neconyanRailOrder.enabled;
     const defaults = Object.fromEntries(Object.entries(neconyanRailGroups).map(([name, group]) => [name, group.defaults]));
     const layout = normalizeNeconyanRailLayout(neconyanRailOrder, defaults);
+    const removed = new Set((Array.isArray(neconyanRailOrder.removed) ? neconyanRailOrder.removed : []).filter(id => neconyanRailButtons.has(id)));
+    neconyanRailOrder.removed = [...removed];
     for (const [name, { host }] of Object.entries(neconyanRailGroups)) {
         neconyanRailOrder[name] = layout[name];
         for (const id of neconyanRailOrder[name]) {
             const button = neconyanRailButtons.get(id);
             host.appendChild(button);
-            if (enabled) button.setAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown');
+            if (enabled) button.setAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown Delete');
             else button.removeAttribute('aria-keyshortcuts');
+            button.toggleAttribute('data-neconyan-rail-removed', removed.has(id));
+            const remove = button.querySelector('.neconyan-rail-remove');
+            if (remove) {
+                remove.classList.toggle('fa-xmark', !removed.has(id));
+                remove.classList.toggle('fa-plus', removed.has(id));
+                remove.title = removed.has(id) ? t`Add back to the sidebar` : t`Remove from the sidebar`;
+            }
         }
         host.classList.toggle('neconyan-rail-reordering', enabled);
         const group = neconyanRailGroups[name];
@@ -1611,9 +1620,19 @@ function setNeconyanRailReordering(enabled) {
     saveNeconyanRailOrder();
 }
 
+// Restores the default order and brings back every removed button.
 function resetNeconyanRailOrder() {
     if (!neconyanRailOrder) return;
     for (const name of Object.keys(neconyanRailGroups)) neconyanRailOrder[name] = [];
+    neconyanRailOrder.removed = [];
+    applyNeconyanRailOrder();
+    saveNeconyanRailOrder();
+}
+
+function setNeconyanRailButtonRemoved(id, removed) {
+    if (!neconyanRailOrder || !neconyanRailButtons.has(id)) return;
+    const others = (neconyanRailOrder.removed || []).filter(other => other !== id);
+    neconyanRailOrder.removed = removed ? [...others, id] : others;
     applyNeconyanRailOrder();
     saveNeconyanRailOrder();
 }
@@ -1645,6 +1664,12 @@ function initializeNeconyanRailOrder(rail) {
         const position = visible.indexOf(button) + 1;
         status.textContent = t`${button.getAttribute('aria-label')} moved to position ${position} of ${visible.length} in ${labels[host.dataset.neconyanRailGroup]}.`;
     };
+    const toggleRemoved = button => {
+        const removed = !button.hasAttribute('data-neconyan-rail-removed');
+        setNeconyanRailButtonRemoved(idOf(button), removed);
+        const name = button.getAttribute('aria-label');
+        status.textContent = removed ? t`${name} removed from the sidebar.` : t`${name} added back to the sidebar.`;
+    };
     // A move past the top or bottom of a section continues into the next open section.
     const moveAcrossSections = (button, up) => {
         const from = button.parentElement.dataset.neconyanRailGroup;
@@ -1673,16 +1698,32 @@ function initializeNeconyanRailOrder(rail) {
             grip.className = 'neconyan-rail-grip fa-solid fa-grip-vertical';
             grip.setAttribute('aria-hidden', 'true');
             grip.title = t`Drag to reorder`;
-            button.appendChild(grip);
+            const remove = document.createElement('span');
+            remove.className = 'neconyan-rail-remove fa-solid fa-xmark';
+            remove.setAttribute('aria-hidden', 'true');
+            button.append(remove, grip);
         }
         // Capture before the buttons' native navigation listeners and Touch Punch's synthetic click.
+        // Stopping here also keeps the phone drawer open while editing.
         host.addEventListener('click', event => {
-            if (event.target.closest('.neconyan-rail-grip') || Date.now() < suppressClickUntil) {
+            const button = event.target.closest('.neconyan-rail-button');
+            const removing = neconyanRailOrder.enabled && button?.parentElement === host
+                && (event.target.closest('.neconyan-rail-remove') || button.hasAttribute('data-neconyan-rail-removed'));
+            if (removing || event.target.closest('.neconyan-rail-grip') || Date.now() < suppressClickUntil) {
                 event.preventDefault();
                 event.stopImmediatePropagation();
             }
+            if (removing && Date.now() >= suppressClickUntil) toggleRemoved(button);
         }, true);
         host.addEventListener('keydown', event => {
+            if (neconyanRailOrder.enabled && event.key === 'Delete' && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+                const button = event.target.closest('.neconyan-rail-button');
+                if (button?.parentElement !== host) return;
+                event.preventDefault();
+                event.stopPropagation();
+                toggleRemoved(button);
+                return;
+            }
             if (!neconyanRailOrder.enabled || !event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
             const button = event.target.closest('.neconyan-rail-button');
             if (button?.parentElement !== host) return;
@@ -1747,36 +1788,55 @@ function initializeNeconyanRailOrder(rail) {
     applyNeconyanRailOrder();
 }
 
-// The sidebar's own Reorder button, and the Reset and Done bar shown while reordering.
+// An Edit button beside every section heading, and the Restore defaults and Done bar shown while editing.
 function initializeNeconyanRailReorderControls(rail) {
-    const heading = rail.querySelector('[data-neconyan-primary-nav]')?.previousElementSibling;
-    const toggle = document.createElement('button');
-    toggle.type = 'button';
-    toggle.className = 'neconyan-rail-icon-button';
-    toggle.dataset.neconyanRailReorderToggle = '';
-    toggle.title = t`Reorder sidebar`;
-    toggle.setAttribute('aria-label', t`Reorder sidebar`);
-    toggle.innerHTML = '<i class="fa-solid fa-arrows-up-down" aria-hidden="true"></i>';
-    toggle.addEventListener('click', () => setNeconyanRailReordering(!neconyanRailOrder.enabled));
-    if (heading) {
-        const actions = document.createElement('span');
-        actions.className = 'neconyan-rail-section-actions';
+    const scroller = rail.querySelector('.neconyan-rail-scroll');
+    const toggles = [];
+    let opener = null;
+    for (const [name, { host }] of Object.entries(neconyanRailGroups)) {
+        const heading = host.previousElementSibling;
+        if (!heading) continue;
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'neconyan-rail-icon-button';
+        toggle.dataset.neconyanRailReorderToggle = name;
+        toggle.title = t`Edit sidebar`;
+        toggle.setAttribute('aria-label', t`Edit sidebar`);
+        toggle.innerHTML = '<i class="fa-solid fa-pen" aria-hidden="true"></i>';
+        toggle.addEventListener('click', () => {
+            const enabled = !neconyanRailOrder.enabled;
+            if (enabled) {
+                opener = toggle;
+                const sectionToggle = heading.querySelector('[data-neconyan-section-toggle]');
+                if (sectionToggle?.getAttribute('aria-expanded') === 'false') sectionToggle.click();
+            }
+            // The bar appears above the list; keep the pressed button where the finger or pointer left it.
+            const before = toggle.getBoundingClientRect().top;
+            setNeconyanRailReordering(enabled);
+            if (scroller) scroller.scrollTop += toggle.getBoundingClientRect().top - before;
+        });
+        let actions = heading.querySelector(':scope > .neconyan-rail-section-actions');
+        if (!actions) {
+            actions = document.createElement('span');
+            actions.className = 'neconyan-rail-section-actions';
+            heading.append(actions);
+        }
         actions.append(toggle);
-        heading.append(actions);
+        toggles.push(toggle);
     }
     const bar = document.createElement('div');
     bar.className = 'neconyan-rail-reorder-bar';
     bar.dataset.neconyanRailReorderBar = '';
     bar.hidden = true;
     bar.setAttribute('role', 'group');
-    bar.setAttribute('aria-label', t`Reorder sidebar`);
+    bar.setAttribute('aria-label', t`Edit sidebar`);
     const hint = document.createElement('p');
-    hint.textContent = t`Drag the grips to move buttons, even into another section.`;
+    hint.textContent = t`Drag the grips to move buttons, even into another section. Press X to remove one.`;
     const reset = document.createElement('button');
     reset.type = 'button';
     reset.className = 'neconyan-rail-reorder-reset';
-    reset.textContent = t`Reset`;
-    reset.title = t`Reset sidebar order`;
+    reset.textContent = t`Restore defaults`;
+    reset.title = t`Restore sidebar defaults`;
     reset.addEventListener('click', () => resetNeconyanRailOrder());
     const done = document.createElement('button');
     done.type = 'button';
@@ -1784,12 +1844,13 @@ function initializeNeconyanRailReorderControls(rail) {
     done.textContent = t`Done`;
     done.addEventListener('click', () => {
         setNeconyanRailReordering(false);
-        toggle.focus({ preventScroll: true });
+        const target = opener?.getClientRects().length ? opener : toggles.find(toggle => toggle.getClientRects().length);
+        target?.focus({ preventScroll: true });
     });
     const buttons = document.createElement('div');
     buttons.append(reset, done);
     bar.append(hint, buttons);
-    rail.querySelector('.neconyan-rail-scroll')?.prepend(bar);
+    scroller?.prepend(bar);
 }
 
 function isNeconyanRailCollapsed() {

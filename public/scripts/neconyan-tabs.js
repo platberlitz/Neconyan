@@ -517,7 +517,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261101-theme-gallery-2';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261101-editable-sidebar';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -15937,11 +15937,11 @@ function createRailOrderSettingsGroup(mode) {
     checkbox.addEventListener('change', () => globalThis.NeconyanWelcome?.setRailReordering?.(checkbox.checked));
     const copy = createElement('span', { className: 'sb-compact-mode-copy' });
     copy.append(
-        createElement('strong', { text: 'Reorder sidebar' }),
-        createElement('small', { id: `${inputId}-hint`, text: 'Drag the grips to move buttons within a section or into another one, such as Persona into Workspace. Modes keep their own list. On phones, hold a grip first. With a button focused, Alt + Up/Down moves it. The arrows button beside Workspace in the sidebar turns this on too. Turning this off keeps your order.' }),
+        createElement('strong', { text: 'Edit sidebar' }),
+        createElement('small', { id: `${inputId}-hint`, text: 'Drag the grips to move buttons within a section or into another one, such as Persona into Workspace. Modes keep their own list. On phones, hold a grip first. Press X to remove a button you never use, and + to bring it back. With a button focused, Alt + Up/Down moves it and Delete removes it. The pen beside each section in the sidebar turns this on too. Turning this off keeps your changes.' }),
     );
     const reset = createElement('button', {
-        className: 'menu_button widthNatural', text: 'Reset sidebar order',
+        className: 'menu_button widthNatural', text: 'Restore sidebar defaults',
         attrs: { type: 'button', 'data-sb-rail-order-reset': mode },
     });
     reset.disabled = enabled === undefined;
