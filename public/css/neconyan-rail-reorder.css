@@ -117,6 +117,9 @@ body.neconyan #neconyan-workspace-rail:not(.neconyan-rail-is-reordering) .necony
     display: none;
 }
 
-:root[data-neconyan-sidebar='closed'] body.neconyan #neconyan-workspace-rail :is(.neconyan-rail-reorder-bar, [data-neconyan-rail-reorder-toggle]) {
-    display: none;
+/* The saved desktop collapse state does not close the separate phone drawer. */
+@media (min-width: 769px) {
+    :root[data-neconyan-sidebar='closed'] body.neconyan #neconyan-workspace-rail :is(.neconyan-rail-reorder-bar, [data-neconyan-rail-reorder-toggle]) {
+        display: none;
+    }
 }

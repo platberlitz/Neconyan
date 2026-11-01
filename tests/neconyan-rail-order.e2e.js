@@ -1,6 +1,7 @@
 /* global document, window, getComputedStyle */
 import { gunzipSync } from 'node:zlib';
 import { expect, test } from '@playwright/test';
+import { applyIOSOnlyCss, installIPhoneSafari } from './ios-safari-emulation.js';
 
 const key = 'NeconyanWorkspaceRailOrder.v1';
 const groups = {
@@ -97,14 +98,14 @@ async function dragTo(page, grip, target, phone) {
     }
 }
 
-async function storeOrder(page, initial) {
+async function storeOrder(page, initial, collapsed = false) {
     const state = { stored: JSON.stringify(initial) };
     await page.route('**/api/settings/get', async route => {
         const response = await route.fetch();
         const body = await response.json();
         if (typeof body.settings !== 'string') return route.fulfill({ response, json: body });
         const data = JSON.parse(body.settings);
-        data.accountStorage = { ...data.accountStorage, 'NeconyanWorkspaceRailCollapsed.v1': 'false', 'NeconyanWorkspaceRailSections.v1': '{}', [key]: state.stored };
+        data.accountStorage = { ...data.accountStorage, 'NeconyanWorkspaceRailCollapsed.v1': String(collapsed), 'NeconyanWorkspaceRailSections.v1': '{}', [key]: state.stored };
         await route.fulfill({ response, json: { ...body, settings: JSON.stringify(data) } });
     });
     await page.route('**/api/settings/save', async route => {
@@ -140,6 +141,38 @@ async function checkPhoneScrolling(page, phone) {
 for (const phone of [false, true]) {
     test.describe(`${phone ? 'phone' : 'desktop'} sidebar order`, () => {
         test.use({ viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone, serviceWorkers: 'block', reducedMotion: 'reduce' });
+        test('collapsed desktop preference preserves phone editing', async ({ page }, info) => {
+            if (phone) await installIPhoneSafari(page.context(), { standalone: true });
+            await storeOrder(page, { enabled: false }, true);
+            await ready(page);
+            if (phone) await applyIOSOnlyCss(page, { inPlace: true });
+            await rail(page, phone);
+            const toggle = page.locator('[data-neconyan-rail-reorder-toggle="primary"]');
+            const bar = page.locator('[data-neconyan-rail-reorder-bar]');
+            await expect(page.locator('html')).toHaveAttribute('data-neconyan-sidebar', 'closed');
+            await page.screenshot({ path: info.outputPath('saved-collapsed-sidebar.png') });
+            if (!phone) {
+                await expect(toggle).toBeHidden();
+                await page.locator('#neconyan-sidebar-toggle').click();
+            }
+            await expect(toggle).toBeVisible();
+            if (phone) {
+                const box = await toggle.boundingBox();
+                expect(box.width).toBeGreaterThanOrEqual(44);
+                expect(box.height).toBeGreaterThanOrEqual(44);
+                await toggle.tap();
+            } else {
+                await toggle.click();
+            }
+            await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+            await expect(bar).toBeVisible();
+            await bar.locator('.neconyan-rail-reorder-done').click();
+            await expect(bar).toBeHidden();
+            await expect(toggle).toBeVisible();
+            await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+            await page.unrouteAll({ behavior: 'ignoreErrors' });
+        });
+
         test('settings, drag, keyboard, saved order and reset', async ({ page }, info) => {
             test.setTimeout(240000);
             // Exercise the real account save/load flow without changing the preview account.
