@@ -475,11 +475,18 @@ body > #sheld[data-sbtw-mode='on'] ~ :where(*) :is(#ica--tracker-panel, #ica--tr
 .sbtw-list {
     display: flex;
     flex-direction: column;
+    gap: var(--sbtw-gap);
 }
 
 .sbtw-post {
-    padding: var(--sbtw-gap) 0;
-    border-bottom: 1px solid var(--sbtw-divider);
+    padding: var(--sbtw-gap);
+}
+
+.sbtw-post,
+.sbtw-reply,
+.sbtw-quote-card {
+    border: 1px solid color-mix(in srgb, var(--neco-ginger, var(--sbtw-accent)) 65%, var(--sbtw-divider));
+    border-radius: var(--sbtw-radius-sm);
 }
 
 .sbtw-repost-context {
@@ -505,13 +512,11 @@ body > #sheld[data-sbtw-mode='on'] ~ :where(*) :is(#ica--tracker-panel, #ica--tr
 .sbtw-quote-card {
     margin-top: 0.5rem;
     padding: 0.5rem 0.75rem;
-    border: 1px solid var(--sbtw-divider);
-    border-radius: var(--sbtw-radius-sm);
 }
 
 .sbtw-post-compact {
     padding: 0;
-    border-bottom: none;
+    border: 0;
 }
 
 .sbtw-post-row {
@@ -776,6 +781,7 @@ body > #sheld[data-sbtw-mode='on'] ~ :where(*) :is(#ica--tracker-panel, #ica--tr
 }
 
 .sbtw-reply {
+    padding: var(--sbtw-gap);
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     column-gap: var(--sbtw-gap);
