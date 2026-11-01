@@ -10,6 +10,15 @@ import lodash from 'lodash';
 import { readSecret, SECRET_KEYS } from './secrets.js';
 import { GEMINI_SAFETY, VERTEX_SAFETY } from '../constants.js';
 import { abortOnRequestClose, delay, getConfigValue, trimTrailingSlash } from '../util.js';
+import {
+    assertSameOriginHttpUrl,
+    isProviderUrlValidationError,
+    parseHttpBaseUrl,
+    resolveVertexAiBaseUrl,
+    validateGoogleModelPath,
+    validateSafePathSegment,
+    validateVertexRegion,
+} from './provider-url-validation.js';
 
 const API_MAKERSUITE = 'https://generativelanguage.googleapis.com';
 const API_VERTEX_AI = 'https://us-central1-aiplatform.googleapis.com';
@@ -84,10 +93,16 @@ export async function getVertexAIAuthForSettings(directories, settings) {
     const authMode = settings.vertexai_auth_mode || 'express';
 
     if (settings.reverse_proxy) {
+        parseHttpBaseUrl(settings.reverse_proxy, 'Vertex AI reverse proxy URL');
         return {
             authHeader: `Bearer ${settings.proxy_password}`,
             authType: 'proxy',
         };
+    }
+
+    validateVertexRegion(settings.vertexai_region);
+    if (authMode === 'express' && settings.vertexai_express_project_id) {
+        validateSafePathSegment(settings.vertexai_express_project_id, 'Vertex AI project ID');
     }
 
     if (authMode === 'express') {
@@ -106,6 +121,7 @@ export async function getVertexAIAuthForSettings(directories, settings) {
         if (serviceAccountJson) {
             try {
                 const serviceAccount = JSON.parse(serviceAccountJson);
+                getProjectIdFromServiceAccount(serviceAccount);
                 const jwtToken = await generateJWTToken(serviceAccount);
                 const accessToken = await getAccessToken(jwtToken);
                 return {
@@ -113,6 +129,9 @@ export async function getVertexAIAuthForSettings(directories, settings) {
                     authType: 'full',
                 };
             } catch (error) {
+                if (isProviderUrlValidationError(error)) {
+                    throw error;
+                }
                 console.error('Failed to authenticate with service account:', error);
                 throw new Error(`Service account authentication failed: ${error.message}`);
             }
@@ -193,7 +212,7 @@ export function getProjectIdFromServiceAccount(serviceAccount) {
         throw new Error('Project ID not found in service account JSON');
     }
 
-    return projectId;
+    return validateSafePathSegment(projectId, 'Vertex AI project ID');
 }
 
 /**
@@ -209,9 +228,10 @@ export async function getGoogleApiConfig(request, model, endpoint = 'generateCon
 
 export async function getGoogleApiConfigForSettings(directories, settings, model, endpoint = 'generateContent') {
     const useVertexAi = settings.api === 'vertexai';
-    const region = settings.vertexai_region || 'us-central1';
     const apiName = useVertexAi ? 'Google Vertex AI' : 'Google AI Studio';
     const safetySettings = [...GEMINI_SAFETY, ...(useVertexAi ? VERTEX_SAFETY : [])];
+    const safeModel = validateGoogleModelPath(model);
+    const safeEndpoint = validateSafePathSegment(endpoint, 'Google API endpoint');
 
     let url;
     let baseUrl;
@@ -220,19 +240,22 @@ export async function getGoogleApiConfigForSettings(directories, settings, model
     };
 
     if (useVertexAi) {
+        const region = settings.reverse_proxy ? 'us-central1' : validateVertexRegion(settings.vertexai_region);
         // Get authentication for Vertex AI
         const { authHeader, authType } = await getVertexAIAuthForSettings(directories, settings);
 
         if (authType === 'express') {
             // Express mode: use API key parameter
             const keyParam = authHeader.replace('Bearer ', '');
-            const projectId = settings.vertexai_express_project_id;
-            baseUrl = region === 'global'
-                ? 'https://aiplatform.googleapis.com/v1'
-                : `https://${region}-aiplatform.googleapis.com/v1`;
-            url = projectId
-                ? `${baseUrl}/projects/${projectId}/locations/${region}/publishers/google/models/${model}:${endpoint}`
-                : `${baseUrl}/publishers/google/models/${model}:${endpoint}`;
+            const projectId = settings.vertexai_express_project_id
+                ? validateSafePathSegment(settings.vertexai_express_project_id, 'Vertex AI project ID')
+                : '';
+            const resolved = resolveVertexAiBaseUrl(region, { includeVersion: true });
+            baseUrl = resolved.baseUrl;
+            const rawUrl = projectId
+                ? `${baseUrl}/projects/${projectId}/locations/${resolved.region}/publishers/google/models/${safeModel}:${safeEndpoint}`
+                : `${baseUrl}/publishers/google/models/${safeModel}:${safeEndpoint}`;
+            url = assertSameOriginHttpUrl(rawUrl, resolved.origin, 'Vertex AI URL').toString();
             headers['x-goog-api-key'] = keyParam;
         } else if (authType === 'full') {
             // Full mode: use project-specific URL with Authorization header
@@ -247,28 +270,33 @@ export async function getGoogleApiConfigForSettings(directories, settings, model
                 const serviceAccount = JSON.parse(serviceAccountJson);
                 projectId = getProjectIdFromServiceAccount(serviceAccount);
             } catch (error) {
+                if (isProviderUrlValidationError(error)) {
+                    throw error;
+                }
                 throw new Error('Failed to extract project ID from Service Account JSON.');
             }
             // Handle global region differently - no region prefix in hostname
-            baseUrl = region === 'global'
-                ? 'https://aiplatform.googleapis.com/v1'
-                : `https://${region}-aiplatform.googleapis.com/v1`;
-            url = `${baseUrl}/projects/${projectId}/locations/${region}/publishers/google/models/${model}:${endpoint}`;
+            const resolved = resolveVertexAiBaseUrl(region, { includeVersion: true });
+            baseUrl = resolved.baseUrl;
+            const rawUrl = `${baseUrl}/projects/${projectId}/locations/${resolved.region}/publishers/google/models/${safeModel}:${safeEndpoint}`;
+            url = assertSameOriginHttpUrl(rawUrl, resolved.origin, 'Vertex AI URL').toString();
             headers['Authorization'] = authHeader;
         } else {
             // Proxy mode: use Authorization header
-            const apiUrl = trimTrailingSlash(settings.reverse_proxy || API_VERTEX_AI);
+            const proxyBase = parseHttpBaseUrl(settings.reverse_proxy || API_VERTEX_AI, 'Vertex AI reverse proxy URL');
+            const apiUrl = trimTrailingSlash(proxyBase.toString());
             baseUrl = getGoogleApiBaseUrl(apiUrl, 'v1');
-            url = `${baseUrl}/publishers/google/models/${model}:${endpoint}`;
+            url = assertSameOriginHttpUrl(`${baseUrl}/publishers/google/models/${safeModel}:${safeEndpoint}`, proxyBase, 'Vertex AI reverse proxy URL').toString();
             headers['Authorization'] = authHeader;
         }
     } else {
         // Google AI Studio
+        const studioBase = parseHttpBaseUrl(settings.reverse_proxy || API_MAKERSUITE, 'Google AI Studio URL');
         const apiKey = settings.reverse_proxy ? settings.proxy_password : readSecret(directories, SECRET_KEYS.MAKERSUITE, settings.secret_id);
-        const apiUrl = trimTrailingSlash(settings.reverse_proxy || API_MAKERSUITE);
+        const apiUrl = trimTrailingSlash(studioBase.toString());
         const apiVersion = getConfigValue('gemini.apiVersion', 'v1beta');
         baseUrl = getGoogleApiBaseUrl(apiUrl, apiVersion);
-        url = `${baseUrl}/models/${model}:${endpoint}`;
+        url = assertSameOriginHttpUrl(`${baseUrl}/models/${safeModel}:${safeEndpoint}`, studioBase, 'Google AI Studio URL').toString();
         headers['x-goog-api-key'] = apiKey;
     }
 
@@ -330,6 +358,10 @@ router.post('/caption-image', async (request, response) => {
 
         return response.json({ caption });
     } catch (error) {
+        if (isProviderUrlValidationError(error)) {
+            console.warn('Invalid Google captioning parameter:', error.message);
+            return response.status(400).send({ error: true, message: error.message });
+        }
         console.error(error);
         response.status(500).send('The server could not finish this request. Try again in a moment.');
     }
@@ -468,6 +500,13 @@ router.post('/generate-native-tts', async (request, response) => {
         response.setHeader('Content-Type', mimeType || 'application/octet-stream');
         response.send(audioBuffer);
     } catch (error) {
+        if (isProviderUrlValidationError(error)) {
+            console.warn('Invalid Google TTS parameter:', error.message);
+            if (!response.headersSent) {
+                return response.status(400).json({ error: error.message });
+            }
+            return response.end();
+        }
         console.error('Google TTS generation failed:', error);
         if (!response.headersSent) {
             return response.status(500).json({ error: 'Could not generate the speech. Try again in a moment.' });
@@ -534,6 +573,13 @@ router.post('/generate-image', async (request, response) => {
 
         return response.send({ image: imagePart });
     } catch (error) {
+        if (isProviderUrlValidationError(error)) {
+            console.warn('Invalid Google image generation parameter:', error.message);
+            if (!response.headersSent) {
+                return response.status(400).send({ error: true, message: error.message });
+            }
+            return response.end();
+        }
         console.error('Google Image generation failed:', error);
         if (!response.headersSent) {
             return response.sendStatus(500);
@@ -679,6 +725,13 @@ router.post('/generate-video', async (request, response) => {
         console.warn(`${apiName} video generation error: Job timed out after multiple attempts`);
         return response.status(500).send('The video took too long and was stopped. Try again.');
     } catch (error) {
+        if (isProviderUrlValidationError(error)) {
+            console.warn('Invalid Google video generation parameter:', error.message);
+            if (!response.headersSent) {
+                return response.status(400).send({ error: true, message: error.message });
+            }
+            return response.end();
+        }
         console.error('Google Video generation failed:', error);
         return response.sendStatus(500);
     }

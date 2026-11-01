@@ -79,6 +79,15 @@ import {
     getWebTokenizer,
 } from '../tokenizers.js';
 import { getVertexAIAuth, getProjectIdFromServiceAccount, getGoogleApiBaseUrl } from '../google.js';
+import {
+    assertSameOriginHttpUrl,
+    isProviderUrlValidationError,
+    parseHttpBaseUrl,
+    resolveVertexAiBaseUrl,
+    validateGoogleModelPath,
+    validateSafePathSegment,
+    validateVertexRegion,
+} from '../provider-url-validation.js';
 
 const API_OPENAI = 'https://api.openai.com/v1';
 const API_CLAUDE = 'https://api.anthropic.com/v1';
@@ -400,7 +409,13 @@ function fetchBunLinkApiStream(url, options) {
  * @param {express.Response} response Express response
  */
 async function sendClaudeRequest(request, response) {
-    const apiUrl = new URL(request.body.reverse_proxy || API_CLAUDE).toString();
+    let apiUrl;
+    try {
+        apiUrl = parseHttpBaseUrl(request.body.reverse_proxy || API_CLAUDE, 'Claude API URL').toString().replace(/\/$/, '');
+    } catch (error) {
+        console.warn(`Claude URL validation failed: ${error.message}`);
+        return response.status(400).send({ error: true, message: error.message });
+    }
     const apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(request.user.directories, SECRET_KEYS.CLAUDE, request.body.secret_id);
     const divider = '-'.repeat(process.stdout.columns);
 
@@ -650,33 +665,41 @@ async function sendMakerSuiteRequest(request, response) {
 
     let authHeader;
     let authType;
+    let safeModel;
 
-    if (useVertexAi) {
-        apiUrl = new URL(request.body.reverse_proxy || API_VERTEX_AI);
+    try {
+        safeModel = validateGoogleModelPath(request.body.model);
+        if (useVertexAi) {
+            apiUrl = parseHttpBaseUrl(request.body.reverse_proxy || API_VERTEX_AI, 'Vertex AI URL');
+            if (!request.body.reverse_proxy) {
+                validateVertexRegion(request.body.vertexai_region);
+                if ((request.body.vertexai_auth_mode || 'express') === 'express' && request.body.vertexai_express_project_id) {
+                    validateSafePathSegment(request.body.vertexai_express_project_id, 'Vertex AI project ID');
+                }
+            }
 
-        try {
             const auth = await getVertexAIAuth(request);
             authHeader = auth.authHeader;
             authType = auth.authType;
             console.debug(`Using Vertex AI authentication type: ${authType}`);
-        } catch (error) {
-            console.warn(`${apiName} authentication failed: ${error.message}`);
-            return response.status(400).send({ error: true, message: error.message });
-        }
-    } else {
-        apiUrl = new URL(request.body.reverse_proxy || API_MAKERSUITE);
-        apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(request.user.directories, SECRET_KEYS.MAKERSUITE, request.body.secret_id);
+        } else {
+            apiUrl = parseHttpBaseUrl(request.body.reverse_proxy || API_MAKERSUITE, 'Google AI Studio URL');
+            apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(request.user.directories, SECRET_KEYS.MAKERSUITE, request.body.secret_id);
 
-        if (!request.body.reverse_proxy && !apiKey) {
-            console.warn(`${apiName} API key is missing.`);
-            return response.status(400).send({ error: true });
-        }
+            if (!request.body.reverse_proxy && !apiKey) {
+                console.warn(`${apiName} API key is missing.`);
+                return response.status(400).send({ error: true });
+            }
 
-        authHeader = `Bearer ${apiKey}`;
-        authType = 'api_key';
+            authHeader = `Bearer ${apiKey}`;
+            authType = 'api_key';
+        }
+    } catch (error) {
+        console.warn(`${apiName} validation/authentication failed: ${error.message}`);
+        return response.status(400).send({ error: true, message: error.message });
     }
 
-    const model = String(request.body.model);
+    const model = safeModel;
     const stream = Boolean(request.body.stream);
     const enableWebSearch = Boolean(request.body.enable_web_search);
     const requestImages = Boolean(request.body.request_images);
@@ -877,14 +900,20 @@ async function sendMakerSuiteRequest(request, response) {
             if (authType === 'express') {
                 // For Express mode (API key authentication), use the key parameter
                 const keyParam = authHeader.replace('Bearer ', '');
-                const region = request.body.vertexai_region || 'us-central1';
-                const projectId = request.body.vertexai_express_project_id;
-                const baseUrl = region === 'global'
-                    ? 'https://aiplatform.googleapis.com'
-                    : `https://${region}-aiplatform.googleapis.com`;
-                url = projectId
-                    ? `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/${region}/publishers/google/models/${model}:${responseType}?key=${keyParam}${stream ? '&alt=sse' : ''}`
-                    : `${baseUrl}/v1/publishers/google/models/${model}:${responseType}?key=${keyParam}${stream ? '&alt=sse' : ''}`;
+                const resolved = resolveVertexAiBaseUrl(request.body.vertexai_region, { includeVersion: false });
+                const region = resolved.region;
+                const projectId = request.body.vertexai_express_project_id
+                    ? validateSafePathSegment(request.body.vertexai_express_project_id, 'Vertex AI project ID')
+                    : '';
+                const baseUrl = resolved.baseUrl;
+                if (projectId) {
+                    const globalResolved = resolveVertexAiBaseUrl('global', { includeVersion: false });
+                    const rawUrl = `${globalResolved.baseUrl}/v1/projects/${projectId}/locations/${region}/publishers/google/models/${model}:${responseType}?key=${encodeURIComponent(keyParam)}${stream ? '&alt=sse' : ''}`;
+                    url = assertSameOriginHttpUrl(rawUrl, globalResolved.origin, 'Vertex AI URL').toString();
+                } else {
+                    const rawUrl = `${baseUrl}/v1/publishers/google/models/${model}:${responseType}?key=${encodeURIComponent(keyParam)}${stream ? '&alt=sse' : ''}`;
+                    url = assertSameOriginHttpUrl(rawUrl, resolved.origin, 'Vertex AI URL').toString();
+                }
             } else if (authType === 'full') {
                 // For Full mode (service account authentication), use project-specific URL
                 // Get project ID from Service Account JSON
@@ -902,23 +931,22 @@ async function sendMakerSuiteRequest(request, response) {
                     console.error('Failed to extract project ID from Service Account JSON:', error);
                     return response.status(400).send({ error: true });
                 }
-                const region = request.body.vertexai_region || 'us-central1';
-                // Handle global region differently - no region prefix in hostname
-                if (region === 'global') {
-                    url = `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/${region}/publishers/google/models/${model}:${responseType}${stream ? '?alt=sse' : ''}`;
-                } else {
-                    url = `https://${region}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${region}/publishers/google/models/${model}:${responseType}${stream ? '?alt=sse' : ''}`;
-                }
+                const resolved = resolveVertexAiBaseUrl(request.body.vertexai_region, { includeVersion: false });
+                const region = resolved.region;
+                const rawUrl = `${resolved.baseUrl}/v1/projects/${projectId}/locations/${region}/publishers/google/models/${model}:${responseType}${stream ? '?alt=sse' : ''}`;
+                url = assertSameOriginHttpUrl(rawUrl, resolved.origin, 'Vertex AI URL').toString();
                 headers['Authorization'] = authHeader;
             } else {
                 // For proxy mode, use the original URL with Authorization header
                 const baseUrl = getGoogleApiBaseUrl(apiUrl.toString(), 'v1');
-                url = `${baseUrl}/publishers/google/models/${model}:${responseType}${stream ? '?alt=sse' : ''}`;
+                const rawUrl = `${baseUrl}/publishers/google/models/${model}:${responseType}${stream ? '?alt=sse' : ''}`;
+                url = assertSameOriginHttpUrl(rawUrl, apiUrl, 'Vertex AI reverse proxy URL').toString();
                 headers['Authorization'] = authHeader;
             }
         } else {
             const baseUrl = getGoogleApiBaseUrl(apiUrl.toString(), apiVersion);
-            url = `${baseUrl}/models/${model}:${responseType}?key=${apiKey}${stream ? '&alt=sse' : ''}`;
+            const rawUrl = `${baseUrl}/models/${model}:${responseType}?key=${encodeURIComponent(apiKey ?? '')}${stream ? '&alt=sse' : ''}`;
+            url = assertSameOriginHttpUrl(rawUrl, apiUrl, 'Google AI Studio URL').toString();
         }
 
         const generateResponse = await (request.fetch || fetch)(url, {
@@ -1069,7 +1097,13 @@ async function sendAI21Request(request, response) {
  * @param {express.Response} response Express response
  */
 async function sendMistralAIRequest(request, response) {
-    const apiUrl = new URL(request.body.reverse_proxy || API_MISTRAL).toString();
+    let apiUrl;
+    try {
+        apiUrl = parseHttpBaseUrl(request.body.reverse_proxy || API_MISTRAL, 'MistralAI API URL').toString().replace(/\/$/, '');
+    } catch (error) {
+        console.warn(`MistralAI URL validation failed: ${error.message}`);
+        return response.status(400).send({ error: true, message: error.message });
+    }
     const apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(request.user.directories, SECRET_KEYS.MISTRALAI, request.body.secret_id);
 
     if (!apiKey) {
@@ -1259,7 +1293,13 @@ async function sendCohereRequest(request, response) {
  * @param {express.Response} response Express response
  */
 async function sendDeepSeekRequest(request, response) {
-    const apiUrl = new URL(request.body.reverse_proxy || API_DEEPSEEK).toString();
+    let apiUrl;
+    try {
+        apiUrl = parseHttpBaseUrl(request.body.reverse_proxy || API_DEEPSEEK, 'DeepSeek API URL').toString().replace(/\/$/, '');
+    } catch (error) {
+        console.warn(`DeepSeek URL validation failed: ${error.message}`);
+        return response.status(400).send({ error: true, message: error.message });
+    }
     const apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(request.user.directories, SECRET_KEYS.DEEPSEEK, request.body.secret_id);
 
     if (!apiKey && !request.body.reverse_proxy) {
@@ -1384,7 +1424,13 @@ async function sendDeepSeekRequest(request, response) {
  * @param {express.Response} response Express response
  */
 async function sendXaiRequest(request, response) {
-    const apiUrl = new URL(request.body.reverse_proxy || API_XAI).toString();
+    let apiUrl;
+    try {
+        apiUrl = parseHttpBaseUrl(request.body.reverse_proxy || API_XAI, 'xAI API URL').toString().replace(/\/$/, '');
+    } catch (error) {
+        console.warn(`xAI URL validation failed: ${error.message}`);
+        return response.status(400).send({ error: true, message: error.message });
+    }
     const apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(request.user.directories, SECRET_KEYS.XAI, request.body.secret_id);
 
     if (!apiKey && !request.body.reverse_proxy) {
@@ -1890,9 +1936,20 @@ async function sendAzureOpenAIRequest(request, response) {
     }
 
     // 2. PREPARE THE REQUEST
-    const url = new URL(`/openai/deployments/${azure_deployment_name}/chat/completions`, azure_base_url);
-    url.searchParams.set('api-version', azure_api_version);
-    const endpointUrl = url.toString();
+    let endpointUrl;
+    try {
+        const azureBase = parseHttpBaseUrl(azure_base_url, 'Azure OpenAI base URL');
+        const safeDeployment = validateSafePathSegment(azure_deployment_name, 'Azure deployment name');
+        const url = new URL(`/openai/deployments/${encodeURIComponent(safeDeployment)}/chat/completions`, azureBase);
+        url.searchParams.set('api-version', String(azure_api_version));
+        endpointUrl = assertSameOriginHttpUrl(url, azureBase, 'Azure OpenAI base URL').toString();
+    } catch (error) {
+        return response.status(400).send({
+            error: {
+                message: error.message || 'Invalid Azure OpenAI configuration.',
+            },
+        });
+    }
 
     // Create the base payload with all standard parameters
     const apiRequestBody = /** @type {any} */ ({});
@@ -1977,11 +2034,11 @@ export async function handleChatCompletionsStatus(request, statusResponse) {
         let queryParams = {};
 
         if ([CHAT_COMPLETION_SOURCES.OPENAI, CHAT_COMPLETION_SOURCES.OPENAI_RESPONSES].includes(request.body.chat_completion_source)) {
-            apiUrl = new URL(request.body.reverse_proxy || API_OPENAI).toString();
+            apiUrl = parseHttpBaseUrl(request.body.reverse_proxy || API_OPENAI, 'OpenAI API URL').toString();
             apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(request.user.directories, SECRET_KEYS.OPENAI, request.body.secret_id);
             headers = {};
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.CLAUDE) {
-            apiUrl = new URL(request.body.reverse_proxy || API_CLAUDE).toString();
+            apiUrl = parseHttpBaseUrl(request.body.reverse_proxy || API_CLAUDE, 'Claude API URL').toString();
             apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(request.user.directories, SECRET_KEYS.CLAUDE, request.body.secret_id);
 
             if (!apiKey && !request.body.reverse_proxy) {
@@ -1989,7 +2046,7 @@ export async function handleChatCompletionsStatus(request, statusResponse) {
                 return statusResponse.status(400).send({ error: true });
             }
 
-            const modelsUrl = new URL(urlJoin(apiUrl, '/models'));
+            const modelsUrl = assertSameOriginHttpUrl(new URL(urlJoin(apiUrl, '/models')), apiUrl, 'Claude API URL');
             modelsUrl.searchParams.set('limit', '1000');
             const anthropicHeaders = {
                 'anthropic-version': '2023-06-01',
@@ -2027,7 +2084,7 @@ export async function handleChatCompletionsStatus(request, statusResponse) {
             // OpenRouter needs to pass the Referer and X-Title: https://openrouter.ai/docs#requests
             headers = { ...OPENROUTER_HEADERS };
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.MISTRALAI) {
-            apiUrl = new URL(request.body.reverse_proxy || API_MISTRAL).toString();
+            apiUrl = parseHttpBaseUrl(request.body.reverse_proxy || API_MISTRAL, 'MistralAI API URL').toString();
             apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(request.user.directories, SECRET_KEYS.MISTRALAI, request.body.secret_id);
             headers = {};
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.CUSTOM) {
@@ -2058,11 +2115,11 @@ export async function handleChatCompletionsStatus(request, statusResponse) {
             headers = {};
             queryParams = { detailed: true };
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.DEEPSEEK) {
-            apiUrl = new URL(request.body.reverse_proxy || API_DEEPSEEK.replace('/beta', '')).toString();
+            apiUrl = parseHttpBaseUrl(request.body.reverse_proxy || API_DEEPSEEK.replace('/beta', ''), 'DeepSeek API URL').toString();
             apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(request.user.directories, SECRET_KEYS.DEEPSEEK, request.body.secret_id);
             headers = {};
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.XAI) {
-            apiUrl = new URL(request.body.reverse_proxy || API_XAI).toString();
+            apiUrl = parseHttpBaseUrl(request.body.reverse_proxy || API_XAI, 'xAI API URL').toString();
             apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(request.user.directories, SECRET_KEYS.XAI, request.body.secret_id);
             headers = {};
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.AIMLAPI) {
@@ -2083,7 +2140,7 @@ export async function handleChatCompletionsStatus(request, statusResponse) {
             headers = {};
             throw new Error('This provider is temporarily disabled.');
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.MOONSHOT) {
-            apiUrl = new URL(request.body.reverse_proxy || API_MOONSHOT).toString();
+            apiUrl = parseHttpBaseUrl(request.body.reverse_proxy || API_MOONSHOT, 'Moonshot API URL').toString();
             apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(request.user.directories, SECRET_KEYS.MOONSHOT, request.body.secret_id);
             headers = {};
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.FIREWORKS) {
@@ -2091,13 +2148,27 @@ export async function handleChatCompletionsStatus(request, statusResponse) {
             apiKey = readSecret(request.user.directories, SECRET_KEYS.FIREWORKS, request.body.secret_id);
             headers = {};
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.MAKERSUITE) {
+            let studioBase;
+            try {
+                studioBase = parseHttpBaseUrl(request.body.reverse_proxy || API_MAKERSUITE, 'Google AI Studio URL');
+            } catch (error) {
+                console.warn(`Google AI Studio URL validation failed: ${error.message}`);
+                return statusResponse.status(400).send({ error: true, message: error.message });
+            }
             apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(request.user.directories, SECRET_KEYS.MAKERSUITE, request.body.secret_id);
-            apiUrl = trimTrailingSlash(request.body.reverse_proxy || API_MAKERSUITE);
+            apiUrl = trimTrailingSlash(studioBase.toString());
             const apiVersion = getConfigValue('gemini.apiVersion', 'v1beta');
             const baseUrl = getGoogleApiBaseUrl(apiUrl, apiVersion);
-            const modelsUrl = !apiKey && request.body.reverse_proxy
+            const rawModelsUrl = !apiKey && request.body.reverse_proxy
                 ? `${baseUrl}/models`
-                : `${baseUrl}/models?key=${apiKey}`;
+                : `${baseUrl}/models?key=${encodeURIComponent(apiKey ?? '')}`;
+            let modelsUrl;
+            try {
+                modelsUrl = assertSameOriginHttpUrl(rawModelsUrl, studioBase, 'Google AI Studio URL').toString();
+            } catch (error) {
+                console.warn(`Google AI Studio URL validation failed: ${error.message}`);
+                return statusResponse.status(400).send({ error: true, message: error.message });
+            }
 
             if (!apiKey && !request.body.reverse_proxy) {
                 console.warn('Google AI Studio API key is missing.');
@@ -2130,54 +2201,67 @@ export async function handleChatCompletionsStatus(request, statusResponse) {
             }
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.VERTEXAI) {
             let auth;
+            let resolvedRegion;
+            let proxyBase;
             try {
+                if (request.body.reverse_proxy) {
+                    proxyBase = parseHttpBaseUrl(request.body.reverse_proxy, 'Vertex AI reverse proxy URL');
+                } else {
+                    resolvedRegion = resolveVertexAiBaseUrl(request.body.vertexai_region, { includeVersion: true });
+                    if ((request.body.vertexai_auth_mode || 'express') === 'express' && request.body.vertexai_express_project_id) {
+                        validateSafePathSegment(request.body.vertexai_express_project_id, 'Vertex AI project ID');
+                    }
+                }
                 auth = await getVertexAIAuth(request);
             } catch (error) {
                 console.warn(`Google Vertex AI authentication failed: ${error.message}`);
                 return statusResponse.status(400).send({ error: true, message: error.message });
             }
 
-            const region = request.body.vertexai_region || 'us-central1';
             const vertexHeaders = {};
             let modelsUrl;
 
-            if (auth.authType === 'express') {
-                const apiKey = auth.authHeader.replace('Bearer ', '');
-                const projectId = request.body.vertexai_express_project_id;
-                const baseUrl = region === 'global'
-                    ? 'https://aiplatform.googleapis.com/v1'
-                    : `https://${region}-aiplatform.googleapis.com/v1`;
-                const parent = projectId
-                    ? `projects/${projectId}/locations/${region}/publishers/google`
-                    : 'publishers/google';
-                modelsUrl = new URL(`${baseUrl}/${parent}/models`);
-                vertexHeaders['x-goog-api-key'] = apiKey;
-            } else if (auth.authType === 'full') {
-                const serviceAccountJson = readSecret(request.user.directories, SECRET_KEYS.VERTEXAI_SERVICE_ACCOUNT, request.body.secret_id);
-                if (!serviceAccountJson) {
-                    console.warn('Vertex AI Service Account JSON is missing.');
-                    return statusResponse.status(400).send({ error: true });
-                }
+            try {
+                if (auth.authType === 'express') {
+                    const apiKey = auth.authHeader.replace('Bearer ', '');
+                    const projectId = request.body.vertexai_express_project_id
+                        ? validateSafePathSegment(request.body.vertexai_express_project_id, 'Vertex AI project ID')
+                        : '';
+                    const resolved = resolvedRegion ?? resolveVertexAiBaseUrl(request.body.vertexai_region, { includeVersion: true });
+                    const parent = projectId
+                        ? `projects/${projectId}/locations/${resolved.region}/publishers/google`
+                        : 'publishers/google';
+                    modelsUrl = assertSameOriginHttpUrl(`${resolved.baseUrl}/${parent}/models`, resolved.origin, 'Vertex AI URL');
+                    vertexHeaders['x-goog-api-key'] = apiKey;
+                } else if (auth.authType === 'full') {
+                    const serviceAccountJson = readSecret(request.user.directories, SECRET_KEYS.VERTEXAI_SERVICE_ACCOUNT, request.body.secret_id);
+                    if (!serviceAccountJson) {
+                        console.warn('Vertex AI Service Account JSON is missing.');
+                        return statusResponse.status(400).send({ error: true });
+                    }
 
-                let projectId;
-                try {
-                    const serviceAccount = JSON.parse(serviceAccountJson);
-                    projectId = getProjectIdFromServiceAccount(serviceAccount);
-                } catch (error) {
-                    console.error('Failed to extract project ID from Service Account JSON:', error);
-                    return statusResponse.status(400).send({ error: true });
-                }
+                    let projectId;
+                    try {
+                        const serviceAccount = JSON.parse(serviceAccountJson);
+                        projectId = getProjectIdFromServiceAccount(serviceAccount);
+                    } catch (error) {
+                        console.error('Failed to extract project ID from Service Account JSON:', error);
+                        return statusResponse.status(400).send({ error: true });
+                    }
 
-                const baseUrl = region === 'global'
-                    ? 'https://aiplatform.googleapis.com/v1'
-                    : `https://${region}-aiplatform.googleapis.com/v1`;
-                modelsUrl = new URL(`${baseUrl}/projects/${projectId}/locations/${region}/publishers/google/models`);
-                vertexHeaders['Authorization'] = auth.authHeader;
-            } else {
-                const apiUrl = trimTrailingSlash(request.body.reverse_proxy || API_VERTEX_AI);
-                const baseUrl = getGoogleApiBaseUrl(apiUrl, 'v1');
-                modelsUrl = new URL(`${baseUrl}/publishers/google/models`);
-                vertexHeaders['Authorization'] = auth.authHeader;
+                    const resolved = resolvedRegion ?? resolveVertexAiBaseUrl(request.body.vertexai_region, { includeVersion: true });
+                    modelsUrl = assertSameOriginHttpUrl(`${resolved.baseUrl}/projects/${projectId}/locations/${resolved.region}/publishers/google/models`, resolved.origin, 'Vertex AI URL');
+                    vertexHeaders['Authorization'] = auth.authHeader;
+                } else {
+                    const resolvedProxyBase = proxyBase ?? parseHttpBaseUrl(request.body.reverse_proxy || API_VERTEX_AI, 'Vertex AI reverse proxy URL');
+                    const apiUrl = trimTrailingSlash(resolvedProxyBase.toString());
+                    const baseUrl = getGoogleApiBaseUrl(apiUrl, 'v1');
+                    modelsUrl = assertSameOriginHttpUrl(`${baseUrl}/publishers/google/models`, resolvedProxyBase, 'Vertex AI reverse proxy URL');
+                    vertexHeaders['Authorization'] = auth.authHeader;
+                }
+            } catch (error) {
+                console.warn(`Google Vertex AI URL validation failed: ${error.message}`);
+                return statusResponse.status(400).send({ error: true, message: error.message });
             }
 
             modelsUrl.searchParams.set('pageSize', '1000');
@@ -2219,11 +2303,22 @@ export async function handleChatCompletionsStatus(request, statusResponse) {
                 return statusResponse.status(400).send({ error: true, message: 'Azure configuration is incomplete.' });
             }
             // 2) Build URLs using the URL API for consistency and robustness.
-            const modelsUrl = new URL('/openai/models', azure_base_url);
-            modelsUrl.searchParams.set('api-version', azure_api_version);
+            let modelsUrl;
+            let chatUrl;
+            try {
+                const azureBase = parseHttpBaseUrl(azure_base_url, 'Azure OpenAI base URL');
+                const safeDeployment = validateSafePathSegment(azure_deployment_name, 'Azure deployment name');
+                modelsUrl = new URL('/openai/models', azureBase);
+                modelsUrl.searchParams.set('api-version', String(azure_api_version));
+                assertSameOriginHttpUrl(modelsUrl, azureBase, 'Azure OpenAI base URL');
 
-            const chatUrl = new URL(`/openai/deployments/${azure_deployment_name}/chat/completions`, azure_base_url);
-            chatUrl.searchParams.set('api-version', azure_api_version);
+                chatUrl = new URL(`/openai/deployments/${encodeURIComponent(safeDeployment)}/chat/completions`, azureBase);
+                chatUrl.searchParams.set('api-version', String(azure_api_version));
+                assertSameOriginHttpUrl(chatUrl, azureBase, 'Azure OpenAI base URL');
+            } catch (error) {
+                console.warn('Azure OpenAI status check failed: invalid URL parameters:', error.message);
+                return statusResponse.status(400).send({ error: true, message: error.message });
+            }
 
             // Map common status codes to user-friendly error messages
             const azureStatusErrorMap = {
@@ -2295,6 +2390,19 @@ export async function handleChatCompletionsStatus(request, statusResponse) {
             headers = {};
             queryParams = { type: 'text', sub_type: 'chat' };
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.WORKERS_AI) {
+            let accountId;
+            try {
+                const accountIdRaw = String(request.body.workers_ai_account_id || '').trim();
+                if (!accountIdRaw) {
+                    console.warn('Cloudflare Workers AI Account ID is missing.');
+                    return statusResponse.status(400).send({ error: true });
+                }
+                accountId = validateSafePathSegment(accountIdRaw, 'Cloudflare account ID');
+            } catch (error) {
+                console.warn('Cloudflare Workers AI Account ID is invalid:', error.message);
+                return statusResponse.status(400).send({ error: true });
+            }
+
             apiKey = readSecret(request.user.directories, SECRET_KEYS.WORKERS_AI, request.body.secret_id);
 
             if (!apiKey) {
@@ -2303,12 +2411,6 @@ export async function handleChatCompletionsStatus(request, statusResponse) {
             }
 
             try {
-                const accountId = String(request.body.workers_ai_account_id || '').trim();
-                if (!accountId) {
-                    console.warn('Cloudflare Workers AI Account ID is missing.');
-                    return statusResponse.status(400).send({ error: true });
-                }
-
                 const modelsUrl = new URL(`${API_WORKERS_AI}/${encodeURIComponent(accountId)}/ai/models/search`);
                 modelsUrl.searchParams.set('task', 'Text Generation');
                 modelsUrl.searchParams.set('per_page', '1000');
@@ -2351,11 +2453,12 @@ export async function handleChatCompletionsStatus(request, statusResponse) {
             return statusResponse.status(400).send({ error: true });
         }
 
-        const modelsUrl = new URL(urlJoin(apiUrl, '/models'));
+        const isCustomSource = request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.CUSTOM;
+        const parsedStatusBase = parseHttpBaseUrl(apiUrl, 'API base URL');
+        const modelsUrl = assertSameOriginHttpUrl(new URL(urlJoin(parsedStatusBase.toString(), '/models')), parsedStatusBase, 'API base URL');
         Object.keys(queryParams).forEach(key => {
             modelsUrl.searchParams.append(key, queryParams[key]);
         });
-        const isCustomSource = request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.CUSTOM;
         const response = await (request.fetch || fetch)(modelsUrl, {
             method: 'GET',
             headers: {
@@ -2461,6 +2564,9 @@ export async function handleChatCompletionsStatus(request, statusResponse) {
                     ? `The endpoint did not answer within ${Math.round(CUSTOM_STATUS_TIMEOUT_MS / 1000)} seconds. Check the URL and that the server is reachable.`
                     : `The endpoint could not be reached: ${e?.cause?.message || e?.message || 'unknown error'}.`;
                 return statusResponse.send({ error: true, bypass: true, data: [], message });
+            }
+            if (isProviderUrlValidationError(e)) {
+                return statusResponse.status(400).send({ error: true, message: e.message });
             }
             statusResponse.send({ error: true });
         } else {
@@ -2866,7 +2972,13 @@ function convertResponsesEventToChatDelta(event) {
  * Transforms requests from Chat Completions format and normalizes responses back.
  */
 async function sendOpenAIResponsesRequest(request, response) {
-    const apiUrl = new URL(request.body.reverse_proxy || API_OPENAI).toString();
+    let apiUrl;
+    try {
+        apiUrl = parseHttpBaseUrl(request.body.reverse_proxy || API_OPENAI, 'OpenAI API URL').toString();
+    } catch (error) {
+        console.warn(`OpenAI URL validation failed: ${error.message}`);
+        return response.status(400).send({ error: true, message: error.message });
+    }
     const apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(request.user.directories, SECRET_KEYS.OPENAI, request.body.secret_id);
 
     if (!apiKey && !request.body.reverse_proxy) {
@@ -3087,7 +3199,12 @@ export async function handleChatCompletionsGenerate(request, response) {
         const isTextCompletion = Boolean(request.body.model && TEXT_COMPLETION_MODELS.includes(request.body.model)) || typeof request.body.messages === 'string';
 
         if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.OPENAI) {
-            apiUrl = new URL(request.body.reverse_proxy || API_OPENAI).toString();
+            try {
+                apiUrl = parseHttpBaseUrl(request.body.reverse_proxy || API_OPENAI, 'OpenAI API URL').toString().replace(/\/$/, '');
+            } catch (error) {
+                console.warn(`OpenAI URL validation failed: ${error.message}`);
+                return response.status(400).send({ error: { message: error.message } });
+            }
             apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(request.user.directories, SECRET_KEYS.OPENAI, request.body.secret_id);
             headers = {};
             bodyParams = {
@@ -3360,7 +3477,12 @@ export async function handleChatCompletionsGenerate(request, response) {
                 };
             }
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.MOONSHOT) {
-            apiUrl = new URL(request.body.reverse_proxy || API_MOONSHOT).toString();
+            try {
+                apiUrl = parseHttpBaseUrl(request.body.reverse_proxy || API_MOONSHOT, 'Moonshot API URL').toString().replace(/\/$/, '');
+            } catch (error) {
+                console.warn(`Moonshot URL validation failed: ${error.message}`);
+                return response.status(400).send({ error: { message: error.message } });
+            }
             apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(request.user.directories, SECRET_KEYS.MOONSHOT, request.body.secret_id);
             headers = {};
             bodyParams = isKimiK3Model(request.body.model) || (reasoningSupport.nativeFallback && request.body.reasoning_effort) ? {} : {
@@ -3386,7 +3508,12 @@ export async function handleChatCompletionsGenerate(request, response) {
             throw new Error('This provider is temporarily disabled.');
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.ZAI) {
             const defaultApiUrl = request.body.zai_endpoint === ZAI_ENDPOINT.CODING ? API_ZAI_CODING : API_ZAI_COMMON;
-            apiUrl = new URL(request.body.reverse_proxy || defaultApiUrl).toString();
+            try {
+                apiUrl = parseHttpBaseUrl(request.body.reverse_proxy || defaultApiUrl, 'Z.AI API URL').toString().replace(/\/$/, '');
+            } catch (error) {
+                console.warn(`Z.AI URL validation failed: ${error.message}`);
+                return response.status(400).send({ error: { message: error.message } });
+            }
             apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(request.user.directories, SECRET_KEYS.ZAI, request.body.secret_id);
             headers = {
                 'Accept-Language': 'en-US,en',
@@ -3417,12 +3544,19 @@ export async function handleChatCompletionsGenerate(request, response) {
                 setJsonObjectFormat(bodyParams, request.body.messages, request.body.json_schema);
             }
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.WORKERS_AI) {
-            apiKey = readSecret(request.user.directories, SECRET_KEYS.WORKERS_AI, request.body.secret_id);
-            const accountId = String(request.body.workers_ai_account_id || '').trim();
-            if (!accountId) {
+            const accountIdRaw = String(request.body.workers_ai_account_id || '').trim();
+            if (!accountIdRaw) {
                 console.warn('Cloudflare Workers AI Account ID is missing.');
                 return response.status(400).send({ error: true });
             }
+            let accountId;
+            try {
+                accountId = validateSafePathSegment(accountIdRaw, 'Cloudflare account ID');
+            } catch (error) {
+                console.warn('Cloudflare Workers AI Account ID is invalid:', error.message);
+                return response.status(400).send({ error: true });
+            }
+            apiKey = readSecret(request.user.directories, SECRET_KEYS.WORKERS_AI, request.body.secret_id);
             apiUrl = `${API_WORKERS_AI}/${encodeURIComponent(accountId)}/ai/v1`;
             headers = {};
             bodyParams = {
@@ -3485,9 +3619,17 @@ export async function handleChatCompletionsGenerate(request, response) {
         }
 
         const textPrompt = isTextCompletion ? convertTextCompletionPrompt(request.body.messages) : '';
-        const endpointUrl = isTextCompletion && request.body.chat_completion_source !== CHAT_COMPLETION_SOURCES.OPENROUTER ?
-            `${apiUrl}/completions` :
-            `${apiUrl}/chat/completions`;
+        let endpointUrl;
+        try {
+            const parsedApiBase = parseHttpBaseUrl(apiUrl, 'API base URL');
+            const rawEndpointUrl = isTextCompletion && request.body.chat_completion_source !== CHAT_COMPLETION_SOURCES.OPENROUTER
+                ? `${trimTrailingSlash(parsedApiBase.toString())}/completions`
+                : `${trimTrailingSlash(parsedApiBase.toString())}/chat/completions`;
+            endpointUrl = assertSameOriginHttpUrl(rawEndpointUrl, parsedApiBase, 'API base URL').toString();
+        } catch (error) {
+            console.warn('Invalid chat completion endpoint URL:', error.message);
+            return response.status(400).send({ error: { message: error.message } });
+        }
 
         const controller = new AbortController();
         abortOnRequestClose(request, controller, response);
@@ -3736,10 +3878,14 @@ multimodalModels.post('/nanogpt', async (_req, res) => {
 
 multimodalModels.post('/workers_ai', async (req, res) => {
     try {
+        const accountIdRaw = String(req.body.workers_ai_account_id || '').trim();
+        if (!accountIdRaw) {
+            return res.json([]);
+        }
+        const accountId = validateSafePathSegment(accountIdRaw, 'Cloudflare account ID');
         const key = readSecret(req.user.directories, SECRET_KEYS.WORKERS_AI, req.body.secret_id);
-        const accountId = String(req.body.workers_ai_account_id || '').trim();
 
-        if (!key || !accountId) {
+        if (!key) {
             return res.json([]);
         }
 
@@ -3762,6 +3908,10 @@ multimodalModels.post('/workers_ai', async (req, res) => {
             : [];
         return res.json(models);
     } catch (error) {
+        if (isProviderUrlValidationError(error)) {
+            console.warn('Invalid Cloudflare Workers AI Account ID:', error.message);
+            return res.sendStatus(400);
+        }
         console.error(error);
         return res.sendStatus(500);
     }

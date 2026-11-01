@@ -63,7 +63,11 @@ jobs:
           PAYLOAD_REF: ${{ github.event.client_payload.ref }}
         run: |
           ref="${INPUT_REF:-${PAYLOAD_REF:-main}}"
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          if [[ "$ref" == *$'\n'* || "$ref" == *$'\r'* ]]; then
+            echo "Upstream ref must be a single line." >&2
+            exit 1
+          fi
+          printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
 
       - name: Sync bundled extension
         id: sync
@@ -73,12 +77,18 @@ jobs:
           metadata_file="$RUNNER_TEMP/quick-image-gen.env"
           bash scripts/sync-quick-image-gen.sh --ref "$UPSTREAM_REF" --metadata-file "$metadata_file"
           . "$metadata_file"
+          for value in "$QIG_VERSION" "$QIG_COMMIT" "$QIG_SHORT_COMMIT" "$QIG_REF" "$QIG_REPO"; do
+            if [[ -z "$value" || "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+              echo "Sync metadata values must be non-empty single lines." >&2
+              exit 1
+            fi
+          done
           {
-            echo "version=$QIG_VERSION"
-            echo "commit=$QIG_COMMIT"
-            echo "short_commit=$QIG_SHORT_COMMIT"
-            echo "ref=$QIG_REF"
-            echo "repo=$QIG_REPO"
+            printf 'version=%s\n' "$QIG_VERSION"
+            printf 'commit=%s\n' "$QIG_COMMIT"
+            printf 'short_commit=%s\n' "$QIG_SHORT_COMMIT"
+            printf 'ref=%s\n' "$QIG_REF"
+            printf 'repo=%s\n' "$QIG_REPO"
           } >> "$GITHUB_OUTPUT"
 
       - name: Create pull request

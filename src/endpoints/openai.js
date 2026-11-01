@@ -6,10 +6,17 @@ import FormData from 'form-data';
 import express from 'express';
 
 import { abortOnRequestClose, getConfigValue, mergeObjectWithYaml, excludeKeysByYaml, trimV1, delay } from '../util.js';
-import { setAdditionalHeaders } from '../additional-headers.js';
+import { setAdditionalHeadersByType } from '../additional-headers.js';
 import { readSecret, SECRET_KEYS } from './secrets.js';
 import { generateOpenAiSpeech, generateOpenAiCompatibleSpeech } from './speech-transports.js';
 import { AIMLAPI_HEADERS, OPENROUTER_HEADERS, SILICONFLOW_ENDPOINT, ZAI_ENDPOINT } from '../constants.js';
+import {
+    assertSameOriginHttpUrl,
+    buildChutesTranscribeUrl,
+    isProviderUrlValidationError,
+    parseHttpBaseUrl,
+    validateSafePathSegment,
+} from './provider-url-validation.js';
 
 export const router = express.Router();
 
@@ -18,79 +25,94 @@ router.post('/caption-image', async (request, response) => {
         let key = '';
         let headers = {};
         let bodyParams = {};
+        const hasReverseProxy = Boolean(request.body.reverse_proxy);
+        const reverseProxyBaseUrl = hasReverseProxy
+            ? parseHttpBaseUrl(request.body.reverse_proxy, 'reverse proxy URL')
+            : null;
 
-        if (request.body.api === 'openai' && !request.body.reverse_proxy) {
+        if (request.body.api === 'openai' && !hasReverseProxy) {
             key = readSecret(request.user.directories, SECRET_KEYS.OPENAI);
         }
 
-        if (request.body.api === 'xai' && !request.body.reverse_proxy) {
+        if (request.body.api === 'xai' && !hasReverseProxy) {
             key = readSecret(request.user.directories, SECRET_KEYS.XAI);
         }
 
-        if (request.body.api === 'mistral' && !request.body.reverse_proxy) {
+        if (request.body.api === 'mistral' && !hasReverseProxy) {
             key = readSecret(request.user.directories, SECRET_KEYS.MISTRALAI);
         }
 
-        if (request.body.reverse_proxy && request.body.proxy_password) {
+        if (hasReverseProxy && request.body.proxy_password) {
             key = request.body.proxy_password;
         }
 
-        if (request.body.api === 'custom') {
+        if (request.body.api === 'custom' && !hasReverseProxy) {
+            const customServerBaseUrl = parseHttpBaseUrl(request.body.server_url, 'custom server URL');
             key = readSecret(request.user.directories, SECRET_KEYS.CUSTOM);
+            mergeObjectWithYaml(bodyParams, request.body.custom_include_body);
+            mergeObjectWithYaml(headers, request.body.custom_include_headers);
+            void customServerBaseUrl;
+        } else if (request.body.api === 'custom') {
             mergeObjectWithYaml(bodyParams, request.body.custom_include_body);
             mergeObjectWithYaml(headers, request.body.custom_include_headers);
         }
 
-        if (request.body.api === 'openrouter') {
+        if (request.body.api === 'openrouter' && !hasReverseProxy) {
             key = readSecret(request.user.directories, SECRET_KEYS.OPENROUTER);
         }
 
         if (request.body.api === 'ooba') {
-            key = readSecret(request.user.directories, SECRET_KEYS.OOBA);
+            if (!hasReverseProxy) {
+                parseHttpBaseUrl(request.body.server_url, 'server URL');
+                key = readSecret(request.user.directories, SECRET_KEYS.OOBA);
+            }
             bodyParams.temperature = 0.1;
         }
 
-        if (request.body.api === 'koboldcpp') {
+        if (request.body.api === 'koboldcpp' && !hasReverseProxy) {
+            parseHttpBaseUrl(request.body.server_url, 'server URL');
             key = readSecret(request.user.directories, SECRET_KEYS.KOBOLDCPP);
         }
 
-        if (request.body.api === 'llamacpp') {
+        if (request.body.api === 'llamacpp' && !hasReverseProxy) {
+            parseHttpBaseUrl(request.body.server_url, 'server URL');
             key = readSecret(request.user.directories, SECRET_KEYS.LLAMACPP);
         }
 
-        if (request.body.api === 'vllm') {
+        if (request.body.api === 'vllm' && !hasReverseProxy) {
+            parseHttpBaseUrl(request.body.server_url, 'server URL');
             key = readSecret(request.user.directories, SECRET_KEYS.VLLM);
         }
 
-        if (request.body.api === 'aimlapi') {
+        if (request.body.api === 'aimlapi' && !hasReverseProxy) {
             key = readSecret(request.user.directories, SECRET_KEYS.AIMLAPI);
         }
 
-        if (request.body.api === 'groq') {
+        if (request.body.api === 'groq' && !hasReverseProxy) {
             key = readSecret(request.user.directories, SECRET_KEYS.GROQ);
         }
 
-        if (request.body.api === 'cohere') {
+        if (request.body.api === 'cohere' && !hasReverseProxy) {
             key = readSecret(request.user.directories, SECRET_KEYS.COHERE);
         }
 
-        if (request.body.api === 'moonshot' && !request.body.reverse_proxy) {
+        if (request.body.api === 'moonshot' && !hasReverseProxy) {
             key = readSecret(request.user.directories, SECRET_KEYS.MOONSHOT);
         }
 
-        if (request.body.api === 'nanogpt') {
+        if (request.body.api === 'nanogpt' && !hasReverseProxy) {
             key = readSecret(request.user.directories, SECRET_KEYS.NANOGPT);
         }
 
-        if (request.body.api === 'chutes') {
+        if (request.body.api === 'chutes' && !hasReverseProxy) {
             key = readSecret(request.user.directories, SECRET_KEYS.CHUTES);
         }
 
-        if (request.body.api === 'electronhub') {
+        if (request.body.api === 'electronhub' && !hasReverseProxy) {
             key = readSecret(request.user.directories, SECRET_KEYS.ELECTRONHUB);
         }
 
-        if (request.body.api === 'zai' && !request.body.reverse_proxy) {
+        if (request.body.api === 'zai' && !hasReverseProxy) {
             key = readSecret(request.user.directories, SECRET_KEYS.ZAI);
         }
 
@@ -99,16 +121,23 @@ router.post('/caption-image', async (request, response) => {
         }
 
         if (request.body.api === 'pollinations') {
-            key = readSecret(request.user.directories, SECRET_KEYS.POLLINATIONS);
+            if (!hasReverseProxy) {
+                key = readSecret(request.user.directories, SECRET_KEYS.POLLINATIONS);
+            }
             bodyParams.seed = Math.floor(Math.random() * Math.pow(2, 32));
         }
 
-        if (request.body.api === 'workers_ai') {
+        if (request.body.api === 'workers_ai' && !hasReverseProxy) {
+            const accountId = String(request.body.workers_ai_account_id || '').trim();
+            if (!accountId) {
+                return response.status(400).send({ error: 'Enter your Cloudflare account ID first.' });
+            }
+            validateSafePathSegment(accountId, 'Cloudflare account ID');
             key = readSecret(request.user.directories, SECRET_KEYS.WORKERS_AI);
         }
 
         const noKeyTypes = ['custom', 'ooba', 'koboldcpp', 'vllm', 'llamacpp'];
-        if (!key && !request.body.reverse_proxy && !noKeyTypes.includes(request.body.api)) {
+        if (!key && !hasReverseProxy && !noKeyTypes.includes(request.body.api)) {
             console.warn('No key found for API', request.body.api);
             return response.sendStatus(400);
         }
@@ -150,12 +179,9 @@ router.post('/caption-image', async (request, response) => {
             apiUrl = 'https://api.openai.com/v1/chat/completions';
         }
 
-        if (request.body.reverse_proxy) {
-            apiUrl = `${request.body.reverse_proxy}/chat/completions`;
-        }
-
         if (request.body.api === 'custom') {
-            apiUrl = `${request.body.server_url}/chat/completions`;
+            const customBaseUrl = parseHttpBaseUrl(request.body.server_url, 'custom server URL');
+            apiUrl = assertSameOriginHttpUrl(`${customBaseUrl.toString().replace(/\/$/, '')}/chat/completions`, customBaseUrl, 'custom server URL').toString();
         }
 
         if (request.body.api === 'aimlapi') {
@@ -186,7 +212,7 @@ router.post('/caption-image', async (request, response) => {
             apiUrl = 'https://gen.pollinations.ai/v1/chat/completions';
         }
 
-        if (request.body.api === 'moonshot' && !request.body.reverse_proxy) {
+        if (request.body.api === 'moonshot' && !hasReverseProxy) {
             apiUrl = 'https://api.moonshot.ai/v1/chat/completions';
         }
 
@@ -202,7 +228,7 @@ router.post('/caption-image', async (request, response) => {
             apiUrl = 'https://api.electronhub.ai/v1/chat/completions';
         }
 
-        if (request.body.api === 'zai' && !request.body.reverse_proxy) {
+        if (request.body.api === 'zai' && !hasReverseProxy) {
             apiUrl = request.body.zai_endpoint === ZAI_ENDPOINT.CODING
                 ? 'https://api.z.ai/api/coding/paas/v4/chat/completions'
                 : 'https://api.z.ai/api/paas/v4/chat/completions';
@@ -221,16 +247,22 @@ router.post('/caption-image', async (request, response) => {
             }
         }
 
-        if (request.body.api === 'workers_ai') {
-            const accountId = String(request.body.workers_ai_account_id || '').trim();
-            if (!accountId) {
-                return response.status(400).send({ error: 'Enter your Cloudflare account ID first.' });
-            }
+        if (request.body.api === 'workers_ai' && !hasReverseProxy) {
+            const accountId = validateSafePathSegment(request.body.workers_ai_account_id, 'Cloudflare account ID');
             apiUrl = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/v1/chat/completions`;
         }
 
-        if (['koboldcpp', 'vllm', 'llamacpp', 'ooba'].includes(request.body.api)) {
-            apiUrl = `${trimV1(request.body.server_url)}/v1/chat/completions`;
+        if (['koboldcpp', 'vllm', 'llamacpp', 'ooba'].includes(request.body.api) && !hasReverseProxy) {
+            const localBaseUrl = parseHttpBaseUrl(request.body.server_url, 'server URL');
+            apiUrl = assertSameOriginHttpUrl(`${trimV1(localBaseUrl.toString())}/v1/chat/completions`, localBaseUrl, 'server URL').toString();
+        }
+
+        if (reverseProxyBaseUrl) {
+            apiUrl = assertSameOriginHttpUrl(`${reverseProxyBaseUrl.toString().replace(/\/$/, '')}/chat/completions`, reverseProxyBaseUrl, 'reverse proxy URL').toString();
+        }
+
+        if (!apiUrl) {
+            return response.sendStatus(400);
         }
 
         if (request.body.api === 'ooba') {
@@ -246,7 +278,9 @@ router.post('/caption-image', async (request, response) => {
             });
         }
 
-        setAdditionalHeaders(request, { headers }, apiUrl);
+        if (!hasReverseProxy && !request.anonymousCustom && ['koboldcpp', 'vllm', 'llamacpp', 'ooba'].includes(request.body.api)) {
+            setAdditionalHeadersByType(headers, request.body.api, apiUrl, request.user.directories, request.body.secret_id, !request.boundProfile);
+        }
         console.debug('Multimodal captioning request', body);
 
         const result = await fetch(apiUrl, {
@@ -276,6 +310,10 @@ router.post('/caption-image', async (request, response) => {
 
         return response.json({ caption });
     } catch (error) {
+        if (isProviderUrlValidationError(error)) {
+            console.warn('Invalid multimodal captioning URL parameter', error.message);
+            return response.status(400).send({ error: error.message });
+        }
         console.error(error);
         response.status(500).send('The server could not finish this request. Try again in a moment.');
     }
@@ -569,16 +607,17 @@ router.post('/siliconflow/models/embedding', async (request, response) => {
 
 router.post('/workers-ai/models/embedding', async (request, response) => {
     try {
+        const accountIdRaw = String(request.body.workers_ai_account_id || '').trim();
+        if (!accountIdRaw) {
+            console.warn('No Workers AI account ID found');
+            return response.sendStatus(400);
+        }
+        const accountId = validateSafePathSegment(accountIdRaw, 'Cloudflare account ID');
+
         const key = readSecret(request.user.directories, SECRET_KEYS.WORKERS_AI);
 
         if (!key) {
             console.warn('No Workers AI key found');
-            return response.sendStatus(400);
-        }
-
-        const accountId = String(request.body.workers_ai_account_id || '').trim();
-        if (!accountId) {
-            console.warn('No Workers AI account ID found');
             return response.sendStatus(400);
         }
 
@@ -606,6 +645,10 @@ router.post('/workers-ai/models/embedding', async (request, response) => {
 
         return response.json(data.result.map(m => ({ ...m, id: m.name })));
     } catch (error) {
+        if (isProviderUrlValidationError(error)) {
+            console.warn('Invalid Workers AI account ID', error.message);
+            return response.sendStatus(400);
+        }
         console.error('Workers AI embedding models fetch failed', error);
         response.sendStatus(500);
     }
@@ -747,16 +790,18 @@ const custom = express.Router();
 
 custom.post('/generate-voice', async (request, response) => {
     try {
-        const key = readSecret(request.user.directories, SECRET_KEYS.CUSTOM_OPENAI_TTS);
-        const { input, provider_endpoint, response_format, voice, speed, model } = request.body;
+        const { input, provider_endpoint, response_format, voice, speed, model } = request.body ?? {};
 
         if (!provider_endpoint) {
             console.warn('No OpenAI-compatible TTS provider endpoint provided');
             return response.sendStatus(400);
         }
 
+        const endpointUrl = parseHttpBaseUrl(provider_endpoint, 'OpenAI-compatible TTS provider endpoint').toString();
+        const key = readSecret(request.user.directories, SECRET_KEYS.CUSTOM_OPENAI_TTS);
+
         const result = await generateOpenAiCompatibleSpeech({
-            endpoint: provider_endpoint,
+            endpoint: endpointUrl,
             key,
             text: input,
             voice,
@@ -768,6 +813,10 @@ custom.post('/generate-voice', async (request, response) => {
         response.setHeader('Content-Type', result.mimeType);
         return response.send(Buffer.from(result.base64, 'base64'));
     } catch (error) {
+        if (isProviderUrlValidationError(error)) {
+            console.warn('Invalid OpenAI-compatible TTS provider endpoint', error.message);
+            return response.sendStatus(400);
+        }
         if (error.providerBody !== undefined) {
             console.warn('OpenAI request failed', error.providerStatus, error.providerBody);
             return response.status(500).send(error.providerBody);
@@ -863,6 +912,12 @@ router.post('/zai/transcribe-audio', createTranscribeHandler({
 
 router.post('/chutes/transcribe-audio', async (request, response) => {
     try {
+        if (!request.file) {
+            console.warn('No audio file found');
+            return response.sendStatus(400);
+        }
+
+        const apiUrl = buildChutesTranscribeUrl(request.body?.model);
         const key = readSecret(request.user.directories, SECRET_KEYS.CHUTES);
 
         if (!key) {
@@ -870,15 +925,10 @@ router.post('/chutes/transcribe-audio', async (request, response) => {
             return response.sendStatus(400);
         }
 
-        if (!request.file) {
-            console.warn('No audio file found');
-            return response.sendStatus(400);
-        }
-
         console.info('Processing audio file with Chutes', request.file.path);
         const audioBase64 = fs.readFileSync(request.file.path).toString('base64');
 
-        const result = await fetch(`https://${request.body.model}.chutes.ai/transcribe`, {
+        const result = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${key}`,
@@ -907,6 +957,10 @@ router.post('/chutes/transcribe-audio', async (request, response) => {
         const fullText = data.map(chunk => chunk.text || '').join('').trim();
         return response.json({ text: fullText });
     } catch (error) {
+        if (isProviderUrlValidationError(error)) {
+            console.warn('Invalid Chutes transcription model', error.message);
+            return response.sendStatus(400);
+        }
         console.error('Chutes transcription failed', error);
         response.status(500).send('The server could not finish this request. Try again in a moment.');
     }

@@ -1,6 +1,8 @@
+/* global globalThis */
 import { describe, test, expect, jest, beforeAll } from '@jest/globals';
 import fs from 'node:fs';
 import css from '@adobe/css-tools';
+import { installCardScriptTestDom } from './card-script-dom.js';
 
 const extensionDir = new URL('../public/scripts/extensions/in-chat-agents/', import.meta.url);
 const readSource = file => fs.readFileSync(new URL(file, extensionDir), 'utf8');
@@ -70,6 +72,42 @@ describe('style decoder cannot break out of its style element', () => {
         expect(decoded.startsWith('CSS ERROR: ')).toBe(true);
         expect(decoded).not.toMatch(/<[a-z]/i);
     });
+
+    test('DOM decoder leaves custom-style inside attribute values inert and strips foreign-context custom-style', () => {
+        const prevDoc = globalThis.document;
+        const prevParser = globalThis.DOMParser;
+        const prevCss = globalThis.CSS;
+        try {
+            const doc = installCardScriptTestDom();
+            const origCreateTextNode = doc.createTextNode;
+            doc.createTextNode = text => {
+                const span = doc.createElement('span');
+                span.textContent = String(text ?? '');
+                return span;
+            };
+
+            const attrHtml = `<div title="<custom-style>${encodeURIComponent('.a { content: " > <b id=injected>ok</b>"; }')}</custom-style>"></div>`;
+            const attrResult = decodeStyleTags(attrHtml, { prefix: '.ica--companion-body ' });
+            expect(attrResult).toBe(attrHtml);
+            expect(attrResult).not.toContain('<style>');
+            expect(attrResult).not.toContain('<b id=injected>');
+
+            const svgHtml = `<svg><desc><custom-style>${encodeURIComponent('.a { color: red; }')}</custom-style></desc></svg>`;
+            const svgResult = decodeStyleTags(svgHtml, { prefix: '.ica--companion-body ' });
+            expect(svgResult).toBe('<svg><desc></desc></svg>');
+            expect(svgResult).not.toContain('<style>');
+
+            const validHtml = `<div title="<custom-style>${encodeURIComponent('.bad { color: red; }')}</custom-style>"><custom-style>${encodeURIComponent('.good { color: green; }')}</custom-style></div>`;
+            const validResult = decodeStyleTags(validHtml, { prefix: '.ica--companion-body ' });
+            expect(validResult).toContain('<style>.ica--companion-body .custom-good {\n  color: green;\n}</style>');
+            expect(validResult).not.toContain('custom-bad');
+            doc.createTextNode = origCreateTextNode;
+        } finally {
+            globalThis.document = prevDoc;
+            globalThis.DOMParser = prevParser;
+            globalThis.CSS = prevCss;
+        }
+    });
 });
 
 describe('agent HTML sinks are escaped or sanitised', () => {
@@ -122,5 +160,13 @@ describe('generated note content cannot act as a trusted control', () => {
         const source = readSource('index.js');
         const preview = source.slice(source.indexOf('async function previewPreGenerationPrompt'));
         expect(preview).toMatch(/substituteParams\(stripStateChangingMacros\(prompt\)/);
+    });
+
+    test('choice wrapper uses DOM childNode grouping and ignores <br> inside attribute values', () => {
+        const source = readSource('companion/companion-ui.js');
+        const decorateFn = source.slice(source.indexOf('export function decorateChoiceLines'), source.indexOf('export function insertChoiceIntoMessageInput'));
+        expect(decorateFn).not.toMatch(/\.innerHTML\.split\(/);
+        expect(decorateFn).toContain('Array.from(block.childNodes)');
+        expect(decorateFn).toContain('nonInteractiveChoiceAncestorSelector');
     });
 });

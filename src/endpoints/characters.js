@@ -1654,6 +1654,13 @@ async function importFromCharX(uploadPath, { request }, preservedFileName) {
     return result ? fileName : '';
 }
 
+const BYAF_ALLOWED_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.apng', '.avif', '.bmp', '.jfif']);
+
+function normalizeByafImageExtension(rawPath) {
+    const ext = path.extname(String(rawPath ?? '')).toLowerCase();
+    return BYAF_ALLOWED_IMAGE_EXTENSIONS.has(ext) ? ext : null;
+}
+
 async function importFromByaf(uploadPath, { request }, preservedFileName) {
     const buffer = await fsPromises.readFile(uploadPath);
     const data = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
@@ -1662,7 +1669,8 @@ async function importFromByaf(uploadPath, { request }, preservedFileName) {
 
     const byafData = await new ByafParser(data).parse();
     const card = readFromV2(byafData.card);
-    const fileName = preservedFileName || getPngName(sanitize(byafData.character.displayName || card.name, { replacement: sanitizeSafeCharacterReplacements }), request.user.directories, request);
+    const sanitizedNameCandidate = sanitize(byafData.character.displayName || card.name, { replacement: sanitizeSafeCharacterReplacements }) || 'character';
+    const fileName = preservedFileName || getPngName(sanitizedNameCandidate, request.user.directories, request);
 
     // Don't import chats and images if the character is being replaced or updated, instead of newly imported.
     if (!preservedFileName) {
@@ -1679,7 +1687,12 @@ async function importFromByaf(uploadPath, { request }, preservedFileName) {
 
         // Upload backgrounds
         for (const bg of byafData.chatBackgrounds) {
-            const extension = path.extname(bg.paths?.[0]) || '.png';
+            const extension = normalizeByafImageExtension(bg.paths?.[0]);
+            if (!extension) {
+                console.warn('Skipping BYAF background with unsupported image extension:', bg.paths?.[0]);
+                bg.name = '';
+                continue;
+            }
             const baseName = `${path.basename(fileName)}_bg`;
             const filePath = path.join(request.user.directories.userImages, fileName);
             if (!fs.existsSync(filePath)) fs.mkdirSync(filePath, { recursive: true });
@@ -1707,17 +1720,24 @@ async function importFromByaf(uploadPath, { request }, preservedFileName) {
         }
 
         // Save alternate icons for the character.
-        for (const icon of byafData.images.slice(1)) {
-            // BYAF does not support character expressions, so using the same structure will not result in conflicts,
-            // even if the expression system did not tolerate additional icons that are not mapped to expressions.
-            // This will not yet allow changing icons within the UI but at least the icons will be available for manual selection, rather than being lost.
-            const altImagesFolder = path.join(request.user.directories.characters, sanitize(card.name));
-            if (!fs.existsSync(altImagesFolder)) fs.mkdirSync(altImagesFolder, { recursive: true });
-            const extension = path.extname(icon.filename) || '.png';
-            const file = getUniqueName(`${sanitize(icon.label, { replacement: sanitizeSafeCharacterReplacements }) || 'alt'}`, (name) => fs.existsSync(path.join(altImagesFolder, `${name}${extension}`)));
-            if (Buffer.isBuffer(icon.image)) {
-                tryWriteFileSync(path.join(altImagesFolder, `${file}${extension}`), icon.image);
-                console.log(`Created ${file}${extension} alternate icon from BYAF import`);
+        const altFolderName = sanitize(card.name) || sanitize(fileName);
+        if (altFolderName) {
+            for (const icon of byafData.images.slice(1)) {
+                // BYAF does not support character expressions, so using the same structure will not result in conflicts,
+                // even if the expression system did not tolerate additional icons that are not mapped to expressions.
+                // This will not yet allow changing icons within the UI but at least the icons will be available for manual selection, rather than being lost.
+                const extension = normalizeByafImageExtension(icon.filename);
+                if (!extension) {
+                    console.warn('Skipping BYAF alternate icon with unsupported image extension:', icon.filename);
+                    continue;
+                }
+                const altImagesFolder = path.join(request.user.directories.characters, altFolderName);
+                if (!fs.existsSync(altImagesFolder)) fs.mkdirSync(altImagesFolder, { recursive: true });
+                const file = getUniqueName(`${sanitize(icon.label, { replacement: sanitizeSafeCharacterReplacements }) || 'alt'}`, (name) => fs.existsSync(path.join(altImagesFolder, `${name}${extension}`)));
+                if (Buffer.isBuffer(icon.image)) {
+                    tryWriteFileSync(path.join(altImagesFolder, `${file}${extension}`), icon.image);
+                    console.log(`Created ${file}${extension} alternate icon from BYAF import`);
+                }
             }
         }
     }
@@ -1948,7 +1968,14 @@ router.post('/create', getFileNameValidationFunction('file_name'), async functio
         request.body.ch_name = sanitize(request.body.ch_name);
 
         const char = JSON.stringify(charaFormatData(request.body, request.user.directories));
-        const internalName = request.body.file_name || getPngName(request.body.ch_name, request.user.directories);
+        const requestedInternalName = typeof request.body.file_name === 'string' ? sanitize(request.body.file_name) : '';
+        if (request.body.file_name && !requestedInternalName) {
+            return response.sendStatus(400);
+        }
+        const internalName = requestedInternalName || getPngName(request.body.ch_name, request.user.directories);
+        if (!internalName) {
+            return response.sendStatus(400);
+        }
         const avatarName = `${internalName}.png`;
         const chatsPath = path.join(request.user.directories.chats, internalName);
 

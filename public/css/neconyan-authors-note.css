@@ -397,6 +397,111 @@ body.neconyan #floatingPrompt #an_open_persona_management {
     white-space: nowrap;
 }
 
+body.neconyan #floatingPrompt .an-note-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+body.neconyan #floatingPrompt .an-note-row {
+    display: flex;
+    align-items: stretch;
+    min-width: 0;
+    margin: 0;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 8px;
+    background: var(--neco-raised, var(--SmartThemeBlurTintColor));
+    transition: border-color 140ms ease-out, background-color 140ms ease-out;
+}
+
+body.neconyan #floatingPrompt .an-note-row.is-used {
+    border-color: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 55%, var(--neco-border, var(--SmartThemeBorderColor)));
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 10%, var(--neco-raised, var(--SmartThemeBlurTintColor)));
+}
+
+body.neconyan #floatingPrompt .an-note-row.is-editing {
+    box-shadow: inset 3px 0 0 var(--neco-ginger, var(--SmartThemeQuoteColor));
+}
+
+body.neconyan #floatingPrompt .an-note-check {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    min-height: 40px;
+    margin: 0;
+    cursor: pointer;
+}
+
+body.neconyan #floatingPrompt .an-note-check > input[type="checkbox"] {
+    margin: 0;
+}
+
+body.neconyan #floatingPrompt button.an-note-open {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 1px;
+    min-width: 0;
+    min-height: 40px;
+    margin: 0;
+    padding: 6px 12px 6px 0;
+    border: 0;
+    border-radius: 0 8px 8px 0;
+    background: transparent;
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    text-align: start;
+    cursor: pointer;
+}
+
+body.neconyan #floatingPrompt button.an-note-open:focus-visible {
+    outline: 2px solid var(--neco-ginger, var(--SmartThemeQuoteColor));
+    outline-offset: -2px;
+}
+
+body.neconyan #floatingPrompt button.an-note-open:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+body.neconyan #floatingPrompt .an-note-name {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.neconyan #floatingPrompt .an-note-meta {
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.3;
+}
+
+body.neconyan #floatingPrompt .an-note-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--neco-raised, var(--SmartThemeBlurTintColor)) 55%, var(--neco-surface, var(--SmartThemeBlurTintColor)));
+}
+
+body.neconyan #floatingPrompt .an-note-editor-head > .an-field-label {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
 body.neconyan #floatingPrompt .an-segmented.floating_prompt_radio_group {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -625,15 +730,22 @@ body.neconyan:not(.sbterm) #persona_author_note_button.has-note i {
     body.neconyan #floatingPrompt .an-segmented > label.an-segment,
     body.neconyan #floatingPrompt select.text_pole,
     body.neconyan #floatingPrompt .an-inline-field > input.text_pole,
-    body.neconyan #floatingPrompt .an-row > input.text_pole {
+    body.neconyan #floatingPrompt .an-row > input.text_pole,
+    body.neconyan #floatingPrompt .an-note-check,
+    body.neconyan #floatingPrompt button.an-note-open {
         min-height: 44px;
+    }
+
+    body.neconyan #floatingPrompt .an-note-check {
+        width: 44px;
     }
 }
 
 @media (prefers-reduced-motion: reduce) {
     body.neconyan #floatingPrompt #floatingPromptMaximize,
     body.neconyan #floatingPrompt #ANClose,
-    body.neconyan #floatingPrompt .an-segmented > label.an-segment {
+    body.neconyan #floatingPrompt .an-segmented > label.an-segment,
+    body.neconyan #floatingPrompt .an-note-row {
         transition: none;
     }
 }

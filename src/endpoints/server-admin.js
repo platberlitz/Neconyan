@@ -1239,11 +1239,21 @@ router.post('/branches', requireAdminMiddleware, async (_request, response) => {
 
 router.post('/switch-branch', requireAdminMiddleware, async (request, response) => {
     try {
-        const branch = String(request.body?.branch ?? '').trim();
+        if (typeof request.body?.branch !== 'string') {
+            return response.status(400).json({ error: 'Choose a branch first.' });
+        }
+        const branch = request.body.branch.trim();
         const autoStash = Boolean(request.body?.autoStash);
 
         if (!branch) {
             return response.status(400).json({ error: 'Choose a branch first.' });
+        }
+
+        if (branch.startsWith('-') || branch.startsWith('/') || branch.endsWith('/') || branch.endsWith('.lock')
+            || branch.includes('..') || branch.includes('@{') || branch.includes('\\')
+            || /[\x00-\x20\x7f~^:?*[]/.test(branch)
+            || branch.split('/').some(part => !part || part.startsWith('.') || part.startsWith('-'))) {
+            return response.status(400).json({ error: 'That branch name is not valid.' });
         }
 
         if (!commandExistsSync('git')) {
@@ -1269,11 +1279,6 @@ router.post('/switch-branch', requireAdminMiddleware, async (request, response) 
             });
         }
 
-        // Stash if needed
-        if (hasLocalChanges && autoStash) {
-            await git.stash(['push', '-u', '-m', `Auto-stash before switching to ${branch}`]);
-        }
-
         let branchSummary = await git.branch(['-r']);
         let remoteBranches = getRemoteBranchesFromSummary(branchSummary);
         let remoteBranch = resolveRemoteBranchName(remoteBranches, branch);
@@ -1285,13 +1290,32 @@ router.post('/switch-branch', requireAdminMiddleware, async (request, response) 
             remoteBranch = resolveRemoteBranchName(remoteBranches, branch);
         }
 
+        const localBranches = await git.branchLocal();
+        const isLocalBranch = localBranches.all.includes(branch);
+
+        if (!remoteBranch && !isLocalBranch) {
+            return response.status(404).json({ error: `Branch "${branch}" was not found.` });
+        }
+
+        // Stash if needed
+        if (hasLocalChanges && autoStash) {
+            await git.stash(['push', '-u', '-m', `Auto-stash before switching to ${branch}`]);
+        }
+
         const currentBranch = toTrimmedString(await git.revparse(['--abbrev-ref', 'HEAD']).catch(() => ''));
 
         if (remoteBranch && isRuntimeBranch(currentBranch)) {
             await git.raw(['checkout', '-B', currentBranch, remoteBranch]);
             await git.raw(['branch', `--set-upstream-to=${remoteBranch}`, currentBranch]);
-        } else {
+        } else if (isLocalBranch) {
             await git.checkout(branch);
+        } else {
+            const targetLocalBranch = branch.startsWith('origin/') ? branch.slice('origin/'.length) : branch;
+            if (localBranches.all.includes(targetLocalBranch)) {
+                await git.checkout(targetLocalBranch);
+            } else {
+                await git.checkoutBranch(targetLocalBranch, remoteBranch);
+            }
         }
 
         // Try to pop stash if we stashed

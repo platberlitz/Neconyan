@@ -576,7 +576,7 @@ body.neconyan #sheld .sb-conversation-message:has(> .sb-conversation-message-bub
     body.neconyan #form_sheld { container-type: inline-size; }
     body.neconyan #sb-bottom-chat-bar { display: flex; overflow-x: auto; }
     body.neconyan #sb-bottom-chat-bar:not(.sb-bottom-chat-secondary-collapsed) .sb-bottom-chat-secondary-row { display: contents; }
-    body.neconyan #sb-bottom-chat-select { min-width: min(72px, 100%); }
+    body.neconyan #sb-bottom-chat-picker-button { min-width: min(72px, 100%); }
     @container (max-width: 300px) {
         body.neconyan #form_sheld #nonQRFormItems {
             --sb-composer-columns: minmax(0, 1fr) max-content;

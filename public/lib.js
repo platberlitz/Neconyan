@@ -14,6 +14,7 @@ import DiffMatchPatch from 'diff-match-patch';
 import { isProbablyReaderable, Readability } from '@mozilla/readability';
 import SVGInject from '@iconfu/svg-inject';
 import showdown from 'showdown';
+import { addShowdownPatch } from './scripts/util/showdown-patch.js';
 import moment from 'moment';
 import seedrandom from 'seedrandom';
 import * as Popper from '@popperjs/core';
@@ -25,6 +26,8 @@ import yaml from 'yaml';
 import * as chevrotain from 'chevrotain';
 import { gzipSync, gzip } from 'fflate';
 import { sha256 } from 'js-sha256';
+
+addShowdownPatch(showdown);
 
 /**
  * Expose the libraries to the 'window' object.
@@ -66,6 +69,9 @@ export function initLibraryShims() {
     if (!('showdown' in window)) {
         // @ts-ignore
         window.showdown = showdown;
+    } else {
+        // @ts-ignore
+        addShowdownPatch(window.showdown);
     }
     if (!('moment' in window)) {
         // @ts-ignore

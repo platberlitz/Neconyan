@@ -14,7 +14,16 @@ import { getGroupMembers, getSelectedGroupSpeakerAvatar, groups, selected_group 
 import { extension_settings, getContext, saveMetadataDebounced } from './extensions.js';
 import { getCharaFilename, debounce, delay, uuidv4 } from './utils.js';
 import { POPUP_RESULT, Popup } from './popup.js';
-import { DEFAULT_NOTE_PROFILE_ID, composeAuthorsNote, getActiveNoteProfileId, getNoteProfiles, getPersonaNoteEntry, isValidNotePosition } from './authors-note-profiles.js';
+import {
+    DEFAULT_NOTE_PROFILE_ID,
+    composeAuthorsNote,
+    getActiveNoteProfileId,
+    getActiveNoteProfileIds,
+    getNoteProfiles,
+    getPersonaNoteEntry,
+    isValidNotePosition,
+    resolveActiveNoteProfiles,
+} from './authors-note-profiles.js';
 import { getTokenCountAsync } from './tokenizers.js';
 import { debounce_timeout } from './constants.js';
 import { SlashCommandParser } from './slash-commands/SlashCommandParser.js';
@@ -130,9 +139,20 @@ function normalizeNoteProfile(profile) {
     };
 }
 
+function getPlainObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function inProfileOrder(profiles, ids) {
+    const wanted = new Set(Array.isArray(ids) ? ids : []);
+    return profiles.filter(profile => wanted.has(profile.id)).map(profile => profile.id);
+}
+
 /**
  * Profile fields for a character or persona note, with notes saved before profiles existed read as
- * one Default profile. `perPersona` fields only apply to character notes.
+ * one Default profile. Character notes (`perPersona`) can use several profiles at once: the shared
+ * mix in `activeProfiles`, or one mix per persona in `personaActiveProfiles`. Notes saved when only
+ * one profile could be in use read as a mix of that one profile.
  */
 function normalizeNoteProfiles(entry, { perPersona = false } = {}) {
     const profiles = getNoteProfiles(entry ?? {}).map(normalizeNoteProfile);
@@ -143,9 +163,19 @@ function normalizeNoteProfiles(entry, { perPersona = false } = {}) {
     };
 
     if (perPersona) {
-        const saved = entry?.personaProfiles && typeof entry.personaProfiles === 'object' ? entry.personaProfiles : {};
+        const personaProfiles = Object.entries(getPlainObject(entry?.personaProfiles))
+            .filter(([avatar, id]) => avatar && ids.has(id));
+        const personaMixes = Object.entries(getPlainObject(entry?.personaActiveProfiles))
+            .filter(([avatar, list]) => avatar && Array.isArray(list));
         state.perPersona = Boolean(entry?.perPersona);
-        state.personaProfiles = Object.fromEntries(Object.entries(saved).filter(([avatar, id]) => avatar && ids.has(id)));
+        state.activeProfiles = Array.isArray(entry?.activeProfiles)
+            ? inProfileOrder(profiles, entry.activeProfiles)
+            : [state.activeProfile];
+        state.personaProfiles = Object.fromEntries(personaProfiles);
+        state.personaActiveProfiles = {
+            ...Object.fromEntries(personaProfiles.map(([avatar, id]) => [avatar, [id]])),
+            ...Object.fromEntries(personaMixes.map(([avatar, list]) => [avatar, inProfileOrder(profiles, list)])),
+        };
     }
 
     return state;
@@ -155,20 +185,63 @@ function ensureNoteProfiles(entry, options) {
     return Object.assign(entry, normalizeNoteProfiles(entry, options));
 }
 
-function getNoteView(entry, options) {
-    const state = normalizeNoteProfiles(entry, options);
-    const activeId = getActiveNoteProfileId({ ...entry, ...state }, getPersonaAvatar());
-    return { ...state, profile: state.profiles.find(profile => profile.id === activeId) ?? state.profiles[0] };
+// The character note profile open in the editor. It is separate from the mix in use, so a note can
+// be edited without switching it on or off.
+let editingCharaProfileId = '';
+
+function getEditingProfile(slotName, state, activeProfiles) {
+    if (slotName === 'chara') {
+        return state.profiles.find(profile => profile.id === editingCharaProfileId) ?? activeProfiles[0] ?? state.profiles[0];
+    }
+
+    return activeProfiles[0] ?? state.profiles[0];
 }
 
-function getCurrentNoteProfile(entry) {
-    const activeId = getActiveNoteProfileId(entry, getPersonaAvatar());
-    return entry.profiles.find(profile => profile.id === activeId) ?? entry.profiles[0];
+/**
+ * What a note slot shows: `active` lists the profiles in use (several for a character note, one for
+ * a persona note) and `profile` is the one open in the editor.
+ */
+function getNoteView(slotName, entry) {
+    const state = normalizeNoteProfiles(entry, { perPersona: noteSlots[slotName].perPersona });
+    const persona = getPersonaAvatar();
+    const merged = { ...entry, ...state };
+    const active = noteSlots[slotName].perPersona
+        ? resolveActiveNoteProfiles(merged, persona)
+        : state.profiles.filter(profile => profile.id === getActiveNoteProfileId(merged, persona));
+    return { ...state, active, profile: getEditingProfile(slotName, state, active) };
 }
 
-// The top-level prompt and position mirror the profile in use, for readers that predate profiles.
+function getMixedNoteProfileIds(note) {
+    return getActiveNoteProfileIds(note, getPersonaAvatar());
+}
+
+function setMixedNoteProfileIds(note, ids) {
+    const persona = getPersonaAvatar();
+    const ordered = inProfileOrder(note.profiles, ids);
+    if (note.perPersona && persona) {
+        note.personaActiveProfiles[persona] = ordered;
+    } else {
+        note.activeProfiles = ordered;
+    }
+}
+
+// The top-level prompt and position, `activeProfile` and `personaProfiles` mirror the first note in
+// use, for readers that predate profiles or mixing.
 function syncNoteMirror(entry) {
-    const profile = getCurrentNoteProfile(entry);
+    const persona = getPersonaAvatar();
+    if (Array.isArray(entry.activeProfiles)) {
+        entry.activeProfile = entry.activeProfiles[0] ?? entry.activeProfile;
+        entry.personaProfiles = Object.fromEntries(Object.entries(entry.personaActiveProfiles ?? {})
+            .filter(([, list]) => list.length)
+            .map(([avatar, list]) => [avatar, list[0]]));
+        const [first] = resolveActiveNoteProfiles(entry, persona);
+        entry.prompt = first?.prompt ?? '';
+        entry.position = first?.position ?? chara_note_position.replace;
+        return;
+    }
+
+    const activeId = getActiveNoteProfileId(entry, persona);
+    const profile = entry.profiles.find(item => item.id === activeId) ?? entry.profiles[0];
     entry.prompt = profile.prompt;
     entry.position = profile.position;
 }
@@ -378,19 +451,22 @@ const noteSlots = {
     },
 };
 
-function getNotePart(slotName, entry) {
-    const slot = noteSlots[slotName];
-    if (!entry?.[slot.enabledKey]) {
-        return { enabled: false, prompt: '', position: chara_note_position.replace };
+function getNoteParts(slotName, entry) {
+    if (!entry?.[noteSlots[slotName].enabledKey]) {
+        return [];
     }
 
-    const { profile } = getNoteView(entry, { perPersona: slot.perPersona });
-    return { enabled: true, prompt: profile.prompt, position: profile.position };
+    return getNoteView(slotName, entry).active.map(profile => ({ enabled: true, prompt: profile.prompt, position: profile.position }));
 }
 
 function getActiveNotePrompt(slotName) {
     const entry = noteSlots[slotName].getReadable();
-    return entry ? getNoteView(entry, { perPersona: noteSlots[slotName].perPersona }).profile.prompt : '';
+    return entry ? getNoteView(slotName, entry).active.map(profile => profile.prompt).filter(Boolean).join('\n') : '';
+}
+
+function getEditingNotePrompt(slotName) {
+    const entry = noteSlots[slotName].getReadable();
+    return entry ? getNoteView(slotName, entry).profile.prompt : '';
 }
 
 function editNote(slotName, mutate) {
@@ -404,7 +480,8 @@ function editNote(slotName, mutate) {
         return false;
     }
 
-    mutate(note, getCurrentNoteProfile(note));
+    const editingId = getNoteView(slotName, note).profile.id;
+    mutate(note, note.profiles.find(profile => profile.id === editingId) ?? note.profiles[0]);
     slot.commit(note);
     return true;
 }
@@ -419,7 +496,7 @@ function selectNoteProfile(note, profileId) {
 }
 
 function refreshNoteTokenCounter(slotName) {
-    noteSlots[slotName].setTokenCounter(getActiveNotePrompt(slotName));
+    noteSlots[slotName].setTokenCounter(getEditingNotePrompt(slotName));
 }
 
 function onNotePromptInput(slotName, value) {
@@ -450,15 +527,29 @@ function onNoteProfileSelected(slotName, profileId) {
     refreshNoteTokenCounter(slotName);
 }
 
+function onCharaNoteMixChanged(profileId, used) {
+    editNote('chara', (note) => {
+        const mixed = getMixedNoteProfileIds(note).filter(id => id !== profileId);
+        setMixedNoteProfileIds(note, used ? [...mixed, profileId] : mixed);
+    });
+}
+
+function onCharaNoteOpened(profileId) {
+    editingCharaProfileId = profileId;
+    renderNoteSlot('chara');
+    refreshNoteTokenCounter('chara');
+}
+
 function onCharaPerPersonaChanged(value) {
-    editNote('chara', (note, profile) => {
+    editNote('chara', (note) => {
         const persona = getPersonaAvatar();
+        // Start from the notes in use on screen, so switching keeps the current mix.
+        const mixed = getMixedNoteProfileIds(note);
         note.perPersona = value;
         if (value && persona) {
-            note.personaProfiles[persona] = profile.id;
+            note.personaActiveProfiles[persona] = mixed;
         } else if (!value) {
-            // Keep showing the profile that was on screen when the persona link is switched off.
-            note.activeProfile = profile.id;
+            note.activeProfiles = mixed;
         }
     });
 }
@@ -469,22 +560,35 @@ async function onNewNoteProfile(slotName) {
         return;
     }
 
-    const current = getNoteView(slot.getReadable(), { perPersona: slot.perPersona });
-    const name = await Popup.show.input(
-        t`Save as a new profile`,
-        t`Name the new profile. It starts as a copy of the one on screen.`,
-        t`${current.profile.name} copy`,
-    );
+    const current = getNoteView(slotName, slot.getReadable());
+    const name = slotName === 'chara'
+        ? await Popup.show.input(t`New note`, t`Name the new note. It starts empty and is switched on for this mix.`, '')
+        : await Popup.show.input(
+            t`Save as a new profile`,
+            t`Name the new profile. It starts as a copy of the one on screen.`,
+            t`${current.profile.name} copy`,
+        );
     if (!String(name ?? '').trim()) {
         return;
     }
 
     editNote(slotName, (note, profile) => {
+        if (slotName === 'chara') {
+            const created = { id: uuidv4(), name: String(name).trim(), prompt: '', position: chara_note_position.after };
+            note.profiles.push(created);
+            setMixedNoteProfileIds(note, [...getMixedNoteProfileIds(note), created.id]);
+            editingCharaProfileId = created.id;
+            return;
+        }
+
         const created = { id: uuidv4(), name: String(name).trim(), prompt: profile.prompt, position: profile.position };
         note.profiles.push(created);
         selectNoteProfile(note, created.id);
     });
     refreshNoteTokenCounter(slotName);
+    if (slotName === 'chara') {
+        findInNotePanel('#extension_floating_chara').trigger('focus');
+    }
 }
 
 async function onRenameNoteProfile(slotName) {
@@ -493,8 +597,10 @@ async function onRenameNoteProfile(slotName) {
         return;
     }
 
-    const current = getNoteView(slot.getReadable(), { perPersona: slot.perPersona });
-    const name = await Popup.show.input(t`Rename profile`, t`Enter a new name for this profile.`, current.profile.name);
+    const current = getNoteView(slotName, slot.getReadable());
+    const name = slotName === 'chara'
+        ? await Popup.show.input(t`Rename note`, t`Enter a new name for this note.`, current.profile.name)
+        : await Popup.show.input(t`Rename profile`, t`Enter a new name for this profile.`, current.profile.name);
     if (!String(name ?? '').trim()) {
         return;
     }
@@ -510,13 +616,18 @@ async function onDeleteNoteProfile(slotName) {
         return;
     }
 
-    const current = getNoteView(slot.getReadable(), { perPersona: slot.perPersona });
+    const isCharaNote = slotName === 'chara';
+    const current = getNoteView(slotName, slot.getReadable());
     if (current.profiles.length <= 1) {
-        toastr.info(t`This is the only profile. Clear its text instead if you no longer need it.`);
+        toastr.info(isCharaNote
+            ? t`This is the only note. Clear its text instead if you no longer need it.`
+            : t`This is the only profile. Clear its text instead if you no longer need it.`);
         return;
     }
 
-    const confirmed = await Popup.show.confirm(t`Delete profile`, t`Delete the profile "${current.profile.name}"? This cannot be undone.`);
+    const confirmed = isCharaNote
+        ? await Popup.show.confirm(t`Delete note`, t`Delete the note "${current.profile.name}"? This cannot be undone.`)
+        : await Popup.show.confirm(t`Delete profile`, t`Delete the profile "${current.profile.name}"? This cannot be undone.`);
     if (confirmed !== POPUP_RESULT.AFFIRMATIVE) {
         return;
     }
@@ -531,30 +642,105 @@ async function onDeleteNoteProfile(slotName) {
                 delete note.personaProfiles[avatar];
             }
         }
+        if (Array.isArray(note.activeProfiles)) {
+            note.activeProfiles = note.activeProfiles.filter(id => id !== profile.id);
+        }
+        for (const [avatar, list] of Object.entries(note.personaActiveProfiles ?? {})) {
+            note.personaActiveProfiles[avatar] = list.filter(id => id !== profile.id);
+        }
     });
     refreshNoteTokenCounter(slotName);
+}
+
+const NOTE_POSITION_LABELS = {
+    [chara_note_position.before]: () => t`Top`,
+    [chara_note_position.replace]: () => t`Replaces`,
+    [chara_note_position.after]: () => t`Bottom`,
+};
+
+/**
+ * One row per character note: a tick puts it in the mix, the name opens it in the editor. Rows are
+ * reused by note id so focus stays put while the list re-renders after each change.
+ */
+function renderCharaNoteList(view, canEdit) {
+    const list = findInNotePanel('#extension_floating_chara_notes').get(0);
+    if (!list) {
+        return;
+    }
+
+    const activeIds = new Set(view.active.map(profile => profile.id));
+    const existing = new Map([...list.children].map(row => [row.dataset.anNoteId, row]));
+    const rows = view.profiles.map((profile) => {
+        let row = existing.get(profile.id);
+        if (!row) {
+            row = document.createElement('li');
+            row.className = 'an-note-row';
+            row.dataset.anNoteId = profile.id;
+            row.innerHTML = `
+                <label class="an-note-check">
+                    <input type="checkbox" class="an-note-toggle" />
+                </label>
+                <button type="button" class="an-note-open">
+                    <span class="an-note-name"></span>
+                    <small class="an-note-meta"></small>
+                </button>`;
+        }
+
+        const used = activeIds.has(profile.id);
+        const editing = profile.id === view.profile.id;
+        const meta = [NOTE_POSITION_LABELS[profile.position]?.() ?? '', profile.prompt.trim() ? '' : t`Empty`].filter(Boolean).join(' · ');
+        row.classList.toggle('is-used', used);
+        row.classList.toggle('is-editing', editing);
+        const toggle = row.querySelector('.an-note-toggle');
+        toggle.checked = used;
+        toggle.disabled = !canEdit;
+        toggle.setAttribute('aria-label', t`Use ${profile.name}`);
+        const open = row.querySelector('.an-note-open');
+        open.disabled = !canEdit;
+        open.setAttribute('aria-pressed', String(editing));
+        open.title = t`Edit ${profile.name}`;
+        row.querySelector('.an-note-name').textContent = profile.name;
+        row.querySelector('.an-note-meta').textContent = meta;
+        return row;
+    });
+
+    rows.forEach((row, index) => {
+        if (list.children[index] !== row) {
+            list.insertBefore(row, list.children[index] ?? null);
+        }
+    });
+    while (list.children.length > rows.length) {
+        list.lastElementChild.remove();
+    }
 }
 
 function renderNoteSlot(slotName) {
     const slot = noteSlots[slotName];
     const canEdit = slot.canEdit();
     const entry = canEdit ? slot.getReadable() : null;
-    const view = getNoteView(entry, { perPersona: slot.perPersona });
-    const $select = $(`#extension_floating_${slotName}_profile`);
-    const optionsChanged = $select.children('option').length !== view.profiles.length
-        || view.profiles.some((profile, index) => {
-            const option = $select.children('option').get(index);
-            return option?.value !== profile.id || option?.textContent !== profile.name;
-        });
+    const view = getNoteView(slotName, entry);
 
-    if (optionsChanged) {
-        $select.empty();
-        for (const profile of view.profiles) {
-            $select.append(new Option(profile.name, profile.id));
+    if (slotName === 'chara') {
+        renderCharaNoteList(view, canEdit);
+        findInNotePanel('#extension_floating_chara_editing').text(view.profile.name);
+    } else {
+        const $select = $(`#extension_floating_${slotName}_profile`);
+        const optionsChanged = $select.children('option').length !== view.profiles.length
+            || view.profiles.some((profile, index) => {
+                const option = $select.children('option').get(index);
+                return option?.value !== profile.id || option?.textContent !== profile.name;
+            });
+
+        if (optionsChanged) {
+            $select.empty();
+            for (const profile of view.profiles) {
+                $select.append(new Option(profile.name, profile.id));
+            }
         }
+
+        $select.val(view.profile.id);
     }
 
-    $select.val(view.profile.id);
     $(`#extension_floating_${slotName}`).val(canEdit ? view.profile.prompt : '');
     $(slot.checkbox).prop('checked', Boolean(entry?.[slot.enabledKey]));
     findInNotePanel(`input[name="${slot.radioName}"][value="${view.profile.position}"]`).prop('checked', true);
@@ -570,6 +756,7 @@ function setNoteSlotDisabled(slotName) {
     findInNotePanel(`[data-an-profile-slot="${slotName}"]`).toggleClass('disabled', disabled).attr('aria-disabled', String(disabled));
     if (slot.perPersona) {
         $('#extension_floating_chara_per_persona').prop('disabled', disabled);
+        findInNotePanel('#extension_floating_chara_notes').find('.an-note-toggle, .an-note-open').prop('disabled', disabled);
     }
 }
 
@@ -585,9 +772,11 @@ function onPersonaDeleted({ avatarId } = {}) {
         changed = true;
     }
     for (const note of extension_settings.note.chara ?? []) {
-        if (note?.personaProfiles && Object.hasOwn(note.personaProfiles, avatarId)) {
-            delete note.personaProfiles[avatarId];
-            changed = true;
+        for (const key of ['personaProfiles', 'personaActiveProfiles']) {
+            if (note?.[key] && Object.hasOwn(note[key], avatarId)) {
+                delete note[key][avatarId];
+                changed = true;
+            }
         }
     }
     if (changed) {
@@ -636,8 +825,8 @@ function renderNoteTargetsAndSummary() {
     $('#an_chara_avatar').attr('src', charThumb).attr('alt', charName).prop('hidden', !charThumb);
 
     const perPersonaHint = personaName
-        ? t`Each persona keeps its own profile choice for this character. Currently choosing the profile for ${personaName}.`
-        : t`Each persona keeps its own profile choice for this character. Switching persona switches the profile.`;
+        ? t`Each persona keeps its own set of ticked notes for this character. Currently choosing the notes for ${personaName}.`
+        : t`Each persona keeps its own set of ticked notes for this character. Switching persona switches the notes.`;
     $('#an_chara_per_persona_hint').text(perPersonaHint);
 
     const hasChat = Boolean(context.groupId || charAvatar);
@@ -646,11 +835,12 @@ function renderNoteTargetsAndSummary() {
     const chatActive = hasChat && interval > 0 && Boolean(chatPrompt);
 
     const charaEntry = hasChat ? noteSlots.chara.getReadable() : null;
-    const charaView = getNoteView(charaEntry, { perPersona: true });
-    const charaActive = Boolean(hasChat && charaEntry?.useChara && String(charaView.profile.prompt ?? '').trim());
+    const charaView = getNoteView('chara', charaEntry);
+    const charaInUse = charaView.active.filter(profile => String(profile.prompt ?? '').trim());
+    const charaActive = Boolean(hasChat && charaEntry?.useChara && charaInUse.length);
 
     const personaEntry = noteSlots.persona.getReadable();
-    const personaView = getNoteView(personaEntry, { perPersona: false });
+    const personaView = getNoteView('persona', personaEntry);
     const personaActive = Boolean(personaAvatar && personaEntry?.useNote && String(personaView.profile.prompt ?? '').trim());
 
     const defaultsActive = Boolean(String(extension_settings.note?.default ?? '').trim());
@@ -683,13 +873,13 @@ function renderNoteTargetsAndSummary() {
     $('#persona_author_note_button').toggleClass('has-note', personaButtonActive).attr('aria-pressed', String(personaButtonActive));
 
     const activeSources = [];
-    const replaced = (charaActive && Number(charaView.profile.position) === chara_note_position.replace)
+    const replaced = (charaActive && charaInUse.some(profile => Number(profile.position) === chara_note_position.replace))
         || (personaActive && Number(personaView.profile.position) === chara_note_position.replace);
     if (chatActive && !replaced) {
         activeSources.push(t`This chat`);
     }
     if (charaActive) {
-        activeSources.push(`${charName || t`Character`} (${charaView.profile.name})`);
+        activeSources.push(`${charName || t`Character`} (${charaInUse.map(profile => profile.name).join(', ')})`);
     }
     if (personaActive) {
         activeSources.push(`${personaName || t`Persona`} (${personaView.profile.name})`);
@@ -960,7 +1150,7 @@ export function setFloatingPrompt() {
     let prompt = shouldAddPrompt ? $('#extension_floating_prompt').val() : '';
     if (shouldAddPrompt) {
         const charaNote = context.groupId ? getActiveGroupCharacterNote(context) : getEditableCharacterNote();
-        prompt = composeAuthorsNote(prompt, [getNotePart('chara', charaNote), getNotePart('persona', getPersonaNote())]);
+        prompt = composeAuthorsNote(prompt, [...getNoteParts('chara', charaNote), ...getNoteParts('persona', getPersonaNote())]);
     }
     context.setExtensionPrompt(
         MODULE_NAME,
@@ -1053,10 +1243,10 @@ async function onChatChanged() {
     const tokenCounter1 = authorsNotePrompt ? await getTokenCountAsync(authorsNotePrompt) : 0;
     $('#extension_floating_prompt_token_counter').text(tokenCounter1);
 
-    const charaPrompt = getActiveNotePrompt('chara');
+    const charaPrompt = getEditingNotePrompt('chara');
     $('#extension_floating_chara_token_counter').text(charaPrompt ? await getTokenCountAsync(charaPrompt) : 0);
 
-    const personaPrompt = getActiveNotePrompt('persona');
+    const personaPrompt = getEditingNotePrompt('persona');
     $('#extension_floating_persona_token_counter').text(personaPrompt ? await getTokenCountAsync(personaPrompt) : 0);
 
     const tokenCounter3 = extension_settings.note.default ? await getTokenCountAsync(extension_settings.note.default) : 0;
@@ -1084,6 +1274,13 @@ export function initAuthorsNote() {
         $(`#extension_floating_${slotName}_profile`).on('change', function () { onNoteProfileSelected(slotName, String($(this).val() ?? '')); });
     }
     $('#extension_floating_chara_per_persona').on('input', function () { onCharaPerPersonaChanged(!!$(this).prop('checked')); });
+    $('#extension_floating_chara_notes')
+        .on('change', '.an-note-toggle', function () {
+            onCharaNoteMixChanged(String($(this).closest('[data-an-note-id]').attr('data-an-note-id') ?? ''), !!$(this).prop('checked'));
+        })
+        .on('click', '.an-note-open', function () {
+            onCharaNoteOpened(String($(this).closest('[data-an-note-id]').attr('data-an-note-id') ?? ''));
+        });
     $(document).on('click', '[data-an-profile-action]', function () {
         if ($(this).hasClass('disabled')) {
             return;

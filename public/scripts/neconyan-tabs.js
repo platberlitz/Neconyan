@@ -2,6 +2,8 @@ import { createBubblesBottomBoundary } from './bubbles-bottom-boundary.js';
 import { initChatWidgets } from './neconyan-chat-widgets.js';
 import { finishUiMotion, getUiDrawerEdge, getUiSlideOptions, isUiClosing, revealChat, revealUi, setUiVisibility } from './ui-motion.js';
 import { DEFAULT_SCROLL_EDGE_SETTLE_DELAYS, jumpScrollElementToEdge } from './chat-scroll-edges.js';
+import { getChatPickerTitle } from './chat-picker-model.js';
+import { createChatPicker } from './chat-picker.js';
 import {
     clampMobileShellText as clampText,
     createMobileShellLifecycle,
@@ -517,7 +519,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261101-phone-sidebar-edit';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261101-chat-picker-ui';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -567,7 +569,7 @@ const NN_MESSAGE_STYLES = Object.freeze([
     { id: '2', label: 'Document', icon: 'fa-file-lines' },
 ]);
 
-const NN_WORLD_INFO_SUBTITLE_HTML = 'Edit lorebooks for character cards here. Read the guide <a class="notes-link" href="https://docs.sillytavern.app/usage/core-concepts/worldinfo/" target="_blank" rel="noopener noreferrer">here</a>.';
+const NN_WORLD_INFO_SUBTITLE_HTML = 'Edit lorebooks for character cards here. Read the guide <a class="notes-link" href="https://platberlitz.github.io/neconyan-docs/workspace/lorebooks/" target="_blank" rel="noopener noreferrer">here</a>.';
 const NN_SAMPLING_SUBTITLE_HTML = 'Adjust randomness, reply length and other generation settings.';
 
 /*
@@ -1116,7 +1118,7 @@ const NN_CHARACTER_PANEL_TABS = Object.freeze([
 ]);
 const NN_CHARACTER_PANEL_DEFAULT_TAB = 'characters';
 
-const NN_PERSONA_HELP_LINK_HTML = '<a class="notes-link sb-character-title-help" href="https://docs.sillytavern.app/usage/core-concepts/personas/" target="_blank"><span class="fa-solid fa-circle-question note-link-span"></span></a>';
+const NN_PERSONA_HELP_LINK_HTML = '<a class="notes-link sb-character-title-help" href="https://platberlitz.github.io/neconyan-docs/workspace/characters/#set-up-your-persona" target="_blank"><span class="fa-solid fa-circle-question note-link-span"></span></a>';
 
 const NN_SHELLS = Object.freeze({
     left: {
@@ -1593,6 +1595,10 @@ const nnState = {
     },
     bottomChatBar: {
         chatSelect: null,
+        chatPickerButton: null,
+        chatList: null,
+        chatListRequest: 0,
+        chatPicker: null,
         personaBubble: null,
         searchField: null,
         searchInput: null,
@@ -6403,6 +6409,7 @@ function bindTopBarBrand() {
     const events = [
         eventTypes.APP_READY,
         eventTypes.CHAT_CHANGED,
+        eventTypes.CHAT_RENAMED,
         eventTypes.CHAT_CREATED,
         eventTypes.GROUP_CHAT_CREATED,
         eventTypes.MESSAGE_EDITED,
@@ -7221,7 +7228,16 @@ function sortChatFiles(files) {
     });
 }
 
-async function fetchCharacterChatFiles(chatContext) {
+// With throwOnError a failed listing rejects instead of looking like an empty one.
+function failChatFileListing(throwOnError, message) {
+    if (throwOnError) {
+        throw new Error(message);
+    }
+
+    return [];
+}
+
+async function fetchCharacterChatFiles(chatContext, { throwOnError = false } = {}) {
     const avatarUrl = chatContext.character?.avatar;
 
     if (!avatarUrl) {
@@ -7231,7 +7247,7 @@ async function fetchCharacterChatFiles(chatContext) {
     try {
         const headers = await getAuthorizedRequestHeadersOrNull(2000, chatContext.context);
         if (!headers) {
-            return [];
+            return failChatFileListing(throwOnError, 'Chat list request is not authorised yet.');
         }
 
         const response = await fetch('/api/characters/chats', {
@@ -7241,23 +7257,26 @@ async function fetchCharacterChatFiles(chatContext) {
         });
 
         if (!response.ok) {
-            return [];
+            return failChatFileListing(throwOnError, `Chat list request failed (${response.status}).`);
         }
 
         const data = await response.json();
         if (typeof data === 'object' && data?.error === true) {
-            return [];
+            return failChatFileListing(throwOnError, 'Chat list request was refused.');
         }
 
         const chats = Array.isArray(data) ? data : Object.values(data ?? {});
         return sortChatFiles(chats.map(normalizeChatInfo).filter(chat => chat.fileName));
     } catch (error) {
+        if (throwOnError) {
+            throw error;
+        }
         console.error('Failed to fetch character chats', error);
         return [];
     }
 }
 
-async function fetchGroupChatFiles(chatContext) {
+async function fetchGroupChatFiles(chatContext, { throwOnError = false } = {}) {
     const groupChats = Array.isArray(chatContext.group?.chats) ? chatContext.group.chats : [];
 
     if (!groupChats.length) {
@@ -7267,7 +7286,7 @@ async function fetchGroupChatFiles(chatContext) {
     try {
         const headers = await getAuthorizedRequestHeadersOrNull(2000, chatContext.context);
         if (!headers) {
-            return [];
+            return failChatFileListing(throwOnError, 'Chat list request is not authorised yet.');
         }
 
         const chats = await Promise.all(groupChats.map(async chatId => {
@@ -7295,19 +7314,22 @@ async function fetchGroupChatFiles(chatContext) {
 
         return sortChatFiles(chats.filter(chat => chat?.fileName));
     } catch (error) {
+        if (throwOnError) {
+            throw error;
+        }
         console.error('Failed to fetch group chats', error);
         return [];
     }
 }
 
-async function getChatFilesForContext(chatContext = getChatUiContext()) {
+async function getChatFilesForContext(chatContext = getChatUiContext(), options = {}) {
     if (!chatContext.canBrowseChats) {
         return [];
     }
 
     return chatContext.group
-        ? fetchGroupChatFiles(chatContext)
-        : fetchCharacterChatFiles(chatContext);
+        ? fetchGroupChatFiles(chatContext, options)
+        : fetchCharacterChatFiles(chatContext, options);
 }
 
 async function openChatById(chatId, { closeMobileTools = false } = {}) {
@@ -9161,6 +9183,7 @@ function bindChatbarEvents() {
     const events = [
         eventTypes.APP_READY,
         eventTypes.CHAT_CHANGED,
+        eventTypes.CHAT_RENAMED,
         eventTypes.CHAT_LOADED,
         eventTypes.CHAT_CREATED,
         eventTypes.GROUP_CHAT_CREATED,
@@ -20046,6 +20069,7 @@ function buildBottomChatBar() {
         return;
     }
 
+    getBottomChatBarState().chatPicker?.close();
     container.replaceChildren();
 
     // Persona bubble
@@ -20071,11 +20095,24 @@ function buildBottomChatBar() {
 
     const chatSelect = createElement('select', {
         id: 'sb-bottom-chat-select',
-        attrs: { title: 'Switch chat' },
+        attrs: { title: 'Switch chat', hidden: '', tabindex: '-1', 'aria-hidden': 'true' },
     });
     chatSelect.addEventListener('change', () => {
         void openChatById(chatSelect.value);
     });
+    const chatPickerButton = createElement('button', {
+        id: 'sb-bottom-chat-picker-button',
+        attrs: { type: 'button', title: t`Switch chat`, 'aria-label': t`Switch chat`,
+            'aria-haspopup': 'dialog', 'aria-expanded': 'false', 'aria-controls': 'sb-bottom-chat-picker' },
+    });
+    chatPickerButton.innerHTML = '<span class="sb-bottom-chat-picker-label"></span><i class="fa-solid fa-chevron-up" aria-hidden="true"></i>';
+    const chatPicker = createChatPicker({
+        button: chatPickerButton,
+        onSelect: openChatById,
+        onRefresh: refreshBottomChatSelect,
+        onOpen: () => { closePersonaPicker(); closeReasoningEffortPicker(); },
+    });
+    chatPickerButton.addEventListener('click', () => chatPicker.toggle());
 
     const collapseToggleBtn = createBottomChatButton({ icon: 'fa-chevron-up', title: 'Hide chat actions', className: 'sb-bottom-chat-collapse-toggle' }, () => {
         setBottomChatSecondaryOpen(!getBottomChatBarState().secondaryOpen);
@@ -20122,11 +20159,13 @@ function buildBottomChatBar() {
     navCluster.append(topBtn, bottomBtn);
     managementCluster.append(regenerateBtn, scratchpadBtn, chatManagerBtn, newBtn, massDeleteBtn, autoNameBtn, renameBtn, searchToggleBtn, hideBtn, deleteBtn);
     secondaryRow.append(managementCluster);
-    container.append(personaBubble, reasoningButton, chatSelect, search.field, navCluster, collapseToggleBtn, secondaryRow);
+    container.append(personaBubble, reasoningButton, chatSelect, chatPickerButton, search.field, navCluster, collapseToggleBtn, secondaryRow);
 
     // Store references for refresh and late context binding retries.
     Object.assign(getBottomChatBarState(), {
         chatSelect,
+        chatPickerButton,
+        chatPicker,
         personaBubble,
         reasoningButton,
         searchField: search.field,
@@ -20185,6 +20224,23 @@ async function refreshBottomChatSelect() {
     }
 
     const chatContext = getChatUiContext();
+    const state = getBottomChatBarState();
+    const request = ++state.chatListRequest;
+    const key = JSON.stringify([chatContext.group?.id ?? null, chatContext.character?.avatar ?? null]);
+    const currentChatName = chatContext.chatId;
+    const label = state.chatPickerButton?.querySelector('.sb-bottom-chat-picker-label');
+    if (label) {
+        label.textContent = currentChatName ? getChatPickerTitle(currentChatName, chatContext.label) : t`No chat selected`;
+        label.setAttribute('translate', currentChatName ? 'no' : 'yes');
+        state.chatPickerButton.title = currentChatName ? `${t`Switch chat`}: ${currentChatName}` : t`Switch chat`;
+    }
+    setButtonDisabled(state.chatPickerButton, !chatContext.canBrowseChats);
+    const fallback = currentChatName ? [{ fileName: currentChatName }] : [];
+    state.chatList = { key, current: currentChatName, label: chatContext.label,
+        entries: state.chatList?.key === key ? state.chatList.entries : fallback,
+        loading: chatContext.canBrowseChats, error: false };
+    state.chatPicker?.update(state.chatList);
+    if (!chatContext.canBrowseChats) state.chatPicker?.close();
 
     setButtonDisabled(nnState.bottomChatBar?.searchInput, !chatContext.hasChat);
     setButtonDisabled(nnState.bottomChatBar?.searchToggleButton, !chatContext.hasChat);
@@ -20199,7 +20255,6 @@ async function refreshBottomChatSelect() {
         return;
     }
 
-    const currentChatName = chatContext.chatId;
     chatSelect.replaceChildren();
 
     // Add placeholder option showing the current chat
@@ -20214,8 +20269,15 @@ async function refreshBottomChatSelect() {
     }
 
     try {
-        const chats = await getChatFilesForContext(chatContext);
+        const chats = await getChatFilesForContext(chatContext, { throwOnError: true });
+        if (request !== state.chatListRequest || getChatUiContext().chatId !== currentChatName
+            || JSON.stringify([getChatUiContext().group?.id ?? null, getChatUiContext().character?.avatar ?? null]) !== key) return;
         const chatNames = chats.map(chat => chat.fileName);
+        const entries = chats.map(chat => ({ ...chat, meta: [formatChatTimestamp(chat.lastMessage),
+            chat.chatItems > 0 ? `${chat.chatItems} ${t`messages`}` : '', formatChatTokenEstimate(chat.tokenEstimate)].filter(Boolean).join(' · ') }));
+        if (currentChatName && !chatNames.includes(currentChatName)) entries.unshift(...fallback);
+        state.chatList = { ...state.chatList, entries, loading: false };
+        state.chatPicker?.update(state.chatList);
 
         chatSelect.replaceChildren();
 
@@ -20247,6 +20309,9 @@ async function refreshBottomChatSelect() {
             nnState.bottomChatBarRefreshAttempts = 0;
         }
     } catch {
+        if (request !== state.chatListRequest) return;
+        state.chatList = { ...state.chatList, loading: false, error: true };
+        state.chatPicker?.update(state.chatList);
         const attempts = Number(nnState.bottomChatBarRefreshAttempts ?? 0);
         if (attempts < 30) {
             nnState.bottomChatBarRefreshAttempts = attempts + 1;
@@ -20421,6 +20486,7 @@ function setBottomChatBarVisible(shouldShow, { persist = true } = {}) {
     const nextVisible = Boolean(shouldShow);
     const bottomChatBarState = getBottomChatBarState();
     bottomChatBarState.visible = nextVisible;
+    if (!nextVisible) bottomChatBarState.chatPicker?.close();
 
     const container = document.getElementById('sb-bottom-chat-bar');
     if (container instanceof HTMLElement) {
@@ -20557,6 +20623,7 @@ function bindBottomChatBarEvents() {
     const events = [
         eventTypes.APP_READY,
         eventTypes.CHAT_CHANGED,
+        eventTypes.CHAT_RENAMED,
         eventTypes.CHAT_LOADED,
         eventTypes.CHAT_CREATED,
         eventTypes.GROUP_CHAT_CREATED,
@@ -20680,6 +20747,7 @@ function toggleReasoningEffortPicker() {
 }
 
 function openReasoningEffortPicker() {
+    getBottomChatBarState().chatPicker?.close();
     const select = getReasoningEffortSelect();
     const button = getBottomChatBarState().reasoningButton;
     if (!(button instanceof HTMLElement) || !isReasoningEffortAvailable(select)) {
@@ -20759,6 +20827,7 @@ function togglePersonaPicker() {
 }
 
 function openPersonaPicker({ focus = true } = {}) {
+    getBottomChatBarState().chatPicker?.close();
     const context = getSillyTavernContext();
     if (!context) return;
     closeReasoningEffortPicker();

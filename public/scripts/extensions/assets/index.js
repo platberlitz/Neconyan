@@ -187,7 +187,7 @@ function createAssetBlock(asset, assetType, element) {
 
     assetBlock.find('.tag').on('click', function (e) {
         const a = document.createElement('a');
-        a.href = 'https://docs.sillytavern.app/for-contributors/function-calling/';
+        a.href = 'https://platberlitz.github.io/neconyan-docs/workspace/model-settings/#function-tools';
         a.target = '_blank';
         a.click();
     });

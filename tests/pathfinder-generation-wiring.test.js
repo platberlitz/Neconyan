@@ -9,6 +9,7 @@ import { resolveGenerationUiLockState, resolveGenerationUnblockState, resolveSto
 import { limitGenerationProse, isGenerationLengthFinish } from '../public/scripts/generation-request-controls.js';
 import { buildAssistantKnowledge, getAssistantKnowledgeBudget } from '../public/scripts/neconyan-assistant-knowledge.js';
 import { isChatNavigationBlocked } from '../public/scripts/chat-navigation-flight.js';
+import { getPendingChatNameCommit } from '../public/scripts/chat-label.js';
 import { isSlashCommandText } from '../public/scripts/slash-commands/SlashCommandRuntimeUtils.js';
 import { captureRecoveryAnchor } from '../public/scripts/held-generation-recovery.js';
 import { substituteWorldInfoGreeting } from '../public/scripts/world-info-scan-chat.js';
@@ -79,6 +80,7 @@ function createHost({ agentsExtension = false } = {}) {
     const context = vm.createContext({
         ...generationOutcome,
         isChatNavigationBlocked, isSlashCommandText,
+        getPendingChatNameCommit,
         captureRecoveryAnchor, releaseGenerationContext: jest.fn(), scheduleHeldGenerationRecovery: jest.fn(),
         saveChatWithHeldReply: jest.fn(async () => true), textgen_settings: {},
         // This harness runs the real host generation flow without the Neconyan

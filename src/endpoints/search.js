@@ -1,11 +1,15 @@
 import fetch from 'node-fetch';
 import express from 'express';
-import ipRegex from 'ip-regex';
 
 import { decode } from 'html-entities';
 import { readSecret, SECRET_KEYS } from './secrets.js';
 import { trimV1 } from '../util.js';
 import { setAdditionalHeaders } from '../additional-headers.js';
+import { parseAndUnwrapIpAddress } from '../private-request-filter.js';
+import { isLocalOrInternalHostname, safeFetchFollowRedirects, validateOutboundTarget } from '../safe-http.js';
+
+const MAX_VISIT_RESPONSE_BYTES = 10 * 1024 * 1024;
+const MAX_SEARXNG_RESPONSE_BYTES = 10 * 1024 * 1024;
 
 export const router = express.Router();
 
@@ -163,17 +167,44 @@ router.post('/transcript', async (request, response) => {
 
 router.post('/searxng', async (request, response) => {
     try {
-        const { baseUrl, query, preferences, categories } = request.body;
+        const { baseUrl, query, preferences, categories } = request.body || {};
 
         if (!baseUrl || !query) {
             console.error('Missing required parameters for /searxng');
             return response.sendStatus(400);
         }
 
+        let mainPageUrl;
+        try {
+            mainPageUrl = new URL(String(baseUrl));
+            if ((mainPageUrl.protocol !== 'http:' && mainPageUrl.protocol !== 'https:') || mainPageUrl.username || mainPageUrl.password) {
+                throw new Error('Invalid SearXNG baseUrl');
+            }
+        } catch {
+            return response.sendStatus(400);
+        }
+
+        const allowPrivate = request.user?.profile?.admin === true;
+        try {
+            await validateOutboundTarget(mainPageUrl, { allowPrivate });
+        } catch (error) {
+            if (error?.status === 403) {
+                return response.status(403).send('Only an administrator can query a private or local SearXNG address.');
+            }
+            return response.sendStatus(400);
+        }
+
+        const isSameOrigin = (host, candidateUrl) => candidateUrl.origin === mainPageUrl.origin;
+
         console.debug('SearXNG query', baseUrl, query);
 
-        const mainPageUrl = new URL(baseUrl);
-        const mainPageRequest = await fetch(mainPageUrl, { headers: visitHeaders });
+        const mainPageRequest = await safeFetchFollowRedirects(mainPageUrl, {
+            headers: visitHeaders,
+            allowPrivate,
+            maxRedirects: 2,
+            maxBytes: MAX_SEARXNG_RESPONSE_BYTES,
+            isAllowedHost: isSameOrigin,
+        });
 
         if (!mainPageRequest.ok) {
             console.error('SearXNG request failed', mainPageRequest.statusText);
@@ -181,14 +212,22 @@ router.post('/searxng', async (request, response) => {
         }
 
         const mainPageText = await mainPageRequest.text();
-        const clientHref = mainPageText.match(/href="(\/client.+\.css)"/)?.[1];
+        const clientHref = mainPageText.match(/href="(\/client[^"]*\.css)"/)?.[1];
 
         if (clientHref) {
-            const clientUrl = new URL(clientHref, baseUrl);
-            await fetch(clientUrl, { headers: visitHeaders });
+            const clientUrl = new URL(clientHref, mainPageUrl.origin);
+            if (clientUrl.origin === mainPageUrl.origin) {
+                await safeFetchFollowRedirects(clientUrl, {
+                    headers: visitHeaders,
+                    allowPrivate,
+                    maxRedirects: 1,
+                    maxBytes: 2 * 1024 * 1024,
+                    isAllowedHost: isSameOrigin,
+                }).catch(() => {});
+            }
         }
 
-        const searchUrl = new URL('/search', baseUrl);
+        const searchUrl = new URL('/search', mainPageUrl);
         const searchParams = new URLSearchParams();
         searchParams.append('q', query);
         if (preferences) {
@@ -199,7 +238,13 @@ router.post('/searxng', async (request, response) => {
         }
         searchUrl.search = searchParams.toString();
 
-        const searchResult = await fetch(searchUrl, { headers: visitHeaders });
+        const searchResult = await safeFetchFollowRedirects(searchUrl, {
+            headers: visitHeaders,
+            allowPrivate,
+            maxRedirects: 2,
+            maxBytes: MAX_SEARXNG_RESPONSE_BYTES,
+            isAllowedHost: isSameOrigin,
+        });
 
         if (!searchResult.ok) {
             const text = await searchResult.text();
@@ -210,6 +255,9 @@ router.post('/searxng', async (request, response) => {
         const data = await searchResult.text();
         return response.send(data);
     } catch (error) {
+        if (error?.status === 403) {
+            return response.sendStatus(403);
+        }
         console.error('SearXNG request failed', error);
         return response.sendStatus(500);
     }
@@ -390,10 +438,10 @@ router.post('/zai', async (request, response) => {
 
 router.post('/visit', async (request, response) => {
     try {
-        const url = request.body.url;
-        const html = Boolean(request.body.html ?? true);
+        const url = request.body?.url;
+        const html = Boolean(request.body?.html ?? true);
 
-        if (!url) {
+        if (!url || typeof url !== 'string') {
             console.error('No url provided for /visit');
             return response.sendStatus(400);
         }
@@ -402,12 +450,12 @@ router.post('/visit', async (request, response) => {
             const urlObj = new URL(url);
 
             // Reject relative URLs
-            if (urlObj.protocol === null || urlObj.host === null) {
+            if (!urlObj.protocol || !urlObj.host) {
                 throw new Error('Invalid URL format');
             }
 
-            // Reject non-HTTP URLs
-            if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') {
+            // Reject non-HTTP URLs and embedded credentials
+            if ((urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') || urlObj.username || urlObj.password) {
                 throw new Error('Invalid protocol');
             }
 
@@ -416,8 +464,9 @@ router.post('/visit', async (request, response) => {
                 throw new Error('Invalid port');
             }
 
-            // Reject IP addresses
-            if (ipRegex.v4({ exact: true }).test(urlObj.hostname) || ipRegex.v6({ exact: true }).test(urlObj.hostname)) {
+            // Reject IP literals (including bracketed IPv6) and local/internal hostnames
+            const strippedHost = urlObj.hostname.replace(/^\[|\]$/g, '');
+            if (parseAndUnwrapIpAddress(strippedHost) || isLocalOrInternalHostname(strippedHost)) {
                 throw new Error('Invalid hostname');
             }
         } catch (error) {
@@ -427,14 +476,29 @@ router.post('/visit', async (request, response) => {
 
         console.info('Visiting web URL', url);
 
-        const result = await fetch(url, { headers: visitHeaders });
+        let result;
+        try {
+            result = await safeFetchFollowRedirects(url, {
+                headers: visitHeaders,
+                allowPrivate: false,
+                disallowIpLiterals: true,
+                standardPortsOnly: true,
+                maxBytes: MAX_VISIT_RESPONSE_BYTES,
+                isAllowedHost: (_host, hopUrl) => hopUrl.port === '',
+            });
+        } catch (error) {
+            if (error?.status >= 400 && error?.status < 500) {
+                return response.sendStatus(400);
+            }
+            throw error;
+        }
 
         if (!result.ok) {
             console.error(`Visit failed ${result.status} ${result.statusText}`);
             return response.sendStatus(500);
         }
 
-        const contentType = String(result.headers.get('content-type'));
+        const contentType = String(result.headers.get('content-type') || '');
 
         if (html) {
             if (!contentType.includes('text/html')) {

@@ -8,7 +8,9 @@ import { applyGenerationRequestControls, requestUsesReasoning } from '../public/
 import { filterChatCompletionSamplingParameters, applyKimiK3ModelParameterConstraints, isKimiK3Model } from '../public/scripts/openai-model-capabilities.js';
 import { checkChatReasoningEffort, getNativeReasoningRoute } from '../public/scripts/chat-reasoning-capabilities.js';
 import { CHAT_COMPLETION_SOURCES, OPENAI_REASONING_EFFORT_MODELS, OPENAI_VERBOSITY_MODELS } from '../src/constants.js';
+import { assertSameOriginHttpUrl, parseHttpBaseUrl, validateSafePathSegment } from '../src/endpoints/provider-url-validation.js';
 import { applyReasoningEffortNormalization, toWireReasoningEffort } from '../src/reasoning-effort.js';
+import { trimTrailingSlash } from '../src/util.js';
 
 const files = ['endpoints/backends/chat-completions.js', 'util.js'];
 const sources = Object.fromEntries(files.map(file => {
@@ -33,6 +35,7 @@ async function sendCustom(body) {
         applyGenerationRequestControls, requestUsesReasoning, applyKimiK3ModelParameterConstraints, isKimiK3Model,
         applyReasoningEffortNormalization, toWireReasoningEffort, filterChatCompletionSamplingParameters,
         checkChatReasoningEffort, getNativeReasoningRoute,
+        assertSameOriginHttpUrl, parseHttpBaseUrl, validateSafePathSegment, trimTrailingSlash,
         TEXT_COMPLETION_MODELS: [], SECRET_KEYS: { CUSTOM: 'custom' },
         readSecret: () => 'test-secret',
         secretIdExists: () => true,

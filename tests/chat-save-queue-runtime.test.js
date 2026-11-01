@@ -4,6 +4,7 @@ import { parse } from 'acorn';
 import { describe, expect, jest, test } from '@jest/globals';
 import { getQueuedChatSaveAbortReason } from '../public/scripts/chat-save-guard.js';
 import { getChatBackupSaveOptions } from '../public/scripts/chat-backup-sequence.js';
+import { getPendingChatNameCommit } from '../public/scripts/chat-label.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave } from '../public/scripts/roleplay-save-chain.js';
 
@@ -33,6 +34,7 @@ function createSaveRuntime(group = false) {
         characters: [{ name: 'Bunny', avatar: 'bunny.png', chat: 'original-chat' }],
         name2: 'Bunny', neutralCharacterName: 'Assistant',
         getQueuedChatSaveAbortReason,
+        getPendingChatNameCommit,
         getChatBackupSaveOptions, uuidv4: randomUUID,
         beginRoleplaySave, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, roleplayAccountStamp, sendRoleplaySave,
         getCurrentChatId: () => runtime.characters[runtime.this_chid]?.chat,

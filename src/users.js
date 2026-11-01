@@ -663,14 +663,62 @@ export function getSessionCookieExpires() {
     return expires;
 }
 
+export const MAX_PASSWORD_LENGTH = 4096;
+const DUMMY_PASSWORD_SALT = crypto.randomBytes(16).toString('base64');
+
+/**
+ * Checks whether a candidate password string is within the accepted length bound.
+ * @param {unknown} password Candidate password
+ * @returns {password is string}
+ */
+export function isAcceptablePasswordInput(password) {
+    return typeof password === 'string' && Buffer.byteLength(password, 'utf8') <= MAX_PASSWORD_LENGTH;
+}
+
 /**
  * Hashes a password using scrypt with the provided salt.
+ * Throws when given a non-string, overlong password, or invalid salt so it can
+ * never silently return the empty-string passwordless account sentinel.
  * @param {string} password Password to hash
  * @param {string} salt Salt to use for hashing
  * @returns {string} Hashed password
  */
 export function getPasswordHash(password, salt) {
+    if (typeof password !== 'string') {
+        throw new TypeError('Password must be a string.');
+    }
+    if (Buffer.byteLength(password, 'utf8') > MAX_PASSWORD_LENGTH) {
+        throw new RangeError(`Password must not exceed ${MAX_PASSWORD_LENGTH} UTF-8 bytes.`);
+    }
+    if (typeof salt !== 'string') {
+        throw new TypeError('Password salt must be a string.');
+    }
     return crypto.scryptSync(password.normalize(), salt, 64).toString('base64');
+}
+
+/**
+ * Verifies a candidate password against a stored scrypt hash in constant time.
+ * When no stored hash is provided, runs a dummy scrypt derivation to equalize timing.
+ * @param {unknown} candidate Candidate password
+ * @param {string} [storedHash] Stored base64 scrypt hash
+ * @param {string} [salt] Stored salt
+ * @returns {boolean}
+ */
+export function verifyPasswordHash(candidate, storedHash, salt) {
+    if (!isAcceptablePasswordInput(candidate)) {
+        return false;
+    }
+    const effectiveSalt = typeof salt === 'string' && salt ? salt : DUMMY_PASSWORD_SALT;
+    const derived = getPasswordHash(candidate, effectiveSalt);
+    if (!derived || typeof storedHash !== 'string' || !storedHash) {
+        return false;
+    }
+    const derivedBytes = Buffer.from(derived, 'utf8');
+    const storedBytes = Buffer.from(storedHash, 'utf8');
+    if (derivedBytes.length !== storedBytes.length) {
+        return false;
+    }
+    return crypto.timingSafeEqual(derivedBytes, storedBytes);
 }
 
 /**
@@ -948,7 +996,7 @@ async function basicUserLogin(request) {
         if (username === userHandle) {
             const user = await storage.getItem(toKey(userHandle));
             // Verify pass again here just to be sure
-            if (user && user.enabled && user.password && user.password === getPasswordHash(password, user.salt)) {
+            if (user && user.enabled && user.password && verifyPasswordHash(password, user.password, user.salt)) {
                 request.session.handle = userHandle;
                 request.session.version = getAccountVersion(user);
                 return true;
@@ -1048,6 +1096,10 @@ export async function setUserDataMiddleware(request, response, next) {
  * @param {import('express').NextFunction} next Next function
  */
 export function requireLoginMiddleware(request, response, next) {
+    if (request.anonymousLoginRoute) {
+        return response.sendStatus(404);
+    }
+
     if (!request.user) {
         return response.sendStatus(403);
     }
@@ -1083,6 +1135,75 @@ export async function loginPageMiddleware(request, response) {
 }
 
 /**
+ * Resolves a regular file inside a trusted root directory, rejecting symbolic links
+ * or targets whose realpath escapes the root's realpath.
+ * @param {string} rootDirectory Trusted base directory (which itself may be a symlink to a directory)
+ * @param {string} relativeFilePath Relative file path under rootDirectory
+ * @returns {{ rootRealPath: string, relativeFromRoot: string } | null}
+ */
+function resolveContainedStaticFile(rootDirectory, relativeFilePath) {
+    if (typeof relativeFilePath !== 'string' || !relativeFilePath || relativeFilePath.includes('\0')) {
+        return null;
+    }
+
+    let rootRealPath;
+    try {
+        const rootStat = fs.statSync(rootDirectory);
+        if (!rootStat.isDirectory()) return null;
+        rootRealPath = fs.realpathSync(rootDirectory);
+    } catch {
+        return null;
+    }
+
+    const lexicalTarget = path.resolve(rootDirectory, relativeFilePath);
+    if (!isPathUnderParent(rootDirectory, lexicalTarget) || path.resolve(rootDirectory) === lexicalTarget) {
+        return null;
+    }
+
+    try {
+        const lstat = fs.lstatSync(lexicalTarget);
+        if (lstat.isSymbolicLink() || !lstat.isFile()) {
+            return null;
+        }
+        const targetRealPath = fs.realpathSync(lexicalTarget);
+        const relativeFromRoot = path.relative(rootRealPath, targetRealPath);
+        if (!relativeFromRoot || relativeFromRoot === '..' || relativeFromRoot.startsWith(`..${path.sep}`) || path.isAbsolute(relativeFromRoot)) {
+            return null;
+        }
+        return { rootRealPath, relativeFromRoot };
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Resolves a regular file inside an extension folder, allowing the top-level extension folder
+ * itself to be a symlink to an external checkout, while requiring the requested file to stay
+ * within that extension folder's realpath and not be a symlink.
+ * @param {string} extensionsBaseDir Base extensions directory (user or global)
+ * @param {string} relativeFilePath Relative path starting with the extension folder name
+ * @returns {{ rootRealPath: string, relativeFromRoot: string } | null}
+ */
+function resolveContainedExtensionFile(extensionsBaseDir, relativeFilePath) {
+    if (typeof relativeFilePath !== 'string' || !relativeFilePath || relativeFilePath.includes('\0')) {
+        return null;
+    }
+
+    const normalized = relativeFilePath.replaceAll('\\', '/').replace(/^\/+/, '');
+    const [extensionFolder, ...restParts] = normalized.split('/');
+    if (!extensionFolder || extensionFolder === '.' || extensionFolder === '..' || restParts.length === 0) {
+        return null;
+    }
+    const innerRelativePath = restParts.join('/');
+    const extensionDir = path.resolve(extensionsBaseDir, extensionFolder);
+    if (!isPathUnderParent(extensionsBaseDir, extensionDir) || path.dirname(extensionDir) !== path.resolve(extensionsBaseDir)) {
+        return null;
+    }
+
+    return resolveContainedStaticFile(extensionDir, innerRelativePath);
+}
+
+/**
  * Creates a route handler for serving files from a specific directory.
  * @param {(req: import('express').Request) => string} directoryFn A function that returns the directory path to serve files from
  * @param {{recoverInterruptedWrites?: boolean}} [options] Route options
@@ -1102,13 +1223,16 @@ function createRouteHandler(directoryFn, { recoverInterruptedWrites = false } = 
             if (recoverInterruptedWrites && isDirectPng) {
                 recoverFileWriteSync(fullPath);
             }
-            const exists = fs.existsSync(fullPath);
-            if (!exists) {
-                return res.sendStatus(404);
+            const resolved = resolveContainedStaticFile(directory, filePath);
+            if (!resolved) {
+                const lstat = fs.lstatSync(fullPath, { throwIfNoEntry: false });
+                return res.sendStatus(lstat?.isSymbolicLink() ? 403 : 404);
             }
 
+            res.set('X-Content-Type-Options', 'nosniff');
+            res.set('Content-Security-Policy', 'default-src \'none\'; media-src \'self\'; img-src \'self\'; style-src \'unsafe-inline\'; sandbox');
             invalidateFirefoxCache(filePath, req, res);
-            return res.sendFile(filePath, { root: directory });
+            return res.sendFile(resolved.relativeFromRoot, { root: resolved.rootRealPath });
         } catch (error) {
             return res.sendStatus(500);
         }
@@ -1129,18 +1253,26 @@ function createExtensionsRouteHandler(directoryFn) {
             if (!isPathUnderParent(directory, path.resolve(localPath))) {
                 return res.sendStatus(403);
             }
-            const existsLocal = fs.existsSync(localPath);
-            if (existsLocal) {
-                return res.sendFile(filePath, { root: directory });
+            const resolvedLocal = resolveContainedExtensionFile(directory, filePath);
+            if (resolvedLocal) {
+                res.set('X-Content-Type-Options', 'nosniff');
+                return res.sendFile(resolvedLocal.relativeFromRoot, { root: resolvedLocal.rootRealPath });
+            }
+            if (fs.lstatSync(localPath, { throwIfNoEntry: false })?.isSymbolicLink()) {
+                return res.sendStatus(403);
             }
 
             const globalPath = path.join(PUBLIC_DIRECTORIES.globalExtensions, filePath);
             if (!isPathUnderParent(PUBLIC_DIRECTORIES.globalExtensions, path.resolve(globalPath))) {
                 return res.sendStatus(403);
             }
-            const existsGlobal = fs.existsSync(globalPath);
-            if (existsGlobal) {
-                return res.sendFile(filePath, { root: PUBLIC_DIRECTORIES.globalExtensions });
+            const resolvedGlobal = resolveContainedExtensionFile(PUBLIC_DIRECTORIES.globalExtensions, filePath);
+            if (resolvedGlobal) {
+                res.set('X-Content-Type-Options', 'nosniff');
+                return res.sendFile(resolvedGlobal.relativeFromRoot, { root: resolvedGlobal.rootRealPath });
+            }
+            if (fs.lstatSync(globalPath, { throwIfNoEntry: false })?.isSymbolicLink()) {
+                return res.sendStatus(403);
             }
 
             return res.sendStatus(404);

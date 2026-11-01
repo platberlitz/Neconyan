@@ -3502,7 +3502,7 @@ function createOpenAISettingsDrawer(id, title, description) {
     if (id === 'sb-openai-sampling') {
         const $helpLink = $('<a>', {
             class: 'notes-link sb-sampling-docs-link',
-            href: 'https://docs.sillytavern.app/usage/common-settings/',
+            href: 'https://platberlitz.github.io/neconyan-docs/workspace/model-settings/#sampling',
             target: '_blank',
             title: 'Documentation on sampling parameters.',
             'data-i18n': '[title]Documentation on sampling parameters',

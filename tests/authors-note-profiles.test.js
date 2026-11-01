@@ -8,8 +8,10 @@ import {
     composeAuthorsNote,
     findCharacterNoteEntry,
     getActiveNoteProfileId,
+    getActiveNoteProfileIds,
     getNoteProfiles,
     getPersonaNoteEntry,
+    resolveActiveNoteProfiles,
     resolveNoteProfile,
 } from '../public/scripts/authors-note-profiles.js';
 
@@ -75,10 +77,67 @@ describe('Author\'s Note profiles', () => {
         };
 
         expect(captureScopedAuthorsNotes(profiled, persona, 'sam.png')).toEqual({
-            scoped: { useChara: true, prompt: 'Everything explodes.', position: 2 },
+            scoped: { useChara: true, notes: [{ prompt: 'Everything explodes.', position: 2 }] },
             persona: { useNote: true, prompt: 'Formal speech.', position: 1 },
         });
         expect(captureScopedAuthorsNotes(null, null, 'sam.png')).toEqual({ scoped: null, persona: null });
+    });
+});
+
+describe('mixing character notes', () => {
+    const mixed = {
+        ...profiled,
+        profiles: [
+            ...profiled.profiles,
+            { id: 'rain', name: 'Rain', prompt: 'It always rains.', position: 1 },
+        ],
+    };
+
+    test('notes saved before mixing keep the single note they had in use', () => {
+        expect(getActiveNoteProfileIds(profiled, 'sam.png')).toEqual(['chaos']);
+        expect(getActiveNoteProfileIds(profiled, 'alex.png')).toEqual(['calm']);
+        expect(getActiveNoteProfileIds(profiled, 'gone.png')).toEqual(['calm']);
+        expect(getActiveNoteProfileIds({ name: 'individual:Nova', prompt: 'Old note', position: 2 })).toEqual([DEFAULT_NOTE_PROFILE_ID]);
+        expect(getActiveNoteProfileIds(null)).toEqual([]);
+    });
+
+    test('a shared mix uses every ticked note in list order', () => {
+        const entry = { ...mixed, perPersona: false, activeProfiles: ['rain', 'calm', 'missing'] };
+
+        expect(getActiveNoteProfileIds(entry, 'sam.png')).toEqual(['calm', 'rain']);
+        expect(resolveActiveNoteProfiles(entry, 'sam.png').map(profile => profile.name)).toEqual(['Calm', 'Rain']);
+    });
+
+    test('each persona can keep its own mix, and others fall back to the shared one', () => {
+        const entry = {
+            ...mixed,
+            activeProfiles: ['calm'],
+            personaActiveProfiles: { 'sam.png': ['rain', 'chaos'], 'mo.png': [] },
+        };
+
+        expect(getActiveNoteProfileIds(entry, 'sam.png')).toEqual(['chaos', 'rain']);
+        expect(getActiveNoteProfileIds(entry, 'mo.png')).toEqual([]);
+        expect(getActiveNoteProfileIds(entry, 'alex.png')).toEqual(['calm']);
+        expect(getActiveNoteProfileIds({ ...entry, perPersona: false }, 'sam.png')).toEqual(['calm']);
+    });
+
+    test('an empty mix is kept as no notes rather than reset to the first one', () => {
+        expect(getActiveNoteProfileIds({ ...mixed, perPersona: false, activeProfiles: [] })).toEqual([]);
+    });
+
+    test('captures every ticked note for the server', () => {
+        const entry = { ...mixed, personaActiveProfiles: { 'sam.png': ['chaos', 'rain'] } };
+
+        expect(captureScopedAuthorsNotes(entry, null, 'sam.png')).toEqual({
+            scoped: {
+                useChara: true,
+                notes: [
+                    { prompt: 'Everything explodes.', position: 2 },
+                    { prompt: 'It always rains.', position: 1 },
+                ],
+            },
+            persona: null,
+        });
     });
 });
 
@@ -106,9 +165,14 @@ describe('combining Author\'s Notes', () => {
 });
 
 describe('Author\'s Note panel wiring', () => {
-    test('both notes have a profile picker, actions and their own switches', () => {
+    test('character notes are a tickable list and the persona note keeps its profile picker', () => {
+        expect(indexHtml).toContain('id="extension_floating_chara_notes"');
+        expect(indexHtml).toContain('id="extension_floating_chara_editing"');
+        expect(indexHtml).not.toContain('id="extension_floating_chara_profile"');
+        expect(indexHtml).toContain('id="extension_floating_persona_profile"');
+        expect(notesSource).toContain('.on(\'change\', \'.an-note-toggle\'');
+        expect(notesSource).toContain('.on(\'click\', \'.an-note-open\'');
         for (const slot of ['chara', 'persona']) {
-            expect(indexHtml).toContain(`id="extension_floating_${slot}_profile"`);
             expect(indexHtml).toContain(`id="extension_floating_${slot}"`);
             expect(indexHtml).toContain(`id="extension_floating_${slot}_token_counter"`);
             for (const action of ['new', 'rename', 'delete']) {
@@ -121,7 +185,7 @@ describe('Author\'s Note panel wiring', () => {
     });
 
     test('the browser combines notes through the shared helper and follows persona changes', () => {
-        expect(notesSource).toContain('composeAuthorsNote(prompt, [getNotePart(\'chara\', charaNote), getNotePart(\'persona\', getPersonaNote())])');
+        expect(notesSource).toContain('composeAuthorsNote(prompt, [...getNoteParts(\'chara\', charaNote), ...getNoteParts(\'persona\', getPersonaNote())])');
         expect(notesSource).toContain('eventSource.on(event_types.PERSONA_CHANGED, onChatChanged);');
         expect(notesSource).toContain('personaAuthorsNote');
     });

@@ -7,7 +7,7 @@ import sanitize from 'sanitize-filename';
 import { sync as writeFileSyncAtomic } from 'write-file-atomic';
 
 import { validateAssetFileName } from './assets.js';
-import { clientRelativePath } from '../util.js';
+import { clientRelativePath, isPathUnderParent } from '../util.js';
 
 export const router = express.Router();
 
@@ -57,12 +57,13 @@ router.post('/upload', async (request, response) => {
 
 router.post('/delete', async (request, response) => {
     try {
-        if (!request.body.path) {
+        if (!request.body.path || typeof request.body.path !== 'string') {
             return response.status(400).send('No file was chosen.');
         }
 
-        const pathToDelete = path.join(request.user.directories.root, request.body.path);
-        if (!pathToDelete.startsWith(request.user.directories.files)) {
+        const filesRoot = path.resolve(request.user.directories.files);
+        const pathToDelete = path.resolve(request.user.directories.root, request.body.path);
+        if (pathToDelete === filesRoot || !isPathUnderParent(filesRoot, pathToDelete)) {
             return response.status(400).send('That file path is not allowed.');
         }
 
@@ -86,10 +87,14 @@ router.post('/verify', async (request, response) => {
         }
 
         const verified = {};
+        const filesRoot = path.resolve(request.user.directories.files);
 
         for (const url of request.body.urls) {
-            const pathToVerify = path.join(request.user.directories.root, url);
-            if (!pathToVerify.startsWith(request.user.directories.files)) {
+            if (typeof url !== 'string' || !url) {
+                continue;
+            }
+            const pathToVerify = path.resolve(request.user.directories.root, url);
+            if (pathToVerify === filesRoot || !isPathUnderParent(filesRoot, pathToVerify)) {
                 console.warn(`File verification: Invalid path: ${pathToVerify}`);
                 continue;
             }

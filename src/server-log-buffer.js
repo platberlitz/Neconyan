@@ -247,4 +247,21 @@ export function getServerLogSnapshot({ limit = 250, afterId = 0 } = {}) {
     };
 }
 
+/**
+ * Writes lines directly to the operator terminal without recording them in the
+ * HTTP-accessible server log buffer.
+ * @param {...string} lines
+ */
+export function writeTerminalOnly(...lines) {
+    initServerLogBuffer();
+    state.consoleSuppression.stdout = (state.consoleSuppression.stdout || 0) + 1;
+    try {
+        for (const line of lines) {
+            process.stdout.write(`${line ?? ''}\n`);
+        }
+    } finally {
+        state.consoleSuppression.stdout = Math.max(0, (state.consoleSuppression.stdout || 1) - 1);
+    }
+}
+
 initServerLogBuffer();

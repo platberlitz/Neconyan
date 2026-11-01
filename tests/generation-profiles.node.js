@@ -1048,6 +1048,7 @@ test('prompt macros precede token bans and consume request-local banned words on
 test('prepared text requests preserve random seeds and macros across recovery', async t => {
     const fixture = textFixture(t);
     fixture.profile.api = 'huggingface';
+    fixture.profile['api-url'] = 'https://fixture.endpoints.huggingface.cloud';
     fixture.profile['secret-id'] = 'selected';
     fs.writeFileSync(path.join(fixture.root, 'secrets.json'), JSON.stringify({ api_key_huggingface: [{ id: 'selected', value: 'private', active: true }] }));
     fixture.settings.power_user.custom_stopping_strings = '["{{random::one::two}}"]';
@@ -1299,6 +1300,16 @@ test('profiles resolve by saved name and carry prompt post-processing like the b
     assert.equal(request.custom_prompt_post_processing, 'merge');
 });
 
+const canonicalTextProfileUrls = {
+    mancer: 'https://neuro.mancer.tech',
+    togetherai: 'https://api.together.xyz',
+    infermaticai: 'https://api.totalgpt.ai',
+    dreamgen: 'https://dreamgen.com',
+    openrouter: 'https://openrouter.ai/api',
+    featherless: 'https://api.featherless.ai/v1',
+    huggingface: 'https://fixture.endpoints.huggingface.cloud',
+};
+
 for (const source of Object.values(textgen_types)) {
     test(`saved text profile ${source} uses its instruct preset and provider transport`, async t => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-text-profile-'));
@@ -1307,8 +1318,10 @@ for (const source of Object.values(textgen_types)) {
         fs.mkdirSync(directories.textGen_Settings);
         fs.mkdirSync(directories.instruct);
         const keyed = ['mancer', 'togetherai', 'infermaticai', 'dreamgen', 'openrouter', 'featherless', 'huggingface'].includes(source);
+        const apiUrl = canonicalTextProfileUrls[source] ?? 'http://127.0.0.1:5000';
+        const expectedUrlPrefix = `${apiUrl.replace(/\/v1$/, '')}/`;
         const profile = { id: 'saved-text', name: 'Saved text', mode: 'tc', api: source === 'openrouter' ? 'openrouter-text' : source,
-            model: 'fixture-model', preset: 'chosen', instruct: 'chosen', 'api-url': 'http://127.0.0.1:5000', ...(keyed ? { 'secret-id': 'chosen-key' } : {}) };
+            model: 'fixture-model', preset: 'chosen', instruct: 'chosen', 'api-url': apiUrl, ...(keyed ? { 'secret-id': 'chosen-key' } : {}) };
         const settings = { max_context: 8192, textgenerationwebui_settings: { ...providerSettings, type: 'wrong-active-provider' },
             power_user: { custom_stopping_strings: '["END"]', tokenizer: 3 },
             extension_settings: { connectionManager: { selectedProfile: 'decoy', profiles: [profile] } } };
@@ -1329,7 +1342,7 @@ for (const source of Object.values(textgen_types)) {
             jobContext: { directories, job, signal: controller.signal },
             fetch: async (url, request) => {
                 calls++;
-                assert.ok(url.startsWith('http://127.0.0.1:5000/'));
+                assert.ok(url.startsWith(expectedUrlPrefix));
                 const body = JSON.parse(request.body);
                 assert.equal(body.prompt, expectedPrompts.scoped);
                 const controls = source === 'ollama' ? body.options : body;

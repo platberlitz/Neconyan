@@ -10,6 +10,7 @@ import { SECRETS_FILE } from '../endpoints/secrets.js';
 import { ENTITY_DATE_ADDED_FILE } from '../entity-date-added.js';
 import { ENTITY_LAST_CHAT_FILE } from '../entity-last-chat.js';
 import { FILE_WRITE_RECOVERY_SUFFIX } from '../util.js';
+import { serverDirectory } from '../server-directory.js';
 import { inspectRoleplayFile, roleplayHash, roleplayStoreDirectory } from '../roleplay-store.js';
 import { operationError } from './store.js';
 import { BINARY_FILE_LIMIT } from './binary-files.js';
@@ -19,6 +20,8 @@ const ROOT_FILES = [SETTINGS_FILE, SECRETS_FILE, ENTITY_DATE_ADDED_FILE, ENTITY_
 const ROOT_DIRECTORIES = [...new Set(Object.values(USER_DIRECTORY_TEMPLATE).filter(Boolean).map(value => value.split('/')[0]))];
 const MARKERS = [SETTINGS_FILE, 'characters', 'chats', 'group chats', 'groups', 'User Avatars', 'worlds', 'OpenAI Settings', 'themes', 'extensions'];
 const within = (candidate, parent) => candidate === parent || candidate.startsWith(parent + path.sep);
+const overlaps = (left, right) => within(left, right) || within(right, left);
+const canonicalPath = value => { try { return fs.realpathSync(value); } catch { return path.resolve(value); } };
 const evidence = file => ({ rawHash: file.rawHash, physical: file.physical });
 // Marks a ZIP entry whose own compressed bytes are unreadable, so the import skips only that file.
 const damagedEntry = error => {
@@ -74,7 +77,15 @@ export function resolveAccountImportRoot(input) {
 export function captureFolderImport(base, sourcePath, { extensionsOnly = false, coreOnly = false, parts } = {}) {
     const sourceRoot = resolveAccountImportRoot(sourcePath);
     const targetRoot = path.resolve(base.directories.root);
-    if (within(sourceRoot, targetRoot) || within(sourceRoot, roleplayStoreDirectory(base))) throw operationError('The import source belongs to this account or its protected records.', 400);
+    const resolvedSource = canonicalPath(sourceRoot);
+    const activeDataRoot = typeof globalThis.DATA_ROOT === 'string' && globalThis.DATA_ROOT.trim() ? canonicalPath(globalThis.DATA_ROOT) : null;
+    if (within(sourceRoot, targetRoot) || within(sourceRoot, roleplayStoreDirectory(base))
+        || overlaps(resolvedSource, canonicalPath(targetRoot))
+        || overlaps(resolvedSource, canonicalPath(roleplayStoreDirectory(base)))
+        || (activeDataRoot && overlaps(resolvedSource, activeDataRoot))
+        || overlaps(resolvedSource, canonicalPath(serverDirectory))) {
+        throw operationError('The import source belongs to this account or its protected records.', 400);
+    }
     const files = [];
     const directories = [];
     const excluded = [];

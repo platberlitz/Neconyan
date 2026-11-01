@@ -1253,10 +1253,103 @@ function extractCssUrl(value) {
     return match?.[2] || '';
 }
 
+function unescapeCssText(value) {
+    return String(value ?? '')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\\([0-9a-fA-F]{1,6})\s?|\\([\s\S])/g, (_, hex, ch) => {
+            if (hex) {
+                const codePoint = parseInt(hex, 16);
+                return Number.isFinite(codePoint) && codePoint > 0 && codePoint <= 0x10ffff
+                    ? String.fromCodePoint(codePoint)
+                    : '\ufffd';
+            }
+            return ch ?? '';
+        });
+}
+
+function isExternalMediaUrl(url) {
+    const normalized = String(url ?? '').replace(/[\u0000-\u0020]+/g, '').trim();
+    if (!normalized || normalized.startsWith('#')) {
+        return false;
+    }
+
+    const slashNormalized = normalized.replaceAll('\\', '/');
+    const lower = slashNormalized.toLowerCase();
+    if (lower.startsWith('data:')) {
+        return false;
+    }
+
+    const baseOrigin = (typeof window !== 'undefined' && window.location?.origin && window.location.origin !== 'null')
+        ? window.location.origin
+        : 'http://localhost';
+
+    if (lower.startsWith('blob:')) {
+        const blobBody = slashNormalized.slice(5);
+        return Boolean(blobBody && !blobBody.toLowerCase().startsWith(baseOrigin.toLowerCase()));
+    }
+
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(slashNormalized) || slashNormalized.startsWith('//')) {
+        try {
+            const parsed = new URL(slashNormalized, baseOrigin);
+            return parsed.origin !== baseOrigin;
+        } catch {
+            return true;
+        }
+    }
+
+    const schemeMatch = slashNormalized.match(/^([a-z][a-z0-9+.-]*):/i);
+    if (schemeMatch) {
+        const scheme = `${schemeMatch[1].toLowerCase()}:`;
+        if (scheme === 'data:' || scheme === 'javascript:' || scheme === 'about:') {
+            return false;
+        }
+        try {
+            const parsed = new URL(slashNormalized, baseOrigin);
+            return parsed.origin !== baseOrigin;
+        } catch {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function hasExternalCssUrl(value) {
+    const raw = String(value ?? '');
+    const extracted = extractCssUrl(raw);
+    if (extracted && isExternalMediaUrl(unescapeCssText(extracted))) {
+        return true;
+    }
+
+    const unescaped = unescapeCssText(raw).trim();
+    return isExternalMediaUrl(unescaped) || /https?:\/\//i.test(unescaped);
+}
+
+function isExternalMediaAllowed() {
+    const context = typeof window !== 'undefined' ? window.SillyTavern?.getContext?.() : null;
+    const entityId = context?.groupId
+        ? String(context.groupId)
+        : (context?.characterId !== undefined ? context?.characters?.[context.characterId]?.avatar ?? null : null);
+
+    if (entityId) {
+        if (Array.isArray(power_user?.external_media_allowed_overrides) && power_user.external_media_allowed_overrides.includes(entityId)) {
+            return true;
+        }
+        if (Array.isArray(power_user?.external_media_forbidden_overrides) && power_user.external_media_forbidden_overrides.includes(entityId)) {
+            return false;
+        }
+    }
+
+    return !power_user?.forbid_external_media;
+}
+
 function getCurrentBackgroundReference() {
-    const lockedBackground = extractCssUrl(chat_metadata[BACKGROUND_LOCK_KEY]);
+    const rawLocked = chat_metadata[BACKGROUND_LOCK_KEY];
+    const lockedBackground = extractCssUrl(rawLocked);
     if (lockedBackground) {
-        return lockedBackground;
+        if (isExternalMediaAllowed() || (!isExternalMediaUrl(lockedBackground) && !hasExternalCssUrl(rawLocked))) {
+            return lockedBackground;
+        }
     }
 
     if (background_settings?.name) {
@@ -1294,7 +1387,12 @@ function getAnimatedBackgroundDescriptor() {
         return null;
     }
 
+    const mediaAllowed = isExternalMediaAllowed();
+
     if (isYouTubeUrl(currentReference)) {
+        if (!mediaAllowed) {
+            return null;
+        }
         const videoId = getYouTubeVideoId(currentReference);
         if (!videoId) {
             return null;
@@ -1312,7 +1410,11 @@ function getAnimatedBackgroundDescriptor() {
         return null;
     }
 
-    if (/^https?:\/\//i.test(currentReference) || currentReference.startsWith('backgrounds/')) {
+    if (!mediaAllowed && (isExternalMediaUrl(currentReference) || hasExternalCssUrl(currentReference))) {
+        return null;
+    }
+
+    if (/^https?:\/\//i.test(currentReference) || currentReference.startsWith('//') || currentReference.startsWith('backgrounds/')) {
         return {
             kind: 'video',
             key: currentReference,

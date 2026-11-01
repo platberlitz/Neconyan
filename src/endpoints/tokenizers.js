@@ -120,7 +120,7 @@ async function getPathToTokenizer(model, fallbackModel) {
             // If the file was downloaded manually
             if (isCompressed) {
                 const compressedBuffer = await fs.promises.readFile(cachedFile);
-                const decompressedBuffer = await gunzip(compressedBuffer);
+                const decompressedBuffer = await gunzip(compressedBuffer, { maxOutputLength: 16 * 1024 * 1024 });
                 writeFileAtomicSync(uncompressedPath, decompressedBuffer);
                 await fs.promises.unlink(cachedFile);
                 return uncompressedPath;
@@ -140,7 +140,7 @@ async function getPathToTokenizer(model, fallbackModel) {
 
         const arrayBuffer = await response.arrayBuffer();
         if (isCompressed) {
-            const decompressedBuffer = await gunzip(arrayBuffer);
+            const decompressedBuffer = await gunzip(arrayBuffer, { maxOutputLength: 16 * 1024 * 1024 });
             writeFileAtomicSync(uncompressedPath, decompressedBuffer);
             return uncompressedPath;
         }
@@ -1295,8 +1295,17 @@ router.post('/remote/kobold/count', async function (request, response) {
     }
 });
 
+const REMOTE_TOKENIZER_TEXTGEN_TYPES = new Set([
+    TEXTGEN_TYPES.OOBA,
+    TEXTGEN_TYPES.TABBY,
+    TEXTGEN_TYPES.KOBOLDCPP,
+    TEXTGEN_TYPES.LLAMACPP,
+    TEXTGEN_TYPES.VLLM,
+    TEXTGEN_TYPES.APHRODITE,
+]);
+
 export async function handleTextGenerationEncode(request, response) {
-    if (!request.body) {
+    if (!request.body || !request.body.url) {
         return response.sendStatus(400);
     }
     const text = String(request.body.text) || '';
@@ -1304,15 +1313,27 @@ export async function handleTextGenerationEncode(request, response) {
     const model = String(request.body.model) || '';
 
     try {
+        const parsedBase = new URL(baseUrl.trim());
+        if (!['http:', 'https:'].includes(parsedBase.protocol) || !parsedBase.hostname || parsedBase.username || parsedBase.password || parsedBase.search || parsedBase.hash) {
+            return response.status(400).send({ error: true });
+        }
+
         const args = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
         };
 
-        setAdditionalHeaders(request, args, baseUrl);
+        const apiType = REMOTE_TOKENIZER_TEXTGEN_TYPES.has(request.body.api_type)
+            ? request.body.api_type
+            : TEXTGEN_TYPES.OOBA;
+        setAdditionalHeaders(
+            { ...request, body: { ...request.body, api_type: apiType } },
+            args,
+            parsedBase.toString(),
+        );
 
         // Convert to string + remove trailing slash + /v1 suffix
-        let url = String(baseUrl).replace(/\/$/, '').replace(/\/v1$/, '');
+        let url = parsedBase.toString().replace(/\/$/, '').replace(/\/v1$/, '');
 
         switch (request.body.api_type) {
             case TEXTGEN_TYPES.TABBY:

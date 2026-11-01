@@ -9,7 +9,7 @@ import { t } from './i18n.js';
 import { callGenericPopup, Popup, POPUP_TYPE } from './popup.js';
 import { groups, selected_group } from './group-chats.js';
 import { humanizedDateTime } from './RossAscends-mods.js';
-import { deleteMediaFromServer } from './chats.js';
+import { deleteMediaFromServer, hasExternalCssUrl, isExternalMediaAllowed, isExternalMediaUrl } from './chats.js';
 
 const BG_METADATA_KEY = 'custom_background';
 const LIST_METADATA_KEY = 'chat_backgrounds';
@@ -303,8 +303,9 @@ async function forceSetBackground(backgroundInfo) {
 
 async function onChatChanged() {
     const lockedUrl = chat_metadata[BG_METADATA_KEY];
+    const allowLockedUrl = Boolean(lockedUrl) && (isExternalMediaAllowed() || !hasExternalCssUrl(lockedUrl));
 
-    $('#bg1').css('background-image', lockedUrl || background_settings.url);
+    $('#bg1').css('background-image', allowLockedUrl ? lockedUrl : background_settings.url);
 
     renderChatBackgrounds();
     highlightLockedBackground();
@@ -1506,6 +1507,10 @@ function isVideoBackgroundExtension(fileName) {
  * @returns {Promise<string>} CSS URL of the background
  */
 async function resolveImageUrl(bg, isCustom, isAnimated = null) {
+    if (isCustom && !isExternalMediaAllowed() && (isExternalMediaUrl(bg) || hasExternalCssUrl(bg))) {
+        return PLACEHOLDER_IMAGE;
+    }
+
     if (isVideoBackgroundExtension(bg)) {
         return PLACEHOLDER_IMAGE;
     }

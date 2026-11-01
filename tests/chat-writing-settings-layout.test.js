@@ -25,7 +25,7 @@ const CONTROL_IDS = [
     'smooth_streaming_speed', 'stream_fade_in', 'streaming_fps', 'streaming_fps_counter', 'play_message_sound',
     'audio_message_sound', 'play_sound_unfocused', 'swipes-checkbox', 'gestures-checkbox', 'image_overswipe',
     'auto_scroll_chat_to_bottom', 'chat_truncation', 'chat_truncation_counter', 'show_group_chat_queue',
-    'pin_styles', 'auto-load-chat-checkbox', 'chat-links-checkbox', 'auto_save_msg_edits',
+    'pin_styles', 'auto-load-chat-checkbox', 'chat-links-checkbox', 'auto_label_chat', 'auto_label_chat_threshold', 'auto_save_msg_edits',
     'confirm_message_delete', 'auto_fix_generated_markdown', 'allow_name2_display', 'allow_name1_display',
     'encode_tags', 'forbid_external_media', 'allow_card_scripts', 'aux_field', 'fuzzy_search_checkbox',
     'show_card_avatar_urls', 'spoiler_free_mode', 'tag_import_setting', 'world_import_dialog',
@@ -126,6 +126,26 @@ describe('Chat & Writing settings layout', () => {
         expect(powerUserJs).toContain('$(\'#reply_generation_location\').val(power_user.reply_generation_location);');
         expect(powerUserJs).toContain('power_user.reply_generation_location = $(this).val() === \'server\' ? \'server\' : \'browser\';');
         expect(routingJs).toContain('return value === \'server\' ? \'server\' : \'browser\';');
+    });
+
+    test('names chats automatically by default after six messages, with an adjustable count nested under the switch', () => {
+        const powerUserJs = read('public/scripts/power-user.js');
+        const defaults = JSON.parse(read('default/content/settings.json'));
+        const window = getDrawerChunks()[0].chunk.split('<section class="nn-vt-group"')[3];
+
+        expect(window).toContain('id="nn-cw-window-title"');
+        expect(window).toMatch(/<label for="auto_label_chat" class="checkbox_label nn-vt-row nn-cw-parent">[\s\S]*?<\/label>\s*<div class="nn-vt-nest">\s*<div class="nn-cw-field">\s*<label for="auto_label_chat_threshold"/);
+        expect(window).toContain('<input id="auto_label_chat_threshold" name="auto_label_chat_threshold" type="number" min="1" max="100" step="1" value="6" class="text_pole nn-cw-number" />');
+        expect(window).toContain('the greeting included');
+        expect(defaults.power_user.auto_label_chat).toBe(true);
+        expect(defaults.power_user.auto_label_chat_threshold).toBe(6);
+        expect(powerUserJs).toContain('auto_label_chat: true,');
+        expect(powerUserJs).toContain('auto_label_chat_threshold: CHAT_AUTO_NAME_DEFAULT_THRESHOLD,');
+        // Older settings without the key, or with a broken count, still name chats at six messages.
+        expect(powerUserJs).toContain('power_user.auto_label_chat = power_user.auto_label_chat !== false;');
+        expect(powerUserJs).toContain('power_user.auto_label_chat_threshold = normalizeChatAutoNameThreshold(power_user.auto_label_chat_threshold);');
+        expect(powerUserJs).toContain('$(\'#auto_label_chat_threshold\').val(power_user.auto_label_chat_threshold).prop(\'disabled\', !power_user.auto_label_chat);');
+        expect(powerUserJs).toContain('$(\'#auto_label_chat_threshold\').prop(\'disabled\', !power_user.auto_label_chat);');
     });
 
     test('wires the auto_focus_chat_input toggle across power-user settings and chat-open entry points', () => {
