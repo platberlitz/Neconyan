@@ -63,6 +63,32 @@ async function expectXpWallpaper(page) {
         .toContain('shell-windows-xp.webp');
 }
 
+async function openXpShell(page, phone) {
+    await page.route('**/api/characters/all', route => route.fulfill({ json: [] }));
+    await page.route('**/api/settings/get', async route => {
+        const response = await route.fetch();
+        const data = await response.json();
+        if (typeof data.settings !== 'string') return route.fulfill({ response });
+        const settings = JSON.parse(data.settings);
+        settings.firstRun = false;
+        settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
+        settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', WelcomePage_PanelMode: 'full' };
+        await route.fulfill({ response, json: { ...data, settings: JSON.stringify(settings) } });
+    });
+    await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
+    await page.goto('/');
+    await page.waitForFunction(() => window.NeconyanShell && document.querySelector('.neconyan-home'));
+    await expect(page.locator('#preloader')).toHaveCount(0);
+    await page.evaluate(() => NeconyanShell.openTab('right', 'settings'));
+    await expand(page, '#AppearanceSection > .inline-drawer-header');
+    await expand(page, '#sb-shell-style-drawer > .inline-drawer-header');
+    await page.locator('[data-sb-theme-option="windows-xp"]').click();
+    await expect(page.locator('[data-sb-theme-option="windows-xp"]')).toHaveAttribute('aria-pressed', 'true');
+    await page.waitForFunction(() => document.querySelector('link[data-sb-shell-style="windows-xp"]')?.sheet);
+    await page.evaluate(() => NeconyanShell.showHome());
+    if (phone) await applyIOSOnlyCss(page);
+}
+
 for (const phone of [false, true]) {
     test(`${phone ? 'iPhone stand-in' : 'desktop'} Windows XP Luna windows and colour schemes`, async ({ browser }, info) => {
         test.setTimeout(120000);
@@ -70,30 +96,7 @@ for (const phone of [false, true]) {
         const page = await context.newPage();
         const errors = [];
         page.on('pageerror', error => errors.push(error.message));
-        await page.route('**/api/characters/all', route => route.fulfill({ json: [] }));
-        await page.route('**/api/settings/get', async route => {
-            const response = await route.fetch();
-            const data = await response.json();
-            if (typeof data.settings !== 'string') return route.fulfill({ response });
-            const settings = JSON.parse(data.settings);
-            settings.firstRun = false;
-            settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
-            settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', WelcomePage_PanelMode: 'full' };
-            await route.fulfill({ response, json: { ...data, settings: JSON.stringify(settings) } });
-        });
-        await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
-        await page.goto('/');
-        await page.waitForFunction(() => window.NeconyanShell && document.querySelector('.neconyan-home'));
-        await expect(page.locator('#preloader')).toHaveCount(0);
-
-        await page.evaluate(() => NeconyanShell.openTab('right', 'settings'));
-        await expand(page, '#AppearanceSection > .inline-drawer-header');
-        await expand(page, '#sb-shell-style-drawer > .inline-drawer-header');
-        await page.locator('[data-sb-theme-option="windows-xp"]').click();
-        await expect(page.locator('[data-sb-theme-option="windows-xp"]')).toHaveAttribute('aria-pressed', 'true');
-        await page.waitForFunction(() => document.querySelector('link[data-sb-shell-style="windows-xp"]')?.sheet);
-        await page.evaluate(() => NeconyanShell.showHome());
-        if (phone) await applyIOSOnlyCss(page);
+        await openXpShell(page, phone);
 
         await expectXpWallpaper(page);
         const wallpaper = await page.evaluate(async () => {
@@ -164,5 +167,78 @@ for (const phone of [false, true]) {
         expect(errors).toEqual([]);
         await page.unrouteAll({ behavior: 'ignoreErrors' });
         await context.close();
+    });
+
+    test(`${phone ? 'iPhone stand-in' : 'desktop'} XP send follows theme and accent colours`, async ({ browser }, info) => {
+        test.setTimeout(180000);
+        const context = await prepareContext(browser, phone);
+        const page = await context.newPage();
+        try {
+            await openXpShell(page, phone);
+            await page.evaluate(async () => {
+                const core = await import('/script.js');
+                await core.newAssistantChat({ temporary: true });
+                core.setOnlineStatus('XP appearance fixture connected');
+                core.activateSendButtons({ emitGenerationEnded: false });
+                const home = await import('/scripts/welcome-screen.js');
+                home.hideWelcomeHome();
+                NeconyanShell.closeWorkspace();
+            });
+            const send = page.locator('#send_but');
+            await expect(send).toBeVisible();
+            // Preserve the composer's existing size while switching accents.
+            // Phone action squares currently use the shared 38px size token.
+            const originalSize = await send.evaluate(el => ({ width: el.offsetWidth, height: el.offsetHeight }));
+            await useUiTheme(page, 'Windows XP Blue', 'windows-xp-blue');
+            await page.locator('.sb-accent-profile-apply[aria-label="Apply Plum Wine accent profile"]').evaluate(el => el.click());
+            await expect(page.locator('html')).toHaveAttribute('data-neconyan-accent', 'custom');
+            await page.evaluate(() => {
+                window.toastr?.remove();
+                document.querySelector('[data-crash-action="dismiss"]')?.click();
+            });
+            const screenshots = new URL('../screenshots/', import.meta.url);
+            await mkdir(screenshots, { recursive: true });
+            await page.screenshot({ path: new URL(`xp-send-${phone ? 'phone' : 'desktop'}.png`, screenshots).pathname, animations: 'disabled', scale: 'css' });
+
+            const results = [];
+            for (const [name, slug] of [...SCHEMES, ['Neconyan Calico', 'neconyan-calico'], ['Neconyan Calico Dark', 'neconyan-calico-dark']]) {
+                await useUiTheme(page, name, slug);
+                const fills = new Set();
+                for (const profile of [null, 'Pearl', 'Midnight Ink']) {
+                    if (profile) await page.locator(`.sb-accent-profile-apply[aria-label="Apply ${profile} accent profile"]`).evaluate(el => el.click());
+                    for (const state of ['normal', 'hover', 'focus', 'pressed']) {
+                        if (state === 'normal') { await send.evaluate(el => el.blur()); await page.mouse.move(0, 0); }
+                        if (state === 'hover') await send.hover();
+                        if (state === 'focus') { await page.mouse.move(0, 0); await send.focus(); }
+                        if (state === 'pressed') { await send.hover(); await page.mouse.down(); }
+                        const colours = await buttonColours(send);
+                        const actual = await send.evaluate(el => {
+                            const style = getComputedStyle(el);
+                            const probe = document.createElement('span');
+                            probe.style.cssText = 'background: var(--neco-ginger); color: var(--neco-on-accent)';
+                            el.append(probe);
+                            const expected = getComputedStyle(probe);
+                            const result = { fill: style.backgroundColor, ink: style.color, expectedFill: expected.backgroundColor, expectedInk: expected.color, image: style.backgroundImage, width: el.offsetWidth, height: el.offsetHeight };
+                            probe.remove();
+                            return result;
+                        });
+                        // Release away from Send so this appearance check never requests a reply.
+                        if (state === 'pressed') { await page.mouse.move(0, 0); await page.mouse.up(); }
+                        expect(actual.fill, `${name} / ${profile || 'default'} / ${state}`).toBe(actual.expectedFill);
+                        expect(actual.ink).toBe(actual.expectedInk);
+                        expect(actual.image).toBe('none');
+                        expect({ width: actual.width, height: actual.height }).toEqual(originalSize);
+                        for (const stop of colours.stops) expect(contrastRatio(colours.ink, stop)).toBeGreaterThanOrEqual(4.5);
+                        fills.add(actual.fill);
+                        results.push({ name, profile: profile || 'default', state, ...colours, contrast: contrastRatio(colours.ink, colours.stops[0]) });
+                    }
+                }
+                expect(fills.size).toBe(3);
+            }
+            await info.attach('send-accent-contrast', { body: JSON.stringify(results, null, 2), contentType: 'application/json' });
+        } finally {
+            if (!page.isClosed()) await page.unrouteAll({ behavior: 'ignoreErrors' });
+            await context.close();
+        }
     });
 }

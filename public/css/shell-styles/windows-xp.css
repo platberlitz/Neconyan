@@ -87,12 +87,6 @@
     --xp-field-edge: #7f9db9;
 }
 
-:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) {
-    --xp-start: linear-gradient(180deg, #5eac56 0, #3f9a3f 12%, #389538 45%, #2f8a2f 80%, #2a7d2a 100%);
-    --xp-start-ink: #fff;
-    --xp-start-edge: #1e5e1e;
-}
-
 :root[data-sb-theme='windows-xp'][data-neconyan-ui-theme='windows-xp-olive-green'] body.neconyan:not(.sbterm) {
     --xp-hue: #6b7f3e;
     --xp-caption: linear-gradient(180deg, #c9d6a3 0, #93a663 8%, #7a8e4b 40%, #6d8142 88%, #61733a 96%, #4f5f2e 100%);
@@ -107,7 +101,7 @@
 }
 
 /* The dark Homestead palette keeps olive faces and compact, shaded XP controls.
-   Caption and Start colours still follow Accent Profiles. */
+   Caption colours still follow Accent Profiles. */
 :root[data-sb-theme='windows-xp'][data-neconyan-ui-theme='windows-xp-olive-green-dark'] body.neconyan:not(.sbterm) {
     --xp-face: var(--neco-canvas);
     --xp-field: var(--neco-surface);
@@ -118,9 +112,6 @@
     --xp-tab: var(--xp-button);
     --xp-tab-edge: var(--neco-border);
     --xp-pane: linear-gradient(180deg, color-mix(in srgb, var(--neco-ginger) 15%, var(--xp-face)), var(--xp-face));
-    --xp-start: linear-gradient(180deg, color-mix(in srgb, var(--neco-accent-deep) 85%, var(--neco-on-accent)), var(--neco-accent-deep) 18%, color-mix(in srgb, var(--neco-accent-deep) 80%, var(--xp-face)) 86%, var(--xp-face));
-    --xp-start-ink: var(--xp-caption-ink);
-    --xp-start-edge: var(--xp-frame);
     --neco-raised: color-mix(in srgb, var(--neco-ginger) 14%, var(--xp-face));
 }
 
@@ -145,7 +136,6 @@
     --xp-select: #316ac5;
     --xp-select-ink: #fff;
     --xp-hot: #f8b636;
-    --xp-start: linear-gradient(180deg, #7cc46c 0, #45a03a 12%, #368a2d 50%, #2a7224 88%, #1e5a1a 100%);
     --xp-pane-top: #c4d3f6;
     --xp-pane-bottom: #9fb7ea;
     --xp-field-edge: #7f9db9;
@@ -159,9 +149,6 @@
     --xp-select: #f78c1e;
     --xp-select-ink: #111;
     --xp-hot: #f78c1e;
-    --xp-start: linear-gradient(180deg, #ffc27a 0, #fb9a35 12%, #f2851a 50%, #dd700c 88%, #b85a05 100%);
-    --xp-start-ink: #1a1a1a;
-    --xp-start-edge: #7a3c00;
     --xp-pane-top: #3a3a3a;
     --xp-pane-bottom: #262626;
     --xp-field-edge: #5a5a5a;
@@ -175,8 +162,6 @@
     --xp-select: #3d6db5;
     --xp-select-ink: #fff;
     --xp-hot: #4f8fe8;
-    --xp-start: linear-gradient(180deg, #78b864 0, #3f8a32 12%, #2f6f26 50%, #22561c 88%, #163d12 100%);
-    --xp-start-edge: #0d2a0a;
     --xp-pane-top: #3a3f46;
     --xp-pane-bottom: #24282d;
     --xp-field-edge: #555c66;
@@ -464,10 +449,12 @@
 }
 
 /* Core sheets pin the send button's border and corners with !important, so the Start-button
-   edge is an inset ring and the corner shape rides on the radius variable they read. */
+   edge is an inset ring and the corner shape rides on the radius variable they read.
+   Keep the accent and its contrast-matched ink together across every XP colour scheme. */
 :root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) #send_but {
-    --sb-send-bg: var(--xp-start);
-    --sb-send-ink: var(--xp-start-ink);
+    --sb-send-bg: var(--neco-ginger);
+    --sb-send-ink: var(--neco-on-accent);
+    --xp-start-edge: color-mix(in srgb, var(--neco-ginger) 65%, var(--neco-on-accent));
     --neconyan-control-radius: 4px 14px 14px 4px;
     box-shadow: inset 0 0 0 1px var(--xp-start-edge), inset 0 2px 0 rgb(255 255 255 / 0.4), inset 0 -3px 3px rgb(0 0 0 / 0.2);
 }
