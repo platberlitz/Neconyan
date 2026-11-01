@@ -6,7 +6,7 @@ import { parse } from 'acorn';
 import yaml from 'yaml';
 import { applyGenerationRequestControls, requestUsesReasoning } from '../public/scripts/generation-request-controls.js';
 import { filterChatCompletionSamplingParameters, applyKimiK3ModelParameterConstraints, isKimiK3Model } from '../public/scripts/openai-model-capabilities.js';
-import { checkNanoGptReasoningEffort } from '../public/scripts/chat-request-controls.js';
+import { checkChatReasoningEffort, getNativeReasoningRoute } from '../public/scripts/chat-reasoning-capabilities.js';
 import { CHAT_COMPLETION_SOURCES, OPENAI_REASONING_EFFORT_MODELS, OPENAI_VERBOSITY_MODELS } from '../src/constants.js';
 import { applyReasoningEffortNormalization, toWireReasoningEffort } from '../src/reasoning-effort.js';
 
@@ -32,7 +32,7 @@ async function sendCustom(body) {
         CHAT_COMPLETION_SOURCES, OPENAI_REASONING_EFFORT_MODELS, OPENAI_VERBOSITY_MODELS,
         applyGenerationRequestControls, requestUsesReasoning, applyKimiK3ModelParameterConstraints, isKimiK3Model,
         applyReasoningEffortNormalization, toWireReasoningEffort, filterChatCompletionSamplingParameters,
-        checkNanoGptReasoningEffort,
+        checkChatReasoningEffort, getNativeReasoningRoute,
         TEXT_COMPLETION_MODELS: [], SECRET_KEYS: { CUSTOM: 'custom' },
         readSecret: () => 'test-secret',
         secretIdExists: () => true,

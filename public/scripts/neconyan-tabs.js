@@ -20610,7 +20610,7 @@ function getReasoningEffortSelect() {
 
 function isReasoningEffortAvailable(select = getReasoningEffortSelect()) {
     const context = getSillyTavernContext();
-    return Boolean(select) && isReasoningEffortSupported({
+    return Boolean(select) && !select.disabled && select.dataset.reasoningControlAvailable !== 'false' && isReasoningEffortSupported({
         mainApi: context?.mainApi,
         source: context?.chatCompletionSettings?.chat_completion_source,
         dataSource: select.closest('[data-source]')?.getAttribute('data-source'),
@@ -20638,15 +20638,16 @@ function updateReasoningEffortButton() {
     }
 
     const select = getReasoningEffortSelect();
+    if (select) bindReasoningEffortSelect(select);
     const available = isReasoningEffortAvailable(select);
     button.hidden = !available;
+    button.style.display = available ? '' : 'none';
     button.closest('#sb-bottom-chat-bar')?.classList.toggle('sb-has-reasoning-effort', available);
     if (!available) {
         closeReasoningEffortPicker();
         return;
     }
 
-    bindReasoningEffortSelect(select);
     const fullLabel = select.selectedOptions[0]?.textContent?.trim() || select.value;
     const unavailable = select.dataset.reasoningUnavailable === 'true';
     const title = select.dataset.reasoningTitle || `${t`Reasoning Effort`}: ${fullLabel}`;

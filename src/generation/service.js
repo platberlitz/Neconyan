@@ -19,6 +19,8 @@ import { prepareActiveRegex, applyActiveRegex } from './active-regex.js';
 import { cleanGeneratedText, cleanScopedTextResponse, createRawPrompt, extractMessageFromData, extractJsonFromData, normalizeContentText, removePartialStops } from '../../public/scripts/generation-format.js';
 import { createChatGenerationParameters } from '../../public/scripts/chat-provider-parameters.js';
 import { REVERSE_PROXY_SUPPORTED_SOURCES, resolveChatReasoningEffort, resolveCustomStoppingStrings } from '../../public/scripts/chat-request-controls.js';
+import { getNativeReasoningRoute } from '../../public/scripts/chat-reasoning-capabilities.js';
+import { getConfigValue } from '../util.js';
 import { buildChatCompletionSamplerMetadata } from '../../public/scripts/openai-model-capabilities.js';
 import { getNanoGptServiceTiers, isNanoGptPayg } from '../../public/scripts/service-tiers.js';
 import { createMacroEnvironment } from '../macros/index.js';
@@ -121,7 +123,8 @@ export async function validateActiveGenerationContext(material, macroEnvironment
             getGroupNames: () => groupNames, getLogitBias: () => ({}),
             getStoppingStrings: limit => resolveCustomStoppingStrings(material.power, substitute, ephemeralStops, limit),
             getIncludeReasoning: () => Boolean(settings.show_thoughts || settings.auto_append_reasoning_tags),
-            getReasoningEffort: () => resolveChatReasoningEffort(settings, material.profile.model),
+            getReasoningEffort: metadata => resolveChatReasoningEffort(settings, material.profile.model, undefined, metadata,
+                getNativeReasoningRoute(settings, { googleApiVersion: settings.chat_completion_source === 'makersuite' ? getConfigValue('gemini.apiVersion', 'v1beta') : undefined })),
             getVerbosity: () => settings.verbosity === 'auto' ? undefined : settings.verbosity,
             canPerformToolCalls: () => false, registerTools: async () => {},
             reverseProxySources: REVERSE_PROXY_SUPPORTED_SOURCES, validateReverseProxy: () => {},
@@ -376,7 +379,8 @@ async function prepareChatRequest({ context, binding, messages, maxTokens, macro
                 settings.bias_presets[settings.bias_preset_selected], { signal }),
             getStoppingStrings,
             getIncludeReasoning: () => Boolean(settings.show_thoughts || settings.auto_append_reasoning_tags),
-            getReasoningEffort: () => resolveChatReasoningEffort(settings, model, catalog),
+            getReasoningEffort: metadata => resolveChatReasoningEffort(settings, model, catalog, metadata,
+                getNativeReasoningRoute(settings, { googleApiVersion: source === 'makersuite' ? getConfigValue('gemini.apiVersion', 'v1beta') : undefined })),
             getVerbosity: () => settings.verbosity === 'auto' ? undefined : settings.verbosity,
             canPerformToolCalls: () => functionTools.length > 0,
             registerTools: async payload => {

@@ -119,6 +119,18 @@ export function buildChatCompletionSamplerMetadata(source, model, record = {}) {
             ? [...record.reasoning_efforts] : record.reasoning_efforts;
     }
 
+    if (source === 'openrouter' && Object.hasOwn(record ?? {}, 'reasoning')) {
+        const reasoning = record.reasoning;
+        if (reasoning && typeof reasoning === 'object' && !Array.isArray(reasoning)) {
+            metadata.reasoning = {};
+            for (const key of ['supported_efforts', 'mandatory']) {
+                if (Object.hasOwn(reasoning, key)) metadata.reasoning[key] = structuredClone(reasoning[key]);
+            }
+        } else {
+            metadata.reasoning = structuredClone(reasoning);
+        }
+    }
+
     return metadata;
 }
 

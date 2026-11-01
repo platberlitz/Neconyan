@@ -14,6 +14,7 @@ import { createChatGenerationParameters } from '../public/scripts/chat-provider-
 import { cleanGeneratedText, normalizeContentText as normalizeContentTextPure, createRawPrompt as createRawPromptPure, extractMessageFromData as extractMessageFromDataPure, extractJsonFromData as extractJsonFromDataPure } from '../public/scripts/generation-format.js';
 import { textgen_types, createTextProviderParameters, replaceMacrosInList as replaceListMacros } from '../public/scripts/text-provider-parameters.js';
 import { resolveChatReasoningEffort } from '../public/scripts/chat-request-controls.js';
+import { getNativeReasoningRoute } from '../public/scripts/chat-reasoning-capabilities.js';
 import { buildChatCompletionSamplerMetadata, filterChatCompletionSamplingParameters, applyClaudeModelParameterConstraints, applyKimiK3ModelParameterConstraints, isKimiK3Model } from '../public/scripts/openai-model-capabilities.js';
 import { resolveGenerationOutputBufferState, resolveGenerationUnblockState, resolveStopGenerationState } from '../public/scripts/generation-lifecycle/index.js';
 import { event_types } from '../public/scripts/events.js';
@@ -124,7 +125,8 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
         applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse, reasoningOnlyWarningKind,
         createChatGenerationParameters, normalizeContentTextPure, createRawPromptPure, cleanGeneratedText, extractMessageFromDataPure, extractJsonFromDataPure,
         createTextProviderParameters, replaceListMacros,
-        resolveChatReasoningEffort,
+        resolveChatReasoningEffort, getNativeReasoningRoute,
+        modelReasoningRouteBySource: new Map(),
         buildAssistantKnowledge, getAssistantKnowledgeBudget,
         buildChatCompletionSamplerMetadata, filterChatCompletionSamplingParameters,
         modelSamplerMetadataBySource: new Map(), nanoGptModelList: [], model_list: [],
@@ -214,7 +216,7 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
     context.parseChatCompletionLogprobs = () => null;
 
     load(context, 'scripts/utils.js', ['escapeRegex', 'trimSpaces']);
-    load(context, 'scripts/openai.js', ['chat_completion_sources', 'reasoning_effort_types', 'verbosity_levels', 'getReasoningEffort', 'getVerbosity', 'shouldRequestReasoning', 'getChatCompletionModel', 'getChatCompletionSamplerMetadata', 'createGenerationParameters', 'sendOpenAIRequest', 'readChatCompletionStream', 'getStreamingReply']);
+    load(context, 'scripts/openai.js', ['chat_completion_sources', 'reasoning_effort_types', 'verbosity_levels', 'getChatReasoningRoute', 'getReasoningEffort', 'getVerbosity', 'shouldRequestReasoning', 'getChatCompletionModel', 'getChatCompletionSamplerMetadata', 'createGenerationParameters', 'sendOpenAIRequest', 'readChatCompletionStream', 'getStreamingReply']);
     load(context, 'scripts/sse-stream.js', ['EventSourceStream']);
     context.getEventSourceStream = vm.runInContext('() => new EventSourceStream()', context);
     context.appendAutoAppendReasoningInstruction = messages => messages;

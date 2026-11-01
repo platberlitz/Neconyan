@@ -1,3 +1,4 @@
+import { load } from 'cheerio';
 import { afterAll, beforeAll, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import express from 'express';
 import fs from 'node:fs';
@@ -168,21 +169,30 @@ describe('reasoning effort on Z.AI and Moonshot requests', () => {
     });
 
     describe('Moonshot', () => {
-        // Moonshot documents low, high and max for Kimi K3, but the rungs it omits are
-        // forwarded anyway: a K3 that refuses one says so, which beats quietly thinking less.
-        test.each([
-            ['min', 'minimal'],
-            ['low', 'low'],
-            ['medium', 'medium'],
-            ['high', 'high'],
-            ['xhigh', 'xhigh'],
-            ['max', 'max'],
-        ])('sends %s as %s on Kimi K3', async (effort, expected) => {
-            const response = await makeRequest(CHAT_COMPLETION_SOURCES.MOONSHOT, { model: 'kimi-k3', reasoning_effort: effort });
+        test.each([['low', 'low'], ['high', 'high'], ['max', 'max']])(
+            'sends %s as %s on native Kimi K3', async (effort, expected) => {
+                const response = await makeRequest(CHAT_COMPLETION_SOURCES.MOONSHOT, { model: 'kimi-k3', reasoning_effort: effort });
+                expect(response.status).toBe(200);
+                expect(capturedBody.reasoning_effort).toBe(expected);
+            },
+        );
 
-            expect(response.status).toBe(200);
-            expect(capturedBody.reasoning_effort).toBe(expected);
+        test.each(['min', 'medium', 'xhigh', 'none'])('rejects unsupported native K3 effort %s without dispatch', async effort => {
+            const response = await makeRequest(CHAT_COMPLETION_SOURCES.MOONSHOT, { model: 'kimi-k3', reasoning_effort: effort });
+            expect(response.status).toBe(400);
+            expect((await response.json()).error.code).toBe('UNSUPPORTED_REASONING_EFFORT');
+            expect(nodeFetchMock).not.toHaveBeenCalled();
         });
+
+        test.each([['min', 'minimal'], ['medium', 'medium'], ['xhigh', 'xhigh'], ['none', undefined]])(
+            'keeps legacy K3 proxy and unlisted K3.1 behaviour for %s', async (effort, expected) => {
+                for (const fields of [{ model: 'kimi-k3', reverse_proxy: 'https://fixture.invalid/v1', proxy_password: 'fixture' }, { model: 'kimi-k3.1-pro' }]) {
+                    const response = await makeRequest(CHAT_COMPLETION_SOURCES.MOONSHOT, { ...fields, reasoning_effort: effort });
+                    expect(response.status).toBe(200);
+                    expect(capturedBody.reasoning_effort).toBe(expected);
+                }
+            },
+        );
 
         test('does not add the thinking object that K3 rejects', async () => {
             const response = await makeRequest(CHAT_COMPLETION_SOURCES.MOONSHOT, {
@@ -196,7 +206,7 @@ describe('reasoning effort on Z.AI and Moonshot requests', () => {
             expect(capturedBody.reasoning_effort).toBe('max');
         });
 
-        test.each(['none', 'auto', '   '])('omits the effort entirely for %p', async (effort) => {
+        test.each(['auto', '   '])('omits the effort entirely for %p', async (effort) => {
             const response = await makeRequest(CHAT_COMPLETION_SOURCES.MOONSHOT, { model: 'kimi-k3', reasoning_effort: effort });
 
             expect(response.status).toBe(200);
@@ -217,19 +227,26 @@ describe('reasoning effort on Z.AI and Moonshot requests', () => {
         });
 
         test('normalizes UI casing before forwarding', async () => {
-            const response = await makeRequest(CHAT_COMPLETION_SOURCES.MOONSHOT, { model: 'kimi-k3', reasoning_effort: ' XHigh ' });
-
+            const response = await makeRequest(CHAT_COMPLETION_SOURCES.MOONSHOT, { model: 'kimi-k3', reasoning_effort: ' High ' });
             expect(response.status).toBe(200);
-            expect(capturedBody.reasoning_effort).toBe('xhigh');
+            expect(capturedBody.reasoning_effort).toBe('high');
+            nodeFetchMock.mockClear();
+            const invalid = await makeRequest(CHAT_COMPLETION_SOURCES.MOONSHOT, { model: 'kimi-k3', reasoning_effort: ' XHigh ' });
+            expect(invalid.status).toBe(400);
+            expect((await invalid.json()).error.code).toBe('UNSUPPORTED_REASONING_EFFORT');
+            expect(nodeFetchMock).not.toHaveBeenCalled();
         });
     });
 
     test('the Reasoning Effort control is shown for both sources', () => {
         const indexSource = fs.readFileSync(fileURLToPath(new URL('../public/index.html', import.meta.url)), 'utf8');
-        const wrapper = indexSource.match(/<div class="flex-container flexFlowColumn wide100p textAlignCenter marginTop10" data-source="([^"]*)">\s*<div class="flex-container oneline-dropdown"[^>]*>\s*<label for="openai_reasoning_effort">/);
-
-        expect(wrapper).not.toBeNull();
-        expect(wrapper[1].split(',')).toEqual(expect.arrayContaining(['zai', 'moonshot']));
+        const $ = load(indexSource);
+        const select = $('#openai_reasoning_effort');
+        const wrapper = select.closest('[data-source]');
+        expect(select).toHaveLength(1);
+        expect(wrapper).toHaveLength(1);
+        expect(wrapper.find('label[for="openai_reasoning_effort"]')).toHaveLength(1);
+        expect(wrapper.attr('data-source').split(',')).toEqual(expect.arrayContaining(['zai', 'moonshot']));
 
         // The generic OpenAI-style caption describes tiers neither provider has, so it must not claim them.
         const genericCaption = indexSource.match(/data-source="([^"]*)"[^>]*>\s*OpenAI-style options: low, medium, high, xhigh\./);
