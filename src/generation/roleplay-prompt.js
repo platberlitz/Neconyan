@@ -210,14 +210,17 @@ export function activeRoleplayAuthorNote(note) {
     if (!isWorldInfoAuthorNoteActive(note)) return '';
     const scoped = note.scoped;
     const persona = note.persona;
-    if (scoped?.useChara && (typeof scoped.prompt !== 'string' || !isValidNotePosition(scoped.position))) {
+    const isValidPart = part => typeof part?.prompt === 'string' && isValidNotePosition(part.position);
+    // Snapshots taken before character notes could be mixed hold one prompt and position.
+    const characterNotes = scoped?.useChara ? (Array.isArray(scoped.notes) ? scoped.notes : [scoped]) : [];
+    if (!characterNotes.every(isValidPart)) {
         throw roleplayError('ROLEPLAY_INVALID', 'The saved character Author\'s Note is invalid.', 409);
     }
-    if (persona?.useNote && (typeof persona.prompt !== 'string' || !isValidNotePosition(persona.position))) {
+    if (persona?.useNote && !isValidPart(persona)) {
         throw roleplayError('ROLEPLAY_INVALID', 'The saved persona Author\'s Note is invalid.', 409);
     }
     return composeAuthorsNote(note.prompt, [
-        { enabled: Boolean(scoped?.useChara), prompt: scoped?.prompt, position: scoped?.position },
+        ...characterNotes.map(part => ({ enabled: true, prompt: part.prompt, position: part.position })),
         { enabled: Boolean(persona?.useNote), prompt: persona?.prompt, position: persona?.position },
     ]);
 }

@@ -67,6 +67,48 @@ export function resolveNoteProfile(entry, personaAvatar = '') {
 }
 
 /**
+ * The character notes switched on together, in the order they are listed. With `perPersona` on,
+ * the persona's own mix wins, then the single note picked for that persona before mixes existed.
+ * Otherwise the shared mix is used. Notes saved before mixes existed have one note in use. An
+ * empty saved mix means none is in use.
+ */
+export function getActiveNoteProfileIds(entry, personaAvatar = '') {
+    const profiles = getNoteProfiles(entry);
+    if (!profiles.length) {
+        return [];
+    }
+
+    const inListOrder = ids => profiles.filter(profile => ids.includes(profile.id)).map(profile => profile.id);
+
+    if (entry.perPersona && personaAvatar) {
+        const personaMix = entry.personaActiveProfiles && typeof entry.personaActiveProfiles === 'object'
+            ? entry.personaActiveProfiles[personaAvatar]
+            : undefined;
+        if (Array.isArray(personaMix)) {
+            return inListOrder(personaMix);
+        }
+
+        const legacyPick = entry.personaProfiles && typeof entry.personaProfiles === 'object'
+            ? entry.personaProfiles[personaAvatar]
+            : undefined;
+        if (legacyPick && profiles.some(profile => profile.id === legacyPick)) {
+            return [legacyPick];
+        }
+    }
+
+    if (Array.isArray(entry.activeProfiles)) {
+        return inListOrder(entry.activeProfiles);
+    }
+
+    return [getActiveNoteProfileId(entry)];
+}
+
+export function resolveActiveNoteProfiles(entry, personaAvatar = '') {
+    const ids = getActiveNoteProfileIds(entry, personaAvatar);
+    return getNoteProfiles(entry).filter(profile => ids.includes(profile.id));
+}
+
+/**
  * The saved note for a solo character. The browser keys notes by the avatar file name without its
  * extension (`individual:Name`); older saves used the bare name.
  */
@@ -97,16 +139,19 @@ export function getPersonaNoteEntry(store, personaAvatar) {
 
 /**
  * Snapshot of the character and persona notes in effect for one reply, in the shape the server
- * prompt builders validate: `scoped` for the character, `persona` for the persona.
+ * prompt builders validate: `scoped` for the character, `persona` for the persona. `scoped.notes`
+ * holds every character note in the mix; snapshots taken before mixes existed hold a single
+ * `prompt` and `position` instead.
  */
 export function captureScopedAuthorsNotes(characterEntry, personaEntry, personaAvatar = '') {
-    const characterProfile = resolveNoteProfile(characterEntry, personaAvatar);
     const personaProfile = resolveNoteProfile(personaEntry, personaAvatar);
     return {
-        scoped: characterEntry && characterProfile ? {
+        scoped: characterEntry && typeof characterEntry === 'object' ? {
             useChara: Boolean(characterEntry.useChara),
-            prompt: characterProfile.prompt,
-            position: characterProfile.position,
+            notes: resolveActiveNoteProfiles(characterEntry, personaAvatar).map(profile => ({
+                prompt: profile.prompt,
+                position: profile.position,
+            })),
         } : null,
         persona: personaEntry && personaProfile ? {
             useNote: Boolean(personaEntry.useNote),

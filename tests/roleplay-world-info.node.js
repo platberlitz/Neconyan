@@ -2589,7 +2589,7 @@ test('server replies use the saved character profile and persona Author\'s Note'
 
     // The browser saves the note as individual:Nova, without the file extension.
     const sam = capture({ user_avatar: 'sam.png', extension_settings: { note: { ...note, default: 'Chat note' } } });
-    assert.deepEqual(sam.scoped, { useChara: true, prompt: 'Everything explodes.', position: 2 });
+    assert.deepEqual(sam.scoped, { useChara: true, notes: [{ prompt: 'Everything explodes.', position: 2 }] });
     assert.deepEqual(sam.persona, { useNote: true, prompt: 'Sam speaks formally.', position: 1 });
     assert.equal(activeRoleplayAuthorNote(sam), 'Sam speaks formally.\nChat note\nEverything explodes.');
 
@@ -2597,9 +2597,24 @@ test('server replies use the saved character profile and persona Author\'s Note'
     assert.equal(alex.persona, null);
     assert.equal(activeRoleplayAuthorNote(alex), 'Calm pacing.\nChat note');
 
+    // Several ticked notes are all sent, in list order, around the chat note.
+    const [chara] = note.chara;
+    const mixed = { ...chara, activeProfiles: ['calm'], personaActiveProfiles: { 'sam.png': ['chaos', 'calm'] } };
+    const samMix = capture({ user_avatar: 'sam.png', extension_settings: { note: { ...note, chara: [mixed], default: 'Chat note' } } });
+    assert.deepEqual(samMix.scoped.notes, [{ prompt: 'Calm pacing.', position: 1 }, { prompt: 'Everything explodes.', position: 2 }]);
+    assert.equal(activeRoleplayAuthorNote(samMix), 'Calm pacing.\nSam speaks formally.\nChat note\nEverything explodes.');
+    const noneTicked = capture({ user_avatar: 'alex.png', extension_settings: { note: { ...note, chara: [{ ...mixed, activeProfiles: [] }], default: 'Chat note' } } });
+    assert.equal(activeRoleplayAuthorNote(noneTicked), 'Chat note');
+
+    // Replies captured before mixing hold a single character note.
+    assert.equal(activeRoleplayAuthorNote({ ...sam, scoped: { useChara: true, prompt: 'Old note', position: 1 } }),
+        'Old note\nSam speaks formally.\nChat note');
+
     assert.throws(() => capture({ user_avatar: 'sam.png', extension_settings: { note: { ...note, persona: [] } } }),
         { code: 'ROLEPLAY_INVALID' });
     assert.throws(() => activeRoleplayAuthorNote({ ...sam, persona: { useNote: true, prompt: 'x', position: 7 } }),
+        { code: 'ROLEPLAY_INVALID' });
+    assert.throws(() => activeRoleplayAuthorNote({ ...samMix, scoped: { useChara: true, notes: [{ prompt: 'x', position: 7 }] } }),
         { code: 'ROLEPLAY_INVALID' });
 });
 
