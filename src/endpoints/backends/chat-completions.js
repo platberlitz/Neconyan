@@ -12,7 +12,7 @@ import { getLocalPromptCacheValue, isLikelyLocalServerUrl } from '../../../publi
 import { getLinkApiBaseUrl, getLinkApiRequestFormat } from '../../../public/scripts/linkapi-utils.js';
 import { applyGrokModelParameterConstraints, applyKimiK3ModelParameterConstraints, isKimiK3Model, filterChatCompletionSamplingParameters, zaiSupportsReasoningEffort } from '../../../public/scripts/openai-model-capabilities.js';
 import { applyGenerationRequestControls, requestUsesReasoning } from '../../../public/scripts/generation-request-controls.js';
-import { checkChatReasoningEffort, getNativeReasoningRoute } from '../../../public/scripts/chat-reasoning-capabilities.js';
+import { checkChatReasoningEffort, getNativeReasoningRoute, GOOGLE_IMAGE_GENERATION_MODELS } from '../../../public/scripts/chat-reasoning-capabilities.js';
 
 import {
     AIMLAPI_HEADERS,
@@ -706,15 +706,7 @@ async function sendMakerSuiteRequest(request, response) {
 
     function getGeminiBody() {
         // #region UGLY MODEL LISTS AREA
-        const imageGenerationModels = [
-            'gemini-2.0-flash-exp',
-            'gemini-2.0-flash-exp-image-generation',
-            'gemini-2.0-flash-preview-image-generation',
-            'gemini-2.5-flash-image-preview',
-            'gemini-2.5-flash-image',
-            'gemini-3-pro-image-preview',
-            'gemini-3.1-flash-image-preview',
-        ];
+
 
         const isThinkingConfigModel = m => (/^gemini-2.5-(flash|pro)/.test(m) && !/-image(-preview)?$/.test(m)) || (/^gemini-3[.\d]*-(flash|pro)/.test(m));
         const isImageSizeModel = m => /^gemini-3/.test(m);
@@ -739,7 +731,7 @@ async function sendMakerSuiteRequest(request, response) {
             delete generationConfig.candidateCount;
         }
 
-        const enableImageModality = requestImages && imageGenerationModels.includes(model);
+        const enableImageModality = requestImages && GOOGLE_IMAGE_GENERATION_MODELS.includes(model);
         const enableImageConfig = enableImageModality && (aspectRatio || imageSize);
         if (enableImageModality) {
             generationConfig.responseModalities = ['text', 'image'];
@@ -795,11 +787,12 @@ async function sendMakerSuiteRequest(request, response) {
             }
         }
 
-        if (isThinkingConfigModel(model)) {
+        if (isThinkingConfigModel(model) || (request.reasoningCapabilities?.nativeFallback && reasoningEffort)) {
             const thinkingConfig = {};
             const shouldIncludeThoughts = includeReasoning;
 
-            const thinkingBudget = calculateGoogleBudgetTokens(generationConfig.maxOutputTokens, reasoningEffort, model);
+            const thinkingBudget = request.reasoningCapabilities?.nativeFallback && reasoningEffort
+                ? reasoningEffort : calculateGoogleBudgetTokens(generationConfig.maxOutputTokens, reasoningEffort, model);
             if (typeof thinkingBudget === 'number' && Number.isInteger(thinkingBudget)) {
                 thinkingConfig.thinkingBudget = thinkingBudget;
             }
@@ -1103,7 +1096,7 @@ async function sendMistralAIRequest(request, response) {
             'stop': Array.isArray(request.body.stop) && request.body.stop.length > 0 ? request.body.stop : undefined,
         };
 
-        if (request.reasoningCapabilities?.provenance === 'mistralai-documentation' && request.body.reasoning_effort) {
+        if ((request.reasoningCapabilities?.provenance === 'mistralai-documentation' || request.reasoningCapabilities?.nativeFallback) && request.body.reasoning_effort) {
             requestBody.reasoning_effort = request.body.reasoning_effort;
         }
 
@@ -1288,7 +1281,7 @@ async function sendDeepSeekRequest(request, response) {
             bodyParams['logprobs'] = true;
         }
 
-        if (isThinkingModel && request.body.reasoning_effort && (!['auto', 'none'].includes(request.body.reasoning_effort) || disableNativeThinking)) {
+        if ((isThinkingModel || request.reasoningCapabilities?.nativeFallback) && request.body.reasoning_effort && (!['auto', 'none'].includes(request.body.reasoning_effort) || disableNativeThinking || request.reasoningCapabilities?.nativeFallback)) {
             bodyParams['reasoning_effort'] = toWireReasoningEffort(request.body.reasoning_effort);
         }
 
@@ -1837,7 +1830,7 @@ async function sendMinimaxRequest(request, response) {
             ...bodyParams,
         };
 
-        if (request.reasoningCapabilities?.provenance === 'minimax-documentation' && request.body.reasoning_effort) {
+        if ((request.reasoningCapabilities?.provenance === 'minimax-documentation' || request.reasoningCapabilities?.nativeFallback) && request.body.reasoning_effort) {
             requestBody.reasoning_effort = request.body.reasoning_effort;
         }
 
@@ -3013,7 +3006,7 @@ export async function handleChatCompletionsGenerate(request, response) {
                 supported_reasoning_efforts: reasoningSupport.supportedEfforts,
             } });
         }
-        if (reasoningSupport.state !== 'unknown' || reasoningSupport.forbiddenEfforts.length) {
+        if (reasoningSupport.state !== 'unknown' || reasoningSupport.forbiddenEfforts.length || reasoningSupport.nativeFallback) {
             if (reasoningSupport.omitted) delete request.body.reasoning_effort;
             else request.body.reasoning_effort = toWireReasoningEffort(request.body.reasoning_effort);
         }
@@ -3247,7 +3240,7 @@ export async function handleChatCompletionsGenerate(request, response) {
             apiKey = readSecret(request.user.directories, SECRET_KEYS.GROQ, request.body.secret_id);
             headers = {};
             bodyParams = {};
-            if (reasoningSupport.provenance === 'groq-documentation' && request.body.reasoning_effort) {
+            if ((reasoningSupport.provenance === 'groq-documentation' || reasoningSupport.nativeFallback) && request.body.reasoning_effort) {
                 bodyParams.reasoning_effort = request.body.reasoning_effort;
             }
             if (request.body.json_schema) {
@@ -3266,7 +3259,7 @@ export async function handleChatCompletionsGenerate(request, response) {
             apiKey = readSecret(request.user.directories, SECRET_KEYS.FIREWORKS, request.body.secret_id);
             headers = {};
             bodyParams = {};
-            if (reasoningSupport.provenance === 'fireworks-documentation' && request.body.reasoning_effort) {
+            if ((reasoningSupport.provenance === 'fireworks-documentation' || reasoningSupport.nativeFallback) && request.body.reasoning_effort) {
                 bodyParams.reasoning_effort = request.body.reasoning_effort;
             }
             if (request.body.json_schema) {
@@ -3370,14 +3363,14 @@ export async function handleChatCompletionsGenerate(request, response) {
             apiUrl = new URL(request.body.reverse_proxy || API_MOONSHOT).toString();
             apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(request.user.directories, SECRET_KEYS.MOONSHOT, request.body.secret_id);
             headers = {};
-            bodyParams = isKimiK3Model(request.body.model) ? {} : {
+            bodyParams = isKimiK3Model(request.body.model) || (reasoningSupport.nativeFallback && request.body.reasoning_effort) ? {} : {
                 thinking: {
                     type: request.body.include_reasoning ? 'enabled' : 'disabled',
                 },
             };
             // Neconyan divergence: K3 always reasons and takes the depth from a top-level
             // reasoning_effort instead of the thinking object the older Kimi models use.
-            if (isKimiK3Model(request.body.model) && request.body.reasoning_effort && !['auto', 'none'].includes(request.body.reasoning_effort)) {
+            if (request.body.reasoning_effort && (reasoningSupport.nativeFallback || (isKimiK3Model(request.body.model) && !['auto', 'none'].includes(request.body.reasoning_effort)))) {
                 bodyParams['reasoning_effort'] = toWireReasoningEffort(request.body.reasoning_effort);
             }
             request.body.json_schema
@@ -3404,9 +3397,10 @@ export async function handleChatCompletionsGenerate(request, response) {
                     type: requiresThinking || request.body.include_reasoning ? 'enabled' : 'disabled',
                 },
             };
+            if (reasoningSupport.nativeFallback && request.body.reasoning_effort) delete bodyParams.thinking;
             // Neconyan divergence: Z.AI takes the reasoning depth alongside thinking.type from
             // GLM-5.2 onwards.
-            if (zaiSupportsReasoningEffort(request.body.model) && request.body.reasoning_effort && !['auto', 'none'].includes(request.body.reasoning_effort)) {
+            if (request.body.reasoning_effort && (reasoningSupport.nativeFallback || (zaiSupportsReasoningEffort(request.body.model) && !['auto', 'none'].includes(request.body.reasoning_effort)))) {
                 bodyParams['reasoning_effort'] = toWireReasoningEffort(request.body.reasoning_effort);
             }
             if (request.body.json_schema) {
@@ -3468,7 +3462,7 @@ export async function handleChatCompletionsGenerate(request, response) {
         if (request.body.reasoning_effort
             && shouldUseDefaultOpenAiReasoningEffort
             && [CHAT_COMPLETION_SOURCES.CUSTOM, CHAT_COMPLETION_SOURCES.OPENAI, CHAT_COMPLETION_SOURCES.OPENAI_RESPONSES].includes(request.body.chat_completion_source)
-            && OPENAI_REASONING_EFFORT_MODELS.includes(request.body.model)) {
+            && (OPENAI_REASONING_EFFORT_MODELS.includes(request.body.model) || reasoningSupport.nativeFallback)) {
             bodyParams['reasoning_effort'] = toWireReasoningEffort(request.body.reasoning_effort);
         }
 

@@ -36,3 +36,19 @@ test('profile preset requests preserve resolved controls and isolate active sett
     assert.equal(overrides.include_reasoning, 'false');
     assert.equal(preset.temperature, 0.8);
 });
+
+test('future Google preset preserves the existing image flag coercion and deliberate effort', async () => {
+    const active = { chat_completion_source: 'makersuite', google_model: 'gemini-4-flash', reasoning_effort: 'none', request_images: false };
+    const original = structuredClone(active);
+    for (const [input, expected] of [['false', false], ['true', true], ['', false]]) {
+        let captured;
+        const result = await buildChatPresetPayload(active, {}, {}, { request_images: input, reasoning_effort: 'min' }, async settings => {
+            captured = structuredClone(settings);
+            return { generate_data: { model: 'gemini-4-flash', request_images: settings.request_images, reasoning_effort: settings.reasoning_effort } };
+        });
+        assert.equal(result.request_images, expected);
+        assert.equal(result.reasoning_effort, 'min');
+        assert.equal(captured.google_model, 'gemini-4-flash');
+    }
+    assert.deepEqual(active, original);
+});

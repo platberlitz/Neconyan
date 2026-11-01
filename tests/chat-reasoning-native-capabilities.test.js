@@ -25,6 +25,38 @@ const fixtures = [
 ];
 const route = source => getNativeReasoningRoute({ chat_completion_source: source }, { googleApiVersion: 'v1beta' });
 
+describe('unverified native fallback transport', () => {
+    test.each(['openai', 'openai_responses', 'makersuite', 'vertexai', 'deepseek', 'moonshot', 'zai', 'minimax', 'mistralai', 'groq', 'aimlapi', 'fireworks'])(
+        '%s retains unknown enum while exposing its native transport', source => {
+            const settings = { chat_completion_source: source, reasoning_effort: 'none' };
+            const identity = { source, model: 'future-neutral-model', route: route(source) };
+            expect(getChatReasoningCapabilities(identity)).toMatchObject({ state: 'unknown', provenance: null, nativeFallback: true });
+            expect(resolveChatReasoningEffort(settings, identity.model, undefined, undefined, identity.route)).toBe('none');
+            expect(getChatReasoningCapabilities({ ...identity, route: { ...identity.route, reverseProxy: 'https://fixture.invalid' } }).nativeFallback).toBe(false);
+            expect(getChatReasoningCapabilities({ ...identity, model: '' }).nativeFallback).toBe(false);
+            expect(getChatReasoningCapabilities({ ...identity, route: undefined }).nativeFallback).toBe(false);
+        },
+    );
+    test.each(['groq', 'aimlapi', 'fireworks'])('%s ignores unrelated saved proxy settings', source => {
+        const settings = { chat_completion_source: source, reverse_proxy: 'https://fixture.invalid', custom_url: 'https://fixture.invalid/custom' };
+        expect(getChatReasoningCapabilities({ source, model: 'future-neutral-model', route: getNativeReasoningRoute(settings) }).nativeFallback).toBe(true);
+    });
+    test.each(['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3-pro-image-preview', 'gemini-2.5-flash-image'])('Google legacy %s remains excluded', model => {
+        expect(getChatReasoningCapabilities({ source: 'makersuite', model, route: route('makersuite') }).nativeFallback).toBe(false);
+    });
+    test.each(['gemini-4-flash', 'gemini-3.7-flash', 'future-neutral-model'])('Google future text %s uses native fallback', model => {
+        expect(getChatReasoningCapabilities({ source: 'makersuite', model, route: route('makersuite') }).nativeFallback).toBe(true);
+    });
+    test('known models on mismatched routes never become fallback models', () => {
+        expect(getChatReasoningCapabilities({ source: 'openai', model: 'gpt-5', route: { ...route('openai'), reverseProxy: 'https://fixture.invalid' } }).nativeFallback).toBe(false);
+        expect(getChatReasoningCapabilities({ source: 'makersuite', model: 'future-neutral-model', route: { ...route('makersuite'), googleApiVersion: 'v1' } }).nativeFallback).toBe(false);
+        expect(getChatReasoningCapabilities({ source: 'vertexai', model: 'future-neutral-model', route: { ...route('vertexai'), vertexAuthMode: 'proxy' } }).nativeFallback).toBe(false);
+        expect(getChatReasoningCapabilities({ source: 'minimax', model: 'future-neutral-model', route: { ...route('minimax'), minimaxEndpoint: 'cn' } }).nativeFallback).toBe(false);
+        expect(getChatReasoningCapabilities({ source: 'zai', model: 'future-neutral-model', route: { ...route('zai'), zaiEndpoint: 'coding' } }).nativeFallback).toBe(false);
+        expect(getChatReasoningCapabilities({ source: 'openrouter', model: 'future-neutral-model', route: route('openrouter') }).nativeFallback).toBe(false);
+    });
+});
+
 describe('finite native reasoning contracts', () => {
     test.each(fixtures)('%s %s exposes the exact documented choices', (source, model, supportedEfforts) => {
         const identity = { source, model, route: route(source) };

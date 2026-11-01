@@ -3720,12 +3720,12 @@ function updateChatCompletionReasoningAvailability() {
     const support = checkChatReasoningEffort({ source, model,
         metadata: getChatCompletionSamplerMetadata(oai_settings, model), route: getChatReasoningRoute(oai_settings), effort: oai_settings.reasoning_effort });
     const newlyExposed = ['mistralai', 'minimax', 'groq', 'fireworks'].includes(source);
-    const controlAvailable = !newlyExposed || support.state === 'effort-list';
+    const controlAvailable = !newlyExposed || support.state === 'effort-list' || support.nativeFallback;
     select.dataset.reasoningControlAvailable = String(controlAvailable);
     if (newlyExposed) $('#chat_reasoning_effort_row').toggle(controlAvailable);
     $('[data-reasoning-legacy-hint]').each(function () {
         const sources = String($(this).attr('data-source') || '').split(',');
-        $(this).toggle(sources.includes(source) && support.state !== 'effort-list');
+        $(this).toggle(sources.includes(source) && support.state !== 'effort-list' && !support.nativeFallback);
     });
     const labels = {
         none: translate('None', 'openai_reasoning_effort_none'),
@@ -3753,7 +3753,7 @@ function updateChatCompletionReasoningAvailability() {
     select.disabled = support.state === 'no-selector';
     select.dataset.reasoningNoSelector = String(select.disabled);
     if (['nanogpt', 'openrouter'].includes(source)) select.setAttribute('aria-describedby', `${source}_reasoning_effort_hint`);
-    else if (support.state === 'effort-list') select.setAttribute('aria-describedby', 'native_reasoning_effort_hint');
+    else if (support.state === 'effort-list' || support.nativeFallback) select.setAttribute('aria-describedby', 'native_reasoning_effort_hint');
     else select.removeAttribute('aria-describedby');
     select.dataset.reasoningUnavailable = String(unavailable);
     const noSelectorMessage = t`This model does not expose an effort setting. Your saved choice is kept for other models.`;
@@ -3772,7 +3772,8 @@ function updateChatCompletionReasoningAvailability() {
                     : source === 'nanogpt' ? t`Reasoning efforts are sent exactly, aside from minimum which is sent as 'minimal'.`
                         : t`Available reasoning levels are not known for this model.`;
     }
-    const signature = JSON.stringify([source, model, support.state, support.supportedEfforts, support.forbiddenEfforts, select.value, unavailable, controlAvailable]);
+    $('#native_reasoning_effort_hint').toggle(support.nativeFallback || (support.state === 'effort-list' && !['nanogpt', 'openrouter'].includes(source)));
+    const signature = JSON.stringify([source, model, support.nativeFallback, support.state, support.supportedEfforts, support.forbiddenEfforts, select.value, unavailable, controlAvailable]);
     if (select.dataset.reasoningAvailability !== signature) {
         select.dataset.reasoningAvailability = signature;
         // Catalogue arrival changes availability, not the user's settings.
@@ -5379,6 +5380,7 @@ function getVerbosity(settings = null) {
  */
 export async function createGenerationParameters(settings, model, type, messages, { jsonSchema = null, cacheScope = null } = {}) {
     return createChatGenerationParameters(settings, model, type, messages, {
+        getReasoningRoute: () => getChatReasoningRoute(settings),
         appendReasoning: value => appendAutoAppendReasoningInstruction(value, settings, model, type),
         logPrompts: power_user.console_log_prompts,
         requestTokenProbabilities: power_user.request_token_probabilities,

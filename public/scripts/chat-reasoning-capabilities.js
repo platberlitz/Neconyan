@@ -43,6 +43,25 @@ const NATIVE_EFFORTS = Object.freeze({
         'accounts/fireworks/models/gpt-oss-120b': ['low', 'medium', 'high'] },
 });
 
+// The Google serializer and fallback eligibility share this exact image protocol boundary.
+export const GOOGLE_IMAGE_GENERATION_MODELS = Object.freeze([
+    'gemini-2.0-flash-exp', 'gemini-2.0-flash-exp-image-generation', 'gemini-2.0-flash-preview-image-generation',
+    'gemini-2.5-flash-image-preview', 'gemini-2.5-flash-image', 'gemini-3-pro-image-preview', 'gemini-3.1-flash-image-preview',
+]);
+
+export function hasNativeReasoningFallback({ source, model, route } = {}) {
+    const rules = Object.hasOwn(NATIVE_EFFORTS, source) ? NATIVE_EFFORTS[source] : null;
+    if (!rules || typeof model !== 'string' || !model.trim() || Object.hasOwn(rules, model)
+        || !route || typeof route !== 'object' || typeof route.reverseProxy !== 'string' || route.reverseProxy
+        || (source === 'makersuite' && route.googleApiVersion !== 'v1beta')
+        || (source === 'vertexai' && !['express', 'full'].includes(route.vertexAuthMode))
+        || (source === 'zai' && route.zaiEndpoint !== 'common')
+        || (source === 'minimax' && route.minimaxEndpoint !== 'global')) return false;
+    if (['makersuite', 'vertexai'].includes(source)
+        && (GOOGLE_IMAGE_GENERATION_MODELS.includes(model) || /^gemini-2\.5-(flash|pro)/.test(model))) return false;
+    return true;
+}
+
 /** Build a route description from the effective request, never from a URL's name. */
 export function getNativeReasoningRoute(settings = {}, { googleApiVersion } = {}) {
     const source = settings.chat_completion_source;
@@ -92,7 +111,7 @@ export function checkNanoGptReasoningEffort({ effort, ...identity } = {}) {
  * Reviewed 1 November 2026.
  */
 export function getChatReasoningCapabilities({ source, model, metadata, route } = {}) {
-    const unknown = { state: 'unknown', declaredEfforts: [], supportedEfforts: [], forbiddenEfforts: [], reason: 'no-matching-declaration', provenance: null };
+    const unknown = { state: 'unknown', declaredEfforts: [], supportedEfforts: [], forbiddenEfforts: [], reason: 'no-matching-declaration', provenance: null, nativeFallback: hasNativeReasoningFallback({ source, model, route }) };
     if (source === 'nanogpt') {
         const nano = getNanoGptReasoningCapabilities({ source, model, metadata });
         return { ...unknown, ...nano, state: nano.known ? 'effort-list' : 'unknown',

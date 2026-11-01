@@ -8,7 +8,7 @@ export function resolveChatReasoningEffort(settings, model, modelList, metadata 
     let effort = settings.reasoning_effort;
     const capability = getChatReasoningCapabilities({ source, model, metadata, route });
     if (capability.state === 'no-selector') return undefined;
-    if (source !== 'nanogpt' && (capability.state === 'effort-list' || capability.forbiddenEfforts.length)) return effort;
+    if (source !== 'nanogpt' && (capability.state === 'effort-list' || capability.forbiddenEfforts.length || capability.nativeFallback)) return effort;
     if (!['openai', 'openai_responses', 'azure_openai', 'custom', 'xai', 'aimlapi', 'openrouter', 'pollinations', 'perplexity', 'cometapi', 'electronhub', 'chutes'].includes(source)) return effort;
     if (effort === 'none' && !(['openai', 'openai_responses', 'azure_openai', 'custom'].includes(source) && /^gpt-5\.([1-9]|\d{2,})/.test(model))) effort = undefined;
     if (effort === 'min') effort = 'minimal';

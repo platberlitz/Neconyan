@@ -180,6 +180,70 @@ test('metadata-free captured active Groq rejects an unavailable effort before di
     assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
 });
 
+function futureGroqFixture(t, { preset = false } = {}) {
+    const fixture = nativeGroqFixture(t, { preset });
+    const model = 'future-neutral-model';
+    fixture.profile.model = model;
+    fixture.profile['reasoning-effort'] = 'none';
+    fixture.settings.active_generation.model = model;
+    fixture.settings.oai_settings.groq_model = model;
+    fixture.settings.oai_settings.reasoning_effort = 'none';
+    if (preset) fs.writeFileSync(path.join(fixture.directories.openAI_Settings, 'reasoning.json'), JSON.stringify({ reasoning_effort: 'none' }));
+    fixture.save();
+    return fixture;
+}
+
+for (const preset of [false, true]) test(`unlisted native Groq ${preset ? 'preset' : 'quiet'} retains None and explicit Minimum without discovery`, async t => {
+    const fixture = futureGroqFixture(t, { preset });
+    const before = fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8');
+    const binding = captureChatProfile(fixture.directories, 'groq');
+    const efforts = [];
+    const options = { ...fixture.options, binding, generationType: 'quiet', fetch: async (url, request) => {
+        assert.equal(String(url), 'https://api.groq.com/openai/v1/chat/completions');
+        efforts.push(JSON.parse(request.body).reasoning_effort);
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'Future reply.' } }] }));
+    } };
+    await runChatProfile(options);
+    await runChatProfile({ ...options, overridePayload: { reasoning_effort: 'min' } });
+    assert.deepEqual(efforts, ['none', 'minimal']);
+    assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
+});
+
+test('captured active future Groq preserves explicit None without a catalogue', async t => {
+    const fixture = futureGroqFixture(t);
+    const binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 7 });
+    const before = fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8');
+    let calls = 0;
+    await runChatProfile({ ...fixture.options, binding, fetch: async (url, request) => {
+        calls++;
+        assert.equal(String(url), 'https://api.groq.com/openai/v1/chat/completions');
+        assert.equal(JSON.parse(request.body).reasoning_effort, 'none');
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'Future reply.' } }] }));
+    } });
+    assert.equal(calls, 1);
+    assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
+});
+
+test('prepared future Groq replay retains a deliberate Minimum', async t => {
+    const fixture = futureGroqFixture(t);
+    const binding = captureChatProfile(fixture.directories, 'groq');
+    const before = fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8');
+    const job = acceptJob(fixture.directories, { owner: 'tester', type: 'test.profile', submissionKey: 'future-groq-prepared', intent: {} }).job;
+    let calls = 0;
+    const options = { ...fixture.options, binding, generationType: 'quiet', overridePayload: { reasoning_effort: 'min' },
+        jobContext: { directories: fixture.directories, job, signal: new AbortController().signal },
+        fetch: async (url, request) => {
+            calls++;
+            assert.equal(String(url), 'https://api.groq.com/openai/v1/chat/completions');
+            assert.equal(JSON.parse(request.body).reasoning_effort, 'minimal');
+            return new Response(JSON.stringify({ choices: [{ message: { content: 'Replay reply.' } }] }));
+        } };
+    await assert.rejects(runChatProfile({ ...options, onProviderStep: () => { throw new Error('Owned stop before dispatch'); } }), /Owned stop/);
+    assert.equal((await runChatProfile(options)).text, 'Replay reply.');
+    assert.equal(calls, 1);
+    assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
+});
+
 function openRouterReasoningFixture(t, { preset = false, activeMetadata = false } = {}) {
     const fixture = nanoReasoningFixture(t, { preset });
     const model = 'example/model:free';

@@ -20726,7 +20726,11 @@ function openReasoningEffortPicker() {
     document.body.appendChild(picker);
     button.setAttribute('aria-expanded', 'true');
     positionPersonaPicker(picker, button);
-    (picker.querySelector('.is-active:not(:disabled)') ?? picker.querySelector('button:not(:disabled)'))?.focus({ preventScroll: true });
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (!picker.isConnected || document.getElementById('sb-reasoning-effort-picker') !== picker
+            || !button.isConnected || !isReasoningEffortAvailable(select)) return;
+        (picker.querySelector('.is-active:not(:disabled)') ?? picker.querySelector('button:not(:disabled)'))?.focus({ preventScroll: true });
+    }));
 }
 
 function closeReasoningEffortPicker({ restoreFocus = false } = {}) {

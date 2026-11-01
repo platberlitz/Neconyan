@@ -111,7 +111,7 @@ describe('reasoning effort on Z.AI and Moonshot requests', () => {
             expect(capturedBody.reasoning_effort).toBe(expected);
         });
 
-        test('keeps sending the thinking switch alongside the effort', async () => {
+        test('unlisted GLM preserves explicit High without a conflicting thinking switch', async () => {
             const response = await makeRequest(CHAT_COMPLETION_SOURCES.ZAI, {
                 model: 'glm-5.2',
                 reasoning_effort: 'high',
@@ -119,26 +119,34 @@ describe('reasoning effort on Z.AI and Moonshot requests', () => {
             });
 
             expect(response.status).toBe(200);
-            expect(capturedBody.thinking).toEqual({ type: 'enabled' });
+            expect(capturedBody.thinking).toBeUndefined();
             expect(capturedBody.reasoning_effort).toBe('high');
         });
 
-        test.each(['none', 'auto', '   '])('omits the effort entirely for %p', async (effort) => {
+        test.each(['auto', '   '])('omits the effort entirely for %p', async (effort) => {
             const response = await makeRequest(CHAT_COMPLETION_SOURCES.ZAI, { model: 'glm-5.2', reasoning_effort: effort });
 
             expect(response.status).toBe(200);
             expect(Object.hasOwn(capturedBody, 'reasoning_effort')).toBe(false);
         });
 
-        // Z.AI documents reasoning_effort from GLM-5.2 onwards; older releases would reject it.
+        test('unlisted GLM preserves explicit None without a thinking switch', async () => {
+            const response = await makeRequest(CHAT_COMPLETION_SOURCES.ZAI, { model: 'glm-5.2', reasoning_effort: 'none' });
+            expect(response.status).toBe(200);
+            expect(capturedBody.reasoning_effort).toBe('none');
+            expect(capturedBody.thinking).toBeUndefined();
+        });
+
+        // Unlisted native IDs use the unverified transport fallback.
+
         test.each(['glm-5.1', 'glm-5', 'glm-5-turbo', 'glm-5v-turbo', 'glm-4.7', 'glm-4-32b-0414-128k', 'autoglm-phone-multilingual'])(
-            'omits the effort on %s, which predates the parameter',
+            'forwards explicit High on unlisted %s without asserting model support',
             async (model) => {
                 const response = await makeRequest(CHAT_COMPLETION_SOURCES.ZAI, { model, reasoning_effort: 'high' });
 
                 expect(response.status).toBe(200);
-                expect(Object.hasOwn(capturedBody, 'reasoning_effort')).toBe(false);
-                expect(capturedBody.thinking).toEqual({ type: 'disabled' });
+                expect(capturedBody.reasoning_effort).toBe('high');
+                expect(capturedBody.thinking).toBeUndefined();
             },
         );
 
@@ -184,9 +192,9 @@ describe('reasoning effort on Z.AI and Moonshot requests', () => {
             expect(nodeFetchMock).not.toHaveBeenCalled();
         });
 
-        test.each([['min', 'minimal'], ['medium', 'medium'], ['xhigh', 'xhigh'], ['none', undefined]])(
-            'keeps legacy K3 proxy and unlisted K3.1 behaviour for %s', async (effort, expected) => {
-                for (const fields of [{ model: 'kimi-k3', reverse_proxy: 'https://fixture.invalid/v1', proxy_password: 'fixture' }, { model: 'kimi-k3.1-pro' }]) {
+        test.each([['min', 'minimal', 'minimal'], ['medium', 'medium', 'medium'], ['xhigh', 'xhigh', 'xhigh'], ['none', undefined, 'none']])(
+            'keeps K3 proxy and unlisted native K3.1 behaviour for %s', async (effort, proxyExpected, nativeExpected) => {
+                for (const [fields, expected] of [[{ model: 'kimi-k3', reverse_proxy: 'https://fixture.invalid/v1', proxy_password: 'fixture' }, proxyExpected], [{ model: 'kimi-k3.1-pro' }, nativeExpected]]) {
                     const response = await makeRequest(CHAT_COMPLETION_SOURCES.MOONSHOT, { ...fields, reasoning_effort: effort });
                     expect(response.status).toBe(200);
                     expect(capturedBody.reasoning_effort).toBe(expected);
@@ -213,8 +221,8 @@ describe('reasoning effort on Z.AI and Moonshot requests', () => {
             expect(Object.hasOwn(capturedBody, 'reasoning_effort')).toBe(false);
         });
 
-        // Only K3 exposes the parameter; the older models keep the thinking object.
-        test.each(['kimi-k2.5', 'kimi-latest', 'moonshot-v1-128k'])('omits the effort on %s and keeps thinking', async (model) => {
+        // Unlisted native IDs use the unverified transport fallback.
+        test.each(['kimi-k2.5', 'kimi-latest', 'moonshot-v1-128k'])('forwards explicit High on unlisted %s without a conflicting switch', async (model) => {
             const response = await makeRequest(CHAT_COMPLETION_SOURCES.MOONSHOT, {
                 model,
                 reasoning_effort: 'high',
@@ -222,8 +230,8 @@ describe('reasoning effort on Z.AI and Moonshot requests', () => {
             });
 
             expect(response.status).toBe(200);
-            expect(Object.hasOwn(capturedBody, 'reasoning_effort')).toBe(false);
-            expect(capturedBody.thinking).toEqual({ type: 'enabled' });
+            expect(capturedBody.reasoning_effort).toBe('high');
+            expect(capturedBody.thinking).toBeUndefined();
         });
 
         test('normalizes UI casing before forwarding', async () => {

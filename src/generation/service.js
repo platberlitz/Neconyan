@@ -119,6 +119,7 @@ export async function validateActiveGenerationContext(material, macroEnvironment
         if (Number.isFinite(rawOptions.temperature)) settings.temp_openai = rawOptions.temperature;
         // Exercise the shared formatter's actual stop passes without catalogue or tokeniser requests.
         await createChatGenerationParameters(settings, material.profile.model, 'quiet', prompt, {
+            getReasoningRoute: () => getNativeReasoningRoute(settings, { googleApiVersion: settings.chat_completion_source === 'makersuite' ? getConfigValue('gemini.apiVersion', 'v1beta') : undefined }),
             appendReasoning: value => value, userName: isolated.names.user, characterName: isolated.names.char,
             getGroupNames: () => groupNames, getLogitBias: () => ({}),
             getStoppingStrings: limit => resolveCustomStoppingStrings(material.power, substitute, ephemeralStops, limit),
@@ -372,6 +373,7 @@ async function prepareChatRequest({ context, binding, messages, maxTokens, macro
         const record = catalog?.find(item => item.id === model);
         const metadata = settings.model_sampler_metadata || (record ? buildChatCompletionSamplerMetadata(source, model, record) : undefined);
         return createChatGenerationParameters(generationType === 'quiet' ? settings : { ...settings, n: 1 }, model, generationType, input, {
+            getReasoningRoute: () => getNativeReasoningRoute(settings, { googleApiVersion: source === 'makersuite' ? getConfigValue('gemini.apiVersion', 'v1beta') : undefined }),
             appendReasoning: value => value, // Native main prompts already contain the saved reasoning instruction.
             logPrompts: power.console_log_prompts, requestTokenProbabilities: power.request_token_probabilities,
             userName, characterName, getGroupNames: () => groupNames,

@@ -1,6 +1,6 @@
 import { applyClaudeModelParameterConstraints, applyKimiK3ModelParameterConstraints, filterChatCompletionSamplingParameters, isKimiK3Model } from './openai-model-capabilities.js';
 import { LINKAPI_ENDPOINT, getLinkApiRequestFormat } from './linkapi-utils.js';
-import { getChatReasoningCapabilities } from './chat-reasoning-capabilities.js';
+import { getChatReasoningCapabilities, getNativeReasoningRoute } from './chat-reasoning-capabilities.js';
 
 /** Build a request using explicit operation capabilities, without reading browser state. */
 export async function createChatGenerationParameters(settings, model, type, messages, context, { jsonSchema = null, cacheScope = null } = {}) {
@@ -9,6 +9,7 @@ export async function createChatGenerationParameters(settings, model, type, mess
     const source = settings.chat_completion_source;
     const suppliedMetadata = context.getSamplerMetadata();
     const samplerMetadata = suppliedMetadata == null ? suppliedMetadata : structuredClone(suppliedMetadata);
+    const reasoningRoute = context.getReasoningRoute?.() ?? getNativeReasoningRoute(settings);
     const reasoningEffort = context.getReasoningEffort(samplerMetadata);
     const gpt = ['openai', 'openai_responses', 'azure_openai', 'openrouter'].includes(source);
     const kimi = ['custom', 'moonshot', 'nanogpt', 'openrouter'].includes(source) && isKimiK3Model(model);
@@ -55,7 +56,7 @@ export async function createChatGenerationParameters(settings, model, type, mess
     applyChatProviderParameters(data, settings, {
         model, type, getStoppingStrings: context.getStoppingStrings, getAssistantPrefill: context.getAssistantPrefill,
         serviceTier: source === 'nanogpt' ? await context.getServiceTier() : undefined,
-        samplerMetadata,
+        samplerMetadata, reasoningRoute,
     });
     if (jsonSchema) data.json_schema = jsonSchema;
     return { generate_data: data, stream, canMultiSwipe };
@@ -63,7 +64,7 @@ export async function createChatGenerationParameters(settings, model, type, mess
 
 /** Provider-specific request fields, shared by browser and server request builders. */
 export function applyChatProviderParameters(data, settings, {
-    model, type, getStoppingStrings, getAssistantPrefill, serviceTier, samplerMetadata,
+    model, type, getStoppingStrings, getAssistantPrefill, serviceTier, samplerMetadata, reasoningRoute = getNativeReasoningRoute(settings),
 }) {
     const source = settings.chat_completion_source;
     const topK = settings.top_k_openai > 0 ? Number(settings.top_k_openai) : undefined;
@@ -206,11 +207,14 @@ export function applyChatProviderParameters(data, settings, {
         }
     }
     const reasoningCapabilities = getChatReasoningCapabilities({
-        source: data.chat_completion_source, model: data.model, metadata: samplerMetadata,
+        source: data.chat_completion_source, model: data.model, metadata: samplerMetadata, route: reasoningRoute,
     });
     const declaredOpenRouterReasoning = data.chat_completion_source === 'openrouter'
         && (reasoningCapabilities.state === 'effort-list' || reasoningCapabilities.forbiddenEfforts.length > 0);
-    applyClaudeModelParameterConstraints(data, { preserveReasoning: ['claude', 'linkapi'].includes(source) || declaredOpenRouterReasoning });
+    // Missing browser version evidence is not a route claim; retain intent for the authoritative server guard.
+    const pendingMakerRoute = data.chat_completion_source === 'makersuite' && !reasoningRoute.reverseProxy
+        && reasoningRoute.googleApiVersion == null;
+    applyClaudeModelParameterConstraints(data, { preserveReasoning: ['claude', 'linkapi'].includes(source) || declaredOpenRouterReasoning || reasoningCapabilities.nativeFallback || pendingMakerRoute });
     if (['custom', 'moonshot', 'nanogpt', 'openrouter'].includes(source) && isKimiK3Model(model)) applyKimiK3ModelParameterConstraints(data);
     if (samplerMetadata) data.model_sampler_metadata = structuredClone(samplerMetadata);
     filterChatCompletionSamplingParameters(data, { source, model, metadata: samplerMetadata, stripMetadata: false });

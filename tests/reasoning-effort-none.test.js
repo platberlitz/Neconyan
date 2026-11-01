@@ -18,7 +18,7 @@ describe('reasoning effort \'none\'', () => {
             expect(resolveChatReasoningEffort(settings, 'gpt-5.1')).toBe('none');
             expect(resolveChatReasoningEffort(settings, 'gpt-5.4')).toBe('none');
             expect(resolveChatReasoningEffort(settings, 'gpt-5')).toBe(['openai', 'openai_responses'].includes(source) ? 'none' : undefined);
-            expect(resolveChatReasoningEffort(settings, 'gpt-4o')).toBeUndefined();
+            expect(resolveChatReasoningEffort(settings, 'gpt-4o')).toBe(['openai', 'openai_responses'].includes(source) ? 'none' : undefined);
         }
         expect(resolveChatReasoningEffort({ chat_completion_source: 'openrouter', reasoning_effort: 'none' }, 'gpt-5.4')).toBeUndefined();
         for (const source of ['openai', 'openai_responses']) {

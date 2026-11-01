@@ -122,3 +122,26 @@ test('keeps existing Claude-family omission for unknown, stale and non-OpenRoute
         expect(data.temperature).toBeUndefined();
     }
 });
+
+test('captures future native route with reasoning intent before asynchronous bias', async () => {
+    const model = 'anthropic/claude-sonnet-5-future';
+    const settings = { ...baseSettings, chat_completion_source: 'openai', reasoning_effort: 'none',
+        bias_preset_selected: 'selected', bias_presets: { selected: [{ text: 'test', value: -1 }] } };
+    let release;
+    let entered;
+    const waiting = new Promise(resolve => { release = resolve; });
+    const ready = new Promise(resolve => { entered = resolve; });
+    const pending = createChatGenerationParameters(settings, model, 'normal', [{ role: 'user', content: 'Hello' }], {
+        ...context, getReasoningEffort: () => resolveChatReasoningEffort(settings, model),
+        getLogitBias: async () => { entered(); await waiting; return {}; },
+    });
+    await ready;
+    settings.chat_completion_source = 'custom';
+    settings.reverse_proxy = 'https://fixture.invalid';
+    settings.reasoning_effort = 'high';
+    release();
+    const { generate_data: data } = await pending;
+    expect(data.chat_completion_source).toBe('openai');
+    expect(data.reasoning_effort).toBe('none');
+    expect(data.temperature).toBeUndefined();
+});

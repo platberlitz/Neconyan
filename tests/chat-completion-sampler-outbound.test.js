@@ -12,6 +12,7 @@ import { setConfigFilePath } from '../src/util.js';
 import { createChatGenerationParameters } from '../public/scripts/chat-provider-parameters.js';
 import { resolveChatReasoningEffort } from '../public/scripts/chat-request-controls.js';
 import { getNativeReasoningRoute } from '../public/scripts/chat-reasoning-capabilities.js';
+import { buildChatPresetPayload } from '../public/scripts/chat-preset-request.js';
 import { extractMessageFromData, extractProviderReasoning } from '../public/scripts/generation-format.js';
 
 const nodeFetchMock = jest.fn(() => { throw new Error('Unexpected unmocked provider request'); });
@@ -200,14 +201,15 @@ describe('Chat Completion sampler wire filtering', () => {
         }
     });
 
-    async function buildNative(source, model, effort, routeOverrides = {}) {
+    async function buildNative(source, model, effort, routeOverrides = {}, googleApiVersion = 'v1beta') {
         const settings = { chat_completion_source: source, reasoning_effort: effort, temp_openai: 1, top_p_openai: 1,
             freq_pen_openai: 0, pres_pen_openai: 0, typical_p_openai: 1, n: 1, openai_max_tokens: 32,
             vertexai_auth_mode: 'express', zai_endpoint: 'common', minimax_endpoint: 'global', ...routeOverrides };
-        const route = getNativeReasoningRoute(settings, { googleApiVersion: 'v1beta' });
+        const route = getNativeReasoningRoute(settings, { googleApiVersion });
         const { generate_data } = await createChatGenerationParameters(settings, model, 'normal', [{ role: 'user', content: 'Hello' }], {
             appendReasoning: messages => messages, userName: 'User', characterName: 'Character', getGroupNames: () => [],
             getLogitBias: async () => ({}), getStoppingStrings: () => [], getIncludeReasoning: () => false,
+            getReasoningRoute: () => route,
             getReasoningEffort: metadata => resolveChatReasoningEffort(settings, model, undefined, metadata, route),
             getVerbosity: () => undefined, canPerformToolCalls: () => false, registerTools: async () => {},
             reverseProxySources: ['openai', 'openai_responses', 'makersuite', 'vertexai', 'deepseek', 'moonshot', 'zai', 'mistralai'],
@@ -266,6 +268,126 @@ describe('Chat Completion sampler wire filtering', () => {
         expect(nodeFetchMock).not.toHaveBeenCalled();
     });
 
+    const futureSources = ['openai', 'openai_responses', 'makersuite', 'vertexai', 'deepseek', 'moonshot', 'zai',
+        'minimax', 'mistralai', 'groq', 'aimlapi', 'fireworks'];
+    test.each(futureSources.flatMap(source => ['none', 'min', 'low', 'medium', 'high', 'xhigh', 'max'].map(effort => [source, effort])))(
+        '%s unknown native model forwards %s through the real builder and backend', async (source, effort) => {
+            const model = 'future-neutral-model';
+            const response = await request(source, await buildNative(source, model, effort));
+            expect(response.status).toBe(200);
+            expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+            const value = effort === 'min' ? 'minimal' : effort;
+            const field = ['makersuite', 'vertexai'].includes(source) ? 'generationConfig.thinkingConfig.thinkingLevel'
+                : source === 'openai_responses' ? 'reasoning.effort' : 'reasoning_effort';
+            expect(capturedBody).toHaveProperty(field, value);
+            const urls = { openai: ['api.openai.com', '/v1/chat/completions'], openai_responses: ['api.openai.com', '/v1/responses'],
+                makersuite: ['generativelanguage.googleapis.com', `/v1beta/models/${model}:generateContent`],
+                vertexai: ['us-central1-aiplatform.googleapis.com', `/v1/publishers/google/models/${model}:generateContent`],
+                deepseek: ['api.deepseek.com', '/beta/chat/completions'], moonshot: ['api.moonshot.ai', '/v1/chat/completions'],
+                zai: ['api.z.ai', '/api/paas/v4/chat/completions'], minimax: ['api.minimax.io', '/v1/chat/completions'],
+                mistralai: ['api.mistral.ai', '/v1/chat/completions'], groq: ['api.groq.com', '/openai/v1/chat/completions'],
+                aimlapi: ['api.aimlapi.com', '/v1/chat/completions'], fireworks: ['api.fireworks.ai', '/inference/v1/chat/completions'] };
+            const actualUrl = new URL(String(nodeFetchMock.mock.calls[0][0]));
+            expect([actualUrl.hostname, actualUrl.pathname]).toEqual(urls[source]);
+            const actualModel = ['makersuite', 'vertexai'].includes(source) ? model : capturedBody.model;
+            expect(actualModel).toBe(model);
+            expect(capturedBody).not.toHaveProperty('model_sampler_metadata');
+            expect(capturedBody).not.toHaveProperty('reasoningCapabilities');
+            expect(capturedBody.thinking).toBeUndefined();
+        },
+    );
+
+    test.each([false, true, 'false', '', undefined])('Google future text retains Minimum with request_images %p', async requestImages => {
+        const data = await buildNative('makersuite', 'gemini-4-flash', 'min');
+        const response = await request('makersuite', { ...data, request_images: requestImages, include_reasoning: true });
+        expect(response.status).toBe(200);
+        expect(capturedBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'minimal', includeThoughts: true });
+        expect(capturedBody.generationConfig.responseModalities).toBeUndefined();
+        expect(capturedBody.generationConfig.imageConfig).toBeUndefined();
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    test.each([['false', false], ['true', true]])('Google preset coercion %s reaches the existing text protocol', async (input, expected) => {
+        const active = { chat_completion_source: 'makersuite', google_model: 'gemini-4-flash', reasoning_effort: 'min' };
+        const payload = await buildChatPresetPayload(active, {}, {}, { model: 'gemini-4-flash', request_images: input, reasoning_effort: 'min' },
+            async settings => ({ generate_data: await buildNative('makersuite', 'gemini-4-flash', settings.reasoning_effort, { request_images: settings.request_images }) }));
+        expect(payload.request_images).toBe(expected);
+        expect((await request('makersuite', payload)).status).toBe(200);
+        expect(capturedBody.generationConfig.thinkingConfig.thinkingLevel).toBe('minimal');
+        expect(capturedBody.generationConfig.responseModalities).toBeUndefined();
+        expect(capturedBody.generationConfig.imageConfig).toBeUndefined();
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    test('Google late image flag stays text, while late exact image model retains its existing protocol', async () => {
+        const data = await buildNative('makersuite', 'gemini-4-flash', 'high');
+        expect((await request('makersuite', { ...data, request_images: true, include_reasoning: false })).status).toBe(200);
+        expect(capturedBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'high' });
+        expect(capturedBody.generationConfig.responseModalities).toBeUndefined();
+        nodeFetchMock.mockClear();
+        expect((await request('makersuite', { ...data, model: 'gemini-3-pro-image-preview', reasoning_effort: 'none', request_images: true })).status).toBe(200);
+        expect(capturedBody.generationConfig.responseModalities).toEqual(['text', 'image']);
+        expect(capturedBody.generationConfig.thinkingConfig?.thinkingLevel).toBeUndefined();
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    test.each(['gemini-3.7-flash', 'future-neutral-model'])('Google unlisted %s sends literal None and minimal', async model => {
+        for (const [effort, expected] of [['none', 'none'], ['min', 'minimal']]) {
+            expect((await request('makersuite', await buildNative('makersuite', model, effort))).status).toBe(200);
+            expect(capturedBody.generationConfig.thinkingConfig.thinkingLevel).toBe(expected);
+        }
+        expect(nodeFetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    test.each(['auto', 'AUTO', '', null, undefined])('unknown native omitted effort %p does not create a Moonshot or ZAI switch', async effort => {
+        for (const source of ['moonshot', 'zai']) {
+            const response = await request(source, { model: 'future-neutral-model', reasoning_effort: effort, include_reasoning: false });
+            expect(response.status).toBe(200);
+            expect(capturedBody.reasoning_effort).toBeUndefined();
+            expect(capturedBody.thinking).toEqual({ type: 'disabled' });
+        }
+        expect(nodeFetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    test.each([['none', 'none'], ['min', 'minimal']])('missing MakerSuite marker retains Claude-shaped %s for server validation', async (effort, wire) => {
+        const model = 'anthropic/claude-sonnet-5-future';
+        const data = await buildNative('makersuite', model, effort, {}, null);
+        expect(data.reasoning_effort).toBe(effort);
+        const response = await request('makersuite', data);
+        expect(response.status).toBe(200);
+        expect(capturedBody.generationConfig.thinkingConfig.thinkingLevel).toBe(wire);
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    test('explicit MakerSuite wrong version and proxy do not inherit the pending-version preservation', async () => {
+        const model = 'anthropic/claude-sonnet-5-future';
+        const wrongVersion = await buildNative('makersuite', model, 'none', {}, 'v1');
+        expect(wrongVersion.reasoning_effort).toBeUndefined();
+        const proxied = await buildNative('makersuite', model, 'none', { reverse_proxy: 'https://fixture.invalid', proxy_password: 'fixture' }, null);
+        expect(proxied.reasoning_effort).toBeUndefined();
+        const previous = process.env.SILLYTAVERN_GEMINI_APIVERSION;
+        try {
+            process.env.SILLYTAVERN_GEMINI_APIVERSION = 'v1';
+            const noMarker = await buildNative('makersuite', model, 'none', {}, null);
+            expect(noMarker.reasoning_effort).toBe('none');
+            expect((await request('makersuite', noMarker)).status).toBe(200);
+            expect(capturedBody.generationConfig?.thinkingConfig?.thinkingLevel).toBeUndefined();
+            expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+        } finally {
+            if (previous === undefined) delete process.env.SILLYTAVERN_GEMINI_APIVERSION;
+            else process.env.SILLYTAVERN_GEMINI_APIVERSION = previous;
+        }
+    });
+
+    test('unknown native explicit opaque value and Claude-shaped model reach Groq unchanged', async () => {
+        const model = 'anthropic/claude-sonnet-5-future';
+        const response = await request('groq', await buildNative('groq', model, 'FutureCase'));
+        expect(response.status).toBe(200);
+        expect(capturedBody.model).toBe(model);
+        expect(capturedBody.reasoning_effort).toBe('FutureCase');
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+    });
+
     test('DeepSeek None strips outgoing reasoning from a clone and enables non-thinking log probabilities', async () => {
         const messages = [{ role: 'user', content: 'Hello' }, { role: 'assistant', content: '', reasoning_content: 'Private thought',
             tool_calls: [{ id: 'call-fixture', type: 'function', function: { name: 'probe', arguments: '{}' } }] },
@@ -292,15 +414,28 @@ describe('Chat Completion sampler wire filtering', () => {
         expect(invalid.status).toBe(400);
         expect((await invalid.json()).error.code).toBe('UNSUPPORTED_REASONING_EFFORT');
         expect(nodeFetchMock).not.toHaveBeenCalled();
-        for (const fields of [{ model: 'deepseek-v4-flash' },
-            { model: 'deepseek-v4-pro', reverse_proxy: 'https://fixture.invalid/v1', proxy_password: 'fixture' }]) {
+        for (const [fields, noneValue] of [[{ model: 'deepseek-v4-flash' }, 'none'],
+            [{ model: 'deepseek-v4-pro', reverse_proxy: 'https://fixture.invalid/v1', proxy_password: 'fixture' }, undefined]]) {
             expect((await request('deepseek', { ...fields, reasoning_effort: 'min' })).status).toBe(200);
             expect(capturedBody.reasoning_effort).toBe('minimal');
             expect((await request('deepseek', { ...fields, reasoning_effort: 'none' })).status).toBe(200);
-            expect(capturedBody.reasoning_effort).toBeUndefined();
+            expect(capturedBody.reasoning_effort).toBe(noneValue);
         }
         expect((await request('deepseek', { model: 'deepseek-chat', reasoning_effort: 'high' })).status).toBe(200);
-        expect(capturedBody.reasoning_effort).toBeUndefined();
+        expect(capturedBody.reasoning_effort).toBe('high');
+    });
+
+    test('unlisted DeepSeek v4 None keeps the established thinking history policy', async () => {
+        const messages = [{ role: 'user', content: 'Hello' }, { role: 'assistant', content: '',
+            tool_calls: [{ id: 'call-fixture', type: 'function', function: { name: 'probe', arguments: '{}' } }] },
+        { role: 'tool', tool_call_id: 'call-fixture', content: 'done' }];
+        const tools = [{ type: 'function', function: { name: 'probe', parameters: { type: 'object', properties: {} } } }];
+        const response = await request('deepseek', { model: 'deepseek-v4-flash', reasoning_effort: 'none', messages, tools, logprobs: 3 });
+        expect(response.status).toBe(200);
+        expect(capturedBody.reasoning_effort).toBe('none');
+        expect(capturedBody.logprobs).toBeUndefined();
+        expect(capturedBody.messages.find(message => message.tool_calls)?.reasoning_content).toBe('');
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
     });
 
     test('DeepSeek enabled and proxied None preserve their existing thinking behaviour', async () => {

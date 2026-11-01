@@ -98,6 +98,84 @@ async function chooseModel(page, id) {
 for (const mobile of [false, true]) {
     test.describe(`Native reasoning ${mobile ? 'phone' : 'desktop'}`, () => {
         test.use({ viewport: mobile ? { width: 393, height: 852 } : { width: 1280, height: 900 }, isMobile: mobile, hasTouch: mobile });
+        test('known native picker focuses an option and returns focus after Escape', async ({ page, baseURL }, testInfo) => {
+            await prepare(page, baseURL);
+            await page.locator('#left-nav-panel .sb-shell-close').click();
+            await expect(page.locator('#send_textarea')).toBeVisible();
+            await page.evaluate(() => {
+                const describeElement = element => element instanceof window.Element
+                    ? { tag: element.tagName, id: element.id, className: element.className } : null;
+                const events = [];
+                const originalFocus = window.HTMLElement.prototype.focus;
+                const isRelevant = element => element?.id === 'sb-reasoning-effort-button'
+                    || Boolean(element?.closest?.('#sb-reasoning-effort-picker'));
+                const focus = function (...args) {
+                    if (!isRelevant(this)) return Reflect.apply(originalFocus, this, args);
+                    const picker = document.getElementById('sb-reasoning-effort-picker');
+                    const record = { kind: 'focus-call', target: describeElement(this), connected: this.isConnected,
+                        inlineVisibility: picker?.style.visibility, before: describeElement(document.activeElement), time: window.performance.now() };
+                    const result = Reflect.apply(originalFocus, this, args);
+                    record.after = describeElement(document.activeElement);
+                    record.computedVisibilityAfter = picker ? window.getComputedStyle(picker).visibility : null;
+                    events.push(record);
+                    return result;
+                };
+                const focusEvent = event => events.push({ kind: event.type, target: describeElement(event.target),
+                    active: describeElement(document.activeElement), time: window.performance.now() });
+                const keyEvent = event => {
+                    if (event.key === 'Escape') events.push({ kind: 'escape', target: describeElement(event.target),
+                        active: describeElement(document.activeElement), time: window.performance.now() });
+                };
+                const observer = new window.MutationObserver(records => {
+                    for (const record of records) if (record.target.id === 'sb-reasoning-effort-picker') {
+                        events.push({ kind: 'picker-style', oldValue: record.oldValue, inlineVisibility: record.target.style.visibility, time: window.performance.now() });
+                    }
+                });
+                observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['style'], attributeOldValue: true });
+                window.HTMLElement.prototype.focus = focus;
+                document.addEventListener('focusin', focusEvent, true);
+                document.addEventListener('focusout', focusEvent, true);
+                document.addEventListener('keydown', keyEvent, true);
+                window.__reasoningFocusTrace = { events, originalFocus, focusEvent, keyEvent, observer };
+            });
+            const snapshot = () => page.evaluate(() => {
+                const picker = document.getElementById('sb-reasoning-effort-picker');
+                const active = document.activeElement;
+                const activeInsidePicker = Boolean(picker?.contains(active));
+                return { active: active instanceof window.Element ? { tag: active.tagName, id: active.id, className: active.className } : null,
+                    activeInsidePicker, activeText: activeInsidePicker ? active?.textContent?.trim() : null, pickerPresent: Boolean(picker),
+                    pickerVisibility: picker ? window.getComputedStyle(picker).visibility : null,
+                    chipFocused: active?.id === 'sb-reasoning-effort-button',
+                    chipExpanded: document.getElementById('sb-reasoning-effort-button')?.getAttribute('aria-expanded'),
+                    escapeEvents: window.__reasoningFocusTrace.events.filter(event => event.kind === 'escape') };
+            });
+            const trace = {};
+            try {
+                await page.locator('#sb-reasoning-effort-button').click();
+                trace.afterClickCompletion = await snapshot();
+                await waitForAnimationFrames(page);
+                trace.afterPositioningFrames = await snapshot();
+                await page.keyboard.press('Escape');
+                trace.afterEscape = await snapshot();
+            } finally {
+                trace.events = await page.evaluate(() => {
+                    const instrument = window.__reasoningFocusTrace;
+                    instrument.observer.disconnect();
+                    window.HTMLElement.prototype.focus = instrument.originalFocus;
+                    document.removeEventListener('focusin', instrument.focusEvent, true);
+                    document.removeEventListener('focusout', instrument.focusEvent, true);
+                    document.removeEventListener('keydown', instrument.keyEvent, true);
+                    return instrument.events;
+                });
+                await testInfo.attach('known-native-picker-focus-trace', { body: JSON.stringify(trace, null, 2), contentType: 'application/json' });
+            }
+            expect(trace.afterPositioningFrames.activeInsidePicker).toBe(true);
+            expect(trace.afterPositioningFrames.activeText).toBe('Low');
+            expect(trace.afterEscape.escapeEvents).toHaveLength(1);
+            expect(trace.afterEscape.pickerPresent).toBe(false);
+            expect(trace.afterEscape.chipFocused).toBe(true);
+        });
+
         // This same visual-only case runs against the clean base and the candidate.
         test('ordinary native settings and picker preview', async ({ page, baseURL }, testInfo) => {
             await prepare(page, baseURL);
@@ -129,6 +207,7 @@ for (const mobile of [false, true]) {
                 ...(await measure(['#openai_reasoning_effort', '#native_reasoning_effort_hint', '#sb-openai-advanced > .inline-drawer-header'])) }, null, 2),
             contentType: 'application/json' });
             await page.locator('#left-nav-panel .sb-shell-close').click();
+            await expect(page.locator('#send_textarea')).toBeVisible();
             const chip = page.locator('#sb-reasoning-effort-button');
             const chipVisible = await chip.isVisible();
             if (chipVisible) await chip.click();
@@ -141,7 +220,51 @@ for (const mobile of [false, true]) {
             if (pickerPresent) await page.keyboard.press('Escape');
         });
 
-        test('known DeepSeek choices replace the legacy hint and restore it for unknown models', async ({ page, baseURL }) => {
+        test('ordinary unknown native settings and picker preview', async ({ page, baseURL }, testInfo) => {
+            await prepare(page, baseURL);
+            await chooseModel(page, variant);
+            await page.evaluate(() => window.NeconyanShell.openTab('left', 'presets'));
+            const drawer = page.locator('#sb-openai-advanced');
+            if (!await drawer.locator(':scope > .inline-drawer-content').isVisible()) await drawer.locator(':scope > .inline-drawer-header').click();
+            const select = page.locator('#openai_reasoning_effort');
+            const settingPresent = await select.isVisible();
+            const anchor = settingPresent ? select : drawer.locator(':scope > .inline-drawer-header');
+            await anchor.scrollIntoViewIfNeeded();
+            await waitForAnimationFrames(page);
+            await page.screenshot({ path: testInfo.outputPath('unknown-preview-settings.png') });
+            const measure = selectors => page.evaluate(items => {
+                const describe = element => {
+                    const rect = element.getBoundingClientRect();
+                    const style = window.getComputedStyle(element);
+                    return { text: element.textContent.trim(), hidden: element.hidden,
+                        disabled: 'disabled' in element ? element.disabled : null,
+                        display: style.display, visibility: style.visibility, opacity: style.opacity,
+                        colour: style.color, background: style.backgroundColor, font: style.font,
+                        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom },
+                        displayed: rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none',
+                        withinViewport: rect.left >= 0 && rect.top >= 0 && rect.right <= window.innerWidth && rect.bottom <= window.innerHeight };
+                };
+                return { viewport: { width: window.innerWidth, height: window.innerHeight },
+                    elements: Object.fromEntries(items.map(selector => [selector, Array.from(document.querySelectorAll(selector), describe)])) };
+            }, selectors);
+            await testInfo.attach('unknown-preview-settings-geometry', { body: JSON.stringify({ state: settingPresent ? 'control present' : 'before: control absent or hidden',
+                ...(await measure(['#openai_reasoning_effort', '#native_reasoning_effort_hint', '#sb-openai-advanced > .inline-drawer-header'])) }, null, 2),
+            contentType: 'application/json' });
+            await page.locator('#left-nav-panel .sb-shell-close').click();
+            await expect(page.locator('#send_textarea')).toBeVisible();
+            const chip = page.locator('#sb-reasoning-effort-button');
+            const chipVisible = await chip.isVisible();
+            if (chipVisible) await chip.click();
+            await waitForAnimationFrames(page);
+            const pickerPresent = await page.locator('#sb-reasoning-effort-picker').isVisible();
+            await page.screenshot({ path: testInfo.outputPath('unknown-preview-composer.png') });
+            await testInfo.attach('unknown-preview-composer-geometry', { body: JSON.stringify({ state: pickerPresent ? 'picker present' : chipVisible ? 'before: visible control without picker' : 'before: control absent or hidden',
+                ...(await measure(['#sb-reasoning-effort-button', '#sb-reasoning-effort-picker .sb-persona-option', '#send_textarea', '#send_but'])) }, null, 2),
+            contentType: 'application/json' });
+            if (pickerPresent) await page.keyboard.press('Escape');
+        });
+
+        test('DeepSeek unknown models use the shared hint and proxy restores legacy copy', async ({ page, baseURL }) => {
             await prepare(page, baseURL);
             await page.locator('#chat_completion_source').selectOption('deepseek');
             await page.evaluate(() => {
@@ -158,6 +281,16 @@ for (const mobile of [false, true]) {
             await expect(page.locator('#native_reasoning_effort_hint')).toContainText('None');
             await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
             await page.evaluate(() => window.$('#model_deepseek_select').val('fixture/unknown').trigger('change'));
+            await page.evaluate(() => window.NeconyanShell.openTab('left', 'presets'));
+            await expect(oldHint).toBeHidden();
+            const effortSelect = page.locator('#openai_reasoning_effort');
+            await expect(effortSelect).toHaveAttribute('aria-describedby', 'native_reasoning_effort_hint');
+            await expect(page.locator('#native_reasoning_effort_hint')).toHaveText('Available reasoning levels are not known for this model.');
+            for (const effort of ['none', 'min', 'low', 'medium', 'high', 'xhigh', 'max']) {
+                await expect(effortSelect.locator(`option[value="${effort}"]`)).toBeEnabled();
+            }
+            await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
+            await page.evaluate(() => window.$('#openai_reverse_proxy').val('https://fixture.invalid/v1').trigger('input'));
             await page.evaluate(() => window.NeconyanShell.openTab('left', 'presets'));
             await expect(oldHint).toBeVisible();
         });
@@ -246,6 +379,7 @@ for (const mobile of [false, true]) {
 
         test('ordinary Groq Send preserves a rejected prompt and retries the supported choice', async ({ page, baseURL }) => {
             await prepare(page, baseURL);
+            await chooseModel(page, variant);
             await page.evaluate(async () => {
                 const openai = await import('/scripts/openai.js');
                 openai.oai_settings.reasoning_effort = 'none';
@@ -254,7 +388,7 @@ for (const mobile of [false, true]) {
             });
             await acknowledgeActiveSettings(page);
             await expect(page.locator('#openai_reasoning_effort')).toHaveValue('none');
-            await expect(page.locator('#openai_reasoning_effort option[value="none"]')).toBeDisabled();
+            await expect(page.locator('#openai_reasoning_effort option[value="none"]')).toBeEnabled();
             const requests = [];
             const reply = 'A single native reasoning reply.';
             await page.route('**/api/backends/chat-completions/generate', async route => {
@@ -274,7 +408,7 @@ for (const mobile of [false, true]) {
             await expect.poll(() => requests.length).toBe(1);
             await expect(page.locator('#toast-container')).toContainText('Choose Low, Medium or High');
             await expect.poll(() => page.evaluate(async () => (await import('/script.js')).isGenerating())).toBe(false);
-            expect(requests[0]).toMatchObject({ chat_completion_source: 'groq', model, reasoning_effort: 'none' });
+            expect(requests[0]).toMatchObject({ chat_completion_source: 'groq', model: variant, reasoning_effort: 'none' });
             expect(await page.evaluate(async original => {
                 const { chat } = await import('/script.js');
                 return { users: chat.filter(message => message.is_user && message.mes === original).length,
@@ -296,7 +430,7 @@ for (const mobile of [false, true]) {
             expect(requests[1].messages.filter(message => message.role === 'user' && typeof message.content === 'string' && message.content.includes(prompt))).toHaveLength(1);
         });
 
-        test('Groq retains an unavailable preference and hides the control for unknown models', async ({ page, baseURL }, testInfo) => {
+        test('Groq retains its preference and exposes unverified unknown choices', async ({ page, baseURL }, testInfo) => {
             await prepare(page, baseURL);
             await page.evaluate(() => window.NeconyanShell.openTab('left', 'presets'));
             const drawer = page.locator('#sb-openai-advanced');
@@ -350,11 +484,71 @@ for (const mobile of [false, true]) {
             await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
             const chip = page.locator('#sb-reasoning-effort-button');
             await chooseModel(page, variant);
-            await expect(select).toHaveAttribute('data-reasoning-control-available', 'false');
-            await expect(chip).toHaveJSProperty('hidden', true);
+            await expect(select).toHaveAttribute('data-reasoning-control-available', 'true');
+            await expect(select).toHaveAttribute('aria-describedby', 'native_reasoning_effort_hint');
+            await expect(page.locator('#native_reasoning_effort_hint')).toHaveText('Available reasoning levels are not known for this model.');
+            for (const effort of ['none', 'min', 'low', 'medium', 'high', 'xhigh', 'max']) {
+                await expect(select.locator(`option[value="${effort}"]`)).toBeEnabled();
+            }
+            await expect(chip).toHaveJSProperty('hidden', false);
+            await acknowledgeActiveSettings(page);
+            const unknownSaved = await page.evaluate(async () => {
+                const core = await import('/script.js');
+                const response = await fetch('/api/settings/get', { method: 'POST', headers: core.getRequestHeaders(), body: '{}' });
+                const saved = JSON.parse((await response.json()).settings);
+                return { revision: saved._settingsRevision, effort: saved.oai_settings.reasoning_effort, model: saved.oai_settings.groq_model };
+            });
+            expect(Number.isSafeInteger(unknownSaved.revision)).toBe(true);
+            expect(unknownSaved).toMatchObject({ effort: 'max', model: variant });
             await page.locator('#left-nav-panel .sb-shell-close').click();
             await expect(page.locator('#send_textarea')).toBeVisible();
-            await expect(chip).toBeHidden();
+            await expect(chip).toBeVisible();
+            await chip.click();
+            await expect(page.locator('#sb-reasoning-effort-picker').getByRole('option')).toHaveText(['None', 'Minimum', 'Low', 'Medium', 'High', 'Extra High', 'Maximum']);
+            await expect(page.locator('#sb-reasoning-effort-picker').getByRole('option', { name: 'Maximum', exact: true })).toBeFocused();
+            await page.keyboard.press('Escape');
+            await expect(page.locator('#sb-reasoning-effort-picker')).toHaveCount(0);
+            await waitForAnimationFrames(page);
+            await expect(chip).toBeFocused();
+            expect(await page.evaluate(async () => {
+                const core = await import('/script.js');
+                const response = await fetch('/api/settings/get', { method: 'POST', headers: core.getRequestHeaders(), body: '{}' });
+                const saved = JSON.parse((await response.json()).settings);
+                return { revision: saved._settingsRevision, effort: saved.oai_settings.reasoning_effort, model: saved.oai_settings.groq_model };
+            })).toEqual(unknownSaved);
+            await page.reload({ waitUntil: 'domcontentloaded' });
+            await page.waitForFunction(() => !document.getElementById('preloader'), null, { timeout: 60000 });
+            await page.waitForFunction(async () => (await import('/script.js')).settingsReady);
+            await expect(page.locator('body')).toHaveClass(/neconyan-rail-ready/, { timeout: 60000 });
+            await page.waitForFunction(() => typeof window.NeconyanShell?.openTab === 'function');
+            await page.waitForFunction(async () => (await import('/script.js')).characters.some(item => item.name === 'Durable Nova'), null, { timeout: 60000 });
+            await page.evaluate(async () => {
+                const core = await import('/script.js');
+                const character = core.characters.findIndex(item => item.name === 'Durable Nova');
+                if (character < 0) throw new Error('The owned reasoning fixture character is missing after reload.');
+                await core.selectCharacterById(character, { switchMenu: false });
+            });
+            await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
+            const reconnected = page.waitForResponse(response => response.url().endsWith('/api/backends/chat-completions/status')
+                && response.request().postDataJSON()?.chat_completion_source === 'groq');
+            await page.locator('#api_button_openai').click();
+            expect((await reconnected).ok()).toBe(true);
+            await expect(page.locator('#model_groq_select')).toHaveValue(variant);
+            await expect(select).toHaveValue('max');
+            await expect(page.locator('#native_reasoning_effort_hint')).toHaveText('Available reasoning levels are not known for this model.');
+            for (const effort of ['none', 'min', 'low', 'medium', 'high', 'xhigh', 'max']) {
+                await expect(select.locator(`option[value="${effort}"]`)).toBeEnabled();
+            }
+            await page.locator('#left-nav-panel .sb-shell-close').click();
+            await expect(page.locator('#send_textarea')).toBeVisible();
+            await expect(chip).toBeVisible();
+            await chip.click();
+            await expect(page.locator('#sb-reasoning-effort-picker').getByRole('option')).toHaveText(['None', 'Minimum', 'Low', 'Medium', 'High', 'Extra High', 'Maximum']);
+            await expect(page.locator('#sb-reasoning-effort-picker').getByRole('option', { name: 'Maximum', exact: true })).toBeFocused();
+            await page.keyboard.press('Escape');
+            await expect(page.locator('#sb-reasoning-effort-picker')).toHaveCount(0);
+            await expect(chip).toBeFocused();
+
             await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
             await chooseModel(page, model);
             await expect(select).toHaveAttribute('data-reasoning-control-available', 'true');
