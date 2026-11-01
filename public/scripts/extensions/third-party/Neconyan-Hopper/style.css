@@ -475,11 +475,18 @@ body > #sheld[data-sbtw-mode='on'] ~ :where(*) :is(#ica--tracker-panel, #ica--tr
 .sbtw-list {
     display: flex;
     flex-direction: column;
+    gap: var(--sbtw-gap);
 }
 
 .sbtw-post {
-    padding: var(--sbtw-gap) 0;
-    border-bottom: 1px solid var(--sbtw-divider);
+    padding: var(--sbtw-gap);
+}
+
+.sbtw-post,
+.sbtw-reply,
+.sbtw-quote-card {
+    border: 1px solid color-mix(in srgb, var(--neco-ginger, var(--sbtw-accent)) 65%, var(--sbtw-divider));
+    border-radius: var(--sbtw-radius-sm);
 }
 
 .sbtw-repost-context {
@@ -505,13 +512,11 @@ body > #sheld[data-sbtw-mode='on'] ~ :where(*) :is(#ica--tracker-panel, #ica--tr
 .sbtw-quote-card {
     margin-top: 0.5rem;
     padding: 0.5rem 0.75rem;
-    border: 1px solid var(--sbtw-divider);
-    border-radius: var(--sbtw-radius-sm);
 }
 
 .sbtw-post-compact {
     padding: 0;
-    border-bottom: none;
+    border: 0;
 }
 
 .sbtw-post-row {
@@ -604,11 +609,13 @@ body > #sheld[data-sbtw-mode='on'] ~ :where(*) :is(#ica--tracker-panel, #ica--tr
    button's left padding: 14.4px, which .sbtw-action-count matches inside a button. */
 .sbtw-action-group {
     display: inline-flex;
+    flex: 0 0 auto;
     align-items: center;
     gap: 0.2rem;
 }
 
 .sbtw-action-who {
+    flex: 0 0 auto;
     min-height: 0;
     padding: 0.3rem 0.3rem;
     border: none;
@@ -710,6 +717,7 @@ body > #sheld[data-sbtw-mode='on'] ~ :where(*) :is(#ica--tracker-panel, #ica--tr
 
 .sbtw-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
     margin-top: 0.5rem;
     max-width: 22rem;
@@ -717,6 +725,8 @@ body > #sheld[data-sbtw-mode='on'] ~ :where(*) :is(#ica--tracker-panel, #ica--tr
 
 .sbtw-action {
     display: inline-flex;
+    flex: 0 0 auto;
+    white-space: nowrap;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
@@ -771,6 +781,7 @@ body > #sheld[data-sbtw-mode='on'] ~ :where(*) :is(#ica--tracker-panel, #ica--tr
 }
 
 .sbtw-reply {
+    padding: var(--sbtw-gap);
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     column-gap: var(--sbtw-gap);
@@ -801,6 +812,7 @@ body > #sheld[data-sbtw-mode='on'] ~ :where(*) :is(#ica--tracker-panel, #ica--tr
 
 .sbtw-reply-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.25rem;
     margin-top: 0.15rem;
 }
@@ -1032,6 +1044,7 @@ body > #sheld[data-sbtw-mode='on'] ~ :where(*) :is(#ica--tracker-panel, #ica--tr
 .sbtw-btn > i,
 .sbtw-action > i,
 .sbtw-delete > i {
+    flex-shrink: 0;
     width: 1em;
     line-height: 1;
     text-align: center;
@@ -1569,7 +1582,7 @@ body > #sheld[data-sbtw-mode='on'] ~ :where(*) :is(#ica--tracker-panel, #ica--tr
 
     .sbtw-actions,
     .sbtw-reply-actions {
-        gap: 1.5rem;
+        gap: 1.25rem 1.5rem;
     }
 
     .sbtw-action,
