@@ -46,6 +46,7 @@
 - PR #386 (2026-11-01) `feat(sidebar): edit sections in place and remove buttons`
 - PR #387 (2026-11-01) `fix(characters): preserve name ownership when the input moves`
 - PR #388 (2026-11-01) `fix(nanogpt): honour declared reasoning effort support`
+- PR #389 (2026-11-01) `feat(characters): add native tag and folder manager`
 
 ## v1.4.0
 
