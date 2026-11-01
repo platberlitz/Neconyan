@@ -54,6 +54,7 @@
 - PR #394 (2026-11-01) `docs(help): point in-app help links at the Neconyan handbook`
 - PR #395 (2026-11-01) `feat(chat): add a searchable composer chat browser`
 - PR #397 (2026-11-01) `fix(shell): align character and lorebook page headers`
+- PR #398 (2026-11-01) `docs(readme): refresh screenshots and add version and language links`
 
 ## v1.4.0
 
