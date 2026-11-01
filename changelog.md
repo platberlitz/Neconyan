@@ -51,6 +51,7 @@
 - PR #392 (2026-11-01) `feat(authors-note): mix several character notes per persona`
 - PR #393 (2026-11-01) `fix(security): harden account, file and outbound request boundaries`
 - PR #394 (2026-11-01) `docs(help): point in-app help links at the Neconyan handbook`
+- PR #395 (2026-11-01) `feat(chat): add a searchable composer chat browser`
 
 ## v1.4.0
 
