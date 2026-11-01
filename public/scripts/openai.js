@@ -10,7 +10,7 @@ import { injectChatPromptDepth } from './chat-prompt-depth.js';
 * https://github.com/CncAnon1/TavernAITurbo
 */
 import { Fuse, DOMPurify } from '../lib.js';
-import { REVERSE_PROXY_SUPPORTED_SOURCES, resolveChatReasoningEffort } from './chat-request-controls.js';
+import { REVERSE_PROXY_SUPPORTED_SOURCES, resolveChatReasoningEffort, checkNanoGptReasoningEffort } from './chat-request-controls.js';
 import { isImageInputIssue } from './prompt-media-policy.js';
 
 import {
@@ -92,7 +92,7 @@ import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from '
 import { renderTemplateAsync } from './templates.js';
 import { SlashCommandEnumValue } from './slash-commands/SlashCommandEnumValue.js';
 import { callGenericPopup, Popup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
-import { t } from './i18n.js';
+import { t, translate, getCurrentLocale } from './i18n.js';
 import { attachModelListSearch, focusModelListSearch, syncModelListSearchValue } from './model-list-search.js';
 import { formatModelLabelWithSource } from './model-family.js';
 import { extension_settings } from './extensions.js';
@@ -3699,7 +3699,55 @@ const CHAT_COMPLETION_SAMPLER_CONTROLS = Object.freeze({
     seed: { selector: '#seed_openai', setting: 'seed' },
 });
 
+function updateChatCompletionReasoningAvailability() {
+    const select = document.getElementById('openai_reasoning_effort');
+    if (!(select instanceof HTMLSelectElement)) return;
+    const source = oai_settings.chat_completion_source;
+    const model = getChatCompletionModel(oai_settings);
+    const support = checkNanoGptReasoningEffort({ source, model,
+        metadata: getChatCompletionSamplerMetadata(oai_settings, model), effort: oai_settings.reasoning_effort });
+    const labels = {
+        none: translate('None', 'openai_reasoning_effort_none'),
+        min: translate('Minimum', 'openai_reasoning_effort_minimum'),
+        low: translate('Low', 'openai_reasoning_effort_low'),
+        medium: translate('Medium', 'openai_reasoning_effort_medium'),
+        high: translate('High', 'openai_reasoning_effort_high'),
+        xhigh: translate('Extra High', 'openai_reasoning_effort_xhigh'),
+        max: translate('Maximum', 'openai_reasoning_effort_maximum'),
+    };
+    const names = support.supportedEfforts.map(value => labels[value]);
+    const locale = getCurrentLocale() || 'en';
+    const supportedList = new Intl.ListFormat(locale, { type: 'conjunction' }).format(names);
+    const choices = new Intl.ListFormat(locale, { type: 'disjunction' }).format(names);
+    for (const option of select.options) {
+        const label = labels[option.value] ?? option.textContent;
+        option.disabled = support.known && !support.supportedEfforts.includes(option.value);
+        option.hidden = option.disabled;
+        option.textContent = option.disabled
+            ? translate('${0} (unavailable)', 'scoped.nanogpt.reasoning.unavailable').replace('${0}', () => label) : label;
+    }
+    const unavailable = !support.supported;
+    const label = labels[select.value] ?? select.value;
+    select.dataset.reasoningUnavailable = String(unavailable);
+    select.dataset.reasoningTitle = unavailable
+        ? t`Reasoning Effort: ${label}, unavailable for this model. Choose ${choices}.`
+        : `${t`Reasoning Effort`}: ${label}`;
+    const hint = document.getElementById('nanogpt_reasoning_effort_hint');
+    if (hint) {
+        hint.textContent = support.known
+            ? (unavailable ? t`This model supports ${supportedList}. Choose one before sending.` : t`This model supports ${supportedList}.`)
+            : t`Reasoning efforts are sent exactly, aside from minimum which is sent as 'minimal'.`;
+    }
+    const signature = JSON.stringify([source, model, support.known, support.supportedEfforts, select.value, unavailable]);
+    if (select.dataset.reasoningAvailability !== signature) {
+        select.dataset.reasoningAvailability = signature;
+        // Catalogue arrival changes availability, not the user's settings.
+        select.dispatchEvent(new Event('neconyan-reasoning-availability-changed'));
+    }
+}
+
 function updateChatCompletionSamplerControlVisibility() {
+    updateChatCompletionReasoningAvailability();
     const capabilities = getChatCompletionSamplerCapabilitiesForSettings(oai_settings);
     const supported = capabilities.supportedParameters;
 
@@ -9895,7 +9943,7 @@ function registerChatCompletionProfileSlashCommands() {
     });
     registerChatCompletionProfileSlashCommand({
         name: 'reasoning-effort',
-        callback: runEnumChatCompletionSettingCallback('reasoning-effort', 'reasoning_effort', '#openai_reasoning_effort', Object.values(reasoning_effort_types)),
+        callback: runEnumChatCompletionSettingCallback('reasoning-effort', 'reasoning_effort', '#openai_reasoning_effort', Object.values(reasoning_effort_types), () => updateChatCompletionReasoningAvailability()),
         description: 'reasoning effort',
         enumList: Object.values(reasoning_effort_types),
         forceEnum: true,
@@ -10698,7 +10746,14 @@ export function initOpenAI() {
     });
 
     $('#openai_reasoning_effort').on('input', function () {
-        oai_settings.reasoning_effort = String($(this).val());
+        if (this.selectedOptions[0]?.disabled || this.selectedOptions[0]?.hidden) {
+            this.value = oai_settings.reasoning_effort;
+            return;
+        }
+        // jQuery returns null for a selected disabled option; native value
+        // preserves the saved choice until a supported option is selected.
+        oai_settings.reasoning_effort = this.value;
+        updateChatCompletionReasoningAvailability();
         saveSettingsDebounced();
     });
 

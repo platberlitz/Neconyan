@@ -1,14 +1,24 @@
 /* global document, window */
 import { expect } from '@playwright/test';
-import { test as disposableTest } from './neconyan-conversation-durable-fixture.js';
+import { writeFile } from 'node:fs/promises';
+import { acknowledgeActiveSettings, test as disposableTest } from './neconyan-conversation-durable-fixture.js';
 import { dismissOnboardingIfPresent, dismissOpenDialogIfPresent, waitForAnimationFrames } from './chat-scroll-regression-helpers.js';
 import { formatModelLabelWithSource } from '../public/scripts/model-family.js';
+import { contrastRatio } from '../public/scripts/theme-contrast.js';
 
 // Routing choices are saved and reloaded, so each case owns its server-side settings too.
 const test = disposableTest.extend({
+    reasoningSendFixture: [false, { option: true }],
     baseURL: async ({ app }, use) => use(app.url),
-    page: async ({ app, viewport, hasTouch }, use) => {
-        const account = await app.account({ phone: hasTouch });
+    page: async ({ app, viewport, hasTouch, reasoningSendFixture }, use) => {
+        const account = await app.account({ phone: hasTouch, configureSettings(saved) {
+            if (!reasoningSendFixture) return;
+            saved.extension_settings.lockedExtensionsUnlockApplied = true;
+            saved.extension_settings.disabledExtensions.push('in-chat-agents', 'guided-generations', 'quick-image-gen');
+            saved.power_user.reply_generation_location = 'browser';
+            saved.power_user.continue_on_send = false;
+            Object.assign(saved.power_user.auto_continue ??= {}, { enabled: false });
+        } });
         const page = await account.context.newPage();
         if (viewport) await page.setViewportSize(viewport);
         await use(page);
@@ -32,6 +42,7 @@ const MODEL_CASES = [
     { id: 'test/unsafe-multiplier', name: 'Malformed Multiplier', subscription: { included: true, inputTokenMultiplier: HTML_PAYLOAD }, badge: ['Sub'] },
     { id: 'test/unsafe-note', name: 'Unsafe Note', subscription: { included: false, note: HTML_PAYLOAD }, badge: ['Not in Sub'] },
     { id: 'test/object-note', name: 'Malformed Note', subscription: { included: false, note: { html: HTML_PAYLOAD } }, badge: ['Not in Sub'] },
+    { id: 'z-ai/glm-5.2:thinking', name: 'Declared reasoning model', reasoning_efforts: ['high', 'max'], badge: [] },
 ];
 const MODELS = MODEL_CASES.map(({ badge, ...model }) => ({
     context_length: 128000,
@@ -41,7 +52,7 @@ const MODELS = MODEL_CASES.map(({ badge, ...model }) => ({
 }));
 const PROVIDERS = { supportsProviderSelection: true, providers: ['chutes', 'cerebras', NEW_PROVIDER] };
 
-async function installRoutes(page, baseURL) {
+async function installRoutes(page, baseURL, { modelRecords = MODELS, ordinarySend = false } = {}) {
     const origin = new URL(baseURL).origin;
     expect(['127.0.0.1', 'localhost', '[::1]']).toContain(new URL(baseURL).hostname);
     const discovery = new Map([
@@ -51,11 +62,16 @@ async function installRoutes(page, baseURL) {
     ]);
     const held = [];
     const catalogue = { json: [{ id: 'chutes', label: 'Chutes' }, { id: 'cerebras', label: 'Cerebras' }] };
+    const models = { value: modelRecords, hold: false, held: [] };
     await page.context().route('**/*', async route => {
         const url = new URL(route.request().url());
         if (url.origin !== origin) return route.abort();
         if (url.pathname === '/api/backends/chat-completions/status') {
-            return route.fulfill({ json: { data: MODELS } });
+            if (models.hold) {
+                models.held.push(route);
+                return;
+            }
+            return route.fulfill({ json: { data: models.value } });
         }
         if (url.pathname === '/api/nanogpt/providers') return route.fulfill(catalogue);
         if (url.pathname === '/api/nanogpt/models/providers') {
@@ -70,6 +86,18 @@ async function installRoutes(page, baseURL) {
         if (url.pathname === '/api/nanogpt/credits') {
             return route.fulfill({ json: { balance: 0, credits: 0 } });
         }
+        if (ordinarySend && url.pathname === '/api/mewmory/config/get') {
+            const response = await route.fetch();
+            const data = await response.json();
+            Object.assign(data.config, { enableNewChats: false, autoUpdate: false, autoHide: false });
+            return route.fulfill({ response, json: data });
+        }
+        // Source-audited read-only dependencies for ordinary browser generation:
+        // browser-reply-routing requires the Notebook check; Mewmory must inspect
+        // the fresh disabled chat; held-reply recovery lists local jobs.
+        if (ordinarySend && ['/api/notebooks/reply-requirements', '/api/mewmory/inspect', '/api/resumable-generations/list'].includes(url.pathname)) {
+            return route.continue();
+        }
         // Only local data APIs reach the temporary server; all inference and unknown APIs are blocked.
         // Chat navigation is checked on every launch; blocking it opens a 'Chat could not be opened' dialog over the page.
         if (url.pathname.startsWith('/api/') && !/^\/api\/(settings|secrets|presets|characters|chats|groups|avatars|backgrounds|worldinfo|content|themes|quick-replies|users|stats|tokenizers|chat-navigation)\//.test(url.pathname)
@@ -78,7 +106,7 @@ async function installRoutes(page, baseURL) {
         }
         return route.continue();
     });
-    return { discovery, held, catalogue };
+    return { discovery, held, catalogue, models };
 }
 
 async function openApi(page) {
@@ -138,8 +166,8 @@ async function connectNanoGpt(page) {
     await expect(page.locator('#model_nanogpt_select option')).toHaveCount(MODELS.length);
 }
 
-async function setupNanoGpt(page, baseURL) {
-    const routes = await installRoutes(page, baseURL);
+async function setupNanoGpt(page, baseURL, options) {
+    const routes = await installRoutes(page, baseURL, options);
     await page.goto(baseURL, { waitUntil: 'domcontentloaded' });
     await openApi(page);
     await page.addLocatorHandler(page.locator('#qig-setup-wizard'), async wizard => {
@@ -148,6 +176,16 @@ async function setupNanoGpt(page, baseURL) {
     await loadRoutingSettings(page, { nanogpt_model: MODELS[0].id, bind_preset_to_connection: false });
     await connectNanoGpt(page);
     return routes;
+}
+
+async function selectReasoningFixtureCharacter(page) {
+    await page.evaluate(async () => {
+        const core = await import('/script.js');
+        const id = core.characters.findIndex(character => character.name === 'Durable Nova');
+        if (id < 0) throw new Error('The owned reasoning fixture character is missing.');
+        await core.selectCharacterById(id, { switchMenu: false });
+    });
+    await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
 }
 
 async function openPicker(page, mobile, id, source) {
@@ -210,6 +248,77 @@ async function screenshot(page, testInfo, name) {
     await testInfo.attach(name, { path, contentType: 'image/png' });
 }
 
+async function attachJson(testInfo, name, value) {
+    const path = testInfo.outputPath(`${name}.json`);
+    await writeFile(path, JSON.stringify(value, null, 2));
+    await testInfo.attach(name, { path, contentType: 'application/json' });
+}
+
+async function expectReasoningState(page, value, restricted = true) {
+    await expect.poll(() => page.evaluate(async () => {
+        const select = document.getElementById('openai_reasoning_effort');
+        const { oai_settings } = await import('/scripts/openai.js');
+        return {
+            value: select.value,
+            selected: Array.from(select.selectedOptions, option => ({ value: option.value, selected: option.selected })),
+            setting: oai_settings.reasoning_effort,
+            options: Array.from(select.options, option => ({ value: option.value, hidden: option.hidden, disabled: option.disabled })),
+        };
+    })).toEqual({
+        value, selected: [{ value, selected: true }], setting: value,
+        options: ['none', 'min', 'low', 'medium', 'high', 'xhigh', 'max'].map(effort => ({
+            value: effort, hidden: restricted && !['high', 'max'].includes(effort), disabled: restricted && !['high', 'max'].includes(effort),
+        })),
+    });
+}
+
+async function savedReasoningEffort(page) {
+    return page.evaluate(async () => {
+        const core = await import('/script.js');
+        const response = await fetch('/api/settings/get', { method: 'POST', headers: core.getRequestHeaders(), body: '{}' });
+        return JSON.parse((await response.json()).settings).oai_settings.reasoning_effort;
+    });
+}
+
+async function expectSupportedReasoningRows(picker, selected = null) {
+    await expect(picker.getByRole('option')).toHaveText(['High', 'Maximum']);
+    await expect(picker.locator('[aria-selected="true"]')).toHaveCount(selected ? 1 : 0);
+    if (selected) await expect(picker.getByRole('option', { name: selected, exact: true })).toHaveAttribute('aria-selected', 'true');
+}
+
+async function reasoningControlGeometry(control) {
+    return control.evaluate(element => {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const context = canvas.getContext('2d');
+        const rgba = colour => {
+            context.clearRect(0, 0, 1, 1);
+            context.fillStyle = colour;
+            context.fillRect(0, 0, 1, 1);
+            return [...context.getImageData(0, 0, 1, 1).data];
+        };
+        const over = (colour, backdrop) => colour.slice(0, 3).map((channel, index) => channel * colour[3] / 255 + backdrop[index] * (1 - colour[3] / 255));
+        const ancestors = [];
+        for (let current = element; current; current = current.parentElement) ancestors.unshift(current);
+        let background = [255, 255, 255];
+        let opacity = 1;
+        for (const current of ancestors) {
+            const style = window.getComputedStyle(current);
+            background = over(rgba(style.backgroundColor), background);
+            opacity *= Number(style.opacity);
+        }
+        const style = window.getComputedStyle(element);
+        const ink = rgba(style.color);
+        ink[3] *= opacity;
+        const format = colour => `rgb(${colour.slice(0, 3).map(Math.round).join(', ')})`;
+        const rect = element.getBoundingClientRect();
+        return { ink: format(over(ink, background)), background: format(background), opacity,
+            x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+            barScale: Number.parseFloat(style.getPropertyValue('--sb-bottom-bar-scale')),
+            overflow: element.scrollWidth > element.clientWidth + 1, viewport: { width: window.innerWidth, height: window.innerHeight } };
+    });
+}
+
 for (const mobile of [false, true]) {
     const layout = mobile ? 'mobile' : 'desktop';
     test.describe(`NanoGPT ${layout}`, () => {
@@ -217,6 +326,310 @@ for (const mobile of [false, true]) {
             viewport: mobile ? { width: 390, height: 844 } : { width: 1440, height: 1000 },
             isMobile: mobile,
             hasTouch: mobile,
+        });
+
+        test('declared reasoning levels preserve an unavailable saved choice and offer deliberate recovery', async ({ page, baseURL }, testInfo) => {
+            await page.setViewportSize(mobile ? { width: 393, height: 852 } : { width: 1280, height: 900 });
+            await setupNanoGpt(page, baseURL);
+            await selectReasoningFixtureCharacter(page);
+            await loadRoutingSettings(page, { nanogpt_model: 'z-ai/glm-5.2:thinking', reasoning_effort: 'low' });
+            await page.evaluate(() => window.NeconyanShell.openTab('left', 'presets'));
+            const select = page.locator('#openai_reasoning_effort');
+            const drawer = page.locator('#sb-openai-advanced');
+            await expect(drawer).toBeVisible();
+            const content = drawer.locator(':scope > .inline-drawer-content');
+            if (!await content.isVisible()) await drawer.locator(':scope > .inline-drawer-header').click();
+            await select.scrollIntoViewIfNeeded();
+            await select.locator('..').locator('[data-source="nanogpt"]').scrollIntoViewIfNeeded();
+            await expect(select).toBeVisible();
+            await expectReasoningState(page, 'low');
+            await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }));
+            expect(await savedReasoningEffort(page)).toBe('low');
+            await screenshot(page, testInfo, `${layout}-declared-reasoning-settings`);
+            if (!mobile) {
+                await select.click();
+                await attachJson(testInfo, 'desktop-native-open-observation', await select.evaluate(element => ({
+                    open: element.matches(':open'), value: element.value,
+                    options: Array.from(element.options, option => ({ value: option.value, hidden: option.hidden, disabled: option.disabled, selected: option.selected })),
+                    captureSurface: 'Playwright page screenshot; an operating-system popup may be outside this surface.',
+                })));
+                await screenshot(page, testInfo, 'desktop-native-popup-attempt');
+                await page.keyboard.press('Escape');
+                await expectReasoningState(page, 'low');
+                expect(await savedReasoningEffort(page)).toBe('low');
+            }
+            const hintGeometry = await reasoningControlGeometry(select.locator('..').locator('[data-source="nanogpt"]'));
+            expect(hintGeometry.overflow).toBe(false);
+            await page.locator('#left-nav-panel .sb-shell-close').click();
+            const chip = page.locator('#sb-reasoning-effort-button');
+            await expect(chip).toBeVisible();
+            await chip.click();
+            const picker = page.locator('#sb-reasoning-effort-picker');
+            await expect(picker).toBeVisible();
+            await screenshot(page, testInfo, `${layout}-declared-reasoning-picker`);
+            await expect(select).toHaveValue('low');
+            await expect(select.locator('option[value="low"]')).toBeDisabled();
+            await expectSupportedReasoningRows(picker);
+            await expect(picker.getByRole('option', { name: 'High', exact: true })).toBeFocused();
+            await page.keyboard.press('ArrowUp');
+            await expect(picker.getByRole('option', { name: 'Maximum', exact: true })).toBeFocused();
+            await page.keyboard.press('Escape');
+            await expect(picker).toBeHidden();
+            await expectReasoningState(page, 'low');
+            expect(await savedReasoningEffort(page)).toBe('low');
+            await chip.click();
+            await expectSupportedReasoningRows(picker);
+            const measurements = [{ control: 'hint', ...hintGeometry }];
+            for (const theme of ['Neconyan Calico Dark', 'Neconyan Calico']) {
+                for (const accent of [null, 'Mint Glass', 'Plum Wine']) {
+                    await page.locator('#themes').selectOption({ label: theme }, { force: true });
+                    if (accent) await page.locator(`.sb-accent-profile-apply[title="Apply ${accent}"]`).evaluate(element => element.click());
+                    if (!await picker.isVisible()) await chip.click();
+                    await expect(chip.locator('.fa-triangle-exclamation')).toBeVisible();
+                    for (const [name, control] of [['warning chip', chip], ['enabled Maximum', picker.getByRole('option', { name: 'Maximum', exact: true })], ['enabled High', picker.getByRole('option', { name: 'High', exact: true })]]) {
+                        const geometry = await reasoningControlGeometry(control);
+                        measurements.push({ theme, accent: accent ?? 'default', control: name, ...geometry });
+                        expect(contrastRatio(geometry.ink, geometry.background), `${theme}/${accent ?? 'default'}/${name} contrast`).toBeGreaterThanOrEqual(4.5);
+                        expect(geometry.overflow).toBe(false);
+                        if (mobile && name === 'warning chip') {
+                            // M42 non-regression only: unchanged fdd CSS fixes the
+                            // normal-scale chip at34px. This source-derived baseline
+                            // is not a measured baseline or44px compliance (UI-15).
+                            expect(geometry.barScale).toBe(1);
+                            expect(geometry.height).toBe(34);
+                        } else if (mobile && name.startsWith('enabled ')) {
+                            expect(geometry.height).toBeGreaterThanOrEqual(44);
+                        }
+                    }
+                    const bounds = await picker.boundingBox();
+                    expect(bounds.x).toBeGreaterThanOrEqual(0);
+                    expect(bounds.y).toBeGreaterThanOrEqual(0);
+                    expect(bounds.x + bounds.width).toBeLessThanOrEqual(mobile ? 393 : 1280);
+                    expect(bounds.y + bounds.height).toBeLessThanOrEqual(mobile ? 852 : 900);
+                    await screenshot(page, testInfo, `${layout}-${theme}-${accent ?? 'default'}-reasoning`);
+                }
+            }
+            await attachJson(testInfo, 'reasoning-control-measurements', measurements);
+            await page.locator('#themes').selectOption({ label: 'Neconyan Calico Dark' }, { force: true });
+            if (!await picker.isVisible()) await chip.click();
+            await picker.getByRole('option', { name: 'High', exact: true }).focus();
+            await page.keyboard.press('ArrowDown');
+            await expect(picker.getByRole('option', { name: 'Maximum', exact: true })).toBeFocused();
+            await page.keyboard.press('ArrowDown');
+            await expect(picker.getByRole('option', { name: 'High', exact: true })).toBeFocused();
+            await page.keyboard.press('Enter');
+            await expect(picker).toBeHidden();
+            await expect(select).toHaveValue('high');
+            await expect(chip).toHaveAttribute('aria-label', 'Reasoning Effort: High');
+            await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }));
+            const saved = await page.evaluate(async () => {
+                const core = await import('/script.js');
+                const response = await fetch('/api/settings/get', { method: 'POST', headers: core.getRequestHeaders(), body: '{}' });
+                return JSON.parse((await response.json()).settings).oai_settings.reasoning_effort;
+            });
+            expect(saved).toBe('high');
+            if (!mobile) {
+                // Restore the explicit saved Low fixture, then exercise the real
+                // native control rather than selectOption as popup evidence.
+                await loadRoutingSettings(page, { reasoning_effort: 'low' });
+                await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }));
+                await expectReasoningState(page, 'low');
+                await page.evaluate(() => window.NeconyanShell.openTab('left', 'presets'));
+                await select.scrollIntoViewIfNeeded();
+                await select.focus();
+                await page.keyboard.press('Home');
+                await page.keyboard.press('Enter');
+                await expectReasoningState(page, 'high');
+                await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }));
+                expect(await savedReasoningEffort(page)).toBe('high');
+                await page.locator('#left-nav-panel .sb-shell-close').click();
+                await expect(chip).toHaveAttribute('aria-label', 'Reasoning Effort: High');
+            }
+            await screenshot(page, testInfo, `${layout}-declared-reasoning-supported`);
+        });
+
+        test('catalogue-only reasoning updates close an open picker without changing the saved effort', async ({ page, baseURL }) => {
+            const routes = await setupNanoGpt(page, baseURL, {
+                modelRecords: MODELS.map(model => {
+                    const record = { ...model };
+                    delete record.reasoning_efforts;
+                    return record;
+                }),
+            });
+            await selectReasoningFixtureCharacter(page);
+            await loadRoutingSettings(page, { nanogpt_model: 'z-ai/glm-5.2:thinking', reasoning_effort: 'low' });
+            await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }));
+            routes.models.hold = true;
+            await page.locator('#api_button_openai').click();
+            await expect.poll(() => routes.models.held.length).toBe(1);
+            await page.locator('#left-nav-panel .sb-shell-close').click();
+            await page.locator('#sb-reasoning-effort-button').click();
+            const picker = page.locator('#sb-reasoning-effort-picker');
+            await expect(picker.getByRole('option', { name: 'Low', exact: true })).toBeEnabled();
+            await expect(picker.getByRole('option')).toHaveCount(7);
+            await expectReasoningState(page, 'low', false);
+            routes.models.value = MODELS;
+            routes.models.hold = false;
+            await routes.models.held.pop().fulfill({ json: { data: MODELS } });
+            await expect(picker).toBeHidden();
+            await expect(page.locator('#openai_reasoning_effort')).toHaveValue('low');
+            await expect(page.locator('#openai_reasoning_effort option[value="low"]')).toBeDisabled();
+            await expectReasoningState(page, 'low');
+            await page.locator('#sb-reasoning-effort-button').click();
+            await expectSupportedReasoningRows(picker);
+            await page.keyboard.press('Escape');
+            await expectReasoningState(page, 'low');
+            expect(await page.evaluate(async () => {
+                const core = await import('/script.js');
+                const response = await fetch('/api/settings/get', { method: 'POST', headers: core.getRequestHeaders(), body: '{}' });
+                return JSON.parse((await response.json()).settings).oai_settings.reasoning_effort;
+            })).toBe('low');
+            const command = effort => page.evaluate(async effort => {
+                const { executeSlashCommandsWithOptions } = await import('/scripts/slash-commands.js');
+                return (await executeSlashCommandsWithOptions(`/reasoning-effort ${effort}`)).pipe;
+            }, effort);
+            expect(await command('high')).toBe('high');
+            const chip = page.locator('#sb-reasoning-effort-button');
+            await expect(chip).toHaveAttribute('aria-label', 'Reasoning Effort: High');
+            await expect(chip.locator('.fa-brain')).toBeVisible();
+            await expect(page.locator('#nanogpt_reasoning_effort_hint')).toHaveText('This model supports High and Maximum.');
+            await chip.click();
+            await expectSupportedReasoningRows(picker, 'High');
+            await page.keyboard.press('Escape');
+            // The native input guard rejects hidden choices independently of
+            // their disabled flag. Restore the fixture flag immediately.
+            await page.evaluate(() => {
+                const select = document.getElementById('openai_reasoning_effort');
+                const low = select.querySelector('option[value="low"]');
+                low.disabled = false;
+                select.value = 'low';
+                select.dispatchEvent(new Event('input', { bubbles: true }));
+                low.disabled = true;
+            });
+            await expectReasoningState(page, 'high');
+            await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }));
+            expect(await page.evaluate(async () => {
+                const core = await import('/script.js');
+                const response = await fetch('/api/settings/get', { method: 'POST', headers: core.getRequestHeaders(), body: '{}' });
+                return JSON.parse((await response.json()).settings).oai_settings.reasoning_effort;
+            })).toBe('high');
+            expect(await command('low')).toBe('low');
+            await expect(chip).toHaveAttribute('aria-label', 'Reasoning Effort: Low, unavailable for this model. Choose High or Maximum.');
+            await expect(chip.locator('.fa-triangle-exclamation')).toBeVisible();
+            await expect(page.locator('#nanogpt_reasoning_effort_hint')).toHaveText('This model supports High and Maximum. Choose one before sending.');
+            await chip.click();
+            await expectSupportedReasoningRows(picker);
+            await page.keyboard.press('Escape');
+            await expectReasoningState(page, 'low');
+            await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
+            await page.locator('#chat_completion_source').selectOption('custom');
+            await expect(page.locator('#openai_reasoning_effort option[value="low"]')).toBeEnabled();
+            await expectReasoningState(page, 'low', false);
+            await page.locator('#chat_completion_source').selectOption('nanogpt');
+            await chooseModel(page, mobile, MODELS[3]);
+            await expect(page.locator('#openai_reasoning_effort option[value="low"]')).toBeEnabled();
+            await expectReasoningState(page, 'low', false);
+            await page.locator('#left-nav-panel .sb-shell-close').click();
+            await chip.click();
+            await expect(picker.getByRole('option')).toHaveText(['None', 'Minimum', 'Low', 'Medium', 'High', 'Extra High', 'Maximum']);
+            await page.keyboard.press('Escape');
+            await expectReasoningState(page, 'low', false);
+            await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
+            await chooseModel(page, mobile, MODELS.at(-1));
+            await expect(page.locator('#openai_reasoning_effort option[value="low"]')).toBeDisabled();
+            await expectReasoningState(page, 'low');
+            await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }));
+            await page.reload({ waitUntil: 'domcontentloaded' });
+            await openApi(page);
+            await connectNanoGpt(page);
+            await expect(page.locator('#openai_reasoning_effort')).toHaveValue('low');
+            await expect(page.locator('#openai_reasoning_effort option[value="low"]')).toBeDisabled();
+            await expectReasoningState(page, 'low');
+        });
+
+        test('quiet browser request payload retains Low and parses an actionable rejection', async ({ page, baseURL }) => {
+            await setupNanoGpt(page, baseURL);
+            await selectReasoningFixtureCharacter(page);
+            await loadRoutingSettings(page, { nanogpt_model: 'z-ai/glm-5.2:thinking', reasoning_effort: 'low', stream_openai: false });
+            await page.locator('#left-nav-panel .sb-shell-close').click();
+            const requests = [];
+            // This proves browser payload/error handling only. The backend mocked-fetch
+            // suite separately proves rejection before native provider dispatch.
+            await page.route('**/api/backends/chat-completions/generate', async route => {
+                if (new URL(route.request().url()).origin !== new URL(baseURL).origin) return route.abort();
+                const payload = route.request().postDataJSON();
+                requests.push(payload);
+                return payload.reasoning_effort === 'low'
+                    ? route.fulfill({ status: 400, json: { error: { code: 'UNSUPPORTED_REASONING_EFFORT', message: 'Low is not available for this model. Choose High or Maximum in Reasoning Effort, then try again.' } } })
+                    : route.fulfill({ json: { choices: [{ message: { role: 'assistant', content: 'Supported reasoning reply.' }, finish_reason: 'stop' }] } });
+            });
+            const send = () => page.evaluate(async () => {
+                const { sendOpenAIRequest } = await import('/scripts/openai.js');
+                try {
+                    return { result: await sendOpenAIRequest('quiet', [{ role: 'user', content: 'Owned reasoning payload probe.' }], null, {}) };
+                } catch (error) {
+                    return { error: error.message };
+                }
+            });
+            expect((await send()).error).toContain('Choose High or Maximum');
+            expect(requests).toHaveLength(1);
+            expect(requests[0]).toMatchObject({ reasoning_effort: 'low', model_sampler_metadata: {
+                source: 'nanogpt', model: 'z-ai/glm-5.2:thinking', reasoning_efforts: ['high', 'max'],
+            } });
+            await page.locator('#sb-reasoning-effort-button').click();
+            await page.locator('#sb-reasoning-effort-picker').getByRole('option', { name: 'High', exact: true }).click();
+            expect((await send()).result.choices[0].message.content).toBe('Supported reasoning reply.');
+            expect(requests[1].reasoning_effort).toBe('high');
+        });
+
+        test.describe('ordinary reasoning Send recovery', () => {
+            test.use({ reasoningSendFixture: true });
+
+            test('ordinary Send preserves its prompt after rejection and retries once after choosing High', async ({ page, baseURL }) => {
+                await setupNanoGpt(page, baseURL, { ordinarySend: true });
+                await selectReasoningFixtureCharacter(page);
+                await loadRoutingSettings(page, { nanogpt_model: 'z-ai/glm-5.2:thinking', reasoning_effort: 'low', stream_openai: false, send_if_empty: '' });
+                await page.locator('#left-nav-panel .sb-shell-close').click();
+                const original = 'An owned ordinary prompt must survive the reasoning rejection.';
+                const reply = 'A single supported ordinary reply.';
+                const requests = [];
+                await page.route('**/api/backends/chat-completions/generate', async route => {
+                    if (new URL(route.request().url()).origin !== new URL(baseURL).origin) return route.abort();
+                    const payload = route.request().postDataJSON();
+                    requests.push(payload);
+                    return payload.reasoning_effort === 'low'
+                        ? route.fulfill({ status: 400, json: { error: { code: 'UNSUPPORTED_REASONING_EFFORT', message: 'Low is not available for this model. Choose High or Maximum in Reasoning Effort, then try again.' } } })
+                        : route.fulfill({ json: { choices: [{ message: { role: 'assistant', content: reply }, finish_reason: 'stop' }] } });
+                });
+                await acknowledgeActiveSettings(page);
+                await page.locator('#send_textarea').fill(original);
+                await page.locator('#send_but').click();
+                await expect.poll(() => requests.length).toBe(1);
+                await expect(page.locator('#toast-container')).toContainText('Choose High or Maximum');
+                await expect.poll(() => page.evaluate(async () => (await import('/script.js')).isGenerating())).toBe(false);
+                await expect(page.locator('#send_but')).toBeVisible();
+                await expect(page.locator('#send_but')).not.toHaveAttribute('aria-disabled', 'true');
+                expect(requests[0]).toMatchObject({ reasoning_effort: 'low', model_sampler_metadata: {
+                    source: 'nanogpt', model: 'z-ai/glm-5.2:thinking', reasoning_efforts: ['high', 'max'],
+                } });
+                // Ordinary non-streamed Generate commits the user message before
+                // dispatch; an unsupported-effort 400 leaves it in chat for retry.
+                expect(await page.evaluate(async original => (await import('/script.js')).chat.filter(message => message.is_user && message.mes === original).length, original)).toBe(1);
+                await expect(page.locator('#send_textarea')).toHaveValue('');
+                await page.locator('#sb-reasoning-effort-button').click();
+                await page.locator('#sb-reasoning-effort-picker').getByRole('option', { name: 'High', exact: true }).click();
+                await acknowledgeActiveSettings(page);
+                await page.locator('#send_but').click();
+                await expect(page.locator('#chat .mes[mesid]').last().locator('.mes_text')).toHaveText(reply);
+                await expect.poll(() => page.evaluate(async () => (await import('/script.js')).isGenerating())).toBe(false);
+                expect(requests).toHaveLength(2);
+                expect(requests[1].reasoning_effort).toBe('high');
+                expect(await page.evaluate(async ({ original, reply }) => {
+                    const { chat } = await import('/script.js');
+                    return { users: chat.filter(message => message.is_user && message.mes === original).length,
+                        replies: chat.filter(message => !message.is_user && message.mes === reply).length };
+                }, { original, reply })).toEqual({ users: 1, replies: 1 });
+            });
         });
 
         if (mobile) {

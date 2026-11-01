@@ -114,6 +114,11 @@ export function buildChatCompletionSamplerMetadata(source, model, record = {}) {
         metadata.open_weights = record.open_weights;
     }
 
+    if (source === 'nanogpt' && Object.hasOwn(record ?? {}, 'reasoning_efforts')) {
+        metadata.reasoning_efforts = Array.isArray(record.reasoning_efforts)
+            ? [...record.reasoning_efforts] : record.reasoning_efforts;
+    }
+
     return metadata;
 }
 
