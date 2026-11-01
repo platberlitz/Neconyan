@@ -837,7 +837,7 @@
     font-size: 0.86em;
     font-variant-numeric: tabular-nums;
     text-align: center;
-    white-space: nowrap;
+    white-space: normal;
 }
 
 #rat_drawer .rat-stage-actions {
@@ -1141,6 +1141,15 @@
 
     #rat_drawer .rat-browse-filters {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    #rat_drawer .rat-stage-nav {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #rat_drawer .rat-stage-position {
+        grid-column: 1 / -1;
+        grid-row: 1;
     }
 
     #rat_drawer .rat-preview-stage-head > select {
