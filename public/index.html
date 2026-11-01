@@ -2112,7 +2112,7 @@
                                             </select>
                                         </div>
                                     </div>
-                                    <div class="flex-container flexFlowColumn wide100p textAlignCenter marginTop10" data-source="openai,custom,claude,xai,makersuite,vertexai,aimlapi,openrouter,pollinations,perplexity,cometapi,electronhub,azure_openai,chutes,nanogpt,linkapi,deepseek,zai,moonshot">
+                                    <div id="chat_reasoning_effort_row" class="flex-container flexFlowColumn wide100p textAlignCenter marginTop10" data-source="openai,custom,claude,xai,makersuite,vertexai,aimlapi,openrouter,pollinations,perplexity,cometapi,electronhub,azure_openai,chutes,nanogpt,linkapi,deepseek,zai,moonshot,mistralai,minimax,groq,fireworks">
                                         <div class="flex-container oneline-dropdown" title="Constrains effort on reasoning for reasoning models.&#10;Reducing reasoning effort can result in faster responses and fewer tokens used on reasoning in a response." data-i18n="[title]Constrains effort on reasoning for reasoning models.">
                                             <label for="openai_reasoning_effort">
                                                 <span data-i18n="Reasoning Effort">Reasoning Effort</span>
@@ -2127,13 +2127,13 @@
                                                 <option data-i18n="openai_reasoning_effort_xhigh" value="xhigh">Extra High</option>
                                                 <option data-i18n="openai_reasoning_effort_maximum" value="max">Maximum</option>
                                             </select>
-                                            <div class="toggle-description justifyLeft marginBot5" data-source="openai,custom,xai,aimlapi,openrouter,pollinations,perplexity,cometapi,electronhub,azure_openai,chutes" data-i18n="OpenAI-style options: low, medium, high, xhigh. Every effort is sent exactly as picked, aside from Minimum, which is sent as 'minimal'. None is sent verbatim to GPT-5.1 and newer. Other models get no effort level.">
+                                            <div class="toggle-description justifyLeft marginBot5" data-source="custom,xai,pollinations,perplexity,cometapi,electronhub,azure_openai,chutes" data-i18n="OpenAI-style options: low, medium, high, xhigh. Every effort is sent exactly as picked, aside from Minimum, which is sent as 'minimal'. None is sent verbatim to GPT-5.1 and newer. Other models get no effort level.">
                                                 OpenAI-style options: low, medium, high, xhigh. Every effort is sent exactly as picked, aside from Minimum, which is sent as 'minimal'. None is sent verbatim to GPT-5.1 and newer. Other models get no effort level.
                                             </div>
                                             <div class="toggle-description justifyLeft marginBot5" data-source="claude" data-i18n="Allocates a portion of the response length for thinking (min: 1024 tokens, low: 10%, medium: 25%, high: 50%, max: 95%), but minimum 1024 tokens. Auto does not request thinking.">
                                                 Allocates a portion of the response length for thinking (min: 1024 tokens, low: 10%, medium: 25%, high: 50%, max: 95%), but minimum 1024 tokens. Auto does not request thinking.
                                             </div>
-                                            <div class="toggle-description justifyLeft marginBot5" data-source="makersuite,vertexai">
+                                            <div class="toggle-description justifyLeft marginBot5" data-reasoning-legacy-hint data-source="makersuite,vertexai">
                                                 <span data-i18n="Sets a dynamic reasoning depth level for thinking (Flash 3/Pro 3). Every effort is sent exactly as picked, so a level the model does not accept is rejected rather than lowered. Auto lets the model decide.">
                                                     Sets a dynamic reasoning depth level for thinking (Flash 3/Pro 3). Every effort is sent exactly as picked, so a level the model does not accept is rejected rather than lowered. Auto lets the model decide.
                                                 </span>
@@ -2142,17 +2142,23 @@
                                                     Allocates a portion of the response length for thinking (Flash 2.5/Pro 2.5) (min: 0/128 tokens, low: 10%, medium: 25%, high: 50%, max: 24576/32768 tokens). Auto lets the model decide.
                                                 </span>
                                             </div>
-                                            <div class="toggle-description justifyLeft marginBot5" data-source="deepseek" data-i18n="DeepSeek documents low, high and max reasoning efforts. Every effort is sent exactly as picked, so anything else may be rejected. Minimum is sent as 'minimal'.">
+                                            <div class="toggle-description justifyLeft marginBot5" data-reasoning-legacy-hint data-source="deepseek" data-i18n="DeepSeek documents low, high and max reasoning efforts. Every effort is sent exactly as picked, so anything else may be rejected. Minimum is sent as 'minimal'.">
                                                 DeepSeek documents low, high and max reasoning efforts. Every effort is sent exactly as picked, so anything else may be rejected. Minimum is sent as 'minimal'.
                                             </div>
-                                            <div class="toggle-description justifyLeft marginBot5" data-source="zai" data-i18n="Only GLM-5.2 and newer accept reasoning efforts. Every effort is sent exactly as picked, aside from Minimum which is sent as 'minimal'. GLM-5.3 specifically only accepts 'low', 'high', and 'max'.">
+                                            <div class="toggle-description justifyLeft marginBot5" data-reasoning-legacy-hint data-source="zai" data-i18n="Only GLM-5.2 and newer accept reasoning efforts. Every effort is sent exactly as picked, aside from Minimum which is sent as 'minimal'. GLM-5.3 specifically only accepts 'low', 'high', and 'max'.">
                                                 Only GLM-5.2 and newer accept reasoning efforts. Every effort is sent exactly as picked, aside from Minimum which is sent as 'minimal'. GLM-5.3 specifically only accepts 'low', 'high', and 'max'.
                                             </div>
-                                            <div class="toggle-description justifyLeft marginBot5" data-source="moonshot" data-i18n="Kimi K3 and K3.1 Pro accept reasoning efforts and document low, high and max. Every effort is sent exactly as picked, so anything else may be rejected. Minimum is sent as 'minimal'. Reasoning cannot be turned off for these models.">
+                                            <div class="toggle-description justifyLeft marginBot5" data-reasoning-legacy-hint data-source="moonshot" data-i18n="Kimi K3 and K3.1 Pro accept reasoning efforts and document low, high and max. Every effort is sent exactly as picked, so anything else may be rejected. Minimum is sent as 'minimal'. Reasoning cannot be turned off for these models.">
                                                 Kimi K3 and K3.1 Pro accept reasoning efforts and document low, high and max. Every effort is sent exactly as picked, so anything else may be rejected. Minimum is sent as 'minimal'. Reasoning cannot be turned off for these models.
                                             </div>
                                             <div id="nanogpt_reasoning_effort_hint" class="toggle-description justifyLeft marginBot5" data-source="nanogpt">
                                                 Reasoning efforts are sent exactly, aside from minimum which is sent as 'minimal'.
+                                            </div>
+                                            <div id="openrouter_reasoning_effort_hint" class="toggle-description justifyLeft marginBot5" data-source="openrouter">
+                                                Available reasoning levels are not known for this model.
+                                            </div>
+                                            <div id="native_reasoning_effort_hint" class="toggle-description justifyLeft marginBot5" data-source="openai,makersuite,vertexai,deepseek,moonshot,zai,minimax,mistralai,groq,aimlapi,fireworks">
+                                                Available reasoning levels are not known for this model.
                                             </div>
                                         </div>
                                     </div>

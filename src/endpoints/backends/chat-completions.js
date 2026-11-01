@@ -12,7 +12,7 @@ import { getLocalPromptCacheValue, isLikelyLocalServerUrl } from '../../../publi
 import { getLinkApiBaseUrl, getLinkApiRequestFormat } from '../../../public/scripts/linkapi-utils.js';
 import { applyGrokModelParameterConstraints, applyKimiK3ModelParameterConstraints, isKimiK3Model, filterChatCompletionSamplingParameters, zaiSupportsReasoningEffort } from '../../../public/scripts/openai-model-capabilities.js';
 import { applyGenerationRequestControls, requestUsesReasoning } from '../../../public/scripts/generation-request-controls.js';
-import { checkNanoGptReasoningEffort } from '../../../public/scripts/chat-request-controls.js';
+import { checkChatReasoningEffort, getNativeReasoningRoute, GOOGLE_IMAGE_GENERATION_MODELS } from '../../../public/scripts/chat-reasoning-capabilities.js';
 
 import {
     AIMLAPI_HEADERS,
@@ -729,15 +729,7 @@ async function sendMakerSuiteRequest(request, response) {
 
     function getGeminiBody() {
         // #region UGLY MODEL LISTS AREA
-        const imageGenerationModels = [
-            'gemini-2.0-flash-exp',
-            'gemini-2.0-flash-exp-image-generation',
-            'gemini-2.0-flash-preview-image-generation',
-            'gemini-2.5-flash-image-preview',
-            'gemini-2.5-flash-image',
-            'gemini-3-pro-image-preview',
-            'gemini-3.1-flash-image-preview',
-        ];
+
 
         const isThinkingConfigModel = m => (/^gemini-2.5-(flash|pro)/.test(m) && !/-image(-preview)?$/.test(m)) || (/^gemini-3[.\d]*-(flash|pro)/.test(m));
         const isImageSizeModel = m => /^gemini-3/.test(m);
@@ -762,7 +754,7 @@ async function sendMakerSuiteRequest(request, response) {
             delete generationConfig.candidateCount;
         }
 
-        const enableImageModality = requestImages && imageGenerationModels.includes(model);
+        const enableImageModality = requestImages && GOOGLE_IMAGE_GENERATION_MODELS.includes(model);
         const enableImageConfig = enableImageModality && (aspectRatio || imageSize);
         if (enableImageModality) {
             generationConfig.responseModalities = ['text', 'image'];
@@ -818,11 +810,12 @@ async function sendMakerSuiteRequest(request, response) {
             }
         }
 
-        if (isThinkingConfigModel(model)) {
+        if (isThinkingConfigModel(model) || (request.reasoningCapabilities?.nativeFallback && reasoningEffort)) {
             const thinkingConfig = {};
             const shouldIncludeThoughts = includeReasoning;
 
-            const thinkingBudget = calculateGoogleBudgetTokens(generationConfig.maxOutputTokens, reasoningEffort, model);
+            const thinkingBudget = request.reasoningCapabilities?.nativeFallback && reasoningEffort
+                ? reasoningEffort : calculateGoogleBudgetTokens(generationConfig.maxOutputTokens, reasoningEffort, model);
             if (typeof thinkingBudget === 'number' && Number.isInteger(thinkingBudget)) {
                 thinkingConfig.thinkingBudget = thinkingBudget;
             }
@@ -1137,6 +1130,10 @@ async function sendMistralAIRequest(request, response) {
             'stop': Array.isArray(request.body.stop) && request.body.stop.length > 0 ? request.body.stop : undefined,
         };
 
+        if ((request.reasoningCapabilities?.provenance === 'mistralai-documentation' || request.reasoningCapabilities?.nativeFallback) && request.body.reasoning_effort) {
+            requestBody.reasoning_effort = request.body.reasoning_effort;
+        }
+
         if (Array.isArray(request.body.tools) && request.body.tools.length > 0) {
             requestBody['tools'] = request.body.tools;
             requestBody['tool_choice'] = request.body.tool_choice;
@@ -1316,13 +1313,15 @@ async function sendDeepSeekRequest(request, response) {
     try {
         let bodyParams = {};
         const isThinkingModel = /(?:^|-)reasoner$|deepseek-v4/i.test(String(request.body.model || ''));
+        const disableNativeThinking = request.reasoningCapabilities?.provenance === 'deepseek-documentation' && request.body.reasoning_effort === 'none';
+        const effectiveThinking = isThinkingModel && !disableNativeThinking;
 
-        if (request.body.logprobs > 0 && !isThinkingModel) {
+        if (request.body.logprobs > 0 && !effectiveThinking) {
             bodyParams['top_logprobs'] = request.body.logprobs;
             bodyParams['logprobs'] = true;
         }
 
-        if (isThinkingModel && request.body.reasoning_effort && !['auto', 'none'].includes(request.body.reasoning_effort)) {
+        if ((isThinkingModel || request.reasoningCapabilities?.nativeFallback) && request.body.reasoning_effort && (!['auto', 'none'].includes(request.body.reasoning_effort) || disableNativeThinking || request.reasoningCapabilities?.nativeFallback)) {
             bodyParams['reasoning_effort'] = toWireReasoningEffort(request.body.reasoning_effort);
         }
 
@@ -1339,6 +1338,11 @@ async function sendDeepSeekRequest(request, response) {
             });
         }
 
+        const inputMessages = disableNativeThinking ? structuredClone(request.body.messages) : request.body.messages;
+        if (disableNativeThinking && Array.isArray(inputMessages)) {
+            for (const message of inputMessages) if (message && typeof message === 'object') delete message.reasoning_content;
+        }
+
         // Hack to support JSON schema
         if (request.body.json_schema) {
             bodyParams.response_format = {
@@ -1348,12 +1352,12 @@ async function sendDeepSeekRequest(request, response) {
                 role: 'user',
                 content: `JSON schema for the response:\n${JSON.stringify(request.body.json_schema.value, null, 4)}`,
             };
-            request.body.messages.push(message);
+            inputMessages.push(message);
         }
 
-        const processedMessages = addAssistantPrefix(postProcessPrompt(request.body.messages, PROMPT_PROCESSING_TYPE.SEMI_TOOLS, getPromptNames(request)), bodyParams.tools, 'prefix');
+        const processedMessages = addAssistantPrefix(postProcessPrompt(inputMessages, PROMPT_PROCESSING_TYPE.SEMI_TOOLS, getPromptNames(request)), bodyParams.tools, 'prefix');
 
-        if (isThinkingModel && bodyParams.tools) {
+        if (effectiveThinking && bodyParams.tools) {
             addReasoningContentToToolCalls(processedMessages);
         } else if (isThinkingModel) {
             for (const message of processedMessages) {
@@ -1872,6 +1876,10 @@ async function sendMinimaxRequest(request, response) {
             ...bodyParams,
         };
 
+        if ((request.reasoningCapabilities?.provenance === 'minimax-documentation' || request.reasoningCapabilities?.nativeFallback) && request.body.reasoning_effort) {
+            requestBody.reasoning_effort = request.body.reasoning_effort;
+        }
+
         const config = {
             method: 'POST',
             headers: {
@@ -2181,7 +2189,8 @@ export async function handleChatCompletionsStatus(request, statusResponse) {
                         })) || [];
 
                     console.info('Available Google AI Studio models:', models.map(m => m.id));
-                    return statusResponse.send({ data: models });
+                    return statusResponse.send({ data: models, ...(!request.body.reverse_proxy
+                        ? { reasoning_context: { source: 'makersuite', apiVersion } } : {}) });
                 } else {
                     console.warn('Google AI Studio models endpoint failed:', response.status, response.statusText);
                     return statusResponse.send({ error: true, bypass: true, data: { data: [] } });
@@ -3086,22 +3095,34 @@ export async function handleChatCompletionsGenerate(request, response) {
         // reasoning effort the frontend never validated, and the pass-through sources forward it
         // to the provider verbatim.
         applyReasoningEffortNormalization(request.body);
-        const reasoningSupport = checkNanoGptReasoningEffort({
+        const reasoningSupport = checkChatReasoningEffort({
             source: request.body.chat_completion_source,
             model: request.body.model,
             metadata: request.body.model_sampler_metadata,
+            route: getNativeReasoningRoute(request.body, { googleApiVersion: request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.MAKERSUITE
+                ? getConfigValue('gemini.apiVersion', 'v1beta') : undefined }),
             effort: request.body.reasoning_effort,
         });
         if (!reasoningSupport.supported) {
             const labels = { none: 'None', min: 'Minimum', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra High', max: 'Maximum' };
             const choices = reasoningSupport.supportedEfforts.map(value => labels[value]).join(' or ');
             const selected = labels[request.body.reasoning_effort] ?? 'This reasoning level';
+            const message = reasoningSupport.state === 'no-selector'
+                ? 'This model does not expose an effort setting. Remove the effort override or choose another model.'
+                : reasoningSupport.state === 'unknown' && reasoningSupport.forbidden
+                    ? 'Reasoning cannot be disabled for this model. Choose another model to turn it off.'
+                    : `${selected} is not available for this model. Choose ${choices} in Reasoning Effort, then try again.`;
             return response.status(400).json({ error: {
                 code: 'UNSUPPORTED_REASONING_EFFORT',
-                message: `${selected} is not available for this model. Choose ${choices} in Reasoning Effort, then try again.`,
+                message,
                 supported_reasoning_efforts: reasoningSupport.supportedEfforts,
             } });
         }
+        if (reasoningSupport.state !== 'unknown' || reasoningSupport.forbiddenEfforts.length || reasoningSupport.nativeFallback) {
+            if (reasoningSupport.omitted) delete request.body.reasoning_effort;
+            else request.body.reasoning_effort = toWireReasoningEffort(request.body.reasoning_effort);
+        }
+        request.reasoningCapabilities = reasoningSupport;
         filterChatCompletionSamplingParameters(request.body, { stripMetadata: true });
 
         // Neconyan: apply Astra's reasoning-model request constraints before dispatch so
@@ -3336,6 +3357,9 @@ export async function handleChatCompletionsGenerate(request, response) {
             apiKey = readSecret(request.user.directories, SECRET_KEYS.GROQ, request.body.secret_id);
             headers = {};
             bodyParams = {};
+            if ((reasoningSupport.provenance === 'groq-documentation' || reasoningSupport.nativeFallback) && request.body.reasoning_effort) {
+                bodyParams.reasoning_effort = request.body.reasoning_effort;
+            }
             if (request.body.json_schema) {
                 bodyParams['response_format'] = {
                     type: 'json_schema',
@@ -3352,6 +3376,9 @@ export async function handleChatCompletionsGenerate(request, response) {
             apiKey = readSecret(request.user.directories, SECRET_KEYS.FIREWORKS, request.body.secret_id);
             headers = {};
             bodyParams = {};
+            if ((reasoningSupport.provenance === 'fireworks-documentation' || reasoningSupport.nativeFallback) && request.body.reasoning_effort) {
+                bodyParams.reasoning_effort = request.body.reasoning_effort;
+            }
             if (request.body.json_schema) {
                 bodyParams['response_format'] = {
                     type: 'json_schema',
@@ -3458,14 +3485,14 @@ export async function handleChatCompletionsGenerate(request, response) {
             }
             apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(request.user.directories, SECRET_KEYS.MOONSHOT, request.body.secret_id);
             headers = {};
-            bodyParams = isKimiK3Model(request.body.model) ? {} : {
+            bodyParams = isKimiK3Model(request.body.model) || (reasoningSupport.nativeFallback && request.body.reasoning_effort) ? {} : {
                 thinking: {
                     type: request.body.include_reasoning ? 'enabled' : 'disabled',
                 },
             };
             // Neconyan divergence: K3 always reasons and takes the depth from a top-level
             // reasoning_effort instead of the thinking object the older Kimi models use.
-            if (isKimiK3Model(request.body.model) && request.body.reasoning_effort && !['auto', 'none'].includes(request.body.reasoning_effort)) {
+            if (request.body.reasoning_effort && (reasoningSupport.nativeFallback || (isKimiK3Model(request.body.model) && !['auto', 'none'].includes(request.body.reasoning_effort)))) {
                 bodyParams['reasoning_effort'] = toWireReasoningEffort(request.body.reasoning_effort);
             }
             request.body.json_schema
@@ -3497,9 +3524,10 @@ export async function handleChatCompletionsGenerate(request, response) {
                     type: requiresThinking || request.body.include_reasoning ? 'enabled' : 'disabled',
                 },
             };
+            if (reasoningSupport.nativeFallback && request.body.reasoning_effort) delete bodyParams.thinking;
             // Neconyan divergence: Z.AI takes the reasoning depth alongside thinking.type from
             // GLM-5.2 onwards.
-            if (zaiSupportsReasoningEffort(request.body.model) && request.body.reasoning_effort && !['auto', 'none'].includes(request.body.reasoning_effort)) {
+            if (request.body.reasoning_effort && (reasoningSupport.nativeFallback || (zaiSupportsReasoningEffort(request.body.model) && !['auto', 'none'].includes(request.body.reasoning_effort)))) {
                 bodyParams['reasoning_effort'] = toWireReasoningEffort(request.body.reasoning_effort);
             }
             if (request.body.json_schema) {
@@ -3568,7 +3596,7 @@ export async function handleChatCompletionsGenerate(request, response) {
         if (request.body.reasoning_effort
             && shouldUseDefaultOpenAiReasoningEffort
             && [CHAT_COMPLETION_SOURCES.CUSTOM, CHAT_COMPLETION_SOURCES.OPENAI, CHAT_COMPLETION_SOURCES.OPENAI_RESPONSES].includes(request.body.chat_completion_source)
-            && OPENAI_REASONING_EFFORT_MODELS.includes(request.body.model)) {
+            && (OPENAI_REASONING_EFFORT_MODELS.includes(request.body.model) || reasoningSupport.nativeFallback)) {
             bodyParams['reasoning_effort'] = toWireReasoningEffort(request.body.reasoning_effort);
         }
 

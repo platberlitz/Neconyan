@@ -59,7 +59,8 @@ describe('OpenAI-compatible Claude model capabilities', () => {
 
     test('applies Claude model constraints while building generation parameters', () => {
         expect(openAiSource).toContain('return createChatGenerationParameters(');
-        expect(providerSource).toContain('applyClaudeModelParameterConstraints(data, { preserveReasoning: [\'claude\', \'linkapi\'].includes(source) });');
+        expect(providerSource).toContain('|| declaredOpenRouterReasoning || reasoningCapabilities.nativeFallback || pendingMakerRoute');
+        expect(providerSource).toContain('reasoningCapabilities.state === \'effort-list\' || reasoningCapabilities.forbiddenEfforts.length > 0');
     });
 });
 

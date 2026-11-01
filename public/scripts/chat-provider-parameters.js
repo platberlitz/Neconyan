@@ -1,11 +1,16 @@
 import { applyClaudeModelParameterConstraints, applyKimiK3ModelParameterConstraints, filterChatCompletionSamplingParameters, isKimiK3Model } from './openai-model-capabilities.js';
 import { LINKAPI_ENDPOINT, getLinkApiRequestFormat } from './linkapi-utils.js';
+import { getChatReasoningCapabilities, getNativeReasoningRoute } from './chat-reasoning-capabilities.js';
 
 /** Build a request using explicit operation capabilities, without reading browser state. */
 export async function createChatGenerationParameters(settings, model, type, messages, context, { jsonSchema = null, cacheScope = null } = {}) {
     if (!Array.isArray(messages)) throw new Error('messages must be an array');
     messages = context.appendReasoning(messages.filter(message => message && typeof message === 'object'));
     const source = settings.chat_completion_source;
+    const suppliedMetadata = context.getSamplerMetadata();
+    const samplerMetadata = suppliedMetadata == null ? suppliedMetadata : structuredClone(suppliedMetadata);
+    const reasoningRoute = context.getReasoningRoute?.() ?? getNativeReasoningRoute(settings);
+    const reasoningEffort = context.getReasoningEffort(samplerMetadata);
     const gpt = ['openai', 'openai_responses', 'azure_openai', 'openrouter'].includes(source);
     const kimi = ['custom', 'moonshot', 'nanogpt', 'openrouter'].includes(source) && isKimiK3Model(model);
     const stream = settings.stream_openai && type !== 'quiet' && !(gpt && ['o1-2024-12-17', 'o1'].includes(model)) && !(source === 'workers_ai' && jsonSchema);
@@ -21,7 +26,7 @@ export async function createChatGenerationParameters(settings, model, type, mess
         max_tokens: settings.openai_max_tokens, stream, logit_bias: Object.keys(bias).length ? bias : undefined,
         stop: context.getStoppingStrings(4), chat_completion_source: source, n: canMultiSwipe ? settings.n : undefined,
         user_name: context.userName, char_name: context.characterName, group_names: context.getGroupNames(),
-        include_reasoning: context.getIncludeReasoning(), reasoning_effort: context.getReasoningEffort(),
+        include_reasoning: context.getIncludeReasoning(), reasoning_effort: reasoningEffort,
         enable_web_search: Boolean(settings.enable_web_search), request_images: Boolean(settings.request_images),
         // Absent image settings mean no preference: send '', never the text "undefined".
         request_image_resolution: String(settings.request_image_resolution ?? ''), request_image_aspect_ratio: String(settings.request_image_aspect_ratio ?? ''),
@@ -51,7 +56,7 @@ export async function createChatGenerationParameters(settings, model, type, mess
     applyChatProviderParameters(data, settings, {
         model, type, getStoppingStrings: context.getStoppingStrings, getAssistantPrefill: context.getAssistantPrefill,
         serviceTier: source === 'nanogpt' ? await context.getServiceTier() : undefined,
-        samplerMetadata: context.getSamplerMetadata(),
+        samplerMetadata, reasoningRoute,
     });
     if (jsonSchema) data.json_schema = jsonSchema;
     return { generate_data: data, stream, canMultiSwipe };
@@ -59,7 +64,7 @@ export async function createChatGenerationParameters(settings, model, type, mess
 
 /** Provider-specific request fields, shared by browser and server request builders. */
 export function applyChatProviderParameters(data, settings, {
-    model, type, getStoppingStrings, getAssistantPrefill, serviceTier, samplerMetadata,
+    model, type, getStoppingStrings, getAssistantPrefill, serviceTier, samplerMetadata, reasoningRoute = getNativeReasoningRoute(settings),
 }) {
     const source = settings.chat_completion_source;
     const topK = settings.top_k_openai > 0 ? Number(settings.top_k_openai) : undefined;
@@ -201,7 +206,15 @@ export function applyChatProviderParameters(data, settings, {
             }
         }
     }
-    applyClaudeModelParameterConstraints(data, { preserveReasoning: ['claude', 'linkapi'].includes(source) });
+    const reasoningCapabilities = getChatReasoningCapabilities({
+        source: data.chat_completion_source, model: data.model, metadata: samplerMetadata, route: reasoningRoute,
+    });
+    const declaredOpenRouterReasoning = data.chat_completion_source === 'openrouter'
+        && (reasoningCapabilities.state === 'effort-list' || reasoningCapabilities.forbiddenEfforts.length > 0);
+    // Missing browser version evidence is not a route claim; retain intent for the authoritative server guard.
+    const pendingMakerRoute = data.chat_completion_source === 'makersuite' && !reasoningRoute.reverseProxy
+        && reasoningRoute.googleApiVersion == null;
+    applyClaudeModelParameterConstraints(data, { preserveReasoning: ['claude', 'linkapi'].includes(source) || declaredOpenRouterReasoning || reasoningCapabilities.nativeFallback || pendingMakerRoute });
     if (['custom', 'moonshot', 'nanogpt', 'openrouter'].includes(source) && isKimiK3Model(model)) applyKimiK3ModelParameterConstraints(data);
     if (samplerMetadata) data.model_sampler_metadata = structuredClone(samplerMetadata);
     filterChatCompletionSamplingParameters(data, { source, model, metadata: samplerMetadata, stripMetadata: false });

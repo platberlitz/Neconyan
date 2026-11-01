@@ -8,6 +8,7 @@ import { fail, hash } from '../mewmory/core.js';
 import { readJson, readJsonShared } from '../mewmory/store.js';
 import { buildChatPresetPayload, createChatRequestData } from '../../public/scripts/chat-preset-request.js';
 import { resolveProfileProxy, resolveProfileRequestOverrides, resolveProfileServiceTier } from '../../public/scripts/connection-profile-request.js';
+import { getChatReasoningCapabilities } from '../../public/scripts/chat-reasoning-capabilities.js';
 import { textgen_types } from '../../public/scripts/text-provider-parameters.js';
 import { mergeTextPresetSettings, TEXT_PROVIDER_URLS } from '../../public/scripts/text-preset-request.js';
 import { readRoleplayFile } from '../roleplay-store.js';
@@ -346,6 +347,9 @@ export async function buildChatProfileRequest(directories, binding, messages, ma
     const urlField = { custom: 'custom_url', vertexai: 'vertexai_region', zai: 'zai_endpoint', siliconflow: 'siliconflow_endpoint', minimax: 'minimax_endpoint' }[source];
     if (urlField) payload[urlField] = profile['api-url'];
     const result = createChatRequestData((preset && rawOptions.includePreset !== false) || generationType !== 'quiet' ? await buildChatPresetPayload(active, preset ?? {}, undefined, payload, generate) : payload);
+    if (profileFieldNames.includes('reasoning_effort') && getChatReasoningCapabilities({
+        source: result.chat_completion_source, model: result.model, metadata: result.model_sampler_metadata,
+    }).state === 'no-selector') delete result.reasoning_effort;
     delete result.__connectionProfileRequestFields;
     delete result.modelOverride;
     if (result.service_tier === '') delete result.service_tier;

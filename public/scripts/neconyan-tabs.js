@@ -20677,7 +20677,7 @@ function getReasoningEffortSelect() {
 
 function isReasoningEffortAvailable(select = getReasoningEffortSelect()) {
     const context = getSillyTavernContext();
-    return Boolean(select) && isReasoningEffortSupported({
+    return Boolean(select) && !select.disabled && select.dataset.reasoningControlAvailable !== 'false' && isReasoningEffortSupported({
         mainApi: context?.mainApi,
         source: context?.chatCompletionSettings?.chat_completion_source,
         dataSource: select.closest('[data-source]')?.getAttribute('data-source'),
@@ -20705,15 +20705,16 @@ function updateReasoningEffortButton() {
     }
 
     const select = getReasoningEffortSelect();
+    if (select) bindReasoningEffortSelect(select);
     const available = isReasoningEffortAvailable(select);
     button.hidden = !available;
+    button.style.display = available ? '' : 'none';
     button.closest('#sb-bottom-chat-bar')?.classList.toggle('sb-has-reasoning-effort', available);
     if (!available) {
         closeReasoningEffortPicker();
         return;
     }
 
-    bindReasoningEffortSelect(select);
     const fullLabel = select.selectedOptions[0]?.textContent?.trim() || select.value;
     const unavailable = select.dataset.reasoningUnavailable === 'true';
     const title = select.dataset.reasoningTitle || `${t`Reasoning Effort`}: ${fullLabel}`;
@@ -20793,7 +20794,11 @@ function openReasoningEffortPicker() {
     document.body.appendChild(picker);
     button.setAttribute('aria-expanded', 'true');
     positionPersonaPicker(picker, button);
-    (picker.querySelector('.is-active:not(:disabled)') ?? picker.querySelector('button:not(:disabled)'))?.focus({ preventScroll: true });
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (!picker.isConnected || document.getElementById('sb-reasoning-effort-picker') !== picker
+            || !button.isConnected || !isReasoningEffortAvailable(select)) return;
+        (picker.querySelector('.is-active:not(:disabled)') ?? picker.querySelector('button:not(:disabled)'))?.focus({ preventScroll: true });
+    }));
 }
 
 function closeReasoningEffortPicker({ restoreFocus = false } = {}) {

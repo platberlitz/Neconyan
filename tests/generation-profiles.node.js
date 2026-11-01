@@ -125,6 +125,197 @@ test('metadata-free default-tier quiet NanoGPT profiles retain legacy Low withou
     assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
 });
 
+function nativeGroqFixture(t, { preset = false } = {}) {
+    const fixture = nanoReasoningFixture(t, { preset });
+    const model = 'openai/gpt-oss-20b';
+    Object.assign(fixture.profile, { id: 'groq', api: 'groq', model, 'secret-id': 'groq-fixture-key', 'reasoning-effort': 'high' });
+    Object.assign(fixture.settings, { active_generation: { api: 'openai', source: 'groq', model },
+        oai_settings: { chat_completion_source: 'groq', groq_model: model, reasoning_effort: 'high',
+            temp_openai: 1, top_p_openai: 1, n: 1 } });
+    fs.writeFileSync(path.join(fixture.root, 'secrets.json'), JSON.stringify({ api_key_groq: [
+        { id: 'groq-fixture-key', value: 'groq-fixture-not-a-real-key', active: true },
+    ] }));
+    if (preset) fs.writeFileSync(path.join(fixture.directories.openAI_Settings, 'reasoning.json'), JSON.stringify({ reasoning_effort: 'high' }));
+    fixture.save();
+    return fixture;
+}
+
+for (const preset of [false, true]) test(`metadata-free native Groq ${preset ? 'preset' : 'quiet'} validates the final effort without a catalogue`, async t => {
+    const fixture = nativeGroqFixture(t, { preset });
+    const before = fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8');
+    const binding = captureChatProfile(fixture.directories, 'groq');
+    let calls = 0;
+    const options = { ...fixture.options, binding, generationType: 'quiet', fetch: async (url, request) => {
+        calls++;
+        assert.equal(String(url), 'https://api.groq.com/openai/v1/chat/completions');
+        assert.equal(JSON.parse(request.body).reasoning_effort, 'high');
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'Native reply.' } }] }));
+    } };
+    assert.equal((await runChatProfile(options)).text, 'Native reply.');
+    await assert.rejects(runChatProfile({ ...options, overridePayload: { reasoning_effort: 'none' } }), /not available/);
+    assert.equal(calls, 1);
+    assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
+});
+
+test('prepared metadata-free Groq quiet request rejects an unavailable effort after replay', async t => {
+    const fixture = nativeGroqFixture(t);
+    const binding = captureChatProfile(fixture.directories, 'groq');
+    const before = fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8');
+    const job = acceptJob(fixture.directories, { owner: 'tester', type: 'test.profile', submissionKey: 'groq-prepared', intent: {} }).job;
+    const options = { ...fixture.options, binding, generationType: 'quiet', overridePayload: { reasoning_effort: 'none' },
+        jobContext: { directories: fixture.directories, job, signal: new AbortController().signal },
+        fetch: () => assert.fail('An unavailable prepared request must not reach inference') };
+    await assert.rejects(runChatProfile({ ...options, onProviderStep: () => { throw new Error('Owned stop before dispatch'); } }), /Owned stop/);
+    await assert.rejects(runChatProfile(options), /not available/);
+    assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
+});
+
+test('metadata-free captured active Groq rejects an unavailable effort before dispatch', async t => {
+    const fixture = nativeGroqFixture(t);
+    const binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 7 });
+    const before = fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8');
+    const options = { ...fixture.options, binding, overridePayload: { reasoning_effort: 'none' },
+        fetch: () => assert.fail('An unavailable effort must not reach inference') };
+    await assert.rejects(runChatProfile(options), /not available/);
+    assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
+});
+
+function futureGroqFixture(t, { preset = false } = {}) {
+    const fixture = nativeGroqFixture(t, { preset });
+    const model = 'future-neutral-model';
+    fixture.profile.model = model;
+    fixture.profile['reasoning-effort'] = 'none';
+    fixture.settings.active_generation.model = model;
+    fixture.settings.oai_settings.groq_model = model;
+    fixture.settings.oai_settings.reasoning_effort = 'none';
+    if (preset) fs.writeFileSync(path.join(fixture.directories.openAI_Settings, 'reasoning.json'), JSON.stringify({ reasoning_effort: 'none' }));
+    fixture.save();
+    return fixture;
+}
+
+for (const preset of [false, true]) test(`unlisted native Groq ${preset ? 'preset' : 'quiet'} retains None and explicit Minimum without discovery`, async t => {
+    const fixture = futureGroqFixture(t, { preset });
+    const before = fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8');
+    const binding = captureChatProfile(fixture.directories, 'groq');
+    const efforts = [];
+    const options = { ...fixture.options, binding, generationType: 'quiet', fetch: async (url, request) => {
+        assert.equal(String(url), 'https://api.groq.com/openai/v1/chat/completions');
+        efforts.push(JSON.parse(request.body).reasoning_effort);
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'Future reply.' } }] }));
+    } };
+    await runChatProfile(options);
+    await runChatProfile({ ...options, overridePayload: { reasoning_effort: 'min' } });
+    assert.deepEqual(efforts, ['none', 'minimal']);
+    assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
+});
+
+test('captured active future Groq preserves explicit None without a catalogue', async t => {
+    const fixture = futureGroqFixture(t);
+    const binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 7 });
+    const before = fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8');
+    let calls = 0;
+    await runChatProfile({ ...fixture.options, binding, fetch: async (url, request) => {
+        calls++;
+        assert.equal(String(url), 'https://api.groq.com/openai/v1/chat/completions');
+        assert.equal(JSON.parse(request.body).reasoning_effort, 'none');
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'Future reply.' } }] }));
+    } });
+    assert.equal(calls, 1);
+    assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
+});
+
+test('prepared future Groq replay retains a deliberate Minimum', async t => {
+    const fixture = futureGroqFixture(t);
+    const binding = captureChatProfile(fixture.directories, 'groq');
+    const before = fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8');
+    const job = acceptJob(fixture.directories, { owner: 'tester', type: 'test.profile', submissionKey: 'future-groq-prepared', intent: {} }).job;
+    let calls = 0;
+    const options = { ...fixture.options, binding, generationType: 'quiet', overridePayload: { reasoning_effort: 'min' },
+        jobContext: { directories: fixture.directories, job, signal: new AbortController().signal },
+        fetch: async (url, request) => {
+            calls++;
+            assert.equal(String(url), 'https://api.groq.com/openai/v1/chat/completions');
+            assert.equal(JSON.parse(request.body).reasoning_effort, 'minimal');
+            return new Response(JSON.stringify({ choices: [{ message: { content: 'Replay reply.' } }] }));
+        } };
+    await assert.rejects(runChatProfile({ ...options, onProviderStep: () => { throw new Error('Owned stop before dispatch'); } }), /Owned stop/);
+    assert.equal((await runChatProfile(options)).text, 'Replay reply.');
+    assert.equal(calls, 1);
+    assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
+});
+
+function openRouterReasoningFixture(t, { preset = false, activeMetadata = false } = {}) {
+    const fixture = nanoReasoningFixture(t, { preset });
+    const model = 'example/model:free';
+    const declaration = { source: 'openrouter', model, reasoning: { mandatory: true } };
+    Object.assign(fixture.profile, { id: 'openrouter', api: 'openrouter', model, 'secret-id': 'router-fixture-key', 'reasoning-effort': 'low' });
+    Object.assign(fixture.settings, { _settingsRevision: 7, main_api: 'openai',
+        active_generation: { api: 'openai', source: 'openrouter', model },
+        oai_settings: { chat_completion_source: 'openrouter', openrouter_model: model, reasoning_effort: 'low',
+            temp_openai: 1, top_p_openai: 1, n: 1, ...(activeMetadata ? { model_sampler_metadata: declaration } : {}) } });
+    fs.writeFileSync(path.join(fixture.root, 'secrets.json'), JSON.stringify({ api_key_openrouter: [
+        { id: 'router-fixture-key', value: 'router-fixture-not-a-real-key', active: true },
+    ] }));
+    if (preset) fs.writeFileSync(path.join(fixture.directories.openAI_Settings, 'reasoning.json'), JSON.stringify({ reasoning_effort: 'low' }));
+    fixture.save();
+    return { ...fixture, model, declaration };
+}
+
+for (const preset of [false, true]) test(`saved OpenRouter ${preset ? 'preset' : 'quiet no-preset'} keeps stored Low but omits it for a known no-selector model`, async t => {
+    const fixture = openRouterReasoningFixture(t, { preset });
+    const binding = captureChatProfile(fixture.directories, 'openrouter');
+    const before = fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8');
+    let calls = 0;
+    const options = { ...fixture.options, binding, generationType: 'quiet', overridePayload: { model_sampler_metadata: fixture.declaration },
+        fetch: async (_url, request) => {
+            calls++;
+            assert.equal(String(request.method).toUpperCase(), 'POST');
+            const body = JSON.parse(request.body);
+            assert.equal(body.reasoning.effort, undefined);
+            assert.equal(body.model_sampler_metadata, undefined);
+            assert.equal(body.__connectionProfileRequestFields, undefined);
+            return new Response(JSON.stringify({ choices: [{ message: { content: 'No selector reply.' } }] }));
+        } };
+    assert.equal((await runChatProfile(options)).text, 'No selector reply.');
+    assert.equal(calls, 1, 'no additional catalogue request');
+    await assert.rejects(runChatProfile({ ...options, overridePayload: { ...options.overridePayload, reasoning_effort: 'high' } }), /Remove the effort override/);
+    assert.equal(calls, 1, 'explicit override is rejected before dispatch');
+    assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
+});
+
+test('captured active OpenRouter no-selector request omits the saved effort, while metadata-free quiet profiles retain it', async t => {
+    const fixture = openRouterReasoningFixture(t, { activeMetadata: true });
+    const active = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 7 });
+    const saved = captureChatProfile(fixture.directories, 'openrouter');
+    const before = fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8');
+    const efforts = [];
+    const options = { ...fixture.options, fetch: async (_url, request) => {
+        assert.equal(String(request.method).toUpperCase(), 'POST');
+        efforts.push(JSON.parse(request.body).reasoning.effort);
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'Profile reply.' } }] }));
+    } };
+    await runChatProfile({ ...options, binding: active });
+    await runChatProfile({ ...options, binding: saved, generationType: 'quiet' });
+    assert.deepEqual(efforts, [undefined, 'low']);
+    assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
+});
+
+test('saved OpenRouter preset retains a declared literal None through request construction', async t => {
+    const fixture = openRouterReasoningFixture(t, { preset: true });
+    fixture.profile['reasoning-effort'] = 'none';
+    fixture.save();
+    const binding = captureChatProfile(fixture.directories, 'openrouter');
+    const declaration = { ...fixture.declaration, reasoning: { supported_efforts: ['none', 'high'] } };
+    let calls = 0;
+    const result = await runChatProfile({ ...fixture.options, binding, overridePayload: { model_sampler_metadata: declaration }, fetch: async (_url, request) => {
+        calls++;
+        assert.equal(JSON.parse(request.body).reasoning.effort, 'none');
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'None reply.' } }] }));
+    } });
+    assert.equal(result.text, 'None reply.');
+    assert.equal(calls, 1);
+});
+
 test('acknowledged Kobold uses the saved endpoint and samplers exactly once', async t => {
     const fixture = textFixture(t);
     const previous = process.env.SILLYTAVERN_REQUESTOVERRIDES;

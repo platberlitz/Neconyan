@@ -10,7 +10,8 @@ import { injectChatPromptDepth } from './chat-prompt-depth.js';
 * https://github.com/CncAnon1/TavernAITurbo
 */
 import { Fuse, DOMPurify } from '../lib.js';
-import { REVERSE_PROXY_SUPPORTED_SOURCES, resolveChatReasoningEffort, checkNanoGptReasoningEffort } from './chat-request-controls.js';
+import { REVERSE_PROXY_SUPPORTED_SOURCES, resolveChatReasoningEffort } from './chat-request-controls.js';
+import { checkChatReasoningEffort, getNativeReasoningRoute } from './chat-reasoning-capabilities.js';
 import { isImageInputIssue } from './prompt-media-policy.js';
 
 import {
@@ -243,6 +244,13 @@ let biasCache = undefined;
 export let model_list = [];
 let nanoGptModelList = [];
 const modelSamplerMetadataBySource = new Map();
+const modelReasoningRouteBySource = new Map();
+let makerReasoningRouteEpoch = 0;
+
+function invalidateMakerReasoningRoute() {
+    modelReasoningRouteBySource.delete('makersuite');
+    makerReasoningRouteEpoch++;
+}
 let openAiStaticModelGroups = null;
 let hasShownPresetConnectionBindingReminder = false;
 let settingsPresetChangeGeneration = 0;
@@ -2022,6 +2030,11 @@ function getChatCompletionSamplerMetadata(settings, model) {
     return record ? buildChatCompletionSamplerMetadata(source, model, record) : null;
 }
 
+function getChatReasoningRoute(settings) {
+    const marker = settings?.chat_completion_source === 'makersuite' ? modelReasoningRouteBySource.get('makersuite') : undefined;
+    return getNativeReasoningRoute(settings, { googleApiVersion: marker?.apiVersion });
+}
+
 export function getChatCompletionSamplerCapabilitiesForSettings(settings, model = getChatCompletionModel(settings)) {
     return getChatCompletionSamplerCapabilities({
         source: settings?.chat_completion_source,
@@ -3704,8 +3717,16 @@ function updateChatCompletionReasoningAvailability() {
     if (!(select instanceof HTMLSelectElement)) return;
     const source = oai_settings.chat_completion_source;
     const model = getChatCompletionModel(oai_settings);
-    const support = checkNanoGptReasoningEffort({ source, model,
-        metadata: getChatCompletionSamplerMetadata(oai_settings, model), effort: oai_settings.reasoning_effort });
+    const support = checkChatReasoningEffort({ source, model,
+        metadata: getChatCompletionSamplerMetadata(oai_settings, model), route: getChatReasoningRoute(oai_settings), effort: oai_settings.reasoning_effort });
+    const newlyExposed = ['mistralai', 'minimax', 'groq', 'fireworks'].includes(source);
+    const controlAvailable = !newlyExposed || support.state === 'effort-list' || support.nativeFallback;
+    select.dataset.reasoningControlAvailable = String(controlAvailable);
+    if (newlyExposed) $('#chat_reasoning_effort_row').toggle(controlAvailable);
+    $('[data-reasoning-legacy-hint]').each(function () {
+        const sources = String($(this).attr('data-source') || '').split(',');
+        $(this).toggle(sources.includes(source) && support.state !== 'effort-list' && !support.nativeFallback);
+    });
     const labels = {
         none: translate('None', 'openai_reasoning_effort_none'),
         min: translate('Minimum', 'openai_reasoning_effort_minimum'),
@@ -3721,24 +3742,38 @@ function updateChatCompletionReasoningAvailability() {
     const choices = new Intl.ListFormat(locale, { type: 'disjunction' }).format(names);
     for (const option of select.options) {
         const label = labels[option.value] ?? option.textContent;
-        option.disabled = support.known && !support.supportedEfforts.includes(option.value);
+        option.disabled = support.state === 'no-selector' || support.forbiddenEfforts.includes(option.value)
+            || (support.state === 'effort-list' && !support.supportedEfforts.includes(option.value));
         option.hidden = option.disabled;
         option.textContent = option.disabled
             ? translate('${0} (unavailable)', 'scoped.nanogpt.reasoning.unavailable').replace('${0}', () => label) : label;
     }
     const unavailable = !support.supported;
     const label = labels[select.value] ?? select.value;
+    select.disabled = support.state === 'no-selector';
+    select.dataset.reasoningNoSelector = String(select.disabled);
+    if (['nanogpt', 'openrouter'].includes(source)) select.setAttribute('aria-describedby', `${source}_reasoning_effort_hint`);
+    else if (support.state === 'effort-list' || support.nativeFallback) select.setAttribute('aria-describedby', 'native_reasoning_effort_hint');
+    else select.removeAttribute('aria-describedby');
     select.dataset.reasoningUnavailable = String(unavailable);
-    select.dataset.reasoningTitle = unavailable
-        ? t`Reasoning Effort: ${label}, unavailable for this model. Choose ${choices}.`
-        : `${t`Reasoning Effort`}: ${label}`;
-    const hint = document.getElementById('nanogpt_reasoning_effort_hint');
+    const noSelectorMessage = t`This model does not expose an effort setting. Your saved choice is kept for other models.`;
+    const mandatoryMessage = t`Reasoning cannot be disabled for this model. Choose another model to turn it off.`;
+    select.dataset.reasoningTitle = support.state === 'no-selector' ? noSelectorMessage
+        : unavailable && support.state === 'unknown' && support.forbidden ? mandatoryMessage
+            : unavailable ? t`Reasoning Effort: ${label}, unavailable for this model. Choose ${choices}.`
+                : `${t`Reasoning Effort`}: ${label}`;
+    const hint = document.getElementById(source === 'openrouter' ? 'openrouter_reasoning_effort_hint'
+        : source === 'nanogpt' ? 'nanogpt_reasoning_effort_hint' : 'native_reasoning_effort_hint');
     if (hint) {
-        hint.textContent = support.known
-            ? (unavailable ? t`This model supports ${supportedList}. Choose one before sending.` : t`This model supports ${supportedList}.`)
-            : t`Reasoning efforts are sent exactly, aside from minimum which is sent as 'minimal'.`;
+        hint.textContent = support.state === 'no-selector' ? noSelectorMessage
+            : support.state === 'unknown' && support.forbiddenEfforts.length ? mandatoryMessage
+                : support.state === 'effort-list'
+                    ? (unavailable ? t`This model supports ${supportedList}. Choose one before sending.` : t`This model supports ${supportedList}.`)
+                    : source === 'nanogpt' ? t`Reasoning efforts are sent exactly, aside from minimum which is sent as 'minimal'.`
+                        : t`Available reasoning levels are not known for this model.`;
     }
-    const signature = JSON.stringify([source, model, support.known, support.supportedEfforts, select.value, unavailable]);
+    $('#native_reasoning_effort_hint').toggle(support.nativeFallback || (support.state === 'effort-list' && !['nanogpt', 'openrouter'].includes(source)));
+    const signature = JSON.stringify([source, model, support.nativeFallback, support.state, support.supportedEfforts, support.forbiddenEfforts, select.value, unavailable, controlAvailable]);
     if (select.dataset.reasoningAvailability !== signature) {
         select.dataset.reasoningAvailability = signature;
         // Catalogue arrival changes availability, not the user's settings.
@@ -4167,6 +4202,8 @@ async function saveServerChatCompletionConfig({ restart = false } = {}) {
             settings: collectServerChatCompletionConfigForm(),
         });
 
+        invalidateMakerReasoningRoute();
+        updateChatCompletionReasoningAvailability();
         fillServerChatCompletionConfigForm(result?.settings);
         serverChatCompletionConfigState.lastModifiedMs = Number(result?.lastModifiedMs ?? 0) || serverChatCompletionConfigState.lastModifiedMs;
         setServerChatCompletionConfigMessage(result?.message || 'Chat completion server config saved.');
@@ -5296,10 +5333,11 @@ function getAimlapiModelTemplate(option) {
  * @param {string} model Model name (optional, used for ElectronHub)
  * @returns {string} Reasoning effort, if present
  */
-function getReasoningEffort(settings = null, model = null) {
+function getReasoningEffort(settings = null, model = null, metadata = undefined) {
     settings = settings ?? oai_settings;
     model = model ?? getChatCompletionModel(settings);
-    return resolveChatReasoningEffort(settings, model, model_list);
+    return resolveChatReasoningEffort(settings, model, model_list, metadata === undefined ? getChatCompletionSamplerMetadata(settings, model) : metadata,
+        getChatReasoningRoute(settings));
 }
 
 /**
@@ -5342,13 +5380,14 @@ function getVerbosity(settings = null) {
  */
 export async function createGenerationParameters(settings, model, type, messages, { jsonSchema = null, cacheScope = null } = {}) {
     return createChatGenerationParameters(settings, model, type, messages, {
+        getReasoningRoute: () => getChatReasoningRoute(settings),
         appendReasoning: value => appendAutoAppendReasoningInstruction(value, settings, model, type),
         logPrompts: power_user.console_log_prompts,
         requestTokenProbabilities: power_user.request_token_probabilities,
         userName: name1, characterName: name2, getGroupNames,
         getLogitBias: async () => { biasCache = biasCache || await calculateLogitBias(); return biasCache; },
         getIncludeReasoning: () => shouldRequestReasoning(settings),
-        getReasoningEffort: () => getReasoningEffort(settings, model),
+        getReasoningEffort: metadata => getReasoningEffort(settings, model, metadata),
         getVerbosity: () => getVerbosity(settings),
         canPerformToolCalls: () => ToolManager.canPerformToolCalls(type, settings, model),
         registerTools: data => ToolManager.registerFunctionToolsOpenAI(data),
@@ -6706,6 +6745,7 @@ function updateNanoGptProviderControls() {
  * @param {ChatCompletionSettings} settings Saved settings from backend
  */
 function loadOpenAISettings(data, settings) {
+    invalidateMakerReasoningRoute();
     openai_setting_names = data.openai_setting_names;
     openai_settings = data.openai_settings;
     openai_settings.forEach(function (item, i) {
@@ -7065,6 +7105,13 @@ async function getStatusOpen() {
     startStatusLoading();
     const { signal } = abortStatusCheck;
     const requestedSource = oai_settings.chat_completion_source;
+    const requestedModel = getChatCompletionModel(oai_settings);
+    const requestedProxy = oai_settings.reverse_proxy;
+    if (requestedSource === 'makersuite') {
+        invalidateMakerReasoningRoute();
+        updateChatCompletionReasoningAvailability();
+    }
+    const requestedReasoningRouteEpoch = makerReasoningRouteEpoch;
     const isCurrentCheck = () => !signal.aborted && main_api === 'openai' && oai_settings.chat_completion_source === requestedSource;
 
     const noValidateSources = [
@@ -7177,6 +7224,13 @@ async function getStatusOpen() {
         }
 
         if ('data' in responseData && Array.isArray(responseData.data) && !responseData.error) {
+            if (requestedSource === 'makersuite' && !requestedProxy && !oai_settings.reverse_proxy
+                && makerReasoningRouteEpoch === requestedReasoningRouteEpoch
+                && getChatCompletionModel(oai_settings) === requestedModel
+                && responseData.reasoning_context?.source === 'makersuite'
+                && typeof responseData.reasoning_context.apiVersion === 'string') {
+                modelReasoningRouteBySource.set('makersuite', { apiVersion: responseData.reasoning_context.apiVersion });
+            }
             saveModelList(responseData.data, requestedSource);
         }
         if (!('error' in responseData)) {
@@ -8187,6 +8241,11 @@ function setEffectiveTemperatureRange(maximum) {
 async function onModelChange() {
     biasCache = undefined;
     let value = String($(this).val() || '');
+    if ($(this).is('#model_google_select') && oai_settings.chat_completion_source === 'makersuite'
+        && value !== String(oai_settings.google_model || '')) {
+        // A held status response must not survive a model change, even if changed back.
+        makerReasoningRouteEpoch++;
+    }
 
     // Skip setting the context size for sources that get it from external APIs
     const hasModelsLoaded = Array.isArray(model_list) && model_list.length > 0;
@@ -8842,6 +8901,8 @@ async function onNewPresetClick() {
 
 function onReverseProxyInput() {
     oai_settings.reverse_proxy = String($(this).val());
+    invalidateMakerReasoningRoute();
+    updateChatCompletionReasoningAvailability();
     $('.reverse_proxy_warning').toggle(oai_settings.reverse_proxy != '');
     saveSettingsDebounced();
 }
@@ -9215,6 +9276,7 @@ function updateProxyPresetOption(preset) {
 
 function setProxyPreset(name, url, password, source = '', { applySource = true, silent = false } = {}) {
     const normalizedPreset = normalizeProxyPreset({ name, url, password, source });
+    const previousReverseProxy = oai_settings.reverse_proxy;
     const preset = proxies.find(p => p.name === normalizedPreset.name);
     if (preset) {
         preset.url = normalizedPreset.url;
@@ -9229,6 +9291,10 @@ function setProxyPreset(name, url, password, source = '', { applySource = true, 
 
     $('#openai_reverse_proxy_name').val(normalizedPreset.name);
     oai_settings.reverse_proxy = normalizedPreset.url;
+    if (previousReverseProxy !== oai_settings.reverse_proxy) {
+        invalidateMakerReasoningRoute();
+        updateChatCompletionReasoningAvailability();
+    }
     $('#openai_reverse_proxy').val(oai_settings.reverse_proxy);
     oai_settings.proxy_password = normalizedPreset.password;
     $('#openai_proxy_password').val(oai_settings.proxy_password);
@@ -10026,6 +10092,7 @@ function registerChatCompletionProfileSlashCommands() {
 function onVertexAIAuthModeChange() {
     const authMode = String($(this).val());
     oai_settings.vertexai_auth_mode = authMode;
+    updateChatCompletionReasoningAvailability();
 
     $('#vertexai_form [data-mode]').each(function () {
         const mode = $(this).data('mode');
@@ -10416,6 +10483,7 @@ export function initOpenAI() {
     $('#chat_completion_source').on('change', function () {
         const presetName = oai_settings.preset_settings_openai;
         cancelStatusCheck('Chat Completion source changed');
+        invalidateMakerReasoningRoute();
         model_list = [];
         oai_settings.chat_completion_source = String($(this).find(':selected').val());
         syncMaxContextUnlockedControl(oai_settings);
@@ -10617,6 +10685,9 @@ export function initOpenAI() {
     });
     $('#makersuite_model_id').on('input', function () {
         const value = String($(this).val());
+        if (oai_settings.chat_completion_source === 'makersuite' && value !== String(oai_settings.google_model || '')) {
+            makerReasoningRouteEpoch++;
+        }
         oai_settings.google_model = value;
 
         if (value) {
@@ -10897,6 +10968,7 @@ export function initOpenAI() {
     });
     $('#zai_endpoint').on('input', function () {
         oai_settings.zai_endpoint = String($(this).val());
+        updateChatCompletionReasoningAvailability();
         saveSettingsDebounced();
     });
     $('#linkapi_endpoint').on('input', function () {
@@ -10909,6 +10981,7 @@ export function initOpenAI() {
     });
     $('#minimax_endpoint').on('input', function () {
         oai_settings.minimax_endpoint = String($(this).val());
+        updateChatCompletionReasoningAvailability();
         saveSettingsDebounced();
     });
     $('#workers_ai_account_id').on('input', function () {

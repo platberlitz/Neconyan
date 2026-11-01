@@ -66,6 +66,7 @@ export async function buildChatPresetPayload(activeSettings, preset, overridePre
     }
     if (overridePayload.chat_completion_source) settings.chat_completion_source = overridePayload.chat_completion_source;
     if (overridePayload.model) settings.openai_model = overridePayload.model;
+    if (Object.hasOwn(overridePayload, 'model_sampler_metadata')) settings.model_sampler_metadata = overridePayload.model_sampler_metadata;
     const outputLimit = overridePayload.max_completion_tokens ?? overridePayload.max_tokens;
     if (outputLimit !== undefined) settings.openai_max_tokens = outputLimit;
     if (Number.isFinite(overridePayload.temperature)) settings.temp_openai = overridePayload.temperature;

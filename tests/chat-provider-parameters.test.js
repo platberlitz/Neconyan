@@ -1,6 +1,7 @@
 import { describe, expect, test } from '@jest/globals';
 
 import { createChatGenerationParameters } from '../public/scripts/chat-provider-parameters.js';
+import { resolveChatReasoningEffort } from '../public/scripts/chat-request-controls.js';
 
 const baseSettings = {
     chat_completion_source: 'openai',
@@ -60,4 +61,87 @@ describe('chat generation image request settings', () => {
     test('keeps empty strings empty', async () => {
         expect(await buildImageFields({ request_image_resolution: '', request_image_aspect_ratio: '' })).toEqual({ resolution: '', aspectRatio: '' });
     });
+});
+
+test('captures bound reasoning intent and metadata before an asynchronous bias lookup', async () => {
+    const model = 'fixture/model';
+    const metadata = { source: 'openrouter', model, reasoning: { mandatory: true, supported_efforts: ['future'] } };
+    const settings = { ...baseSettings, chat_completion_source: 'openrouter', reasoning_effort: 'none',
+        bias_preset_selected: 'selected', bias_presets: { selected: [{ text: 'test', value: -1 }] } };
+    let resumeBias;
+    let enterBias;
+    const entered = new Promise(resolve => { enterBias = resolve; });
+    const waiting = new Promise(resolve => { resumeBias = resolve; });
+    const pending = createChatGenerationParameters(settings, model, 'normal', [{ role: 'user', content: 'Hello' }], {
+        ...context,
+        getSamplerMetadata: () => metadata,
+        getReasoningEffort: snapshot => resolveChatReasoningEffort(settings, model, undefined, snapshot),
+        getLogitBias: async () => { enterBias(); await waiting; return {}; },
+    });
+    await entered;
+    settings.chat_completion_source = 'custom';
+    settings.reasoning_effort = 'high';
+    metadata.reasoning.mandatory = false;
+    resumeBias();
+    const { generate_data: data } = await pending;
+    expect(data.chat_completion_source).toBe('openrouter');
+    expect(data.reasoning_effort).toBe('none');
+    expect(data.model_sampler_metadata).toEqual({ source: 'openrouter', model, reasoning: { mandatory: true, supported_efforts: ['future'] } });
+});
+
+test.each(['anthropic/claude-sonnet-5', 'anthropic/claude-opus-5', 'anthropic/claude-fable-5'])(
+    'retains declared OpenRouter effort for %s until the final guard', async model => {
+        for (const effort of ['high', 'low', 'none']) {
+            const metadata = { source: 'openrouter', model, reasoning: { supported_efforts: ['high', 'max'], mandatory: true } };
+            const settings = { ...baseSettings, chat_completion_source: 'openrouter', reasoning_effort: effort };
+            const { generate_data: data } = await createChatGenerationParameters(settings, model, 'normal', [{ role: 'user', content: 'Hello' }], {
+                ...context, getSamplerMetadata: () => metadata,
+                getReasoningEffort: snapshot => resolveChatReasoningEffort(settings, model, undefined, snapshot),
+            });
+            expect(data.reasoning_effort).toBe(effort);
+            expect(data.model_sampler_metadata).toEqual(metadata);
+            expect(data.temperature).toBeUndefined();
+            expect(data.top_p).toBeUndefined();
+        }
+    },
+);
+
+test('keeps existing Claude-family omission for unknown, stale and non-OpenRouter declarations', async () => {
+    const model = 'anthropic/claude-sonnet-5';
+    for (const [source, metadata] of [
+        ['openrouter', undefined],
+        ['openrouter', { source: 'openrouter', model: `${model}:free`, reasoning: { supported_efforts: ['high'] } }],
+        ['custom', { source: 'openrouter', model, reasoning: { supported_efforts: ['high'] } }],
+    ]) {
+        const settings = { ...baseSettings, chat_completion_source: source, reasoning_effort: 'high' };
+        const { generate_data: data } = await createChatGenerationParameters(settings, model, 'normal', [{ role: 'user', content: 'Hello' }], {
+            ...context, getSamplerMetadata: () => metadata,
+            getReasoningEffort: snapshot => resolveChatReasoningEffort(settings, model, undefined, snapshot),
+        });
+        expect(data.reasoning_effort).toBeUndefined();
+        expect(data.temperature).toBeUndefined();
+    }
+});
+
+test('captures future native route with reasoning intent before asynchronous bias', async () => {
+    const model = 'anthropic/claude-sonnet-5-future';
+    const settings = { ...baseSettings, chat_completion_source: 'openai', reasoning_effort: 'none',
+        bias_preset_selected: 'selected', bias_presets: { selected: [{ text: 'test', value: -1 }] } };
+    let release;
+    let entered;
+    const waiting = new Promise(resolve => { release = resolve; });
+    const ready = new Promise(resolve => { entered = resolve; });
+    const pending = createChatGenerationParameters(settings, model, 'normal', [{ role: 'user', content: 'Hello' }], {
+        ...context, getReasoningEffort: () => resolveChatReasoningEffort(settings, model),
+        getLogitBias: async () => { entered(); await waiting; return {}; },
+    });
+    await ready;
+    settings.chat_completion_source = 'custom';
+    settings.reverse_proxy = 'https://fixture.invalid';
+    settings.reasoning_effort = 'high';
+    release();
+    const { generate_data: data } = await pending;
+    expect(data.chat_completion_source).toBe('openai');
+    expect(data.reasoning_effort).toBe('none');
+    expect(data.temperature).toBeUndefined();
 });

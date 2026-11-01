@@ -1,3 +1,4 @@
+import { load } from 'cheerio';
 import { describe, expect, test } from '@jest/globals';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -11,11 +12,14 @@ const chatCompletionsSource = readSource('../src/endpoints/backends/chat-complet
 
 describe('DeepSeek reasoning effort', () => {
     test('exposes the reasoning effort control and a DeepSeek-specific hint', () => {
-        const wrapper = indexSource.match(/<div class="flex-container flexFlowColumn wide100p textAlignCenter marginTop10" data-source="([^"]*)">\s*<div class="flex-container oneline-dropdown"[^>]*>\s*<label for="openai_reasoning_effort">/);
-
-        expect(wrapper).not.toBeNull();
-        expect(wrapper[1].split(',')).toContain('deepseek');
-        expect(indexSource).toMatch(/data-source="deepseek"[^>]*>\s*DeepSeek documents low, high and max reasoning efforts\./);
+        const $ = load(indexSource);
+        const select = $('#openai_reasoning_effort');
+        const wrapper = select.closest('[data-source]');
+        expect(select).toHaveLength(1);
+        expect(wrapper).toHaveLength(1);
+        expect(wrapper.find('label[for="openai_reasoning_effort"]')).toHaveLength(1);
+        expect(wrapper.attr('data-source').split(',')).toContain('deepseek');
+        expect(wrapper.find('[data-source="deepseek"]').text()).toContain('DeepSeek documents low, high and max reasoning efforts.');
 
         // DeepSeek carries its own hint, so the generic OpenAI-style caption must not claim it.
         const genericCaption = indexSource.match(/data-source="([^"]*)"[^>]*>\s*OpenAI-style options: low, medium, high, xhigh\./);
@@ -27,12 +31,10 @@ describe('DeepSeek reasoning effort', () => {
         expect(resolveChatReasoningEffort({ chat_completion_source: 'deepseek', reasoning_effort: 'max' }, 'deepseek-v4-flash')).toBe('max');
     });
 
-    test('forwards the effort to DeepSeek for thinking models only, mapping min to low', () => {
+    test('recognises thinking models and preserves the documented wire spelling', () => {
         const handler = chatCompletionsSource.match(/async function sendDeepSeekRequest\(request, response\) \{([\s\S]*?)\n\}/);
-
         expect(handler).not.toBeNull();
         expect(handler[1]).toContain('const isThinkingModel = /(?:^|-)reasoner$|deepseek-v4/i.test(String(request.body.model || \'\'));');
-        expect(handler[1]).toContain('if (isThinkingModel && request.body.reasoning_effort && ![\'auto\', \'none\'].includes(request.body.reasoning_effort)) {');
         expect(handler[1]).toContain('bodyParams[\'reasoning_effort\'] = toWireReasoningEffort(request.body.reasoning_effort);');
     });
 
