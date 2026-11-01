@@ -49,6 +49,7 @@
 - PR #389 (2026-11-01) `feat(characters): add native tag and folder manager`
 - PR #390 (2026-11-01) `fix(sidebar): show edit controls in the phone drawer`
 - PR #392 (2026-11-01) `feat(authors-note): mix several character notes per persona`
+- PR #393 (2026-11-01) `fix(security): harden account, file and outbound request boundaries`
 
 ## v1.4.0
 
