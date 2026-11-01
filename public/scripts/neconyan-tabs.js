@@ -567,7 +567,7 @@ const NN_MESSAGE_STYLES = Object.freeze([
     { id: '2', label: 'Document', icon: 'fa-file-lines' },
 ]);
 
-const NN_WORLD_INFO_SUBTITLE_HTML = 'Edit lorebooks for character cards here. Read the guide <a class="notes-link" href="https://docs.sillytavern.app/usage/core-concepts/worldinfo/" target="_blank" rel="noopener noreferrer">here</a>.';
+const NN_WORLD_INFO_SUBTITLE_HTML = 'Edit lorebooks for character cards here. Read the guide <a class="notes-link" href="https://platberlitz.github.io/neconyan-docs/workspace/lorebooks/" target="_blank" rel="noopener noreferrer">here</a>.';
 const NN_SAMPLING_SUBTITLE_HTML = 'Adjust randomness, reply length and other generation settings.';
 
 /*
@@ -1116,7 +1116,7 @@ const NN_CHARACTER_PANEL_TABS = Object.freeze([
 ]);
 const NN_CHARACTER_PANEL_DEFAULT_TAB = 'characters';
 
-const NN_PERSONA_HELP_LINK_HTML = '<a class="notes-link sb-character-title-help" href="https://docs.sillytavern.app/usage/core-concepts/personas/" target="_blank"><span class="fa-solid fa-circle-question note-link-span"></span></a>';
+const NN_PERSONA_HELP_LINK_HTML = '<a class="notes-link sb-character-title-help" href="https://platberlitz.github.io/neconyan-docs/workspace/characters/#set-up-your-persona" target="_blank"><span class="fa-solid fa-circle-question note-link-span"></span></a>';
 
 const NN_SHELLS = Object.freeze({
     left: {
