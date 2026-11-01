@@ -55,6 +55,7 @@
 - PR #395 (2026-11-01) `feat(chat): add a searchable composer chat browser`
 - PR #397 (2026-11-01) `fix(shell): align character and lorebook page headers`
 - PR #398 (2026-11-01) `docs(readme): refresh screenshots and add version and language links`
+- PR #399 (2026-11-01) `fix(meower): uncramp actions and add accent-aware message borders`
 
 ## v1.4.0
 
