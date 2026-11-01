@@ -1,3 +1,4 @@
+import { parse } from '@adobe/css-tools';
 import { describe, expect, test } from '@jest/globals';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -73,6 +74,47 @@ function splitSelectorList(group) {
     }
     if (buffer.trim()) parts.push(buffer.trim());
     return parts;
+}
+
+const backedLibraryStyles = new Set(['windows-aero', 'macos-minimal', 'hypr-glow']);
+const importantPattern = /!\s*important\b/gi;
+const normaliseInnerSpaces = text => text.trim().replace(/\s+/g, ' ').replace(/([([])\s+/g, '$1').replace(/\s+([)\]])/g, '$1');
+const normaliseSelector = text => normaliseInnerSpaces(text).replace(/\s*([>+~,=])\s*/g, '$1');
+const normaliseValue = text => normaliseInnerSpaces(text).replace(/\s*,\s*/g, ',').replace(/\s*!\s*important\b/gi, '!important');
+const normaliseMedia = text => normaliseInnerSpaces(text).replace(/\s*:\s*/g, ':');
+
+function auditImportantDeclarations(source, id) {
+    const ast = parse(source, { source: `${id}.css` });
+    const important = [];
+    const errors = [];
+    function visit(nodes, ancestors = []) {
+        for (const node of nodes) {
+            for (const declaration of node.declarations ?? []) {
+                if (declaration.type === 'declaration' && /!\s*important\b/i.test(declaration.value)) {
+                    important.push({ node, declaration, ancestors });
+                }
+            }
+            if (Array.isArray(node.rules)) visit(node.rules, [...ancestors, node]);
+            if (Array.isArray(node.keyframes)) visit(node.keyframes, [...ancestors, node]);
+        }
+    }
+    visit(ast.stylesheet.rules);
+    const rawCount = [...stripCssBlockComments(source).matchAll(importantPattern)].length;
+    if (rawCount !== important.length) errors.push('source and parsed important counts differ');
+    const expectedCount = backedLibraryStyles.has(id) ? 1 : 0;
+    if (important.length !== expectedCount) errors.push('unexpected important count');
+    if (expectedCount === 1 && important.length === 1) {
+        const { node, declaration, ancestors } = important[0];
+        const expectedSelector = `:root[data-sb-theme='${id}'] body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='characters'], [data-menu-type='world-info'])`;
+        const expectedValue = 'linear-gradient(var(--neco-rail), var(--neco-rail)), var(--neco-surface) !important';
+        if (ancestors.length !== 1 || ancestors[0].type !== 'media'
+            || normaliseMedia(ancestors[0].media) !== '(min-width:769px)') errors.push('wrong media ancestry');
+        if (node.type !== 'rule' || node.selectors.length !== 1
+            || normaliseSelector(node.selectors[0]) !== normaliseSelector(expectedSelector)) errors.push('wrong selector');
+        if (node.declarations.filter(item => item.type === 'declaration').length !== 1
+            || declaration.property !== 'background' || normaliseValue(declaration.value) !== normaliseValue(expectedValue)) errors.push('wrong declaration');
+    }
+    return errors;
 }
 
 const themeIds = readThemeIds();
@@ -161,9 +203,9 @@ describe('shell style runtime stylesheets', () => {
                 expect(withoutExclusions).not.toContain(forbidden);
             }
 
-            // Runtime sheets sit outside the !important budget, so they must not lean on it,
-            // and any motion would need a reduced-motion guard the sheets do not carry.
-            expect(stripped).not.toMatch(/!important/);
+            // Only the three reviewed desktop library backings may use !important.
+            expect(auditImportantDeclarations(source, id)).toEqual([]);
+            // Motion would need a reduced-motion guard the sheets do not carry.
             expect(stripped).not.toMatch(/\b(transition|animation)\s*:/);
             expect(stripped).not.toMatch(/(^|[^:])\/\//m);
 
@@ -172,6 +214,32 @@ describe('shell style runtime stylesheets', () => {
             }
         });
     }
+
+    test('the backing exception rejects additional or widened important declarations', () => {
+        const id = 'windows-aero';
+        const selector = `:root[data-sb-theme='${id}'] body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='characters'], [data-menu-type='world-info'])`;
+        const declaration = 'background: linear-gradient(var(--neco-rail), var(--neco-rail)), var(--neco-surface) !important;';
+        const rule = `${selector} { ${declaration} }`;
+        const valid = `@media (min-width: 769px) { ${rule} }`;
+        expect(auditImportantDeclarations(valid, id)).toEqual([]);
+        expect(auditImportantDeclarations(valid.replace('!important', '! IMPORTANT'), id)).toEqual([]);
+        for (const invalid of [
+            `${valid} ${selector} { color: red !important; }`,
+            rule,
+            valid.replace(':is([data-menu-type=\'characters\'], [data-menu-type=\'world-info\'])', ''),
+            valid.replace('background:', 'color:'),
+            valid.replace('var(--neco-surface)', 'transparent'),
+            valid.replace('not(.sbterm) #right-nav-panel', 'not(.sbterm)#right-nav-panel'),
+            valid.replace(':root[data-sb-theme=', ':root [data-sb-theme='),
+            valid.replace('var(--neco-rail)', 'var (--neco-rail)'),
+            valid.replace('769px', '769 px'),
+            `@media (min-width: 769px) { ${rule} ${rule} }`,
+            '',
+            `@supports (display: grid) { ${valid} }`,
+        ]) expect(auditImportantDeclarations(invalid, id)).not.toEqual([]);
+        expect(auditImportantDeclarations(valid, 'windows-xp')).not.toEqual([]);
+        expect(auditImportantDeclarations('/* !important */', 'windows-xp')).toEqual([]);
+    });
 
     test('every style, Calico included, follows the chosen accent colour', () => {
         const signatureHues = { kittyless: '--kittyless-primary:', 'windows-aero': '--aero-hue:', 'windows-xp': '--xp-hue:', 'windows-98': '--w98-title:', 'cozy-warm': '--cozy-amber:', 'hypr-glow': '--hypr-b:', 'slate-flat': '--slate-cool:', 'clean-minimal': '--clean-line-strong:' };

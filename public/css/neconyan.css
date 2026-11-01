@@ -2985,6 +2985,29 @@ body.neconyan #right-nav-panel.neconyan-character-workspace .neconyan-character-
         overflow: visible;
     }
     body.neconyan #right-nav-panel.neconyan-character-workspace .neconyan-character-native-nav-wrapper .sb-shell-tab { width: auto; min-height: 44px; }
+
+    body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='characters'], [data-menu-type='world-info']) > .sb-character-shell-header.neconyan-cat-panel {
+        margin: 0; border-width: 0 0 1px; border-radius: 0;
+        &::before, &::after { display: none; }
+    }
+    body.neconyan:not(.sbterm) #rightNavHolder > #right-nav-panel.neconyan-character-workspace.openDrawer:is([data-menu-type='characters'], [data-menu-type='world-info']) {
+        > .sb-character-shell-nav-wrapper {
+            order: 0;
+            > .sb-character-shell-nav { padding: 8px var(--sb-shell-panel-padding-inline, 20px); }
+        }
+        > .sb-character-shell-header {
+            order: 1; flex-flow: column nowrap; align-items: stretch;
+            gap: 2px; padding: 16px 116px 16px 18px;
+            > :is(.sb-shell-title, .sb-shell-subtitle) { flex: 0 0 auto; max-width: 100%; }
+            > .sb-shell-title {
+                display: flex; align-items: center; min-height: 34px;
+                font-size: calc(var(--mainFontSize) * 1.12);
+            }
+            > .sb-shell-subtitle { font-size: 12px; line-height: 18px; }
+            > .sb-shell-close { inset: calc(50% - 22px) 18px auto auto; }
+            > #sb_character_dock_toggle { inset: calc(50% - 22px) 72px auto auto; }
+        }
+    }
 }
 body.neconyan #right-nav-panel.neconyan-character-workspace .neconyan-character-native-nav-wrapper [hidden],
 body.neconyan #right-nav-panel[data-menu-type='world-info'] .neconyan-character-native-nav-wrapper { display: none; }
