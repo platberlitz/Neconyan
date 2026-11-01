@@ -16011,6 +16011,7 @@
   "Reply in progress": "Reply in progress",
   "Send a private aside DM while the group chat is ongoing. React to the group if there is something worth reacting to; otherwise start a natural casual DM topic.": "Send a private aside DM while the group chat is ongoing. React to the group if there is something worth reacting to; otherwise start a natural casual DM topic.",
   "Reply stopped": "Reply stopped",
+  "The connection to the server was lost. Check your connection and try again.": "The connection to the server was lost. Check your connection and try again.",
   "A Roleplay workflow is already running.": "A Roleplay workflow is already running.",
   "Open a saved Roleplay chat before generating.": "Open a saved Roleplay chat before generating.",
   "A page prompt addition cannot run on the server.": "A page prompt addition cannot run on the server.",

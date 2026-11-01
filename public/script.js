@@ -11033,8 +11033,13 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                 streamingProcessor = null;
                 return Object.defineProperty(new String(''), 'generationOutcome', { value: exception.generationOutcome });
             }
-            // if the response JSON was thrown (novel|textgenerationwebui|kobold), show the error message
-            if (typeof exception?.error?.message === 'string') {
+            if (exception?.code === GENERATION_CONNECTION_LOST && !dryRun && [undefined, 'normal'].includes(type)
+                && !selected_group && !automatic_trigger && !depth && !suppressUserMessage && !isAuxiliaryGeneration
+                && getCurrentUserHandle() === refusalAccount
+                && (activeStream === null || (activeStream.message === null && activeStream.messageId === -1))) {
+                toastr.error(t`The connection to the server was lost. Check your connection and try again.`, t`Reply stopped`, { timeOut: 10000, extendedTimeOut: 20000 });
+            } else if (typeof exception?.error?.message === 'string') {
+                // If the response JSON was thrown (novel|textgenerationwebui|kobold), show the error message.
                 toastr.error(exception.error.message, t`Text generation error`, { timeOut: 10000, extendedTimeOut: 20000 });
             }
 
