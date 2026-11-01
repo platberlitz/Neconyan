@@ -63,7 +63,7 @@ import { roleplaySaveNotice } from './scripts/roleplay-reply-notice.js';
 import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplayLifecycle, sendRoleplaySave } from './scripts/roleplay-save-chain.js';
 import { getCharacterDefinitionFormValues, getSuspiciousEmptyCharacterDefinitionSave } from './scripts/character-save-guard.js';
 // Neconyan: keep model-produced chat filenames behind a strict, independently tested parser.
-import { CHAT_LABEL_TITLE_LIMIT, extractGeneratedChatLabel, normalizeGeneratedChatLabel, truncateChatLabelText } from './scripts/chat-label.js';
+import { CHAT_LABEL_TITLE_LIMIT, beginChatNameCommit, createChatAutoNamer, extractGeneratedChatLabel, getPendingChatNameCommit, getPlainChatLabelMessage, normalizeGeneratedChatLabel, truncateChatLabelText } from './scripts/chat-label.js';
 
 import {
     world_info,
@@ -296,6 +296,7 @@ import { getRegexedString, regex_placement } from './scripts/extensions/regex/en
 import { AGENT_REGEX_PLACEMENT, applyRegexScriptList } from './scripts/extensions/in-chat-agents/regex-scripts.js';
 import { stripTrackerMandatoryMarkers } from './scripts/tracker-mandatory-marker.js';
 import { resolveRegexScriptsForSnapshot } from './scripts/extensions/in-chat-agents/regex-snapshot-store.js';
+import { isAgentWorkPending, waitForAgentWorkIdle } from './scripts/extensions/in-chat-agents/agent-work-state.js';
 import { buildCompanionChatHistoryBlocks, COMPANION_HISTORY_PROMPT_KEY_PREFIX, consolidateCompanionChatHistory, hasCompanionChatHistoryForHiddenHost, selectCompanionChatHistory } from './scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { IN_CHAT_AGENT_PROMPT_KEY_PREFIX, instrumentInChatAgentPromptValue, trimOldestRetainedContribution } from './scripts/in-chat-agent-inspection.js';
 import { initLogprobs, saveLogprobsForActiveMessage } from './scripts/logprobs.js';
@@ -9099,6 +9100,8 @@ function consumePendingUserMessageExtra(message) {
 }
 
 export async function Generate(type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, jsonSchema = null, depth = 0, suppressUserMessage = false, cacheScope = null, preserveLastMessage = false, companionHistoryTarget = null, suppressAutoContinue = false, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false, skipNativeRoleplay, preparedNativeRoleplay = null, mewmoryCatchUpOverride } = {}, dryRun = false) {
+    const namingCommit = getPendingChatNameCommit();
+    if (!dryRun && namingCommit) await namingCommit;
     if (!dryRun && isChatNavigationBlocked()) return;
     if (!dryRun && signal?.aborted) return;
     // Commands do not own a reply's cancellation controller or generation events.
@@ -13131,6 +13134,7 @@ async function waitForQueuedChatSaves() {
 }
 
 export async function flushPendingChatSavesForNavigation() {
+    await getPendingChatNameCommit();
     if (hasPendingChatSave()) {
         // Neconyan: preserve swipe/message edits before navigation clears the active chat.
         const didFlush = await flushPendingChatSaves({ silent: true });
@@ -13157,6 +13161,7 @@ export async function flushPendingChatSavesForNavigation() {
  * @returns {Promise<boolean>} Whether the chat save completed successfully.
  */
 export async function flushPendingChatSaves({ silent = false } = {}) {
+    await getPendingChatNameCommit();
     const chatId = getCurrentChatId();
 
     if (!chatId) {
@@ -13216,6 +13221,8 @@ export async function flushPendingChatSaves({ silent = false } = {}) {
  * @returns {Promise<boolean>}
  */
 export function saveChat(...saveChatArguments) {
+    const namingCommit = getPendingChatNameCommit();
+    if (namingCommit) return namingCommit.then(() => saveChat(...saveChatArguments));
     const [firstArgument] = saveChatArguments;
     let options = firstArgument && typeof firstArgument === 'object' ? firstArgument : {};
     if (saveChatArguments.length > 0 && (typeof firstArgument !== 'object' || firstArgument === null)) {
@@ -16221,14 +16228,6 @@ function isDatedChatFileName(fileName, displayName = '', isGroupChat = false) {
     return trailingTimestamp.test(baseName);
 }
 
-function getPlainChatLabelMessage(message) {
-    const rawText = message?.extra?.display_text || message?.mes || '';
-    return String(rawText)
-        .replace(/<[^>]*>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-}
-
 function getChatMessagesForLabel(chatData) {
     return (Array.isArray(chatData) ? chatData : [])
         .filter(message => message && typeof message === 'object' && typeof message.mes === 'string')
@@ -16414,7 +16413,7 @@ function getExistingChatNameSet(chats) {
     return new Set((Array.isArray(chats) ? chats : []).map(chat => getChatBaseName(chat.file_name).toLowerCase()).filter(Boolean));
 }
 
-async function autoLabelChatFile(fileName, { existingNames, force = false, sourceChat = null, signal = null, reloadCurrent = false } = {}) {
+async function autoLabelChatFile(fileName, { existingNames, force = false, sourceChat = null, signal = null, reloadCurrent = false, canCommit = null, showErrorPopup = true } = {}) {
     const oldFileName = getChatBaseName(fileName);
     const groupId = selected_group;
     const characterId = this_chid;
@@ -16456,6 +16455,7 @@ async function autoLabelChatFile(fileName, { existingNames, force = false, sourc
         }
     }
 
+    throwIfChatHistoryToolAborted(signal);
     const renameResult = await renameGroupOrCharacterChat({
         characterId,
         groupId,
@@ -16463,6 +16463,8 @@ async function autoLabelChatFile(fileName, { existingNames, force = false, sourc
         newFileName,
         loader: false,
         reloadCurrent,
+        canCommit,
+        showErrorPopup,
     });
 
     return { status: 'renamed', oldFileName, newFileName: renameResult.newFileName };
@@ -16597,6 +16599,116 @@ async function autoLabelDatedChats() {
         toastr.error(String(error?.message || error), t`Auto-label Chat`);
         endChatHistoryTool(t`Could not finish auto-labeling chats.`);
     }
+}
+
+const CHAT_AUTO_NAME_MANUAL_KEY = 'neconyan_manual_chat_name';
+const manuallyNamedChats = new Set();
+
+function getChatAutoNameKey({ groupId, avatar, fileName }) {
+    let owner = '';
+    try {
+        owner = roleplayAccountStamp().owner;
+    } catch {
+        return '';
+    }
+    const baseName = getChatBaseName(fileName);
+    if (!owner || !baseName || (!groupId && !avatar)) return '';
+    return JSON.stringify([owner, groupId ? 'group' : 'character', String(groupId || avatar), baseName]);
+}
+
+/** The open Roleplay or Story chat, or null when there is nothing to name (temporary chats, assistants, Conversation). */
+function getChatAutoNameTarget() {
+    if (document.body?.classList.contains('neconyan-conversation-active')) return null;
+    const chatId = getCurrentChatId();
+    const isGroup = Boolean(selected_group);
+    const character = isGroup ? null : characters[this_chid];
+    if (!chatId || (!isGroup && !character?.avatar) || character?.data?.extensions?.neconyan_assistant) return null;
+    const key = getChatAutoNameKey({ groupId: selected_group, avatar: character?.avatar, fileName: chatId });
+    if (!key) return null;
+    return {
+        key,
+        fileName: getChatBaseName(chatId),
+        displayName: getCurrentChatDetails().characterName || '',
+        isGroup,
+        generation: chatGeneration,
+        messages: chat,
+        manual: manuallyNamedChats.has(key) || chat_metadata?.[CHAT_AUTO_NAME_MANUAL_KEY] === true,
+    };
+}
+
+function isChatAutoNameIdle() {
+    return !is_send_press && !is_group_generating && !activeGenerationRun && !activeRoleplayJob && !streamingProcessor
+        && swipeState === SWIPE_STATE.NONE && this_edit_mes_id === undefined && !is_delete_mode && !isChatSaving;
+}
+
+async function renameChatAutomatically(target, { signal, canCommit }) {
+    const chats = await searchPastChats('');
+    if (signal.aborted || getChatAutoNameTarget()?.key !== target.key) {
+        throw new DOMException('The open chat changed before it could be named.', 'AbortError');
+    }
+    // autoLabelChatFile captures the open chat before its first wait, so it names exactly this one.
+    return await autoLabelChatFile(target.fileName, {
+        existingNames: getExistingChatNameSet(chats),
+        sourceChat: chat.slice(),
+        signal,
+        reloadCurrent: 'saved',
+        canCommit,
+        showErrorPopup: false,
+    });
+}
+
+const chatAutoNamer = createChatAutoNamer({
+    isEnabled: () => power_user.auto_label_chat !== false,
+    getThreshold: () => power_user.auto_label_chat_threshold,
+    getTarget: getChatAutoNameTarget,
+    isDatedName: isDatedChatFileName,
+    isIdle: isChatAutoNameIdle,
+    hasConnection: () => online_status !== 'no_connection',
+    isAgentWorkPending,
+    waitForAgentWorkIdle,
+    rename: renameChatAutomatically,
+});
+
+/** A rename someone else made is final for that chat, even when the new name looks like a date. */
+function rememberManualChatRename({ avatarId, groupId, newFileName } = {}) {
+    const key = getChatAutoNameKey({ groupId, avatar: avatarId, fileName: newFileName });
+    if (!key) return;
+    manuallyNamedChats.add(key);
+    if (getChatAutoNameTarget()?.key === key) {
+        chat_metadata[CHAT_AUTO_NAME_MANUAL_KEY] = true;
+        return true;
+    }
+    return false;
+}
+
+function initChatAutoNaming() {
+    const schedule = () => chatAutoNamer.schedule();
+    const restart = () => {
+        chatAutoNamer.cancel();
+        chatAutoNamer.schedule();
+    };
+    for (const event of [event_types.MESSAGE_RECEIVED, event_types.GENERATION_ENDED, event_types.GROUP_WRAPPER_FINISHED]) {
+        eventSource.on(event, schedule);
+    }
+    // The user is still writing: abandon an unsent answer and look again once the reply lands.
+    for (const event of [event_types.MESSAGE_SENT, event_types.MESSAGE_EDITED, event_types.MESSAGE_DELETED, event_types.MESSAGE_SWIPED]) {
+        eventSource.on(event, restart);
+    }
+    eventSource.on(event_types.GENERATION_STARTED, (_type, options, dryRun) => {
+        if (!dryRun && !options?.isAuxiliaryGeneration) chatAutoNamer.cancel();
+    });
+    // A different chat or model: drop the answer in flight; the next message in the chat tries again.
+    for (const event of [event_types.CHAT_CHANGED, event_types.MAIN_API_CHANGED, event_types.CHATCOMPLETION_SOURCE_CHANGED,
+        event_types.CHATCOMPLETION_MODEL_CHANGED, event_types.CONNECTION_PROFILE_LOADED]) {
+        eventSource.on(event, () => chatAutoNamer.cancel());
+    }
+    eventSource.on(event_types.CHAT_RENAMED, async (data) => {
+        if (chatAutoNamer.isCommitting()) return;
+        chatAutoNamer.cancel();
+        // Persist before a reload can forget a chosen name that also looks like a date.
+        if (rememberManualChatRename(data)) await saveChatConditional();
+    });
+    globalThis.addEventListener?.('neconyan:roleplay-workflow-finished', schedule);
 }
 
 function getCleanupUnit() {
@@ -19384,9 +19496,13 @@ export async function doNewChat({ deleteCurrentChat = false } = {}) {
  * @param {string} param.oldFileName Old name of the chat (no JSONL extension)
  * @param {string} param.newFileName New name for the chat (no JSONL extension)
  * @param {boolean} [param.loader=true] Whether to show loader during the operation
- * @param {boolean} [param.reloadCurrent=true] Whether to reload the active chat after the operation
+ * @param {boolean|'saved'} [param.reloadCurrent=true] Whether to reload the active chat after the operation; 'saved' keeps the screen and only adopts the renamed file
+ * @param {() => boolean} [param.canCommit] Checked right before the rename is sent; false cancels it
+ * @param {boolean} [param.showErrorPopup=true] Whether a failure explains itself in a popup
  */
-export async function renameGroupOrCharacterChat({ characterId, groupId, oldFileName, newFileName, loader: showLoader, reloadCurrent: shouldReloadCurrent = true }) {
+export async function renameGroupOrCharacterChat({ characterId, groupId, oldFileName, newFileName, loader: showLoader, reloadCurrent: shouldReloadCurrent = true, canCommit = null, showErrorPopup = true }) {
+    let releaseNamingCommit;
+    let renamedChatSnapshot;
     const currentChatId = getCurrentChatId();
     const isGroupRename = groupId !== undefined && groupId !== null;
     const targetCharacter = characterId !== undefined ? characters[characterId] : null;
@@ -19425,10 +19541,17 @@ export async function renameGroupOrCharacterChat({ characterId, groupId, oldFile
             ? chat_metadata.chat_id_hash
             : derivedChatIdHash;
         if (wasActiveTarget) {
-            const didFlush = await flushPendingChatSaves();
+            const didFlush = await flushPendingChatSaves({ silent: !showErrorPopup });
             if (!didFlush) {
                 throw new Error('Could not save the current chat before renaming.');
             }
+        }
+        if (canCommit && !canCommit()) {
+            throw new DOMException('The chat rename was cancelled.', 'AbortError');
+        }
+        if (shouldReloadCurrent === 'saved') {
+            releaseNamingCommit = beginChatNameCommit();
+            renamedChatSnapshot = JSON.stringify(chat);
         }
 
         const sendRenameRequest = async (requestBody) => {
@@ -19483,12 +19606,22 @@ export async function renameGroupOrCharacterChat({ characterId, groupId, oldFile
                 && getChatBaseName(getCurrentChatId()) === actualNewFileName;
         if (shouldReloadCurrent && wasActiveTarget && isStillActiveTarget) {
             try {
-                await reloadCurrentChat();
+                if (shouldReloadCurrent !== 'saved') {
+                    await reloadCurrentChat();
+                } else if (!await adoptRenamedChatRead(renamedChatSnapshot)) {
+                    if (JSON.stringify(chat) !== renamedChatSnapshot || this_edit_mes_id !== undefined || hasPendingChatSave()) {
+                        throw new Error('The renamed chat could not be refreshed safely; the unsaved messages were kept on screen.');
+                    }
+                    await refreshCurrentChatFromSaved();
+                }
             } catch (error) {
                 console.error('Failed to reload renamed chat:', error);
             }
         }
 
+        // Event listeners may save the chat, so release the save gate first.
+        releaseNamingCommit?.();
+        releaseNamingCommit = null;
         const eventData = {
             avatarId: body.avatar_url,
             groupId,
@@ -19502,6 +19635,9 @@ export async function renameGroupOrCharacterChat({ characterId, groupId, oldFile
         }
         return { oldFileName: getChatBaseName(oldFileName), newFileName: actualNewFileName };
     } catch (error) {
+        if (!showErrorPopup || error?.name === 'AbortError') {
+            throw error;
+        }
         await delay(500);
         if (typeof error?.serverMessage === 'string') {
             // The server's explanation is its own English, shown as written under the general sentence.
@@ -19517,7 +19653,32 @@ export async function renameGroupOrCharacterChat({ characterId, groupId, oldFile
         }
         throw error;
     } finally {
+        releaseNamingCommit?.();
         await loaderHandle?.hide();
+    }
+}
+
+/**
+ * Lets the open chat keep saving under its new name without redrawing it.
+ * Returns false when the renamed file cannot confirm the saved predecessor.
+ * @returns {Promise<boolean>}
+ */
+async function adoptRenamedChatRead(savedSnapshot = JSON.stringify(chat)) {
+    const chatId = getCurrentChatId();
+    const avatar = characters[this_chid]?.avatar;
+    if (!chatId || (!selected_group && !avatar)) return false;
+    const generation = chatGeneration;
+    const locator = selected_group ? { group: true, groupId: String(selected_group), chat: String(chatId) } : { group: false, avatar, chat: chatId };
+    try {
+        const { records, evidence } = await loadRoleplayChat(locator);
+        if (generation !== chatGeneration || getCurrentChatId() !== chatId) return false;
+        // A new message may already be visible, with its save waiting for this
+        // commit. Adopt only the known saved predecessor without replacing it.
+        if (!Array.isArray(records) || JSON.stringify(records.slice(1)) !== savedSnapshot) return false;
+        return rememberRoleplayRead(locator, evidence);
+    } catch (error) {
+        console.warn('Could not adopt the renamed chat read evidence.', error);
+        return false;
     }
 }
 
@@ -20747,6 +20908,8 @@ jQuery(async function () {
         await doNewChat({ deleteCurrentChat: false });
         $('#select_chat_cross').trigger('click');
     });
+
+    initChatAutoNaming();
 
     $('#chat_auto_label_current').on('click', async function (e) {
         e.preventDefault();

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { getQueuedChatSaveAbortReason } from '../public/scripts/chat-save-guard.js';
+import { getPendingChatNameCommit } from '../public/scripts/chat-label.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'acorn';
@@ -71,6 +72,7 @@ function createClient(group) {
     }
     const runtime = vm.createContext({
         console, structuredClone, getChatBackupSaveOptions, uuidv4: randomUUID, getQueuedChatSaveAbortReason,
+        getPendingChatNameCommit,
         beginRoleplaySave, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, roleplayAccountStamp, sendRoleplaySave,
         getCurrentUserHandle: () => handle,
         chatSaveQueue: Promise.resolve(), groupChatSaveQueue: Promise.resolve(),

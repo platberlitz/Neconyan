@@ -2,6 +2,7 @@ import { renderRoleplayStory } from './roleplay-text-format.js';
 import { applyDesktopResponseControls, normaliseDesktopResponseControls } from './desktop-response-controls.js';
 import { Fuse, Handlebars } from '../lib.js';
 import { accessibleTheme } from './theme-contrast.js';
+import { CHAT_AUTO_NAME_DEFAULT_THRESHOLD, normalizeChatAutoNameThreshold } from './chat-label.js';
 import { createUiThemePicker } from './neconyan-ui-theme-picker.js';
 import { resolveCustomStoppingStrings } from './chat-request-controls.js';
 import { fixGeneratedMarkdown } from './generation-format.js';
@@ -671,6 +672,8 @@ export const power_user = {
     auto_connect: false,
     auto_load_chat: false,
     chat_links: false,
+    auto_label_chat: true,
+    auto_label_chat_threshold: CHAT_AUTO_NAME_DEFAULT_THRESHOLD,
     forbid_external_media: true,
     allow_card_scripts: false,
     external_media_allowed_overrides: [],
@@ -2856,6 +2859,8 @@ export async function loadPowerUserSettings(settings, data) {
     }
 
     power_user.reply_generation_location = power_user.reply_generation_location === 'server' ? 'server' : 'browser';
+    power_user.auto_label_chat = power_user.auto_label_chat !== false;
+    power_user.auto_label_chat_threshold = normalizeChatAutoNameThreshold(power_user.auto_label_chat_threshold);
 
     if (!hasAccentProfileSeedVersion) {
         power_user.sb_accent_profiles_seed_version = 0;
@@ -3130,6 +3135,8 @@ export async function loadPowerUserSettings(settings, data) {
     $('#auto-connect-checkbox').prop('checked', power_user.auto_connect);
     $('#auto-load-chat-checkbox').prop('checked', power_user.auto_load_chat);
     $('#chat-links-checkbox').prop('checked', power_user.chat_links);
+    $('#auto_label_chat').prop('checked', power_user.auto_label_chat);
+    $('#auto_label_chat_threshold').val(power_user.auto_label_chat_threshold).prop('disabled', !power_user.auto_label_chat);
     $('#forbid_external_media').prop('checked', power_user.forbid_external_media);
     $('#allow_card_scripts').prop('checked', !!power_user.allow_card_scripts);
     $('#pin_styles').prop('checked', power_user.pin_styles);
@@ -5652,6 +5659,23 @@ jQuery(async () => {
     $('#auto-load-chat-checkbox').on('input', async function () {
         power_user.auto_load_chat = !!$(this).prop('checked');
         if (await saveSettings(0, { returnResult: true })) window.dispatchEvent(new CustomEvent('neconyan:resume-preference'));
+    });
+
+    $('#auto_label_chat').on('input', function () {
+        power_user.auto_label_chat = !!$(this).prop('checked');
+        $('#auto_label_chat_threshold').prop('disabled', !power_user.auto_label_chat);
+        saveSettingsDebounced();
+    });
+
+    $('#auto_label_chat_threshold').on('input', function () {
+        const value = String($(this).val() ?? '').trim();
+        if (!value) return;
+        power_user.auto_label_chat_threshold = normalizeChatAutoNameThreshold(value);
+        saveSettingsDebounced();
+    });
+
+    $('#auto_label_chat_threshold').on('change', function () {
+        $(this).val(power_user.auto_label_chat_threshold);
     });
 
     $('#chat-links-checkbox').on('input', function () {

@@ -6409,6 +6409,7 @@ function bindTopBarBrand() {
     const events = [
         eventTypes.APP_READY,
         eventTypes.CHAT_CHANGED,
+        eventTypes.CHAT_RENAMED,
         eventTypes.CHAT_CREATED,
         eventTypes.GROUP_CHAT_CREATED,
         eventTypes.MESSAGE_EDITED,
@@ -9182,6 +9183,7 @@ function bindChatbarEvents() {
     const events = [
         eventTypes.APP_READY,
         eventTypes.CHAT_CHANGED,
+        eventTypes.CHAT_RENAMED,
         eventTypes.CHAT_LOADED,
         eventTypes.CHAT_CREATED,
         eventTypes.GROUP_CHAT_CREATED,
@@ -20621,6 +20623,7 @@ function bindBottomChatBarEvents() {
     const events = [
         eventTypes.APP_READY,
         eventTypes.CHAT_CHANGED,
+        eventTypes.CHAT_RENAMED,
         eventTypes.CHAT_LOADED,
         eventTypes.CHAT_CREATED,
         eventTypes.GROUP_CHAT_CREATED,

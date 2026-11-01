@@ -1,6 +1,7 @@
 import { Fuse } from '../lib.js';
 
 import { roleplayLoadErrorMessage } from './roleplay-load-error.js';
+import { getPendingChatNameCommit } from './chat-label.js';
 import {
     shuffle,
     onlyUnique,
@@ -1628,6 +1629,8 @@ function rememberQueuedGroupChatIntegrity(chatId, integrity) {
  * @returns {Promise<boolean>} A promise that resolves when the group chat has been saved.
  */
 function saveGroupChat(groupId, shouldSaveGroup, force = false, throwOnError = false, options = {}) {
+    const namingCommit = getPendingChatNameCommit();
+    if (namingCommit) return namingCommit.then(() => saveGroupChat(groupId, shouldSaveGroup, force, throwOnError, options));
     const group = groups.find(x => x.id == groupId);
     if (!group) {
         console.warn('Group not found', groupId);

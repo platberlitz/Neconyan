@@ -146,6 +146,7 @@ describe('Neconyan save behaviour', () => {
                 characters: [{ avatar: 'a.png' }, { avatar: 'b.png' }], this_chid: 0,
                 selected_group: null, is_group_generating: false, is_send_press: false,
                 hasPendingChatSave: () => false, waitForQueuedChatSaves: jest.fn(), waitForQueuedGroupChatSaves: jest.fn(),
+                getPendingChatNameCommit: () => null,
                 toastr: { error: jest.fn() }, t: strings => strings.join(''),
                 setCharacterId: jest.fn(id => { context.this_chid = id; }), setCharacterName: jest.fn(),
                 resetSelectedGroup: jest.fn(), clearChat: jest.fn(), cancelTtsPlay: jest.fn(), getChat: jest.fn(),

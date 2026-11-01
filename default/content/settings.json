@@ -139,6 +139,8 @@
         "noShadows": false,
         "theme": "Neconyan Calico Dark",
         "reply_generation_location": "browser",
+        "auto_label_chat": true,
+        "auto_label_chat_threshold": 6,
         "auto_swipe": false,
         "auto_swipe_minimum_length": 0,
         "auto_swipe_blacklist": [],

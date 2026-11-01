@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { parse } from 'acorn';
 import { createHash, randomUUID } from 'node:crypto';
 import { getChatBackupSaveOptions } from '../public/scripts/chat-backup-sequence.js';
+import { getPendingChatNameCommit } from '../public/scripts/chat-label.js';
 import { getQueuedChatSaveAbortReason } from '../public/scripts/chat-save-guard.js';
 import { beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave } from '../public/scripts/roleplay-save-chain.js';
 
@@ -37,6 +38,7 @@ function saveContext(group = false) {
         getCurrentChatId: () => 'story',
         chatGeneration: 1, getChatGeneration: () => 1,
         getChatBackupSaveOptions, getQueuedChatSaveAbortReason, uuidv4: randomUUID,
+        getPendingChatNameCommit,
         latestChatSave: null,
     });
     load(context, 'script.js', ['chatSaveFingerprint', 'saveChatConditional', 'saveMetadata']);

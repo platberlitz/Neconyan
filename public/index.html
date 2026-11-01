@@ -5785,6 +5785,18 @@
                                             <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Chat links in the address bar">Chat links in the address bar</small><span class="nn-vt-desc">Back, Forward and bookmarks open the exact chat. Links only work for your account on this install; they are not for sharing.</span></span>
                                             <input id="chat-links-checkbox" type="checkbox" />
                                         </label>
+                                        <label for="auto_label_chat" class="checkbox_label nn-vt-row nn-cw-parent">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Name chats automatically">Name chats automatically</small><span class="nn-vt-desc">Swaps a chat's date-and-time name for a short title from your current model. Names you chose stay as they are.</span></span>
+                                            <input id="auto_label_chat" type="checkbox" />
+                                        </label>
+                                        <div class="nn-vt-nest">
+                                            <div class="nn-cw-field">
+                                                <label for="auto_label_chat_threshold" class="nn-vt-text"><small class="nn-vt-name" data-i18n="Messages before naming">Messages before naming</small><span class="nn-vt-desc">Counts every message in the chat, the greeting included.</span></label>
+                                                <div class="nn-cw-control">
+                                                    <input id="auto_label_chat_threshold" name="auto_label_chat_threshold" type="number" min="1" max="100" step="1" value="6" class="text_pole nn-cw-number" />
+                                                </div>
+                                            </div>
+                                        </div>
                                     </section>
                                     <section class="nn-vt-group" aria-labelledby="nn-cw-messages-title">
                                         <div class="nn-vt-group-head">
