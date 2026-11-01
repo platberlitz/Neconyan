@@ -47,6 +47,7 @@
 - PR #387 (2026-11-01) `fix(characters): preserve name ownership when the input moves`
 - PR #388 (2026-11-01) `fix(nanogpt): honour declared reasoning effort support`
 - PR #389 (2026-11-01) `feat(characters): add native tag and folder manager`
+- PR #390 (2026-11-01) `fix(sidebar): show edit controls in the phone drawer`
 
 ## v1.4.0
 
