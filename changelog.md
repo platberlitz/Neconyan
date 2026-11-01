@@ -53,6 +53,7 @@
 - PR #393 (2026-11-01) `fix(security): harden account, file and outbound request boundaries`
 - PR #394 (2026-11-01) `docs(help): point in-app help links at the Neconyan handbook`
 - PR #395 (2026-11-01) `feat(chat): add a searchable composer chat browser`
+- PR #397 (2026-11-01) `fix(shell): align character and lorebook page headers`
 
 ## v1.4.0
 
