@@ -2,6 +2,18 @@
 
 ## v1.4.1
 
+### Highlights
+- **Author's Note** now has four tabs: **This chat**, **Character**, **Persona** and **New chats**, with a summary of what reaches the prompt. You can combine several character notes and keep a different selection for each persona. Persona notes are also reachable from Persona Management and the composer Persona picker.
+- The chat name above the message box opens a searchable list of the current character's or group's saved chats, with previews and message counts. **Name chats automatically** replaces dated chat names after six messages by default, once the app is idle. Each title usually uses one request to the current model, with a second attempt if the structured response fails; names you chose yourself stay as they are. Change the threshold or switch it off under **Chat & Writing > Chat & messages > Chat window**.
+- **Edit sidebar** appears beside each section heading on desktop and in the phone drawer. Move buttons between sections, hide them with **X**, or use **Restore defaults**. Hiding a button doesn't delete its page or data.
+- **Tag Management** has **Tags & Folders** and **Characters & Groups** tabs, searchable tags and cards, folder grouping, tag merging and bulk assignment. **Prune**, **Backup**, **Restore** and **Undo** help with tidying the library without editing every card separately.
+- **UI Theme** has searchable palette previews and **All**, **Dark** and **Light** filters, with 115 Regex Agent tracker themes available as full interface themes. Relationship and Ethereality tracker cards have their faithful layouts back, and accent buttons and narrow search controls remain readable across more shell styles.
+- **Reasoning Effort** in Connections and the composer uses the levels a model supports across NanoGPT, OpenRouter and supported native providers. Models without an effort setting disable the setting in Connections and hide the composer button, while keeping your saved choice for other models; models that require reasoning don't offer **None**.
+- **Agents** shows an **Agent updates ready** banner with **Update all** and **Dismiss**. Updating includes edited built-in agents after a warning, so check that warning before replacing your changes. **Chatroom** Companions gain polls, room events and direct viewer replies. A poll option fills the reply box; **Send reply** makes one Companion request without adding a message to the main chat.
+- Interrupted replies keep their partial prose or thinking, including when the response limit is reached before any prose appears. Neconyan explains early endings, stalled streams and connection loss, and never cancels a running held reply to make room for another. Refused or failed swipes no longer leave swiping locked, and Doom tracker callbacks work again.
+- **Mewmory** waits for running Agents before hiding older messages, preserves reading progress and avoids redundant work. Companion notes wait for scrolling to stop before clearing older notes, and fallback errors appear instead of blank replies.
+- Damaged Notebook files no longer discard Scratchpad replies or block **Blank note**. Desktop sessions load over plain HTTP again, NovelAI V5 and Gemini image settings are corrected, and account, file and outbound request boundaries have tighter checks. In-app help links now point to the Neconyan handbook.
+
 ### Merged Staging PRs
 - PR #345 (2026-10-30) `fix(gemini): omit the image settings when none are set`
 - PR #346 (2026-10-30) `fix(agents): report fallback errors instead of a blank companion reply`
@@ -53,6 +65,7 @@
 - PR #393 (2026-11-01) `fix(security): harden account, file and outbound request boundaries`
 - PR #394 (2026-11-01) `docs(help): point in-app help links at the Neconyan handbook`
 - PR #395 (2026-11-01) `feat(chat): add a searchable composer chat browser`
+- PR #396 (2026-11-01) `feat(chat): name chats automatically with the current model`
 - PR #397 (2026-11-01) `fix(shell): align character and lorebook page headers`
 - PR #398 (2026-11-01) `docs(readme): refresh screenshots and add version and language links`
 - PR #399 (2026-11-01) `fix(meower): uncramp actions and add accent-aware message borders`
