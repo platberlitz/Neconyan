@@ -70,12 +70,53 @@ for (const phone of [false, true]) {
         await expect(panel.locator('.sb-chat-picker-row')).toHaveCount(1);
         await search.press('ArrowDown');
         await expect(panel.locator('.sb-chat-picker-row')).toBeFocused();
-        await page.keyboard.press('Enter');
-        await expect(panel).toHaveCount(0);
-        await expect(trigger).toContainText('Market debate');
-        await expect(page.locator('#chat')).toContainText('Scene 1: a cup of tea.');
-        await trigger.click();
+        // Hold the 200ms post-load composer auto-focus timer until the picker is reopened,
+        // so the test deterministically exercises the race where the timer fires while open.
+        await page.evaluate(() => {
+            const realSetTimeout = window.setTimeout;
+            const state = { held: null, restore: () => { window.setTimeout = realSetTimeout; } };
+            window.__chatLoadFocusDelay = state;
+            window.setTimeout = function (fn, ms, ...args) {
+                if (ms === 200 && !state.held && /\bat delay \([^\n]*\n\s+at getChat \(/.test(new Error().stack ?? '')) {
+                    window.setTimeout = realSetTimeout;
+                    state.held = () => fn(...args);
+                    return 0;
+                }
+                return realSetTimeout.call(window, fn, ms, ...args);
+            };
+        });
+        try {
+            await page.keyboard.press('Enter');
+            await expect(panel).toHaveCount(0);
+            await expect(trigger).toContainText('Market debate');
+            await expect(page.locator('#chat')).toContainText('Scene 1: a cup of tea.');
+            await expect.poll(() => page.evaluate(() => Boolean(window.__chatLoadFocusDelay?.held))).toBe(true);
+            await trigger.click();
+            await expect(panel.locator('[aria-current="true"]')).toContainText('Market debate');
+            if (phone) {
+                await expect(search).not.toBeFocused();
+                await expect(panel.locator('[aria-current="true"]')).toBeFocused();
+            } else {
+                await expect(search).toBeFocused();
+            }
+            await page.evaluate(async () => {
+                if (typeof window.__chatLoadFocusDelay?.held !== 'function') {
+                    throw new Error('Expected getChat 200ms focus delay to be captured');
+                }
+                window.__chatLoadFocusDelay.held();
+                await Promise.resolve();
+            });
+        } finally {
+            await page.evaluate(() => window.__chatLoadFocusDelay?.restore?.());
+        }
+        await expect(panel).toBeVisible();
         await expect(panel.locator('[aria-current="true"]')).toContainText('Market debate');
+        if (phone) {
+            await expect(search).not.toBeFocused();
+            await expect(panel.locator('[aria-current="true"]')).toBeFocused();
+        } else {
+            await expect(search).toBeFocused();
+        }
         await page.keyboard.press('Escape');
         await expect(panel).toHaveCount(0);
         await expect(trigger).toBeFocused();

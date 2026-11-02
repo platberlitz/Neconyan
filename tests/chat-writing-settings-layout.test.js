@@ -161,6 +161,7 @@ describe('Chat & Writing settings layout', () => {
         expect(powerUserJs).toContain('$(\'#auto_focus_chat_input\').prop(\'checked\', power_user.auto_focus_chat_input !== false);');
         expect(powerUserJs).toContain('power_user.auto_focus_chat_input = !!$(this).prop(\'checked\');');
         expect(scriptJs).toContain('if (!exactChat && power_user.auto_focus_chat_input !== false)');
+        expect(scriptJs).toContain('document.getElementById(\'sb-bottom-chat-picker\')');
         expect(welcomeJs).toContain('power_user?.auto_focus_chat_input === false');
         expect(tabsJs).toContain('power_user?.auto_focus_chat_input !== false');
         expect(conversationChromeJs).toContain('power_user?.auto_focus_chat_input !== false');

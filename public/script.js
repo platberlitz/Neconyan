@@ -13904,7 +13904,11 @@ export async function getChat({ allowMissingPersisted = false, switchMenu = true
 
         // Focus on the textarea if not already focused on a visible text input
         if (!exactChat && power_user.auto_focus_chat_input !== false) delay(debounce_timeout.short).then(() => {
-            if (power_user.auto_focus_chat_input === false || $(document.activeElement).is('input:visible, textarea:visible')) {
+            if (power_user.auto_focus_chat_input === false
+                || $(document.activeElement).is('input:visible, textarea:visible')
+                || document.getElementById('sb-bottom-chat-picker')
+                || document.getElementById('sb-persona-picker')
+                || document.getElementById('sb-reasoning-effort-picker')) {
                 return;
             }
             $('#send_textarea').trigger('click').trigger('focus');
