@@ -9,6 +9,7 @@
 - PR #405 (2026-11-02) `fix(roleplay): retain reasoning effort on server replies`
 - PR #406 (2026-11-02) `fix(archive): restore loading and refresh the native layout`
 - PR #407 (2026-11-02) `fix(connections): keep model selection from resetting scroll`
+- PR #409 (2026-11-02) `fix: restore rail taps and immediate composer scrolling`
 - PR #410 (2026-11-02) `feat(agents): recover replies from completed thinking`
 
 ## v1.4.1
