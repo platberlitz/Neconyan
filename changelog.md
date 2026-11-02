@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.4.2
+
+### Merged Staging PRs
+- PR #402 (2026-11-02) `fix(composer): contain the accent and finish the Cozy Warm border`
+
 ## v1.4.1
 
 ### Highlights
