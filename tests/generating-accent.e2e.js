@@ -1,14 +1,18 @@
 /* global document, getComputedStyle */
 import { expect } from '@playwright/test';
+import { mkdir } from 'node:fs/promises';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { selectSampleCharacter } from './chat-scroll-regression-helpers.js';
+import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
-const styles = ['calico', 'windows-aero', 'macos-minimal', 'clean-minimal', 'cozy-warm', 'hypr-glow', 'slate-flat', 'kittyless', 'windows-98'];
+const styles = ['calico', 'windows-aero', 'macos-minimal', 'clean-minimal', 'cozy-warm', 'hypr-glow', 'slate-flat', 'kittyless', 'windows-98', 'windows-xp'];
 
-for (const phone of [false, true]) {
-    test(`generating edge follows the secondary accent on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
+for (const device of ['desktop', 'phone', 'ios']) {
+    const phone = device !== 'desktop';
+    test(`generating edge follows the secondary accent on ${device}`, async ({ app }) => {
         test.setTimeout(120000);
-        const account = await app.account({ phone });
+        const account = await app.account({ phone, contextOptions: device === 'ios' ? IPHONE_SAFARI_CONTEXT : {} });
+        if (device === 'ios') await installIPhoneSafari(account.context, { standalone: true });
         const page = await account.open({ workspace: false });
         await selectSampleCharacter(page);
         const form = page.locator('#send_form');
@@ -30,6 +34,7 @@ for (const phone of [false, true]) {
                     });
                 }
             }, style);
+            if (device === 'ios') await applyIOSOnlyCss(page, { inPlace: true });
 
             for (const custom of [true, false]) {
                 await page.evaluate(custom => {
@@ -44,24 +49,46 @@ for (const phone of [false, true]) {
                     shadow: getComputedStyle(element).boxShadow,
                     height: element.getBoundingClientRect().height,
                 }));
-                const colour = await edge.evaluate((element, custom) => {
+                const expected = await edge.evaluate((element, { custom, style }) => {
                     const probe = document.createElement('span');
                     probe.style.color = custom ? 'var(--SmartThemeUnderlineColor)' : 'var(--neco-ginger)';
+                    const accent = custom ? 'var(--SmartThemeUnderlineColor)' : 'var(--neco-ginger)';
+                    const rim = style === 'cozy-warm' ? 'var(--cozy-shadow)' : `inset 0 0 0 1.5px color-mix(in srgb, ${accent} 78%, transparent)`;
+                    probe.style.boxShadow = `${rim}, 0 0 12px color-mix(in srgb, ${accent} 14%, transparent)`;
                     element.append(probe);
-                    const colour = getComputedStyle(probe).color;
+                    const expected = [getComputedStyle(probe).boxShadow, getComputedStyle(probe).color];
                     probe.remove();
-                    return colour;
-                }, custom);
+                    return expected;
+                }, { custom, style });
 
                 // A late chat-load step can call hideStopButton() and drop the class, so re-apply it until it sticks.
                 await expect.poll(async () => {
                     await form.evaluate(element => element.classList.add('sb-generating-controls'));
                     return edge.evaluate(element => [getComputedStyle(element).boxShadow, getComputedStyle(element).borderTopColor]);
-                }, { message: `${style}, custom=${custom}` }).toEqual([`${colour} 0px 0px 0px 3px inset`, colour]);
+                }, { message: `${style}, custom=${custom}` }).toEqual(expected);
+                if (phone) {
+                    await expect(form).toHaveCSS('backdrop-filter', 'none');
+                    await expect(form).toHaveCSS('box-shadow', 'none');
+                }
+                if (style === 'cozy-warm') {
+                    for (const side of ['top', 'right', 'bottom', 'left']) {
+                        await expect(edge).toHaveCSS(`border-${side}-style`, 'dashed');
+                        await expect(edge).toHaveCSS(`border-${side}-width`, '2px');
+                        await expect(edge).toHaveCSS(`border-${side}-color`, expected[1]);
+                    }
+                }
+                if (process.env.NECONYAN_ACCENT_SCREENSHOTS && custom && ['windows-aero', 'cozy-warm'].includes(style)) {
+                    const directory = new URL('../screenshots/', import.meta.url);
+                    await mkdir(directory, { recursive: true });
+                    await page.screenshot({ path: new URL(`${process.env.NECONYAN_ACCENT_SCREENSHOTS}-${style}-${device}-generating.png`, directory).pathname });
+                }
                 const active = await edge.boundingBox();
                 expect(active.height).toBe(idle.height);
                 await form.evaluate(element => element.classList.remove('sb-generating-controls'));
                 await expect(edge, `${style}, custom=${custom}: idle edge restored`).toHaveCSS('box-shadow', idle.shadow);
+                if (process.env.NECONYAN_ACCENT_SCREENSHOTS && custom && style === 'cozy-warm') {
+                    await page.screenshot({ path: new URL(`../screenshots/${process.env.NECONYAN_ACCENT_SCREENSHOTS}-${style}-${device}-idle.png`, import.meta.url).pathname });
+                }
             }
         }
     });

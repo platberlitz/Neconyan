@@ -108,6 +108,10 @@
 }
 
 /* Composer: a quilted cushion with stitched edges and a lamplit send button. */
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) #form_sheld {
+    --neco-generating-shadow: var(--cozy-shadow), 0 0 12px color-mix(in srgb, var(--neco-accent-secondary) 14%, transparent);
+}
+
 :root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) #sb-bottom-chat-bar {
     --neco-surface: var(--cozy-surface);
     border-radius: 18px 18px 0 0;
@@ -199,8 +203,8 @@
 @media (max-width: 768px) {
     :root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel {
         --neco-surface: var(--cozy-surface);
-        border-top: 2px dashed var(--cozy-thread);
-        border-radius: 22px 22px 0 0;
+        border: 2px dashed var(--cozy-thread);
+        border-radius: 22px;
         box-shadow: var(--cozy-shadow);
     }
     :root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel #sb-bottom-chat-bar {

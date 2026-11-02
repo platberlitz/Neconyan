@@ -22,6 +22,6 @@ describe('group speaker bar on phones', () => {
     test('the bar sits inside the bottom panel\'s generating ring', () => {
         const rule = mobileStyles.slice(mobileStyles.indexOf('    .group_speaker_controls {'));
         expect(rule.slice(0, rule.indexOf('\n    }\n'))).toContain('margin: 0 4px 2px !important;');
-        expect(readSource('public', 'css', 'neconyan-calico.css')).toContain('box-shadow: inset 0 0 0 3px var(--neco-accent-secondary);');
+        expect(readSource('public', 'css', 'neconyan-mobile-shell.css')).toContain('box-shadow: var(--neco-generating-shadow);');
     });
 });

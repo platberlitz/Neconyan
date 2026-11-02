@@ -3112,6 +3112,12 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         --sb-composer-bottom-padding: 0px;
     }
 
+    /* The phone's visible generating edge belongs to the whole bottom panel. */
+    body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel:has(#send_form.sb-generating-controls) {
+        border-color: var(--neco-accent-secondary);
+        box-shadow: var(--neco-generating-shadow);
+    }
+
     /* Keep the home-indicator clearance outside the installed iPhone app's
        painted panel. Square, edge-to-edge corners disappear behind the screen
        curve. Retain a small gap even when standalone reports a zero inset;
