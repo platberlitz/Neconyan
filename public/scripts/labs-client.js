@@ -64,13 +64,13 @@ export function createLabClient({ request, observeJob, account, storage, uuid = 
                     : reject(completed?.state === 'refused' ? refusal(completed)
                         : lifecycle === 'distill' && completed ? Object.assign(distillError(completed, job), { phase: 'generation', generationMessage: job.error?.message })
                             : Object.assign(new Error(job.error?.message || `${label} work is ${job.state}. Review it in Jobs before retrying.`),
-                                { phase: 'generation', jobId: record.jobId, requestKey: record.key, status: job.error?.status, code: job.error?.code })),
+                                { phase: 'generation', jobId: record.jobId, requestKey: record.key, status: job.error?.status, code: job.error?.code, jobState: job.state })),
                 onStop: async reason => {
                     if (reason === 'done') return;
                     if (reason === 'missing') {
                         read(record.key).then(saved => saved.state === 'completed' ? resolve(saved)
                             : reject(lifecycle === 'distill' ? distillError(saved)
-                                : new Error(`The job is unavailable. Its saved ${label} record has been retained.`)), reject);
+                                : Object.assign(new Error(`The job is unavailable. Its saved ${label} record has been retained.`), { jobState: 'missing' })), reject);
                     } else if (reason === 'aborted') {
                         try { resolve(await observationClosed(record, signal)); } catch (error) { reject(error); }
                     } else reject(new Error(reason));
@@ -214,7 +214,11 @@ export function createLabClient({ request, observeJob, account, storage, uuid = 
             storage.removeItem(storageKey);
             return result;
         } catch (error) {
-            if (error.cancelled || error.refused) storage.removeItem(storageKey);
+            // Read-only scans can be explicitly retried after a terminal failure.
+            // Paid requests and uncertain transport/readback failures stay retained.
+            const failedScan = ['archive-inventory', 'archive-search'].includes(kind)
+                && ['failed', 'interrupted', 'cancelled', 'missing'].includes(error.jobState);
+            if (error.cancelled || error.refused || failedScan) storage.removeItem(storageKey);
             throw error;
         }
     }

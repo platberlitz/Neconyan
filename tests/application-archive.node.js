@@ -33,10 +33,39 @@ test('archive metadata is retained after source deletion and job pruning without
     assert.equal(saved.result.rows[0].file_name, 'Source.jsonl');
     assert.throws(() => readArchiveFile(p.base, saved.key, saved.result.rows[0].archive_hash), /changed after/);
     fs.rmSync(path.join(p.base.directories.root, 'jobs/index.json'));
-    fs.rmSync(path.join(p.base.directories.root, 'jobs/artifacts'), { recursive: true });
+    assert.equal(fs.existsSync(path.join(p.base.directories.root, 'jobs/artifacts')), false);
     const duplicate = await p.accept('inventory', 'archive-inventory', { scope: 'archive' });
     assert.equal(duplicate.job, null);
     assert.deepEqual(duplicate.record.result, saved.result);
+});
+
+test('archive capture yields and reuses unchanged bytes while detecting same-size rewrites and unsafe links', async t => {
+    const p = setup(t);
+    let opened = 0;
+    const originalOpen = fs.openSync;
+    t.mock.method(fs, 'openSync', function (filename, ...args) {
+        if (filename === p.f.filename) opened++;
+        return originalOpen.call(this, filename, ...args);
+    });
+    let yielded = false;
+    setImmediate(() => { yielded = true; });
+    await p.run('first', 'archive-inventory');
+    assert.equal(yielded, true);
+    assert.ok(opened > 0);
+    opened = 0;
+    await p.run('second', 'archive-inventory');
+    assert.equal(opened, 0, 'unchanged chat content is not reopened');
+    const before = fs.statSync(p.f.filename);
+    const text = fs.readFileSync(p.f.filename, 'utf8');
+    fs.writeFileSync(p.f.filename, text.replace('Answer', 'Change'));
+    fs.utimesSync(p.f.filename, before.atime, before.mtime);
+    opened = 0;
+    const changed = await p.run('changed', 'archive-inventory');
+    assert.ok(opened > 0, 'same-size rewrite must invalidate the cache');
+    assert.match(changed.result.rows[0].mes, /Change/);
+    const link = path.join(p.base.directories.root, 'duplicate.jsonl');
+    fs.linkSync(p.f.filename, link);
+    await assert.rejects(p.accept('linked', 'archive-inventory'), /evidence needs recovery/);
 });
 
 test('archive inventory keeps chat settings and long messages out of the saved plan and result', async t => {
