@@ -66,6 +66,7 @@ describe('Taro agent recommendations', () => {
         expect(getAgentRequestCost(templateById.get('tpl-intent-reader'))).toBe('before');
         expect(getAgentRequestCost(templateById.get('tpl-position-tracker-companion'))).toBe('after');
         expect(getAgentRequestCost(templateById.get('tpl-vitals-companion'))).toBe('after');
+        expect(getAgentRequestCost(templateById.get('tpl-dice-roller-companion'))).toBe('free');
         expect(getAgentRequestCost(templateById.get('tpl-scene-tracker'))).toBe('free');
         expect(getAgentRequestCost(templateById.get('tpl-cyoa-choices-skill-checks'))).toBe('free');
         expect(getAgentRequestCost(templateById.get('tpl-friction-mode'))).toBe('free');

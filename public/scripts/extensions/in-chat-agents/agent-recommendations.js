@@ -1,6 +1,8 @@
 // Taro's agent guide: local, deterministic recommendations. This module never
 // loads a model, reads a chat or writes an agent. The Agents page owns those.
 
+import { isDiceRollerAgent } from './companion/companion-shared.js';
+
 export const TARO_GUIDE_ANSWERS_VERSION = 1;
 export const TARO_GUIDE_MAX_NEW_PICKS = 6;
 
@@ -392,6 +394,9 @@ export function normalizeTaroGuideAnswers(value) {
 export function getAgentRequestCost(record) {
     const preProcess = record?.preProcess && typeof record.preProcess === 'object' ? record.preProcess : {};
     const postProcess = record?.postProcess && typeof record.postProcess === 'object' ? record.postProcess : {};
+    if (isDiceRollerAgent(record)) {
+        return 'free';
+    }
     if (preProcess.mode === 'intercept' && preProcess.interceptTiming !== 'post-main-generation') {
         return 'before';
     }

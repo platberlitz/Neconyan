@@ -110,6 +110,37 @@ test('Companions publish independent progress without letting an observer change
     assert.equal(f.rows().at(-1).extra.inChatAgentCompanionResults.early.content, 'First note');
 });
 
+test('the Dice Roller adds its directive without a model, a profile or a saved note', async t => {
+    const roll = '\u{1F3B2} Pick the lock - rolled 18 vs 12 (1d20: 18) - SUCCESS';
+    const dice = {
+        ...companion('dice'), name: 'Dice Roller', sourceTemplateId: 'tpl-dice-roller-companion',
+        prompt: 'CUSTOM_DICE for {{user}}.',
+        injection: { position: 1, depth: 0, role: 0, order: 115, scan: false },
+        companion: { trigger: 'manual', displayMode: 'panel', includeWorldInfo: false,
+            feedback: { enabled: true, depth: 1 } },
+        conditions: { triggerKeywords: [], triggerProbability: 100, generationTypes: ['normal', 'continue', 'swipe', 'regenerate'] },
+    };
+    const f = prepared(t, [dice], { changeRecords: records => {
+        records.push({ name: 'Ari', is_user: true, mes: `Trying.\n${roll}` });
+    } });
+    let mainPrompt = null;
+    let companionCalls = 0;
+    await f.run({
+        generate: async options => {
+            mainPrompt = options.messages;
+            return paid('main', 'Main reply')(options);
+        },
+        generateAgent: async () => {
+            companionCalls++;
+            return { text: 'Should not run.' };
+        },
+    });
+    assert.equal(companionCalls, 0, 'the local Dice Roller never asks a model for a note');
+    assert.match(JSON.stringify(mainPrompt), /\[Dice result for User\]/);
+    assert.match(JSON.stringify(mainPrompt), /CUSTOM_DICE for User\./);
+    assert.equal(f.rows().at(-1).extra?.inChatAgentCompanionResults, undefined);
+});
+
 test('companion prompts expand the separate saved secrets macro', async t => {
     const f = prepared(t, [
         { ...companion('reader'), prompt: 'READ_SECRETS {{secrets-tracker}}' },

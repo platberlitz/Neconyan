@@ -1,5 +1,6 @@
 import { normalizeRegexScript } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { normalizePromptTransformContextMessages } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-context.js';
+import { isDiceRollerAgent } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { roleplayError } from '../roleplay-store.js';
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -75,6 +76,9 @@ export function nativeAgentDefinition(raw) {
 }
 
 export function agentNeedsModel(agent) {
+    // The Dice Roller is a local companion: it writes its directive straight
+    // into the prompt and never calls a model for a note.
+    if (isDiceRollerAgent(agent)) return false;
     if (isNativeCompanion(agent)) return Boolean(agent.prompt.trim());
     if (agent.category === 'tool' || !agent.prompt.trim()) return false;
     return ['pre', 'both'].includes(agent.phase) && agent.preProcess.mode === 'intercept'

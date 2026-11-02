@@ -101,6 +101,7 @@ describe('companion tracker panel', () => {
 
         await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-store.js', () => ({
             areAgentsGloballyEnabled: jest.fn(() => globallyEnabled),
+            getAgentById: jest.fn(id => agents.find(agent => agent.id === id)),
             getAgents: jest.fn(() => agents),
             getCompanionConfig: jest.fn(agent => ({
                 trigger: agent?.companion?.trigger === 'manual' ? 'manual' : 'auto',
@@ -162,6 +163,7 @@ describe('companion tracker panel', () => {
                 extraContextSections: [{ title: 'Viewer reply', content: viewerText }],
             })),
             insertChoiceIntoMessageInput: jest.fn(() => true),
+            refreshCompanionCards: jest.fn(),
             isSilentCompanionAgent: jest.fn(agent => String(agent?.sourceTemplateId ?? agent?.id ?? '') === 'tpl-message-inbox-companion'),
             isSuppressedCompanionResult: jest.fn((agentId, result) =>
                 ['PHONE_NONE', 'phone-none', 'TRACKER_NONE', 'tracker-none'].includes(String(result?.content ?? '').trim())),
@@ -227,6 +229,21 @@ describe('companion tracker panel', () => {
         expect(states[0].history).toHaveLength(7);
         expect(states[0].history[0].messageIndex).toBe(6);
         expect(states[0].history.at(-1).messageIndex).toBe(0);
+    });
+
+    test('puts the local Dice Roller widget in the panel instead of a note or run state', async () => {
+        agents = [{
+            id: 'dice-1', name: 'Dice Roller', icon: 'fa-dice-d20', execution: 'companion', category: 'companion',
+            sourceTemplateId: 'tpl-dice-roller-companion', enabled: true, companion: { displayMode: 'panel', trigger: 'manual' },
+        }];
+        const panel = await importPanel();
+        const html = panel.buildPanelHtml();
+        expect(html).toContain('data-neco-dice-host="true"');
+        expect(html).toContain('data-neco-dice-agent="dice-1"');
+        expect(html).toContain('data-neco-dice-surface="panel"');
+        expect(html).not.toContain('No state yet');
+        expect(html).not.toContain('data-action="panel-regenerate"');
+        expect(html).not.toContain('data-action="panel-fix"');
     });
 
     test('shows live notes ahead of saved history without exposing saved-message actions', async () => {

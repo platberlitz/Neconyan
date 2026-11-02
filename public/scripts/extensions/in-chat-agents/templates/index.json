@@ -6408,5 +6408,74 @@
             "runOnCompanionOutputs": false,
             "companionOutputTargetAgentIds": []
         }
+    },
+    {
+        "id": "tpl-dice-roller-companion",
+        "name": "Dice Roller",
+        "description": "Roll a d20 or another die for what you attempt. The roll lands in the chat as your message, and the next reply treats the result as settled fact. It runs locally in its panel or note, with no extra model request.",
+        "icon": "fa-dice-d20",
+        "category": "companion",
+        "subcategory": "story-notes",
+        "tags": [
+            "dice",
+            "roll",
+            "skill check",
+            "d20",
+            "chance"
+        ],
+        "version": 1,
+        "author": "Neconyan",
+        "prompt": "Write the next reply with this result as settled fact. Describe what happens in the story, and keep the dice, the numbers and the word roll out of the reply.",
+        "phase": "post",
+        "execution": "companion",
+        "companion": {
+            "trigger": "manual",
+            "displayMode": "panel",
+            "format": "text",
+            "rawPrompt": true,
+            "contextMessages": 1,
+            "includeCharacterCard": false,
+            "includePersona": false,
+            "includeWorldInfo": false,
+            "includeAuthorsNote": false,
+            "includeSystemPrompt": false,
+            "includeHistory": false,
+            "historyDepth": 1,
+            "feedback": {
+                "enabled": true,
+                "depth": 1
+            },
+            "batch": false,
+            "maxTokens": 1024,
+            "chatHistoryPlacement": "source"
+        },
+        "injection": {
+            "position": 1,
+            "depth": 0,
+            "role": 0,
+            "order": 115,
+            "scan": false
+        },
+        "postProcess": {
+            "enabled": false,
+            "type": "regex",
+            "regexFind": "",
+            "regexReplace": "",
+            "regexFlags": "g",
+            "appendText": "",
+            "extractPattern": "",
+            "extractVariable": ""
+        },
+        "enabled": false,
+        "conditions": {
+            "triggerKeywords": [],
+            "triggerProbability": 100,
+            "generationTypes": [
+                "normal",
+                "continue",
+                "swipe",
+                "regenerate"
+            ]
+        }
     }
 ]

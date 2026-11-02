@@ -115,6 +115,7 @@ describe('companion card ui', () => {
             getAgentRegexScripts: jest.fn(agent => Array.isArray(agent?.regexScripts) ? agent.regexScripts : []),
             getCompanionConfig: jest.fn(() => ({ displayMode: 'card' })),
             getEnabledAgents: jest.fn(() => [...agents]),
+            isAgentHidden: jest.fn(() => false),
             isCompanionAgent: jest.fn(agent => agent?.execution === 'companion' || agent?.category === 'companion'),
             saveAgent: jest.fn(async (id, { update }) => {
                 const agent = agents.find(agent => agent.id === id);
@@ -134,6 +135,8 @@ describe('companion card ui', () => {
             emitCompanionResultsUpdated: jest.fn(async () => {}),
             deleteCompanionResult: jest.fn(),
             getCompanionResults: jest.fn(message => message?.extra?.inChatAgentCompanionResults ?? {}),
+            getLatestAssistantCompanionMessageIndex: jest.fn(() => chat.findLastIndex(message => message && !message.is_user && !message.is_system)),
+            getLatestValidCompanionMessageIndex: jest.fn(() => Math.max(0, chat.length - 1)),
             runCompanionAgentOnMessage: jest.fn(async () => ({ status: 'done' })),
             runCompanionsOnMessage: jest.fn(async () => ({})),
             updateCompanionResult: jest.fn(),
@@ -629,6 +632,41 @@ describe('companion card ui', () => {
         expect(cleanCompanionAgentName('Scene Tracker 20345602-939a-44c2-8522-525fb7212b0e')).toBe('Scene Tracker');
         expect(cleanCompanionAgentName('Scene Tracker')).toBe('Scene Tracker');
         expect(cleanCompanionAgentName('')).toBe('Companion');
+    });
+
+    test('removes stale Dice Roller cards from every row except the newest assistant reply', async () => {
+        const staleCard = { remove: jest.fn() };
+        const staleLedger = { querySelector: jest.fn(() => null), remove: jest.fn() };
+        const latestCard = { remove: jest.fn() };
+        const staleRow = {
+            getAttribute: jest.fn(() => '1'),
+            querySelectorAll: jest.fn(() => [staleCard]),
+            querySelector: jest.fn(() => staleLedger),
+        };
+        const latestRow = {
+            getAttribute: jest.fn(() => '2'),
+            querySelectorAll: jest.fn(() => [latestCard]),
+            querySelector: jest.fn(() => null),
+        };
+        globalThis.document.querySelectorAll = jest.fn(() => [staleRow, latestRow]);
+        globalThis.document.querySelector = jest.fn(() => staleCard);
+        const { pruneDiceCardsExcept } = await importCompanionUi();
+
+        pruneDiceCardsExcept(2);
+
+        expect(staleCard.remove).toHaveBeenCalledTimes(1);
+        expect(staleLedger.remove).toHaveBeenCalledTimes(1);
+        expect(latestCard.remove).not.toHaveBeenCalled();
+    });
+
+    test('skips the Dice Roller row scan when no old card exists', async () => {
+        globalThis.document.querySelector = jest.fn(() => null);
+        globalThis.document.querySelectorAll = jest.fn(() => []);
+        const { pruneDiceCardsExcept } = await importCompanionUi();
+
+        pruneDiceCardsExcept(2);
+
+        expect(globalThis.document.querySelectorAll).not.toHaveBeenCalled();
     });
 
     test('extracts clickable choice text without list enumeration', async () => {

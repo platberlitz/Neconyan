@@ -41,6 +41,8 @@ const OUTCOME_GUIDANCE = Object.freeze({
 
 export const ROLL_MARKER = '\u{1F3B2}';
 
+export const DEFAULT_DICE_PROMPT = 'Write the next reply with this result as settled fact. Describe what happens in the story, and keep the dice, the numbers and the word roll out of the reply.';
+
 const OUTCOME_PATTERN = 'CRITICAL SUCCESS|PARTIAL SUCCESS|CRITICAL FAILURE|SUCCESS|FAILURE';
 const ROLL_LINE_PATTERN = new RegExp(
     `${ROLL_MARKER}\\s*(?:(.+?)\\s+-\\s+)?rolled\\s+(-?\\d+)\\s+vs\\s+(-?\\d+)\\s*(?:\\(([^)\\n]*)\\))?\\s*-\\s*(${OUTCOME_PATTERN})\\b`,
@@ -248,7 +250,7 @@ export function parseRollLines(text) {
     return rolls;
 }
 
-export function buildDiceDirective(rolls, userName = 'the user') {
+export function buildDiceDirective(rolls, userName = 'the user', customPrompt = DEFAULT_DICE_PROMPT) {
     if (!Array.isArray(rolls) || rolls.length === 0) {
         return '';
     }
@@ -258,7 +260,7 @@ export function buildDiceDirective(rolls, userName = 'the user') {
         const subject = roll.action ? roll.action : `The attempt in ${name}'s last message`;
         lines.push(`${subject}: ${roll.outcome}. ${getOutcomeGuidance(roll.outcome)}`);
     }
-    lines.push('Write the next reply with this result as settled fact. Describe what happens in the story, and keep the dice, the numbers and the word roll out of the reply.');
+    lines.push(String(customPrompt ?? '').trim() || DEFAULT_DICE_PROMPT);
     return lines.join('\n');
 }
 
@@ -297,4 +299,16 @@ export function findRollMessageForGeneration(chat, type) {
         return null;
     }
     return chat[lastUserIndex];
+}
+
+/**
+ * The newest user roll a reply would see, with hidden messages and the reply
+ * being swiped or regenerated removed first.
+ * @param {object[]} messages Saved chat messages, or prompt records.
+ * @param {string} type Generation type.
+ * @returns {{ message: object|null, rolls: object[] }}
+ */
+export function findDiceRollsForGeneration(messages, type) {
+    const message = findRollMessageForGeneration(getGenerationChat(messages, type), type);
+    return { message, rolls: message ? parseRollLines(message.mes) : [] };
 }

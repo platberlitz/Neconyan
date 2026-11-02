@@ -332,12 +332,12 @@ test('Built-in Extensions links bundled tools to their own settings pages', asyn
     await page.evaluate(() => window.NeconyanShell.openTab('right', 'extensions'));
     await page.getByRole('button', { name: 'Built-in', exact: true }).click();
     const entries = page.locator('.sb-extension-master-item');
-    // Dice Roller is enabled for everyone, so its settings drawer joins the bundled tools.
-    await expect(entries).toHaveCount(8);
-    for (const name of ['BotSearcher', 'Dialogue Colors', 'Preset Tools', 'Prompt Tags', 'Time Machine', 'Meower', 'Story Mode', 'Pawthfinder', 'Quick Image Gen', 'Character Expressions', 'Regex']) {
+    // Dice Roller is a Companion agent now, so it is not an extension entry.
+    await expect(entries).toHaveCount(7);
+    for (const name of ['BotSearcher', 'Dialogue Colors', 'Preset Tools', 'Prompt Tags', 'Time Machine', 'Meower', 'Story Mode', 'Pawthfinder', 'Quick Image Gen', 'Character Expressions', 'Regex', 'Dice Roller']) {
         await expect(entries.filter({ hasText: new RegExp(`^${name}$`) })).toHaveCount(0);
     }
-    for (const name of ['TTS', 'Quick Reply', 'Vectorization', 'Dice Roller']) {
+    for (const name of ['TTS', 'Quick Reply', 'Vectorization']) {
         await expect(entries.filter({ hasText: new RegExp(`^${name}$`) })).toHaveCount(1);
     }
     const tools = page.locator('.sb-extensions-tools');

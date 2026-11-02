@@ -67,7 +67,9 @@ import {
     holdsReadableCompanionResults,
     isAssistantMessage,
     isEmptyOutputSentinel,
+    isDiceRollerAgent,
     isExpressionsAgent,
+    isLocalCompanionAgent,
     isRetryableCompanionFailure,
     isSuppressedCompanionResult,
     isValidCompanionMessage,
@@ -78,6 +80,8 @@ import {
     TRACKER_EMPTY_OUTPUT_INSTRUCTION,
 } from './companion-shared.js';
 import { resolveCompanionContentMacros } from './companion-macros.js';
+import { buildDiceDirective, findDiceRollsForGeneration } from './dice.js';
+import { runDiceCompanionLocally } from './dice-companion-local.js';
 import { getExpressionsAgentCastPrompt } from '../../expressions/expression-sets.js';
 import { markTrackerRepairRunAgent } from '../tracker-repair-run.js';
 import { findTrackerBlocks, getCompanionTrackerAutoRepairPayload, inspectCompanionTrackerOutput, inspectTrackerState, normalizeCompanionTrackerRepairPayload, TRACKER_REPAIR_INSTRUCTION } from '../tracker-state.js';
@@ -1649,6 +1653,7 @@ function collectConnectedCompanionRunAgents(runnableAgents = []) {
 }
 
 function partitionCompanionRuns(agents, messageIndex, extraContextSectionsByAgentId = null) {
+    agents = agents.filter(agent => !isLocalCompanionAgent(agent));
     const singles = [];
     const agentById = new Map(agents.map(agent => [agent.id, agent]));
     const agentByReferenceId = buildCompanionReferenceMap(agents);
@@ -1829,6 +1834,11 @@ async function cleanUpCompanionTrackerOutput(agent, attempt, generate, extraCont
 }
 
 async function runSingleCompanionAgent(agent, messageIndex, generationType, cancelRevision, { repair = false, extraContextSections = [], allowUserMessage = false, previousContent = null, previousResult = null, run = null, initialOutput = null, diagnosticParent = null, onGenerationStart = null, transformContent = null } = {}) {
+    // Shared safety gate: a local companion must never reach a model, even if a
+    // future caller forgets to filter it out of a batch or dependency wave.
+    if (isLocalCompanionAgent(agent)) {
+        return { agentId: agent.id, changed: false, result: null, local: true };
+    }
     let diagnosticHandle = diagnosticParent, diagnosticOutcome = 'done';
     try { if (!diagnosticParent) diagnosticHandle = globalThis.NeconyanCrashDiagnostics?.beginAgent?.({ id: agent.id, sourceTemplateId: agent.sourceTemplateId, phase: repair ? 'repair' : 'companions' }); } catch { /* Optional diagnostics. */ }
     try {
@@ -2015,6 +2025,10 @@ async function cancelCompanionAgentResults(message, agents, messageIndex, profil
 }
 
 async function runBatchCompanionAgents(agents, messageIndex, generationType, cancelRevision, { allowUserMessage = false, previousContents = null, extraContextSectionsByAgentId = null, runs = null } = {}) {
+    agents = agents.filter(agent => !isLocalCompanionAgent(agent));
+    if (agents.length === 0) {
+        return [];
+    }
     const diagnosticHandles = new Map();
     let diagnosticOutcome = 'done';
     try { for (const agent of agents.slice(0, 8)) diagnosticHandles.set(agent.id, globalThis.NeconyanCrashDiagnostics?.beginAgent?.({ id: agent.id, sourceTemplateId: agent.sourceTemplateId, phase: 'companions' })); } catch { /* Optional diagnostics. */ }
@@ -2188,6 +2202,9 @@ async function runCompanionUnit(unit, messageIndex, generationType, cancelRevisi
     if (unit.type === 'batch') {
         return await runBatchCompanionAgents(unit.agents, messageIndex, generationType, cancelRevision, { allowUserMessage, previousContents, extraContextSectionsByAgentId, runs });
     }
+    if (isLocalCompanionAgent(unit.agent)) {
+        return [];
+    }
 
     const previousContent = previousContents?.get(unit.agent.id) ?? null;
     const single = await runSingleCompanionAgent(unit.agent, messageIndex, generationType, cancelRevision, {
@@ -2233,6 +2250,11 @@ function getRunnableCompanionAgents(activeAgents = [], { manual = false, message
             return false;
         }
 
+        // Dice are rolled locally by their widget, never by a model or a server job.
+        if (!manual && isLocalCompanionAgent(agent)) {
+            return false;
+        }
+
         if (!includeHidden && isAgentHidden(agent.id)) {
             return false;
         }
@@ -2261,7 +2283,7 @@ async function runCompanionUnits(units, messageIndex, generationType, cancelRevi
 
 async function runCompanionAgentSet(agents, messageIndex, generationType, cancelRevision, { allowUserMessage = false, contextSourceAgents = agents } = {}) {
     const isTargetCurrent = captureCompanionTarget(messageIndex);
-    agents = agents.filter(isAgentRuntimeAllowed);
+    agents = agents.filter(agent => isAgentRuntimeAllowed(agent) && !isLocalCompanionAgent(agent));
     if (!agents.length || !areAgentsGloballyEnabled() || getAgentGenerationCancelRevision() !== cancelRevision) {
         return [];
     }
@@ -2292,6 +2314,8 @@ async function runCompanionAgentSet(agents, messageIndex, generationType, cancel
 }
 
 async function runCompanionAgentsWithDependencyDelay(agents, messageIndex, generationType, cancelRevision, { allowUserMessage = false, contextSourceAgents = agents, visited = new Set(), changedSources = null } = {}) {
+    agents = agents.filter(agent => !isLocalCompanionAgent(agent));
+    contextSourceAgents = contextSourceAgents.filter(agent => !isLocalCompanionAgent(agent));
     const isTargetCurrent = captureCompanionTarget(messageIndex);
     const referenceMap = buildCompanionReferenceMap(contextSourceAgents);
     const outcomes = new Map();
@@ -2357,9 +2381,10 @@ async function runCompanionDependencyCascade(messageIndex, changedAgentIds, gene
     }
 
     const allEnabled = getEnabledAgents();
-    const runnable = Array.isArray(contextSourceAgents)
+    const runnable = (Array.isArray(contextSourceAgents)
         ? contextSourceAgents.filter(isAgentRuntimeAllowed)
-        : getRunnableCompanionAgents(allEnabled, { manual: true, messageIndex });
+        : getRunnableCompanionAgents(allEnabled, { manual: true, messageIndex }))
+        .filter(agent => !isLocalCompanionAgent(agent));
     const agentByReferenceId = buildCompanionReferenceMap(runnable);
     const dependents = [];
 
@@ -2369,7 +2394,7 @@ async function runCompanionDependencyCascade(messageIndex, changedAgentIds, gene
         const changedAgent = agentByReferenceId.get(changedId) ?? { id: changedId };
         if (!isAgentRuntimeAllowed(changedAgent)) continue;
         for (const dependent of findCompanionDependents(changedAgent, runnable)) {
-            if (!visited.has(dependent.id) && !isAgentHidden(dependent.id)) {
+            if (!isLocalCompanionAgent(dependent) && !visited.has(dependent.id) && !isAgentHidden(dependent.id)) {
                 dependents.push(dependent);
                 visited.add(dependent.id);
                 pending.push(dependent.id);
@@ -2406,7 +2431,7 @@ export async function runCompanionStage({ messageIndex, message, generationType 
     return agents.map(agent => getCompanionResults(message)[agent.id]);
 }
 
-export function injectCompanionFeedbackPrompts(activeAgents = [], { excludeMessage = null } = {}) {
+export function injectCompanionFeedbackPrompts(activeAgents = [], { excludeMessage = null, generationType = 'normal' } = {}) {
     activeAgents = activeAgents.filter(isAgentRuntimeAllowed);
     const excludedIndex = excludeMessage ? chat.indexOf(excludeMessage) : -1;
     const beforeMessageIndex = excludedIndex >= 0 ? excludedIndex : chat.length;
@@ -2415,8 +2440,30 @@ export function injectCompanionFeedbackPrompts(activeAgents = [], { excludeMessa
     const feedbackPrompts = [];
     activeFeedbackTrackerShapes = feedbackTrackerShapes;
 
+    // Dice Roller writes one short settled-result note for the newest user roll.
+    // It has no saved note and no model call, so it never enters feedbackPrompts.
+    for (const agent of activeAgents.filter(isDiceRollerAgent)) {
+        const key = COMPANION_PROMPT_KEY_PREFIX + agent.id;
+        if (isAgentHidden(agent.id)) {
+            setExtensionPrompt(key, '');
+            continue;
+        }
+        const roll = findDiceRollsForGeneration(chat, generationType);
+        const directive = buildDiceDirective(roll.rolls, substituteParams('{{user}}'), resolveCompanionContentMacros(agent.prompt, roll.message));
+        setExtensionPrompt(
+            key,
+            directive,
+            agent.injection.position,
+            agent.injection.depth,
+            agent.injection.scan,
+            agent.injection.role,
+            null,
+            agent.name,
+        );
+    }
+
     for (const agent of activeAgents) {
-        if (!isCompanionAgent(agent)) {
+        if (!isCompanionAgent(agent) || isLocalCompanionAgent(agent)) {
             continue;
         }
         if (isAgentHidden(agent.id)) {
@@ -2559,7 +2606,17 @@ async function runCompanionAgentOnMessageInternal(agentId, messageIndex, { cance
     const agent = getAgentById(agentId);
     const message = chat[messageIndex];
     const isTargetCurrent = captureCompanionTarget(messageIndex);
-    if (!areAgentsGloballyEnabled() || getAgentGenerationCancelRevision() !== cancelRevision || !agent || !isAgentRuntimeAllowed(agent) || !isCompanionAgent(agent) || !isValidCompanionTargetMessage(message, { allowUserMessage })) {
+    if (!areAgentsGloballyEnabled() || getAgentGenerationCancelRevision() !== cancelRevision || !agent || !isAgentRuntimeAllowed(agent) || !isCompanionAgent(agent)) {
+        return null;
+    }
+
+    // A local companion has no note to write and needs no chat message. Running
+    // it rolls in its widget, before any server hand-off or pending result.
+    if (isLocalCompanionAgent(agent)) {
+        return runDiceCompanionLocally(agent.id, messageIndex);
+    }
+
+    if (!isValidCompanionTargetMessage(message, { allowUserMessage })) {
         return null;
     }
 
@@ -2723,7 +2780,10 @@ export async function runCompanionsOnMessage(messageIndex, { allowUserMessage = 
         return [];
     }
 
-    const agents = getRunnableCompanionAgents(getEnabledAgents(), { manual: true, messageIndex });
+    // Run all, Regenerate all and the message companion button are bulk actions:
+    // they never reroll a local Dice Roller. An explicit single Run does that.
+    const agents = getRunnableCompanionAgents(getEnabledAgents(), { manual: true, messageIndex })
+        .filter(agent => !isLocalCompanionAgent(agent));
     if (agents.length === 0) {
         return [];
     }
@@ -2763,8 +2823,10 @@ export async function runConnectedCompanionsOnMessage(messageIndex, { cancelRevi
         return [];
     }
 
-    const runnable = getRunnableCompanionAgents(getEnabledAgents(), { manual: true, messageIndex });
-    const agents = collectConnectedCompanionRunAgents(runnable);
+    const runnable = getRunnableCompanionAgents(getEnabledAgents(), { manual: true, messageIndex })
+        .filter(agent => !isLocalCompanionAgent(agent));
+    const agents = collectConnectedCompanionRunAgents(runnable)
+        .filter(agent => !isLocalCompanionAgent(agent));
     if (agents.length === 0) {
         return [];
     }
@@ -2907,7 +2969,7 @@ export async function retryFailedCompanionsOnMessage(messageIndex) {
  * @returns {{ groups: string[][], mismatched: Set<string> }}
  */
 export function getCompanionBatchGroups(agents = []) {
-    const companions = agents.filter(agent => agent && isCompanionAgent(agent));
+    const companions = agents.filter(agent => agent && isCompanionAgent(agent) && !isLocalCompanionAgent(agent));
     const messageIndex = Math.max(0, chat.length - 1);
     const groups = partitionCompanionRuns(companions, messageIndex)
         .filter(unit => unit.type === 'batch')

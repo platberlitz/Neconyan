@@ -131,7 +131,7 @@ import { captureCompanionResultTarget, collectRecentCompanionResults, getCompani
 import { getCompanionReferenceIds } from './companion/companion-shared.js';
 import { stripStateChangingMacros } from './companion/companion-macros.js';
 import { withReadOnlyVariables } from '../../variable-read-only.js';
-import { initCompanionCardUi, sanitizeCompanionHtml, updateCompanionButtonVisibility } from './companion/companion-ui.js';
+import { initCompanionCardUi, refreshCompanionCards, sanitizeCompanionHtml, updateCompanionButtonVisibility } from './companion/companion-ui.js';
 import { configureCompanionDashboard, initCompanionWandMenuItem, openCompanionDashboard } from './companion/companion-dashboard.js';
 import { configureCompanionPanel, getCompanionPanelLauncher, initCompanionPanel, refreshCompanionPanel, setCompanionPanelLauncher, updateCompanionPanelHandleVisibility } from './companion/companion-panel.js';
 import { attachTextareaFullscreen } from './textarea-fullscreen.js';
@@ -181,6 +181,7 @@ async function refreshSavedAgents(ids) {
     }
     syncToolAgentRegistrations();
     refreshCompanionPanel();
+    refreshCompanionCards();
     updateCompanionButtonVisibility();
     updateRerunAgentsButtonVisibility();
     notifyTaroGuide();
@@ -724,7 +725,8 @@ let autoSeededTemplateIds = new Set();
 
 // Seeded once per account, disabled. The trackers mirror the "Pura's Trackers
 // Only" kit in templates/groups.json; the Ethereality kit stays library-only.
-// Position Tracker, Visual Map and Vitals are the companions seeded by default.
+// Position Tracker, Visual Map, Vitals and the local Dice Roller are the
+// companions seeded by default.
 const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-proofreader',
     'tpl-dialogue-humaniser',
@@ -763,6 +765,7 @@ const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-position-tracker-companion',
     'tpl-visual-map-companion',
     'tpl-vitals-companion',
+    'tpl-dice-roller-companion',
 ]);
 
 // Internal bundled templates stay available for migrations/settings even when
@@ -808,6 +811,7 @@ const MESSAGE_INBOX_TEMPLATE_ID = 'tpl-message-inbox-companion';
 const POSITION_TRACKER_TEMPLATE_ID = 'tpl-position-tracker-companion';
 const VISUAL_MAP_TEMPLATE_ID = 'tpl-visual-map-companion';
 const VITALS_TEMPLATE_ID = 'tpl-vitals-companion';
+const DICE_ROLLER_TEMPLATE_ID = 'tpl-dice-roller-companion';
 const DIRECTORS_COMMENTARY_TEMPLATE_ID = 'tpl-directors-commentary-companion';
 const PLOT_COMPASS_TEMPLATE_ID = 'tpl-plot-compass-companion';
 const LEVEL_UP_COMPANION_TEMPLATE_ID = 'tpl-level-up-companion';
@@ -854,6 +858,7 @@ const BUNDLED_REGEX_POST_DEFAULT_EXCLUDED_TEMPLATE_IDS = new Set([
     POSITION_TRACKER_TEMPLATE_ID,
     VISUAL_MAP_TEMPLATE_ID,
     VITALS_TEMPLATE_ID,
+    DICE_ROLLER_TEMPLATE_ID,
 ]);
 const BUNDLED_PROMPT_TRANSFORM_IMPERSONATE_TEMPLATE_IDS = new Set([
     'tpl-prose-polisher',
@@ -1428,6 +1433,8 @@ function toggleGlobalAgents() {
     updateFixTrackersButtonVisibility();
     updateRerunAgentsButtonVisibility();
     updateCompanionButtonVisibility();
+    refreshCompanionPanel();
+    refreshCompanionCards();
     if (enabled && !areAgentsGloballyEnabled()) {
         toastr.warning('Agents are switched on, but the saved setup or library needs recovery. Check Saved setups.');
     } else {
@@ -1455,6 +1462,8 @@ async function toggleAgentEnabled(agent) {
     persistExtensionState();
     syncToolAgentRegistrations();
     renderAgentList();
+    refreshCompanionPanel();
+    refreshCompanionCards();
     updateCompanionButtonVisibility();
     notifyTaroGuide();
 }
@@ -3863,8 +3872,7 @@ function renderAgentList() {
                 if (result === POPUP_RESULT.AFFIRMATIVE) {
                     if (!isCurrent()) throw new Error('The agent changed. Reopen its deletion confirmation.');
                     await deleteAgentBatch([agent.id]);
-                    renderAgentList();
-                    refreshCompanionPanel();
+                    await refreshSavedAgents([agent.id]);
                 }
             }));
 
@@ -5063,7 +5071,10 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         }
         refreshRegexSnapshotsForAgent(agent.id);
         renderAgentList();
+        refreshCompanionPanel();
+        refreshCompanionCards();
         updateCompanionButtonVisibility();
+        notifyTaroGuide();
     }
 
     editorEl.on('input', '#ica--editor-prompt', function () {
@@ -7082,6 +7093,13 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         openConnections: agentId => openQuickSettings([agentId], 'connections'),
     });
     initCompanionPanel();
+
+    // The Dice Roller is a local companion: its widget rolls and decorates sent
+    // messages without a model or a server job. Load it after the companion
+    // surfaces exist so its first host lookup succeeds.
+    void import('./companion/dice-roller.js')
+        .then(module => module.initDiceRollerCompanion())
+        .catch(error => console.warn('[InChatAgents] Dice Roller companion failed to start:', error));
 
     // Wire up toolbar
     $('#ica--globalEnabled').on('click', toggleGlobalAgents);

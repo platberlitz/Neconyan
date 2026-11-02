@@ -4956,6 +4956,7 @@ async function onGenerationAfterCommands(generationType, options, dryRun) {
     injectPreGenerationAgentPrompts(activeAgents, generationType);
     companionRuntime?.injectCompanionFeedbackPrompts?.(activeAgents.filter(isAgentRuntimeAllowed), {
         excludeMessage: options?.companionHistoryTarget ?? null,
+        generationType,
     });
 
     if (!dryRun) {
