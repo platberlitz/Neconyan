@@ -1,5 +1,61 @@
 # Full server migration: continuation
 
+### 2 November 2026: 1.4.1 published, staging starts 1.4.2
+
+Published [Neconyan 1.4.1](https://github.com/platberlitz/Neconyan/releases/tag/v1.4.1)
+with annotated tag `v1.4.1` on `6f48ccd96a9d2711ba7b75838df109dc73b5d032`.
+PR #401 was merged into staging by local fast-forward at `f39b085d`, then main
+was fast-forwarded to it. The later iPhone packaging correction `6f48ccd9`
+was applied to both branches before the final native builds. No personal
+instance was deployed.
+
+The handbook update, `platberlitz/neconyan-docs` PR #4, was merged as
+`c15aa94dde9ff401fcab9a6ddbfbb32ef2d8042c`. Pages run `41370366607` passed;
+all eight changed live pages passed desktop and touch-phone checks, 16 checks
+in total. Assistant knowledge revision 53 covers all nine variants, with
+source-anchor, retrieval and desktop/phone checks passing.
+
+Verification and retained scope:
+
+- Browser coverage: 2,229 passes and 34 existing skips across all 16 groups.
+  Run `41378730385` at `ed20f9ab` supplies 13 passing groups; corrected groups
+  10, 13 and 16 passed in `41389787839` at `f39b085d`. The first run remains
+  recorded as failed. Picker focus, live-lock ownership and notebook update
+  handling were corrected and verified, rather than retried unchanged.
+  No assertions were weakened or skips added.
+- Final application PR checks, run `41389780359` at `f39b085d`: 610 Jest
+  suites, 8,788 passes and three existing skips; 3,434 Node passes and one
+  existing environment skip for unavailable Node development headers;
+  109 Mewmory passes. Bun runtime, frontend assets, root/test lint, frontend
+  budgets and frontend build passed. The packaging-only correction retains
+  those application results and adds seven focused Node checks, six boundary
+  checks and lint. Duplicate main browser runs `41396333871` and `41397566927`
+  were cancelled because the retained and focused results cover those commits.
+- Android run `41397565780` at the release commit passed signed packaging,
+  the WebView fixture and Android 11, 13 and 15 lifecycle/native checks.
+  The optional older-release comparison was not requested and was skipped.
+- iPhone run `41397568697` at the release commit passed storage checks,
+  the real 13 GiB ZIP import, device IPA verification and simulator startup
+  and relaunch. The first iPhone build, `41396340792`, caught hardcoded
+  native versions; both version fields now come from the release package.
+  The earlier passing Android run `41396340096` was superseded by a matching
+  rebuild. Native runtime checks use emulators/simulators, not physical phones.
+
+All twelve assets were independently verified before publication: eight
+Android and two iPhone listed checksums, both APK signatures against the
+existing official signing certificate, native 16 KiB alignment, embedded
+versions/commits, frontend files and provenance. The source ZIP's 4,588 files
+and archive metadata match `git archive` of the release commit. Separate
+platform builds have different frontend manifest hashes; each was verified
+against its own payload. After publication, all twelve downloads were fetched
+again and matched byte for byte, with matching sizes and GitHub SHA-256
+digests. The release is public and marked latest.
+
+Next staging version: **1.4.2**. Both root lockfile version entries and the
+boundary expectations were updated; all six boundary tests and their lint
+passed. Main and the release tag retain 1.4.1. The development root remains
+on staging, tracking `origin/staging`.
+
 ### 8 October: automatic Termux startup and recovery upgrades
 
 PR #74, branch `codex/fix-termux-file-identity` from staging `d520b8885`, now
