@@ -29,28 +29,27 @@ const lockIdentity = stat => Number.isFinite(stat.birthtimeMs) && stat.birthtime
     : null;
 
 // Keep the normal stale timeout for live, remote or unidentified owners. Only a
-// lock under this process's verified exclusive data-root lease (when not held by
-// this process) or a matching lock left by a provably dead local process can be
-// reclaimed early.
+// matching lock left by a provably dead local process, or an ownerless lock
+// directory under this process's verified exclusive data-root lease (when not
+// held by this process), can be reclaimed early.
 function ownerAwareStat(filename, ...args) {
     const stat = fs.statSync(filename, ...args);
     const key = normalizeLockPath(filename);
     const entity = entityKey(stat);
-    if (!activeLocks.has(key) && !activeLockEntities.has(entity) && isPathUnderOwnedDataRoot(filename)) {
-        try { fs.unlinkSync(filename + '.owner'); } catch { /* Optional recovery hint. */ }
-        stat.mtime = new Date(0);
-        return stat;
-    }
+    if (activeLocks.has(key) || activeLockEntities.has(entity)) return stat;
     try {
-        const identity = lockIdentity(stat);
-        if (!identity) return stat;
         const ownerPath = filename + '.owner';
         const info = fs.lstatSync(ownerPath);
         if (!info.isFile() || info.size > 4096) return stat;
         const owner = JSON.parse(fs.readFileSync(ownerPath, 'utf8'));
-        if (owner.hostname !== hostname || !Number.isSafeInteger(owner.pid) || owner.pid < 1 || owner.identity !== identity) return stat;
+        const identity = lockIdentity(stat);
+        if (owner.hostname !== hostname || !Number.isSafeInteger(owner.pid) || owner.pid < 1 || !identity || owner.identity !== identity) return stat;
         try { process.kill(owner.pid, 0); } catch (error) { if (error.code === 'ESRCH') stat.mtime = new Date(0); }
-    } catch { /* Old locks and incomplete owner records use the normal timeout. */ }
+    } catch (error) {
+        if (error?.code === 'ENOENT' && isPathUnderOwnedDataRoot(filename)) {
+            stat.mtime = new Date(0);
+        }
+    }
     return stat;
 }
 

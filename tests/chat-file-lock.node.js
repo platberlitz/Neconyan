@@ -117,6 +117,23 @@ test('data-root lease reclamation requires live verified ownership, realpath con
     assert.equal(isPathUnderOwnedDataRoot(orphanChatLock), true);
     const releaseChat = acquireChatFileLock(filename);
 
+    // A lock held by another live local process (with a valid .owner sidecar) is NEVER stolen even under an owned data root.
+    const liveExternalFile = path.join(root, 'external-live');
+    const liveExternalLock = getChatFileLockPath(liveExternalFile);
+    const module = new URL('../src/chat-file-lock.js', import.meta.url).href;
+    const externalChild = spawn(process.execPath, ['--input-type=module', '-e', `
+        import { acquireChatFileLock } from ${JSON.stringify(module)};
+        const release = acquireChatFileLock(${JSON.stringify(liveExternalFile)});
+        process.stdout.write('locked');
+        process.stdin.once('data', () => { release(); process.exit(0); });
+    `], { stdio: ['pipe', 'pipe', 'pipe'] });
+    t.after(() => externalChild.kill('SIGKILL'));
+    await once(externalChild.stdout, 'data');
+    assert.throws(() => acquireLocalFileLock(liveExternalFile, { lockfilePath: liveExternalLock, realpath: false, stale: 300_000, update: 100_000 }), { code: 'ELOCKED' });
+    const externalExited = once(externalChild, 'exit');
+    externalChild.stdin.write('release');
+    await externalExited;
+
     // The probe during acquisition must record a real non-zero mtime on the held lock entry.
     const activeLocksMap = lockfileCore.getLocks();
     assert.ok(activeLocksMap[path.resolve(filename)]?.mtime?.getTime() > 0, 'Acquired lock under owned data root must record non-zero mtime');
