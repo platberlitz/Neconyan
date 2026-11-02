@@ -7,6 +7,7 @@
 - PR #403 (2026-11-02) `feat(appearance): add previews to the chat style picker`
 - PR #404 (2026-11-02) `feat(mobile): make swipeable button rows easier to discover`
 - PR #405 (2026-11-02) `fix(roleplay): retain reasoning effort on server replies`
+- PR #406 (2026-11-02) `fix(archive): restore loading and refresh the native layout`
 
 ## v1.4.1
 
