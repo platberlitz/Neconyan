@@ -344,12 +344,12 @@ export async function prepareChange(change, source, { sharedAvatar = '', creator
                 try { value = JSON.parse(edited); } catch { fail('The Creator proposal must be valid JSON.'); }
                 const draft = scratchpadCreatorDraft(value, id);
                 try {
-                    await client.request('/get', { id });
+                    await client.request('get', { id });
                     requireSource(source);
                     return { creatorDraftId: id };
                 } catch (error) { if (error.status !== 404) throw error; }
                 requireSource(source);
-                await client.request('/save', { draft, expectedRevision: null });
+                await client.request('save', { draft, expectedRevision: null });
                 requireSource(source);
                 return { creatorDraftId: id };
             },
