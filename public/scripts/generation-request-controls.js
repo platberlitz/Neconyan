@@ -117,6 +117,7 @@ export function limitGenerationProse(text, maxOutputTokens, template, reasoningP
         .filter(item => item?.prefix && item?.suffix);
     let content = reasoningPrefix + text;
     const reasoning = [];
+    let unclosed = false;
     while (content) {
         const next = templates.map(item => ({ ...item, index: content.indexOf(item.prefix) }))
             .filter(item => item.index >= 0).sort((a, b) => a.index - b.index)[0];
@@ -128,6 +129,7 @@ export function limitGenerationProse(text, maxOutputTokens, template, reasoningP
             // Match ReasoningHandler's incomplete-block handling without regexing every thinking token.
             reasoning.push(content.slice(next.index + next.prefix.length));
             content = content.slice(0, next.index);
+            unclosed = true;
             break;
         }
         // Keep whitespace until continuation prefixes have been removed by the caller.
@@ -154,5 +156,5 @@ export function limitGenerationProse(text, maxOutputTokens, template, reasoningP
     if (accepted.length < content.length && /[\uD800-\uDBFF]$/.test(accepted)) {
         accepted = accepted.slice(0, -1);
     }
-    return { text: accepted, reasoning: reasoning.filter(Boolean).join('\n\n'), limited: content.length >= maxCharacters };
+    return { text: accepted, reasoning: reasoning.filter(Boolean).join('\n\n'), limited: content.length >= maxCharacters, unclosed };
 }

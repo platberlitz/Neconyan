@@ -1789,6 +1789,372 @@ describe('in-chat agent post-processing runner', () => {
         expect(noteMessages[1].content).toContain('Final task boundary: follow the companion task and its output format.');
     });
 
+    describe('thinking reply recovery through the real post-processing pipeline', () => {
+        const REASONING = 'She opens the door and asks who knocked.';
+        const recoveryAgent = () => ({
+            id: 'tpl-thinking-reply-recovery',
+            sourceTemplateId: 'tpl-thinking-reply-recovery',
+            name: 'Thinking Reply Recovery',
+            category: 'content',
+            phase: 'post',
+            prompt: 'RECOVERY_PROMPT: write the reply from the thinking.',
+            injection: { position: 1, depth: 1, scan: false, role: 0, order: 30 },
+            postProcess: {
+                enabled: false,
+                type: 'regex',
+                promptTransformEnabled: true,
+                promptTransformMode: 'rewrite',
+                promptTransformMaxTokens: 1024,
+                promptTransformShowNotifications: false,
+                promptTransformContextMessages: 8,
+            },
+            conditions: { triggerKeywords: [], triggerProbability: 100, generationTypes: ['normal', 'continue'] },
+        });
+        const rewriteAgent = () => ({
+            id: 'agent-rewrite',
+            name: 'Rewriter',
+            category: 'content',
+            phase: 'post',
+            prompt: 'REWRITE_PROMPT: polish the reply.',
+            injection: { position: 0, depth: 4, scan: false, role: 0, order: 100 },
+            postProcess: {
+                enabled: false,
+                type: 'extract',
+                promptTransformEnabled: true,
+                promptTransformMode: 'rewrite',
+                promptTransformMaxTokens: 1024,
+                promptTransformShowNotifications: false,
+            },
+            conditions: { triggerKeywords: [], triggerProbability: 100, generationTypes: ['normal'] },
+        });
+
+        function modelAnswers({ recovery = 'Recovered reply.', rewrite = 'Rewritten reply.', companion = 'Companion note.' } = {}) {
+            generateQuietPrompt.mockImplementation(async request => {
+                const prompt = String(request?.quietPrompt ?? '');
+                if (prompt.includes('RECOVERY_PROMPT')) return recovery;
+                if (prompt.includes('REWRITE_PROMPT')) return rewrite;
+                if (prompt.includes('Write a companion note')) return companion;
+                return 'unexpected request';
+            });
+        }
+
+        function callsWith(marker) {
+            return generateQuietPrompt.mock.calls.filter(([request]) => String(request?.quietPrompt ?? '').includes(marker));
+        }
+
+        async function loadRunner({ concurrentCompanions = false } = {}) {
+            globalSettings.companionConcurrentWithPostGen = concurrentCompanions;
+            const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+            const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+            runner.registerCompanionRuntime(companionRunner);
+            runner.initAgentRunner();
+            return runner;
+        }
+
+        // Stop and streaming are set before GENERATION_ENDED, which can already start post-processing.
+        // The stream finalises its markers, then marks the reply completed, before MESSAGE_RECEIVED. Early fallbacks run first.
+        async function receiveReply(runner, { mes = '', extra = {}, stopped = false, streaming = false, completed = true, generationType = 'normal' } = {}) {
+            await eventSource.emit(eventTypes.GENERATION_STARTED, generationType, {}, false);
+            chat.push({ name: 'Traveler', mes: 'Knock knock.', is_user: true, is_system: false, extra: {} });
+            await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, generationType, {}, false);
+            chat.push({ name: 'Assistant', mes, is_user: false, is_system: false, extra: { ...extra } });
+            const messageIndex = chat.length - 1;
+            const generationContext = runner.getAgentGenerationContext();
+            if (stopped) await eventSource.emit(eventTypes.GENERATION_STOPPED, generationContext);
+            if (streaming) document.body.dataset.generating = 'true';
+            await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length, generationContext);
+            if (completed && !stopped) {
+                const { markStreamCompleted } = await import('../public/scripts/stream-completion.js');
+                markStreamCompleted(chat[messageIndex]);
+            }
+            return { messageIndex, generationContext, generationType };
+        }
+
+        test('an empty reply with completed thinking is written first, then the rewrite, append and Companion each run once on that prose', async () => {
+            enabledAgents = [recoveryAgent(), rewriteAgent(), createCompanionAgent({ id: 'agent-companion' })];
+            useAppendPostAgent();
+            enabledAgents.push(recoveryAgent(), rewriteAgent(), createCompanionAgent({ id: 'agent-companion' }));
+            enabledAgents = enabledAgents.filter((agent, index, all) => all.findIndex(item => item.id === agent.id) === index);
+            modelAnswers();
+            const runner = await loadRunner();
+            const { messageIndex, generationContext } = await receiveReply(runner, { extra: { reasoning: REASONING } });
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'normal', generationContext);
+
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(1);
+            expect(callsWith('RECOVERY_PROMPT')[0][0].quietPrompt).toContain(REASONING);
+            expect(callsWith('RECOVERY_PROMPT')[0][0].quietPrompt).toContain('Completed thinking');
+            expect(callsWith('REWRITE_PROMPT')).toHaveLength(1);
+            expect(callsWith('Write a companion note')).toHaveLength(1);
+            expect(callsWith('REWRITE_PROMPT')[0][0].quietPrompt).toContain('Recovered reply.');
+            expect(callsWith('Write a companion note')[0][0].quietPrompt).toContain('Rewritten reply.');
+            const order = generateQuietPrompt.mock.calls.map(([request]) => String(request?.quietPrompt ?? ''))
+                .map(prompt => prompt.includes('RECOVERY_PROMPT') ? 'recovery' : prompt.includes('REWRITE_PROMPT') ? 'rewrite' : 'companion');
+            expect(order).toEqual(['recovery', 'rewrite', 'companion']);
+            const message = chat[messageIndex];
+            expect(message.mes).toBe('Rewritten reply.\n[post processed]');
+            expect(message.mes.split('[post processed]')).toHaveLength(2);
+            expect(message.extra.reasoning).toBe(REASONING);
+            expect(message.extra.inChatAgentThinkingRecovery).toMatchObject({ agentId: 'tpl-thinking-reply-recovery', status: 'done' });
+        });
+
+        test('with concurrent Companions the recovered reply is written before any Companion starts', async () => {
+            enabledAgents = [recoveryAgent(), rewriteAgent(), createCompanionAgent({ id: 'agent-companion' })];
+            modelAnswers();
+            const runner = await loadRunner({ concurrentCompanions: true });
+            const { messageIndex, generationContext } = await receiveReply(runner, { extra: { reasoning: REASONING } });
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'normal', generationContext);
+
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(1);
+            expect(callsWith('REWRITE_PROMPT')).toHaveLength(1);
+            expect(callsWith('Write a companion note')).toHaveLength(1);
+            const companionPrompt = callsWith('Write a companion note')[0][0].quietPrompt;
+            expect(companionPrompt).toContain('Recovered reply.');
+            expect(companionPrompt).not.toContain('Knock knock.\n\nASSISTANT:\n</assistant_response>');
+            expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain('RECOVERY_PROMPT');
+            expect(chat[messageIndex].mes).toBe('Rewritten reply.');
+        });
+
+        test('an early fallback before the stream completes neither recovers nor marks the reply processed', async () => {
+            enabledAgents = [recoveryAgent(), rewriteAgent()];
+            modelAnswers();
+            const runner = await loadRunner();
+            const { messageIndex, generationContext } = await receiveReply(runner, { extra: { reasoning: REASONING }, completed: false });
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'normal', generationContext);
+            await new Promise(resolve => setTimeout(resolve, 80));
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(0);
+            expect(chat[messageIndex].mes).toBe('');
+
+            const { markStreamCompleted } = await import('../public/scripts/stream-completion.js');
+            markStreamCompleted(chat[messageIndex]);
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'normal', generationContext);
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(1);
+            expect(chat[messageIndex].mes).toBe('Rewritten reply.');
+        });
+
+        test('a recovery Agent that is not an inline post pass never runs', async () => {
+            enabledAgents = [{ ...recoveryAgent(), phase: 'pre' }, rewriteAgent()];
+            modelAnswers();
+            const runner = await loadRunner();
+            const { messageIndex, generationContext } = await receiveReply(runner, { extra: { reasoning: REASONING } });
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'normal', generationContext);
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(0);
+        });
+
+        test('a continuation whose new text is empty recovers only the missing suffix after the saved prefix', async () => {
+            const PREFIX = 'The door creaks open.';
+            enabledAgents = [recoveryAgent()];
+            modelAnswers({ recovery: ' and the door closes behind her.' });
+            const runner = await loadRunner();
+            const { messageIndex, generationContext } = await receiveReply(runner, { mes: PREFIX, generationType: 'continue',
+                extra: { reasoning: REASONING, reasoning_continuation_empty: true } });
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'continue', generationContext);
+
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(1);
+            const prompt = callsWith('RECOVERY_PROMPT')[0][0].quietPrompt;
+            expect(prompt).toContain('continues it from exactly where it stops');
+            expect(prompt).toContain(`<reply_so_far>\n${PREFIX}\n</reply_so_far>`);
+            expect(prompt).toContain(REASONING);
+            expect(chat[messageIndex].mes).toBe(`${PREFIX} and the door closes behind her.`);
+            expect(chat[messageIndex].extra.reasoning).toBe(REASONING);
+            expect(chat[messageIndex].extra.reasoning_continuation_empty).toBeUndefined();
+            expect(chat[messageIndex].extra.inChatAgentThinkingRecovery.status).toBe('done');
+        });
+
+        test('a continuation that wrote visible text is never recovered', async () => {
+            enabledAgents = [recoveryAgent()];
+            modelAnswers();
+            const runner = await loadRunner();
+            const { messageIndex, generationContext } = await receiveReply(runner, { mes: 'The door creaks open. Then silence.', generationType: 'continue',
+                extra: { reasoning: REASONING } });
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'continue', generationContext);
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(0);
+            expect(chat[messageIndex].mes).toBe('The door creaks open. Then silence.');
+        });
+
+        test('a tool turn is never recovered, whether marked on the reply or recorded in the system tool result after it', async () => {
+            enabledAgents = [recoveryAgent(), rewriteAgent()];
+            modelAnswers();
+            const runner = await loadRunner();
+            const { setGenerationToolTurnMarker } = await import('../public/scripts/stream-completion.js');
+            const marked = {};
+            setGenerationToolTurnMarker(marked, true);
+            const first = await receiveReply(runner, { extra: { reasoning: REASONING, ...marked } });
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, first.messageIndex, 'normal', first.generationContext);
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(0);
+
+            const second = await receiveReply(runner, { extra: { reasoning: REASONING } });
+            chat.push({ name: 'Tool', mes: '', is_user: false, is_system: true, extra: { tool_invocations: [{ name: 'lookup', result: 'found' }] } });
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, second.messageIndex, 'normal', second.generationContext);
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(0);
+            expect(chat[second.messageIndex].mes).toBe('');
+        });
+
+        test('a final reply that answers a native tool result gets that result in its recovery prompt', async () => {
+            enabledAgents = [recoveryAgent()];
+            modelAnswers({ recovery: 'The cellar door swings open.' });
+            const runner = await loadRunner();
+            const { messageIndex, generationContext } = await receiveReply(runner, { extra: { reasoning: REASONING } });
+            // The tool call's system record sits before the reply, in the browser's own invocation shape.
+            chat.splice(messageIndex, 0, { name: 'System', mes: '', is_user: false, is_system: true, extra: { tool_invocations: [{
+                id: 'fixture-tool-call', displayName: 'Fixture key lookup', name: 'fixture_key', parameters: '{}',
+                result: 'The brass key unlocks the cellar.', error: false, signature: null, reasoning: null,
+            }] } });
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex + 1, 'normal', generationContext);
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(1);
+            const prompt = callsWith('RECOVERY_PROMPT')[0][0].quietPrompt;
+            expect(prompt).toContain('<tool_results>');
+            expect(prompt).toContain('tool result: The brass key unlocks the cellar.');
+            expect(prompt).toContain('tool calls: Fixture key lookup');
+            expect(chat[messageIndex + 1].mes).toBe('The cellar door swings open.');
+        });
+
+        test('a recorded recovery failure for the same thinking is never requested again by a later pass', async () => {
+            enabledAgents = [recoveryAgent(), rewriteAgent()];
+            modelAnswers();
+            const runner = await loadRunner();
+            const { messageIndex, generationContext } = await receiveReply(runner, { extra: { reasoning: REASONING,
+                inChatAgentThinkingRecovery: { agentId: 'tpl-thinking-reply-recovery', status: 'error', failed: true, reasoning: REASONING, continuation: false } } });
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'normal', generationContext);
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'normal', generationContext);
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(0);
+            expect(callsWith('REWRITE_PROMPT')).toHaveLength(0);
+            expect(chat[messageIndex].mes).toBe('');
+        });
+
+        test('a continuation recovers from this generation\'s thinking, not the thinking an earlier turn saved', async () => {
+            enabledAgents = [recoveryAgent()];
+            modelAnswers({ recovery: ' and the door closes behind her.' });
+            const runner = await loadRunner();
+            const { messageIndex, generationContext } = await receiveReply(runner, { mes: 'The door creaks open.', generationType: 'continue',
+                extra: { reasoning: 'Earlier turn thinking.\n\nFresh turn thinking.', reasoning_current: 'Fresh turn thinking.', reasoning_continuation_empty: true } });
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'continue', generationContext);
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(1);
+            const prompt = callsWith('RECOVERY_PROMPT')[0][0].quietPrompt;
+            expect(prompt).toContain('Fresh turn thinking.');
+            expect(prompt).not.toContain('Earlier turn thinking.');
+        });
+
+        test('a normal visible answer never reaches the recovery Agent', async () => {
+            enabledAgents = [recoveryAgent(), rewriteAgent()];
+            modelAnswers();
+            const runner = await loadRunner();
+            const { messageIndex, generationContext } = await receiveReply(runner, { mes: 'The door creaks open.', extra: { reasoning: REASONING } });
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'normal', generationContext);
+
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(0);
+            expect(callsWith('REWRITE_PROMPT')).toHaveLength(1);
+            expect(callsWith('REWRITE_PROMPT')[0][0].quietPrompt).toContain('The door creaks open.');
+            expect(chat[messageIndex].extra.inChatAgentThinkingRecovery).toBeUndefined();
+        });
+
+        test.each([
+            ['no thinking', { extra: {} }],
+            ['unclosed inline thinking', { extra: { reasoning: REASONING, reasoning_unclosed: true } }],
+            ['thinking cut off by the token limit', { extra: { reasoning: REASONING, generation_finish_reason: 'length' } }],
+            ['a tool-only turn', { extra: { reasoning: REASONING, tool_invocations: [{ name: 'lookup' }] } }],
+            ['a provider error', { extra: { reasoning: REASONING, generation_outcome: { version: 1, status: 'error', reason: 'provider' } } }],
+        ])('%s is never recovered and nothing downstream runs against the blank reply', async (_label, { extra }) => {
+            enabledAgents = [recoveryAgent(), rewriteAgent(), createCompanionAgent({ id: 'agent-companion' })];
+            modelAnswers();
+            const runner = await loadRunner();
+            const { messageIndex, generationContext } = await receiveReply(runner, { extra });
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'normal', generationContext);
+
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(0);
+            expect(callsWith('REWRITE_PROMPT')).toHaveLength(0);
+            expect(chat[messageIndex].mes).toBe('');
+        });
+
+        test('a stopped generation is not recovered', async () => {
+            enabledAgents = [recoveryAgent(), rewriteAgent()];
+            modelAnswers();
+            const runner = await loadRunner();
+            const { messageIndex, generationContext } = await receiveReply(runner, { extra: { reasoning: REASONING }, stopped: true });
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'normal', generationContext);
+            await new Promise(resolve => setTimeout(resolve, 80));
+
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(0);
+            expect(chat[messageIndex].mes).toBe('');
+        });
+
+        test('a reply still streaming is not recovered until it finishes, then is recovered once', async () => {
+            enabledAgents = [recoveryAgent(), rewriteAgent()];
+            modelAnswers();
+            const runner = await loadRunner();
+            const { messageIndex, generationContext } = await receiveReply(runner, { extra: { reasoning: REASONING }, streaming: true });
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'normal', generationContext);
+            await new Promise(resolve => setTimeout(resolve, 80));
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(0);
+            delete document.body.dataset.generating;
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'normal', generationContext);
+            await waitForDeferredFlush(() => callsWith('REWRITE_PROMPT').length > 0);
+
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(1);
+            expect(callsWith('REWRITE_PROMPT')).toHaveLength(1);
+            expect(chat[messageIndex].mes).toBe('Rewritten reply.');
+        });
+
+        test.each([
+            ['an empty answer', ''],
+            ['a refusal of the thinking', 'I cannot fulfil this request.'],
+        ])('a failed recovery (%s) is saved once and nothing downstream runs', async (_label, answer) => {
+            enabledAgents = [recoveryAgent(), rewriteAgent(), createCompanionAgent({ id: 'agent-companion' })];
+            modelAnswers({ recovery: answer });
+            const runner = await loadRunner();
+            const { messageIndex, generationContext } = await receiveReply(runner, { extra: { reasoning: REASONING } });
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'normal', generationContext);
+            await new Promise(resolve => setTimeout(resolve, 80));
+
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(1);
+            expect(callsWith('REWRITE_PROMPT')).toHaveLength(0);
+            expect(callsWith('Write a companion note')).toHaveLength(0);
+            const message = chat[messageIndex];
+            expect(message.mes).toBe('');
+            expect(message.extra.reasoning).toBe(REASONING);
+            expect(message.extra.inChatAgentThinkingRecovery).toMatchObject({ failed: true, agentId: 'tpl-thinking-reply-recovery' });
+        });
+
+        test('the recovered prose is saved before the rewrite runs, so a later failure cannot lose it', async () => {
+            enabledAgents = [recoveryAgent(), rewriteAgent()];
+            modelAnswers();
+            let savesBeforeRewrite = null;
+            let textAtFirstSave = null;
+            saveChat.mockImplementation(async () => {
+                textAtFirstSave ??= chat.at(-1).mes;
+                return true;
+            });
+            generateQuietPrompt.mockImplementation(async request => {
+                const prompt = String(request?.quietPrompt ?? '');
+                if (prompt.includes('REWRITE_PROMPT')) {
+                    savesBeforeRewrite = saveChat.mock.calls.length;
+                    return 'Rewritten reply.';
+                }
+                return prompt.includes('RECOVERY_PROMPT') ? 'Recovered reply.' : 'unexpected request';
+            });
+            const runner = await loadRunner();
+            const { messageIndex, generationContext } = await receiveReply(runner, { extra: { reasoning: REASONING } });
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'normal', generationContext);
+
+            expect(savesBeforeRewrite).toBeGreaterThan(0);
+            expect(textAtFirstSave).toBe('Recovered reply.');
+        });
+
+        test('the recovered prose is the undo baseline and the original thinking is kept', async () => {
+            enabledAgents = [recoveryAgent(), rewriteAgent()];
+            modelAnswers();
+            const runner = await loadRunner();
+            const { messageIndex, generationContext } = await receiveReply(runner, { extra: { reasoning: REASONING } });
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'normal', generationContext);
+            const message = chat[messageIndex];
+            expect(message.mes).toBe('Rewritten reply.');
+            expect(message.extra.reasoning).toBe(REASONING);
+
+            await expect(runner.undoPromptTransform(messageIndex)).resolves.toBe(true);
+            expect(chat[messageIndex].mes).toBe('Recovered reply.');
+            expect(chat[messageIndex].extra.reasoning).toBe(REASONING);
+        });
+    });
+
     describe('companion recovery and dependency ownership', () => {
         async function setup(agents) {
             enabledAgents = agents;

@@ -9,6 +9,7 @@ import { buildRegexScriptRefsForAgent } from '../../public/scripts/extensions/in
 import { inspectTrackerRepairState, mergeTrackerRepairPayload, repairTrackerFieldOrder, TRACKER_REPAIR_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
 import { buildPromptTransformSynthesisMessages, composePromptTransformDraft, planPromptTransformStages, runOrderedPromptTransformStages, runPromptTransformStages } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-synthesis.js';
 import { isLikelyPromptTransformRefusal } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-refusal.js';
+import { buildThinkingRecoveryMessages, cleanThinkingRecoveryOutput, isThinkingRecoveryAgent } from '../../public/scripts/extensions/in-chat-agents/thinking-recovery.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { createProviderScope, readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
@@ -233,7 +234,7 @@ async function modelRun(context, options, agent, text, name, intercept = false, 
         diagnostic: { id: agent.id, sourceTemplateId: agent.sourceTemplateId, synthesis: Boolean(options.synthesisMessages),
             phase: options.synthesisMessages ? 'synthesis' : name.includes(':repair:') ? 'repair' : intercept && agent.preProcess.interceptTiming !== 'post-main-generation' ? 'pre' : 'post' },
         identity: roleplayHash({ intent: context.job.intent, agent: snapshot.agents.agents.find(item => item.id === agent.id), text, intercept, format, generationType,
-            ...(options.synthesisMessages ? { synthesisMessages: options.synthesisMessages } : {}) }),
+            ...(options.synthesisMessages ? { synthesisMessages: options.synthesisMessages } : {}), ...(options.thinkingRecovery ? { thinkingRecovery: true } : {}) }),
         binding: agent.binding || options.binding, modelOverride: agent.binding ? agent.modelOverride : '', fallbacks: agent.fallbacks,
         maxTokens: intercept ? agent.preProcess.maxTokens : agent.postProcess.promptTransformMaxTokens,
         macros, tokenizer: snapshot.tokenizer, fallbackContext: snapshot.maxContext, assertCurrent, generate,
@@ -241,6 +242,8 @@ async function modelRun(context, options, agent, text, name, intercept = false, 
             if (options.synthesisMessages) return appendHelperPrefillMessages(options.synthesisMessages, snapshot.agents.helperPrefill);
             aliases(environment, agent, text, generationType, options.assistantName, agentContextMacros(snapshot, options.mewmory, options.agentReference));
             const prompt = evaluate(environment, agent.prompt, snapshot);
+            if (options.thinkingRecovery) return appendHelperPrefillMessages(buildThinkingRecoveryMessages(prompt,
+                { reasoning: text, assistantName: options.assistantName, generationType, recentChat, continuation: options.thinkingRecovery === 'continue', prefix: options.continuationPrefix ?? '', toolResults: options.toolResults ?? '' }), snapshot.agents.helperPrefill);
             return appendHelperPrefillMessages(messagesFor(agent, text, prompt, generationType, options.assistantName, format, intercept, recentChat), snapshot.agents.helperPrefill);
         } }).catch(error => {
         if (!isRoleplayAgentStop(error)) throw error;
@@ -250,7 +253,7 @@ async function modelRun(context, options, agent, text, name, intercept = false, 
     // A refusal never replaces the text it was asked to work on.
     const refused = snapshot.agents.refusalGuard !== false && isLikelyPromptTransformRefusal(outputText, text);
     return { agentId: agent.id, agentName: agent.name, order: agent.injection.order,
-        outputText: refused ? '' : outputText,
+        outputText: refused ? '' : outputText, rawText: refused ? '' : result.lengthLimited ? '' : String(result.text ?? ''),
         status: result.stopped ? 'stopped' : result.lengthLimited ? 'length-limited' : refused ? 'refused' : result.text.trim() ? 'done' : 'empty',
         profileLabel: result.fallbackLabel || result.profileId || 'Main model', modelLabel: result.model, timestamp: result.completedAt, modelHash: result.hash };
 }
@@ -347,6 +350,50 @@ async function runLegacyPromptTransformStages({ agents, text, isAppend, runRewri
     return { draft: { body: text, before: [], after: [] } };
 }
 
+const UNSAFE_RECOVERY_CODES = new Set(['PROVIDER_OUTCOME_UNKNOWN', 'ROLEPLAY_AGENT_RECOVERY', 'ROLEPLAY_RECOVERY_REQUIRED', 'ROLEPLAY_SOURCE_CHANGED', 'ROLEPLAY_AGENT_SOURCE_CHANGED']);
+
+/**
+ * Writes the reply for a completed generation that returned only thinking.
+ * Runs once per job and identity; a failure is saved as an empty text so a
+ * restart reports it instead of paying for the same request again.
+ */
+export async function runRoleplayThinkingRecovery(context, options) {
+    const { base, snapshot, records, reasoning, generationType } = options;
+    if (!snapshot.agents || typeof reasoning !== 'string' || !reasoning.trim()) return null;
+    const active = activeAgents(context, base, snapshot, options.agentCache);
+    const agent = active.agents.find(isThinkingRecoveryAgent);
+    if (!agent || !agent.prompt.trim()) return null;
+    const continuation = options.continuation === true;
+    const toolResults = options.toolResults ?? '';
+    const identity = roleplayHash({ intent: context.job.intent, reasoning, generationType, agent, continuation, toolResults, prefix: continuation ? options.continuationPrefix ?? '' : '' });
+    const phaseName = 'roleplay-thinking-recovery';
+    const saved = readPhase(context, snapshot.account, phaseName, identity);
+    if (saved) return saved;
+    if (roleplayAgentsStopped(context)) return null;
+    const usesTrackers = usesAgentMacro(agent.prompt, TRACKER_STATE_MACRO) || usesAgentMacro(agent.prompt, SECRETS_TRACKER_MACRO);
+    const usesPresetPrompts = usesAgentMacro(agent.prompt, PRESET_PROMPTS_MACRO);
+    const agentReference = { lore: options.activeLore ?? '', agents: usesTrackers ? readRoleplayAgents(base, snapshot, options.agentCache) : [],
+        records: options.metadataRecords ?? records, continuityNotes: '',
+        presetPrompts: usesPresetPrompts ? await roleplayPresetPrompts(context.directories, options.binding, generationType, options.resolvePresetProfile) : null };
+    let run;
+    try {
+        run = await modelRun(context, { ...options, agentReference, toolResults, thinkingRecovery: continuation ? 'continue' : true }, agent, reasoning, 'thinking-recovery');
+    } catch (error) {
+        // A cancelled job, a stop, or a source/recovery error keeps its own error. A paid request whose outcome is
+        // already marked unknown is never repeated, because repeating it could bill twice.
+        if (context.signal?.aborted || error?.name === 'AbortError' || roleplayAgentsStopped(context) || UNSAFE_RECOVERY_CODES.has(error?.code)) throw error;
+        // Every other failure, including a raw network error such as TypeError('fetch failed'), is saved once as this
+        // phase's failure. The job then takes the existing no-answer path and the request is not sent again.
+        run = { status: 'error', rawText: '', outputText: '', profileLabel: '', modelLabel: '', timestamp: Date.now(), modelHash: null, error: String(error?.message ?? error) };
+    }
+    if (run.status === 'stopped') return null;
+    const text = cleanThinkingRecoveryOutput(run.rawText, { status: run.status, reasoning, continuation, refusalGuard: snapshot.agents.refusalGuard !== false });
+    // The keeper reads this phase after a later failure, so it records the job, the thinking it was written from and the agent that wrote it.
+    return savePhase(context, snapshot.account, phaseName, { identity, intentHash: roleplayHash(context.job.intent), reasoning, continuation,
+        agentId: agent.id, agentName: agent.name, text, status: text ? 'done' : run.status, error: run.error ?? null,
+        profileLabel: run.profileLabel, modelLabel: run.modelLabel, timestamp: run.timestamp, modelHash: run.modelHash });
+}
+
 function postprocessingPlan(context, account, phaseName, identity, selected, modelName) {
     const name = `${phaseName}:plan`;
     const saved = readPhase(context, account, name, identity);
@@ -375,7 +422,9 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     const companionOutput = Boolean(options.companionAgent);
     const targetIds = companionOutput ? [options.companionAgent.id, options.companionAgent.sourceTemplateId].filter(Boolean) : [];
     const manual = Boolean(options.manualAgentIds);
-    const definitions = companionOutput || manual ? readRoleplayAgents(base, snapshot, options.agentCache) : active.agents;
+    // The recovery Agent only writes a reply that was missing, so it never runs as a normal post pass.
+    const definitions = (companionOutput || manual ? readRoleplayAgents(base, snapshot, options.agentCache) : active.agents)
+        .filter(agent => !isThinkingRecoveryAgent(agent));
     const agents = manual ? definitions.filter(agent => options.manualAgentIds.includes(agent.id) && !isNativeCompanion(agent))
         : companionOutput ? definitions.filter(agent => inline(agent) && agent.id !== options.companionAgent.id
             && agent.conditions.runOnCompanionOutputs && (!agent.conditions.companionOutputTargetAgentIds.length || agent.conditions.companionOutputTargetAgentIds.some(id => targetIds.includes(id)))) : definitions;
@@ -459,6 +508,9 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     const agentOrder = new Map(selected.map((agent, index) => [agent.id, index]));
     runs.sort((left, right) => agentOrder.get(left.agentId) - agentOrder.get(right.agentId));
     let text = composePromptTransformDraft(draft, join);
+    // A rewrite trims its output, which would glue a joined chunk onto the earlier turn. The chunk's own leading whitespace
+    // replaces whatever the pass returned, so the saved post text is the text the proof and the delivered reply both use.
+    if (options.continuationChunk && !companionOutput) text = String(baseline ?? '').match(/^\s*/)[0] + text.replace(/^\s+/, '');
     if (roleplayAgentsStopped(context)) {
         return savePhase(context, snapshot.account, phaseName, { identity, baseline, text,
             extra: { inChatAgentPromptRuns: runs }, metadata: {}, runs, stopped: true });

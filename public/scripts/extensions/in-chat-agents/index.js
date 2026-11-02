@@ -729,6 +729,7 @@ const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-proofreader',
     'tpl-dialogue-humaniser',
     'tpl-continuity-corrector',
+    'tpl-thinking-reply-recovery',
     'tpl-character-authenticity',
     'tpl-prompt-adherence-checker',
     'tpl-format-fixer',

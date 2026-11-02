@@ -188,7 +188,7 @@ test('thinking-only classification uses the selected choice and excludes refusal
 test('configured inline thinking separates a leading block without rewriting prose or inventing delimiters', () => {
     const settings = { auto_parse: true, prefix: '<thought>', suffix: '</thought>' };
     assert.deepEqual(separateConfiguredReasoning({ text: '<thought>Still thinking', reasoning: '' }, settings),
-        { text: '', reasoning: 'Still thinking' });
+        { text: '', reasoning: 'Still thinking', reasoningUnclosed: true });
     assert.deepEqual(separateConfiguredReasoning({ text: '  <thought>Plan</thought>  Exact prose and', reasoning: 'Provider thought' }, settings),
         { text: '  Exact prose and', reasoning: 'Provider thought\n\nPlan' });
     for (const text of ['<think>Different delimiters</think>', 'Prose first <thought>Quoted thought</thought>']) {

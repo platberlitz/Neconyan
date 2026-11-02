@@ -98,6 +98,8 @@ import {
 } from './tracker-state.js';
 import { buildPromptTransformSynthesisMessages, composePromptTransformDraft, runPromptTransformStages } from './prompt-transform-synthesis.js';
 import { isLikelyMainReplyRefusal, isLikelyPromptTransformRefusal } from './prompt-transform-refusal.js';
+import { buildThinkingRecoveryMessages, cleanThinkingRecoveryOutput, formatToolResults, isThinkingRecoveryAgent, isThinkingRecoveryEligible, THINKING_RECOVERY_RUN_EXTRA_KEY } from './thinking-recovery.js';
+import { isStreamCompleted, setContinuationEmptyMarker } from '../../stream-completion.js';
 import { runAgentActionOnServer } from './server-agent-actions.js';
 import { setAgentWorkProbe } from './agent-work-state.js';
 
@@ -3651,7 +3653,7 @@ async function requestMainModelPromptTransform(context, promptMessages, maxToken
     });
 
     return {
-        output: extractProfileResponseText(response),
+        output: extractProfileResponseText(response, { preserveWhitespace: options.preserveWhitespace === true }),
         runner: 'main',
         profileId: '',
         lengthLimited: isGenerationLengthFinish(response),
@@ -3710,7 +3712,7 @@ function describeAgentError(error) {
     return parts.filter(Boolean).join(': ');
 }
 
-async function requestProfilePromptTransform(isRuntimeAllowed, CMRS, profileId, promptMessages, maxTokens, modelOverride = '', signal = null) {
+async function requestProfilePromptTransform(isRuntimeAllowed, CMRS, profileId, promptMessages, maxTokens, modelOverride = '', signal = null, preserveWhitespace = false) {
     const requestOptions = {
         extractData: true,
         includePreset: true,
@@ -3726,7 +3728,7 @@ async function requestProfilePromptTransform(isRuntimeAllowed, CMRS, profileId, 
     let primaryResponse;
     try {
         primaryResponse = await CMRS.sendRequest(profileId, promptMessages, maxTokens, requestOptions);
-        const primaryOutput = extractProfileResponseText(primaryResponse);
+        const primaryOutput = extractProfileResponseText(primaryResponse, { preserveWhitespace });
         if (primaryOutput.trim() || primaryResponse?.lengthLimited) {
             return {
                 output: primaryOutput,
@@ -3763,7 +3765,7 @@ async function requestProfilePromptTransform(isRuntimeAllowed, CMRS, profileId, 
     if (Array.isArray(fallbackPrompt)) {
         // Chat-completion profiles return the same message array, so a retry would be identical.
         return {
-            output: extractProfileResponseText(primaryResponse),
+            output: extractProfileResponseText(primaryResponse, { preserveWhitespace }),
             runner: 'profile',
             profileId,
             lengthLimited: primaryResponse?.lengthLimited === true,
@@ -3792,7 +3794,7 @@ async function requestProfilePromptTransform(isRuntimeAllowed, CMRS, profileId, 
     const fallbackResponse = await CMRS.sendRequest(profileId, fallbackRequestPrompt, maxTokens, fallbackOptions);
 
     return {
-        output: extractProfileResponseText(fallbackResponse),
+        output: extractProfileResponseText(fallbackResponse, { preserveWhitespace }),
         runner: 'profile',
         profileId,
         lengthLimited: fallbackResponse?.lengthLimited === true,
@@ -3868,7 +3870,7 @@ export async function requestPromptTransform(agent, promptMessages, maxTokens, o
                 }
 
                 return runAllowedRequest(
-                    () => requestProfilePromptTransform(isRuntimeAllowed, CMRS, attemptProfileId, promptMessages, maxTokens, attemptModelOverride, signal),
+                    () => requestProfilePromptTransform(isRuntimeAllowed, CMRS, attemptProfileId, promptMessages, maxTokens, attemptModelOverride, signal, options.preserveWhitespace === true),
                     signal,
                 );
             }
@@ -4037,7 +4039,79 @@ function stripEchoedPartialPrefill(outputText, protectedPartialPrefill) {
     return outputText;
 }
 
+/** Writes the missing reply from the completed thinking. Failures come back as data, never as a thrown error. */
+/**
+ * The tool invocations the system records just before this reply carry, oldest first. A reply that answers tool results
+ * follows those records, so the recovery prompt is given what the model already saw. Only a bounded run of system records is read.
+ */
+function precedingToolInvocations(chatRecords, messageIndex) {
+    const invocations = [];
+    for (let index = messageIndex - 1, read = 0; index >= 0 && read < 16; index--, read++) {
+        const record = chatRecords[index];
+        if (record?.is_system !== true) break;
+        if (Array.isArray(record.extra?.tool_invocations)) invocations.unshift(...record.extra.tool_invocations);
+    }
+    return invocations;
+}
+
+/** The one enabled Agent that may write a missing reply: an inline post pass, never for greetings or impersonation. */
+function thinkingRecoveryAgentFor(agents, generationType) {
+    if (isGreetingGenerationType(generationType) || isImpersonateGenerationType(generationType)) return null;
+    return agents.find(agent => isThinkingRecoveryAgent(agent) && isAgentRuntimeAllowed(agent) && !isCompanionAgent(agent)
+        && (agent.phase === 'post' || agent.phase === 'both') && agent.postProcess?.promptTransformEnabled) ?? null;
+}
+
+/**
+ * A blank reply, or a continuation, that carries thinking may only be decided after its stream has finished writing
+ * its markers. Until then the early fallback paths must leave it alone, without recording it as processed.
+ */
+function awaitsThinkingRecoveryCompletion(message, generationType, snapshot) {
+    if (isStreamCompleted(message)) return false;
+    const reasoning = message?.extra?.reasoning;
+    if (typeof reasoning !== 'string' || !reasoning.trim()) return false;
+    const continuation = normalizeGenerationType(generationType) === 'continue';
+    if (!continuation && String(message.mes ?? '').trim()) return false;
+    return Boolean(thinkingRecoveryAgentFor(getActiveAgentsForMessage(generationType, snapshot), generationType));
+}
+
+async function runThinkingRecoveryAgent(agent, message, generationType, reasoning, messageIndex, { cancelRevision, isCurrent, continuation = false, prefix = '', toolResults = '' }) {
+    const profileId = resolveAgentConnectionProfile(agent);
+    const base = { agentId: agent.id, agentName: agent.name, mode: 'rewrite', profileId, ...getPromptTransformRunMetadata(agent, profileId),
+        timestamp: new Date().toISOString(), runner: 'none' };
+    // A stale reply, a disabled Agent or a changed target is checked before any billed request, not after it.
+    if (cancelRevision !== agentGenerationCancelRevision || !isAgentRuntimeAllowed(agent) || !isCurrent()) {
+        return { ...base, status: 'cancelled', text: '' };
+    }
+    const assistantName = String(message?.name ?? '').trim();
+    const expandedPrompt = withGroupTargetPrompt(message, chat, () => substituteParams(agent.prompt, {
+        name2Override: assistantName,
+        original: reasoning,
+        dynamicMacros: buildPromptDynamicMacros(reasoning, message, agent, generationType),
+    }).trim());
+    if (!expandedPrompt) return { ...base, status: 'skipped-empty-prompt', text: '' };
+    const helperRequest = appendConfiguredHelperPrefillMessages(buildThinkingRecoveryMessages(expandedPrompt, {
+        reasoning, assistantName, generationType, recentChat: getPromptTransformRecentChat(agent, message, messageIndex), continuation, prefix, toolResults,
+    }));
+    try {
+        const response = await requestPromptTransform(agent, helperRequest.promptMessages,
+            normalizePromptTransformMaxTokens(agent.postProcess?.promptTransformMaxTokens),
+            { allowAssistantPrefillTail: helperRequest.allowAssistantPrefillTail, preserveWhitespace: continuation });
+        if (cancelRevision !== agentGenerationCancelRevision) return { ...base, status: 'cancelled', text: '' };
+        const status = response.lengthLimited ? 'length-limited' : 'done';
+        const text = cleanThinkingRecoveryOutput(response.output, { status, reasoning, continuation, refusalGuard: true });
+        return { ...base, status: text ? 'done' : status === 'done' ? 'empty' : status, text };
+    } catch (error) {
+        return { ...base, status: 'error', text: '', error: describeAgentError(error) };
+    }
+}
+
 async function runPromptTransformAgent(agent, message, generationType, messageTextOverride = null, messageIndex = null, options = {}) {
+    // The recovery Agent writes a missing reply through its own path; as a normal rewrite it would edit a reply that already exists.
+    if (isThinkingRecoveryAgent(agent)) {
+        return { agentId: agent.id, agentName: agent.name, changed: false, status: 'skipped-thinking-recovery', mode: getPromptTransformMode(agent),
+            profileId: resolveAgentConnectionProfile(agent), runner: 'none', timestamp: new Date().toISOString(), outputText: '',
+            nextMessageText: messageTextOverride ?? message?.mes ?? '', beforeText: messageTextOverride ?? message?.mes ?? '' };
+    }
     let diagnosticHandle = null, diagnosticOutcome = 'done';
     try { diagnosticHandle = globalThis.NeconyanCrashDiagnostics?.beginAgent?.({ id: agent.id, sourceTemplateId: agent.sourceTemplateId, phase: 'post' }); } catch { /* Optional diagnostics. */ }
     try {
@@ -4933,6 +5007,11 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
     let failureOutcomeUnknown = false;
     let runKey = '', indexRunKey = '';
     try {
+        if (awaitsThinkingRecoveryCompletion(message, generationType, cloneActivationSnapshot(activationSnapshot ?? pendingGenerationSnapshot
+            ?? buildActivationSnapshot(generationType), generationType))) {
+            alreadyProcessed = true;
+            return;
+        }
         syncAssistantMessageTextToSwipe(message);
 
         const resolvedActivationSnapshot = activationSnapshot
@@ -4945,7 +5024,9 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
             return;
         }
 
-        const activeAgents = getActiveAgentsForMessage(generationType, resolvedActivationSnapshot);
+        const allActiveAgents = getActiveAgentsForMessage(generationType, resolvedActivationSnapshot);
+        const thinkingRecoveryAgent = thinkingRecoveryAgentFor(allActiveAgents, generationType);
+        const activeAgents = allActiveAgents.filter(agent => !isThinkingRecoveryAgent(agent));
         let chatStateChanged = false;
         let messageDisplayChanged = false;
 
@@ -4977,7 +5058,7 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
 
         // The history baseline is the visible starting text (after the sentinel strip), so Undo never
         // restores a sentinel and a strip-only reply is not recorded as an agent transformation.
-        const historyBaselineText = currentPromptTransformText;
+        let historyBaselineText = currentPromptTransformText;
 
         // Neconyan: the sentinel strip is bookkeeping cleanup, not an agent edit, so publish it
         // before the agents run. If a later stage is interrupted, the reply must not keep the
@@ -4989,11 +5070,67 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
         }
 
         // A refused reply keeps its text, but no after-reply Agent or Companion runs on it.
-        const refusedReply = shouldSkipAgentsForRefusedReply(currentPromptTransformText);
+        let refusedReply = shouldSkipAgentsForRefusedReply(currentPromptTransformText);
         if (refusedReply) showRefusedReplyAgentNotice(activeAgents, generationType);
 
-        // Companions normally run last so they see the post-transform reply; the concurrent
-        // option trades that for speed and runs them against the current reply alongside the passes.
+        // A blank reply, or a continuation whose new text is empty, that came back with thinking is written from that thinking
+        // first, so the Agents and Companions below run once on the recovered prose. A failed or ineligible recovery leaves
+        // the reply untouched by them.
+        const continuation = normalizeGenerationType(generationType) === 'continue';
+        const recoveryDue = Boolean(thinkingRecoveryAgent) && !refusedReply && typeof message.extra?.reasoning === 'string'
+            && message.extra.reasoning.trim() !== ''
+            && (continuation ? message.extra.reasoning_continuation_empty === true : !currentPromptTransformText.trim());
+        if (recoveryDue) {
+            // A continuation's prompt carries only this generation's thinking, not the thinking saved by earlier turns.
+            const reasoning = continuation && typeof message.extra.reasoning_current === 'string' ? message.extra.reasoning_current : message.extra.reasoning;
+            const prefix = continuation ? currentPromptTransformText : '';
+            const outcome = message.extra.generation_outcome?.reason === 'reasoning_only' ? null : message.extra.generation_outcome;
+            // A continuation is judged by its new text, which is empty; the saved prefix is never the eligibility text.
+            // The tool-turn marker, or the system record that holds the tool results right after this reply, excludes it.
+            const nextRecord = chat[messageIndex + 1];
+            const toolTurn = message.extra.generation_tool_turn === true
+                || Array.isArray(message.extra.tool_invocations) && message.extra.tool_invocations.length > 0
+                || nextRecord?.is_system === true && Array.isArray(nextRecord.extra?.tool_invocations) && nextRecord.extra.tool_invocations.length > 0;
+            const eligible = isThinkingRecoveryEligible({ text: continuation ? '' : currentPromptTransformText, reasoning, outcome,
+                unclosed: message.extra.reasoning_unclosed === true,
+                finishReason: message.extra.generation_finish_reason,
+                toolTurn });
+            // A recorded failure for this same thinking is never billed again by a later downstream retry.
+            const prior = getAgentExtraValue(message, THINKING_RECOVERY_RUN_EXTRA_KEY);
+            const alreadyFailed = prior?.failed === true && prior.reasoning === reasoning && prior.continuation === continuation;
+            const recovery = alreadyFailed ? { status: 'already-failed', text: '', failed: true }
+                : eligible
+                    ? await runThinkingRecoveryAgent(thinkingRecoveryAgent, message, generationType, reasoning, messageIndex,
+                        { cancelRevision: operationCancelRevision, isCurrent: isOperationCurrent, continuation, prefix,
+                            toolResults: formatToolResults(precedingToolInvocations(chat, messageIndex)) })
+                    : { status: 'skipped-not-eligible', text: '' };
+            if (!isOperationCurrent()) return;
+            const { text: recoveredText, ...recoveryRun } = recovery;
+            if (!recoveredText) {
+                // A failed or ineligible recovery is recorded once and never retried. No Agent or Companion runs on the
+                // reply, but the bookkeeping below still records the interceptor, regex and tracker state.
+                setAgentExtraValue(message, THINKING_RECOVERY_RUN_EXTRA_KEY, { ...recoveryRun, failed: true, reasoning, continuation });
+                refusedReply = true;
+                chatStateChanged = true;
+            } else {
+                const recoveredReply = continuation ? prefix + recoveredText : recoveredText;
+                if (!setPostProcessingText(message, recoveredReply, postProcessingTarget)) return;
+                if (message.extra.generation_outcome?.reason === 'reasoning_only') deleteAgentExtraValue(message, 'generation_outcome');
+                setContinuationEmptyMarker(message.extra, false);
+                setAgentExtraValue(message, THINKING_RECOVERY_RUN_EXTRA_KEY, recoveryRun);
+                currentPromptTransformText = recoveredReply;
+                historyBaselineText = recoveredReply;
+                chatStateChanged = true;
+                messageDisplayChanged = true;
+                if (!await syncPromptTransformMessageStateAsync(message, messageIndex)) return;
+                if (!isOperationCurrent()) return;
+                // Save the paid prose before any later Agent can fail or the page can reload.
+                syncAssistantMessageStateToSwipe(message, messageIndex);
+                await saveChatForAgent(getContext(), { deferBackup: false });
+                if (!isOperationCurrent()) return;
+            }
+        }
+
         const companionStageArgs = { messageIndex, message, generationType };
         const runCompanions = !refusedReply && Boolean(companionRuntime?.runCompanionStage);
         const concurrentCompanionStage = runCompanions && getGlobalSettings().companionConcurrentWithPostGen

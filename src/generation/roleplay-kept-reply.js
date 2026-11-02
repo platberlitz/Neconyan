@@ -93,6 +93,42 @@ export function readWorkflowReplyText({ directories, rootJobId, turn }) {
     return record;
 }
 
+/** The bound automatic decision for one turn, of any kind. Returns null when the turn has no matching saved decision. */
+function readWorkflowDecisionRecord({ directories, rootJobId, turn }) {
+    if (typeof rootJobId !== 'string' || !rootJobId || !Number.isSafeInteger(turn) || turn < 0) return null;
+    let root;
+    try { root = getJob(directories, rootJobId); } catch { return null; }
+    if (!root) return null;
+    let saved;
+    try { saved = readArtifact(directories, rootJobId, 'roleplay-workflow-decision:' + turn); } catch { return null; }
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return null;
+    const { hash, ...record } = saved;
+    if (hash !== roleplayHash(record) || record.parentIntentHash !== roleplayHash(root.intent) || record.turn !== turn) return null;
+    return record;
+}
+
+/**
+ * For an automatically continued turn, the full reply the earlier turns already
+ * assembled. Only a continue decision from the previous turn, a selected previous
+ * turn by the same speaker, and the bound root intent can supply it; any other
+ * turn (including a new group speaker) is an ordinary reply and returns null.
+ */
+export function readWorkflowContinuationPrefix({ directories, job }) {
+    const candidate = job?.intent?.request?.workflowCandidate;
+    if (!candidate || typeof candidate.parentJobId !== 'string' || !Number.isSafeInteger(candidate.turn) || candidate.turn < 1) return null;
+    // A tool turn writes no text decision of its own, so the walk skips turns with neither a decision nor selected text.
+    // The first turn that has a decision or selected text decides: only its continue decision, by the same speaker, extends the reply.
+    for (let turn = candidate.turn - 1; turn >= 0; turn--) {
+        const decision = readWorkflowDecisionRecord({ directories, rootJobId: candidate.parentJobId, turn });
+        const previous = readWorkflowReplyText({ directories, rootJobId: candidate.parentJobId, turn });
+        if (!decision && !(previous?.selected && typeof previous.text === 'string' && previous.text.trim())) continue;
+        if (decision?.decision?.kind !== 'continue' || !previous?.selected || typeof previous.text !== 'string' || !previous.text.trim()) return null;
+        if (Number.isSafeInteger(candidate.speakerIndex) && previous.speakerIndex !== candidate.speakerIndex) return null;
+        return previous.text;
+    }
+    return null;
+}
+
 /** Read the saved automatic choice for one turn. Only a matching swipe decision can be trusted. */
 function readWorkflowDecision({ directories, rootJobId, turn }) {
     if (typeof rootJobId !== 'string' || !rootJobId || !Number.isSafeInteger(turn) || turn < 0) return null;
@@ -224,6 +260,27 @@ function readAgentBaseText({ directories, job }) {
     return hash === roleplayHash(data) ? saved.value : '';
 }
 
+/**
+ * The verified thinking-recovery phase for this job. It is used only when its
+ * saved hash, job intent, continuation flag and original thinking all match, so
+ * a stale or foreign phase can never be kept as this reply.
+ */
+function readRecoveredThinkingReply({ directories, job, reasoning = null }) {
+    const saved = readArtifactSafe(directories, job.id, 'roleplay-thinking-recovery');
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return null;
+    const { hash, ...data } = saved;
+    if (hash !== roleplayHash(data) || data.intentHash !== roleplayHash(job.intent) || data.status !== 'done'
+        || !isText(data.text) || !isText(data.reasoning)
+        || data.continuation !== (job.intent?.effect === 'continue' || readWorkflowContinuationPrefix({ directories, job }) !== null)
+        || (reasoning !== null && data.reasoning !== reasoning)) return null;
+    return data;
+}
+
+function recoveryRunOf(recovered) {
+    return { agentId: recovered.agentId, agentName: recovered.agentName, status: recovered.status,
+        profileLabel: recovered.profileLabel, modelLabel: recovered.modelLabel, timestamp: recovered.timestamp };
+}
+
 function readProviderReply({ directories, job }) {
     const reference = readArtifact(directories, job.id, 'roleplay-main-provider');
     if (reference?.intentHash !== roleplayHash(job.intent) || !/^provider:[a-f0-9]{64}$/.test(reference?.step ?? '')) return null;
@@ -233,6 +290,11 @@ function readProviderReply({ directories, job }) {
     const thinkingOnly = reasoningOnlyResult(result);
     if (thinkingOnly && isText(thinkingOnly.reasoning)) {
         const generation = result.generation ?? {};
+        // Recovery wrote the missing prose after this provider result was saved; keep that prose with the original thinking.
+        const recovered = readRecoveredThinkingReply({ directories, job, reasoning: thinkingOnly.reasoning });
+        if (recovered) return { text: recovered.text, chunk: job.intent?.effect === 'continue', reasoning: recovered.reasoning,
+            extra: cleanExtra({ reasoning_effort: generation.reasoning_effort, inChatAgentThinkingRecovery: recoveryRunOf(recovered) }),
+            timings: timingsOf(generation), model: generation.model, api: generation.source, reasoningDuration: generation.reasoning_duration };
         return { text: '', chunk: false, reasoning: thinkingOnly.reasoning,
             extra: cleanExtra({ ...thinkingOnly.extra, reasoning_effort: generation.reasoning_effort }),
             timings: timingsOf(generation), model: generation.model, api: generation.source,
@@ -287,7 +349,10 @@ export function collectRoleplayKeptReply({ directories, job, rootJobId = null })
         const base = readAgentBaseText({ directories, job });
         if (isText(base)) {
             source = 'main';
-            captured = { text: base, chunk: false, reasoning: '', extra: {}, timings: {},
+            // A saved base that came from recovery keeps the original thinking, which the base alone does not carry.
+            const recovered = readRecoveredThinkingReply({ directories, job });
+            captured = { text: base, chunk: false, reasoning: recovered?.reasoning ?? '',
+                extra: recovered ? { inChatAgentThinkingRecovery: recoveryRunOf(recovered) } : {}, timings: {},
                 model: undefined, api: undefined, tokenCount: undefined, reasoningTokens: undefined, reasoningDuration: undefined };
         }
     }

@@ -10,12 +10,14 @@ const { captureRoleplaySource, captureRoleplayStorageSourceLocked } = await impo
 const { commitSingleChatWriteLocked } = await import('../src/roleplay-lifecycle.js');
 const { prepareNativeChatWrite, roleplayNativeHost } = await import('../src/endpoints/chats.js');
 const { captureRoleplayWorkflowRequest, admitRoleplayWorkflowJob, runRoleplayWorkflowJob } = await import('../src/generation/roleplay-workflow.js');
+const { runRoleplayReplyJob } = await import('../src/generation/roleplay-execution.js');
 const { captureRoleplayNamedWorkflow } = await import('../src/generation/roleplay-workflow-named.js');
 const { publishRoleplayPreview, readRoleplayPreview } = await import('../src/generation/roleplay-preview.js');
-const { keepRoleplayReply, preserveInterruptedRoleplayReply, readRoleplayKeptReply, reconcileRoleplayKeptReply, roleplayKeptReplyPending, KEPT_REPLY_ARTIFACT } = await import('../src/generation/roleplay-kept-reply.js');
+const { keepRoleplayReply, preserveInterruptedRoleplayReply, readRoleplayKeptReply, readWorkflowContinuationPrefix, recordWorkflowReplyText, reconcileRoleplayKeptReply, roleplayKeptReplyPending, KEPT_REPLY_ARTIFACT } = await import('../src/generation/roleplay-kept-reply.js');
 const { withNativeMediaReceipt } = await import('../src/generation/media-jobs.js');
 const { acceptJob, getJob, recoverJobs, releaseJob, requestCancellation, setJobState, updateJob } = await import('../src/jobs/store.js');
-const { readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
+const { providerStep, readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
+const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
 const { roleplayHash, roleplayLease, withRoleplayAccount } = await import('../src/roleplay-store.js');
 const { readRoleplayWorkflowReceipt } = await import('../src/generation/roleplay-acceptance.js');
 
@@ -33,7 +35,7 @@ function editChat(f, mutate) {
     });
 }
 
-function prepared(t, { effect = 'append', group = false, groupSpeakers = ['Nova.png'], named = null, messageIndex = 1 } = {}) {
+function prepared(t, { effect = 'append', group = false, groupSpeakers = ['Nova.png'], named = null, messageIndex = 1, recovery = false } = {}) {
     const f = fixture(t, group);
     const dirs = f.scope.directories;
     f.records[1].extra = {};
@@ -51,11 +53,23 @@ function prepared(t, { effect = 'append', group = false, groupSpeakers = ['Nova.
     dirs.openAI_Settings = path.join(dirs.root, 'openai-presets');
     fs.mkdirSync(dirs.openAI_Settings);
     fs.writeFileSync(path.join(dirs.openAI_Settings, 'Main.json'), JSON.stringify({ openai_max_context: 4096 }));
+    if (recovery) {
+        dirs.inChatAgents = path.join(dirs.root, 'InChatAgents');
+        fs.mkdirSync(dirs.inChatAgents);
+        fs.writeFileSync(path.join(dirs.inChatAgents, 'tpl-thinking-reply-recovery.json'), JSON.stringify({ id: 'tpl-thinking-reply-recovery',
+            sourceTemplateId: 'tpl-thinking-reply-recovery', name: 'Thinking Reply Recovery', enabled: true, category: 'content', phase: 'post',
+            prompt: 'RECOVER', execution: 'inline', settings: {}, injection: { position: 1, depth: 1, role: 0, order: 30, scan: false },
+            preProcess: { mode: 'inject', interceptTiming: 'pre-generation', applyMode: 'replace', maxTokens: 8192 },
+            postProcess: { enabled: false, type: 'regex', promptTransformEnabled: true, promptTransformMode: 'rewrite', promptTransformMaxTokens: 64, promptTransformContextMessages: 8 },
+            conditions: { triggerKeywords: [], triggerProbability: 100, generationTypes: ['normal', 'continue'] } }));
+        fs.writeFileSync(path.join(dirs.inChatAgents, 'rewrite.json'), JSON.stringify({ id: 'rewrite', name: 'Rewrite', enabled: true, phase: 'post',
+            prompt: 'REWRITE', postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64 } }));
+    }
     fs.writeFileSync(path.join(dirs.root, 'settings.json'), JSON.stringify({
         world_info_settings: { world_info: { globalSelect: [] } },
         oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1', function_calling: true },
         extension_settings: { connectionManager: { profiles: [{ id: 'main', api: 'custom', model: 'fixture', preset: 'Main',
-            'api-url': 'http://127.0.0.1:18000/v1' }] } },
+            'api-url': 'http://127.0.0.1:18000/v1' }] }, ...(recovery ? { inChatAgents: { globalSettings: { enabled: true } } } : {}) },
     }));
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
     const source = f.source();
@@ -398,6 +412,89 @@ test('a group speaker cancelled before its first frame never adopts the previous
     const kept = keepRoleplayReply(f.context(getJob(f.dirs, second.id)), { reason: 'stopped', rootJobId: f.jobId });
     assert.equal(kept, null);
     assert.deepEqual(f.records(), before);
+});
+
+test('a thinking-only group speaker candidate is recovered, rewritten once and keeps its reasoning', async t => {
+    t.after(cancelAutoSaves);
+    const f = prepared(t, { group: true, groupSpeakers: ['Nova.png'], recovery: true });
+    const child = await f.child();
+    const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', system_prompt: true },
+        { identifier: 'worldInfoBefore', marker: true, system_prompt: true }, { identifier: 'chatHistory', marker: true, system_prompt: true }],
+    prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'worldInfoBefore', enabled: true },
+        { identifier: 'chatHistory', enabled: true }] }] };
+    const calls = [];
+    setJobState(f.dirs, child.id, 'running');
+    await runRoleplayReplyJob({ owner: f.f.scope.owner, directories: f.dirs, job: getJob(f.dirs, child.id), signal: new AbortController().signal }, {
+        contextLimit: () => 4096, promptBackend: () => ({ backend: 'chat', active: controls, profile: { model: 'fixture' }, source: 'custom' }),
+        generate: async options => {
+            const step = roleplayHash(['group-thinking', child.id]);
+            options.onProviderStep(`provider:${step}`);
+            return providerStep(options.jobContext, step, async () => {
+                options.beforeDispatch();
+                return { text: '', response: { choices: [{ message: { reasoning_content: 'Plan the reply' }, finish_reason: 'stop' }] } };
+            });
+        },
+        generateAgent: async options => {
+            const step = roleplayHash(['group-agent', child.id, JSON.stringify(options.messages)]);
+            options.onProviderStep(`provider:${step}`);
+            return providerStep(options.jobContext, step, async () => {
+                options.beforeDispatch();
+                const body = JSON.stringify(options.messages);
+                calls.push(body.includes('RECOVER') ? 'recovery' : 'rewrite');
+                return { text: body.includes('RECOVER') ? 'Recovered reply.' : 'Rewritten reply.' };
+            });
+        },
+    });
+    assert.deepEqual(calls, ['recovery', 'rewrite']);
+    const candidate = readArtifact(f.dirs, child.id, 'roleplay-candidate');
+    assert.equal(candidate.kind, 'text');
+    const message = candidate.output.message;
+    assert.equal(message.name, 'Nova');
+    assert.equal(message.mes, 'Rewritten reply.');
+    assert.equal(message.extra.reasoning, 'Plan the reply');
+    assert.equal(message.extra.inChatAgentThinkingRecovery.status, 'done');
+    assert.equal(message.extra.inChatAgentTransformHistory[0].beforeText, 'Recovered reply.', 'undo starts from the recovered prose');
+    assert.equal(readArtifact(f.dirs, child.id, 'roleplay-thinking-recovery').status, 'done');
+    await new Promise(resolve => setTimeout(resolve, 150));
+});
+
+function workflowDecision(root, turn, kind, text) {
+    const record = { parentIntentHash: roleplayHash(root.intent), childJobId: `child-${turn}`, candidateHash: roleplayHash(['candidate', turn]),
+        turn, outputHash: roleplayHash(text), decision: { kind, textHash: roleplayHash(text) } };
+    return { ...record, hash: roleplayHash(record) };
+}
+
+function continuationChild(rootJobId, turn, speakerIndex = 0) {
+    return { intent: { request: { workflowCandidate: { parentJobId: rootJobId, turn, speakerIndex } } } };
+}
+
+function savedTextTurn(f, turn, text, speakerIndex = 0) {
+    const root = getJob(f.dirs, f.jobId);
+    recordWorkflowReplyText({ directories: f.dirs }, root, turn, { message: { name: 'Nova', is_user: false, mes: text, extra: {} } },
+        { selected: true, speakerIndex });
+}
+
+test('an automatic continuation walks back over a tool turn to its latest text turn and its continue decision', async t => {
+    const f = prepared(t);
+    const root = getJob(f.dirs, f.jobId);
+    savedTextTurn(f, 0, 'Visible prose.');
+    writeArtifact(f.dirs, f.jobId, 'roleplay-workflow-decision:0', workflowDecision(root, 0, 'continue', 'Visible prose.'));
+    // Turn 1 is a tool turn: it writes no text record and no text decision.
+    assert.equal(readWorkflowContinuationPrefix({ directories: f.dirs, job: continuationChild(f.jobId, 2) }), 'Visible prose.');
+});
+
+test('a swipe decision or another speaker stops the continuation walk instead of crossing it', async t => {
+    const swiped = prepared(t);
+    const swipedRoot = getJob(swiped.dirs, swiped.jobId);
+    savedTextTurn(swiped, 0, 'Rejected prose.');
+    writeArtifact(swiped.dirs, swiped.jobId, 'roleplay-workflow-decision:0', workflowDecision(swipedRoot, 0, 'swipe', 'Rejected prose.'));
+    assert.equal(readWorkflowContinuationPrefix({ directories: swiped.dirs, job: continuationChild(swiped.jobId, 2) }), null);
+
+    const otherSpeaker = prepared(t, { group: true, groupSpeakers: ['Nova.png'] });
+    const groupRoot = getJob(otherSpeaker.dirs, otherSpeaker.jobId);
+    savedTextTurn(otherSpeaker, 0, 'Nova prose.', 0);
+    writeArtifact(otherSpeaker.dirs, otherSpeaker.jobId, 'roleplay-workflow-decision:0', workflowDecision(groupRoot, 0, 'continue', 'Nova prose.'));
+    assert.equal(readWorkflowContinuationPrefix({ directories: otherSpeaker.dirs, job: continuationChild(otherSpeaker.jobId, 2, 1) }), null);
 });
 
 test('safe start leaves a pending keeper record untouched', async t => {

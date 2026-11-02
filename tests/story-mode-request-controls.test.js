@@ -25,7 +25,7 @@ import { isChatNavigationBlocked } from '../public/scripts/chat-navigation-fligh
 import { getPendingChatNameCommit } from '../public/scripts/chat-label.js';
 import { isSlashCommandText } from '../public/scripts/slash-commands/SlashCommandRuntimeUtils.js';
 
-const sources = Object.fromEntries(['script.js', 'scripts/openai.js', 'scripts/reasoning.js', 'scripts/generation-format.js', 'scripts/group-chats.js', 'scripts/utils.js', 'scripts/sentence-boundaries.js', 'scripts/st-context.js', 'scripts/sse-stream.js', 'scripts/textgen-settings.js'].map(file => {
+const sources = Object.fromEntries(['script.js', 'scripts/openai.js', 'scripts/reasoning.js', 'scripts/stream-completion.js', 'scripts/generation-format.js', 'scripts/group-chats.js', 'scripts/utils.js', 'scripts/sentence-boundaries.js', 'scripts/st-context.js', 'scripts/sse-stream.js', 'scripts/textgen-settings.js'].map(file => {
     const source = readFileSync(new URL(`../public/${file}`, import.meta.url), 'utf8');
     return [file, { source, ast: parse(source, { ecmaVersion: 'latest', sourceType: 'module' }) }];
 }));
@@ -226,6 +226,10 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
     load(context, 'scripts/reasoning.js', ['ReasoningType', 'ReasoningState', 'PromptReasoning', 'ReasoningHandler', 'parseReasoningFromString', 'extractReasoningFromData']);
     context.getReasoningParseTemplates = () => [context.power_user.reasoning];
     vm.runInContext('ReasoningHandler.prototype.updateDom = () => {};', context);
+    // The completion-marker helpers are the real declarations from their own modules, loaded like the rest of the host code.
+    load(context, 'scripts/stream-completion.js', ['completedMessages', 'markStreamCompleted', 'unmarkStreamCompleted', 'isStreamCompleted', 'setContinuationEmptyMarker', 'setGenerationToolTurnMarker', 'setFreshReasoningMarker']);
+    load(context, 'scripts/reasoning.js', ['setReasoningUnclosedMarker']);
+    load(context, 'script.js', ['setGenerationFinishMarker']);
     load(context, 'script.js', ['Generate', 'buildRecoveryContext', 'StreamingProcessor', 'sendGenerationRequest', 'sendStreamingRequest', 'getGenerateUrl', 'saveReply', 'getNextMessageId', 'getBiasStrings', 'processCommands', 'extractMessageFromData', 'normalizeContentText', 'stringifyUnknown', 'shouldBufferMainGenerationOutput', 'applyMainGenerationOutputInterceptors', 'unblockGeneration', 'clearStreamingProcessorIfCurrent', 'shouldAutoContinue', 'triggerAutoContinue', 'syncMesToSwipe', 'stopGeneration', 'generateRaw', 'generateRawData', 'generateQuietPrompt', 'TempResponseLength', 'addChatsPreamble', 'addChatsSeparator', 'consumePendingGeneratedMessageExtra']);
     context.removeReasoningFromString = text => context.parseReasoningFromString(text)?.content ?? text;
 
@@ -364,7 +368,7 @@ describe('request-local output controls', () => {
         const limit = text => limitGenerationProse(text, 2, context.power_user.reasoning, '', true);
         expect(limit('<think>' + 'reasoning '.repeat(100))).toMatchObject({ text: '', limited: false });
         expect(limit('<thi')).toMatchObject({ text: '', limited: false });
-        expect(limit('<thinking>one</thinking>abcd<think>two</think>efgh-more')).toEqual({ text: 'abcdefgh', reasoning: 'one\n\ntwo', limited: true });
+        expect(limit('<thinking>one</thinking>abcd<think>two</think>efgh-more')).toEqual({ text: 'abcdefgh', reasoning: 'one\n\ntwo', limited: true, unclosed: false });
         expect(limit('abc\uD83D\uDE00xxxx')).toMatchObject({ text: 'abc\uD83D\uDE00xxx', limited: true });
         expect(limitGenerationProse('abc\uD83D\uDE00', 1, context.power_user.reasoning).text).toBe('abc');
     });
@@ -554,7 +558,8 @@ describe('owned host generation flow', () => {
     test.each([false, true])('tool successors retain controls but tool helpers do not (stream: %s)', async stream => {
         const { context, requests } = makeRuntime({ api: stream ? 'textgenerationwebui' : 'openai', stream });
         context.ToolManager.canPerformToolCalls = () => true;
-        context.ToolManager.hasToolCalls = jest.fn().mockReturnValueOnce(true).mockReturnValue(false);
+        // A reply has tool calls until its tool helper has run. The saved-reply marker and the tool branch both classify the same reply.
+        context.ToolManager.hasToolCalls = jest.fn(() => !context.ToolManager.invokeFunctionTools?.mock?.calls.length);
         context.chunks = [{ text: 'tool reply', toolCalls: [{ id: 'tool' }] }];
         context.ToolManager.invokeFunctionTools = jest.fn(async () => ({ invocations: [], stealthCalls: [] })).mockImplementationOnce(async () => {
             await context.generateRaw({ prompt: 'tool helper', responseLength: 64, preserveReasoningBudget: true });
