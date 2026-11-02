@@ -148,6 +148,7 @@ for (const phone of [false, true]) {
         const reopened = await account.open({ workspace: false, readyTimeout: 60000 });
         const root = await showArchive(reopened);
         await expect(root.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
+        await root.locator('.sbca-tools > summary').click();
         await root.getByLabel('Saved archive work', { exact: true }).selectOption(inventory.record.key);
         await expect(root.locator('.sbca-status')).toContainText('Saved archive work loaded');
         const search = await accepted(reopened, 'archive-search', async () => {
@@ -163,6 +164,7 @@ for (const phone of [false, true]) {
         const third = await account.open({ workspace: false, readyTimeout: 60000 });
         const saved = await showArchive(third);
         await expect(saved.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
+        await saved.locator('.sbca-tools > summary').click();
         await saved.getByLabel('Saved archive work', { exact: true }).selectOption(search.record.key);
         await expect(saved.locator('.sbca-status')).toContainText('Saved archive work loaded');
         await expect(saved.locator('.sbca-list')).toContainText('Retained archive');
