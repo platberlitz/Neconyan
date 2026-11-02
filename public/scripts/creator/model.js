@@ -103,6 +103,7 @@ export function creatorProposal(draft, fields, label) {
 
 export function acceptCreatorProposal(draft, proposal, selected = proposal.changes.map(change => change.field)) {
     if (proposal.draftId !== draft.id) throw new Error('This proposal belongs to another draft.');
+    if (proposal.formatBefore !== undefined && proposal.formatBefore !== draft.style) throw new Error('The writing format changed. Review a fresh conversion.');
     if (proposal.dossierBefore !== undefined && proposal.dossierBefore !== (draft.dossier ?? '')) throw new Error('The dossier changed. Convert the updated dossier before applying these fields.');
     const changes = proposal.changes.filter(change => selected.includes(change.field));
     for (const change of changes) {

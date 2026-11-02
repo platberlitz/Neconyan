@@ -1,3 +1,5 @@
+import { creatorFormatGuidance } from './formats.js';
+
 /** Authoring guidance adapted from the bundled Director main and grounded prose prompts. */
 export const DIRECTOR_GUIDANCE = `Treat the user's established facts and corrections as canon. Preserve chronology, possessions, knowledge boundaries and physical continuity. Give characters independent goals, distinctive voices and initiative. Keep the environment and supporting characters active.
 Use observable action, concrete nouns, direct verbs and material detail. Let consequences follow causes. Continue from the actual endpoint without recap or parroting. Leave the user's dialogue, actions, thoughts and decisions to them unless their chosen co-writing instructions explicitly grant control. End scenes with a meaningful opening before deciding the user's response. Example dialogue uses <START>, Interviewer: and {{char}}:. Return directly applicable writing, never a handover prompt.`;
@@ -14,5 +16,7 @@ export function creatorGuidance(draft) {
     const mode = draft.writing?.mode ?? 'full';
     const prompts = Object.fromEntries(Object.entries(CREATOR_PROMPTS).map(([key, fallback]) => [key,
         typeof draft.writing?.prompts?.[key] === 'string' ? draft.writing.prompts[key] : fallback]));
-    return [prompts.director, mode === 'full' ? prompts.grounded : '', mode === 'custom' ? String(draft.writing?.custom ?? '') : '', prompts.macros].filter(Boolean).join('\n\n');
+    return [prompts.director, mode === 'full' ? prompts.grounded : '', mode === 'custom' ? String(draft.writing?.custom ?? '') : '', prompts.macros,
+        draft.writing?.userInstructions ? `Custom user instructions:\n${draft.writing.userInstructions}` : '', creatorFormatGuidance(draft),
+    ].filter(Boolean).join('\n\n');
 }

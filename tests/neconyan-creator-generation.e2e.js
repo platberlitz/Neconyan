@@ -1,0 +1,66 @@
+import { expect } from '@playwright/test';
+import { test } from './neconyan-conversation-durable-fixture.js';
+
+for (const phone of [false, true]) {
+    test(`Creator generation, formats and collaborators on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
+        test.setTimeout(180000);
+        const account = await app.account({ phone, activeConnection: true });
+        const page = await account.open({ workspace: false });
+        await page.getByRole('button', { name: 'Choose a character', exact: true }).click();
+        await page.locator('#sb_character_tab_creator').click();
+        const creator = page.locator('#sb_character_creator_panel');
+        await creator.getByRole('button', { name: 'Create a character', exact: true }).click();
+        await creator.getByRole('button', { name: 'Dossier', exact: true }).click();
+        await creator.getByRole('button', { name: 'Convert dossier to card', exact: true }).click();
+        await expect(creator.locator('.creator-conversion-status')).toContainText('dossier');
+        await creator.getByLabel('Character dossier', { exact: true }).fill('Mira repairs ships with {{poss}} tools and seeks her sister.');
+        await creator.getByRole('button', { name: 'ALIchat', exact: true }).click();
+        await expect(creator.getByRole('button', { name: 'ALIchat', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        await page.screenshot({ path: `../screenshots/creator-formats-${phone ? 'phone' : 'desktop'}.png` });
+        app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: JSON.stringify({ fields: { name: 'Mira', description: '<START>\nInterviewer: What do you do?\n{{char}}: I repair ships.' }, questions: [], coverage: ['Kept her occupation.'] }) } }] };
+        await creator.getByRole('button', { name: 'Convert dossier to card', exact: true }).click();
+        await expect(creator.locator('.creator-proposal')).toBeVisible({ timeout: 30000 });
+        expect(app.provider.calls.some(call => call.messages?.some(message => message.content?.includes('Selected writing format: ALIchat')))).toBe(true);
+        await creator.getByRole('button', { name: 'Accept all fields', exact: true }).click();
+        await creator.getByRole('button', { name: 'Identity', exact: true }).click();
+        await expect(creator.getByLabel('Display name', { exact: true })).toHaveValue('Mira');
+        const expand = creator.getByRole('button', { name: 'Expand Description', exact: true });
+        await expect(expand).toHaveText('');
+        await expect(expand.locator('.fa-expand')).toHaveCount(1);
+        const personality = creator.locator('.creator-field').filter({ has: page.getByRole('textbox', { name: 'Personality', exact: true }) });
+        const lock = personality.getByRole('button', { name: 'Lock for AI', exact: true });
+        await lock.scrollIntoViewIfNeeded();
+        const position = () => creator.evaluate(host => {
+            const values = [];
+            for (let node = host; node; node = node.parentElement) values.push(node.scrollTop);
+            return values;
+        });
+        const before = await position();
+        await lock.click();
+        await expect(personality.getByRole('button', { name: 'Locked for AI', exact: true })).toBeVisible();
+        expect(await position()).toEqual(before);
+        await creator.getByRole('button', { name: 'Prompts', exact: true }).click();
+        await creator.getByLabel('Custom User Instructions', { exact: true }).fill('Write terse, precise sentences.');
+        await creator.getByRole('button', { name: 'Identity', exact: true }).click();
+        app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: JSON.stringify({ value: 'Mira repairs ships with {{poss}} tools.' }) } }] };
+        await creator.getByRole('button', { name: 'Generate Description', exact: true }).click();
+        await expect(creator.getByLabel('Generated suggestion', { exact: true })).toHaveValue('Mira repairs ships with {{poss}} tools.', { timeout: 30000 });
+        await creator.getByRole('button', { name: 'Use suggestion', exact: true }).click();
+        await expect(creator.getByLabel('Description', { exact: true })).toHaveValue('Mira repairs ships with {{poss}} tools.');
+        expect(app.provider.calls.some(call => call.messages?.some(message => message.content?.includes('Write terse, precise sentences.')))).toBe(true);
+        await page.screenshot({ path: `../screenshots/creator-generation-${phone ? 'phone' : 'desktop'}.png` });
+        await creator.getByRole('button', { name: 'Interview', exact: true }).click();
+        for (const name of ['Miso', 'Taro', 'Nori']) await expect(creator.getByRole('button', { name: `Ask ${name}`, exact: true })).toBeVisible();
+        await creator.getByRole('button', { name: 'Add a character or assistant', exact: true }).click();
+        await expect(page.getByRole('button', { name: 'Add a new assistant', exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Use a character card', exact: true })).toBeVisible();
+        await page.getByRole('button', { name: 'Add a new assistant', exact: true }).click();
+        await page.getByLabel('Assistant name', { exact: true }).fill('Jun');
+        await page.getByRole('textbox', { name: 'Personality', exact: true }).fill('A practical editor who checks continuity.');
+        await page.getByRole('button', { name: 'Save assistant', exact: true }).click();
+        await expect(page.getByRole('button', { name: 'Use Jun', exact: true })).toBeDisabled();
+        await page.getByRole('button', { name: 'Done', exact: true }).click();
+        await expect(creator.getByRole('button', { name: 'Ask Jun', exact: true })).toBeVisible();
+        await page.screenshot({ path: `../screenshots/creator-collaborators-${phone ? 'phone' : 'desktop'}.png` });
+    });
+}

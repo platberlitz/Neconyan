@@ -14,16 +14,22 @@ export function buildCreatorWritingRequest(draft, instruction, fields, { include
 }
 
 export async function requestCreatorReply(workspace, draft, messages, { signal, isCurrent = () => true } = {}) {
-    const { requestPromptTransform } = await import('../extensions/in-chat-agents/agent-runner.js');
+    const { generateRawData } = await import('../../script.js');
+    const { extractProfileResponseText } = await import('../extensions/in-chat-agents/llm-utils.js');
+    const { isGenerationLengthFinish } = await import('../generation-request-controls.js');
     const current = () => workspace.session.draft?.id === draft.id && isCurrent();
-    const result = await requestPromptTransform({ category: 'custom', execution: 'inline', connectionProfile: '' }, messages, 8192, {
-        signal, isCurrent: current, preserveWhitespace: true, literalPrompt: true,
-    });
+    workspace.session.assertOwner();
+    if (!current() || signal?.aborted) throw new Error('Request cancelled. Nothing was applied.');
+    // Creator is a manual authoring request, not a saved in-chat Agent. Agent runtime
+    // filters deliberately reject unregistered agents and must not gate this workspace.
+    const result = await generateRawData({ prompt: structuredClone(messages), responseLength: 8192, signal, cacheScope: 'auxiliary', literalPrompt: true });
     workspace.session.assertOwner();
     if (signal?.aborted) throw new Error('Request cancelled. Nothing was applied.');
     if (!current()) throw new Error('The source changed while the model was replying. Request a fresh proposal.');
-    if (result.lengthLimited) throw new Error('The model ran out of output space. Request a smaller change; nothing was applied.');
-    return result.output;
+    if (isGenerationLengthFinish(result)) throw new Error('The model ran out of output space. Request a smaller change; nothing was applied.');
+    const output = extractProfileResponseText(result, { preserveWhitespace: true });
+    if (!output.trim()) throw new Error('The model returned no text. Check the current connection and try again.');
+    return output;
 }
 
 export function renderWritingPartner(workspace, main) {

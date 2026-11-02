@@ -6,6 +6,9 @@ import { buildDossierRequest, dossierProposal, DOSSIER_FIELDS } from './dossier.
 import { compareCreatorChanges } from './conflicts.js';
 import { restoreCreatorBackup } from './backup.js';
 import { creatorPublicationCard, adoptCreatorComparedCard } from './embedded-book.js';
+import { rememberCreatorViewport } from './viewport.js';
+import { attachCreatorGenerator } from './field-generator.js';
+import { renderCreatorFormat } from './format-picker.js';
 
 const sections = [['dossier', 'Dossier'], ['notebooks', 'Notebook sources'], ['identity', 'Identity'], ['facts', 'Guided facts'], ['greetings', 'Greetings & examples'], ['interview', 'Interview'], ['prompts', 'Prompts'], ['lore', 'Lorebooks'], ['macros', 'Macros & pronouns'], ['regex', 'Pretty HTML'], ['game', 'Gamify'], ['portrait', 'Portrait'], ['helper', 'Writing partner'], ['instructions', 'Writing instructions'], ['metadata', 'Details'], ['preview', 'Preview & export']];
 const labels = { name: 'Display name', description: 'Description', personality: 'Personality', scenario: 'Scenario', first_mes: 'First greeting', mes_example: 'Interviewer examples', creator_notes: 'Public creator notes', system_prompt: 'Main prompt', post_history_instructions: 'Post-history instructions', creator: 'Creator', character_version: 'Card version' };
@@ -214,11 +217,14 @@ class CreatorWorkspace {
             lock.setAttribute('aria-pressed', String(locked));
             node.querySelector('.creator-field-heading').append(lock);
         }
-        return node;
+        return attachCreatorGenerator(this, node, field);
     }
 
     render() {
         const draft = this.session.draft;
+        const key = `${draft.id}:${draft.view.section}`;
+        const restore = this.renderKey === key ? rememberCreatorViewport(this.host) : () => {};
+        this.renderKey = key;
         this.shell();
         const header = element('header', 'creator-draft-header');
         const heading = element('div', 'creator-draft-title');
@@ -243,6 +249,7 @@ class CreatorWorkspace {
         const main = element('div', 'creator-content creator-card');
         const section = draft.view.section;
         if (section === 'identity') {
+            renderCreatorFormat(this, main);
             main.append(element('div', 'creator-section-intro', 'Core character profile sent to the model in chat.'), this.field('name'), this.field('description'), this.field('personality'), this.field('scenario'));
         } else if (section === 'dossier') this.dossier(main);
         else if (section === 'facts') this.facts(main);
@@ -252,8 +259,11 @@ class CreatorWorkspace {
             this.stringList(main, 'Group greetings', 'group_only_greetings');
         } else if (section === 'prompts') {
             main.append(element('div', 'creator-section-intro', 'Optional system and depth instructions for this character.'), this.field('system_prompt'), this.field('post_history_instructions'));
+            main.append(textField('Custom User Instructions', draft.writing?.userInstructions ?? '', value => this.edit(next => {
+                next.writing ??= {}; next.writing.userInstructions = value;
+            }), { hint: 'Your directions for Creator’s writing, generation and interviews. Sent with those requests, kept in this draft, and not exported as a character prompt.' }));
             const depth = draft.card.data.extensions?.depth_prompt ?? { prompt: '', depth: 4, role: 'system' };
-            main.append(textField('Depth prompt', depth.prompt, value => this.edit(next => { next.card.data.extensions ??= {}; next.card.data.extensions.depth_prompt = { ...depth, ...next.card.data.extensions.depth_prompt, prompt: value }; })));
+            main.append(attachCreatorGenerator(this, textField('Depth prompt', depth.prompt, value => this.edit(next => { next.card.data.extensions ??= {}; next.card.data.extensions.depth_prompt = { ...depth, ...next.card.data.extensions.depth_prompt, prompt: value }; })), 'depth_prompt'));
             this.jsonField(main, 'Depth and role', { depth: depth.depth, role: depth.role }, value => {
                 if (!Number.isInteger(value.depth) || value.depth < 0 || !['system', 'user', 'assistant'].includes(value.role)) throw new Error('Use a non-negative depth and system, user or assistant role.');
                 this.edit(next => { next.card.data.extensions ??= {}; next.card.data.extensions.depth_prompt = { ...depth, ...next.card.data.extensions.depth_prompt, ...value }; });
@@ -267,10 +277,12 @@ class CreatorWorkspace {
         }
         layout.append(nav, main);
         this.host.append(header, layout);
+        // Scroll the section rail only; scrollIntoView also moves the enclosing drawer.
         const activeTab = nav.querySelector('[aria-current="page"]');
-        activeTab?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        if (activeTab && nav.scrollWidth > nav.clientWidth) nav.scrollLeft = Math.max(0, activeTab.offsetLeft - nav.offsetLeft);
+        restore();
         if (!['dossier', 'identity', 'facts', 'greetings', 'prompts', 'metadata'].includes(section)) {
-            void this.renderTool(section, main).catch(error => this.status(error.message, true));
+            void this.renderTool(section, main).then(() => { if (main.isConnected) restore(); }).catch(error => this.status(error.message, true));
         }
     }
 
@@ -280,6 +292,7 @@ class CreatorWorkspace {
     }
 
     dossier(main) {
+        renderCreatorFormat(this, main);
         main.append(element('h3', '', 'Everything about your character, in one place.'), textField('Character dossier', this.session.draft.dossier ?? '', value => this.edit(next => { next.dossier = value; }), {
             rows: 10,
             hint: 'Paste notes, history, appearance, relationships, voice, setting and scene ideas. Convert sends this dossier and the chosen existing fields to your current model. Your original notes stay in this draft, outside the published card.',
@@ -301,33 +314,42 @@ class CreatorWorkspace {
         let controller;
         const cancel = button('Cancel conversion', () => controller?.abort());
         cancel.hidden = true;
-        const convert = button('Convert dossier to card', () => this.run(async () => {
-            const draft = structuredClone(this.session.draft);
-            const request = buildDossierRequest(draft, [...selection]);
-            controller = new AbortController(); cancel.hidden = false; convert.disabled = true;
-            this.status('Converting your dossier. You will review the fields before applying them.');
-            try {
-                const { requestPromptTransform } = await import('../extensions/in-chat-agents/agent-runner.js');
-                const result = await requestPromptTransform({ category: 'custom', execution: 'inline', connectionProfile: '' }, request.messages, 8192, {
-                    signal: controller.signal, preserveWhitespace: true, literalPrompt: true,
-                    isCurrent: () => this.session.draft?.id === draft.id && this.session.draft.dossier === draft.dossier,
-                });
-                this.session.assertOwner();
-                if (controller.signal.aborted) throw new Error('Conversion cancelled. Your dossier is unchanged.');
-                if (this.session.draft?.id !== draft.id || (this.session.draft.dossier ?? '') !== (draft.dossier ?? '')) throw new Error('The source dossier changed. Convert the updated version.');
-                if (result.lengthLimited) throw new Error('The model ran out of output space. Nothing was applied; convert fewer fields at once.');
-                const proposal = dossierProposal(draft, result.output, request.fields);
-                this.edit(next => { next.proposals.push(proposal); });
-                if (main.isConnected) this.proposal(proposal);
-                this.status('Conversion ready for review. Your dossier and library are unchanged.');
-            } finally { cancel.hidden = true; convert.disabled = false; }
-        }), true);
+        const feedback = element('p', 'creator-conversion-status creator-muted');
+        feedback.setAttribute('role', 'status');
+        const convert = button('Convert dossier to card', () => {
+            if (this.busy) { feedback.textContent = 'Another Creator request is still running. Wait for it to finish, then try again.'; return; }
+            return this.run(async () => {
+                try {
+                    const draft = structuredClone(this.session.draft);
+                    const request = buildDossierRequest(draft, [...selection]);
+                    controller = new AbortController(); cancel.hidden = false; convert.disabled = true;
+                    convert.textContent = 'Converting…';
+                    feedback.textContent = 'Sending your Dossier to the current model. The converted fields will appear here for review.';
+                    const { requestCreatorReply } = await import('./assistant.js');
+                    const output = await requestCreatorReply(this, draft, request.messages, {
+                        signal: controller.signal,
+                        isCurrent: () => this.session.draft?.id === draft.id && this.session.draft.dossier === draft.dossier && this.session.draft.style === draft.style,
+                    });
+                    this.session.assertOwner();
+                    if (controller.signal.aborted) throw new Error('Conversion cancelled. Your dossier is unchanged.');
+                    if (this.session.draft?.id !== draft.id || (this.session.draft.dossier ?? '') !== (draft.dossier ?? '')) throw new Error('The source dossier changed. Convert the updated version.');
+                    const proposal = dossierProposal(draft, output, request.fields);
+                    proposal.formatBefore = draft.style;
+                    this.edit(next => { next.proposals.push(proposal); });
+                    if (main.isConnected) this.proposal(proposal);
+                    this.status('Conversion ready for review. Your dossier and library are unchanged.');
+                } catch (error) {
+                    feedback.textContent = error?.message || (typeof error === 'string' ? error : 'Conversion failed. Check your model connection and try again.');
+                    throw error;
+                } finally { cancel.hidden = true; convert.disabled = false; convert.textContent = 'Convert dossier to card'; }
+            });
+        }, true);
         const actionRow = element('div', 'creator-actions');
         actionRow.append(convert, cancel);
         for (const proposal of this.session.draft.proposals.filter(item => item.dossierBefore !== undefined)) {
             actionRow.append(button(`Review ${proposal.label}`, () => this.proposal(proposal)));
         }
-        main.append(choices, actionRow);
+        main.append(choices, actionRow, feedback);
     }
 
     stringList(main, title, field) {
@@ -342,7 +364,7 @@ class CreatorWorkspace {
             const row = textField(`${title} ${index + 1}`, text, value => this.edit(next => { next.card.data[field][index] = value; }), { rows: field === 'tags' ? 1 : 3 });
             const removeBtn = button('Remove', () => this.edit(next => { next.card.data[field].splice(index, 1); }, true), false, 'creator-chip-btn creator-danger-outline');
             row.querySelector('.creator-field-heading').append(removeBtn);
-            main.append(row);
+            main.append(attachCreatorGenerator(this, row, `${field}:${index}`));
         });
     }
 
