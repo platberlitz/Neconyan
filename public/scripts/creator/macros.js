@@ -5,8 +5,8 @@ const ENHANCED = ['{{sub}}', '{{obj}}', '{{poss}}', '{{poss_p}}', '{{ref}}', '{{
 
 export function renderMacroTools(workspace, main) {
     const draft = workspace.session.draft;
-    main.append(element('h3', '', 'Reusable words, without touching your chat'), element('p', 'creator-muted', 'The core preview uses a disposable copy of your example variables. It cannot read your active chat, saved variables or lorebooks. Random choices are independent of your real chat.'));
-    const input = textField('Macro text', draft.macroText ?? '{{char}} meets {{user}}.', value => workspace.edit(next => { next.macroText = value; }), { rows: 3 });
+    main.append(element('h3', '', 'Try macros before using them'), element('p', 'creator-muted', 'A macro is a placeholder that becomes text when a chat runs. For example, {{char}} becomes the character’s name. Paste a sentence here, choose example values, then preview the result. This is a scratch area: it does not add text to your character card or change your chat.'));
+    const input = textField('Sentence to preview', draft.macroText ?? '{{char}} meets {{user}}.', value => workspace.edit(next => { next.macroText = value; }), { rows: 3, hint: 'Try {{char}} meets {{user}}. The preview below replaces those placeholders with your draft’s name and the example user name.' });
     const row = element('div', 'creator-form-grid');
     row.append(textField('Example user name', draft.macroUser ?? 'Interviewer', value => workspace.edit(next => { next.macroUser = value; }), { rows: 1 }));
     workspace.jsonField(row, 'Example local variables', draft.macroVariables ?? {}, value => {
@@ -20,7 +20,7 @@ export function renderMacroTools(workspace, main) {
         for (const snippet of snippets) palette.append(button(snippet, () => {
             const field = input.querySelector('textarea');
             field.setRangeText(snippet, field.selectionStart, field.selectionEnd, 'end');
-            field.dispatchEvent(new Event('input', { bubbles: true })); field.focus();
+            field.dispatchEvent(new Event('input', { bubbles: true })); field.focus({ preventScroll: true });
         }, false, 'creator-chip-btn'));
         main.append(palette);
     }
