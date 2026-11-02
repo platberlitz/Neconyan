@@ -8,6 +8,7 @@
 - PR #404 (2026-11-02) `feat(mobile): make swipeable button rows easier to discover`
 - PR #405 (2026-11-02) `fix(roleplay): retain reasoning effort on server replies`
 - PR #406 (2026-11-02) `fix(archive): restore loading and refresh the native layout`
+- PR #407 (2026-11-02) `fix(connections): keep model selection from resetting scroll`
 
 ## v1.4.1
 
