@@ -4,6 +4,7 @@ import { listCreatorDrafts, getCreatorDraft, saveCreatorDraft } from '../creator
 import { creatorCharacterSource, creatorBookSource } from '../creator/resources.js';
 import { publishCreatorDraft, getCreatorReceipt, getCreatorPublication, acknowledgeCreatorPublication, recoverCreatorPublication, discardCreatorDraft } from '../creator/publish.js';
 import { previewCreatorMacros } from '../creator/macro-preview.js';
+import { readAssistantPersona } from '../scratchpad/prompt.js';
 
 export const router = express.Router();
 
@@ -23,6 +24,7 @@ function route(handler) {
 }
 
 router.post('/list', route(lease => ({ drafts: listCreatorDrafts(lease) })));
+router.post('/collaborators', route(() => ({ assistants: ['miso', 'taro', 'nori'].map(id => readAssistantPersona(id)) })));
 router.post('/get', route((lease, body) => {
     const item = getCreatorDraft(lease, body.id);
     const publication = getCreatorPublication(lease, body.id);

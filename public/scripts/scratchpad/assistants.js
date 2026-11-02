@@ -21,7 +21,7 @@ async function portraitFile(file) {
 }
 
 /** One account-owned library, with the current session's portable copies as a fallback. */
-export async function openAssistantLibrary({ assistants, portrait, selected, canChoose, choose, onSave }) {
+export async function openAssistantLibrary({ assistants, portrait, selected, canChoose, choose, onSave, description = t`Choose who you talk to. A round table can include up to three assistants.` }) {
     const owner = getCurrentUserHandle();
     const checkAccount = () => {
         if (getCurrentUserHandle() !== owner) throw new Error(t`The account changed. Reopen the editor.`);
@@ -149,7 +149,7 @@ export async function openAssistantLibrary({ assistants, portrait, selected, can
             if (!matches.length) results.append(h('p', { text: t`No assistants match that search.` }));
         };
         search.addEventListener('input', render);
-        show(heading(t`Your assistants`), h('p', { class: 'scratchpad-review-hint', text: t`Choose who you talk to. A round table can include up to three assistants.` }),
+        show(heading(t`Your assistants`), h('p', { class: 'scratchpad-review-hint', text: description }),
             h('div', { class: 'scratchpad-library-actions' },
                 button(t`Add a new assistant`, () => editor(), { class: 'menu_button menu_button_primary scratchpad-library-button' }),
                 button(t`Use a character card`, cards)), search, results);

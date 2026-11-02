@@ -25,9 +25,19 @@ export function interviewExample(draft, turnId) {
     return `<START>\nInterviewer: ${question.text}\n{{char}}: ${reply.text}`;
 }
 
-export function renderInterview(workspace, main) {
+export async function renderInterview(workspace, main) {
+    const id = workspace.session.draft.id;
+    const { assistants: defaults } = await workspace.session.request('collaborators');
+    if (!main.isConnected || workspace.session.draft.id !== id) return;
+    const copyAssistant = profile => ({ id: profile.id, name: profile.name, instructions: [profile.personality, profile.summary].filter(Boolean).join('\n\n'), examples: profile.examples || '', avatar: profile.avatar || '' });
+    if (!workspace.session.draft.interview?.defaultsAdded && !workspace.session.pending && !workspace.session.publishing) workspace.edit(next => {
+        next.interview ??= { turns: [], assistants: [] };
+        const existing = next.interview.assistants ?? [];
+        next.interview.assistants = [...defaults.filter(profile => !existing.some(item => item.id === profile.id)).map(copyAssistant), ...existing];
+        next.interview.defaultsAdded = true;
+    });
     const draft = workspace.session.draft;
-    main.append(element('h3', '', 'Meet the character you are writing'), element('p', 'creator-muted', 'Talk to your unsaved character, or invite up to three writing collaborators. This conversation stays in the draft and does not enter your chats or Mewmory. Public card fields and visible lore are sent to your current model.'));
+    main.append(element('h3', '', 'Meet the character you are writing'), element('p', 'creator-muted', 'Talk to your unsaved character, Miso, Taro or Nori. Add a character card or your own assistant from the shared Scratchpad library. This conversation stays in the draft and does not enter your chats or Mewmory. Public card fields and visible lore are sent to your current model.'));
     const transcript = element('div', 'creator-interview');
     for (const turn of draft.interview?.turns ?? []) {
         const row = element('section', 'creator-review-item');
@@ -71,11 +81,13 @@ export function renderInterview(workspace, main) {
     askRow.append(button('Ask the character', () => ask(), true), cancel);
     main.append(askRow);
     const assistants = element('details', 'creator-review-item');
+    assistants.open = true;
     assistants.append(element('summary', '', 'Writing collaborators'));
     for (const assistant of draft.interview?.assistants ?? []) {
         const card = element('div', 'creator-subdetails-body');
         card.append(textField('Collaborator name', assistant.name, value => workspace.edit(next => { next.interview.assistants.find(item => item.id === assistant.id).name = value; }), { rows: 1 }),
-            textField('Collaborator approach', assistant.instructions, value => workspace.edit(next => { next.interview.assistants.find(item => item.id === assistant.id).instructions = value; }), { rows: 2 }));
+            textField('Collaborator approach', assistant.instructions, value => workspace.edit(next => { next.interview.assistants.find(item => item.id === assistant.id).instructions = value; }), { rows: 2 }),
+            textField('Collaborator example dialogue', assistant.examples ?? '', value => workspace.edit(next => { next.interview.assistants.find(item => item.id === assistant.id).examples = value; }), { rows: 2 }));
         const collabActions = element('div', 'creator-actions');
         collabActions.append(
             button(`Ask ${assistant.name || 'collaborator'}`, () => ask(workspace.session.draft.interview.assistants.find(item => item.id === assistant.id)), false, 'creator-chip-btn'),
@@ -84,11 +96,30 @@ export function renderInterview(workspace, main) {
         card.append(collabActions);
         assistants.append(card);
     }
-    assistants.append(button('Add collaborator', () => workspace.edit(next => {
-        next.interview ??= { turns: [], assistants: [] };
-        if (next.interview.assistants.length >= 3) throw new Error('Use up to three collaborators.');
-        next.interview.assistants.push({ id: crypto.randomUUID(), name: 'Writing partner', instructions: 'Ask useful questions about motives, continuity and voice.' });
-    }, true), false, 'creator-chip-btn'));
+    assistants.append(button('Add a character or assistant', () => workspace.run(async () => {
+        const { openAssistantLibrary } = await import('../scratchpad/assistants.js');
+        let library = { assistants: [] };
+        const available = () => [...defaults, ...library.assistants];
+        const current = () => {
+            workspace.session.assertOwner();
+            if (workspace.session.draft.id !== id || workspace.session.pending || workspace.session.publishing) throw new Error('Reopen collaborators for the current editable draft.');
+            return workspace.session.draft.interview.assistants;
+        };
+        await openAssistantLibrary({
+            assistants: available, portrait: key => available().find(profile => profile.id === key)?.avatar || 'img/ai4.png',
+            selected: () => current().map(profile => profile.id),
+            canChoose: key => !current().some(profile => profile.id === key),
+            onSave: value => { library = value; },
+            description: 'Use a saved assistant, copy any character card, or make your own. Creator keeps an editable copy of each collaborator in this draft.',
+            choose: key => {
+                current();
+                const profile = available().find(item => item.id === key);
+                if (!profile) throw new Error('Choose an available assistant.');
+                workspace.edit(next => { next.interview.assistants.push(copyAssistant(profile)); });
+            },
+        });
+        if (main.isConnected && workspace.session.draft.id === id) workspace.render();
+    }), false, 'creator-chip-btn'));
     main.append(assistants);
     const clear = element('details', 'creator-review-item');
     clear.append(element('summary', '', 'Clear this interview'), element('p', 'creator-muted', 'Remove the draft conversation. Accepted examples and greetings stay in the card.'), button('Clear interview turns', () => workspace.edit(next => { if (next.interview) next.interview.turns = []; }, true), false, 'creator-chip-btn creator-danger-outline'));
