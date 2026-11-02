@@ -9,6 +9,7 @@ import { creatorPublicationCard, adoptCreatorComparedCard } from './embedded-boo
 import { rememberCreatorViewport } from './viewport.js';
 import { attachCreatorGenerator } from './field-generator.js';
 import { renderCreatorFormat } from './format-picker.js';
+import { creatorTargetsSignature } from './formats.js';
 
 const sections = [['dossier', 'Dossier'], ['notebooks', 'Notebook sources'], ['identity', 'Identity'], ['facts', 'Guided facts'], ['greetings', 'Greetings & examples'], ['interview', 'Interview'], ['prompts', 'Prompts'], ['lore', 'Lorebooks'], ['macros', 'Macros & pronouns'], ['regex', 'Pretty HTML'], ['game', 'Gamify'], ['portrait', 'Portrait'], ['helper', 'Writing partner'], ['instructions', 'Writing instructions'], ['metadata', 'Details'], ['preview', 'Preview & export']];
 const labels = { name: 'Display name', description: 'Description', personality: 'Personality', scenario: 'Scenario', first_mes: 'First greeting', mes_example: 'Interviewer examples', creator_notes: 'Public creator notes', system_prompt: 'Main prompt', post_history_instructions: 'Post-history instructions', creator: 'Creator', character_version: 'Card version' };
@@ -243,9 +244,32 @@ class CreatorWorkspace {
         nav.setAttribute('aria-label', 'Creator sections');
         for (const [id, label] of sections) {
             const tab = button(label, () => { this.session.draft.view.section = id; this.session.remember(); this.render(); }, false, 'creator-section-tab');
-            tab.setAttribute('aria-current', draft.view.section === id ? 'page' : 'false');
+            const isCurrent = draft.view.section === id;
+            tab.setAttribute('aria-current', isCurrent ? 'page' : 'false');
+            tab.setAttribute('tabindex', isCurrent ? '0' : '-1');
             nav.append(tab);
         }
+        nav.addEventListener('keydown', event => {
+            const target = event.target instanceof HTMLElement ? event.target.closest('.creator-section-tab') : null;
+            if (!target) return;
+            const tabs = [...nav.querySelectorAll('.creator-section-tab')];
+            const index = tabs.indexOf(target);
+            if (index < 0) return;
+            let nextIndex = -1;
+            if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (index + 1) % tabs.length;
+            else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (index - 1 + tabs.length) % tabs.length;
+            else if (event.key === 'Home') nextIndex = 0;
+            else if (event.key === 'End') nextIndex = tabs.length - 1;
+            if (nextIndex < 0) return;
+            event.preventDefault();
+            const nextId = sections[nextIndex]?.[0];
+            if (nextId) {
+                this.session.draft.view.section = nextId;
+                this.session.remember();
+                this.render();
+                this.host.querySelector('.creator-sections [aria-current="page"]')?.focus({ preventScroll: true });
+            }
+        });
         const main = element('div', 'creator-content creator-card');
         const section = draft.view.section;
         if (section === 'identity') {
@@ -316,10 +340,12 @@ class CreatorWorkspace {
         cancel.hidden = true;
         const feedback = element('p', 'creator-conversion-status creator-muted');
         feedback.setAttribute('role', 'status');
+        feedback.hidden = true;
         const convert = button('Convert dossier to card', () => {
-            if (this.busy) { feedback.textContent = 'Another Creator request is still running. Wait for it to finish, then try again.'; return; }
+            if (this.busy) { feedback.hidden = false; feedback.textContent = 'Another Creator request is still running. Wait for it to finish, then try again.'; return; }
             return this.run(async () => {
                 try {
+                    feedback.hidden = false;
                     const draft = structuredClone(this.session.draft);
                     const request = buildDossierRequest(draft, [...selection]);
                     controller = new AbortController(); cancel.hidden = false; convert.disabled = true;
@@ -328,7 +354,7 @@ class CreatorWorkspace {
                     const { requestCreatorReply } = await import('./assistant.js');
                     const output = await requestCreatorReply(this, draft, request.messages, {
                         signal: controller.signal,
-                        isCurrent: () => this.session.draft?.id === draft.id && this.session.draft.dossier === draft.dossier && this.session.draft.style === draft.style,
+                        isCurrent: () => this.session.draft?.id === draft.id && this.session.draft.dossier === draft.dossier && this.session.draft.style === draft.style && creatorTargetsSignature(this.session.draft) === creatorTargetsSignature(draft),
                     });
                     this.session.assertOwner();
                     if (controller.signal.aborted) throw new Error('Conversion cancelled. Your dossier is unchanged.');
@@ -339,6 +365,7 @@ class CreatorWorkspace {
                     if (main.isConnected) this.proposal(proposal);
                     this.status('Conversion ready for review. Your dossier and library are unchanged.');
                 } catch (error) {
+                    feedback.hidden = false;
                     feedback.textContent = error?.message || (typeof error === 'string' ? error : 'Conversion failed. Check your model connection and try again.');
                     throw error;
                 } finally { cancel.hidden = true; convert.disabled = false; convert.textContent = 'Convert dossier to card'; }
@@ -507,14 +534,16 @@ class CreatorWorkspace {
                 group.append(element('h4', '', conflict.path.join(' / ') || resource.label));
                 const radioName = crypto.randomUUID();
                 for (const [key, label] of [['draft', 'Keep draft'], ['library', 'Keep library']]) {
-                    const row = element('label');
+                    const optionWrap = element('div', 'creator-conflict-option');
+                    const pill = element('label', 'creator-choice-pill');
                     const radio = element('input'); radio.type = 'radio'; radio.name = radioName;
                     radio.addEventListener('change', () => {
                         resource.choices[conflict.id] = key;
                         for (const input of group.querySelectorAll('input')) input.checked = input === radio;
                     });
-                    row.append(radio, document.createTextNode(label), element('pre', '', JSON.stringify(conflict[key], null, 2) ?? '(removed)'));
-                    group.append(row);
+                    pill.append(radio, document.createTextNode(label));
+                    optionWrap.append(pill, element('pre', '', JSON.stringify(conflict[key], null, 2) ?? '(removed)'));
+                    group.append(optionWrap);
                 }
                 content.append(group);
             }

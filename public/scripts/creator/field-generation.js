@@ -1,5 +1,6 @@
 import { TEXT_FIELDS, creatorAssistantContext, editCreatorDraft, setCreatorField } from './model.js';
 import { creatorGuidance } from './guidance.js';
+import { creatorTargetsSignature } from './formats.js';
 
 export function creatorFieldValue(draft, target) {
     if (TEXT_FIELDS.includes(target)) return draft.card.data[target] ?? '';
@@ -20,7 +21,7 @@ export function buildCreatorFieldRequest(draft, target) {
 
 export function acceptCreatorField(draft, source, target, value) {
     if (target.includes(':') && JSON.stringify(draft.card.data[target.split(':')[0]]) !== JSON.stringify(source.card.data[target.split(':')[0]])) throw new Error('This list changed. Generate again before applying.');
-    if (draft.id !== source.id || draft.dossier !== source.dossier || draft.style !== source.style || creatorFieldValue(draft, target) !== creatorFieldValue(source, target)) throw new Error('The field, Dossier or format changed. Generate again before applying.');
+    if (draft.id !== source.id || draft.dossier !== source.dossier || draft.style !== source.style || creatorTargetsSignature(draft) !== creatorTargetsSignature(source) || creatorFieldValue(draft, target) !== creatorFieldValue(source, target)) throw new Error('The field, Dossier or format changed. Generate again before applying.');
     if (draft.locks.includes(target.split(':')[0])) throw new Error('This field is locked for AI.');
     if (typeof value !== 'string' || value.length > (target === 'name' ? 200 : 100000)) throw new Error('The generated field is too long or invalid.');
     if (TEXT_FIELDS.includes(target)) return setCreatorField(draft, target, value);

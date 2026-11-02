@@ -176,7 +176,7 @@ const NN_PANEL_STYLESHEETS = Object.freeze({
         { href: 'css/neconyan-tool-pages.css?v=20261026a-qig-tabs', id: 'deferred-tool-pages-css' },
     ],
     'characters:creator': [
-        { href: 'css/neconyan-creator.css?v=20261103a-creator-ui', id: 'deferred-creator-css' },
+        { href: 'css/neconyan-creator.css?v=20261103b-creator-ui', id: 'deferred-creator-css' },
     ],
     'left:api': [
         { href: 'css/neconyan-tool-pages.css?v=20261026a-qig-tabs', id: 'deferred-tool-pages-css' },
@@ -523,7 +523,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261103a-creator-ui';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261103b-creator-ui';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -9645,7 +9645,7 @@ function isCharacterPanelOpen() {
 function getActiveCharacterPanelTab() {
     const menuType = getCharacterPanel()?.dataset.menuType;
 
-    if (['persona', 'import', 'world-info', 'groups'].includes(menuType)) {
+    if (['persona', 'creator', 'import', 'world-info', 'groups'].includes(menuType)) {
         return menuType;
     }
 
@@ -10638,6 +10638,11 @@ function syncCharacterShellTabs(activeTab = null) {
     if (creatorPanel) {
         creatorPanel.hidden = normalizedTab !== 'creator';
         creatorPanel.setAttribute('aria-hidden', String(normalizedTab !== 'creator'));
+    }
+
+    const editorSubtabsWrapper = panel?.querySelector('.sb-character-editor-subtabs-wrapper');
+    if (editorSubtabsWrapper instanceof HTMLElement) {
+        editorSubtabsWrapper.hidden = normalizedTab !== 'editor';
     }
 
     if (menuType === 'characters' || menuType === 'groups') {

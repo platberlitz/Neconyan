@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCreatorDraft } from '../public/scripts/creator/model.js';
+import { createCreatorDraft, acceptCreatorProposal } from '../public/scripts/creator/model.js';
 import { appendCreatorNote } from '../public/scripts/creator/notebook-source.js';
 import { creatorGuidance, CREATOR_PROMPTS } from '../public/scripts/creator/guidance.js';
-import { buildDossierRequest } from '../public/scripts/creator/dossier.js';
+import { buildDossierRequest, dossierProposal } from '../public/scripts/creator/dossier.js';
 import { normaliseScratchpadCreator, scratchpadCreatorDraft } from '../public/scripts/creator/scratchpad-draft.js';
 import { normaliseChange, splitReply, describeChange } from '../public/scripts/scratchpad/proposals.js';
 import { creatorCardExport } from '../public/scripts/creator/export.js';
@@ -64,6 +64,50 @@ test('All formats and custom user instructions reach Dossier and field generatio
     assert.throws(() => buildCreatorFieldRequest(draft, 'privateNotes'), /no longer available/);
     const depth = acceptCreatorField(draft, draft, 'depth_prompt', 'Remember her goal.');
     assert.deepEqual(depth.card.data.extensions.depth_prompt, { depth: 4, role: 'system', prompt: 'Remember her goal.' });
+});
+
+test('Conversion targets and style controls reach authoring prompts, guard stale proposals and remain draft-private', () => {
+    const draft = createCreatorDraft({ id: 'targets', card: { data: { name: 'Mira', description: 'Shipwright' } } });
+    draft.dossier = 'Mira repairs ships at the dock.';
+    assert.match(creatorGuidance(draft), /Rely strictly on the supplied dossier/);
+
+    draft.writing = {
+        targets: {
+            tense: 'present',
+            pov: 'third',
+            canon: 'supplement',
+            words: '2500-4000 interview, 500 opening',
+            paragraphs: '3-5 paragraphs',
+            tokens: '~1200 tokens',
+            interviewQuestions: '8 questions across surface and fault lines',
+            plistCategories: 'persona, appearance, body, wardrobe, quirks_and_tells',
+            openingScenarios: '4 everyday workshop openings',
+        },
+    };
+    const guidance = creatorGuidance(draft);
+    assert.match(guidance, /present tense outside dialogue quotes/);
+    assert.match(guidance, /third-person external narration/);
+    assert.match(guidance, /established canon knowledge/);
+    assert.match(guidance, /word target: 2500-4000 interview, 500 opening/);
+    assert.match(guidance, /paragraph target: 3-5 paragraphs/);
+    assert.match(guidance, /approximate token target: ~1200 tokens/);
+    assert.match(guidance, /8 questions across surface and fault lines/);
+    assert.match(guidance, /persona, appearance, body, wardrobe, quirks_and_tells/);
+    assert.match(guidance, /4 everyday workshop openings/);
+
+    for (const messages of [buildDossierRequest(draft).messages, buildCreatorFieldRequest(draft, 'description')]) {
+        assert.ok(messages[0].content.includes('Conversion and writing targets:'));
+    }
+
+    const exported = JSON.stringify(creatorCardExport(draft));
+    assert.ok(!exported.includes('2500-4000 interview'));
+    assert.ok(!exported.includes('4 everyday workshop openings'));
+
+    const proposal = dossierProposal(draft, JSON.stringify({ fields: { description: 'Updated' }, questions: [], coverage: ['Kept dock work.'] }));
+    const changedTargets = structuredClone(draft);
+    changedTargets.writing.targets.tense = 'past';
+    assert.throws(() => acceptCreatorProposal(changedTargets, proposal), /conversion targets changed/);
+    assert.throws(() => acceptCreatorField(changedTargets, draft, 'description', 'Updated'), /changed/);
 });
 
 test('Scratchpad produces a private editable Creator draft with literal source macros', () => {

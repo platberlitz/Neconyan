@@ -1,5 +1,6 @@
 import { creatorProposal, TEXT_FIELDS } from './model.js';
 import { creatorGuidance } from './guidance.js';
+import { creatorTargetsSignature } from './formats.js';
 
 export const DOSSIER_FIELDS = Object.freeze(['name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example']);
 
@@ -29,5 +30,5 @@ export function dossierProposal(draft, output, requested = DOSSIER_FIELDS) {
     for (const key of ['questions', 'coverage']) {
         if (!Array.isArray(result[key]) || result[key].length > 100 || result[key].some(value => typeof value !== 'string' || value.length > 10000)) throw new Error('The conversion needs valid coverage and questions before review.');
     }
-    return { ...creatorProposal(draft, result.fields, 'Dossier conversion'), dossierBefore: draft.dossier ?? '', questions: result.questions, coverage: result.coverage };
+    return { ...creatorProposal(draft, result.fields, 'Dossier conversion'), dossierBefore: draft.dossier ?? '', targetsBefore: creatorTargetsSignature(draft), questions: result.questions, coverage: result.coverage };
 }

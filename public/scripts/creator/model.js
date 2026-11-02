@@ -1,5 +1,6 @@
 /** Creator documents retain the complete imported card, including unknown extensions. */
 export const CREATOR_SCHEMA = 1;
+import { creatorTargetsSignature } from './formats.js';
 export const TEXT_FIELDS = Object.freeze(['name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions', 'creator', 'character_version']);
 export const FACT_SECTIONS = Object.freeze(['identity', 'appearance', 'traits', 'goals', 'limits', 'relationships', 'history', 'voice', 'scenario']);
 export const STYLES = Object.freeze(['plain', 'plist', 'alichat', 'hybrid']);
@@ -104,6 +105,7 @@ export function creatorProposal(draft, fields, label) {
 export function acceptCreatorProposal(draft, proposal, selected = proposal.changes.map(change => change.field)) {
     if (proposal.draftId !== draft.id) throw new Error('This proposal belongs to another draft.');
     if (proposal.formatBefore !== undefined && proposal.formatBefore !== draft.style) throw new Error('The writing format changed. Review a fresh conversion.');
+    if (proposal.targetsBefore !== undefined && proposal.targetsBefore !== creatorTargetsSignature(draft)) throw new Error('The conversion targets changed. Review a fresh conversion.');
     if (proposal.dossierBefore !== undefined && proposal.dossierBefore !== (draft.dossier ?? '')) throw new Error('The dossier changed. Convert the updated dossier before applying these fields.');
     const changes = proposal.changes.filter(change => selected.includes(change.field));
     for (const change of changes) {

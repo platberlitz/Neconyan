@@ -82,20 +82,35 @@ export async function renderInterview(workspace, main) {
     main.append(askRow);
     const assistants = element('details', 'creator-review-item');
     assistants.open = true;
-    assistants.append(element('summary', '', 'Writing collaborators'));
+    const collabHeader = element('summary', '', 'Writing collaborators');
+    assistants.append(collabHeader);
+    const collabList = element('div', 'creator-collaborator-list');
     for (const assistant of draft.interview?.assistants ?? []) {
-        const card = element('div', 'creator-subdetails-body');
-        card.append(textField('Collaborator name', assistant.name, value => workspace.edit(next => { next.interview.assistants.find(item => item.id === assistant.id).name = value; }), { rows: 1 }),
-            textField('Collaborator approach', assistant.instructions, value => workspace.edit(next => { next.interview.assistants.find(item => item.id === assistant.id).instructions = value; }), { rows: 2 }),
-            textField('Collaborator example dialogue', assistant.examples ?? '', value => workspace.edit(next => { next.interview.assistants.find(item => item.id === assistant.id).examples = value; }), { rows: 2 }));
+        const card = element('section', 'creator-collaborator-card');
+        const topRow = element('div', 'creator-collaborator-top');
+        const info = element('div', 'creator-collaborator-info');
+        info.append(element('strong', 'creator-collaborator-name', assistant.name || 'Collaborator'));
+        const excerptText = String(assistant.instructions ?? '').split('\n')[0].trim();
+        if (excerptText) info.append(element('p', 'creator-muted creator-collaborator-excerpt', excerptText));
         const collabActions = element('div', 'creator-actions');
         collabActions.append(
             button(`Ask ${assistant.name || 'collaborator'}`, () => ask(workspace.session.draft.interview.assistants.find(item => item.id === assistant.id)), false, 'creator-chip-btn'),
             button('Remove collaborator', () => workspace.edit(next => { next.interview.assistants = next.interview.assistants.filter(item => item.id !== assistant.id); }, true), false, 'creator-chip-btn creator-danger-outline'),
         );
-        card.append(collabActions);
-        assistants.append(card);
+        topRow.append(info, collabActions);
+        const editor = element('details', 'creator-subdetails');
+        editor.append(element('summary', '', `Edit ${assistant.name || 'collaborator'} details`));
+        const editorBody = element('div', 'creator-subdetails-body');
+        editorBody.append(
+            textField('Collaborator name', assistant.name, value => workspace.edit(next => { next.interview.assistants.find(item => item.id === assistant.id).name = value; }), { rows: 1 }),
+            textField('Collaborator approach', assistant.instructions, value => workspace.edit(next => { next.interview.assistants.find(item => item.id === assistant.id).instructions = value; }), { rows: 2 }),
+            textField('Collaborator example dialogue', assistant.examples ?? '', value => workspace.edit(next => { next.interview.assistants.find(item => item.id === assistant.id).examples = value; }), { rows: 2 }),
+        );
+        editor.append(editorBody);
+        card.append(topRow, editor);
+        collabList.append(card);
     }
+    assistants.append(collabList);
     assistants.append(button('Add a character or assistant', () => workspace.run(async () => {
         const { openAssistantLibrary } = await import('../scratchpad/assistants.js');
         let library = { assistants: [] };

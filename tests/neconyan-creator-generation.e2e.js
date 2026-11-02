@@ -16,11 +16,17 @@ for (const phone of [false, true]) {
         await creator.getByLabel('Character dossier', { exact: true }).fill('Mira repairs ships with {{poss}} tools and seeks her sister.');
         await creator.getByRole('button', { name: 'ALIchat', exact: true }).click();
         await expect(creator.getByRole('button', { name: 'ALIchat', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        await creator.locator('summary').filter({ hasText: 'Conversion targets & style' }).click();
+        await creator.getByRole('button', { name: 'Present tense', exact: true }).click();
+        await creator.getByRole('button', { name: 'Third person', exact: true }).click();
+        await creator.getByLabel('Word target', { exact: true }).fill('2500-4000 interview, 500 opening');
+        await creator.getByLabel('Paragraph target', { exact: true }).fill('3-5 paragraphs');
+        await creator.getByLabel('Approximate token target', { exact: true }).fill('~1200 tokens');
         await page.screenshot({ path: `../screenshots/creator-formats-${phone ? 'phone' : 'desktop'}.png` });
         app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: JSON.stringify({ fields: { name: 'Mira', description: '<START>\nInterviewer: What do you do?\n{{char}}: I repair ships.' }, questions: [], coverage: ['Kept her occupation.'] }) } }] };
         await creator.getByRole('button', { name: 'Convert dossier to card', exact: true }).click();
         await expect(creator.locator('.creator-proposal')).toBeVisible({ timeout: 30000 });
-        expect(app.provider.calls.some(call => call.messages?.some(message => message.content?.includes('Selected writing format: ALIchat')))).toBe(true);
+        expect(app.provider.calls.some(call => call.messages?.some(message => message.content?.includes('Selected writing format: ALIchat') && message.content?.includes('word target: 2500-4000 interview, 500 opening') && message.content?.includes('present tense outside dialogue quotes')))).toBe(true);
         await creator.getByRole('button', { name: 'Accept all fields', exact: true }).click();
         await creator.getByRole('button', { name: 'Identity', exact: true }).click();
         await expect(creator.getByLabel('Display name', { exact: true })).toHaveValue('Mira');
