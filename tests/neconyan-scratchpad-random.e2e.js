@@ -81,11 +81,39 @@ for (const phone of [false, true]) {
         await account.settled((await second.json()).job.id);
         await expect(page.locator('.scratchpad-message.is-assistant.is-done')).toHaveCount(2);
 
-        // Changing the pool must not turn a retry into a different assistant.
-        await page.locator('.scratchpad-assistants').getByRole('button', { name: 'Miso', exact: true }).click();
-        await page.locator('.scratchpad-assistants').getByRole('button', { name: 'Taro', exact: true }).click();
+        // Changing the pool must not turn a retry into a different assistant,
+        // and an open message menu survives a delayed participant-save refresh.
+        let releaseSave;
+        const saveHeld = new Promise(resolve => { releaseSave = resolve; });
+        let heldUpdates = 0;
+        let interceptUpdates = true;
+        await page.route('**/api/scratchpad/session/update', async route => {
+            if (!interceptUpdates) return route.continue();
+            heldUpdates += 1;
+            const response = await route.fetch();
+            if (heldUpdates === 2) await saveHeld;
+            await route.fulfill({ response });
+        });
         const reply = page.locator('.scratchpad-message.is-assistant').last();
-        await reply.locator('summary[aria-label="Message actions"]').click();
+        const menu = reply.locator('.scratchpad-message-menu');
+        try {
+            await page.locator('.scratchpad-assistants').getByRole('button', { name: 'Miso', exact: true }).click();
+            await page.locator('.scratchpad-assistants').getByRole('button', { name: 'Taro', exact: true }).click();
+            await expect.poll(() => heldUpdates).toBe(2);
+            await menu.locator('summary[aria-label="Message actions"]').click();
+            await expect(menu).toHaveJSProperty('open', true);
+            await menu.evaluate(element => { element.dataset.beforeSave = '1'; });
+            const savesSettled = page.waitForResponse(response => response.url().includes('/api/scratchpad/session/update') && heldUpdates === 2);
+            releaseSave();
+            expect((await savesSettled).ok()).toBe(true);
+        } finally {
+            interceptUpdates = false;
+            releaseSave();
+        }
+        await expect(page.locator('.scratchpad-assistants').getByRole('button', { name: 'Miso', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        await expect(page.locator('.scratchpad-assistants').getByRole('button', { name: 'Taro', exact: true })).toHaveAttribute('aria-pressed', 'false');
+        await expect(page.locator('.scratchpad-assistants').getByRole('button', { name: 'Miso', exact: true })).toBeDisabled();
+        await expect(reply.locator('.scratchpad-message-menu:not([data-before-save])')).toHaveJSProperty('open', true);
         const retried = page.waitForResponse('**/api/scratchpad/send');
         await reply.getByRole('button', { name: 'Try again', exact: true }).click();
         const retry = await retried;

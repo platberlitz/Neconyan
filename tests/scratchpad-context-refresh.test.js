@@ -153,7 +153,7 @@ describe('Scratchpad Context refresh lifecycle', () => {
         const chat = { kind: 'roleplay', key: 'chat' };
         const bucket = (source, id) => ({ source, activeSessionId: id, sessions: [{ id, messages: [] }] });
         const app = { source: general, bucket: bucket(general, 'general-session'), ticket: 0, contextKey: '', tab: 'chat', openSwipes: new Set(),
-            drafts: new Map(), draftKey: JSON.stringify(['general', 'general', 'general-session']), el: { composer: { value: 'GENERAL-DRAFT' } } };
+            openMenus: new Set(), openMenusSessionId: '', drafts: new Map(), draftKey: JSON.stringify(['general', 'general', 'general-session']), el: { composer: { value: 'GENERAL-DRAFT' } } };
         let live = general;
         const requests = [];
         const runtime = vm.createContext({ app, sameSourceBucket, sameSourceContext, PICK_PAGE: 30,
@@ -295,5 +295,175 @@ describe('Scratchpad Context refresh lifecycle', () => {
         await f.settle();
         expect(f.rows()).toHaveLength(1);
         expect(f.panel.find('scratchpad-error')).toHaveLength(0);
+    });
+
+    test('preserves open message menus across same-session settings saves without carrying them to closed or other sessions', async () => {
+        const list = new Element('div');
+        list.root = true;
+        list.scrollHeight = 100;
+        list.scrollTop = 100;
+        list.clientHeight = 100;
+        list.querySelectorAll = selector => selector === '.scratchpad-message-menu' ? list.find('scratchpad-message-menu') : [];
+        const scope = { kind: 'roleplay', key: 'chat' };
+        const messages = [
+            { id: 'user-1', role: 'user', text: 'Now explain the next step.' },
+            { id: 'reply-1', role: 'assistant', state: 'done', assistant: 'taro', text: 'random-taro answers in one reply.' },
+        ];
+        const session = (id = 'one', participants = ['taro']) => ({
+            id,
+            assistant: 'miso',
+            settings: { ...structuredClone(defaults), roundTable: true, randomReply: true, participants },
+            messages: structuredClone(messages),
+        });
+        const bucket = (sessions = [session()], activeSessionId = sessions[0]?.id ?? '') => ({ source: scope, activeSessionId, sessions });
+        const app = {
+            built: true,
+            open: true,
+            tab: 'chat',
+            assistant: 'miso',
+            source: scope,
+            bucket: bucket(),
+            ticket: 1,
+            sending: false,
+            editing: '',
+            contextKey: '',
+            pickLimit: 30,
+            openSwipes: new Set(),
+            openMenus: new Set(),
+            openMenusSessionId: '',
+            foldedThinking: new Set(),
+            previews: new Map(),
+            queue: Promise.resolve(),
+            library: { assistants: [] },
+            el: { root: {}, messages: list, summary: new Element('div'), composer: { value: '' } },
+        };
+        const updates = [];
+        const node = (tag, attributes = {}, ...children) => {
+            const element = new Element(tag, attributes, children);
+            element.listeners = new Map();
+            element.open = Boolean(attributes.open);
+            element.dataset = { ...(attributes.dataset ?? {}) };
+            element.addEventListener = (type, listener) => element.listeners.set(type, listener);
+            element.querySelector = selector => selector === 'summary' ? element.children[0] : null;
+            element.closest = selector => {
+                for (let cur = element; cur; cur = cur.parent) {
+                    if (selector === '[data-message-id]' && cur.dataset?.messageId) return cur;
+                }
+                return null;
+            };
+            return element;
+        };
+        const runtime = vm.createContext({
+            app,
+            structuredClone,
+            DEFAULT_SETTINGS: defaults,
+            ASSISTANTS: [{ id: 'miso', name: 'Miso' }, { id: 'taro', name: 'Taro' }],
+            PICK_PAGE: 30,
+            h: node,
+            append: (element, children) => element.append(children),
+            clear: element => element.replaceChildren(),
+            t: (strings, ...values) => strings.reduce((text, part, index) => text + part + (values[index] ?? ''), ''),
+            sameSourceBucket,
+            sameSourceContext,
+            isCurrentSource: value => sameSourceContext(value, app.source),
+            currentSource: () => app.source,
+            wireSource: value => value,
+            sourceUserName: () => 'User',
+            assistantInfo: id => ({ id, name: id }),
+            assistantPortrait: id => `${id}.png`,
+            sessionAssistants: current => current?.settings.roundTable ? current.settings.participants : ['miso'],
+            randomReplyEnabled: () => true,
+            pendingReply: () => null,
+            contextSummary: () => 'Reading the latest 15 messages',
+            updateMessageTokenCounts() {},
+            renderReply: (_session, message) => node('div', { class: 'scratchpad-reply', text: message.text }),
+            renderWebSearchSources: () => null,
+            renderMessageActions: () => node('div', { class: 'scratchpad-message-actions' }, node('button', { title: 'Try again' })),
+            renderHeader() {},
+            renderOverview() {},
+            renderComposer() {},
+            renderContext() {},
+            renderSessions() {},
+            syncDraft() {},
+            syncWatchers() {},
+            stopWatchers() {},
+            setNotebookSource() {},
+            applyLayout() {},
+            clearInterval() {},
+            scrollMessages() {},
+            iconButton: (text, onclick, options = {}) => node('button', { text, onclick, title: options.title }),
+            reportError: error => { throw error; },
+            api: {
+                updateSession: (_source, sessionId, changes) => new Promise(resolve => updates.push({ sessionId, changes, resolve })),
+            },
+        });
+        const messageFns = ['activeSession', 'currentSettings', 'nearBottom', 'applyBucket', 'render', 'renderChat', 'renderMessages', 'renderMessage', 'requireScope', 'change', 'updateSettings', 'checkSource', 'hideScratchpad'];
+        vm.runInContext(messageFns.map(name => source.match(new RegExp(`^(?:export )?(?:async )?function ${name}\\([\\s\\S]*?^}`, 'm'))[0].replace(/^export /, '')).join('\n'), runtime);
+
+        const menus = () => list.find('scratchpad-message-menu');
+        runtime.renderMessages();
+        expect(menus().map(menu => menu.open)).toEqual([false, false]);
+
+        const firstReplyMenu = menus()[1];
+        firstReplyMenu.open = true;
+        firstReplyMenu.attributes.ontoggle({ currentTarget: firstReplyMenu });
+        expect(app.openMenus.has('reply-1')).toBe(true);
+
+        const pendingSave = runtime.updateSettings({ participants: ['taro', 'miso'] });
+        await Promise.resolve();
+        expect(updates).toHaveLength(1);
+        updates[0].resolve({ bucket: bucket([session('one', ['taro', 'miso'])]) });
+        await pendingSave;
+        expect(menus()[1]).not.toBe(firstReplyMenu);
+        expect(menus().map(menu => menu.open)).toEqual([false, true]);
+
+        // A delayed toggle event from a detached old menu must not mutate openMenus after rerender.
+        expect(firstReplyMenu.isConnected).toBe(false);
+        firstReplyMenu.open = false;
+        firstReplyMenu.attributes.ontoggle({ currentTarget: firstReplyMenu });
+        expect(app.openMenus.has('reply-1')).toBe(true);
+        runtime.applyBucket(bucket([session('one', ['taro', 'miso'])]));
+        expect(menus().map(menu => menu.open)).toEqual([false, true]);
+
+        // A synchronous DOM open/close before the deferred toggle event fires is captured by same-session rerender.
+        menus()[0].open = true;
+        menus()[1].open = false;
+        runtime.applyBucket(bucket([session('one', ['taro'])]));
+        expect(menus().map(menu => menu.open)).toEqual([true, false]);
+        menus()[0].open = false;
+        menus()[0].attributes.ontoggle({ currentTarget: menus()[0] });
+
+        // Closing the menu by toggling or pressing Escape prevents a later rerender from reopening it.
+        menus()[1].open = false;
+        menus()[1].attributes.ontoggle({ currentTarget: menus()[1] });
+        runtime.applyBucket(bucket([session('one', ['miso'])]));
+        expect(menus().map(menu => menu.open)).toEqual([false, false]);
+
+        menus()[1].open = true;
+        menus()[1].attributes.ontoggle({ currentTarget: menus()[1] });
+        let focused = false;
+        menus()[1].children[0].focus = () => { focused = true; };
+        menus()[1].listeners.get('keydown')({ key: 'Escape', stopPropagation() {} });
+        expect(focused).toBe(true);
+        runtime.applyBucket(bucket([session('one', ['taro'])]));
+        expect(menus().map(menu => menu.open)).toEqual([false, false]);
+
+        // Switching sessions, deleted messages, or closing Scratchpad drops open-menu state.
+        menus()[1].open = true;
+        menus()[1].attributes.ontoggle({ currentTarget: menus()[1] });
+        runtime.applyBucket(bucket([session('one'), session('two')], 'two'));
+        expect(menus().map(menu => menu.open)).toEqual([false, false]);
+        runtime.applyBucket(bucket([session('one'), session('two')], 'one'));
+        expect(menus().map(menu => menu.open)).toEqual([false, false]);
+
+        menus()[1].open = true;
+        menus()[1].attributes.ontoggle({ currentTarget: menus()[1] });
+        runtime.applyBucket(bucket([{ ...session('one'), messages: [messages[0]] }]));
+        expect(app.openMenus.has('reply-1')).toBe(false);
+
+        menus()[0].open = true;
+        menus()[0].attributes.ontoggle({ currentTarget: menus()[0] });
+        runtime.hideScratchpad();
+        expect(app.openMenus.size).toBe(0);
     });
 });

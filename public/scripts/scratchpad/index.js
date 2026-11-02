@@ -130,6 +130,8 @@ const app = {
     foldedThinking: new Set(),
     openLorebooks: new Set(),
     openSwipes: new Set(),
+    openMenus: new Set(),
+    openMenusSessionId: '',
     watchers: new Map(),
     imageWatchers: new Map(),
     imageJobSignatures: new Map(),
@@ -567,6 +569,8 @@ function checkSource() {
     app.editing = '';
     app.pickLimit = PICK_PAGE;
     app.openSwipes.clear();
+    app.openMenus.clear();
+    app.openMenusSessionId = '';
     app.contextKey = '';
     render();
     void reload();
@@ -1118,14 +1122,24 @@ function scrollMessages(force = false) {
 function renderMessages() {
     const list = app.el.messages;
     const stick = nearBottom(list);
+    const session = app.source ? activeSession() : null;
+    if (session?.id && app.openMenusSessionId === session.id) {
+        for (const menu of list.querySelectorAll?.('.scratchpad-message-menu') ?? []) {
+            const id = menu.closest('[data-message-id]')?.dataset?.messageId;
+            if (id) app.openMenus[menu.open ? 'add' : 'delete'](id);
+        }
+    } else {
+        app.openMenus.clear();
+        app.openMenusSessionId = session?.id ?? '';
+    }
     clear(list);
     if (!app.source) {
         list.append(h('div', { class: 'scratchpad-empty' },
             h('p', { text: t`Open a Roleplay or Conversation chat, then come back here to talk with your chosen assistant.` })));
         return;
     }
-    const session = activeSession();
     if (!session?.messages.length) {
+        app.openMenus.clear();
         const participants = sessionAssistants(session).map(id => assistantInfo(id));
         const names = participants.map(assistant => assistant.name).join(', ');
         list.append(h('div', { class: 'scratchpad-empty' },
@@ -1138,6 +1152,8 @@ function renderMessages() {
                     : t`Suggested changes to notes, lorebooks, characters or messages appear as cards you can review before anything is saved.` })));
         return;
     }
+    const ids = new Set(session.messages.map(item => item.id));
+    for (const id of app.openMenus) if (!ids.has(id)) app.openMenus.delete(id);
     const lastUserIndex = session.messages.findLastIndex(item => item.role === 'user');
     for (const [index, message] of session.messages.entries()) {
         list.append(renderMessage(session, message, {
@@ -1224,18 +1240,29 @@ function renderMessage(session, message, { latest }) {
         }
     }
     const actions = renderMessageActions(session, message, { latest });
-    const menu = h('details', { class: 'scratchpad-message-menu' },
-        h('summary', { 'aria-label': t`Message actions`, title: t`Message actions` },
-            h('i', { class: 'fa-solid fa-ellipsis', 'aria-hidden': 'true' })), actions);
+    const menu = h('details', {
+        class: 'scratchpad-message-menu',
+        open: app.openMenus.has(message.id),
+        ontoggle: event => {
+            if (!event.currentTarget.isConnected || activeSession()?.id !== session.id) return;
+            app.openMenus[event.currentTarget.open ? 'add' : 'delete'](message.id);
+        },
+    },
+    h('summary', { 'aria-label': t`Message actions`, title: t`Message actions` },
+        h('i', { class: 'fa-solid fa-ellipsis', 'aria-hidden': 'true' })), actions);
     menu.addEventListener('keydown', event => {
         if (event.key === 'Escape') {
+            app.openMenus.delete(message.id);
             menu.open = false;
             menu.querySelector('summary').focus();
             event.stopPropagation();
         }
     });
     actions.addEventListener('click', event => {
-        if (event.target.closest('button:not(:disabled)')) menu.open = false;
+        if (event.target.closest('button:not(:disabled)')) {
+            app.openMenus.delete(message.id);
+            menu.open = false;
+        }
     });
     author.append(menu);
     return article;
@@ -2319,6 +2346,8 @@ export async function openScratchpad({ tab = '', note = null } = {}) {
 export function hideScratchpad() {
     if (!app.open) return;
     app.open = false;
+    app.openMenus.clear();
+    app.openMenusSessionId = '';
     clearInterval(app.timer);
     app.timer = 0;
     stopWatchers();
