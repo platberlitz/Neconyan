@@ -6,6 +6,69 @@ test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
 test.setTimeout(120000);
 
 for (const width of [393, 1280]) {
+    test(`model lists open at the saved model and keep the viewport on selection at ${width}px`, async ({ browser }) => {
+        const context = await browser.newContext({ viewport: { width, height: width === 393 ? 852 : 900 }, hasTouch: width === 393, serviceWorkers: 'block', reducedMotion: 'reduce' });
+        const page = await context.newPage();
+        try {
+            await isolateSettingsSaves(page, settings => {
+                settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', 'NeconyanTutorialHidden.v1': 'true' };
+                settings.main_api = 'openai';
+                settings.oai_settings = { ...settings.oai_settings, chat_completion_source: 'custom', custom_model: 'catalogue-060', custom_url: 'https://models.invalid/v1' };
+            });
+            const models = Array.from({ length: 100 }, (_, index) => ({ id: `catalogue-${String(index).padStart(3, '0')}` }));
+            await page.route('**/api/backends/chat-completions/status', route => route.fulfill({ json: { data: models } }));
+            await page.goto('/');
+            await page.waitForFunction(() => window.NeconyanShell && document.body.classList.contains('neconyan-rail-ready'));
+            await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
+            await page.locator('#api_button_openai').click();
+            const results = page.locator('#model_custom_select_results');
+            await expect(results.locator('[data-model-id]')).toHaveCount(100);
+            const selectedIsInListView = () => results.evaluate(element => {
+                const row = element.querySelector('[aria-pressed="true"]')?.getBoundingClientRect();
+                const bounds = element.getBoundingClientRect();
+                return row && row.top >= bounds.top && row.bottom <= bounds.bottom;
+            });
+            await expect.poll(selectedIsInListView).toBe(true);
+            await expect(page.locator('#custom_model_id')).not.toBeFocused();
+
+            // Leave the model-name field above the panel's visible area, then
+            // select a model without letting the test scroll the page for us.
+            const target = results.locator('[data-model-id="catalogue-090"]');
+            await target.scrollIntoViewIfNeeded();
+            await results.evaluate(element => {
+                const panel = element.closest('.sb-shell-panel-scroller');
+                panel.scrollTop += element.getBoundingClientRect().top - panel.getBoundingClientRect().top - 12;
+            });
+            const position = () => results.evaluate(element => ({
+                list: element.scrollTop,
+                panel: element.closest('.sb-shell-panel-scroller').scrollTop,
+                page: window.scrollY,
+            }));
+            const before = await position();
+            expect(await page.locator('#custom_model_id').evaluate(element => element.getBoundingClientRect().bottom < element.closest('.sb-shell-panel-scroller').getBoundingClientRect().top)).toBe(true);
+            if (width === 393) await target.tap();
+            else await target.click();
+            await expect(target).toHaveAttribute('aria-pressed', 'true');
+            await expect(page.locator('#custom_model_id')).toHaveValue('catalogue-090');
+            // Both the immediate and the deferred option rebuild must settle.
+            await page.waitForTimeout(200);
+            expect(await position()).toEqual(before);
+            await expect(page.locator('#custom_model_id')).not.toBeFocused();
+
+            // Opening another backend and returning must show the saved row,
+            // even after the user had scrolled away from it.
+            await results.evaluate(element => { element.scrollTop = 0; });
+            await page.locator('#chat_completion_source').selectOption('claude');
+            await expect(results).toBeHidden();
+            await page.locator('#chat_completion_source').selectOption('custom');
+            await expect(results).toBeVisible();
+            await expect.poll(selectedIsInListView).toBe(true);
+            await expect(page.locator('#custom_model_id')).toHaveValue('catalogue-090');
+        } finally {
+            await context.close();
+        }
+    });
+
     test(`custom model search only changes the chosen model on selection at ${width}px`, async ({ browser }) => {
         const context = await browser.newContext({ viewport: { width, height: width === 393 ? 852 : 900 }, hasTouch: width === 393, serviceWorkers: 'block', reducedMotion: 'reduce' });
         const page = await context.newPage();

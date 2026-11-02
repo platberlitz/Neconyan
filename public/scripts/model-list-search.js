@@ -67,6 +67,7 @@ export function attachModelListSearch(select, options = {}) {
     let rows = new WeakMap();
     let available = [];
     let searchText = new WeakMap();
+    let revealOnRender = true;
     lists.set(select, list);
 
     // Programmatic .val() calls do not fire a change event. Sync before the
@@ -75,6 +76,7 @@ export function attachModelListSearch(select, options = {}) {
     root.addEventListener('pointerdown', syncPressed, { passive: true });
 
     function choose(value) {
+        revealOnRender = false;
         select.value = value;
         select.dispatchEvent(new Event('change', { bubbles: true }));
         syncPressed();
@@ -180,6 +182,7 @@ export function attachModelListSearch(select, options = {}) {
     }
 
     function render({ invalidate = true } = {}) {
+        const scrollTop = results.scrollTop;
         // A caller can replace options and dispatch input in the same turn,
         // before the observer has delivered those source changes.
         if (!invalidate && observer.takeRecords().length) invalidate = true;
@@ -221,8 +224,25 @@ export function attachModelListSearch(select, options = {}) {
             for (const option of group.items) fragment.append(createRow(option));
         }
         results.replaceChildren(fragment);
+        // Rebuilding options temporarily empties the scroller. Restore its
+        // position before returning focus to a row, including on touch screens.
+        results.scrollTop = scrollTop;
         if (focusedValue !== null && focusedValue !== undefined) {
             results.querySelector(`[data-model-id="${CSS.escape(focusedValue)}"]`)?.focus({ preventScroll: true });
+        } else if (invalidate && revealOnRender) {
+            revealSelected();
+        }
+    }
+
+    /** Move only the catalogue, never its containing settings panel. */
+    function revealSelected() {
+        if (input.value || !results.clientHeight) return;
+        const target = results.querySelector('[aria-pressed="true"]');
+        if (!target) return;
+        const bounds = results.getBoundingClientRect();
+        const row = target.getBoundingClientRect();
+        if (row.top < bounds.top || row.bottom > bounds.bottom) {
+            results.scrollTop += row.top - bounds.top - (results.clientHeight - row.height) / 2;
         }
     }
 
@@ -244,6 +264,10 @@ export function attachModelListSearch(select, options = {}) {
 
     /** Brings the list into view without opening an on-screen keyboard. */
     function focus() {
+        revealOnRender = true;
+        if (observer.takeRecords().length) render();
+        syncPressed();
+        revealSelected();
         root.scrollIntoView({ block: 'nearest' });
         const target = results.querySelector('[aria-pressed="true"]') ?? getButtons()[0];
         if (target instanceof HTMLElement) {
@@ -306,6 +330,19 @@ export function attachModelListSearch(select, options = {}) {
         attributes: true,
         attributeFilter: ['disabled', 'label', 'data-favorite', 'value', 'style'],
     });
+    // Lists are often built while their backend or Connections is hidden.
+    // Centre the saved model once that list is shown, without stealing focus.
+    let visible = false;
+    const visibilityObserver = new ResizeObserver(() => {
+        const nextVisible = results.clientHeight > 0;
+        if (nextVisible && !visible) {
+            revealOnRender = true;
+            syncPressed();
+            revealSelected();
+        }
+        visible = nextVisible;
+    });
+    visibilityObserver.observe(results);
     render();
     return list;
 }
