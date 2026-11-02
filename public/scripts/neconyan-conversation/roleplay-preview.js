@@ -123,6 +123,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             extra: { reasoning: latest.reasoning || '', inChatAgents: latest.inChatAgents,
                 inChatAgentCompanionResults: latest.inChatAgentCompanionResults,
                 api: latest.generation?.source, model: latest.generation?.model,
+                reasoning_effort: latest.generation?.reasoning_effort,
                 token_count: latest.token_count, reasoning_tokens: latest.reasoning_tokens,
                 time_to_first_token: latest.time_to_first_token, reasoning_duration: reasoningDuration,
                 ...(reasoningDetails && node.classList.contains('reasoning') ? { reasoning_collapsed: !reasoningDetails.open } : {}) } };
@@ -349,6 +350,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         const sentAt = startedAt || new Date(latest.updatedAt || Date.now()).toISOString();
         const extra = Object.fromEntries(Object.entries({ reasoning: latest.reasoning || undefined,
             api: latest.generation?.source, model: latest.generation?.model,
+            reasoning_effort: latest.generation?.reasoning_effort,
             // Display and prompt regexes need the exact rules accepted for this reply.
             inChatAgents: latest.inChatAgents ? structuredClone(latest.inChatAgents) : undefined,
             token_count: latest.token_count, reasoning_tokens: latest.reasoning_tokens,

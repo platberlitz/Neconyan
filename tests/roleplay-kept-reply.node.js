@@ -102,13 +102,14 @@ test('a mid-stream Stop keeps the partial reply and its reasoning exactly once',
     const child = await f.child();
     requestCancellation(f.dirs, f.jobId, { reason: 'user_cancelled' });
     publishRoleplayPreview(f.context(child), { stage: 'generating', text: 'Half a reply', reasoning: 'Because the bell rang',
-        gen_started: '2026-10-28T10:00:00.000Z', generation: { model: 'fixture', source: 'custom' } });
+        gen_started: '2026-10-28T10:00:00.000Z', generation: { model: 'fixture', source: 'custom', reasoning_effort: 'medium' } });
     const stopped = Object.assign(new Error('The reply was stopped.'), { name: 'AbortError' });
     const kept = preserveInterruptedRoleplayReply({ ...f.context(child), signal: AbortSignal.abort() }, stopped);
     assert.equal(kept.state, 'done');
     assert.equal(f.records().length, 4);
     assert.equal(f.records()[3].mes, 'Half a reply');
     assert.equal(f.records()[3].extra.reasoning, 'Because the bell rang');
+    assert.equal(f.records()[3].extra.reasoning_effort, 'medium');
     assert.equal(f.records()[3].extra.roleplay_kept_reply.reason, 'stopped');
     assert.equal(f.records()[3].extra.roleplay_kept_reply.rootJobId, f.jobId);
     assert.equal(readRoleplayKeptReply({ directories: f.dirs, jobId: child.id }).state, 'done');

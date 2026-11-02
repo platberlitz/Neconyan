@@ -245,6 +245,15 @@ describe('Roleplay preview rendering', () => {
         await waitFor(() => updateMessageElement.mock.calls.length >= 1);
     }
 
+    test.each(['medium', undefined])('preview and recovery retain the accepted reasoning effort: %s', async effort => {
+        const stop = startPreview();
+        stream.send({ preview: { childId: 'reply', stage: 'generating', text: 'Hello.',
+            generation: { source: 'custom', model: 'reasoning-model', reasoning_effort: effort } } });
+        await waitForFirstDraw();
+        expect(updateMessageElement.mock.calls[0][0].extra.reasoning_effort).toBe(effort);
+        expect(stop.reply().extra.reasoning_effort).toBe(effort);
+    });
+
     test('recovery keeps the accepted display and prompt regex rules without changing the reply text', async () => {
         const scripts = [
             { id: 'display', findRegex: '/\\[MOOD\\|([^\\]]+)\\]/g', replaceString: '<em>$1</em>', placement: [2], markdownOnly: true },

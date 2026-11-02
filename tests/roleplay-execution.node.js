@@ -139,9 +139,9 @@ test('bound provider metadata keeps an encrypted reasoning signature on the reco
 
 test('a saved active Custom request runs through the real provider transport and stores only the reply', async t => {
     const f = fixture(t);
-    const settings = { _settingsRevision: 1, main_api: 'openai', active_generation: { api: 'openai', source: 'custom', model: 'fixture' },
-        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000', custom_model: 'fixture', show_thoughts: true,
-            custom_include_headers: 'Authorization: Bearer private-header', custom_include_body: 'api_key: private-body' },
+    const settings = { _settingsRevision: 1, main_api: 'openai', active_generation: { api: 'openai', source: 'custom', model: 'gpt-5.1' },
+        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000', custom_model: 'gpt-5.1', show_thoughts: true,
+            reasoning_effort: 'medium', custom_include_headers: 'Authorization: Bearer private-header', custom_include_body: 'api_key: private-body' },
         power_user: { custom_stopping_strings: '[]' } };
     fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify(settings));
     const binding = captureGenerationBinding(f.scope.directories, { kind: 'active' }, { settingsRevision: 1 });
@@ -158,14 +158,16 @@ test('a saved active Custom request runs through the real provider transport and
         assert.equal(url, 'http://127.0.0.1:6000/chat/completions');
         assert.equal(request.headers.Authorization, 'Bearer private-header');
         assert.equal(JSON.parse(request.body).api_key, 'private-body');
+        assert.equal(JSON.parse(request.body).reasoning_effort, 'medium');
         return new Response(JSON.stringify({ choices: [{ message: { content: 'Real bound reply', reasoning_content: 'Private thought' } }] }));
     } });
     await runRoleplayReplyJob(context, { generate });
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Real bound reply');
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).extra.reasoning, 'Private thought');
     const extra = readRoleplayChat(f.scope, f.locator).records.at(-1).extra;
-    assert.equal(extra.model, 'fixture');
+    assert.equal(extra.model, 'gpt-5.1');
     assert.equal(extra.api, 'custom');
+    assert.equal(extra.reasoning_effort, 'medium');
     assert.ok(extra.token_count > 0);
     assert.ok(extra.reasoning_tokens > 0);
     assert.equal(calls, 1);
@@ -302,7 +304,7 @@ test('thinking-only provider results are kept once without successful delivery o
             const f = fixture(t);
             fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({ _settingsRevision: 1,
                 main_api: 'openai', active_generation: { api: 'openai', source: 'custom', model: 'fixture' },
-                oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000', custom_model: 'fixture', show_thoughts: true },
+                oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000', custom_model: 'fixture', show_thoughts: true, reasoning_effort: 'medium' },
                 power_user: { custom_stopping_strings: '[]' } }));
             const binding = captureGenerationBinding(f.scope.directories, { kind: 'active' }, { settingsRevision: 1 });
             const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
@@ -335,6 +337,7 @@ test('thinking-only provider results are kept once without successful delivery o
             const last = saved.records.at(-1);
             assert.equal(last.mes, '');
             assert.equal(last.extra.reasoning, 'A paid thought, without an answer.');
+            assert.equal(last.extra.reasoning_effort, 'medium');
             assert.equal(last.extra.generation_finish_reason, reason);
             assert.deepEqual(last.extra.generation_usage, usage);
             assert.equal(last.extra.generation_outcome.status, 'error');
@@ -488,13 +491,14 @@ test('a swipe keeps reasoning with its selected version', async t => {
     await runRoleplayReplyJob(context, { generate: async () => ({ text: 'Another',
         response: { choices: [{ message: { reasoning_content: 'Why' } }] },
         generation: { backend: 'chat', source: 'custom', model: 'thinking-model', showThoughts: true,
-            ...timing, reasoning_duration: 3000 } }) });
+            ...timing, reasoning_duration: 3000, reasoning_effort: 'high' } }) });
     const message = readRoleplayChat(f.scope, f.locator).records[2];
     assert.equal(message.swipe_id, 2);
     assert.equal(message.swipe_info[2].extra.reasoning, 'Why');
     assert.equal(message.extra.reasoning, 'Why');
     for (const version of [message, message.swipe_info[2]]) {
         assert.equal(version.extra.reasoning_duration, 3000);
+        assert.equal(version.extra.reasoning_effort, 'high');
         assert.equal(version.gen_started, timing.gen_started);
         assert.equal(version.gen_finished, timing.gen_finished);
     }
