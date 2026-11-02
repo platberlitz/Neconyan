@@ -24,7 +24,11 @@ test.describe('phone discovery cues', () => {
         await applyIOSOnlyCss(page, { inPlace: true });
         const rail = page.locator('#leftSendForm');
         const chrome = chromeFor(page, '#leftSendForm');
-        await expect(chrome).toHaveCount(0);
+        await expect(chrome.locator('.sb-mobile-rail-track')).toBeVisible();
+        await expect(chrome.locator('.sb-mobile-rail-arrow')).toHaveCount(0);
+        expect(await chrome.evaluate(el => getComputedStyle(el).pointerEvents)).toBe('none');
+        const thumbOffset = () => chrome.evaluate(el => parseFloat(el.style.getPropertyValue('--sb-rail-thumb-left')));
+        expect(await thumbOffset()).toBe(0);
         expect(await rail.locator('.sb-mobile-rail-chrome').count()).toBe(0);
         // The two original tool centres remain available, including the narrow composer.
         const centres = await rail.evaluate(el => [...el.children].filter(child => child.getBoundingClientRect().width > 0).map(child => {
@@ -42,7 +46,10 @@ test.describe('phone discovery cues', () => {
         }
         await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
         await expect.poll(() => rail.evaluate(el => el.scrollLeft)).toBeGreaterThan(0);
+        await expect.poll(thumbOffset).toBeGreaterThan(0);
         await client.detach();
+        await rail.evaluate(el => el.scrollTo({ left: 0, behavior: 'instant' }));
+        await expect.poll(thumbOffset).toBe(0);
         await page.evaluate(() => window.NeconyanShell.openCharacters());
         await applyIOSOnlyCss(page, { inPlace: true });
         const nav = page.locator('#right-nav-panel .sb-character-shell-nav');

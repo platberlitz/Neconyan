@@ -85,6 +85,10 @@
         border-radius: inherit;
         background: var(--neco-ginger);
     }
+    body .sb-mobile-rail-progress-only .sb-mobile-rail-track {
+        bottom: -5px;
+        opacity: 0.7;
+    }
 
     /* iOS can reserve the status bar itself and report a zero top safe area.
        Keep this sampling box taller than WebKit's 10px thin-border threshold,
