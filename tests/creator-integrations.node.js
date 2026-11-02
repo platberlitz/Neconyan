@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCreatorDraft, acceptCreatorProposal } from '../public/scripts/creator/model.js';
+import { createCreatorDraft, acceptCreatorProposal, renderCreatorFacts } from '../public/scripts/creator/model.js';
 import { appendCreatorNote } from '../public/scripts/creator/notebook-source.js';
 import { creatorGuidance, CREATOR_PROMPTS } from '../public/scripts/creator/guidance.js';
 import { buildDossierRequest, dossierProposal } from '../public/scripts/creator/dossier.js';
@@ -9,6 +9,36 @@ import { normaliseChange, splitReply, describeChange } from '../public/scripts/s
 import { creatorCardExport } from '../public/scripts/creator/export.js';
 import { buildCreatorFieldRequest, acceptCreatorField } from '../public/scripts/creator/field-generation.js';
 import { CREATOR_FORMATS } from '../public/scripts/creator/formats.js';
+
+test('ALIchat guidance and guided examples need no opening delimiter and preserve imported text', () => {
+    const draft = createCreatorDraft({ id: 'alichat', card: { data: { mes_example: '<START>\nLegacy example' } } });
+    draft.style = 'alichat';
+    draft.dossier = 'Mira repairs ships.';
+    draft.facts.push({ id: 'work', section: 'identity', text: 'Ship repairer', status: 'decided' });
+    assert.ok(!buildDossierRequest(draft).messages[0].content.includes('<START>'));
+    assert.ok(renderCreatorFacts(draft).fields.mes_example.startsWith('Interviewer:'));
+    assert.equal(draft.card.data.mes_example, '<START>\nLegacy example');
+});
+
+test('PList destination reviews Character’s Note without changing description or depth settings', () => {
+    const draft = createCreatorDraft({ id: 'note-target', card: { data: { description: 'Original description', extensions: { depth_prompt: { prompt: 'Old note', depth: 7, role: 'user', opaque: true } } } } });
+    draft.dossier = 'Mira repairs ships.';
+    draft.style = 'plist';
+    draft.writing = { formatInstruction: 'Use compact bracketed categories.', plistDestination: 'depth_prompt' };
+    draft.facts.push({ id: 'work', section: 'identity', text: 'Ship repairer', status: 'decided' });
+    assert.match(renderCreatorFacts(draft).fields.depth_prompt, /Ship repairer/);
+    const request = buildDossierRequest(draft, ['description']);
+    assert.deepEqual(request.fields, ['depth_prompt']);
+    assert.match(request.messages[0].content, /compact bracketed categories/);
+    assert.equal(JSON.parse(request.messages[1].content).existingFields.depth_prompt, 'Old note');
+    const proposal = dossierProposal(draft, JSON.stringify({ fields: { depth_prompt: '[Work: ship repairs]' }, questions: [], coverage: ['Kept occupation'] }), request.fields);
+    const applied = acceptCreatorProposal(draft, proposal);
+    assert.equal(applied.card.data.description, 'Original description');
+    assert.deepEqual(applied.card.data.extensions.depth_prompt, { prompt: '[Work: ship repairs]', depth: 7, role: 'user', opaque: true });
+    assert.equal(draft.card.data.extensions.depth_prompt.prompt, 'Old note');
+    assert.throws(() => acceptCreatorProposal({ ...draft, writing: { ...draft.writing, formatInstruction: 'Changed rules' } }, proposal), /targets changed/);
+    assert.throws(() => acceptCreatorProposal({ ...draft, locks: ['depth_prompt'] }, proposal), /locked/);
+});
 
 test('Notebook imports copy only the selected saved text and preserve its source', () => {
     const draft = createCreatorDraft({ id: 'notes', card: { data: { name: 'Mira' } } });

@@ -2,6 +2,8 @@
 export const CREATOR_SCHEMA = 1;
 import { creatorTargetsSignature } from './formats.js';
 export const TEXT_FIELDS = Object.freeze(['name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions', 'creator', 'character_version']);
+export const PROPOSAL_FIELDS = Object.freeze([...TEXT_FIELDS, 'depth_prompt']);
+export const creatorTextValue = (draft, field) => field === 'depth_prompt' ? draft.card.data.extensions?.depth_prompt?.prompt ?? '' : draft.card.data[field] ?? '';
 export const FACT_SECTIONS = Object.freeze(['identity', 'appearance', 'traits', 'goals', 'limits', 'relationships', 'history', 'voice', 'scenario']);
 export const STYLES = Object.freeze(['plain', 'plist', 'alichat', 'hybrid']);
 const copy = value => structuredClone(value);
@@ -33,7 +35,7 @@ export function validateCreatorDraft(draft) {
     for (const field of TEXT_FIELDS) {
         if (typeof draft.card.data[field] !== 'string' || draft.card.data[field].length > 100000) throw new Error(`The character ${field} must be text within 100,000 characters.`);
     }
-    if (typeof draft.privateNotes !== 'string' || !draft.locks.every(field => TEXT_FIELDS.includes(field))) throw new Error('The draft notes or field locks are invalid.');
+    if (typeof draft.privateNotes !== 'string' || !draft.locks.every(field => PROPOSAL_FIELDS.includes(field))) throw new Error('The draft notes or field locks are invalid.');
     if (!draft.facts.every(fact => fact && typeof fact.id === 'string' && FACT_SECTIONS.includes(fact.section) && typeof fact.text === 'string' && ['decided', 'tentative', 'open'].includes(fact.status))) throw new Error('The guided facts are invalid.');
     if (!draft.books.every(book => book && typeof book.id === 'string' && typeof book.name === 'string' && ['linked', 'copy', 'embedded'].includes(book.mode) && book.data?.entries && typeof book.data.entries === 'object' && !Array.isArray(book.data.entries))) throw new Error('The draft lorebooks are invalid.');
     if (draft.additionalBooks !== undefined && (!Array.isArray(draft.additionalBooks) || !draft.additionalBooks.every(name => typeof name === 'string'))) throw new Error('The additional lorebook names are invalid.');
@@ -89,15 +91,16 @@ export function renderCreatorFacts(draft, style = draft.style) {
     const lines = facts.map(fact => `${fact.section}: ${fact.text}`);
     const plain = lines.join('\n');
     const plist = facts.map(fact => `${fact.section}: ${JSON.stringify(String(fact.text))}`).join(';\n');
-    const interview = facts.map(fact => `<START>\nInterviewer: Tell me about your ${fact.section}.\n{{char}}: ${fact.text}`).join('\n\n');
-    return { style, version: 1, fields: style === 'alichat' ? { mes_example: interview } : style === 'hybrid' ? { description: plain, mes_example: interview } : { description: style === 'plist' ? plist : plain }, kept: facts.map(fact => fact.id), excluded: draft.facts.filter(fact => !facts.includes(fact)).map(fact => fact.id) };
+    const interview = facts.map(fact => `Interviewer: Tell me about your ${fact.section}.\n{{char}}: ${fact.text}`).join('\n\n');
+    const propertyField = style === 'plist' && draft.writing?.plistDestination === 'depth_prompt' ? 'depth_prompt' : 'description';
+    return { style, version: 1, fields: style === 'alichat' ? { mes_example: interview } : style === 'hybrid' ? { description: plain, mes_example: interview } : { [propertyField]: style === 'plist' ? plist : plain }, kept: facts.map(fact => fact.id), excluded: draft.facts.filter(fact => !facts.includes(fact)).map(fact => fact.id) };
 }
 
 /** Every proposed field keeps its exact before-value, so late replies cannot overwrite edits. */
 export function creatorProposal(draft, fields, label) {
     const changes = Object.entries(fields).map(([field, after]) => {
-        if (!TEXT_FIELDS.includes(field) || typeof after !== 'string') throw new Error('The proposal contains an unsupported field.');
-        return { field, before: draft.card.data[field] ?? '', after };
+        if (!PROPOSAL_FIELDS.includes(field) || typeof after !== 'string') throw new Error('The proposal contains an unsupported field.');
+        return { field, before: creatorTextValue(draft, field), after };
     });
     return { id: globalThis.crypto.randomUUID(), draftId: draft.id, label, changes };
 }
@@ -109,12 +112,17 @@ export function acceptCreatorProposal(draft, proposal, selected = proposal.chang
     if (proposal.dossierBefore !== undefined && proposal.dossierBefore !== (draft.dossier ?? '')) throw new Error('The dossier changed. Convert the updated dossier before applying these fields.');
     const changes = proposal.changes.filter(change => selected.includes(change.field));
     for (const change of changes) {
-        if (!TEXT_FIELDS.includes(change.field) || typeof change.after !== 'string') throw new Error('The proposal contains an unsupported field.');
+        if (!PROPOSAL_FIELDS.includes(change.field) || typeof change.after !== 'string' || change.after.length > 100000) throw new Error('The proposal contains an unsupported field.');
         if (draft.locks.includes(change.field)) throw new Error(`The ${change.field} field is locked.`);
-        if ((draft.card.data[change.field] ?? '') !== change.before) throw new Error(`The ${change.field} field changed. Review a fresh proposal.`);
+        if (creatorTextValue(draft, change.field) !== change.before) throw new Error(`The ${change.field} field changed. Review a fresh proposal.`);
     }
     return editCreatorDraft(draft, next => {
         for (const change of changes) {
+            if (change.field === 'depth_prompt') {
+                next.card.data.extensions ??= {};
+                next.card.data.extensions.depth_prompt = { depth: 4, role: 'system', ...next.card.data.extensions.depth_prompt, prompt: change.after };
+                continue;
+            }
             next.card.data[change.field] = change.after;
             const alias = change.field === 'creator_notes' ? 'creatorcomment' : change.field;
             if (Object.hasOwn(next.card, alias)) next.card[alias] = change.after;

@@ -22,7 +22,7 @@ export function interviewExample(draft, turnId) {
     const reply = turns[index];
     const question = turns.slice(0, index).findLast(turn => turn.speaker === 'Interviewer');
     if (reply?.speaker !== 'character' || !question) throw new Error('Choose a character reply that follows an Interviewer question.');
-    return `<START>\nInterviewer: ${question.text}\n{{char}}: ${reply.text}`;
+    return `Interviewer: ${question.text}\n{{char}}: ${reply.text}`;
 }
 
 export async function renderInterview(workspace, main) {

@@ -478,7 +478,7 @@ class CreatorWorkspace {
         }
         for (const change of proposal.changes) {
             const group = element('section', 'creator-proposal-field');
-            group.append(element('h4', '', labels[change.field] || change.field), element('pre', 'creator-before', change.before || '(empty)'));
+            group.append(element('h4', '', change.field === 'depth_prompt' ? 'Character’s Note' : labels[change.field] || change.field), element('pre', 'creator-before', change.before || '(empty)'));
             group.append(textField('Proposed text', change.after, value => { change.after = value; persist(); }));
             group.append(button('Accept this field', () => {
                 this.change(draft => acceptCreatorProposal(draft, proposal, [change.field]), true);

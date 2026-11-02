@@ -90,7 +90,7 @@ export function renderCreatorFormat(workspace, main) {
             convert.disabled = true; cancel.hidden = false; controller = new AbortController();
             feedback.textContent = 'Converting existing text. Your fields stay unchanged until you accept the proposal.';
             const output = await requestCreatorReply(workspace, source, request.messages, { signal: controller.signal });
-            const proposal = dossierProposal(source, output, fields);
+            const proposal = dossierProposal(source, output, request.fields);
             delete proposal.dossierBefore;
             proposal.formatBefore = source.style;
             proposal.targetsBefore = creatorTargetsSignature(source);
@@ -107,6 +107,21 @@ export function renderCreatorFormat(workspace, main) {
     convertActions.append(convert, cancel);
     topBar.append(row, convertActions);
     group.append(topBar, element('p', 'creator-muted', 'Used by Dossier conversion, Generate and the Writing partner. Choosing a format does not replace existing text.'), feedback);
+    group.append(textField('Custom writing format instructions', workspace.session.draft.writing?.formatInstruction ?? '', value => workspace.edit(next => {
+        next.writing ??= {}; next.writing.formatInstruction = value;
+    }), { rows: 2, hint: 'Add your own structure, formatting and style rules. Used alongside the selected format; kept private to this draft.' }));
+    if (workspace.session.draft.style === 'plist') {
+        const destinations = element('div', 'creator-actions');
+        destinations.append(element('span', 'creator-muted', 'Place the PList in:'));
+        for (const [id, label] of [['description', 'Description'], ['depth_prompt', 'Character’s Note']]) {
+            const choice = button(label, () => workspace.edit(next => {
+                next.writing ??= {}; next.writing.plistDestination = id;
+            }, true), false, 'creator-chip-btn');
+            choice.setAttribute('aria-pressed', String((workspace.session.draft.writing?.plistDestination ?? 'description') === id));
+            destinations.append(choice);
+        }
+        group.append(destinations, element('p', 'creator-muted', 'Applies when converting the Dossier or existing description, or requesting description changes from the Writing partner. Character’s Note is the depth prompt on the Prompts page. Existing text changes only after review.'));
+    }
     renderCreatorTargets(workspace, group, { open: false });
     main.append(group);
 }

@@ -1,8 +1,8 @@
 export const CREATOR_FORMATS = Object.freeze({
     plain: { label: 'Natural description', hint: 'Character-specific prose, with clear paragraphs.', instruction: 'Write descriptive character fields as natural prose with concrete, character-specific details.' },
     plist: { label: 'PList', hint: 'Compact labelled properties and traits.', instruction: 'Write descriptive character fields as compact labelled properties, grouping related traits into readable lists. Prefer exact nouns, measurements, habits, triggers and lifestyle context over bare adjectives; use thing(descriptor, descriptor) parentheticals and semicolon-separated categories where helpful. Preserve concrete detail instead of reducing everything to vague adjectives.' },
-    alichat: { label: 'ALIchat', hint: 'Characterisation through Interviewer and character dialogue.', instruction: 'Express characterisation through short example exchanges: <START> followed by brief neutral Interviewer: questions (roughly 2-5 words) and character-voiced {{char}}: turns with concrete physical mannerisms. Let the character demonstrate their traits in their own voice. Use Interviewer, never {{user}}, as the example speaker.' },
-    hybrid: { label: 'Hybrid', hint: 'Concise facts plus dialogue that demonstrates their voice.', instruction: 'Combine concise labelled character facts (PList-style traits and context) with illustrative <START> dialogue using brief Interviewer: questions and {{char}}: replies. Keep each part useful rather than repeating all the same facts.' },
+    alichat: { label: 'ALIchat', hint: 'Characterisation through Interviewer and character dialogue.', instruction: 'Express characterisation through short example exchanges using brief neutral Interviewer: questions (roughly 2-5 words) and character-voiced {{char}}: turns with concrete physical mannerisms. Let the character demonstrate their traits in their own voice. Use Interviewer, never {{user}}, as the example speaker. Separate exchanges with blank lines; no opening delimiter is required.' },
+    hybrid: { label: 'Hybrid', hint: 'Concise facts plus dialogue that demonstrates their voice.', instruction: 'Combine concise labelled character facts (PList-style traits and context) with illustrative dialogue using brief Interviewer: questions and {{char}}: replies. Separate exchanges with blank lines; no opening delimiter is required. Keep each part useful rather than repeating all the same facts.' },
 });
 
 export const CREATOR_TENSES = Object.freeze({
@@ -34,6 +34,8 @@ export function creatorTargetsSignature(draft) {
         String(t.interviewQuestions ?? '').trim(),
         String(t.plistCategories ?? '').trim(),
         String(t.openingScenarios ?? '').trim(),
+        draft.writing?.formatInstruction ?? '',
+        draft.writing?.plistDestination ?? 'description',
     ]);
 }
 
@@ -70,5 +72,11 @@ export function creatorFormatGuidance(draft) {
     const format = CREATOR_FORMATS[draft.style] ?? CREATOR_FORMATS.plain;
     const base = `Selected writing format: ${format.label}. ${format.instruction} Apply this format to description, personality, scenario and example dialogue as appropriate to the requested fields. Keep names, tags and metadata short. Greetings remain playable scene openings; system and depth prompts remain instructions. Preserve established facts, user agency and literal macros. Do not rewrite unrelated fields merely to enforce a format.`;
     const targets = creatorTargetsGuidance(draft);
-    return [base, targets].filter(Boolean).join('\n\n');
+    const custom = draft.writing?.formatInstruction ? `Custom writing format instructions:\n${draft.writing.formatInstruction}` : '';
+    const placement = draft.style === 'plist' && draft.writing?.plistDestination === 'depth_prompt' ? 'When depth_prompt is requested, write the PList into Character’s Note (depth_prompt), not into description or creator_notes. Preserve any existing useful note instructions. Do not duplicate the PList into other fields.' : '';
+    return [base, targets, custom, placement].filter(Boolean).join('\n\n');
+}
+
+export function creatorFormatFields(draft, fields) {
+    return [...new Set(fields.map(field => field === 'description' && draft.style === 'plist' && draft.writing?.plistDestination === 'depth_prompt' ? 'depth_prompt' : field))];
 }

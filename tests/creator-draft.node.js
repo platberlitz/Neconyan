@@ -194,7 +194,7 @@ test('draft interview excludes private source material and promotes only charact
     const messages = buildCreatorInterview(draft, 'Who is waiting?');
     assert.ok(messages[1].content.includes('Mira keeps her promises.'));
     assert.ok(!JSON.stringify(messages).includes('PRIVATE-'));
-    assert.equal(interviewExample(draft, 'a'), '<START>\nInterviewer: What did you promise?\n{{char}}: To bring {{poss}} letter home.');
+    assert.equal(interviewExample(draft, 'a'), 'Interviewer: What did you promise?\n{{char}}: To bring {{poss}} letter home.');
     assert.throws(() => interviewExample(draft, 'peer'), /character reply/);
     assert.throws(() => buildCreatorInterview(draft, ''), /question/);
     assert.equal(draft.card.data.mes_example, '');
