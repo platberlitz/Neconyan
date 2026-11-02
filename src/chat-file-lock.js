@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import process from 'node:process';
 import { types } from 'node:util';
+import { isPathUnderOwnedDataRoot } from './data-root-owner.js';
 
 const require = createRequire(import.meta.url);
 const lockfile = require('proper-lockfile');
@@ -13,33 +14,54 @@ const LOCK_RETRY_DELAY_MS = 25;
 const LOCK_RETRY_LIMIT = 200;
 const LOCK_STALE_MS = 300_000;
 const activeLocks = new Set();
+const activeLockEntities = new Set();
 const hostname = os.hostname();
 
-const lockIdentity = stat => `${stat.dev}:${stat.ino}:${stat.birthtimeMs}:${stat.ctimeMs}`;
+const normalizeLockPath = lockPath => {
+    const resolved = path.resolve(lockPath);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+};
+
+const entityKey = stat => `${stat.dev}:${stat.ino}`;
+
+const lockIdentity = stat => Number.isFinite(stat.birthtimeMs) && stat.birthtimeMs > 0
+    ? `${stat.dev}:${stat.ino}:${stat.birthtimeMs}`
+    : null;
 
 // Keep the normal stale timeout for live, remote or unidentified owners. Only a
-// matching lock left by a provably dead local process can be reclaimed early.
+// lock under this process's verified exclusive data-root lease (when not held by
+// this process) or a matching lock left by a provably dead local process can be
+// reclaimed early.
 function ownerAwareStat(filename, ...args) {
     const stat = fs.statSync(filename, ...args);
+    const key = normalizeLockPath(filename);
+    const entity = entityKey(stat);
+    if (!activeLocks.has(key) && !activeLockEntities.has(entity) && isPathUnderOwnedDataRoot(filename)) {
+        try { fs.unlinkSync(filename + '.owner'); } catch { /* Optional recovery hint. */ }
+        stat.mtime = new Date(0);
+        return stat;
+    }
     try {
+        const identity = lockIdentity(stat);
+        if (!identity) return stat;
         const ownerPath = filename + '.owner';
         const info = fs.lstatSync(ownerPath);
         if (!info.isFile() || info.size > 4096) return stat;
         const owner = JSON.parse(fs.readFileSync(ownerPath, 'utf8'));
-        if (owner.hostname !== hostname || !Number.isSafeInteger(owner.pid) || owner.pid < 1 || owner.identity !== lockIdentity(stat)) return stat;
+        if (owner.hostname !== hostname || !Number.isSafeInteger(owner.pid) || owner.pid < 1 || owner.identity !== identity) return stat;
         try { process.kill(owner.pid, 0); } catch (error) { if (error.code === 'ESRCH') stat.mtime = new Date(0); }
     } catch { /* Old locks and incomplete owner records use the normal timeout. */ }
     return stat;
 }
-const ownerAwareFs = new Proxy(require('graceful-fs'), {
-    get(target, name) { return name === 'statSync' ? ownerAwareStat : target[name]; },
-});
+
+const gracefulFs = require('graceful-fs');
 
 function recordLockOwner(lockPath) {
     // This is a recovery hint, not write-ahead evidence. Losing it falls back to
     // the ordinary stale timeout; it must not add a disk flush to every lock.
     try {
         const identity = lockIdentity(fs.statSync(lockPath));
+        if (!identity) return;
         const fd = fs.openSync(lockPath + '.owner', fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW, 0o600);
         try { fs.writeFileSync(fd, JSON.stringify({ hostname, pid: process.pid, identity })); } finally { fs.closeSync(fd); }
     } catch { /* Locking remains valid without the recovery hint. */ }
@@ -47,14 +69,52 @@ function recordLockOwner(lockPath) {
 
 /** Retain the existing lock policy while allowing immediate recovery of dead local owners. */
 export function acquireLocalFileLock(filePath, options) {
-    const release = lockfile.lockSync(filePath, { ...options, fs: ownerAwareFs });
-    recordLockOwner(options.lockfilePath);
+    const lockPath = options?.lockfilePath || `${filePath}.lock`;
+    const key = normalizeLockPath(lockPath);
+    if (activeLocks.has(key)) {
+        throw Object.assign(new Error(`Lock file is already being held: ${filePath}`), { code: 'ELOCKED', file: filePath });
+    }
+    let heldEntity = null;
+    const fsProxy = new Proxy(gracefulFs, {
+        get(target, name) {
+            if (name === 'statSync') return ownerAwareStat;
+            if (name === 'mkdirSync') {
+                return function (filename, ...args) {
+                    const result = target.mkdirSync(filename, ...args);
+                    try {
+                        heldEntity = entityKey(fs.statSync(filename));
+                    } catch (error) {
+                        try { target.rmdirSync(filename); } catch { /* Best effort. */ }
+                        throw error;
+                    }
+                    activeLockEntities.add(heldEntity);
+                    activeLocks.add(key);
+                    return result;
+                };
+            }
+            return target[name];
+        },
+    });
+    let unlock;
+    try {
+        unlock = lockfile.lockSync(filePath, { ...options, fs: fsProxy });
+    } catch (error) {
+        activeLocks.delete(key);
+        if (heldEntity) activeLockEntities.delete(heldEntity);
+        throw error;
+    }
+    recordLockOwner(lockPath);
     let released = false;
     return () => {
         if (released) return;
         released = true;
-        try { fs.unlinkSync(options.lockfilePath + '.owner'); } catch { /* Optional recovery hint. */ }
-        release();
+        try { fs.unlinkSync(lockPath + '.owner'); } catch { /* Optional recovery hint. */ }
+        try {
+            unlock();
+        } finally {
+            activeLocks.delete(key);
+            if (heldEntity) activeLockEntities.delete(heldEntity);
+        }
     };
 }
 
@@ -67,7 +127,8 @@ export function getChatFileLockPath(filePath) {
 export function acquireChatFileLock(filePath) {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     const lockPath = getChatFileLockPath(filePath);
-    if (activeLocks.has(lockPath)) {
+    const key = normalizeLockPath(lockPath);
+    if (activeLocks.has(key)) {
         throw Object.assign(new Error(`Chat file is already locked: ${filePath}`), { code: 'ELOCKED' });
     }
 
@@ -89,13 +150,8 @@ export function acquireChatFileLock(filePath) {
         }
     }
 
-    activeLocks.add(lockPath);
     return () => {
-        try {
-            release?.();
-        } finally {
-            activeLocks.delete(lockPath);
-        }
+        release?.();
     };
 }
 

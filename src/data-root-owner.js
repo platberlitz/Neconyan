@@ -6,7 +6,87 @@ import process from 'node:process';
 
 export const DATA_ROOT_OWNER_DIRECTORY = '.neconyan-root-owner';
 const OWNER_NAME = 'owner.json';
-const activeOwners = new WeakMap();
+const activeOwners = new Map();
+
+function withinRoot(root, candidate) {
+    const relative = path.relative(root, candidate);
+    return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative));
+}
+
+function verifyHeldOwner(held) {
+    try {
+        const directory = path.join(held.root, DATA_ROOT_OWNER_DIRECTORY);
+        const current = readOwner(directory);
+        const now = rootIdentity(held.root);
+        const dir = fs.lstatSync(directory, { bigint: true });
+        const file = fs.lstatSync(path.join(directory, OWNER_NAME), { bigint: true });
+        const start = processStartIdentity();
+        return current.version === 1
+            && current.nonce === held.owner.nonce
+            && current.pid === process.pid
+            && current.hostname === os.hostname()
+            && current.platform === process.platform
+            && current.purpose === held.owner.purpose
+            && current.processStart === held.owner.processStart
+            && (held.owner.processStart === null || start === held.owner.processStart)
+            && current.root.dev === held.identity.dev
+            && current.root.ino === held.identity.ino
+            && now.dev === held.identity.dev
+            && now.ino === held.identity.ino
+            && dir.dev === held.directoryStat.dev
+            && dir.ino === held.directoryStat.ino
+            && file.dev === held.ownerStat.dev
+            && file.ino === held.ownerStat.ino
+            && file.size === held.ownerStat.size
+            && file.mtimeNs === held.ownerStat.mtimeNs
+            && file.ctimeNs === held.ownerStat.ctimeNs;
+    } catch {
+        return false;
+    }
+}
+
+function hasNestedDataRootOwner(root, target) {
+    let current = path.dirname(target);
+    while (withinRoot(root, current) && current !== root) {
+        try {
+            fs.lstatSync(path.join(current, DATA_ROOT_OWNER_DIRECTORY));
+            return true;
+        } catch (error) {
+            if (error?.code !== 'ENOENT') return true;
+        }
+        const parent = path.dirname(current);
+        if (parent === current) break;
+        current = parent;
+    }
+    return false;
+}
+
+/** True only when this process currently holds a verified live data-root lease directly governing targetPath. */
+export function isPathUnderOwnedDataRoot(targetPath) {
+    if (typeof targetPath !== 'string' || !targetPath || !activeOwners.size) return false;
+    let resolvedTarget;
+    try {
+        resolvedTarget = fs.realpathSync(path.resolve(targetPath));
+    } catch {
+        try {
+            const resolved = path.resolve(targetPath);
+            resolvedTarget = path.join(fs.realpathSync(path.dirname(resolved)), path.basename(resolved));
+        } catch {
+            return false;
+        }
+    }
+    for (const held of activeOwners.values()) {
+        try {
+            if (fs.realpathSync(held.root) !== held.root) continue;
+        } catch {
+            continue;
+        }
+        if (withinRoot(held.root, resolvedTarget) && !hasNestedDataRootOwner(held.root, resolvedTarget) && verifyHeldOwner(held)) {
+            return true;
+        }
+    }
+    return false;
+}
 
 function fail(message) {
     return Object.assign(new Error(message), { code: 'DATA_ROOT_OWNED' });
