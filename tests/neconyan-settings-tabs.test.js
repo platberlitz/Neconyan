@@ -122,4 +122,45 @@ describe('Neconyan settings theme drawers', () => {
         expect(indexSource).toContain('id="aggressive_dom_window_size"');
         expect(indexSource).toContain('id="aggressive_dom_window_size_counter"');
     });
+
+    test('places Miso\'s Help me choose beside the settings search, not in the tab row', () => {
+        const guideSource = readSource('public', 'scripts', 'miso-settings-guide.js');
+        const recommendationsSource = readSource('public', 'scripts', 'miso-settings-recommendations.js');
+
+        expect(settingsTabsSource).toContain('askMiso.id = MISO_GUIDE_TRIGGER_ID;');
+        expect(settingsTabsSource).toContain('searchBar.append(askMiso);');
+        expect(settingsTabsSource).toContain('detail.append(searchBar, misoGuideRoot, heading, resultCount, noResults, content);');
+        expect(settingsTabsSource).toContain('misoGuideRoot.className = \'nn-miso-guide\';');
+        expect(settingsTabsSource).toContain('misoGuideRoot.setAttribute(\'aria-label\', \'Miso\\\'s settings guide\');');
+        expect(settingsTabsSource).toContain('markSearchIndexIgnored(document.createElement(\'section\'));');
+        expect(settingsTabsSource).not.toContain('nav.append(askMiso');
+        expect(settingsTabsSource).toContain('import(\'./miso-settings-guide.js\')');
+        expect(settingsTabsSource).toContain('loadAnswers: () => accountStorage.getItem(MISO_GUIDE_STORAGE_KEY)');
+        expect(settingsTabsSource).toContain('NeconyanMisoSettingsGuide.v1');
+        expect(settingsTabsSource).toContain('aria-expanded');
+        expect(settingsTabsSource).toContain('aria-controls');
+
+        expect(guideSource).toContain('getAssistantIconSrc(\'miso\')');
+        expect(guideSource).toContain('Miso asks, you decide');
+        expect(guideSource).toContain('Four short questions. Miso suggests settings for how you read and chat, and nothing changes until you press the button.');
+        expect(guideSource).toContain('event.key === \'Escape\'');
+        expect(guideSource).toContain('neconyan:assistant-gender-changed');
+        expect(guideSource).toContain('window.addEventListener(\'neconyan:simple-mode-changed\'');
+        expect(guideSource).not.toContain('document.addEventListener(\'neconyan:simple-mode-changed\'');
+        expect(guideSource).toContain('settingsContent?.addEventListener(\'input\'');
+        expect(guideSource).toContain('settingsContent?.addEventListener(\'change\'');
+        expect(guideSource).toContain('if (!built || root.hidden || view !== \'results\' || busy) return;');
+        expect(guideSource).toContain('const SHELL_APPEARANCE_CONTROL_IDS = new Set([');
+        expect(guideSource).toContain('\'sb-desktop-compact-mode-input\'');
+        expect(guideSource).toContain('\'sb-mobile-compact-mode-input\'');
+        expect(guideSource).toContain('\'sb-kittyless-enabled-input\'');
+        expect(guideSource).toContain('settingsBlock?.addEventListener(\'change\', handleAppearanceControlChange)');
+        expect(guideSource).toContain('settingsBlock?.removeEventListener(\'change\', handleAppearanceControlChange)');
+        expect(settingsTabsSource).toContain('if (readMisoRawValue(settingId) !== next || control.checked !== next)');
+        expect(settingsTabsSource).toContain('Aggressive unloading keeps the chat at');
+        expect(recommendationsSource).toContain('NeconyanMisoSettingsGuide.v1');
+
+        const chatWritingCss = readSource('public', 'css', 'neconyan-chat-writing.css');
+        expect(chatWritingCss).toMatch(/#nn-settings-ask-miso,\s*#nn-settings-miso-guide \.nn-miso-guide-close \{\s*min-height: 44px;/);
+    });
 });

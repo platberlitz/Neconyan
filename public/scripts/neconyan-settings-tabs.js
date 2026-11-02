@@ -3,6 +3,9 @@ import { eventSource, event_types } from './events.js';
 import { getRequestHeaders } from '../script.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { t } from './i18n.js';
+import { createDefaultLowMemoryPreferences, getLowMemoryState } from './low-memory-mode.js';
+import { getEffectiveFastUiMode, getEffectiveLowMemoryPolicy, power_user, syncLowMemorySettingsUi } from './power-user.js';
+import { isSimpleModeEnabled, setSimpleModeEnabled } from './neconyan-simple-mode.js';
 
 /**
  * Neconyan Settings Tabs Overhaul
@@ -787,6 +790,286 @@ import { t } from './i18n.js';
         return element;
     }
 
+    const MISO_GUIDE_ROOT_ID = 'nn-settings-miso-guide';
+    const MISO_GUIDE_TRIGGER_ID = 'nn-settings-ask-miso';
+    const MISO_GUIDE_STORAGE_KEY = 'NeconyanMisoSettingsGuide.v1';
+    const MISO_SETTING_CONTROLS = Object.freeze({
+        chatDisplay: 'chat_display',
+        fontScale: 'font_scale',
+        lineSpacing: 'line_spacing',
+        messageTokenCount: 'messageTokensEnabled',
+        messageTimer: 'messageTimerEnabled',
+        messageModelName: 'messageModelNameEnabled',
+        reducedMotion: 'reduced_motion',
+        fastUi: 'fast_ui_mode',
+        autoLoadChat: 'auto-load-chat-checkbox',
+        replyLocation: 'reply_generation_location',
+        smoothStreaming: 'smooth_streaming',
+        quickContinue: 'quick_continue',
+        quickImpersonate: 'quick_impersonate',
+        sendOnEnter: 'send_on_enter',
+        messageSound: 'play_message_sound',
+        backgroundSound: 'play_sound_unfocused',
+        spoilerFree: 'spoiler_free_mode',
+        lowMemoryMode: 'low_memory_mode',
+        streamingFps: 'streaming_fps',
+        chatTruncation: 'chat_truncation',
+    });
+    const MISO_SETTING_IDS = Object.freeze([
+        ...Object.keys(MISO_SETTING_CONTROLS),
+        'simpleMode',
+        'compactMode',
+        'kittyless',
+    ]);
+
+    let misoGuideInstance = null;
+    let misoGuideLoading = null;
+
+    function misoControl(settingId) {
+        const controlId = MISO_SETTING_CONTROLS[settingId];
+        return controlId ? document.getElementById(controlId) : null;
+    }
+
+    function readMisoEffectiveValue(settingId) {
+        switch (settingId) {
+            case 'simpleMode':
+                return isSimpleModeEnabled();
+            case 'compactMode':
+                return Boolean(globalThis.NeconyanShell?.getCompactMode?.());
+            case 'kittyless':
+                return document.documentElement.dataset.sbKittyless === 'true';
+            case 'chatDisplay':
+                return Number(power_user.chat_display);
+            case 'fontScale':
+                return Number(power_user.font_scale);
+            case 'lineSpacing':
+                return Number(power_user.line_spacing);
+            case 'messageTokenCount':
+                return Boolean(power_user.message_token_count_enabled);
+            case 'messageTimer':
+                return Boolean(power_user.timer_enabled);
+            case 'messageModelName':
+                return Boolean(power_user.timestamp_model_name);
+            case 'reducedMotion': {
+                const input = misoControl('reducedMotion');
+                return input instanceof HTMLInputElement ? input.checked : Boolean(power_user.reduced_motion);
+            }
+            case 'fastUi':
+                return Boolean(getEffectiveFastUiMode());
+            case 'autoLoadChat':
+                return Boolean(power_user.auto_load_chat);
+            case 'replyLocation':
+                return power_user.reply_generation_location === 'server' ? 'server' : 'browser';
+            case 'smoothStreaming':
+                return Boolean(power_user.smooth_streaming);
+            case 'quickContinue':
+                return Boolean(power_user.quick_continue);
+            case 'quickImpersonate':
+                return Boolean(power_user.quick_impersonate);
+            case 'sendOnEnter':
+                return Number(power_user.send_on_enter);
+            case 'messageSound':
+                return Boolean(power_user.play_message_sound);
+            case 'backgroundSound':
+                return Boolean(power_user.play_sound_unfocused);
+            case 'spoilerFree':
+                return Boolean(power_user.spoiler_free_mode);
+            case 'lowMemoryMode':
+                return getLowMemoryState().mode;
+            case 'streamingFps':
+                return Number(power_user.streaming_fps);
+            case 'chatTruncation':
+                return Number(getEffectiveLowMemoryPolicy().roleplayWindowSize);
+            default:
+                return undefined;
+        }
+    }
+
+    function readMisoRawValue(settingId) {
+        if (settingId === 'reducedMotion') return Boolean(power_user.reduced_motion);
+        if (settingId === 'fastUi') return Boolean(power_user.fast_ui_mode);
+        if (settingId === 'chatTruncation') return Number(power_user.chat_truncation);
+        return readMisoEffectiveValue(settingId);
+    }
+
+    function getMisoValues() {
+        return Object.fromEntries(MISO_SETTING_IDS.map(settingId => [settingId, readMisoEffectiveValue(settingId)]));
+    }
+
+    function getMisoLockedSettings() {
+        const locked = {};
+        const reducedMotion = misoControl('reducedMotion');
+        if (reducedMotion instanceof HTMLInputElement && reducedMotion.disabled) {
+            locked.reducedMotion = 'Your device asks for reduced motion, so Miso cannot turn it off.';
+        }
+        const kittyless = document.getElementById('sb-kittyless-enabled-input');
+        if (kittyless instanceof HTMLInputElement && kittyless.disabled) {
+            locked.kittyless = 'The current Shell Style hides the cats itself, so Miso cannot change this here.';
+        }
+        if (power_user.aggressive_dom_unload) {
+            const windowSize = Number(power_user.aggressive_dom_window_size) || 5;
+            locked.chatTruncation = `Aggressive unloading keeps the chat at ${windowSize} messages. Turn off Enable aggressive unloading in Settings → System & Device before changing Messages to load.`;
+        }
+        return locked;
+    }
+
+    function getMisoBlockedReason() {
+        const missing = Object.values(MISO_SETTING_CONTROLS).filter(controlId => !document.getElementById(controlId));
+        if (missing.length) return 'The settings page is still loading. Wait a moment and try again.';
+        if (!(document.getElementById('sb-kittyless-enabled-input') instanceof HTMLInputElement)) {
+            return 'The appearance settings are still loading. Wait a moment and try again.';
+        }
+        if (typeof globalThis.NeconyanShell?.setCompactMode !== 'function') {
+            return 'The app shell is still loading. Wait a moment and try again.';
+        }
+        return '';
+    }
+
+    function applyMisoSetting(settingId, value) {
+        if (settingId === 'simpleMode') {
+            setSimpleModeEnabled(Boolean(value));
+            return;
+        }
+        if (settingId === 'compactMode') {
+            if (typeof globalThis.NeconyanShell?.setCompactMode !== 'function') {
+                throw new Error('The compact layout control is not ready.');
+            }
+            globalThis.NeconyanShell.setCompactMode(Boolean(value));
+            return;
+        }
+        if (settingId === 'kittyless') {
+            const input = document.getElementById('sb-kittyless-enabled-input');
+            if (!(input instanceof HTMLInputElement)) throw new Error('The cat decoration control is not ready.');
+            const next = Boolean(value);
+            if (input.disabled && input.checked !== next) {
+                throw new Error('The current shell style sets the cat decorations itself.');
+            }
+            if (input.checked !== next) {
+                input.checked = next;
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            return;
+        }
+
+        const control = misoControl(settingId);
+        if (settingId === 'reducedMotion' && control instanceof HTMLInputElement && control.disabled) {
+            const next = Boolean(value);
+            if (control.checked === next) return;
+            throw new Error('Your device asks for reduced motion, so Miso will not turn it off.');
+        }
+        if (control instanceof HTMLInputElement && control.type === 'checkbox') {
+            const next = Boolean(value);
+            if (readMisoRawValue(settingId) !== next || control.checked !== next) {
+                control.checked = next;
+                control.dispatchEvent(new Event('input', { bubbles: true }));
+                control.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            return;
+        }
+        if (control instanceof HTMLInputElement && control.type === 'range') {
+            control.value = String(value);
+            control.dispatchEvent(new Event('input', { bubbles: true }));
+            control.dispatchEvent(new Event('change', { bubbles: true }));
+            const counter = document.getElementById(`${control.id}_counter`);
+            if (counter instanceof HTMLInputElement) counter.value = String(value);
+            return;
+        }
+        if (control instanceof HTMLSelectElement) {
+            control.value = String(value);
+            control.dispatchEvent(new Event('change', { bubbles: true }));
+            return;
+        }
+        throw new Error('That setting control is not ready.');
+    }
+
+    function cloneLowMemoryPreferences(value) {
+        try {
+            return JSON.parse(JSON.stringify(value ?? createDefaultLowMemoryPreferences()));
+        } catch {
+            return createDefaultLowMemoryPreferences();
+        }
+    }
+
+    function captureMisoSnapshot(settingIds) {
+        const ids = [...new Set(settingIds)];
+        const tracksLowMemoryPreferences = ids.some(settingId => settingId === 'fastUi' || settingId === 'chatTruncation');
+        return {
+            values: Object.fromEntries(ids.map(settingId => [settingId, readMisoRawValue(settingId)])),
+            effective: Object.fromEntries(ids.map(settingId => [settingId, readMisoEffectiveValue(settingId)])),
+            lowMemoryPreferences: tracksLowMemoryPreferences ? cloneLowMemoryPreferences(power_user.low_memory_preferences) : null,
+        };
+    }
+
+    function restoreMisoSnapshot(snapshot) {
+        if (!snapshot || typeof snapshot !== 'object') throw new Error('There is no saved state to put back.');
+        const values = snapshot.values ?? {};
+        if (Object.hasOwn(values, 'lowMemoryMode')) {
+            applyMisoSetting('lowMemoryMode', values.lowMemoryMode);
+        }
+        for (const [settingId, value] of Object.entries(values)) {
+            if (settingId === 'lowMemoryMode') continue;
+            applyMisoSetting(settingId, value);
+        }
+        if (snapshot.lowMemoryPreferences && typeof snapshot.lowMemoryPreferences === 'object') {
+            power_user.low_memory_preferences = cloneLowMemoryPreferences(snapshot.lowMemoryPreferences);
+            syncLowMemorySettingsUi();
+            // Re-run the current mode so the checkbox, notes and policy follow the restored flags.
+            applyMisoSetting('lowMemoryMode', getLowMemoryState().mode);
+        }
+    }
+
+    function getMisoLowMemoryPreferences() {
+        return JSON.stringify(power_user.low_memory_preferences ?? null);
+    }
+
+    function createMisoGuideDeps() {
+        return {
+            getValues: getMisoValues,
+            getLockedSettings: getMisoLockedSettings,
+            getBlockedReason: getMisoBlockedReason,
+            applySetting: applyMisoSetting,
+            captureSnapshot: captureMisoSnapshot,
+            restoreSnapshot: restoreMisoSnapshot,
+            getLowMemoryPreferences: getMisoLowMemoryPreferences,
+            loadAnswers: () => accountStorage.getItem(MISO_GUIDE_STORAGE_KEY),
+            saveAnswers: value => accountStorage.setItem(MISO_GUIDE_STORAGE_KEY, JSON.stringify(value)),
+        };
+    }
+
+    async function ensureMisoSettingsGuide(root) {
+        if (misoGuideInstance) return misoGuideInstance;
+        if (!misoGuideLoading) {
+            misoGuideLoading = import('./miso-settings-guide.js')
+                .then(({ createMisoSettingsGuide }) => {
+                    misoGuideInstance = createMisoSettingsGuide({ root, deps: createMisoGuideDeps() });
+                    return misoGuideInstance;
+                })
+                .finally(() => {
+                    misoGuideLoading = null;
+                });
+        }
+        return misoGuideLoading;
+    }
+
+    async function toggleMisoSettingsGuide(root, trigger) {
+        if (misoGuideInstance?.isOpen) {
+            misoGuideInstance.close();
+            return;
+        }
+        if (misoGuideLoading) return;
+        trigger.setAttribute('aria-busy', 'true');
+        try {
+            const guide = await ensureMisoSettingsGuide(root);
+            guide.open();
+        } catch (error) {
+            console.error('[Neconyan] Miso\'s settings guide could not be opened.', error);
+            trigger.setAttribute('aria-expanded', 'false');
+            trigger.title = 'Miso could not open. Reload the page and try again.';
+        } finally {
+            trigger.setAttribute('aria-busy', 'false');
+        }
+    }
+
     function createSettingsNavigator(content) {
         if (!(content instanceof HTMLElement) || !(content.parentElement instanceof HTMLElement)) {
             return null;
@@ -825,6 +1108,29 @@ import { t } from './i18n.js';
             searchBar.append(searchLabel, searchInput);
         }
 
+        const askMiso = markSearchIndexIgnored(document.createElement('button'));
+        askMiso.type = 'button';
+        askMiso.id = MISO_GUIDE_TRIGGER_ID;
+        askMiso.className = 'menu_button menu_button_icon sb-settings-ask-miso';
+        askMiso.setAttribute('aria-expanded', 'false');
+        askMiso.setAttribute('aria-controls', MISO_GUIDE_ROOT_ID);
+        const askMisoIcon = document.createElement('i');
+        askMisoIcon.className = 'fa-solid fa-wand-magic-sparkles';
+        askMisoIcon.setAttribute('aria-hidden', 'true');
+        const askMisoLabel = document.createElement('span');
+        askMisoLabel.textContent = 'Help me choose';
+        askMiso.append(askMisoIcon, askMisoLabel);
+        searchBar.append(askMiso);
+
+        const misoGuideRoot = markSearchIndexIgnored(document.createElement('section'));
+        misoGuideRoot.id = MISO_GUIDE_ROOT_ID;
+        misoGuideRoot.className = 'nn-miso-guide';
+        misoGuideRoot.hidden = true;
+        misoGuideRoot.setAttribute('aria-label', 'Miso\'s settings guide');
+        askMiso.addEventListener('click', () => {
+            void toggleMisoSettingsGuide(misoGuideRoot, askMiso);
+        });
+
         const heading = markSearchIndexIgnored(document.createElement('h3'));
         heading.className = 'sb-settings-detail-heading';
         const resultCount = document.createElement('p');
@@ -859,7 +1165,7 @@ import { t } from './i18n.js';
         navColumn.append(nav, mobileSelect);
         layout.append(navColumn, detail);
         sourceParent.insertBefore(layout, content);
-        detail.append(searchBar, heading, resultCount, noResults, content);
+        detail.append(searchBar, misoGuideRoot, heading, resultCount, noResults, content);
 
         return {
             layout,
@@ -870,6 +1176,8 @@ import { t } from './i18n.js';
             noResults,
             mobileSelect,
             searchInput,
+            askMiso,
+            misoGuideRoot,
             content,
             settingsBlock: document.getElementById('user-settings-block'),
         };

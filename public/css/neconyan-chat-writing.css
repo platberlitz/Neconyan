@@ -261,3 +261,417 @@
 body.reduced-motion #user-settings-block .nn-settings-cards :is(.nn-cw-button, .nn-cw-preset-card) {
     transition: none;
 }
+
+/* Miso's inline settings guide. It lives beside the search box, outside
+   #user-settings-block-content, so the settings grid and search do not index it. */
+
+.sb-settings-detail .sb-settings-ask-miso {
+    flex: 0 0 auto;
+    min-height: 44px;
+    margin: 0;
+}
+
+.sb-settings-detail .nn-miso-guide {
+    margin: 0 0 14px;
+    padding: 14px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: var(--sb-radius-lg, 14px);
+    background: var(--neco-surface, var(--SmartThemeBlurTintColor));
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+}
+
+.sb-settings-detail .nn-miso-guide[hidden] {
+    display: none;
+}
+
+.sb-settings-detail .nn-miso-guide-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.sb-settings-detail .nn-miso-guide-portrait {
+    flex: 0 0 auto;
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    background: var(--neco-raised, var(--SmartThemeBlurTintColor));
+    object-fit: cover;
+}
+
+.sb-settings-detail .nn-miso-guide-copy {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.sb-settings-detail .nn-miso-guide-kicker {
+    margin: 0;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.sb-settings-detail .nn-miso-guide-lead {
+    margin: 8px 0 0;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.sb-settings-detail .nn-miso-guide-close {
+    flex: 0 0 auto;
+    min-height: 44px;
+    margin: 0 0 0 auto;
+}
+
+.sb-settings-detail .nn-miso-guide-body {
+    margin-top: 12px;
+}
+
+.sb-settings-detail .nn-miso-guide-progress {
+    margin: 0 0 8px;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.sb-settings-detail .nn-miso-guide-form {
+    display: grid;
+    gap: 12px;
+}
+
+.sb-settings-detail .nn-miso-guide-fieldset {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.sb-settings-detail .nn-miso-guide-fieldset legend {
+    padding: 0;
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font-size: calc(var(--mainFontSize, 16px) * 1.02);
+    font-weight: 700;
+}
+
+.sb-settings-detail .nn-miso-guide-help {
+    margin: 6px 0 10px;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+.sb-settings-detail .nn-miso-guide-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-height: 44px;
+    margin-bottom: 6px;
+    padding: 10px 12px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 12px;
+    background: var(--neco-raised, var(--SmartThemeBlurTintColor));
+    cursor: pointer;
+}
+
+.sb-settings-detail .nn-miso-guide-option input {
+    flex: 0 0 auto;
+    margin: 3px 0 0;
+    accent-color: var(--neco-ginger, var(--SmartThemeQuoteColor));
+}
+
+.sb-settings-detail .nn-miso-guide-option-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.sb-settings-detail .nn-miso-guide-option-copy small {
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    line-height: 1.3;
+}
+
+.sb-settings-detail .nn-miso-guide-option:has(input:checked) {
+    border-color: var(--neco-ginger, var(--SmartThemeQuoteColor));
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 10%, var(--neco-raised, var(--SmartThemeBlurTintColor)));
+}
+
+.sb-settings-detail .nn-miso-guide-option:has(:focus-visible),
+.sb-settings-detail .nn-miso-guide-row:has(:focus-visible),
+.sb-settings-detail .nn-miso-guide-skipped summary:focus-visible {
+    outline: 2px solid var(--neco-ginger, var(--SmartThemeQuoteColor));
+    outline-offset: 2px;
+}
+
+.sb-settings-detail .nn-miso-guide-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.sb-settings-detail .nn-miso-guide-actions .menu_button {
+    min-height: 44px;
+    margin: 0;
+}
+
+.sb-settings-detail .nn-miso-guide-primary {
+    min-width: min(100%, 210px);
+}
+
+.sb-settings-detail .nn-miso-guide-notes {
+    margin: 8px 0 0;
+    padding-left: 18px;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.sb-settings-detail .nn-miso-guide-rows {
+    display: grid;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.sb-settings-detail .nn-miso-guide-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-height: 44px;
+    padding: 10px 12px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 12px;
+    background: var(--neco-surface, var(--SmartThemeBlurTintColor));
+}
+
+.sb-settings-detail .nn-miso-guide-row.is-already-set {
+    background: color-mix(in srgb, var(--neco-muted, var(--SmartThemeEmColor)) 8%, var(--neco-surface, var(--SmartThemeBlurTintColor)));
+}
+
+.sb-settings-detail .nn-miso-guide-row input {
+    flex: 0 0 auto;
+    margin: 3px 0 0;
+    accent-color: var(--neco-ginger, var(--SmartThemeQuoteColor));
+}
+
+.sb-settings-detail .nn-miso-guide-row-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.sb-settings-detail .nn-miso-guide-row-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.sb-settings-detail .nn-miso-guide-badge {
+    padding: 1px 7px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 999px;
+    background: var(--neco-raised, var(--SmartThemeBlurTintColor));
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.sb-settings-detail .nn-miso-guide-target {
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.sb-settings-detail .nn-miso-guide-reasons {
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.sb-settings-detail .nn-miso-guide-location {
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 11px;
+    line-height: 1.3;
+}
+
+.sb-settings-detail .nn-miso-guide-empty {
+    margin: 0;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+}
+
+.sb-settings-detail .nn-miso-guide-skipped {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+}
+
+.sb-settings-detail .nn-miso-guide-skipped summary {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.sb-settings-detail .nn-miso-guide-skipped ul {
+    margin: 4px 0 0;
+    padding-left: 18px;
+    line-height: 1.4;
+}
+
+.sb-settings-detail .nn-miso-guide-skipped li {
+    display: grid;
+    gap: 2px;
+    margin-bottom: 6px;
+}
+
+.sb-settings-detail .nn-miso-guide-skipped li span {
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+}
+
+.sb-settings-detail .nn-miso-guide-applied {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--neco-ginger, var(--SmartThemeQuoteColor));
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 10%, var(--neco-surface, var(--SmartThemeBlurTintColor)));
+    font-weight: 600;
+}
+
+.sb-settings-detail .nn-miso-guide-applied .menu_button {
+    min-height: 44px;
+    margin: 0;
+}
+
+.sb-settings-detail .nn-miso-guide-undo-blocked {
+    flex-basis: 100%;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.35;
+}
+
+.sb-settings-detail .nn-miso-guide-status {
+    margin: 10px 0 0;
+    line-height: 1.4;
+}
+
+.sb-settings-detail .nn-miso-guide-status:empty {
+    display: none;
+}
+
+.sb-settings-detail .nn-miso-guide-status[data-tone="saved"],
+.sb-settings-detail .nn-miso-guide-status[data-tone="warn"] {
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font-weight: 600;
+}
+
+.sb-settings-detail .nn-miso-guide-status[data-tone="error"] {
+    color: var(--sb-danger, var(--SmartThemeQuoteColor));
+    font-weight: 600;
+}
+
+@media (max-width: 768px) {
+    .sb-settings-detail .sb-settings-ask-miso {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .sb-settings-detail .nn-miso-guide {
+        margin-bottom: 12px;
+        padding: 12px;
+        border-radius: 14px;
+    }
+
+    .sb-settings-detail .nn-miso-guide-header {
+        gap: 8px;
+    }
+
+    .sb-settings-detail .nn-miso-guide-portrait {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+    }
+
+    .sb-settings-detail .nn-miso-guide-lead {
+        margin-top: 6px;
+    }
+
+    .sb-settings-detail .nn-miso-guide-body {
+        margin-top: 10px;
+    }
+
+    .sb-settings-detail .nn-miso-guide-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .sb-settings-detail .nn-miso-guide-actions .menu_button,
+    .sb-settings-detail .nn-miso-guide-primary {
+        width: 100%;
+        min-width: 0;
+        margin: 0;
+        justify-content: center;
+    }
+
+    .sb-settings-detail .nn-miso-guide-primary {
+        grid-column: 1 / -1;
+    }
+
+    .sb-settings-detail .nn-miso-guide-option,
+    .sb-settings-detail .nn-miso-guide-row {
+        padding: 10px;
+    }
+}
+
+/* The settings block styles every h3/h4 as a titled bar. Miso's own headings
+   are plain copy inside the guide. */
+#user-settings-block #nn-settings-miso-guide .nn-miso-guide-title {
+    margin: 2px 0 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    min-height: 0;
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font-family: var(--sb-font-display, var(--mainFontFamily));
+    font-size: calc(var(--mainFontSize, 16px) * 1.08);
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: normal;
+    text-transform: none;
+}
+
+#user-settings-block #nn-settings-miso-guide .nn-miso-guide-results-title {
+    margin: 0 0 8px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    min-height: 0;
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font-size: calc(var(--mainFontSize, 16px) * 1.02);
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: normal;
+    text-transform: none;
+}
+
+/* Phone shell sizing sets .sb-shell-panel-scroller button.menu_button_icon to
+   38px. The id keeps these controls at the 44px touch target without !important. */
+#nn-settings-ask-miso,
+#nn-settings-miso-guide .nn-miso-guide-close {
+    min-height: 44px;
+}
