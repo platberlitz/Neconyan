@@ -86,3 +86,22 @@ test('iOS WKUIDelegate JavaScript dialogs require a local main frame and complet
     assert.match(dialogs, /runJavaScriptTextInputPanelWithPrompt[\s\S]*?presentJavaScriptDialog\(prompt, from: frame, defaultValue: nil, completionHandler: completionHandler\)/);
     assert.deepEqual(dialogs.match(/\bcompletionHandler\([^)]*\)/g), ['completionHandler(value)', 'completionHandler()']);
 });
+
+test('iOS native version is generated from package.json rather than hardcoded in project.yml', () => {
+    const project = YAML.parse(fs.readFileSync(path.join(root, 'ios/project.yml'), 'utf8'));
+    assert.equal(project.settings?.base?.MARKETING_VERSION, undefined);
+    assert.equal(project.settings?.base?.CURRENT_PROJECT_VERSION, undefined);
+    assert.deepEqual(project.configFiles, {
+        Debug: 'generated/version.xcconfig',
+        Release: 'generated/version.xcconfig',
+    });
+    assert.equal(project.targets?.Neconyan?.info?.properties?.CFBundleShortVersionString, '$(MARKETING_VERSION)');
+    assert.equal(project.targets?.Neconyan?.info?.properties?.CFBundleVersion, '$(CURRENT_PROJECT_VERSION)');
+    const payloadBuilder = fs.readFileSync(path.join(root, 'scripts/build-ios-payload.js'), 'utf8');
+    assert.match(payloadBuilder, /ios\/generated\/version\.xcconfig/);
+    assert.match(payloadBuilder, /MARKETING_VERSION = \$\{provenance\.version\}/);
+    assert.match(payloadBuilder, /CURRENT_PROJECT_VERSION = \$\{provenance\.version\}/);
+    const verifier = fs.readFileSync(path.join(root, 'scripts/verify-ios-build.py'), 'utf8');
+    assert.match(verifier, /info\['CFBundleShortVersionString'\] == provenance\['version'\]/);
+    assert.match(verifier, /info\['CFBundleVersion'\] == provenance\['version'\]/);
+});

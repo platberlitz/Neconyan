@@ -33,6 +33,7 @@ execFileSync('npm', ['ci', '--omit=dev', '--omit=optional', '--ignore-scripts', 
 execFileSync('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: path.join(root, 'ios/tools'), stdio: 'inherit' });
 execFileSync(process.execPath, ['ios/tools/prepare-sentencepiece.mjs', target], { cwd: root, stdio: 'inherit' });
 fs.writeFileSync(path.join(root, 'ios/generated/payload-version.txt'), provenance.commit + '\n');
+fs.writeFileSync(path.join(root, 'ios/generated/version.xcconfig'), `MARKETING_VERSION = ${provenance.version}\nCURRENT_PROJECT_VERSION = ${provenance.version}\n`);
 const icons = path.join(root, 'ios/generated/Assets.xcassets/AppIcon.appiconset');
 fs.mkdirSync(icons, { recursive: true });
 fs.copyFileSync(path.join(root, 'public/img/neconyan-icon-512.png'), path.join(icons, 'icon.png'));

@@ -42,6 +42,7 @@ def verify(ipa, commit):
         provenance = json.loads(archive.read(server + 'release-provenance.json'))
         require(provenance['commit'] == commit, 'Provenance commit mismatch')
         require(info['CFBundleShortVersionString'] == provenance['version'], 'Native/server version mismatch')
+        require(info['CFBundleVersion'] == provenance['version'], 'Native/server build version mismatch')
         for binary in ['Neconyan', 'Frameworks/NodeMobile.framework/NodeMobile']:
             device_binary(archive.read(prefix + binary), binary)
         for required in ['server.js', 'server-bootstrap.mjs', 'src/ios-tokenizer.js', 'public/index.html', 'default/config.yaml', 'NODE-LICENSE.txt', 'POLYWASM-LICENSE.txt', 'node_modules/@agnai/sentencepiece-js/dist/index.js']:

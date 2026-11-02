@@ -15,6 +15,8 @@ const packageLock = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package-lock
 const electronPackageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'src', 'electron', 'package.json'), 'utf8'));
 const electronPackageLock = JSON.parse(fs.readFileSync(path.join(repoRoot, 'src', 'electron', 'package-lock.json'), 'utf8'));
 const tabsSource = fs.readFileSync(path.join(repoRoot, 'public', 'scripts', 'neconyan-tabs.js'), 'utf8');
+const iosProjectSource = fs.readFileSync(path.join(repoRoot, 'ios', 'project.yml'), 'utf8');
+const iosPayloadBuilderSource = fs.readFileSync(path.join(repoRoot, 'scripts', 'build-ios-payload.js'), 'utf8');
 
 describe('Neconyan project boundaries', () => {
     test('uses independent 1.0 package metadata and executable naming', () => {
@@ -46,6 +48,12 @@ describe('Neconyan project boundaries', () => {
                 '': { name: 'neconyan-electron', version: '1.0.0' },
             },
         });
+
+        expect(iosProjectSource).not.toMatch(/^\s*MARKETING_VERSION:/m);
+        expect(iosProjectSource).not.toMatch(/^\s*CURRENT_PROJECT_VERSION:/m);
+        expect(iosProjectSource).toMatch(/configFiles:\s+Debug: generated\/version\.xcconfig\s+Release: generated\/version\.xcconfig/);
+        expect(iosPayloadBuilderSource).toContain('ios/generated/version.xcconfig');
+        expect(iosPayloadBuilderSource).toContain('MARKETING_VERSION = ${provenance.version}');
     });
 
     test('uses Neconyan-specific global config and data paths', () => {

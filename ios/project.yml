@@ -9,8 +9,9 @@ settings:
     TARGETED_DEVICE_FAMILY: '1,2'
     ENABLE_USER_SCRIPT_SANDBOXING: false
     CODE_SIGNING_ALLOWED: false
-    MARKETING_VERSION: '1.4.0'
-    CURRENT_PROJECT_VERSION: '1'
+configFiles:
+  Debug: generated/version.xcconfig
+  Release: generated/version.xcconfig
 targets:
   Neconyan:
     type: application
