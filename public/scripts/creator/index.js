@@ -60,6 +60,7 @@ class CreatorWorkspace {
     }
 
     shell() {
+        this.railObserver?.disconnect();
         this.host.replaceChildren();
         const output = element('p', 'creator-status', this.message);
         output.setAttribute('role', 'status');
@@ -224,6 +225,7 @@ class CreatorWorkspace {
     render() {
         const draft = this.session.draft;
         const key = `${draft.id}:${draft.view.section}`;
+        const railLeft = this.renderKey?.startsWith(`${draft.id}:`) ? this.host.querySelector('.creator-sections')?.scrollLeft ?? 0 : 0;
         const restore = this.renderKey === key ? rememberCreatorViewport(this.host) : () => {};
         this.renderKey = key;
         this.shell();
@@ -268,6 +270,12 @@ class CreatorWorkspace {
                 this.session.remember();
                 this.render();
                 this.host.querySelector('.creator-sections [aria-current="page"]')?.focus({ preventScroll: true });
+                const rail = this.host.querySelector('.creator-sections');
+                const selected = rail.querySelector('[aria-current="page"]');
+                const bounds = rail.getBoundingClientRect();
+                const tabBounds = selected.getBoundingClientRect();
+                if (tabBounds.left < bounds.left) rail.scrollLeft += tabBounds.left - bounds.left;
+                else if (tabBounds.right > bounds.right) rail.scrollLeft += tabBounds.right - bounds.right;
             }
         });
         const main = element('div', 'creator-content creator-card');
@@ -299,12 +307,31 @@ class CreatorWorkspace {
             this.stringList(main, 'Tags', 'tags');
             main.append(textField('Private author notes', draft.privateNotes, value => this.edit(next => { next.privateNotes = value; }), { hint: 'Kept only in this draft. Excluded from character saves and AI requests unless you explicitly include them.' }));
         }
-        layout.append(nav, main);
+        const railControls = element('div', 'creator-rail-controls');
+        const arrow = (label, icon, direction) => {
+            const control = button('', () => { nav.scrollLeft += direction * Math.max(100, nav.clientWidth * 0.75); }, false, 'creator-rail-arrow');
+            control.setAttribute('aria-label', label);
+            control.title = label;
+            const glyph = element('i', `fa-solid fa-chevron-${icon}`);
+            glyph.setAttribute('aria-hidden', 'true');
+            control.append(glyph);
+            return control;
+        };
+        const previous = arrow('Scroll Creator sections left', 'left', -1);
+        const next = arrow('Scroll Creator sections right', 'right', 1);
+        const updateArrows = () => {
+            previous.disabled = nav.scrollLeft <= 1;
+            next.disabled = nav.scrollLeft >= nav.scrollWidth - nav.clientWidth - 1;
+        };
+        nav.addEventListener('scroll', updateArrows, { passive: true });
+        railControls.append(previous, nav, next);
+        layout.append(railControls, main);
         this.host.append(header, layout);
-        // Scroll the section rail only; scrollIntoView also moves the enclosing drawer.
-        const activeTab = nav.querySelector('[aria-current="page"]');
-        if (activeTab && nav.scrollWidth > nav.clientWidth) nav.scrollLeft = Math.max(0, activeTab.offsetLeft - nav.offsetLeft);
+        nav.scrollLeft = railLeft;
+        this.railObserver = new ResizeObserver(updateArrows);
+        this.railObserver.observe(nav);
         restore();
+        updateArrows();
         if (!['dossier', 'identity', 'facts', 'greetings', 'prompts', 'metadata'].includes(section)) {
             void this.renderTool(section, main).then(() => { if (main.isConnected) restore(); }).catch(error => this.status(error.message, true));
         }
