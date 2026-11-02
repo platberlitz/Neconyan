@@ -51,10 +51,14 @@ for (const phone of [false, true]) {
                 expect(surface.image, `${shellStyle}: ${selector} must not have a tinted gradient`).toBe('none');
             }
         }
+        // Each shell style triggers saveSettingsDebounced(), which pushes the 1000ms timer forward.
+        // Flush the pending save before reloading so the reload reads AMOLED Black from the server.
+        expect(await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }))).toBe(true);
         await page.reload();
         await page.waitForFunction(() => window.jQuery?.('#bg_tabs').data('ui-tabs'));
         await expect(page.locator('#themes')).toHaveValue('AMOLED Black');
         await expect(page.locator('#bg1')).toHaveCSS('visibility', 'hidden');
+        await page.evaluate(() => NeconyanShell.applyTheme('calico'));
         await page.locator('#themes').evaluate(el => window.jQuery(el).val('Neconyan Calico').trigger('change'));
         await expect(page.locator('#bg1')).toHaveCSS('visibility', 'visible');
         expect(await page.evaluate(() => getComputedStyle(document.body, '::before').display)).not.toBe('none');

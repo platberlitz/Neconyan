@@ -157,7 +157,10 @@ for (const phone of [false, true]) {
             }
             await expect(toggle).toBeVisible();
             if (phone) {
-                const box = await toggle.boundingBox();
+                const box = await toggle.evaluate(element => {
+                    const rect = element.getBoundingClientRect();
+                    return { width: rect.width, height: rect.height };
+                });
                 expect(box.width).toBeGreaterThanOrEqual(44);
                 expect(box.height).toBeGreaterThanOrEqual(44);
                 await toggle.tap();
