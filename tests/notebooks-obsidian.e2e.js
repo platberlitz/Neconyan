@@ -277,11 +277,26 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
         const first = '# Original\r\nExternal update while the editor is clean.\r\n';
         await fs.writeFile(path.join(f.folder, 'Original.md'), first);
         await expect.poll(() => sourceText(page), { timeout: 30000 }).toBe(first.replace(/\r\n/g, '\n'));
-        await page.route('**/api/notebooks/notes/update', route => route.abort('failed'));
+        let releaseSave;
+        let secondSynced = false;
+        const saveGate = new Promise(done => { releaseSave = done; });
+        states.get(page).gates.push(releaseSave);
+        let saveStarted;
+        const waitingSave = new Promise(done => { saveStarted = done; });
+        await page.route('**/api/notebooks/notes/update', async route => {
+            if (!secondSynced) await saveGate;
+            await route.abort('failed');
+        });
+        page.on('request', request => { if (request.url().endsWith('/api/notebooks/notes/update')) saveStarted(); });
         const draft = '# Original\nKeep my current device draft.\n';
         await fillSource(page, draft);
+        await waitingSave;
         const second = '# Original\r\nA newer external saved version.\r\n';
         await fs.writeFile(path.join(f.folder, 'Original.md'), second);
+        await expect.poll(async () => (await notesApi(page, '/obsidian/history', { notebookId: f.notebookId }))
+            .history.filter(item => item.path === 'Original.md' && item.kind === 'changed').length, { timeout: 30000 }).toBe(2);
+        secondSynced = true;
+        releaseSave();
         await expect(page.locator('.notes-banner[data-banner="remote"]')).toContainText('Your text is still here.', { timeout: 30000 });
         await expectSourceText(page, draft);
         expect(await fs.readFile(path.join(f.folder, 'Original.md'), 'utf8')).toBe(second);

@@ -115,6 +115,7 @@ const app = {
         back: [],
         unsubscribe: null,
         remoteChanged: false,
+        remoteRevision: null,
     },
     elements: {},
     panels: null,
@@ -152,7 +153,7 @@ function resetForAccount(handle) {
     app.tableView?.clear();
     app.canvasView?.clear();
     Object.assign(state, { account: handle, notebooks: [], importStages: [], notebookId: null, tree: null, note: null, dirty: false,
-        saveConflict: false, pending: null, saving: false, savePromise: null, back: [], search: null, status: 'idle', workspaceView: 'note' });
+        saveConflict: false, pending: null, saving: false, savePromise: null, back: [], search: null, status: 'idle', workspaceView: 'note', remoteChanged: false, remoteRevision: null });
     if (state.built) {
         renderEditor();
         void loadNotebooks();
@@ -787,6 +788,7 @@ function loadNoteDetail(result) {
     state.saveConflict = false;
     state.pending = null;
     state.remoteChanged = false;
+    state.remoteRevision = null;
     state.retryMs = 0;
     const draft = readDraft(state.account, state.notebookId, note.id);
     let text = lf(note.text);
@@ -817,7 +819,15 @@ async function reloadNote({ keepView = true, discardDraft = false } = {}) {
     const result = await request('/notes/read', { notebookId, noteId: note.id });
     if (failed(result) || state.note !== note || state.account !== account || state.notebookId !== notebookId
         || state.noteRequestVersion !== noteRequestVersion || state.notebookSelectionVersion !== notebookSelectionVersion
-        || note.revision !== revision || state.editorText !== editorText || app.elements.textarea.value !== value || state.dirty !== dirty) return false;
+        || note.revision !== revision) return false;
+    if (state.editorText !== editorText || app.elements.textarea.value !== value || state.dirty !== dirty) {
+        if (!discardDraft && state.dirty && !state.saveConflict && state.status !== 'conflict'
+            && result.note?.revision && result.note.revision !== note.revision
+            && !(state.ownRevisions ?? []).includes(result.note.revision)) {
+            showRemoteChange(result.note.revision);
+        }
+        return false;
+    }
     const view = state.view;
     if (discardDraft) clearDraft(account, notebookId, note.id);
     loadNoteDetail(result);
@@ -1225,6 +1235,7 @@ async function saveNote() {
     if (state.note !== note || state.account !== account || state.notebookId !== notebookId
         || state.noteRequestVersion !== noteRequestVersion || state.notebookSelectionVersion !== notebookSelectionVersion) return false;
     if (result.status === 'success' || result.status === 'no_change') {
+        const bufferedRemote = state.remoteRevision;
         state.retryMs = 0;
         state.pending = null;
         note.revision = result.revision ?? note.revision;
@@ -1239,6 +1250,20 @@ async function saveNote() {
             saveDraft(state.account, state.notebookId, note.id, { text: state.editorText, baseRevision: note.revision });
             scheduleSave(300);
         }
+        if (bufferedRemote && bufferedRemote !== note.revision && !state.ownRevisions.includes(bufferedRemote)) {
+            if (state.dirty) {
+                showRemoteChange(bufferedRemote);
+            } else {
+                state.remoteChanged = false;
+                state.remoteRevision = null;
+                clearBanner('remote');
+                void reloadNote();
+            }
+        } else {
+            state.remoteChanged = false;
+            state.remoteRevision = null;
+            clearBanner('remote');
+        }
         reportLoreUpdates(result.loreUpdates);
         if (result.title && result.title !== note.title) {
             note.title = result.title;
@@ -1252,14 +1277,25 @@ async function saveNote() {
         showSaveConflict();
         return false;
     }
-    if (result.status === 'cancelled') return false;
+    if (result.status === 'cancelled') {
+        if (state.remoteRevision && state.remoteRevision !== note.revision && state.dirty && !state.saveConflict && state.status !== 'conflict') {
+            showRemoteChange();
+        }
+        return false;
+    }
     if (result.network || result.http >= 500 || result.status === 'unavailable') {
         state.retryMs = Math.min(MAX_RETRY_MS, state.retryMs ? state.retryMs * 2 : 2000);
         setStatus('device');
+        if (state.remoteRevision && state.remoteRevision !== note.revision && state.dirty && !state.saveConflict && state.status !== 'conflict') {
+            showRemoteChange();
+        }
         scheduleSave(state.retryMs);
         return false;
     }
     setStatus('error');
+    if (state.remoteRevision && state.remoteRevision !== note.revision && state.dirty && !state.saveConflict && state.status !== 'conflict') {
+        showRemoteChange();
+    }
     showBanner('save-error', result.message || 'The server refused this save. Your text is kept on this device.', [
         ['Try again', () => { clearBanner('save-error'); setStatus('device'); void saveNow(); }],
     ]);
@@ -1353,6 +1389,7 @@ async function saveRecoveryCopy(text, suffix, { open = false } = {}) {
 
 function showSaveConflict() {
     app.state.saveConflict = true;
+    app.state.remoteRevision = null;
     clearTimeout(app.state.saveTimer);
     clearBanner('remote');
     showBanner('conflict', 'This note changed somewhere else since you opened it. Your text is kept on this device. Choose what to keep.', [
@@ -1397,6 +1434,18 @@ function showDraftConflict(draft) {
 
 const refreshTreeSoon = debounce(() => void refreshTree(), 500);
 
+function showRemoteChange(revision = app.state.remoteRevision) {
+    app.state.remoteChanged = true;
+    if (revision) app.state.remoteRevision = revision;
+    showBanner('remote', 'This note was changed somewhere else while you were editing. Your text is still here.', [
+        ['Compare', async () => {
+            const server = await fetchServerText();
+            if (server) await compareTexts('Server version (-) and your version (+)', server.note.text, app.elements.textarea.value);
+        }],
+        ['Use server version', () => reloadNote({ discardDraft: true })],
+    ]);
+}
+
 function onRemoteChange(change) {
     const { state } = app;
     if (!state.open || change.notebookId !== state.notebookId) {
@@ -1407,7 +1456,11 @@ function onRemoteChange(change) {
     if (change.kind === 'policy' || change.kind === 'lore' || change.kind === 'proposal') app.panels?.renderDetails(app);
     const note = state.note;
     if (!note || change.noteId !== note.id || !change.revision || change.revision === note.revision) return;
-    if ((state.ownRevisions ?? []).includes(change.revision) || state.saving) return;
+    if ((state.ownRevisions ?? []).includes(change.revision)) return;
+    if (state.saving) {
+        state.remoteRevision = change.revision;
+        return;
+    }
     if (state.saveConflict || state.status === 'conflict') {
         showSaveConflict();
         return;
@@ -1416,14 +1469,7 @@ function onRemoteChange(change) {
         void reloadNote();
         return;
     }
-    state.remoteChanged = true;
-    showBanner('remote', 'This note was changed somewhere else while you were editing. Your text is still here.', [
-        ['Compare', async () => {
-            const server = await fetchServerText();
-            if (server) await compareTexts('Server version (-) and your version (+)', server.note.text, app.elements.textarea.value);
-        }],
-        ['Use server version', () => reloadNote({ discardDraft: true })],
-    ]);
+    showRemoteChange(change.revision);
 }
 
 /* ---------- toolbar ---------- */

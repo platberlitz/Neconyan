@@ -10,20 +10,20 @@ const deferred = () => {
     return { promise, resolve };
 };
 
-function runtime(overrides = {}, functions = ['showBanner', 'clearBanner', 'showSaveConflict', 'showDraftConflict', 'saveRecoveryCopy', 'fetchServerText', 'reloadNote']) {
+function runtime(overrides = {}, functions = ['showBanner', 'clearBanner', 'showSaveConflict', 'showDraftConflict', 'showRemoteChange', 'onRemoteChange', 'saveRecoveryCopy', 'fetchServerText', 'reloadNote']) {
     const rows = [];
     const removed = [];
     const note = { id: 'one', title: 'Original', folder: 'Inbox', revision: 'old', serverText: 'Old words.' };
-    const app = { state: { account: 'owner', notebookId: 'book', noteRequestVersion: 0, back: [], note, editorText: 'My draft.', dirty: true, status: 'conflict' },
+    const app = { state: { open: true, account: 'owner', notebookId: 'book', noteRequestVersion: 0, back: [], note, editorText: 'My draft.', dirty: true, status: 'conflict' },
         elements: { textarea: { value: 'My draft.' }, banner: { append: row => rows.push(row),
             querySelector: selector => ({ remove: () => removed.push(selector) }) } } };
     const h = (tag, attributes = {}, ...children) => ({ tag, attributes, children, append: (...items) => children.push(...items), remove: jest.fn() });
     const context = vm.createContext({ app, h, button: (label, action) => ({ label, action }), request: jest.fn(),
         failed: result => result.status !== 'success', clearDraft: jest.fn(), loadNoteDetail: jest.fn(), renderEditor: jest.fn(),
-        lf: text => text, createNote: jest.fn(), openNote: jest.fn(async () => true), compareTexts: jest.fn(), setStatus: jest.fn(), saveNow: jest.fn(),
+        lf: text => text, createNote: jest.fn(), openNote: jest.fn(async () => true), compareTexts: jest.fn(), setStatus: jest.fn(), saveNow: jest.fn(), scheduleSave: jest.fn(), MAX_RETRY_MS: 30000, refreshTreeSoon: jest.fn(),
         readDraft: () => ({ text: 'My draft.' }), formatTime: () => 'Today', onEditorInput: jest.fn(), refreshLiveOutline: jest.fn(), toast: jest.fn(),
         flushSave: async () => true, selectNotebook: jest.fn(), renderNav: jest.fn(), writePrefs: jest.fn(), applyLayout: jest.fn(), isPhone: () => false, clearTimeout, ...overrides });
-    if (functions.includes('saveNow')) functions = [...functions, 'saveNote'];
+    if (functions.includes('saveNow')) functions = [...functions, 'saveNote', 'clearBanner', 'showRemoteChange'];
     vm.runInContext(functionSource('notebookCanvasCanLeave') + '\n' + functions.map(functionSource).join('\n'), context);
     const actions = () => rows.at(-1).children[1].children;
     return { app, context, rows, removed, actions };
@@ -335,5 +335,119 @@ describe('Notes conflict and recovery safety', () => {
         newer.resolve({ status: 'success', revision: 'new-account-saved' });
         expect(await newSave).toBe(true);
         expect(app.state.saving).toBe(false);
+    });
+
+    test('a remote change arriving during a failed autosave or clean reload still warns when a draft is present', async () => {
+        const waitingSave = deferred();
+        const { app, context, rows } = runtime({
+            request: () => waitingSave.promise,
+            newOperationId: () => 'save',
+            reportLoreUpdates: jest.fn(),
+        }, ['showBanner', 'clearBanner', 'showSaveConflict', 'showRemoteChange', 'onRemoteChange', 'reloadNote', 'saveNow']);
+        app.state.status = 'device';
+        app.state.saveConflict = false;
+        const saving = context.saveNow();
+        expect(app.state.saving).toBe(true);
+        context.onRemoteChange({ notebookId: 'book', noteId: 'one', revision: 'external-rev-1', kind: 'external' });
+        expect(rows).toHaveLength(0);
+        expect(app.state.remoteRevision).toBe('external-rev-1');
+        waitingSave.resolve({ status: 'failure', network: true });
+        expect(await saving).toBe(false);
+        expect(app.state.remoteChanged).toBe(true);
+        expect(rows.at(-1).attributes.dataset.banner).toBe('remote');
+        expect(rows.at(-1).children[0].attributes.text).toContain('Your text is still here.');
+
+        // If a clean reload was in flight when typing started and read a newer server revision, it warns without replacing the draft.
+        rows.length = 0;
+        const waitingRead = deferred();
+        const readCase = runtime({ request: () => waitingRead.promise });
+        readCase.app.state.status = 'saved';
+        readCase.app.state.saveConflict = false;
+        readCase.app.state.dirty = false;
+        readCase.app.state.editorText = readCase.app.elements.textarea.value = 'Old words.';
+        const reloading = readCase.context.reloadNote();
+        readCase.app.state.editorText = readCase.app.elements.textarea.value = 'New typing during reload.';
+        readCase.app.state.dirty = true;
+        waitingRead.resolve({ status: 'success', note: { id: 'one', revision: 'external-rev-2', text: 'External update.' } });
+        expect(await reloading).toBe(false);
+        expect(readCase.context.loadNoteDetail).not.toHaveBeenCalled();
+        expect(readCase.app.state.remoteChanged).toBe(true);
+        expect(readCase.rows.at(-1).attributes.dataset.banner).toBe('remote');
+        expect(readCase.rows.at(-1).children[0].attributes.text).toContain('Your text is still here.');
+    });
+
+    test('a successful save ignores its own early SSE revision but acts on a newer external revision buffered before the response arrived', async () => {
+        // 1. Own SSE arrives before the HTTP response finishes: cleared without reload or remote banner.
+        const ownSave = deferred();
+        const ownRequest = jest.fn(() => ownSave.promise);
+        const ownCase = runtime({
+            request: ownRequest,
+            saveDraft: jest.fn(() => ({ ok: true })),
+            newOperationId: () => 'save-own',
+            reportLoreUpdates: jest.fn(),
+        }, ['showBanner', 'clearBanner', 'showSaveConflict', 'showRemoteChange', 'onRemoteChange', 'reloadNote', 'saveNow']);
+        ownCase.app.state.status = 'device';
+        ownCase.app.state.saveConflict = false;
+        const savingOwn = ownCase.context.saveNow();
+        ownCase.context.onRemoteChange({ notebookId: 'book', noteId: 'one', revision: 'own-rev-1', kind: 'note' });
+        expect(ownCase.app.state.remoteRevision).toBe('own-rev-1');
+        ownSave.resolve({ status: 'success', revision: 'own-rev-1' });
+        expect(await savingOwn).toBe(true);
+        expect(ownCase.app.state.remoteChanged).toBe(false);
+        expect(ownCase.app.state.remoteRevision).toBeNull();
+        expect(ownCase.rows).toHaveLength(0);
+        expect(ownRequest).toHaveBeenCalledTimes(1);
+
+        // 2. External R2 arrives after the server committed own R1 (and editor stayed clean): triggers reloadNote.
+        const cleanSave = deferred();
+        const cleanReload = deferred();
+        const cleanRequest = jest.fn()
+            .mockImplementationOnce(() => cleanSave.promise)
+            .mockImplementationOnce(() => cleanReload.promise);
+        const cleanCase = runtime({
+            request: cleanRequest,
+            saveDraft: jest.fn(() => ({ ok: true })),
+            newOperationId: () => 'save-clean',
+            reportLoreUpdates: jest.fn(),
+        }, ['showBanner', 'clearBanner', 'showSaveConflict', 'showRemoteChange', 'onRemoteChange', 'reloadNote', 'saveNow']);
+        cleanCase.app.state.status = 'device';
+        cleanCase.app.state.saveConflict = false;
+        const savingClean = cleanCase.context.saveNow();
+        cleanCase.context.onRemoteChange({ notebookId: 'book', noteId: 'one', revision: 'own-rev-1', kind: 'note' });
+        cleanCase.context.onRemoteChange({ notebookId: 'book', noteId: 'one', revision: 'external-rev-2', kind: 'external' });
+        cleanSave.resolve({ status: 'success', revision: 'own-rev-1' });
+        expect(await savingClean).toBe(true);
+        expect(cleanRequest).toHaveBeenCalledTimes(2);
+        expect(cleanRequest.mock.calls[1][0]).toBe('/notes/read');
+        const reloaded = { status: 'success', note: { id: 'one', revision: 'external-rev-2', text: 'External R2 text.' } };
+        const reloadDone = deferred();
+        cleanCase.context.loadNoteDetail.mockImplementationOnce(() => reloadDone.resolve());
+        cleanReload.resolve(reloaded);
+        await reloadDone.promise;
+        expect(cleanCase.context.loadNoteDetail).toHaveBeenCalledWith(reloaded);
+        expect(cleanCase.rows).toHaveLength(0);
+
+        // 3. External R2 arrives after own R1 committed, and user kept typing while R1 was in flight: shows remote banner and keeps draft.
+        const dirtySave = deferred();
+        const dirtyRequest = jest.fn(() => dirtySave.promise);
+        const dirtyCase = runtime({
+            request: dirtyRequest,
+            saveDraft: jest.fn(() => ({ ok: true })),
+            newOperationId: () => 'save-dirty',
+            reportLoreUpdates: jest.fn(),
+        }, ['showBanner', 'clearBanner', 'showSaveConflict', 'showRemoteChange', 'onRemoteChange', 'reloadNote', 'saveNow']);
+        dirtyCase.app.state.status = 'device';
+        dirtyCase.app.state.saveConflict = false;
+        const savingDirty = dirtyCase.context.saveNow();
+        dirtyCase.app.state.editorText = dirtyCase.app.elements.textarea.value = 'My draft plus newer typing.';
+        dirtyCase.context.onRemoteChange({ notebookId: 'book', noteId: 'one', revision: 'external-rev-3', kind: 'external' });
+        dirtySave.resolve({ status: 'success', revision: 'own-rev-1' });
+        expect(await savingDirty).toBe(false);
+        expect(dirtyCase.app.state.dirty).toBe(true);
+        expect(dirtyCase.app.state.remoteChanged).toBe(true);
+        expect(dirtyCase.app.state.remoteRevision).toBe('external-rev-3');
+        expect(dirtyCase.rows.at(-1).attributes.dataset.banner).toBe('remote');
+        expect(dirtyCase.rows.at(-1).children[0].attributes.text).toContain('Your text is still here.');
+        expect(dirtyRequest).toHaveBeenCalledTimes(1);
     });
 });
