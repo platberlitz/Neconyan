@@ -4,6 +4,7 @@ import { Fuse, Handlebars } from '../lib.js';
 import { accessibleTheme } from './theme-contrast.js';
 import { CHAT_AUTO_NAME_DEFAULT_THRESHOLD, normalizeChatAutoNameThreshold } from './chat-label.js';
 import { createUiThemePicker } from './neconyan-ui-theme-picker.js';
+import { createChatStylePicker } from './neconyan-chat-style-picker.js';
 import { resolveCustomStoppingStrings } from './chat-request-controls.js';
 import { fixGeneratedMarkdown } from './generation-format.js';
 
@@ -1668,6 +1669,8 @@ function applyAvatarStyle() {
     $('#avatar_style').val(power_user.avatar_style).prop('selected', true);
 }
 
+let chatStylePicker;
+
 function applyChatDisplay() {
     if ([null, undefined].includes(power_user.chat_display)) {
         console.debug('applyChatDisplay: saw no chat display type defined');
@@ -1701,6 +1704,21 @@ function applyChatDisplay() {
 
     if (nextClass) {
         $('body').addClass(nextClass);
+    }
+
+    const gallery = document.getElementById('nn-chat-style-gallery');
+    if (gallery && select instanceof HTMLSelectElement) {
+        chatStylePicker ??= createChatStylePicker(gallery, {
+            options: select.options,
+            translate,
+            onSelect: value => {
+                select.value = value;
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+            },
+        });
+        chatStylePicker.update(styleValue);
+        gallery.hidden = false;
+        select.hidden = true;
     }
 
     document.dispatchEvent(new CustomEvent('sb:chat-style-updated', {

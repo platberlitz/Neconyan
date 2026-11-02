@@ -1,3 +1,302 @@
+#user-settings-block #chat_display[hidden] {
+    display: none;
+}
+
+/* Chat layout miniatures share the active palette, without inheriting live message rules. */
+#nn-chat-style-gallery {
+    container-type: inline-size;
+    width: 100%;
+    min-width: 0;
+}
+
+#nn-chat-style-gallery .nn-chat-style-current {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    margin-bottom: 8px;
+    color: var(--neco-ink);
+    font-size: 0.9em;
+}
+
+#nn-chat-style-gallery .nn-chat-style-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    max-height: 360px;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
+    padding: 4px;
+}
+
+#user-settings-block #nn-chat-style-gallery .nn-chat-style-card {
+    appearance: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px;
+    font: inherit;
+    text-align: start;
+    color: var(--neco-ink);
+    background: var(--neco-raised);
+    border: 1px solid var(--neco-border);
+    border-radius: var(--sb-radius-button, 12px);
+    box-shadow: none;
+    text-shadow: none;
+    cursor: pointer;
+}
+
+#user-settings-block #nn-chat-style-gallery .nn-chat-style-card[aria-pressed='true'] {
+    border-color: var(--neco-ginger);
+    box-shadow: inset 0 0 0 1px var(--neco-ginger);
+    background: var(--neco-surface);
+}
+
+#user-settings-block #nn-chat-style-gallery .nn-chat-style-card:hover {
+    border-color: var(--neco-ginger-hover);
+}
+
+#user-settings-block #nn-chat-style-gallery .nn-chat-style-card:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+#nn-chat-style-gallery .nn-chat-style-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    width: 100%;
+    font-weight: 700;
+    font-size: 0.92em;
+    overflow-wrap: anywhere;
+}
+
+#nn-chat-style-gallery .nn-chat-style-description {
+    font-size: 0.8em;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+#nn-chat-style-gallery .nn-chat-style-check {
+    visibility: hidden;
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    color: var(--neco-on-accent);
+    background: var(--neco-ginger);
+}
+
+#nn-chat-style-gallery [aria-pressed='true'] .nn-chat-style-check {
+    visibility: visible;
+}
+
+#nn-chat-style-gallery .nn-chat-style-preview {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    height: 88px;
+    flex: none;
+    padding: 6px;
+    overflow: hidden;
+    border: 1px solid var(--neco-border);
+    border-radius: 6px;
+    background: var(--neco-surface);
+    pointer-events: none;
+}
+
+#nn-chat-style-gallery .nn-chat-preview-row {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 5px;
+    padding: 3px;
+    min-height: 28px;
+    isolation: isolate;
+}
+
+#nn-chat-style-gallery .nn-chat-preview-avatar {
+    width: 17px;
+    height: 17px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--neco-user) url('../img/ai4.png') center / cover;
+}
+
+#nn-chat-style-gallery .nn-chat-preview-row:nth-child(2) .nn-chat-preview-avatar {
+    background-image: url('../img/user-default.png');
+}
+
+#nn-chat-style-gallery .nn-chat-preview-content {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+}
+
+#nn-chat-style-gallery .nn-chat-preview-heading {
+    display: block;
+    width: 35%;
+    height: 3px;
+    margin-bottom: 4px;
+    background: var(--neco-ginger);
+    border-radius: 2px;
+}
+
+#nn-chat-style-gallery .nn-chat-preview-line {
+    display: block;
+    height: 2px;
+    margin-top: 3px;
+    background: color-mix(in srgb, var(--neco-ink) 45%, transparent);
+    border-radius: 1px;
+}
+
+#nn-chat-style-gallery .nn-chat-preview-line:last-child {
+    width: 65%;
+}
+
+#nn-chat-style-gallery :is(.nn-chat-preview-bubbles, .nn-chat-preview-echo, .nn-chat-preview-whisper, .nn-chat-preview-hush, .nn-chat-preview-tide) .nn-chat-preview-row {
+    border: 1px solid var(--neco-border);
+    border-radius: 7px;
+    background: var(--neco-raised);
+}
+
+#nn-chat-style-gallery :is(.nn-chat-preview-document, .nn-chat-preview-screenplay, .nn-chat-preview-storybook) .nn-chat-preview-avatar {
+    display: none;
+}
+
+#nn-chat-style-gallery :is(.nn-chat-preview-echo, .nn-chat-preview-whisper, .nn-chat-preview-hush) .nn-chat-preview-avatar {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 35%;
+    height: 100%;
+    border-radius: inherit;
+    opacity: 0.3;
+    mask-image: linear-gradient(to right, black, transparent);
+}
+
+#nn-chat-style-gallery .nn-chat-preview-whisper .nn-chat-preview-avatar {
+    left: auto;
+    right: 0;
+    mask-image: linear-gradient(to left, black, transparent);
+}
+
+#nn-chat-style-gallery .nn-chat-preview-hush .nn-chat-preview-avatar {
+    width: 100%;
+    mask-image: none;
+    opacity: 0.2;
+}
+
+#nn-chat-style-gallery .nn-chat-preview-ripple .nn-chat-preview-row {
+    border: 1px solid var(--neco-border);
+    border-radius: 3px 9px 9px 3px;
+    padding: 0;
+    overflow: hidden;
+}
+
+#nn-chat-style-gallery .nn-chat-preview-ripple .nn-chat-preview-avatar {
+    width: 25px;
+    height: auto;
+    align-self: stretch;
+    border-radius: 0;
+}
+
+#nn-chat-style-gallery .nn-chat-preview-ripple .nn-chat-preview-content {
+    padding: 4px;
+}
+
+#nn-chat-style-gallery .nn-chat-preview-tide .nn-chat-preview-row {
+    background: color-mix(in srgb, var(--neco-ginger) 12%, var(--neco-surface));
+    padding-top: 7px;
+    margin-top: 3px;
+}
+
+#nn-chat-style-gallery .nn-chat-preview-tide .nn-chat-preview-heading {
+    margin-top: -12px;
+    margin-bottom: 6px;
+    height: 8px;
+    width: 55%;
+    border: 2px solid var(--neco-raised);
+    outline: 1px solid var(--neco-border);
+}
+
+#nn-chat-style-gallery .nn-chat-preview-messenger .nn-chat-preview-row {
+    max-width: 85%;
+}
+
+#nn-chat-style-gallery .nn-chat-preview-messenger .nn-chat-preview-content {
+    padding: 4px;
+    background: var(--neco-raised);
+    border: 1px solid var(--neco-border);
+    border-radius: 2px 7px 7px;
+}
+
+#nn-chat-style-gallery .nn-chat-preview-messenger .nn-chat-preview-row:nth-child(2) {
+    align-self: flex-end;
+    flex-direction: row-reverse;
+    width: 85%;
+}
+
+#nn-chat-style-gallery .nn-chat-preview-messenger .nn-chat-preview-row:nth-child(2) .nn-chat-preview-content {
+    background: color-mix(in srgb, var(--neco-user) 25%, var(--neco-surface));
+    border-radius: 7px 2px 7px 7px;
+}
+
+#nn-chat-style-gallery .nn-chat-preview-notebook .nn-chat-preview-content {
+    padding-inline-start: 5px;
+    border-inline-start: 2px solid var(--neco-ginger);
+    background: repeating-linear-gradient(transparent 0 5px, var(--neco-border) 5px 6px);
+}
+
+#nn-chat-style-gallery :is(.nn-chat-preview-screenplay, .nn-chat-preview-storybook) .nn-chat-preview-heading {
+    margin-inline: auto;
+}
+
+#nn-chat-style-gallery .nn-chat-preview-screenplay .nn-chat-preview-line {
+    border-radius: 0;
+    background: repeating-linear-gradient(to right, var(--neco-muted) 0 2px, transparent 2px 3px);
+}
+
+#nn-chat-style-gallery .nn-chat-preview-compact {
+    justify-content: flex-start;
+    gap: 0;
+}
+
+#nn-chat-style-gallery .nn-chat-preview-compact .nn-chat-preview-avatar {
+    width: 10px;
+    height: 10px;
+}
+
+#nn-chat-style-gallery .nn-chat-preview-compact .nn-chat-preview-line:last-child {
+    display: none;
+}
+
+#nn-chat-style-gallery .nn-chat-preview-storybook .nn-chat-preview-text::before {
+    content: 'A';
+    float: left;
+    margin-inline-end: 3px;
+    color: var(--neco-ginger);
+    font: bold 19px / 1 Georgia, serif;
+}
+
+@container (min-width: 480px) {
+    #nn-chat-style-gallery .nn-chat-style-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@container (max-width: 260px) {
+    #nn-chat-style-gallery .nn-chat-style-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 /* Theme previews use their own saved colours; labels use the active readable palette. */
 #user-settings-block #UI-presets-block #themes[hidden],
 #user-settings-block #UI-presets-block #nn-ui-theme-gallery [hidden] {
