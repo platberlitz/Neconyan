@@ -10,8 +10,6 @@
     }
     .sb-mobile-swipe-rail.sb-can-scroll-left { --sb-rail-fade-left: 22px; }
     .sb-mobile-swipe-rail.sb-can-scroll-right { --sb-rail-fade-right: 22px; }
-    #send_form.compact #leftSendForm.sb-can-scroll-left { --sb-rail-fade-left: 10px; }
-    #send_form.compact #leftSendForm.sb-can-scroll-right { --sb-rail-fade-right: 10px; }
 
     .sb-shell-nav-wrapper:has(> .sb-mobile-rail-chrome)::before,
     .sb-shell-nav-wrapper:has(> .sb-mobile-rail-chrome)::after {
@@ -69,29 +67,6 @@
     body .sb-mobile-rail-arrow:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 1px; }
     body .sb-mobile-rail-left { left: 0; justify-items: start; }
     body .sb-mobile-rail-right { right: 0; justify-items: end; }
-    body .sb-mobile-rail-compact .sb-mobile-rail-arrow {
-        top: auto;
-        bottom: -8px;
-        translate: none;
-        width: 16px;
-        height: 20px;
-        align-items: end;
-    }
-    body .sb-mobile-rail-compact .sb-mobile-rail-arrow > span {
-        width: 12px;
-        height: 12px;
-        border: 0;
-        background: transparent;
-        color: var(--neco-ink);
-        font-size: 16px;
-    }
-    body .sb-mobile-rail-compact .sb-mobile-rail-track {
-        bottom: -5px;
-        left: 16px;
-        width: calc(100% - 32px);
-        height: 2px;
-        opacity: 0.65;
-    }
     body .sb-mobile-rail-track {
         position: absolute;
         bottom: 0;
@@ -316,6 +291,7 @@
     }
 
     #leftSendForm {
+        touch-action: pan-x;
         grid-area: tools !important;
         width: 100% !important;
         min-width: 0 !important;

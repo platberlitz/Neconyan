@@ -28,7 +28,7 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
             button.type = 'button';
             button.className = `sb-mobile-rail-arrow sb-mobile-rail-${direction < 0 ? 'left' : 'right'}`;
             button.setAttribute('aria-label', direction < 0 ? leftLabel : rightLabel);
-            button.innerHTML = `<span aria-hidden="true">${direction < 0 ? '‹' : '›'}</span>`;
+            button.innerHTML = `<span aria-hidden="true"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${direction < 0 ? 'M10.5 3 5.5 8 10.5 13' : 'M5.5 3 10.5 8 5.5 13'}"/></svg></span>`;
             button.addEventListener('click', event => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -92,7 +92,6 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
             toggle(rail, 'sb-can-scroll-right', state.canScrollRight);
             if (chrome.hidden === state.hasOverflow) chrome.hidden = !state.hasOverflow;
             if (!state.hasOverflow) continue;
-            toggle(chrome, 'sb-mobile-rail-compact', rail.id === 'leftSendForm' && !!rail.closest('#send_form.compact'));
             buttons.forEach((button, index) => {
                 const enabled = index === 0 ? state.canScrollLeft : state.canScrollRight;
                 if (button.hidden === enabled) button.hidden = !enabled;
