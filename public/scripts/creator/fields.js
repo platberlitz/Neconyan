@@ -91,7 +91,11 @@ export function textField(label, value, change, { name = false, rows = 4, hint =
     title.htmlFor = input.id;
     heading.append(title);
     if (!name) {
-        const expand = button('Fullscreen', () => expandField(input, label), false, 'creator-chip-btn');
+        const expand = button('', () => expandField(input, label), false, 'creator-chip-btn');
+        const icon = element('i', 'fa-solid fa-expand');
+        icon.setAttribute('aria-hidden', 'true');
+        expand.append(icon);
+        expand.title = `Expand ${label}`;
         expand.setAttribute('aria-label', `Expand ${label}`);
         heading.append(expand);
         input.addEventListener('dblclick', () => expandField(input, label));
