@@ -60,7 +60,8 @@
             "tpl-vitals-companion",
             "tpl-expressions-agent",
             "tpl-level-up-companion",
-            "tpl-user-based-stats-generator"
+            "tpl-user-based-stats-generator",
+            "tpl-dice-roller-companion"
         ]
     },
     {

@@ -10,7 +10,7 @@ import { isNativeCompanion } from './agent-definition.js';
 import { runAgentModelStep } from './agent-model-step.js';
 import { runRoleplayAgentPostprocessing } from './roleplay-agent-processing.js';
 import { companionEnvironment, companionMessageTokens, previousCompanionNotes, resolveCompanionText, singleCompanionPrompt, batchCompanionPrompt } from './companion-context.js';
-import { classifyCompanionFailureMessage, getActiveCompanionResults, isEmptyOutputSentinel, MEMORY_SHARD_TEMPLATE_ID, normalizeCompanionChatHistoryInjection } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
+import { classifyCompanionFailureMessage, getActiveCompanionResults, isDiceRollerAgent, isEmptyOutputSentinel, MEMORY_SHARD_TEMPLATE_ID, normalizeCompanionChatHistoryInjection } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { getCompanionTrackerAutoRepairPayload, inspectCompanionTrackerOutput, normalizeCompanionTrackerRepairPayload } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
 import { captureCompanionCapacity, MAX_COMPANION_RESULT_BYTES } from './companion-capacity.js';
 import { isRoleplayAgentStop, roleplayAgentsStopped } from './roleplay-agent-stop.js';
@@ -155,7 +155,9 @@ function baseRecord(agent, model) {
  */
 export function planRoleplayCompanionStart({ agents, snapshot, pre, records, value, effect, assistantName, selectedAgentIds }) {
     const hidden = new Set(snapshot.agents.hiddenIds ?? []);
-    const sources = agents.filter(agent => isNativeCompanion(agent) && agent.prompt.trim() && (selectedAgentIds || !hidden.has(agent.id)));
+    // The Dice Roller is local: its directive is injected, but it never needs a
+    // model step or a pending result card.
+    const sources = agents.filter(agent => isNativeCompanion(agent) && !isDiceRollerAgent(agent) && agent.prompt.trim() && (selectedAgentIds || !hidden.has(agent.id)));
     const preparedRecords = companionHostRecords(projectPromptMediaRecords(records, snapshot.mediaPolicy, { hash: roleplayHash }), value, effect, assistantName);
     const messages = preparedRecords.slice(1);
     const hostResults = getActiveCompanionResults(messages.at(-1));

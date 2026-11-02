@@ -15,6 +15,7 @@ export const CHAT_ONLY_TEMPLATE_ID = 'tpl-chat-only-companion';
 export const MESSAGE_INBOX_TEMPLATE_ID = 'tpl-message-inbox-companion';
 export const MEMORY_SHARD_TEMPLATE_ID = 'tpl-memory-shard-companion';
 export const EXPRESSIONS_AGENT_TEMPLATE_ID = 'tpl-expressions-agent';
+export const DICE_ROLLER_TEMPLATE_ID = 'tpl-dice-roller-companion';
 export const COMPANION_RESULTS_EXTRA_KEY = 'inChatAgentCompanionResults';
 
 const ESCAPED_MACRO_OPEN_RE = /\\\{\\\{/g;
@@ -123,6 +124,20 @@ export function isPlotCompassAgent(agent = null) {
 
 export function isExpressionsAgent(agent = null) {
     return getAgentTemplateId(agent) === EXPRESSIONS_AGENT_TEMPLATE_ID;
+}
+
+/**
+ * The Dice Roller runs locally in its own widget. It never asks a model for a
+ * note, so every model, capacity and automatic-run path must leave it alone.
+ * @param {object} [agent]
+ * @returns {boolean}
+ */
+export function isDiceRollerAgent(agent = null) {
+    return getAgentTemplateId(agent) === DICE_ROLLER_TEMPLATE_ID;
+}
+
+export function isLocalCompanionAgent(agent = null) {
+    return isDiceRollerAgent(agent);
 }
 
 export function normalizeChatOnlyInput(value = '') {

@@ -13,6 +13,7 @@ import { replaceCompanionView, runCompanionViewAction } from './view-state.js';
 import { initCompanionWindows, openCompanionWindow, refreshCompanionWindows } from './companion-windows.js';
 import {
     areAgentsGloballyEnabled,
+    getAgentById,
     getAgents,
     getCompanionConfig,
     getHiddenAgentIds,
@@ -48,6 +49,7 @@ import {
     getChatroomReplyRunOptions,
     insertChoiceIntoMessageInput,
     isSuppressedCompanionResult,
+    refreshCompanionCards,
 } from './companion-ui.js';
 import {
     CHAT_ONLY_INPUT_MAX_CHARS,
@@ -59,11 +61,19 @@ import {
     isAssistantMessage,
     isChatOnlyAgent,
     isChatroomAgent,
+    isDiceRollerAgent,
     isPlotCompassAgent,
     normalizeChatOnlyInput,
     normalizeChatroomReply,
     normalizePlotCompassObjective,
 } from './companion-shared.js';
+import {
+    buildDiceCompanionHostHtml,
+    captureDiceCompanionWidget,
+    DICE_COMPANION_COMPOSER_REQUEST_EVENT,
+    notifyDiceCompanionHostsChanged,
+    restoreDiceCompanionWidget,
+} from './dice-companion-view.js';
 
 // v2: v1 could persist scroll-corrupted positions on iOS (drag hijacked into a page scroll),
 // pinning the handle to a screen edge with no way to drag it back. The old key is abandoned.
@@ -109,6 +119,12 @@ export function isConversationModeActive() {
     const sheld = globalThis.document?.getElementById?.('sheld');
     return sheld?.dataset?.sbConversationMode === 'on'
         || sheld?.getAttribute?.('data-sb-conversation-mode') === 'on';
+}
+
+/** The panel only covers the composer on the phone layout. */
+function isPhonePanelLayout() {
+    return globalThis.NeconyanShell?.isMobileViewport?.()
+        ?? globalThis.matchMedia?.('(max-width: 768px)')?.matches === true;
 }
 
 function syncConversationModePanelVisibility() {
@@ -769,6 +785,19 @@ function buildPanelAgentSection(state) {
         ? '<button type="button" class="ica--cdash-action ica--tpanel-drag-handle" title="Drag to reorder (arrow keys nudge)" aria-label="Reorder companion"><i class="fa-solid fa-grip-vertical"></i></button>'
         : '';
 
+    if (state.agent && isDiceRollerAgent(state.agent)) {
+        return `
+            <section class="ica--tpanel-agent ica--tpanel-agent--dice" data-agent-id="${escapeHtml(agentId)}" data-hidden="${isHidden}" data-search-text="${searchText}">
+                <div class="ica--tpanel-agent-head">
+                    <span class="ica--tpanel-agent-name"><i class="fa-solid ${escapeHtml(icon)}"></i><span>${escapeHtml(name)}</span></span>
+                    <span class="ica--tpanel-agent-actions">${dragHandleButton}${hiddenButton}${windowButton}${settingsButton}</span>
+                </div>
+                <p class="ica--tpanel-dice-hint">Roll here. Add to message puts the result in the box; Send puts it in the story for the next reply to treat as settled.</p>
+                ${buildDiceCompanionHostHtml({ agentId, surface: 'panel' })}
+            </section>
+        `;
+    }
+
     if (!latest) {
         return `
             <section class="ica--tpanel-agent" data-agent-id="${escapeHtml(agentId)}" data-hidden="${isHidden}" data-search-text="${searchText}">
@@ -944,6 +973,7 @@ function applyPanelSearch() {
     if (clear) clear.disabled = !panelSearchQuery;
     const body = panel.querySelector('.ica--tpanel-body');
     if (body && typeof $(body).sortable === 'function' && $(body).sortable('instance')) $(body).sortable('refresh');
+    notifyDiceCompanionHostsChanged();
 }
 
 function renderPanel() {
@@ -963,7 +993,9 @@ function renderPanel() {
 
     const scope = {};
     const target = captureMessageTargetState(scope);
+    const liveDice = captureDiceCompanionWidget(panel);
     replaceCompanionView(panelElement, buildPanelHtml(), () => isMessageTargetCurrent(scope, target));
+    if (liveDice) restoreDiceCompanionWidget(panel, liveDice);
     applyPanelSearch();
 
     for (const section of panel?.querySelectorAll(PANEL_ANCHOR_OPTIONS.messageSelector) ?? []) {
@@ -1017,7 +1049,7 @@ function setupPanelSortable() {
         // gate runs; its default (`input, textarea, button, select, option`) would swallow every
         // drag that starts on the grip because the grip is a <button>. Cancel the section's other
         // controls but leave the drag handle draggable.
-        cancel: 'input, textarea, .menu_button, .ica--cdash-action:not(.ica--tpanel-drag-handle)',
+        cancel: 'input, textarea, .menu_button, .neco-dice, .ica--cdash-action:not(.ica--tpanel-drag-handle)',
         tolerance: 'pointer',
         distance: 5,
         placeholder: 'ica--tpanel-agent-placeholder',
@@ -1136,6 +1168,7 @@ export function openCompanionPanel() {
     panel.attr('aria-hidden', 'false');
     $('#ica--tracker-panel-handle').attr('aria-expanded', 'true');
     globalThis.document?.getElementById?.(TOPBAR_LAUNCHER_ID)?.setAttribute('aria-expanded', 'true');
+    notifyDiceCompanionHostsChanged();
     document.querySelector('#ica--tracker-panel [data-action="panel-close"]')?.focus({ preventScroll: true });
 }
 
@@ -1147,6 +1180,7 @@ export function closeCompanionPanel() {
     panel.attr('aria-hidden', 'true');
     $('#ica--tracker-panel-handle').attr('aria-expanded', 'false');
     globalThis.document?.getElementById?.(TOPBAR_LAUNCHER_ID)?.setAttribute('aria-expanded', 'false');
+    notifyDiceCompanionHostsChanged();
     if (restoreFocus && returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
 }
 
@@ -1311,6 +1345,7 @@ async function handlePanelAction(event) {
             hiddenAgentIds.add(agentId);
         }
         setHiddenAgentIds(hiddenAgentIds);
+        refreshCompanionCards();
 
         if (panelOpen) {
             renderPanel();
@@ -1689,7 +1724,13 @@ export function initCompanionPanel() {
 
     initCompanionWindows({
         getLivePreview: () => (livePreview?.element.isConnected ? livePreview.message : null),
-        formatEntry: (agentId, entry) => buildCompanionEntryBody(agentId, entry, '.ica--cwin-body '),
+        formatEntry: (agentId, entry) => {
+            const agent = getAgentById(agentId);
+            if (isDiceRollerAgent(agent)) {
+                return buildDiceCompanionHostHtml({ agentId, surface: 'window', messageIndex: entry?.messageIndex ?? -1 });
+            }
+            return buildCompanionEntryBody(agentId, entry, '.ica--cwin-body ');
+        },
         isConversationModeActive,
     });
 
@@ -1735,6 +1776,14 @@ export function initCompanionPanel() {
             updateCompanionPanelHandleVisibility();
         });
     }
+
+    // On phones the panel covers the composer. A deliberate Add reveals it and
+    // overrides the panel lock; desktop keeps the panel and its lock.
+    document.addEventListener(DICE_COMPANION_COMPOSER_REQUEST_EVENT, () => {
+        if (panelOpen && isPhonePanelLayout()) {
+            closeCompanionPanel();
+        }
+    });
 
     observeConversationModeState();
     syncConversationModePanelVisibility();

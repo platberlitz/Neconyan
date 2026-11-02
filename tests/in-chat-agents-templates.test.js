@@ -938,6 +938,36 @@ describe('in-chat agent bundled templates', () => {
         expect(companionGroup.agentTemplateIds).toContain('tpl-vitals-companion');
     });
 
+    test('seeds Dice Roller by default, switched off, as a manual local companion', () => {
+        const catalog = readTemplate('index.json');
+        const dice = findCatalogTemplate(catalog, 'tpl-dice-roller-companion');
+        expect(dice).toEqual(readTemplate('dice-roller-companion.json'));
+        expect(dice).toEqual(expect.objectContaining({
+            category: 'companion',
+            execution: 'companion',
+            phase: 'post',
+            enabled: false,
+            icon: 'fa-dice-d20',
+        }));
+        expect(dice.companion).toEqual(expect.objectContaining({
+            trigger: 'manual',
+            displayMode: 'panel',
+            format: 'text',
+            rawPrompt: true,
+            feedback: { enabled: true, depth: 1 },
+        }));
+        expect(dice.injection).toEqual({ position: 1, depth: 0, role: 0, order: 115, scan: false });
+        expect(dice.prompt).toContain('settled fact');
+        expect(dice.prompt).toContain('keep the dice, the numbers and the word roll out of the reply');
+        expect(dice.conditions.generationTypes).toEqual(expect.arrayContaining(['normal', 'continue', 'swipe', 'regenerate']));
+        expect(readIndexSetBody('BUNDLED_REGEX_POST_DEFAULT_EXCLUDED_TEMPLATE_IDS')).toContain('DICE_ROLLER_TEMPLATE_ID');
+        expect(readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS')).toContain('\'tpl-dice-roller-companion\'');
+        expect(readIndexSetBody('HIDDEN_TEMPLATE_BROWSER_IDS')).not.toContain('\'tpl-dice-roller-companion\'');
+        const companionGroup = JSON.parse(fs.readFileSync(new URL('groups.json', templateDir), 'utf8'))
+            .find(group => group.id === 'grp-companions');
+        expect(companionGroup.agentTemplateIds).toContain('tpl-dice-roller-companion');
+    });
+
     test('renders Vitals lines as tiered bars with changes and status chips', () => {
         const html = renderVitalsOutput([
             '```',

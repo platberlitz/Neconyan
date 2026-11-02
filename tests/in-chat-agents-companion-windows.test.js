@@ -54,6 +54,7 @@ describe('companion floating windows', () => {
 
         await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/companion/companion-shared.js', () => ({
             holdsReadableCompanionResults: jest.fn(message => Boolean(message)),
+            isDiceRollerAgent: jest.fn(() => false),
             isSuppressedCompanionResult: jest.fn((agentId, result) => result?.content === 'suppressed'),
         }));
 

@@ -11,7 +11,8 @@ import {
 } from '../agent-store.js';
 import { cleanCompanionAgentName, insertChoiceIntoMessageInput } from './companion-ui.js';
 import { getCompanionResults, getLatestValidCompanionMessageIndex, runCompanionAgentOnMessage } from './companion-runner.js';
-import { holdsReadableCompanionResults, isSuppressedCompanionResult } from './companion-shared.js';
+import { holdsReadableCompanionResults, isDiceRollerAgent, isSuppressedCompanionResult } from './companion-shared.js';
+import { buildDiceCompanionHostHtml, captureDiceCompanionWidget, notifyDiceCompanionHostsChanged, restoreDiceCompanionWidget } from './dice-companion-view.js';
 import { runCompanionViewAction } from './view-state.js';
 import { accountStorage } from '../../../util/AccountStorage.js';
 
@@ -407,6 +408,9 @@ function getWindowStatus(agent, entry) {
     if (!isAgentEnabledForCurrentScope(agent)) {
         return { label: 'Off', tone: 'off' };
     }
+    if (isDiceRollerAgent(agent)) {
+        return { label: 'Ready to roll', tone: 'ready' };
+    }
     if (!entry) {
         return { label: 'No note yet', tone: 'empty' };
     }
@@ -453,11 +457,14 @@ export function buildCompanionWindowHtml({
     const name = getWindowDisplayName(agent, entry);
     const icon = normalizeWindowIcon(agent.icon ?? entry?.result?.icon);
     const status = getWindowStatus(agent, entry);
+    const dice = isDiceRollerAgent(agent);
     const titleId = nextDomId('title');
     const bodyId = nextDomId('body');
     const safeName = escapeHtml(name);
-    const sourceLabel = entry?.preview ? 'Live reply' : entry ? `Message #${entry.messageIndex}` : 'No note in this chat yet';
-    const emptyMessage = entry ? '' : EMPTY_WINDOW_NOTE_HTML;
+    const sourceLabel = dice
+        ? 'Roll here, then add the result to your message or send it to the story'
+        : entry?.preview ? 'Live reply' : entry ? `Message #${entry.messageIndex}` : 'No note in this chat yet';
+    const emptyMessage = entry || dice ? '' : EMPTY_WINDOW_NOTE_HTML;
     const noteContent = deferNote ? '' : (noteHtml || emptyMessage);
     const runDisabled = canRun ? '' : ' disabled';
     const regenerateDisabled = canRegenerate ? '' : ' disabled';
@@ -597,7 +604,11 @@ function applyWindowLayout(section, agent, { mode, viewport, topbarBottom, compo
     section.style.left = `${Math.round(layout.left + viewport.offsetLeft)}px`;
     section.style.top = `${Math.round(layout.top + viewport.offsetTop)}px`;
     section.style.width = `${Math.round(layout.width)}px`;
+    const previousTemporary = section.dataset.temporaryCollapse;
     section.dataset.temporaryCollapse = String(layout.temporaryCollapse);
+    if (previousTemporary !== section.dataset.temporaryCollapse) {
+        notifyDiceCompanionHostsChanged();
+    }
     const body = section.querySelector?.('.ica--cwin-body');
     if (body) {
         body.style.maxHeight = `${Math.round(layout.bodyMaxHeight)}px`;
@@ -730,15 +741,15 @@ function syncWindowCollapsedState(section, collapsed, name) {
     }
     section.dataset.collapsed = String(collapsed);
     const button = section.querySelector('[data-action="cwin-collapse"]');
-    if (!button) {
-        return;
+    if (button) {
+        button.setAttribute('aria-expanded', String(!collapsed));
+        button.title = collapsed ? 'Expand window' : 'Collapse window';
+        button.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${name} window`);
+        const icon = button.querySelector('i');
+        icon?.classList.toggle('fa-chevron-down', collapsed);
+        icon?.classList.toggle('fa-chevron-up', !collapsed);
     }
-    button.setAttribute('aria-expanded', String(!collapsed));
-    button.title = collapsed ? 'Expand window' : 'Collapse window';
-    button.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} ${name} window`);
-    const icon = button.querySelector('i');
-    icon?.classList.toggle('fa-chevron-down', collapsed);
-    icon?.classList.toggle('fa-chevron-up', !collapsed);
+    notifyDiceCompanionHostsChanged();
 }
 
 function captureWindowBodyView(section) {
@@ -832,6 +843,7 @@ export function refreshCompanionWindows({ preserveFocus = true } = {}) {
     const hidden = agents.length === 0 || shouldHideWindowLayer();
     layerNode.hidden = hidden;
     layerNode.setAttribute('aria-hidden', String(hidden));
+    notifyDiceCompanionHostsChanged();
 
     if (agents.length === 0 || hidden) {
         clearRenderedWindowSections();
@@ -854,8 +866,11 @@ export function refreshCompanionWindows({ preserveFocus = true } = {}) {
         const entry = findLatestCompanionWindowEntry(agent.id, { previewMessage });
         nextEntries.set(agent.id, { ...(entry ?? {}) });
         const stateEntry = getWindowStateEntry(agent.id);
+        const dice = isDiceRollerAgent(agent);
         let noteHtml = '';
-        if (entry && typeof windowHooks.formatEntry === 'function') {
+        if (dice) {
+            noteHtml = buildDiceCompanionHostHtml({ agentId: agent.id, surface: 'window', messageIndex: entry?.messageIndex ?? -1 });
+        } else if (entry && typeof windowHooks.formatEntry === 'function') {
             try {
                 noteHtml = windowHooks.formatEntry(agent.id, entry);
             } catch (error) {
@@ -864,8 +879,8 @@ export function refreshCompanionWindows({ preserveFocus = true } = {}) {
             }
         }
         const canRun = canRunCompanionWindow(agent, entry);
-        const canRegenerate = canRun && Boolean(entry) && !entry.preview && !entry.hostHidden;
-        const canShowInChat = Boolean(entry) && !entry.preview;
+        const canRegenerate = !dice && canRun && Boolean(entry) && !entry.preview && !entry.hostHidden;
+        const canShowInChat = !dice && Boolean(entry) && !entry.preview;
         const statusLabel = getWindowStatus(agent, entry).label;
         const noteKey = getCompanionWindowNoteKey({ chatId: currentChatId, entry });
         const renderKey = getCompanionWindowRenderKey({
@@ -908,11 +923,13 @@ export function refreshCompanionWindows({ preserveFocus = true } = {}) {
                     if (noteNode) {
                         noteNode.innerHTML = noteHtml || (entry ? '' : EMPTY_WINDOW_NOTE_HTML);
                     }
+                    const liveDice = dice && section?.isConnected ? captureDiceCompanionWidget(section) : null;
                     if (section?.isConnected && section.replaceWith) {
                         section.replaceWith(next);
                     } else {
                         layerNode.append(next);
                     }
+                    if (liveDice) restoreDiceCompanionWidget(next, liveDice);
                     section = next;
                 }
             }
@@ -957,6 +974,7 @@ export function refreshCompanionWindows({ preserveFocus = true } = {}) {
     for (const section of layerNode.querySelectorAll('.ica--cwin')) {
         section.dataset.front = String(section.dataset?.agentId === frontAgentId);
     }
+    notifyDiceCompanionHostsChanged();
     syncComposerObserver();
     positionRenderedWindows();
     for (const [agentId, view] of restores) {
@@ -1089,15 +1107,15 @@ function currentChatMatchesRendered() {
 }
 
 async function runWindowCompanion({ agentId, messageIndex, button }) {
-    if (!Number.isInteger(messageIndex) || messageIndex < 0) {
-        globalThis.toastr?.warning?.('No reply yet to run this companion on.');
-        return;
-    }
     const agent = getValidWindowAgent(agentId);
     const entry = renderedEntries.get(agentId) ?? null;
     if (!agent) {
         globalThis.toastr?.warning?.('That companion no longer exists.');
         refreshCompanionWindows();
+        return;
+    }
+    if (!isDiceRollerAgent(agent) && (!Number.isInteger(messageIndex) || messageIndex < 0)) {
+        globalThis.toastr?.warning?.('No reply yet to run this companion on.');
         return;
     }
     if (entry?.result?.status === 'pending') {
@@ -1113,7 +1131,7 @@ async function runWindowCompanion({ agentId, messageIndex, button }) {
 
     button.disabled = true;
     try {
-        await runCompanionAgentOnMessage(agentId, messageIndex);
+        await runCompanionAgentOnMessage(agentId, Number.isInteger(messageIndex) && messageIndex >= 0 ? messageIndex : -1);
     } finally {
         if (button.isConnected) {
             button.disabled = false;
@@ -1162,11 +1180,11 @@ async function runWindowLatest(agentId, button) {
         return;
     }
     const messageIndex = getLatestValidCompanionMessageIndex();
-    if (messageIndex < 0) {
+    if (messageIndex < 0 && !isDiceRollerAgent(getValidWindowAgent(agentId))) {
         globalThis.toastr?.warning?.('No message yet to run this companion on.');
         return;
     }
-    await runWindowCompanion({ agentId, messageIndex, button });
+    await runWindowCompanion({ agentId, messageIndex: messageIndex < 0 ? -1 : messageIndex, button });
 }
 
 async function performWindowAction(action, section, button, agentId) {

@@ -99,6 +99,41 @@ const WIDTHS = [1280, 1024, 997, 768, 390, 393, 320];
 for (const width of [1280, 393]) {
     test.describe(`Reply rewrite settings at ${width}px`, () => {
         test.use({ viewport: { width, height: width === 393 ? 852 : 900 }, isMobile: width === 393, hasTouch: width === 393 });
+        test('switching agents keeps the scrolled card in place', async ({ page }, info) => {
+            await openAgents(page);
+            const template = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/knowledge-guard.json', import.meta.url)));
+            const agents = Array.from({ length: 12 }, (_, index) => ({
+                ...template, id: `scroll-check-${width}-${index}`, sourceTemplateId: '',
+                name: `Scroll check ${String(index).padStart(2, '0')}`, enabled: false,
+            }));
+            const requestHeaders = await headers(page);
+            try {
+                for (const agent of agents) expect((await page.request.post('/api/in-chat-agents/save', { headers: requestHeaders, data: agent })).ok()).toBe(true);
+                await openAgents(page);
+                const skipTour = page.getByRole('region', { name: 'Neconyan interactive tutorial' }).getByRole('button', { name: 'Skip', exact: true });
+                if (await skipTour.isVisible()) await skipTour.click();
+                await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
+                await page.locator('#ica--agentTabs [data-tab="all"]').click();
+                await page.locator('#ica--search').fill('Scroll check');
+                const card = page.locator(`[data-agent-id="${agents[8].id}"]`);
+                const toggle = card.locator('.ica--card-toggle');
+                await toggle.evaluate(element => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
+                await page.waitForTimeout(300);
+                const before = await toggle.boundingBox();
+                await capture(page, info, 'agent-toggle-before');
+                for (const enabled of [true, false]) {
+                    await toggle.click();
+                    await expect(toggle).toHaveAttribute('aria-pressed', String(enabled));
+                    await page.waitForTimeout(300);
+                    const after = await toggle.boundingBox();
+                    await capture(page, info, `agent-toggle-${enabled ? 'on' : 'off'}`);
+                    expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
+                }
+            } finally {
+                for (const agent of agents) await page.request.post('/api/in-chat-agents/delete', { headers: requestHeaders, data: { id: agent.id } });
+            }
+        });
+
         test('agent names show installed versions and the template update changes that version', async ({ page }, info) => {
             await openAgents(page);
             const skipTour = page.getByRole('region', { name: 'Neconyan interactive tutorial' }).getByRole('button', { name: 'Skip', exact: true });

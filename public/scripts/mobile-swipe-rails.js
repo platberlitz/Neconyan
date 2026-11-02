@@ -18,6 +18,19 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
         if (element.classList.contains(name) !== enabled) element.classList.toggle(name, enabled);
     };
 
+    function revealTabInRail(rail, tab) {
+        // scrollIntoView also scrolls vertical ancestors, pulling a scrolled
+        // settings page back to its tab strip when that strip is refreshed.
+        const box = rail.getBoundingClientRect();
+        const tabBox = tab.getBoundingClientRect();
+        const scale = box.width / rail.offsetWidth || 1;
+        const left = box.left + rail.clientLeft * scale;
+        const right = left + rail.clientWidth * scale;
+        if (tabBox.left < left && tabBox.right > right) return;
+        const delta = tabBox.left < left ? tabBox.left - left : Math.max(0, tabBox.right - right);
+        if (delta) rail.scrollBy({ left: delta / scale, behavior: 'instant' });
+    }
+
     function register(rail) {
         if (records.has(rail) || !(rail instanceof HTMLElement)) return;
         const chrome = document.createElement('div');
@@ -53,7 +66,7 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
         const revealTab = event => {
             const tab = event.target.closest?.('[role="tab"]');
             if (phone.matches && tab && rail.contains(tab)) {
-                tab.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+                revealTabInRail(rail, tab);
             }
         };
         rail.addEventListener('click', revealTab);
@@ -116,7 +129,8 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
         }
         for (const tab of selectedTabs) {
             if (phone.matches && tab.isConnected && tab.getClientRects().length) {
-                tab.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+                const rail = tab.closest(MOBILE_SWIPE_RAIL_SELECTOR);
+                if (rail) revealTabInRail(rail, tab);
             }
         }
         selectedTabs.clear();
@@ -127,7 +141,7 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
         for (const mutation of mutations) {
             const target = mutation.target;
             if (!(target instanceof Element) || target.closest('.sb-mobile-rail-chrome')) continue;
-            if (mutation.attributeName === 'aria-selected' && target.matches('[role="tab"][aria-selected="true"]')
+            if (mutation.attributeName === 'aria-selected' && mutation.oldValue !== 'true' && target.matches('[role="tab"][aria-selected="true"]')
                 && target.closest(MOBILE_SWIPE_RAIL_SELECTOR)) selectedTabs.add(target);
             if (mutation.type === 'childList') {
                 for (const node of mutation.addedNodes) {

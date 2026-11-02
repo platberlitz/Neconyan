@@ -1,5 +1,5 @@
 import { roleplayError } from '../roleplay-store.js';
-import { getActiveCompanionResults, getAgentTemplateId, MEMORY_SHARD_TEMPLATE_ID } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
+import { getActiveCompanionResults, getAgentTemplateId, isDiceRollerAgent, MEMORY_SHARD_TEMPLATE_ID } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { isNativeCompanion } from './agent-definition.js';
 
 export const MAX_COMPANION_RESULT_BYTES = 10 * 1024 * 1024;
@@ -10,7 +10,7 @@ const MAX_NOTE_CODE_UNITS = 65536;
 export function captureCompanionCapacity(agents, records, source, { agentContext = false, trigger = 'normal', hiddenIds = [] } = {}) {
     const hidden = new Set(hiddenIds);
     // Automatic runs skip hidden Companions; explicit manual selections can still run them.
-    const selected = agents.filter(agent => isNativeCompanion(agent) && agent.prompt.trim() && (agentContext || !hidden.has(agent.id)));
+    const selected = agents.filter(agent => isNativeCompanion(agent) && !isDiceRollerAgent(agent) && agent.prompt.trim() && (agentContext || !hidden.has(agent.id)));
     const index = source.message?.index;
     const originalHost = Number.isSafeInteger(index) && index >= 0 ? records[index + 1] : null;
     const host = agentContext || trigger === 'continue' ? originalHost : null;

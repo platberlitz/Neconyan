@@ -1,16 +1,20 @@
 import {
-    chat as savedChat,
+    chat,
     eventSource,
     event_types,
-    extension_prompt_roles,
     extension_prompt_types,
-    name1,
     saveSettingsDebounced,
     sendTextareaMessage,
     setExtensionPrompt,
-} from '../../../script.js';
-import { extension_settings } from '../../extensions.js';
-import { Popup, POPUP_TYPE } from '../../popup.js';
+} from '../../../../script.js';
+import { extension_settings } from '../../../extensions.js';
+import {
+    areAgentsGloballyEnabled,
+    getAgentById,
+    getCompanionConfig,
+    isAgentEnabledForCurrentScope,
+    isAgentHidden,
+} from '../agent-store.js';
 import {
     DICE_SIDES,
     DIFFICULTIES,
@@ -18,11 +22,8 @@ import {
     MAX_MODIFIER,
     OUTCOMES,
     ROLL_MODES,
-    buildDiceDirective,
-    findRollMessageForGeneration,
     formatDiceNotation,
     formatRollLine,
-    getGenerationChat,
     getOutcomeKey,
     getTotalRange,
     normaliseCount,
@@ -32,13 +33,18 @@ import {
     parseRollLines,
     resolveTarget,
     rollDice,
-} from './lib/dice.js';
+} from './dice.js';
+import { setDiceCompanionRunner } from './dice-companion-local.js';
+import {
+    DICE_COMPANION_COMPOSER_REQUEST_EVENT,
+    DICE_COMPANION_HOST_SELECTOR,
+    DICE_COMPANION_HOSTS_CHANGED_EVENT,
+    getDiceRunHint,
+} from './dice-companion-view.js';
 
-const MODULE_NAME = 'dice-roller';
-const PROMPT_KEY = 'neco_dice_roller';
-const COMPOSER_BUTTON_ID = 'neco-dice-composer-button';
-const WAND_BUTTON_ID = 'neco-dice-wand-button';
-const SETTINGS_ID = 'neco-dice-settings';
+const SETTINGS_KEY = 'diceRoller';
+const LEGACY_SETTINGS_KEY = 'dice-roller';
+const LEGACY_PROMPT_KEY = 'neco_dice_roller';
 const CHIP_CLASS = 'neco-dice-chip';
 const ROLL_DURATION_MS = 900;
 const FLICKER_INTERVAL_MS = 55;
@@ -52,9 +58,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     mode: ROLL_MODES.NORMAL,
     criticals: true,
     partials: true,
-    composerButton: true,
     rollOnOpen: true,
-    introduced: false,
 });
 
 const OUTCOME_LABELS = Object.freeze({
@@ -90,31 +94,57 @@ const DIE_SHAPES = Object.freeze({
 });
 
 let settings = { ...DEFAULT_SETTINGS };
-let activePanel = null;
-let decorateFrame = 0;
+let widget = null;
 let initialised = false;
+let hostsRefreshFrame = 0;
+let decorateFrame = 0;
+let autoRolled = false;
 
 function prefersReducedMotion() {
     return globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
 }
 
-function loadSettings() {
-    const stored = extension_settings[MODULE_NAME] && typeof extension_settings[MODULE_NAME] === 'object'
-        ? extension_settings[MODULE_NAME]
-        : {};
-    settings = { ...DEFAULT_SETTINGS, ...stored };
-    settings.sides = normaliseSides(settings.sides);
-    settings.count = normaliseCount(settings.count);
-    settings.modifier = normaliseModifier(settings.modifier);
-    settings.mode = normaliseMode(settings.mode);
-    if (settings.difficulty !== 'custom' && !DIFFICULTIES.some(item => item.id === settings.difficulty)) {
-        settings.difficulty = DEFAULT_SETTINGS.difficulty;
+function getSettingsStore() {
+    return extension_settings?.inChatAgents && typeof extension_settings.inChatAgents === 'object'
+        ? extension_settings.inChatAgents
+        : null;
+}
+
+function normaliseSettings(stored = {}) {
+    const next = { ...DEFAULT_SETTINGS, ...(stored && typeof stored === 'object' ? stored : {}) };
+    delete next.composerButton;
+    delete next.introduced;
+    next.sides = normaliseSides(next.sides);
+    next.count = normaliseCount(next.count);
+    next.modifier = normaliseModifier(next.modifier);
+    next.mode = normaliseMode(next.mode);
+    if (next.difficulty !== 'custom' && !DIFFICULTIES.some(item => item.id === next.difficulty)) {
+        next.difficulty = DEFAULT_SETTINGS.difficulty;
     }
-    extension_settings[MODULE_NAME] = settings;
+    next.criticals = next.criticals !== false;
+    next.partials = next.partials !== false;
+    next.rollOnOpen = next.rollOnOpen !== false;
+    return next;
+}
+
+function loadSettings() {
+    const store = getSettingsStore();
+    const legacy = extension_settings?.[LEGACY_SETTINGS_KEY];
+    const stored = store?.[SETTINGS_KEY] ?? (legacy && typeof legacy === 'object' ? legacy : null);
+    settings = normaliseSettings(stored);
+    if (!store?.[SETTINGS_KEY]) {
+        saveSettings();
+    }
 }
 
 function saveSettings() {
-    extension_settings[MODULE_NAME] = settings;
+    if (!extension_settings || typeof extension_settings !== 'object') {
+        return;
+    }
+    if (!getSettingsStore()) {
+        extension_settings.inChatAgents = {};
+    }
+    extension_settings.inChatAgents[SETTINGS_KEY] = { ...settings };
     saveSettingsDebounced();
 }
 
@@ -202,15 +232,29 @@ function createDie(sides, index) {
     return die;
 }
 
-function buildPanel() {
+function createCheckbox(key, label, hint) {
+    const input = el('input', { type: 'checkbox', checked: settings[key] === true });
+    input.addEventListener('change', () => {
+        settings[key] = input.checked;
+        saveSettings();
+        widget?.onOptionsChanged?.(key);
+    });
+    return el('label', { className: 'checkbox_label neco-dice-setting', title: hint }, [
+        input,
+        el('span', { text: label }),
+    ]);
+}
+
+function buildWidget() {
     const state = {
-        action: '',
         rolling: false,
         result: null,
         timers: [],
+        agentId: '',
     };
 
     const root = el('div', { className: 'neco-dice', dataset: { outcome: '' } });
+    const status = el('p', { className: 'neco-dice-companion-status', role: 'status', hidden: true });
     const burst = el('span', { className: 'neco-dice-burst', 'aria-hidden': 'true' });
     const tray = el('span', { className: 'neco-dice-tray' });
     const rollButton = el('button', {
@@ -245,6 +289,20 @@ function buildPanel() {
         title: 'Target number',
     });
 
+    const addButton = el('button', {
+        type: 'button',
+        className: 'menu_button neco-dice-add',
+        title: 'Put the result in the message box so you can add to it',
+        disabled: true,
+    }, [el('i', { className: 'fa-solid fa-pen', 'aria-hidden': 'true' }), el('span', { text: 'Add to message' })]);
+    const sendButton = el('button', {
+        type: 'button',
+        className: 'menu_button menu_button_primary neco-dice-send',
+        title: 'Send the result to the story now',
+        disabled: true,
+    }, [el('i', { className: 'fa-solid fa-paper-plane', 'aria-hidden': 'true' }), el('span', { text: 'Send' })]);
+    const actions = el('div', { className: 'neco-dice-actions' }, [addButton, sendButton]);
+
     const renderTray = () => {
         tray.replaceChildren(...Array.from({ length: settings.count }, (_, index) => createDie(settings.sides, index)));
         tray.dataset.count = String(settings.count);
@@ -258,11 +316,10 @@ function buildPanel() {
         if (settings.difficulty === 'custom') {
             targetInput.hidden = false;
             targetInput.value = String(target);
-            targetText.textContent = `Need ${target}+ (${formatDiceNotation(settings)}, ${min}-${max})`;
         } else {
             targetInput.hidden = true;
-            targetText.textContent = `Need ${target}+ (${formatDiceNotation(settings)}, ${min}-${max})`;
         }
+        targetText.textContent = `Need ${target}+ (${formatDiceNotation(settings)}, ${min}-${max})`;
     };
 
     const resetResult = () => {
@@ -344,19 +401,12 @@ function buildPanel() {
         }),
     ]);
 
-    const addButton = el('button', {
-        type: 'button',
-        className: 'menu_button neco-dice-add',
-        title: 'Put the result in the message box so you can add to it',
-        disabled: true,
-    }, [el('i', { className: 'fa-solid fa-pen', 'aria-hidden': 'true' }), el('span', { text: 'Add to message' })]);
-    const sendButton = el('button', {
-        type: 'button',
-        className: 'menu_button menu_button_primary neco-dice-send',
-        title: 'Send the result to the story now',
-        disabled: true,
-    }, [el('i', { className: 'fa-solid fa-paper-plane', 'aria-hidden': 'true' }), el('span', { text: 'Send' })]);
-    const actions = el('div', { className: 'neco-dice-actions' }, [addButton, sendButton]);
+    const options = el('details', { className: 'neco-dice-options' }, [
+        el('summary', { text: 'Roll options' }),
+        createCheckbox('criticals', 'Critical rolls', 'All dice on their highest face is a critical success; all ones is a critical failure'),
+        createCheckbox('partials', 'Partial successes', 'Just missing the target still succeeds, with a cost'),
+        createCheckbox('rollOnOpen', 'Roll when the Companion panel opens', 'Roll straight away the first time the dice appear in a panel or window'),
+    ]);
 
     const controls = el('div', { className: 'neco-dice-controls' }, [
         actionField,
@@ -364,8 +414,9 @@ function buildPanel() {
         el('div', { className: 'neco-dice-row' }, [countField, modifierField]),
         difficultyField,
         modeField,
+        options,
     ]);
-    root.append(stage, controls, actions);
+    root.append(status, stage, controls, actions);
 
     const clearTimers = () => {
         for (const timer of state.timers) {
@@ -404,7 +455,7 @@ function buildPanel() {
 
     const roll = () => {
         if (state.rolling) {
-            return;
+            return state.result;
         }
         clearTimers();
         const rolled = rollDice({
@@ -413,7 +464,7 @@ function buildPanel() {
         });
         if (prefersReducedMotion()) {
             showResult(rolled);
-            return;
+            return rolled;
         }
         state.rolling = true;
         root.dataset.outcome = '';
@@ -435,6 +486,7 @@ function buildPanel() {
             clearInterval(flicker);
             showResult(rolled);
         }, ROLL_DURATION_MS + ((settings.count - 1) * 70)));
+        return rolled;
     };
 
     rollButton.addEventListener('click', roll);
@@ -447,7 +499,12 @@ function buildPanel() {
             return;
         }
         insertIntoComposer(line);
-        activePanel?.popup?.completeCancelled();
+        // The phone panel covers the composer. A deliberate Add reveals it, but
+        // only the panel hosting this widget, never an unrelated window.
+        const host = root.closest?.(DICE_COMPANION_HOST_SELECTOR);
+        if (host?.dataset?.necoDiceSurface === 'panel') {
+            globalThis.document?.dispatchEvent?.(new Event(DICE_COMPANION_COMPOSER_REQUEST_EVENT));
+        }
         focusComposer();
     });
 
@@ -457,7 +514,6 @@ function buildPanel() {
             return;
         }
         insertIntoComposer(line);
-        activePanel?.popup?.completeCancelled();
         await sendTextareaMessage();
     });
 
@@ -473,9 +529,54 @@ function buildPanel() {
 
     return {
         root,
+        state,
         roll,
+        getLine: getRollLine,
         focus: () => rollButton.focus({ preventScroll: true }),
         destroy: clearTimers,
+        resetForChat() {
+            clearTimers();
+            state.rolling = false;
+            state.result = null;
+            root.classList.remove('is-rolling');
+            root.dataset.outcome = '';
+            outcome.textContent = 'Tap the dice to roll';
+            breakdown.textContent = '';
+            actionInput.value = '';
+            sendButton.disabled = true;
+            addButton.disabled = true;
+        },
+        onOptionsChanged: key => {
+            if (key === 'criticals' || key === 'partials') {
+                resetResult();
+            }
+        },
+        syncAvailability(agent) {
+            const globallyEnabled = areAgentsGloballyEnabled();
+            const enabledForScope = agent ? isAgentEnabledForCurrentScope(agent) : false;
+            const hidden = agent ? isAgentHidden(agent.id) : false;
+            rollButton.disabled = !globallyEnabled || !enabledForScope;
+            if (!globallyEnabled) {
+                status.hidden = false;
+                status.textContent = 'Agents are off. Turn them on in Agents to roll for a reply.';
+            } else if (!enabledForScope) {
+                status.hidden = false;
+                status.textContent = 'This companion is off.';
+            } else if (hidden) {
+                status.hidden = false;
+                status.textContent = 'This companion is hidden, so the next reply will not see the roll.';
+            } else {
+                status.hidden = true;
+                status.textContent = '';
+            }
+            if (rollButton.disabled) {
+                sendButton.disabled = true;
+                addButton.disabled = true;
+            } else if (state.result) {
+                sendButton.disabled = false;
+                addButton.disabled = false;
+            }
+        },
     };
 }
 
@@ -502,139 +603,121 @@ function focusComposer() {
     composer.setSelectionRange(composer.value.length, composer.value.length);
 }
 
-export async function openDicePanel() {
-    if (activePanel) {
-        activePanel.panel.focus();
-        return;
+function ensureWidget() {
+    if (!widget) {
+        widget = buildWidget();
     }
-    loadSettings();
-    if (!settings.introduced) {
-        settings.introduced = true;
-        saveSettings();
-        document.getElementById(COMPOSER_BUTTON_ID)?.removeAttribute('data-new');
-    }
-    const panel = buildPanel();
-    const popup = new Popup(panel.root, POPUP_TYPE.DISPLAY, '', {
-        allowVerticalScrolling: true,
-        onOpen: () => {
-            panel.focus();
-            if (settings.rollOnOpen) {
-                panel.roll();
-            }
-        },
-    });
-    popup.dlg.classList.add('neco-dice-popup');
-    activePanel = { panel, popup };
-    try {
-        await popup.show();
-    } finally {
-        panel.destroy();
-        activePanel = null;
-    }
+    return widget;
 }
 
-function createMenuButton() {
-    const button = el('div', {
-        id: WAND_BUTTON_ID,
-        className: 'list-group-item flex-container flexGap5 interactable',
-        tabindex: '0',
-        role: 'button',
-        title: 'Roll dice and send the result to the story',
-    }, [
-        el('div', { className: 'fa-solid fa-dice-d20 extensionsMenuExtensionButton', 'aria-hidden': 'true' }),
-        el('span', { text: 'Roll dice' }),
-    ]);
-    const open = () => void openDicePanel();
-    button.addEventListener('click', open);
-    button.addEventListener('keydown', event => {
-        if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            open();
+function isHostVisible(host, messageIndex) {
+    if (!host?.isConnected) {
+        return false;
+    }
+    const panel = host.closest('#ica--tracker-panel');
+    if (panel) {
+        if (panel.getAttribute('aria-hidden') === 'true') {
+            return false;
         }
-    });
-    return button;
+        const currentChat = chat?.[messageIndex];
+        if (currentChat && chat.indexOf(currentChat) !== messageIndex) {
+            return false;
+        }
+    }
+    if (host.closest('[hidden]')) {
+        return false;
+    }
+    const windowLayer = host.closest('.ica--cwin-layer');
+    if (windowLayer?.hidden) {
+        return false;
+    }
+    const windowSection = host.closest('.ica--cwin');
+    if (windowSection) {
+        if (windowSection.hidden
+            || windowSection.getAttribute('aria-hidden') === 'true'
+            || windowSection.dataset.collapsed === 'true'
+            || windowSection.dataset.temporaryCollapse === 'true') {
+            return false;
+        }
+    }
+    return true;
 }
 
-function ensureWandButton() {
-    if (document.getElementById(WAND_BUTTON_ID)) {
-        return;
+function chooseHost() {
+    const hosts = [...document.querySelectorAll(DICE_COMPANION_HOST_SELECTOR)];
+    let best = null;
+    let bestRank = -1;
+    let bestMessageIndex = -1;
+    for (const host of hosts) {
+        const surface = host.dataset.necoDiceSurface || 'card';
+        const messageIndex = Number(host.dataset.necoDiceMessageIndex ?? -1);
+        if (!isHostVisible(host, messageIndex)) {
+            continue;
+        }
+        const rank = surface === 'window' ? 3 : surface === 'panel' ? 2 : 1;
+        if (rank > bestRank || (rank === bestRank && messageIndex > bestMessageIndex)) {
+            best = host;
+            bestRank = rank;
+            bestMessageIndex = messageIndex;
+        }
     }
-    const host = document.getElementById('dice_wand_container') ?? document.getElementById('extensionsMenu');
-    host?.append(createMenuButton());
+    return best;
 }
 
-function ensureComposerButton() {
-    const existing = document.getElementById(COMPOSER_BUTTON_ID);
-    if (!settings.composerButton) {
-        existing?.remove();
+function syncHost() {
+    if (!widget || !document?.body) {
         return;
     }
-    if (existing) {
-        return;
-    }
-    const host = document.getElementById('leftSendForm');
+    const host = chooseHost();
     if (!host) {
+        if (widget.root.isConnected) {
+            widget.root.remove();
+        }
         return;
     }
-    const button = el('div', {
-        id: COMPOSER_BUTTON_ID,
-        className: 'fa-solid fa-dice-d20 interactable',
-        role: 'button',
-        tabindex: '0',
-        title: 'Roll dice',
-        'aria-label': 'Roll dice',
-    });
-    if (!settings.introduced) {
-        button.dataset.new = 'true';
+
+    const agentId = host.dataset.necoDiceAgent || '';
+    const agent = getAgentById(agentId);
+    widget.state.agentId = agentId;
+    widget.syncAvailability(agent);
+
+    if (widget.root.parentElement !== host) {
+        host.append(widget.root);
     }
-    button.addEventListener('click', () => void openDicePanel());
-    button.addEventListener('keydown', event => {
-        if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            void openDicePanel();
-        }
-    });
-    host.append(button);
+
+    const surface = host.dataset.necoDiceSurface || 'card';
+    if (!autoRolled && surface !== 'card' && settings.rollOnOpen && !widget.state.result && !widget.state.rolling) {
+        autoRolled = true;
+        globalThis.setTimeout(() => widget?.roll(), 0);
+    }
 }
 
-function createCheckbox(key, label, hint) {
-    const input = el('input', { type: 'checkbox', checked: settings[key] === true });
-    input.addEventListener('change', () => {
-        settings[key] = input.checked;
-        saveSettings();
-        if (key === 'composerButton') {
-            ensureComposerButton();
-        }
+function scheduleHostSync() {
+    if (hostsRefreshFrame) {
+        return;
+    }
+    hostsRefreshFrame = requestAnimationFrame(() => {
+        hostsRefreshFrame = 0;
+        syncHost();
     });
-    return el('label', { className: 'checkbox_label neco-dice-setting', title: hint }, [
-        input,
-        el('span', { text: label }),
-    ]);
 }
 
-function ensureSettingsPanel() {
-    if (document.getElementById(SETTINGS_ID)) {
-        return;
+function syncAfterAgentChange() {
+    scheduleHostSync();
+}
+
+function handleLocalRun(agentId, messageIndex = -1) {
+    const agent = getAgentById(agentId);
+    if (!agent || !widget || !areAgentsGloballyEnabled() || !isAgentEnabledForCurrentScope(agent)) {
+        return null;
     }
-    const parent = document.getElementById('extensions_settings2') ?? document.getElementById('extensions_settings');
-    if (!parent) {
-        return;
+    widget.state.agentId = agentId;
+    widget.syncAvailability(agent);
+    const rolled = widget.roll();
+    if (rolled && !widget.root.isConnected) {
+        globalThis.toastr?.info?.(`Rolled ${rolled.total} vs ${rolled.target}. ${getDiceRunHint(getCompanionConfig(agent).displayMode)}`);
     }
-    const content = el('div', { className: 'inline-drawer-content neco-dice-settings-content' }, [
-        el('p', { className: 'neco-dice-settings-hint', text: 'Roll from the dice button beside the message box or from the wand menu. The result goes to the story as part of your message, and the AI writes what happens.' }),
-        createCheckbox('composerButton', 'Dice button beside the message box', 'Show a dice button next to the message box'),
-        createCheckbox('rollOnOpen', 'Roll as soon as the dice open', 'Roll straight away when you open the dice'),
-        createCheckbox('criticals', 'Critical rolls', 'All dice on their highest face is a critical success; all ones is a critical failure'),
-        createCheckbox('partials', 'Partial successes', 'Just missing the target still succeeds, with a cost'),
-    ]);
-    const drawer = el('div', { id: SETTINGS_ID, className: 'inline-drawer' }, [
-        el('div', { className: 'inline-drawer-toggle inline-drawer-header' }, [
-            el('b', { text: 'Dice Roller' }),
-            el('div', { className: 'inline-drawer-icon fa-solid fa-circle-chevron-down down' }),
-        ]),
-        content,
-    ]);
-    parent.append(drawer);
+    return { agentId, messageIndex, changed: false, local: true, result: null };
 }
 
 function decorateTextNode(node) {
@@ -668,11 +751,11 @@ function decorateTextNode(node) {
 
 function decorateChat() {
     decorateFrame = 0;
-    const chat = document.getElementById('chat');
-    if (!chat) {
+    const chatRoot = document.getElementById('chat');
+    if (!chatRoot) {
         return;
     }
-    for (const messageText of chat.querySelectorAll('.mes[is_user="true"] .mes_text')) {
+    for (const messageText of chatRoot.querySelectorAll('.mes[is_user="true"] .mes_text')) {
         if (!messageText.textContent?.includes('\u{1F3B2}')) {
             continue;
         }
@@ -695,44 +778,45 @@ function scheduleDecorate() {
 }
 
 /**
- * Sets or clears the dice note for the next reply. Server replies pass no chat,
- * so the note is read from the saved chat instead.
+ * Starts the Dice Roller companion widget and the roll chips in sent messages.
+ * Safe to call more than once.
  */
-export function applyDiceDirective(chat, type) {
-    const source = Array.isArray(chat) ? chat : getGenerationChat(savedChat, type);
-    const message = findRollMessageForGeneration(source, type);
-    const rolls = message ? parseRollLines(message.mes) : [];
-    const directive = buildDiceDirective(rolls, name1);
-    setExtensionPrompt(PROMPT_KEY, directive, extension_prompt_types.IN_CHAT, 0, false, extension_prompt_roles.SYSTEM);
-    return directive;
-}
-
-globalThis.necoDiceRollerInterceptor = async function (chat, _contextSize, _abort, type) {
-    try {
-        applyDiceDirective(chat, type);
-    } catch (error) {
-        console.warn('[Dice Roller] Could not add the dice result to the prompt.', error);
-        setExtensionPrompt(PROMPT_KEY, '', extension_prompt_types.IN_CHAT, 0);
-    }
-};
-
-export function activate() {
+export function initDiceRollerCompanion() {
     if (initialised) {
         return;
     }
     initialised = true;
     loadSettings();
-    ensureSettingsPanel();
-    ensureWandButton();
-    ensureComposerButton();
-    for (const eventName of [event_types.USER_MESSAGE_RENDERED, event_types.MESSAGE_UPDATED, event_types.MESSAGE_EDITED, event_types.MORE_MESSAGES_LOADED, event_types.CHAT_LOADED]) {
+    ensureWidget();
+    setDiceCompanionRunner(handleLocalRun);
+    setExtensionPrompt(LEGACY_PROMPT_KEY, '', extension_prompt_types.IN_CHAT, 0);
+    for (const eventName of [
+        event_types.USER_MESSAGE_RENDERED,
+        event_types.MESSAGE_UPDATED,
+        event_types.MESSAGE_EDITED,
+        event_types.MORE_MESSAGES_LOADED,
+        event_types.CHAT_LOADED,
+        event_types.CHARACTER_MESSAGE_RENDERED,
+    ]) {
         if (eventName) {
             eventSource.on(eventName, scheduleDecorate);
         }
     }
     eventSource.on(event_types.CHAT_CHANGED, () => {
-        setExtensionPrompt(PROMPT_KEY, '', extension_prompt_types.IN_CHAT, 0);
+        autoRolled = false;
+        widget?.resetForChat();
+        setExtensionPrompt(LEGACY_PROMPT_KEY, '', extension_prompt_types.IN_CHAT, 0);
         scheduleDecorate();
+        scheduleHostSync();
     });
+    document.addEventListener(DICE_COMPANION_HOSTS_CHANGED_EVENT, scheduleHostSync);
+    document.addEventListener('neconyan:agents-changed', syncAfterAgentChange);
+    document.addEventListener('toggle', event => {
+        const target = event.target;
+        if (target?.matches?.('.ica--companion-card') || target?.closest?.('.ica--companion-card')) {
+            scheduleHostSync();
+        }
+    }, true);
     scheduleDecorate();
+    scheduleHostSync();
 }

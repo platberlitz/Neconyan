@@ -31,7 +31,6 @@ const CORE_EXTENSIONS = new Set([
     // Neconyan: ship Chats Archive as a built-in core extension.
     'neconyan-chats-archive',
     'css-snippets',
-    'dice-roller',
 ]);
 const MANUAL_SYNC_EXTENSIONS = new Map([
     ['quick-image-gen', {

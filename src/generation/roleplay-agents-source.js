@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { normalizeExtensionBootId } from '../../public/scripts/extension-boot-lifecycle/index.js';
-import { CHATROOM_TEMPLATE_ID, getActiveCompanionResults, getAgentTemplateId } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
+import { CHATROOM_TEMPLATE_ID, getActiveCompanionResults, getAgentTemplateId, isDiceRollerAgent } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { companionExtraCharacterAvatars } from '../../public/scripts/extensions/in-chat-agents/companion/companion-prompts.js';
 import { agentCollectionDirectory, readAgentCollection, readAgentRecordLocked } from '../in-chat-agent-storage.js';
 import { roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
@@ -47,7 +47,7 @@ export function captureRoleplayAgentSet(lease, settings, { group = false, server
         if (!stored || roleplayHash(stored.record) !== roleplayHash(raw)) throw fail('An enabled Agent changed.');
         const file = stored.file;
         let binding = null, fallbacks = [];
-        if (enabled && (agentNeedsModel(agent) || forcedIds.includes(agent.id) && agent.prompt.trim())) {
+        if (enabled && !isDiceRollerAgent(agent) && (agentNeedsModel(agent) || forcedIds.includes(agent.id) && agent.prompt.trim())) {
             const profileId = agent.connectionProfile || (isNativeCompanion(agent) ? global.companionConnectionProfile : '')
                 || global.connectionProfile || extensions.connectionManager?.selectedProfile || '';
             if (typeof profileId !== 'string') throw fail('An Agent model connection is invalid.');

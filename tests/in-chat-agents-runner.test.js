@@ -1028,7 +1028,7 @@ describe('in-chat agent post-processing runner', () => {
 
         await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
 
-        expect(injectCompanionFeedbackPrompts).toHaveBeenCalledWith([companionAgent], { excludeMessage: null });
+        expect(injectCompanionFeedbackPrompts).toHaveBeenCalledWith([companionAgent], { excludeMessage: null, generationType: 'normal' });
         expect(extensionPrompts[`inchat_agent_${companionAgent.id}`]).toBeUndefined();
     });
 
@@ -2237,6 +2237,31 @@ describe('in-chat agent post-processing runner', () => {
             expect(prompts[2]).toContain('State B');
         });
 
+        test('bulk runs never reroll a local Dice Roller, even as a dependency', async () => {
+            const dice = createCompanionAgent({
+                id: 'dice-bulk', name: 'Dice Roller', sourceTemplateId: 'tpl-dice-roller-companion', prompt: 'DICE_DIRECTIVE',
+            });
+            const note = createCompanionAgent({
+                id: 'note-bulk', prompt: 'NOTE_DIRECTIVE',
+                companion: { waitForDependencies: true, dependencies: ['dice-bulk'] },
+            });
+            const runtime = await setup([dice, note]);
+            generateQuietPrompt.mockResolvedValue('Note only');
+            const local = await import('../public/scripts/extensions/in-chat-agents/companion/dice-companion-local.js');
+            const localRun = jest.fn(() => ({ agentId: dice.id, local: true, status: 'done' }));
+            local.setDiceCompanionRunner(localRun);
+            try {
+                const results = await runtime.runCompanionsOnMessage(0);
+                expect(localRun).not.toHaveBeenCalled();
+                expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+                expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).toContain('NOTE_DIRECTIVE');
+                expect(generateQuietPrompt.mock.calls[0][0].quietPrompt).not.toContain('DICE_DIRECTIVE');
+                expect(results).toHaveLength(1);
+            } finally {
+                local.setDiceCompanionRunner(null);
+            }
+        });
+
         test('a failed prerequisite preserves its dependant and does not dispatch it', async () => {
             const source = createCompanionAgent({ id: 'source' });
             const dependent = createCompanionAgent({ id: 'dependent', companion: { waitForDependencies: true, dependencies: ['source'] } });
@@ -2984,6 +3009,65 @@ describe('in-chat agent post-processing runner', () => {
         chat.push({ mes: 'And then?', name: 'User', is_user: true, is_system: false, extra: {} });
         companionRunner.injectCompanionFeedbackPrompts([feedbackCompanion]);
         expect(extensionPrompts['inchat_agent_companion_feedback-companion'].value).toContain('Stale swipe state');
+    });
+
+    test('injects the local Dice Roller directive for the newest user roll only', async () => {
+        const dice = createCompanionAgent({
+            id: 'dice-companion',
+            name: 'Dice Roller',
+            sourceTemplateId: 'tpl-dice-roller-companion',
+            prompt: 'Write it in the scene with {{user}}.',
+        });
+        enabledAgents = [dice];
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const roll = '🎲 Pick the lock - rolled 18 vs 12 (1d20: 18) - SUCCESS';
+        const user = { mes: `Trying.\n${roll}`, name: 'User', is_user: true, is_system: false, extra: {} };
+        chat.push(user);
+
+        companionRunner.injectCompanionFeedbackPrompts([dice], { generationType: 'normal' });
+        const injected = extensionPrompts['inchat_agent_companion_dice-companion'];
+        expect(injected.name).toBe('Dice Roller');
+        expect(injected.value).toContain('[Dice result for Traveler]');
+        expect(injected.value).toContain('Pick the lock: SUCCESS.');
+        expect(injected.value).toContain('Write it in the scene with Traveler.');
+        expect(injected.value).not.toContain('keep the dice, the numbers');
+
+        // A swipe or regeneration still reads the roll its new reply is for.
+        chat.push({ mes: 'Old reply.', name: 'Assistant', is_user: false, is_system: false, extra: {} });
+        companionRunner.injectCompanionFeedbackPrompts([dice], { generationType: 'regenerate' });
+        expect(extensionPrompts['inchat_agent_companion_dice-companion'].value).toContain('Pick the lock: SUCCESS.');
+
+        // An ordinary next message clears it instead of reusing the old roll.
+        chat.push({ mes: 'Look around.', name: 'User', is_user: true, is_system: false, extra: {} });
+        companionRunner.injectCompanionFeedbackPrompts([dice], { generationType: 'normal' });
+        expect(extensionPrompts['inchat_agent_companion_dice-companion'].value).toBe('');
+
+        globalSettings.hiddenCompanionAgentIds = [dice.id];
+        companionRunner.injectCompanionFeedbackPrompts([dice], { generationType: 'normal' });
+        expect(extensionPrompts['inchat_agent_companion_dice-companion'].value).toBe('');
+    });
+
+    test('a manual Dice Roller run uses the local widget before a server job or pending note', async () => {
+        const dice = createCompanionAgent({
+            id: 'dice-companion',
+            name: 'Dice Roller',
+            sourceTemplateId: 'tpl-dice-roller-companion',
+            prompt: 'Write it in the scene.',
+        });
+        enabledAgents = [dice];
+        chat.push({ mes: 'Trying.', name: 'User', is_user: true, is_system: false, extra: {} });
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const local = await import('../public/scripts/extensions/in-chat-agents/companion/dice-companion-local.js');
+        const localRun = jest.fn(() => ({ agentId: dice.id, local: true, status: 'done' }));
+        local.setDiceCompanionRunner(localRun);
+        try {
+            const result = await companionRunner.runCompanionAgentOnMessage(dice.id, 0);
+            expect(localRun).toHaveBeenCalledWith(dice.id, 0);
+            expect(result).toEqual({ agentId: dice.id, local: true, status: 'done' });
+            expect(extensionPrompts).toEqual({});
+        } finally {
+            local.setDiceCompanionRunner(null);
+        }
     });
 
     test('includes an assistant tail in normal dry-run feedback previews', async () => {

@@ -5,6 +5,7 @@ import { isExpressionSource, readMessageExpression, writeMessageExpression } fro
 import { expressionLabelFromFilename, isExpressionLabel, nextExpressionSpriteName } from '../public/scripts/extensions/expressions/expression-labels.js';
 import { applyExpressionMemberPrompt, readExpressionSets, resolveExpressionMember } from '../public/scripts/extensions/expressions/expression-sets.js';
 import { EventEmitter } from '../public/lib/eventemitter.js';
+import { isLocalCompanionAgent } from '../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 
 const core = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8');
 const expressions = readFileSync(new URL('../public/scripts/extensions/expressions/index.js', import.meta.url), 'utf8');
@@ -100,6 +101,7 @@ describe('exact expression history', () => {
                 buildCompanionPromptMessages: async () => [], buildBatchPromptPayload: async () => ({ promptMessages: [], taskPayloads: [] }),
                 getUnitExtraContextSections: () => [], requestPromptTransform: () => request, MAX_AGENT_MAX_TOKENS: 100,
                 setCompanionResult: write, restoreCompanionResult: write, emitCompanionResultsUpdated: write, DOMException,
+                isLocalCompanionAgent,
             });
             vm.runInContext(`${extract(companion, 'captureCompanionTarget')}\n${extract(companion, name)}`, runtime);
             const pending = runtime[name](name.includes('Batch') ? [agent] : agent, 0, 'normal', 0);

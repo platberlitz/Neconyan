@@ -16,6 +16,7 @@ import {
     getAgentRegexScripts,
     getCompanionConfig,
     getEnabledAgents,
+    isAgentHidden,
     isCompanionAgent,
     saveAgent,
 } from '../agent-store.js';
@@ -30,6 +31,7 @@ import {
     deleteCompanionResult,
     emitCompanionResultsUpdated,
     getCompanionResults,
+    getLatestAssistantCompanionMessageIndex,
     runCompanionAgentOnMessage,
     runCompanionsOnMessage,
     updateCompanionResult,
@@ -44,6 +46,7 @@ import {
     isAssistantMessage,
     isChatOnlyAgent,
     isChatroomAgent,
+    isDiceRollerAgent,
     isMessageInboxAgent,
     isPlotCompassAgent,
     isSuppressedCompanionResult,
@@ -52,6 +55,12 @@ import {
     normalizeChatroomReply,
     normalizePlotCompassObjective,
 } from './companion-shared.js';
+import {
+    buildDiceCompanionCardHtml,
+    captureDiceCompanionWidget,
+    notifyDiceCompanionHostsChanged,
+    restoreDiceCompanionWidget,
+} from './dice-companion-view.js';
 
 let companionUiInitialized = false;
 let companionMarkdownConverter = null;
@@ -571,15 +580,62 @@ function buildCompanionCard(agentId, result, message, isPreview = false) {
     `;
 }
 
-function renderCompanionResultsForRow(message, messageElement, messageIndex, preview) {
+function getDiceCardAgents() {
+    if (!areAgentsGloballyEnabled()) {
+        return [];
+    }
+
+    return getEnabledAgents().filter(agent => isDiceRollerAgent(agent)
+        && getCompanionConfig(agent).displayMode === 'card'
+        && !isAgentHidden(agent.id));
+}
+
+/** Notes under replies live under the newest assistant reply, never a user message. */
+export function pruneDiceCardsExcept(keepMessageIndex) {
+    // One query is enough to skip the whole scan while the agent is off and no
+    // old shell exists, including every row of a full redraw.
+    if (!document.querySelector('#chat .ica--companion-card--dice')) {
+        return;
+    }
+    for (const row of document.querySelectorAll('#chat > .mes[mesid]')) {
+        const rowIndex = Number(row.getAttribute('mesid'));
+        if (rowIndex === keepMessageIndex) {
+            continue;
+        }
+        for (const card of row.querySelectorAll?.('.ica--companion-card--dice') ?? []) {
+            card.remove();
+        }
+        const ledger = row.querySelector?.('.ica--companion-ledger');
+        if (ledger && !ledger.querySelector('.ica--companion-card')) {
+            ledger.remove();
+        }
+    }
+}
+
+function getDiceCardState() {
+    const latestAssistant = getLatestAssistantCompanionMessageIndex();
+    const allDiceAgents = getDiceCardAgents();
+    return { latestAssistant, allDiceAgents, keepMessageIndex: allDiceAgents.length > 0 ? latestAssistant : -1 };
+}
+
+function renderCompanionResultsForRow(message, messageElement, messageIndex, preview, { prune = true, diceCardState = null } = {}) {
     const textElement = messageElement.find('.mes_text').first();
     decorateStyledChoiceRows(textElement[0]);
 
     const entries = holdsReadableCompanionResults(message) ? getRenderableCompanionEntries(message) : [];
+    const diceState = preview ? null : (diceCardState ?? getDiceCardState());
+    const latestAssistant = diceState?.latestAssistant ?? -1;
+    const diceAgents = messageIndex === latestAssistant ? diceState?.allDiceAgents ?? [] : [];
+    if (!preview && prune && diceState) {
+        // Keep the card on the newest assistant reply while other rows redraw.
+        // With no card-mode Dice Roller, remove every stale host.
+        pruneDiceCardsExcept(diceState.keepMessageIndex);
+    }
     let ledger = messageElement.find('.ica--companion-ledger');
 
-    if (entries.length === 0) {
+    if (entries.length === 0 && diceAgents.length === 0) {
         ledger.remove();
+        notifyDiceCompanionHostsChanged();
         return;
     }
 
@@ -592,9 +648,22 @@ function renderCompanionResultsForRow(message, messageElement, messageIndex, pre
         }
     }
 
+    const cards = entries.map(([agentId, result]) => buildCompanionCard(agentId, result, message, Boolean(preview)));
+    cards.push(...diceAgents.map(agent => buildDiceCompanionCardHtml(agent, { messageIndex })));
     const target = captureMessageTargetState(message);
-    replaceCompanionView(ledger, entries.map(([agentId, result]) => buildCompanionCard(agentId, result, message, Boolean(preview))).join(''),
+    const liveDice = preview ? null : captureDiceCompanionWidget(ledger[0]);
+    replaceCompanionView(ledger, cards.join(''),
         () => preview ? preview.element.isConnected : isMessageTargetCurrent(message, target, messageIndex, { text: false, revision: false }));
+    if (liveDice) {
+        restoreDiceCompanionWidget(ledger[0], liveDice);
+    }
+    notifyDiceCompanionHostsChanged();
+}
+
+/** Redraws chat note cards after an Agent save or the global Agents switch. */
+export function refreshCompanionCards() {
+    renderAllCompanionResults();
+    updateCompanionButtonVisibility();
 }
 
 export function renderCompanionResultsForMessage(messageIndex, preview = null, { element: rowElement = null } = {}) {
@@ -624,16 +693,21 @@ function renderAllCompanionResults() {
         .filter(row => Number.isInteger(row.messageIndex) && row.messageIndex >= 0 && chat[row.messageIndex]);
 
     if (rows.length === 0) {
+        notifyDiceCompanionHostsChanged();
         return;
     }
 
-    // One anchor read and one restore for the whole chat. Wrapping each note
-    // separately forces a full layout for every row on chat open and reload.
+    // One prune and one anchor read for the whole chat, not a full document scan
+    // for every row in it.
+    const diceCardState = getDiceCardState();
+    pruneDiceCardsExcept(diceCardState.keepMessageIndex);
     changeMessagesBelowReader(rows.map(row => row.element), () => {
         for (const { messageIndex } of rows) {
-            renderCompanionResultsForRow(chat[messageIndex], $(`.mes[mesid="${messageIndex}"]`), messageIndex, null);
+            renderCompanionResultsForRow(chat[messageIndex], $(`.mes[mesid="${messageIndex}"]`), messageIndex, null,
+                { prune: false, diceCardState });
         }
     });
+    notifyDiceCompanionHostsChanged();
 }
 
 let renderAllCompanionResultsQueued = false;
@@ -652,7 +726,7 @@ function scheduleRenderAllCompanionResults() {
 
 function hasRunnableCompanionAgents() {
     return areAgentsGloballyEnabled() && getEnabledAgents().some(agent => {
-        return isCompanionAgent(agent) && String(agent.prompt ?? '').trim();
+        return isCompanionAgent(agent) && !isDiceRollerAgent(agent) && String(agent.prompt ?? '').trim();
     });
 }
 

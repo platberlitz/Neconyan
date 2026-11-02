@@ -1,4 +1,5 @@
-import { getActiveCompanionResults, isEmptyOutputSentinel, normalizeCompanionMacroSyntax, selectCompanionChatHistory } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
+import { getActiveCompanionResults, isDiceRollerAgent, isEmptyOutputSentinel, normalizeCompanionMacroSyntax, selectCompanionChatHistory } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
+import { buildDiceDirective, findDiceRollsForGeneration } from '../../public/scripts/extensions/in-chat-agents/companion/dice.js';
 import { buildTrackerEchoGuard, getActiveInlineTrackerTags, getOwnedCompanionTrackerShape } from '../../public/scripts/extensions/in-chat-agents/companion/companion-tracker-context.js';
 import { isNativeCompanion } from './agent-definition.js';
 
@@ -23,6 +24,21 @@ export function prepareCompanionFeedback(active, historyAgents, records, snapsho
         if (shape && !inlineTags.has(shape.tag)) shapes.set(shape.tag, shape.shape);
         return shape && !inlineTags.has(shape.tag) ? shape.tag : null;
     };
+    const diceExtensions = [];
+    for (const agent of active.filter(isDiceRollerAgent)) {
+        if (hidden.has(agent.id)) continue;
+        const roll = findDiceRollsForGeneration(records.slice(1), generationType);
+        if (!roll.rolls.length) continue;
+        const prompt = String(environment.evaluate(normalizeCompanionMacroSyntax(agent.prompt), {
+            legacy: !snapshot.experimentalMacroEngine,
+            strictCapabilities: true,
+            original: roll.message?.is_system ? '' : String(roll.message?.mes ?? ''),
+        }) ?? '').trim();
+        const content = buildDiceDirective(roll.rolls, environment.names?.user, prompt);
+        if (!content) continue;
+        diceExtensions.push({ key: `inchat_agent_companion_${agent.id}`, content,
+            position: agent.injection.position, depth: agent.injection.depth, role: ['system', 'user', 'assistant'][agent.injection.role], scan: agent.injection.scan });
+    }
     for (const agent of active) {
         if (!isNativeCompanion(agent) || hidden.has(agent.id) || !agent.companion.feedback.enabled) continue;
         const selected = [];
@@ -40,12 +56,12 @@ export function prepareCompanionFeedback(active, historyAgents, records, snapsho
         for (const id of ids) rememberShape(owners.get(id), resolveSavedCompanionText(results[id].content, host, snapshot, environment));
     }
     let guardIncluded = false;
-    const extensions = feedback.map(({ agent, body, tag }) => {
+    const extensions = [...diceExtensions, ...feedback.map(({ agent, body, tag }) => {
         const guard = tag && !guardIncluded ? buildTrackerEchoGuard(shapes) + '\n\n' : '';
         guardIncluded ||= Boolean(tag);
         return { key: `inchat_agent_companion_${agent.id}`, content: `[${agent.name || 'Companion'} - auxiliary notes]\n${guard}${body}`,
             position: agent.injection.position, depth: agent.injection.depth, role: ['system', 'user', 'assistant'][agent.injection.role], scan: agent.injection.scan };
-    });
+    })];
     if (shapes.size && !guardIncluded) extensions.push({ key: 'inchat_agent_companion_tracker_echo_guard', content: buildTrackerEchoGuard(shapes), position: 1, depth: 0, role: 'system', scan: false });
     return { extensions, trackerTags: [...shapes.keys()] };
 }

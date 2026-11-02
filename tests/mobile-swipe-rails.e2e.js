@@ -156,6 +156,36 @@ test.describe('phone discovery cues', () => {
             return { x: b.x, y: b.y, width: b.width, height: b.height };
         }));
         for (const key of ['x', 'y', 'width', 'height']) expect(Math.abs(boxes[0][key] - boxes[1][key])).toBeLessThan(1);
+        // Selecting a tab above the viewport must only move its horizontal rail.
+        for (const direction of ['ltr', 'rtl']) {
+            await rail.evaluate((el, direction) => {
+                el.style.direction = direction;
+                el.scrollLeft = 0;
+                document.body.style.minHeight = '2500px';
+                el.querySelectorAll('button').forEach(tab => tab.setAttribute('aria-selected', 'false'));
+                window.scrollTo(0, 600);
+            }, direction);
+            await rail.locator('button').last().evaluate(el => el.setAttribute('aria-selected', 'true'));
+            await expect.poll(() => rail.evaluate(el => Math.abs(el.scrollLeft))).toBeGreaterThan(0);
+            expect(await page.evaluate(() => window.scrollY)).toBe(600);
+            const visible = await rail.evaluate(el => {
+                const outer = el.getBoundingClientRect();
+                const tab = el.lastElementChild.getBoundingClientRect();
+                return tab.left >= outer.left - 1 && tab.right <= outer.right + 1;
+            });
+            expect(visible).toBe(true);
+            // Refreshing the same selection must leave both scroll positions alone.
+            await rail.evaluate(el => {
+                el.scrollLeft = 0;
+                el.lastElementChild.setAttribute('aria-selected', 'true');
+            });
+            await page.evaluate(async () => {
+                for (let i = 0; i < 3; i++) await new Promise(requestAnimationFrame);
+            });
+            expect(await rail.evaluate(el => el.scrollLeft)).toBe(0);
+            expect(await page.evaluate(() => window.scrollY)).toBe(600);
+        }
+        await page.evaluate(() => window.scrollTo(0, 0));
         await page.setViewportSize({ width: 1280, height: 900 });
         await expect(chrome).toBeHidden();
         await page.setViewportSize({ width: 393, height: 852 });
