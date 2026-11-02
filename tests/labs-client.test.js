@@ -91,6 +91,25 @@ test('unknown paid outcomes remain attached to the retained operation', async ()
     expect(f.request).toHaveBeenCalledTimes(1);
 });
 
+test.each(['archive-inventory', 'archive-search'])('a failed %s releases only the read-only request for an explicit retry', async kind => {
+    const f = fixture();
+    const done = f.client.run(kind, {}).catch(error => error);
+    await observe(f);
+    f.observer.onDone({ state: 'failed', error: { message: 'Scan failed' } });
+    expect(await done).toMatchObject({ message: 'Scan failed', jobState: 'failed' });
+    expect(f.entries.size).toBe(0);
+    f.request.mockResolvedValueOnce({ record: f.completed });
+    await expect(f.client.run(kind, {})).resolves.toEqual(f.completed);
+    expect(f.request.mock.calls.filter(([url]) => url.endsWith('/submit'))).toHaveLength(2);
+});
+
+test('an uncertain archive submission remains attached to its original request', async () => {
+    const f = fixture();
+    f.request.mockRejectedValueOnce(new Error('offline'));
+    await expect(f.client.run('archive-inventory', {})).rejects.toThrow('offline');
+    expect(f.entries.size).toBe(1);
+});
+
 test('Stop waits for saved cancellation before releasing the retained operation', async () => {
     const f = fixture();
     const controller = new AbortController();

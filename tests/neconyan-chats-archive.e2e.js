@@ -161,6 +161,11 @@ test('owns the popup frame spacing and keeps mobile controls inside the viewport
     });
     expect(filterTarget.height).toBeGreaterThanOrEqual(44);
     expect(filterTarget.width).toBeGreaterThanOrEqual(44);
+    await expect(page.locator('.sbca-tools-content')).toBeHidden();
+    const firstChat = await page.locator('.sbca-row-button').first().boundingBox();
+    expect(firstChat.y).toBeLessThan(650);
+    await filters.click();
+    await page.locator('.sbca-tools > summary').click();
     const viewTargets = await page.locator('.sbca-view-setting select:visible').evaluateAll(selects => selects.map(select => {
         const rect = select.getBoundingClientRect();
         return { height: rect.height, width: rect.width };
@@ -170,7 +175,6 @@ test('owns the popup frame spacing and keeps mobile controls inside the viewport
         expect(target.height).toBeGreaterThanOrEqual(44);
         expect(target.width).toBeGreaterThanOrEqual(44);
     }
-    await filters.click();
     await expect(filters).toHaveAttribute('aria-expanded', 'true');
     await expect(filterPanel).toBeVisible();
     const mobileControls = await page.locator('.sbca-root').evaluate(root => {
@@ -333,6 +337,7 @@ test('keeps a balanced master-detail workspace on desktop', async ({ page }) => 
     expect(loadingOrder).toEqual(['sbca-organizer', 'sbca-viewer-details']);
     releaseExport();
     await expect(page.locator('.sbca-viewer-content')).toContainText('desktop message');
+    await page.locator('.sbca-tools > summary').click();
     const layout = await page.locator('.sbca-dialog').evaluate(dialog => {
         const root = dialog.querySelector('.sbca-root');
         const list = dialog.querySelector('.sbca-list-panel');
@@ -389,7 +394,7 @@ test('keeps a balanced master-detail workspace on desktop', async ({ page }) => 
                 const rect = pill.getBoundingClientRect();
                 return { height: rect.height, width: rect.width };
             }),
-            listToolsAligned: Math.abs(ownerSummaryRect.top - sortPillRect.top) <= 0.5
+            listToolsAligned: ownerSummaryRect.bottom <= sortPillRect.top
                 && Math.abs(ownerSummaryRect.height - sortPillRect.height) <= 2,
             orphanControlsAligned: Math.abs(orphanReasonRect.bottom - scanRect.bottom) <= 0.5,
             orphanTargets: [orphanReasonRect, scanRect].map(rect => ({ height: rect.height, width: rect.width })),
@@ -525,6 +530,7 @@ test('keeps desktop filters visible and organization management full width when 
     await expect(page.getByText('List tools', { exact: true })).toHaveCount(0);
     await expect(page.locator('.sbca-filter-toggle')).toBeHidden();
     await expect(page.locator('.sbca-options-panel')).toBeVisible();
+    await page.locator('.sbca-tools > summary').click();
     const filterLayout = await page.locator('.sbca-filter-tools').evaluate(filterTools => {
         const panel = filterTools.querySelector('.sbca-options-panel');
         const browse = filterTools.querySelector('.sbca-browse-strip');
@@ -546,8 +552,7 @@ test('keeps desktop filters visible and organization management full width when 
                 && browseRect.bottom <= actionsRect.bottom + 0.5,
             controlsBelowActionRow: panelRect.top > Math.max(browseRect.bottom, actionsRect.bottom),
             orphanControlsShareRow: Math.abs(orphanReasonRect.bottom - scanRect.bottom) <= 0.5,
-            orphanControlsInActionRow: orphanActionsRect.top >= actionsRect.top
-                && orphanActionsRect.bottom <= actionsRect.bottom,
+            orphanControlsInActionRow: orphanActionsRect.top > panelRect.bottom,
             refreshAtStart: Math.abs(refreshRect.left - actionsRect.left) <= 0.5,
             controls: controls.map(control => {
                 const label = control.querySelector('.sbca-label, legend');
@@ -649,6 +654,10 @@ test('keeps desktop filters visible and organization management full width when 
     await expect(page.locator('.sbca-options-panel')).toBeHidden();
     await page.getByText('Manage organization', { exact: true }).click();
     await expect(page.locator('.sbca-options-panel')).toBeVisible();
+    await page.getByText('Manage organization', { exact: true }).click();
+    await page.locator('.sbca-tools > summary').click();
+    await expect(page.locator('.sbca-options-panel')).toBeVisible();
+    await expect(page.locator('.sbca-organization-tools-panel')).toBeHidden();
 });
 
 test('keeps organization load recovery contextual to Manage organization', async ({ page }) => {
@@ -662,6 +671,7 @@ test('keeps organization load recovery contextual to Manage organization', async
     const recoveryMessage = page.getByText('Organization could not be loaded. Retry or import a backup.');
     await expect(recoveryMessage).toBeHidden();
     await expect(page.getByRole('button', { name: 'Retry' })).toBeHidden();
+    await page.locator('.sbca-tools > summary').click();
     await page.getByRole('button', { name: 'Manage organization' }).click();
     await expect(page.locator('.sbca-organization-backup')).toContainText('Organization could not be loaded. Retry or import a backup.');
     await expect(page.locator('.sbca-organization-backup').getByRole('button', { name: 'Retry' })).toBeVisible();
@@ -755,6 +765,7 @@ test('preserves focus and organizer geometry across the desktop-mobile breakpoin
     await page.setViewportSize({ width: 1001, height: 800 });
     await page.locator('.sbca-row-button').evaluate(button => button.click());
     await expect(page.locator('.sbca-viewer-content')).toContainText('Organize chat');
+    await page.locator('.sbca-tools > summary').click();
     const geometry = await page.locator('.sbca-dialog').evaluate(dialog => {
         const organizer = dialog.querySelector('.sbca-organizer');
         const viewer = dialog.querySelector('.sbca-viewer');
@@ -770,7 +781,7 @@ test('preserves focus and organizer geometry across the desktop-mobile breakpoin
             actionClusterFits: secondaryActions.scrollWidth <= secondaryActions.clientWidth,
             actionClusterIsAdjacent: Math.abs(orphanRect.top - organizationRect.top) <= 0.5
                 && orphanRect.right <= organizationRect.left,
-            actionRowsDoNotIntersect: archiveRect.right <= secondaryRect.left,
+            actionRowsDoNotIntersect: archiveRect.bottom <= secondaryRect.top,
             actionClusterVisible: secondaryRect.width > 0,
             organizerFits: organizer.scrollWidth <= organizer.clientWidth,
             toolbarFits: dialog.querySelector('.sbca-toolbar').scrollWidth <= dialog.querySelector('.sbca-toolbar').clientWidth,
@@ -1139,6 +1150,7 @@ test('stops accepted orphan work without displaying an incomplete result', async
     });
 
     await openArchive(page);
+    await page.locator('.sbca-tools > summary').click();
     await expect(page.getByRole('button', { name: 'Find orphaned files' })).toBeEnabled();
     await page.getByRole('button', { name: 'Find orphaned files' }).click();
     await latePageStarted;
@@ -1191,6 +1203,7 @@ test('retains completed orphan scans and reads the active saved result', async (
     });
 
     await openArchive(page);
+    await page.locator('.sbca-tools > summary').click();
     await page.getByRole('button', { name: 'Find orphaned files' }).click();
     await expect(page.getByText('old-orphan', { exact: true })).toBeVisible();
     const firstKey = [...operationStates.get(page).records.values()].find(record => record.result?.rows?.[0]?.archive_hash === FIRST_ORPHAN_HASH).key;

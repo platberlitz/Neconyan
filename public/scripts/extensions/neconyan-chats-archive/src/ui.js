@@ -462,7 +462,7 @@ export async function openArchive(ctx, opener = null, { archiveHash = null } = {
         savedWorkAbort: new AbortController(),
     };
     const ui = buildRoot(ctx, state);
-    mountSavedArchiveWork(ui.root.querySelector('.sbca-toolbar'), {
+    mountSavedArchiveWork(ui.root.querySelector('.sbca-tools-content'), {
         signal: state.savedWorkAbort.signal,
         onBusy: busy => {
             if (busy) { state.listAbort?.abort(); state.searchAbort?.abort(); state.scanAbort?.abort(); }
@@ -543,6 +543,9 @@ function buildRoot(ctx, state) {
     const avoidSoftwareKeyboard = globalThis.matchMedia('(max-width: 1000px), (any-pointer: coarse)');
 
     const heading = el('h3', 'sbca-heading', tr(ctx, 'Chat Archive'));
+    const headingIcon = el('i', 'fa-solid fa-box-archive');
+    headingIcon.setAttribute('aria-hidden', 'true');
+    heading.prepend(headingIcon);
     heading.id = 'sbca_heading';
     heading.tabIndex = -1;
 
@@ -672,7 +675,13 @@ function buildRoot(ctx, state) {
     );
     const secondaryActions = el('div', 'sbca-archive-secondary-actions');
     secondaryActions.append(orphanActions, organizationToggle);
-    filterTools.append(archiveActions, filterToggle, optionsPanel, secondaryActions, organizationPanel);
+    const archiveTools = el('details', 'sbca-tools');
+    const toolsSummary = el('summary', 'sbca-control', tr(ctx, 'Archive tools'));
+    const toolsContent = el('div', 'sbca-tools-content');
+    toolsContent.append(secondaryActions, organizationPanel);
+    archiveTools.append(toolsSummary, toolsContent);
+    filterTools.append(archiveActions, filterToggle, optionsPanel, archiveTools);
+    if (mobileQuery.matches) optionsPanel.prepend(browseStrip);
 
     const status = el('div', 'sbca-status');
     status.setAttribute('role', 'status');
@@ -711,8 +720,8 @@ function buildRoot(ctx, state) {
     const list = el('ul', 'sbca-list');
     list.setAttribute('aria-labelledby', listHeading.id);
     const listTools = el('div', 'sbca-list-tools');
-    listTools.append(ownerField.wrap, sortPills, selectionBar);
-    listTop.append(listHeading, listTools);
+    listTools.append(ownerField.wrap, sortPills);
+    listTop.append(listHeading, selectionBar, listTools);
     listPanel.append(listTop, list);
 
     const viewer = el('section', 'sbca-viewer');
@@ -862,6 +871,8 @@ function buildRoot(ctx, state) {
     const handleBreakpoint = event => {
         const active = document.activeElement;
         const focusInBrowse = browseStrip.contains(active);
+        if (event.matches) optionsPanel.prepend(browseStrip);
+        else archiveActions.append(browseStrip);
         const focusInFilters = optionsPanel.contains(active);
         const organizationExpanded = organizationToggle.getAttribute('aria-expanded') === 'true';
         const showDesktopFilters = !event.matches && !organizationExpanded;
@@ -871,6 +882,7 @@ function buildRoot(ctx, state) {
             return;
         }
         if (!event.matches) {
+            if (focusInBrowse) active.focus({ preventScroll: true });
             if (restoreFilterFocusOnDesktop && showDesktopFilters) {
                 optionsPanel.querySelector('input, select, button')?.focus({ preventScroll: true });
                 restoreFilterFocusOnDesktop = false;
@@ -910,6 +922,9 @@ function buildRoot(ctx, state) {
             filterToggle.setAttribute('aria-expanded', 'true');
             optionsPanel.hidden = false;
         }
+    });
+    archiveTools.addEventListener('toggle', () => {
+        if (!archiveTools.open && organizationToggle.getAttribute('aria-expanded') === 'true') organizationToggle.click();
     });
     state.cleanup = () => {
         clearTimeout(queryTimer);
@@ -2026,9 +2041,6 @@ async function loadRows(ctx, state, ui) {
             }
             state.rows = nextRows;
             state.inventoryFailures = page.errors + invalidRows;
-            refreshOwnerOptions(ctx, state, ui);
-            renderList(ctx, state, ui);
-            updateSelectionControls(ctx, state, ui);
             setStatus(ui, `${tr(ctx, 'Loading chats...')} ${tr(ctx, '{matching} of {total} indexed chat files', {
                 matching: page.loaded,
                 total: page.total,

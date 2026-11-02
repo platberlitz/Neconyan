@@ -3,6 +3,7 @@ import { getOperationClient, mountOperationRecovery } from '../../../operations-
 /** Observe retained work; choosing a result never submits another scan or search. */
 export function mountSavedArchiveWork(container, { signal, onResult, onBusy, onError }) {
     const wrapper = document.createElement('div');
+    wrapper.className = 'sbca-saved-work';
     const label = document.createElement('label');
     label.textContent = 'Saved archive work';
     const select = document.createElement('select');

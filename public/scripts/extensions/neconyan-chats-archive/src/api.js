@@ -21,6 +21,9 @@ export async function* iterateArchiveInventoryPages(_ctx, scope, signal) {
         yield { rows: batch, loaded: offset + batch.length, errors: record.result.errors, pageErrors: 0,
             total: rows.length, cursor: offset + batch.length < rows.length ? `${record.key}:${offset + batch.length}` : null,
             readToken: record.key };
+        // Async-generator microtasks alone do not let the browser paint or
+        // dispatch Cancel while a large saved inventory is being normalised.
+        if (offset + batch.length < rows.length) await new Promise(resolve => setTimeout(resolve, 0));
     }
 }
 

@@ -807,8 +807,8 @@ describe('Neconyan Chats Archive integration', () => {
         expect(ui).toMatch(/Search characters and groups/);
         expect(ui).toMatch(/Character: \{name\}/);
         expect(ui).toMatch(/const listTools = el\('div', 'sbca-list-tools'\)/);
-        expect(ui).toMatch(/listTools\.append\(ownerField\.wrap, sortPills, selectionBar\)/);
-        expect(ui).toMatch(/listTop\.append\(listHeading, listTools\)/);
+        expect(ui).toMatch(/listTools\.append\(ownerField\.wrap, sortPills\)/);
+        expect(ui).toMatch(/listTop\.append\(listHeading, selectionBar, listTools\)/);
         expect(ui).toMatch(/listPanel\.append\(listTop, list\)/);
         expect(ui).toMatch(/sbca-list-tools/);
         expect(ui).not.toMatch(/listTools\.open/);
