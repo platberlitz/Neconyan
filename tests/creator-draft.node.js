@@ -2,23 +2,40 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fixture } from './roleplay-transactions-fixture.js';
+import { fixture, png } from './roleplay-transactions-fixture.js';
 import { withRoleplayAccount } from '../src/roleplay-store.js';
 import { createCreatorDraft, setCreatorField, undoCreatorDraft, creatorProposal, acceptCreatorProposal, renderCreatorFacts, creatorAssistantContext } from '../public/scripts/creator/model.js';
 import { saveCreatorDraft, getCreatorDraft, listCreatorDrafts, deleteCreatorDraft } from '../src/creator/store.js';
 import { creatorCharacterSource } from '../src/creator/resources.js';
-import { publishCreatorDraft, getCreatorPublication } from '../src/creator/publish.js';
+import { publishCreatorDraft, getCreatorPublication, recoverCreatorPublication, acknowledgeCreatorPublication, discardCreatorDraft } from '../src/creator/publish.js';
+import { write as writeCard } from '../src/character-card-parser.js';
+import { commitRoleplayLifecycleLocked } from '../src/roleplay-lifecycle.js';
 import { buildDossierRequest, dossierProposal } from '../public/scripts/creator/dossier.js';
 import { createRawPrompt } from '../public/scripts/generation-format.js';
 import { previewCreatorMacros } from '../src/creator/macro-preview.js';
 import { applyGameEvent, createGameState, gameRulesPackage } from '../public/scripts/creator/game.js';
 import { buildCreatorInterview, interviewExample } from '../public/scripts/creator/interview.js';
-import { creatorPublicationCard } from '../public/scripts/creator/embedded-book.js';
+import { creatorPublicationCard, adoptCreatorComparedCard } from '../public/scripts/creator/embedded-book.js';
 import { compareCreatorChanges } from '../public/scripts/creator/conflicts.js';
 import { inspectCreatorKeys, acceptCreatorBulkLore } from '../public/scripts/creator/lore-tools.js';
 import { buildCreatorLoreRequest, parseCreatorLoreProposal, acceptCreatorLoreProposal } from '../public/scripts/creator/lore-proposals.js';
 import { creatorCardExport } from '../public/scripts/creator/export.js';
 import { restoreCreatorBackup } from '../public/scripts/creator/backup.js';
+import { mergeCreatorEntrySettings } from '../public/scripts/creator/lore-entry.js';
+
+test('advanced lore settings preserve later basic edits and reject same-field conflicts', () => {
+    const before = { uid: 7, content: 'Old content', probability: 50, opaque: { retained: true } };
+    const current = { ...structuredClone(before), content: 'New basic content' };
+    const edited = { ...structuredClone(before), probability: 75 };
+    const merged = mergeCreatorEntrySettings(before, current, edited);
+    assert.equal(merged.content, 'New basic content');
+    assert.equal(merged.probability, 75);
+    assert.deepEqual(merged.opaque, before.opaque);
+    assert.equal(current.probability, 50);
+    assert.throws(() => mergeCreatorEntrySettings(before, current, { ...edited, content: 'Conflicting content' }), /changed in another field/);
+    assert.throws(() => mergeCreatorEntrySettings(before, current, { ...edited, uid: 8 }), /UID/);
+    assert.equal(mergeCreatorEntrySettings(merged, { ...merged, content: 'Later basic edit' }, { ...merged, probability: 90 }).content, 'Later basic edit');
+});
 
 test('backup restoration preserves private work without inheriting publication authority', () => {
     const draft = createCreatorDraft({ id: 'original', avatar: 'Nova.png', revision: 'old', extraBooks: ['World'] });
@@ -371,4 +388,166 @@ test('publication retains successful books and resumes only its interrupted work
     assert.equal(JSON.parse(fs.readFileSync(bookFile)).entries[17].probability, 37);
     const stale = locked(lease => saveCreatorDraft(lease, setCreatorField(draft, 'description', 'Stale edit'), saved.revision));
     assert.throws(() => locked(lease => publishCreatorDraft(lease, { ...request, expectedRevision: stale.revision, operationId: 'stale-source' })), { status: 409 });
+});
+
+test('embedded comparison publishes the chosen book and preserves opaque imported values', () => {
+    const card = { data: { name: 'Mira', character_book: { name: 'Portable', opaque: { keep: true }, entries: [{ id: 17, content: 'Original', opaque: ['keep'] }] } } };
+    const convert = book => ({ originalData: structuredClone(book), originalDataUidMap: { 0: 0 }, entries: { 0: { uid: 0, content: book.entries[0].content } } });
+    const draft = createCreatorDraft({ id: 'compare', card });
+    adoptCreatorComparedCard(draft, card, convert);
+    draft.books[0].data.entries[0].content = 'Local edit';
+    const local = creatorPublicationCard(draft);
+    assert.equal(local.data.character_book.entries[0].content, 'Local edit');
+    const remote = structuredClone(card);
+    remote.data.character_book.entries[0].content = 'Library edit';
+    const comparison = compareCreatorChanges(card, local, remote);
+    assert.equal(comparison.conflicts.length, 1);
+    const choices = { [comparison.conflicts[0].id]: 'library' };
+    const chosen = compareCreatorChanges(card, local, remote, choices).value;
+    adoptCreatorComparedCard(draft, chosen, convert);
+    assert.deepEqual(creatorPublicationCard(draft), remote);
+    delete chosen.data.character_book;
+    adoptCreatorComparedCard(draft, chosen, convert);
+    assert.equal(creatorPublicationCard(draft).data.character_book, undefined);
+    assert.equal(draft.books.length, 0);
+});
+
+test('publication uses canonical book names in receipts and card links', t => {
+    const f = fixture(t);
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    const locked = operation => withRoleplayAccount(f.scope, f.scope, operation);
+    const draft = setCreatorField(createCreatorDraft({ id: 'canonical' }), 'name', 'Mira');
+    draft.books = [{ id: 'book', name: 'City/Places', mode: 'copy', data: { entries: {} } }];
+    draft.card.data.extensions = { world: 'City/Places' };
+    const saved = locked(lease => saveCreatorDraft(lease, draft, null));
+    const result = locked(lease => publishCreatorDraft(lease, { id: draft.id, expectedRevision: saved.revision, operationId: 'canonical-save' }));
+    assert.equal(result.books[0].id, 'book');
+    assert.notEqual(result.books[0].name, 'City/Places');
+    const source = locked(lease => creatorCharacterSource(lease, result.avatar));
+    assert.equal(source.card.data.extensions.world, result.books[0].name);
+    assert.equal(fs.existsSync(path.join(f.scope.directories.worlds, `${result.books[0].name}.json`)), true);
+});
+
+test('partial publication can recover, compare a later character edit and finish without rewriting saved books', t => {
+    const f = fixture(t);
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    const locked = operation => withRoleplayAccount(f.scope, f.scope, operation);
+    const source = locked(lease => creatorCharacterSource(lease, 'Nova.png'));
+    const draft = setCreatorField(createCreatorDraft({ id: 'recover', ...source }), 'description', 'Draft description');
+    draft.books = [{ id: 'book', name: 'City', mode: 'copy', data: { entries: { 0: { uid: 0, content: 'Saved lore' } } } }];
+    const saved = locked(lease => saveCreatorDraft(lease, draft, null));
+    const request = { id: draft.id, expectedRevision: saved.revision, operationId: 'recover-save' };
+    assert.throws(() => locked(lease => publishCreatorDraft(lease, request, { afterBook: () => { throw new Error('interrupted'); } })), /interrupted/);
+    const bookFile = path.join(f.scope.directories.worlds, 'City.json');
+    const inode = fs.statSync(bookFile).ino;
+    const remoteCard = structuredClone(draft.card);
+    remoteCard.data.description = 'Library description';
+    locked(lease => commitRoleplayLifecycleLocked(lease, { operationKey: 'external-edit', action: 'character-update', steps: [{ op: 'update', kind: 'character', locator: { avatar: 'Nova.png' }, bytes: writeCard(png, JSON.stringify(remoteCard)) }] }));
+    assert.throws(() => locked(lease => publishCreatorDraft(lease, request)), { status: 409 });
+    draft.view.section = 'lore';
+    const navigated = locked(lease => saveCreatorDraft(lease, draft, saved.revision));
+    assert.equal(locked(lease => getCreatorPublication(lease, draft.id)).operationId, request.operationId);
+    const recovered = locked(lease => recoverCreatorPublication(lease, { ...request, expectedRevision: navigated.revision }));
+    assert.equal(recovered.draft.books[0].mode, 'linked');
+    assert.equal(recovered.draft.card.data.description, 'Draft description');
+    const remote = locked(lease => creatorCharacterSource(lease, 'Nova.png'));
+    const compared = compareCreatorChanges(recovered.draft.source.original, recovered.draft.card, remote.card);
+    assert.ok(compared.conflicts.length);
+    const choices = Object.fromEntries(compared.conflicts.map(conflict => [conflict.id, 'draft']));
+    recovered.draft.card = compareCreatorChanges(recovered.draft.source.original, recovered.draft.card, remote.card, choices).value;
+    recovered.draft.source = { ...recovered.draft.source, original: remote.card, revision: remote.revision };
+    const reviewed = locked(lease => saveCreatorDraft(lease, recovered.draft, recovered.revision));
+    const completed = locked(lease => publishCreatorDraft(lease, { id: draft.id, expectedRevision: reviewed.revision, operationId: 'reviewed-save' }));
+    assert.equal(completed.state, 'done');
+    assert.equal(fs.statSync(bookFile).ino, inode);
+    assert.throws(() => locked(lease => publishCreatorDraft(lease, request)), { status: 409 });
+});
+
+test('recovery after a completed new character keeps its identity and compares later library edits', t => {
+    const f = fixture(t);
+    const locked = operation => withRoleplayAccount(f.scope, f.scope, operation);
+    const draft = setCreatorField(createCreatorDraft({ id: 'readback' }), 'name', 'Mira');
+    const saved = locked(lease => saveCreatorDraft(lease, draft, null));
+    const request = { id: draft.id, expectedRevision: saved.revision, operationId: 'readback-save' };
+    const result = locked(lease => publishCreatorDraft(lease, request));
+    const later = structuredClone(draft.card);
+    later.data.description = 'Later library edit';
+    locked(lease => commitRoleplayLifecycleLocked(lease, { operationKey: 'later-edit', action: 'character-update', steps: [{ op: 'update', kind: 'character', locator: { avatar: result.avatar }, bytes: writeCard(png, JSON.stringify(later)) }] }));
+    const recovered = locked(lease => recoverCreatorPublication(lease, request));
+    assert.equal(recovered.draft.source.avatar, result.avatar);
+    assert.equal(recovered.draft.source.revision, result.revision);
+    assert.equal(recovered.draft.source.original.data.description, '');
+    assert.equal(locked(lease => creatorCharacterSource(lease, result.avatar)).card.data.description, 'Later library edit');
+    assert.deepEqual(locked(lease => recoverCreatorPublication(lease, request)), recovered);
+    assert.equal(fs.readdirSync(f.scope.directories.characters).filter(name => name.startsWith('Creator-')).length, 1);
+    assert.equal(locked(lease => getCreatorPublication(lease, draft.id)).acknowledged, true);
+});
+
+test('recovery recognises a committed character when completion acknowledgement was interrupted', t => {
+    const f = fixture(t);
+    const locked = operation => withRoleplayAccount(f.scope, f.scope, operation);
+    const draft = setCreatorField(createCreatorDraft({ id: 'interrupted-card' }), 'name', 'Mira');
+    const saved = locked(lease => saveCreatorDraft(lease, draft, null));
+    const request = { id: draft.id, expectedRevision: saved.revision, operationId: 'interrupted-card-save' };
+    assert.throws(() => locked(lease => publishCreatorDraft(lease, request, { afterCharacter: () => { throw new Error('lost acknowledgement'); } })), /lost acknowledgement/);
+    const avatar = fs.readdirSync(f.scope.directories.characters).find(name => name.startsWith('Creator-'));
+    const later = structuredClone(draft.card);
+    later.data.description = 'A subsequent library edit';
+    locked(lease => commitRoleplayLifecycleLocked(lease, { operationKey: 'later-library-edit', action: 'character-update', steps: [{ op: 'update', kind: 'character', locator: { avatar }, bytes: writeCard(png, JSON.stringify(later)) }] }));
+    const recovered = locked(lease => recoverCreatorPublication(lease, request));
+    assert.equal(recovered.draft.source.avatar, avatar);
+    assert.equal(recovered.draft.source.original.data.description, '');
+    assert.equal(locked(lease => creatorCharacterSource(lease, avatar)).card.data.description, 'A subsequent library edit');
+    assert.equal(fs.readdirSync(f.scope.directories.characters).filter(name => name.startsWith('Creator-')).length, 1);
+});
+
+test('discard on another device preserves an unfinished save until recovery and retains published resources', t => {
+    const f = fixture(t);
+    const locked = operation => withRoleplayAccount(f.scope, f.scope, operation);
+    const draft = setCreatorField(createCreatorDraft({ id: 'discard-recovery' }), 'name', 'Mira');
+    const saved = locked(lease => saveCreatorDraft(lease, draft, null));
+    const request = { id: draft.id, expectedRevision: saved.revision, operationId: 'discard-save' };
+    assert.throws(() => locked(lease => publishCreatorDraft(lease, request, { afterCharacter: () => { throw new Error('interrupted'); } })), /interrupted/);
+    assert.throws(() => locked(lease => discardCreatorDraft(lease, request)), { status: 409 });
+    assert.equal(locked(lease => getCreatorDraft(lease, draft.id)).revision, saved.revision);
+    const recovered = locked(lease => recoverCreatorPublication(lease, request));
+    assert.deepEqual(locked(lease => discardCreatorDraft(lease, { id: draft.id, expectedRevision: recovered.revision })), { deleted: true });
+    assert.equal(locked(lease => creatorCharacterSource(lease, recovered.draft.source.avatar)).card.data.name, 'Mira');
+    assert.throws(() => locked(lease => getCreatorDraft(lease, draft.id)), { status: 404 });
+});
+
+test('successful acknowledgement is durable across changed draft revisions', t => {
+    const f = fixture(t);
+    const locked = operation => withRoleplayAccount(f.scope, f.scope, operation);
+    const draft = setCreatorField(createCreatorDraft({ id: 'ack' }), 'name', 'Mira');
+    const saved = locked(lease => saveCreatorDraft(lease, draft, null));
+    const request = { id: draft.id, expectedRevision: saved.revision, operationId: 'ack-save' };
+    const result = locked(lease => publishCreatorDraft(lease, request));
+    assert.throws(() => locked(lease => acknowledgeCreatorPublication(lease, request)), { status: 409 });
+    draft.journal = result;
+    draft.source = { avatar: result.avatar, revision: result.revision, original: draft.card, extraBooks: [] };
+    draft.view.section = 'lore';
+    locked(lease => saveCreatorDraft(lease, draft, saved.revision));
+    locked(lease => acknowledgeCreatorPublication(lease, request));
+    assert.equal(locked(lease => getCreatorPublication(lease, draft.id)).acknowledged, true);
+});
+
+test('recovering a large partially published draft keeps its snapshot within the authoring-file limit', t => {
+    const f = fixture(t);
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    const locked = operation => withRoleplayAccount(f.scope, f.scope, operation);
+    const draft = setCreatorField(createCreatorDraft({ id: 'large-recovery' }), 'name', 'Mira');
+    draft.books = [{ id: 'large-book', name: 'Large book', mode: 'copy', data: { entries: {}, opaque: 'x'.repeat(10 * 1024 * 1024) } }];
+    draft.privateNotes = 'n'.repeat(3 * 1024 * 1024);
+    const saved = locked(lease => saveCreatorDraft(lease, draft, null));
+    const request = { id: draft.id, expectedRevision: saved.revision, operationId: 'large-recovery-save' };
+    assert.throws(() => locked(lease => publishCreatorDraft(lease, request, { afterBook: () => { throw new Error('interrupted'); } })), /interrupted/);
+    const recovered = locked(lease => recoverCreatorPublication(lease, request));
+    assert.equal(recovered.draft.books[0].mode, 'linked');
+    assert.equal(recovered.draft.books[0].data.opaque.length, 10 * 1024 * 1024);
+    assert.equal(recovered.draft.books[0].original.opaque, recovered.draft.books[0].data.opaque);
+    assert.equal(recovered.draft.privateNotes, draft.privateNotes);
 });

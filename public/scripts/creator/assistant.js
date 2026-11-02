@@ -30,42 +30,45 @@ export function renderWritingPartner(workspace, main) {
     const draft = workspace.session.draft;
     main.append(element('h3', '', 'Write with your character in mind'), element('p', 'creator-muted', 'Your current model receives the draft’s public fields and visible lore. Replies become proposals, not library changes.'));
     let instruction = '';
-    const requestField = textField('What would you like to work on?', '', value => { instruction = value; });
+    const requestField = textField('What would you like to work on?', '', value => { instruction = value; }, { rows: 3 });
     main.append(requestField);
-    const shortcuts = element('div', 'creator-actions');
+    const shortcuts = element('div', 'creator-actions creator-chip-strip');
     for (const task of ['Flesh out their motives', 'Suggest a twist', 'Develop a secret', 'Check consistency', 'Strengthen their voice', 'Write an active greeting', 'Condense without losing facts', 'Suggest useful macros']) {
         shortcuts.append(button(task, () => {
             instruction = task;
             requestField.querySelector('textarea').value = task;
-        }));
+        }, false, 'creator-chip-btn'));
     }
     main.append(shortcuts);
     const fields = new Set(['description']);
-    const choices = element('fieldset', 'creator-actions');
+    const choices = element('fieldset', 'creator-fieldset');
     choices.append(element('legend', '', 'Fields to propose'));
+    const choiceGrid = element('div', 'creator-choice-grid');
     for (const field of TEXT_FIELDS.filter(field => field !== 'name')) {
-        const label = element('label');
+        const label = element('label', 'creator-choice-pill');
         const input = element('input'); input.type = 'checkbox';
         input.disabled = draft.locks.includes(field); input.checked = fields.has(field) && !input.disabled;
         if (input.disabled) fields.delete(field);
         input.addEventListener('change', () => input.checked ? fields.add(field) : fields.delete(field));
-        label.append(input, document.createTextNode(field.replaceAll('_', ' '))); choices.append(label);
+        label.append(input, document.createTextNode(field.replaceAll('_', ' '))); choiceGrid.append(label);
     }
+    choices.append(choiceGrid);
     main.append(choices);
     const modes = element('div', 'creator-actions');
     for (const [mode, title] of [['full', 'Director + grounded prose'], ['positive', 'Positive guidance only'], ['custom', 'My prose rules']]) {
-        const control = button(title, () => workspace.edit(next => { next.writing = { ...next.writing, mode }; }, true));
+        const control = button(title, () => workspace.edit(next => { next.writing = { ...next.writing, mode }; }, true), false, 'creator-chip-btn');
         control.setAttribute('aria-pressed', String((draft.writing?.mode ?? 'full') === mode)); modes.append(control);
     }
     main.append(modes);
     if (draft.writing?.mode === 'custom') main.append(textField('My prose rules', draft.writing.custom ?? '', value => workspace.edit(next => { next.writing.custom = value; })));
-    const privateLabel = element('label');
+    const privateLabel = element('label', 'creator-choice-pill');
     const privateInput = element('input'); privateInput.type = 'checkbox';
     privateLabel.append(privateInput, document.createTextNode('Include private notes and private facts in this request'));
     main.append(privateLabel);
     let controller;
     const cancel = button('Cancel request', () => controller?.abort()); cancel.hidden = true;
-    main.append(button('Ask for a proposal', () => workspace.run(async () => {
+    const actionRow = element('div', 'creator-actions');
+    actionRow.append(button('Ask for a proposal', () => workspace.run(async () => {
         const source = structuredClone(workspace.session.draft);
         const request = buildCreatorWritingRequest(source, instruction, [...fields], { includePrivate: privateInput.checked });
         controller = new AbortController(); cancel.hidden = false;
@@ -79,5 +82,6 @@ export function renderWritingPartner(workspace, main) {
             workspace.status('Your writing proposal is ready to review.');
         } finally { cancel.hidden = true; }
     }), true), cancel);
-    for (const proposal of draft.proposals.filter(item => item.dossierBefore === undefined && item.kind !== 'lore')) main.append(button(`Review ${proposal.label}`, () => workspace.proposal(proposal)));
+    for (const proposal of draft.proposals.filter(item => item.dossierBefore === undefined && item.kind !== 'lore')) actionRow.append(button(`Review ${proposal.label}`, () => workspace.proposal(proposal)));
+    main.append(actionRow);
 }

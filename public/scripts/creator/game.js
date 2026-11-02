@@ -58,9 +58,10 @@ export function gameRulesPackage(draft) {
 export function renderGameTools(workspace, main) {
     const draft = workspace.session.draft;
     const modules = draft.game?.modules ?? [];
-    main.append(element('h3', '', 'Give the story rules to play by'), element('p', 'creator-hint', 'Build a narrative game kit for the character card. The simulator below checks explicit example actions; your chat model follows the published rules, rather than an automatic game-state service.'));
+    main.append(element('h3', '', 'Give the story rules to play by'), element('p', 'creator-muted', 'Build a narrative game kit for the character card. The simulator below checks explicit example actions; your chat model follows the published rules, rather than an automatic game-state service.'));
+    const choiceGrid = element('div', 'creator-choice-grid');
     for (const [key, module] of Object.entries(GAME_MODULES)) {
-        const label = element('label', 'creator-choice');
+        const label = element('label', 'creator-choice-pill');
         const check = element('input'); check.type = 'checkbox'; check.checked = modules.includes(key);
         check.addEventListener('change', () => workspace.edit(next => {
             next.game ??= {};
@@ -68,20 +69,24 @@ export function renderGameTools(workspace, main) {
             next.game.modules = check.checked ? [...current, key] : current.filter(item => item !== key);
             delete next.game.simulation;
         }, true));
-        label.append(check, document.createTextNode(module.title)); main.append(label);
+        label.append(check, document.createTextNode(module.title)); choiceGrid.append(label);
     }
-    main.append(textField('Custom game rules', draft.game?.instructions ?? '', value => workspace.edit(next => { next.game ??= {}; next.game.instructions = value; })));
+    main.append(choiceGrid);
+    main.append(textField('Custom game rules', draft.game?.instructions ?? '', value => workspace.edit(next => { next.game ??= {}; next.game.instructions = value; }), { rows: 3 }));
     main.append(button('Review game rules for the card', () => workspace.run(async () => {
         const current = workspace.session.draft;
         const rules = gameRulesPackage(current);
         workspace.proposal(creatorProposal(current, { post_history_instructions: [current.card.data.post_history_instructions, rules].filter(Boolean).join('\n\n') }, 'Game rules'), main);
-    })));
+    }), true));
     main.append(element('h4', '', 'Isolated state simulator'));
     const state = draft.game?.simulation ?? createGameState(modules);
     main.append(element('pre', 'creator-preview', JSON.stringify(state.values, null, 2)));
     let eventText = JSON.stringify({ id: crypto.randomUUID(), revision: state.revision, key: Object.keys(state.values)[0] || 'trust', operation: 'add', value: 1 }, null, 2);
-    main.append(textField('Test action', eventText, value => { eventText = value; }), button('Test state change', () => workspace.run(async () => {
+    main.append(textField('Test action', eventText, value => { eventText = value; }, { rows: 4, className: 'creator-mono-field' }));
+    const simActions = element('div', 'creator-actions');
+    simActions.append(button('Test state change', () => workspace.run(async () => {
         const nextState = applyGameEvent(state, JSON.parse(eventText));
         workspace.edit(next => { next.game ??= {}; next.game.simulation = nextState; }, true);
     })), button('Reset simulator', () => workspace.edit(next => { next.game ??= {}; next.game.simulation = createGameState(next.game.modules ?? []); }, true)));
+    main.append(simActions);
 }

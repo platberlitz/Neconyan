@@ -21,7 +21,7 @@ export async function creatorPortraitBytes(blob, square = false) {
 
 export function renderPortrait(workspace, main) {
     const draft = workspace.session.draft;
-    main.append(element('h3', '', 'Choose their portrait'), element('p', 'creator-hint', 'Keep up to four candidates. The selected PNG is saved exactly once with your character; saving never generates another image.'));
+    main.append(element('h3', '', 'Choose their portrait'), element('p', 'creator-muted', 'Keep up to four candidates. The selected PNG is saved exactly once with your character; saving never generates another image.'));
     const add = async (blob, label) => {
         const dataUrl = await creatorPortraitBytes(blob);
         workspace.session.assertOwner();
@@ -33,15 +33,19 @@ export function renderPortrait(workspace, main) {
             next.selectedMedia = id;
         }, true);
     };
+    const uploadWrap = element('label', 'menu_button creator-file-btn');
+    uploadWrap.append(element('span', '', 'Upload portrait file'));
     const upload = element('input');
     upload.type = 'file'; upload.accept = 'image/png,image/jpeg,image/webp';
     upload.setAttribute('aria-label', 'Upload portrait');
     upload.addEventListener('change', () => { if (upload.files[0]) void workspace.run(() => add(upload.files[0], upload.files[0].name)); });
-    main.append(upload, textField('Portrait prompt', draft.portraitPrompt ?? '', value => workspace.edit(next => { next.portraitPrompt = value; }), { hint: 'Only this prompt and the character name are sent to Quick Image Gen. Private notes and the dossier are excluded.' }));
+    uploadWrap.append(upload);
+    main.append(textField('Portrait prompt', draft.portraitPrompt ?? '', value => workspace.edit(next => { next.portraitPrompt = value; }), { rows: 3, hint: 'Only this prompt and the character name are sent to Quick Image Gen. Private notes and the dossier are excluded.' }));
     const cancel = button('Cancel image generation', () => controller?.abort());
     let controller;
     cancel.hidden = true;
-    main.append(button('Generate portrait candidate', () => workspace.run(async () => {
+    const actionBar = element('div', 'creator-actions');
+    actionBar.append(button('Generate portrait candidate', () => workspace.run(async () => {
         if (controller) throw new Error('An image request is already running.');
         const prompt = workspace.session.draft.portraitPrompt?.trim();
         if (!prompt) throw new Error('Describe the portrait first.');
@@ -59,23 +63,26 @@ export function renderPortrait(workspace, main) {
             if (!response.ok) throw new Error('The generated portrait could not be loaded.');
             await add(await response.blob(), 'Generated portrait');
         } finally { controller = null; cancel.hidden = true; }
-    })), cancel);
+    }), true), uploadWrap, cancel);
+    main.append(actionBar);
     const gallery = element('div', 'creator-portraits');
     for (const media of draft.media) {
         const card = element('section', 'creator-portrait');
         const image = element('img'); image.src = media.dataUrl; image.alt = media.label || 'Portrait candidate';
-        const select = button(draft.selectedMedia === media.id ? 'Selected portrait' : 'Use portrait', () => workspace.edit(next => { next.selectedMedia = media.id; }, true));
+        const select = button(draft.selectedMedia === media.id ? 'Selected portrait' : 'Use portrait', () => workspace.edit(next => { next.selectedMedia = media.id; }, true), draft.selectedMedia === media.id, 'creator-chip-btn');
         select.setAttribute('aria-pressed', String(draft.selectedMedia === media.id));
-        card.append(image, select, button('Crop square', () => workspace.run(async () => {
+        const controls = element('div', 'creator-actions');
+        controls.append(select, button('Crop square', () => workspace.run(async () => {
             const blob = await (await fetch(media.dataUrl)).blob();
             const dataUrl = await creatorPortraitBytes(blob, true);
             workspace.session.assertOwner();
             if (workspace.session.draft.id !== draft.id || !workspace.session.draft.media.some(item => item.id === media.id)) throw new Error('This portrait changed. Reopen it before cropping.');
             workspace.edit(next => { next.media.find(item => item.id === media.id).dataUrl = dataUrl; }, true);
-        })), button('Remove candidate', () => workspace.edit(next => {
+        }), false, 'creator-chip-btn'), button('Remove candidate', () => workspace.edit(next => {
             next.media = next.media.filter(item => item.id !== media.id);
             if (next.selectedMedia === media.id) next.selectedMedia = null;
-        }, true)));
+        }, true), false, 'creator-chip-btn creator-danger-outline'));
+        card.append(image, controls);
         gallery.append(card);
     }
     main.append(gallery);

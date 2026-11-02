@@ -5,6 +5,7 @@ import { editCreatorDraft, setCreatorField, undoCreatorDraft, renderCreatorFacts
 import { buildDossierRequest, dossierProposal, DOSSIER_FIELDS } from './dossier.js';
 import { compareCreatorChanges } from './conflicts.js';
 import { restoreCreatorBackup } from './backup.js';
+import { creatorPublicationCard, adoptCreatorComparedCard } from './embedded-book.js';
 
 const sections = [['dossier', 'Dossier'], ['identity', 'Identity'], ['facts', 'Guided facts'], ['greetings', 'Greetings & examples'], ['interview', 'Interview'], ['prompts', 'Prompts'], ['lore', 'Lorebooks'], ['macros', 'Macros & pronouns'], ['regex', 'Pretty HTML'], ['game', 'Gamify'], ['portrait', 'Portrait'], ['helper', 'Writing partner'], ['metadata', 'Details'], ['preview', 'Preview & export']];
 const labels = { name: 'Display name', description: 'Description', personality: 'Personality', scenario: 'Scenario', first_mes: 'First greeting', mes_example: 'Interviewer examples', creator_notes: 'Public creator notes', system_prompt: 'Main prompt', post_history_instructions: 'Post-history instructions', creator: 'Creator', character_version: 'Card version' };
@@ -46,13 +47,18 @@ class CreatorWorkspace {
     status(message, error = false) {
         this.message = message;
         const output = this.host.querySelector('.creator-status');
-        if (output) { output.textContent = message; output.dataset.error = String(error); }
+        if (output) {
+            output.textContent = message;
+            output.dataset.error = String(error);
+            output.hidden = !message;
+        }
     }
 
     shell() {
         this.host.replaceChildren();
         const output = element('p', 'creator-status', this.message);
         output.setAttribute('role', 'status');
+        output.hidden = !this.message;
         this.host.append(output);
     }
 
@@ -60,11 +66,17 @@ class CreatorWorkspace {
         clearTimeout(this.timer);
         if (this.session.draft) await this.session.save();
         this.shell();
+        const hub = element('div', 'creator-hub');
         const welcome = element('div', 'creator-welcome');
-        welcome.append(element('h2', '', 'A character starts here.'), element('p', '', 'Keep a private draft, explore their voice, and review everything before it reaches your library.'));
-        welcome.append(button('Create a character', () => this.run(async () => { await this.session.create(); this.render(); }), true));
-        this.host.append(welcome);
-        const restore = element('label', 'creator-field');
+        const welcomeCopy = element('div', 'creator-welcome-copy');
+        welcomeCopy.append(
+            element('p', 'creator-eyebrow', 'Private character studio'),
+            element('h2', '', 'A character starts here.'),
+            element('p', 'creator-muted', 'Keep a private draft, explore their voice, and review everything before it reaches your library.'),
+        );
+        const welcomeActions = element('div', 'creator-actions creator-welcome-actions');
+        welcomeActions.append(button('Create a character', () => this.run(async () => { await this.session.create(); this.render(); }), true));
+        const restore = element('label', 'menu_button creator-file-btn');
         restore.append(element('span', '', 'Restore a private draft backup'));
         const upload = element('input');
         upload.type = 'file'; upload.accept = '.json,application/json';
@@ -78,29 +90,94 @@ class CreatorWorkspace {
             await this.session.save(); this.render();
             this.status('Backup restored as a new draft. External books will be new copies; rename them in Lorebooks if those names already exist.');
         }));
-        restore.append(upload); this.host.append(restore);
+        restore.append(upload);
+        welcomeActions.append(restore);
         const recovery = this.session.recovery();
-        if (recovery) this.host.append(button(`Recover ${recovery.draft.card.data.name || 'untitled draft'}`, () => {
-            this.session.restore(recovery); this.render(); this.status(recovery.pending ? 'A previous save needs recovery. Resume it from Review & save.' : 'Local draft recovered.');
-        }));
+        if (recovery) {
+            welcomeActions.append(button(`Recover ${recovery.draft.card.data.name || 'untitled draft'}`, () => {
+                this.session.restore(recovery); this.render(); this.status(recovery.pending ? 'A previous save needs recovery. Resume it from Review & save.' : 'Local draft recovered.');
+            }));
+        }
+        welcome.append(welcomeCopy, welcomeActions);
+        hub.append(welcome);
+
+        const columns = element('div', 'creator-hub-columns');
         const { drafts } = await this.session.request('list');
-        const saved = element('section', 'creator-library');
-        saved.append(element('h3', '', 'Your drafts'));
-        if (!drafts.length) saved.append(element('p', 'creator-muted', 'Your drafts will appear here, including work saved on another device.'));
-        for (const draft of drafts) saved.append(button(draft.name || 'Untitled character', () => this.run(async () => { await this.session.open(draft.id); this.render(); })));
-        this.host.append(saved);
-        const library = element('section', 'creator-library');
-        library.append(element('h3', '', 'Edit an existing character'));
+        const saved = element('section', 'creator-library creator-card');
+        const savedHeader = element('div', 'creator-section-header');
+        savedHeader.append(
+            element('h3', '', 'Your drafts'),
+            element('span', 'creator-badge', `${drafts.length} / 40`),
+        );
+        saved.append(savedHeader);
+        if (!drafts.length) {
+            saved.append(element('p', 'creator-muted', 'Your drafts will appear here, including work saved on another device.'));
+        } else {
+            const draftList = element('div', 'creator-draft-list');
+            const ordered = [...drafts].sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')));
+            for (const draft of ordered) {
+                const row = element('div', 'creator-draft-row');
+                const mainRow = element('div', 'creator-draft-row-main');
+                const open = button(draft.name || 'Untitled character', () => this.run(async () => { await this.session.open(draft.id); this.render(); }), false, 'creator-draft-open');
+                open.title = `${draft.name || 'Untitled character'} (${draft.avatar ? 'Linked to library card' : 'New character draft'})`;
+                const meta = element('span', 'creator-draft-meta', draft.avatar ? 'Linked card' : 'New draft');
+                const askDiscard = button('Discard', () => {
+                    confirmBar.hidden = false;
+                    askDiscard.hidden = true;
+                }, false, 'creator-chip-btn creator-danger-outline');
+                askDiscard.setAttribute('aria-label', `Discard ${draft.name || 'Untitled character'}`);
+                mainRow.append(open, meta, askDiscard);
+                const confirmBar = element('div', 'creator-confirm-bar');
+                confirmBar.hidden = true;
+                confirmBar.append(
+                    element('span', 'creator-confirm-text', draft.avatar ? 'Discard this draft? Published character stays in your library.' : 'Discard this private draft permanently?'),
+                    button('Confirm discard', () => this.run(async () => {
+                        if (recovery?.pending && recovery.draft?.id === draft.id) {
+                            throw new Error('This draft has an unfinished library save. Recover it before discarding.');
+                        }
+                        await this.session.request('delete', { id: draft.id, expectedRevision: draft.revision });
+                        if (this.session.draft?.id === draft.id) {
+                            this.session.draft = null;
+                            this.session.revision = null;
+                            this.session.pending = null;
+                        }
+                        if (recovery?.draft?.id === draft.id && !recovery.pending) {
+                            try { localStorage.removeItem(this.session.recoveryKey); } catch { /* ignore */ }
+                        }
+                        await this.home();
+                        this.status('Draft discarded. Published library items were not changed.');
+                    }), false, 'creator-chip-btn creator-danger-btn'),
+                    button('Keep draft', () => {
+                        confirmBar.hidden = true;
+                        askDiscard.hidden = false;
+                    }, false, 'creator-chip-btn'),
+                );
+                row.append(mainRow, confirmBar);
+                draftList.append(row);
+            }
+            saved.append(draftList);
+        }
+        columns.append(saved);
+
+        const library = element('section', 'creator-library creator-card');
+        const libHeader = element('div', 'creator-section-header');
+        libHeader.append(
+            element('h3', '', 'Edit an existing character'),
+            element('span', 'creator-badge', `${characters.length}`),
+        );
+        library.append(libHeader);
         const list = element('div', 'creator-library-grid');
         const search = textField('Find a character', '', value => {
             for (const item of list.children) item.hidden = !item.textContent.toLocaleLowerCase().includes(value.toLocaleLowerCase());
-        }, { rows: 1 });
+        }, { rows: 1, placeholder: 'Type a name to filter...' });
         for (const card of characters) {
-            const open = button(card.name || card.avatar, () => this.run(async () => { await this.session.create(card.avatar); this.render(); }));
+            const open = button(card.name || card.avatar, () => this.run(async () => { await this.session.create(card.avatar); this.render(); }), false, 'creator-library-item');
             list.append(open);
         }
         library.append(search, list);
-        this.host.append(library);
+        columns.append(library);
+        hub.append(columns);
+        this.host.append(hub);
     }
 
     change(operation, redraw = false) {
@@ -127,12 +204,12 @@ class CreatorWorkspace {
 
     field(field) {
         const draft = this.session.draft;
-        const node = textField(labels[field] || field, draft.card.data[field], value => this.change(current => setCreatorField(current, field, value)), { name: field === 'name', hint: field === 'mes_example' ? 'Use Interviewer: for questions and {{char}}: for the character’s replies.' : '' });
+        const node = textField(labels[field] || field, draft.card.data[field], value => this.change(current => setCreatorField(current, field, value)), { name: field === 'name', rows: field === 'creator' || field === 'character_version' ? 1 : 4, hint: field === 'mes_example' ? 'Use Interviewer: for questions and {{char}}: for the character’s replies.' : '' });
         if (field !== 'name') {
             const locked = draft.locks.includes(field);
             const lock = button(locked ? 'Locked for AI' : 'Lock for AI', () => this.edit(next => {
                 next.locks = locked ? next.locks.filter(item => item !== field) : [...next.locks, field];
-            }, true));
+            }, true), false, 'creator-chip-btn');
             lock.setAttribute('aria-pressed', String(locked));
             node.querySelector('.creator-field-heading').append(lock);
         }
@@ -143,36 +220,37 @@ class CreatorWorkspace {
         const draft = this.session.draft;
         this.shell();
         const header = element('header', 'creator-draft-header');
-        const heading = element('div');
+        const heading = element('div', 'creator-draft-title');
         heading.append(element('p', 'creator-eyebrow', draft.source.avatar ? 'Editing a library character' : 'New character draft'), element('h2', '', draft.card.data.name || 'Untitled character'));
-        const actions = element('div', 'creator-actions');
-        const undo = button('Undo', () => this.change(value => undoCreatorDraft(value), true));
-        const redo = button('Redo', () => this.change(value => undoCreatorDraft(value, true), true));
+        const actions = element('div', 'creator-actions creator-header-actions');
+        const undo = button('Undo', () => this.change(value => undoCreatorDraft(value), true), false, 'creator-chip-btn');
+        const redo = button('Redo', () => this.change(value => undoCreatorDraft(value, true), true), false, 'creator-chip-btn');
         undo.dataset.creatorUndo = '';
         redo.dataset.creatorRedo = '';
         undo.disabled = !draft.history.length;
         redo.disabled = !draft.future.length;
-        actions.append(button('Drafts', () => this.run(() => this.home())), undo, redo, button('Review & save', () => this.review(), true));
+        actions.append(button('Drafts', () => this.run(() => this.home()), false, 'creator-chip-btn'), undo, redo, button('Review & save', () => this.review(), true, 'creator-chip-btn'));
         header.append(heading, actions);
         const layout = element('div', 'creator-layout');
         const nav = element('nav', 'creator-sections');
         nav.setAttribute('aria-label', 'Creator sections');
         for (const [id, label] of sections) {
-            const tab = button(label, () => { this.session.draft.view.section = id; this.session.remember(); this.render(); });
+            const tab = button(label, () => { this.session.draft.view.section = id; this.session.remember(); this.render(); }, false, 'creator-section-tab');
             tab.setAttribute('aria-current', draft.view.section === id ? 'page' : 'false');
             nav.append(tab);
         }
-        const main = element('div', 'creator-content');
+        const main = element('div', 'creator-content creator-card');
         const section = draft.view.section;
-        if (section === 'identity') main.append(this.field('name'), this.field('description'), this.field('personality'), this.field('scenario'));
-        else if (section === 'dossier') this.dossier(main);
+        if (section === 'identity') {
+            main.append(element('div', 'creator-section-intro', 'Core character profile sent to the model in chat.'), this.field('name'), this.field('description'), this.field('personality'), this.field('scenario'));
+        } else if (section === 'dossier') this.dossier(main);
         else if (section === 'facts') this.facts(main);
         else if (section === 'greetings') {
-            main.append(this.field('first_mes'), this.field('mes_example'));
+            main.append(element('div', 'creator-section-intro', 'Opening scenes and dialogue examples using Interviewer: for prompts.'), this.field('first_mes'), this.field('mes_example'));
             this.stringList(main, 'Alternate greetings', 'alternate_greetings');
             this.stringList(main, 'Group greetings', 'group_only_greetings');
         } else if (section === 'prompts') {
-            main.append(this.field('system_prompt'), this.field('post_history_instructions'));
+            main.append(element('div', 'creator-section-intro', 'Optional system and depth instructions for this character.'), this.field('system_prompt'), this.field('post_history_instructions'));
             const depth = draft.card.data.extensions?.depth_prompt ?? { prompt: '', depth: 4, role: 'system' };
             main.append(textField('Depth prompt', depth.prompt, value => this.edit(next => { next.card.data.extensions ??= {}; next.card.data.extensions.depth_prompt = { ...depth, ...next.card.data.extensions.depth_prompt, prompt: value }; })));
             this.jsonField(main, 'Depth and role', { depth: depth.depth, role: depth.role }, value => {
@@ -180,12 +258,16 @@ class CreatorWorkspace {
                 this.edit(next => { next.card.data.extensions ??= {}; next.card.data.extensions.depth_prompt = { ...depth, ...next.card.data.extensions.depth_prompt, ...value }; });
             });
         } else if (section === 'metadata') {
-            main.append(this.field('creator'), this.field('character_version'), this.field('creator_notes'));
+            const metaRow = element('div', 'creator-form-grid');
+            metaRow.append(this.field('creator'), this.field('character_version'));
+            main.append(metaRow, this.field('creator_notes'));
             this.stringList(main, 'Tags', 'tags');
             main.append(textField('Private author notes', draft.privateNotes, value => this.edit(next => { next.privateNotes = value; }), { hint: 'Kept only in this draft. Excluded from character saves and AI requests unless you explicitly include them.' }));
         }
         layout.append(nav, main);
         this.host.append(header, layout);
+        const activeTab = nav.querySelector('[aria-current="page"]');
+        activeTab?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
         if (!['dossier', 'identity', 'facts', 'greetings', 'prompts', 'metadata'].includes(section)) {
             void this.renderTool(section, main).catch(error => this.status(error.message, true));
         }
@@ -198,21 +280,23 @@ class CreatorWorkspace {
 
     dossier(main) {
         main.append(element('h3', '', 'Everything about your character, in one place.'), textField('Character dossier', this.session.draft.dossier ?? '', value => this.edit(next => { next.dossier = value; }), {
-            rows: 18,
+            rows: 10,
             hint: 'Paste notes, history, appearance, relationships, voice, setting and scene ideas. Convert sends this dossier and the chosen existing fields to your current model. Your original notes stay in this draft, outside the published card.',
         }));
         const selection = new Set(DOSSIER_FIELDS.filter(field => !this.session.draft.locks.includes(field)));
-        const choices = element('fieldset', 'creator-actions');
+        const choices = element('fieldset', 'creator-fieldset');
         choices.append(element('legend', '', 'Fields to create'));
+        const choiceGrid = element('div', 'creator-choice-grid');
         for (const field of DOSSIER_FIELDS) {
-            const label = element('label');
+            const label = element('label', 'creator-choice-pill');
             const checkbox = element('input');
             checkbox.type = 'checkbox'; checkbox.checked = selection.has(field);
             checkbox.disabled = this.session.draft.locks.includes(field);
             checkbox.addEventListener('change', () => checkbox.checked ? selection.add(field) : selection.delete(field));
             label.append(checkbox, document.createTextNode(`${labels[field]}${checkbox.disabled ? ' (locked)' : ''}`));
-            choices.append(label);
+            choiceGrid.append(label);
         }
+        choices.append(choiceGrid);
         let controller;
         const cancel = button('Cancel conversion', () => controller?.abort());
         cancel.hidden = true;
@@ -237,47 +321,59 @@ class CreatorWorkspace {
                 this.status('Conversion ready for review. Your dossier and library are unchanged.');
             } finally { cancel.hidden = true; convert.disabled = false; }
         }), true);
-        main.append(choices, convert, cancel);
+        const actionRow = element('div', 'creator-actions');
+        actionRow.append(convert, cancel);
         for (const proposal of this.session.draft.proposals.filter(item => item.dossierBefore !== undefined)) {
-            main.append(button(`Review ${proposal.label}`, () => this.proposal(proposal)));
+            actionRow.append(button(`Review ${proposal.label}`, () => this.proposal(proposal)));
         }
+        main.append(choices, actionRow);
     }
 
     stringList(main, title, field) {
         const list = this.session.draft.card.data[field] ?? [];
-        main.append(element('h3', '', title));
+        const sectionHeader = element('div', 'creator-section-header');
+        sectionHeader.append(
+            element('h3', '', title),
+            button(`Add ${title.toLowerCase()}`, () => this.edit(next => { next.card.data[field] ??= []; next.card.data[field].push(''); }, true), false, 'creator-chip-btn'),
+        );
+        main.append(sectionHeader);
         list.forEach((text, index) => {
-            const row = textField(`${title} ${index + 1}`, text, value => this.edit(next => { next.card.data[field][index] = value; }));
-            row.append(button('Remove', () => this.edit(next => { next.card.data[field].splice(index, 1); }, true)));
+            const row = textField(`${title} ${index + 1}`, text, value => this.edit(next => { next.card.data[field][index] = value; }), { rows: field === 'tags' ? 1 : 3 });
+            const removeBtn = button('Remove', () => this.edit(next => { next.card.data[field].splice(index, 1); }, true), false, 'creator-chip-btn creator-danger-outline');
+            row.querySelector('.creator-field-heading').append(removeBtn);
             main.append(row);
         });
-        main.append(button(`Add ${title.toLowerCase()}`, () => this.edit(next => { next.card.data[field] ??= []; next.card.data[field].push(''); }, true)));
     }
 
     jsonField(main, title, value, accept) {
         main.append(textField(title, JSON.stringify(value, null, 2), text => {
             try { accept(JSON.parse(text)); } catch (error) { this.status(error.message, true); }
-        }));
+        }, { rows: 3, className: 'creator-mono-field' }));
     }
 
     facts(main) {
         const draft = this.session.draft;
         main.append(element('h3', '', 'Decide who they are'), element('p', 'creator-muted', 'Decided, model-visible facts can become a reviewed writing proposal. Tentative and private facts stay in your draft.'));
+        const add = element('div', 'creator-actions creator-chip-strip');
+        for (const section of FACT_SECTIONS) add.append(button(`+ ${section}`, () => this.edit(next => { next.facts.push({ id: crypto.randomUUID(), section, text: '', status: 'decided', visibility: 'model' }); }, true), false, 'creator-chip-btn'));
+        main.append(add);
         for (const fact of draft.facts) {
             const card = element('section', 'creator-fact');
-            card.append(textField(fact.section, fact.text, value => this.edit(next => { next.facts.find(item => item.id === fact.id).text = value; })));
-            const actions = element('div', 'creator-actions');
+            const fieldNode = textField(fact.section, fact.text, value => this.edit(next => { next.facts.find(item => item.id === fact.id).text = value; }), { rows: 2 });
+            card.append(fieldNode);
+            const actions = element('div', 'creator-actions creator-fact-controls');
             for (const status of ['decided', 'tentative', 'open']) {
-                const toggle = button(status, () => this.edit(next => { next.facts.find(item => item.id === fact.id).status = status; }, true));
+                const toggle = button(status, () => this.edit(next => { next.facts.find(item => item.id === fact.id).status = status; }, true), false, 'creator-chip-btn');
                 toggle.setAttribute('aria-pressed', String(fact.status === status));
                 actions.append(toggle);
             }
-            actions.append(button(fact.visibility === 'private' ? 'Private' : 'Model-visible', () => this.edit(next => { next.facts.find(item => item.id === fact.id).visibility = fact.visibility === 'private' ? 'model' : 'private'; }, true)), button('Remove fact', () => this.edit(next => { next.facts = next.facts.filter(item => item.id !== fact.id); }, true)));
+            actions.append(
+                button(fact.visibility === 'private' ? 'Private' : 'Model-visible', () => this.edit(next => { next.facts.find(item => item.id === fact.id).visibility = fact.visibility === 'private' ? 'model' : 'private'; }, true), false, 'creator-chip-btn'),
+                button('Remove fact', () => this.edit(next => { next.facts = next.facts.filter(item => item.id !== fact.id); }, true), false, 'creator-chip-btn creator-danger-outline'),
+            );
             card.append(actions); main.append(card);
         }
-        const add = element('div', 'creator-actions');
-        for (const section of FACT_SECTIONS) add.append(button(`+ ${section}`, () => this.edit(next => { next.facts.push({ id: crypto.randomUUID(), section, text: '', status: 'decided', visibility: 'model' }); }, true)));
-        main.append(add, element('h3', '', 'Writing format'));
+        main.append(element('h3', '', 'Writing format'));
         if (draft.rawAhead) main.append(element('p', 'creator-muted', 'Raw text has changed. Review the differences before replacing it with guided facts.'));
         const formats = element('div', 'creator-actions');
         for (const style of STYLES) formats.append(button(style, () => {
@@ -314,9 +410,11 @@ class CreatorWorkspace {
             }, true));
             review.append(group);
         }
-        review.append(button('Accept all fields', () => this.change(draft => acceptCreatorProposal(draft, proposal), true), true), button('Reject proposal', () => {
+        const footer = element('div', 'creator-actions');
+        footer.append(button('Accept all fields', () => this.change(draft => acceptCreatorProposal(draft, proposal), true), true), button('Reject proposal', () => {
             this.edit(next => { next.proposals = next.proposals.filter(item => item.id !== proposal.id); }, true);
         }));
+        review.append(footer);
         content.prepend(review);
         review.scrollIntoView({ block: 'start' });
     }
@@ -326,30 +424,50 @@ class CreatorWorkspace {
         const content = this.host.querySelector('.creator-content');
         content.replaceChildren(element('h3', '', 'Review your library changes'));
         content.append(element('p', 'creator-muted', 'Lorebooks save first, then the character. If a later step fails, resume this save to finish the remaining steps.'));
-        for (const [key, value] of Object.entries(draft.card.data)) {
+        for (const [key, value] of Object.entries(creatorPublicationCard(draft).data)) {
             const before = draft.source.original?.data?.[key];
             if (JSON.stringify(before) === JSON.stringify(value)) continue;
             const item = element('details', 'creator-review-item');
             item.append(element('summary', '', labels[key] || key), element('pre', '', `Before\n${typeof before === 'string' ? before : JSON.stringify(before ?? null, null, 2)}\n\nAfter\n${typeof value === 'string' ? value : JSON.stringify(value, null, 2)}`));
             content.append(item);
         }
-        for (const book of draft.books) content.append(element('p', '', `${book.detached ? 'Detach' : book.mode}: ${book.name}`));
+        for (const book of draft.books) {
+            const item = element('details', 'creator-review-item');
+            item.append(element('summary', '', `${book.detached ? 'Detach' : book.mode}: ${book.name}`),
+                element('pre', '', `Before\n${JSON.stringify(book.original ?? null, null, 2)}\n\nAfter\n${book.detached ? '(detached, library file retained)' : JSON.stringify(book.data, null, 2)}`));
+            content.append(item);
+        }
+        if (draft.selectedMedia) {
+            const portrait = draft.media.find(item => item.id === draft.selectedMedia);
+            if (portrait) { const image = element('img', 'creator-portrait creator-review-portrait'); image.src = portrait.dataUrl; image.alt = 'Portrait selected for this save'; content.append(image); }
+        }
+        if (JSON.stringify(draft.additionalBooks) !== JSON.stringify(draft.source.extraBooks)) content.append(element('pre', '', `Additional lorebook links\nBefore: ${JSON.stringify(draft.source.extraBooks ?? [])}\nAfter: ${JSON.stringify(draft.additionalBooks ?? [])}`));
         const publish = copy => this.run(async () => {
             clearTimeout(this.timer);
             const result = await this.session.publish(copy);
-            await getOneCharacter(result.avatar, { allowInsert: true });
-            this.render(); this.status('Character and reviewed lorebooks saved to your library.');
+            let refreshed = false;
+            try { refreshed = await getOneCharacter(result.avatar, { allowInsert: true }); } catch { /* The publication is already saved. */ }
+            this.render(); this.status(!refreshed ? 'Saved to your library. Reload the page to refresh the character list.' : result.refreshWarning || 'Character and reviewed lorebooks saved to your library.');
         });
-        content.append(button(this.session.pending ? 'Resume save' : 'Save to library', () => publish(false), true));
-        if (!this.session.pending) content.append(button('Save as a new copy', () => publish(true)));
-        if (!this.session.pending && draft.source.avatar) content.append(button('Compare with library', () => this.run(() => this.compareLibrary())));
+        const actionRow = element('div', 'creator-actions');
+        actionRow.append(button(this.session.pending ? 'Resume save' : 'Save to library', () => publish(false), true));
+        if (!this.session.pending) actionRow.append(button('Save as a new copy', () => publish(true)));
+        if (this.session.pending) actionRow.append(button('Recover for comparison', () => this.run(async () => {
+            clearTimeout(this.timer);
+            await this.session.recoverPublication();
+            await this.compareLibrary();
+            this.status('Interrupted save stopped. Saved resources are retained. Compare the remaining changes before saving again.');
+        })));
+        else actionRow.append(button('Compare with library', () => this.run(() => this.compareLibrary())));
+        content.append(actionRow);
     }
 
     async compareLibrary() {
         const draft = structuredClone(this.session.draft);
-        const source = await this.session.request('character', { avatar: draft.source.avatar });
-        const resources = [{ label: 'Character', base: draft.source.original, local: draft.card, remote: source.card, choices: {} },
-            { label: 'Additional lorebook links', base: draft.source.extraBooks ?? [], local: draft.additionalBooks ?? [], remote: source.extraBooks, choices: {} }];
+        const localCard = creatorPublicationCard(draft);
+        const source = draft.source.avatar ? await this.session.request('character', { avatar: draft.source.avatar }) : null;
+        const resources = [{ label: 'Character', base: draft.source.original ?? localCard, local: localCard, remote: source?.card ?? localCard, choices: {} },
+            { label: 'Additional lorebook links', base: draft.source.extraBooks ?? [], local: draft.additionalBooks ?? [], remote: source?.extraBooks ?? draft.additionalBooks ?? [], choices: {} }];
         for (const book of draft.books.filter(book => book.mode === 'linked' && !book.detached)) {
             const current = await this.session.request('book', { name: book.name });
             resources.push({ label: book.name, bookId: book.id, base: book.original, local: book.data, remote: current.data, revision: current.revision, choices: {} });
@@ -382,10 +500,11 @@ class CreatorWorkspace {
             if (JSON.stringify(this.session.draft) !== JSON.stringify(draft)) throw new Error('The draft changed during comparison. Compare again before applying.');
             const merged = resources.map(resource => compareCreatorChanges(resource.base, resource.local, resource.remote, resource.choices));
             if (merged.some(item => item.conflicts.length)) throw new Error('Choose a version for every conflicting field.');
+            const { convertCharacterBook } = await import('../world-info.js');
             this.edit(next => {
-                next.card = merged[0].value;
+                adoptCreatorComparedCard(next, merged[0].value, convertCharacterBook);
                 next.additionalBooks = merged[1].value;
-                next.source = { ...next.source, original: structuredClone(source.card), revision: source.revision, extraBooks: source.extraBooks };
+                if (source) next.source = { ...next.source, original: structuredClone(source.card), revision: source.revision, extraBooks: source.extraBooks };
                 for (let index = 2; index < resources.length; index++) {
                     const resource = resources[index];
                     const book = next.books.find(item => item.id === resource.bookId);

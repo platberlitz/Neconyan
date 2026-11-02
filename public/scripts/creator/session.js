@@ -128,6 +128,41 @@ export class CreatorSession {
         } finally { this.publishing = false; }
     }
 
+    async recoverPublication() {
+        if (!this.pending || this.publishing) throw new Error('Wait for the current save before recovering it.');
+        await this.queue;
+        const result = await this.request('recover', { id: this.draft.id, operationId: this.pending.operationId, expectedRevision: this.revision });
+        this.draft = result.draft;
+        this.revision = result.revision;
+        this.pending = null;
+        this.remember();
+        await this.refreshPublishedResources(result.draft.journal);
+    }
+
+    async refreshPublishedResources(result) {
+        if (!result) return;
+        try {
+            const { world_info, invalidateWorldInfoCache, updateWorldInfoList } = await import('../world-info.js');
+            this.assertOwner();
+            if (result.binding?.state === 'done') {
+                const filename = result.avatar.replace(/\.[^.]+$/, '');
+                const entries = world_info.charLore ??= [];
+                const index = entries.findIndex(item => item.name === filename);
+                if (!result.binding.books.length) {
+                    if (index >= 0) entries.splice(index, 1);
+                } else if (index >= 0) entries[index].extraBooks = [...result.binding.books];
+                else entries.push({ name: filename, extraBooks: [...result.binding.books] });
+                if (result.binding.settingsWrite) adoptServerSettingsWrite({ account: this.owner, ...result.binding.settingsWrite });
+            }
+            const books = (result.books ?? []).filter(book => book.state === 'done');
+            for (const book of books) invalidateWorldInfoCache(book.name);
+            if (books.length && await updateWorldInfoList() === false) throw new Error('The lorebook list could not be refreshed.');
+        } catch {
+            result.refreshWarning = 'Saved resources retained. Reload the page to refresh the lorebook list.';
+        }
+        this.assertOwner();
+    }
+
     async publishFrozen(copy) {
         if (!this.pending) {
             if (!await saveSettings(0, { returnResult: true })) throw new Error('Save your current settings before publishing this character.');
@@ -140,12 +175,14 @@ export class CreatorSession {
             result = await this.request('publish', this.pending);
             this.pending.operationId = result.operationId;
             this.remember();
+            await this.refreshPublishedResources(result);
         } catch (error) {
             // Only a definitive missing receipt proves that no resource was committed.
             try {
                 const receipt = await this.request('receipt', this.pending);
                 this.pending.operationId = receipt.operationId;
                 this.remember();
+                await this.refreshPublishedResources(receipt);
             } catch (receiptError) {
                 if (receiptError.status === 404) { this.pending = null; this.remember(); }
             }
@@ -158,33 +195,25 @@ export class CreatorSession {
         const next = structuredClone(this.draft);
         for (const book of next.books) {
             if (!book.detached && (book.mode === 'copy' || book.mode === 'linked')) {
-                const current = await this.request('book', { name: book.name });
-                const committed = result.books.find(item => item.name === book.name);
+                const committed = result.books.find(item => item.id ? item.id === book.id : item.name === book.name);
+                const current = await this.request('book', { name: committed?.name ?? book.name });
                 if (!committed || current.revision !== committed.revision) throw new Error(`The save completed, but ${book.name} changed again. Your draft and save receipt are retained.`);
                 book.mode = 'linked';
+                book.name = current.name;
                 book.revision = current.revision;
                 book.original = structuredClone(current.data);
             }
         }
-        if (result.binding?.state === 'done') {
-            const { world_info } = await import('../world-info.js');
-            const filename = result.avatar.replace(/\.[^.]+$/, '');
-            const entries = world_info.charLore ??= [];
-            const index = entries.findIndex(item => item.name === filename);
-            if (!result.binding.books.length) {
-                if (index >= 0) entries.splice(index, 1);
-            } else if (index >= 0) entries[index].extraBooks = [...result.binding.books];
-            else entries.push({ name: filename, extraBooks: [...result.binding.books] });
-            if (result.binding.settingsWrite) adoptServerSettingsWrite({ account: this.owner, ...result.binding.settingsWrite });
-        }
         // Keep the operation until the source and draft acknowledge the committed identity.
         next.source = { avatar: source.avatar, revision: source.revision, original: structuredClone(source.card), extraBooks: source.extraBooks };
         next.card = structuredClone(source.card);
+        next.additionalBooks = structuredClone(source.extraBooks ?? []);
         next.journal = result;
         next.history = [];
         next.future = [];
         this.draft = next;
         await this.save();
+        await this.request('acknowledge', { id: next.id, operationId: result.operationId });
         this.pending = null;
         this.remember();
         return result;

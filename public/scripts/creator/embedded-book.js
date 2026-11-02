@@ -24,3 +24,15 @@ export function creatorPublicationCard(draft) {
     else if (draft.books.some(book => book.mode === 'embedded' && book.detached)) delete card.data.character_book;
     return card;
 }
+
+/** Rebuild the editable portable book from the chosen comparison, including removal. */
+export function adoptCreatorComparedCard(draft, card, convertCharacterBook) {
+    const previous = draft.books.find(book => book.mode === 'embedded');
+    draft.books = draft.books.filter(book => book.mode !== 'embedded');
+    draft.card = structuredClone(card);
+    const embedded = card.data.character_book;
+    if (Array.isArray(embedded?.entries)) {
+        const data = convertCharacterBook(embedded);
+        draft.books.push({ id: previous?.id ?? crypto.randomUUID(), name: embedded.name || 'Portable lorebook', mode: 'embedded', data, original: structuredClone(data), revision: null });
+    }
+}

@@ -3,20 +3,22 @@ import { requestCreatorReply } from './assistant.js';
 import { buildCreatorLoreRequest, parseCreatorLoreProposal, acceptCreatorLoreProposal } from './lore-proposals.js';
 
 export function renderLoreWriter(workspace, panel, book) {
-    const details = element('details', 'creator-review-item');
+    const details = element('details', 'creator-review-item creator-subdetails');
     details.append(element('summary', '', 'Write entries or extract background'));
     let instruction = '';
     let mode = 'keep';
-    details.append(textField('What should the lorebook contain?', '', value => { instruction = value; }));
-    const choices = element('fieldset', 'creator-actions');
+    details.append(textField('What should the lorebook contain?', '', value => { instruction = value; }, { rows: 3 }));
+    const choices = element('fieldset', 'creator-fieldset');
     choices.append(element('legend', '', 'Original character description after extraction'));
+    const choiceGrid = element('div', 'creator-choice-grid');
     const group = crypto.randomUUID();
     for (const [value, title] of [['keep', 'Keep it all'], ['summarise', 'Shorten it'], ['remove', 'Remove extracted facts only']]) {
-        const label = element('label');
+        const label = element('label', 'creator-choice-pill');
         const input = element('input'); input.type = 'radio'; input.name = group; input.value = value; input.checked = value === mode;
         input.addEventListener('change', () => { if (input.checked) mode = value; });
-        label.append(input, document.createTextNode(title)); choices.append(label);
+        label.append(input, document.createTextNode(title)); choiceGrid.append(label);
     }
+    choices.append(choiceGrid);
     details.append(choices, element('p', 'creator-muted', 'The model receives public card fields and unprotected entries. Review the entries and source changes together before applying them to this draft.'));
     const reviews = element('div');
     const show = proposal => {
@@ -33,12 +35,15 @@ export function renderLoreWriter(workspace, panel, book) {
         if (proposal.sourceMode !== 'keep') {
             review.append(element('h5', '', 'Description before'), element('pre', 'creator-preview', proposal.descriptionBefore), element('h5', '', 'Description after'), element('pre', 'creator-preview', proposal.description));
         }
-        review.append(button('Accept entries and source choice', () => workspace.change(draft => acceptCreatorLoreProposal(draft, proposal), true), true), button('Reject proposal', () => workspace.edit(next => { next.proposals = next.proposals.filter(item => item.id !== proposal.id); }, true)));
+        const actions = element('div', 'creator-actions');
+        actions.append(button('Accept entries and source choice', () => workspace.change(draft => acceptCreatorLoreProposal(draft, proposal), true), true), button('Reject proposal', () => workspace.edit(next => { next.proposals = next.proposals.filter(item => item.id !== proposal.id); }, true)));
+        review.append(actions);
         reviews.append(review);
     };
     let controller;
     const cancel = button('Cancel request', () => controller?.abort()); cancel.hidden = true;
-    details.append(button('Propose lorebook changes', () => workspace.run(async () => {
+    const actionBar = element('div', 'creator-actions');
+    actionBar.append(button('Propose lorebook changes', () => workspace.run(async () => {
         const draft = structuredClone(workspace.session.draft);
         const selectedMode = mode;
         const messages = buildCreatorLoreRequest(draft, book.id, instruction, selectedMode);
@@ -50,7 +55,8 @@ export function renderLoreWriter(workspace, panel, book) {
             if (reviews.isConnected) show(proposal);
             workspace.status('Lorebook proposal saved for review. Your source background is unchanged.');
         } finally { cancel.hidden = true; }
-    }), true), cancel, reviews);
+    }), true), cancel);
+    details.append(actionBar, reviews);
     for (const proposal of workspace.session.draft.proposals.filter(item => item.kind === 'lore' && item.bookId === book.id)) show(proposal);
     panel.append(details);
 }

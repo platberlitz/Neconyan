@@ -175,6 +175,9 @@ const NN_PANEL_STYLESHEETS = Object.freeze({
         { href: 'css/personas.css?v=20261006-personaui1', id: 'deferred-personas-css' },
         { href: 'css/neconyan-tool-pages.css?v=20261026a-qig-tabs', id: 'deferred-tool-pages-css' },
     ],
+    'characters:creator': [
+        { href: 'css/neconyan-creator.css?v=20261103a-creator-ui', id: 'deferred-creator-css' },
+    ],
     'left:api': [
         { href: 'css/neconyan-tool-pages.css?v=20261026a-qig-tabs', id: 'deferred-tool-pages-css' },
     ],
@@ -520,7 +523,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261102-creator';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261103a-creator-ui';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -9929,7 +9932,7 @@ function syncCharacterTitlebarVisibility() {
         return;
     }
 
-    const shouldHide = ['characters', 'groups', 'editor_empty', 'world-info', 'persona', 'import', 'conversation'].includes(panel.dataset.menuType ?? '');
+    const shouldHide = ['characters', 'groups', 'editor_empty', 'world-info', 'persona', 'creator', 'import', 'conversation'].includes(panel.dataset.menuType ?? '');
     pinAndTabs.style.display = shouldHide ? 'none' : '';
     // Phones: the name/token titlebar scrolls away with the editor body instead of pinning
     // another 100px of chrome above it. Desktop keeps it as a direct panel child.
@@ -10415,6 +10418,8 @@ function openCharacterPersonaTab() {
 
 function openCharacterCreatorTab({ avatar = null } = {}) {
     const panel = getCharacterPanel();
+    const creatorStylesReady = preloadPanelStylesheets('characters', 'creator', { priority: 'high' });
+    holdPanelUntilStyled(document.getElementById('sb_character_creator_panel'), creatorStylesReady);
     setCharacterPanelMenuType(panel, 'creator');
     setCharacterEditorEmptyState(false);
     setCharacterPersonaPanelVisible(false);

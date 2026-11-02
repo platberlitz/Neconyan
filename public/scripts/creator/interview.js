@@ -33,17 +33,19 @@ export function renderInterview(workspace, main) {
         const row = element('section', 'creator-review-item');
         row.append(element('h4', '', turn.speaker === 'character' ? draft.card.data.name || 'Character' : turn.speaker), element('p', 'creator-interview-text', turn.text));
         if (turn.speaker === 'character') {
-            row.append(button('Review as example', () => {
+            const turnActions = element('div', 'creator-actions');
+            turnActions.append(button('Review as example', () => {
                 const source = workspace.session.draft;
                 const example = interviewExample(source, turn.id);
                 workspace.proposal(creatorProposal(source, { mes_example: [source.card.data.mes_example, example].filter(Boolean).join('\n\n') }, 'Interview example'));
-            }), button('Review as greeting', () => workspace.proposal(creatorProposal(workspace.session.draft, { first_mes: turn.text }, 'Interview greeting'))));
+            }, false, 'creator-chip-btn'), button('Review as greeting', () => workspace.proposal(creatorProposal(workspace.session.draft, { first_mes: turn.text }, 'Interview greeting')), false, 'creator-chip-btn'));
+            row.append(turnActions);
         }
         transcript.append(row);
     }
     main.append(transcript);
     let question = '';
-    main.append(textField('Ask or direct the conversation', '', value => { question = value; }));
+    main.append(textField('Ask or direct the conversation', '', value => { question = value; }, { rows: 3 }));
     let controller;
     const cancel = button('Cancel reply', () => controller?.abort()); cancel.hidden = true;
     const ask = (assistant = null) => workspace.run(async () => {
@@ -65,22 +67,30 @@ export function renderInterview(workspace, main) {
             }, true);
         } finally { cancel.hidden = true; }
     });
-    main.append(button('Ask the character', () => ask(), true), cancel);
-    const assistants = element('details');
+    const askRow = element('div', 'creator-actions');
+    askRow.append(button('Ask the character', () => ask(), true), cancel);
+    main.append(askRow);
+    const assistants = element('details', 'creator-review-item');
     assistants.append(element('summary', '', 'Writing collaborators'));
     for (const assistant of draft.interview?.assistants ?? []) {
-        assistants.append(textField('Collaborator name', assistant.name, value => workspace.edit(next => { next.interview.assistants.find(item => item.id === assistant.id).name = value; }), { rows: 1 }),
-            textField('Collaborator approach', assistant.instructions, value => workspace.edit(next => { next.interview.assistants.find(item => item.id === assistant.id).instructions = value; })),
-            button(`Ask ${assistant.name || 'collaborator'}`, () => ask(workspace.session.draft.interview.assistants.find(item => item.id === assistant.id))),
-            button('Remove collaborator', () => workspace.edit(next => { next.interview.assistants = next.interview.assistants.filter(item => item.id !== assistant.id); }, true)));
+        const card = element('div', 'creator-subdetails-body');
+        card.append(textField('Collaborator name', assistant.name, value => workspace.edit(next => { next.interview.assistants.find(item => item.id === assistant.id).name = value; }), { rows: 1 }),
+            textField('Collaborator approach', assistant.instructions, value => workspace.edit(next => { next.interview.assistants.find(item => item.id === assistant.id).instructions = value; }), { rows: 2 }));
+        const collabActions = element('div', 'creator-actions');
+        collabActions.append(
+            button(`Ask ${assistant.name || 'collaborator'}`, () => ask(workspace.session.draft.interview.assistants.find(item => item.id === assistant.id)), false, 'creator-chip-btn'),
+            button('Remove collaborator', () => workspace.edit(next => { next.interview.assistants = next.interview.assistants.filter(item => item.id !== assistant.id); }, true), false, 'creator-chip-btn creator-danger-outline'),
+        );
+        card.append(collabActions);
+        assistants.append(card);
     }
     assistants.append(button('Add collaborator', () => workspace.edit(next => {
         next.interview ??= { turns: [], assistants: [] };
         if (next.interview.assistants.length >= 3) throw new Error('Use up to three collaborators.');
         next.interview.assistants.push({ id: crypto.randomUUID(), name: 'Writing partner', instructions: 'Ask useful questions about motives, continuity and voice.' });
-    }, true)));
+    }, true), false, 'creator-chip-btn'));
     main.append(assistants);
-    const clear = element('details');
-    clear.append(element('summary', '', 'Clear this interview'), element('p', '', 'Remove the draft conversation. Accepted examples and greetings stay in the card.'), button('Clear interview turns', () => workspace.edit(next => { if (next.interview) next.interview.turns = []; }, true)));
+    const clear = element('details', 'creator-review-item');
+    clear.append(element('summary', '', 'Clear this interview'), element('p', 'creator-muted', 'Remove the draft conversation. Accepted examples and greetings stay in the card.'), button('Clear interview turns', () => workspace.edit(next => { if (next.interview) next.interview.turns = []; }, true), false, 'creator-chip-btn creator-danger-outline'));
     main.append(clear);
 }

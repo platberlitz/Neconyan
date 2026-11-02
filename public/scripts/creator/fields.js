@@ -1,13 +1,14 @@
 /** DOM construction uses text nodes: card and model text are never trusted markup. */
 export function element(tag, className = '', text = '') {
     const node = document.createElement(tag);
-    node.className = className;
-    node.textContent = text;
+    if (className) node.className = className;
+    if (text) node.textContent = text;
     return node;
 }
 
-export function button(text, action, primary = false) {
-    const node = element('button', `menu_button${primary ? ' menu_button_primary' : ''}`, text);
+export function button(text, action, primary = false, extraClass = '') {
+    const cls = ['menu_button', primary ? 'menu_button_primary' : '', extraClass].filter(Boolean).join(' ');
+    const node = element('button', cls, text);
     node.type = 'button';
     node.addEventListener('click', action);
     return node;
@@ -29,13 +30,13 @@ export function expandField(input, label) {
         input.dispatchEvent(new Event('input', { bubbles: true }));
         update();
     });
-    const toolbar = element('div', 'creator-actions');
+    const toolbar = element('div', 'creator-actions creator-fullscreen-toolbar');
     for (const macro of ['{{char}}', '{{user}}', '{{poss}}', '{{charposs}}']) {
         const insert = button(macro, () => {
             editor.setRangeText(macro, editor.selectionStart, editor.selectionEnd, 'end');
             editor.dispatchEvent(new Event('input'));
             editor.focus();
-        });
+        }, false, 'creator-chip-btn');
         insert.title = macro.includes('poss') ? 'Requires MacroEnhanced and experimental macros. Configure pronouns in Macros & pronouns.' : 'Insert a literal macro.';
         toolbar.append(insert);
     }
@@ -49,12 +50,12 @@ export function expandField(input, label) {
         } catch {
             if (dialog.isConnected) count.textContent = 'Token count unavailable. Your text is unchanged.';
         } finally { tokens.disabled = false; }
-    });
-    toolbar.append(tokens);
+    }, false, 'creator-chip-btn');
+    toolbar.append(tokens, count);
     const close = () => dialog.close();
-    const header = element('header', 'creator-actions');
-    header.append(title, button('Done', close, true));
-    dialog.append(header, editor, toolbar, count);
+    const header = element('header', 'creator-actions creator-fullscreen-header');
+    header.append(title, button('Done', close, true, 'creator-chip-btn'));
+    dialog.append(header, editor, toolbar);
     // Keeping the modal inside the drawer also respects its outside-click policy.
     input.closest('#sb_character_creator_panel').append(dialog);
     dialog.addEventListener('close', () => {
@@ -74,26 +75,27 @@ export function expandField(input, label) {
 }
 
 /** Every text input except Display name gets the same fullscreen affordance. */
-export function textField(label, value, change, { name = false, rows = 5, hint = '' } = {}) {
-    const wrapper = element('div', 'creator-field');
+export function textField(label, value, change, { name = false, rows = 4, hint = '', placeholder = '', className = '' } = {}) {
+    const wrapper = element('div', ['creator-field', name || rows === 1 ? 'creator-field-compact' : '', className].filter(Boolean).join(' '));
     const heading = element('div', 'creator-field-heading');
     const input = element(name ? 'input' : 'textarea', 'text_pole');
     input.id = `creator-field-${crypto.randomUUID()}`;
     input.value = value ?? '';
     input.dataset.creatorText = name ? 'name' : 'expandable';
+    if (placeholder) input.placeholder = placeholder;
     if (name) input.type = 'text';
     else input.rows = rows;
     const title = element('label', '', label);
     title.htmlFor = input.id;
     heading.append(title);
     if (!name) {
-        const expand = button('Fullscreen', () => expandField(input, label));
+        const expand = button('Fullscreen', () => expandField(input, label), false, 'creator-chip-btn');
         expand.setAttribute('aria-label', `Expand ${label}`);
         heading.append(expand);
         input.addEventListener('dblclick', () => expandField(input, label));
     }
     input.addEventListener('input', () => change(input.value));
     wrapper.append(heading, input);
-    if (hint) wrapper.append(element('p', 'creator-muted', hint));
+    if (hint) wrapper.append(element('p', 'creator-muted creator-field-hint', hint));
     return wrapper;
 }

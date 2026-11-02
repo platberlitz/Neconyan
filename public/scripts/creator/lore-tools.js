@@ -26,25 +26,29 @@ export function acceptCreatorBulkLore(draft, proposal) {
 }
 
 export function renderCreatorLoreTools(workspace, panel, book) {
-    const tools = element('details', 'creator-review-item');
+    const tools = element('details', 'creator-review-item creator-subdetails');
     tools.append(element('summary', '', 'Check keys and bulk edit'));
     let sample = '', pattern = '', replacement = '';
-    tools.append(textField('Sample conversation for key check', sample, value => { sample = value; }));
+    tools.append(textField('Sample conversation for key check', sample, value => { sample = value; }, { rows: 2 }));
     const results = element('div');
     tools.append(button('Check literal keys', () => {
         const current = workspace.session.draft.books.find(item => item.id === book.id);
         results.replaceChildren(element('p', 'creator-muted', 'Advisory substring check only. Word boundaries, secondary keys, regular-expression keys, budgets, recursion, probability, vectors and timed effects are not simulated.'));
         for (const row of inspectCreatorKeys(current, sample)) results.append(element('p', '', `${row.title}: ${row.reason}${row.matched.length ? ` (${row.matched.join(', ')})` : ''}`));
-    }), results);
+    }, false, 'creator-chip-btn'), results);
     tools.append(element('h4', '', 'Bulk changes'));
     const selected = new Set();
+    const choiceGrid = element('div', 'creator-choice-grid');
     for (const [uid, entry] of Object.entries(book.data.entries)) {
-        const label = element('label', 'creator-bulk-choice');
+        const label = element('label', 'creator-choice-pill');
         const check = element('input'); check.type = 'checkbox';
         check.addEventListener('change', () => check.checked ? selected.add(uid) : selected.delete(uid));
-        label.append(check, document.createTextNode(entry.comment || `Entry ${uid}`)); tools.append(label);
+        label.append(check, document.createTextNode(entry.comment || `Entry ${uid}`)); choiceGrid.append(label);
     }
-    tools.append(textField('Find regular expression', pattern, value => { pattern = value; }, { rows: 2 }), textField('Replacement text', replacement, value => { replacement = value; }, { rows: 3 }));
+    tools.append(choiceGrid);
+    const bulkFields = element('div', 'creator-form-grid');
+    bulkFields.append(textField('Find regular expression', pattern, value => { pattern = value; }, { rows: 2 }), textField('Replacement text', replacement, value => { replacement = value; }, { rows: 2 }));
+    tools.append(bulkFields);
     const review = element('div');
     const preview = kind => workspace.run(async () => {
         if (!selected.size) throw new Error('Choose the entries to change.');
@@ -70,6 +74,8 @@ export function renderCreatorLoreTools(workspace, panel, book) {
             workspace.change(value => acceptCreatorBulkLore(value, proposal), true);
         }, true));
     });
-    tools.append(button('Preview replacement', () => preview('replace')), button('Preview enable', () => preview('enable')), button('Preview disable', () => preview('disable')), review);
+    const bulkActions = element('div', 'creator-actions');
+    bulkActions.append(button('Preview replacement', () => preview('replace'), false, 'creator-chip-btn'), button('Preview enable', () => preview('enable'), false, 'creator-chip-btn'), button('Preview disable', () => preview('disable'), false, 'creator-chip-btn'));
+    tools.append(bulkActions, review);
     panel.append(tools);
 }

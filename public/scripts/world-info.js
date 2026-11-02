@@ -2294,7 +2294,9 @@ export async function updateWorldInfoList() {
             data: worldInfoEditor?.data ?? null,
         });
         if (typeof CustomEvent === 'function') globalThis.dispatchEvent?.(new CustomEvent('neconyan:lorebooks-updated'));
+        return true;
     }
+    return false;
 }
 
 async function hideWorldEditor() {
@@ -5002,7 +5004,7 @@ function mergeWorldInfoData(base, draft, latest) {
     return result;
 }
 
-function invalidateWorldInfoCache(name) {
+export function invalidateWorldInfoCache(name) {
     worldInfoCache.delete(name);
     worldInfoCacheVersions.set(name, {});
 }

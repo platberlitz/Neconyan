@@ -63,5 +63,14 @@ for (const phone of [false, true]) {
         await creator.getByRole('button', { name: 'Creator Mira', exact: true }).first().click();
         await creator.getByRole('button', { name: 'Dossier', exact: true }).click();
         await expect(creator.getByLabel('Character dossier', { exact: true })).toHaveValue('Private working notes with {{poss}} intact.');
+        await creator.getByRole('button', { name: 'Drafts', exact: true }).click();
+        await creator.getByRole('button', { name: 'Discard Creator Mira', exact: true }).click();
+        await creator.getByRole('button', { name: 'Keep draft', exact: true }).click();
+        await expect(creator.getByRole('button', { name: 'Creator Mira', exact: true }).first()).toBeVisible();
+        await creator.getByRole('button', { name: 'Discard Creator Mira', exact: true }).click();
+        await creator.getByRole('button', { name: 'Confirm discard', exact: true }).click();
+        await expect(creator.getByRole('status')).toHaveText('Draft discarded. Published library items were not changed.');
+        await expect(creator.locator('.creator-draft-list').getByRole('button', { name: 'Creator Mira', exact: true })).toHaveCount(0);
+        await expect(creator.locator('.creator-library-grid').getByRole('button', { name: 'Creator Mira', exact: true })).toBeVisible();
     });
 }

@@ -19,10 +19,11 @@ export function renderPrettyHtml(workspace, main) {
     const draft = workspace.session.draft;
     main.append(element('h3', '', 'Pretty HTML, with a matching text format'), element('p', 'creator-muted', 'Create character-scoped display rules. Your existing regex permissions still decide whether they run in chat. Preview keeps macros literal and never changes chat variables.'));
     let instruction = '';
-    main.append(textField('Describe the display you want', '', value => { instruction = value; }, { hint: 'For example: a compact status card with trust, stamina and the current quest, readable on a phone.' }));
+    main.append(textField('Describe the display you want', '', value => { instruction = value; }, { rows: 2, hint: 'For example: a compact status card with trust, stamina and the current quest, readable on a phone.' }));
     let controller;
     const cancel = button('Cancel design', () => controller?.abort()); cancel.hidden = true;
-    main.append(button('Design a display', () => workspace.run(async () => {
+    const designBar = element('div', 'creator-actions');
+    designBar.append(button('Design a display', () => workspace.run(async () => {
         if (!instruction.trim()) throw new Error('Describe the display first.');
         const source = structuredClone(workspace.session.draft);
         controller = new AbortController(); cancel.hidden = false;
@@ -36,12 +37,19 @@ export function renderPrettyHtml(workspace, main) {
             workspace.edit(next => { next.displayKit = kit; }, true);
         } finally { cancel.hidden = true; }
     }), true), cancel);
-    const kit = draft.displayKit ?? { name: 'Character status', pattern: '/\\[STATUS: ([^\\]]+)\\]/g', replacement: '<aside style="padding:1em;border:1px solid currentColor;border-radius:12px">$1</aside>', sample: '[STATUS: Ready to explore]', instructions: 'When status changes, append [STATUS: a short factual status].' };
-    for (const [key, label] of [['name', 'Display title'], ['pattern', 'Find pattern'], ['replacement', 'HTML replacement'], ['sample', 'Example raw output'], ['instructions', 'Output format instructions']]) {
-        main.append(textField(label, kit[key], value => { kit[key] = value; workspace.edit(next => { next.displayKit = structuredClone(kit); }); }));
+    main.append(designBar);
+    const kit = structuredClone(draft.displayKit ?? { name: 'Character status', pattern: '/\\[STATUS: ([^\\]]+)\\]/g', replacement: '<aside style="padding:1em;border:1px solid currentColor;border-radius:12px">$1</aside>', sample: '[STATUS: Ready to explore]', instructions: 'When status changes, append [STATUS: a short factual status].' });
+    const topGrid = element('div', 'creator-form-grid');
+    for (const [key, label] of [['name', 'Display title'], ['pattern', 'Find pattern']]) {
+        topGrid.append(textField(label, kit[key], value => { kit[key] = value; workspace.edit(next => { next.displayKit = structuredClone(kit); }); }, { rows: 1, className: key === 'pattern' ? 'creator-mono-field' : '' }));
+    }
+    main.append(topGrid);
+    for (const [key, label] of [['replacement', 'HTML replacement'], ['sample', 'Example raw output'], ['instructions', 'Output format instructions']]) {
+        main.append(textField(label, kit[key], value => { kit[key] = value; workspace.edit(next => { next.displayKit = structuredClone(kit); }); }, { rows: 2, className: key === 'replacement' ? 'creator-mono-field' : '' }));
     }
     const preview = element('section', 'creator-display-preview');
-    main.append(button('Preview display', () => workspace.run(async () => {
+    const actionRow = element('div', 'creator-actions');
+    actionRow.append(button('Preview display', () => workspace.run(async () => {
         const result = await previewCreatorRegex(kit.pattern, kit.replacement, kit.sample);
         preview.replaceChildren(element('p', '', `${result.matches} matches. Static preview: macros, trim strings and live chat settings are not evaluated.`));
         const frame = element('iframe', 'creator-preview-frame');
@@ -49,8 +57,7 @@ export function renderPrettyHtml(workspace, main) {
         const html = sanitizeMessageHtml(result.output, {}, workspace.session.draft.card);
         frame.srcdoc = `<html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:"></head><body><div class="mes_text">${html}</div></body></html>`;
         preview.append(frame, element('pre', '', result.output));
-    })), preview);
-    main.append(button('Add display to draft', () => workspace.run(async () => {
+    })), button('Add display to draft', () => workspace.run(async () => {
         const result = await previewCreatorRegex(kit.pattern, kit.replacement, kit.sample);
         if (!result.matches) throw new Error('The pattern must match your sample before adding this display.');
         if (workspace.session.draft.locks.includes('post_history_instructions')) throw new Error('Unlock post-history instructions before adding the matching output format.');
@@ -62,11 +69,13 @@ export function renderPrettyHtml(workspace, main) {
         }, true);
         workspace.status('Display and output instructions added to the draft. Review & save publishes them; chat regex permissions still apply.');
     }), true));
+    main.append(actionRow, preview);
     for (const script of draft.card.data.extensions?.regex_scripts ?? []) {
         const row = element('section', 'creator-fact');
         row.append(element('h4', '', script.scriptName || 'Unnamed display'));
         workspace.jsonField(row, 'Existing display settings', script, value => {
             if (!value || typeof value.findRegex !== 'string' || typeof value.replaceString !== 'string') throw new Error('Keep a find pattern and replacement string.');
+            if (value.id !== script.id) throw new Error('Keep the existing display ID so later edits reach the same rule.');
             workspace.edit(next => {
                 const index = next.card.data.extensions.regex_scripts.findIndex(item => item.id === script.id);
                 if (index >= 0) next.card.data.extensions.regex_scripts[index] = value;

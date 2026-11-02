@@ -1,8 +1,8 @@
 import express from 'express';
 import { roleplayAccountBase, roleplayAccountStamp, roleplayError, withRoleplayAccount } from '../roleplay-store.js';
-import { listCreatorDrafts, getCreatorDraft, saveCreatorDraft, deleteCreatorDraft } from '../creator/store.js';
+import { listCreatorDrafts, getCreatorDraft, saveCreatorDraft } from '../creator/store.js';
 import { creatorCharacterSource, creatorBookSource } from '../creator/resources.js';
-import { publishCreatorDraft, getCreatorReceipt, getCreatorPublication } from '../creator/publish.js';
+import { publishCreatorDraft, getCreatorReceipt, getCreatorPublication, acknowledgeCreatorPublication, recoverCreatorPublication, discardCreatorDraft } from '../creator/publish.js';
 import { previewCreatorMacros } from '../creator/macro-preview.js';
 
 export const router = express.Router();
@@ -26,16 +26,18 @@ router.post('/list', route(lease => ({ drafts: listCreatorDrafts(lease) })));
 router.post('/get', route((lease, body) => {
     const item = getCreatorDraft(lease, body.id);
     const publication = getCreatorPublication(lease, body.id);
-    return { ...item, publication: publication?.expectedRevision === item.revision ? publication : null };
+    return { ...item, publication: publication?.acknowledged ? null : publication };
 }));
 router.post('/save', route((lease, body) => saveCreatorDraft(lease, body.draft, body.expectedRevision)));
-router.post('/delete', route((lease, body) => deleteCreatorDraft(lease, body.id, body.expectedRevision)));
+router.post('/delete', route((lease, body) => discardCreatorDraft(lease, body)));
 router.post('/character', route((lease, body) => creatorCharacterSource(lease, body.avatar)));
 router.post('/book', route((lease, body) => {
     const { name, data, revision } = creatorBookSource(lease, body.name);
     return { name, data, revision };
 }));
 router.post('/publish', route((lease, body) => publishCreatorDraft(lease, body)));
+router.post('/acknowledge', route((lease, body) => acknowledgeCreatorPublication(lease, body)));
+router.post('/recover', route((lease, body) => recoverCreatorPublication(lease, body)));
 router.post('/receipt', route((lease, body) => {
     const publication = body.id ? getCreatorPublication(lease, body.id) : null;
     const operationId = publication?.expectedRevision === body.expectedRevision && publication?.copy === body.copy ? publication.operationId : body.operationId;
