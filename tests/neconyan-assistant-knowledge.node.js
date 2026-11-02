@@ -118,6 +118,30 @@ test('real help questions retrieve the appropriate topic', () => {
     ]) assert.ok(ids(question).includes(expected), `${question}: ${ids(question)}`);
 });
 
+test('prepared references preserve cold-search ordering across different questions and follow-ups', () => {
+    const conversations = [
+        [user('How do I change dialogue colours?')],
+        [user('Do Companion windows open in Conversation Mode?')],
+        [user('How do I change dialogue colours?'), user('Only for this chat?')],
+        [user('Dialogue Colors'), user('Configure TTS voices')],
+        [user('unicorn quantum confetti')],
+    ];
+    const expected = conversations.map(messages => selectAssistantKnowledge([...topics], messages).map(topic => topic.id));
+    for (const indexes of [[0, 1, 2, 3, 4], [4, 3, 2, 1, 0]]) {
+        for (const index of indexes) {
+            assert.deepEqual(selectAssistantKnowledge(topics, conversations[index]).map(topic => topic.id), expected[index]);
+        }
+    }
+});
+
+test('caller-owned references can change between searches', () => {
+    const references = [{ id: 'old', title: 'Astronomy', keys: ['astronomy'], content: 'Astronomy stars.' }];
+    assert.equal(selectAssistantKnowledge(references, [user('astronomy')])[0]?.id, 'old');
+    references[0] = { id: 'new', title: 'Botany', keys: ['botany'], content: 'Botany plants.' };
+    assert.equal(selectAssistantKnowledge(references, [user('botany')])[0]?.id, 'new');
+    assert.deepEqual(selectAssistantKnowledge(references, [user('astronomy')]), []);
+});
+
 test('every best-matching reference section fits the default allowance intact', async () => {
     for (const topic of topics) {
         const messages = [user(topic.title)];

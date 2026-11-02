@@ -8,6 +8,7 @@ const assistantIds = new Set([
 const stopWords = new Set('a an the i me my you your we our they their it its is are was were be been do does did how what where when why which can could would should will to of for from in on at by with and or but if then than as that this these those there here have has had not just please want need change use get make only also about tell help'.split(' '));
 const spelling = { colour: 'color', colours: 'colors', colouring: 'coloring', colourize: 'colorize', dialogue: 'dialog', dialogues: 'dialog', dialog: 'dialog', grey: 'gray', favourite: 'favorite', favourites: 'favorites', pawthfinder: 'pathfinder' };
 const encoder = new TextEncoder();
+const preparedTopicsCache = new WeakMap();
 
 export function isNeconyanAssistant(character) {
     return assistantIds.has(character?.data?.extensions?.neconyan_assistant?.id ?? character?.extensions?.neconyan_assistant?.id);
@@ -19,6 +20,25 @@ function words(text) {
 
 function searchable(text) {
     return words(text).filter(word => !stopWords.has(word)).join(' ');
+}
+
+function prepareTopics(topics) {
+    let cached = preparedTopicsCache.get(topics);
+    if (!cached) {
+        cached = topics.map(topic => {
+            const searchText = searchable([topic.title, ...topic.keys].join(' '));
+            return {
+                topic,
+                text: searchable(topic.content),
+                searchText,
+                searchWords: searchText.split(' ').filter(Boolean),
+                keyPhrases: topic.keys.map(key => ' ' + words(key).join(' ') + ' '),
+            };
+        });
+        // Shipped references are immutable; caller-owned lists may change between searches.
+        if (Object.isFrozen(topics)) preparedTopicsCache.set(topics, cached);
+    }
+    return cached;
 }
 
 /** A conservative fallback for routes without a tokenizer for the selected profile. */
@@ -42,11 +62,7 @@ export function selectAssistantKnowledge(topics, messages) {
     if (/\b(it|that|this|those|these|same|also|only|instead|both|second|first)\b/i.test(latest)) {
         turns.slice(0, -1).reverse().forEach((text, index) => queries.push({ text, weight: 0.65 / (index + 1) }));
     }
-    const documents = topics.map(topic => ({
-        topic,
-        text: searchable(topic.content),
-        searchText: searchable([topic.title, ...topic.keys].join(' ')),
-    }));
+    const documents = prepareTopics(topics);
     const scores = new Map();
     for (const { text, weight } of queries) {
         const query = searchable(text);
@@ -55,9 +71,9 @@ export function selectAssistantKnowledge(topics, messages) {
         const phrase = ' ' + words(text).join(' ') + ' ';
         for (const { document, score } of lexicalSearch(documents, query, documents.length)) {
             const topic = document.topic;
-            const anchorMatches = document.searchText.split(' ').filter(word => queryWords.has(word));
+            const anchorMatches = document.searchWords.filter(word => queryWords.has(word));
             if (!anchorMatches.length) continue;
-            const exact = topic.keys.some(key => phrase.includes(' ' + words(key).join(' ') + ' '));
+            const exact = document.keyPhrases.some(keyPhrase => phrase.includes(keyPhrase));
             const value = (score + (exact ? 12 : 0) + new Set(anchorMatches).size * 2) * weight;
             scores.set(topic.id, (scores.get(topic.id) || 0) + value);
         }
