@@ -1,5 +1,6 @@
 import { createBubblesBottomBoundary } from './bubbles-bottom-boundary.js';
 import { initChatWidgets } from './neconyan-chat-widgets.js';
+import { initMobileSwipeRails } from './mobile-swipe-rails.js';
 import { finishUiMotion, getUiDrawerEdge, getUiSlideOptions, isUiClosing, revealChat, revealUi, setUiVisibility } from './ui-motion.js';
 import { DEFAULT_SCROLL_EDGE_SETTLE_DELAYS, jumpScrollElementToEdge } from './chat-scroll-edges.js';
 import { getChatPickerTitle } from './chat-picker-model.js';
@@ -519,7 +520,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261102-chat-previews';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261102-swipe-cues';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -21225,6 +21226,7 @@ function initAll() {
     forceDrawerState(rightShellRoot, false, getShellConfig('right').hostIconSelector);
     buildShell('left');
     buildShell('right');
+    initMobileSwipeRails({ leftLabel: t`Scroll left to see more options`, rightLabel: t`Scroll right to see more options` });
     buildMobileNav();
     bindNeconyanModeStateEvents();
     buildMobileChatTools();

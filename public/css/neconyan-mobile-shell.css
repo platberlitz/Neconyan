@@ -1,6 +1,116 @@
 /* Neconyan mobile shell foundation: final sheet contract for modal drawers.
  * Keep this at the end of the shell sheet so it beats older mobile drawer rules. */
 @media screen and (max-width: 768px) {
+    /* Overflow hints are siblings, never extra tools inside the scrolling strip. */
+    .sb-mobile-swipe-rail {
+        --sb-rail-fade-left: 0px;
+        --sb-rail-fade-right: 0px;
+        mask-image: linear-gradient(to right, transparent, #000 var(--sb-rail-fade-left), #000 calc(100% - var(--sb-rail-fade-right)), transparent);
+        touch-action: pan-x;
+    }
+    .sb-mobile-swipe-rail.sb-can-scroll-left { --sb-rail-fade-left: 22px; }
+    .sb-mobile-swipe-rail.sb-can-scroll-right { --sb-rail-fade-right: 22px; }
+    #send_form.compact #leftSendForm.sb-can-scroll-left { --sb-rail-fade-left: 10px; }
+    #send_form.compact #leftSendForm.sb-can-scroll-right { --sb-rail-fade-right: 10px; }
+
+    .sb-shell-nav-wrapper:has(> .sb-mobile-rail-chrome)::before,
+    .sb-shell-nav-wrapper:has(> .sb-mobile-rail-chrome)::after {
+        content: none;
+    }
+
+    body .sb-mobile-rail-chrome {
+        position: absolute;
+        z-index: 11;
+        pointer-events: none;
+        direction: ltr;
+        contain: layout style;
+    }
+    body .sb-mobile-rail-chrome[hidden],
+    body .sb-mobile-rail-chrome .sb-mobile-rail-arrow[hidden] {
+        display: none;
+    }
+    body .sb-mobile-rail-chrome .sb-mobile-rail-arrow {
+        position: absolute;
+        top: 50%;
+        translate: 0 -50%;
+        display: grid;
+        place-items: center;
+        box-sizing: border-box;
+        width: 44px;
+        min-width: 0;
+        max-width: none;
+        height: min(100%, 44px);
+        min-height: 0;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--neco-on-accent);
+        box-shadow: none;
+        cursor: pointer;
+        pointer-events: auto;
+        touch-action: pan-x;
+        font: 700 22px/1 var(--mainFontFamily, sans-serif);
+        text-shadow: none;
+    }
+    body .sb-mobile-rail-arrow > span {
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 28px;
+        border: 1px solid var(--neco-ginger);
+        border-radius: 999px;
+        background: var(--neco-ginger);
+        color: var(--neco-on-accent);
+    }
+    body .sb-mobile-rail-arrow:hover > span,
+    body .sb-mobile-rail-arrow:active > span { background: var(--neco-ginger-hover); }
+    body .sb-mobile-rail-arrow:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 1px; }
+    body .sb-mobile-rail-left { left: 0; justify-items: start; }
+    body .sb-mobile-rail-right { right: 0; justify-items: end; }
+    body .sb-mobile-rail-compact .sb-mobile-rail-arrow {
+        top: auto;
+        bottom: -8px;
+        translate: none;
+        width: 16px;
+        height: 20px;
+        align-items: end;
+    }
+    body .sb-mobile-rail-compact .sb-mobile-rail-arrow > span {
+        width: 12px;
+        height: 12px;
+        border: 0;
+        background: transparent;
+        color: var(--neco-ink);
+        font-size: 16px;
+    }
+    body .sb-mobile-rail-compact .sb-mobile-rail-track {
+        bottom: -5px;
+        left: 16px;
+        width: calc(100% - 32px);
+        height: 2px;
+        opacity: 0.65;
+    }
+    body .sb-mobile-rail-track {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 2px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--neco-ginger) 20%, transparent);
+    }
+    body .sb-mobile-rail-thumb {
+        position: absolute;
+        height: 100%;
+        width: var(--sb-rail-thumb-width);
+        left: var(--sb-rail-thumb-left);
+        border-radius: inherit;
+        background: var(--neco-ginger);
+    }
+
     /* iOS can reserve the status bar itself and report a zero top safe area.
        Keep this sampling box taller than WebKit's 10px thin-border threshold,
        above the paper texture. Empty text clipping preserves its computed colour
@@ -1613,14 +1723,6 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         padding: 18px 14px 6px;
         border-right: 0;
         border-bottom: 1px solid color-mix(in srgb, var(--sb-shell-border) 80%, transparent);
-    }
-
-    .sb-shell-nav-wrapper.sb-can-scroll-left .sb-shell-nav {
-        padding-left: 54px;
-    }
-
-    .sb-shell-nav-wrapper.sb-can-scroll-right .sb-shell-nav {
-        padding-right: 54px;
     }
 
     .sb-shell-nav-scroll {
