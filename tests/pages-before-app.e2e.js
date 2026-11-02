@@ -672,15 +672,18 @@ test.describe('S3 whitelist page in basic-auth mode', () => {
     });
     test.afterAll(async () => { await app?.stop(); });
 
-    test('S3 the /login redirect of basic-auth mode ends on the whitelist page', async ({ browser }) => {
-        const { context, page, response, requests } = await visit(browser, app.url + '/', { locale: 'de-DE' });
-        expect(page.url()).toBe(app.url + '/login');
-        expect(response.status()).toBe(403);
-        expect(await pageLang(page)).toBe('de-de');
-        expect(await page.title()).toBe(expected('de-de', KEYS.forbidden));
-        expect(await bodyText(page)).toContain(squash(expected('de-de', KEYS.connection, ['127.0.0.1'])));
-        expect(requests.filter(request => !request.endsWith('/login') && !request.endsWith('/'))).toEqual([]);
-        await context.close();
+    test('S3 basic-auth mode blocks root and login before any authentication redirect', async ({ browser }) => {
+        for (const pathname of ['/', '/login']) {
+            const url = app.url + pathname;
+            const { context, page, response, requests } = await visit(browser, url, { locale: 'de-DE' });
+            expect(page.url()).toBe(url);
+            expect(response.status()).toBe(403);
+            expect(await pageLang(page)).toBe('de-de');
+            expect(await page.title()).toBe(expected('de-de', KEYS.forbidden));
+            expect(await bodyText(page)).toContain(squash(expected('de-de', KEYS.connection, ['127.0.0.1'])));
+            expect(requests).toEqual([url]);
+            await context.close();
+        }
     });
 });
 

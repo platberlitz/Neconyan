@@ -87,6 +87,8 @@ for (const phone of [false, true]) {
         const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
             saved.power_user.reply_generation_location = 'server';
             saved.power_user.continue_on_send = false;
+            // Count only the reply request, not the separate six-message naming task.
+            saved.power_user.auto_label_chat = false;
             saved.oai_settings.stream_openai = true;
             saved.oai_settings.show_thoughts = true;
             saved.extension_settings.inChatAgents = { globalSettings: { enabled: false } };

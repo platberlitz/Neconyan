@@ -267,6 +267,13 @@ const PORTUGUESE_MARK = '«pt» ';
 // browser that behaves differently fails loudly). The route handler cannot see the Accept-Language header, so the
 // header is asserted by the server tests in tests/pages-before-app.e2e.js.
 test.describe('E3 the loader follows ordinary browser language settings', () => {
+    test.beforeAll(async () => {
+        // Cold Edge detection can take 40 seconds on CI. Charge this one-time
+        // browser setup to the hook, not the first language behaviour check.
+        test.setTimeout(120_000);
+        await profileChannels();
+    });
+
     test('C8-E3a a regional or bare browser language shows the language\'s dictionary', async ({ browser }) => {
         const austrian = await openE1(browser, { locale: 'de-AT' });
         await expect(austrian.page.locator('#heading')).toHaveText(MARK + 'Heading');
@@ -282,7 +289,7 @@ test.describe('E3 the loader follows ordinary browser language settings', () => 
     });
 
     test('C8-E3b a browser whose language list is de, en-US, en (plain German at the top of the Languages settings) shows German', async ({ browser }) => {
-        // CI's first Edge launch took 21 seconds. Allow for multiple browser processes,
+        // Allow for the two real browser profiles after the one-time channel probe,
         // while retaining the normal assertion deadlines for language behaviour.
         test.setTimeout(60_000);
         for (const channel of await profileChannels()) {
