@@ -1,18 +1,51 @@
-import { EXTENSION_LABEL, EXTENSION_NAME, TAB, TAB_LABEL, TAB_META } from '../constants.js';
-import { button, element, replace } from '../dom.js';
+import { EXTENSION_LABEL, EXTENSION_NAME, TAB, TAB_LABEL, TAB_META, TAB_ORDER } from '../constants.js';
+import { button, element, emptyState, replace } from '../dom.js';
 import { hostT } from '../host.js';
 import { createLedger } from '../ledger.js';
-import { createAbTab } from './ab-tab.js';
-import { createCasesTab } from './cases-tab.js';
-import { createDiffTab } from './diff-tab.js';
-import { createExperimentTab } from './experiment-tab.js';
-import { createLedgerTab } from './ledger-tab.js';
-import { createPresetsTab } from './presets-tab.js';
-import { createPromptsTab } from './prompts-tab.js';
-import { createRunTab } from './run-tab.js';
-import { createScenesTab } from './scenes-tab.js';
-import { createSettingsTab } from './settings-tab.js';
 import { createWorkbench } from './workbench.js';
+
+let tabModulesPromise = null;
+
+function loadTabModules() {
+    tabModulesPromise ??= Promise.all([
+        import('./ab-tab.js'),
+        import('./cases-tab.js'),
+        import('./diff-tab.js'),
+        import('./experiment-tab.js'),
+        import('./ledger-tab.js'),
+        import('./presets-tab.js'),
+        import('./prompts-tab.js'),
+        import('./run-tab.js'),
+        import('./scenes-tab.js'),
+        import('./settings-tab.js'),
+    ]).then(([
+        { createAbTab },
+        { createCasesTab },
+        { createDiffTab },
+        { createExperimentTab },
+        { createLedgerTab },
+        { createPresetsTab },
+        { createPromptsTab },
+        { createRunTab },
+        { createScenesTab },
+        { createSettingsTab },
+    ]) => ({
+        createAbTab,
+        createCasesTab,
+        createDiffTab,
+        createExperimentTab,
+        createLedgerTab,
+        createPresetsTab,
+        createPromptsTab,
+        createRunTab,
+        createScenesTab,
+        createSettingsTab,
+    })).catch((error) => {
+        tabModulesPromise = null;
+        throw error;
+    });
+    return tabModulesPromise;
+}
 
 const TOKEN_SPEND_TAB_LABELS = Object.entries(TAB_META)
     .filter(([, meta]) => meta.sends)
@@ -146,85 +179,181 @@ export function mountRuntimeUi({ signal = null } = {}) {
         onStateChange: updateDrawer,
     });
 
-    const runTab = createRunTab({
-        onRunFinished: () => {
-            workbench.refresh('run-finished');
-            diffTab.refresh();
-            abTab.refresh();
-        },
-    });
-    const casesTab = createCasesTab({
-        onChanged: () => {
-            runTab.refresh();
-            workbench.refreshReadout();
-        },
-        onQuickRun: (testCase) => {
-            if (workbench.getState().availability?.ok === false) {
-                return;
-            }
-            const suiteId = testCase.suiteId ?? document.querySelector(
-                '#sbpl-panel .sbpl-cases-tab > .sbpl-controls select',
-            )?.value ?? '';
-            workbench.showTab(TAB.RUN);
-            runTab.runOne(testCase, suiteId);
-        },
-    });
-    const promptsTab = createPromptsTab({
-        onChanged: () => {
-            presetsTab.refresh();
-            experimentTab.refresh();
-            workbench.refreshReadout();
-        },
-    });
-    const presetsTab = createPresetsTab({
-        onChanged: () => {
-            casesTab.refresh();
-            promptsTab.refresh();
-            workbench.refreshReadout();
-        },
-        onPromptSaved: () => {
-            promptsTab.refresh();
-            experimentTab.refresh();
-        },
-    });
-    const diffTab = createDiffTab();
-    const experimentTab = createExperimentTab();
-    const abTab = createAbTab();
-    const scenesTab = createScenesTab();
+    let tabsRegistered = false;
+    let tabsLoadingPromise = null;
+    let ledgerTab = null;
+
     const ledger = createLedger({
         onRecorded: () => {
-            ledgerTab.refresh();
+            ledgerTab?.refresh();
             workbench.refreshReadout();
         },
     });
-    const ledgerTab = createLedgerTab({ ledger });
     ledger.sync();
-    workbench.registerTab(TAB.CASES, casesTab);
-    workbench.registerTab(TAB.PRESETS, presetsTab);
-    workbench.registerTab(TAB.PROMPTS, promptsTab);
-    workbench.registerTab(TAB.RUN, runTab);
-    workbench.registerTab(TAB.LEDGER, ledgerTab);
-    workbench.registerTab(TAB.DIFF, diffTab);
-    workbench.registerTab(TAB.EXPERIMENT, experimentTab);
-    const settingsTab = createSettingsTab({
-        onChanged: () => {
-            casesTab.refresh();
-            runTab.refresh();
-            diffTab.refresh();
-        },
-    });
-    workbench.registerTab(TAB.AB, abTab);
-    workbench.registerTab(TAB.SCENES, scenesTab);
-    workbench.registerTab(TAB.SETTINGS, settingsTab);
+
+    function registerPlaceholderTabs(title, body) {
+        for (const id of TAB_ORDER) {
+            workbench.registerTab(id, {
+                render: () => emptyState(title, body),
+            });
+        }
+    }
+
+    registerPlaceholderTabs(
+        'Loading Prompting Lab...',
+        'Preparing the prompt testing tools.',
+    );
+
+    function ensureTabsLoaded() {
+        if (tabsRegistered || disposed) {
+            return Promise.resolve();
+        }
+        if (!tabsLoadingPromise) {
+            registerPlaceholderTabs(
+                'Loading Prompting Lab...',
+                'Preparing the prompt testing tools.',
+            );
+        }
+        tabsLoadingPromise ??= loadTabModules().then(({
+            createAbTab,
+            createCasesTab,
+            createDiffTab,
+            createExperimentTab,
+            createLedgerTab,
+            createPresetsTab,
+            createPromptsTab,
+            createRunTab,
+            createScenesTab,
+            createSettingsTab,
+        }) => {
+            if (disposed || tabsRegistered) {
+                return;
+            }
+            const createdControllers = [];
+            try {
+                let diffTab;
+                let abTab;
+                let experimentTab;
+                let promptsTab;
+                let presetsTab;
+                const runTab = createRunTab({
+                    onRunFinished: () => {
+                        workbench.refresh('run-finished');
+                        diffTab.refresh();
+                        abTab.refresh();
+                    },
+                });
+                createdControllers.push(runTab);
+                const casesTab = createCasesTab({
+                    onChanged: () => {
+                        runTab.refresh();
+                        workbench.refreshReadout();
+                    },
+                    onQuickRun: (testCase) => {
+                        if (workbench.getState().availability?.ok === false) {
+                            return;
+                        }
+                        const suiteId = testCase.suiteId ?? document.querySelector(
+                            '#sbpl-panel .sbpl-cases-tab > .sbpl-controls select',
+                        )?.value ?? '';
+                        workbench.showTab(TAB.RUN);
+                        runTab.runOne(testCase, suiteId);
+                    },
+                });
+                createdControllers.push(casesTab);
+                promptsTab = createPromptsTab({
+                    onChanged: () => {
+                        presetsTab.refresh();
+                        experimentTab.refresh();
+                        workbench.refreshReadout();
+                    },
+                });
+                createdControllers.push(promptsTab);
+                presetsTab = createPresetsTab({
+                    onChanged: () => {
+                        casesTab.refresh();
+                        promptsTab.refresh();
+                        workbench.refreshReadout();
+                    },
+                    onPromptSaved: () => {
+                        promptsTab.refresh();
+                        experimentTab.refresh();
+                    },
+                });
+                createdControllers.push(presetsTab);
+                diffTab = createDiffTab();
+                createdControllers.push(diffTab);
+                experimentTab = createExperimentTab();
+                createdControllers.push(experimentTab);
+                abTab = createAbTab();
+                createdControllers.push(abTab);
+                const scenesTab = createScenesTab();
+                createdControllers.push(scenesTab);
+                const nextLedgerTab = createLedgerTab({ ledger });
+                createdControllers.push(nextLedgerTab);
+                const settingsTab = createSettingsTab({
+                    onChanged: () => {
+                        casesTab.refresh();
+                        runTab.refresh();
+                        diffTab.refresh();
+                    },
+                });
+                createdControllers.push(settingsTab);
+                workbench.registerTab(TAB.CASES, casesTab);
+                workbench.registerTab(TAB.PRESETS, presetsTab);
+                workbench.registerTab(TAB.PROMPTS, promptsTab);
+                workbench.registerTab(TAB.RUN, runTab);
+                workbench.registerTab(TAB.LEDGER, nextLedgerTab);
+                workbench.registerTab(TAB.DIFF, diffTab);
+                workbench.registerTab(TAB.EXPERIMENT, experimentTab);
+                workbench.registerTab(TAB.AB, abTab);
+                workbench.registerTab(TAB.SCENES, scenesTab);
+                workbench.registerTab(TAB.SETTINGS, settingsTab);
+                ledgerTab = nextLedgerTab;
+                tabsRegistered = true;
+            } catch (error) {
+                ledgerTab = null;
+                for (const controller of createdControllers) {
+                    try {
+                        controller?.dispose?.();
+                    } catch {
+                        // Best-effort cleanup of partially created tab controllers.
+                    }
+                }
+                throw error;
+            }
+            if (pendingRefreshReason && isWorkbenchVisible()) {
+                const reason = pendingRefreshReason;
+                pendingRefreshReason = null;
+                workbench.refresh(reason);
+            }
+        }).catch((error) => {
+            tabsLoadingPromise = null;
+            if (!disposed) {
+                registerPlaceholderTabs(
+                    'Prompting Lab could not load.',
+                    'Reload Neconyan and try opening Prompting Lab again.',
+                );
+                console.error('Prompting Lab tabs could not load.', error);
+            }
+        });
+        return tabsLoadingPromise;
+    }
 
     function syncDrawerAccessibility() {
         const expanded = Boolean(drawerIcon && !drawerIcon.classList.contains('down'));
         drawerToggle?.setAttribute('aria-expanded', String(expanded));
         drawerContent?.setAttribute('aria-hidden', String(!expanded));
-        if (expanded && pendingRefreshReason) {
-            const reason = pendingRefreshReason;
-            pendingRefreshReason = null;
-            workbench.refresh(reason);
+        if (expanded && !disposed) {
+            if (workbenchMount && (!page || page.hidden)) {
+                workbench.mount(workbenchMount, { layout: 'drawer' });
+            }
+            void ensureTabsLoaded();
+            if (pendingRefreshReason) {
+                const reason = pendingRefreshReason;
+                pendingRefreshReason = null;
+                workbench.refresh(reason);
+            }
         }
     }
 
@@ -424,6 +553,7 @@ export function mountRuntimeUi({ signal = null } = {}) {
         pageOpener = opener instanceof HTMLElement ? opener : null;
         page.hidden = false;
         workbench.mount(pageMount, { layout: 'page' });
+        void ensureTabsLoaded();
         if (pendingRefreshReason) {
             const reason = pendingRefreshReason;
             pendingRefreshReason = null;
@@ -446,7 +576,7 @@ export function mountRuntimeUi({ signal = null } = {}) {
         page.hidden = true;
         deactivatePageModal();
         ensureSettingsDrawer();
-        if (workbenchMount) {
+        if (workbenchMount && drawerIcon && !drawerIcon.classList.contains('down')) {
             workbench.mount(workbenchMount, { layout: 'drawer' });
         }
         const opener = pageOpener?.isConnected
@@ -515,6 +645,7 @@ export function mountRuntimeUi({ signal = null } = {}) {
             className: 'inline-drawer sbpl-settings',
             attributes: {
                 'data-extension-name': EXTENSION_NAME,
+                'data-sb-drawer-persistence': 'off',
             },
         });
         drawerToggle = element('button', {
@@ -575,7 +706,7 @@ export function mountRuntimeUi({ signal = null } = {}) {
         settingsDrawer.append(drawerToggle, drawerContent);
         settingsRoot.append(settingsDrawer);
         host.append(settingsRoot);
-        if (!page || page.hidden) {
+        if (workbench.getState().open && (!page || page.hidden)) {
             workbench.mount(workbenchMount, { layout: 'drawer' });
         }
 
@@ -597,6 +728,7 @@ export function mountRuntimeUi({ signal = null } = {}) {
             }
             ensureEntrypoints();
             if (isWorkbenchVisible()) {
+                void ensureTabsLoaded();
                 pendingRefreshReason = null;
                 workbench.refresh(reason);
             } else {

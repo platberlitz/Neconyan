@@ -160,6 +160,20 @@ describe('opening a chat skips work for panels that are not on screen', () => {
         expect(promptingLabRuntimeJs).toContain('function isWorkbenchVisible()');
         expect(promptingLabRuntimeJs).toContain('if (isWorkbenchVisible())');
         expect(promptingLabRuntimeJs).toContain('pendingRefreshReason = reason;');
+        expect(promptingLabRuntimeJs).toContain('function loadTabModules()');
+        expect(promptingLabRuntimeJs).toContain('import(\'./cases-tab.js\')');
+        expect(promptingLabRuntimeJs).not.toMatch(/^import\s+\{[^}]*\}\s+from\s+'\.\/cases-tab\.js';/m);
+        expect(promptingLabRuntimeJs).toMatch(/registerPlaceholderTabs\(\s*'Loading Prompting Lab\.\.\.',\s*'Preparing the prompt testing tools\.',?\s*\)/);
+        expect(promptingLabRuntimeJs).toMatch(/registerPlaceholderTabs\(\s*'Prompting Lab could not load\.',\s*'Reload Neconyan and try opening Prompting Lab again\.',?\s*\)/);
+        const lastRegisterIndex = promptingLabRuntimeJs.lastIndexOf('workbench.registerTab(TAB.SETTINGS, settingsTab);');
+        const tabsRegisteredSetIndex = promptingLabRuntimeJs.indexOf('tabsRegistered = true;');
+        expect(lastRegisterIndex).toBeGreaterThan(-1);
+        expect(tabsRegisteredSetIndex).toBeGreaterThan(lastRegisterIndex);
+
+        const botSearcherIndexJs = read('public/scripts/extensions/third-party/Neconyan-BotSearcher/index.js');
+        expect(botSearcherIndexJs).toContain('import(\'./client/browser.js\')');
+        expect(botSearcherIndexJs).not.toMatch(/^import\s+\{[^}]*\}\s+from\s+'\.\/client\/browser\.js';/m);
+        expect(botSearcherIndexJs).toContain('Could not open BotSearcher. Reload the page and try again.');
     });
 
     test('typing avoids Sizzle selector cache eviction, redundant macro parsing and inactive autocomplete layout', () => {

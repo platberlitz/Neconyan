@@ -12,10 +12,28 @@
 
 import { LOG_TAG } from './client/constants.js';
 import { installEntryPoints } from './client/inject.js';
-import { openBrowser } from './client/browser.js';
 import { mountSettings } from './client/settings.js';
 
 let booted = false;
+let browserModulePromise = null;
+
+function loadBrowserModule() {
+    browserModulePromise ??= import('./client/browser.js').catch((error) => {
+        browserModulePromise = null;
+        throw error;
+    });
+    return browserModulePromise;
+}
+
+function openBotSearcher(options) {
+    return loadBrowserModule().then(
+        ({ openBrowser }) => openBrowser(options),
+        (error) => {
+            globalThis.toastr?.error?.('Could not open BotSearcher. Reload the page and try again.', 'BotSearcher');
+            throw error;
+        },
+    );
+}
 
 /**
  * Idempotent: the manifest declares this as the `activate` hook, and activation
@@ -28,7 +46,7 @@ export function init() {
     booted = true;
 
     installEntryPoints(() => {
-        openBrowser().catch((error) => console.error(`[${LOG_TAG}] open failed:`, error));
+        openBotSearcher().catch((error) => console.error(`[${LOG_TAG}] open failed:`, error));
     });
 
     mountSettings().catch((error) => console.error(`[${LOG_TAG}] settings mount failed:`, error));
@@ -46,7 +64,7 @@ export function init() {
         ],
         callback: (_named, unnamed) => {
             const query = typeof unnamed === 'string' ? unnamed : '';
-            openBrowser({ query }).catch((error) => console.error(`[${LOG_TAG}]`, error));
+            openBotSearcher({ query }).catch((error) => console.error(`[${LOG_TAG}]`, error));
             return '';
         },
     }));

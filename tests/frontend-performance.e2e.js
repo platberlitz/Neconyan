@@ -94,5 +94,59 @@ test.describe('frontend performance smoke', () => {
         for (const assetPath of coreAssetPaths) {
             expect(snapshot.coreAssetBytes[assetPath]).toBeGreaterThan(0);
         }
+
+        const startupResourceNames = snapshot.resources.map(entry => entry.name);
+        expect(startupResourceNames.some(name => name.includes('/Neconyan-BotSearcher/client/browser.js'))).toBe(false);
+        expect(startupResourceNames.some(name => name.includes('/Neconyan-Prompting-Lab/src/ui/cases-tab.js'))).toBe(false);
+
+        const activeTabSelector = [
+            '.sbpl-cases-tab', '.sbpl-presets-tab', '.sbpl-prompts-tab', '.sbpl-run-tab',
+            '.sbpl-ledger-tab', '.sbpl-diff-tab', '.sbpl-experiment-tab', '.sbpl-ab-tab',
+            '.sbpl-scenes-tab', '.sbpl-settings-tab',
+        ].join(', ');
+
+        // First-use Prompting Lab via the Extensions → Built-in settings page, then open/close full-page mode.
+        await page.evaluate(() => globalThis.document.querySelector('#neconyan-tour-coachmark [data-tour-coach-skip]')?.click());
+        await page.evaluate(() => globalThis.NeconyanShell.openTab('right', 'extensions'));
+        await page.locator('[data-extensions-scope="built-in"]').click();
+        await page.locator('.sb-extensions-tool').filter({ hasText: 'Prompting Lab' }).click();
+        const drawerToggle = page.locator('#sbpl-settings .inline-drawer-toggle');
+        await expect(drawerToggle).toBeVisible();
+        if (await drawerToggle.getAttribute('aria-expanded') !== 'true') {
+            await drawerToggle.click();
+        }
+        await expect(page.locator('#sbpl-settings #sbpl-workbench')).toBeVisible();
+        await expect(page.locator(`#sbpl-settings #sbpl-panel > :is(${activeTabSelector})`)).toBeVisible();
+        await expect(page.locator('#sbpl-settings #sbpl-panel')).not.toContainText('still being built');
+        expect(await page.evaluate(() => globalThis.performance.getEntriesByType('resource')
+            .some(entry => entry.name.includes('/Neconyan-Prompting-Lab/src/ui/cases-tab.js')))).toBe(true);
+
+        await page.locator('#sbpl-open-page').click();
+        await expect(page.locator('#sbpl-page')).toBeVisible();
+        await expect(page.locator(`#sbpl-page #sbpl-panel > :is(${activeTabSelector})`)).toBeVisible();
+        await expect(page.locator('#sbpl-page #sbpl-panel')).not.toContainText('still being built');
+        await page.locator('#sbpl-page .sbpl-page-close').click();
+        await expect(page.locator('#sbpl-page')).toBeHidden();
+        await expect(page.locator('#sbpl-settings #sbpl-workbench')).toBeInViewport();
+        await expect(page.locator(`#sbpl-settings #sbpl-panel > :is(${activeTabSelector})`)).toBeInViewport();
+
+        // First-use BotSearcher via /botsearch slash command and reuse via the import panel button.
+        expect(await page.evaluate(() => globalThis.performance.getEntriesByType('resource')
+            .some(entry => entry.name.includes('/Neconyan-BotSearcher/client/browser.js')))).toBe(false);
+        await page.evaluate(() => globalThis.SillyTavern.getContext().executeSlashCommandsWithOptions('/botsearch moon'));
+        const botSearcherDialog = page.locator('dialog.popup[open] :is(.sbbs-root, .sbbs-install)');
+        await expect(botSearcherDialog).toBeVisible();
+        if (await page.locator('dialog.popup[open] .sbbs-root').isVisible()) {
+            await expect(page.locator('#sbbs_query')).toHaveValue('moon');
+        }
+        await page.locator('dialog.popup[open] .popup-button-close').click();
+        await expect(botSearcherDialog).toBeHidden();
+
+        await page.evaluate(() => globalThis.document.getElementById('sbbs_import_action')?.click());
+        await expect(botSearcherDialog).toBeVisible();
+        await page.locator('dialog.popup[open] .popup-button-close').click();
+        await expect(botSearcherDialog).toBeHidden();
+        expect(await page.evaluate(() => globalThis.performance.getEntriesByType('resource')
+            .filter(entry => entry.name.includes('/Neconyan-BotSearcher/client/browser.js')).length)).toBe(1);
     });
 });
