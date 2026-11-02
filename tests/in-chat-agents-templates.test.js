@@ -78,6 +78,7 @@ const sourceFilenames = [
     'the-ledger.json',
     'the-turning.json',
     'thin-places-tracker.json',
+    'thinking-reply-recovery.json',
     'thought-cabinet.json',
     'time-tracker.json',
     'user-agency-guard.json',
@@ -1137,6 +1138,21 @@ describe('in-chat agent bundled templates', () => {
         expect(enhancer.prompt).toContain('Keep every character an adult');
         expect(enhancer.id).not.toBe('tpl-nsfw-mode');
         expect(readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS')).toContain('\'tpl-nsfw-enhancer\'');
+    });
+
+    test('Thinking Reply Recovery is a disabled post-phase rewrite that reads the reference sheet and runs before the Continuity Corrector', () => {
+        const recovery = readTemplate('thinking-reply-recovery.json');
+        const corrector = readTemplate('continuity-corrector.json');
+        expect(recovery).toMatchObject({ id: 'tpl-thinking-reply-recovery', name: 'Thinking Reply Recovery', category: 'content', subcategory: 'prose-quality',
+            phase: 'post', execution: 'inline', enabled: false, version: 1, author: 'Purachina', conditions: { generationTypes: ['normal', 'continue'] },
+            postProcess: { promptTransformEnabled: true, promptTransformMode: 'rewrite', promptTransformContextMessages: 8, promptTransformMaxTokens: 32000 } });
+        expect(recovery.injection.order).toBeLessThan(corrector.injection.order);
+        expect(readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS')).toContain('\'tpl-thinking-reply-recovery\'');
+        for (const reference of ['description', 'personality', 'group-cards', 'persona', 'scenario', 'mesExamplesRaw', 'active-lore', 'active-authors-note',
+            'tracker-state', 'mewmory-facts', 'mewmory-interview', 'preset-prompts']) {
+            expect(recovery.prompt).toContain(`{{${reference}}}`);
+        }
+        expect(`${recovery.description}\n${recovery.prompt}`).not.toMatch(/roleplay|\u2014/i);
     });
 
     test('installs the reply rewrite chain by default in a fixed running order with the recent chat each pass needs', () => {

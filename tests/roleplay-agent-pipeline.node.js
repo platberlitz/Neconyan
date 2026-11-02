@@ -15,7 +15,7 @@ const { roleplayHash, withRoleplayAccount } = await import('../src/roleplay-stor
 const { loadCurrentStateSync } = await import('../src/mewmory/sources.js');
 const { mutateState } = await import('../src/mewmory/store.js');
 const { putRecord, validateRecord } = await import('../src/mewmory/core.js');
-const { getJob, releaseJob, updateJob } = await import('../src/jobs/store.js');
+const { getJob, releaseJob, requestCancellation, updateJob } = await import('../src/jobs/store.js');
 const { providerStep, readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
 const { decideJobApproval } = await import('../src/generation/job-approvals.js');
 const { requestRoleplayAgentStop } = await import('../src/generation/roleplay-agent-stop.js');
@@ -30,7 +30,7 @@ const controls = { prompts: [{ identifier: 'main', role: 'system', system_prompt
     { identifier: 'chatHistory', marker: true, system_prompt: true }], prompt_order: [{ character_id: 100001,
     order: [{ identifier: 'main', enabled: true }, { identifier: 'worldInfoBefore', enabled: true }, { identifier: 'chatHistory', enabled: true }] }] };
 
-function prepared(t, agents, { effect = 'append', range = { start: 1, count: 1 }, review = false, translation = false, configure = () => {}, globalSettings = {}, imagePolicy = false, previewParent = null } = {}) {
+function prepared(t, agents, { effect = 'append', range = { start: 1, count: 1 }, review = false, translation = false, configure = () => {}, globalSettings = {}, imagePolicy = false, previewParent = null, type = 'roleplay.reply' } = {}) {
     const f = fixture(t);
     const directories = f.scope.directories;
     f.records[1].extra = {};
@@ -63,7 +63,7 @@ function prepared(t, agents, { effect = 'append', range = { start: 1, count: 1 }
     const request = { binding: { kind: 'profile', ...captureChatProfile(directories, 'main') }, maxTokens: 32,
         characterName: 'Nova', serverPrompt: true, worldInfo, messages: [],
         ...(previewParent ? { workflowCandidate: { version: 1, parentJobId: previewParent } } : {}) };
-    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'agent-pipeline', effect, source, request });
+    const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'agent-pipeline', effect, source, request, type });
     releaseJob(directories, jobId);
     updateJob(directories, jobId, { state: 'running' });
     const context = () => ({ directories, owner: f.scope.owner, job: getJob(directories, jobId), signal: new AbortController().signal });
@@ -114,6 +114,138 @@ for (const effect of ['append', 'continue', 'swipe', 'replace']) {
         assert.deepEqual(f.saved(), saved);
     });
 }
+
+const RECOVERY_AGENT = { id: 'tpl-thinking-reply-recovery', sourceTemplateId: 'tpl-thinking-reply-recovery', phase: 'post', prompt: 'RECOVER', postProcess: {
+    enabled: false, promptTransformEnabled: true, promptTransformMaxTokens: 64, promptTransformContextMessages: 8 } };
+const REWRITE_AGENT = { id: 'rewrite', phase: 'post', prompt: 'REWRITE', postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64 } };
+const THINKING_ONLY = { text: '', response: { choices: [{ message: { reasoning_content: 'Plan the reply' }, finish_reason: 'stop' }] } };
+
+test('a thinking-only reply is written by the recovery Agent, then the other Agents run once on that prose', async t => {
+    const f = prepared(t, [RECOVERY_AGENT, REWRITE_AGENT]);
+    const calls = [];
+    await f.run({
+        generate: paid('main', () => THINKING_ONLY),
+        generateAgent: paid('agent', ({ messages }) => {
+            const body = JSON.stringify(messages);
+            calls.push(body.includes('RECOVER') ? 'recovery' : 'rewrite');
+            if (body.includes('RECOVER')) return { text: 'Recovered reply' };
+            assert.match(body, /Recovered reply/, 'the rewrite must read the recovered prose');
+            return { text: 'Rewritten reply' };
+        }),
+    });
+    assert.deepEqual(calls, ['recovery', 'rewrite']);
+    const reply = f.saved().at(-1);
+    assert.equal(reply.mes, 'Rewritten reply');
+    assert.equal(reply.extra.reasoning, 'Plan the reply');
+    assert.equal(reply.extra.inChatAgentThinkingRecovery.agentId, 'tpl-thinking-reply-recovery');
+    assert.equal(reply.extra.inChatAgentThinkingRecovery.status, 'done');
+});
+
+test('a thinking-only reply the recovery Agent cannot write keeps the no-answer path with one request', async t => {
+    const f = prepared(t, [RECOVERY_AGENT, REWRITE_AGENT]);
+    let recoveryCalls = 0;
+    const generateAgent = paid('agent', ({ messages }) => {
+        assert.match(JSON.stringify(messages), /RECOVER/);
+        recoveryCalls++;
+        return { text: '<thinking>Still planning</thinking>' };
+    });
+    await assert.rejects(f.run({ generate: paid('main', () => THINKING_ONLY), generateAgent }), { code: 'GENERATION_NO_ANSWER' });
+    assert.equal(recoveryCalls, 1);
+    const failed = f.saved().at(-1);
+    assert.equal(failed.mes, '', 'the failed thinking is kept without a written reply');
+    assert.equal(failed.extra.reasoning, 'Plan the reply');
+    assert.equal(failed.extra.generation_outcome.reason, 'reasoning_only');
+});
+
+test('a provider error while writing the missing reply is saved once and reported as no answer', async t => {
+    const f = prepared(t, [RECOVERY_AGENT, REWRITE_AGENT]);
+    let recoveryCalls = 0;
+    await assert.rejects(f.run({ generate: paid('main', () => THINKING_ONLY), generateAgent: paid('agent', () => {
+        recoveryCalls++;
+        throw Object.assign(new Error('Rate limit reached.'), { status: 429 });
+    }) }), { code: 'GENERATION_NO_ANSWER' });
+    assert.equal(recoveryCalls, 1);
+    assert.equal(f.saved().at(-1).extra.generation_outcome.reason, 'reasoning_only');
+    assert.equal(f.saved().at(-1).extra.reasoning, 'Plan the reply');
+});
+
+test('a raw network error while writing the missing reply is saved once, not sent again, and the reply is kept', async t => {
+    const f = prepared(t, [RECOVERY_AGENT, REWRITE_AGENT]);
+    let recoveryCalls = 0;
+    await assert.rejects(f.run({ generate: paid('main', () => THINKING_ONLY), generateAgent: paid('agent', () => {
+        recoveryCalls++;
+        throw new TypeError('fetch failed');
+    }) }), { code: 'GENERATION_NO_ANSWER' });
+    assert.equal(recoveryCalls, 1);
+    assert.equal(f.saved().at(-1).extra.reasoning, 'Plan the reply');
+    assert.equal(f.saved().at(-1).extra.generation_outcome.reason, 'reasoning_only');
+});
+
+test('an uncertain provider outcome while writing the missing reply is never repaired automatically', async t => {
+    const f = prepared(t, [RECOVERY_AGENT, REWRITE_AGENT]);
+    let recoveryCalls = 0;
+    await assert.rejects(f.run({ generate: paid('main', () => THINKING_ONLY), generateAgent: paid('agent', () => {
+        recoveryCalls++;
+        throw Object.assign(new Error('The provider did not answer.'), { code: 'PROVIDER_OUTCOME_UNKNOWN' });
+    }) }));
+    assert.equal(recoveryCalls, 1);
+    assert.equal(f.saved().some(record => JSON.stringify(record).includes('Recovered reply')), false, 'an unknown outcome never writes recovered text');
+});
+
+test('an interruption after the missing reply is written keeps that prose and its original thinking', async t => {
+    const f = prepared(t, [RECOVERY_AGENT, REWRITE_AGENT]);
+    const controller = new AbortController();
+    let recoveryCalls = 0;
+    await assert.rejects(f.run({ signal: controller.signal, generate: paid('main', () => THINKING_ONLY),
+        generateAgent: async args => {
+            assert.match(JSON.stringify(args.messages), /RECOVER/, 'only the recovery Agent may run before the interruption');
+            recoveryCalls++;
+            const written = await paid('agent', () => ({ text: 'Recovered reply.' }))(args);
+            // The owner stops the reply after the recovery phase is saved and before the Agent base is written.
+            requestCancellation(f.directories, f.jobId, { reason: 'stopped' });
+            controller.abort();
+            return written;
+        } }));
+    assert.equal(recoveryCalls, 1);
+    assert.equal(readArtifact(f.directories, f.jobId, 'roleplay-agent-output-base'), undefined);
+    assert.equal(readArtifact(f.directories, f.jobId, 'roleplay-thinking-recovery').text, 'Recovered reply.');
+    const kept = f.saved().at(-1);
+    assert.equal(kept.mes, 'Recovered reply.');
+    assert.equal(kept.extra.reasoning, 'Plan the reply');
+    assert.equal(kept.extra.inChatAgentThinkingRecovery.status, 'done');
+    assert.equal(kept.extra.generation_outcome, undefined, 'a recovered reply is not marked as a thinking-only failure');
+});
+
+test('a recorded recovery failure is replayed without a second model request', async t => {
+    const f = prepared(t, [RECOVERY_AGENT, REWRITE_AGENT]);
+    let recoveryCalls = 0;
+    await assert.rejects(f.run({ generate: paid('main', () => THINKING_ONLY), generateAgent: paid('agent', () => {
+        recoveryCalls++;
+        throw Object.assign(new Error('Rate limit reached.'), { status: 429 });
+    }) }), { code: 'GENERATION_NO_ANSWER' });
+    await assert.rejects(f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('recovery repeated') }));
+    assert.equal(recoveryCalls, 1);
+});
+
+test('a normal answer never triggers the recovery Agent, and a thinking-only continuation appends only the recovered suffix', async t => {
+    const f = prepared(t, [RECOVERY_AGENT]);
+    await f.run({
+        generate: paid('main', () => ({ text: 'Answer', response: { choices: [{ message: { reasoning_content: 'Plan' }, finish_reason: 'stop' }] } })),
+        generateAgent: () => assert.fail('recovery must not run on a written reply'),
+    });
+    assert.equal(f.saved().at(-1).mes, 'Answer');
+    const continued = prepared(t, [RECOVERY_AGENT], { effect: 'continue' });
+    await continued.run({ generate: paid('main', () => THINKING_ONLY), generateAgent: paid('agent', ({ messages }) => {
+        const body = JSON.stringify(messages);
+        assert.match(body, /stopped before its text was written/);
+        assert.match(body, /Answer/, 'the continuation sees the saved prefix as recent chat');
+        return { text: ' and the door closed.' };
+    }) });
+    const continuedReply = continued.saved().at(-1);
+    assert.equal(continuedReply.mes, 'Answer and the door closed.');
+    assert.equal(continuedReply.extra.reasoning, 'Plan the reply');
+    assert.equal(continuedReply.extra.inChatAgentThinkingRecovery.status, 'done');
+});
 
 test('stopping at the post-main review saves the already paid reply without approval or another request', async t => {
     const f = prepared(t, [{ id: 'review', prompt: 'REVIEW_EDIT', phase: 'pre', preProcess: {

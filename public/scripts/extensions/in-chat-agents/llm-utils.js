@@ -84,7 +84,11 @@ function firstVisibleContentText(...values) {
     return '';
 }
 
-export function extractProfileResponseText(response) {
+/**
+ * The reply text. Whitespace is trimmed as before, except when a caller asks to keep it: a continuation's leading space
+ * is part of the join with the saved prefix, so that path keeps the model's own spacing and drops only blank lines.
+ */
+export function extractProfileResponseText(response, { preserveWhitespace = false } = {}) {
     const blocked = classifyGenerationOutcome(response);
     if (blocked) throw providerBlockedError(blocked);
     const text = firstVisibleContentText(
@@ -105,7 +109,9 @@ export function extractProfileResponseText(response) {
         response?.[0]?.content,
         typeof response === 'string' ? response : '',
     );
-    return removeReasoningFromString(text, { force: true });
+    const cleaned = removeReasoningFromString(text, { force: true });
+    if (preserveWhitespace && cleaned === text.trim()) return text.trimEnd();
+    return cleaned;
 }
 
 export function buildFallbackPromptText(promptMessages) {

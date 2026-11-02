@@ -3,9 +3,22 @@ import { describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import * as generationOutcome from '../public/scripts/generation-outcome.js';
+import { parse } from 'acorn';
 
 const source = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8');
 const classSource = source.slice(source.indexOf('class StreamingProcessor {'), source.indexOf('\n/**', source.indexOf('\n}\n', source.indexOf('class StreamingProcessor {'))));
+
+// Loads named top-level declarations from a real source file into the VM context, so the class calls the actual helpers.
+function loadDeclarations(context, file, names) {
+    const fileSource = readFileSync(new URL(`../public/${file}`, import.meta.url), 'utf8');
+    const ast = parse(fileSource, { ecmaVersion: 'latest', sourceType: 'module' });
+    for (const name of names) {
+        const node = ast.body.map(item => item.declaration ?? item)
+            .find(item => item.id?.name === name || item.declarations?.some(declaration => declaration.id.name === name));
+        if (!node) throw new Error(`Missing declaration: ${name}`);
+        vm.runInContext(fileSource.slice(node.start, node.end), context);
+    }
+}
 
 function replacement() {
     return { mes: 'different chat', name: 'Other', extra: {}, swipe_id: 0, swipes: ['untouched'], swipe_info: [{ extra: { keep: true } }] };
@@ -60,6 +73,9 @@ async function stream(type = 'normal') {
     });
     context.getCurrentChatId = () => context.chatId;
     context.saveReply = async () => { context.chat.push({ ...replacement(), mes: 'original', swipes: ['original'] }); };
+    loadDeclarations(context, 'scripts/stream-completion.js', ['completedMessages', 'markStreamCompleted', 'unmarkStreamCompleted', 'isStreamCompleted', 'setContinuationEmptyMarker', 'setGenerationToolTurnMarker', 'setFreshReasoningMarker']);
+    loadDeclarations(context, 'scripts/reasoning.js', ['setReasoningUnclosedMarker']);
+    loadDeclarations(context, 'script.js', ['setGenerationFinishMarker']);
     vm.runInContext(classSource + '\nthis.StreamingProcessor = StreamingProcessor;', context);
     const syncSwipe = source.match(/^export function syncMesToSwipe\([\s\S]*?^}$/m)[0].replace(/^export /, '');
     vm.runInContext(syncSwipe, context);

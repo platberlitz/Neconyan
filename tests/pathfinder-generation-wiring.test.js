@@ -123,7 +123,19 @@ function createHost({ agentsExtension = false } = {}) {
         getCharacterCardFields: () => ({ description: '', personality: '', persona: '', scenario: '', mesExamples: '', system: '', jailbreak: '' }),
         getGroupDepthPrompts: () => [],
         getExtensionPromptRoleByName: role => role,
-        ToolManager: { isToolCallingSupported: () => false, canPerformToolCalls: () => false, RECURSE_LIMIT: 5 },
+        ToolManager: {
+            isToolCallingSupported: () => false, canPerformToolCalls: () => false, RECURSE_LIMIT: 5,
+            // Mirrors the non-streamed branches of ToolManager.hasToolCalls (public/scripts/tool-calling.js), so the reply
+            // classification sees the same tool calls the production method reports.
+            hasToolCalls(data) {
+                const claudeCalls = Array.isArray(data?.content) ? data.content.filter(part => part.type === 'tool_use') : [];
+                const googleCalls = Array.isArray(data?.responseContent?.parts) ? data.responseContent.parts.filter(part => part.functionCall) : [];
+                const choice = Array.isArray(data?.choices) ? data.choices.find(item => item.index === 0) : null;
+                const openAiCalls = choice && typeof choice.message === 'object' && Array.isArray(choice.message.tool_calls) ? choice.message.tool_calls : [];
+                const cohereCalls = data?.message?.tool_calls ? [].concat(data.message.tool_calls) : [];
+                return [openAiCalls, claudeCalls, googleCalls, cohereCalls].some(calls => calls.length > 0);
+            },
+        },
         selectCompanionChatHistory: () => [], consolidateCompanionChatHistory: () => ({ host: null, entries: [] }),
         buildCompanionChatHistoryBlocks: () => [], COMPANION_HISTORY_PROMPT_KEY_PREFIX: 'inchat_agent_companion_history_',
         PromptReasoning: class { removePrefix(text) { return text; } },

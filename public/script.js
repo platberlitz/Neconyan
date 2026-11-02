@@ -350,7 +350,8 @@ import { initServerHistory } from './scripts/server-history.js';
 import { initSettingsSearch } from './scripts/setting-search.js';
 import { initBulkEdit } from './scripts/bulk-edit.js';
 import { getContext } from './scripts/st-context.js';
-import { extractReasoningFromData, extractReasoningSignatureFromData, initReasoning, parseReasoningInSwipes, PromptReasoning, ReasoningHandler, removeReasoningFromString, updateReasoningUI } from './scripts/reasoning.js';
+import { markStreamCompleted, setContinuationEmptyMarker, setFreshReasoningMarker, setGenerationToolTurnMarker, unmarkStreamCompleted } from './scripts/stream-completion.js';
+import { extractReasoningFromData, extractReasoningSignatureFromData, initReasoning, parseReasoningInSwipes, PromptReasoning, ReasoningHandler, removeReasoningFromString, setReasoningUnclosedMarker, updateReasoningUI } from './scripts/reasoning.js';
 import { StreamingThinkingIndicator } from './scripts/streaming-thinking.js';
 import { accountStorage } from './scripts/util/AccountStorage.js';
 import { getAssistantIconSrc } from './scripts/neconyan-assistant-art.js';
@@ -8035,6 +8036,7 @@ class StreamingProcessor {
             this.messageId = messageId;
             setCardScriptMessageStreaming(messageId, true);
             this.message = chat[messageId];
+            unmarkStreamCompleted(this.message);
             this.swipeId = this.message?.swipe_id;
             await saving;
             if (!this.#isCurrent(messageId)) return -1;
@@ -8257,12 +8259,24 @@ class StreamingProcessor {
 
         await this.reasoningHandler.finish(messageId);
         if (!this.#isCurrent(messageId)) return;
+        setGenerationFinishMarker(message.extra, this.finishReason);
+        setContinuationEmptyMarker(message.extra, this.type === 'continue' && !String(this.result ?? '').trim());
+        setGenerationToolTurnMarker(message.extra, Array.isArray(this.toolCalls) && this.toolCalls.length > 0);
+        setFreshReasoningMarker(message.extra, this.type === 'continue' && this.lastReasoningPrefix
+            ? this.reasoningHandler.reasoning.slice((this.promptReasoning?.prefixReasoning ?? '').length) : this.type === 'continue' ? this.reasoningHandler.reasoning : null);
+        // Markers are complete; only now may an automatic Agent read this reply.
+        markStreamCompleted(message);
 
         if (Array.isArray(this.swipes) && this.swipes.length > 0) {
             const swipeInfoExtra = structuredClone(message.extra ?? {});
             delete swipeInfoExtra.neconyanExpression;
             delete swipeInfoExtra.token_count;
             delete swipeInfoExtra.reasoning;
+            delete swipeInfoExtra.reasoning_unclosed;
+            delete swipeInfoExtra.generation_finish_reason;
+            delete swipeInfoExtra.reasoning_continuation_empty;
+            delete swipeInfoExtra.generation_tool_turn;
+            delete swipeInfoExtra.reasoning_current;
             delete swipeInfoExtra.reasoning_duration;
             delete swipeInfoExtra.reasoning_tokens;
             delete swipeInfoExtra[IN_CHAT_AGENT_TRANSFORM_HISTORY_KEY];
@@ -10668,6 +10682,10 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                             await saveReply({ type: isContinue ? 'appendFinal' : type,
                                 getMessage: cleanUpMessage({ getMessage: (isContinue ? continue_mag : '') + partial, isContinue, displayIncompleteSentences: true }),
                                 reasoning: activeStreamingProcessor.reasoningHandler.reasoning,
+                                reasoningUnclosed: activeStreamingProcessor.reasoningHandler.hasUnclosedInlineReasoning,
+                                finishReason: activeStreamingProcessor.finishReason,
+                                continuationEmpty: isContinue && !String(activeStreamingProcessor.result ?? '').trim(),
+                                toolTurn: Array.isArray(activeStreamingProcessor.toolCalls) && activeStreamingProcessor.toolCalls.length > 0,
                                 generationContext: agentGenerationContext, generationOutcome: activeStreamingProcessor.outcome,
                                 swipes: activeStreamingProcessor.swipes, choiceOutcomes: activeStreamingProcessor.outcomes, isCurrent });
                             await saveChatWithHeldReply(recoveryContext, isCurrent);
@@ -10770,6 +10788,10 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                                 reasoning: activeStreamingProcessor.lastReasoningPrefix
                                     ? activeStreamingProcessor.reasoningHandler.reasoning.slice(promptReasoning.prefixReasoning.length)
                                     : activeStreamingProcessor.reasoningHandler.reasoning,
+                                reasoningUnclosed: activeStreamingProcessor.reasoningHandler.hasUnclosedInlineReasoning,
+                                finishReason: activeStreamingProcessor.finishReason,
+                                continuationEmpty: originalType === 'continue' && !String(activeStreamingProcessor.result ?? '').trim(),
+                                toolTurn: Array.isArray(activeStreamingProcessor.toolCalls) && activeStreamingProcessor.toolCalls.length > 0,
                                 imageUrls: activeStreamingProcessor.images,
                                 reasoningSignature: activeStreamingProcessor.reasoningSignature,
                                 reasoningTokens: activeStreamingProcessor.reasoningTokens,
@@ -10915,6 +10937,8 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                     : t`The model finished reasoning but returned no reply text.`);
             }
 
+            // Only the new text decides whether this continuation wrote anything; the saved prefix is joined below.
+            const continuationChunkEmpty = isContinue && !String(getMessage ?? '').trim();
             if (isContinue) {
                 continue_mag = promptReasoning.removePrefix(continue_mag);
                 getMessage = continue_mag + getMessage;
@@ -10961,9 +10985,9 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             } else {
             // Without streaming we'll be having a full message on continuation. Treat it as a last chunk.
                 if (originalType !== 'continue') {
-                    ({ type, getMessage } = await saveReply({ type, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, reasoningTokens: data.reasoningTokens, isCurrent, generationContext: agentGenerationContext, choiceOutcomes: Object.fromEntries((data.choices ?? []).map((choice, index) => [choice.index ?? index, classifyGenerationOutcome(data, choice.index ?? index)])) }));
+                    ({ type, getMessage } = await saveReply({ type, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, reasoningTokens: data.reasoningTokens, finishReason: isGenerationLengthFinish(data) ? 'length' : null, reasoningUnclosed: limitedOutput.unclosed === true, toolTurn: ToolManager.hasToolCalls(data), isCurrent, generationContext: agentGenerationContext, choiceOutcomes: Object.fromEntries((data.choices ?? []).map((choice, index) => [choice.index ?? index, classifyGenerationOutcome(data, choice.index ?? index)])) }));
                 } else {
-                    ({ type, getMessage } = await saveReply({ type: 'appendFinal', getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, reasoningTokens: data.reasoningTokens, isCurrent, generationContext: agentGenerationContext, choiceOutcomes: Object.fromEntries((data.choices ?? []).map((choice, index) => [choice.index ?? index, classifyGenerationOutcome(data, choice.index ?? index)])) }));
+                    ({ type, getMessage } = await saveReply({ type: 'appendFinal', getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, reasoningTokens: data.reasoningTokens, finishReason: isGenerationLengthFinish(data) ? 'length' : null, continuationEmpty: continuationChunkEmpty, reasoningUnclosed: limitedOutput.unclosed === true, toolTurn: ToolManager.hasToolCalls(data), isCurrent, generationContext: agentGenerationContext, choiceOutcomes: Object.fromEntries((data.choices ?? []).map((choice, index) => [choice.index ?? index, classifyGenerationOutcome(data, choice.index ?? index)])) }));
                 }
                 if (!isCurrent()) return;
 
@@ -12259,7 +12283,14 @@ async function processImageAttachment(message, { imageUrls }) {
  * @property {string} type Type of generation
  * @property {string} getMessage Generated message
  */
-export async function saveReply({ type, getMessage, fromStreaming = false, title = '', swipes = [], reasoning = '', imageUrls = [], reasoningSignature = null, reasoningTokens = 0, isCurrent = () => true, generationContext = null, generationOutcome = null, choiceOutcomes = {} }) {
+/** Keeps a length cut-off on the reply so automatic Agents never repair thinking that the limit cut short. */
+function setGenerationFinishMarker(extra, finishReason) {
+    if (!extra || typeof extra !== 'object') return;
+    if (finishReason) extra.generation_finish_reason = finishReason;
+    else delete extra.generation_finish_reason;
+}
+
+export async function saveReply({ type, getMessage, fromStreaming = false, title = '', swipes = [], reasoning = '', imageUrls = [], reasoningSignature = null, reasoningTokens = 0, reasoningUnclosed = false, finishReason = null, continuationEmpty = false, toolTurn = false, isCurrent = () => true, generationContext = null, generationOutcome = null, choiceOutcomes = {} }) {
     // Backward compatibility
     if (arguments.length > 1 && typeof arguments[0] !== 'object') {
         console.trace('saveReply called with positional arguments. Please use an object instead.');
@@ -12314,6 +12345,12 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
             lastMessage.extra.model = getGeneratingModel();
             lastMessage.extra.reasoning_effort = getCurrentReasoningEffort();
             lastMessage.extra.reasoning = reasoning;
+            setReasoningUnclosedMarker(lastMessage.extra, reasoningUnclosed);
+            setGenerationFinishMarker(lastMessage.extra, finishReason);
+            setContinuationEmptyMarker(lastMessage.extra, false);
+            setGenerationToolTurnMarker(lastMessage.extra, toolTurn);
+            setFreshReasoningMarker(lastMessage.extra, null);
+            markStreamCompleted(lastMessage);
             lastMessage.extra.reasoning_duration = null;
             lastMessage.extra.reasoning_signature = reasoningSignature;
             delete lastMessage.extra[IN_CHAT_AGENT_TRANSFORM_HISTORY_KEY];
@@ -12343,6 +12380,12 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
         lastMessage.extra.model = getGeneratingModel();
         lastMessage.extra.reasoning_effort = getCurrentReasoningEffort();
         lastMessage.extra.reasoning = reasoning;
+        setReasoningUnclosedMarker(lastMessage.extra, reasoningUnclosed);
+        setGenerationFinishMarker(lastMessage.extra, finishReason);
+        setContinuationEmptyMarker(lastMessage.extra, continuationEmpty);
+        setGenerationToolTurnMarker(lastMessage.extra, toolTurn);
+        setFreshReasoningMarker(lastMessage.extra, null);
+        markStreamCompleted(lastMessage);
         lastMessage.extra.reasoning_duration = null;
         lastMessage.extra.reasoning_signature = reasoningSignature;
         await processImageAttachment(lastMessage, { imageUrls });
@@ -12368,6 +12411,12 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
         lastMessage.extra.reasoning_effort = getCurrentReasoningEffort();
         lastMessage.extra.reasoning += reasoning;
         lastMessage.extra.reasoning_signature = reasoningSignature;
+        setReasoningUnclosedMarker(lastMessage.extra, reasoningUnclosed);
+        setGenerationFinishMarker(lastMessage.extra, finishReason);
+        setContinuationEmptyMarker(lastMessage.extra, continuationEmpty);
+        setGenerationToolTurnMarker(lastMessage.extra, toolTurn);
+        setFreshReasoningMarker(lastMessage.extra, reasoning);
+        markStreamCompleted(lastMessage);
         await processImageAttachment(lastMessage, { imageUrls });
         if (!isReplyCurrent()) return { type, getMessage };
         // We don't know if the reasoning duration extended, so we don't update it here on purpose.
@@ -12397,6 +12446,11 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
         newMessage.extra.model = getGeneratingModel();
         newMessage.extra.reasoning_effort = getCurrentReasoningEffort();
         newMessage.extra.reasoning = reasoning;
+        setReasoningUnclosedMarker(newMessage.extra, reasoningUnclosed);
+        setGenerationFinishMarker(newMessage.extra, finishReason);
+        setGenerationToolTurnMarker(newMessage.extra, toolTurn);
+        setFreshReasoningMarker(newMessage.extra, null);
+        markStreamCompleted(newMessage);
         newMessage.extra.reasoning_duration = null;
         newMessage.extra.reasoning_signature = reasoningSignature;
         if (power_user.trim_spaces) {
@@ -12464,6 +12518,11 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
         delete swipeInfoExtra.neconyanExpression;
         delete swipeInfoExtra.token_count;
         delete swipeInfoExtra.reasoning;
+        delete swipeInfoExtra.reasoning_unclosed;
+        delete swipeInfoExtra.generation_finish_reason;
+        delete swipeInfoExtra.reasoning_continuation_empty;
+        delete swipeInfoExtra.generation_tool_turn;
+        delete swipeInfoExtra.reasoning_current;
         delete swipeInfoExtra.reasoning_duration;
         delete swipeInfoExtra.reasoning_tokens;
         delete swipeInfoExtra[IN_CHAT_AGENT_TRANSFORM_HISTORY_KEY];

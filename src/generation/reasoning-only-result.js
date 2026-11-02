@@ -12,7 +12,7 @@ export function separateConfiguredReasoning(result, settings, source) {
     const thinking = content.slice(settings.prefix.length, end < 0 ? undefined : end);
     const existing = result.reasoning ?? extractProviderReasoning(result.response, { mainApi: 'openai', chatCompletionSource: source });
     return { ...result, text: end < 0 ? '' : content.slice(end + settings.suffix.length),
-        reasoning: [existing, thinking].filter(Boolean).join('\n\n') };
+        reasoning: [existing, thinking].filter(Boolean).join('\n\n'), ...(end < 0 ? { reasoningUnclosed: true } : {}) };
 }
 
 /** A completed paid response can contain thinking without a usable answer. */

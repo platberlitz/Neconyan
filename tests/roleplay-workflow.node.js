@@ -30,7 +30,7 @@ const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', 
 prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }],
 function_calling: true };
 
-function prepared(t, effect = 'append', { assistant = false, pathfinder = false, agents = false, autoSwipe = false, autoContinue = false, continueTarget = 30, bundledMacros = null, history = 0 } = {}) {
+function prepared(t, effect = 'append', { assistant = false, pathfinder = false, agents = false, recovery = false, rewrite = true, autoSwipe = false, autoContinue = false, continueTarget = 30, bundledMacros = null, history = 0 } = {}) {
     const f = fixture(t);
     const dirs = f.scope.directories;
     // Keep small history budgets elsewhere; assistant lifecycle checks include every tool schema.
@@ -58,8 +58,14 @@ function prepared(t, effect = 'append', { assistant = false, pathfinder = false,
         if (pathfinder) fs.writeFileSync(path.join(dirs.inChatAgents, 'pathfinder.json'), JSON.stringify({ id: 'pathfinder',
             name: 'Pathfinder', category: 'tool', enabled: true, sourceTemplateId: 'tpl-pathfinder',
             settings: { sidecarEnabled: true, pipelineEnabled: false, enabledLorebooks: ['Manual'], includeContextualLorebooks: false } }));
-        if (agents) fs.writeFileSync(path.join(dirs.inChatAgents, 'rewrite.json'), JSON.stringify({ id: 'rewrite', name: 'Rewrite',
+        if (agents && rewrite) fs.writeFileSync(path.join(dirs.inChatAgents, 'rewrite.json'), JSON.stringify({ id: 'rewrite', name: 'Rewrite',
             enabled: true, phase: 'post', prompt: 'REWRITE', postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64 } }));
+        if (recovery) fs.writeFileSync(path.join(dirs.inChatAgents, 'tpl-thinking-reply-recovery.json'), JSON.stringify({ id: 'tpl-thinking-reply-recovery',
+            sourceTemplateId: 'tpl-thinking-reply-recovery', name: 'Thinking Reply Recovery', enabled: true, category: 'content', phase: 'post', prompt: 'RECOVER',
+            execution: 'inline', settings: {}, injection: { position: 1, depth: 1, role: 0, order: 30, scan: false },
+            preProcess: { mode: 'inject', interceptTiming: 'pre-generation', applyMode: 'replace', maxTokens: 8192 },
+            postProcess: { enabled: false, type: 'regex', promptTransformEnabled: true, promptTransformMode: 'rewrite', promptTransformMaxTokens: 64, promptTransformContextMessages: 8 },
+            conditions: { triggerKeywords: [], triggerProbability: 100, generationTypes: ['normal', 'continue'] } }));
     }
     dirs.openAI_Settings = path.join(dirs.root, 'openai-presets');
     fs.mkdirSync(dirs.openAI_Settings);
@@ -120,6 +126,25 @@ function prepared(t, effect = 'append', { assistant = false, pathfinder = false,
         records: () => fs.readFileSync(f.filename, 'utf8').trim().split('\n').map(line => JSON.parse(line)),
     };
 }
+
+test('a thinking-only workflow candidate is recovered, rewritten once and committed with its reasoning', async t => {
+    const f = prepared(t, 'append', { agents: true, recovery: true });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = [];
+    await f.candidate('', { count: 0 }, { response: { choices: [{ message: { reasoning_content: 'Plan the reply' }, finish_reason: 'stop' }] },
+        generateAgent: async ({ messages }) => {
+            const body = JSON.stringify(messages);
+            calls.push(body.includes('RECOVER') ? 'recovery' : 'rewrite');
+            return { text: body.includes('RECOVER') ? 'Recovered reply.' : 'Rewritten reply.' };
+        } });
+    const output = await runRoleplayWorkflowJob(f.context());
+    assert.equal(output.result.status, 'completed');
+    assert.deepEqual(calls, ['recovery', 'rewrite']);
+    assert.equal(f.records().at(-1).mes, 'Rewritten reply.');
+    assert.equal(f.records().at(-1).extra.reasoning, 'Plan the reply');
+    assert.equal(f.records().at(-1).extra.inChatAgentThinkingRecovery.status, 'done');
+});
 
 for (const policy of ['autoSwipe', 'autoContinue']) {
     test(`stopping Agents publishes the completed workflow reply without starting ${policy}`, async t => {
@@ -347,6 +372,67 @@ test('a thinking-only workflow fails before Agents or automatic continuation and
     assert.equal(f.records().length, 4);
     assert.equal(getJob(f.dirs, f.jobId).children.length, 1);
 });
+
+test('an automatically continued thinking-only turn recovers only the suffix after the assembled prefix, once', async t => {
+    // The rewrite Agent is off here, so turn 0 makes no unscripted model call before its continue decision.
+    const f = prepared(t, 'append', { agents: true, recovery: true, rewrite: false, autoContinue: true, continueTarget: 6 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    await f.candidate('Visible prose.', calls);
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    const agentPrompts = [];
+    await f.candidate('', calls, { turn: 1, response: { choices: [{ finish_reason: 'stop',
+        message: { content: '', reasoning_content: 'She closes the door behind her.' } }] },
+    generateAgent: async ({ messages }) => {
+        const body = JSON.stringify(messages);
+        agentPrompts.push(body);
+        return { text: body.includes('RECOVER') ? ' and the door closed.' : 'Rewritten reply.' };
+    } });
+    const output = await runRoleplayWorkflowJob(f.context());
+    assert.equal(output.result.status, 'completed');
+    assert.equal(agentPrompts.length, 1, 'recovery makes exactly one agent request for the thinking-only turn');
+    // The prompt is JSON-encoded, so the saved prefix appears with escaped newlines.
+    assert.ok(agentPrompts[0].includes('<reply_so_far>\\nVisible prose.\\n</reply_so_far>'));
+    assert.match(agentPrompts[0], /continues it from exactly where it stops/);
+    const accepted = f.records().at(-1);
+    assert.equal(accepted.mes, 'Visible prose. and the door closed.', 'the accepted reply joins the earlier chunk and the suffix once');
+    assert.equal(accepted.extra.reasoning, 'She closes the door behind her.');
+    assert.equal(accepted.extra.inChatAgentThinkingRecovery.status, 'done');
+    assert.equal(f.records().filter(record => record.mes?.includes('Visible prose.')).length, 1, 'the earlier chunk is never written twice');
+});
+
+for (const [seam, recovered, rewritten, expected] of [
+    ['space', ' and the door closed.', 'and the door closed.', 'Visible prose. and the door closed.'],
+    ['paragraph', '\n\nShe closes the door.', 'She closes the door.', 'Visible prose.\n\nShe closes the door.'],
+]) {
+    test(`an automatically continued thinking-only turn with a rewrite keeps its ${seam} seam and is accepted`, async t => {
+        const f = prepared(t, 'append', { agents: true, recovery: true, autoContinue: true, continueTarget: 6 });
+        updateJob(f.dirs, f.jobId, { state: 'running' });
+        await runRoleplayWorkflowJob(f.context());
+        const calls = { count: 0 };
+        const rewrites = [];
+        const agentFor = async ({ messages }) => {
+            const body = JSON.stringify(messages);
+            if (body.includes('RECOVER')) return { text: recovered };
+            rewrites.push(body);
+            // The rewrite returns the chunk without its leading whitespace, as a trimming model reply would.
+            return { text: rewrites.length === 1 ? 'Visible prose.' : rewritten };
+        };
+        await f.candidate('Visible prose.', calls, { generateAgent: agentFor });
+        assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+        await f.candidate('', calls, { turn: 1, response: { choices: [{ finish_reason: 'stop',
+            message: { content: '', reasoning_content: 'She closes the door behind her.' } }] }, generateAgent: agentFor });
+        const output = await runRoleplayWorkflowJob(f.context());
+        assert.equal(output.result.status, 'completed');
+        const accepted = f.records().at(-1);
+        assert.equal(accepted.mes, expected, 'the seam keeps exactly one space or paragraph break');
+        assert.equal(accepted.extra.reasoning, 'She closes the door behind her.');
+        assert.equal(accepted.extra.inChatAgentThinkingRecovery.status, 'done');
+        assert.equal(rewrites.length, 2, 'the rewrite runs once on each turn, after the recovery on the second');
+        assert.equal(f.records().filter(record => record.mes?.includes('Visible prose.')).length, 1);
+    });
+}
 
 for (const effect of ['append', 'continue']) for (const complete of [true, false]) {
     test(`a thinking-only automatic continuation keeps its accepted ${effect} prefix (complete: ${complete})`, async t => {

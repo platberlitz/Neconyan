@@ -285,6 +285,15 @@ export class ReasoningHandler {
     #lastReasoningDomRenderAt = 0;
 
     /**
+     * True while an inline reasoning prefix has started and its suffix has not arrived.
+     * Provider-native reasoning never sets this, so it is the source that tells a cut-off inline block apart.
+     * @returns {boolean}
+     */
+    get hasUnclosedInlineReasoning() {
+        return this.#isParsingReasoning;
+    }
+
+    /**
      * @param {Date?} [timeStarted=null] - When the generation started
      */
     constructor(timeStarted = null) {
@@ -565,6 +574,7 @@ export class ReasoningHandler {
      * @returns {Promise<void>}
      */
     async finish(messageId) {
+        setReasoningUnclosedMarker(chat[messageId]?.extra, this.hasUnclosedInlineReasoning);
         if (this.state === ReasoningState.None) return;
 
         // Make sure the finish time is recorded if a reasoning was in process and it wasn't ended correctly during streaming
@@ -1471,6 +1481,18 @@ function setReasoningEventHandlers() {
  * @param {string} str Input string
  * @returns {string} Output string
  */
+/**
+ * Records on a message's extra whether its reasoning came from an inline block that never closed.
+ * The marker is removed when the block closed or the reasoning came from the provider.
+ * @param {object?} extra The message or swipe extra to update
+ * @param {boolean} unclosed Whether the inline reasoning block is still open
+ */
+export function setReasoningUnclosedMarker(extra, unclosed) {
+    if (!extra || typeof extra !== 'object') return;
+    if (unclosed) extra.reasoning_unclosed = true;
+    else delete extra.reasoning_unclosed;
+}
+
 export function removeReasoningFromString(str, { force = false } = {}) {
     if (!force && !isReasoningAutoParseEnabled()) {
         return str;

@@ -126,7 +126,11 @@ function outputMessage(value) {
     return structuredClone(value);
 }
 
-function effectRecords(records, source, effect, output, request, job, directories) {
+/**
+ * `proofOutput` is the output the job's own Agent proofs were saved for. A workflow root joins earlier chunks onto a child's
+ * reply, so its combined output differs from what the child's Agents checked; the proof must be checked against the child's output.
+ */
+function effectRecords(records, source, effect, output, request, job, directories, proofOutput = output) {
     if (effect === 'notebook') return applyPathfinderNotebookRecords(directories, job, records, output);
     if (effect === 'agent') return applyManualAgentRecords(directories, job, records, output);
     const captionPolicy = request?.worldInfo?.captions;
@@ -156,7 +160,7 @@ function effectRecords(records, source, effect, output, request, job, directorie
         throw invalid('The saved Quick Reply actions were not included with this reply.');
     }
     applyRoleplayMacroCommit(directories, job, next, output, agentBaseline);
-    applyAgentCompletionRecords(directories, job, next, output, agentBaseline);
+    applyAgentCompletionRecords(directories, job, next, proofOutput, agentBaseline);
     if (output?.timedWorldInfo) {
         if (next.length - 1 !== output.timedChatLength
             || roleplayHash(next[0].chat_metadata?.timedWorldInfo ?? {}) !== output.timedBaseline) {
@@ -215,7 +219,7 @@ function effectRecords(records, source, effect, output, request, job, directorie
 }
 
 /** Build a protected candidate's final chat without publishing a provisional message. */
-export function previewRoleplayWorkflowEffect(lease, { source, effect, output, request, job }) {
+export function previewRoleplayWorkflowEffect(lease, { source, effect, output, request, job, proofOutput = output }) {
     if (job?.type !== 'roleplay.candidate' || !job.intent?.request?.workflowCandidate || !source || !output) {
         throw roleplayError('ROLEPLAY_WORKFLOW_INVALID', 'Only a bound workflow candidate can prepare this chat.', 409);
     }
@@ -224,7 +228,7 @@ export function previewRoleplayWorkflowEffect(lease, { source, effect, output, r
         throw roleplayError('ROLEPLAY_WORKFLOW_INVALID', 'The saved workflow candidate changed.', 409);
     }
     const saved = assertRoleplaySourceLocked(lease, source, { effect });
-    return effectRecords(saved.records, source, effect, output, request, job, scope.directories);
+    return effectRecords(saved.records, source, effect, output, request, job, scope.directories, proofOutput);
 }
 
 /** Completed ownership remains available after the replayable job and its artifacts have expired. */

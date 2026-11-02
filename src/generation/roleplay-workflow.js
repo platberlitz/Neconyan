@@ -406,7 +406,10 @@ function finalPlan(context, job, chosen, { key = FINAL, speakerIndex = null, pri
     const source = chosen.child.intent.source;
     const before = withNativeMediaReceipt(context, ({ lease }) => {
         const effect = job.intent.request.effect;
-        const selected = previewRoleplayWorkflowEffect(lease, { source, effect, output: chosen.output,
+        // A joined non-continue chunk is verified against the child's own Agent output. A blocked-continuation proof lives on
+        // the combined output, so that output stays the verified value. Continue keeps its combined output, as before.
+        const proofOutput = effect !== 'continue' && !chosen.output?.blockedContinuationProof ? chosen.candidate.output : chosen.output;
+        const selected = previewRoleplayWorkflowEffect(lease, { source, effect, output: chosen.output, proofOutput,
             request: chosen.child.intent.request, job: chosen.child });
         const currentSource = assertRoleplaySourceLocked(lease, source, { effect });
         const original = currentSource.records;

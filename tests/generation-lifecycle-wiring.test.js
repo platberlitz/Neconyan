@@ -187,10 +187,14 @@ describe('generation lifecycle wiring', () => {
     test('runs main output intercept event before saveReply stores non-streaming replies', () => {
         const generateSource = getFunctionSource('Generate', { exported: true });
         const interceptIndex = generateSource.indexOf('await applyMainGenerationOutputInterceptors({');
-        const saveIndex = generateSource.indexOf('await saveReply({ type, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, reasoningTokens: data.reasoningTokens, isCurrent, generationContext: agentGenerationContext, choiceOutcomes: Object.fromEntries((data.choices ?? []).map((choice, index) => [choice.index ?? index, classifyGenerationOutcome(data, choice.index ?? index)])) })');
+        // Matched on the stable leading arguments, so the later completion-marker arguments do not break the ordering check.
+        const saveIndex = generateSource.indexOf('await saveReply({ type, getMessage, title, swipes, reasoning, imageUrls, reasoningSignature, reasoningTokens: data.reasoningTokens,');
+        const saveCall = generateSource.slice(saveIndex, generateSource.indexOf('}));', saveIndex));
 
         expect(interceptIndex).toBeGreaterThanOrEqual(0);
         expect(saveIndex).toBeGreaterThanOrEqual(0);
         expect(interceptIndex).toBeLessThan(saveIndex);
+        expect(saveCall).toContain('reasoningUnclosed: limitedOutput.unclosed === true');
+        expect(saveCall).toContain('toolTurn: ToolManager.hasToolCalls(data)');
     });
 });

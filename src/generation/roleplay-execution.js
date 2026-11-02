@@ -33,7 +33,6 @@ import { prepareAutomaticHiding } from '../mewmory/hiding.js';
 import { cleanMewmoryCountView, finaliseMewmoryContext } from '../../public/scripts/mewmory/prompt-proof.js';
 import { createRoleplayChatCounter, createRoleplayTextCounter } from './roleplay-budget.js';
 import { createRoleplayTextPrompt } from './roleplay-text-prompt.js';
-import { readRoleplayPromptContributions } from './roleplay-contributions.js';
 import { inject_ids } from '../../public/scripts/constants.js';
 import { worldInfoActivationActions } from './world-info-hook-policy.js';
 import { runBoundPathfinderRetrieval } from './pathfinder-retrieval.js';
@@ -44,7 +43,10 @@ import { roleplayPromptContentHash } from './roleplay-prompt-proof.js';
 import { generateSavedSpeech } from './speech-jobs.js';
 import { prepareRoleplayCaptions } from './roleplay-captions.js';
 import { applyCaptionRecords } from './caption-records.js';
-import { prepareRoleplayAgentContributions, runRoleplayAgentInterceptors, runRoleplayAgentPostprocessing, roleplayAgentLoreText, roleplayAgentOutputBaseline, roleplayAgentDisplaySnapshot } from './roleplay-agent-processing.js';
+import { prepareRoleplayAgentContributions, runRoleplayAgentInterceptors, runRoleplayAgentPostprocessing, runRoleplayThinkingRecovery, roleplayAgentLoreText, roleplayAgentOutputBaseline, roleplayAgentDisplaySnapshot } from './roleplay-agent-processing.js';
+import { formatToolResults, THINKING_RECOVERY_RUN_EXTRA_KEY } from '../../public/scripts/extensions/in-chat-agents/thinking-recovery.js';
+import { readRoleplayPromptContributions } from './roleplay-contributions.js';
+import { readWorkflowContinuationPrefix } from './roleplay-kept-reply.js';
 import { runRoleplayCompanions, planRoleplayCompanionStart, roleplayCompanionPlaceholders } from './roleplay-companions.js';
 import { readRoleplayAgents } from './roleplay-agents-source.js';
 import { createFreshnessGate } from './roleplay-freshness-gate.js';
@@ -148,15 +150,17 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
         return withRoleplayAccount(base, account, lease => assertRoleplaySourceLocked(lease, source, { effect }));
     };
     const finish = async (result, selection) => {
+        // The saved provider result, before any thinking recovery, is what a workflow candidate is checked against.
+        const providerSource = result;
         const blocked = classifyGenerationOutcome(result?.response);
         if (blocked && !result?.text?.trim()) throw providerBlockedError(blocked);
         const saveCandidate = (kind, contents) => {
             const reference = readArtifact(directories, job.id, 'roleplay-main-provider');
             const providerResult = reference?.step && readArtifact(directories, job.id, reference.step);
-            if (!providerResult || roleplayHash(providerResult) !== roleplayHash(result)) {
+            if (!providerResult || roleplayHash(providerResult) !== roleplayHash(providerSource)) {
                 throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The candidate needs its saved provider result.', 503);
             }
-            const value = { intentHash: roleplayHash(job.intent), kind, providerHash: roleplayHash(result), ...contents };
+            const value = { intentHash: roleplayHash(job.intent), kind, providerHash: roleplayHash(providerSource), ...contents };
             const saved = readArtifact(directories, job.id, 'roleplay-candidate');
             if (saved !== undefined) {
                 const { hash, ...savedValue } = saved;
@@ -180,11 +184,50 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                 || result?.response?.candidates?.some?.(candidate => candidate.content?.parts?.some(part => part.functionCall)))) {
             throw roleplayError('ROLEPLAY_TOOLS_PENDING', 'The saved provider result needs the native tool workflow before a reply can be written.', 409);
         }
-        const thinkingOnly = reasoningOnlyResult(result);
+        const readAgentMewmory = () => request.serverPrompt ? withRoleplayAccount(base, account, () => {
+            const saved = readArtifact(directories, job.id, 'roleplay-mewmory');
+            const presentation = readArtifact(directories, job.id, 'roleplay-prompt')?.memoryPresentation;
+            return saved?.enabled && presentation?.version === 1 && presentation.phase === 'terminal'
+                ? { ...saved, memoryText: presentation.memoryText, factsText: presentation.factsText,
+                    interviewText: presentation.interviewText, presentationChoice: presentation.choice }
+                : saved ?? null;
+        }) : null;
+        let thinkingOnly = reasoningOnlyResult(result);
+        let thinkingRecovery = null;
+        // An automatically continued chunk is joined onto an earlier turn, so its own leading whitespace must survive every Agent pass.
+        const workflowChunk = Boolean(request.workflowCandidate) && readWorkflowContinuationPrefix({ directories, job }) !== null;
+        // Only a finished reply with no reasoning cut-off, unclosed tags or tool turn is repaired. A continuation has
+        // its saved prefix already, so its recovered text is the missing suffix that the existing continue merge appends.
+        if (thinkingOnly?.extra.generation_outcome.reason === 'reasoning_only' && !result.reasoningUnclosed && !blocked
+            && request.worldInfo?.agents) {
+            const current = assertSource();
+            // An explicit Continue, or an automatic continuation of an earlier turn, writes only the missing suffix.
+            const workflowPrefix = request.workflowCandidate ? readWorkflowContinuationPrefix({ directories, job }) : null;
+            const continuation = effect === 'continue' || workflowPrefix !== null;
+            // A continuation's prefix is the full reply already saved, not just the source message.
+            const continuationPrefix = workflowPrefix ?? (effect === 'continue' ? String(current.records[source.message.index + 1].mes ?? '') : '');
+            publishRoleplayPreview(context, { stage: 'agents', text: '', reasoning: thinkingOnly.reasoning, reasoning_finished: true,
+                generation: result.generation });
+            const recovery = await runRoleplayThinkingRecovery(context, { base, snapshot: request.worldInfo,
+                records: selectRoleplayPromptRecords(current.records, source, effect), metadataRecords: current.records,
+                reasoning: thinkingOnly.reasoning, generationType: request.worldInfo.global.trigger, binding: request.binding,
+                continuation, continuationPrefix, toolResults: formatToolResults(readRoleplayPromptContributions({ directories, job }).history),
+                macros: savedRoleplayMacroSnapshot(request.worldInfo, selectRoleplayPromptRecords(current.records, source, effect)),
+                activeLore: roleplayAgentLoreText(selection), mewmory: readAgentMewmory(), assistantName: request.characterName,
+                assertCurrent: () => { assertSource(); assertRoleplayWorldInfoCurrent(base, request.worldInfo); },
+                generate: generateAgent, resolvePresetProfile: promptBackend, agentCache });
+            if (recovery?.text) {
+                thinkingRecovery = { agentId: recovery.agentId, agentName: recovery.agentName, status: recovery.status,
+                    profileLabel: recovery.profileLabel, modelLabel: recovery.modelLabel, timestamp: recovery.timestamp };
+                result = { ...result, text: recovery.text, reasoning: thinkingOnly.reasoning };
+                thinkingOnly = null;
+            }
+        }
         if (thinkingOnly) throw roleplayError('GENERATION_NO_ANSWER', thinkingOnly.message, 502);
         let output = replyOutput(result, effect, request.characterName, result.generation);
         let reply = output.message ?? output.messages?.[0] ?? output;
         if (blocked) reply.extra.generation_outcome = blocked;
+        if (thinkingRecovery) reply.extra[THINKING_RECOVERY_RUN_EXTRA_KEY] = thinkingRecovery;
         // The paid main reply is complete from here on. A late Stop turns into
         // a soft stop for optional postprocessing instead of cancelling text
         // that is already paid for. A marker failure must not lose the reply.
@@ -327,15 +370,7 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                     if (previous !== undefined && roleplayHash(previous) !== roleplayHash(baseProof)) throw roleplayError('ROLEPLAY_AGENT_RECOVERY', 'The saved Agent response source changed.', 409);
                     if (previous === undefined) writeArtifact(directories, job.id, 'roleplay-agent-output-base', baseProof);
                 });
-                const mewmory = request.serverPrompt ? withRoleplayAccount(base, account, () => {
-                    const saved = readArtifact(directories, job.id, 'roleplay-mewmory');
-                    const presentation = readArtifact(directories, job.id, 'roleplay-prompt')?.memoryPresentation;
-                    return saved?.enabled && presentation?.version === 1 && presentation.phase === 'terminal'
-                        ? { ...saved, memoryText: presentation.memoryText, factsText: presentation.factsText,
-                            interviewText: presentation.interviewText, presentationChoice: presentation.choice }
-                        : saved ?? null;
-                }) : null;
-                const options = { base, snapshot: request.worldInfo, records, metadataRecords: current.records, binding: request.binding, mewmory,
+                const options = { base, snapshot: request.worldInfo, records, metadataRecords: current.records, binding: request.binding, mewmory: readAgentMewmory(), continuationChunk: workflowChunk,
                     activeLore: roleplayAgentLoreText(selection), agentCache: cache,
                     macros: savedRoleplayMacroSnapshot(request.worldInfo, records), generationType: request.worldInfo.global.trigger,
                     assistantName: request.characterName, assertCurrent: () => freshness(), generate: generateAgent,

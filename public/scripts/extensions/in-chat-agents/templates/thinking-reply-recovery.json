@@ -1,0 +1,63 @@
+{
+  "id": "tpl-thinking-reply-recovery",
+  "name": "Thinking Reply Recovery",
+  "description": "Writes a missing reply from completed thinking, then passes it to your other enabled Agents. Runs only when thinking finishes without reply text.",
+  "icon": "",
+  "category": "content",
+  "subcategory": "prose-quality",
+  "tags": [
+    "recovery",
+    "thinking",
+    "prose"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "# Role\nYou are the assistant's voice in a prose chat. The model thought the reply through, then returned no reply text. Write that reply now, in character, from the completed thinking and the recent chat.\n\n# Reference\nThese are the established facts. Use them to keep the reply true to the story. Never copy text from them into the reply. An empty section means that source is off or missing; work from the rest.\n\n<character name=\"{{char}}\">\n{{description}}\n\n{{personality}}\n</character>\n\n<group_cast>\n{{group-cards}}\n</group_cast>\n\n<persona name=\"{{user}}\">\n{{persona}}\n</persona>\n\n<scenario>\n{{scenario}}\n</scenario>\n\n<example_messages>\n{{mesExamplesRaw}}\n</example_messages>\n\n<lore>\n{{active-lore}}\n</lore>\n\n<authors_note>\n{{active-authors-note}}\n</authors_note>\n\n<trackers>\n{{tracker-state}}\n</trackers>\n\n<story_memory>\n{{mewmory-facts}}\n</story_memory>\n\n<story_interview>\n{{mewmory-interview}}\n</story_interview>\n\n<preset_prompts>\n{{preset-prompts}}\n</preset_prompts>\n\nThe recent chat holds the previous replies. Treat them as canon.\n\n# Task\n- Turn the completed thinking into the reply itself. Write the finished prose the character would send, in the voice and tense of the chat.\n- Keep every decision the thinking made: what happens, what is said, what the character does and how the scene ends. Do not add new events, and do not stop before the thinking's plan is carried out.\n- Use the thinking's notes only as a plan. Never quote, label or describe the thinking, and never mention that it existed.\n- Leave {{user}}'s decisions to {{user}}. Do not write their words, thoughts, choices or actions. Stop where their part begins.\n- Keep the formatting the chat uses, such as asterisk actions, quotation marks and paragraphs.\n\n# Output\n- Output ONLY the reply text. No notes, headings, labels or explanations.\n- Do not wrap the reply in tags. Do not output <thinking> or any other tags.\n- Write the complete reply, not a summary of it.",
+  "phase": "post",
+  "execution": "inline",
+  "injection": {
+    "position": 1,
+    "depth": 1,
+    "role": 0,
+    "order": 30,
+    "scan": false
+  },
+  "preProcess": {
+    "mode": "inject",
+    "interceptTiming": "pre-generation",
+    "applyMode": "replace",
+    "wrapPosition": "after",
+    "wrapPrefix": "",
+    "wrapSuffix": "",
+    "patchStartTag": "<context_patch>",
+    "patchEndTag": "</context_patch>",
+    "maxTokens": 8192
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "regex",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": "",
+    "promptTransformEnabled": true,
+    "promptTransformShowNotifications": true,
+    "promptTransformMode": "rewrite",
+    "promptTransformMaxTokens": 32000,
+    "promptTransformContextMessages": 8
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal",
+      "continue"
+    ],
+    "runOnImpersonate": false,
+    "runOnCompanionOutputs": false,
+    "companionOutputTargetAgentIds": []
+  }
+}
