@@ -338,20 +338,29 @@ export function resolveMobileShellNavPageScroll({
  * @param {number} [options.scrollLeft=0] Current scroll offset.
  * @param {number} [options.clientWidth=0] Visible width.
  * @param {number} [options.scrollWidth=0] Total scroll width.
- * @returns {{canScrollLeft: boolean, canScrollRight: boolean}}
+ * @param {number} [options.threshold=4] Ignore tiny rounding overflow and edge bounce.
+ * @returns {{canScrollLeft: boolean, canScrollRight: boolean, hasOverflow: boolean, thumbWidthPercent: number, thumbOffsetPercent: number}}
  */
 export function resolveMobileShellNavScrollIndicators({
     scrollLeft = 0,
     clientWidth = 0,
     scrollWidth = 0,
+    threshold = 4,
 } = {}) {
-    const currentScrollLeft = normalizeNumber(scrollLeft);
-    const visibleWidth = normalizeNumber(clientWidth);
-    const totalWidth = normalizeNumber(scrollWidth);
+    const visibleWidth = Math.max(0, normalizeNumber(clientWidth));
+    const totalWidth = Math.max(0, normalizeNumber(scrollWidth));
+    const maxScrollLeft = Math.max(0, totalWidth - visibleWidth);
+    const currentScrollLeft = Math.min(maxScrollLeft, Math.max(0, normalizeNumber(scrollLeft)));
+    const safeThreshold = Math.max(0, normalizeNumber(threshold));
+    const hasOverflow = visibleWidth > 0 && maxScrollLeft > safeThreshold;
+    const thumbWidthPercent = hasOverflow ? Math.min(92, Math.max(18, visibleWidth / totalWidth * 100)) : 0;
 
     return {
-        canScrollLeft: currentScrollLeft > 0,
-        canScrollRight: Math.ceil(currentScrollLeft + visibleWidth) < totalWidth,
+        canScrollLeft: hasOverflow && currentScrollLeft > safeThreshold,
+        canScrollRight: hasOverflow && maxScrollLeft - currentScrollLeft > safeThreshold,
+        hasOverflow,
+        thumbWidthPercent,
+        thumbOffsetPercent: hasOverflow ? currentScrollLeft / maxScrollLeft * (100 - thumbWidthPercent) : 0,
     };
 }
 
@@ -966,7 +975,8 @@ const MOBILE_DOCUMENT_PAN_GUARD_SELECTOR = [
     '.ica--cwin',
 ].join(', ');
 
-const MOBILE_DOCUMENT_PAN_HORIZONTAL_SCROLL_SELECTOR = [
+// Button/tab strips share their discovery cues and touch-pan allowlist.
+export const MOBILE_SWIPE_RAIL_SELECTOR = [
     '#leftSendForm',
     '#qr--bar',
     '#sb-bottom-chat-secondary-row',
@@ -981,6 +991,7 @@ const MOBILE_DOCUMENT_PAN_HORIZONTAL_SCROLL_SELECTOR = [
     '.sb-conversation-settings-nav',
     '.ica--template-pill-row',
     '.sb-shell-nav',
+    '.sb-character-editor-subtabs',
     '.sb-settings-tabs-nav',
     // The icons-only top bar is made entirely of buttons, so every swipe on it matches
     // MOBILE_DOCUMENT_PAN_CONTROL_SELECTOR and the pan guard blocks it unless the rail is
@@ -993,6 +1004,10 @@ const MOBILE_DOCUMENT_PAN_HORIZONTAL_SCROLL_SELECTOR = [
     '#HotSwapWrapper .hotswap',
     '#right-nav-panel .rm_tag_controls',
     '#right-nav-panel .neconyan-character-library-footer',
+].join(', ');
+
+const MOBILE_DOCUMENT_PAN_HORIZONTAL_SCROLL_SELECTOR = [
+    MOBILE_SWIPE_RAIL_SELECTOR,
     '#completion_prompt_manager .completion_prompt_manager_prompt > span:nth-child(3)',
     '.popup.horizontal_scrolling_dialogue_popup .popup-content',
     '.mes_text pre code',

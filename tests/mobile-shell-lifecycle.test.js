@@ -152,6 +152,9 @@ describe('mobile shell lifecycle helper', () => {
         })).toEqual({
             canScrollLeft: false,
             canScrollRight: true,
+            hasOverflow: true,
+            thumbWidthPercent: 37.5,
+            thumbOffsetPercent: 0,
         });
 
         expect(resolveMobileShellNavScrollIndicators({
@@ -161,6 +164,27 @@ describe('mobile shell lifecycle helper', () => {
         })).toEqual({
             canScrollLeft: true,
             canScrollRight: false,
+            hasOverflow: true,
+            thumbWidthPercent: 37.5,
+            thumbOffsetPercent: 62.5,
+        });
+    });
+
+    test('keeps the overflow thumb stable through midpoint, rounding and bounce', () => {
+        expect(resolveMobileShellNavScrollIndicators({ clientWidth: 100, scrollWidth: 300, scrollLeft: 100 })).toMatchObject({
+            canScrollLeft: true, canScrollRight: true, hasOverflow: true,
+        });
+        const middle = resolveMobileShellNavScrollIndicators({ clientWidth: 100, scrollWidth: 300, scrollLeft: 100 });
+        expect(middle.thumbOffsetPercent).toBeCloseTo((100 - middle.thumbWidthPercent) / 2);
+        expect(resolveMobileShellNavScrollIndicators({ clientWidth: 100, scrollWidth: 103 })).toMatchObject({
+            hasOverflow: false, thumbWidthPercent: 0, thumbOffsetPercent: 0,
+        });
+        expect(resolveMobileShellNavScrollIndicators({ clientWidth: 0, scrollWidth: 300 }).hasOverflow).toBe(false);
+        expect(resolveMobileShellNavScrollIndicators({ clientWidth: 100, scrollWidth: 10000, scrollLeft: -20 })).toMatchObject({
+            thumbWidthPercent: 18, thumbOffsetPercent: 0, canScrollLeft: false,
+        });
+        expect(resolveMobileShellNavScrollIndicators({ clientWidth: 100, scrollWidth: 106, scrollLeft: 100 })).toMatchObject({
+            thumbWidthPercent: 92, thumbOffsetPercent: 8, canScrollRight: false,
         });
     });
 

@@ -8042,14 +8042,6 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
         padding: 18px 12px 6px;
     }
 
-    .sb-shell-nav-wrapper.sb-can-scroll-left .sb-shell-nav {
-        padding-left: 54px;
-    }
-
-    .sb-shell-nav-wrapper.sb-can-scroll-right .sb-shell-nav {
-        padding-right: 54px;
-    }
-
     .sb-shell-tab {
         flex-basis: clamp(150px, 64vw, 204px);
         min-width: clamp(150px, 64vw, 204px);
