@@ -1,0 +1,52 @@
+#sb_character_creator_panel {
+    container-type: inline-size;
+    min-width: 0;
+    padding: 12px;
+    color: var(--neco-ink);
+    background: var(--neco-canvas);
+    overflow: auto;
+}
+#sb_character_creator_panel[hidden] { display: none; }
+#sb_character_creator_panel h2,
+#sb_character_creator_panel h3 { font-family: var(--sb-font-display); font-weight: 400; }
+#sb_character_creator_panel h2 { font-size: 1.55rem; margin: 0 0 8px; }
+#sb_character_creator_panel h3 { font-size: 1.2rem; }
+#sb_character_creator_panel .menu_button { min-height: 44px; white-space: normal; margin: 0; }
+#sb_character_creator_panel .creator-status { min-height: 1.5em; margin: 0 0 10px; font-size: .85rem; }
+#sb_character_creator_panel .creator-status[data-error="true"] { color: var(--neco-ink); font-weight: 700; }
+.creator-welcome { padding: 20px; background: var(--neco-surface); border-radius: 16px; }
+.creator-library { margin-block: 20px; }
+.creator-library-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.creator-draft-header { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.creator-eyebrow { font-size: .8rem; color: var(--neco-muted); margin: 0 0 4px; }
+.creator-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.creator-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.creator-content { min-width: 0; }
+.creator-sections { display: flex; gap: 6px; overflow-x: auto; touch-action: pan-x; overscroll-behavior-x: contain; padding-bottom: 6px; }
+#sb_character_creator_panel .creator-sections .menu_button { flex: 0 0 auto; white-space: nowrap; }
+#sb_character_creator_panel .creator-sections [aria-current="page"] { background: var(--neco-ginger); color: var(--neco-on-accent); border-color: var(--neco-ginger); }
+.creator-field { margin-bottom: 18px; min-width: 0; }
+.creator-field-heading { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.creator-field-heading label { font-weight: 700; margin-right: auto; }
+#sb_character_creator_panel .text_pole { width: 100%; color: var(--neco-ink); background: var(--neco-surface); border: 1px solid var(--neco-border); border-radius: 10px; padding: 12px; font-family: var(--mainFontFamily); line-height: 1.55; resize: vertical; }
+#sb_character_creator_panel :focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 3px; }
+.creator-muted { color: var(--neco-muted); font-size: .85rem; line-height: 1.5; }
+.creator-fact,
+.creator-proposal,
+.creator-book,
+.creator-review-item { background: var(--neco-surface); padding: 14px; border-radius: 12px; margin-bottom: 14px; }
+.creator-proposal-field { border-top: 1px solid var(--neco-border); padding-block: 12px; }
+#sb_character_creator_panel pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: .9rem; max-height: 360px; overflow: auto; }
+.creator-before { color: var(--neco-muted); }
+#sb_character_creator_panel .creator-fullscreen { position: fixed; inset: 0; width: 100dvw; height: 100dvh; max-width: none; max-height: none; margin: 0; border: 0; padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); color: var(--neco-ink); background: var(--neco-canvas); }
+#sb_character_creator_panel .creator-fullscreen[open] { display: flex; flex-direction: column; gap: 12px; }
+.creator-fullscreen header { justify-content: space-between; }
+#sb_character_creator_panel .creator-expanded-input { flex: 1; min-height: 0; resize: none; }
+.creator-portraits { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 16px; }
+.creator-portrait { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 12px; background: var(--neco-surface); border-radius: 12px; }
+.creator-portrait img { width: 100%; height: 180px; object-fit: contain; border-radius: 8px; }
+@container (min-width: 960px) {
+    .creator-layout { grid-template-columns: 210px minmax(0, 1fr); }
+    .creator-sections { flex-direction: column; align-self: start; position: sticky; top: 0; }
+    #sb_character_creator_panel .creator-sections .menu_button { white-space: normal; text-align: left; justify-content: flex-start; }
+}

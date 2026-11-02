@@ -1008,6 +1008,7 @@ export const MOBILE_SWIPE_RAIL_SELECTOR = [
 
 const MOBILE_DOCUMENT_PAN_HORIZONTAL_SCROLL_SELECTOR = [
     MOBILE_SWIPE_RAIL_SELECTOR,
+    '.creator-sections',
     '#completion_prompt_manager .completion_prompt_manager_prompt > span:nth-child(3)',
     '.popup.horizontal_scrolling_dialogue_popup .popup-content',
     '.mes_text pre code',

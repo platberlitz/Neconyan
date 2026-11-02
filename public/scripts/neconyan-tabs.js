@@ -520,7 +520,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261102-rail-line';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261102-creator';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -1093,6 +1093,11 @@ const NN_CHARACTER_TAB_COPY = Object.freeze({
         subtitle: 'Edit your own persona here for roleplay and chats!',
         description: 'Edit persona details, locks, and defaults in the same flow as your character work.',
     },
+    creator: {
+        title: 'Creator',
+        subtitle: 'Build a character, try their voice, and shape their world.',
+        description: 'Recover drafts, develop character cards, and review lorebook changes before saving.',
+    },
     import: {
         title: 'Import',
         subtitle: 'Directly import character cards here from various sources.',
@@ -1115,6 +1120,7 @@ const NN_CHARACTER_PANEL_TABS = Object.freeze([
     { id: 'editor', label: 'Editor', icon: 'fa-pen-to-square' },
     { id: 'world-info', label: 'Lorebooks', icon: 'fa-book-atlas' },
     { id: 'persona', label: 'Persona', icon: 'fa-face-smile' },
+    { id: 'creator', label: 'Creator', icon: 'fa-wand-magic-sparkles' },
     { id: 'import', label: 'Import', icon: 'fa-file-import' },
 ]);
 const NN_CHARACTER_PANEL_DEFAULT_TAB = 'characters';
@@ -10407,6 +10413,34 @@ function openCharacterPersonaTab() {
     syncCharacterTitlebarVisibility();
 }
 
+function openCharacterCreatorTab({ avatar = null } = {}) {
+    const panel = getCharacterPanel();
+    setCharacterPanelMenuType(panel, 'creator');
+    setCharacterEditorEmptyState(false);
+    setCharacterPersonaPanelVisible(false);
+    setCharacterImportPanelVisible(false);
+    setCharacterWorldInfoPanelVisible(false);
+    hideCharacterMainPanels();
+    syncCharacterShellTabs('creator');
+    syncCharacterTitlebarVisibility();
+    void import('./creator/index.js').then(module => module.mountCreator(document.getElementById('sb_character_creator_panel'), { avatar }))
+        .catch(error => { console.error('[Creator]', error); toastr.error('Creator could not open. Try again.'); });
+}
+
+async function openEditedCharacterInCreator() {
+    const context = getSillyTavernContext();
+    const avatar = context?.groupId ? null : context?.characters?.[context.characterId]?.avatar;
+    if (getCharacterPanel()?.dataset.menuType !== 'character_edit' || !avatar) {
+        toastr.info('Save this character first, or start a new draft in Creator.');
+        return;
+    }
+    if (await flushCharacterSaveDebounced() === false) {
+        toastr.error('Save the editor changes before opening Creator.');
+        return;
+    }
+    openCharacterCreatorTab({ avatar });
+}
+
 function openCharacterImportTab() {
     const panel = getCharacterPanel();
     nnState.characterDrawer.lastTab = 'import';
@@ -10518,6 +10552,8 @@ function openCharacterPanelTab(tabId) {
         if (normalizedTabId === 'persona') {
             setCharacterPanelMenuType(panel, 'persona');
             openCharacterPersonaTab();
+        } else if (normalizedTabId === 'creator') {
+            openCharacterCreatorTab();
         } else if (normalizedTabId === 'import') {
             setCharacterPanelMenuType(panel, 'import');
             openCharacterImportTab();
@@ -10546,6 +10582,8 @@ function restoreLastCharacterPanelView() {
 
     if (lastTab === 'persona') {
         openCharacterPersonaTab();
+    } else if (lastTab === 'creator') {
+        openCharacterCreatorTab();
     } else if (lastTab === 'import') {
         openCharacterImportTab();
     } else if (lastTab === 'world-info') {
@@ -10579,7 +10617,7 @@ function syncCharacterShellTabs(activeTab = null) {
     const panel = getCharacterPanel();
     const menuType = panel?.dataset.menuType;
     const normalizedTab = activeTab
-        ?? (menuType === 'persona'
+        ?? (menuType === 'creator' ? 'creator' : menuType === 'persona'
             ? 'persona'
             : menuType === 'import'
                 ? 'import'
@@ -10590,6 +10628,12 @@ function syncCharacterShellTabs(activeTab = null) {
                         : ['character_edit', 'group_edit', 'create', 'group_create', 'editor_empty'].includes(menuType) ? 'editor' : 'characters');
 
     nnState.characterDrawer.lastTab = normalizedTab;
+
+    const creatorPanel = document.getElementById('sb_character_creator_panel');
+    if (creatorPanel) {
+        creatorPanel.hidden = normalizedTab !== 'creator';
+        creatorPanel.setAttribute('aria-hidden', String(normalizedTab !== 'creator'));
+    }
 
     if (menuType === 'characters' || menuType === 'groups') {
         syncCharacterListControls(menuType);
@@ -19415,6 +19459,13 @@ function injectCharacterDrawerControls() {
     }
 
     const editorTab = document.getElementById('sb_character_tab_editor');
+    const creatorShortcut = document.getElementById('sb_character_open_creator');
+    if (creatorShortcut && creatorShortcut.dataset.sbBound !== 'true') {
+        creatorShortcut.dataset.sbBound = 'true';
+        creatorShortcut.addEventListener('click', () => {
+            void openEditedCharacterInCreator().catch(error => toastr.error(error.message));
+        });
+    }
     if (editorTab instanceof HTMLButtonElement && editorTab.dataset.sbBound !== 'true') {
         editorTab.dataset.sbBound = 'true';
         editorTab.addEventListener('click', () => { void openCharacterEditorTab(); });
@@ -19430,6 +19481,12 @@ function injectCharacterDrawerControls() {
     if (worldInfoTab instanceof HTMLButtonElement && worldInfoTab.dataset.sbBound !== 'true') {
         worldInfoTab.dataset.sbBound = 'true';
         worldInfoTab.addEventListener('click', () => openCharacterWorldInfoTab());
+    }
+
+    const creatorTab = document.getElementById('sb_character_tab_creator');
+    if (creatorTab instanceof HTMLButtonElement && creatorTab.dataset.sbBound !== 'true') {
+        creatorTab.dataset.sbBound = 'true';
+        creatorTab.addEventListener('click', openCharacterCreatorTab);
     }
 
     const importTab = document.getElementById('sb_character_tab_import');

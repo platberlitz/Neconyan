@@ -1,0 +1,192 @@
+import { getRequestHeaders, adoptServerSettingsWrite, saveSettings } from '../../script.js';
+import { getCurrentUserHandle } from '../user.js';
+import { createCreatorDraft, validateCreatorDraft } from './model.js';
+
+/** Each workspace owns its account, source and request queue, independently of the active chat. */
+export class CreatorSession {
+    constructor() {
+        this.owner = getCurrentUserHandle();
+        this.draft = null;
+        this.revision = null;
+        this.pending = null;
+        this.queue = Promise.resolve();
+    }
+
+    assertOwner() {
+        if (this.owner !== getCurrentUserHandle()) throw new Error('The account changed. Reopen Creator before continuing.');
+    }
+
+    async request(path, body = {}) {
+        this.assertOwner();
+        const response = await fetch(`/api/creator/${path}`, {
+            method: 'POST', cache: 'no-store',
+            headers: { ...getRequestHeaders(), 'X-Neconyan-Account': this.owner },
+            body: JSON.stringify(body),
+        });
+        this.assertOwner();
+        const result = await response.json();
+        if (!response.ok) throw Object.assign(new Error(result.message || 'Creator could not finish this request.'), { status: response.status, code: result.code });
+        if (result.owner !== this.owner) throw new Error('The account changed. Reopen Creator.');
+        return result;
+    }
+
+    get recoveryKey() { return `neconyan.creator.recovery:${encodeURIComponent(this.owner)}`; }
+
+    remember() {
+        this.assertOwner();
+        // A browser quota failure must not prevent the account-scoped server save.
+        try {
+            localStorage.setItem(this.recoveryKey, JSON.stringify({ draft: this.draft, revision: this.revision, pending: this.pending }));
+            this.localRecoveryError = false;
+        } catch {
+            this.localRecoveryError = true;
+        }
+    }
+
+    recovery() {
+        this.assertOwner();
+        const value = JSON.parse(localStorage.getItem(this.recoveryKey) || 'null');
+        if (value?.draft) validateCreatorDraft(value.draft);
+        return value;
+    }
+
+    async open(id) {
+        await this.queue;
+        const result = await this.request('get', { id });
+        this.draft = result.draft;
+        this.revision = result.revision;
+        this.pending = result.publication ?? null;
+        this.remember();
+    }
+
+    async create(avatar = null) {
+        await this.queue;
+        if (avatar && !await saveSettings(0, { returnResult: true })) throw new Error('Save your current settings before opening this character.');
+        const source = avatar ? await this.request('character', { avatar }) : {};
+        const draft = createCreatorDraft({ id: crypto.randomUUID(), ...source });
+        const embedded = draft.card.data.character_book;
+        if (Array.isArray(embedded?.entries)) {
+            const { convertCharacterBook } = await import('../world-info.js');
+            const data = convertCharacterBook(embedded);
+            draft.books.push({ id: crypto.randomUUID(), name: embedded.name || 'Portable lorebook', mode: 'embedded', data, original: structuredClone(data), revision: null });
+        }
+        const linkedName = draft.card.data.extensions?.world;
+        if (linkedName) {
+            try {
+                const linked = await this.request('book', { name: linkedName });
+                draft.books.push({ id: crypto.randomUUID(), ...linked, mode: 'linked', original: structuredClone(linked.data) });
+            } catch (error) {
+                if (error.status !== 404) throw error;
+                draft.missingBooks = [linkedName];
+            }
+        }
+        for (const name of draft.additionalBooks) {
+            if (draft.books.some(book => book.name === name && book.mode !== 'embedded')) continue;
+            try {
+                const linked = await this.request('book', { name });
+                draft.books.push({ id: crypto.randomUUID(), ...linked, mode: 'linked', original: structuredClone(linked.data) });
+            } catch (error) {
+                if (error.status !== 404) throw error;
+                (draft.missingBooks ??= []).push(name);
+            }
+        }
+        this.draft = draft;
+        this.revision = null;
+        this.pending = null;
+        this.remember();
+        await this.save();
+    }
+
+    restore(value) {
+        this.assertOwner();
+        this.draft = validateCreatorDraft(structuredClone(value.draft));
+        this.revision = value.revision;
+        this.pending = value.pending;
+    }
+
+    save() {
+        this.assertOwner();
+        this.remember();
+        const draft = structuredClone(this.draft);
+        const action = async () => {
+            if (this.draft?.id !== draft.id) throw new Error('The draft changed before it could be saved.');
+            const result = await this.request('save', { draft, expectedRevision: this.revision });
+            this.revision = result.revision;
+            this.remember();
+            return result;
+        };
+        const task = this.queue.then(action);
+        this.queue = task.catch(() => {});
+        return task;
+    }
+
+    async publish(copy = false) {
+        if (this.publishing) throw new Error('A save is already in progress.');
+        this.publishing = true;
+        try {
+            return await this.publishFrozen(copy);
+        } finally { this.publishing = false; }
+    }
+
+    async publishFrozen(copy) {
+        if (!this.pending) {
+            if (!await saveSettings(0, { returnResult: true })) throw new Error('Save your current settings before publishing this character.');
+            await this.save();
+            this.pending = { id: this.draft.id, expectedRevision: this.revision, operationId: crypto.randomUUID(), copy };
+            this.remember();
+        }
+        let result;
+        try {
+            result = await this.request('publish', this.pending);
+            this.pending.operationId = result.operationId;
+            this.remember();
+        } catch (error) {
+            // Only a definitive missing receipt proves that no resource was committed.
+            try {
+                const receipt = await this.request('receipt', this.pending);
+                this.pending.operationId = receipt.operationId;
+                this.remember();
+            } catch (receiptError) {
+                if (receiptError.status === 404) { this.pending = null; this.remember(); }
+            }
+            throw error;
+        }
+        // Read every committed resource before changing the local baseline. A later
+        // library edit must never acquire a fresh revision beside our older text.
+        const source = await this.request('character', { avatar: result.avatar });
+        if (source.revision !== result.revision) throw new Error('The save completed, but the character changed again. Your draft and save receipt are retained. Reopen the library character to compare it.');
+        const next = structuredClone(this.draft);
+        for (const book of next.books) {
+            if (!book.detached && (book.mode === 'copy' || book.mode === 'linked')) {
+                const current = await this.request('book', { name: book.name });
+                const committed = result.books.find(item => item.name === book.name);
+                if (!committed || current.revision !== committed.revision) throw new Error(`The save completed, but ${book.name} changed again. Your draft and save receipt are retained.`);
+                book.mode = 'linked';
+                book.revision = current.revision;
+                book.original = structuredClone(current.data);
+            }
+        }
+        if (result.binding?.state === 'done') {
+            const { world_info } = await import('../world-info.js');
+            const filename = result.avatar.replace(/\.[^.]+$/, '');
+            const entries = world_info.charLore ??= [];
+            const index = entries.findIndex(item => item.name === filename);
+            if (!result.binding.books.length) {
+                if (index >= 0) entries.splice(index, 1);
+            } else if (index >= 0) entries[index].extraBooks = [...result.binding.books];
+            else entries.push({ name: filename, extraBooks: [...result.binding.books] });
+            if (result.binding.settingsWrite) adoptServerSettingsWrite({ account: this.owner, ...result.binding.settingsWrite });
+        }
+        // Keep the operation until the source and draft acknowledge the committed identity.
+        next.source = { avatar: source.avatar, revision: source.revision, original: structuredClone(source.card), extraBooks: source.extraBooks };
+        next.card = structuredClone(source.card);
+        next.journal = result;
+        next.history = [];
+        next.future = [];
+        this.draft = next;
+        await this.save();
+        this.pending = null;
+        this.remember();
+        return result;
+    }
+}

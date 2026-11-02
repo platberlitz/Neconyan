@@ -5240,7 +5240,7 @@ function balanceStreamingMarkdown(text) {
 }
 
 // Neconyan: Extracted HTML sanitization to allow reuse in streaming and final render paths.
-function sanitizeMessageHtml(mes, sanitizerOverrides = {}) {
+export function sanitizeMessageHtml(mes, sanitizerOverrides = {}, character = characters[this_chid]) {
     /** @type {DOMPurify.Config} */
     const config = {
         RETURN_DOM: false,
@@ -5251,7 +5251,7 @@ function sanitizeMessageHtml(mes, sanitizerOverrides = {}) {
         ADD_ATTR: ['style'], // Allow inline CSS effects from model-generated message spans.
         ...sanitizerOverrides,
     };
-    mes = bindPortraitUrls(mes, characters[this_chid]);
+    mes = bindPortraitUrls(mes, character);
     mes = encodeStyleTags(mes);
     mes = DOMPurify.sanitize(mes, config);
     return decodeStyleTags(mes, { prefix: '.mes_text ' });
@@ -8591,10 +8591,10 @@ class StreamingProcessor {
  * @param {string} [prefill] Prefill for the prompt.
  * @returns {string | object[]} Prompt ready for use in generation. If using TC, this will be a string. If using CC, this will be an array of chat-style messages.
  */
-export function createRawPrompt(prompt, api, instructOverride, quietToLoud, systemPrompt, prefill) {
+export function createRawPrompt(prompt, api, instructOverride, quietToLoud, systemPrompt, prefill, { literalPrompt = false } = {}) {
     return createRawPromptPure(prompt, api, instructOverride, quietToLoud, systemPrompt, prefill, {
         instruct: power_user.instruct, context: power_user.context, name1, name2,
-        selectedGroup: Boolean(selected_group), substitute: substituteParams, adjustNovelPrompt: adjustNovelInstructionPrompt,
+        selectedGroup: Boolean(selected_group), substitute: substituteParams, adjustNovelPrompt: adjustNovelInstructionPrompt, literalPrompt,
     });
 }
 
@@ -8613,6 +8613,7 @@ export function createRawPrompt(prompt, api, instructOverride, quietToLoud, syst
  * @prop {JsonSchema} [jsonSchema] JSON schema to use for the structured generation. Usually requires a special instruction.
  * @prop {AbortSignal} [signal] Optional signal to abort the request.
  * @prop {'main'|'auxiliary'|'none'} [cacheScope] Prompt cache lane for local backends.
+ * @prop {boolean} [literalPrompt=false] Preserve authoring macros without evaluating chat variables or inserting active chat names.
  */
 
 /**
@@ -8621,7 +8622,7 @@ export function createRawPrompt(prompt, api, instructOverride, quietToLoud, syst
  * @param {GenerateRawParams} params Parameters for generating a message
  * @returns {Promise<object | string>} Raw API response data, or a JSON string extracted from the response when `jsonSchema` is provided.
  */
-export async function generateRawData({ prompt = '', api = null, instructOverride = false, quietToLoud = false, systemPrompt = '', responseLength = null, prefill = '', jsonSchema = null, signal = null, cacheScope = 'auxiliary', preserveReasoningBudget = false, temperature } = {}) {
+export async function generateRawData({ prompt = '', api = null, instructOverride = false, quietToLoud = false, systemPrompt = '', responseLength = null, prefill = '', jsonSchema = null, signal = null, cacheScope = 'auxiliary', preserveReasoningBudget = false, temperature, literalPrompt = false } = {}) {
     if (!api) {
         api = main_api;
     }
@@ -8652,7 +8653,7 @@ export async function generateRawData({ prompt = '', api = null, instructOverrid
 
     try {
         abortController.signal.throwIfAborted();
-        prompt = createRawPrompt(prompt, api, instructOverride, quietToLoud, systemPrompt, prefill);
+        prompt = createRawPrompt(prompt, api, instructOverride, quietToLoud, systemPrompt, prefill, { literalPrompt });
         /** @type {object|any[]} */
         let generateData = {};
 

@@ -3650,6 +3650,7 @@ async function requestMainModelPromptTransform(context, promptMessages, maxToken
         trimNames: false,
         signal,
         cacheScope: 'auxiliary',
+        literalPrompt: options.literalPrompt === true,
     });
 
     return {

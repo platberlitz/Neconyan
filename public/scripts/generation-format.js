@@ -139,8 +139,15 @@ export function constructScopedTextPrompt(prompt, instruct, { name1 = '', name2 
 /** Preserve raw generation's separate system prompt, macro and prefill semantics. */
 export function createRawPrompt(prompt, api, instructOverride, quietToLoud, systemPrompt, prefill, {
     instruct = {}, context = {}, name1 = '', name2 = '', selectedGroup = false,
-    substitute = value => value, adjustNovelPrompt = value => value,
+    substitute = value => value, adjustNovelPrompt = value => value, literalPrompt = false,
 } = {}) {
+    // Authoring requests carry macro source, not executable chat templates.
+    if (literalPrompt) {
+        substitute = value => value;
+        name1 = '';
+        name2 = '';
+        selectedGroup = false;
+    }
     const isInstruct = instruct.enabled && api !== 'openai' && api !== 'novel' && !instructOverride;
     const formatting = { customInstruct: instruct, name1, name2, selectedGroup, substitute };
     if (typeof prompt === 'string') prompt = [{ role: 'user', content: prompt.trim() }];
