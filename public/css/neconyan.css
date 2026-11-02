@@ -620,7 +620,8 @@ body.neconyan #options_button { border-radius: 12px; border: 1px solid var(--nec
 body.neconyan :is(#send_but, #sb_conversation_send) { border-radius: var(--neconyan-control-radius, 12px) !important; background: var(--sb-send-bg, var(--neco-ginger)) !important; color: var(--sb-send-ink, var(--neco-on-accent)) !important; box-shadow: none; }
 body.neconyan :is(#send_form:focus-within, .sb-conversation-composer:focus-within) { border-color: var(--neco-ginger); box-shadow: none; }
 body.neconyan #send_form:focus-within :is(#nonQRFormItems, #send_textarea) { background: transparent; box-shadow: none; }
-body.neconyan #form_sheld #send_form.sb-generating-controls { border-color: var(--neco-accent-secondary); box-shadow: inset 0 0 0 3px var(--neco-accent-secondary); }
+body.neconyan #form_sheld { --neco-generating-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--neco-accent-secondary) 78%, transparent), 0 0 12px color-mix(in srgb, var(--neco-accent-secondary) 14%, transparent); }
+body.neconyan #form_sheld #send_form.sb-generating-controls { border-color: var(--neco-accent-secondary); box-shadow: var(--neco-generating-shadow); }
 #send_form.sb-roleplay-background #send_but { opacity: .5; cursor: progress; }
 
 body.neconyan #sheld[data-sb-conversation-mode='on'] { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'header' 'stage'; border: 0; border-radius: 0; }
