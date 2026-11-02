@@ -151,7 +151,9 @@ for (const preset of [false, true]) test(`metadata-free native Groq ${preset ? '
         assert.equal(JSON.parse(request.body).reasoning_effort, 'high');
         return new Response(JSON.stringify({ choices: [{ message: { content: 'Native reply.' } }] }));
     } };
-    assert.equal((await runChatProfile(options)).text, 'Native reply.');
+    const result = await runChatProfile(options);
+    assert.equal(result.text, 'Native reply.');
+    assert.equal(result.generation.reasoning_effort, 'high');
     await assert.rejects(runChatProfile({ ...options, overridePayload: { reasoning_effort: 'none' } }), /not available/);
     assert.equal(calls, 1);
     assert.equal(fs.readFileSync(path.join(fixture.root, 'settings.json'), 'utf8'), before);
@@ -276,7 +278,9 @@ for (const preset of [false, true]) test(`saved OpenRouter ${preset ? 'preset' :
             assert.equal(body.__connectionProfileRequestFields, undefined);
             return new Response(JSON.stringify({ choices: [{ message: { content: 'No selector reply.' } }] }));
         } };
-    assert.equal((await runChatProfile(options)).text, 'No selector reply.');
+    const result = await runChatProfile(options);
+    assert.equal(result.text, 'No selector reply.');
+    assert.equal(Object.hasOwn(result.generation, 'reasoning_effort'), false);
     assert.equal(calls, 1, 'no additional catalogue request');
     await assert.rejects(runChatProfile({ ...options, overridePayload: { ...options.overridePayload, reasoning_effort: 'high' } }), /Remove the effort override/);
     assert.equal(calls, 1, 'explicit override is rejected before dispatch');

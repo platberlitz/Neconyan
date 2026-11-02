@@ -233,12 +233,13 @@ function readProviderReply({ directories, job }) {
     const thinkingOnly = reasoningOnlyResult(result);
     if (thinkingOnly && isText(thinkingOnly.reasoning)) {
         const generation = result.generation ?? {};
-        return { text: '', chunk: false, reasoning: thinkingOnly.reasoning, extra: thinkingOnly.extra,
+        return { text: '', chunk: false, reasoning: thinkingOnly.reasoning,
+            extra: cleanExtra({ ...thinkingOnly.extra, reasoning_effort: generation.reasoning_effort }),
             timings: timingsOf(generation), model: generation.model, api: generation.source,
             reasoningDuration: generation.reasoning_duration };
     }
     return isText(result?.text) ? { text: result.text, chunk: job.intent?.effect === 'continue', reasoning: '',
-        extra: {}, timings: {}, model: undefined, api: undefined, tokenCount: undefined,
+        extra: cleanExtra({ reasoning_effort: result.generation?.reasoning_effort }), timings: {}, model: undefined, api: undefined, tokenCount: undefined,
         reasoningTokens: undefined, reasoningDuration: undefined } : null;
 }
 
@@ -301,6 +302,7 @@ export function collectRoleplayKeptReply({ directories, job, rootJobId = null })
         source = 'preview';
         const inChatAgents = previewAgentSnapshot(preview);
         const extra = cleanExtra({ reasoning: preview.reasoning, reasoning_duration: preview.reasoning_duration,
+            reasoning_effort: preview.generation?.reasoning_effort,
             reasoning_tokens: preview.reasoning_tokens, token_count: preview.token_count, model: preview.generation?.model,
             api: preview.generation?.source, ...(inChatAgents ? { inChatAgents } : {}),
             ...(isThinkingOnly(preview) ? { generation_outcome: { version: 1, status: 'truncated', reason: 'incomplete_stream' } } : {}) });
@@ -319,6 +321,9 @@ export function collectRoleplayKeptReply({ directories, job, rootJobId = null })
         if (!captured.timings.gen_finished && preview.gen_finished) captured.timings = { ...captured.timings, gen_finished: preview.gen_finished };
         if (captured.model === undefined) captured.model = preview.generation?.model;
         if (captured.api === undefined) captured.api = preview.generation?.source;
+        if (captured.extra.reasoning_effort === undefined && preview.generation?.reasoning_effort !== undefined) {
+            captured.extra.reasoning_effort = preview.generation.reasoning_effort;
+        }
         if (captured.tokenCount === undefined) captured.tokenCount = preview.token_count;
         if (captured.reasoningTokens === undefined) captured.reasoningTokens = preview.reasoning_tokens;
         if (captured.reasoningDuration === undefined) captured.reasoningDuration = preview.reasoning_duration;

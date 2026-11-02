@@ -105,7 +105,8 @@ function replyOutput(result, effect, name, material) {
         throw roleplayError('ROLEPLAY_INVALID', 'The generated Roleplay signature is too large.', 502);
     }
     const extra = { ...(typeof reasoning === 'string' && reasoning ? { reasoning } : {}), ...(signature ? { reasoning_signature: signature } : {}),
-        ...(material?.model ? { model: material.model } : {}), ...(material?.source ? { api: material.source } : {}) };
+        ...(material?.model ? { model: material.model } : {}), ...(material?.source ? { api: material.source } : {}),
+        ...(material?.reasoning_effort ? { reasoning_effort: material.reasoning_effort } : {}) };
     const timing = material?.gen_started && material?.gen_finished
         ? { gen_started: material.gen_started, gen_finished: material.gen_finished } : {};
     if (reasoning && timing.gen_started) {

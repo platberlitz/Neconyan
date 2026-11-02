@@ -267,6 +267,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
         if (!dispatchValidation) await validatePrompt?.(payload, material);
         const generation = { backend: binding.backend || 'chat', source: material.source,
             ...modelField(payload.model || modelOverride || material.profile.model),
+            ...(payload.reasoning_effort ? { reasoning_effort: String(payload.reasoning_effort) } : {}),
             showThoughts: Boolean(material.active.show_thoughts || material.active.auto_append_reasoning_tags) };
         const reasoningSettings = parseInlineReasoning ? material.power.reasoning : null;
         const call = async () => {
@@ -318,6 +319,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
     if (!dispatchValidation) await validatePrompt?.(payload, material);
     const generation = { backend: 'chat', source: material.source,
         ...modelField(payload.model || modelOverride || material.profile.model),
+        ...(payload.reasoning_effort ? { reasoning_effort: String(payload.reasoning_effort) } : {}),
         showThoughts: Boolean(material.active.show_thoughts || material.active.auto_append_reasoning_tags) };
     const reasoningSettings = parseInlineReasoning ? material.power.reasoning : null;
     const call = async () => {
