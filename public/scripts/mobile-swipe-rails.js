@@ -22,13 +22,15 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
         if (records.has(rail) || !(rail instanceof HTMLElement)) return;
         const chrome = document.createElement('div');
         chrome.className = 'sb-mobile-rail-chrome';
+        const progressOnly = rail.id === 'leftSendForm';
+        if (progressOnly) chrome.classList.add('sb-mobile-rail-progress-only');
         chrome.hidden = true;
-        const buttons = [-1, 1].map(direction => {
+        const buttons = (progressOnly ? [] : [-1, 1]).map(direction => {
             const button = document.createElement('button');
             button.type = 'button';
             button.className = `sb-mobile-rail-arrow sb-mobile-rail-${direction < 0 ? 'left' : 'right'}`;
             button.setAttribute('aria-label', direction < 0 ? leftLabel : rightLabel);
-            button.innerHTML = `<span aria-hidden="true">${direction < 0 ? '‹' : '›'}</span>`;
+            button.innerHTML = `<span aria-hidden="true"><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${direction < 0 ? 'M10.5 3 5.5 8 10.5 13' : 'M5.5 3 10.5 8 5.5 13'}"/></svg></span>`;
             button.addEventListener('click', event => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -57,7 +59,7 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
         rail.addEventListener('click', revealTab);
         rail.addEventListener('focusin', revealTab);
         resize.observe(rail);
-        records.set(rail, { chrome, buttons, revealTab });
+        records.set(rail, { chrome, buttons, revealTab, progressOnly });
     }
 
     function update() {
@@ -68,7 +70,7 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
             root.querySelectorAll?.(MOBILE_SWIPE_RAIL_SELECTOR).forEach(register);
         }
         pendingRoots.clear();
-        for (const [rail, { chrome, buttons, revealTab }] of records) {
+        for (const [rail, { chrome, buttons, revealTab, progressOnly }] of records) {
             if (!rail.isConnected) {
                 chrome.remove();
                 resize.unobserve(rail);
@@ -87,12 +89,11 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
             const state = resolveMobileShellNavScrollIndicators({
                 scrollLeft, clientWidth: visible ? rail.clientWidth : 0, scrollWidth: rail.scrollWidth,
             });
-            toggle(rail, 'sb-mobile-swipe-rail', state.hasOverflow);
+            toggle(rail, 'sb-mobile-swipe-rail', state.hasOverflow && !progressOnly);
             toggle(rail, 'sb-can-scroll-left', state.canScrollLeft);
             toggle(rail, 'sb-can-scroll-right', state.canScrollRight);
             if (chrome.hidden === state.hasOverflow) chrome.hidden = !state.hasOverflow;
             if (!state.hasOverflow) continue;
-            toggle(chrome, 'sb-mobile-rail-compact', rail.id === 'leftSendForm' && !!rail.closest('#send_form.compact'));
             buttons.forEach((button, index) => {
                 const enabled = index === 0 ? state.canScrollLeft : state.canScrollRight;
                 if (button.hidden === enabled) button.hidden = !enabled;

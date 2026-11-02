@@ -293,7 +293,7 @@
     }
 }
 
-#top-bar * {
+#top-bar *:not(:where(.sb-mobile-rail-chrome, .sb-mobile-rail-chrome *)) {
     pointer-events: auto;
 }
 
@@ -1514,9 +1514,9 @@ body:not(.movingUI) .drawer-content.maximized {
 }
 
 #top-settings-holder .drawer-content,
-#top-settings-holder .drawer-content *,
+#top-settings-holder .drawer-content *:not(:where(.sb-mobile-rail-chrome, .sb-mobile-rail-chrome *)),
 #top-settings-holder .popup,
-#top-settings-holder .popup * {
+#top-settings-holder .popup *:not(:where(.sb-mobile-rail-chrome, .sb-mobile-rail-chrome *)) {
     pointer-events: auto;
 }
 
@@ -8354,7 +8354,7 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
         #left-nav-panel .sb-shell-main,
         #left-nav-panel .sb-shell-panel-scroller,
         #left-nav-panel .sb-shell-panel,
-        #left-nav-panel .sb-shell-panel * {
+        #left-nav-panel .sb-shell-panel *:not(:where(.sb-mobile-rail-chrome, .sb-mobile-rail-chrome *)) {
             pointer-events: auto !important;
         }
     }

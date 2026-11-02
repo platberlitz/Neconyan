@@ -799,6 +799,16 @@ const chatBlock = document.getElementById('chat');
 const isFirefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
 const MESSAGE_SWIPE_IGNORED_SELECTOR = '#group_speaker_controls, #group_scene_strip';
 
+function revealSendTextAreaEnd() {
+    // WebKit can leave the newly typed line below the viewport until a later paint.
+    // Only follow an active end caret; editing or selecting earlier text stays put.
+    if (document.activeElement === sendTextArea
+        && sendTextArea.selectionStart === sendTextArea.value.length
+        && sendTextArea.selectionEnd === sendTextArea.value.length) {
+        sendTextArea.scrollTo({ top: sendTextArea.scrollHeight, behavior: 'instant' });
+    }
+}
+
 /**
  * this makes the chat input text area resize vertically to match the text size (limited by CSS at 50% window height)
  */
@@ -808,6 +818,7 @@ function autoFitSendTextArea() {
     sendTextArea.style.height = '1px'; // Reset height to 1px to force recalculation of scrollHeight
     const newHeight = sendTextArea.scrollHeight;
     sendTextArea.style.height = `${newHeight}px`;
+    revealSendTextAreaEnd();
 
     if (!isFirefox) {
         chatBlock.scrollTop = chatBlock.scrollHeight - (chatBlock.offsetHeight + originalScrollBottom);
@@ -981,6 +992,7 @@ export function initRossMods() {
             if (sendTextArea.style.height && sendTextArea.style.height !== 'auto') {
                 sendTextArea.style.height = 'auto';
             }
+            revealSendTextAreaEnd();
             return;
         }
 
@@ -1000,6 +1012,7 @@ export function initRossMods() {
                         chatBlock.scrollTop = chatBlock.scrollHeight - (chatBlock.offsetHeight + originalScrollBottom);
                     }
                 }
+                revealSendTextAreaEnd();
                 return;
             }
             const fitsCurrentSize = scrollHeight <= offsetHeight;

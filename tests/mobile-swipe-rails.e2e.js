@@ -24,9 +24,11 @@ test.describe('phone discovery cues', () => {
         await applyIOSOnlyCss(page, { inPlace: true });
         const rail = page.locator('#leftSendForm');
         const chrome = chromeFor(page, '#leftSendForm');
-        await expect(chrome).toBeVisible();
-        await expect(chrome.locator('.sb-mobile-rail-left')).toBeHidden();
-        await expect(chrome.locator('.sb-mobile-rail-right')).toBeVisible();
+        await expect(chrome.locator('.sb-mobile-rail-track')).toBeVisible();
+        await expect(chrome.locator('.sb-mobile-rail-arrow')).toHaveCount(0);
+        expect(await chrome.evaluate(el => getComputedStyle(el).pointerEvents)).toBe('none');
+        const thumbOffset = () => chrome.evaluate(el => parseFloat(el.style.getPropertyValue('--sb-rail-thumb-left')));
+        expect(await thumbOffset()).toBe(0);
         expect(await rail.locator('.sb-mobile-rail-chrome').count()).toBe(0);
         // The two original tool centres remain available, including the narrow composer.
         const centres = await rail.evaluate(el => [...el.children].filter(child => child.getBoundingClientRect().width > 0).map(child => {
@@ -35,21 +37,6 @@ test.describe('phone discovery cues', () => {
             return !visible || child.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
         }));
         expect(centres.every(Boolean)).toBe(true);
-        await chrome.locator('.sb-mobile-rail-right').tap();
-        await expect.poll(() => rail.evaluate(el => el.scrollLeft)).toBeGreaterThan(0);
-        await expect(chrome.locator('.sb-mobile-rail-left')).toBeVisible();
-        while (await chrome.locator('.sb-mobile-rail-right').isVisible()) {
-            const previous = await rail.evaluate(el => el.scrollLeft);
-            await chrome.locator('.sb-mobile-rail-right').tap();
-            await expect.poll(() => rail.evaluate(el => el.scrollLeft)).toBeGreaterThan(previous);
-        }
-        await expect(chrome.locator('.sb-mobile-rail-right')).toBeHidden();
-        while (await chrome.locator('.sb-mobile-rail-left').isVisible()) {
-            const previous = await rail.evaluate(el => el.scrollLeft);
-            await chrome.locator('.sb-mobile-rail-left').tap();
-            await expect.poll(() => rail.evaluate(el => el.scrollLeft)).toBeLessThan(previous);
-        }
-        await expect.poll(() => rail.evaluate(el => el.scrollLeft)).toBe(0);
         // A native touch swipe over the actual tools still reaches the hidden control.
         const box = await rail.boundingBox();
         const client = await context.newCDPSession(page);
@@ -59,14 +46,41 @@ test.describe('phone discovery cues', () => {
         }
         await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
         await expect.poll(() => rail.evaluate(el => el.scrollLeft)).toBeGreaterThan(0);
+        await expect.poll(thumbOffset).toBeGreaterThan(0);
         await client.detach();
+        await rail.evaluate(el => el.scrollTo({ left: 0, behavior: 'instant' }));
+        await expect.poll(thumbOffset).toBe(0);
         await page.evaluate(() => window.NeconyanShell.openCharacters());
+        await applyIOSOnlyCss(page, { inPlace: true });
         const nav = page.locator('#right-nav-panel .sb-character-shell-nav');
         const navChrome = chromeFor(page, '#right-nav-panel .sb-character-shell-nav');
         await expect(navChrome.locator('.sb-mobile-rail-right')).toBeVisible();
+        // The sibling decoration must not cover the tabs or the swipe surface.
+        expect(await navChrome.evaluate(el => getComputedStyle(el).pointerEvents)).toBe('none');
+        const tab = nav.locator('[role="tab"]').nth(1);
+        await tab.tap();
+        await expect(tab).toHaveAttribute('aria-selected', 'true');
+        const navBox = await nav.boundingBox();
+        const swipe = await context.newCDPSession(page);
+        const before = await nav.evaluate(el => el.scrollLeft);
+        await swipe.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: navBox.x + navBox.width - 65, y: navBox.y + navBox.height / 2 }] });
+        for (let x = navBox.x + navBox.width - 70; x > navBox.x + 65; x -= 10) {
+            await swipe.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: navBox.y + navBox.height / 2 }] });
+        }
+        await swipe.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        await expect.poll(() => nav.evaluate(el => el.scrollLeft)).toBeGreaterThan(before);
+        await swipe.detach();
+        await nav.evaluate(el => el.scrollTo({ left: 0, behavior: 'instant' }));
         await navChrome.locator('.sb-mobile-rail-right').tap();
         await expect.poll(() => nav.evaluate(el => el.scrollLeft)).toBeGreaterThan(0);
         await expect(page.locator('#right-nav-panel')).toBeVisible();
+        const alignment = await navChrome.locator('.sb-mobile-rail-left > span').evaluate(el => {
+            const pill = el.getBoundingClientRect();
+            const icon = el.querySelector('svg').getBoundingClientRect();
+            const rail = el.closest('.sb-mobile-rail-chrome').getBoundingClientRect();
+            return [Math.abs(pill.y + pill.height / 2 - icon.y - icon.height / 2), Math.abs(pill.y + pill.height / 2 - rail.y - rail.height / 2)];
+        });
+        expect(alignment.every(offset => offset < 1)).toBe(true);
         // Use the real accent controls, which also select readable foreground colours.
         for (const colour of [null, 'rgba(245, 235, 200, 1)', 'rgba(45, 20, 70, 1)']) {
             await page.evaluate(value => {
