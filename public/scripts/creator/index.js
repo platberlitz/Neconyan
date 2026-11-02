@@ -7,23 +7,24 @@ import { compareCreatorChanges } from './conflicts.js';
 import { restoreCreatorBackup } from './backup.js';
 import { creatorPublicationCard, adoptCreatorComparedCard } from './embedded-book.js';
 
-const sections = [['dossier', 'Dossier'], ['identity', 'Identity'], ['facts', 'Guided facts'], ['greetings', 'Greetings & examples'], ['interview', 'Interview'], ['prompts', 'Prompts'], ['lore', 'Lorebooks'], ['macros', 'Macros & pronouns'], ['regex', 'Pretty HTML'], ['game', 'Gamify'], ['portrait', 'Portrait'], ['helper', 'Writing partner'], ['metadata', 'Details'], ['preview', 'Preview & export']];
+const sections = [['dossier', 'Dossier'], ['notebooks', 'Notebook sources'], ['identity', 'Identity'], ['facts', 'Guided facts'], ['greetings', 'Greetings & examples'], ['interview', 'Interview'], ['prompts', 'Prompts'], ['lore', 'Lorebooks'], ['macros', 'Macros & pronouns'], ['regex', 'Pretty HTML'], ['game', 'Gamify'], ['portrait', 'Portrait'], ['helper', 'Writing partner'], ['instructions', 'Writing instructions'], ['metadata', 'Details'], ['preview', 'Preview & export']];
 const labels = { name: 'Display name', description: 'Description', personality: 'Personality', scenario: 'Scenario', first_mes: 'First greeting', mes_example: 'Interviewer examples', creator_notes: 'Public creator notes', system_prompt: 'Main prompt', post_history_instructions: 'Post-history instructions', creator: 'Creator', character_version: 'Card version' };
 let app;
 
-export async function mountCreator(host, { avatar = null } = {}) {
+export async function mountCreator(host, { avatar = null, draftId = null } = {}) {
     if (!host) return;
     if (app?.host === host) app.session.assertOwner();
     else {
         app = new CreatorWorkspace(host);
-        if (!avatar) await app.home();
+        if (!avatar && !draftId) await app.home();
         else app.shell();
     }
-    if (avatar) await app.run(async () => {
+    if (avatar || draftId) await app.run(async () => {
         if (app.session.pending || app.session.publishing) throw new Error('Finish the previous save before opening another character.');
         clearTimeout(app.timer);
         if (app.session.draft) await app.session.save();
-        await app.session.create(avatar);
+        if (draftId) await app.session.open(draftId);
+        else await app.session.create(avatar);
         app.render();
     });
 }

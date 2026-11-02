@@ -8,7 +8,11 @@ Avoid canned 'a beat' or 'a pause', negative-parallelism formulas, tightening ja
 export const MACRO_GUIDANCE = `Keep authoring macros literal. Core names include {{user}}, {{char}}, {{description}}, {{personality}}, {{scenario}}, {{persona}}, {{mesExamples}} and {{creatorNotes}}.
 MacroEnhanced pronouns require that extension and its experimental macro support: {{sub}}, {{obj}}, {{poss}}, {{poss_p}}, {{ref}}, and {{charsub}}, {{charobj}}, {{charposs}}, {{charposs_p}}, {{charref}}. Verb agreement uses {{pverb::is::are}} or {{charpverb::is::are}}. Never invent pronoun macro names. Use {{hasvar::key}} to test variable existence: zero is a valid stored value. {{random::a::b}} rerolls on evaluation; {{pick::a::b}} is seeded, not permanent. MacroEnhanced can provide {{freeze::key::{{random::a::b}}}}, {{rollonce::key::1d20}} and {{listpick::key::a,b}}. Setters do not create new bare macro names; read values with {{getvar::key}}. Never hide executable initialisers inside {{// comments}}, which discard their contents. Suggest only macros whose required support is identified.`;
 
+export const CREATOR_PROMPTS = Object.freeze({ director: DIRECTOR_GUIDANCE, grounded: GROUNDED_GUIDANCE, macros: MACRO_GUIDANCE });
+
 export function creatorGuidance(draft) {
     const mode = draft.writing?.mode ?? 'full';
-    return [DIRECTOR_GUIDANCE, mode === 'full' ? GROUNDED_GUIDANCE : '', mode === 'custom' ? String(draft.writing?.custom ?? '') : '', MACRO_GUIDANCE].filter(Boolean).join('\n\n');
+    const prompts = Object.fromEntries(Object.entries(CREATOR_PROMPTS).map(([key, fallback]) => [key,
+        typeof draft.writing?.prompts?.[key] === 'string' ? draft.writing.prompts[key] : fallback]));
+    return [prompts.director, mode === 'full' ? prompts.grounded : '', mode === 'custom' ? String(draft.writing?.custom ?? '') : '', prompts.macros].filter(Boolean).join('\n\n');
 }

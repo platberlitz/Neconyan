@@ -22,6 +22,7 @@ export function expandField(input, label) {
     const title = element('h2', '', label);
     const editor = element('textarea', 'text_pole creator-expanded-input');
     editor.value = input.value;
+    editor.readOnly = input.readOnly;
     editor.setAttribute('aria-label', label);
     const count = element('output', 'creator-muted');
     const update = () => { count.textContent = `${editor.value.length.toLocaleString()} characters`; };
@@ -38,6 +39,7 @@ export function expandField(input, label) {
             editor.focus();
         }, false, 'creator-chip-btn');
         insert.title = macro.includes('poss') ? 'Requires MacroEnhanced and experimental macros. Configure pronouns in Macros & pronouns.' : 'Insert a literal macro.';
+        insert.disabled = input.readOnly;
         toolbar.append(insert);
     }
     const tokens = button('Count tokens', async () => {

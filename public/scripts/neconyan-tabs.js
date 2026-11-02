@@ -10416,7 +10416,7 @@ function openCharacterPersonaTab() {
     syncCharacterTitlebarVisibility();
 }
 
-function openCharacterCreatorTab({ avatar = null } = {}) {
+function openCharacterCreatorTab({ avatar = null, draftId = null } = {}) {
     const panel = getCharacterPanel();
     const creatorStylesReady = preloadPanelStylesheets('characters', 'creator', { priority: 'high' });
     holdPanelUntilStyled(document.getElementById('sb_character_creator_panel'), creatorStylesReady);
@@ -10428,7 +10428,7 @@ function openCharacterCreatorTab({ avatar = null } = {}) {
     hideCharacterMainPanels();
     syncCharacterShellTabs('creator');
     syncCharacterTitlebarVisibility();
-    void import('./creator/index.js').then(module => module.mountCreator(document.getElementById('sb_character_creator_panel'), { avatar }))
+    void import('./creator/index.js').then(module => module.mountCreator(document.getElementById('sb_character_creator_panel'), { avatar, draftId }))
         .catch(error => { console.error('[Creator]', error); toastr.error('Creator could not open. Try again.'); });
 }
 
@@ -10531,7 +10531,7 @@ function setCharacterShellMode(mode) {
     }
 }
 
-function openCharacterPanelTab(tabId) {
+function openCharacterPanelTab(tabId, creatorOptions = {}) {
     const normalizedTabId = normalizeCharacterPanelTab(tabId);
     nnState.characterDrawer.lastTab = normalizedTabId;
 
@@ -10558,7 +10558,7 @@ function openCharacterPanelTab(tabId) {
             setCharacterPanelMenuType(panel, 'persona');
             openCharacterPersonaTab();
         } else if (normalizedTabId === 'creator') {
-            openCharacterCreatorTab();
+            openCharacterCreatorTab(creatorOptions);
         } else if (normalizedTabId === 'import') {
             setCharacterPanelMenuType(panel, 'import');
             openCharacterImportTab();
@@ -21401,6 +21401,7 @@ function initAll() {
     const neconyanShell = /** @type {any} */ (globalThis.NeconyanShell || {});
     globalThis.NeconyanShell = Object.assign(neconyanShell, {
         refreshRailQuickActions: refreshNeconyanRailQuickActions,
+        openCreator: options => openCharacterPanelTab('creator', options),
         editQuickActions: editNeconyanRailQuickActions,
         openExtensionSettings,
         openIncludedTool: openNeconyanIncludedToolPage,

@@ -68,6 +68,7 @@ export function stringList(value) {
  * a plain message explaining why the change cannot be used.
  */
 export function normaliseChange(value) {
+    if (value?.type === 'creator') return normaliseScratchpadCreator(value);
     if (!value || typeof value !== 'object' || Array.isArray(value)) fail('This change is not a JSON object.');
     const reason = text(value.reason, 1000).trim();
     if (value.type === 'image') {
@@ -204,6 +205,7 @@ export function splitReply(reply) {
 }
 
 export function describeChange(change) {
+    if (change.type === 'creator') return `Creator draft: ${change.name}`;
     if (change.type === 'image') return change.target === 'avatar' ? `New avatar for ${change.character}` : 'Generate an image';
     if (change.type === 'notebook') {
         const label = Object.values(NOTE_TOOL_DEFINITIONS).find(item => item.kind === change.action)?.displayName || 'Change note';
@@ -261,3 +263,4 @@ export function parseField(field, edited) {
     if (field === 'alternate_greetings') return String(edited ?? '').split(/\n\s*---\s*\n/).map(item => item.trim()).filter(Boolean);
     return String(edited ?? '');
 }
+import { normaliseScratchpadCreator } from '../creator/scratchpad-draft.js';
