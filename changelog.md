@@ -13,6 +13,7 @@
 - PR #410 (2026-11-02) `feat(agents): recover replies from completed thinking`
 - PR #413 (2026-11-02) `fix(agents): keep the page still when toggling agents`
 - PR #414 (2026-11-03) `fix(mewmory): avoid copying the search index when hiding messages`
+- PR #415 (2026-11-03) `fix(mobile): keep rail scroll lines on their rail when a sibling grows`
 
 ## v1.4.1
 
