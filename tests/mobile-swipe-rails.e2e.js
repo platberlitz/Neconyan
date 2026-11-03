@@ -210,4 +210,55 @@ test.describe('phone discovery cues', () => {
         await expect(page.locator('.sb-mobile-rail-chrome')).toHaveCount(0);
         expect(errors).toEqual([]);
     });
+
+    // Scratchpad and the compact composer put the rail beside the growing box;
+    // Conversation mode wraps it in a fixed-height toolbar that the box pushes.
+    for (const toolbar of [false, true]) {
+        test(`rail chrome follows the rail when a growing sibling pushes it up${toolbar ? ' through a fixed toolbar' : ''}`, async ({ page }) => {
+            const errors = [];
+            page.on('pageerror', error => errors.push(error.message));
+            const chips = `<div class="scratchpad-quick">${Array.from({ length: 6 }, (_, i) => `<button>Chip ${i}</button>`).join('')}</div>`;
+            await page.route('**/swipe-rail-sibling-fixture', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html>
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <link rel="stylesheet" href="/css/neconyan-mobile-shell.css">
+                <style>body{margin:0;--neco-ginger:#d28c64;--neco-on-accent:#111;--neco-ginger-hover:#d28c64}
+                #panel{position:fixed;inset:0;display:flex;flex-direction:column;justify-content:flex-end}
+                #compose{display:flex;flex-direction:column;gap:8px;padding:8px}
+                #toolbar{height:52px}
+                .scratchpad-quick{display:flex;overflow-x:auto;gap:4px;height:44px;white-space:nowrap}
+                .scratchpad-quick button{flex:0 0 120px}
+                #grow{height:40px;overflow:hidden}</style>
+                <div id="panel"><div id="compose">${toolbar ? `<div id="toolbar">${chips}</div>` : chips}<div id="grow"></div></div></div>
+                <script type="module">import {initMobileSwipeRails} from '/scripts/mobile-swipe-rails.js';
+                initMobileSwipeRails({leftLabel:'Scroll left',rightLabel:'Scroll right'});window.ready=true;</script>` }));
+            await page.goto('/swipe-rail-sibling-fixture');
+            await page.waitForFunction(() => window.ready);
+            const chrome = chromeFor(page, '.scratchpad-quick');
+            await expect(chrome).toBeVisible();
+            const offset = () => page.evaluate(() => {
+                const rail = document.querySelector('.scratchpad-quick').getBoundingClientRect();
+                const cue = document.querySelector('.sb-mobile-rail-chrome').getBoundingClientRect();
+                return Math.abs(rail.top - cue.top) + Math.abs(rail.height - cue.height);
+            });
+            expect(await offset()).toBeLessThan(1);
+            const railTop = () => page.locator('.scratchpad-quick').evaluate(el => el.getBoundingClientRect().top);
+            const before = await railTop();
+            // A style change outside the rail, with no scroll event, as WebKit does it.
+            for (const height of ['120px', '64px']) {
+                await page.locator('#grow').evaluate((el, value) => { el.style.height = value; }, height);
+                await expect.poll(offset).toBeLessThan(1);
+            }
+            expect(await railTop()).toBeLessThan(before);
+            const changes = await page.evaluate(async () => {
+                let count = 0;
+                const observer = new MutationObserver(records => { count += records.length; });
+                observer.observe(document.body, { subtree: true, attributes: true, childList: true });
+                for (let i = 0; i < 8; i++) await new Promise(requestAnimationFrame);
+                observer.disconnect();
+                return count;
+            });
+            expect(changes).toBe(0);
+            expect(errors).toEqual([]);
+        });
+    }
 });
