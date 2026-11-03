@@ -66,7 +66,9 @@ class CreatorWorkspace {
     }
 
     shell() {
-        this.host.replaceChildren();
+        // The page introduction and Nori's tour invitation belong to the shell, so redraws keep them.
+        const intro = this.host.querySelector(':scope > .neconyan-native-page-heading');
+        this.host.replaceChildren(...(intro ? [intro] : []));
         const output = element('p', 'creator-status', this.message);
         output.setAttribute('role', 'status');
         output.hidden = !this.message;
@@ -270,7 +272,9 @@ class CreatorWorkspace {
         redo.dataset.creatorRedo = '';
         undo.disabled = !draft.history.length;
         redo.disabled = !draft.future.length;
-        actions.append(button('Drafts', () => this.run(() => this.home()), false, 'creator-chip-btn'), undo, redo, button('Review & save', () => this.review(), true, 'creator-chip-btn'));
+        const review = button('Review & save', () => this.review(), true, 'creator-chip-btn');
+        review.dataset.creatorReview = '';
+        actions.append(button('Drafts', () => this.run(() => this.home()), false, 'creator-chip-btn'), undo, redo, review);
         const cancelRequest = button('Cancel active request', () => this.requestController?.abort(), false, 'creator-chip-btn');
         cancelRequest.dataset.creatorCancelRequest = '';
         cancelRequest.hidden = !this.requestController;
@@ -281,6 +285,7 @@ class CreatorWorkspace {
         nav.setAttribute('aria-label', 'Catelier sections');
         for (const [id, label] of sections) {
             const tab = button(label, () => { this.session.draft.view.section = id; this.session.remember(); this.render(); }, false, 'creator-section-tab');
+            tab.dataset.creatorSection = id;
             const isCurrent = draft.view.section === id;
             tab.setAttribute('aria-current', isCurrent ? 'page' : 'false');
             tab.setAttribute('tabindex', isCurrent ? '0' : '-1');
@@ -421,6 +426,7 @@ class CreatorWorkspace {
                 } finally { cancel.hidden = true; convert.disabled = false; convert.textContent = 'Convert dossier to card'; }
             });
         }, true);
+        convert.dataset.creatorConvert = '';
         const actionRow = element('div', 'creator-actions');
         actionRow.append(convert, cancel);
         for (const proposal of this.session.draft.proposals.filter(item => item.dossierBefore !== undefined)) {

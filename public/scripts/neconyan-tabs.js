@@ -3018,6 +3018,7 @@ const NN_CHARACTER_NATIVE_PAGES = Object.freeze({
     groups: 'group-library',
     persona: 'persona',
     import: 'character-import',
+    creator: 'character-creator',
 });
 
 /**
@@ -10656,6 +10657,7 @@ function syncCharacterShellTabs(activeTab = null) {
     if (panel instanceof HTMLElement) panel.dataset.neconyanNativePage = nativePage;
     if (normalizedTab === 'persona') mountNeconyanNativePage('persona', document.getElementById('sb_character_persona_panel'));
     else if (normalizedTab === 'import') mountNeconyanNativePage(nativePage, document.getElementById('sb_character_import_panel'));
+    else if (normalizedTab === 'creator') mountNeconyanNativePage(nativePage, document.getElementById('sb_character_creator_panel'));
     else if (nativePage) mountNeconyanNativePage(nativePage, document.getElementById('rm_characters_block'));
 
     panel?.querySelectorAll('[data-sb-character-tab]').forEach(tab => {
