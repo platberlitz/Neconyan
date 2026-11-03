@@ -13,6 +13,7 @@ import { attachCreatorGenerator } from './field-generator.js';
 import { renderCreatorFormat } from './format-picker.js';
 import { creatorTargetsSignature } from './formats.js';
 import { renderCreatorLiveReply } from './live-reply.js';
+import { creatorProposalDiff } from './proposal-diff.js';
 
 const sections = [['dossier', 'Dossier'], ['notebooks', 'Notebook sources'], ['identity', 'Identity'], ['facts', 'Guided facts'], ['greetings', 'Greetings & examples'], ['interview', 'Interview'], ['prompts', 'Prompts'], ['lore', 'Lorebooks'], ['macros', 'Macros & pronouns'], ['regex', 'Pretty HTML'], ['game', 'Gamify'], ['portrait', 'Portrait'], ['helper', 'Writing partner'], ['agents', 'Post-process with agents'], ['instructions', 'Writing instructions'], ['metadata', 'Details'], ['preview', 'Preview & export']];
 const labels = { name: 'Display name', description: 'Description', personality: 'Personality', scenario: 'Scenario', first_mes: 'First greeting', mes_example: 'Interviewer examples', creator_notes: 'Public creator notes', system_prompt: 'Main prompt', post_history_instructions: 'Post-history instructions', creator: 'Creator', character_version: 'Card version' };
@@ -679,15 +680,18 @@ class CreatorWorkspace {
             const group = element('section', 'creator-proposal-field');
             group.dataset.field = change.field;
             const before = Array.isArray(change.before) ? change.before.join('\n\n') : change.before;
+            const showDiff = proposal.agentProcessing || proposal.plan?.steps.some(step => step.agent);
             group.append(element('h4', '', change.field === 'depth_prompt' ? 'Character’s Note' : change.field === 'alternate_greetings' ? 'Alternate greetings' : labels[change.field] || change.field));
-            group.append(element('pre', 'creator-before', before || '(empty)'));
+            if (!showDiff) group.append(element('pre', 'creator-before', before || '(empty)'));
             if (change.field === 'alternate_greetings') {
                 if (!change.after.length) group.append(element('p', 'creator-muted', change.before.length ? `Removes all ${change.before.length} alternate greetings.` : 'No alternate greetings proposed.'));
                 change.after.forEach((text, index) => {
                     if (change.acceptedGreetings?.includes(index)) return;
+                    const diff = showDiff ? creatorProposalDiff((change.greetingBase ?? change.before)?.[index] ?? '', text) : null;
                     const greeting = textField(`Proposed alternate greeting ${index + 1}`, text, value => {
-                        persist(current => { current.changes.find(item => item.field === change.field).after[index] = value; });
+                        if (persist(current => { current.changes.find(item => item.field === change.field).after[index] = value; })) diff?.update(value);
                     });
+                    if (diff) greeting.prepend(diff.element);
                     greeting.append(button(`Accept greeting ${index + 1}`, () => {
                         this.change(draft => acceptCreatorGreeting(draft, draft.proposals.find(item => item.id === proposal.id), index));
                         const remaining = this.session.draft.proposals.find(item => item.id === proposal.id);
@@ -697,8 +701,10 @@ class CreatorWorkspace {
                     group.append(greeting);
                 });
             } else {
+                const diff = showDiff ? creatorProposalDiff(change.before, change.after) : null;
+                if (diff) group.append(diff.element);
                 group.append(textField('Proposed text', change.after, value => {
-                    persist(current => { current.changes.find(item => item.field === change.field).after = value; });
+                    if (persist(current => { current.changes.find(item => item.field === change.field).after = value; })) diff?.update(value);
                 }));
             }
             group.append(button('Accept this field', () => {

@@ -30,6 +30,7 @@ export function reviseCreatorConversion(draft, proposal, { field, note, regenera
     if (!regenerate && !answered.length && !proposal.note?.trim()) throw new Error('Answer a question or describe a change first.');
     const next = structuredClone(proposal);
     const pending = field || !next.changes.length ? [] : next.plan?.steps.slice(next.plan.next) ?? [];
+    next.agentProcessing ||= next.plan?.steps.some(step => step.agent) ?? false;
     if (note !== undefined) next.note = note;
     resolveCreatorAnswers(next);
     const fields = field ? [field] : next.changes.length ? next.changes.map(change => change.field) : [...new Set(next.plan?.steps.flatMap(step => step.fields) ?? [])];
