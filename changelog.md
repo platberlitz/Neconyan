@@ -1814,3 +1814,7 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - Cleaned up test lint references so nested test lint runs without warnings or undefined globals.
 - Kept `public/scripts/f-localStorage.js` in place for extension compatibility.
 - Bumped app-owned version strings to `1.5.0` without changing dependency versions.
+
+### Merged Staging PRs
+- PR #416 (2026-11-03) `chore: set staging version to 1.5.0`
+
