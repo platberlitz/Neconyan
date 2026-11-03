@@ -627,12 +627,33 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
 
 .scratchpad-change-actions,
 .scratchpad-editor-actions,
-.scratchpad-session-tools,
 .scratchpad-session-actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
+}
+
+.scratchpad-session-tools {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    max-width: 36rem;
+}
+
+#neconyan-scratchpad .scratchpad-session-tools > .scratchpad-button {
+    width: 100%;
+    min-width: 0;
+}
+
+.scratchpad-session-tools > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+}
+
+@container scratchpad (max-width: 360px) {
+    .scratchpad-session-tools {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 
 .scratchpad-message-actions {
