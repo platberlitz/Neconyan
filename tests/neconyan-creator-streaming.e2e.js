@@ -117,6 +117,13 @@ test('Catelier keeps cancelled, length-limited and disconnected streams out of t
     await creator.getByLabel('What would you like to work on?', { exact: true }).fill('Try once more.');
     await creator.getByRole('button', { name: 'Ask for a proposal', exact: true }).click();
     await expect(creator.getByText(/disconnected before completing/).first()).toBeVisible({ timeout: 30000 });
+    delete app.provider.mode.streamRaw;
+    const refusedJson = JSON.stringify({ fields: { description: 'I cannot help with this request.' }, questions: [], coverage: [] });
+    app.provider.mode.streamEvents = [{ choices: [{ index: 0, delta: { content: refusedJson }, finish_reason: 'stop' }] }];
+    await creator.getByLabel('What would you like to work on?', { exact: true }).fill('Try another description.');
+    await creator.getByRole('button', { name: 'Ask for a proposal', exact: true }).click();
+    await expect(creator.getByText(/The model refused the request/).first()).toBeVisible({ timeout: 30000 });
+    await expect(creator.locator('[data-creator-live-status]')).toHaveText('Request failed. Nothing was applied.');
     await creator.getByRole('button', { name: 'Drafts', exact: true }).click();
     const stored = (await account.post('/api/creator/list')).drafts[0];
     const saved = (await account.post('/api/creator/get', { id: stored.id })).draft;

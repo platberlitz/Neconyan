@@ -6,6 +6,7 @@ export function creatorConnection(draft) {
 }
 
 export function creatorConnectionError(error) {
+    if (error?.code === 'CREATOR_REFUSAL') return error.message;
     const messages = [];
     let status;
     for (let cause = error, depth = 0; cause && depth < 4; cause = cause.cause, depth++) {

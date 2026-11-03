@@ -44,17 +44,26 @@ for (const phone of [false, true]) {
         await page.screenshot({ path: fileURLToPath(new URL(`../screenshots/catelier-agent-picker-${phone ? 'phone' : 'desktop'}.png`, import.meta.url)) });
         const calls = [];
         let fail = true;
+        let refuse = true;
         await page.route('**/api/backends/chat-completions/generate', async route => {
             const body = route.request().postDataJSON();
             const second = body.messages[0].content.includes('SECOND_PASS');
             calls.push({ second, input: JSON.parse(body.messages.at(-1).content) });
             if (second && fail) return route.fulfill({ status: 504, json: { error: 'Timed out' } });
+            if (second && refuse) return route.fulfill({ json: { choices: [{ message: { role: 'assistant', content: 'I cannot help with this request.' } }] } });
             return route.fulfill({ json: { choices: [{ message: { role: 'assistant', content: second ? 'A precise description.' : 'A concrete description.' } }] } });
         });
         await creator.getByRole('button', { name: 'Run selected agents', exact: true }).click();
         await expect(creator.getByRole('button', { name: 'Continue writing', exact: true })).toBeVisible({ timeout: 60000 });
         await expect(creator.getByLabel('Proposed text', { exact: true })).toHaveValue('A concrete description.');
         fail = false;
+        await creator.getByRole('button', { name: 'Continue writing', exact: true }).click();
+        await expect(creator.getByText(/The model refused the request/).first()).toBeVisible({ timeout: 60000 });
+        await expect(creator.getByLabel('Proposed text', { exact: true })).toHaveValue('A concrete description.');
+        await expect(creator.getByRole('button', { name: 'Continue writing', exact: true })).toBeEnabled();
+        await creator.getByText(/The model refused the request/).first().scrollIntoViewIfNeeded();
+        await page.screenshot({ path: fileURLToPath(new URL(`../screenshots/catelier-refusal-after-${phone ? 'phone' : 'desktop'}.png`, import.meta.url)) });
+        refuse = false;
         await creator.getByRole('button', { name: 'Continue writing', exact: true }).click();
         await expect(creator.getByRole('button', { name: 'Accept all fields', exact: true })).toBeVisible({ timeout: 60000 });
         await expect(creator.getByLabel('Proposed text', { exact: true })).toHaveValue('A precise description.');

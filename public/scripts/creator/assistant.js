@@ -8,6 +8,7 @@ import { requestCreatorConnection, withCreatorAbort } from './connection.js';
 import { creatorPrefill, joinCreatorPrefill } from './prefill.js';
 import { collectGenerationStream } from '../generation-stream-result.js';
 import { updateCreatorLiveReply } from './live-reply.js';
+import { assertCreatorReplyNotRefused } from './refusal.js';
 
 export function buildCreatorWritingRequest(draft, instruction, fields, { includePrivate = false } = {}) {
     if (!String(instruction).trim()) throw new Error('Tell your writing partner what to work on.');
@@ -91,6 +92,7 @@ async function sendCreatorReply(workspace, draft, messages, { signal, isCurrent 
             const continuation = extractProfileResponseText(result, { preserveWhitespace: true });
             if (!continuation.trim()) throw new Error('The model returned no text. Check the connection and try again.');
             const text = joinCreatorPrefill(continuation, prefill.reply);
+            assertCreatorReplyNotRefused(text, messages);
             if (streaming) updateCreatorLiveReply(workspace, { text });
             return text;
         },
