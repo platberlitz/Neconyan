@@ -31,6 +31,8 @@ import {
 } from './samplerSelect.js';
 import { SECRET_KEYS, writeSecret } from './secrets.js';
 import { getEventSourceStream } from './sse-stream.js';
+import { isGenerationLengthFinish } from './generation-request-controls.js';
+import { streamCompletionSignal } from './generation-outcome.js';
 import { fetchResumable } from './resumable-generation.js';
 import { getLocalPromptCacheValue, isLikelyLocalServerUrl } from './local-url-utils.js';
 import { getCurrentDreamGenModelTokenizer, getCurrentOpenRouterModelTokenizer, loadAphroditeModels, loadDreamGenModels, loadFeatherlessModels, loadGenericModels, loadInfermaticAIModels, loadLlamaCppModels, loadMancerModels, loadOllamaModels, loadOpenRouterModels, loadTabbyModels, loadTogetherAIModels, loadVllmModels, setOpenRouterProviders, updateOpenRouterProvidersWarning } from './textgen-models.js';
@@ -1318,14 +1320,20 @@ export function readTextGenerationStream(response) {
         const swipes = [];
         const toolCalls = [];
         const state = { reasoning: '' };
+        let completed = false;
         while (true) {
             const { done, value } = await reader.read();
-            if (done) return;
+            if (done) {
+                if (!completed) throw new Error('The provider disconnected before completing the reply.');
+                return;
+            }
             if (value.data === '[DONE]') return;
 
             tryParseStreamingError(response, value.data);
 
             let data = JSON.parse(value.data);
+            completed ||= streamCompletionSignal(data) || data.stop === true;
+            if (isGenerationLengthFinish(data)) state.finishReason = 'length';
 
             if (data?.choices?.[0]?.index > 0) {
                 const swipeIndex = data.choices[0].index - 1;

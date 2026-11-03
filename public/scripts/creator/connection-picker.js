@@ -1,5 +1,7 @@
 import { ConnectionManagerRequestService } from '../extensions/shared.js';
-import { element, button } from './fields.js';
+import { element, button, textField } from './fields.js';
+import { getGeneratingModel } from '../../script.js';
+import { isKimiK3Model } from '../openai-model-capabilities.js';
 
 export function renderCreatorConnection(workspace, main) {
     const value = workspace.session.draft.writing?.connection ?? {};
@@ -52,5 +54,18 @@ export function renderCreatorConnection(workspace, main) {
         if (!input.reportValidity() || !input.value) return;
         edit(next => { next.maxTokens = Number(input.value); }, false);
     });
-    label.append(input); group.append(label); main.append(group);
+    label.append(input); group.append(label);
+    group.append(textField('Prefill', value.prefill ?? '', prefill => edit(next => { next.prefill = prefill; }, false), {
+        rows: 3, hint: 'Start the model’s reply with this text. Kept in this draft and used for Catelier writing requests. Your provider must support assistant prefills.',
+    }));
+    const models = [value.profile ? profiles.find(profile => profile.id === value.profile)?.model : getGeneratingModel(), ...(value.fallbacks ?? []).map(id => profiles.find(profile => profile.id === id)?.model)];
+    if (models.some(isKimiK3Model)) group.append(textField('Partial prefill', value.partialPrefill ?? '', partialPrefill => edit(next => { next.partialPrefill = partialPrefill; }, false), {
+        rows: 3, hint: 'Used instead of Prefill for Kimi K3 and K3.1 Pro, including fallback connections. Sends partial: true. Leave blank to use Prefill. A <think> block starts the model’s reasoning.',
+    }));
+    const streaming = element('label', 'creator-choice-pill');
+    const toggle = element('input'); toggle.type = 'checkbox'; toggle.checked = value.stream === true;
+    toggle.addEventListener('change', () => edit(next => { next.stream = toggle.checked; }, false));
+    streaming.append(toggle, document.createTextNode('Stream live output'));
+    group.append(streaming, element('p', 'creator-muted', 'Watch replies arrive before reviewing the finished proposal. Supported by chat and text completion connections; other connections show their reply when it finishes.'));
+    main.append(group);
 }

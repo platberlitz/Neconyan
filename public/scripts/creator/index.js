@@ -12,6 +12,7 @@ import { rememberCreatorViewport } from './viewport.js';
 import { attachCreatorGenerator } from './field-generator.js';
 import { renderCreatorFormat } from './format-picker.js';
 import { creatorTargetsSignature } from './formats.js';
+import { renderCreatorLiveReply } from './live-reply.js';
 
 const sections = [['dossier', 'Dossier'], ['notebooks', 'Notebook sources'], ['identity', 'Identity'], ['facts', 'Guided facts'], ['greetings', 'Greetings & examples'], ['interview', 'Interview'], ['prompts', 'Prompts'], ['lore', 'Lorebooks'], ['macros', 'Macros & pronouns'], ['regex', 'Pretty HTML'], ['game', 'Gamify'], ['portrait', 'Portrait'], ['helper', 'Writing partner'], ['agents', 'Post-process with agents'], ['instructions', 'Writing instructions'], ['metadata', 'Details'], ['preview', 'Preview & export']];
 const labels = { name: 'Display name', description: 'Description', personality: 'Personality', scenario: 'Scenario', first_mes: 'First greeting', mes_example: 'Interviewer examples', creator_notes: 'Public creator notes', system_prompt: 'Main prompt', post_history_instructions: 'Post-history instructions', creator: 'Creator', character_version: 'Card version' };
@@ -361,6 +362,7 @@ class CreatorWorkspace {
         rail.append(nav);
         layout.append(rail, main);
         this.host.append(header, layout);
+        renderCreatorLiveReply(this, main);
         nav.scrollLeft = railLeft;
         restore();
         if (!['dossier', 'identity', 'facts', 'greetings', 'prompts', 'metadata'].includes(section)) {
@@ -370,7 +372,10 @@ class CreatorWorkspace {
 
     async renderTool(section, main) {
         const module = await import('./tools.js');
-        if (main.isConnected) await module.renderCreatorTool(this, section, main);
+        if (main.isConnected) {
+            await module.renderCreatorTool(this, section, main);
+            renderCreatorLiveReply(this, main);
+        }
     }
 
     dossier(main) {
