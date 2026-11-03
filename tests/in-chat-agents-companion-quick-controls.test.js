@@ -86,4 +86,35 @@ describe('companion quick controls', () => {
         expect(groups).not.toContain('data-candidate-id="a"');
         expect(quick.buildCompanionQuickGroupsHtml(companion('solo', 'Solo'), [])).toContain('Make another agent a companion');
     });
+
+    test('renders relationship tabs with connected counts, filter controls, and connected companions first', () => {
+        agents = [
+            companion('a', 'Alpha', { dependencies: ['z'], contextRecipientAgentIds: ['b', 'z'] }),
+            companion('b', 'Beta'),
+            companion('z', 'Zeta'),
+        ];
+        const defaultGroups = quick.buildCompanionQuickGroupsHtml(agents[0], undefined, { scope: 'card' });
+        expect(defaultGroups).toContain('data-quick-tab="dependencies" aria-pressed="true"');
+        expect(defaultGroups).toContain('data-quick-tab="contextRecipientAgentIds" aria-pressed="false"');
+        expect(defaultGroups).toContain('data-quick-tab="batchAgentIds" aria-pressed="false"');
+        expect(defaultGroups).toContain('data-quick-search');
+        expect(defaultGroups).toContain('data-quick-selected-only');
+        expect(defaultGroups).toContain('<fieldset class="ica--companion-quick-group" data-quick-group="dependencies">');
+        expect(defaultGroups).toContain('<fieldset class="ica--companion-quick-group" data-quick-group="contextRecipientAgentIds" hidden>');
+
+        const zetaIndex = defaultGroups.indexOf('data-quick-link="dependencies" data-candidate-id="z" checked');
+        const betaIndex = defaultGroups.indexOf('data-quick-link="dependencies" data-candidate-id="b"');
+        expect(zetaIndex).toBeGreaterThan(-1);
+        expect(betaIndex).toBeGreaterThan(zetaIndex);
+
+        quick.setActiveCompanionLinkField('card', 'a', 'contextRecipientAgentIds');
+        expect(quick.getActiveCompanionLinkField('card', 'a')).toBe('contextRecipientAgentIds');
+        const switchedGroups = quick.buildCompanionQuickGroupsHtml(agents[0], undefined, { scope: 'card' });
+        expect(switchedGroups).toContain('data-quick-tab="contextRecipientAgentIds" aria-pressed="true"');
+        expect(switchedGroups).toContain('<fieldset class="ica--companion-quick-group" data-quick-group="dependencies" hidden>');
+        expect(switchedGroups).toContain('<fieldset class="ica--companion-quick-group" data-quick-group="contextRecipientAgentIds">');
+
+        quick.setCompanionLinksOpen('card', 'a', false);
+        expect(quick.getActiveCompanionLinkField('card', 'a')).toBe('dependencies');
+    });
 });
