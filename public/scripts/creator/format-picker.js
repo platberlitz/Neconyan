@@ -98,7 +98,15 @@ export function renderCreatorTargets(workspace, host, { open = false } = {}) {
         }, true), false, 'creator-chip-btn');
         reset.setAttribute('aria-label', 'Reset NSFW instructions');
         field.querySelector('.creator-field-heading')?.append(reset);
-        body.append(field);
+        const fetishes = textField('Fetishes to focus on (greetings only)', nsfw.fetishes ?? '', val => workspace.edit(next => {
+            next.writing ??= {};
+            next.writing.nsfw = { ...next.writing.nsfw, fetishes: val };
+        }), {
+            rows: 2,
+            placeholder: 'e.g. sloppy kissing, body worship, cockwarming, oral sex',
+            hint: 'Applied only to first and alternate greetings when NSFW instructions are on. Never added to description, personality, Character’s Note or lorebooks.',
+        });
+        body.append(field, fetishes);
     }
 
     details.append(body);

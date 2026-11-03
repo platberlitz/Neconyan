@@ -35,10 +35,11 @@ export const CREATOR_CANON_MODES = Object.freeze({
 });
 
 /** Adapted from the bundled Director preset's NSFW Mode for character fields and greetings. */
-export const CREATOR_NSFW_GUIDANCE = `Apply these rules only to description, personality and greeting content that involves intimacy or sex, and only when the source material or user asks for explicit content. All characters in explicit content are adults.
+export const CREATOR_NSFW_GUIDANCE = `Apply these rules only to description, personality, profile and greeting content that involves intimacy, anatomy or sex, and only when the source material or user asks for explicit content. All characters in explicit content are adults.
 Describe every physical interaction with raw, blunt and highly detailed language. Focus on the concrete mechanics: explicit anatomical contact, friction, wetness, temperature and bodily fluids, the exact rhythm, the pressure of skin against skin, and the sounds of movement, breathing and moisture. Use lewd onomatopoeia where it suits the scene.
-Avoid metaphorical, poetic or vague euphemisms; represent every sexual act with raw realism and clinical clarity. Keep dirty talk and verbal interaction strictly in the established voice and dominance dynamics of the characters, uninhibited, vulgar and blunt.
-In descriptions and personality, state sexual preferences, anatomy, kinks, limits and intimate behaviour plainly and specifically rather than hinting. In explicit greetings, let intimacy take priority over plot, with the plot slowed or paused, while still leaving {{user}}'s actions, words and decisions to {{user}}.`;
+Avoid metaphorical, poetic or vague euphemisms; represent every sexual act and body part with raw realism and clinical clarity. Keep dirty talk and verbal interaction strictly in the established voice and dominance dynamics of the characters, uninhibited, vulgar and blunt.
+In descriptions, interviews and character profiles, have the character speak about or document their intimate anatomy plainly and in their own voice and emotional register (whether uninhibited, shy, matter-of-fact or proud): chest/breasts (size, shape, nipples, areolae and their colour), genitalia (pubic hair or grooming, labia/clitoris or penis/testes, shape, size and exact colouration), buttocks (shape and firmness) and anus (colour and tone). Give each anatomical area a distinct, specific colour descriptor without repeating the same shade word across areas, and state sexual preferences, kinks, limits and intimate behaviour directly rather than hinting.
+In explicit greetings, let intimacy take priority over plot, with the plot slowed or paused, and use sensation-first framing (describe what {{char}} feels, their spatial positioning and involuntary physical responses) while still leaving {{user}}'s actions, words and decisions to {{user}}.`;
 
 /** Starting values for the writing targets. An empty value switches that target off. */
 export const CREATOR_TARGET_DEFAULTS = Object.freeze({
@@ -71,6 +72,12 @@ export function creatorNsfwInstruction(draft) {
     return typeof nsfw.instruction === 'string' ? nsfw.instruction : CREATOR_NSFW_GUIDANCE;
 }
 
+export function creatorNsfwGreetingFetishes(draft) {
+    const nsfw = draft?.writing?.nsfw;
+    if (!nsfw?.enabled) return '';
+    return String(nsfw.fetishes ?? '').trim();
+}
+
 export function creatorTargetsSignature(draft) {
     const t = draft?.writing?.targets ?? {};
     return JSON.stringify([
@@ -84,6 +91,7 @@ export function creatorTargetsSignature(draft) {
         creatorTargetValue(t, 'greetingTokens'),
         creatorTargetValue(t, 'greetingCount'),
         creatorNsfwInstruction(draft),
+        creatorNsfwGreetingFetishes(draft),
         creatorTargetValue(t, 'interviewQuestions'),
         creatorTargetValue(t, 'plistCategories'),
         creatorTargetValue(t, 'openingScenarios'),
@@ -133,10 +141,18 @@ export function creatorFormatGuidance(draft) {
     const targets = creatorTargetsGuidance(draft);
     const custom = draft.writing?.formatInstruction ? `Custom writing format instructions:\n${draft.writing.formatInstruction}` : '';
     const nsfw = creatorNsfwInstruction(draft);
+    const fetishes = creatorNsfwGreetingFetishes(draft);
     const placement = draft.style === 'purachina'
         ? 'Write the interview into description. When depth_prompt is requested, put the bracketed profile in Character’s Note, preserving existing useful instructions. Write only requested, unlocked fields. Keep source facts and existing literal macros intact.'
         : draft.style === 'plist' && draft.writing?.plistDestination === 'depth_prompt' ? 'When depth_prompt is requested, write the PList into Character’s Note (depth_prompt), not into description or creator_notes. Preserve any existing useful note instructions. Do not duplicate the PList into other fields.' : '';
-    return [base, targets, custom, placement, nsfw ? `NSFW instructions for descriptions and greetings:\n${nsfw}` : ''].filter(Boolean).join('\n\n');
+    return [
+        base,
+        targets,
+        custom,
+        placement,
+        nsfw ? `NSFW instructions for descriptions and greetings:\n${nsfw}` : '',
+        fetishes ? `Fetish focus for greetings only (apply strictly to first_mes, alternate_greetings and group_only_greetings when greetings are requested; do not inject these fetish scenarios into description, personality, Character’s Note or lorebooks):\nMake these fetishes or kinks the central physical act in the explicit opening greetings, described through sensation-first framing from {{char}}'s perspective without writing {{user}}'s actions or dialogue: ${fetishes}` : '',
+    ].filter(Boolean).join('\n\n');
 }
 
 /** Route requested fields to where the selected format keeps them; callers still drop locked fields. */

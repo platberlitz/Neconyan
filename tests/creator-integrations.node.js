@@ -25,13 +25,26 @@ test('Character and greeting length targets are separate, migrate old values and
     const before = creatorTargetsSignature(draft);
     draft.writing.nsfw = { enabled: true };
     assert.notEqual(creatorTargetsSignature(draft), before);
-    assert.ok(buildDossierRequest(draft).messages[0].content.includes(CREATOR_NSFW_GUIDANCE));
+    prompt = buildDossierRequest(draft).messages[0].content;
+    assert.ok(prompt.includes(CREATOR_NSFW_GUIDANCE));
+    assert.match(prompt, /nipples, areolae and their colour/);
+    assert.match(prompt, /genitalia.*exact colouration/);
+    assert.match(prompt, /distinct, specific colour descriptor/);
+    assert.ok(!prompt.includes('Fetish focus for greetings only'));
+    const sigWithNsfw = creatorTargetsSignature(draft);
+    draft.writing.nsfw.fetishes = 'body worship, oral sex';
+    assert.notEqual(creatorTargetsSignature(draft), sigWithNsfw);
+    prompt = buildDossierRequest(draft).messages[0].content;
+    assert.match(prompt, /Fetish focus for greetings only.*do not inject these fetish scenarios into description.*body worship, oral sex/s);
     draft.writing.nsfw.instruction = 'Keep it explicit but brief.';
     prompt = buildDossierRequest(draft).messages[0].content;
     assert.ok(prompt.includes('Keep it explicit but brief.') && !prompt.includes(CREATOR_NSFW_GUIDANCE));
     draft.writing.nsfw.enabled = false;
-    assert.ok(!buildDossierRequest(draft).messages[0].content.includes('Keep it explicit'));
+    prompt = buildDossierRequest(draft).messages[0].content;
+    assert.ok(!prompt.includes('Keep it explicit'));
+    assert.ok(!prompt.includes('body worship, oral sex'));
     assert.ok(!JSON.stringify(creatorCardExport(draft)).includes('Keep it explicit'));
+    assert.ok(!JSON.stringify(creatorCardExport(draft)).includes('body worship'));
 });
 
 test('ALIchat guidance and guided examples need no opening delimiter and preserve imported text', () => {
