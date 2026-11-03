@@ -3,7 +3,7 @@ import { creatorFormatFields, creatorTargetValue } from './formats.js';
 import { creatorGuidance } from './guidance.js';
 import { dossierProposal } from './dossier.js';
 import { element, button, textField } from './fields.js';
-import { requestCreatorConnection } from './connection.js';
+import { requestCreatorConnection, withCreatorAbort } from './connection.js';
 
 export function buildCreatorWritingRequest(draft, instruction, fields, { includePrivate = false } = {}) {
     if (!String(instruction).trim()) throw new Error('Tell your writing partner what to work on.');
@@ -17,6 +17,21 @@ export function buildCreatorWritingRequest(draft, instruction, fields, { include
 }
 
 export async function requestCreatorReply(workspace, draft, messages, { signal, isCurrent = () => true } = {}) {
+    const controller = new AbortController();
+    const requestSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    workspace.requestController = controller;
+    workspace.syncRequestControls?.();
+    try {
+        return await withCreatorAbort(() => sendCreatorReply(workspace, draft, messages, { signal: requestSignal, isCurrent }), requestSignal);
+    } finally {
+        if (workspace.requestController === controller) {
+            workspace.requestController = null;
+            workspace.syncRequestControls?.();
+        }
+    }
+}
+
+async function sendCreatorReply(workspace, draft, messages, { signal, isCurrent }) {
     const { generateRawData } = await import('../../script.js');
     const { extractProfileResponseText } = await import('../extensions/in-chat-agents/llm-utils.js');
     const { isGenerationLengthFinish } = await import('../generation-request-controls.js');
@@ -39,7 +54,7 @@ export async function requestCreatorReply(workspace, draft, messages, { signal, 
             else {
                 const { ConnectionManagerRequestService } = await import('../extensions/shared.js');
                 try {
-                    for (const item of ConnectionManagerRequestService.getSupportedProfiles()) profileNames.set(item.id, `${item.name} (${item.id})`);
+                    for (const item of ConnectionManagerRequestService.getSupportedProfiles()) profileNames.set(item.id, item.name);
                 } catch { /* A missing manager is reported by sendRequest below. */ }
                 result = await ConnectionManagerRequestService.sendRequest(profile, structuredClone(messages), maxTokens, {
                     signal, stream: false, extractData: false, includePreset: false, includeInstruct: false,

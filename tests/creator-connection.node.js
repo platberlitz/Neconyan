@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { creatorConnection, requestCreatorConnection } from '../public/scripts/creator/connection.js';
+import { creatorConnection, creatorConnectionError, requestCreatorConnection } from '../public/scripts/creator/connection.js';
 
 test('Creator defaults to current connection and 64000 output tokens', () => {
     assert.deepEqual(creatorConnection({}), { profiles: [''], maxTokens: 64000 });
@@ -27,7 +27,7 @@ test('Cancellation never starts a fallback', async () => {
     await assert.rejects(requestCreatorConnection({ writing: { connection: { fallbacks: ['second'] } } }, {
         signal: controller.signal, validate() {},
         async send() { calls++; controller.abort(); throw new Error('Cancelled'); },
-    }), /Cancelled/);
+    }), /[Cc]ancelled/);
     assert.equal(calls, 1);
 });
 
@@ -55,12 +55,35 @@ test('Failed connections retain every labelled error in attempt order', async ()
         validate() {},
         profileLabel: profile => profile ? 'Deleted backup' : 'Current connection',
         async send(profile) { throw new Error(profile ? 'Profile not found' : 'Authentication failed'); },
-    }), /Current connection: Authentication failed\nDeleted backup: Profile not found/);
+    }), /Current connection: Authentication failed[^\n]*\nDeleted backup: Profile not found/);
+});
+
+test('Empty provider errors retain the HTTP status and useful next steps', () => {
+    const error = new Error('API request failed', { cause: Object.assign(new Error('<none>'), { status: 401 }) });
+    const message = creatorConnectionError(error);
+    assert.match(message, /HTTP 401/);
+    assert.match(message, /Check the API key/);
+    assert.doesNotMatch(message, /<none>|API request failed/);
+});
+
+test('Cancellation releases a hung connection without starting a fallback or accepting its late reply', async () => {
+    const controller = new AbortController();
+    let release;
+    let calls = 0;
+    const request = requestCreatorConnection({ writing: { connection: { fallbacks: ['second'] } } }, {
+        signal: controller.signal, validate() {},
+        send() { calls++; return new Promise(resolve => { release = resolve; }); },
+    });
+    await Promise.resolve();
+    controller.abort();
+    await assert.rejects(request, /cancelled/);
+    release('Late reply');
+    assert.equal(calls, 1);
 });
 
 test('Wrapped profile errors include the provider cause', async () => {
     await assert.rejects(requestCreatorConnection({}, {
         validate() {},
         async send() { throw new Error('API request failed', { cause: new Error('The API key was rejected') }); },
-    }), /API request failed: The API key was rejected/);
+    }), /The API key was rejected/);
 });

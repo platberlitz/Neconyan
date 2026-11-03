@@ -61,6 +61,10 @@ class CreatorWorkspace {
         }
     }
 
+    syncRequestControls() {
+        for (const control of this.host.querySelectorAll('[data-creator-cancel-request]')) control.hidden = !this.requestController;
+    }
+
     shell() {
         this.host.replaceChildren();
         const output = element('p', 'creator-status', this.message);
@@ -267,6 +271,10 @@ class CreatorWorkspace {
         undo.disabled = !draft.history.length;
         redo.disabled = !draft.future.length;
         actions.append(button('Drafts', () => this.run(() => this.home()), false, 'creator-chip-btn'), undo, redo, button('Review & save', () => this.review(), true, 'creator-chip-btn'));
+        const cancelRequest = button('Cancel active request', () => this.requestController?.abort(), false, 'creator-chip-btn');
+        cancelRequest.dataset.creatorCancelRequest = '';
+        cancelRequest.hidden = !this.requestController;
+        actions.append(cancelRequest);
         header.append(heading, actions);
         const layout = element('div', 'creator-layout');
         const nav = element('nav', 'creator-sections');
@@ -381,7 +389,7 @@ class CreatorWorkspace {
         feedback.setAttribute('role', 'status');
         feedback.hidden = true;
         const convert = button('Convert dossier to card', () => {
-            if (this.busy) { feedback.hidden = false; feedback.textContent = 'Another Creator request is still running. Wait for it to finish, then try again.'; return; }
+            if (this.busy) { feedback.hidden = false; feedback.textContent = this.requestController ? 'A Creator request is still running. Use Cancel active request above to stop it, then try again.' : 'Creator is saving your draft. Try again when the save finishes.'; return; }
             return this.run(async () => {
                 try {
                     feedback.hidden = false;
