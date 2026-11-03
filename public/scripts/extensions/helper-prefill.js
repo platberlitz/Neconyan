@@ -1,3 +1,5 @@
+import { isKimiK3Model } from '../openai-model-capabilities.js';
+
 const ROLE_HEADER_RE = /^\s*\[(system|user|assistant)\]\s*$/i;
 const VALID_ROLES = new Set(['system', 'user', 'assistant']);
 
@@ -83,4 +85,19 @@ export function serializeHelperPrefillForPrompt(messages = []) {
         })
         .filter(Boolean)
         .join('\n\n');
+}
+
+/** Add a model-specific continuation after the ordinary helper messages. */
+export function prepareHelperPartialPrefill(messages, value, model) {
+    const text = typeof value === 'string' ? value.replace(/\r\n?/g, '\n') : '';
+    if (!text.trim() || !isKimiK3Model(model)) return { messages, reply: '', active: false };
+    const thinking = text.match(/^\s*<think>[\s\S]*?(?:<\/think>|$)/i);
+    const reply = thinking ? text.slice(thinking[0].length).trimStart() : text;
+    return { messages: [...messages, { role: 'assistant', content: text, partial: true }], reply, active: true };
+}
+
+/** Restore only visible continuation text, never the seeded reasoning. */
+export function joinHelperPartialPrefill(text, prefix = '') {
+    if (!text?.trim() || !prefix || text.startsWith(prefix) || text.trimStart().startsWith(prefix.trimStart())) return text;
+    return prefix + text;
 }

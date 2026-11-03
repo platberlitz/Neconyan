@@ -416,6 +416,26 @@ test('a failed Agent connection hands over to the next fallback once and is neve
     assert.equal(calls.length, 2);
 });
 
+test('partial prefills follow each saved Agent model and survive replay without repeating the prefix', async t => {
+    const f = prepared(t);
+    const aux = { kind: 'profile', ...captureChatProfile(f.directories, 'aux') };
+    const seen = [];
+    const options = { base: f.scope, account: f.account, name: 'partial', identity: roleplayHash('partial'), binding: f.binding,
+        modelOverride: 'kimi-k3.1-pro', partialPrefill: '<think>Check</think>Answer: ', maxTokens: 64, macros: {},
+        fallbacks: [{ binding: aux, profileLabel: 'Backup' }], buildMessages: () => [{ role: 'user', content: 'Write' }],
+        generate: modelResponse(({ binding, messages }) => {
+            seen.push(messages);
+            return { text: binding.profileId === 'main' ? '' : 'Backup note' };
+        }) };
+    const result = await runAgentModelStep(f.context, options);
+    assert.equal(result.text, 'Backup note');
+    assert.deepEqual(seen[0].at(-1), { role: 'assistant', content: '<think>Check</think>Answer: ', partial: true });
+    assert.deepEqual(seen[1], [{ role: 'user', content: 'Write' }]);
+    const success = { ...options, name: 'partial-success', generate: modelResponse(() => ({ text: 'Done' })) };
+    assert.equal((await runAgentModelStep(f.context, success)).text, 'Answer: Done');
+    assert.equal((await runAgentModelStep(f.context, { ...success, generate: () => assert.fail('Repeated a saved call') })).text, 'Answer: Done');
+});
+
 test('an empty Agent reply tries the fallback, and every connection failing keeps the last error', async t => {
     const f = prepared(t);
     const aux = { kind: 'profile', ...captureChatProfile(f.directories, 'aux') };

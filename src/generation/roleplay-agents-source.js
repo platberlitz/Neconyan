@@ -82,6 +82,8 @@ export function captureRoleplayAgentSet(lease, settings, { group = false, server
     if (!agents.length && !hasHistory) return empty;
     agents.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
     const helperPrefill = global.helperPrefillMessages ?? '';
+    const kimiPartialPrefill = global.kimiPartialPrefill ?? '';
+    if (typeof kimiPartialPrefill !== 'string' || Buffer.byteLength(kimiPartialPrefill) > 64 * 1024) throw fail('The saved Agent partial prefill is invalid.');
     if (typeof helperPrefill !== 'string' || Buffer.byteLength(helperPrefill) > 64 * 1024) throw fail('The saved Agent helper messages are invalid.');
     const policy = { version: 1, group: Boolean(group), globalHash: roleplayHash(global), agents, historyAgents, hiddenIds,
         characterAvatars, historyAgentIds, hasHistory, forcedIds, extraCharacters: [...extraCharacters.values()],
@@ -89,7 +91,7 @@ export function captureRoleplayAgentSet(lease, settings, { group = false, server
         companionMode: global.companionExecutionMode === 'sequential' ? 'sequential' : 'parallel',
         concurrentCompanions: Boolean(global.companionConcurrentWithPostGen),
         reviewPostMain: global.postMainInterceptShowMessageFirst !== false,
-        refusalGuard: global.promptTransformRefusalGuard !== false, helperPrefill };
+        refusalGuard: global.promptTransformRefusalGuard !== false, helperPrefill, kimiPartialPrefill };
     if (global.companionAutoCleanupEnabled === true) {
         const value = global.companionAutoCleanupOlderNotes;
         const count = value === '' || value === null || value === undefined ? 3 : Number(value);

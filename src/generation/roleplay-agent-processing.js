@@ -236,6 +236,7 @@ async function modelRun(context, options, agent, text, name, intercept = false, 
         identity: roleplayHash({ intent: context.job.intent, agent: snapshot.agents.agents.find(item => item.id === agent.id), text, intercept, format, generationType,
             ...(options.synthesisMessages ? { synthesisMessages: options.synthesisMessages } : {}), ...(options.thinkingRecovery ? { thinkingRecovery: true } : {}) }),
         binding: agent.binding || options.binding, modelOverride: agent.binding ? agent.modelOverride : '', fallbacks: agent.fallbacks,
+        partialPrefill: snapshot.agents.kimiPartialPrefill,
         maxTokens: intercept ? agent.preProcess.maxTokens : agent.postProcess.promptTransformMaxTokens,
         macros, tokenizer: snapshot.tokenizer, fallbackContext: snapshot.maxContext, assertCurrent, generate,
         buildMessages: environment => {

@@ -6707,6 +6707,7 @@ function populateGlobalExecutionModeDropdown() {
 
 function populateGlobalHelperPrefillField() {
     $('#ica--helperPrefillMessages').val(getGlobalSettings().helperPrefillMessages || '');
+    $('#ica--kimiPartialPrefill').val(getGlobalSettings().kimiPartialPrefill || '');
 }
 
 /**
@@ -7426,6 +7427,10 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
     });
     $('#ica--helperPrefillMessages').on('input', function () {
         setGlobalSettings({ helperPrefillMessages: this.value });
+        persistExtensionState();
+    });
+    $('#ica--kimiPartialPrefill').on('input', function () {
+        setGlobalSettings({ kimiPartialPrefill: this.value });
         persistExtensionState();
     });
     $('#ica--resetDefaults').on('click', agentAction(async () => {

@@ -361,6 +361,37 @@ for (const width of [1280, 393]) {
 }
 
 for (const width of [1280, 393]) {
+    test.describe(`Agent prefills at ${width}px`, () => {
+        test.use({ viewport: { width, height: width === 393 ? 852 : 900 }, isMobile: width === 393, hasTouch: width === 393 });
+        test('labels, examples and partial prefills stay usable and save independently', async ({ page }, info) => {
+            await openAgents(page);
+            const skip = page.getByRole('region', { name: 'Neconyan interactive tutorial' }).getByRole('button', { name: 'Skip', exact: true });
+            if (await skip.isVisible()) {
+                await skip.click();
+                await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
+            }
+            await page.locator('.ica--workspace-tab[data-workspace-view="connections"]').click();
+            const ordinary = page.getByLabel('Extra messages', { exact: true });
+            const partial = page.getByLabel('Kimi K3 / K3.1 partial prefill', { exact: true });
+            await ordinary.scrollIntoViewIfNeeded();
+            await expect(ordinary).toHaveAttribute('placeholder', '[system]\nExtra instruction\n\n[assistant]\nStart of agent response');
+            await ordinary.fill('[system]\nKeep it short.');
+            await partial.fill('<think>Check the task.');
+            const saved = await page.evaluate(async () => (await import('/scripts/extensions/in-chat-agents/agent-store.js')).getGlobalSettings());
+            expect(saved.helperPrefillMessages).toBe('[system]\nKeep it short.');
+            expect(saved.kimiPartialPrefill).toBe('<think>Check the task.');
+            for (const field of [ordinary, partial]) {
+                const bounds = await field.boundingBox();
+                expect(bounds.width).toBeGreaterThan(240);
+                expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+                const padding = await field.evaluate(element => parseFloat(window.getComputedStyle(element).paddingRight));
+                expect(padding).toBeGreaterThanOrEqual(58);
+            }
+            await partial.fill('');
+            await expect(ordinary).toHaveValue('[system]\nKeep it short.');
+            await capture(page, info, 'agent-prefills');
+        });
+    });
     test.describe(`Companion note clean-up at ${width}px`, () => {
         test.use({ viewport: { width, height: width === 393 ? 852 : 900 }, isMobile: width === 393, hasTouch: width === 393 });
         test('automatic clean-up is opt-in, configurable and saved without changing agents or notes', async ({ page }, info) => {

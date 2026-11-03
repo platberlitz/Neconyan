@@ -240,12 +240,24 @@
                     <small id="ica--cleanup-help" class="ica--profile-help">Always keeps the newest readable note and leaves running notes alone. Set 0 to keep only the newest. Starts with the next successful run; switching this on does not delete anything immediately. Removed notes, including saved reply versions, cannot be restored here and are no longer available as model context. Your agents and chat messages stay.</small>
                 </section>
 
+                <section class="ica--settings-group ica--prefill-group" aria-labelledby="ica--prefill-group-title">
+                    <div class="ica--settings-group-heading">
+                        <span class="ica--settings-group-icon"><i class="fa-solid fa-pen-nib" aria-hidden="true"></i></span>
+                        <div><h4 id="ica--prefill-group-title">Agent prefills</h4><p>Add messages or give Kimi a starting point for its response.</p></div>
+                    </div>
+                    <label for="ica--helperPrefillMessages">Extra messages</label>
+                    <textarea id="ica--helperPrefillMessages" class="text_pole ica--helper-prefill-field" rows="5" aria-describedby="ica--prefill-help" placeholder="[system]&#10;Extra instruction&#10;&#10;[assistant]&#10;Start of agent response"></textarea>
+                    <small id="ica--prefill-help" class="ica--profile-help">Put [system], [user] or [assistant] on its own line, then write the message below. Plain text is an assistant message.</small>
+                    <label for="ica--kimiPartialPrefill">Kimi K3 / K3.1 partial prefill</label>
+                    <textarea id="ica--kimiPartialPrefill" class="text_pole ica--helper-prefill-field" rows="4" aria-describedby="ica--kimi-prefill-help" placeholder="&lt;think&gt;&#10;I will follow the agent's instructions."></textarea>
+                    <small id="ica--kimi-prefill-help" class="ica--profile-help">Kimi continues this text after the extra messages. Start with &lt;think&gt; to seed reasoning, or enter the start of the answer. Applies to Kimi connections and fallbacks only; leave blank to use just the extra messages.</small>
+                </section>
+
                 <section class="ica--settings-group" aria-labelledby="ica--context-group-title">
                     <div class="ica--settings-group-heading">
                         <span class="ica--settings-group-icon"><i class="fa-solid fa-layer-group" aria-hidden="true"></i></span>
                         <div><h4 id="ica--context-group-title">Context &amp; notifications</h4><p>Control agent prompts and how their work is shown while you chat.</p></div>
                     </div>
-                    <label class="ica--profile-label ica--helper-prefill-label"><span>Agent prefill messages</span><textarea id="ica--helperPrefillMessages" class="text_pole ica--helper-prefill-field" rows="4" placeholder="[assistant] Start of agent response&#10;&#10;[system] Extra instruction"></textarea><small class="ica--profile-help">Use [system], [user], or [assistant] blocks. Text before a header is treated as [assistant].</small></label>
                     <label class="checkbox_label" title="Keep enabled In-Chat Agents separate between Individual chats and Group chats."><input type="checkbox" id="ica--separateRecentChats" /><span>Keep individual and group chat switches separate</span></label>
                     <label class="checkbox_label" title="Show a pop-up message when an agent edits the prompt or the reply."><input type="checkbox" id="ica--promptTransformShowNotifications" /><span>Show agent edit notifications</span></label>
                     <label class="checkbox_label" title="Show the reply as it arrives, before an agent that checks the reply has finished."><input type="checkbox" id="ica--postMainInterceptShowMessageFirst" /><span>Show the reply before agents check it</span></label>

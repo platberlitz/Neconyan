@@ -66,6 +66,8 @@ import { describeAgentRunModel } from './model-label.js';
 import {
     appendHelperPrefillMessages,
     parseHelperPrefillMessages,
+    prepareHelperPartialPrefill,
+    joinHelperPartialPrefill,
 } from '../helper-prefill.js';
 import {
     getToolAction,
@@ -3864,21 +3866,27 @@ export async function requestPromptTransform(agent, promptMessages, maxTokens, o
         activeAgentRequestAbortControllers.add(requestAbortController);
         options.signal?.addEventListener('abort', abortFromCaller, { once: true });
 
-        const requestConnection = (attemptProfileId, attemptModelOverride, signal) => {
+        const requestConnection = async (attemptProfileId, attemptModelOverride, signal) => {
+            const prefill = prepareHelperPartialPrefill(promptMessages, getGlobalSettings().kimiPartialPrefill,
+                getPromptTransformRequestModel(attemptProfileId, attemptModelOverride));
+            let result;
             if (attemptProfileId) {
                 if (!CMRS || typeof CMRS.sendRequest !== 'function') {
                     throw new Error(`${describePromptTransformTarget(attemptProfileId, 'profile')} is set, but Connection Manager is unavailable.`);
                 }
 
-                return runAllowedRequest(
-                    () => requestProfilePromptTransform(isRuntimeAllowed, CMRS, attemptProfileId, promptMessages, maxTokens, attemptModelOverride, signal, options.preserveWhitespace === true),
+                result = await runAllowedRequest(
+                    () => requestProfilePromptTransform(isRuntimeAllowed, CMRS, attemptProfileId, prefill.messages, maxTokens, attemptModelOverride, signal, options.preserveWhitespace === true),
+                    signal,
+                );
+            } else {
+                result = await runAllowedRequest(
+                    () => requestMainModelPromptTransform(context, prefill.messages, maxTokens,
+                        { ...options, allowAssistantPrefillTail: prefill.active || options.allowAssistantPrefillTail }, signal),
                     signal,
                 );
             }
-            return runAllowedRequest(
-                () => requestMainModelPromptTransform(context, promptMessages, maxTokens, options, signal),
-                signal,
-            );
+            return { ...result, output: joinHelperPartialPrefill(result.output, prefill.reply) };
         };
         // Each attempt stops waiting as soon as it is cancelled or runs out of time, even when the
         // connection ignores the abort, so a stalled request cannot keep Agents marked as running.

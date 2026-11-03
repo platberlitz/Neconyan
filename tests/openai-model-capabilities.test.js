@@ -115,14 +115,14 @@ describe('Kimi K3 model capabilities', () => {
     test('recognizes native and provider-prefixed K3 and K3.1 Pro model IDs', () => {
         for (const model of [
             'kimi-k3', 'KIMI-K3', 'moonshotai/kimi-k3', 'models:moonshotai/kimi-k3',
-            'kimi-k3.1-pro', 'KIMI-K3.1-PRO', 'moonshotai/kimi-k3.1-pro', 'models:moonshotai/kimi-k3.1-pro-highspeed',
+            'kimi-k3.1', 'moonshotai/kimi-k3.1', 'kimi-k3.1-pro', 'KIMI-K3.1-PRO', 'moonshotai/kimi-k3.1-pro', 'models:moonshotai/kimi-k3.1-pro-highspeed',
         ]) {
             expect(isKimiK3Model(model)).toBe(true);
         }
     });
 
     test('rejects unrelated model IDs', () => {
-        for (const model of ['kimi-k2.5', 'moonshotai/kimi-k2', 'not-kimi-k3', 'kimi-k3.1', 'kimi-k3.2-pro', 'not-kimi-k3.1-pro', '', undefined]) {
+        for (const model of ['kimi-k2.5', 'moonshotai/kimi-k2', 'not-kimi-k3', 'kimi-k3.2-pro', 'not-kimi-k3.1-pro', '', undefined]) {
             expect(isKimiK3Model(model)).toBe(false);
         }
     });

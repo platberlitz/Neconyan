@@ -438,7 +438,7 @@ export function zaiSupportsReasoningEffort(model) {
  */
 export function isKimiK3Model(model) {
     const normalizedModel = String(model ?? '').trim().toLowerCase();
-    return /(?:^|[/:])kimi-k3(?:\.1-pro)?(?:[-/:]|$)/.test(normalizedModel);
+    return /(?:^|[/:])kimi-k3(?:\.1(?:-pro)?)?(?:[-/:]|$)/.test(normalizedModel);
 }
 
 /**
