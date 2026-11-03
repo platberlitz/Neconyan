@@ -102,6 +102,28 @@ function flushDirectory(directory) {
     } finally { fs.closeSync(fd); }
 }
 
+function removeFailedOwnerDirectory(root, identity, directory, directoryStat) {
+    try {
+        if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()
+            || typeof directoryStat.dev !== 'bigint' || typeof directoryStat.ino !== 'bigint' || directoryStat.ino <= 0n
+            || typeof directoryStat.ctimeNs !== 'bigint' || typeof directoryStat.mtimeNs !== 'bigint'
+            || !/^\d+$/.test(identity.dev) || !/^[1-9]\d*$/.test(identity.ino)) return;
+        const unchanged = () => {
+            if (fs.realpathSync(root) !== root) return false;
+            const currentRoot = fs.lstatSync(root, { bigint: true });
+            const currentDirectory = fs.lstatSync(directory, { bigint: true });
+            return typeof currentRoot.dev === 'bigint' && typeof currentRoot.ino === 'bigint' && currentRoot.ino > 0n
+                && currentRoot.isDirectory() && !currentRoot.isSymbolicLink()
+                && String(currentRoot.dev) === identity.dev && String(currentRoot.ino) === identity.ino
+                && currentDirectory.isDirectory() && !currentDirectory.isSymbolicLink()
+                && currentDirectory.dev === directoryStat.dev && currentDirectory.ino === directoryStat.ino
+                && currentDirectory.ctimeNs === directoryStat.ctimeNs && currentDirectory.mtimeNs === directoryStat.mtimeNs;
+        };
+        if (!unchanged() || fs.readdirSync(directory).length !== 0 || !unchanged()) return;
+        fs.rmdirSync(directory);
+        flushDirectory(root);
+    } catch { /* Preserve the original create-open failure. */ }
+}
 function rootIdentity(root) {
     const stat = fs.statSync(root, { bigint: true });
     if (!stat.isDirectory()) throw fail('The data root is not a directory.');
@@ -175,8 +197,14 @@ export function acquireDataRootOwner(dataRoot, purpose) {
     const directoryStat = fs.lstatSync(directory, { bigint: true });
     const owner = { version: 1, nonce: crypto.randomBytes(16).toString('hex'), hostname: os.hostname(),
         platform: process.platform, pid: process.pid, processStart: processStartIdentity(), root: identity, purpose };
-    const fd = fs.openSync(path.join(directory, OWNER_NAME), fs.constants.O_WRONLY | fs.constants.O_CREAT
-        | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW ?? 0), 0o600);
+    let fd;
+    try {
+        fd = fs.openSync(path.join(directory, OWNER_NAME), fs.constants.O_WRONLY | fs.constants.O_CREAT
+            | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW ?? 0), 0o600);
+    } catch (error) {
+        removeFailedOwnerDirectory(root, identity, directory, directoryStat);
+        throw error;
+    }
     let ownerStat;
     try { fs.writeFileSync(fd, JSON.stringify(owner)); fs.fsyncSync(fd); ownerStat = fs.fstatSync(fd, { bigint: true }); } finally { fs.closeSync(fd); }
     flushDirectory(directory);
