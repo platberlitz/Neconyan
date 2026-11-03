@@ -1823,3 +1823,4 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #420 (2026-11-03) `fix(agents): restore thinking reply recovery`
 - PR #421 (2026-11-03) `feat(agents): redesign companion connections controls`
 - PR #422 (2026-11-03) `feat(creator): match format picker to field selector pills`
+- PR #423 (2026-11-03) `feat(catelier): ask questions before generating`
