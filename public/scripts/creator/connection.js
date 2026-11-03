@@ -19,7 +19,12 @@ export async function requestCreatorConnection(draft, { send, validate, signal, 
         } catch (error) {
             validate();
             if (signal?.aborted || error?.name === 'AbortError' || error?.message === 'Cancelled by stop event') throw error;
-            failures.push(`${profileLabel(profile)}: ${error?.message || String(error)}`);
+            const messages = [];
+            for (let cause = error, depth = 0; cause && depth < 4; cause = cause.cause, depth++) {
+                const message = cause.message || String(cause);
+                if (!messages.includes(message)) messages.push(message);
+            }
+            failures.push(`${profileLabel(profile)}: ${messages.join(': ')}`);
         }
     }
     throw new Error(`Creator could not get a reply.\n${failures.join('\n')}`);

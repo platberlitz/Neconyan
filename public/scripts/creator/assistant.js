@@ -108,7 +108,7 @@ export function renderWritingPartner(workspace, main) {
             const proposal = dossierProposal(source, output, request.fields);
             delete proposal.dossierBefore;
             proposal.label = 'Writing partner';
-            workspace.edit(next => { next.proposals.push(proposal); });
+            if (!workspace.edit(next => { next.proposals.push(proposal); })) return;
             if (main.isConnected) workspace.proposal(proposal);
             workspace.status('Your writing proposal is ready to review.');
         } finally { cancel.hidden = true; }

@@ -57,3 +57,10 @@ test('Failed connections retain every labelled error in attempt order', async ()
         async send(profile) { throw new Error(profile ? 'Profile not found' : 'Authentication failed'); },
     }), /Current connection: Authentication failed\nDeleted backup: Profile not found/);
 });
+
+test('Wrapped profile errors include the provider cause', async () => {
+    await assert.rejects(requestCreatorConnection({}, {
+        validate() {},
+        async send() { throw new Error('API request failed', { cause: new Error('The API key was rejected') }); },
+    }), /API request failed: The API key was rejected/);
+});

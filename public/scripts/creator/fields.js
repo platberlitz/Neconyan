@@ -1,3 +1,5 @@
+import { withCreatorTextEdit } from './model.js';
+
 /** DOM construction uses text nodes: card and model text are never trusted markup. */
 export function element(tag, className = '', text = '') {
     const node = document.createElement(tag);
@@ -100,7 +102,7 @@ export function textField(label, value, change, { name = false, rows = 4, hint =
         heading.append(expand);
         input.addEventListener('dblclick', () => expandField(input, label));
     }
-    input.addEventListener('input', () => change(input.value));
+    input.addEventListener('input', () => withCreatorTextEdit(input.id, () => change(input.value)));
     wrapper.append(heading, input);
     if (hint) wrapper.append(element('p', 'creator-muted creator-field-hint', hint));
     return wrapper;

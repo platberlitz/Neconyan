@@ -22,7 +22,7 @@ export async function creatorPortraitBytes(blob, square = false) {
 
 export function renderPortrait(workspace, main) {
     const draft = workspace.session.draft;
-    main.append(element('h3', '', 'Choose their portrait'), element('p', 'creator-muted', 'Keep up to four candidates. The selected PNG is saved exactly once with your character; saving never generates another image.'));
+    main.append(element('h3', '', 'Choose their portrait'), element('p', 'creator-muted', 'Keep up to four candidates. The selected PNG is saved exactly once with your character; saving never generates another image. Portrait changes are separate from text Undo.'));
     const add = async (blob, label) => {
         const dataUrl = await creatorPortraitBytes(blob);
         workspace.session.assertOwner();
@@ -32,7 +32,7 @@ export function renderPortrait(workspace, main) {
             const id = crypto.randomUUID();
             next.media.push({ id, label, dataUrl });
             next.selectedMedia = id;
-        }, true);
+        }, true, { record: false });
     };
     const uploadWrap = element('label', 'menu_button creator-file-btn');
     uploadWrap.append(element('span', '', 'Upload portrait file'));
@@ -41,7 +41,7 @@ export function renderPortrait(workspace, main) {
     upload.setAttribute('aria-label', 'Upload portrait');
     upload.addEventListener('change', () => { if (upload.files[0]) void workspace.run(() => add(upload.files[0], upload.files[0].name)); });
     uploadWrap.append(upload);
-    main.append(textField('Portrait prompt', creatorPortraitPrompt(draft), value => workspace.edit(next => { next.portraitPrompt = value; }), { rows: 6, hint: 'Starts from the card’s description, personality, setting and Character’s Note. Edit it if you like, then generate. Only this visible prompt and the character name go to Quick Image Gen; private notes and the Dossier stay out.' }));
+    main.append(textField('Portrait prompt', creatorPortraitPrompt(draft), value => workspace.edit(next => { next.portraitPrompt = value; }), { rows: 6, hint: 'Starts from the card’s description, personality, setting and Character’s Note. Quick Image Gen receives this prompt and name and may also apply saved image settings or reference pictures for a matching library character. Private draft notes and the Dossier stay out.' }));
     main.append(button('Refresh prompt from card', () => workspace.edit(next => { delete next.portraitPrompt; }, true), false, 'creator-chip-btn'));
     const cancel = button('Cancel image generation', () => controller?.abort());
     let controller;
@@ -73,7 +73,7 @@ export function renderPortrait(workspace, main) {
     for (const media of draft.media) {
         const card = element('section', 'creator-portrait');
         const image = element('img'); image.src = media.dataUrl; image.alt = media.label || 'Portrait candidate';
-        const select = button(draft.selectedMedia === media.id ? 'Selected portrait' : 'Use portrait', () => workspace.edit(next => { next.selectedMedia = media.id; }, true), draft.selectedMedia === media.id, 'creator-chip-btn');
+        const select = button(draft.selectedMedia === media.id ? 'Selected portrait' : 'Use portrait', () => workspace.edit(next => { next.selectedMedia = media.id; }, true, { record: false }), draft.selectedMedia === media.id, 'creator-chip-btn');
         select.setAttribute('aria-pressed', String(draft.selectedMedia === media.id));
         const controls = element('div', 'creator-actions');
         controls.append(select, button('Crop square', () => workspace.run(async () => {
@@ -81,11 +81,11 @@ export function renderPortrait(workspace, main) {
             const dataUrl = await creatorPortraitBytes(blob, true);
             workspace.session.assertOwner();
             if (workspace.session.draft.id !== draft.id || !workspace.session.draft.media.some(item => item.id === media.id)) throw new Error('This portrait changed. Reopen it before cropping.');
-            workspace.edit(next => { next.media.find(item => item.id === media.id).dataUrl = dataUrl; }, true);
+            workspace.edit(next => { next.media.find(item => item.id === media.id).dataUrl = dataUrl; }, true, { record: false });
         }), false, 'creator-chip-btn'), button('Remove candidate', () => workspace.edit(next => {
             next.media = next.media.filter(item => item.id !== media.id);
             if (next.selectedMedia === media.id) next.selectedMedia = null;
-        }, true), false, 'creator-chip-btn creator-danger-outline'));
+        }, true, { record: false }), false, 'creator-chip-btn creator-danger-outline'));
         card.append(image, controls);
         gallery.append(card);
     }

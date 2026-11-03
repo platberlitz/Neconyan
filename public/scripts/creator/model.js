@@ -10,6 +10,14 @@ export const creatorTextValue = (draft, field) => field === 'depth_prompt' ? dra
 export const FACT_SECTIONS = Object.freeze(['identity', 'appearance', 'traits', 'goals', 'limits', 'relationships', 'history', 'voice', 'scenario']);
 export const STYLES = Object.freeze(['plain', 'plist', 'alichat', 'hybrid']);
 const copy = value => structuredClone(value);
+let textEditKey = null;
+const textEdits = new WeakMap();
+export const creatorTextEditKey = () => textEditKey;
+export function withCreatorTextEdit(key, operation) {
+    const previous = textEditKey;
+    textEditKey = key;
+    try { return operation(); } finally { textEditKey = previous; }
+}
 
 export function createCreatorDraft({ id, card, avatar = null, revision = null, extraBooks = [] }) {
     const original = copy(card ?? { spec: 'chara_card_v2', spec_version: '2.0', data: {} });
@@ -46,7 +54,11 @@ export function validateCreatorDraft(draft) {
 }
 
 function snapshot(draft) {
-    return copy(Object.fromEntries(Object.entries(draft).filter(([key]) => !['history', 'future', 'journal'].includes(key))));
+    return copy(Object.fromEntries(Object.entries(draft).filter(([key]) => !['history', 'future', 'journal', 'media', 'selectedMedia'].includes(key))));
+}
+
+function textHistory(entries) {
+    return entries.map(entry => Object.hasOwn(entry, 'media') || Object.hasOwn(entry, 'selectedMedia') ? snapshot(entry) : entry);
 }
 
 function boundedHistory(entries) {
@@ -60,11 +72,15 @@ function boundedHistory(entries) {
     return kept;
 }
 
-export function editCreatorDraft(draft, operation) {
-    const next = copy(draft);
+export function editCreatorDraft(draft, operation, { record = true } = {}) {
+    const next = { ...snapshot(draft), journal: draft.journal, media: (draft.media ?? []).map(item => ({ ...item })), selectedMedia: draft.selectedMedia };
     operation(next);
-    next.history = boundedHistory([...draft.history, snapshot(draft)]);
-    next.future = [];
+    const previous = textEdits.get(draft);
+    const merge = textEditKey && previous?.key === textEditKey && Date.now() - previous.time < 1500;
+    const history = textHistory(draft.history);
+    next.history = record && !merge ? boundedHistory([...history, snapshot(draft)]) : history;
+    next.future = record ? [] : textHistory(draft.future);
+    if (textEditKey) textEdits.set(next, { key: textEditKey, time: Date.now() });
     return validateCreatorDraft(next);
 }
 
@@ -72,7 +88,7 @@ export function undoCreatorDraft(draft, redo = false) {
     const from = redo ? 'future' : 'history';
     const to = redo ? 'history' : 'future';
     if (!draft[from].length) return draft;
-    return { ...copy(draft[from].at(-1)), journal: draft.journal, [from]: draft[from].slice(0, -1), [to]: boundedHistory([...draft[to], snapshot(draft)]) };
+    return { ...snapshot(draft[from].at(-1)), media: draft.media, selectedMedia: draft.selectedMedia, journal: draft.journal, [from]: textHistory(draft[from].slice(0, -1)), [to]: boundedHistory([...textHistory(draft[to]), snapshot(draft)]) };
 }
 
 export function setCreatorField(draft, field, value, { generated = false } = {}) {

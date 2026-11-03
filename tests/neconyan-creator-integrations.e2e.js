@@ -18,6 +18,8 @@ for (const phone of [false, true]) {
         await creator.getByRole('button', { name: 'Mira facts', exact: true }).click();
         await creator.getByRole('button', { name: 'Copy note into Dossier', exact: true }).click();
         await expect(creator.getByRole('status')).toContainText('Note copied');
+        await creator.getByRole('button', { name: 'Copy note into Dossier', exact: true }).click();
+        await expect(creator.getByRole('status')).toContainText('already in the Dossier');
         await creator.getByRole('button', { name: 'Dossier', exact: true }).click();
         await expect(creator.getByLabel('Character dossier', { exact: true })).toHaveValue('## Mira facts\n\nMira repairs ships with {{poss}} tools.');
         await creator.getByRole('button', { name: 'Writing instructions', exact: true }).click();

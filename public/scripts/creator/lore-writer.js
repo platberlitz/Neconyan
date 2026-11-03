@@ -51,7 +51,7 @@ export function renderLoreWriter(workspace, panel, book) {
         try {
             const output = await requestCreatorReply(workspace, draft, messages, { signal: controller.signal });
             const proposal = parseCreatorLoreProposal(draft, book.id, output, selectedMode);
-            workspace.edit(next => { next.proposals.push(proposal); });
+            if (!workspace.edit(next => { next.proposals.push(proposal); })) return;
             if (reviews.isConnected) show(proposal);
             workspace.status('Lorebook proposal saved for review. Your source background is unchanged.');
         } finally { cancel.hidden = true; }

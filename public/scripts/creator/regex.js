@@ -61,12 +61,12 @@ export function renderPrettyHtml(workspace, main) {
         const result = await previewCreatorRegex(kit.pattern, kit.replacement, kit.sample);
         if (!result.matches) throw new Error('The pattern must match your sample before adding this display.');
         if (workspace.session.draft.locks.includes('post_history_instructions')) throw new Error('Unlock post-history instructions before adding the matching output format.');
-        workspace.edit(next => {
+        if (!workspace.edit(next => {
             next.card.data.extensions ??= {};
             next.card.data.extensions.regex_scripts ??= [];
             next.card.data.extensions.regex_scripts.push({ id: crypto.randomUUID(), scriptName: kit.name, findRegex: kit.pattern, replaceString: kit.replacement, trimStrings: [], placement: [2], disabled: false, markdownOnly: true, promptOnly: false, runOnEdit: true, substituteRegex: 0, minDepth: null, maxDepth: null });
             next.card.data.post_history_instructions += `\n\n${kit.instructions}`;
-        }, true);
+        }, true)) return;
         workspace.status('Display and output instructions added to the draft. Review & save publishes them; chat regex permissions still apply.');
     }), true));
     main.append(actionRow, preview);

@@ -27,7 +27,7 @@ export async function renderCreatorNotebooks(workspace, main) {
         field.querySelector('textarea').readOnly = true;
         preview.append(field, button('Copy note into Dossier', () => workspace.run(async () => {
             current();
-            workspace.edit(next => appendCreatorNote(next, { notebookId, note: result.note }));
+            if (!workspace.edit(next => appendCreatorNote(next, { notebookId, note: result.note }))) return;
             await workspace.session.save();
             workspace.status('Note copied into the Dossier. The notebook is unchanged.');
         }), true));

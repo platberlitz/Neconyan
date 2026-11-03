@@ -1,7 +1,7 @@
 import { characters, getOneCharacter } from '../../script.js';
 import { CreatorSession } from './session.js';
 import { element, button, textField } from './fields.js';
-import { editCreatorDraft, setCreatorField, undoCreatorDraft, renderCreatorFacts, creatorProposal, acceptCreatorProposal, FACT_SECTIONS, STYLES } from './model.js';
+import { editCreatorDraft, setCreatorField, undoCreatorDraft, renderCreatorFacts, creatorProposal, acceptCreatorProposal, FACT_SECTIONS, STYLES, creatorTextEditKey } from './model.js';
 import { buildDossierRequest, dossierProposal, DOSSIER_FIELDS } from './dossier.js';
 import { compareCreatorChanges } from './conflicts.js';
 import { restoreCreatorBackup } from './backup.js';
@@ -20,8 +20,9 @@ export async function mountCreator(host, { avatar = null, draftId = null } = {})
     if (app?.host === host) app.session.assertOwner();
     else {
         app = new CreatorWorkspace(host);
-        if (!avatar && !draftId) await app.home();
-        else app.shell();
+        if (!avatar && !draftId) {
+            try { await app.home(); } catch (error) { app = null; throw error; }
+        } else app.shell();
     }
     if (avatar || draftId) await app.run(async () => {
         if (app.session.pending || app.session.publishing) throw new Error('Finish the previous save before opening another character.');
@@ -50,6 +51,7 @@ class CreatorWorkspace {
     }
 
     status(message, error = false) {
+        this.statusRevision = (this.statusRevision ?? 0) + 1;
         this.message = message;
         const output = this.host.querySelector('.creator-status');
         if (output) {
@@ -69,7 +71,11 @@ class CreatorWorkspace {
 
     async home() {
         clearTimeout(this.timer);
-        if (this.session.draft) await this.session.save();
+        if (this.session.draft) {
+            try { await this.session.save(); } catch (error) {
+                this.status(`${error.message} Your local draft remains available under Recover.`, true);
+            }
+        }
         this.shell();
         const hub = element('div', 'creator-hub');
         const welcome = element('div', 'creator-welcome');
@@ -91,18 +97,32 @@ class CreatorWorkspace {
             if (file.size > 24 * 1024 * 1024) throw new Error('Choose a backup smaller than 24 MiB.');
             const draft = restoreCreatorBackup(JSON.parse(await file.text()));
             await this.session.queue;
+            if (this.session.draft) await this.session.save();
             this.session.draft = draft; this.session.revision = null; this.session.pending = null;
             await this.session.save(); this.render();
             this.status('Backup restored as a new draft. External books will be new copies; rename them in Lorebooks if those names already exist.');
         }));
         restore.append(upload);
         welcomeActions.append(restore);
-        const recovery = this.session.recovery();
+        const recovery = this.session.draft ? { draft: this.session.draft, revision: this.session.revision, pending: this.session.pending } : this.session.recovery();
         if (recovery) {
             welcomeActions.append(button(`Recover ${recovery.draft.card.data.name || 'untitled draft'}`, () => {
                 this.session.restore(recovery); this.render(); this.status(recovery.pending ? 'A previous save needs recovery. Resume it from Review & save.' : 'Local draft recovered.');
             }));
         }
+        const previousRecovery = this.session.recovery(true);
+        if (previousRecovery) welcomeActions.append(button('Recover previous local version', () => {
+            this.session.restore(previousRecovery); this.render();
+            this.status('Previous local version restored. Export a private backup before replacing a newer saved draft.');
+        }), button('Clear previous local recovery', event => {
+            if (event.currentTarget.dataset.confirm !== 'true') {
+                event.currentTarget.dataset.confirm = 'true';
+                event.currentTarget.textContent = 'Confirm clear previous local recovery';
+                return;
+            }
+            localStorage.removeItem(`${this.session.recoveryKey}:previous`);
+            void this.run(() => this.home());
+        }, false, 'creator-chip-btn'));
         welcome.append(welcomeCopy, welcomeActions);
         hub.append(welcome);
 
@@ -186,10 +206,14 @@ class CreatorWorkspace {
     }
 
     change(operation, redraw = false) {
-        if (this.session.pending || this.session.publishing) { this.status('Finish the previous save before changing this draft.', true); return; }
+        if (this.session.pending || this.session.publishing) { this.status('Finish the previous save before changing this draft.', true); return false; }
         try {
             this.session.draft = operation(this.session.draft);
-            this.session.remember();
+            clearTimeout(this.recoveryTimer);
+            if (creatorTextEditKey()) this.recoveryTimer = setTimeout(() => {
+                try { this.session.remember(); } catch (error) { this.status(error.message, true); }
+            }, 150);
+            else this.session.remember();
             const heading = this.host.querySelector('.creator-draft-header h2');
             if (heading) heading.textContent = this.session.draft.card.data.name || 'Untitled character';
             const undo = this.host.querySelector('[data-creator-undo]');
@@ -197,15 +221,19 @@ class CreatorWorkspace {
             if (undo) undo.disabled = !this.session.draft.history.length;
             if (redo) redo.disabled = !this.session.draft.future.length;
             clearTimeout(this.timer);
-            this.status(this.session.localRecoveryError ? 'Device recovery storage is full. Saving to your account…' : 'Draft changes saved on this device.', this.session.localRecoveryError);
+            this.status(creatorTextEditKey() ? 'Saving draft changes…' : this.session.localRecoveryError ? 'Device recovery storage is full. Saving to your account…' : 'Draft changes saved on this device.', this.session.localRecoveryError);
+            const statusRevision = this.statusRevision;
             this.timer = setTimeout(() => {
-                void this.session.save().then(() => this.status(this.session.localRecoveryError ? 'Draft saved to your account. Device recovery storage is full.' : 'Draft saved. Your library has not changed.', this.session.localRecoveryError)).catch(error => this.status(error.message, true));
+                void Promise.resolve().then(() => this.session.save()).then(() => {
+                    if (this.statusRevision === statusRevision) this.status(this.session.localRecoveryError ? 'Draft saved to your account. Device recovery storage is full.' : 'Draft saved. Your library has not changed.', this.session.localRecoveryError);
+                }).catch(error => { if (this.statusRevision === statusRevision) this.status(error.message, true); });
             }, 500);
             if (redraw) this.render();
-        } catch (error) { this.status(error.message, true); }
+            return true;
+        } catch (error) { this.status(error.message, true); return false; }
     }
 
-    edit(operation, redraw = false) { this.change(draft => editCreatorDraft(draft, operation), redraw); }
+    edit(operation, redraw = false, options) { return this.change(draft => editCreatorDraft(draft, operation, options), redraw); }
 
     field(field) {
         const draft = this.session.draft;
@@ -372,7 +400,10 @@ class CreatorWorkspace {
                     if (this.session.draft?.id !== draft.id || (this.session.draft.dossier ?? '') !== (draft.dossier ?? '')) throw new Error('The source dossier changed. Convert the updated version.');
                     const proposal = dossierProposal(draft, output, request.fields);
                     proposal.formatBefore = draft.style;
-                    this.edit(next => { next.proposals.push(proposal); });
+                    if (!this.edit(next => { next.proposals.push(proposal); })) {
+                        feedback.textContent = this.message;
+                        return;
+                    }
                     if (main.isConnected) this.proposal(proposal);
                     this.status('Conversion ready for review. Your dossier and library are unchanged.');
                 } catch (error) {
@@ -451,7 +482,7 @@ class CreatorWorkspace {
             if (index >= 0) next.proposals[index] = structuredClone(proposal);
             else next.proposals.push(structuredClone(proposal));
         });
-        if (!this.session.draft.proposals.some(item => item.id === proposal.id)) persist();
+        if (!this.session.draft.proposals.some(item => item.id === proposal.id) && !persist()) return;
         const content = this.host.querySelector('.creator-content');
         const review = element('section', 'creator-proposal');
         review.append(element('h3', '', proposal.label));
