@@ -8,7 +8,7 @@ export const validCreatorProposalValue = (field, value) => field === 'alternate_
     : typeof value === 'string' && value.length <= 100000;
 export const creatorTextValue = (draft, field) => field === 'depth_prompt' ? draft.card.data.extensions?.depth_prompt?.prompt ?? '' : draft.card.data[field] ?? (field === 'alternate_greetings' ? [] : '');
 export const FACT_SECTIONS = Object.freeze(['identity', 'appearance', 'traits', 'goals', 'limits', 'relationships', 'history', 'voice', 'scenario']);
-export const STYLES = Object.freeze(['purachina', 'plain', 'plist', 'alichat', 'hybrid']);
+export const STYLES = Object.freeze(['purachina', 'plain', 'plist', 'alichat', 'hybrid', 'custom']);
 const copy = value => structuredClone(value);
 let textEditKey = null;
 const textEdits = new WeakMap();
@@ -120,6 +120,7 @@ export function creatorProfileText(name, sections) {
 /** Deterministic rendering never invents facts or overwrites raw text. */
 export function renderCreatorFacts(draft, style = draft.style) {
     if (!STYLES.includes(style)) throw new Error('Choose a supported writing format.');
+    if (style === 'custom') throw new Error('Use Generate or Dossier conversion to apply your custom instructions.');
     const facts = draft.facts.filter(fact => fact.visibility !== 'private' && fact.status === 'decided' && String(fact.text ?? '').trim());
     const realName = String(draft.card.data.name ?? '').trim();
     const name = realName || '{{char}}';

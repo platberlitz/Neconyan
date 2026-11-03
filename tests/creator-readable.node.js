@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCreatorDraft, renderCreatorFacts } from '../public/scripts/creator/model.js';
+import { createCreatorDraft, renderCreatorFacts, validateCreatorDraft } from '../public/scripts/creator/model.js';
 import { buildDossierRequest } from '../public/scripts/creator/dossier.js';
+import { buildCreatorWritingRequest } from '../public/scripts/creator/assistant.js';
 import { buildCreatorLoreRequest, parseCreatorLoreProposal, acceptCreatorLoreProposal } from '../public/scripts/creator/lore-proposals.js';
 
 const fixture = () => {
@@ -10,6 +11,23 @@ const fixture = () => {
     draft.books.push({ id: 'book', name: 'Places', mode: 'copy', data: { entries: {} } });
     return draft;
 };
+
+test('Custom uses only the supplied format and never falls back to a built-in template', () => {
+    const draft = fixture();
+    draft.style = 'custom';
+    draft.writing = { formatInstruction: 'Write a single YAML mapping with biography and voice keys.', plistDestination: 'depth_prompt' };
+    validateCreatorDraft(draft);
+    const request = buildDossierRequest(draft, ['description']);
+    assert.deepEqual(request.fields, ['description']);
+    assert.match(request.messages[0].content, /single YAML mapping/);
+    assert.doesNotMatch(request.messages[0].content, /Interviewer:|PList|ALIchat|grounded, direct narration|Paragraph target|purachina|square brackets/);
+    const writing = buildCreatorWritingRequest(draft, 'Rewrite the description', ['description']);
+    assert.match(writing.messages[0].content, /single YAML mapping/);
+    assert.doesNotMatch(writing.messages[0].content, /Interviewer:|PList|ALIchat|grounded, direct narration|Paragraph target|purachina|square brackets/);
+    assert.throws(() => renderCreatorFacts(draft), /Use Generate or Dossier conversion/);
+    draft.writing.formatInstruction = '  ';
+    assert.throws(() => buildDossierRequest(draft), /Add your custom writing format instructions/);
+});
 
 test('Recommended format requests an interview and note, preserves locks and has readable deterministic output', () => {
     const draft = fixture();

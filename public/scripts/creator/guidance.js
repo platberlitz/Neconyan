@@ -34,6 +34,9 @@ MacroEnhanced pronouns require that extension and its experimental macro support
 export const CREATOR_PROMPTS = Object.freeze({ director: DIRECTOR_GUIDANCE, grounded: GROUNDED_GUIDANCE, macros: MACRO_GUIDANCE });
 
 export function creatorGuidance(draft) {
+    if (draft.style === 'custom') {
+        return [MACRO_GUIDANCE, draft.writing?.userInstructions ? `Custom user instructions:\n${draft.writing.userInstructions}` : '', creatorFormatGuidance(draft)].filter(Boolean).join('\n\n');
+    }
     const mode = draft.writing?.mode ?? 'full';
     const prompts = Object.fromEntries(Object.entries(CREATOR_PROMPTS).map(([key, fallback]) => [key,
         typeof draft.writing?.prompts?.[key] === 'string' ? draft.writing.prompts[key] : fallback]));

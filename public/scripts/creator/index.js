@@ -482,7 +482,7 @@ class CreatorWorkspace {
         main.append(element('h3', '', 'Writing format'));
         if (draft.rawAhead) main.append(element('p', 'creator-muted', 'Raw text has changed. Review the differences before replacing it with guided facts.'));
         const formats = element('div', 'creator-actions');
-        for (const style of STYLES) formats.append(button(style, () => {
+        for (const style of STYLES.filter(style => style !== 'custom')) formats.append(button(style, () => {
             const rendered = renderCreatorFacts(this.session.draft, style);
             this.proposal(creatorProposal(this.session.draft, rendered.fields, `${style}: ${rendered.kept.length} facts kept, ${rendered.excluded.length} excluded`));
         }));

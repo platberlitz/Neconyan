@@ -15,6 +15,7 @@ Macros: use {{user}} for the user and write the character's real name instead of
     plist: { label: 'PList', hint: 'Compact labelled properties and traits.', instruction: `Write descriptive character fields as compact labelled properties, grouping related traits into readable lists. ${READABLE_PLIST} Prefer exact nouns, measurements, habits, triggers and lifestyle context over bare adjectives, and use item(qualifier, qualifier) parentheticals to keep detail. Preserve concrete detail instead of reducing everything to vague adjectives.` },
     alichat: { label: 'ALIchat', hint: 'Characterisation through Interviewer and character dialogue.', instruction: `Express characterisation through short example exchanges using brief neutral Interviewer: questions (roughly 2-5 words) and character-voiced {{char}}: turns with concrete physical mannerisms. Let the character demonstrate their traits in their own voice. Use Interviewer, never {{user}}, as the example speaker. Start each speaker turn on a new line and separate exchanges with blank lines; no opening delimiter is required. ${READABLE_TEXT}` },
     hybrid: { label: 'Hybrid', hint: 'Concise facts plus dialogue that demonstrates their voice.', instruction: `Combine a concise labelled profile with illustrative dialogue. For the profile: ${READABLE_PLIST} For the dialogue, use brief Interviewer: questions and {{char}}: replies, each turn on a new line, with blank lines between exchanges; no opening delimiter is required. ${READABLE_TEXT} Keep each part useful rather than repeating all the same facts.` },
+    custom: { label: 'Custom', hint: 'Use only your custom writing format instructions.', instruction: '' },
 });
 
 export const CREATOR_TENSES = Object.freeze({
@@ -136,6 +137,11 @@ export function creatorTargetsGuidance(draft) {
 }
 
 export function creatorFormatGuidance(draft) {
+    if (draft.style === 'custom') {
+        const instruction = String(draft.writing?.formatInstruction ?? '').trim();
+        if (!instruction) throw new Error('Add your custom writing format instructions before generating.');
+        return `Selected writing format: Custom. Follow the custom instructions below as the sole character writing format. Preserve established facts, literal macros and the requested response schema. Change only requested, unlocked fields.\n\nCustom writing format instructions:\n${instruction}`;
+    }
     const format = CREATOR_FORMATS[draft.style] ?? CREATOR_FORMATS.plain;
     const base = `Selected writing format: ${format.label}. ${format.instruction} Apply this format to description, personality, scenario and example dialogue as appropriate to the requested fields. Keep names, tags and metadata short. Greetings remain playable scene openings; system and depth prompts remain instructions. Preserve established facts, user agency and literal macros. Do not rewrite unrelated fields merely to enforce a format.`;
     const targets = creatorTargetsGuidance(draft);
