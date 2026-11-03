@@ -667,6 +667,86 @@ body.neconyan #right-nav-panel.openDrawer[data-menu-type="creator"] #sb_characte
     gap: 8px;
 }
 
+#right-nav-panel #sb_character_creator_panel .creator-format-info {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+#right-nav-panel #sb_character_creator_panel .creator-info-btn {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    min-width: 0;
+    min-height: 0;
+    flex: none;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--neco-border);
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    font: 700 0.7rem/1 var(--mainFontFamily, inherit);
+    cursor: pointer;
+}
+
+#right-nav-panel #sb_character_creator_panel .creator-info-btn::before {
+    content: '';
+    position: absolute;
+    inset: -12px;
+}
+
+#right-nav-panel #sb_character_creator_panel .creator-info-btn:hover,
+#right-nav-panel #sb_character_creator_panel .creator-info-btn:focus-visible {
+    border-color: var(--neco-ginger);
+}
+
+#right-nav-panel #sb_character_creator_panel .creator-info-btn[aria-expanded="true"] {
+    border-color: var(--neco-ginger);
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+#right-nav-panel #sb_character_creator_panel .creator-info-tip {
+    position: absolute;
+    inset-block-start: calc(100% + 8px);
+    inset-inline-start: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    inline-size: min(300px, 82vw);
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--neco-border);
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    box-shadow: 0 6px 18px rgb(0 0 0 / 0.32);
+    font-size: 0.78rem;
+    font-weight: 500;
+    line-height: 1.4;
+    text-align: start;
+}
+
+#right-nav-panel #sb_character_creator_panel .creator-info-tip::before {
+    content: '';
+    position: absolute;
+    inset-block-start: -6px;
+    inset-inline-start: calc(var(--creator-tip-arrow, 24px) - 6px);
+    inline-size: 10px;
+    block-size: 10px;
+    border-inline-start: 1px solid var(--neco-border);
+    border-block-start: 1px solid var(--neco-border);
+    background: var(--neco-surface);
+    rotate: 45deg;
+}
+
+#right-nav-panel #sb_character_creator_panel .creator-info-tip[hidden] {
+    display: none;
+}
+
 #right-nav-panel #sb_character_creator_panel .creator-inline-status[hidden],
 #right-nav-panel #sb_character_creator_panel .creator-conversion-status[hidden] {
     display: none;

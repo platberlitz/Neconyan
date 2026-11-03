@@ -118,35 +118,54 @@ export function renderCreatorFormat(workspace, main) {
     group.append(element('legend', '', 'Character writing format'));
     const topBar = element('div', 'creator-format-bar');
     const row = element('div', 'creator-actions creator-chip-strip');
-    const help = element('div', 'creator-card creator-format-help');
-    help.id = 'creator-recommended-help';
-    help.setAttribute('role', 'tooltip');
-    help.hidden = true;
-    help.append(element('strong', '', 'What is purachina’s recommended?'), element('p', '', 'An interview in Description, with the character answering questions about their personality, appearance and life in their own voice. A compact, square-bracketed profile goes in Character’s Note. Personality and Scenario stay brief. Greetings use third-person, present-tense narration and the character’s real name, leaving your actions to you.'));
     for (const [id, format] of Object.entries(CREATOR_FORMATS)) {
         const choice = button(format.label, () => workspace.edit(next => { next.style = id; }, true), false, 'creator-chip-btn');
         choice.setAttribute('aria-pressed', String((workspace.session.draft.style || 'plain') === id));
         choice.title = format.hint;
-        row.append(choice);
-        if (id === 'purachina') {
-            const toggle = button('?', () => {
-                help.hidden = !help.hidden;
-                toggle.setAttribute('aria-expanded', String(!help.hidden));
-                if (!help.hidden) help.scrollIntoView({ block: 'nearest', behavior: 'instant' });
-            }, false, 'creator-chip-btn');
-            toggle.title = 'About purachina’s recommended';
-            toggle.setAttribute('aria-label', toggle.title);
-            toggle.setAttribute('aria-controls', help.id);
-            toggle.setAttribute('aria-expanded', 'false');
-            toggle.addEventListener('keydown', event => {
-                if (event.key === 'Escape') {
-                    help.hidden = true;
-                    toggle.setAttribute('aria-expanded', 'false');
-                    event.stopPropagation();
-                }
-            });
-            row.append(toggle);
+        if (id !== 'purachina') {
+            row.append(choice);
+            continue;
         }
+        const wrap = element('span', 'creator-format-info');
+        const toggle = element('button', 'creator-info-btn', '?');
+        toggle.type = 'button';
+        toggle.setAttribute('aria-label', 'What is purachina’s recommended?');
+        toggle.setAttribute('aria-controls', 'creator-recommended-help');
+        toggle.setAttribute('aria-expanded', 'false');
+        const tip = element('span', 'creator-info-tip');
+        tip.id = 'creator-recommended-help';
+        tip.setAttribute('role', 'tooltip');
+        tip.hidden = true;
+        tip.append(element('strong', '', 'purachina’s recommended'), element('span', '', 'Description is an interview, with the character answering in their own voice. A short, square-bracketed profile goes in Character’s Note. Personality and Scenario stay brief, and greetings use third-person, present-tense narration with the character’s real name.'));
+        const close = () => {
+            tip.hidden = true;
+            toggle.setAttribute('aria-expanded', 'false');
+            document.removeEventListener('pointerdown', outside, true);
+        };
+        const outside = event => { if (!wrap.contains(event.target) || !wrap.isConnected) close(); };
+        toggle.addEventListener('click', event => {
+            event.stopPropagation();
+            if (!tip.hidden) return close();
+            tip.hidden = false;
+            toggle.setAttribute('aria-expanded', 'true');
+            const bounds = (wrap.closest('fieldset') ?? wrap).getBoundingClientRect();
+            const anchor = wrap.getBoundingClientRect();
+            const center = toggle.getBoundingClientRect().left + toggle.offsetWidth / 2;
+            const width = tip.offsetWidth;
+            const left = Math.max(bounds.left + 8, Math.min(center - 24, bounds.right - 8 - width));
+            tip.style.insetInlineStart = `${Math.round(left - anchor.left)}px`;
+            tip.style.setProperty('--creator-tip-arrow', `${Math.round(center - left)}px`);
+            document.addEventListener('pointerdown', outside, true);
+        });
+        wrap.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && !tip.hidden) {
+                close();
+                toggle.focus();
+                event.stopPropagation();
+            }
+        });
+        wrap.append(choice, toggle, tip);
+        row.append(wrap);
     }
     const feedback = element('p', 'creator-muted creator-inline-status');
     feedback.setAttribute('role', 'status');
@@ -183,7 +202,7 @@ export function renderCreatorFormat(workspace, main) {
     const convertActions = element('div', 'creator-actions');
     convertActions.append(convert, cancel);
     topBar.append(row, convertActions);
-    group.append(topBar, help, element('p', 'creator-muted', 'Used by Dossier conversion, Generate and the Writing partner. Choosing a format does not replace existing text.'), feedback);
+    group.append(topBar, element('p', 'creator-muted', 'Used by Dossier conversion, Generate and the Writing partner. Choosing a format does not replace existing text.'), feedback);
     group.append(textField('Custom writing format instructions', workspace.session.draft.writing?.formatInstruction ?? '', value => workspace.edit(next => {
         next.writing ??= {}; next.writing.formatInstruction = value;
     }), { rows: 2, hint: workspace.session.draft.style === 'custom' ? 'Your only writing format. Built-in formats, prose guidance and style targets are omitted. The greeting count and required response structure still apply. Kept private to this draft.' : 'Add your own structure, formatting and style rules. Choose Custom to use these alone; otherwise they accompany the selected format. Kept private to this draft.' }));
