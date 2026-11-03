@@ -1,6 +1,7 @@
 import path from 'node:path';
+import fs from 'node:fs';
 import { createHash } from 'node:crypto';
-import { roleplayLease, roleplayError } from '../roleplay-store.js';
+import { roleplayLease, roleplayError, createRoleplayDirectory } from '../roleplay-store.js';
 import { readAuthoringFileLocked, writeAuthoringFileLocked } from '../authoring-store.js';
 import { validateCreatorDraft } from '../../public/scripts/creator/model.js';
 
@@ -14,10 +15,28 @@ function filename(lease) {
 
 function read(lease) {
     const file = readAuthoringFileLocked(lease, filename(lease), LIMIT);
-    if (!file) return { schema: 1, drafts: {} };
+    if (!file) return;
     const data = JSON.parse(file.bytes.toString('utf8'));
+    if (data.schema === 2) return;
     if (data.schema !== 1 || !data.drafts || Array.isArray(data.drafts)) throw roleplayError('CREATOR_SCHEMA', 'The Creator store needs a newer version of Neconyan.', 409);
-    return data;
+    // Each copy is durable before retiring the legacy aggregate. Retrying a partial
+    // migration never replaces an already migrated draft or deletion tombstone.
+    for (const item of Object.values(data.drafts)) {
+        const target = draftPath(lease, requireId(item.draft.id));
+        if (!readAuthoringFileLocked(lease, target, LIMIT)) writeAuthoringFileLocked(lease, target, JSON.stringify(item), { limit: LIMIT });
+    }
+    writeAuthoringFileLocked(lease, filename(lease), JSON.stringify({ schema: 2 }));
+}
+
+function draftPath(lease, id) {
+    return path.join(roleplayLease(lease).scope.directories.root, 'creator', 'drafts', `${requireId(id)}.json`);
+}
+
+function readItem(lease, id) {
+    const file = readAuthoringFileLocked(lease, draftPath(lease, id), LIMIT);
+    if (!file) return null;
+    const item = JSON.parse(file.bytes.toString('utf8'));
+    return item.deleted ? null : item;
 }
 
 function requireId(id) {
@@ -26,13 +45,20 @@ function requireId(id) {
 }
 
 export function listCreatorDrafts(lease) {
-    return Object.values(read(lease).drafts).map(item => ({ id: item.draft.id, name: item.draft.card.data.name || 'Untitled character', updatedAt: item.updatedAt, revision: item.revision, avatar: item.draft.source?.avatar ?? null }));
+    read(lease);
+    const root = roleplayLease(lease).scope.directories.root;
+    const directory = path.join(root, 'creator', 'drafts');
+    createRoleplayDirectory(directory, root);
+    return fs.readdirSync(directory).filter(name => /^[a-zA-Z0-9_-]{1,64}\.json$/.test(name))
+        .map(name => {
+            const item = readItem(lease, name.slice(0, -5));
+            return item ? { id: item.draft.id, name: item.draft.card.data.name || 'Untitled character', updatedAt: item.updatedAt, revision: item.revision, avatar: item.draft.source?.avatar ?? null } : null;
+        }).filter(Boolean);
 }
 
 export function getCreatorDraft(lease, id) {
-    const drafts = read(lease).drafts;
-    requireId(id);
-    const item = Object.hasOwn(drafts, id) ? drafts[id] : null;
+    read(lease);
+    const item = readItem(lease, id);
     if (!item) throw roleplayError('CREATOR_NOT_FOUND', 'This Creator draft no longer exists.', 404);
     return item;
 }
@@ -40,25 +66,24 @@ export function getCreatorDraft(lease, id) {
 export function saveCreatorDraft(lease, draft, expectedRevision) {
     requireId(draft?.id);
     try { validateCreatorDraft(draft); } catch (error) { throw roleplayError('CREATOR_DOCUMENT', error.message, 400); }
-    const store = read(lease);
-    const previous = Object.hasOwn(store.drafts, draft.id) ? store.drafts[draft.id] : null;
+    read(lease);
+    const previous = readItem(lease, draft.id);
     const revision = hash(JSON.stringify(draft));
     if (previous?.revision === revision) return previous;
-    if ((previous?.revision ?? null) !== expectedRevision) throw roleplayError('CREATOR_CONFLICT', 'This draft changed elsewhere. Keep your recovery copy and compare the saved draft.', 409);
-    if (!previous && Object.keys(store.drafts).length >= MAX_DRAFTS) throw roleplayError('CREATOR_LIMIT', 'Remove an old draft before creating another.', 409);
+    if ((previous?.revision ?? null) !== expectedRevision) throw roleplayError('CREATOR_CONFLICT', 'This draft changed elsewhere. Export your local draft as a private backup before opening the saved version.', 409);
+    if (!previous && listCreatorDrafts(lease).length >= MAX_DRAFTS) throw roleplayError('CREATOR_LIMIT', 'Remove an old draft before creating another.', 409);
     const item = { draft, revision, updatedAt: new Date().toISOString() };
-    store.drafts[draft.id] = item;
-    writeAuthoringFileLocked(lease, filename(lease), JSON.stringify(store), { limit: LIMIT });
+    const bytes = JSON.stringify(item);
+    if (Buffer.byteLength(bytes) > LIMIT) throw roleplayError('CREATOR_DRAFT_SIZE', `The draft “${draft.card.data.name || draft.id}” is too large. Remove portraits or shorten its lorebooks, then save again. Other drafts are unaffected.`, 413);
+    writeAuthoringFileLocked(lease, draftPath(lease, draft.id), bytes, { limit: LIMIT });
     return item;
 }
 
 export function deleteCreatorDraft(lease, id, expectedRevision) {
-    const store = read(lease);
-    requireId(id);
-    const previous = Object.hasOwn(store.drafts, id) ? store.drafts[id] : null;
+    read(lease);
+    const previous = readItem(lease, id);
     if (!previous) return { deleted: true };
     if (previous.revision !== expectedRevision) throw roleplayError('CREATOR_CONFLICT', 'This draft changed elsewhere. Reload it before discarding.', 409);
-    delete store.drafts[id];
-    writeAuthoringFileLocked(lease, filename(lease), JSON.stringify(store), { limit: LIMIT });
+    writeAuthoringFileLocked(lease, draftPath(lease, id), JSON.stringify({ deleted: true }), { limit: LIMIT });
     return { deleted: true };
 }

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { roleplayLease, roleplayError, readRoleplayFile, roleplayHash } from '../roleplay-store.js';
-import { readAuthoringFileLocked, writeAuthoringFileLocked, stageAuthoringFileLocked, publishAuthoringFileLocked, authoringEvidence } from '../authoring-store.js';
+import { AUTHORING_FILE_LIMIT, readAuthoringFileLocked, writeAuthoringFileLocked, stageAuthoringFileLocked, publishAuthoringFileLocked, authoringEvidence } from '../authoring-store.js';
 import { commitRoleplayLifecycleLocked } from '../roleplay-lifecycle.js';
 import { write as writeCharacterCard } from '../character-card-parser.js';
 import { assertNativeMediaTargetIdle } from '../generation/media-jobs.js';
@@ -31,7 +31,13 @@ function publicationPath(lease, id) {
 /** A server-side pointer survives loss of browser storage and a second device's retry. */
 export function getCreatorPublication(lease, id) {
     const file = readRoleplayFile(publicationPath(lease, id), 4096, { allowMissingParent: true });
-    return file ? JSON.parse(file.bytes.toString('utf8')) : null;
+    const publication = file ? JSON.parse(file.bytes.toString('utf8')) : null;
+    if (publication && !publication.acknowledged && !readRoleplayFile(receiptPath(lease, publication.operationId), MAX_CARD, { allowMissingParent: true })) {
+        publication.acknowledged = true;
+        publication.neverStarted = true;
+        writeAuthoringFileLocked(lease, publicationPath(lease, id), JSON.stringify(publication));
+    }
+    return publication;
 }
 
 /** A second device must not discard the only draft that can recover a frozen save. */
@@ -60,6 +66,7 @@ export function publishCreatorDraft(lease, { id, expectedRevision, operationId, 
     if (previous) {
         if (!previous.acknowledged && previous.expectedRevision === expectedRevision && previous.copy === copy) operationId = previous.operationId;
         else {
+            if (!previous.acknowledged) throw conflict('This draft has a previous library save awaiting recovery. Recover it for comparison before publishing newer edits.');
             const priorFile = readRoleplayFile(receiptPath(lease, previous.operationId), MAX_CARD, { allowMissingParent: true });
             if (priorFile && !['done', 'stopped'].includes(JSON.parse(priorFile.bytes.toString('utf8')).state)) throw conflict('This draft has an interrupted save. Resume it or recover it for comparison before starting another review.');
         }
@@ -69,6 +76,7 @@ export function publishCreatorDraft(lease, { id, expectedRevision, operationId, 
     // A lifecycle interruption blocks authoring reads. Only its own saved receipt can resume it.
     const saved = readRoleplayFile(filename, MAX_CARD, { allowMissingParent: true });
     let receipt = saved ? JSON.parse(saved.bytes.toString('utf8')) : null;
+    if (receipt && previous && previous.operationId !== operationId) throw conflict('A newer library save replaced this operation. Reopen the draft before continuing.');
     if (receipt && (receipt.id !== id || receipt.draftRevision !== expectedRevision || receipt.requestedCopy !== copy)) throw conflict('This save operation belongs to a different review. Start a new review.');
     if (receipt && ['recovering', 'stopped'].includes(receipt.state)) throw conflict('This save was stopped for comparison. Reopen the recovered draft.');
     if (state.pending) {
@@ -101,7 +109,7 @@ export function publishCreatorDraft(lease, { id, expectedRevision, operationId, 
             names.add(target.name);
             canonicalNames.set(book.name, target.name);
             const expected = book.mode === 'copy' ? null : book.revision;
-            if (target.revision !== expected) throw conflict(`The lorebook ${target.name} changed. Compare it before saving.`);
+            if (target.revision !== expected) throw conflict(book.mode === 'copy' ? `A lorebook named ${target.name} already exists. Rename this new copy before saving.` : `The lorebook ${target.name} changed. Compare it before saving.`);
             assertNativeMediaTargetIdle(lease, { kind: 'lorebook', id: target.filename });
             books.push({ id: book.id, name: target.name, filename: target.filename, data: book.data,
                 before: authoringEvidence(target.file), revision: worldInfoRevision(book.data), state: 'waiting', staged: null });
@@ -112,8 +120,9 @@ export function publishCreatorDraft(lease, { id, expectedRevision, operationId, 
         let image = source ? readRoleplayFile(path.join(scope.directories.characters, source.avatar), MAX_CARD).bytes
             : fs.readFileSync(new URL('../../public/img/ai4.png', import.meta.url));
         if (!source && previous?.reservedAvatar) {
-            const prior = JSON.parse(readRoleplayFile(receiptPath(lease, previous.operationId), MAX_CARD).bytes.toString('utf8'));
-            if (prior.cardBytes) image = Buffer.from(prior.cardBytes, 'base64');
+            const priorFile = readRoleplayFile(receiptPath(lease, previous.operationId), MAX_CARD, { allowMissingParent: true });
+            const prior = priorFile ? JSON.parse(priorFile.bytes.toString('utf8')) : null;
+            if (prior?.cardBytes) image = Buffer.from(prior.cardBytes, 'base64');
         }
         if (draft.selectedMedia) {
             const media = draft.media.find(item => item.id === draft.selectedMedia);
@@ -132,9 +141,14 @@ export function publishCreatorDraft(lease, { id, expectedRevision, operationId, 
             avatar, sourceRevision: source?.revision ?? null, state: 'saving', characterPrepared: false,
             cardHash: digest(bytes), card, cardBytes: bytes.toString('base64'), books, binding,
             manifest: digest(JSON.stringify({ card, books, avatar, binding })), createdAt: new Date().toISOString() };
-        writeAuthoringFileLocked(lease, publicationPath(lease, id), JSON.stringify({ id, expectedRevision, operationId, copy }));
+        // Leave room for durable stage witnesses added while each resource commits.
+        const receiptBudget = Buffer.byteLength(JSON.stringify(receipt)) + (books.length + 2) * 8192;
+        if (receiptBudget > AUTHORING_FILE_LIMIT) throw roleplayError('CREATOR_RECEIPT_SIZE', 'This library save is too large to prepare. Reduce the card or lorebook size and review again. No library items were changed.', 413);
         persist();
     }
+    // No library writes may occur before both the frozen receipt and its pointer
+    // are durable. A failed receipt write must never strand a pending pointer.
+    if (previous?.operationId !== operationId || previous.neverStarted) writeAuthoringFileLocked(lease, publicationPath(lease, id), JSON.stringify({ id, expectedRevision, operationId, copy }));
     if (receipt.state === 'done') return result(receipt);
     for (const book of receipt.books) {
         if (book.state === 'done') continue;
@@ -189,7 +203,12 @@ export function recoverCreatorPublication(lease, { id, operationId, expectedRevi
     if (!publication || publication.operationId !== operationId) throw conflict('The save changed. Reopen the draft.');
     const filename = receiptPath(lease, operationId);
     const file = readRoleplayFile(filename, MAX_CARD, { allowMissingParent: true });
-    if (!file) throw conflict('The save receipt is unavailable. Retry the original save.');
+    if (!file) {
+        const item = getCreatorDraft(lease, id);
+        if (item.revision !== expectedRevision) throw conflict('The draft changed elsewhere. Reopen it before recovering the save.');
+        writeAuthoringFileLocked(lease, publicationPath(lease, id), JSON.stringify({ ...publication, acknowledged: true, neverStarted: true }));
+        return item;
+    }
     const receipt = JSON.parse(file.bytes.toString('utf8'));
     if (receipt.id !== id) throw conflict('This receipt belongs to another draft.');
     // Finish only an already-started lifecycle transaction, never start a new write here.
@@ -203,6 +222,14 @@ export function recoverCreatorPublication(lease, { id, operationId, expectedRevi
     if (receipt.state === 'stopped') { acknowledge(); return item; }
     const persist = () => writeAuthoringFileLocked(lease, filename, JSON.stringify(receipt));
     const recoveryFilename = filename.replace(/\.json$/, '.recovery.json');
+    if ((receipt.recoveryPrepared || receipt.recoveryDraft) && item.revision !== receipt.recoveryRevision
+        && !(item.draft.journal?.operationId === operationId && item.draft.journal?.recovered)) {
+        if (item.revision !== expectedRevision) throw conflict('The draft changed elsewhere. Reopen it before recovering the save.');
+        // A crash between preparing and adopting recovery must not freeze out edits
+        // saved by another device. Rebuild only the baselines on the newest draft.
+        delete receipt.recoveryPrepared;
+        delete receipt.recoveryDraft;
+    }
     if (!receipt.recoveryPrepared && !receipt.recoveryDraft) {
         if (item.revision !== expectedRevision) throw conflict('The draft changed elsewhere. Reopen it before recovering the save.');
         const draft = structuredClone(item.draft);

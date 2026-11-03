@@ -43,16 +43,34 @@ export class CreatorSession {
         }
     }
 
-    recovery() {
+    recovery(previous = false) {
         this.assertOwner();
-        const value = JSON.parse(localStorage.getItem(this.recoveryKey) || 'null');
+        const value = JSON.parse(localStorage.getItem(`${this.recoveryKey}${previous ? ':previous' : ''}`) || 'null');
         if (value?.draft) validateCreatorDraft(value.draft);
         return value;
     }
 
     async open(id) {
         await this.queue;
+        const openingDraft = this.draft;
+        const openingRevision = this.revision;
+        const recovery = this.draft ? { draft: this.draft, revision: this.revision, pending: this.pending } : this.recovery();
         const result = await this.request('get', { id });
+        let savedRecovery = result;
+        if (recovery?.draft && recovery.draft.id !== id) {
+            try { savedRecovery = await this.request('get', { id: recovery.draft.id }); } catch (error) { if (error.status !== 404) throw error; savedRecovery = null; }
+        }
+        const content = draft => JSON.stringify(draft ? { ...draft, view: undefined } : null);
+        if (this.draft !== openingDraft || this.revision !== openingRevision) throw new Error('Your local draft changed while opening another version. Save it or export a backup, then try again.');
+        if (recovery?.draft && content(recovery.draft) !== content(savedRecovery?.draft)) {
+            // Keep the previous local version separately before replacing the only
+            // recovery slot, including when opening another account draft.
+            try {
+                const previous = this.recovery(true);
+                if (previous && JSON.stringify(previous) !== JSON.stringify(recovery)) throw new Error('A previous local version is already retained.');
+                localStorage.setItem(`${this.recoveryKey}:previous`, JSON.stringify(recovery));
+            } catch { throw new Error('Export your local draft and recover or clear the previous local version before opening another version; recovery storage could not retain both.'); }
+        }
         this.draft = result.draft;
         this.revision = result.revision;
         this.pending = result.publication ?? null;
@@ -61,6 +79,12 @@ export class CreatorSession {
 
     async create(avatar = null) {
         await this.queue;
+        if (this.draft) await this.save();
+        if (avatar) {
+            const { drafts } = await this.request('list');
+            const existing = drafts.filter(item => item.avatar === avatar).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0];
+            if (existing) { await this.open(existing.id); return; }
+        }
         if (avatar && !await saveSettings(0, { returnResult: true })) throw new Error('Save your current settings before opening this character.');
         const source = avatar ? await this.request('character', { avatar }) : {};
         const draft = createCreatorDraft({ id: crypto.randomUUID(), ...source });
@@ -164,12 +188,26 @@ export class CreatorSession {
     }
 
     async publishFrozen(copy) {
+        if (this.pending && this.revision !== this.pending.expectedRevision) {
+            const journal = this.draft.journal;
+            if (journal?.operationId === this.pending.operationId && this.draft.source.avatar === journal.avatar && this.draft.source.revision === journal.revision) {
+                // Adoption already succeeded before an acknowledgement was lost.
+                // Acknowledge that identity without replacing any subsequent edits.
+                await this.refreshPublishedResources(journal);
+                await this.request('acknowledge', { id: this.draft.id, operationId: journal.operationId });
+                this.pending = null;
+                this.remember();
+                return journal;
+            }
+            throw new Error('This draft contains edits made after the library save started. Use Recover for comparison to keep those edits.');
+        }
         if (!this.pending) {
             if (!await saveSettings(0, { returnResult: true })) throw new Error('Save your current settings before publishing this character.');
             await this.save();
             this.pending = { id: this.draft.id, expectedRevision: this.revision, operationId: crypto.randomUUID(), copy };
             this.remember();
         }
+        const adoptingRevision = this.revision;
         let result;
         try {
             result = await this.request('publish', this.pending);
@@ -211,8 +249,12 @@ export class CreatorSession {
         next.journal = result;
         next.history = [];
         next.future = [];
+        // Conditional server adoption happens before replacing local work. A remote
+        // edit during readback remains recoverable and cannot acquire our receipt.
+        const adopted = await this.request('save', { draft: next, expectedRevision: adoptingRevision });
         this.draft = next;
-        await this.save();
+        this.revision = adopted.revision;
+        this.remember();
         await this.request('acknowledge', { id: next.id, operationId: result.operationId });
         this.pending = null;
         this.remember();

@@ -77,6 +77,83 @@ test('a later character edit retains the original draft and recoverable receipt'
     expect(session.publishing).toBe(false);
 });
 
+test('Resume refuses a newer draft revision before adopting the frozen card', async () => {
+    const session = pendingSession();
+    session.revision = 'edited-on-another-device';
+    session.draft.card.data.description = 'Newer edits';
+    session.request = jest.fn();
+    await expect(session.publish()).rejects.toThrow('Recover for comparison');
+    expect(session.draft.card.data.description).toBe('Newer edits');
+    expect(session.request).not.toHaveBeenCalled();
+});
+
+test('An adoption conflict keeps local content and its receipt intact', async () => {
+    const session = pendingSession();
+    const before = structuredClone(session.draft);
+    session.request = jest.fn(async route => {
+        if (route === 'publish') return { operationId: 'operation', avatar: 'Mira.png', revision: 'committed', books: [] };
+        if (route === 'character') return { avatar: 'Mira.png', revision: 'committed', card: { ...before.card, data: { ...before.card.data, description: 'Frozen publication' } }, extraBooks: [] };
+        if (route === 'save') throw new Error('Draft conflict');
+        throw new Error(`Unexpected ${route}`);
+    });
+    await expect(session.publish()).rejects.toThrow('Draft conflict');
+    expect(session.draft).toEqual(before);
+    expect(session.pending.operationId).toBe('operation');
+});
+
+test('Retrying a lost acknowledgement preserves edits made after adoption', async () => {
+    const session = pendingSession();
+    session.revision = 'adopted-and-edited';
+    session.draft.source = { avatar: 'Mira.png', revision: 'committed' };
+    session.draft.journal = { operationId: 'operation', avatar: 'Mira.png', revision: 'committed', state: 'done', books: [] };
+    session.draft.card.data.description = 'Newer edits';
+    session.request = jest.fn(async route => {
+        if (route === 'acknowledge') return { acknowledged: true };
+        throw new Error(`Unexpected ${route}`);
+    });
+    await session.publish();
+    expect(session.draft.card.data.description).toBe('Newer edits');
+    expect(session.pending).toBeNull();
+    expect(session.request).toHaveBeenCalledTimes(1);
+});
+
+test('Opening the server version preserves the previous local recovery copy', async () => {
+    const session = pendingSession();
+    session.draft.card.data.description = 'Unsaved local work';
+    session.remember();
+    const remote = structuredClone(session.draft);
+    remote.card.data.description = 'Server work';
+    session.request = jest.fn(async () => ({ draft: remote, revision: 'remote', publication: null }));
+    await session.open('draft');
+    expect(session.draft.card.data.description).toBe('Server work');
+    expect(session.recovery(true).draft.card.data.description).toBe('Unsaved local work');
+});
+
+test('Opening a library card resumes its latest draft instead of creating duplicates', async () => {
+    const session = new CreatorSession();
+    const draft = createCreatorDraft({ id: 'existing', avatar: 'Mira.png', card: { data: { name: 'Mira' } } });
+    session.request = jest.fn(async route => {
+        if (route === 'list') return { drafts: [{ id: 'existing', avatar: 'Mira.png', updatedAt: '2026-11-03' }] };
+        if (route === 'get') return { draft, revision: 'saved', publication: null };
+        throw new Error(`Unexpected ${route}`);
+    });
+    await session.create('Mira.png');
+    expect(session.draft.id).toBe('existing');
+    expect(session.request.mock.calls.map(([route]) => route)).toEqual(['list', 'get']);
+});
+
+test('Edits made during an open request cannot be replaced by its response', async () => {
+    const session = pendingSession();
+    const remote = structuredClone(session.draft);
+    session.request = jest.fn(async () => {
+        session.draft = structuredClone(session.draft);
+        session.draft.card.data.description = 'Typed while loading';
+        return { draft: remote, revision: 'remote', publication: null };
+    });
+    await expect(session.open('draft')).rejects.toThrow('local draft changed');
+    expect(session.draft.card.data.description).toBe('Typed while loading');
+});
+
 test('a later book edit cannot attach its revision to the older local book', async () => {
     const session = pendingSession();
     session.draft.books = [{ id: 'book', name: 'City', mode: 'copy', data: { entries: {} }, revision: null }];
