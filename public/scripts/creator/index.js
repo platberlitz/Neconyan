@@ -761,6 +761,14 @@ class CreatorWorkspace {
         if (this.session.draft.id !== draft.id) throw new Error('Reopen comparison for the current draft.');
         const content = this.host.querySelector('.creator-content');
         content.replaceChildren(element('h3', '', 'Compare with your library'), element('p', '', 'Independent changes are combined. Choose which version to keep wherever both copies changed. Nothing is published by this comparison.'));
+        const draftChoices = [];
+        const selectAll = button('Keep all draft changes', () => {
+            for (const radio of draftChoices) {
+                radio.checked = true;
+                radio.dispatchEvent(new Event('change'));
+            }
+        });
+        content.append(selectAll);
         for (const resource of resources) {
             content.append(element('h4', '', resource.label));
             const compared = compareCreatorChanges(resource.base, resource.local, resource.remote);
@@ -777,6 +785,7 @@ class CreatorWorkspace {
                         resource.choices[conflict.id] = key;
                         for (const input of group.querySelectorAll('input')) input.checked = input === radio;
                     });
+                    if (key === 'draft') draftChoices.push(radio);
                     pill.append(radio, document.createTextNode(label));
                     optionWrap.append(pill, element('pre', '', JSON.stringify(conflict[key], null, 2) ?? '(removed)'));
                     group.append(optionWrap);
@@ -784,6 +793,7 @@ class CreatorWorkspace {
                 content.append(group);
             }
         }
+        selectAll.hidden = !draftChoices.length;
         content.append(button('Apply comparison to draft', () => this.run(async () => {
             if (JSON.stringify(this.session.draft) !== JSON.stringify(draft)) throw new Error('The draft changed during comparison. Compare again before applying.');
             const merged = resources.map(resource => compareCreatorChanges(resource.base, resource.local, resource.remote, resource.choices));
