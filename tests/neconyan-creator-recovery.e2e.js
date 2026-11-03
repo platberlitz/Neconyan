@@ -53,6 +53,10 @@ for (const phone of [false, true]) {
         await expect(creator).not.toHaveAttribute('aria-busy', 'true');
         await page.unroute(generate);
         await page.screenshot({ path: screenshot(`creator-error-${phone ? 'phone' : 'desktop'}`) });
+        const banner = creator.locator('.creator-status');
+        await expect(banner).toContainText('HTTP 401');
+        await banner.getByRole('button', { name: 'Dismiss', exact: true }).click();
+        await expect(banner).toBeHidden();
         app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: JSON.stringify({ fields: { description: 'A shipwright who repairs old boats.' }, questions: [], coverage: [] }) } }] };
         await convert.click();
         await expect(creator.getByRole('button', { name: 'Accept all fields', exact: true })).toBeVisible({ timeout: 30000 });

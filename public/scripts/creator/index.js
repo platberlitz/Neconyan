@@ -53,9 +53,15 @@ class CreatorWorkspace {
     status(message, error = false) {
         this.statusRevision = (this.statusRevision ?? 0) + 1;
         this.message = message;
+        this.messageError = error;
         const output = this.host.querySelector('.creator-status');
         if (output) {
-            output.textContent = message;
+            output.replaceChildren(element('span', '', message));
+            if (message) {
+                const actions = element('div', 'creator-actions');
+                actions.append(button('Dismiss', () => this.status(''), false, 'creator-chip-btn'));
+                output.append(actions);
+            }
             output.dataset.error = String(error);
             output.hidden = !message;
         }
@@ -69,10 +75,11 @@ class CreatorWorkspace {
         // The page introduction and Nori's tour invitation belong to the shell, so redraws keep them.
         const intro = this.host.querySelector(':scope > .neconyan-native-page-heading');
         this.host.replaceChildren(...(intro ? [intro] : []));
-        const output = element('p', 'creator-status', this.message);
+        const output = element('div', 'creator-status');
         output.setAttribute('role', 'status');
         output.hidden = !this.message;
         this.host.append(output);
+        this.status(this.message, this.messageError);
     }
 
     async home() {
