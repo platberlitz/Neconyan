@@ -49,6 +49,22 @@ test('accepting every available field retains unfinished writing and rebases lat
     assert.deepEqual(draft.proposals, []);
 });
 
+test('field regeneration requests only that field and optional notes, preserving unfinished work', () => {
+    const draft = createCreatorDraft({ id: 'regenerate-field', card: { data: {} } });
+    draft.dossier = 'A shipwright.';
+    let proposal = startCreatorConversion(draft, ['name', 'description']);
+    proposal = mergeCreatorStep(draft, proposal, '{"fields":{"name":"Mira"}}');
+    const regenerated = reviseCreatorConversion(draft, proposal, { field: 'name', regenerate: true, note: 'Use a longer name.' });
+    assert.deepEqual(regenerated.plan.steps.map(step => step.fields), [['name']]);
+    assert.equal(JSON.parse(creatorStepMessages(draft, regenerated)[1].content).revisionNote, 'Use a longer name.');
+    assert.equal(JSON.parse(creatorStepMessages(draft, reviseCreatorConversion(draft, proposal, { field: 'name', regenerate: true }))[1].content).revisionNote, '');
+    assert.equal(proposal.plan.next, 1);
+    assert.equal(proposal.changes[0].after, 'Mira');
+    proposal.note = 'Make her stern.';
+    const revised = reviseCreatorConversion(draft, proposal);
+    assert.deepEqual(revised.plan.steps.map(step => step.fields), [['name'], ['description']]);
+});
+
 test('a late step cannot replace an edit made while it was pending', () => {
     const draft = createCreatorDraft({ id: 'edited', card: { data: { description: 'Original' } } });
     draft.dossier = 'A shipwright.';

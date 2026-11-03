@@ -588,7 +588,7 @@ class CreatorWorkspace {
         }
     }
 
-    async reviseProposal(id) {
+    async reviseProposal(id, field) {
         if (this.busy) {
             if (this.writingProposal !== id) return;
             this.requestController?.abort();
@@ -597,9 +597,34 @@ class CreatorWorkspace {
         return this.run(async () => {
             const proposal = this.session.draft.proposals.find(item => item.id === id);
             if (!proposal) return;
-            const next = reviseCreatorConversion(this.session.draft, proposal);
-            if (!this.edit(draft => { draft.proposals[draft.proposals.findIndex(item => item.id === id)] = next; })) return;
-            await this.continueWriting(id);
+            const next = reviseCreatorConversion(this.session.draft, proposal, field ? { field, note: proposal.fieldNotes?.[field] ?? '', regenerate: true } : {});
+            if (!field) {
+                if (!this.edit(draft => { draft.proposals[draft.proposals.findIndex(item => item.id === id)] = next; })) return;
+                await this.continueWriting(id);
+                return;
+            }
+            const { requestCreatorReply } = await import('./assistant.js');
+            const source = structuredClone(this.session.draft);
+            const original = JSON.stringify(proposal.changes.find(change => change.field === field));
+            const current = () => this.session.draft?.id === source.id && this.session.draft.dossier === source.dossier && this.session.draft.style === source.style && creatorTargetsSignature(this.session.draft) === creatorTargetsSignature(source) && JSON.stringify(this.session.draft.proposals.find(item => item.id === id)?.changes.find(change => change.field === field)) === original;
+            let revised = next;
+            this.writingProposal = id;
+            try {
+                this.proposal(proposal);
+                while (revised.plan.next < revised.plan.steps.length) {
+                    const output = await requestCreatorReply(this, source, creatorStepMessages(source, revised), { isCurrent: current });
+                    revised = mergeCreatorStep(source, revised, output);
+                }
+                if (!this.edit(draft => {
+                    const latest = draft.proposals.find(item => item.id === id);
+                    latest.changes = latest.changes.map(change => change.field === field ? revised.changes.find(item => item.field === field) : change);
+                })) return;
+                this.status('Field regenerated. Review it before accepting.');
+            } finally {
+                this.writingProposal = null;
+                const latest = this.session.draft?.id === source.id && this.session.draft.proposals.find(item => item.id === id);
+                if (latest) this.proposal(latest);
+            }
         });
     }
 
@@ -675,6 +700,14 @@ class CreatorWorkspace {
                 if (remaining) this.proposal(remaining);
                 else review.remove();
             }, true));
+            const revision = element('details');
+            revision.append(element('summary', '', 'Revision notes (optional)'), textField('Revision notes for this field', proposal.fieldNotes?.[change.field] ?? '', value => {
+                persist(current => {
+                    current.fieldNotes ??= {};
+                    current.fieldNotes[change.field] = value;
+                });
+            }, { rows: 2 }));
+            group.append(revision, button('Regenerate this field', () => this.reviseProposal(proposal.id, change.field)));
             review.append(group);
         }
         const footer = element('div', 'creator-actions');

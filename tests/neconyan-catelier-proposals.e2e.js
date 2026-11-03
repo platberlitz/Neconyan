@@ -6,6 +6,67 @@ import { startCreatorConversion, mergeCreatorStep } from '../public/scripts/crea
 import { checkImageControlContrast } from './scratchpad-image-contrast-helpers.js';
 
 for (const phone of [false, true]) {
+    test(`Catelier accepts partial fields and regenerates one field on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
+        test.setTimeout(180000);
+        const account = await app.account({ phone, activeConnection: true });
+        const draft = createCreatorDraft({ id: 'proposal-controls', card: { data: {} } });
+        draft.dossier = 'Mira repairs boats.';
+        draft.writing = { connection: { profile: 'durable' } };
+        let proposal = startCreatorConversion(draft, ['name', 'description', 'scenario']);
+        for (const fields of [{ name: 'Mira' }, { description: 'A patient shipwright.' }]) proposal = mergeCreatorStep(draft, proposal, JSON.stringify({ fields }));
+        draft.proposals = [proposal];
+        await account.post('/api/creator/save', { draft, expectedRevision: null });
+        const page = await account.open({ workspace: false });
+        await page.waitForFunction(() => typeof globalThis.NeconyanShell?.openCreator === 'function');
+        await page.evaluate(id => globalThis.NeconyanShell.openCreator({ draftId: id }), draft.id);
+        const creator = page.locator('#sb_character_creator_panel');
+        await creator.getByRole('button', { name: 'Dossier', exact: true }).click();
+        await creator.getByRole('button', { name: 'Review Dossier conversion', exact: true }).click();
+        const review = creator.locator('.creator-proposal');
+        await review.locator('.creator-proposal-field').first().scrollIntoViewIfNeeded();
+        await expect(page.locator('#toast-container .toast')).toHaveCount(0);
+        await page.screenshot({ path: `../screenshots/catelier-proposals-after-${phone ? 'phone' : 'desktop'}.png` });
+        await checkImageControlContrast(page, ['.creator-proposal-field > button.menu_button_primary', '.creator-proposal-field > button:not(.menu_button_primary)', '.creator-proposal > button.menu_button_primary'], phone);
+        let hold = true;
+        const calls = [];
+        await page.route('**/api/backends/chat-completions/generate', async route => {
+            const body = route.request().postDataJSON();
+            const request = JSON.parse(body.messages.findLast(message => message.role === 'user').content);
+            calls.push(request);
+            if (hold && request.requestedFields.includes('scenario')) return;
+            const fields = request.requestedFields.includes('description') ? { description: 'A stern shipwright.' } : { scenario: 'At the docks.' };
+            await route.fulfill({ json: { choices: [{ message: { role: 'assistant', content: JSON.stringify({ fields }) } }] } });
+        });
+        await review.getByRole('button', { name: 'Continue writing', exact: true }).click();
+        await expect.poll(() => calls.length).toBe(1);
+        await review.locator('.creator-proposal-field').filter({ has: page.getByRole('heading', { name: 'Display name', exact: true }) }).getByRole('button', { name: 'Accept this field', exact: true }).click();
+        await expect(review.locator('.creator-proposal-field')).toHaveCount(1);
+        const description = review.locator('.creator-proposal-field');
+        await description.getByText('Revision notes (optional)', { exact: true }).click();
+        await description.getByLabel('Revision notes for this field', { exact: true }).fill('Make her stern.');
+        await description.getByRole('button', { name: 'Regenerate this field', exact: true }).click();
+        await expect(description.getByLabel('Proposed text', { exact: true })).toHaveValue('A stern shipwright.');
+        expect(calls.at(-1).requestedFields).toEqual(['description']);
+        expect(calls.at(-1).revisionNote).toBe('Make her stern.');
+        await expect(review).toContainText('Written 2 of 3 steps');
+        await review.getByRole('button', { name: 'Continue writing', exact: true }).click();
+        await expect.poll(() => calls.length).toBe(3);
+        await creator.getByRole('button', { name: 'Cancel active request', exact: true }).click();
+        await expect(review.getByRole('button', { name: 'Continue writing', exact: true })).toBeVisible();
+        await review.getByRole('button', { name: 'Accept all fields', exact: true }).click();
+        await expect(review.locator('.creator-proposal-field')).toHaveCount(0);
+        hold = false;
+        await review.getByRole('button', { name: 'Continue writing', exact: true }).click();
+        await expect(review.getByLabel('Proposed text', { exact: true })).toHaveValue('At the docks.');
+        await review.getByRole('button', { name: 'Accept all fields', exact: true }).click();
+        await creator.getByRole('button', { name: 'Drafts', exact: true }).click();
+        const saved = (await account.post('/api/creator/get', { id: draft.id })).draft;
+        expect(saved.card.data.name).toBe('Mira');
+        expect(saved.card.data.description).toBe('A stern shipwright.');
+        expect(saved.card.data.scenario).toBe('At the docks.');
+        expect(saved.proposals).toEqual([]);
+    });
+
     test(`Catelier applies revisions and accepts all during writing on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
         test.setTimeout(180000);
         const account = await app.account({ phone, activeConnection: true });
