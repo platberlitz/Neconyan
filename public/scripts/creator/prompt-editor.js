@@ -1,8 +1,10 @@
 import { CREATOR_PROMPTS } from './guidance.js';
+import { renderCreatorConnection } from './connection-picker.js';
 import { renderCreatorTargets } from './format-picker.js';
 import { element, button, textField } from './fields.js';
 
 export function renderCreatorPrompts(workspace, main) {
+    renderCreatorConnection(workspace, main);
     main.append(element('h3', '', 'Writing instructions'), element('p', 'creator-muted', 'These prompts guide Dossier conversion, the writing partner, interviews and lorebook writing. Changes belong to this draft. Card prompts stay in the Prompts section.'));
     renderCreatorTargets(workspace, main, { open: true });
     const labels = { director: 'Director prompt', grounded: 'Grounded prose prompt', macros: 'Macro guidance prompt' };
