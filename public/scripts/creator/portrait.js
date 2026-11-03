@@ -1,6 +1,6 @@
 import { getExtensionCapability } from '../neconyan-conversation/extension-capabilities.js';
 import { element, button, textField } from './fields.js';
-import { creatorPortraitPrompt, buildCreatorImagePromptRequest } from './portrait-prompt.js';
+import { creatorPortraitPrompt, buildCreatorImagePromptRequest, parseCreatorImagePrompt } from './portrait-prompt.js';
 
 export async function creatorPortraitBytes(blob, square = false) {
     if (!/^image\/(png|jpeg|webp)$/.test(blob.type) || blob.size > 20 * 1024 * 1024) throw new Error('Choose a PNG, JPEG or WebP smaller than 20 MiB.');
@@ -43,6 +43,12 @@ export function renderPortrait(workspace, main) {
     uploadWrap.append(upload);
     main.append(textField('Portrait prompt', creatorPortraitPrompt(draft), value => workspace.edit(next => { next.portraitPrompt = value; }), { rows: 6, hint: 'Starts from the card’s description, personality, setting and Character’s Note. Quick Image Gen receives this prompt and name and may also apply saved image settings or reference pictures for a matching library character. Private draft notes and the Dossier stay out.' }));
     main.append(textField('Image prompt guidelines (optional)', draft.portraitGuidelines ?? '', value => workspace.edit(next => { next.portraitGuidelines = value; }), { rows: 2, hint: 'For example: watercolour, head-and-shoulders, soft morning light. Used when the model writes the image prompt.' }));
+    const negativeToggle = element('label', 'creator-choice-pill');
+    const supportsNegative = element('input'); supportsNegative.type = 'checkbox'; supportsNegative.checked = draft.portraitSupportsNegative === true;
+    supportsNegative.addEventListener('change', () => workspace.edit(next => { next.portraitSupportsNegative = supportsNegative.checked; }, true));
+    negativeToggle.append(supportsNegative, document.createTextNode('Image provider supports negative prompts'));
+    main.append(negativeToggle);
+    if (draft.portraitSupportsNegative === true) main.append(textField('Negative portrait prompt', draft.portraitNegativePrompt ?? '', value => workspace.edit(next => { next.portraitNegativePrompt = value; }), { rows: 3, hint: 'Things to exclude from the image. The model may leave this empty. Sent to image generation only while the checkbox is checked.' }));
     const promptActions = element('div', 'creator-actions');
     promptActions.append(button('Generate image prompt', () => workspace.run(async () => {
         const source = structuredClone(workspace.session.draft);
@@ -50,13 +56,17 @@ export function renderPortrait(workspace, main) {
         const current = () => workspace.session.draft?.id === source.id
             && workspace.session.draft.portraitPrompt === source.portraitPrompt
             && workspace.session.draft.portraitGuidelines === source.portraitGuidelines
+            && workspace.session.draft.portraitNegativePrompt === source.portraitNegativePrompt
             && JSON.stringify(buildCreatorImagePromptRequest(workspace.session.draft)) === JSON.stringify(messages);
         workspace.status('Writing an image prompt from the character card…');
         const { requestCreatorReply } = await import('./assistant.js');
         const output = (await requestCreatorReply(workspace, source, messages, { isCurrent: current })).trim();
-        if (!output) throw new Error('The model returned an empty image prompt. Try again.');
+        const result = parseCreatorImagePrompt(output, source.portraitSupportsNegative === true);
         if (!current()) throw new Error('The card or image prompt changed. Generate a fresh prompt.');
-        if (!workspace.edit(next => { next.portraitPrompt = output; }, main.isConnected)) return;
+        if (!workspace.edit(next => {
+            next.portraitPrompt = result.prompt;
+            if (source.portraitSupportsNegative === true) next.portraitNegativePrompt = result.negativePrompt;
+        }, main.isConnected)) return;
         workspace.status('Image prompt ready. Review or edit it before generating a portrait.');
     }), false, 'creator-chip-btn'), button('Refresh prompt from card', () => workspace.edit(next => { delete next.portraitPrompt; }, true), false, 'creator-chip-btn'));
     main.append(promptActions);
@@ -75,7 +85,8 @@ export function renderPortrait(workspace, main) {
         controller = new AbortController(); cancel.hidden = false;
         try {
             const name = source.card.data.name;
-            const image = await qig.generateImage(prompt, '', { character: { name, data: { name } }, characterName: name, signal: controller.signal });
+            const negative = source.portraitSupportsNegative === true ? String(source.portraitNegativePrompt ?? '').trim() : '';
+            const image = await qig.generateImage(prompt, negative, { character: { name, data: { name } }, characterName: name, signal: controller.signal });
             if (controller.signal.aborted) return;
             if (!image?.url) throw new Error('No image was returned. Your text draft is still saved.');
             const url = new URL(image.url, location.href);
