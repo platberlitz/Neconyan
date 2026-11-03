@@ -329,7 +329,7 @@ class CreatorWorkspace {
             rows: 10,
             hint: 'Paste anything you have: canon wiki notes, history, appearance, relationships, voice, setting, and your own additions or headcanons. Convert turns it into card fields for you to review. This text stays private to the draft and is never published with the card.',
         }));
-        const selection = new Set(DOSSIER_FIELDS.filter(field => !this.session.draft.locks.includes(field)));
+        const selection = new Set((this.session.draft.writing?.dossierFields ?? DOSSIER_FIELDS).filter(field => DOSSIER_FIELDS.includes(field)));
         const choices = element('fieldset', 'creator-fieldset');
         choices.append(element('legend', '', 'Fields to create'));
         const choiceGrid = element('div', 'creator-choice-grid');
@@ -338,7 +338,10 @@ class CreatorWorkspace {
             const checkbox = element('input');
             checkbox.type = 'checkbox'; checkbox.checked = selection.has(field);
             checkbox.disabled = this.session.draft.locks.includes(field);
-            checkbox.addEventListener('change', () => checkbox.checked ? selection.add(field) : selection.delete(field));
+            checkbox.addEventListener('change', () => {
+                if (checkbox.checked) selection.add(field); else selection.delete(field);
+                this.edit(next => { next.writing ??= {}; next.writing.dossierFields = [...selection]; });
+            });
             label.append(checkbox, document.createTextNode(`${labels[field]}${checkbox.disabled ? ' (locked)' : ''}`));
             choiceGrid.append(label);
         }
@@ -459,8 +462,11 @@ class CreatorWorkspace {
         }
         for (const change of proposal.changes) {
             const group = element('section', 'creator-proposal-field');
-            group.append(element('h4', '', change.field === 'depth_prompt' ? 'Character’s Note' : labels[change.field] || change.field), element('pre', 'creator-before', change.before || '(empty)'));
-            group.append(textField('Proposed text', change.after, value => { change.after = value; persist(); }));
+            const before = Array.isArray(change.before) ? change.before.join('\n\n') : change.before;
+            group.append(element('h4', '', change.field === 'depth_prompt' ? 'Character’s Note' : change.field === 'alternate_greetings' ? 'Alternate greetings' : labels[change.field] || change.field), element('pre', 'creator-before', before || '(empty)'));
+            if (change.field === 'alternate_greetings') {
+                change.after.forEach((text, index) => group.append(textField(`Proposed alternate greeting ${index + 1}`, text, value => { change.after[index] = value; persist(); })));
+            } else group.append(textField('Proposed text', change.after, value => { change.after = value; persist(); }));
             group.append(button('Accept this field', () => {
                 this.change(draft => acceptCreatorProposal(draft, proposal, [change.field]), true);
                 const remaining = this.session.draft.proposals.find(item => item.id === proposal.id);

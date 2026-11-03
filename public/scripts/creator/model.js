@@ -2,8 +2,11 @@
 export const CREATOR_SCHEMA = 1;
 import { creatorTargetsSignature } from './formats.js';
 export const TEXT_FIELDS = Object.freeze(['name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions', 'creator', 'character_version']);
-export const PROPOSAL_FIELDS = Object.freeze([...TEXT_FIELDS, 'depth_prompt']);
-export const creatorTextValue = (draft, field) => field === 'depth_prompt' ? draft.card.data.extensions?.depth_prompt?.prompt ?? '' : draft.card.data[field] ?? '';
+export const PROPOSAL_FIELDS = Object.freeze([...TEXT_FIELDS, 'depth_prompt', 'alternate_greetings']);
+export const validCreatorProposalValue = (field, value) => field === 'alternate_greetings'
+    ? Array.isArray(value) && value.length <= 100 && value.every(item => typeof item === 'string' && item.length <= 100000) && value.join('').length <= 1000000
+    : typeof value === 'string' && value.length <= 100000;
+export const creatorTextValue = (draft, field) => field === 'depth_prompt' ? draft.card.data.extensions?.depth_prompt?.prompt ?? '' : draft.card.data[field] ?? (field === 'alternate_greetings' ? [] : '');
 export const FACT_SECTIONS = Object.freeze(['identity', 'appearance', 'traits', 'goals', 'limits', 'relationships', 'history', 'voice', 'scenario']);
 export const STYLES = Object.freeze(['plain', 'plist', 'alichat', 'hybrid']);
 const copy = value => structuredClone(value);
@@ -99,8 +102,8 @@ export function renderCreatorFacts(draft, style = draft.style) {
 /** Every proposed field keeps its exact before-value, so late replies cannot overwrite edits. */
 export function creatorProposal(draft, fields, label) {
     const changes = Object.entries(fields).map(([field, after]) => {
-        if (!PROPOSAL_FIELDS.includes(field) || typeof after !== 'string') throw new Error('The proposal contains an unsupported field.');
-        return { field, before: creatorTextValue(draft, field), after };
+        if (!PROPOSAL_FIELDS.includes(field) || !validCreatorProposalValue(field, after)) throw new Error('The proposal contains an unsupported field.');
+        return { field, before: copy(field === 'alternate_greetings' ? draft.card.data[field] ?? [] : creatorTextValue(draft, field)), after: copy(after) };
     });
     return { id: globalThis.crypto.randomUUID(), draftId: draft.id, label, changes };
 }
@@ -112,9 +115,10 @@ export function acceptCreatorProposal(draft, proposal, selected = proposal.chang
     if (proposal.dossierBefore !== undefined && proposal.dossierBefore !== (draft.dossier ?? '')) throw new Error('The dossier changed. Convert the updated dossier before applying these fields.');
     const changes = proposal.changes.filter(change => selected.includes(change.field));
     for (const change of changes) {
-        if (!PROPOSAL_FIELDS.includes(change.field) || typeof change.after !== 'string' || change.after.length > 100000) throw new Error('The proposal contains an unsupported field.');
+        if (!PROPOSAL_FIELDS.includes(change.field) || !validCreatorProposalValue(change.field, change.after)) throw new Error('The proposal contains an unsupported field.');
         if (draft.locks.includes(change.field)) throw new Error(`The ${change.field} field is locked.`);
-        if (creatorTextValue(draft, change.field) !== change.before) throw new Error(`The ${change.field} field changed. Review a fresh proposal.`);
+        const current = change.field === 'alternate_greetings' ? draft.card.data.alternate_greetings ?? [] : creatorTextValue(draft, change.field);
+        if (JSON.stringify(current) !== JSON.stringify(change.before)) throw new Error(`The ${change.field} field changed. Review a fresh proposal.`);
     }
     return editCreatorDraft(draft, next => {
         for (const change of changes) {
@@ -123,9 +127,9 @@ export function acceptCreatorProposal(draft, proposal, selected = proposal.chang
                 next.card.data.extensions.depth_prompt = { depth: 4, role: 'system', ...next.card.data.extensions.depth_prompt, prompt: change.after };
                 continue;
             }
-            next.card.data[change.field] = change.after;
+            next.card.data[change.field] = copy(change.after);
             const alias = change.field === 'creator_notes' ? 'creatorcomment' : change.field;
-            if (Object.hasOwn(next.card, alias)) next.card[alias] = change.after;
+            if (Object.hasOwn(next.card, alias)) next.card[alias] = copy(change.after);
         }
         if (proposal.id) {
             next.proposals = next.proposals.flatMap(item => {
