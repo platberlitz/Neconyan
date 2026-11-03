@@ -15,7 +15,7 @@ for (const phone of [false, true]) {
         const buttons = page.locator('.scratchpad-session-tools > button');
         await expect(buttons).toHaveCount(5);
         await page.screenshot({ path: `../screenshots/scratchpad-sessions-${phone ? 'phone' : 'desktop'}.png` });
-        await checkImageControlContrast(page, ['.scratchpad-session-tools > .scratchpad-button-primary'], phone);
+        await checkImageControlContrast(page, ['.scratchpad-session-tools > .menu_button_primary'], phone);
         for (const shell of ['default', 'windows-98']) {
             await page.evaluate(shell => { document.body.dataset.sbTheme = shell; }, shell);
             if (shell !== 'default') await page.addStyleTag({ url: `/css/shell-styles/${shell}.css` });
