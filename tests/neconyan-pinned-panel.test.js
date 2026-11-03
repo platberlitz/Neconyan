@@ -4,14 +4,15 @@ import vm from 'node:vm';
 
 const source = readFileSync(new URL('../public/scripts/neconyan-tabs.js', import.meta.url), 'utf8');
 function runtime() {
-    const state = { pinned: true, mobile: false, open: true, shell: false, frames: [], stored: new Map() };
+    const state = { pinned: true, mobile: false, open: true, shell: false, menuType: 'characters', frames: [], stored: new Map() };
     const context = vm.createContext({
         nnState: { characterDrawer: { displacedWhilePinned: false, restoreFrame: 0 } },
         document: { getElementById: () => ({ checked: state.pinned }) },
         window: { requestAnimationFrame: callback => state.frames.push(callback) },
         isMobileViewport: () => state.mobile,
         isCharacterPanelOpen: () => state.open,
-        closeCharacterPanel: () => { state.open = false; },
+        getCharacterPanel: () => ({ dataset: { menuType: state.menuType } }),
+        closeCharacterPanel: () => { state.open = false; context.nnState.characterDrawer.displacedCreator = false; },
         toggleCharacterPanel: () => { state.open = !state.open; },
         isShellOpen: () => state.shell,
         getShellAccountStorage: () => ({ getItem: key => state.stored.get(key), setItem: (key, value) => state.stored.set(key, value) }),
@@ -58,6 +59,33 @@ describe('pinned character panel lifecycle', () => {
         state.open = false;
         context.rememberCharacterPanelOpenState(true, false);
         context.restorePinnedCharacterPanel();
+        expect(state.open).toBe(false);
+    });
+
+    test.each([false, true])('Creator resumes after switching settings pages on mobile: %s', mobile => {
+        const { state, context } = runtime();
+        state.mobile = mobile;
+        state.pinned = false;
+        state.menuType = 'creator';
+        context.closeCharacterPanelUnlessPinned({ preserveCreator: true });
+        context.displaceCharacterPanel();
+        state.shell = true;
+        context.queuePinnedCharacterPanelRestore(); state.frames.shift()();
+        expect(state.open).toBe(false);
+        state.shell = false;
+        context.queuePinnedCharacterPanelRestore(); state.frames.shift()();
+        expect(state.open).toBe(true);
+        expect(context.nnState.characterDrawer.displacedCreator).toBe(false);
+    });
+
+    test('explicit navigation away cancels a pending Creator return', () => {
+        const { state, context } = runtime();
+        state.pinned = false;
+        state.menuType = 'creator';
+        context.displaceCharacterPanel();
+        context.queuePinnedCharacterPanelRestore();
+        context.closeCharacterPanelUnlessPinned();
+        state.frames.shift()();
         expect(state.open).toBe(false);
     });
 });

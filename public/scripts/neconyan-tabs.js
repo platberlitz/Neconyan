@@ -1539,6 +1539,7 @@ const nnState = {
         observedOpen: null,
         lastTab: 'characters',
         displacedWhilePinned: false,
+        displacedCreator: false,
         restoreFrame: 0,
     },
     mobileModal: {
@@ -8228,7 +8229,7 @@ function applyMobileSurfaceExclusivity(decision) {
         [surface.NAV]: () => closeMobileNav(),
         [surface.LEFT_SHELL]: () => closeShell('left'),
         [surface.RIGHT_SHELL]: () => closeShell('right'),
-        [surface.CHARACTER_PANEL]: () => closeCharacterPanelUnlessPinned(),
+        [surface.CHARACTER_PANEL]: () => closeCharacterPanelUnlessPinned({ preserveCreator: true }),
         [surface.CHAT_TOOLS]: () => closeMobileChatTools(),
         [surface.CONNECTION_STRIP]: () => setConnectionStripOpenState(false),
     };
@@ -10884,6 +10885,7 @@ function bindCharacterDrawerStateObserver() {
 }
 
 function closeCharacterPanel() {
+    nnState.characterDrawer.displacedCreator = false;
     const panel = getCharacterPanel();
     const shouldResetViewport = panel instanceof HTMLElement
         && (panel.classList.contains('openDrawer') || (document.activeElement instanceof HTMLElement && panel.contains(document.activeElement)));
@@ -10915,19 +10917,27 @@ function isCharacterPanelPinned() {
 
 // Opening a chat, going Home and popovers tidy the workspace away. A pinned panel is part of the
 // layout rather than an overlay, so it stays; the user still closes it with its own buttons.
-function closeCharacterPanelUnlessPinned() {
+function closeCharacterPanelUnlessPinned({ preserveCreator = false } = {}) {
+    if (preserveCreator && getCharacterPanel()?.dataset.menuType === 'creator') {
+        displaceCharacterPanel();
+        return;
+    }
     if (!isCharacterPanelPinned()) {
         closeCharacterPanel();
     }
 }
 
 // Settings and the left shell share the panel's inspector slot, so they replace a pinned panel
-// while open and hand the slot back when they close.
+// while open and hand the slot back when they close. Creator also resumes its draft
+// after a temporary visit to another page, including on phones.
 function displaceCharacterPanel() {
+    const displacedCreator = nnState.characterDrawer.displacedCreator
+        || (isCharacterPanelOpen() && getCharacterPanel()?.dataset.menuType === 'creator');
     if (isCharacterPanelPinned() && isCharacterPanelOpen()) {
         nnState.characterDrawer.displacedWhilePinned = true;
     }
     closeCharacterPanel();
+    nnState.characterDrawer.displacedCreator = displacedCreator;
 }
 
 // The shell intercepts the native toggle, so the native NavOpened flag is written here instead;
@@ -10956,7 +10966,7 @@ function restorePinnedCharacterPanel() {
 }
 
 function queuePinnedCharacterPanelRestore() {
-    if (!nnState.characterDrawer.displacedWhilePinned || nnState.characterDrawer.restoreFrame) {
+    if ((!nnState.characterDrawer.displacedWhilePinned && !nnState.characterDrawer.displacedCreator) || nnState.characterDrawer.restoreFrame) {
         return;
     }
 
@@ -10967,8 +10977,10 @@ function queuePinnedCharacterPanelRestore() {
             return;
         }
 
-        const shouldRestore = isCharacterPanelPinned() && !isCharacterPanelOpen();
+        const restoreCreator = nnState.characterDrawer.displacedCreator && getCharacterPanel()?.dataset.menuType === 'creator';
+        const shouldRestore = (isCharacterPanelPinned() || restoreCreator) && !isCharacterPanelOpen();
         nnState.characterDrawer.displacedWhilePinned = false;
+        nnState.characterDrawer.displacedCreator = false;
         if (shouldRestore) {
             toggleCharacterPanel();
         }
