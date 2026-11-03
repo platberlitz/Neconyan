@@ -43,7 +43,7 @@ for (const phone of [false, true]) {
 
         // Measure accent contrast across default, pale (Mint Glass) and dark (Plum Wine) accents in Calico Dark and Calico Light
         const primarySave = creator.getByRole('button', { name: 'Review & save', exact: true });
-        const selectedFormat = creator.getByRole('button', { name: 'Natural description', exact: true });
+        const selectedFormat = creator.locator('.creator-choice-grid--formats > .creator-choice-pill').filter({ hasText: 'Natural description' });
         const secondaryDrafts = creator.getByRole('button', { name: 'Drafts', exact: true });
         for (const theme of ['Neconyan Calico Dark', 'Neconyan Calico']) {
             for (const profile of [null, 'Mint Glass', 'Plum Wine']) {
