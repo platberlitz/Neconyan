@@ -12,7 +12,7 @@ import { attachCreatorGenerator } from './field-generator.js';
 import { renderCreatorFormat } from './format-picker.js';
 import { creatorTargetsSignature } from './formats.js';
 
-const sections = [['dossier', 'Dossier'], ['notebooks', 'Notebook sources'], ['identity', 'Identity'], ['facts', 'Guided facts'], ['greetings', 'Greetings & examples'], ['interview', 'Interview'], ['prompts', 'Prompts'], ['lore', 'Lorebooks'], ['macros', 'Macros & pronouns'], ['regex', 'Pretty HTML'], ['game', 'Gamify'], ['portrait', 'Portrait'], ['helper', 'Writing partner'], ['instructions', 'Writing instructions'], ['metadata', 'Details'], ['preview', 'Preview & export']];
+const sections = [['dossier', 'Dossier'], ['notebooks', 'Notebook sources'], ['identity', 'Identity'], ['facts', 'Guided facts'], ['greetings', 'Greetings & examples'], ['interview', 'Interview'], ['prompts', 'Prompts'], ['lore', 'Lorebooks'], ['macros', 'Macros & pronouns'], ['regex', 'Pretty HTML'], ['game', 'Gamify'], ['portrait', 'Portrait'], ['helper', 'Writing partner'], ['agents', 'Post-process with agents'], ['instructions', 'Writing instructions'], ['metadata', 'Details'], ['preview', 'Preview & export']];
 const labels = { name: 'Display name', description: 'Description', personality: 'Personality', scenario: 'Scenario', first_mes: 'First greeting', mes_example: 'Interviewer examples', creator_notes: 'Public creator notes', system_prompt: 'Main prompt', post_history_instructions: 'Post-history instructions', creator: 'Creator', character_version: 'Card version' };
 let app;
 
@@ -503,7 +503,10 @@ class CreatorWorkspace {
                 if ((proposal.dossierBefore !== undefined && proposal.dossierBefore !== (source.dossier ?? '')) || (proposal.formatBefore !== undefined && proposal.formatBefore !== source.style) || (proposal.targetsBefore !== undefined && proposal.targetsBefore !== creatorTargetsSignature(source))) throw new Error('The source changed. Request a fresh proposal.');
                 show(proposal);
                 this.status(`Writing ${proposal.plan.next + 1} of ${proposal.plan.steps.length}: ${proposal.plan.steps[proposal.plan.next].label}. Finished steps are saved for review.`);
-                const output = await requestCreatorReply(this, source, creatorStepMessages(source, proposal), { signal, isCurrent: current });
+                const step = proposal.plan.steps[proposal.plan.next];
+                const output = step.agent
+                    ? await (await import('./agent-processing.js')).requestCreatorAgentStep(this, source, proposal, { signal, isCurrent: current })
+                    : await requestCreatorReply(this, source, creatorStepMessages(source, proposal), { signal, isCurrent: current });
                 const latest = this.session.draft.proposals.find(item => item.id === id);
                 const next = mergeCreatorStep(this.session.draft, latest, output);
                 if (!this.edit(draft => { draft.proposals[draft.proposals.findIndex(item => item.id === id)] = next; }, false, { record: false })) throw new Error(this.message);
