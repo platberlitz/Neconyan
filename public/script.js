@@ -383,6 +383,7 @@ import { fetchResumable, setGenerationContext, releaseGenerationContext, listRec
 import { captureRecoveryAnchor, getHeldReplyTarget } from './scripts/held-generation-recovery.js';
 import { applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse, reasoningOnlyWarningKind } from './scripts/generation-request-controls.js';
 import { cleanGeneratedText, createRawPrompt as createRawPromptPure, normalizeContentText as normalizeContentTextPure, extractMessageFromData as extractMessageFromDataPure, extractJsonFromData as extractJsonFromDataPure } from './scripts/generation-format.js';
+import { collectGenerationStream } from './scripts/generation-stream-result.js';
 import { generationSettingsSnapshot } from './scripts/generation-settings.js';
 import {
     CHAT_RENDER_LIFECYCLE_ROLLOUT_KEY,
@@ -8615,6 +8616,7 @@ export function createRawPrompt(prompt, api, instructOverride, quietToLoud, syst
  * @prop {AbortSignal} [signal] Optional signal to abort the request.
  * @prop {'main'|'auxiliary'|'none'} [cacheScope] Prompt cache lane for local backends.
  * @prop {boolean} [literalPrompt=false] Preserve authoring macros without evaluating chat variables or inserting active chat names.
+ * @prop {function} [onChunk] Receive cumulative streamed output on chat and text completion connections.
  */
 
 /**
@@ -8623,7 +8625,7 @@ export function createRawPrompt(prompt, api, instructOverride, quietToLoud, syst
  * @param {GenerateRawParams} params Parameters for generating a message
  * @returns {Promise<object | string>} Raw API response data, or a JSON string extracted from the response when `jsonSchema` is provided.
  */
-export async function generateRawData({ prompt = '', api = null, instructOverride = false, quietToLoud = false, systemPrompt = '', responseLength = null, prefill = '', jsonSchema = null, signal = null, cacheScope = 'auxiliary', preserveReasoningBudget = false, temperature, literalPrompt = false } = {}) {
+export async function generateRawData({ prompt = '', api = null, instructOverride = false, quietToLoud = false, systemPrompt = '', responseLength = null, prefill = '', jsonSchema = null, signal = null, cacheScope = 'auxiliary', preserveReasoningBudget = false, temperature, literalPrompt = false, onChunk } = {}) {
     if (!api) {
         api = main_api;
     }
@@ -8712,7 +8714,9 @@ export async function generateRawData({ prompt = '', api = null, instructOverrid
         if (api === 'koboldhorde') {
             data = await generateHorde(prompt.toString(), generateData, abortController.signal, false);
         } else if (api === 'openai') {
-            data = await sendOpenAIRequest('quiet', generateData, abortController.signal, { jsonSchema, cacheScope, temperature, ...requestControls });
+            data = await sendOpenAIRequest('quiet', generateData, abortController.signal, { jsonSchema, cacheScope, temperature, ...requestControls, stream: typeof onChunk === 'function' ? true : undefined });
+        } else if (api === 'textgenerationwebui' && typeof onChunk === 'function') {
+            data = await generateTextGenWithStreaming(generateData, abortController.signal);
         } else {
             const generateUrl = getGenerateUrl(api);
             const response = await fetchResumable(generateUrl, {
@@ -8728,6 +8732,10 @@ export async function generateRawData({ prompt = '', api = null, instructOverrid
             }
 
             data = await response.json();
+        }
+
+        if (typeof data === 'function' && typeof onChunk === 'function') {
+            data = await collectGenerationStream(data, { signal: abortController.signal, onChunk });
         }
 
         // should only happen for text completions
@@ -11671,6 +11679,7 @@ function setInContextMessages(msgInContextCount, type, preserveLastMessage = fal
  * @property {number} [maxOutputTokens]
  * @property {number} [responseLength]
  * @property {boolean} [preserveReasoningBudget]
+ * @property {boolean} [stream] Request-local streaming override.
  * @property {object|null} [recoveryContext]
  */
 

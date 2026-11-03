@@ -5410,7 +5410,7 @@ export async function createGenerationParameters(settings, model, type, messages
  * @returns {Promise<unknown>}
  * @throws {Error}
  */
-async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, cacheScope = null, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false, generationContext = null, temperature } = {}) {
+async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, cacheScope = null, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false, generationContext = null, temperature, stream: streamOverride } = {}) {
     // Provide default abort signal
     if (!signal) {
         signal = new AbortController().signal;
@@ -5421,6 +5421,7 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
     let { generate_data, stream, canMultiSwipe } = await createGenerationParameters(settings, model, type, messages, { jsonSchema, cacheScope });
 
     await eventSource.emit(event_types.CHAT_COMPLETION_SETTINGS_READY, generate_data, { type, isAuxiliaryGeneration: type === 'quiet', generationContext });
+    if (typeof streamOverride === 'boolean') generate_data.stream = stream = streamOverride;
 
     const requestControls = { maxOutputTokens, responseLength, preserveReasoningBudget };
     if (generate_data.chat_completion_source === chat_completion_sources.CUSTOM) {
@@ -5452,7 +5453,7 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
         throw new Error(`Got response status ${response.status}`);
     }
     if (stream) {
-        return readChatCompletionStream(response, { canMultiSwipe });
+        return readChatCompletionStream(response, { canMultiSwipe, overrideShowThoughts: type === 'quiet' && streamOverride === true ? true : null });
     } else {
         const data = await response.json();
         if (classifyGenerationOutcome(data)) return data;
@@ -5488,9 +5489,10 @@ async function sendOpenAIRequest(type, messages, signal, { jsonSchema = null, ca
  * @param {object} [options]
  * @param {boolean} [options.canMultiSwipe] Whether extra choices should be treated as swipes
  * @param {string?} [options.chatCompletionSource] Source override (defaults to the current setting)
+ * @param {boolean?} [options.overrideShowThoughts] Read any reasoning supplied for an auxiliary viewer.
  * @returns {() => AsyncGenerator<{text: string, swipes: string[], logprobs: any, toolCalls: any[], state: object}>}
  */
-export function readChatCompletionStream(response, { canMultiSwipe = false, chatCompletionSource = null } = {}) {
+export function readChatCompletionStream(response, { canMultiSwipe = false, chatCompletionSource = null, overrideShowThoughts = null } = {}) {
     const eventStream = getEventSourceStream();
     response.body.pipeThrough(eventStream);
     const reader = eventStream.readable.getReader();
@@ -5537,7 +5539,7 @@ export function readChatCompletionStream(response, { canMultiSwipe = false, chat
                     continue;
                 }
                 if (isGenerationLengthFinish(frame)) state.finishReason = 'length';
-                text += getStreamingReply(frame, state, { chatCompletionSource });
+                text += getStreamingReply(frame, state, { chatCompletionSource, overrideShowThoughts });
                 if (!state.outcome) ToolManager.parseToolCalls(toolCalls, frame, state.toolSignatures);
             }
             if (parsed.usage?.completion_tokens_details?.reasoning_tokens) state.reasoning_tokens = parsed.usage.completion_tokens_details.reasoning_tokens;

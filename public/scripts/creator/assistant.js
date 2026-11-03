@@ -5,6 +5,9 @@ import { startCreatorWriting } from './conversion.js';
 import { renderCreatorQuestionsOption } from './questions.js';
 import { element, button, textField } from './fields.js';
 import { requestCreatorConnection, withCreatorAbort } from './connection.js';
+import { creatorPrefill, joinCreatorPrefill } from './prefill.js';
+import { collectGenerationStream } from '../generation-stream-result.js';
+import { updateCreatorLiveReply } from './live-reply.js';
 
 export function buildCreatorWritingRequest(draft, instruction, fields, { includePrivate = false } = {}) {
     if (!String(instruction).trim()) throw new Error('Tell your writing partner what to work on.');
@@ -21,9 +24,17 @@ export async function requestCreatorReply(workspace, draft, messages, { signal, 
     const controller = new AbortController();
     const requestSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     workspace.requestController = controller;
+    workspace.liveReply = null;
+    workspace.host?.querySelector('[data-creator-live-reply]')?.remove();
     workspace.syncRequestControls?.();
     try {
-        return await withCreatorAbort(() => sendCreatorReply(workspace, draft, messages, { signal: requestSignal, isCurrent }), requestSignal);
+        const reply = await withCreatorAbort(() => sendCreatorReply(workspace, draft, messages, { signal: requestSignal, isCurrent }), requestSignal);
+        updateCreatorLiveReply(workspace, { status: 'Reply received. Review the proposal before applying it.' });
+        return reply;
+    } catch (error) {
+        updateCreatorLiveReply(workspace, { status: requestSignal.aborted ? 'Cancelled. Nothing was applied.' : 'Request failed. Nothing was applied.' });
+        controller.abort();
+        throw error;
     } finally {
         if (workspace.requestController === controller) {
             workspace.requestController = null;
@@ -33,7 +44,7 @@ export async function requestCreatorReply(workspace, draft, messages, { signal, 
 }
 
 async function sendCreatorReply(workspace, draft, messages, { signal, isCurrent }) {
-    const { generateRawData } = await import('../../script.js');
+    const { generateRawData, getGeneratingModel } = await import('../../script.js');
     const { extractProfileResponseText } = await import('../extensions/in-chat-agents/llm-utils.js');
     const { isGenerationLengthFinish } = await import('../generation-request-controls.js');
     const current = () => workspace.session.draft?.id === draft.id && isCurrent();
@@ -50,20 +61,37 @@ async function sendCreatorReply(workspace, draft, messages, { signal, isCurrent 
             if (!current()) throw new Error('The source changed. Request a fresh proposal.');
         },
         send: async (profile, maxTokens) => {
+            const { ConnectionManagerRequestService } = await import('../extensions/shared.js');
+            const connection = draft.writing?.connection ?? {};
+            const model = profile ? ConnectionManagerRequestService.getProfile(profile)?.model : getGeneratingModel();
+            const prefill = creatorPrefill(connection, model);
+            const streaming = connection.stream === true;
+            const prompt = structuredClone(messages);
+            if (streaming) updateCreatorLiveReply(workspace, { draftId: draft.id, text: '', reasoning: '', status: `Waiting for ${profile ? ConnectionManagerRequestService.getProfile(profile)?.name || profile : 'Current connection'}…` });
+            const onChunk = streaming ? chunk => {
+                workspace.session.assertOwner();
+                if (signal.aborted || !current()) throw new Error('Request cancelled. Nothing was applied.');
+                updateCreatorLiveReply(workspace, { text: joinCreatorPrefill(chunk.text, prefill.reply), reasoning: chunk.state?.reasoning || '', status: 'Receiving reply…' });
+            } : undefined;
             let result;
-            if (!profile) result = await generateRawData({ prompt: structuredClone(messages), responseLength: maxTokens, signal, cacheScope: 'auxiliary', literalPrompt: true });
+            if (!profile) result = await generateRawData({ prompt, prefill: prefill.text, responseLength: maxTokens, signal, cacheScope: 'auxiliary', literalPrompt: true, onChunk });
             else {
-                const { ConnectionManagerRequestService } = await import('../extensions/shared.js');
                 try {
                     for (const item of ConnectionManagerRequestService.getSupportedProfiles()) profileNames.set(item.id, item.name);
                 } catch { /* A missing manager is reported by sendRequest below. */ }
-                result = await ConnectionManagerRequestService.sendRequest(profile, structuredClone(messages), maxTokens, {
-                    signal, stream: false, extractData: false, includePreset: false, includeInstruct: false,
+                if (prefill.text) prompt.push({ role: 'assistant', content: prefill.text, ...(prefill.partial ? { partial: true } : {}) });
+                result = await ConnectionManagerRequestService.sendRequest(profile, prompt, maxTokens, {
+                    signal, stream: streaming, extractData: false, includePreset: false, includeInstruct: false,
                 });
+                if (typeof result === 'function') result = await collectGenerationStream(result, { signal, onChunk });
             }
+            workspace.session.assertOwner();
+            if (signal.aborted || !current()) throw new Error('Request cancelled. Nothing was applied.');
             if (isGenerationLengthFinish(result)) throw new Error('The model ran out of output space. Request a smaller change; nothing was applied.');
-            const text = extractProfileResponseText(result, { preserveWhitespace: true });
-            if (!text.trim()) throw new Error('The model returned no text. Check the connection and try again.');
+            const continuation = extractProfileResponseText(result, { preserveWhitespace: true });
+            if (!continuation.trim()) throw new Error('The model returned no text. Check the connection and try again.');
+            const text = joinCreatorPrefill(continuation, prefill.reply);
+            if (streaming) updateCreatorLiveReply(workspace, { text });
             return text;
         },
     });

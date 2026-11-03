@@ -28,6 +28,13 @@ export function expandField(input, label) {
     editor.setAttribute('aria-label', label);
     const count = element('output', 'creator-muted');
     const update = () => { count.textContent = `${editor.value.length.toLocaleString()} characters`; };
+    const refresh = () => {
+        const following = editor.scrollTop + editor.clientHeight >= editor.scrollHeight - 24;
+        editor.value = input.value;
+        if (following) editor.scrollTop = editor.scrollHeight;
+        update();
+    };
+    if (input.readOnly) input.addEventListener('creator-output', refresh);
     editor.addEventListener('input', () => {
         input.value = editor.value;
         input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -63,6 +70,7 @@ export function expandField(input, label) {
     // Keeping the modal inside the drawer also respects its outside-click policy.
     input.closest('#sb_character_creator_panel').append(dialog);
     dialog.addEventListener('close', () => {
+        input.removeEventListener('creator-output', refresh);
         input.dispatchEvent(new Event('change', { bubbles: true }));
         const caret = [editor.selectionStart, editor.selectionEnd];
         dialog.remove();

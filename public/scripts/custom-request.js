@@ -1,4 +1,4 @@
-import { classifyGenerationOutcome, providerBlockedError } from './generation-outcome.js';
+import { classifyGenerationOutcome, providerBlockedError, streamCompletionSignal } from './generation-outcome.js';
 import { getPresetManager } from './preset-manager.js';
 import { extractJsonFromData, extractMessageFromData, getGenerateUrl, getRequestHeaders, name1, name2, normalizeContentText, substituteParams } from '../script.js';
 import { getTextGenServer, createTextGenGenerationData, textgenerationwebui_settings } from './textgen-settings.js';
@@ -193,14 +193,20 @@ export class TextCompletionService {
             let text = '';
             const swipes = [];
             const state = { reasoning: '' };
+            let completed = false;
             while (true) {
                 const { done, value } = await reader.read();
-                if (done) return;
+                if (done) {
+                    if (!completed) throw new Error('The provider disconnected before completing the reply.');
+                    return;
+                }
                 if (value.data === '[DONE]') return;
 
                 tryParseStreamingError(response, value.data, { quiet: true });
 
                 let data = JSON.parse(value.data);
+                completed ||= streamCompletionSignal(data) || data.stop === true;
+                if (isGenerationLengthFinish(data)) state.finishReason = 'length';
 
                 if (data?.choices?.[0]?.index > 0) {
                     const swipeIndex = data.choices[0].index - 1;
@@ -428,13 +434,19 @@ export class ChatCompletionService {
             let text = '';
             const swipes = [];
             const state = { reasoning: '', images: [], signature: '', toolSignatures: {} };
+            let completed = false;
             while (true) {
                 const { done, value } = await reader.read();
-                if (done) return;
+                if (done) {
+                    if (!completed) throw new Error('The provider disconnected before completing the reply.');
+                    return;
+                }
                 const rawData = value.data;
                 if (rawData === '[DONE]') return;
                 tryParseStreamingError(response, rawData, { quiet: true });
                 const parsed = JSON.parse(rawData);
+                completed ||= streamCompletionSignal(parsed);
+                if (isGenerationLengthFinish(parsed)) state.finishReason = 'length';
                 const blocked = classifyGenerationOutcome(parsed);
                 if (blocked) throw providerBlockedError(blocked);
 
