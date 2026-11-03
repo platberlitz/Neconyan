@@ -2,6 +2,7 @@ import { creatorAssistantContext, TEXT_FIELDS, PROPOSAL_FIELDS, creatorTextValue
 import { creatorFormatFields, creatorTargetValue } from './formats.js';
 import { creatorGuidance } from './guidance.js';
 import { startCreatorWriting } from './conversion.js';
+import { renderCreatorQuestionsOption } from './questions.js';
 import { element, button, textField } from './fields.js';
 import { requestCreatorConnection, withCreatorAbort } from './connection.js';
 
@@ -111,6 +112,7 @@ export function renderWritingPartner(workspace, main) {
     const privateInput = element('input'); privateInput.type = 'checkbox';
     privateLabel.append(privateInput, document.createTextNode('Include private notes and private facts in this request'));
     main.append(privateLabel);
+    renderCreatorQuestionsOption(workspace, main);
     let controller;
     const cancel = button('Cancel request', () => controller?.abort()); cancel.hidden = true;
     const actionRow = element('div', 'creator-actions');
@@ -122,7 +124,6 @@ export function renderWritingPartner(workspace, main) {
             const proposal = startCreatorWriting(source, request, 'Writing partner');
             if (!workspace.edit(next => { next.proposals.push(proposal); })) return;
             await workspace.continueWriting(proposal.id, controller.signal);
-            workspace.status('Your writing proposal is ready to review.');
         } finally { cancel.hidden = true; }
     }), true), cancel);
     for (const proposal of draft.proposals.filter(item => item.dossierBefore === undefined && item.kind !== 'lore')) actionRow.append(button(`Review ${proposal.label}`, () => workspace.proposal(proposal)));

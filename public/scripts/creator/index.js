@@ -4,6 +4,7 @@ import { element, button, textField } from './fields.js';
 import { editCreatorDraft, setCreatorField, undoCreatorDraft, renderCreatorFacts, creatorProposal, acceptCreatorProposal, FACT_SECTIONS, STYLES, creatorTextEditKey } from './model.js';
 import { DOSSIER_FIELDS } from './dossier.js';
 import { startCreatorConversion, reviseCreatorConversion, creatorStepMessages, mergeCreatorStep } from './conversion.js';
+import { renderCreatorQuestionsOption, creatorQuestionMessages, mergeCreatorQuestions, generateCreatorProposal } from './questions.js';
 import { compareCreatorChanges } from './conflicts.js';
 import { restoreCreatorBackup } from './backup.js';
 import { creatorPublicationCard, adoptCreatorComparedCard } from './embedded-book.js';
@@ -448,14 +449,14 @@ class CreatorWorkspace {
                     const draft = structuredClone(this.session.draft);
                     const proposal = startCreatorConversion(draft, [...selection]);
                     controller = new AbortController(); cancel.hidden = false; convert.disabled = true;
-                    convert.textContent = 'Converting…';
-                    feedback.textContent = 'Sending your Dossier to the current model. The converted fields will appear here for review.';
+                    convert.textContent = proposal.plan.phase === 'questions' ? 'Asking questions…' : 'Converting…';
+                    feedback.textContent = proposal.plan.phase === 'questions' ? 'Checking your dossier for questions before writing.' : 'Sending your Dossier to the current model. The converted fields will appear here for review.';
                     if (!this.edit(next => { next.proposals.push(proposal); })) {
                         feedback.textContent = this.message;
                         return;
                     }
                     await this.continueWriting(proposal.id, controller.signal);
-                    this.status('Conversion ready for review. Your dossier and library are unchanged.');
+                    feedback.textContent = this.message;
                 } catch (error) {
                     feedback.hidden = false;
                     feedback.textContent = error?.message || (typeof error === 'string' ? error : 'Conversion failed. Check your model connection and try again.');
@@ -469,7 +470,9 @@ class CreatorWorkspace {
         for (const proposal of this.session.draft.proposals.filter(item => item.dossierBefore !== undefined)) {
             actionRow.append(button(`Review ${proposal.label}`, () => this.proposal(proposal)));
         }
-        main.append(choices, actionRow, feedback);
+        main.append(choices);
+        renderCreatorQuestionsOption(this, main);
+        main.append(actionRow, feedback);
     }
 
     stringList(main, title, field) {
@@ -538,9 +541,18 @@ class CreatorWorkspace {
         try {
             while (current()) {
                 const proposal = this.session.draft.proposals.find(item => item.id === id);
+                if (proposal.plan.phase === 'answers') break;
                 if (proposal.plan.next >= proposal.plan.steps.length) break;
                 if ((proposal.dossierBefore !== undefined && proposal.dossierBefore !== (source.dossier ?? '')) || (proposal.formatBefore !== undefined && proposal.formatBefore !== source.style) || (proposal.targetsBefore !== undefined && proposal.targetsBefore !== creatorTargetsSignature(source))) throw new Error('The source changed. Request a fresh proposal.');
                 show(proposal);
+                if (proposal.plan.phase === 'questions') {
+                    this.status('Asking questions before writing.');
+                    const output = await requestCreatorReply(this, source, creatorQuestionMessages(proposal), { signal, isCurrent: current });
+                    const latest = this.session.draft.proposals.find(item => item.id === id);
+                    const next = mergeCreatorQuestions(latest, output);
+                    if (!this.edit(draft => { draft.proposals[draft.proposals.findIndex(item => item.id === id)] = next; }, false, { record: false })) throw new Error(this.message);
+                    break;
+                }
                 this.status(`Writing ${proposal.plan.next + 1} of ${proposal.plan.steps.length}: ${proposal.plan.steps[proposal.plan.next].label}. Finished steps are saved for review.`);
                 const step = proposal.plan.steps[proposal.plan.next];
                 const output = step.agent
@@ -551,8 +563,11 @@ class CreatorWorkspace {
                 if (!this.edit(draft => { draft.proposals[draft.proposals.findIndex(item => item.id === id)] = next; }, false, { record: false })) throw new Error(this.message);
             }
             if (!current()) throw new Error('The source changed. Request a fresh proposal.');
-            this.status('Writing finished. Review the proposed fields before accepting them.');
+            this.status(this.session.draft.proposals.find(item => item.id === id)?.plan.phase === 'answers'
+                ? 'Questions ready. Answer what you like, then choose Generate.'
+                : 'Writing finished. Review the proposed fields before accepting them.');
         } catch (error) {
+            if (this.session.draft?.proposals.find(item => item.id === id)?.plan.phase === 'questions') throw new Error(`${error.message} Use Retry questions to try again.`, { cause: error });
             throw new Error(`${error.message} Finished steps remain available. Use Continue writing to retry the unfinished step.`, { cause: error });
         } finally {
             this.writingProposal = null;
@@ -577,8 +592,11 @@ class CreatorWorkspace {
         review.append(element('h3', '', proposal.label));
         const unfinished = proposal.plan && proposal.plan.next < proposal.plan.steps.length;
         const writing = this.writingProposal === proposal.id;
-        if (proposal.plan) review.append(element('p', 'creator-muted', `Written ${proposal.plan.next} of ${proposal.plan.steps.length} steps.${unfinished ? ` Next: ${proposal.plan.steps[proposal.plan.next].label}.` : ' Ready to review.'}`));
-        if (unfinished && !writing) review.append(button('Continue writing', () => this.run(() => this.continueWriting(proposal.id)), true));
+        const asking = proposal.plan?.phase === 'questions';
+        const answering = proposal.plan?.phase === 'answers';
+        if (asking || answering) review.append(element('p', 'creator-muted', asking ? 'Ask questions before generating any fields.' : proposal.questions.length ? 'Answer what you like, then choose Generate. Unanswered questions can be revisited later.' : 'The model has no questions. Choose Generate when you are ready.'));
+        else if (proposal.plan) review.append(element('p', 'creator-muted', `Written ${proposal.plan.next} of ${proposal.plan.steps.length} steps.${unfinished ? ` Next: ${proposal.plan.steps[proposal.plan.next].label}.` : ' Ready to review.'}`));
+        if (unfinished && !writing && !answering) review.append(button(asking ? 'Retry questions' : 'Continue writing', () => this.run(() => this.continueWriting(proposal.id)), true));
         for (const [key, title] of [['coverage', 'How your information was used']]) {
             if (!proposal[key]?.length) continue;
             review.append(element('h4', '', title));
@@ -596,6 +614,11 @@ class CreatorWorkspace {
             for (const answer of proposal.resolved) history.append(element('p', '', `${answer.question}\n${answer.answer}`));
             review.append(history);
         }
+        if (answering && !writing) review.append(button('Generate', () => this.run(async () => {
+            const next = generateCreatorProposal(proposal);
+            if (!this.edit(draft => { draft.proposals[draft.proposals.findIndex(item => item.id === proposal.id)] = next; })) return;
+            await this.continueWriting(proposal.id);
+        }), true));
         if (!writing && !unfinished && (proposal.changes.length || proposal.questions?.length)) {
             review.append(textField('Anything else to change?', proposal.note ?? '', value => { proposal.note = value; persist(); }, { rows: 2 }));
             review.append(button('Revise with my answers', () => this.run(async () => {
@@ -625,6 +648,7 @@ class CreatorWorkspace {
             this.edit(next => { next.proposals = next.proposals.filter(item => item.id !== proposal.id); }, true);
         }));
         review.append(footer);
+        if (writing) for (const control of review.querySelectorAll('input, textarea, button')) control.disabled = true;
         const previous = [...content.querySelectorAll('.creator-proposal')].find(node => node.dataset.proposalId === proposal.id);
         if (previous) previous.replaceWith(review);
         else { content.prepend(review); review.scrollIntoView({ block: 'start' }); }
