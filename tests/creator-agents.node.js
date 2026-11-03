@@ -26,3 +26,20 @@ test('ordered agents revise only selected fields and individual greetings with r
     draft.locks.push('description');
     assert.throws(() => startCreatorAgentProcessing(draft, agents, ['description']), /Unlock/);
 });
+
+test('accepting an agent pass keeps its text available to the remaining agents', () => {
+    let draft = createCreatorDraft({ id: 'partial-agents', card: { data: { alternate_greetings: ['Original', 'Untouched'] } } });
+    const agents = [{ name: 'First', prompt: 'First pass' }, { name: 'Second', prompt: 'Second pass' }];
+    let proposal = startCreatorAgentProcessing(draft, agents, ['alternate_greetings:0']);
+    proposal = mergeCreatorStep(draft, proposal, finishCreatorAgentStep(proposal, 'First pass'));
+    draft.proposals = [proposal];
+    draft = acceptCreatorProposal(draft, proposal);
+    proposal = draft.proposals[0];
+    assert.equal(JSON.parse(creatorAgentMessages(proposal)[1].content).text, 'First pass');
+    proposal = mergeCreatorStep(draft, proposal, finishCreatorAgentStep(proposal, 'Second pass'));
+    assert.deepEqual(proposal.changes[0].before, ['First pass', 'Untouched']);
+    assert.deepEqual(proposal.changes[0].after, ['Second pass', 'Untouched']);
+    draft.proposals = [proposal];
+    draft = acceptCreatorProposal(draft, proposal);
+    assert.deepEqual(draft.card.data.alternate_greetings, ['Second pass', 'Untouched']);
+});

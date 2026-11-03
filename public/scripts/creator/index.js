@@ -1,7 +1,7 @@
 import { characters, getOneCharacter } from '../../script.js';
 import { CreatorSession } from './session.js';
 import { element, button, textField } from './fields.js';
-import { editCreatorDraft, setCreatorField, undoCreatorDraft, renderCreatorFacts, creatorProposal, acceptCreatorProposal, FACT_SECTIONS, STYLES, creatorTextEditKey } from './model.js';
+import { editCreatorDraft, setCreatorField, undoCreatorDraft, renderCreatorFacts, creatorProposal, acceptCreatorProposal, acceptCreatorGreeting, FACT_SECTIONS, STYLES, creatorTextEditKey } from './model.js';
 import { DOSSIER_FIELDS } from './dossier.js';
 import { startCreatorConversion, reviseCreatorConversion, creatorStepMessages, mergeCreatorStep } from './conversion.js';
 import { renderCreatorQuestionsOption, creatorQuestionMessages, mergeCreatorQuestions, generateCreatorProposal } from './questions.js';
@@ -13,6 +13,7 @@ import { attachCreatorGenerator } from './field-generator.js';
 import { renderCreatorFormat } from './format-picker.js';
 import { creatorTargetsSignature } from './formats.js';
 import { renderCreatorLiveReply } from './live-reply.js';
+import { creatorProposalDiff } from './proposal-diff.js';
 
 const sections = [['dossier', 'Dossier'], ['notebooks', 'Notebook sources'], ['identity', 'Identity'], ['facts', 'Guided facts'], ['greetings', 'Greetings & examples'], ['interview', 'Interview'], ['prompts', 'Prompts'], ['lore', 'Lorebooks'], ['macros', 'Macros & pronouns'], ['regex', 'Pretty HTML'], ['game', 'Gamify'], ['portrait', 'Portrait'], ['helper', 'Writing partner'], ['agents', 'Post-process with agents'], ['instructions', 'Writing instructions'], ['metadata', 'Details'], ['preview', 'Preview & export']];
 const labels = { name: 'Display name', description: 'Description', personality: 'Personality', scenario: 'Scenario', first_mes: 'First greeting', mes_example: 'Interviewer examples', creator_notes: 'Public creator notes', system_prompt: 'Main prompt', post_history_instructions: 'Post-history instructions', creator: 'Creator', character_version: 'Card version' };
@@ -50,7 +51,10 @@ class CreatorWorkspace {
         if (this.busy) return;
         this.busy = true;
         this.host.setAttribute('aria-busy', 'true');
-        try { await action(); } catch (error) { this.status(error.message, true); } finally { this.busy = false; this.host.removeAttribute('aria-busy'); }
+        this.activeAction = (async () => {
+            try { await action(); } catch (error) { this.status(error.message, true); } finally { this.busy = false; this.host.removeAttribute('aria-busy'); }
+        })();
+        return this.activeAction;
     }
 
     status(message, error = false) {
@@ -560,9 +564,13 @@ class CreatorWorkspace {
                 }
                 this.status(`Writing ${proposal.plan.next + 1} of ${proposal.plan.steps.length}: ${proposal.plan.steps[proposal.plan.next].label}. Finished steps are saved for review.`);
                 const step = proposal.plan.steps[proposal.plan.next];
+                const sameStep = () => {
+                    const latest = this.session.draft?.proposals.find(item => item.id === id);
+                    return current() && latest.plan.next === proposal.plan.next && JSON.stringify(latest.plan.steps[latest.plan.next]) === JSON.stringify(step);
+                };
                 const output = step.agent
-                    ? await (await import('./agent-processing.js')).requestCreatorAgentStep(this, source, proposal, { signal, isCurrent: current })
-                    : await requestCreatorReply(this, source, creatorStepMessages(source, proposal), { signal, isCurrent: current });
+                    ? await (await import('./agent-processing.js')).requestCreatorAgentStep(this, this.session.draft, proposal, { signal, isCurrent: sameStep })
+                    : await requestCreatorReply(this, source, creatorStepMessages(this.session.draft, proposal), { signal, isCurrent: sameStep });
                 const latest = this.session.draft.proposals.find(item => item.id === id);
                 const next = mergeCreatorStep(this.session.draft, latest, output);
                 if (!this.edit(draft => { draft.proposals[draft.proposals.findIndex(item => item.id === id)] = next; }, false, { record: false })) throw new Error(this.message);
@@ -581,14 +589,54 @@ class CreatorWorkspace {
         }
     }
 
+    async reviseProposal(id, field) {
+        if (this.busy) {
+            if (this.writingProposal !== id) return;
+            this.requestController?.abort();
+            await this.activeAction;
+        }
+        return this.run(async () => {
+            const proposal = this.session.draft.proposals.find(item => item.id === id);
+            if (!proposal) return;
+            const next = reviseCreatorConversion(this.session.draft, proposal, field ? { field, note: proposal.fieldNotes?.[field] ?? '', regenerate: true } : {});
+            if (!field) {
+                if (!this.edit(draft => { draft.proposals[draft.proposals.findIndex(item => item.id === id)] = next; })) return;
+                await this.continueWriting(id);
+                return;
+            }
+            const { requestCreatorReply } = await import('./assistant.js');
+            const source = structuredClone(this.session.draft);
+            const original = JSON.stringify(proposal.changes.find(change => change.field === field));
+            const current = () => this.session.draft?.id === source.id && this.session.draft.dossier === source.dossier && this.session.draft.style === source.style && creatorTargetsSignature(this.session.draft) === creatorTargetsSignature(source) && JSON.stringify(this.session.draft.proposals.find(item => item.id === id)?.changes.find(change => change.field === field)) === original;
+            let revised = next;
+            this.writingProposal = id;
+            try {
+                this.proposal(proposal);
+                while (revised.plan.next < revised.plan.steps.length) {
+                    const output = await requestCreatorReply(this, source, creatorStepMessages(source, revised), { isCurrent: current });
+                    revised = mergeCreatorStep(source, revised, output);
+                }
+                if (!this.edit(draft => {
+                    const latest = draft.proposals.find(item => item.id === id);
+                    latest.changes = latest.changes.map(change => change.field === field ? revised.changes.find(item => item.field === field) : change);
+                })) return;
+                this.status('Field regenerated. Review it before accepting.');
+            } finally {
+                this.writingProposal = null;
+                const latest = this.session.draft?.id === source.id && this.session.draft.proposals.find(item => item.id === id);
+                if (latest) this.proposal(latest);
+            }
+        });
+    }
+
     proposal(proposal) {
         proposal = structuredClone(proposal);
-        const persist = () => this.edit(next => {
-            const index = next.proposals.findIndex(item => item.id === proposal.id);
-            if (index >= 0) next.proposals[index] = structuredClone(proposal);
-            else next.proposals.push(structuredClone(proposal));
+        const persist = update => this.edit(next => {
+            const current = next.proposals.find(item => item.id === proposal.id);
+            if (!current) throw new Error('This proposal is no longer available.');
+            update(current);
         });
-        if (!this.session.draft.proposals.some(item => item.id === proposal.id) && !persist()) return;
+        if (!this.session.draft.proposals.some(item => item.id === proposal.id) && !this.edit(next => next.proposals.push(structuredClone(proposal)))) return;
         const content = this.host.querySelector('.creator-content');
         if (!content) return;
         for (const node of content.querySelectorAll('.creator-proposal')) if (node.dataset.proposalId !== proposal.id) node.remove();
@@ -610,7 +658,7 @@ class CreatorWorkspace {
         if (proposal.questions?.length) {
             review.append(element('h4', '', 'Questions to resolve'));
             for (const question of proposal.questions) {
-                review.append(textField(question, proposal.answers?.[question] ?? '', value => { proposal.answers ??= {}; proposal.answers[question] = value; persist(); }, { rows: 2, placeholder: 'Your answer' }));
+                review.append(textField(question, proposal.answers?.[question] ?? '', value => persist(current => { current.answers ??= {}; current.answers[question] = value; }), { rows: 2, placeholder: 'Your answer' }));
             }
         }
         if (proposal.resolved?.length) {
@@ -620,43 +668,87 @@ class CreatorWorkspace {
             review.append(history);
         }
         if (answering && !writing) review.append(button('Generate', () => this.run(async () => {
-            const next = generateCreatorProposal(proposal);
+            const next = generateCreatorProposal(this.session.draft.proposals.find(item => item.id === proposal.id));
             if (!this.edit(draft => { draft.proposals[draft.proposals.findIndex(item => item.id === proposal.id)] = next; })) return;
             await this.continueWriting(proposal.id);
         }), true));
-        if (!writing && !unfinished && (proposal.changes.length || proposal.questions?.length)) {
-            review.append(textField('Anything else to change?', proposal.note ?? '', value => { proposal.note = value; persist(); }, { rows: 2 }));
-            review.append(button('Revise with my answers', () => this.run(async () => {
-                const next = reviseCreatorConversion(this.session.draft, proposal);
-                if (!this.edit(draft => { draft.proposals[draft.proposals.findIndex(item => item.id === proposal.id)] = next; })) return;
-                await this.continueWriting(proposal.id);
-            }), true));
+        if (proposal.changes.length || proposal.questions?.length) {
+            review.append(textField('Anything else to change?', proposal.note ?? '', value => persist(current => { current.note = value; }), { rows: 2 }));
+            review.append(button(unfinished || writing ? 'Apply revisions now' : 'Revise with my answers', () => this.reviseProposal(proposal.id), true));
         }
         for (const change of proposal.changes) {
             const group = element('section', 'creator-proposal-field');
+            group.dataset.field = change.field;
             const before = Array.isArray(change.before) ? change.before.join('\n\n') : change.before;
-            group.append(element('h4', '', change.field === 'depth_prompt' ? 'Character’s Note' : change.field === 'alternate_greetings' ? 'Alternate greetings' : labels[change.field] || change.field), element('pre', 'creator-before', before || '(empty)'));
+            const showDiff = proposal.agentProcessing || proposal.plan?.steps.some(step => step.agent);
+            group.append(element('h4', '', change.field === 'depth_prompt' ? 'Character’s Note' : change.field === 'alternate_greetings' ? 'Alternate greetings' : labels[change.field] || change.field));
+            if (!showDiff) group.append(element('pre', 'creator-before', before || '(empty)'));
             if (change.field === 'alternate_greetings') {
                 if (!change.after.length) group.append(element('p', 'creator-muted', change.before.length ? `Removes all ${change.before.length} alternate greetings.` : 'No alternate greetings proposed.'));
-                change.after.forEach((text, index) => group.append(textField(`Proposed alternate greeting ${index + 1}`, text, value => { change.after[index] = value; persist(); })));
-            } else group.append(textField('Proposed text', change.after, value => { change.after = value; persist(); }));
-            if (!writing && !unfinished) group.append(button('Accept this field', () => {
-                this.change(draft => acceptCreatorProposal(draft, proposal, [change.field]), true);
+                change.after.forEach((text, index) => {
+                    if (change.acceptedGreetings?.includes(index)) return;
+                    const diff = showDiff ? creatorProposalDiff((change.greetingBase ?? change.before)?.[index] ?? '', text) : null;
+                    const greeting = textField(`Proposed alternate greeting ${index + 1}`, text, value => {
+                        if (persist(current => { current.changes.find(item => item.field === change.field).after[index] = value; })) diff?.update(value);
+                    });
+                    if (diff) greeting.prepend(diff.element);
+                    greeting.append(button(`Accept greeting ${index + 1}`, () => {
+                        this.change(draft => acceptCreatorGreeting(draft, draft.proposals.find(item => item.id === proposal.id), index));
+                        const remaining = this.session.draft.proposals.find(item => item.id === proposal.id);
+                        if (remaining) this.proposal(remaining);
+                        else review.remove();
+                    }, true));
+                    group.append(greeting);
+                });
+            } else {
+                const diff = showDiff ? creatorProposalDiff(change.before, change.after) : null;
+                if (diff) group.append(diff.element);
+                group.append(textField('Proposed text', change.after, value => {
+                    if (persist(current => { current.changes.find(item => item.field === change.field).after = value; })) diff?.update(value);
+                }));
+            }
+            group.append(button('Accept this field', () => {
+                this.change(draft => acceptCreatorProposal(draft, draft.proposals.find(item => item.id === proposal.id), [change.field]));
                 const remaining = this.session.draft.proposals.find(item => item.id === proposal.id);
-                if (remaining && !review.isConnected) this.proposal(remaining);
+                if (remaining) this.proposal(remaining);
+                else review.remove();
             }, true));
+            const revision = element('details');
+            revision.append(element('summary', '', 'Revision notes (optional)'), textField('Revision notes for this field', proposal.fieldNotes?.[change.field] ?? '', value => {
+                persist(current => {
+                    current.fieldNotes ??= {};
+                    current.fieldNotes[change.field] = value;
+                });
+            }, { rows: 2 }));
+            group.append(revision, button('Regenerate this field', () => this.reviseProposal(proposal.id, change.field)));
             review.append(group);
         }
         const footer = element('div', 'creator-actions');
-        if (!writing && !unfinished && proposal.changes.length) footer.append(button('Accept all fields', () => this.change(draft => acceptCreatorProposal(draft, proposal), true), true));
+        if (proposal.changes.length) footer.append(button('Accept all fields', () => {
+            this.change(draft => acceptCreatorProposal(draft, draft.proposals.find(item => item.id === proposal.id)));
+            const remaining = this.session.draft.proposals.find(item => item.id === proposal.id);
+            if (remaining) this.proposal(remaining);
+            else review.remove();
+        }, true));
         if (!writing) footer.append(button('Reject proposal', () => {
             this.edit(next => { next.proposals = next.proposals.filter(item => item.id !== proposal.id); }, true);
         }));
         review.append(footer);
-        if (writing) for (const control of review.querySelectorAll('input, textarea, button')) control.disabled = true;
         const previous = [...content.querySelectorAll('.creator-proposal')].find(node => node.dataset.proposalId === proposal.id);
-        if (previous) previous.replaceWith(review);
-        else { content.prepend(review); review.scrollIntoView({ block: 'start' }); }
+        if (previous) {
+            const restore = rememberCreatorViewport(this.host);
+            const focused = previous.contains(document.activeElement) ? document.activeElement : null;
+            const field = focused?.closest('[data-field]')?.dataset.field;
+            const label = focused?.labels?.[0]?.textContent;
+            const selection = focused && [focused.selectionStart, focused.selectionEnd];
+            previous.replaceWith(review);
+            if (label) {
+                const replacement = [...review.querySelectorAll('input, textarea')].find(input => input.labels?.[0]?.textContent === label && input.closest('[data-field]')?.dataset.field === field);
+                replacement?.focus({ preventScroll: true });
+                if (replacement && selection[0] !== null) replacement.setSelectionRange(...selection);
+            }
+            restore();
+        } else { content.prepend(review); review.scrollIntoView({ block: 'start' }); }
     }
 
     review() {
@@ -715,6 +807,14 @@ class CreatorWorkspace {
         if (this.session.draft.id !== draft.id) throw new Error('Reopen comparison for the current draft.');
         const content = this.host.querySelector('.creator-content');
         content.replaceChildren(element('h3', '', 'Compare with your library'), element('p', '', 'Independent changes are combined. Choose which version to keep wherever both copies changed. Nothing is published by this comparison.'));
+        const draftChoices = [];
+        const selectAll = button('Keep all draft changes', () => {
+            for (const radio of draftChoices) {
+                radio.checked = true;
+                radio.dispatchEvent(new Event('change'));
+            }
+        });
+        content.append(selectAll);
         for (const resource of resources) {
             content.append(element('h4', '', resource.label));
             const compared = compareCreatorChanges(resource.base, resource.local, resource.remote);
@@ -731,6 +831,7 @@ class CreatorWorkspace {
                         resource.choices[conflict.id] = key;
                         for (const input of group.querySelectorAll('input')) input.checked = input === radio;
                     });
+                    if (key === 'draft') draftChoices.push(radio);
                     pill.append(radio, document.createTextNode(label));
                     optionWrap.append(pill, element('pre', '', JSON.stringify(conflict[key], null, 2) ?? '(removed)'));
                     group.append(optionWrap);
@@ -738,6 +839,7 @@ class CreatorWorkspace {
                 content.append(group);
             }
         }
+        selectAll.hidden = !draftChoices.length;
         content.append(button('Apply comparison to draft', () => this.run(async () => {
             if (JSON.stringify(this.session.draft) !== JSON.stringify(draft)) throw new Error('The draft changed during comparison. Compare again before applying.');
             const merged = resources.map(resource => compareCreatorChanges(resource.base, resource.local, resource.remote, resource.choices));

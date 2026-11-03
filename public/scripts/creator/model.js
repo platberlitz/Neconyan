@@ -180,10 +180,48 @@ export function acceptCreatorProposal(draft, proposal, selected = proposal.chang
             next.proposals = next.proposals.flatMap(item => {
                 if (item.id !== proposal.id) return [item];
                 const remaining = proposal.changes.filter(change => !selected.includes(change.field));
-                return remaining.length ? [{ ...copy(proposal), changes: remaining }] : [];
+                const retained = { ...copy(proposal), changes: remaining };
+                for (const change of changes) {
+                    if (retained.plan) {
+                        retained.plan.before ??= {};
+                        retained.plan.before[change.field] = copy(change.after);
+                        retained.plan.accepted ??= {};
+                        retained.plan.accepted[change.field] = copy(change.after);
+                    }
+                }
+                const unfinished = retained.plan && retained.plan.next < retained.plan.steps.length;
+                return remaining.length || unfinished ? [retained] : [];
             });
         }
     });
+}
+
+/** Accept one alternative without publishing the other proposed greetings. */
+export function acceptCreatorGreeting(draft, proposal, index) {
+    const change = proposal.changes.find(item => item.field === 'alternate_greetings');
+    if (!change || !Number.isInteger(index) || index < 0 || index >= change.after.length || change.acceptedGreetings?.includes(index)) throw new Error('This greeting is no longer available to accept.');
+    const acceptedGreetings = [...(change.acceptedGreetings ?? []), index].sort((a, b) => a - b);
+    const greetingBase = change.greetingBase ?? change.before;
+    const after = copy(greetingBase);
+    for (const accepted of acceptedGreetings) {
+        if (accepted < after.length) after[accepted] = change.after[accepted];
+        else after.push(change.after[accepted]);
+    }
+    const selected = { ...copy(proposal), changes: [{ ...copy(change), after }] };
+    // Keep the other changes and the writing plan in the same undoable edit.
+    const result = acceptCreatorProposal(draft, { ...selected, id: null });
+    const retained = copy(proposal);
+    if (retained.plan) {
+        retained.plan.before ??= {};
+        retained.plan.before.alternate_greetings = copy(after);
+        retained.plan.accepted ??= {};
+        retained.plan.accepted.alternate_greetings = copy(after);
+    }
+    retained.changes = retained.changes.flatMap(item => item.field !== 'alternate_greetings' ? [item]
+        : acceptedGreetings.length === change.after.length ? [] : [{ ...item, before: copy(after), greetingBase: copy(greetingBase), acceptedGreetings }]);
+    result.proposals = result.proposals.flatMap(item => item.id !== proposal.id ? [item]
+        : retained.changes.length || (retained.plan && retained.plan.next < retained.plan.steps.length) ? [retained] : []);
+    return result;
 }
 
 export function creatorAssistantContext(draft, { includePrivate = false } = {}) {

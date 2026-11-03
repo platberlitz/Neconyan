@@ -67,6 +67,20 @@ for (const phone of [false, true]) {
         await creator.getByRole('button', { name: 'Continue writing', exact: true }).click();
         await expect(creator.getByRole('button', { name: 'Accept all fields', exact: true })).toBeVisible({ timeout: 60000 });
         await expect(creator.getByLabel('Proposed text', { exact: true })).toHaveValue('A precise description.');
+        const diff = creator.locator('.creator-proposal-diff .ica-transform-diff');
+        await expect(diff.locator('.ica-transform-diff-part--del')).toContainText('Original');
+        await expect(diff.locator('.ica-transform-diff-part--ins').first()).toContainText('A precise');
+        const colours = await diff.evaluate(node => {
+            const added = getComputedStyle(node.querySelector('.ica-transform-diff-part--ins'));
+            const removed = getComputedStyle(node.querySelector('.ica-transform-diff-part--del'));
+            return { added: added.backgroundColor, removed: removed.backgroundColor, deletion: removed.textDecorationLine };
+        });
+        expect(colours.added).not.toBe(colours.removed);
+        expect(colours.deletion).toBe('line-through');
+        await creator.getByLabel('Proposed text', { exact: true }).fill('A precise description. <img src=x onerror=alert(1)>');
+        await expect(diff).toContainText('<img src=x onerror=alert(1)>');
+        await expect(diff.locator('img')).toHaveCount(0);
+        await creator.getByLabel('Proposed text', { exact: true }).fill('A precise description.');
         expect(calls.filter(call => !call.second)).toHaveLength(1);
         expect(calls.filter(call => call.second).every(call => call.input.text === 'A concrete description.' && call.input.field === 'description')).toBe(true);
         await creator.locator('.creator-proposal').evaluate(node => node.scrollIntoView({ block: 'start', behavior: 'instant' }));

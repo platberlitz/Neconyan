@@ -19,12 +19,12 @@ export function startCreatorAgentProcessing(draft, agents, targets) {
         fields: [target.field], label: `${agent.name}: ${target.index === undefined ? target.field.replaceAll('_', ' ') : `alternate greeting ${target.index + 1}`}`,
         ...(target.index === undefined ? {} : { start: target.index, count: 1 }), agent: structuredClone(agent),
     })));
-    return { ...creatorProposal(draft, fields, 'Agent post-processing'), questions: [], coverage: [], answers: {}, plan: { steps, next: 0, before: structuredClone(fields) } };
+    return { ...creatorProposal(draft, fields, 'Agent post-processing'), agentProcessing: true, questions: [], coverage: [], answers: {}, plan: { steps, next: 0, before: structuredClone(fields) } };
 }
 
 export function creatorAgentStepInput(proposal) {
     const step = proposal.plan.steps[proposal.plan.next];
-    const value = proposal.changes.find(change => change.field === step.fields[0]).after;
+    const value = proposal.changes.find(change => change.field === step.fields[0])?.after ?? proposal.plan.before?.[step.fields[0]];
     return step.count ? value[step.start] : value;
 }
 
