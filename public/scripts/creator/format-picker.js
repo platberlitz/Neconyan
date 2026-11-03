@@ -116,14 +116,20 @@ export function renderCreatorTargets(workspace, host, { open = false } = {}) {
 export function renderCreatorFormat(workspace, main) {
     const group = element('fieldset', 'creator-fieldset creator-format-box');
     group.append(element('legend', '', 'Character writing format'));
-    const topBar = element('div', 'creator-format-bar');
-    const row = element('div', 'creator-actions creator-chip-strip');
+    const row = element('div', 'creator-choice-grid creator-choice-grid--formats');
+    const current = workspace.session.draft.style || 'plain';
     for (const [id, format] of Object.entries(CREATOR_FORMATS)) {
-        const choice = button(format.label, () => workspace.edit(next => { next.style = id; }, true), false, 'creator-chip-btn');
-        choice.setAttribute('aria-pressed', String((workspace.session.draft.style || 'plain') === id));
-        choice.title = format.hint;
+        const label = element('label', 'creator-choice-pill');
+        const radio = element('input');
+        radio.type = 'radio';
+        radio.name = 'creator-format';
+        radio.value = id;
+        radio.checked = current === id;
+        radio.addEventListener('change', () => workspace.edit(next => { next.style = id; }, true));
+        label.title = format.hint;
+        label.append(radio, element('span', 'creator-choice-label', format.label));
         if (id !== 'purachina') {
-            row.append(choice);
+            row.append(label);
             continue;
         }
         const wrap = element('span', 'creator-format-info');
@@ -164,7 +170,7 @@ export function renderCreatorFormat(workspace, main) {
                 event.stopPropagation();
             }
         });
-        wrap.append(choice, toggle, tip);
+        wrap.append(label, toggle, tip);
         row.append(wrap);
     }
     const feedback = element('p', 'creator-muted creator-inline-status');
@@ -197,21 +203,28 @@ export function renderCreatorFormat(workspace, main) {
     }), false, 'creator-chip-btn');
     const convertActions = element('div', 'creator-actions');
     convertActions.append(convert, cancel);
-    topBar.append(row, convertActions);
-    group.append(topBar, element('p', 'creator-muted', 'Used by Dossier conversion, Generate and the Writing partner. Choosing a format does not replace existing text.'), feedback);
+    group.append(row, convertActions, element('p', 'creator-muted', 'Used by Dossier conversion, Generate and the Writing partner. Choosing a format does not replace existing text.'), feedback);
     group.append(textField('Custom writing format instructions', workspace.session.draft.writing?.formatInstruction ?? '', value => workspace.edit(next => {
         next.writing ??= {}; next.writing.formatInstruction = value;
     }), { rows: 2, hint: workspace.session.draft.style === 'custom' ? 'Your only writing format. Built-in formats, prose guidance and style targets are omitted. The greeting count and required response structure still apply. Kept private to this draft.' : 'Add your own structure, formatting and style rules. Choose Custom to use these alone; otherwise they accompany the selected format. Kept private to this draft.' }));
     if (workspace.session.draft.style === 'plist') {
-        const destinations = element('div', 'creator-actions');
-        destinations.append(element('span', 'creator-muted', 'Place the PList in:'));
+        const destinations = element('div', 'creator-choice-subgroup');
+        destinations.append(element('span', 'creator-choice-subheading', 'Place the PList in'));
+        const destinationGrid = element('div', 'creator-choice-grid creator-choice-grid--pair');
         for (const [id, label] of [['description', 'Description'], ['depth_prompt', 'Character’s Note']]) {
-            const choice = button(label, () => workspace.edit(next => {
+            const choice = element('label', 'creator-choice-pill');
+            const radio = element('input');
+            radio.type = 'radio';
+            radio.name = 'creator-plist-destination';
+            radio.value = id;
+            radio.checked = (workspace.session.draft.writing?.plistDestination ?? 'description') === id;
+            radio.addEventListener('change', () => workspace.edit(next => {
                 next.writing ??= {}; next.writing.plistDestination = id;
-            }, true), false, 'creator-chip-btn');
-            choice.setAttribute('aria-pressed', String((workspace.session.draft.writing?.plistDestination ?? 'description') === id));
-            destinations.append(choice);
+            }, true));
+            choice.append(radio, element('span', 'creator-choice-label', label));
+            destinationGrid.append(choice);
         }
+        destinations.append(destinationGrid);
         group.append(destinations, element('p', 'creator-muted', 'Applies when converting the Dossier or existing description, or requesting description changes from the Writing partner. Character’s Note is the depth prompt on the Prompts page. Existing text changes only after review.'));
     }
     renderCreatorTargets(workspace, group, { open: false });

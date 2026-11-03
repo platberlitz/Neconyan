@@ -37,10 +37,11 @@ for (const phone of [false, true]) {
         await legend.click();
         await expect(tip).toBeHidden();
         await expect(help).toHaveAttribute('aria-expanded', 'false');
-        await creator.getByRole('button', { name: 'Custom', exact: true }).click();
-        await expect(creator.getByRole('button', { name: 'Custom', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        await creator.getByRole('radio', { name: 'Custom', exact: true }).check();
+        await expect(creator.getByRole('radio', { name: 'Custom', exact: true })).toBeChecked();
+        const customPill = creator.locator('.creator-choice-grid--formats > .creator-choice-pill').filter({ hasText: 'Custom' });
         for (const accent of [null, 'rgba(110, 231, 183, 1)', 'rgba(126, 34, 206, 1)']) {
-            const contrast = await creator.getByRole('button', { name: 'Custom', exact: true }).evaluate(async (node, colour) => {
+            const contrast = await customPill.evaluate(async (node, colour) => {
                 if (colour) {
                     for (const id of ['sb-accent-primary-picker', 'sb-accent-secondary-picker']) document.getElementById(id).dispatchEvent(new CustomEvent('change', { detail: { rgba: colour } }));
                 }
@@ -73,7 +74,7 @@ for (const phone of [false, true]) {
         await creator.getByLabel('Custom writing format instructions', { exact: true }).fill('Use a YAML mapping with biography and voice keys.');
         await page.screenshot({ path: fileURLToPath(new URL(`../screenshots/catelier-custom-${phone ? 'phone' : 'desktop'}.png`, import.meta.url)) });
         await creator.locator('[data-creator-section="identity"]').click();
-        await expect(creator.getByRole('button', { name: 'Custom', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        await expect(creator.getByRole('radio', { name: 'Custom', exact: true })).toBeChecked();
         await expect(creator.getByLabel('Custom writing format instructions', { exact: true })).toHaveValue('Use a YAML mapping with biography and voice keys.');
         await creator.locator('[data-creator-section="instructions"]').click();
         await creator.getByLabel('Connection profile', { exact: true }).selectOption('durable');

@@ -659,23 +659,24 @@ body.neconyan #right-nav-panel.openDrawer[data-menu-type="creator"] #sb_characte
     color: var(--neco-ink);
 }
 
-#right-nav-panel #sb_character_creator_panel .creator-format-bar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-}
-
 #right-nav-panel #sb_character_creator_panel .creator-format-info {
     position: relative;
-    display: inline-flex;
+    display: flex;
     align-items: center;
-    gap: 4px;
+    min-width: 0;
+}
+
+#right-nav-panel #sb_character_creator_panel .creator-format-info > .creator-choice-pill {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-inline-end: 32px;
 }
 
 #right-nav-panel #sb_character_creator_panel .creator-info-btn {
-    position: relative;
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-end: 6px;
+    translate: 0 -50%;
     display: inline-grid;
     place-items: center;
     width: 20px;
@@ -695,7 +696,7 @@ body.neconyan #right-nav-panel.openDrawer[data-menu-type="creator"] #sb_characte
 #right-nav-panel #sb_character_creator_panel .creator-info-btn::before {
     content: '';
     position: absolute;
-    inset: -12px;
+    inset: -5px;
 }
 
 #right-nav-panel #sb_character_creator_panel .creator-info-btn:hover,
@@ -728,6 +729,7 @@ body.neconyan #right-nav-panel.openDrawer[data-menu-type="creator"] #sb_characte
     font-weight: 500;
     line-height: 1.4;
     text-align: start;
+    pointer-events: none;
 }
 
 #right-nav-panel #sb_character_creator_panel .creator-info-tip::before {
@@ -859,6 +861,8 @@ body.neconyan #right-nav-panel.openDrawer[data-menu-type="creator"] #sb_characte
 }
 
 #right-nav-panel #sb_character_creator_panel .creator-choice-grid--fields,
+#right-nav-panel #sb_character_creator_panel .creator-choice-grid--formats,
+#right-nav-panel #sb_character_creator_panel .creator-choice-grid--pair,
 #right-nav-panel #sb_character_creator_panel .creator-choice-grid--greetings,
 #right-nav-panel #sb_character_creator_panel .creator-choice-grid--disabled,
 #right-nav-panel #sb_character_creator_panel .creator-agent-grid {
@@ -870,6 +874,7 @@ body.neconyan #right-nav-panel.openDrawer[data-menu-type="creator"] #sb_characte
 
 @container (max-width: 290px) {
     #right-nav-panel #sb_character_creator_panel .creator-choice-grid--fields,
+    #right-nav-panel #sb_character_creator_panel .creator-choice-grid--formats,
     #right-nav-panel #sb_character_creator_panel .creator-choice-grid--greetings,
     #right-nav-panel #sb_character_creator_panel .creator-choice-grid--disabled,
     #right-nav-panel #sb_character_creator_panel .creator-agent-grid {
@@ -879,6 +884,7 @@ body.neconyan #right-nav-panel.openDrawer[data-menu-type="creator"] #sb_characte
 
 @container (min-width: 560px) {
     #right-nav-panel #sb_character_creator_panel .creator-choice-grid--fields,
+    #right-nav-panel #sb_character_creator_panel .creator-choice-grid--formats,
     #right-nav-panel #sb_character_creator_panel .creator-choice-grid--greetings,
     #right-nav-panel #sb_character_creator_panel .creator-choice-grid--disabled,
     #right-nav-panel #sb_character_creator_panel .creator-agent-grid {
@@ -1014,6 +1020,8 @@ body.neconyan #right-nav-panel.openDrawer[data-menu-type="creator"] #sb_characte
 }
 
 #right-nav-panel #sb_character_creator_panel .creator-choice-grid--fields .creator-choice-pill,
+#right-nav-panel #sb_character_creator_panel .creator-choice-grid--formats > .creator-choice-pill,
+#right-nav-panel #sb_character_creator_panel .creator-choice-grid--pair > .creator-choice-pill,
 #right-nav-panel #sb_character_creator_panel .creator-choice-grid--greetings .creator-choice-pill,
 #right-nav-panel #sb_character_creator_panel .creator-choice-grid--disabled .creator-choice-pill,
 #right-nav-panel #sb_character_creator_panel .creator-agent-grid .creator-choice-pill {

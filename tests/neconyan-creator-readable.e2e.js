@@ -12,8 +12,8 @@ for (const phone of [false, true]) {
         await creator.getByRole('button', { name: 'Create a character', exact: true }).click();
         await creator.getByRole('button', { name: 'Dossier', exact: true }).click();
         await creator.getByLabel('Character dossier', { exact: true }).fill('Moon Harbour is a sheltered port. Mira repairs ships there.');
-        await creator.getByRole('button', { name: 'purachina’s recommended', exact: true }).click();
-        await expect(creator.getByRole('button', { name: 'purachina’s recommended', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        await creator.getByRole('radio', { name: 'purachina’s recommended', exact: true }).check();
+        await expect(creator.getByRole('radio', { name: 'purachina’s recommended', exact: true })).toBeChecked();
         await page.screenshot({ path: `../screenshots/creator-readable-format-${phone ? 'phone' : 'desktop'}.png` });
         await creator.getByRole('button', { name: 'Lorebooks', exact: true }).click();
         await creator.getByLabel('Lorebook name', { exact: true }).fill('Places');
