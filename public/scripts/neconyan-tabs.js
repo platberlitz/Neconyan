@@ -176,7 +176,7 @@ const NN_PANEL_STYLESHEETS = Object.freeze({
         { href: 'css/neconyan-tool-pages.css?v=20261026a-qig-tabs', id: 'deferred-tool-pages-css' },
     ],
     'characters:creator': [
-        { href: 'css/neconyan-creator.css?v=20261103-catelier-selectors', id: 'deferred-creator-css' },
+        { href: 'css/neconyan-creator.css?v=20261103-agents-connections-redesign', id: 'deferred-creator-css' },
     ],
     'left:api': [
         { href: 'css/neconyan-tool-pages.css?v=20261026a-qig-tabs', id: 'deferred-tool-pages-css' },
@@ -523,7 +523,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261103-catelier-selectors';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261103-agents-connections-redesign';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',

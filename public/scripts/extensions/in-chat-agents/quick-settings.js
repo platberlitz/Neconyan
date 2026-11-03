@@ -43,7 +43,10 @@ function addReferenceChecklist(root, agent, field, title, help, onSelect = () =>
         id: candidate.id, label: candidate.name,
         values: saved.filter(id => getCompanionReferenceIds(candidate).includes(id)),
         checked: getCompanionReferenceIds(candidate).some(id => selected.has(id)),
-    }));
+    })).sort((a, b) => {
+        if (a.checked !== b.checked) return a.checked ? -1 : 1;
+        return a.label.localeCompare(b.label);
+    });
     for (const id of saved.filter(id => !available.has(id))) {
         options.push({ id, label: `Unavailable: ${id}`, values: [id], checked: true });
     }
@@ -53,13 +56,19 @@ function addReferenceChecklist(root, agent, field, title, help, onSelect = () =>
         <div class="ica--link-options"></div><small role="status"></small></fieldset>`);
     const list = section.find('.ica--link-options');
     for (const option of options) {
-        const row = $('<label class="checkbox_label"></label>');
+        const row = $('<label class="checkbox_label ica--link-option"></label>').toggleClass('is-selected', Boolean(option.checked));
         const input = $('<input type="checkbox">').attr('data-link-field', field).val(option.id).prop('checked', option.checked);
         input.data('referenceValues', option.values.length ? option.values : [option.id]);
         row.append(input, $('<span>').text(option.label));
         list.append(row);
     }
-    const update = () => section.find('[role="status"]').text(`${list.find('input:checked').length} selected`);
+    const update = () => {
+        list.children().each((_, row) => {
+            const input = row.querySelector('input[type="checkbox"]');
+            row.classList.toggle('is-selected', Boolean(input?.checked));
+        });
+        section.find('[role="status"]').text(`${list.find('input:checked').length} selected`);
+    };
     section.find('input[type="search"]').on('input', function () {
         const query = this.value.toLowerCase();
         list.children().each((_, row) => { row.hidden = !row.textContent.toLowerCase().includes(query); });

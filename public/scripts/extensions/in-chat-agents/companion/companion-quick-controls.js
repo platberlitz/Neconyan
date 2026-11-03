@@ -10,6 +10,9 @@ export const COMPANION_QUICK_LINKS = Object.freeze([
 ]);
 
 const openLinkPanels = new Set();
+const activeCompanionLinkTab = new Map();
+const companionLinkSearch = new Map();
+const companionLinkSelectedOnly = new Set();
 
 export function isCompanionLinksOpen(scope, agentId) {
     return openLinkPanels.has(`${scope}:${agentId}`);
@@ -17,8 +20,26 @@ export function isCompanionLinksOpen(scope, agentId) {
 
 export function setCompanionLinksOpen(scope, agentId, open) {
     const key = `${scope}:${agentId}`;
-    if (open) openLinkPanels.add(key);
-    else openLinkPanels.delete(key);
+    if (open) {
+        openLinkPanels.add(key);
+    } else {
+        openLinkPanels.delete(key);
+        activeCompanionLinkTab.delete(key);
+        companionLinkSearch.delete(key);
+        companionLinkSelectedOnly.delete(key);
+    }
+}
+
+export function getActiveCompanionLinkField(scope, agentId) {
+    const field = activeCompanionLinkTab.get(`${scope}:${agentId}`);
+    return COMPANION_QUICK_LINKS.some(item => item.field === field)
+        ? field
+        : COMPANION_QUICK_LINKS[0].field;
+}
+
+export function setActiveCompanionLinkField(scope, agentId, field) {
+    if (!agentId || !COMPANION_QUICK_LINKS.some(item => item.field === field)) return;
+    activeCompanionLinkTab.set(`${scope}:${agentId}`, field);
 }
 
 function getOtherCompanions(agent) {
@@ -85,29 +106,108 @@ export function applyCompanionQuickChange(agent, change) {
  * times, so a closed panel leaves them out and {@link bindCompanionQuickControls} fills them in when
  * it opens.
  */
-export function buildCompanionQuickGroupsHtml(agent, companions = getOtherCompanions(agent)) {
+export function buildCompanionQuickGroupsHtml(agent, companions = getOtherCompanions(agent), { scope = 'card' } = {}) {
     if (!companions.length) return '<p class="ica--companion-quick-help">Make another agent a companion to connect them.</p>';
     const config = getCompanionConfig(agent);
-    return COMPANION_QUICK_LINKS.map(({ field, title, help }) => {
+    const key = `${scope}:${agent?.id ?? ''}`;
+    const activeField = getActiveCompanionLinkField(scope, agent?.id);
+    const searchQuery = companionLinkSearch.get(key) ?? '';
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    const selectedOnly = companionLinkSelectedOnly.has(key);
+    const countsByField = new Map(COMPANION_QUICK_LINKS.map(({ field }) => {
         const ids = new Set(config[field] ?? []);
+        const count = companions.filter(candidate => isLinked(ids, candidate)).length;
+        return [field, count];
+    }));
+    const tabButtonsHtml = COMPANION_QUICK_LINKS.map(({ field, title }) => {
+        const count = countsByField.get(field) ?? 0;
+        const active = field === activeField;
+        return `<button type="button" class="ica--companion-quick-tab${active ? ' is-active' : ''}${count > 0 ? ' has-links' : ''}" data-quick-tab="${field}" aria-pressed="${active ? 'true' : 'false'}"><span class="ica--companion-quick-tab-label">${title}</span><span class="ica--companion-quick-count">${count}</span></button>`;
+    }).join('');
+    const tabsHtml = `
+        <div class="ica--companion-quick-tabs" role="group" aria-label="Connection type">
+            ${tabButtonsHtml}
+        </div>`;
+    const toolbarHtml = companions.length > 1 ? `
+        <div class="ica--companion-quick-toolbar">
+            <label class="ica--companion-quick-search">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                <input type="search" class="text_pole" placeholder="Filter companions..." value="${escapeHtml(searchQuery)}" data-quick-search aria-label="Filter companions">
+            </label>
+            <button type="button" class="ica--companion-quick-filter${selectedOnly ? ' is-active' : ''}" data-quick-selected-only aria-pressed="${selectedOnly ? 'true' : 'false'}" title="Show only connected companions in this tab">
+                <span>Connected</span>
+            </button>
+        </div>` : '';
+    const groupsHtml = COMPANION_QUICK_LINKS.map(({ field, title, help }) => {
+        const ids = new Set(config[field] ?? []);
+        const active = field === activeField;
+        const sortedCompanions = [...companions].sort((a, b) => {
+            const aLinked = isLinked(ids, a);
+            const bLinked = isLinked(ids, b);
+            if (aLinked !== bLinked) return aLinked ? -1 : 1;
+            return a.name.localeCompare(b.name);
+        });
+        let visibleCount = 0;
+        const optionsHtml = sortedCompanions.map(candidate => {
+            const linked = isLinked(ids, candidate);
+            const matchesQuery = !normalizedQuery || candidate.name.toLowerCase().includes(normalizedQuery);
+            const matchesSelected = !selectedOnly || linked;
+            const visible = matchesQuery && matchesSelected;
+            if (visible) visibleCount += 1;
+            return `<label class="checkbox_label ica--companion-quick-option${linked ? ' is-selected' : ''}" data-candidate-name="${escapeHtml(candidate.name.toLowerCase())}"${visible ? '' : ' hidden'}><input type="checkbox" data-quick-link="${field}" data-candidate-id="${escapeHtml(candidate.id)}"${linked ? ' checked' : ''}><span>${escapeHtml(candidate.name)}</span></label>`;
+        }).join('');
+        const emptyText = selectedOnly && !normalizedQuery
+            ? 'No connected companions in this tab yet.'
+            : 'No matching companions.';
         return `
-            <fieldset class="ica--companion-quick-group">
+            <fieldset class="ica--companion-quick-group" data-quick-group="${field}"${active ? '' : ' hidden'}>
                 <legend>${title}</legend>
                 <p class="ica--companion-quick-help">${help}</p>
                 <div class="ica--companion-quick-options">
-                    ${companions.map(candidate => `<label class="checkbox_label"><input type="checkbox" data-quick-link="${field}" data-candidate-id="${escapeHtml(candidate.id)}"${isLinked(ids, candidate) ? ' checked' : ''}><span>${escapeHtml(candidate.name)}</span></label>`).join('')}
+                    ${optionsHtml}
                 </div>
+                <p class="ica--companion-quick-empty" data-quick-empty${visibleCount === 0 ? '' : ' hidden'}>${emptyText}</p>
             </fieldset>`;
     }).join('');
+    return `${tabsHtml}${toolbarHtml}${groupsHtml}`;
 }
 
-function fillCompanionQuickGroups(details) {
+function applyCompanionQuickFilter(container, scope, agentId) {
+    if (!container || !agentId) return;
+    const key = `${scope}:${agentId}`;
+    const normalizedQuery = (companionLinkSearch.get(key) ?? '').trim().toLowerCase();
+    const selectedOnly = companionLinkSelectedOnly.has(key);
+    const emptyText = selectedOnly && !normalizedQuery
+        ? 'No connected companions in this tab yet.'
+        : 'No matching companions.';
+    container.querySelectorAll('[data-quick-group]').forEach(group => {
+        let visibleCount = 0;
+        group.querySelectorAll('.ica--companion-quick-option').forEach(option => {
+            const name = option.getAttribute('data-candidate-name') ?? option.textContent?.toLowerCase() ?? '';
+            const input = option.querySelector('input[type="checkbox"]');
+            const checked = Boolean(input?.checked);
+            option.classList.toggle('is-selected', checked);
+            const matchesQuery = !normalizedQuery || name.includes(normalizedQuery);
+            const matchesSelected = !selectedOnly || checked;
+            const visible = matchesQuery && matchesSelected;
+            option.hidden = !visible;
+            if (visible) visibleCount += 1;
+        });
+        const emptyEl = group.querySelector('[data-quick-empty]');
+        if (emptyEl) {
+            emptyEl.textContent = emptyText;
+            emptyEl.hidden = visibleCount > 0;
+        }
+    });
+}
+
+function fillCompanionQuickGroups(details, scope = 'card') {
     const groups = details?.querySelector(':scope > .ica--companion-quick-groups[data-quick-groups-pending]');
     if (!groups) return;
     const agentId = details.closest('[data-companion-quick]')?.getAttribute('data-companion-quick');
     const agent = getAgents().find(item => item.id === agentId);
     if (!agent) return;
-    groups.innerHTML = buildCompanionQuickGroupsHtml(agent);
+    groups.innerHTML = buildCompanionQuickGroupsHtml(agent, getOtherCompanions(agent), { scope });
     groups.removeAttribute('data-quick-groups-pending');
 }
 
@@ -123,8 +223,10 @@ export function buildCompanionQuickControlsHtml(agent, { scope = 'card' } = {}) 
     const name = escapeHtml(agent.name);
     const depth = config.includeAllChatHistory ? '' : String(config.chatHistoryDepth);
     const open = isCompanionLinksOpen(scope, agent.id);
+    const summaryText = describeCompanionLinks(agent, companions);
+    const isConnected = summaryText !== 'Not connected' && summaryText !== 'No other companions yet';
     const groups = open
-        ? `<div class="ica--companion-quick-groups">${buildCompanionQuickGroupsHtml(agent, companions)}</div>`
+        ? `<div class="ica--companion-quick-groups">${buildCompanionQuickGroupsHtml(agent, companions, { scope })}</div>`
         : '<div class="ica--companion-quick-groups" data-quick-groups-pending></div>';
     return `
         <div class="ica--companion-quick" data-companion-quick="${id}">
@@ -138,8 +240,8 @@ export function buildCompanionQuickControlsHtml(agent, { scope = 'card' } = {}) 
                     <span>notes</span>
                 </label>
             </div>
-            <details class="ica--companion-quick-links"${open ? ' open' : ''}>
-                <summary><i class="fa-solid fa-link" aria-hidden="true"></i><span>Connections</span><small>${escapeHtml(describeCompanionLinks(agent, companions))}</small></summary>
+            <details class="ica--companion-quick-links"${open ? ' open' : ''}${isConnected ? ' data-connected="true"' : ''}>
+                <summary><i class="fa-solid fa-link" aria-hidden="true"></i><span>Connections</span><small>${escapeHtml(summaryText)}</small></summary>
                 ${groups}
                 ${companions.length ? '<button type="button" class="menu_button ica--companion-quick-more" data-quick-more>More connection options</button>' : ''}
             </details>
@@ -168,6 +270,9 @@ export function readCompanionQuickChange(target) {
 export function getCompanionQuickControlSelector(target) {
     if (target.matches('[data-quick-keep]')) return '[data-quick-keep]';
     if (target.matches('[data-quick-depth]')) return '[data-quick-depth]';
+    if (target.matches('[data-quick-search]')) return '[data-quick-search]';
+    if (target.matches('[data-quick-selected-only]')) return '[data-quick-selected-only]';
+    if (target.matches('[data-quick-tab]')) return `[data-quick-tab="${target.dataset.quickTab}"]`;
     if (target.matches('[data-quick-link]')) return `[data-quick-link="${target.dataset.quickLink}"][data-candidate-id="${CSS.escape(target.dataset.candidateId)}"]`;
     return '';
 }
@@ -185,18 +290,78 @@ export function bindCompanionQuickControls(root, { scope, save, openMore, getRoo
         if (!(details instanceof HTMLDetailsElement) || !details.matches('.ica--companion-quick-links')) return;
         const agentId = details.closest('[data-companion-quick]')?.getAttribute('data-companion-quick');
         if (agentId) setCompanionLinksOpen(scope, agentId, details.open);
-        if (details.open) fillCompanionQuickGroups(details);
+        if (details.open) fillCompanionQuickGroups(details, scope);
     }, true);
     // Fill the groups before the summary opens the panel, so it never paints empty.
     root.addEventListener('click', event => {
         const summary = event.target instanceof Element ? event.target.closest('.ica--companion-quick-links > summary') : null;
-        if (summary) fillCompanionQuickGroups(summary.parentElement);
+        if (summary) fillCompanionQuickGroups(summary.parentElement, scope);
     }, true);
     root.addEventListener('click', async event => {
-        const button = event.target instanceof Element ? event.target.closest('[data-quick-more]') : null;
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target) return;
+        const tabButton = target.closest('[data-quick-tab]');
+        if (tabButton) {
+            const container = tabButton.closest('[data-companion-quick]');
+            const agentId = container?.getAttribute('data-companion-quick');
+            const field = tabButton.getAttribute('data-quick-tab');
+            if (!container || !agentId || !field) return;
+            setActiveCompanionLinkField(scope, agentId, field);
+            container.querySelectorAll('[data-quick-tab]').forEach(btn => {
+                const active = btn.getAttribute('data-quick-tab') === field;
+                btn.classList.toggle('is-active', active);
+                btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+            });
+            container.querySelectorAll('[data-quick-group]').forEach(group => {
+                group.hidden = group.getAttribute('data-quick-group') !== field;
+            });
+            return;
+        }
+        const filterButton = target.closest('[data-quick-selected-only]');
+        if (filterButton) {
+            const container = filterButton.closest('[data-companion-quick]');
+            const agentId = container?.getAttribute('data-companion-quick');
+            if (!container || !agentId) return;
+            const key = `${scope}:${agentId}`;
+            const nextActive = !companionLinkSelectedOnly.has(key);
+            if (nextActive) companionLinkSelectedOnly.add(key);
+            else companionLinkSelectedOnly.delete(key);
+            filterButton.classList.toggle('is-active', nextActive);
+            filterButton.setAttribute('aria-pressed', nextActive ? 'true' : 'false');
+            applyCompanionQuickFilter(container, scope, agentId);
+            return;
+        }
+        const button = target.closest('[data-quick-more]');
         const agentId = button?.closest('[data-companion-quick]')?.getAttribute('data-companion-quick');
         if (!agentId) return;
         await openMore?.(agentId);
+    });
+    root.addEventListener('input', event => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement) || !target.matches('[data-quick-search]')) return;
+        const container = target.closest('[data-companion-quick]');
+        const agentId = container?.getAttribute('data-companion-quick');
+        if (!container || !agentId) return;
+        event.stopPropagation();
+        const key = `${scope}:${agentId}`;
+        if (target.value) companionLinkSearch.set(key, target.value);
+        else companionLinkSearch.delete(key);
+        applyCompanionQuickFilter(container, scope, agentId);
+    });
+    root.addEventListener('keydown', event => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement) || !target.matches('[data-quick-search]')) return;
+        if (event.key === 'Escape' && target.value) {
+            event.preventDefault();
+            event.stopPropagation();
+            target.value = '';
+            const container = target.closest('[data-companion-quick]');
+            const agentId = container?.getAttribute('data-companion-quick');
+            if (container && agentId) {
+                companionLinkSearch.delete(`${scope}:${agentId}`);
+                applyCompanionQuickFilter(container, scope, agentId);
+            }
+        }
     });
     root.addEventListener('change', async event => {
         const target = event.target;
@@ -212,6 +377,9 @@ export function bindCompanionQuickControls(root, { scope, save, openMore, getRoo
             return;
         }
         const selector = getCompanionQuickControlSelector(target);
+        const optionsEl = target instanceof Element ? target.closest('.ica--companion-quick-options') : null;
+        const savedScrollTop = optionsEl ? optionsEl.scrollTop : 0;
+        const activeGroupField = target instanceof Element ? (target.closest('[data-quick-group]')?.getAttribute('data-quick-group') || '') : '';
         container.querySelectorAll('input').forEach(input => { input.disabled = true; });
         try {
             await save(agentId, draft);
@@ -221,6 +389,10 @@ export function bindCompanionQuickControls(root, { scope, save, openMore, getRoo
             container.querySelectorAll('input').forEach(input => { input.disabled = false; });
             const rendered = [...getRoot().querySelectorAll('[data-companion-quick]')]
                 .find(element => element.getAttribute('data-companion-quick') === agentId);
+            if (rendered && activeGroupField && savedScrollTop > 0) {
+                const nextOptionsEl = rendered.querySelector(`[data-quick-group="${activeGroupField}"] .ica--companion-quick-options`);
+                if (nextOptionsEl) nextOptionsEl.scrollTop = savedScrollTop;
+            }
             const control = selector ? rendered?.querySelector(selector) : null;
             if (control instanceof HTMLElement) control.focus({ preventScroll: true });
         }
