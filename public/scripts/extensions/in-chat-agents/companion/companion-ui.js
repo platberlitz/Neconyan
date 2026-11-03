@@ -1,6 +1,7 @@
 import { DOMPurify, showdown } from '../../../../lib.js';
-import { chat, changeMessageBelowReader, changeMessagesBelowReader, runWhenChatScrollSettles, saveChatDebounced, substituteParams, substituteParamsExtended } from '../../../../script.js';
+import { chat, characters, this_chid, changeMessageBelowReader, changeMessagesBelowReader, runWhenChatScrollSettles, saveChatDebounced, substituteParams, substituteParamsExtended } from '../../../../script.js';
 import { encodeStyleTags, decodeStyleTags } from '../../../chats.js';
+import { bindPortraitUrls } from '../../../portrait-urls.js';
 import { eventSource, event_types } from '../../../events.js';
 import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../popup.js';
 import { escapeHtml } from '../../../utils.js';
@@ -180,6 +181,21 @@ function applyAgentRegexToCompanionContent(agentId, content, message) {
     }));
 }
 
+function getCompanionPortraitCharacter(message) {
+    // Assistant messages carry the speaking card's file identity, including group members.
+    if (message && !message.is_user && message.original_avatar) {
+        return { name: message.name, avatar: message.original_avatar };
+    }
+
+    const current = characters?.[this_chid];
+    const messageName = String(message?.name ?? '').trim();
+    if (!messageName || current?.name === messageName) {
+        return current;
+    }
+
+    return characters?.find(character => character?.name === messageName) ?? current;
+}
+
 export function formatCompanionContent(agentId, result = {}, message = null, stylePrefix = '.ica--companion-body ') {
     const rawContent = String(result.content ?? '').trim();
     if (isSuppressedCompanionResult(agentId, result)) {
@@ -193,16 +209,18 @@ export function formatCompanionContent(agentId, result = {}, message = null, sty
     const content = applyAgentRegexToCompanionContent(agentId, stripTrackerMandatoryMarkers(rawContent), message);
     const resolved = resolveCompanionContentMacros(content, message);
     const sanitizeOptions = { prefix: stylePrefix };
+    const portraitCharacter = getCompanionPortraitCharacter(message);
+    const bindPortraits = html => bindPortraitUrls(html, portraitCharacter);
 
     if (result.format === 'html') {
-        return decorateChoiceLines(sanitizeCompanionHtml(resolved, sanitizeOptions));
+        return decorateChoiceLines(sanitizeCompanionHtml(bindPortraits(resolved), sanitizeOptions));
     }
 
     if (result.format === 'text') {
         return `<pre class="ica--companion-text">${escapeHtml(resolved)}</pre>`;
     }
 
-    return decorateChoiceLines(sanitizeCompanionHtml(getMarkdownConverter().makeHtml(resolved), sanitizeOptions));
+    return decorateChoiceLines(sanitizeCompanionHtml(bindPortraits(getMarkdownConverter().makeHtml(resolved)), sanitizeOptions));
 }
 
 function getResultStatus(result = {}) {

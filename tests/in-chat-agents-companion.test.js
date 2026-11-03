@@ -29,6 +29,8 @@ function createEventSource() {
 
 describe('companion card ui', () => {
     let chat;
+    let characters;
+    let this_chid;
     let eventSource;
     let eventTypes;
     let agents;
@@ -69,6 +71,8 @@ describe('companion card ui', () => {
 
         await jest.unstable_mockModule('../public/script.js', () => ({
             chat,
+            characters,
+            this_chid,
             changeMessageBelowReader: jest.fn((_element, mutate) => mutate()),
             changeMessagesBelowReader: (batchReaderChange = jest.fn((_elements, mutate) => mutate())),
             runWhenChatScrollSettles: (settleScroll = jest.fn(callback => callback())),
@@ -147,6 +151,8 @@ describe('companion card ui', () => {
 
     beforeEach(() => {
         chat = [];
+        characters = [];
+        this_chid = undefined;
         powerUser = { timestamp_model_name_short: false };
         eventSource = createEventSource();
         eventTypes = {
@@ -407,6 +413,22 @@ describe('companion card ui', () => {
 
         expect(html).toBe('<div class="status">calm</div>');
         expect(sanitize).toHaveBeenCalledWith('<div class="status">calm</div>', expect.anything());
+    });
+
+    test('adds the character file identity to tracker portraits in companion notes', async () => {
+        characters = [{ name: 'Mimi', avatar: 'Creator-4fccd42c-4b4a-478b-a0d6-be7f54c7249a.png' }];
+        this_chid = '0';
+        const { formatCompanionContent } = await importCompanionUi();
+        const portrait = '<span class="portrait" style="background:url(&quot;/thumbnail/portrait?name=Mimi&amp;char=Mimi&quot;)">M</span>';
+
+        for (const [format, message] of [
+            ['markdown', { name: 'Mimi', is_user: false, original_avatar: characters[0].avatar }],
+            ['html', { name: 'Mimi', is_user: false, original_avatar: characters[0].avatar }],
+            ['markdown', { name: 'Mimi', is_user: false }],
+        ]) {
+            const html = formatCompanionContent('companion-tracker', { content: portrait, format }, message);
+            expect(html).toContain('avatar=Creator-4fccd42c-4b4a-478b-a0d6-be7f54c7249a.png');
+        }
     });
 
     test('resolves companion output macros with the source message context', async () => {

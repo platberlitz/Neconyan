@@ -897,12 +897,17 @@ test('completion discovered before replacement keeps the result and requires ano
     assert.equal(readLabRecord(f.base, f.body.key).result.proposals.length, 2);
 });
 
-test('count pruning and expiry preserve distillation outcome classification before history disappears', async () => {
+test('count pruning and expiry preserve distillation outcome classification before history disappears', async (t) => {
+    const now = Date.now();
+    t.mock.method(Date, 'now', () => now);
     for (const expiry of [false, true]) {
         const f = fixture(), old = await acceptLabJob(f.request, f.body);
         updateJob(f.base.directories, old.job.id, { state: 'failed', dismissed: !expiry, finishedAt: Date.now() - (expiry ? JOB_FAILURE_RETENTION_MS + 1000 : 1000) });
         const seed = acceptJob(f.base.directories, { owner: f.base.owner, type: 'fixture.test', submissionKey: 'seed', intent: {} }).job;
         mutateJobs(f.base.directories, store => {
+            // Count pruning orders by updatedAt, not finishedAt. Keep the old job
+            // strictly older even when every fixture write shares a millisecond.
+            store.jobs[jobKey(old.job.id)].updatedAt = now - 1000;
             for (let index = 0; index < JOB_LIMIT + 2; index++) {
                 const job = { ...seed, id: `fixture-${index}`, state: 'completed', updatedAt: Date.now(), finishedAt: Date.now() };
                 store.jobs[jobKey(job.id)] = job;
