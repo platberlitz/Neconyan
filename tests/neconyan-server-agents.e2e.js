@@ -97,6 +97,60 @@ async function reopen(account, name, info) {
 
 for (const phone of [false, true]) {
     const viewport = phone ? 'phone' : 'desktop';
+    test(`${viewport} thinking-only replies recover automatically and on manual retry`, async ({ app, browser }, info) => {
+        app.provider.mode.reply = () => completed('She opens the door and smiles.');
+        const account = await app.account({ phone, activeConnection: true, configureSettings: settings => {
+            settings.extension_settings.inChatAgents = { globalSettings: { enabled: true } };
+        } });
+        await account.open({ workspace: false });
+        await noPages(browser);
+        const native = accountScope(app);
+        withRoleplayAccount(native.base, native.account, lease => {
+            writeAgentRecordLocked(lease, 'agent', { id: 'recover', sourceTemplateId: 'tpl-thinking-reply-recovery',
+                name: 'Thinking Reply Recovery', enabled: true, category: 'content', phase: 'post', prompt: 'RECOVER from the completed thinking.',
+                postProcess: { promptTransformEnabled: true, promptTransformMaxTokens: 256 },
+                conditions: { generationTypes: ['normal', 'continue'], triggerProbability: 100 } });
+        });
+        const locator = await chat(account, 'Thinking recovery');
+        const page = await reopen(account, locator.chat, info);
+        await page.setViewportSize(phone ? { width: 393, height: 852 } : { width: 1280, height: 900 });
+        await page.evaluate(async () => {
+            const core = await import('/script.js');
+            const message = core.chat[0];
+            message.mes = '';
+            message.swipes[0] = '';
+            message.extra = { reasoning: 'Open the door and greet the visitor.',
+                generation_outcome: { version: 1, status: 'error', reason: 'reasoning_only' } };
+            core.updateMessageBlock(0, message);
+            await core.saveChatConditional();
+        });
+        const screenshots = path.resolve('..', 'screenshots');
+        fs.mkdirSync(screenshots, { recursive: true });
+        await page.screenshot({ path: path.join(screenshots, `thinking-recovery-${viewport}-before.png`) });
+        const manual = await page.evaluate(async () => (await import('/scripts/extensions/in-chat-agents/agent-runner.js')).runAgentOnMessage('recover', 0));
+        expect(manual.changed).toBe(true);
+        await expect(page.locator('.mes[mesid="0"] .mes_text')).toContainText('She opens the door and smiles.');
+        await page.screenshot({ path: path.join(screenshots, `thinking-recovery-${viewport}-after.png`) });
+        const automatic = await page.evaluate(async () => {
+            const core = await import('/script.js');
+            const runner = await import('/scripts/extensions/in-chat-agents/agent-runner.js');
+            const { event_types } = await import('/scripts/events.js');
+            await core.eventSource.emit(event_types.GENERATION_STARTED, 'normal', {}, false);
+            await core.eventSource.emit(event_types.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
+            const message = { name: 'Durable Nova', mes: '', is_user: false, extra: {
+                reasoning: 'Open the door and greet the visitor.', generation_outcome: { version: 1, status: 'error', reason: 'reasoning_only' },
+            } };
+            core.chat.push(message);
+            core.addOneMessage(message);
+            (await import('/scripts/stream-completion.js')).markStreamCompleted(message);
+            await core.eventSource.emit(event_types.MESSAGE_RECEIVED, core.chat.length - 1, 'normal', runner.getAgentGenerationContext());
+            return { text: message.mes, outcome: message.extra.generation_outcome, recovery: message.extra.inChatAgentThinkingRecovery };
+        });
+        expect(automatic.text).toBe('She opens the door and smiles.');
+        expect(automatic.outcome).toBeUndefined();
+        expect(automatic.recovery.status).toBe('done');
+    });
+
     test(`${viewport} parallel reply passes overlap over HTTP and publish one combined reply`, async ({ app, browser }, info) => {
         const original = 'The lantern flickers beside the open door.';
         const combined = 'The lantern gutters beside the open oak door.';
