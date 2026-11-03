@@ -2,6 +2,7 @@ import { buildDossierRequest } from './dossier.js';
 import { creatorProposal, creatorTextValue, validCreatorProposalValue } from './model.js';
 import { creatorTargetsSignature, creatorTargetValue } from './formats.js';
 import { creatorGuidance } from './guidance.js';
+import { resolveCreatorAnswers } from './questions.js';
 
 export function creatorWritingSteps(draft, fields, alternateCount = Number(creatorTargetValue(draft.writing?.targets, 'greetingCount')) - 1) {
     const steps = [];
@@ -21,16 +22,14 @@ export function startCreatorConversion(draft, fields) {
 
 export function startCreatorWriting(draft, request, label) {
     const before = Object.fromEntries(request.fields.map(field => [field, structuredClone(field === 'alternate_greetings' ? draft.card.data[field] ?? [] : creatorTextValue(draft, field))]));
-    return { ...creatorProposal(draft, {}, label), formatBefore: draft.style, targetsBefore: creatorTargetsSignature(draft), questions: [], coverage: [], answers: {}, plan: { before, steps: creatorWritingSteps(draft, request.fields), next: 0, system: request.messages[0].content, source: JSON.parse(request.messages[1].content) } };
+    return { ...creatorProposal(draft, {}, label), formatBefore: draft.style, targetsBefore: creatorTargetsSignature(draft), questions: [], coverage: [], answers: {}, plan: { phase: draft.writing?.askQuestionsFirst === true ? 'questions' : 'writing', before, steps: creatorWritingSteps(draft, request.fields), next: 0, system: request.messages[0].content, source: JSON.parse(request.messages[1].content) } };
 }
 
 export function reviseCreatorConversion(draft, proposal) {
     const answered = Object.entries(proposal.answers ?? {}).filter(([, value]) => value.trim());
     if (!answered.length && !proposal.note?.trim()) throw new Error('Answer a question or describe a change first.');
     const next = structuredClone(proposal);
-    next.resolved = [...(next.resolved ?? []), ...answered.map(([question, answer]) => ({ question, answer }))];
-    next.questions = (next.questions ?? []).filter(question => !answered.some(([key]) => key === question));
-    next.answers = {};
+    resolveCreatorAnswers(next);
     const fields = next.changes.length ? next.changes.map(change => change.field) : [...new Set(next.plan?.steps.flatMap(step => step.fields) ?? [])];
     next.plan = { before: next.plan?.before, source: next.plan?.source, steps: creatorWritingSteps(draft, fields, next.changes.find(change => change.field === 'alternate_greetings')?.after.length), next: 0, system: `Revise the proposed character fields using the author's answers and revision note. Preserve unaffected facts and prose. Answers settle earlier questions; do not ask them again. Return JSON with fields, questions and coverage. Only write requested fields.\n${creatorGuidance(draft)}` };
     if (!next.plan.steps.length) throw new Error('There are no proposed fields left to revise.');
@@ -38,6 +37,7 @@ export function reviseCreatorConversion(draft, proposal) {
 }
 
 export function creatorStepMessages(draft, proposal) {
+    if (['questions', 'answers'].includes(proposal.plan.phase)) throw new Error('Choose Generate after reviewing the questions.');
     const step = proposal.plan.steps[proposal.plan.next];
     const existingFields = Object.fromEntries(step.fields.map(field => [field, field === 'alternate_greetings' ? draft.card.data[field] ?? [] : creatorTextValue(draft, field)]));
     return [
@@ -47,6 +47,7 @@ export function creatorStepMessages(draft, proposal) {
 }
 
 export function mergeCreatorStep(draft, proposal, output) {
+    if (['questions', 'answers'].includes(proposal.plan.phase)) throw new Error('Choose Generate after reviewing the questions.');
     let result;
     try { result = JSON.parse(String(output).trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/, '$1')); } catch { throw new Error('This step returned incomplete text. Continue writing to retry it; finished steps are saved.'); }
     if (!result?.fields || typeof result.fields !== 'object' || Array.isArray(result.fields)) throw new Error('This step returned no fields. Continue writing to retry it.');

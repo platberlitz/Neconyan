@@ -188,7 +188,7 @@ export function renderCreatorFormat(workspace, main) {
             const proposal = startCreatorWriting(source, request, `${CREATOR_FORMATS[source.style]?.label || 'Natural description'} conversion`);
             if (!workspace.edit(next => { next.proposals.push(proposal); })) return;
             await workspace.continueWriting(proposal.id, controller.signal);
-            feedback.textContent = 'Conversion ready for review.';
+            feedback.textContent = workspace.message;
         } catch (error) {
             feedback.hidden = false;
             feedback.textContent = error?.message || String(error);

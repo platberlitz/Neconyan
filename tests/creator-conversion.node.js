@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createCreatorDraft, acceptCreatorProposal } from '../public/scripts/creator/model.js';
 import { startCreatorConversion, mergeCreatorStep, creatorStepMessages, reviseCreatorConversion } from '../public/scripts/creator/conversion.js';
+import { creatorQuestionMessages, mergeCreatorQuestions, generateCreatorProposal } from '../public/scripts/creator/questions.js';
 
 test('conversion keeps completed fields and resumes exactly the failed step', () => {
     const draft = createCreatorDraft({ id: 'steps', card: { data: {} } });
@@ -51,4 +52,53 @@ test('greetings are written one per request and keep earlier greetings', () => {
     proposal = mergeCreatorStep(draft, proposal, JSON.stringify({ fields: { alternate_greetings: ['D'] } }));
     assert.deepEqual(proposal.changes[1].after, ['A', 'B', 'C', 'D']);
     assert.equal(proposal.plan.next, 5);
+});
+
+test('questions first waits for Generate, carries answers into every step and supports follow-up revision', () => {
+    const draft = createCreatorDraft({ id: 'questions', card: { data: {} } });
+    draft.dossier = 'A shipwright.';
+    draft.writing = { askQuestionsFirst: true };
+    let proposal = startCreatorConversion(draft, ['name', 'description']);
+    assert.equal(proposal.plan.phase, 'questions');
+    assert.deepEqual(JSON.parse(creatorQuestionMessages(proposal)[1].content).requestedFields, ['name', 'description']);
+    assert.throws(() => creatorStepMessages(draft, proposal), /Generate/);
+    assert.throws(() => generateCreatorProposal(proposal), /questions/);
+    proposal = mergeCreatorQuestions(proposal, JSON.stringify({ questions: ['Where does she work?', 'Where does she work?'], fields: { name: 'Ignore premature writing' } }));
+    assert.equal(proposal.plan.phase, 'answers');
+    assert.equal(proposal.plan.next, 0);
+    assert.deepEqual(proposal.changes, []);
+    assert.deepEqual(proposal.questions, ['Where does she work?']);
+    assert.throws(() => mergeCreatorStep(draft, proposal, '{"fields":{"name":"Too early"}}'), /Generate/);
+    proposal = JSON.parse(JSON.stringify(proposal));
+    proposal.answers = { 'Where does she work?': 'Northern docks' };
+    proposal = generateCreatorProposal(proposal);
+    assert.deepEqual(proposal.questions, []);
+    assert.deepEqual(proposal.answers, {});
+    for (const field of ['name', 'description']) {
+        assert.equal(JSON.parse(creatorStepMessages(draft, proposal)[1].content).answers[0].answer, 'Northern docks');
+        proposal = mergeCreatorStep(draft, proposal, JSON.stringify({ fields: { [field]: 'Mira' }, questions: ['Where does she work?', 'Who taught her?'] }));
+    }
+    assert.deepEqual(proposal.questions, ['Who taught her?']);
+    proposal.answers = { 'Who taught her?': 'Her aunt' };
+    const revised = reviseCreatorConversion(draft, proposal);
+    assert.equal(JSON.parse(creatorStepMessages(draft, revised)[1].content).answers[1].answer, 'Her aunt');
+});
+
+test('questions first can retry malformed replies and generate without answers', () => {
+    const draft = createCreatorDraft({ id: 'retry-questions', card: { data: {} } });
+    draft.dossier = 'A shipwright.';
+    draft.writing = { askQuestionsFirst: true };
+    const pending = startCreatorConversion(draft, ['description']);
+    for (const output of ['broken', '{}', '{"questions":[42]}', '{"questions":"Where?"}', JSON.stringify({ questions: ['x'.repeat(10001)] })]) {
+        assert.throws(() => mergeCreatorQuestions(pending, output), /questions/i);
+        assert.equal(pending.plan.phase, 'questions');
+    }
+    for (const questions of [[], ['Where does she work?']]) {
+        const ready = mergeCreatorQuestions(pending, JSON.stringify({ questions }));
+        assert.throws(() => creatorStepMessages(draft, ready), /Generate/);
+        const writing = generateCreatorProposal(ready);
+        assert.equal(writing.plan.phase, 'writing');
+        assert.deepEqual(writing.questions, questions);
+        assert.equal(JSON.parse(creatorStepMessages(draft, writing)[1].content).answers.length, 0);
+    }
 });
