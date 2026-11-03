@@ -376,7 +376,6 @@ body.neconyan :is(.sb-shell-header, #right-nav-panel.openDrawer > .sb-character-
 body.neconyan .sb-shell-header .sb-shell-kicker { display: none; }
 body.neconyan .sb-shell-header .sb-shell-title { font-size: 16px; font-weight: 600; }
 body.neconyan .sb-shell-header .sb-shell-subtitle { color: var(--neco-muted); font-size: 12px; font-weight: 400; }
-body.neconyan .neconyan-shell-page-intro:empty { display: none; }
 body.neconyan .sb-shell-header:has(.neconyan-page-intro-header) {
     display: grid;
     grid-template-columns: fit-content(calc(100% - 90px)) minmax(0, 1fr);
@@ -3180,7 +3179,7 @@ body.neconyan .sb-extension-mobile-pin { display: none; }
 body.neconyan .neconyan-included-tool-content [hidden] { display: none !important; }
 body.neconyan .neconyan-included-tool-content > .extension_container { width: 100%; }
 body.neconyan .sb-shell-tab[data-sb-tab='included-tool'],
-body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] :is(.sb-shell-nav-wrapper, .sb-shell-subtitle) { display: none !important; }
+body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] :is(.sb-shell-nav-wrapper, .sb-shell-subtitle, .neconyan-shell-page-intro:empty) { display: none !important; }
 body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] .sb-shell-main { grid-column: 1 / -1; }
 @media (max-width: 768px) {
     body.neconyan #right-nav-panel #neconyan-character-library { padding: 6px 12px 8px; gap: 6px; }
