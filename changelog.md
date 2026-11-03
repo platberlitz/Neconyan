@@ -1818,3 +1818,4 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 ### Merged Staging PRs
 - PR #416 (2026-11-03) `chore: set staging version to 1.5.0`
 - PR #418 (2026-11-03) `fix(shell): align page titles and close controls`
+- PR #419 (2026-11-03) `fix(prompting-lab): keep sidebar labels readable`
