@@ -91,7 +91,7 @@ export async function renderLore(workspace, main) {
             button('Add entry', () => workspace.edit(next => {
                 const entries = next.books.find(item => item.id === book.id).data.entries;
                 const uid = nextEntryId(entries);
-                entries[uid] = { uid, key: [], keysecondary: [], comment: '', content: '', constant: false, selective: true, order: 100, position: 0, disable: false };
+                entries[uid] = { uid, key: [], keysecondary: [], comment: '', content: next.writing?.loreBrackets === false ? '' : '[\n\n]', constant: false, selective: true, order: 100, position: 0, disable: false };
             }, true), true),
         );
         panel.append(filterHeader);

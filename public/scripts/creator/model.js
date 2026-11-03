@@ -8,7 +8,7 @@ export const validCreatorProposalValue = (field, value) => field === 'alternate_
     : typeof value === 'string' && value.length <= 100000;
 export const creatorTextValue = (draft, field) => field === 'depth_prompt' ? draft.card.data.extensions?.depth_prompt?.prompt ?? '' : draft.card.data[field] ?? (field === 'alternate_greetings' ? [] : '');
 export const FACT_SECTIONS = Object.freeze(['identity', 'appearance', 'traits', 'goals', 'limits', 'relationships', 'history', 'voice', 'scenario']);
-export const STYLES = Object.freeze(['plain', 'plist', 'alichat', 'hybrid']);
+export const STYLES = Object.freeze(['purachina', 'plain', 'plist', 'alichat', 'hybrid']);
 const copy = value => structuredClone(value);
 let textEditKey = null;
 const textEdits = new WeakMap();
@@ -42,6 +42,8 @@ export function validateCreatorDraft(draft) {
     }
     if (draft.history.length > 50 || draft.future.length > 50) throw new Error('The draft undo history is too large.');
     if (draft.dossier !== undefined && (typeof draft.dossier !== 'string' || draft.dossier.length > 100000)) throw new Error('Keep the dossier within 100,000 characters.');
+    // Older drafts may lack a style; they keep behaving as Natural description.
+    if (draft.style !== undefined && draft.style !== '' && !STYLES.includes(draft.style)) throw new Error('This draft uses an unsupported writing format.');
     if (!draft.source || typeof draft.source !== 'object' || !draft.view || typeof draft.view.section !== 'string') throw new Error('The draft source or workspace settings are missing.');
     for (const field of TEXT_FIELDS) {
         if (typeof draft.card.data[field] !== 'string' || draft.card.data[field].length > 100000) throw new Error(`The character ${field} must be text within 100,000 characters.`);
@@ -103,16 +105,42 @@ export function setCreatorField(draft, field, value, { generated = false } = {})
     });
 }
 
+const FACT_LABELS = Object.freeze({ identity: 'identity', appearance: 'appearance', traits: 'traits', goals: 'goals', limits: 'limits', relationships: 'relationships', history: 'history', voice: 'voice', scenario: 'scenario' });
+const INTERVIEW_ORDER = Object.freeze([['identity', 'Brief introduction?'], ['traits', 'Personality?'], ['appearance', 'Appearance?'], ['history', 'Your past?'], ['relationships', 'The people around you?'], ['voice', 'How do you talk?'], ['limits', 'What won’t you do?'], ['goals', 'What do you want?']]);
+const PROFILE_ORDER = Object.freeze([['persona', ['identity', 'traits', 'voice', 'limits', 'goals']], ['backstory', ['history']], ['appearance', ['appearance']], ['relationships', ['relationships']]]);
+const listItem = text => String(text).trim().replace(/[;.\s]+$/, '');
+const grouped = (facts, sections) => facts.filter(fact => sections.includes(fact.section)).map(fact => listItem(fact.text)).filter(Boolean);
+
+/** Readable bracketed profile: one `Name's label: a, b;` line per section, blank lines between, no trailing semicolon. */
+export function creatorProfileText(name, sections) {
+    const lines = sections.filter(([, items]) => items.length).map(([label, items]) => `${name}'s ${label}: ${items.join(', ')}`);
+    return lines.length ? `[\n${lines.join(';\n\n')}\n]` : '';
+}
+
 /** Deterministic rendering never invents facts or overwrites raw text. */
 export function renderCreatorFacts(draft, style = draft.style) {
     if (!STYLES.includes(style)) throw new Error('Choose a supported writing format.');
     const facts = draft.facts.filter(fact => fact.visibility !== 'private' && fact.status === 'decided' && String(fact.text ?? '').trim());
-    const lines = facts.map(fact => `${fact.section}: ${fact.text}`);
-    const plain = lines.join('\n');
-    const plist = facts.map(fact => `${fact.section}: ${JSON.stringify(String(fact.text))}`).join(';\n');
+    const realName = String(draft.card.data.name ?? '').trim();
+    const name = realName || '{{char}}';
+    const capital = text => text.charAt(0).toLocaleUpperCase() + text.slice(1);
+    const plain = FACT_SECTIONS.map(section => grouped(facts, [section])).map((items, index) => items.length ? `${capital(FACT_LABELS[FACT_SECTIONS[index]])}: ${items.join('. ')}.` : '').filter(Boolean).join('\n\n');
+    const plist = creatorProfileText(name, FACT_SECTIONS.map(section => [FACT_LABELS[section], grouped(facts, [section])]));
     const interview = facts.map(fact => `Interviewer: Tell me about your ${fact.section}.\n{{char}}: ${fact.text}`).join('\n\n');
-    const propertyField = style === 'plist' && draft.writing?.plistDestination === 'depth_prompt' ? 'depth_prompt' : 'description';
-    return { style, version: 1, fields: style === 'alichat' ? { mes_example: interview } : style === 'hybrid' ? { description: plain, mes_example: interview } : { [propertyField]: style === 'plist' ? plist : plain }, kept: facts.map(fact => fact.id), excluded: draft.facts.filter(fact => !facts.includes(fact)).map(fact => fact.id) };
+    let fields;
+    if (style === 'purachina') {
+        const speaker = realName || 'Character';
+        const answers = INTERVIEW_ORDER.flatMap(([section, question]) => {
+            const items = facts.filter(fact => fact.section === section).map(fact => String(fact.text).trim());
+            return items.length ? [`\`Interviewer\`: ${question}\n\`${speaker}\`: ${items.join(' ')}`] : [];
+        });
+        fields = { description: answers.join('\n\n'), depth_prompt: creatorProfileText(name, PROFILE_ORDER.map(([label, sections]) => [label, grouped(facts, sections)])) };
+        const scenario = facts.filter(fact => fact.section === 'scenario').map(fact => String(fact.text).trim()).join(' ');
+        if (scenario) fields.scenario = scenario;
+    } else if (style === 'alichat') fields = { mes_example: interview };
+    else if (style === 'hybrid') fields = { description: plist, mes_example: interview };
+    else fields = { [style === 'plist' && draft.writing?.plistDestination === 'depth_prompt' ? 'depth_prompt' : 'description']: style === 'plist' ? plist : plain };
+    return { style, version: 1, fields, kept: facts.map(fact => fact.id), excluded: draft.facts.filter(fact => !facts.includes(fact)).map(fact => fact.id) };
 }
 
 /** Every proposed field keeps its exact before-value, so late replies cannot overwrite edits. */

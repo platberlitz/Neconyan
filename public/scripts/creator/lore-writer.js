@@ -4,7 +4,14 @@ import { buildCreatorLoreRequest, parseCreatorLoreProposal, acceptCreatorLorePro
 
 export function renderLoreWriter(workspace, panel, book) {
     const details = element('details', 'creator-review-item creator-subdetails');
-    details.append(element('summary', '', 'Write entries or extract background'));
+    details.append(element('summary', '', 'Create entries from Dossier or character'));
+    const bracketLabel = element('label', 'creator-choice-pill');
+    const bracketInput = element('input');
+    bracketInput.type = 'checkbox';
+    bracketInput.checked = workspace.session.draft.writing?.loreBrackets !== false;
+    bracketInput.addEventListener('change', () => workspace.edit(next => { next.writing ??= {}; next.writing.loreBrackets = bracketInput.checked; }));
+    bracketLabel.append(bracketInput, document.createTextNode('Wrap new entry content in square brackets'));
+    details.append(bracketLabel);
     let instruction = '';
     let mode = 'keep';
     details.append(textField('What should the lorebook contain?', '', value => { instruction = value; }, { rows: 3 }));
@@ -19,7 +26,7 @@ export function renderLoreWriter(workspace, panel, book) {
         label.append(input, document.createTextNode(title)); choiceGrid.append(label);
     }
     choices.append(choiceGrid);
-    details.append(choices, element('p', 'creator-muted', 'The model receives public card fields and unprotected entries. Review the entries and source changes together before applying them to this draft.'));
+    details.append(choices, element('p', 'creator-muted', 'Create entries from Dossier sends your Dossier and keeps it intact. Propose lorebook changes uses your character fields and the description choice above. Both include unprotected entries for context. Review titles, keywords and content before applying.'));
     const reviews = element('div');
     const show = proposal => {
         const review = element('section', 'creator-review-item');
@@ -29,7 +36,16 @@ export function renderLoreWriter(workspace, panel, book) {
         for (const [key, entry] of Object.entries(proposal.data.entries)) {
             if (JSON.stringify(before.entries[key]) === JSON.stringify(entry)) continue;
             const change = element('details');
-            change.append(element('summary', '', entry.comment || `Entry ${entry.uid}`), element('h5', '', 'Before'), element('pre', 'creator-preview', JSON.stringify(before.entries[key] ?? null, null, 2)), element('h5', '', 'After'), element('pre', 'creator-preview', JSON.stringify(entry, null, 2)));
+            change.open = true;
+            change.append(element('summary', '', entry.comment || `Entry ${entry.uid}`));
+            if (before.entries[key]) change.append(element('h5', '', 'Previous content'), element('pre', 'creator-preview', before.entries[key].content));
+            const save = () => workspace.edit(next => {
+                const stored = next.proposals.find(item => item.id === proposal.id);
+                if (stored) stored.data = structuredClone(proposal.data);
+            });
+            change.append(textField('Entry title', entry.comment, value => { entry.comment = value; save(); }),
+                textField('Activation keywords, one per line', entry.key.join('\n'), value => { entry.key = value.split('\n').map(key => key.trim()).filter(Boolean); save(); }),
+                textField('Entry content', entry.content, value => { entry.content = value; save(); }, { rows: 8 }));
             review.append(change);
         }
         if (proposal.sourceMode !== 'keep') {
@@ -43,6 +59,22 @@ export function renderLoreWriter(workspace, panel, book) {
     let controller;
     const cancel = button('Cancel request', () => controller?.abort()); cancel.hidden = true;
     const actionBar = element('div', 'creator-actions');
+    const feedback = element('p', 'creator-muted');
+    feedback.setAttribute('role', 'status');
+    actionBar.append(button('Create entries from Dossier', () => workspace.run(async () => {
+        const draft = structuredClone(workspace.session.draft);
+        controller = new AbortController(); cancel.hidden = false;
+        try {
+            const messages = buildCreatorLoreRequest(draft, book.id, instruction || 'Extract useful setting, people, places and background from the Dossier. Generate precise activation keywords.', 'keep', 'dossier');
+            feedback.textContent = 'Creating entries and keywords from the Dossier…';
+            const output = await requestCreatorReply(workspace, draft, messages, { signal: controller.signal });
+            const proposal = parseCreatorLoreProposal(draft, book.id, output, 'keep', 'dossier');
+            acceptCreatorLoreProposal(workspace.session.draft, proposal);
+            if (!workspace.edit(next => { next.proposals.push(proposal); })) return;
+            if (reviews.isConnected) show(structuredClone(proposal));
+            feedback.textContent = 'Review the titles, keywords and content before accepting.';
+        } catch (error) { feedback.textContent = error.message || String(error); throw error; } finally { cancel.hidden = true; }
+    }), true));
     actionBar.append(button('Propose lorebook changes', () => workspace.run(async () => {
         const draft = structuredClone(workspace.session.draft);
         const selectedMode = mode;
@@ -56,7 +88,7 @@ export function renderLoreWriter(workspace, panel, book) {
             workspace.status('Lorebook proposal saved for review. Your source background is unchanged.');
         } finally { cancel.hidden = true; }
     }), true), cancel);
-    details.append(actionBar, reviews);
-    for (const proposal of workspace.session.draft.proposals.filter(item => item.kind === 'lore' && item.bookId === book.id)) show(proposal);
+    details.append(actionBar, feedback, reviews);
+    for (const proposal of workspace.session.draft.proposals.filter(item => item.kind === 'lore' && item.bookId === book.id)) show(structuredClone(proposal));
     panel.append(details);
 }
