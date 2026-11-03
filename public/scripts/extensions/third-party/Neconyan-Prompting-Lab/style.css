@@ -319,6 +319,8 @@
     min-width: 0;
 }
 
+.sbpl-workbench-page .sbpl-tab-line { flex-wrap: wrap; }
+
 .sbpl-tab-line {
     display: flex;
     align-items: baseline;
