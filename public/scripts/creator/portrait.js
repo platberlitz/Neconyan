@@ -1,5 +1,6 @@
 import { getExtensionCapability } from '../neconyan-conversation/extension-capabilities.js';
 import { element, button, textField } from './fields.js';
+import { creatorPortraitPrompt } from './portrait-prompt.js';
 
 export async function creatorPortraitBytes(blob, square = false) {
     if (!/^image\/(png|jpeg|webp)$/.test(blob.type) || blob.size > 20 * 1024 * 1024) throw new Error('Choose a PNG, JPEG or WebP smaller than 20 MiB.');
@@ -40,20 +41,23 @@ export function renderPortrait(workspace, main) {
     upload.setAttribute('aria-label', 'Upload portrait');
     upload.addEventListener('change', () => { if (upload.files[0]) void workspace.run(() => add(upload.files[0], upload.files[0].name)); });
     uploadWrap.append(upload);
-    main.append(textField('Portrait prompt', draft.portraitPrompt ?? '', value => workspace.edit(next => { next.portraitPrompt = value; }), { rows: 3, hint: 'Only this prompt and the character name are sent to Quick Image Gen. Private notes and the dossier are excluded.' }));
+    main.append(textField('Portrait prompt', creatorPortraitPrompt(draft), value => workspace.edit(next => { next.portraitPrompt = value; }), { rows: 6, hint: 'Starts from the card’s description, personality, setting and Character’s Note. Edit it if you like, then generate. Only this visible prompt and the character name go to Quick Image Gen; private notes and the Dossier stay out.' }));
+    main.append(button('Refresh prompt from card', () => workspace.edit(next => { delete next.portraitPrompt; }, true), false, 'creator-chip-btn'));
     const cancel = button('Cancel image generation', () => controller?.abort());
     let controller;
     cancel.hidden = true;
     const actionBar = element('div', 'creator-actions');
     actionBar.append(button('Generate portrait candidate', () => workspace.run(async () => {
         if (controller) throw new Error('An image request is already running.');
-        const prompt = workspace.session.draft.portraitPrompt?.trim();
+        const source = workspace.session.draft;
+        const prompt = creatorPortraitPrompt(source).trim();
         if (!prompt) throw new Error('Describe the portrait first.');
+        if (source.media.length >= 4) throw new Error('Remove a candidate before generating another portrait.');
         const qig = getExtensionCapability('quick-image-gen');
         if (!qig?.generateImage) throw new Error('Enable Quick Image Gen and configure an image provider first.');
         controller = new AbortController(); cancel.hidden = false;
         try {
-            const name = draft.card.data.name;
+            const name = source.card.data.name;
             const image = await qig.generateImage(prompt, '', { character: { name, data: { name } }, characterName: name, signal: controller.signal });
             if (controller.signal.aborted) return;
             if (!image?.url) throw new Error('No image was returned. Your text draft is still saved.');
