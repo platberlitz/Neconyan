@@ -3,9 +3,12 @@ import { element, button } from './fields.js';
 
 export function renderCreatorConnection(workspace, main) {
     const value = workspace.session.draft.writing?.connection ?? {};
-    const profiles = ConnectionManagerRequestService.getSupportedProfiles();
+    let profiles = [];
+    let unavailable = false;
+    try { profiles = ConnectionManagerRequestService.getSupportedProfiles(); } catch { unavailable = true; }
     const group = element('fieldset', 'creator-fieldset');
-    group.append(element('legend', '', 'Model connection'), element('p', 'creator-muted', 'Used for all Creator writing requests. If a request fails, try the fallback profiles in order. Provider output limits still apply.'));
+    group.append(element('legend', '', 'Model connection'), element('p', 'creator-muted', 'Used for all Creator writing requests. Failed requests try fallback profiles in order. The output limit is sent as entered, without automatic adjustment to the model. Lower it if your provider rejects it or your local model has a smaller context.'));
+    if (unavailable) group.append(element('p', 'creator-muted', 'Connection Manager is unavailable. Choose Current connection to keep writing. Saved profile choices are retained until you change them.'));
     const edit = (change, redraw = true) => workspace.edit(next => {
         next.writing ??= {};
         next.writing.connection ??= {};

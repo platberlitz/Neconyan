@@ -56,7 +56,7 @@ export function renderCreatorTargets(workspace, host, { open = false } = {}) {
         textField('Greeting tokens', creatorTargetValue(targets, 'greetingTokens'), val => setTarget('greetingTokens', val), { rows: 1, placeholder: 'e.g. ~700 tokens each' }),
     );
     const countField = textField('Number of greetings', creatorTargetValue(targets, 'greetingCount'), val => setTarget('greetingCount', creatorTargetValue({ greetingCount: val }, 'greetingCount')), {
-        rows: 1, hint: 'Default and minimum: 1. Includes the first greeting and all alternatives. Applies when creating greetings, not when editing just one.',
+        rows: 1, hint: 'Whole numbers from 1 to 101; default: 1. Includes the first greeting and all alternatives. Applies when creating greetings, not when editing just one.',
     });
     const countInput = countField.querySelector('textarea, input');
     countInput.inputMode = 'numeric';

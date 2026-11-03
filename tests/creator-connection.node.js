@@ -40,3 +40,20 @@ test('A changed draft or account stops fallback requests', async () => {
     }), /Source changed/);
     assert.equal(calls, 1);
 });
+
+test('The main chat Stop event does not start a fallback', async () => {
+    let calls = 0;
+    await assert.rejects(requestCreatorConnection({ writing: { connection: { fallbacks: ['second'] } } }, {
+        validate() {},
+        async send() { calls++; throw new Error('Cancelled by stop event'); },
+    }), /Cancelled by stop event/);
+    assert.equal(calls, 1);
+});
+
+test('Failed connections retain every labelled error in attempt order', async () => {
+    await assert.rejects(requestCreatorConnection({ writing: { connection: { fallbacks: ['missing'] } } }, {
+        validate() {},
+        profileLabel: profile => profile ? 'Deleted backup' : 'Current connection',
+        async send(profile) { throw new Error(profile ? 'Profile not found' : 'Authentication failed'); },
+    }), /Current connection: Authentication failed\nDeleted backup: Profile not found/);
+});

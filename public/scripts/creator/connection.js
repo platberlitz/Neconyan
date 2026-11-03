@@ -5,9 +5,9 @@ export function creatorConnection(draft) {
     return { profiles: [...new Set([value.profile || '', ...(value.fallbacks ?? []).filter(Boolean)])], maxTokens };
 }
 
-export async function requestCreatorConnection(draft, { send, validate, signal }) {
+export async function requestCreatorConnection(draft, { send, validate, signal, profileLabel = profile => profile || 'Current connection' }) {
     const { profiles, maxTokens } = creatorConnection(draft);
-    let failure;
+    const failures = [];
     for (const profile of profiles) {
         validate();
         if (signal?.aborted) throw new Error('Request cancelled. Nothing was applied.');
@@ -18,9 +18,9 @@ export async function requestCreatorConnection(draft, { send, validate, signal }
             return result;
         } catch (error) {
             validate();
-            if (signal?.aborted || error?.name === 'AbortError') throw error;
-            failure = error;
+            if (signal?.aborted || error?.name === 'AbortError' || error?.message === 'Cancelled by stop event') throw error;
+            failures.push(`${profileLabel(profile)}: ${error?.message || String(error)}`);
         }
     }
-    throw failure;
+    throw new Error(`Creator could not get a reply.\n${failures.join('\n')}`);
 }

@@ -43,8 +43,9 @@ export const CREATOR_TARGET_DEFAULTS = Object.freeze({
 
 export function creatorTargetValue(targets, key) {
     if (key === 'greetingCount') {
-        const count = Number(targets?.greetingCount ?? 1);
-        return String(Number.isSafeInteger(count) && count >= 1 ? count : 1);
+        const raw = String(targets?.greetingCount ?? 1).trim();
+        const count = Number(raw);
+        return /^\d+$/.test(raw) && count >= 1 ? String(Math.min(count, 101)) : '1';
     }
     if (typeof targets?.[key] === 'string') return targets[key].trim();
     const legacy = key === 'characterWords' ? targets?.words : key === 'characterTokens' ? targets?.tokens : undefined;

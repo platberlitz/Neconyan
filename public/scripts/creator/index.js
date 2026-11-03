@@ -465,6 +465,7 @@ class CreatorWorkspace {
             const before = Array.isArray(change.before) ? change.before.join('\n\n') : change.before;
             group.append(element('h4', '', change.field === 'depth_prompt' ? 'Character’s Note' : change.field === 'alternate_greetings' ? 'Alternate greetings' : labels[change.field] || change.field), element('pre', 'creator-before', before || '(empty)'));
             if (change.field === 'alternate_greetings') {
+                if (!change.after.length) group.append(element('p', 'creator-muted', change.before.length ? `Removes all ${change.before.length} alternate greetings.` : 'No alternate greetings proposed.'));
                 change.after.forEach((text, index) => group.append(textField(`Proposed alternate greeting ${index + 1}`, text, value => { change.after[index] = value; persist(); })));
             } else group.append(textField('Proposed text', change.after, value => { change.after = value; persist(); }));
             group.append(button('Accept this field', () => {
