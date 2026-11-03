@@ -11,6 +11,37 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
         if (!frame) frame = requestAnimationFrame(update);
     };
     const resize = new ResizeObserver(schedule);
+    // A growing sibling (such as an auto-sized composer) moves the rail without
+    // resizing it, but it resizes a container between the rail and the chrome's
+    // offset parent, so every container on that path is observed.
+    const observedContainers = new Map();
+    const watchContainers = (record, containers) => {
+        for (const container of containers) {
+            if (record.containers.includes(container)) continue;
+            const count = observedContainers.get(container) || 0;
+            if (!count) resize.observe(container);
+            observedContainers.set(container, count + 1);
+        }
+        for (const container of record.containers) {
+            if (containers.includes(container)) continue;
+            const count = observedContainers.get(container) || 0;
+            if (count > 1) {
+                observedContainers.set(container, count - 1);
+                continue;
+            }
+            observedContainers.delete(container);
+            if (!records.has(container)) resize.unobserve(container);
+        }
+        record.containers = containers;
+    };
+    const containersFor = (rail, offsetParent) => {
+        const containers = [];
+        for (let container = rail.parentElement; container; container = container.parentElement) {
+            containers.push(container);
+            if (container === offsetParent || !offsetParent) break;
+        }
+        return containers;
+    };
     const setStyle = (element, property, value) => {
         if (element.style.getPropertyValue(property) !== value) element.style.setProperty(property, value);
     };
@@ -72,7 +103,9 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
         rail.addEventListener('click', revealTab);
         rail.addEventListener('focusin', revealTab);
         resize.observe(rail);
-        records.set(rail, { chrome, buttons, revealTab, progressOnly });
+        const record = { chrome, buttons, revealTab, progressOnly, containers: [] };
+        records.set(rail, record);
+        watchContainers(record, containersFor(rail, null));
     }
 
     function update() {
@@ -83,16 +116,19 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
             root.querySelectorAll?.(MOBILE_SWIPE_RAIL_SELECTOR).forEach(register);
         }
         pendingRoots.clear();
-        for (const [rail, { chrome, buttons, revealTab, progressOnly }] of records) {
+        for (const [rail, record] of records) {
+            const { chrome, buttons, revealTab, progressOnly } = record;
             if (!rail.isConnected) {
                 chrome.remove();
                 resize.unobserve(rail);
+                watchContainers(record, []);
                 rail.removeEventListener('scroll', schedule);
                 rail.removeEventListener('click', revealTab);
                 rail.removeEventListener('focusin', revealTab);
                 records.delete(rail);
                 continue;
             }
+            if (record.containers[0] !== rail.parentElement) watchContainers(record, containersFor(rail, null));
             if (chrome.parentElement !== rail.parentElement) rail.parentElement.append(chrome);
             const style = getComputedStyle(rail);
             const visible = (phone.matches || rail.matches('#sb_character_creator_panel .creator-sections')) && rail.getClientRects().length > 0
@@ -118,6 +154,8 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
             // Offset-parent coordinates also follow scaled composer and theme containers.
             const parent = chrome.offsetParent;
             if (!(parent instanceof HTMLElement)) continue;
+            const containers = containersFor(rail, parent);
+            if (containers.at(-1) !== record.containers.at(-1) || containers.length !== record.containers.length) watchContainers(record, containers);
             const box = rail.getBoundingClientRect();
             const origin = parent.getBoundingClientRect();
             const scaleX = origin.width / parent.offsetWidth || 1;

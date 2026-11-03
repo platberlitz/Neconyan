@@ -3593,6 +3593,7 @@ body.neconyan :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-he
 }
 /* A tool page is not the Settings overview, so the Settings blurb stays out of its header. */
 body.neconyan #user-settings-block.openDrawer[data-sb-active-tab='included-tool'] .sb-shell-header .sb-shell-description { display: none; }
+body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] .sb-shell-header:not(:has(.neconyan-page-intro-header)) { justify-content: center; }
 
 /* Conversation DM settings: phones get the section buttons as a scrolling row, not the dropdown. */
 body.neconyan #sheld .sb-conversation-settings-mobile-select { display: none; }
@@ -3680,6 +3681,7 @@ body.neconyan #open_chat_expressions .expression_buttons > .menu_button > span {
 @media (max-width: 768px) {
     body.neconyan :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header:has(.neconyan-page-intro-header) {
         --neco-shell-header-padding: 10px 12px 12px;
+        --neco-shell-close-top: 26px;
         display: grid;
         grid-template-columns: fit-content(calc(100% - 132px)) minmax(0, 1fr) 42px;
         align-items: stretch;

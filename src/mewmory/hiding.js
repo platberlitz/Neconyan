@@ -166,7 +166,12 @@ export function prepareMessageHidingPolicy(directories, locator, { manual = fals
  * Mewmory has finished reading it, or when it is not a memory source at all.
  */
 function preservationCheck(records, archivedState, config, contextSources, sourceOptions = {}, { checkpoint = config.excludeHistory !== false } = {}) {
-    const shadow = structuredClone(archivedState);
+    // Reconciliation only writes or replaces the index; its payload is not
+    // needed to decide whether sources are preserved. Keep malformed values so
+    // their existing failure behaviour remains intact.
+    const index = archivedState.index;
+    const shadow = structuredClone(index && typeof index === 'object' && !Array.isArray(index)
+        ? { ...archivedState, index: { pending: false } } : archivedState);
     const messages = records.slice(1);
     syncSources(shadow, messages, contextSources, sourceOptions);
     const offset = shadow.inheritedTimeline?.length || 0;

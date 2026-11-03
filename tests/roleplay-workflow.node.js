@@ -24,6 +24,7 @@ const { KEPT_REPLY_ARTIFACT, keepRoleplayReply, preserveInterruptedRoleplayReply
 const { roleplayHash } = await import('../src/roleplay-store.js');
 const { saveBlockedContinuationProof, verifyBlockedOutputProof } = await import('../src/generation/blocked-output-proof.js');
 const { enableMewmoryHiding } = await import('./mewmory-hiding-fixture.js');
+const { statePath } = await import('../src/mewmory/store.js');
 
 const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', system_prompt: true },
     { identifier: 'chatHistory', marker: true, system_prompt: true }],
@@ -920,6 +921,8 @@ test('a native workflow reply clears older history at the Mewmory trigger in its
         steps: [{ op: 'move', kind: 'chat', locator: f.f.locator, destination }],
     }));
     enableMewmoryHiding(f.dirs, destination, { autoHideTokens: 1024 });
+    const archiveFile = statePath(f.dirs, destination);
+    const archiveBefore = fs.readFileSync(archiveFile);
     await assert.rejects(runRoleplayWorkflowJob(f.context(), { beforePublication: () => {
         throw new Error('Lost parent acknowledgement after the hidden write');
     } }), /Lost parent acknowledgement/);
@@ -935,6 +938,7 @@ test('a native workflow reply clears older history at the Mewmory trigger in its
     assert.equal(completed.result.status, 'completed');
     assert.deepEqual(await runRoleplayWorkflowJob(f.context()), completed);
     assert.deepEqual(readRoleplayChat(f.f.scope, destination).records, saved);
+    assert.deepEqual(fs.readFileSync(archiveFile), archiveBefore);
 });
 
 test('a final chat write can resume from its owned proof after losing only the parent acknowledgement', async t => {

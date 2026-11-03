@@ -12,6 +12,8 @@
 - PR #409 (2026-11-02) `fix: restore rail taps and immediate composer scrolling`
 - PR #410 (2026-11-02) `feat(agents): recover replies from completed thinking`
 - PR #413 (2026-11-02) `fix(agents): keep the page still when toggling agents`
+- PR #414 (2026-11-03) `fix(mewmory): avoid copying the search index when hiding messages`
+- PR #415 (2026-11-03) `fix(mobile): keep rail scroll lines on their rail when a sibling grows`
 
 ## v1.4.1
 
@@ -1812,3 +1814,8 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - Cleaned up test lint references so nested test lint runs without warnings or undefined globals.
 - Kept `public/scripts/f-localStorage.js` in place for extension compatibility.
 - Bumped app-owned version strings to `1.5.0` without changing dependency versions.
+
+### Merged Staging PRs
+- PR #416 (2026-11-03) `chore: set staging version to 1.5.0`
+- PR #418 (2026-11-03) `fix(shell): align page titles and close controls`
+- PR #419 (2026-11-03) `fix(prompting-lab): keep sidebar labels readable`

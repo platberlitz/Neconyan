@@ -1,4 +1,5 @@
 /* eslint playwright/expect-expect: off -- These checks use node:assert, not Playwright assertions. */
+/* global globalThis */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -34,7 +35,7 @@ const { startOperation, registerMewmoryOperations } = await import('../src/mewmo
 const { getJob: getSavedJob, recoverJobs, updateJob } = await import('../src/jobs/store.js');
 const { setDirectoriesResolver, testExports: jobRunner } = await import('../src/jobs/runner.js');
 const { readArtifact } = await import('../src/jobs/artifacts.js');
-const { applyOverflowHiding, prepareAutomaticHiding, writerTokenizerFromMaterial } = await import('../src/mewmory/hiding.js');
+const { applyOverflowHiding, planPreservedMessageHiding, planPreservedOverflowHiding, prepareAutomaticHiding, writerTokenizerFromMaterial } = await import('../src/mewmory/hiding.js');
 
 test('RAG prefixes preserve whitespace through saving and real custom and native requests', async t => {
     const { directories } = disk(t);
@@ -1169,6 +1170,119 @@ function rememberMessages(directories, locator, records) {
         for (const ref of state.timeline) state.checkpoints[refKey(ref)] = version;
     });
 }
+
+test('preservation planning does not clone index vectors', () => {
+    const state = base();
+    const config = defaultConfig();
+    config.roles.extractor.enabled = true;
+    const version = processingVersion(config);
+    for (const ref of state.timeline) state.checkpoints[refKey(ref)] = version;
+    state.index.vectors = Array.from({ length: 4096 }, () => ({ vector: [1, 2, 3] }));
+    state.index.vectors[0].sentinel = () => {};
+    const records = [{ chat_metadata: {} }, ...structuredClone(fixture.messages)];
+    assert.deepEqual(planPreservedOverflowHiding(records, state, config, fixture.lore, {}, [0, 1]), [0, 1]);
+});
+
+test('preservation planners match full archive cloning across reconciliation changes', () => {
+    const config = defaultConfig();
+    config.roles.extractor.enabled = true;
+    config.recentMessages = 1;
+    config.historyBatchMessages = 2;
+    const state = base();
+    const version = processingVersion(config);
+    for (const ref of state.timeline) {
+        state.checkpoints[refKey(ref)] = version;
+        state.coverage[refKey(ref)] = version;
+    }
+    const anchor = event(state);
+    anchor.inputRefs = [state.timeline[0], state.timeline[2]];
+    const dependent = event(state, { id: 'event:dependent', refs: [state.timeline[3]], asOf: 3,
+        dependencies: [{ id: anchor.id, version: anchor.version }] });
+    state.audit.push({ recordId: dependent.id, before: structuredClone(dependent) });
+    const original = structuredClone(state);
+    const records = [{ chat_metadata: {} }, ...structuredClone(fixture.messages)];
+    const edited = structuredClone(records);
+    edited[1].mes += ' edited';
+    const editedInput = structuredClone(records);
+    editedInput[3].mes += ' edited input';
+    const deleted = records.filter((_, index) => index !== 3);
+    const context = structuredClone(fixture.lore);
+    context[0].text += ' changed';
+    const nativeClone = globalThis.structuredClone;
+    const outcome = fn => {
+        try { return { value: fn() }; } catch (error) { return { error: error.constructor.name }; }
+    };
+    for (const [input, lore] of [[records, fixture.lore], [edited, fixture.lore], [editedInput, fixture.lore],
+        [deleted, fixture.lore], [records, context]]) {
+        for (const checkpoint of [true, false]) {
+            config.excludeHistory = checkpoint;
+            for (const planner of [
+                () => planPreservedMessageHiding(input, state, config, lore),
+                () => planPreservedOverflowHiding(input, state, config, lore, {}, [0, 1, 2]),
+            ]) {
+                const actual = outcome(planner);
+                assert.equal(actual.error, undefined, 'valid archive must reconcile successfully');
+                globalThis.structuredClone = () => nativeClone(state);
+                let expected;
+                try { expected = outcome(planner); } finally { globalThis.structuredClone = nativeClone; }
+                assert.deepEqual(actual, expected);
+            }
+        }
+    }
+    assert.deepEqual(planPreservedOverflowHiding(editedInput, state, config, fixture.lore, {}, [0, 1, 2]), [],
+        'editing a later input invalidates coverage from its earlier batch input');
+    assert.deepEqual(state, original);
+    config.roles.extractor.enabled = false;
+    assert.deepEqual(planPreservedOverflowHiding(records, state, config, fixture.lore, {}, [0, 1]), [0, 1]);
+});
+
+test('automatic hiding fails closed when an edited archive has a malformed index', t => {
+    const { directories } = disk(t);
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    saveConfig(directories, config);
+    const records = [{ chat_metadata: {} }, ...structuredClone(fixture.messages)];
+    mutateState(directories, locator, state => {
+        syncSources(state, records.slice(1), []);
+        state.enabled = true;
+    });
+    const filename = statePath(directories, locator);
+    const state = JSON.parse(fs.readFileSync(filename, 'utf8'));
+    state.index = null;
+    writeJson(filename, state);
+    records[1].mes += ' edited';
+    const warning = t.mock.method(console, 'warn', () => {});
+    const result = applyOverflowHiding(records, { limit: 1, count: text => text.length, directories, locator });
+    assert.equal(result.hidden, 0);
+    assert.equal(result.records, records);
+    assert.match(warning.mock.calls[0].arguments.join(' '), /Automatic hiding was skipped:.*pending/);
+});
+
+test('malformed preservation indexes retain full clone failure behaviour', () => {
+    const config = defaultConfig();
+    config.roles.extractor.enabled = true;
+    const records = [{ chat_metadata: {} }, ...structuredClone(fixture.messages)];
+    const nativeClone = globalThis.structuredClone;
+    for (const malformed of [undefined, null, 1, 'invalid']) {
+        const state = base();
+        if (malformed === undefined) delete state.index;
+        else state.index = malformed;
+        const edited = structuredClone(records);
+        edited[1].mes += ' edited';
+        for (const planner of [
+            () => planPreservedMessageHiding(edited, state, config, fixture.lore),
+            () => planPreservedOverflowHiding(edited, state, config, fixture.lore, {}, [0, 1]),
+        ]) {
+            const outcome = () => { try { return { value: planner() }; } catch (error) { return { error: error.constructor.name }; } };
+            const actual = outcome();
+            globalThis.structuredClone = () => nativeClone(state);
+            let expected;
+            try { expected = outcome(); } finally { globalThis.structuredClone = nativeClone; }
+            assert.deepEqual(actual, expected);
+            assert.equal(actual.error, 'TypeError');
+        }
+    }
+});
 
 function disk(t, messages = fixture.messages) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mewmory-test-'));
