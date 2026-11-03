@@ -196,6 +196,34 @@ export function acceptCreatorProposal(draft, proposal, selected = proposal.chang
     });
 }
 
+/** Accept one alternative without publishing the other proposed greetings. */
+export function acceptCreatorGreeting(draft, proposal, index) {
+    const change = proposal.changes.find(item => item.field === 'alternate_greetings');
+    if (!change || !Number.isInteger(index) || index < 0 || index >= change.after.length || change.acceptedGreetings?.includes(index)) throw new Error('This greeting is no longer available to accept.');
+    const acceptedGreetings = [...(change.acceptedGreetings ?? []), index].sort((a, b) => a - b);
+    const greetingBase = change.greetingBase ?? change.before;
+    const after = copy(greetingBase);
+    for (const accepted of acceptedGreetings) {
+        if (accepted < after.length) after[accepted] = change.after[accepted];
+        else after.push(change.after[accepted]);
+    }
+    const selected = { ...copy(proposal), changes: [{ ...copy(change), after }] };
+    // Keep the other changes and the writing plan in the same undoable edit.
+    const result = acceptCreatorProposal(draft, { ...selected, id: null });
+    const retained = copy(proposal);
+    if (retained.plan) {
+        retained.plan.before ??= {};
+        retained.plan.before.alternate_greetings = copy(after);
+        retained.plan.accepted ??= {};
+        retained.plan.accepted.alternate_greetings = copy(after);
+    }
+    retained.changes = retained.changes.flatMap(item => item.field !== 'alternate_greetings' ? [item]
+        : acceptedGreetings.length === change.after.length ? [] : [{ ...item, before: copy(after), greetingBase: copy(greetingBase), acceptedGreetings }]);
+    result.proposals = result.proposals.flatMap(item => item.id !== proposal.id ? [item]
+        : retained.changes.length || (retained.plan && retained.plan.next < retained.plan.steps.length) ? [retained] : []);
+    return result;
+}
+
 export function creatorAssistantContext(draft, { includePrivate = false } = {}) {
     return {
         character: Object.fromEntries(TEXT_FIELDS.map(field => [field, draft.card.data[field] ?? ''])),

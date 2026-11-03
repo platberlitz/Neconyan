@@ -111,6 +111,41 @@ for (const phone of [false, true]) {
         expect(saved.proposals[0].plan.steps[1].fields).toEqual(['scenario']);
     });
 
+    test(`Catelier accepts alternate greetings separately on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
+        test.setTimeout(180000);
+        const account = await app.account({ phone });
+        const draft = createCreatorDraft({ id: 'greeting-controls', card: { data: { name: 'Mira' } } });
+        draft.dossier = 'Mira repairs boats.';
+        draft.writing = { targets: { greetingCount: '3' } };
+        let proposal = startCreatorConversion(draft, ['alternate_greetings']);
+        for (const greeting of ['At home.', 'At sea.']) proposal = mergeCreatorStep(draft, proposal, JSON.stringify({ fields: { alternate_greetings: [greeting] } }));
+        draft.proposals = [proposal];
+        await account.post('/api/creator/save', { draft, expectedRevision: null });
+        const page = await account.open({ workspace: false });
+        await page.waitForFunction(() => typeof globalThis.NeconyanShell?.openCreator === 'function');
+        await page.evaluate(id => globalThis.NeconyanShell.openCreator({ draftId: id }), draft.id);
+        const creator = page.locator('#sb_character_creator_panel');
+        await creator.getByRole('button', { name: 'Dossier', exact: true }).click();
+        await creator.getByRole('button', { name: 'Review Dossier conversion', exact: true }).click();
+        const review = creator.locator('.creator-proposal');
+        await review.getByRole('button', { name: 'Accept greeting 2', exact: true }).scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `../screenshots/catelier-greetings-after-${phone ? 'phone' : 'desktop'}.png` });
+        await checkImageControlContrast(page, ['.creator-proposal-field .creator-field > button.menu_button_primary'], phone);
+        await review.getByRole('button', { name: 'Accept greeting 2', exact: true }).click();
+        await expect(review.getByLabel('Proposed alternate greeting 2', { exact: true })).toHaveCount(0);
+        await creator.getByRole('button', { name: 'Drafts', exact: true }).click();
+        let saved = (await account.post('/api/creator/get', { id: draft.id })).draft;
+        expect(saved.card.data.alternate_greetings).toEqual(['At sea.']);
+        await page.evaluate(id => globalThis.NeconyanShell.openCreator({ draftId: id }), draft.id);
+        await creator.getByRole('button', { name: 'Dossier', exact: true }).click();
+        await creator.getByRole('button', { name: 'Review Dossier conversion', exact: true }).click();
+        await review.getByRole('button', { name: 'Accept greeting 1', exact: true }).click();
+        await expect(review).toHaveCount(0);
+        await creator.getByRole('button', { name: 'Drafts', exact: true }).click();
+        saved = (await account.post('/api/creator/get', { id: draft.id })).draft;
+        expect(saved.card.data.alternate_greetings).toEqual(['At home.', 'At sea.']);
+    });
+
     test(`Catelier selects all draft conflicts on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
         test.setTimeout(180000);
         const account = await app.account({ phone });

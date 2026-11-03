@@ -1,7 +1,7 @@
 import { characters, getOneCharacter } from '../../script.js';
 import { CreatorSession } from './session.js';
 import { element, button, textField } from './fields.js';
-import { editCreatorDraft, setCreatorField, undoCreatorDraft, renderCreatorFacts, creatorProposal, acceptCreatorProposal, FACT_SECTIONS, STYLES, creatorTextEditKey } from './model.js';
+import { editCreatorDraft, setCreatorField, undoCreatorDraft, renderCreatorFacts, creatorProposal, acceptCreatorProposal, acceptCreatorGreeting, FACT_SECTIONS, STYLES, creatorTextEditKey } from './model.js';
 import { DOSSIER_FIELDS } from './dossier.js';
 import { startCreatorConversion, reviseCreatorConversion, creatorStepMessages, mergeCreatorStep } from './conversion.js';
 import { renderCreatorQuestionsOption, creatorQuestionMessages, mergeCreatorQuestions, generateCreatorProposal } from './questions.js';
@@ -684,9 +684,16 @@ class CreatorWorkspace {
             if (change.field === 'alternate_greetings') {
                 if (!change.after.length) group.append(element('p', 'creator-muted', change.before.length ? `Removes all ${change.before.length} alternate greetings.` : 'No alternate greetings proposed.'));
                 change.after.forEach((text, index) => {
+                    if (change.acceptedGreetings?.includes(index)) return;
                     const greeting = textField(`Proposed alternate greeting ${index + 1}`, text, value => {
                         persist(current => { current.changes.find(item => item.field === change.field).after[index] = value; });
                     });
+                    greeting.append(button(`Accept greeting ${index + 1}`, () => {
+                        this.change(draft => acceptCreatorGreeting(draft, draft.proposals.find(item => item.id === proposal.id), index));
+                        const remaining = this.session.draft.proposals.find(item => item.id === proposal.id);
+                        if (remaining) this.proposal(remaining);
+                        else review.remove();
+                    }, true));
                     group.append(greeting);
                 });
             } else {

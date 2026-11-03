@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createCreatorDraft, acceptCreatorProposal } from '../public/scripts/creator/model.js';
+import { createCreatorDraft, acceptCreatorProposal, acceptCreatorGreeting } from '../public/scripts/creator/model.js';
 import { startCreatorConversion, mergeCreatorStep, creatorStepMessages, reviseCreatorConversion } from '../public/scripts/creator/conversion.js';
 import { creatorQuestionMessages, mergeCreatorQuestions, generateCreatorProposal } from '../public/scripts/creator/questions.js';
 
@@ -47,6 +47,36 @@ test('accepting every available field retains unfinished writing and rebases lat
     draft = acceptCreatorProposal(draft, proposal);
     assert.deepEqual(draft.card.data.alternate_greetings, ['A', 'B']);
     assert.deepEqual(draft.proposals, []);
+});
+
+test('individual greetings can be accepted out of order without applying their siblings', () => {
+    let draft = createCreatorDraft({ id: 'individual-greetings', card: { data: { alternate_greetings: ['Old'] } } });
+    draft.dossier = 'A shipwright.';
+    draft.writing = { targets: { greetingCount: '4' } };
+    let proposal = startCreatorConversion(draft, ['alternate_greetings']);
+    for (const greeting of ['A', 'B', 'C']) proposal = mergeCreatorStep(draft, proposal, JSON.stringify({ fields: { alternate_greetings: [greeting] } }));
+    draft.proposals = [proposal];
+    draft = acceptCreatorGreeting(draft, proposal, 2);
+    assert.deepEqual(draft.card.data.alternate_greetings, ['Old', 'C']);
+    assert.deepEqual(draft.proposals[0].changes[0].acceptedGreetings, [2]);
+    draft = acceptCreatorGreeting(draft, draft.proposals[0], 0);
+    assert.deepEqual(draft.card.data.alternate_greetings, ['A', 'C']);
+    draft = acceptCreatorGreeting(draft, draft.proposals[0], 1);
+    assert.deepEqual(draft.card.data.alternate_greetings, ['A', 'B', 'C']);
+    assert.deepEqual(draft.proposals, []);
+});
+
+test('individual greeting acceptance preserves stale-edit and lock checks', () => {
+    const draft = createCreatorDraft({ id: 'greeting-guard', card: { data: {} } });
+    draft.dossier = 'A shipwright.';
+    let proposal = startCreatorConversion(draft, ['alternate_greetings']);
+    proposal = mergeCreatorStep(draft, proposal, '{"fields":{"alternate_greetings":["A"]}}');
+    draft.proposals = [proposal];
+    draft.locks = ['alternate_greetings'];
+    assert.throws(() => acceptCreatorGreeting(draft, proposal, 0), /locked/);
+    draft.locks = [];
+    draft.card.data.alternate_greetings = ['My edit'];
+    assert.throws(() => acceptCreatorGreeting(draft, proposal, 0), /field changed/);
 });
 
 test('field regeneration requests only that field and optional notes, preserving unfinished work', () => {
