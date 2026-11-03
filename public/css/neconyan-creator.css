@@ -432,19 +432,9 @@ body.neconyan #right-nav-panel.openDrawer[data-menu-type="creator"] #sb_characte
 }
 
 /* Main Workspace Layout & Navigation Rail */
-#right-nav-panel #sb_character_creator_panel .creator-rail-controls {
-    display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) 44px;
-    align-items: center;
-    gap: 4px;
+#right-nav-panel #sb_character_creator_panel .creator-rail {
+    position: relative;
     min-width: 0;
-}
-
-#right-nav-panel #sb_character_creator_panel .creator-rail-arrow {
-    width: 44px;
-    min-height: 44px;
-    margin: 0;
-    padding: 0;
 }
 
 #right-nav-panel #sb_character_creator_panel .creator-layout {

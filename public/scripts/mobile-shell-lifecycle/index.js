@@ -992,6 +992,7 @@ export const MOBILE_SWIPE_RAIL_SELECTOR = [
     '.ica--template-pill-row',
     '.sb-shell-nav',
     '.sb-character-editor-subtabs',
+    '.creator-sections',
     '.sb-settings-tabs-nav',
     // The icons-only top bar is made entirely of buttons, so every swipe on it matches
     // MOBILE_DOCUMENT_PAN_CONTROL_SELECTOR and the pan guard blocks it unless the rail is
@@ -1008,7 +1009,6 @@ export const MOBILE_SWIPE_RAIL_SELECTOR = [
 
 const MOBILE_DOCUMENT_PAN_HORIZONTAL_SCROLL_SELECTOR = [
     MOBILE_SWIPE_RAIL_SELECTOR,
-    '.creator-sections',
     '#completion_prompt_manager .completion_prompt_manager_prompt > span:nth-child(3)',
     '.popup.horizontal_scrolling_dialogue_popup .popup-content',
     '.mes_text pre code',

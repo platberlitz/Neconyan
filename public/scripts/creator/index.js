@@ -60,7 +60,6 @@ class CreatorWorkspace {
     }
 
     shell() {
-        this.railObserver?.disconnect();
         this.host.replaceChildren();
         const output = element('p', 'creator-status', this.message);
         output.setAttribute('role', 'status');
@@ -307,31 +306,13 @@ class CreatorWorkspace {
             this.stringList(main, 'Tags', 'tags');
             main.append(textField('Private author notes', draft.privateNotes, value => this.edit(next => { next.privateNotes = value; }), { hint: 'Kept only in this draft. Excluded from character saves and AI requests unless you explicitly include them.' }));
         }
-        const railControls = element('div', 'creator-rail-controls');
-        const arrow = (label, icon, direction) => {
-            const control = button('', () => { nav.scrollLeft += direction * Math.max(100, nav.clientWidth * 0.75); }, false, 'creator-rail-arrow');
-            control.setAttribute('aria-label', label);
-            control.title = label;
-            const glyph = element('i', `fa-solid fa-chevron-${icon}`);
-            glyph.setAttribute('aria-hidden', 'true');
-            control.append(glyph);
-            return control;
-        };
-        const previous = arrow('Scroll Creator sections left', 'left', -1);
-        const next = arrow('Scroll Creator sections right', 'right', 1);
-        const updateArrows = () => {
-            previous.disabled = nav.scrollLeft <= 1;
-            next.disabled = nav.scrollLeft >= nav.scrollWidth - nav.clientWidth - 1;
-        };
-        nav.addEventListener('scroll', updateArrows, { passive: true });
-        railControls.append(previous, nav, next);
-        layout.append(railControls, main);
+        // Phones get the shared swipe-rail arrows (mobile-swipe-rails.js), the same as the character tabs.
+        const rail = element('div', 'creator-rail');
+        rail.append(nav);
+        layout.append(rail, main);
         this.host.append(header, layout);
         nav.scrollLeft = railLeft;
-        this.railObserver = new ResizeObserver(updateArrows);
-        this.railObserver.observe(nav);
         restore();
-        updateArrows();
         if (!['dossier', 'identity', 'facts', 'greetings', 'prompts', 'metadata'].includes(section)) {
             void this.renderTool(section, main).then(() => { if (main.isConnected) restore(); }).catch(error => this.status(error.message, true));
         }

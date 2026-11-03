@@ -11,12 +11,18 @@ for (const phone of [false, true]) {
         const creator = page.locator('#sb_character_creator_panel');
         await creator.getByRole('button', { name: 'Create a character', exact: true }).click();
         const rail = creator.locator('.creator-sections');
-        const left = creator.getByRole('button', { name: 'Scroll Creator sections left' });
-        const right = creator.getByRole('button', { name: 'Scroll Creator sections right' });
-        await expect(left).toBeDisabled();
-        await right.click();
-        await expect.poll(() => rail.evaluate(node => node.scrollLeft)).toBeGreaterThan(0);
-        await expect(left).toBeEnabled();
+        // Phones share the character tab bar's swipe-rail arrows; desktop scrolls the rail directly.
+        const chrome = creator.locator('.creator-rail .sb-mobile-rail-chrome');
+        const left = chrome.getByRole('button', { name: 'Scroll left to see more options' });
+        const right = chrome.getByRole('button', { name: 'Scroll right to see more options' });
+        if (phone) {
+            await expect(right).toBeVisible();
+            await right.click();
+            await expect.poll(() => rail.evaluate(node => node.scrollLeft)).toBeGreaterThan(0);
+            await expect(left).toBeVisible();
+        } else {
+            await expect(chrome).toHaveCount(0);
+        }
         const macros = rail.getByRole('button', { name: 'Macros & pronouns', exact: true });
         await macros.scrollIntoViewIfNeeded();
         const before = await rail.evaluate(node => node.scrollLeft);
@@ -24,8 +30,10 @@ for (const phone of [false, true]) {
         await expect(creator.getByLabel('Sentence to preview', { exact: true })).toBeVisible();
         expect(await rail.evaluate(node => node.scrollLeft)).toBeCloseTo(before, 0);
         await page.screenshot({ path: `../screenshots/creator-rail-${phone ? 'phone' : 'desktop'}.png` });
-        await left.click();
-        await expect.poll(() => rail.evaluate(node => node.scrollLeft)).toBeLessThan(before);
+        if (phone && before > 0) {
+            await left.click();
+            await expect.poll(() => rail.evaluate(node => node.scrollLeft)).toBeLessThan(before);
+        }
         await rail.getByRole('button', { name: 'Dossier', exact: true }).click();
         await creator.getByLabel('Character dossier', { exact: true }).fill('Mira repairs ships.');
         await creator.getByRole('button', { name: 'PList', exact: true }).click();
