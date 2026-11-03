@@ -36,14 +36,19 @@ test('a late step cannot replace an edit made while it was pending', () => {
     assert.throws(() => acceptCreatorProposal(draft, finished), /field changed/);
 });
 
-test('greetings use bounded batches and retain previous batches', () => {
+test('greetings are written one per request and keep earlier greetings', () => {
     const draft = createCreatorDraft({ id: 'greetings', card: { data: {} } });
     draft.dossier = 'A shipwright.';
-    draft.writing = { targets: { greetingCount: '8' } };
+    draft.writing = { targets: { greetingCount: '5' } };
     let proposal = startCreatorConversion(draft, ['first_mes']);
-    assert.deepEqual(proposal.plan.steps.map(step => step.count ?? 1), [1, 3, 3, 1]);
+    assert.deepEqual(proposal.plan.steps.map(step => step.label), ['First greeting', 'Alternate greeting 1', 'Alternate greeting 2', 'Alternate greeting 3', 'Alternate greeting 4']);
+    assert.ok(proposal.plan.steps.slice(1).every(step => step.count === 1));
     proposal = mergeCreatorStep(draft, proposal, JSON.stringify({ fields: { first_mes: 'First' } }));
-    for (const batch of [['A', 'B', 'C'], ['D', 'E', 'F'], ['G']]) proposal = mergeCreatorStep(draft, proposal, JSON.stringify({ fields: { alternate_greetings: batch } }));
-    assert.deepEqual(proposal.changes[1].after, ['A', 'B', 'C', 'D', 'E', 'F', 'G']);
-    assert.equal(proposal.plan.next, 4);
+    proposal = mergeCreatorStep(draft, proposal, JSON.stringify({ fields: { alternate_greetings: ['A', 'Extra'] } }));
+    assert.match(creatorStepMessages(draft, proposal)[0].content, /exactly one new greeting: alternative 2/);
+    proposal = mergeCreatorStep(draft, proposal, JSON.stringify({ fields: { alternate_greetings: ['B'] } }));
+    proposal = mergeCreatorStep(draft, proposal, JSON.stringify({ fields: { alternate_greetings: ['X', 'Y', 'C'] } }));
+    proposal = mergeCreatorStep(draft, proposal, JSON.stringify({ fields: { alternate_greetings: ['D'] } }));
+    assert.deepEqual(proposal.changes[1].after, ['A', 'B', 'C', 'D']);
+    assert.equal(proposal.plan.next, 5);
 });

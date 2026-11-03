@@ -8,7 +8,7 @@ export function creatorWritingSteps(draft, fields, alternateCount = Number(creat
     const labels = { name: 'Display name', description: 'Description', personality: 'Personality', scenario: 'Scenario', first_mes: 'First greeting', mes_example: 'Interviewer examples', depth_prompt: 'Character’s Note' };
     for (const field of fields) {
         if (field === 'alternate_greetings') {
-            for (let start = 0; start < Math.max(1, alternateCount); start += 3) steps.push({ fields: [field], label: `Alternate greetings ${start + 1}–${Math.min(start + 3, Math.max(1, alternateCount))}`, start, count: Math.min(3, Math.max(1, alternateCount) - start) });
+            for (let start = 0; start < Math.max(1, alternateCount); start++) steps.push({ fields: [field], label: `Alternate greeting ${start + 1}`, start, count: 1 });
         } else steps.push({ fields: [field], label: labels[field] ?? field.replaceAll('_', ' ') });
     }
     return steps;
@@ -41,7 +41,7 @@ export function creatorStepMessages(draft, proposal) {
     const step = proposal.plan.steps[proposal.plan.next];
     const existingFields = Object.fromEntries(step.fields.map(field => [field, field === 'alternate_greetings' ? draft.card.data[field] ?? [] : creatorTextValue(draft, field)]));
     return [
-        { role: 'system', content: `${proposal.plan.system}\nWrite only this small step: ${step.label}. Other fields are written separately. Return a JSON object with fields, questions and coverage. Leave unsupported fields absent. Do not repeat questions already asked or answered.${step.count ? ` Return at most ${step.count} alternate greetings, starting at alternative ${step.start + 1}.` : ''}` },
+        { role: 'system', content: `${proposal.plan.system}\nWrite only this small step: ${step.label}. Other fields are written separately. Return a JSON object with fields, questions and coverage. Leave unsupported fields absent. Do not repeat questions already asked or answered.${step.count ? ` Return "alternate_greetings" as an array holding exactly one new greeting: alternative ${step.start + 1}. Make it distinct from the first greeting and every greeting in writtenFields.` : ''}` },
         { role: 'user', content: JSON.stringify({ ...proposal.plan.source, requestedFields: step.fields, dossier: proposal.dossierBefore, existingFields, writtenFields: Object.fromEntries(proposal.changes.map(change => [change.field, change.after])), alreadyAsked: proposal.questions, answers: [...(proposal.resolved ?? []), ...Object.entries(proposal.answers ?? {}).map(([question, answer]) => ({ question, answer }))], revisionNote: proposal.note ?? '', step }) },
     ];
 }
@@ -62,7 +62,7 @@ export function mergeCreatorStep(draft, proposal, output) {
             if (Object.hasOwn(next.plan.before ?? {}, field)) change.before = structuredClone(next.plan.before[field]);
             next.changes.push(change);
         }
-        if (field === 'alternate_greetings') change.after.splice(step.start, step.count, ...value.slice(0, step.count));
+        if (field === 'alternate_greetings') change.after.splice(step.start, step.count, ...(value.length > step.count && value.length >= step.start + step.count ? value.slice(step.start, step.start + step.count) : value.slice(0, step.count)));
         else change.after = value;
     }
     for (const key of ['questions', 'coverage']) {
