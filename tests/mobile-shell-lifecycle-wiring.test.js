@@ -416,6 +416,7 @@ describe('mobile shell lifecycle wiring', () => {
             ['.popup', '.ica--template-pill-row'],
             ['#user-settings-block', '.sb-settings-tabs-nav'],
             ['#right-nav-panel', '.sb-character-editor-subtabs'],
+            ['#right-nav-panel', '.creator-sections'],
             ['#top-bar', '.sb-topbar-group-left'],
             ['#sheld', '.sb-conversation-channel-tabs'],
             ['#sheld', '.sb-conversation-quick-actions'],
@@ -961,7 +962,7 @@ describe('mobile shell lifecycle wiring', () => {
         expect(applyExclusivitySource).toContain('[surface.NAV]: () => closeMobileNav(),');
         expect(applyExclusivitySource).toContain('[surface.LEFT_SHELL]: () => closeShell(\'left\'),');
         expect(applyExclusivitySource).toContain('[surface.RIGHT_SHELL]: () => closeShell(\'right\'),');
-        expect(applyExclusivitySource).toContain('[surface.CHARACTER_PANEL]: () => closeCharacterPanelUnlessPinned(),');
+        expect(applyExclusivitySource).toContain('[surface.CHARACTER_PANEL]: () => closeCharacterPanelUnlessPinned({ preserveCreator: true }),');
         expect(applyExclusivitySource).toContain('[surface.CHAT_TOOLS]: () => closeMobileChatTools(),');
         expect(applyExclusivitySource).toContain('[surface.CONNECTION_STRIP]: () => setConnectionStripOpenState(false),');
         expect(applyExclusivitySource).toContain('throw new Error(`Unknown mobile shell surface: ${closeSurfaceKey}`);');

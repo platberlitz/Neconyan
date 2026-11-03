@@ -325,9 +325,36 @@ function chatPlan(change, source) {
  * Reads the live value a change would replace and returns everything the
  * review needs. Nothing is written until commit() is called.
  */
-export async function prepareChange(change, source, { sharedAvatar = '' } = {}) {
+export async function prepareChange(change, source, { sharedAvatar = '', creatorKey = '' } = {}) {
     if (!isCurrentSource(source)) fail(t`Return to this Scratchpad context before applying changes.`);
     change = normaliseChange(change);
+    if (change.type === 'creator') {
+        const { CreatorSession } = await import('../creator/session.js');
+        const { scratchpadCreatorDraft } = await import('../creator/scratchpad-draft.js');
+        const client = new CreatorSession();
+        if (!creatorKey) fail('This Catelier proposal needs its original Scratchpad message.');
+        const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(creatorKey));
+        const id = `scratchpad-${Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('').slice(0, 48)}`;
+        return {
+            target: change.name, field: 'Private Catelier draft', before: '', after: JSON.stringify(change, null, 2), editable: true,
+            hint: 'This saves a private draft in Catelier, not a character in your library. Reapplying this proposal opens the same draft.',
+            async commit(edited) {
+                requireSource(source); client.assertOwner();
+                let value;
+                try { value = JSON.parse(edited); } catch { fail('The Catelier proposal must be valid JSON.'); }
+                const draft = scratchpadCreatorDraft(value, id);
+                try {
+                    await client.request('get', { id });
+                    requireSource(source);
+                    return { creatorDraftId: id };
+                } catch (error) { if (error.status !== 404) throw error; }
+                requireSource(source);
+                await client.request('save', { draft, expectedRevision: null });
+                requireSource(source);
+                return { creatorDraftId: id };
+            },
+        };
+    }
     if (change.type === 'character' && change.action === 'create') {
         const draft = normaliseCharacterDraft(change);
         let committed;

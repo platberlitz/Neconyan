@@ -1273,6 +1273,100 @@ const TOOL_PAGES = Object.freeze({
             },
         ],
     },
+    'character-creator': {
+        assistant: 'nori',
+        name: 'Catelier',
+        kicker: 'Build a character',
+        description: 'Write a character in a private draft, try their voice, and review every change before it reaches your library.',
+        invite: 'Nori will show you how a character comes together here. Try not to stare.',
+        rebuilds: true,
+        steps: [
+            {
+                id: 'welcome',
+                targets: ['.neconyan-tool-page-intro'],
+                title: 'Your private studio',
+                body: 'Catelier builds a character in a **private draft**. Nothing reaches your **Characters** list until you press **Review & save**.\nWrite, rewrite, change your mind. Nobody sees the messy bits.',
+                hint: 'An atelier for cats. Very exclusive. I would charge a fortune for entry, if anyone asked.',
+            },
+            {
+                id: 'start',
+                targets: ['.creator-welcome-actions'],
+                optional: true,
+                title: 'Start a draft',
+                body: '**Create a character** opens a blank draft. Press it now and I will follow you in.\n**Restore a private draft backup** brings back a draft you saved to a file earlier.',
+                hint: 'Go on, press it. I will wait. Elegantly.',
+            },
+            {
+                id: 'drafts',
+                targets: ['.creator-draft-list'],
+                optional: true,
+                title: 'Your drafts',
+                body: 'Drafts you have started wait here. Open one to carry on where you left off.',
+                hint: 'Unfinished masterpieces. I have a few myself. Mostly outfits.',
+            },
+            {
+                id: 'library',
+                targets: ['.creator-library-grid'],
+                optional: true,
+                title: 'Start from a character you have',
+                body: 'Pick a character from your library to work on a copy of them here. The original stays as it is until you review and save.',
+                hint: 'A makeover. I approve of makeovers.',
+            },
+            {
+                id: 'sections',
+                targets: ['.creator-sections'],
+                follow: '.creator-welcome-actions .menu_button_primary, .creator-draft-open, .creator-library-item',
+                optional: true,
+                title: 'One section at a time',
+                body: 'Each part of the card has its own section: **Identity**, **Greetings & examples**, **Lorebooks**, **Portrait** and more. Visit them in any order.\nCatelier keeps your changes as you type.',
+                hint: 'You do not have to finish in one sitting. Beauty takes time. Ask me how I know.',
+            },
+            {
+                id: 'dossier',
+                targets: ['.creator-content'],
+                open: '[data-creator-section="dossier"]',
+                follow: '[data-creator-section="dossier"]',
+                optional: true,
+                title: 'Dossier',
+                body: 'The **Dossier** holds everything you know about the character: canon notes, history, appearance, voice and your own headcanons.\nIt stays private to the draft and is never published with the card.',
+                hint: 'Paste it all in. Messy is fine. I will not judge. Out loud.',
+            },
+            {
+                id: 'convert',
+                targets: ['[data-creator-convert]'],
+                open: '[data-creator-section="dossier"]',
+                optional: true,
+                title: 'Convert dossier to card',
+                body: 'Tick the fields you want, then press **Convert dossier to card**. The model writes them from your Dossier and shows each one for you to accept or reject.\nNothing in the draft changes until you accept.',
+                hint: 'Someone else does the writing. My favourite kind of work.',
+            },
+            {
+                id: 'instructions',
+                targets: ['[data-creator-connection]', '.creator-content'],
+                open: '[data-creator-section="instructions"]',
+                follow: '[data-creator-section="instructions"]',
+                optional: true,
+                title: 'Writing instructions',
+                body: '**Writing instructions** picks the connection Catelier writes with, the fallback profiles it tries when that fails, and the output limit.\nBelow that are the prompts that guide conversion, interviews and lorebook writing for this draft.',
+                hint: 'If a reply fails, look here first. It is usually the connection. It is never me.',
+            },
+            {
+                id: 'save',
+                targets: ['[data-creator-review]'],
+                optional: true,
+                title: 'Review & save',
+                body: '**Review & save** lists every change before anything reaches your library. Save to create the character, or to update the one you started from.',
+                hint: 'Check their hair before they go out. Trust me.',
+            },
+            {
+                id: 'done',
+                targets: ['.neconyan-tool-tour-button'],
+                title: 'That is Catelier',
+                body: 'Press **Tour** at any time to see this again. **Drafts** takes you back to every private draft.',
+                hint: 'Now go make someone gorgeous. Second most gorgeous. After me.',
+            },
+        ],
+    },
     'dialogue-colors': {
         assistant: 'miso',
         name: 'Dialogue Colors',
@@ -1843,6 +1937,25 @@ function followMewmoryTab(event) {
     if (step) void show(step);
 }
 
+// A step with `follow` opens when the user presses that control themselves, once its target is on screen.
+function followTourClick(event) {
+    if (!event.isTrusted || !tour.card || !(event.target instanceof Element)) return;
+    const origin = event.target;
+    const step = getToolPage(tour.key)?.steps.find(item => item.follow && origin.closest(item.follow));
+    if (!step || step.id === tour.stepId) return;
+    const token = tour.token;
+    void (async () => {
+        for (let attempt = 0; attempt < 40; attempt++) {
+            if (token !== tour.token || !tour.card) return;
+            if (currentSteps().some(item => item.id === step.id)) {
+                void show(step.id);
+                return;
+            }
+            await wait(100);
+        }
+    })();
+}
+
 function refreshTourTarget() {
     if (!tour.card || !tour.root) return;
     const step = currentSteps().find(item => item.id === tour.stepId);
@@ -1865,7 +1978,7 @@ function openStep(step) {
         const header = findShown(scope, selector);
         const details = header?.closest('details');
         if (details && !details.open) details.open = true;
-        else if (header?.getAttribute('aria-expanded') === 'false' || header?.getAttribute('aria-pressed') === 'false') header.click();
+        else if (['aria-expanded', 'aria-pressed', 'aria-current'].some(name => header?.getAttribute(name) === 'false')) header.click();
     }
 }
 
@@ -2023,6 +2136,7 @@ export function startToolTour(id, root, heading = null) {
     tour.root = root;
     tour.heading = heading;
     if (page.key === 'mewmory') root.addEventListener('click', followMewmoryTab);
+    if (page.steps.some(step => step.follow)) root.addEventListener('click', followTourClick);
     if (page.key === 'mewmory' || page.rebuilds) {
         // Switching tabs or panes rebuilds these pages' controls, including the highlighted node.
         tour.observer = new MutationObserver(refreshTourTarget);
@@ -2053,6 +2167,7 @@ export function endToolTour({ restoreFocus = true } = {}) {
     tour.observer?.disconnect();
     tour.observer = null;
     tour.root?.removeEventListener('click', followMewmoryTab);
+    tour.root?.removeEventListener('click', followTourClick);
     tour.spacer?.remove();
     tour.spacer = null;
     clearTarget();

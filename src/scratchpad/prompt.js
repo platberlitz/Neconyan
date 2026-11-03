@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { serverDirectory } from '../server-directory.js';
 import { CHARACTER_CREATION_INSTRUCTIONS } from './character-tools.js';
+import { CREATOR_SCRATCHPAD_INSTRUCTIONS } from '../../public/scripts/creator/scratchpad-draft.js';
 import { normaliseAssistant, normaliseGender } from './store.js';
 import { isCustomAssistant, assistantProfileError } from './assistant-profiles.js';
 import { SCRATCHPAD_MACRO_GUIDANCE } from './macros.js';
@@ -173,7 +174,7 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
     const preferences = userInstructions.trim() ? `The user's global Scratchpad instructions for you:\n${userInstructions}` : '';
     const voice = typeof customPrompt === 'string' && customPrompt.trim() ? ''
         : `For this reply, be ${persona.name} throughout: ${substituteNames(persona.personality, names)}\nGive the requested help in that voice, including explanations around any change blocks. Keep factual claims accurate and distinguish playful teasing from real advice.`;
-    return { text: [instructions, preferences, SCRATCHPAD_MACRO_GUIDANCE, CHARACTER_CREATION_INSTRUCTIONS, imageInstructions(capabilities), reference, voice].filter(Boolean).join('\n\n'), persona };
+    return { text: [instructions, preferences, SCRATCHPAD_MACRO_GUIDANCE, CHARACTER_CREATION_INSTRUCTIONS, CREATOR_SCRATCHPAD_INSTRUCTIONS, imageInstructions(capabilities), reference, voice].filter(Boolean).join('\n\n'), persona };
 }
 
 export const SCRATCHPAD_CONTEXT_ACK = 'I have read the shared context. What would you like to work on?';

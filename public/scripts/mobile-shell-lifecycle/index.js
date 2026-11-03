@@ -992,6 +992,7 @@ export const MOBILE_SWIPE_RAIL_SELECTOR = [
     '.ica--template-pill-row',
     '.sb-shell-nav',
     '.sb-character-editor-subtabs',
+    '.creator-sections',
     '.sb-settings-tabs-nav',
     // The icons-only top bar is made entirely of buttons, so every swipe on it matches
     // MOBILE_DOCUMENT_PAN_CONTROL_SELECTOR and the pan guard blocks it unless the rail is

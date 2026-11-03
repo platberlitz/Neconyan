@@ -26,7 +26,7 @@ export async function createMewmoryProvider(port = 0) {
             return response.end('{}');
         }
         const name = typeof body.prompt === 'string' ? 'text-writer' : body.model;
-        const call = { model: name, stream: body.stream, messages: body.messages, prompt: body.prompt, input: body.input, tools: body.tools, headers: request.headers, url: request.url, startedAt: Date.now(), completedAt: null };
+        const call = { model: name, stream: body.stream, max_tokens: body.max_tokens, messages: body.messages, prompt: body.prompt, input: body.input, tools: body.tools, headers: request.headers, url: request.url, startedAt: Date.now(), completedAt: null };
         calls.push(call);
         if ([].concat(mode.hold).includes(name)) await new Promise(resolve => held.add(resolve));
         call.completedAt = Date.now();

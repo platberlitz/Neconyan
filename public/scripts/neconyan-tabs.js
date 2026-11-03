@@ -175,6 +175,9 @@ const NN_PANEL_STYLESHEETS = Object.freeze({
         { href: 'css/personas.css?v=20261006-personaui1', id: 'deferred-personas-css' },
         { href: 'css/neconyan-tool-pages.css?v=20261026a-qig-tabs', id: 'deferred-tool-pages-css' },
     ],
+    'characters:creator': [
+        { href: 'css/neconyan-creator.css?v=20261103-catelier-selectors', id: 'deferred-creator-css' },
+    ],
     'left:api': [
         { href: 'css/neconyan-tool-pages.css?v=20261026a-qig-tabs', id: 'deferred-tool-pages-css' },
     ],
@@ -520,7 +523,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261103-prompting-lab-merge';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261103-catelier-selectors';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -1093,6 +1096,11 @@ const NN_CHARACTER_TAB_COPY = Object.freeze({
         subtitle: 'Edit your own persona here for roleplay and chats!',
         description: 'Edit persona details, locks, and defaults in the same flow as your character work.',
     },
+    creator: {
+        title: 'Catelier',
+        subtitle: 'Build a character, try their voice, and shape their world.',
+        description: 'Recover drafts, develop character cards, and review lorebook changes before saving.',
+    },
     import: {
         title: 'Import',
         subtitle: 'Directly import character cards here from various sources.',
@@ -1115,6 +1123,7 @@ const NN_CHARACTER_PANEL_TABS = Object.freeze([
     { id: 'editor', label: 'Editor', icon: 'fa-pen-to-square' },
     { id: 'world-info', label: 'Lorebooks', icon: 'fa-book-atlas' },
     { id: 'persona', label: 'Persona', icon: 'fa-face-smile' },
+    { id: 'creator', label: 'Catelier', icon: 'fa-wand-magic-sparkles' },
     { id: 'import', label: 'Import', icon: 'fa-file-import' },
 ]);
 const NN_CHARACTER_PANEL_DEFAULT_TAB = 'characters';
@@ -1530,6 +1539,7 @@ const nnState = {
         observedOpen: null,
         lastTab: 'characters',
         displacedWhilePinned: false,
+        displacedCreator: false,
         restoreFrame: 0,
     },
     mobileModal: {
@@ -3008,6 +3018,7 @@ const NN_CHARACTER_NATIVE_PAGES = Object.freeze({
     groups: 'group-library',
     persona: 'persona',
     import: 'character-import',
+    creator: 'character-creator',
 });
 
 /**
@@ -8219,7 +8230,7 @@ function applyMobileSurfaceExclusivity(decision) {
         [surface.NAV]: () => closeMobileNav(),
         [surface.LEFT_SHELL]: () => closeShell('left'),
         [surface.RIGHT_SHELL]: () => closeShell('right'),
-        [surface.CHARACTER_PANEL]: () => closeCharacterPanelUnlessPinned(),
+        [surface.CHARACTER_PANEL]: () => closeCharacterPanelUnlessPinned({ preserveCreator: true }),
         [surface.CHAT_TOOLS]: () => closeMobileChatTools(),
         [surface.CONNECTION_STRIP]: () => setConnectionStripOpenState(false),
     };
@@ -9636,7 +9647,7 @@ function isCharacterPanelOpen() {
 function getActiveCharacterPanelTab() {
     const menuType = getCharacterPanel()?.dataset.menuType;
 
-    if (['persona', 'import', 'world-info', 'groups'].includes(menuType)) {
+    if (['persona', 'creator', 'import', 'world-info', 'groups'].includes(menuType)) {
         return menuType;
     }
 
@@ -9923,7 +9934,7 @@ function syncCharacterTitlebarVisibility() {
         return;
     }
 
-    const shouldHide = ['characters', 'groups', 'editor_empty', 'world-info', 'persona', 'import', 'conversation'].includes(panel.dataset.menuType ?? '');
+    const shouldHide = ['characters', 'groups', 'editor_empty', 'world-info', 'persona', 'creator', 'import', 'conversation'].includes(panel.dataset.menuType ?? '');
     pinAndTabs.style.display = shouldHide ? 'none' : '';
     // Phones: the name/token titlebar scrolls away with the editor body instead of pinning
     // another 100px of chrome above it. Desktop keeps it as a direct panel child.
@@ -10407,6 +10418,36 @@ function openCharacterPersonaTab() {
     syncCharacterTitlebarVisibility();
 }
 
+function openCharacterCreatorTab({ avatar = null, draftId = null } = {}) {
+    const panel = getCharacterPanel();
+    const creatorStylesReady = preloadPanelStylesheets('characters', 'creator', { priority: 'high' });
+    holdPanelUntilStyled(document.getElementById('sb_character_creator_panel'), creatorStylesReady);
+    setCharacterPanelMenuType(panel, 'creator');
+    setCharacterEditorEmptyState(false);
+    setCharacterPersonaPanelVisible(false);
+    setCharacterImportPanelVisible(false);
+    setCharacterWorldInfoPanelVisible(false);
+    hideCharacterMainPanels();
+    syncCharacterShellTabs('creator');
+    syncCharacterTitlebarVisibility();
+    void import('./creator/index.js').then(module => module.mountCreator(document.getElementById('sb_character_creator_panel'), { avatar, draftId }))
+        .catch(error => { console.error('[Creator]', error); toastr.error('Catelier could not open. Try again.'); });
+}
+
+async function openEditedCharacterInCreator() {
+    const context = getSillyTavernContext();
+    const avatar = context?.groupId ? null : context?.characters?.[context.characterId]?.avatar;
+    if (getCharacterPanel()?.dataset.menuType !== 'character_edit' || !avatar) {
+        toastr.info('Save this character first, or start a new draft in Catelier.');
+        return;
+    }
+    if (await flushCharacterSaveDebounced() === false) {
+        toastr.error('Save the editor changes before opening Catelier.');
+        return;
+    }
+    openCharacterCreatorTab({ avatar });
+}
+
 function openCharacterImportTab() {
     const panel = getCharacterPanel();
     nnState.characterDrawer.lastTab = 'import';
@@ -10492,7 +10533,7 @@ function setCharacterShellMode(mode) {
     }
 }
 
-function openCharacterPanelTab(tabId) {
+function openCharacterPanelTab(tabId, creatorOptions = {}) {
     const normalizedTabId = normalizeCharacterPanelTab(tabId);
     nnState.characterDrawer.lastTab = normalizedTabId;
 
@@ -10518,6 +10559,8 @@ function openCharacterPanelTab(tabId) {
         if (normalizedTabId === 'persona') {
             setCharacterPanelMenuType(panel, 'persona');
             openCharacterPersonaTab();
+        } else if (normalizedTabId === 'creator') {
+            openCharacterCreatorTab(creatorOptions);
         } else if (normalizedTabId === 'import') {
             setCharacterPanelMenuType(panel, 'import');
             openCharacterImportTab();
@@ -10546,6 +10589,8 @@ function restoreLastCharacterPanelView() {
 
     if (lastTab === 'persona') {
         openCharacterPersonaTab();
+    } else if (lastTab === 'creator') {
+        openCharacterCreatorTab();
     } else if (lastTab === 'import') {
         openCharacterImportTab();
     } else if (lastTab === 'world-info') {
@@ -10579,7 +10624,7 @@ function syncCharacterShellTabs(activeTab = null) {
     const panel = getCharacterPanel();
     const menuType = panel?.dataset.menuType;
     const normalizedTab = activeTab
-        ?? (menuType === 'persona'
+        ?? (menuType === 'creator' ? 'creator' : menuType === 'persona'
             ? 'persona'
             : menuType === 'import'
                 ? 'import'
@@ -10591,6 +10636,17 @@ function syncCharacterShellTabs(activeTab = null) {
 
     nnState.characterDrawer.lastTab = normalizedTab;
 
+    const creatorPanel = document.getElementById('sb_character_creator_panel');
+    if (creatorPanel) {
+        creatorPanel.hidden = normalizedTab !== 'creator';
+        creatorPanel.setAttribute('aria-hidden', String(normalizedTab !== 'creator'));
+    }
+
+    const editorSubtabsWrapper = panel?.querySelector('.sb-character-editor-subtabs-wrapper');
+    if (editorSubtabsWrapper instanceof HTMLElement) {
+        editorSubtabsWrapper.hidden = normalizedTab !== 'editor';
+    }
+
     if (menuType === 'characters' || menuType === 'groups') {
         syncCharacterListControls(menuType);
     }
@@ -10601,6 +10657,7 @@ function syncCharacterShellTabs(activeTab = null) {
     if (panel instanceof HTMLElement) panel.dataset.neconyanNativePage = nativePage;
     if (normalizedTab === 'persona') mountNeconyanNativePage('persona', document.getElementById('sb_character_persona_panel'));
     else if (normalizedTab === 'import') mountNeconyanNativePage(nativePage, document.getElementById('sb_character_import_panel'));
+    else if (normalizedTab === 'creator') mountNeconyanNativePage(nativePage, document.getElementById('sb_character_creator_panel'));
     else if (nativePage) mountNeconyanNativePage(nativePage, document.getElementById('rm_characters_block'));
 
     panel?.querySelectorAll('[data-sb-character-tab]').forEach(tab => {
@@ -10830,6 +10887,7 @@ function bindCharacterDrawerStateObserver() {
 }
 
 function closeCharacterPanel() {
+    nnState.characterDrawer.displacedCreator = false;
     const panel = getCharacterPanel();
     const shouldResetViewport = panel instanceof HTMLElement
         && (panel.classList.contains('openDrawer') || (document.activeElement instanceof HTMLElement && panel.contains(document.activeElement)));
@@ -10861,19 +10919,27 @@ function isCharacterPanelPinned() {
 
 // Opening a chat, going Home and popovers tidy the workspace away. A pinned panel is part of the
 // layout rather than an overlay, so it stays; the user still closes it with its own buttons.
-function closeCharacterPanelUnlessPinned() {
+function closeCharacterPanelUnlessPinned({ preserveCreator = false } = {}) {
+    if (preserveCreator && getCharacterPanel()?.dataset.menuType === 'creator') {
+        displaceCharacterPanel();
+        return;
+    }
     if (!isCharacterPanelPinned()) {
         closeCharacterPanel();
     }
 }
 
 // Settings and the left shell share the panel's inspector slot, so they replace a pinned panel
-// while open and hand the slot back when they close.
+// while open and hand the slot back when they close. Creator also resumes its draft
+// after a temporary visit to another page, including on phones.
 function displaceCharacterPanel() {
+    const displacedCreator = nnState.characterDrawer.displacedCreator
+        || (isCharacterPanelOpen() && getCharacterPanel()?.dataset.menuType === 'creator');
     if (isCharacterPanelPinned() && isCharacterPanelOpen()) {
         nnState.characterDrawer.displacedWhilePinned = true;
     }
     closeCharacterPanel();
+    nnState.characterDrawer.displacedCreator = displacedCreator;
 }
 
 // The shell intercepts the native toggle, so the native NavOpened flag is written here instead;
@@ -10902,7 +10968,7 @@ function restorePinnedCharacterPanel() {
 }
 
 function queuePinnedCharacterPanelRestore() {
-    if (!nnState.characterDrawer.displacedWhilePinned || nnState.characterDrawer.restoreFrame) {
+    if ((!nnState.characterDrawer.displacedWhilePinned && !nnState.characterDrawer.displacedCreator) || nnState.characterDrawer.restoreFrame) {
         return;
     }
 
@@ -10913,8 +10979,10 @@ function queuePinnedCharacterPanelRestore() {
             return;
         }
 
-        const shouldRestore = isCharacterPanelPinned() && !isCharacterPanelOpen();
+        const restoreCreator = nnState.characterDrawer.displacedCreator && getCharacterPanel()?.dataset.menuType === 'creator';
+        const shouldRestore = (isCharacterPanelPinned() || restoreCreator) && !isCharacterPanelOpen();
         nnState.characterDrawer.displacedWhilePinned = false;
+        nnState.characterDrawer.displacedCreator = false;
         if (shouldRestore) {
             toggleCharacterPanel();
         }
@@ -19415,6 +19483,13 @@ function injectCharacterDrawerControls() {
     }
 
     const editorTab = document.getElementById('sb_character_tab_editor');
+    const creatorShortcut = document.getElementById('sb_character_open_creator');
+    if (creatorShortcut && creatorShortcut.dataset.sbBound !== 'true') {
+        creatorShortcut.dataset.sbBound = 'true';
+        creatorShortcut.addEventListener('click', () => {
+            void openEditedCharacterInCreator().catch(error => toastr.error(error.message));
+        });
+    }
     if (editorTab instanceof HTMLButtonElement && editorTab.dataset.sbBound !== 'true') {
         editorTab.dataset.sbBound = 'true';
         editorTab.addEventListener('click', () => { void openCharacterEditorTab(); });
@@ -19430,6 +19505,12 @@ function injectCharacterDrawerControls() {
     if (worldInfoTab instanceof HTMLButtonElement && worldInfoTab.dataset.sbBound !== 'true') {
         worldInfoTab.dataset.sbBound = 'true';
         worldInfoTab.addEventListener('click', () => openCharacterWorldInfoTab());
+    }
+
+    const creatorTab = document.getElementById('sb_character_tab_creator');
+    if (creatorTab instanceof HTMLButtonElement && creatorTab.dataset.sbBound !== 'true') {
+        creatorTab.dataset.sbBound = 'true';
+        creatorTab.addEventListener('click', openCharacterCreatorTab);
     }
 
     const importTab = document.getElementById('sb_character_tab_import');
@@ -21339,6 +21420,7 @@ function initAll() {
     const neconyanShell = /** @type {any} */ (globalThis.NeconyanShell || {});
     globalThis.NeconyanShell = Object.assign(neconyanShell, {
         refreshRailQuickActions: refreshNeconyanRailQuickActions,
+        openCreator: options => openCharacterPanelTab('creator', options),
         editQuickActions: editNeconyanRailQuickActions,
         openExtensionSettings,
         openIncludedTool: openNeconyanIncludedToolPage,

@@ -1454,7 +1454,7 @@ async function reviewAndSaveChange(session, message, part, key) {
             throw new Error(t`Return to the original context and share the selected card before reviewing this change.`);
         }
         plan = part.change.type === 'image' ? await images.prepareAvatarChange({ source: wireSource(source), session, message, part,
-            guard: () => imageGuard(source, session, message, part) }) : await prepareChange(part.change, source, { sharedAvatar: message.sharedAvatar });
+            guard: () => imageGuard(source, session, message, part) }) : await prepareChange(part.change, source, { sharedAvatar: message.sharedAvatar, creatorKey: JSON.stringify([source.key, session.id, message.id, part.index]) });
         requireScope(source, session.id);
         if (plan.bucket) applyBucket(plan.bucket);
     } catch (error) {
@@ -1479,6 +1479,7 @@ async function reviewAndSaveChange(session, message, part, key) {
         cancelButton: t`Not now`,
     });
     if (result !== POPUP_RESULT.AFFIRMATIVE) return;
+    let creatorDraftId = null;
     try {
         await app.queue;
         requireScope(source, session.id);
@@ -1486,6 +1487,7 @@ async function reviewAndSaveChange(session, message, part, key) {
             throw new Error(t`Share the selected character card before saving this change.`);
         }
         const saved = await plan.commit(editor ? editor.value : plan.after);
+        creatorDraftId = saved?.creatorDraftId;
         if (saved?.refreshFailed) toastr.info(t`The avatar was saved. Refresh this view to reload its picture.`);
     } catch (error) {
         reportError(error, t`That change could not be saved.`);
@@ -1494,6 +1496,10 @@ async function reviewAndSaveChange(session, message, part, key) {
     committedChanges.add(key);
     toastr.success(t`Change saved.`);
     if (await markChange(session, message, part.index, 'applied', source)) committedChanges.delete(key);
+    if (creatorDraftId) {
+        hideScratchpad();
+        globalThis.NeconyanShell?.openCreator?.({ draftId: creatorDraftId });
+    }
 }
 
 async function reviewNotebookChange(session, message, part, { dismiss = false } = {}) {

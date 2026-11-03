@@ -525,6 +525,7 @@ app.use('/api/roleplay/images', express.json({ limit: '64kb', inflate: false }))
 app.use('/api/roleplay', express.json({ limit: '256kb' }), express.urlencoded({ extended: false, limit: '256kb' }));
 app.use('/api/notebooks', express.json({ limit: '8mb' }), express.urlencoded({ extended: false, limit: '256kb' }));
 app.use('/api/scratchpad', express.json({ limit: '4mb' }), express.urlencoded({ extended: false, limit: '256kb' }));
+app.use('/api/creator', express.json({ limit: '24mb' }));
 app.use('/api/meower', express.json({ limit: '32kb' }), express.urlencoded({ extended: false, limit: '32kb' }));
 app.use('/api/labs', express.json({ limit: '32mb' }), express.urlencoded({ extended: false, limit: '32mb' }));
 app.use('/api/operations', express.json({ limit: '32mb' }), express.urlencoded({ extended: false, limit: '32mb' }));
