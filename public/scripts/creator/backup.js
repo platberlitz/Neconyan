@@ -2,7 +2,7 @@ import { validateCreatorDraft } from './model.js';
 
 /** A restored backup is a new private draft, never authority to overwrite an old account. */
 export function restoreCreatorBackup(value, id = globalThis.crypto.randomUUID()) {
-    if (value?.format !== 'neconyan-creator-backup' || value.version !== 1) throw new Error('Choose a Creator private draft backup.');
+    if (value?.format !== 'neconyan-creator-backup' || value.version !== 1) throw new Error('Choose a Catelier private draft backup.');
     const draft = structuredClone(validateCreatorDraft(value.draft));
     draft.id = id;
     draft.source = { avatar: null, revision: null, original: structuredClone(draft.card), extraBooks: [] };

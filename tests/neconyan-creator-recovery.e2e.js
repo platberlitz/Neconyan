@@ -38,7 +38,7 @@ for (const phone of [false, true]) {
         app.provider.mode.reply = null;
         app.provider.mode.fail = true;
         await convert.click();
-        await expect(creator.locator('.creator-conversion-status')).toContainText('Creator could not get a reply', { timeout: 30000 });
+        await expect(creator.locator('.creator-conversion-status')).toContainText('Catelier could not get a reply', { timeout: 30000 });
         await expect(creator).not.toHaveAttribute('aria-busy', 'true');
         app.provider.mode.fail = false;
         await creator.getByRole('button', { name: 'Writing instructions', exact: true }).click();

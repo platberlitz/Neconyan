@@ -20,7 +20,7 @@ export function downloadCreatorJson(value, filename) {
 export function renderCreatorPreview(workspace, main) {
     const draft = workspace.session.draft;
     const card = creatorCardExport(draft);
-    main.append(element('h3', '', 'What leaves your draft'), element('p', 'creator-muted', 'The card contains the public fields below, its extensions and its portable lorebook. Your dossier, private notes, interview and draft history stay in Creator. Linked book files and additional local links are not bundled into a character JSON file.'));
+    main.append(element('h3', '', 'What leaves your draft'), element('p', 'creator-muted', 'The card contains the public fields below, its extensions and its portable lorebook. Your dossier, private notes, interview and draft history stay in Catelier. Linked book files and additional local links are not bundled into a character JSON file.'));
     const count = element('p', 'creator-muted', 'Count tokens using your selected tokenizer when you need an estimate. This is not a complete chat prompt.');
     const actionBar = element('div', 'creator-actions');
     actionBar.append(

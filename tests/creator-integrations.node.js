@@ -180,7 +180,7 @@ test('Conversion targets and style controls reach authoring prompts, guard stale
 test('Scratchpad produces a private editable Creator draft with literal source macros', () => {
     const proposal = { type: 'creator', action: 'create', name: 'Mira', dossier: 'Agreed: {{char}} repairs ships.', fields: { description: 'Shipwright', mes_example: '<START>\nInterviewer: Why?\n{{char}}: Work.' } };
     assert.deepEqual(normaliseChange(proposal), proposal);
-    assert.match(describeChange(proposal), /Creator draft/);
+    assert.match(describeChange(proposal), /Catelier draft/);
     const parts = splitReply('Ready.\n```scratchpad-change\n' + JSON.stringify(proposal) + '\n```');
     assert.ok(parts.some(part => part.change?.type === 'creator'));
     const draft = scratchpadCreatorDraft(proposal, 'stable-proposal');

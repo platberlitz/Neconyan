@@ -11,6 +11,6 @@ import { renderCreatorNotebooks } from './notebooks.js';
 
 export async function renderCreatorTool(workspace, section, main) {
     const render = { lore: renderLore, helper: renderWritingPartner, regex: renderPrettyHtml, portrait: renderPortrait, macros: renderMacroTools, game: renderGameTools, interview: renderInterview, preview: renderCreatorPreview, instructions: renderCreatorPrompts, notebooks: renderCreatorNotebooks }[section];
-    if (!render) throw new Error('This Creator section is not available.');
+    if (!render) throw new Error('This Catelier section is not available.');
     await render(workspace, main);
 }

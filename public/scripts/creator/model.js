@@ -35,7 +35,7 @@ export function createCreatorDraft({ id, card, avatar = null, revision = null, e
 }
 
 export function validateCreatorDraft(draft) {
-    if (!draft || draft.schema !== CREATOR_SCHEMA || !/^[a-zA-Z0-9_-]{1,64}$/.test(draft.id ?? '')) throw new Error('This Creator draft format is not supported.');
+    if (!draft || draft.schema !== CREATOR_SCHEMA || !/^[a-zA-Z0-9_-]{1,64}$/.test(draft.id ?? '')) throw new Error('This Catelier draft format is not supported.');
     if (!draft.card?.data || typeof draft.card.data !== 'object' || Array.isArray(draft.card.data)) throw new Error('The character data is missing.');
     for (const key of ['facts', 'locks', 'books', 'media', 'proposals', 'history', 'future']) {
         if (!Array.isArray(draft[key])) throw new Error(`The draft ${key} must be a list.`);

@@ -13,7 +13,7 @@ export class CreatorSession {
     }
 
     assertOwner() {
-        if (this.owner !== getCurrentUserHandle()) throw new Error('The account changed. Reopen Creator before continuing.');
+        if (this.owner !== getCurrentUserHandle()) throw new Error('The account changed. Reopen Catelier before continuing.');
     }
 
     async request(path, body = {}) {
@@ -25,8 +25,8 @@ export class CreatorSession {
         });
         this.assertOwner();
         const result = await response.json();
-        if (!response.ok) throw Object.assign(new Error(result.message || 'Creator could not finish this request.'), { status: response.status, code: result.code });
-        if (result.owner !== this.owner) throw new Error('The account changed. Reopen Creator.');
+        if (!response.ok) throw Object.assign(new Error(result.message || 'Catelier could not finish this request.'), { status: response.status, code: result.code });
+        if (result.owner !== this.owner) throw new Error('The account changed. Reopen Catelier.');
         return result;
     }
 

@@ -278,7 +278,7 @@ class CreatorWorkspace {
         header.append(heading, actions);
         const layout = element('div', 'creator-layout');
         const nav = element('nav', 'creator-sections');
-        nav.setAttribute('aria-label', 'Creator sections');
+        nav.setAttribute('aria-label', 'Catelier sections');
         for (const [id, label] of sections) {
             const tab = button(label, () => { this.session.draft.view.section = id; this.session.remember(); this.render(); }, false, 'creator-section-tab');
             const isCurrent = draft.view.section === id;
@@ -328,7 +328,7 @@ class CreatorWorkspace {
             main.append(element('div', 'creator-section-intro', 'Optional system and depth instructions for this character.'), this.field('system_prompt'), this.field('post_history_instructions'));
             main.append(textField('Custom User Instructions', draft.writing?.userInstructions ?? '', value => this.edit(next => {
                 next.writing ??= {}; next.writing.userInstructions = value;
-            }), { hint: 'Your directions for Creator’s writing, generation and interviews. Sent with those requests, kept in this draft, and not exported as a character prompt.' }));
+            }), { hint: 'Your directions for Catelier’s writing, generation and interviews. Sent with those requests, kept in this draft, and not exported as a character prompt.' }));
             const depth = draft.card.data.extensions?.depth_prompt ?? { prompt: '', depth: 4, role: 'system' };
             main.append(attachCreatorGenerator(this, textField('Depth prompt', depth.prompt, value => this.edit(next => { next.card.data.extensions ??= {}; next.card.data.extensions.depth_prompt = { ...depth, ...next.card.data.extensions.depth_prompt, prompt: value }; })), 'depth_prompt'));
             this.jsonField(main, 'Depth and role', { depth: depth.depth, role: depth.role }, value => {
@@ -389,7 +389,7 @@ class CreatorWorkspace {
         feedback.setAttribute('role', 'status');
         feedback.hidden = true;
         const convert = button('Convert dossier to card', () => {
-            if (this.busy) { feedback.hidden = false; feedback.textContent = this.requestController ? 'A Creator request is still running. Use Cancel active request above to stop it, then try again.' : 'Creator is saving your draft. Try again when the save finishes.'; return; }
+            if (this.busy) { feedback.hidden = false; feedback.textContent = this.requestController ? 'A Catelier request is still running. Use Cancel active request above to stop it, then try again.' : 'Catelier is saving your draft. Try again when the save finishes.'; return; }
             return this.run(async () => {
                 try {
                     feedback.hidden = false;

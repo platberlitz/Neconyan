@@ -125,7 +125,7 @@ export async function renderInterview(workspace, main) {
             selected: () => current().map(profile => profile.id),
             canChoose: key => !current().some(profile => profile.id === key),
             onSave: value => { library = value; },
-            description: 'Use a saved assistant, copy any character card, or make your own. Creator keeps an editable copy of each collaborator in this draft.',
+            description: 'Use a saved assistant, copy any character card, or make your own. Catelier keeps an editable copy of each collaborator in this draft.',
             choose: key => {
                 current();
                 const profile = available().find(item => item.id === key);

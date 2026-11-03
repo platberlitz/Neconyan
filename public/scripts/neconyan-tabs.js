@@ -1097,7 +1097,7 @@ const NN_CHARACTER_TAB_COPY = Object.freeze({
         description: 'Edit persona details, locks, and defaults in the same flow as your character work.',
     },
     creator: {
-        title: 'Creator',
+        title: 'Catelier',
         subtitle: 'Build a character, try their voice, and shape their world.',
         description: 'Recover drafts, develop character cards, and review lorebook changes before saving.',
     },
@@ -1123,7 +1123,7 @@ const NN_CHARACTER_PANEL_TABS = Object.freeze([
     { id: 'editor', label: 'Editor', icon: 'fa-pen-to-square' },
     { id: 'world-info', label: 'Lorebooks', icon: 'fa-book-atlas' },
     { id: 'persona', label: 'Persona', icon: 'fa-face-smile' },
-    { id: 'creator', label: 'Creator', icon: 'fa-wand-magic-sparkles' },
+    { id: 'creator', label: 'Catelier', icon: 'fa-wand-magic-sparkles' },
     { id: 'import', label: 'Import', icon: 'fa-file-import' },
 ]);
 const NN_CHARACTER_PANEL_DEFAULT_TAB = 'characters';
@@ -10430,18 +10430,18 @@ function openCharacterCreatorTab({ avatar = null, draftId = null } = {}) {
     syncCharacterShellTabs('creator');
     syncCharacterTitlebarVisibility();
     void import('./creator/index.js').then(module => module.mountCreator(document.getElementById('sb_character_creator_panel'), { avatar, draftId }))
-        .catch(error => { console.error('[Creator]', error); toastr.error('Creator could not open. Try again.'); });
+        .catch(error => { console.error('[Creator]', error); toastr.error('Catelier could not open. Try again.'); });
 }
 
 async function openEditedCharacterInCreator() {
     const context = getSillyTavernContext();
     const avatar = context?.groupId ? null : context?.characters?.[context.characterId]?.avatar;
     if (getCharacterPanel()?.dataset.menuType !== 'character_edit' || !avatar) {
-        toastr.info('Save this character first, or start a new draft in Creator.');
+        toastr.info('Save this character first, or start a new draft in Catelier.');
         return;
     }
     if (await flushCharacterSaveDebounced() === false) {
-        toastr.error('Save the editor changes before opening Creator.');
+        toastr.error('Save the editor changes before opening Catelier.');
         return;
     }
     openCharacterCreatorTab({ avatar });

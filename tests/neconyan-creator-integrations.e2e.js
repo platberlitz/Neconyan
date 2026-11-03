@@ -41,7 +41,7 @@ for (const phone of [false, true]) {
         });
         const proposal = { type: 'creator', action: 'create', name: 'Scratchpad Mira', dossier: 'Agreed in discussion: she seeks her sister.', fields: { description: 'Mira keeps {{charposs}} tools.' } };
         app.provider.mode.streamReply = { first: 'Here is your draft.', rest: `\n\`\`\`scratchpad-change\n${JSON.stringify(proposal)}\n\`\`\`` };
-        await page.locator('.scratchpad-composer').fill('Put our character discussion in Creator.');
+        await page.locator('.scratchpad-composer').fill('Put our character discussion in Catelier.');
         const sent = page.waitForResponse('**/api/scratchpad/send');
         await page.locator('.scratchpad-send').click();
         const response = await sent;
@@ -51,13 +51,13 @@ for (const phone of [false, true]) {
         await account.settled((await response.json()).job.id);
         await expect(page.locator('.scratchpad-message.is-pending')).toHaveCount(0);
         await page.locator('.scratchpad-change').getByRole('button', { name: 'Review', exact: true }).click();
-        await expect(page.locator('.scratchpad-review')).toContainText('Private Creator draft');
+        await expect(page.locator('.scratchpad-review')).toContainText('Private Catelier draft');
         await page.getByRole('button', { name: 'Save change', exact: true }).click();
         await expect(creator).toBeVisible();
         await expect(creator.getByLabel('Character dossier', { exact: true })).toHaveValue(proposal.dossier, { timeout: 30000 });
         const after = await account.post('/api/creator/list');
         expect(after.drafts.filter(draft => draft.name === 'Scratchpad Mira')).toHaveLength(1);
-        expect(app.provider.calls.some(call => call.messages?.some(message => message.content?.includes('Creator workspace integration:')))).toBe(true);
+        expect(app.provider.calls.some(call => call.messages?.some(message => message.content?.includes('Catelier workspace integration:')))).toBe(true);
         await page.screenshot({ path: `../screenshots/creator-scratchpad-${phone ? 'phone' : 'desktop'}.png` });
     });
 }

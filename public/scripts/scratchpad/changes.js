@@ -332,16 +332,16 @@ export async function prepareChange(change, source, { sharedAvatar = '', creator
         const { CreatorSession } = await import('../creator/session.js');
         const { scratchpadCreatorDraft } = await import('../creator/scratchpad-draft.js');
         const client = new CreatorSession();
-        if (!creatorKey) fail('This Creator proposal needs its original Scratchpad message.');
+        if (!creatorKey) fail('This Catelier proposal needs its original Scratchpad message.');
         const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(creatorKey));
         const id = `scratchpad-${Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('').slice(0, 48)}`;
         return {
-            target: change.name, field: 'Private Creator draft', before: '', after: JSON.stringify(change, null, 2), editable: true,
-            hint: 'This saves a private draft in Creator, not a character in your library. Reapplying this proposal opens the same draft.',
+            target: change.name, field: 'Private Catelier draft', before: '', after: JSON.stringify(change, null, 2), editable: true,
+            hint: 'This saves a private draft in Catelier, not a character in your library. Reapplying this proposal opens the same draft.',
             async commit(edited) {
                 requireSource(source); client.assertOwner();
                 let value;
-                try { value = JSON.parse(edited); } catch { fail('The Creator proposal must be valid JSON.'); }
+                try { value = JSON.parse(edited); } catch { fail('The Catelier proposal must be valid JSON.'); }
                 const draft = scratchpadCreatorDraft(value, id);
                 try {
                     await client.request('get', { id });

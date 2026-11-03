@@ -205,7 +205,7 @@ export function splitReply(reply) {
 }
 
 export function describeChange(change) {
-    if (change.type === 'creator') return `Creator draft: ${change.name}`;
+    if (change.type === 'creator') return `Catelier draft: ${change.name}`;
     if (change.type === 'image') return change.target === 'avatar' ? `New avatar for ${change.character}` : 'Generate an image';
     if (change.type === 'notebook') {
         const label = Object.values(NOTE_TOOL_DEFINITIONS).find(item => item.kind === change.action)?.displayName || 'Change note';

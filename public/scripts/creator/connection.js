@@ -52,5 +52,5 @@ export async function requestCreatorConnection(draft, { send, validate, signal, 
             failures.push(`${profileLabel(profile)}: ${creatorConnectionError(error)}`);
         }
     }
-    throw new Error(`Creator could not get a reply.\n${failures.join('\n')}`);
+    throw new Error(`Catelier could not get a reply.\n${failures.join('\n')}`);
 }

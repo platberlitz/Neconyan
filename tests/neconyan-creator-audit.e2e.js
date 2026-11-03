@@ -16,7 +16,7 @@ for (const phone of [false, true]) {
         await page.getByRole('button', { name: 'Choose a character', exact: true }).click();
         await page.locator('#sb_character_tab_creator').click();
         await expect.poll(() => failed).toBe(true);
-        await page.locator('#toast-container .toast-error').filter({ hasText: 'Creator could not open' }).click();
+        await page.locator('#toast-container .toast-error').filter({ hasText: 'Catelier could not open' }).click();
         await page.locator('#sb_character_tab_persona').click();
         await page.locator('#sb_character_tab_creator').click();
         const creator = page.locator('#sb_character_creator_panel');
