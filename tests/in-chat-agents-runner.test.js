@@ -1927,6 +1927,36 @@ describe('in-chat agent post-processing runner', () => {
             await new Promise(resolve => setTimeout(resolve, 80));
         });
 
+        test('a manual recovery runs enabled after-reply Agents and Companions on the recovered prose and shows notifications', async () => {
+            globalSettings.promptTransformShowNotifications = true;
+            const notifyingRecovery = {
+                ...recoveryAgent(),
+                postProcess: { ...recoveryAgent().postProcess, promptTransformShowNotifications: true },
+            };
+            enabledAgents = [notifyingRecovery, rewriteAgent(), createCompanionAgent({ id: 'agent-companion' })];
+            modelAnswers();
+            const runner = await loadRunner();
+            const extra = { reasoning: REASONING, generation_outcome: { version: 1, status: 'error', reason: 'reasoning_only' } };
+            chat.push({ name: 'Assistant', mes: '', is_user: false, extra, swipe_id: 0, swipes: [''], swipe_info: [{ extra: { ...extra } }] });
+            const result = await runner.runAgentOnMessage('tpl-thinking-reply-recovery', 0);
+            expect(result.changed).toBe(true);
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(1);
+            expect(callsWith('REWRITE_PROMPT')).toHaveLength(1);
+            expect(callsWith('Write a companion note')).toHaveLength(1);
+            expect(callsWith('REWRITE_PROMPT')[0][0].quietPrompt).toContain('Recovered reply.');
+            expect(callsWith('Write a companion note')[0][0].quietPrompt).toContain('Rewritten reply.');
+            expect(chat[0].mes).toBe('Rewritten reply.');
+            expect(chat[0].swipes[0]).toBe('Rewritten reply.');
+            expect(chat[0].extra.generation_outcome).toBeUndefined();
+            expect(chat[0].extra.inChatAgentTransformHistory).toHaveLength(2);
+            expect(chat[0].extra.inChatAgentPromptRuns.map(run => run.agentId)).toEqual(['tpl-thinking-reply-recovery', 'agent-rewrite']);
+            expect(chat[0].extra.inChatAgentCompanionResults['agent-companion']).toMatchObject({ status: 'done', content: 'Companion note.' });
+            expect(globalThis.toastr.info).toHaveBeenCalledWith(expect.stringContaining('Running prompt rewrite via'), 'Thinking Reply Recovery', expect.any(Object));
+            expect(globalThis.toastr.success).toHaveBeenCalledWith('', 'Thinking Reply Recovery', { timeOut: 5000 });
+            expect(globalThis.toastr.clear).toHaveBeenCalled();
+            await new Promise(resolve => setTimeout(resolve, 80));
+        });
+
         test('with concurrent Companions the recovered reply is written before any Companion starts', async () => {
             enabledAgents = [recoveryAgent(), rewriteAgent(), createCompanionAgent({ id: 'agent-companion' })];
             modelAnswers();

@@ -105,6 +105,46 @@ test('a failed manual thinking recovery preserves the reply and allows a fresh e
     assert.equal(f.saved()[2].extra.generation_outcome, undefined);
 });
 
+test('manual thinking recovery runs enabled after-reply Agents and automatic Companions on the recovered reply', async t => {
+    const f = prepared(t, [
+        { id: 'recover', sourceTemplateId: 'tpl-thinking-reply-recovery', name: 'Thinking Reply Recovery', enabled: false,
+            phase: 'post', prompt: 'RECOVER', postProcess: { promptTransformEnabled: true } },
+        { id: 'rewrite', name: 'Polisher', enabled: true, phase: 'post', prompt: 'REWRITE',
+            postProcess: { promptTransformEnabled: true } },
+        { id: 'companion', name: 'Scene Note', enabled: true, category: 'companion', phase: 'post', prompt: 'COMPANION',
+            companion: { executionMode: 'auto' } },
+    ], records => {
+        records[2].mes = '';
+        records[2].swipes[0] = '';
+        records[2].extra = { reasoning: 'Completed plan.', generation_outcome: { version: 1, status: 'error', reason: 'reasoning_only' } };
+        records[2].swipe_info[0].extra = structuredClone(records[2].extra);
+    });
+    const seen = [];
+    await f.action('run', ['recover']).run({ generate: paid(options => {
+        const joined = options.messages.map(item => String(item.content)).join('\n');
+        seen.push(joined);
+        if (joined.includes('RECOVER')) return { text: 'Recovered prose.' };
+        if (joined.includes('REWRITE')) {
+            assert.match(joined, /Recovered prose\./);
+            return { text: 'Polished prose.' };
+        }
+        if (joined.includes('COMPANION')) {
+            assert.match(joined, /Polished prose\./);
+            return { text: 'Companion observation.' };
+        }
+        return assert.fail(`unexpected prompt: ${joined}`);
+    }) });
+    assert.equal(seen.length, 3);
+    const saved = f.saved();
+    const message = saved[2];
+    assert.equal(message.mes, 'Polished prose.');
+    assert.equal(message.swipes[0], 'Polished prose.');
+    assert.equal(message.extra.generation_outcome, undefined);
+    assert.equal(message.extra.inChatAgentThinkingRecovery.status, 'done');
+    assert.equal(message.extra.inChatAgentTransformHistory.length, 2);
+    assert.equal(message.extra.inChatAgentCompanionResults.companion.content, 'Companion observation.');
+});
+
 for (const extra of [
     { generation_outcome: { version: 1, status: 'error', reason: 'reasoning_only_length' } },
     { generation_outcome: { version: 1, status: 'truncated', reason: 'connection_lost' } },

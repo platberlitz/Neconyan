@@ -5634,6 +5634,7 @@ function applyMessageBlockUpdate(messageId, message, { rerenderMessage = true } 
         scheduleCardScriptReconcile(messageId);
     }
     updateMessageMetaBadges(messageElement, message);
+    renderGenerationOutcome(messageElement, message);
 
     updateReasoningUI(messageElement);
 
