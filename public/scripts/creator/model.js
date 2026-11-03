@@ -180,7 +180,17 @@ export function acceptCreatorProposal(draft, proposal, selected = proposal.chang
             next.proposals = next.proposals.flatMap(item => {
                 if (item.id !== proposal.id) return [item];
                 const remaining = proposal.changes.filter(change => !selected.includes(change.field));
-                return remaining.length ? [{ ...copy(proposal), changes: remaining }] : [];
+                const retained = { ...copy(proposal), changes: remaining };
+                for (const change of changes) {
+                    if (retained.plan) {
+                        retained.plan.before ??= {};
+                        retained.plan.before[change.field] = copy(change.after);
+                        retained.plan.accepted ??= {};
+                        retained.plan.accepted[change.field] = copy(change.after);
+                    }
+                }
+                const unfinished = retained.plan && retained.plan.next < retained.plan.steps.length;
+                return remaining.length || unfinished ? [retained] : [];
             });
         }
     });

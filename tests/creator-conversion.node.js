@@ -25,6 +25,30 @@ test('conversion keeps completed fields and resumes exactly the failed step', ()
     assert.equal(revised.changes[0].before, proposal.changes[0].before);
 });
 
+test('accepting every available field retains unfinished writing and rebases later greetings', () => {
+    let draft = createCreatorDraft({ id: 'accept-partial', card: { data: {} } });
+    draft.dossier = 'A shipwright.';
+    draft.writing = { targets: { greetingCount: '3' } };
+    let proposal = startCreatorConversion(draft, ['first_mes']);
+    proposal = mergeCreatorStep(draft, proposal, '{"fields":{"first_mes":"First"}}');
+    draft.proposals = [proposal];
+    draft = acceptCreatorProposal(draft, proposal);
+    assert.equal(draft.card.data.first_mes, 'First');
+    assert.equal(draft.proposals[0].plan.next, 1);
+    assert.equal(JSON.parse(creatorStepMessages(draft, draft.proposals[0])[1].content).writtenFields.first_mes, 'First');
+    proposal = mergeCreatorStep(draft, draft.proposals[0], '{"fields":{"alternate_greetings":["A"]}}');
+    draft.proposals = [proposal];
+    draft = acceptCreatorProposal(draft, proposal);
+    assert.deepEqual(draft.card.data.alternate_greetings, ['A']);
+    proposal = mergeCreatorStep(draft, draft.proposals[0], '{"fields":{"alternate_greetings":["B"]}}');
+    assert.deepEqual(proposal.changes[0].before, ['A']);
+    assert.deepEqual(proposal.changes[0].after, ['A', 'B']);
+    draft.proposals = [proposal];
+    draft = acceptCreatorProposal(draft, proposal);
+    assert.deepEqual(draft.card.data.alternate_greetings, ['A', 'B']);
+    assert.deepEqual(draft.proposals, []);
+});
+
 test('a late step cannot replace an edit made while it was pending', () => {
     const draft = createCreatorDraft({ id: 'edited', card: { data: { description: 'Original' } } });
     draft.dossier = 'A shipwright.';

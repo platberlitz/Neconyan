@@ -50,7 +50,10 @@ class CreatorWorkspace {
         if (this.busy) return;
         this.busy = true;
         this.host.setAttribute('aria-busy', 'true');
-        try { await action(); } catch (error) { this.status(error.message, true); } finally { this.busy = false; this.host.removeAttribute('aria-busy'); }
+        this.activeAction = (async () => {
+            try { await action(); } catch (error) { this.status(error.message, true); } finally { this.busy = false; this.host.removeAttribute('aria-busy'); }
+        })();
+        return this.activeAction;
     }
 
     status(message, error = false) {
@@ -560,9 +563,13 @@ class CreatorWorkspace {
                 }
                 this.status(`Writing ${proposal.plan.next + 1} of ${proposal.plan.steps.length}: ${proposal.plan.steps[proposal.plan.next].label}. Finished steps are saved for review.`);
                 const step = proposal.plan.steps[proposal.plan.next];
+                const sameStep = () => {
+                    const latest = this.session.draft?.proposals.find(item => item.id === id);
+                    return current() && latest.plan.next === proposal.plan.next && JSON.stringify(latest.plan.steps[latest.plan.next]) === JSON.stringify(step);
+                };
                 const output = step.agent
-                    ? await (await import('./agent-processing.js')).requestCreatorAgentStep(this, source, proposal, { signal, isCurrent: current })
-                    : await requestCreatorReply(this, source, creatorStepMessages(source, proposal), { signal, isCurrent: current });
+                    ? await (await import('./agent-processing.js')).requestCreatorAgentStep(this, this.session.draft, proposal, { signal, isCurrent: sameStep })
+                    : await requestCreatorReply(this, source, creatorStepMessages(this.session.draft, proposal), { signal, isCurrent: sameStep });
                 const latest = this.session.draft.proposals.find(item => item.id === id);
                 const next = mergeCreatorStep(this.session.draft, latest, output);
                 if (!this.edit(draft => { draft.proposals[draft.proposals.findIndex(item => item.id === id)] = next; }, false, { record: false })) throw new Error(this.message);
@@ -581,14 +588,29 @@ class CreatorWorkspace {
         }
     }
 
+    async reviseProposal(id) {
+        if (this.busy) {
+            if (this.writingProposal !== id) return;
+            this.requestController?.abort();
+            await this.activeAction;
+        }
+        return this.run(async () => {
+            const proposal = this.session.draft.proposals.find(item => item.id === id);
+            if (!proposal) return;
+            const next = reviseCreatorConversion(this.session.draft, proposal);
+            if (!this.edit(draft => { draft.proposals[draft.proposals.findIndex(item => item.id === id)] = next; })) return;
+            await this.continueWriting(id);
+        });
+    }
+
     proposal(proposal) {
         proposal = structuredClone(proposal);
-        const persist = () => this.edit(next => {
-            const index = next.proposals.findIndex(item => item.id === proposal.id);
-            if (index >= 0) next.proposals[index] = structuredClone(proposal);
-            else next.proposals.push(structuredClone(proposal));
+        const persist = update => this.edit(next => {
+            const current = next.proposals.find(item => item.id === proposal.id);
+            if (!current) throw new Error('This proposal is no longer available.');
+            update(current);
         });
-        if (!this.session.draft.proposals.some(item => item.id === proposal.id) && !persist()) return;
+        if (!this.session.draft.proposals.some(item => item.id === proposal.id) && !this.edit(next => next.proposals.push(structuredClone(proposal)))) return;
         const content = this.host.querySelector('.creator-content');
         if (!content) return;
         for (const node of content.querySelectorAll('.creator-proposal')) if (node.dataset.proposalId !== proposal.id) node.remove();
@@ -610,7 +632,7 @@ class CreatorWorkspace {
         if (proposal.questions?.length) {
             review.append(element('h4', '', 'Questions to resolve'));
             for (const question of proposal.questions) {
-                review.append(textField(question, proposal.answers?.[question] ?? '', value => { proposal.answers ??= {}; proposal.answers[question] = value; persist(); }, { rows: 2, placeholder: 'Your answer' }));
+                review.append(textField(question, proposal.answers?.[question] ?? '', value => persist(current => { current.answers ??= {}; current.answers[question] = value; }), { rows: 2, placeholder: 'Your answer' }));
             }
         }
         if (proposal.resolved?.length) {
@@ -620,43 +642,67 @@ class CreatorWorkspace {
             review.append(history);
         }
         if (answering && !writing) review.append(button('Generate', () => this.run(async () => {
-            const next = generateCreatorProposal(proposal);
+            const next = generateCreatorProposal(this.session.draft.proposals.find(item => item.id === proposal.id));
             if (!this.edit(draft => { draft.proposals[draft.proposals.findIndex(item => item.id === proposal.id)] = next; })) return;
             await this.continueWriting(proposal.id);
         }), true));
-        if (!writing && !unfinished && (proposal.changes.length || proposal.questions?.length)) {
-            review.append(textField('Anything else to change?', proposal.note ?? '', value => { proposal.note = value; persist(); }, { rows: 2 }));
-            review.append(button('Revise with my answers', () => this.run(async () => {
-                const next = reviseCreatorConversion(this.session.draft, proposal);
-                if (!this.edit(draft => { draft.proposals[draft.proposals.findIndex(item => item.id === proposal.id)] = next; })) return;
-                await this.continueWriting(proposal.id);
-            }), true));
+        if (proposal.changes.length || proposal.questions?.length) {
+            review.append(textField('Anything else to change?', proposal.note ?? '', value => persist(current => { current.note = value; }), { rows: 2 }));
+            review.append(button(unfinished || writing ? 'Apply revisions now' : 'Revise with my answers', () => this.reviseProposal(proposal.id), true));
         }
         for (const change of proposal.changes) {
             const group = element('section', 'creator-proposal-field');
+            group.dataset.field = change.field;
             const before = Array.isArray(change.before) ? change.before.join('\n\n') : change.before;
-            group.append(element('h4', '', change.field === 'depth_prompt' ? 'Character’s Note' : change.field === 'alternate_greetings' ? 'Alternate greetings' : labels[change.field] || change.field), element('pre', 'creator-before', before || '(empty)'));
+            group.append(element('h4', '', change.field === 'depth_prompt' ? 'Character’s Note' : change.field === 'alternate_greetings' ? 'Alternate greetings' : labels[change.field] || change.field));
+            group.append(element('pre', 'creator-before', before || '(empty)'));
             if (change.field === 'alternate_greetings') {
                 if (!change.after.length) group.append(element('p', 'creator-muted', change.before.length ? `Removes all ${change.before.length} alternate greetings.` : 'No alternate greetings proposed.'));
-                change.after.forEach((text, index) => group.append(textField(`Proposed alternate greeting ${index + 1}`, text, value => { change.after[index] = value; persist(); })));
-            } else group.append(textField('Proposed text', change.after, value => { change.after = value; persist(); }));
-            if (!writing && !unfinished) group.append(button('Accept this field', () => {
-                this.change(draft => acceptCreatorProposal(draft, proposal, [change.field]), true);
+                change.after.forEach((text, index) => {
+                    const greeting = textField(`Proposed alternate greeting ${index + 1}`, text, value => {
+                        persist(current => { current.changes.find(item => item.field === change.field).after[index] = value; });
+                    });
+                    group.append(greeting);
+                });
+            } else {
+                group.append(textField('Proposed text', change.after, value => {
+                    persist(current => { current.changes.find(item => item.field === change.field).after = value; });
+                }));
+            }
+            group.append(button('Accept this field', () => {
+                this.change(draft => acceptCreatorProposal(draft, draft.proposals.find(item => item.id === proposal.id), [change.field]));
                 const remaining = this.session.draft.proposals.find(item => item.id === proposal.id);
-                if (remaining && !review.isConnected) this.proposal(remaining);
+                if (remaining) this.proposal(remaining);
+                else review.remove();
             }, true));
             review.append(group);
         }
         const footer = element('div', 'creator-actions');
-        if (!writing && !unfinished && proposal.changes.length) footer.append(button('Accept all fields', () => this.change(draft => acceptCreatorProposal(draft, proposal), true), true));
+        if (proposal.changes.length) footer.append(button('Accept all fields', () => {
+            this.change(draft => acceptCreatorProposal(draft, draft.proposals.find(item => item.id === proposal.id)));
+            const remaining = this.session.draft.proposals.find(item => item.id === proposal.id);
+            if (remaining) this.proposal(remaining);
+            else review.remove();
+        }, true));
         if (!writing) footer.append(button('Reject proposal', () => {
             this.edit(next => { next.proposals = next.proposals.filter(item => item.id !== proposal.id); }, true);
         }));
         review.append(footer);
-        if (writing) for (const control of review.querySelectorAll('input, textarea, button')) control.disabled = true;
         const previous = [...content.querySelectorAll('.creator-proposal')].find(node => node.dataset.proposalId === proposal.id);
-        if (previous) previous.replaceWith(review);
-        else { content.prepend(review); review.scrollIntoView({ block: 'start' }); }
+        if (previous) {
+            const restore = rememberCreatorViewport(this.host);
+            const focused = previous.contains(document.activeElement) ? document.activeElement : null;
+            const field = focused?.closest('[data-field]')?.dataset.field;
+            const label = focused?.labels?.[0]?.textContent;
+            const selection = focused && [focused.selectionStart, focused.selectionEnd];
+            previous.replaceWith(review);
+            if (label) {
+                const replacement = [...review.querySelectorAll('input, textarea')].find(input => input.labels?.[0]?.textContent === label && input.closest('[data-field]')?.dataset.field === field);
+                replacement?.focus({ preventScroll: true });
+                if (replacement && selection[0] !== null) replacement.setSelectionRange(...selection);
+            }
+            restore();
+        } else { content.prepend(review); review.scrollIntoView({ block: 'start' }); }
     }
 
     review() {

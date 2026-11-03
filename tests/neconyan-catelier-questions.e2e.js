@@ -64,6 +64,7 @@ for (const phone of [false, true]) {
         await page.screenshot({ path: fileURLToPath(new URL(`../screenshots/catelier-questions-${phone ? 'phone' : 'desktop'}.png`, import.meta.url)) });
         await generate.click();
         await expect(review.getByRole('button', { name: 'Accept all fields', exact: true })).toBeVisible();
+        await expect(review).toContainText('Written 2 of 2 steps');
         expect(calls).toHaveLength(4);
         for (const request of calls.slice(2)) expect(request.answers).toContainEqual({ question: 'Where does Mira work?', answer: 'Northern docks' });
         await expect(review.getByLabel('Where does Mira work?', { exact: true })).toHaveCount(0);

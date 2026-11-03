@@ -24,7 +24,7 @@ export function startCreatorAgentProcessing(draft, agents, targets) {
 
 export function creatorAgentStepInput(proposal) {
     const step = proposal.plan.steps[proposal.plan.next];
-    const value = proposal.changes.find(change => change.field === step.fields[0]).after;
+    const value = proposal.changes.find(change => change.field === step.fields[0])?.after ?? proposal.plan.before?.[step.fields[0]];
     return step.count ? value[step.start] : value;
 }
 
