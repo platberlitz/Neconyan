@@ -34,6 +34,11 @@ for (const phone of [false, true]) {
         await expect(creator.getByLabel('Catelier first test agent', { exact: true })).toBeChecked();
         await expect(creator.getByLabel('Catelier second test agent', { exact: true })).toBeChecked();
         await expect(creator.getByLabel('Description', { exact: true })).toBeChecked();
+        await expect(creator.getByRole('button', { name: 'Expand Find an agent', exact: true })).toHaveCount(0);
+        await expect(creator.locator('.creator-agent-pill.is-selected .creator-agent-step-badge')).toHaveText(['1', '2']);
+        await expect(creator.getByRole('group', { name: 'Fields to post-process', exact: true }).locator('.creator-choice-subgroup--disabled').getByLabel('Personality', { exact: true })).toBeDisabled();
+        const checkboxRadius = await creator.getByLabel('Catelier first test agent', { exact: true }).evaluate(node => getComputedStyle(node).borderRadius);
+        expect(checkboxRadius).toBe('4px');
         await creator.getByLabel('Find an agent', { exact: true }).fill('Catelier');
         await creator.getByRole('heading', { name: 'Post-process fields with agents', exact: true }).evaluate(node => node.scrollIntoView({ block: 'start', behavior: 'instant' }));
         await page.screenshot({ path: fileURLToPath(new URL(`../screenshots/catelier-agent-picker-${phone ? 'phone' : 'desktop'}.png`, import.meta.url)) });

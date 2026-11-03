@@ -379,22 +379,61 @@ class CreatorWorkspace {
             hint: 'Paste anything you have: canon wiki notes, history, appearance, relationships, voice, setting, and your own additions or headcanons. Convert turns it into card fields for you to review. This text stays private to the draft and is never published with the card.',
         }));
         const selection = new Set((this.session.draft.writing?.dossierFields ?? DOSSIER_FIELDS).filter(field => DOSSIER_FIELDS.includes(field)));
-        const choices = element('fieldset', 'creator-fieldset');
+        const choices = element('fieldset', 'creator-fieldset creator-selector-card');
         choices.append(element('legend', '', 'Fields to create'));
-        const choiceGrid = element('div', 'creator-choice-grid');
+        const unlockedFields = DOSSIER_FIELDS.filter(field => !this.session.draft.locks.includes(field));
+        const toolbar = element('div', 'creator-selector-toolbar');
+        const summary = element('span', 'creator-selector-summary');
+        const actions = element('div', 'creator-selector-actions');
+        const selectAllBtn = button('All', () => {
+            for (const field of unlockedFields) selection.add(field);
+            for (const item of choiceInputs) if (!item.input.disabled) item.input.checked = true;
+            syncCreateSummary();
+            this.edit(next => { next.writing ??= {}; next.writing.dossierFields = [...selection]; });
+        });
+        selectAllBtn.classList.add('creator-mini-btn');
+        selectAllBtn.setAttribute('aria-label', 'Select all fields to create');
+        const clearAllBtn = button('None', () => {
+            for (const field of unlockedFields) selection.delete(field);
+            for (const item of choiceInputs) if (!item.input.disabled) item.input.checked = false;
+            syncCreateSummary();
+            this.edit(next => { next.writing ??= {}; next.writing.dossierFields = [...selection]; });
+        });
+        clearAllBtn.classList.add('creator-mini-btn');
+        clearAllBtn.setAttribute('aria-label', 'Clear fields to create');
+        actions.append(selectAllBtn, clearAllBtn);
+        toolbar.append(summary, actions);
+        const choiceGrid = element('div', 'creator-choice-grid creator-choice-grid--fields');
+        const choiceInputs = [];
+        const syncCreateSummary = () => {
+            summary.textContent = `${selection.size} of ${DOSSIER_FIELDS.length} selected`;
+            selectAllBtn.disabled = !unlockedFields.length || unlockedFields.every(field => selection.has(field));
+            clearAllBtn.disabled = !unlockedFields.some(field => selection.has(field));
+        };
         for (const field of DOSSIER_FIELDS) {
-            const label = element('label', 'creator-choice-pill');
+            const label = element('label', 'creator-choice-pill creator-field-pill');
             const checkbox = element('input');
             checkbox.type = 'checkbox'; checkbox.checked = selection.has(field);
             checkbox.disabled = this.session.draft.locks.includes(field);
+            const fullLabel = `${labels[field]}${checkbox.disabled ? ' (locked)' : ''}`;
+            checkbox.setAttribute('aria-label', fullLabel);
             checkbox.addEventListener('change', () => {
                 if (checkbox.checked) selection.add(field); else selection.delete(field);
+                syncCreateSummary();
                 this.edit(next => { next.writing ??= {}; next.writing.dossierFields = [...selection]; });
             });
-            label.append(checkbox, document.createTextNode(`${labels[field]}${checkbox.disabled ? ' (locked)' : ''}`));
+            const textSpan = element('span', 'creator-choice-label', labels[field]);
+            label.append(checkbox, textSpan);
+            if (checkbox.disabled) {
+                const meta = element('span', 'creator-choice-meta', 'Locked');
+                meta.setAttribute('aria-hidden', 'true');
+                label.append(meta);
+            }
+            choiceInputs.push({ field, input: checkbox });
             choiceGrid.append(label);
         }
-        choices.append(choiceGrid);
+        syncCreateSummary();
+        choices.append(toolbar, choiceGrid);
         let controller;
         const cancel = button('Cancel conversion', () => controller?.abort());
         cancel.hidden = true;
