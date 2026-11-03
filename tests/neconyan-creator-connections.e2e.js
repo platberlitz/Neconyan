@@ -23,6 +23,15 @@ for (const phone of [false, true]) {
         await creator.getByLabel('Maximum output tokens').press('Tab');
         await expect(creator.getByLabel('Maximum output tokens')).toHaveValue('1234');
         await expect(creator.getByLabel('Connection profile', { exact: true })).toBeVisible();
+        const count = creator.getByLabel('Number of greetings', { exact: true });
+        await expect(count).toHaveValue('1');
+        await count.fill('0');
+        await count.press('Tab');
+        await expect(count).toHaveValue('1');
+        await count.fill('4');
+        await count.press('Tab');
+        await count.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `../screenshots/creator-greeting-count-${phone ? 'phone' : 'desktop'}.png` });
         await page.screenshot({ path: `../screenshots/creator-connections-${phone ? 'phone' : 'desktop'}.png` });
         await creator.getByRole('button', { name: 'Dossier', exact: true }).click();
         const choices = creator.getByRole('group', { name: 'Fields to create', exact: true });
@@ -32,6 +41,7 @@ for (const phone of [false, true]) {
         const stored = (await account.post('/api/creator/list')).drafts[0];
         const saved = (await account.post('/api/creator/get', { id: stored.id })).draft;
         expect(saved.writing.dossierFields).not.toContain('name');
+        expect(saved.writing.targets.greetingCount).toBe('4');
         expect(saved.writing.connection).toEqual({ profile: 'broken', fallbacks: ['durable'], maxTokens: 1234 });
         await page.reload();
         await page.waitForFunction(() => typeof globalThis.NeconyanShell?.openCreator === 'function');
@@ -48,5 +58,6 @@ for (const phone of [false, true]) {
         const result = (await account.post('/api/creator/get', { id: stored.id })).draft;
         expect(result.card.data.alternate_greetings).toEqual(['At home.', 'At the workshop.', 'At sea.']);
         expect(app.provider.calls.some(call => call.max_tokens === 1234)).toBe(true);
+        expect(app.provider.calls.some(call => call.messages?.some(message => message.content?.includes('Number of greetings to create: 4 total')))).toBe(true);
     });
 }

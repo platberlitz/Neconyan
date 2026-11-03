@@ -30,6 +30,7 @@ In descriptions and personality, state sexual preferences, anatomy, kinks, limit
 
 /** Starting values for the writing targets. An empty value switches that target off. */
 export const CREATOR_TARGET_DEFAULTS = Object.freeze({
+    greetingCount: '1',
     characterWords: '1,200-2,000 words across description and personality',
     characterTokens: '~1,600-2,600 tokens',
     greetingWords: '~500 words each',
@@ -41,6 +42,10 @@ export const CREATOR_TARGET_DEFAULTS = Object.freeze({
 });
 
 export function creatorTargetValue(targets, key) {
+    if (key === 'greetingCount') {
+        const count = Number(targets?.greetingCount ?? 1);
+        return String(Number.isSafeInteger(count) && count >= 1 ? count : 1);
+    }
     if (typeof targets?.[key] === 'string') return targets[key].trim();
     const legacy = key === 'characterWords' ? targets?.words : key === 'characterTokens' ? targets?.tokens : undefined;
     if (typeof legacy === 'string' && legacy.trim()) return legacy.trim();
@@ -64,6 +69,7 @@ export function creatorTargetsSignature(draft) {
         creatorTargetValue(t, 'characterTokens'),
         creatorTargetValue(t, 'greetingWords'),
         creatorTargetValue(t, 'greetingTokens'),
+        creatorTargetValue(t, 'greetingCount'),
         creatorNsfwInstruction(draft),
         creatorTargetValue(t, 'interviewQuestions'),
         creatorTargetValue(t, 'plistCategories'),
@@ -91,6 +97,7 @@ export function creatorTargetsGuidance(draft) {
     const paragraphs = creatorTargetValue(t, 'paragraphs');
     if (character) lines.push(`Description and personality length (${character}).`);
     if (greeting) lines.push(`Opening greeting length, per greeting, for first_mes, alternate_greetings and group_only_greetings (${greeting}).`);
+    lines.push(`Number of greetings to create: ${creatorTargetValue(t, 'greetingCount')} total, including the first greeting. When creating a set, put the first in first_mes and the remaining greetings in alternate_greetings as separate strings. This count applies only when greetings are requested; when editing one specific greeting, return only that greeting. Preserve existing greetings unless replacement is requested.`);
     if (paragraphs) lines.push(`Paragraph target: ${paragraphs}.`);
     if (character || greeting || paragraphs) {
         lines.push('Treat length targets as quality-biased writing targets for the requested fields rather than hard API cutoffs: a tight, character-specific result outperforms padded filler.');

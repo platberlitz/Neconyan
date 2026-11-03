@@ -55,7 +55,13 @@ export function renderCreatorTargets(workspace, host, { open = false } = {}) {
         textField('Greeting words', creatorTargetValue(targets, 'greetingWords'), val => setTarget('greetingWords', val), { rows: 1, placeholder: 'e.g. ~500 words each' }),
         textField('Greeting tokens', creatorTargetValue(targets, 'greetingTokens'), val => setTarget('greetingTokens', val), { rows: 1, placeholder: 'e.g. ~700 tokens each' }),
     );
-    body.append(lengthGrid, textField('Paragraph target', creatorTargetValue(targets, 'paragraphs'), val => setTarget('paragraphs', val), { rows: 1, placeholder: 'e.g. 3-5 paragraphs' }));
+    const countField = textField('Number of greetings', creatorTargetValue(targets, 'greetingCount'), val => setTarget('greetingCount', creatorTargetValue({ greetingCount: val }, 'greetingCount')), {
+        rows: 1, hint: 'Default and minimum: 1. Includes the first greeting and all alternatives. Applies when creating greetings, not when editing just one.',
+    });
+    const countInput = countField.querySelector('textarea, input');
+    countInput.inputMode = 'numeric';
+    countInput.addEventListener('blur', () => { countInput.value = creatorTargetValue(workspace.session.draft.writing?.targets, 'greetingCount'); });
+    body.append(countField, lengthGrid, textField('Paragraph target', creatorTargetValue(targets, 'paragraphs'), val => setTarget('paragraphs', val), { rows: 1, placeholder: 'e.g. 3-5 paragraphs' }));
 
     const taskGrid = element('div', 'creator-form-grid');
     taskGrid.append(

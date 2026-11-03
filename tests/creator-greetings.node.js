@@ -33,3 +33,15 @@ test('Multiple greetings remain separate, editable and protected against stale r
     assert.throws(() => dossierProposal(draft, JSON.stringify(reply), requested), /invalid field/);
     assert.throws(() => dossierProposal(draft, JSON.stringify({ ...reply, fields: { alternate_greetings: ['Unrequested'] } }), ['description']), /unrequested/);
 });
+import { creatorTargetValue, creatorTargetsSignature, creatorTargetsGuidance } from '../public/scripts/creator/formats.js';
+
+test('Greeting count defaults to one, rejects invalid counts and invalidates old targets', () => {
+    for (const value of [undefined, '', '0', '-1', '1.5', 'no', Infinity]) {
+        assert.equal(creatorTargetValue({ greetingCount: value }, 'greetingCount'), '1');
+    }
+    const draft = { writing: { targets: {} } };
+    const before = creatorTargetsSignature(draft);
+    draft.writing.targets.greetingCount = '6';
+    assert.notEqual(creatorTargetsSignature(draft), before);
+    assert.match(creatorTargetsGuidance(draft), /Number of greetings to create: 6 total/);
+});
