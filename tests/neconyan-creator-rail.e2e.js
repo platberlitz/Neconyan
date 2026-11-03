@@ -11,18 +11,14 @@ for (const phone of [false, true]) {
         const creator = page.locator('#sb_character_creator_panel');
         await creator.getByRole('button', { name: 'Create a character', exact: true }).click();
         const rail = creator.locator('.creator-sections');
-        // Phones share the character tab bar's swipe-rail arrows; desktop scrolls the rail directly.
+        // Both viewports expose the shared rail controls.
         const chrome = creator.locator('.creator-rail .sb-mobile-rail-chrome');
         const left = chrome.getByRole('button', { name: 'Scroll left to see more options' });
         const right = chrome.getByRole('button', { name: 'Scroll right to see more options' });
-        if (phone) {
-            await expect(right).toBeVisible();
-            await right.click();
-            await expect.poll(() => rail.evaluate(node => node.scrollLeft)).toBeGreaterThan(0);
-            await expect(left).toBeVisible();
-        } else {
-            await expect(chrome).toHaveCount(0);
-        }
+        await expect(right).toBeVisible();
+        await right.click();
+        await expect.poll(() => rail.evaluate(node => node.scrollLeft)).toBeGreaterThan(0);
+        await expect(left).toBeVisible();
         const macros = rail.getByRole('button', { name: 'Macros & pronouns', exact: true });
         await macros.scrollIntoViewIfNeeded();
         const before = await rail.evaluate(node => node.scrollLeft);
@@ -30,7 +26,7 @@ for (const phone of [false, true]) {
         await expect(creator.getByLabel('Sentence to preview', { exact: true })).toBeVisible();
         expect(await rail.evaluate(node => node.scrollLeft)).toBeCloseTo(before, 0);
         await page.screenshot({ path: `../screenshots/creator-rail-${phone ? 'phone' : 'desktop'}.png` });
-        if (phone && before > 0) {
+        if (before > 0) {
             await left.click();
             await expect.poll(() => rail.evaluate(node => node.scrollLeft)).toBeLessThan(before);
         }

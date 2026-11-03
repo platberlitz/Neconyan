@@ -95,7 +95,7 @@ export function initMobileSwipeRails({ leftLabel, rightLabel }) {
             }
             if (chrome.parentElement !== rail.parentElement) rail.parentElement.append(chrome);
             const style = getComputedStyle(rail);
-            const visible = phone.matches && rail.getClientRects().length > 0
+            const visible = (phone.matches || rail.matches('#sb_character_creator_panel .creator-sections')) && rail.getClientRects().length > 0
                 && style.visibility !== 'hidden' && /auto|scroll/.test(style.overflowX);
             // Modern browsers use negative scrollLeft for RTL. Map to physical left/right.
             const scrollLeft = style.direction === 'rtl' ? rail.scrollWidth - rail.clientWidth + rail.scrollLeft : rail.scrollLeft;

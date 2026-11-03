@@ -432,6 +432,58 @@ body.neconyan #right-nav-panel.openDrawer[data-menu-type="creator"] #sb_characte
 }
 
 /* Main Workspace Layout & Navigation Rail */
+/* Creator has more sections than fit on desktop too. Use the shared rail
+ * controls with the same accent pill and generous pointer target as phones. */
+@media (min-width: 769px) {
+    #sb_character_creator_panel .sb-mobile-rail-chrome {
+        position: absolute;
+        z-index: 11;
+        pointer-events: none;
+        direction: ltr;
+        contain: layout style;
+    }
+    #sb_character_creator_panel .sb-mobile-rail-chrome[hidden],
+    #sb_character_creator_panel .sb-mobile-rail-arrow[hidden],
+    #sb_character_creator_panel .sb-mobile-rail-track {
+        display: none;
+    }
+    #sb_character_creator_panel .sb-mobile-rail-arrow {
+        position: absolute;
+        top: 50%;
+        translate: 0 -50%;
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 36px;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--neco-on-accent);
+        box-shadow: none;
+        pointer-events: auto;
+        cursor: pointer;
+    }
+    #sb_character_creator_panel .sb-mobile-rail-arrow > span {
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 28px;
+        border: 1px solid var(--neco-ginger);
+        border-radius: 999px;
+        background: var(--neco-ginger);
+        color: var(--neco-on-accent);
+    }
+    #sb_character_creator_panel .sb-mobile-rail-arrow:hover > span {
+        background: var(--neco-ginger-hover);
+    }
+    #sb_character_creator_panel .sb-mobile-rail-arrow:focus-visible {
+        outline: 2px solid var(--neco-ginger);
+        outline-offset: 1px;
+    }
+    #sb_character_creator_panel .sb-mobile-rail-left { left: 0; justify-items: start; }
+    #sb_character_creator_panel .sb-mobile-rail-right { right: 0; justify-items: end; }
+}
 #right-nav-panel #sb_character_creator_panel .creator-rail {
     position: relative;
     min-width: 0;
