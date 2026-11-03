@@ -1,11 +1,14 @@
 import { element, button, textField } from './fields.js';
-import { CREATOR_FORMATS, CREATOR_TENSES, CREATOR_POVS, CREATOR_CANON_MODES, creatorTargetsSignature } from './formats.js';
+import { CREATOR_FORMATS, CREATOR_TENSES, CREATOR_POVS, CREATOR_CANON_MODES, CREATOR_NSFW_GUIDANCE, creatorTargetValue, creatorTargetsSignature } from './formats.js';
 
 export function renderCreatorTargets(workspace, host, { open = false } = {}) {
     const targets = workspace.session.draft.writing?.targets ?? {};
     const setTarget = (key, value, redraw = false) => workspace.edit(next => {
         next.writing ??= {};
         next.writing.targets ??= {};
+        // Older drafts kept one shared length target; it now belongs to the character fields.
+        if (key === 'characterWords') delete next.writing.targets.words;
+        if (key === 'characterTokens') delete next.writing.targets.tokens;
         if (value === '' || value === undefined || value === null || (key === 'tense' && value === 'unset') || (key === 'pov' && value === 'unset') || (key === 'canon' && value === 'source_only')) {
             delete next.writing.targets[key];
         } else {
@@ -42,11 +45,12 @@ export function renderCreatorTargets(workspace, host, { open = false } = {}) {
 
     const lengthGrid = element('div', 'creator-targets-grid');
     lengthGrid.append(
-        textField('Word target', targets.words ?? '', val => setTarget('words', val), { rows: 1, placeholder: 'e.g. 2500-4000 words' }),
-        textField('Paragraph target', targets.paragraphs ?? '', val => setTarget('paragraphs', val), { rows: 1, placeholder: 'e.g. 3-5 paragraphs' }),
-        textField('Approximate token target', targets.tokens ?? '', val => setTarget('tokens', val), { rows: 1, placeholder: 'e.g. ~1200 tokens' }),
+        textField('Description & personality words', creatorTargetValue(targets, 'characterWords'), val => setTarget('characterWords', val), { rows: 1, placeholder: 'e.g. 600-900 words' }),
+        textField('Description & personality tokens', creatorTargetValue(targets, 'characterTokens'), val => setTarget('characterTokens', val), { rows: 1, placeholder: 'e.g. ~1200 tokens' }),
+        textField('Greeting words', creatorTargetValue(targets, 'greetingWords'), val => setTarget('greetingWords', val), { rows: 1, placeholder: 'e.g. ~500 words each' }),
+        textField('Greeting tokens', creatorTargetValue(targets, 'greetingTokens'), val => setTarget('greetingTokens', val), { rows: 1, placeholder: 'e.g. ~700 tokens each' }),
     );
-    body.append(lengthGrid);
+    body.append(lengthGrid, textField('Paragraph target', targets.paragraphs ?? '', val => setTarget('paragraphs', val), { rows: 1, placeholder: 'e.g. 3-5 paragraphs' }));
 
     const taskGrid = element('div', 'creator-form-grid');
     taskGrid.append(
@@ -55,6 +59,32 @@ export function renderCreatorTargets(workspace, host, { open = false } = {}) {
     );
     body.append(taskGrid);
     body.append(textField('Opening scenario mix', targets.openingScenarios ?? '', val => setTarget('openingScenarios', val), { rows: 2, placeholder: 'e.g. 4 everyday scenarios grounded in routine, varied emotional arcs, sensation-first hooks' }));
+
+    const nsfw = workspace.session.draft.writing?.nsfw ?? {};
+    const nsfwGroup = element('div', 'creator-target-group');
+    nsfwGroup.append(element('span', 'creator-target-label', 'NSFW instructions'));
+    const nsfwStrip = element('div', 'creator-actions creator-chip-strip');
+    for (const [enabled, label] of [[false, 'Off'], [true, 'On']]) {
+        const choice = button(label, () => workspace.edit(next => {
+            next.writing ??= {};
+            next.writing.nsfw = { ...next.writing.nsfw, enabled };
+        }, true), false, 'creator-chip-btn');
+        choice.setAttribute('aria-pressed', String(Boolean(nsfw.enabled) === enabled));
+        nsfwStrip.append(choice);
+    }
+    nsfwGroup.append(nsfwStrip);
+    body.append(nsfwGroup);
+    if (nsfw.enabled) {
+        const field = textField('NSFW instructions for descriptions and greetings', typeof nsfw.instruction === 'string' ? nsfw.instruction : CREATOR_NSFW_GUIDANCE, val => workspace.edit(next => {
+            next.writing.nsfw = { ...next.writing.nsfw, instruction: val };
+        }), { rows: 5, hint: 'Based on the Director preset’s NSFW Mode. Sent only while this is on, and kept private to this draft.' });
+        const reset = button('Reset default', () => workspace.edit(next => {
+            if (next.writing?.nsfw) delete next.writing.nsfw.instruction;
+        }, true), false, 'creator-chip-btn');
+        reset.setAttribute('aria-label', 'Reset NSFW instructions');
+        field.querySelector('.creator-field-heading')?.append(reset);
+        body.append(field);
+    }
 
     details.append(body);
     host.append(details);

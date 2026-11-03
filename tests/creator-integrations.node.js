@@ -8,7 +8,31 @@ import { normaliseScratchpadCreator, scratchpadCreatorDraft } from '../public/sc
 import { normaliseChange, splitReply, describeChange } from '../public/scripts/scratchpad/proposals.js';
 import { creatorCardExport } from '../public/scripts/creator/export.js';
 import { buildCreatorFieldRequest, acceptCreatorField } from '../public/scripts/creator/field-generation.js';
-import { CREATOR_FORMATS } from '../public/scripts/creator/formats.js';
+import { CREATOR_FORMATS, CREATOR_NSFW_GUIDANCE, creatorTargetsSignature } from '../public/scripts/creator/formats.js';
+
+test('Character and greeting length targets are separate, migrate old values and NSFW guidance is opt-in', () => {
+    const draft = createCreatorDraft({ id: 'lengths', card: { data: { name: 'Mira' } } });
+    draft.dossier = 'Mira repairs ships.';
+    draft.writing = { targets: { words: '700 words', tokens: '900 tokens' } };
+    let prompt = buildDossierRequest(draft).messages[0].content;
+    assert.match(prompt, /Description and personality length \(word target: 700 words; approximate token target: 900 tokens\)/);
+    assert.ok(!prompt.includes('Opening greeting length'));
+    assert.ok(!prompt.includes('NSFW instructions'));
+    draft.writing.targets = { characterWords: '600 words', greetingWords: '500 words', greetingTokens: '700 tokens' };
+    prompt = buildDossierRequest(draft).messages[0].content;
+    assert.match(prompt, /Description and personality length \(word target: 600 words\)/);
+    assert.match(prompt, /Opening greeting length.*word target: 500 words; approximate token target: 700 tokens/);
+    const before = creatorTargetsSignature(draft);
+    draft.writing.nsfw = { enabled: true };
+    assert.notEqual(creatorTargetsSignature(draft), before);
+    assert.ok(buildDossierRequest(draft).messages[0].content.includes(CREATOR_NSFW_GUIDANCE));
+    draft.writing.nsfw.instruction = 'Keep it explicit but brief.';
+    prompt = buildDossierRequest(draft).messages[0].content;
+    assert.ok(prompt.includes('Keep it explicit but brief.') && !prompt.includes(CREATOR_NSFW_GUIDANCE));
+    draft.writing.nsfw.enabled = false;
+    assert.ok(!buildDossierRequest(draft).messages[0].content.includes('Keep it explicit'));
+    assert.ok(!JSON.stringify(creatorCardExport(draft)).includes('Keep it explicit'));
+});
 
 test('ALIchat guidance and guided examples need no opening delimiter and preserve imported text', () => {
     const draft = createCreatorDraft({ id: 'alichat', card: { data: { mes_example: '<START>\nLegacy example' } } });
@@ -119,7 +143,7 @@ test('Conversion targets and style controls reach authoring prompts, guard stale
     assert.match(guidance, /third-person external narration/);
     assert.match(guidance, /established canon knowledge/);
     assert.match(guidance, /word target: 2500-4000 interview, 500 opening/);
-    assert.match(guidance, /paragraph target: 3-5 paragraphs/);
+    assert.match(guidance, /Paragraph target: 3-5 paragraphs/);
     assert.match(guidance, /approximate token target: ~1200 tokens/);
     assert.match(guidance, /8 questions across surface and fault lines/);
     assert.match(guidance, /persona, appearance, body, wardrobe, quirks_and_tells/);

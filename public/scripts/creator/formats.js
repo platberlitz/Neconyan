@@ -22,15 +22,32 @@ export const CREATOR_CANON_MODES = Object.freeze({
     supplement: { label: 'Allow canon knowledge', instruction: 'Supplement supplied facts with established canon knowledge about {{char}} and their setting when consistent with the user\'s source material.' },
 });
 
+/** Adapted from the bundled Director preset's NSFW Mode for character fields and greetings. */
+export const CREATOR_NSFW_GUIDANCE = `Apply these rules only to description, personality and greeting content that involves intimacy or sex, and only when the source material or user asks for explicit content. All characters in explicit content are adults.
+Describe every physical interaction with raw, blunt and highly detailed language. Focus on the concrete mechanics: explicit anatomical contact, friction, wetness, temperature and bodily fluids, the exact rhythm, the pressure of skin against skin, and the sounds of movement, breathing and moisture. Use lewd onomatopoeia where it suits the scene.
+Avoid metaphorical, poetic or vague euphemisms; represent every sexual act with raw realism and clinical clarity. Keep dirty talk and verbal interaction strictly in the established voice and dominance dynamics of the characters, uninhibited, vulgar and blunt.
+In descriptions and personality, state sexual preferences, anatomy, kinks, limits and intimate behaviour plainly and specifically rather than hinting. In explicit greetings, let intimacy take priority over plot, with the plot slowed or paused, while still leaving {{user}}'s actions, words and decisions to {{user}}.`;
+
+export const creatorTargetValue = (targets, key) => String(targets?.[key] ?? (key === 'characterWords' ? targets?.words : key === 'characterTokens' ? targets?.tokens : '') ?? '').trim();
+
+export function creatorNsfwInstruction(draft) {
+    const nsfw = draft?.writing?.nsfw;
+    if (!nsfw?.enabled) return '';
+    return typeof nsfw.instruction === 'string' ? nsfw.instruction : CREATOR_NSFW_GUIDANCE;
+}
+
 export function creatorTargetsSignature(draft) {
     const t = draft?.writing?.targets ?? {};
     return JSON.stringify([
         t.tense ?? 'unset',
         t.pov ?? 'unset',
         t.canon ?? 'source_only',
-        String(t.words ?? '').trim(),
+        creatorTargetValue(t, 'characterWords'),
         String(t.paragraphs ?? '').trim(),
-        String(t.tokens ?? '').trim(),
+        creatorTargetValue(t, 'characterTokens'),
+        creatorTargetValue(t, 'greetingWords'),
+        creatorTargetValue(t, 'greetingTokens'),
+        creatorNsfwInstruction(draft),
         String(t.interviewQuestions ?? '').trim(),
         String(t.plistCategories ?? '').trim(),
         String(t.openingScenarios ?? '').trim(),
@@ -48,13 +65,18 @@ export function creatorTargetsGuidance(draft) {
     if (tense) lines.push(tense);
     if (pov) lines.push(pov);
     if (canon) lines.push(canon);
-    const lengths = [
-        String(t.words ?? '').trim() ? `word target: ${String(t.words).trim()}` : '',
-        String(t.paragraphs ?? '').trim() ? `paragraph target: ${String(t.paragraphs).trim()}` : '',
-        String(t.tokens ?? '').trim() ? `approximate token target: ${String(t.tokens).trim()}` : '',
-    ].filter(Boolean);
-    if (lengths.length) {
-        lines.push(`Approximate length and structure targets (${lengths.join('; ')}). Treat these as quality-biased writing targets for the requested fields rather than hard API cutoffs: a tight, character-specific result outperforms padded filler.`);
+    const group = (words, tokens) => [
+        creatorTargetValue(t, words) ? `word target: ${creatorTargetValue(t, words)}` : '',
+        creatorTargetValue(t, tokens) ? `approximate token target: ${creatorTargetValue(t, tokens)}` : '',
+    ].filter(Boolean).join('; ');
+    const character = group('characterWords', 'characterTokens');
+    const greeting = group('greetingWords', 'greetingTokens');
+    const paragraphs = String(t.paragraphs ?? '').trim();
+    if (character) lines.push(`Description and personality length (${character}).`);
+    if (greeting) lines.push(`Opening greeting length, per greeting, for first_mes, alternate_greetings and group_only_greetings (${greeting}).`);
+    if (paragraphs) lines.push(`Paragraph target: ${paragraphs}.`);
+    if (character || greeting || paragraphs) {
+        lines.push('Treat length targets as quality-biased writing targets for the requested fields rather than hard API cutoffs: a tight, character-specific result outperforms padded filler.');
     }
     if (String(t.interviewQuestions ?? '').trim()) {
         lines.push(`Interview / ALIchat exchange target: ${String(t.interviewQuestions).trim()} (move from surface traits to habits, relationships and deeper fault lines with brief 2-5 word Interviewer prompts).`);
@@ -74,7 +96,8 @@ export function creatorFormatGuidance(draft) {
     const targets = creatorTargetsGuidance(draft);
     const custom = draft.writing?.formatInstruction ? `Custom writing format instructions:\n${draft.writing.formatInstruction}` : '';
     const placement = draft.style === 'plist' && draft.writing?.plistDestination === 'depth_prompt' ? 'When depth_prompt is requested, write the PList into Character’s Note (depth_prompt), not into description or creator_notes. Preserve any existing useful note instructions. Do not duplicate the PList into other fields.' : '';
-    return [base, targets, custom, placement].filter(Boolean).join('\n\n');
+    const nsfw = creatorNsfwInstruction(draft);
+    return [base, targets, custom, placement, nsfw ? `NSFW instructions for descriptions and greetings:\n${nsfw}` : ''].filter(Boolean).join('\n\n');
 }
 
 export function creatorFormatFields(draft, fields) {
