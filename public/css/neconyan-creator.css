@@ -589,6 +589,14 @@ body.neconyan #right-nav-panel.openDrawer[data-menu-type="creator"] #sb_characte
     margin-inline-end: auto;
 }
 
+#right-nav-panel #sb_character_creator_panel .creator-greeting-field .creator-field-heading {
+    gap: 4px;
+}
+
+#right-nav-panel #sb_character_creator_panel .creator-greeting-field .creator-chip-btn {
+    padding-inline: 6px;
+}
+
 #right-nav-panel #sb_character_creator_panel .text_pole {
     width: 100%;
     min-width: 0;

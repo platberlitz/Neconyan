@@ -322,7 +322,7 @@ class CreatorWorkspace {
         else if (section === 'facts') this.facts(main);
         else if (section === 'greetings') {
             main.append(element('div', 'creator-section-intro', 'Opening scenes and dialogue examples using Interviewer: for prompts.'), this.field('first_mes'), this.field('mes_example'));
-            this.stringList(main, 'Alternate greetings', 'alternate_greetings');
+            this.stringList(main, 'Alt greetings', 'alternate_greetings');
             this.stringList(main, 'Group greetings', 'group_only_greetings');
         } else if (section === 'prompts') {
             main.append(element('div', 'creator-section-intro', 'Optional system and depth instructions for this character.'), this.field('system_prompt'), this.field('post_history_instructions'));
@@ -438,7 +438,7 @@ class CreatorWorkspace {
         );
         main.append(sectionHeader);
         list.forEach((text, index) => {
-            const row = textField(`${title} ${index + 1}`, text, value => this.edit(next => { next.card.data[field][index] = value; }), { rows: field === 'tags' ? 1 : 3 });
+            const row = textField(`${title} ${index + 1}`, text, value => this.edit(next => { next.card.data[field][index] = value; }), { rows: field === 'tags' ? 1 : 3, className: field === 'alternate_greetings' ? 'creator-greeting-field' : '' });
             const removeBtn = button('Remove', () => this.edit(next => { next.card.data[field].splice(index, 1); }, true), false, 'creator-chip-btn creator-danger-outline');
             row.querySelector('.creator-field-heading').append(removeBtn);
             main.append(attachCreatorGenerator(this, row, `${field}:${index}`));
