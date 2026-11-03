@@ -12,6 +12,7 @@
 - PR #409 (2026-11-02) `fix: restore rail taps and immediate composer scrolling`
 - PR #410 (2026-11-02) `feat(agents): recover replies from completed thinking`
 - PR #413 (2026-11-02) `fix(agents): keep the page still when toggling agents`
+- PR #414 (2026-11-03) `fix(mewmory): avoid copying the search index when hiding messages`
 
 ## v1.4.1
 
