@@ -108,12 +108,13 @@ test('All formats and custom user instructions reach Dossier and field generatio
     const draft = createCreatorDraft({ id: 'generation', card: { data: { name: 'Mira', description: 'Shipwright', alternate_greetings: ['Old opening'] } } });
     draft.dossier = 'She seeks her sister with {{poss}} tools.';
     draft.privateNotes = 'UNSHARED_SECRET';
-    draft.writing = { userInstructions: 'Make her voice terse.' };
+    draft.writing = { userInstructions: 'Make her voice terse.', formatInstruction: 'Use short labelled character traits.' };
     for (const [style, format] of Object.entries(CREATOR_FORMATS)) {
         draft.style = style;
         for (const messages of [buildDossierRequest(draft).messages, buildCreatorFieldRequest(draft, 'description')]) {
             assert.ok(messages[0].content.includes(`Selected writing format: ${format.label}`));
             assert.ok(messages[0].content.includes('Make her voice terse.'));
+            assert.ok(messages[0].content.includes('Use short labelled character traits.'));
             assert.ok(messages[1].content.includes('{{poss}}'));
             assert.ok(!JSON.stringify(messages).includes('UNSHARED_SECRET'));
         }
