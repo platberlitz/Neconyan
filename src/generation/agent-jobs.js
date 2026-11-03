@@ -12,7 +12,8 @@ import { savedRoleplayMacroSnapshot } from './roleplay-prompt.js';
 import { captureRoleplayAgents, readRoleplayAgents, readRoleplayHistoryAgents, agentHistorySources } from './roleplay-agents-source.js';
 import { isNativeCompanion, nativeAgentDefinition } from './agent-definition.js';
 import { agentMessageExtra, agentTransformHistory, mergeAgentRegexSnapshot, reconcileAgentTrackerMetadata } from './agent-message-state.js';
-import { prepareRoleplayAgentContributions, runRoleplayAgentPostprocessing } from './roleplay-agent-processing.js';
+import { prepareRoleplayAgentContributions, runRoleplayAgentPostprocessing, runRoleplayThinkingRecovery } from './roleplay-agent-processing.js';
+import { formatToolResults, isThinkingRecoveryAgent, precedingToolInvocations, thinkingRecoveryInput, THINKING_RECOVERY_RUN_EXTRA_KEY } from '../../public/scripts/extensions/in-chat-agents/thinking-recovery.js';
 import { runRoleplayCompanions } from './roleplay-companions.js';
 import { getActiveCompanionResults } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { roleplayNativeHost } from '../endpoints/chats.js';
@@ -116,6 +117,26 @@ export async function runAgentJob(context, { generate, host = roleplayNativeHost
                 extra.inChatAgentTransformRedo = redoList;
             }
             extra.inChatAgentTransformHistory = Array.isArray(stored) ? stored : [];
+        } else if (request.agent.mode === 'run' && isThinkingRecoveryAgent(selected[0])) {
+            const input = thinkingRecoveryInput(message, saved.records[source.message.index + 2]);
+            if (!input.eligible) throw fail('This message has no completed thinking-only reply to recover.');
+            const result = await runRoleplayThinkingRecovery(context, { ...options, manualAgentId: selected[0].id,
+                reasoning: input.reasoning, continuation: input.continuation, continuationPrefix: input.prefix,
+                toolResults: formatToolResults(precedingToolInvocations(saved.records, source.message.index + 1)),
+                generationType: input.continuation ? 'continue' : 'normal' });
+            if (!result) throw fail('Thinking Reply Recovery could not run.');
+            proofs['roleplay-thinking-recovery'] = result.hash;
+            extra[THINKING_RECOVERY_RUN_EXTRA_KEY] = { agentId: result.agentId, agentName: result.agentName,
+                status: result.text ? 'done' : result.status, error: result.error, failed: !result.text,
+                reasoning: input.reasoning, continuation: input.continuation,
+                profileLabel: result.profileLabel, modelLabel: result.modelLabel, timestamp: result.timestamp };
+            if (result.text) {
+                text = input.prefix + result.text;
+                const history = agentTransformHistory(agentMessageExtra(message, 'inChatAgentTransformHistory'), message.mes);
+                extra.inChatAgentTransformHistory = [...history, { agentId: result.agentId, agentName: result.agentName,
+                    beforeText: message.mes, afterText: text, timestamp: result.timestamp }].slice(-10);
+                extra.inChatAgentTransformRedo = [];
+            } else preserveMessage = true;
         } else {
             const note = request.agent.mode === 'companion-output' ? getActiveCompanionResults(message)[request.agent.companionId] : null;
             const namespace = 'manual';

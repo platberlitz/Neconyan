@@ -1897,6 +1897,36 @@ describe('in-chat agent post-processing runner', () => {
             expect(message.extra.inChatAgentThinkingRecovery).toMatchObject({ agentId: 'tpl-thinking-reply-recovery', status: 'done' });
         });
 
+        test('a saved thinking-only error reaches automatic recovery and clears the error', async () => {
+            enabledAgents = [recoveryAgent(), rewriteAgent()];
+            modelAnswers();
+            const runner = await loadRunner();
+            const { messageIndex, generationContext } = await receiveReply(runner, { extra: { reasoning: REASONING,
+                generation_outcome: { version: 1, status: 'error', reason: 'reasoning_only' } } });
+            await eventSource.emit(eventTypes.MESSAGE_RECEIVED, messageIndex, 'normal', generationContext);
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(1);
+            expect(chat[messageIndex].mes).toBe('Rewritten reply.');
+            expect(chat[messageIndex].extra.generation_outcome).toBeUndefined();
+        });
+
+        test('a manual recovery retries failed thinking and keeps the active swipe in sync', async () => {
+            enabledAgents = [recoveryAgent()];
+            modelAnswers();
+            const runner = await loadRunner();
+            const extra = { reasoning: REASONING, generation_outcome: { version: 1, status: 'error', reason: 'reasoning_only' },
+                inChatAgentThinkingRecovery: { failed: true, reasoning: REASONING, continuation: false } };
+            chat.push({ name: 'Assistant', mes: '', is_user: false, extra, swipe_id: 0, swipes: [''], swipe_info: [{ extra: { ...extra } }] });
+            const result = await runner.runAgentOnMessage('tpl-thinking-reply-recovery', 0);
+            expect(callsWith('RECOVERY_PROMPT')).toHaveLength(1);
+            expect(result.changed).toBe(true);
+            expect(chat[0].mes).toBe('Recovered reply.');
+            expect(chat[0].swipes[0]).toBe('Recovered reply.');
+            expect(chat[0].extra.generation_outcome).toBeUndefined();
+            expect(chat[0].swipe_info[0].extra.generation_outcome).toBeUndefined();
+            expect(chat[0].extra.reasoning).toBe(REASONING);
+            await new Promise(resolve => setTimeout(resolve, 80));
+        });
+
         test('with concurrent Companions the recovered reply is written before any Companion starts', async () => {
             enabledAgents = [recoveryAgent(), rewriteAgent(), createCompanionAgent({ id: 'agent-companion' })];
             modelAnswers();

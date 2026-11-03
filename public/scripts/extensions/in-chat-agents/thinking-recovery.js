@@ -25,6 +25,34 @@ export function isThinkingRecoveryEligible({ text, reasoning, finishReason, outc
     return typeof reasoning === 'string' && reasoning.trim().length > 0;
 }
 
+/** Read a saved reply without treating the recoverable thinking-only notice as a provider failure. */
+export function thinkingRecoveryInput(message, nextRecord) {
+    const extra = message?.extra ?? {};
+    const continuation = extra.reasoning_continuation_empty === true;
+    const reasoning = continuation && typeof extra.reasoning_current === 'string' ? extra.reasoning_current : extra.reasoning;
+    const prefix = continuation ? String(message?.mes ?? '') : '';
+    const outcome = extra.generation_outcome?.status === 'error' && extra.generation_outcome.reason === 'reasoning_only'
+        ? null : extra.generation_outcome;
+    const toolTurn = extra.generation_tool_turn === true || extra.tool_invocations?.length > 0
+        || nextRecord?.is_system === true && nextRecord.extra?.tool_invocations?.length > 0;
+    const eligible = !message?.is_user && !message?.is_system && isThinkingRecoveryEligible({
+        text: continuation ? '' : message?.mes, reasoning, outcome, toolTurn,
+        unclosed: extra.reasoning_unclosed === true, finishReason: extra.generation_finish_reason,
+    });
+    return { eligible, reasoning, continuation, prefix };
+}
+
+/** Read the bounded run of tool-result records immediately preceding a reply, oldest first. */
+export function precedingToolInvocations(chatRecords, messageIndex) {
+    const invocations = [];
+    for (let index = messageIndex - 1, read = 0; index >= 0 && read < 16; index--, read++) {
+        const record = chatRecords[index];
+        if (record?.is_system !== true) break;
+        if (Array.isArray(record.extra?.tool_invocations)) invocations.unshift(...record.extra.tool_invocations);
+    }
+    return invocations;
+}
+
 /**
  * Accepts only the reply prose. Closed leading thinking blocks and an
  * assistant_response wrapper are removed; anything still carrying an unclosed

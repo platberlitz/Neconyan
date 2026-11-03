@@ -58,6 +58,68 @@ function paid(response) {
     };
 }
 
+for (const continuation of [false, true]) test(`manual thinking recovery preserves thinking and swipes, including restart (continue=${continuation})`, async t => {
+    const prefix = continuation ? 'She opens the door.' : '';
+    const f = prepared(t, [{ id: 'recover', sourceTemplateId: 'tpl-thinking-reply-recovery', enabled: false,
+        phase: 'post', prompt: 'RECOVER', conditions: { generationTypes: ['quiet'], triggerProbability: 0 },
+        postProcess: { promptTransformEnabled: true } }], records => {
+        records[1].is_system = true;
+        records[1].extra.tool_invocations = [{ name: 'lookup', result: 'The visitor is Nova.' }];
+        records[2].mes = prefix;
+        records[2].swipes[0] = prefix;
+        records[2].extra = { reasoning: 'Completed plan.', generation_outcome: { version: 1, status: 'error', reason: 'reasoning_only' },
+            ...(continuation ? { reasoning_continuation_empty: true, reasoning_current: 'New plan.' } : {}) };
+        records[2].swipe_info[0].extra = structuredClone(records[2].extra);
+    });
+    const operation = f.action('run', ['recover']);
+    await assert.rejects(operation.run({ generate: paid(options => {
+        assert.match(options.messages.at(-1).content, continuation ? /New plan\./ : /Completed plan\./);
+        assert.match(options.messages.at(-1).content, /The visitor is Nova\./);
+        return { text: ' Then she smiles.' };
+    }), beforeCompletion: () => { throw new Error('pause before saving'); } }), /pause before saving/);
+    await operation.run({ generate: () => assert.fail('paid recovery must not repeat') });
+    const message = f.saved()[2];
+    assert.equal(message.mes, prefix + (continuation ? ' Then she smiles.' : 'Then she smiles.'));
+    assert.equal(message.swipes[0], message.mes);
+    assert.equal(message.extra.reasoning, 'Completed plan.');
+    assert.equal(message.extra.generation_outcome, undefined);
+    assert.equal(message.swipe_info[0].extra.generation_outcome, undefined);
+    assert.equal(message.extra.reasoning_continuation_empty, undefined);
+    assert.equal(message.extra.inChatAgentThinkingRecovery.status, 'done');
+    assert.deepEqual(message.swipe_info[1], f.records[2].swipe_info[1]);
+});
+
+test('a failed manual thinking recovery preserves the reply and allows a fresh explicit retry', async t => {
+    const f = prepared(t, [{ id: 'recover', sourceTemplateId: 'tpl-thinking-reply-recovery', enabled: true,
+        phase: 'post', prompt: 'RECOVER', postProcess: { promptTransformEnabled: true } }], records => {
+        records[2].mes = '';
+        records[2].extra = { reasoning: 'Completed plan.', generation_outcome: { version: 1, status: 'error', reason: 'reasoning_only' } };
+    });
+    await f.action('run', ['recover']).run({ generate: paid({ text: '', reasoning: 'More thinking.' }) });
+    const failed = f.saved()[2];
+    assert.equal(failed.mes, '');
+    assert.equal(failed.extra.generation_outcome.reason, 'reasoning_only');
+    assert.equal(failed.extra.inChatAgentThinkingRecovery.failed, true);
+    await f.action('run', ['recover']).run({ generate: paid('Recovered prose.') });
+    assert.equal(f.saved()[2].mes, 'Recovered prose.');
+    assert.equal(f.saved()[2].extra.generation_outcome, undefined);
+});
+
+for (const extra of [
+    { generation_outcome: { version: 1, status: 'error', reason: 'reasoning_only_length' } },
+    { generation_outcome: { version: 1, status: 'truncated', reason: 'connection_lost' } },
+    { reasoning_unclosed: true }, { generation_tool_turn: true },
+]) test(`manual thinking recovery refuses incomplete or unsafe thinking: ${JSON.stringify(extra)}`, async t => {
+    const f = prepared(t, [{ id: 'recover', sourceTemplateId: 'tpl-thinking-reply-recovery', enabled: true,
+        phase: 'post', prompt: 'RECOVER', postProcess: { promptTransformEnabled: true } }], records => {
+        records[2].mes = '';
+        records[2].extra = { reasoning: 'Unfinished plan.', ...extra };
+    });
+    await assert.rejects(f.action('run', ['recover']).run({ generate: () => assert.fail('ineligible recovery must not send a request') }),
+        /no completed thinking-only reply/);
+    assert.deepEqual(f.saved(), f.records);
+});
+
 function draftAction(f, draft = 'Original composer draft') {
     const source = f.source();
     const request = captureAgentDraftRequest(f.scope, f.account, source, { avatar: 'Nova.png', agentId: 'draft', draft, draftId: 'composer', revision: '7' });

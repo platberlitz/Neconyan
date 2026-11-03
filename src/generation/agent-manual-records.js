@@ -3,7 +3,7 @@ import { roleplayError, roleplayHash } from '../roleplay-store.js';
 import { applyAutomaticCompanionNoteCleanup } from './companion-note-cleanup.js';
 
 const fail = () => roleplayError('ROLEPLAY_AGENT_RECOVERY', 'The saved manual Agent result no longer matches its accepted message.');
-const EXTRA_KEYS = new Set(['inChatAgents', 'inChatAgentPromptRuns', 'inChatAgentTransformHistory', 'inChatAgentTransformRedo', 'inChatAgentCompanionResults', 'token_count']);
+const EXTRA_KEYS = new Set(['inChatAgents', 'inChatAgentPromptRuns', 'inChatAgentTransformHistory', 'inChatAgentTransformRedo', 'inChatAgentCompanionResults', 'inChatAgentThinkingRecovery', 'token_count']);
 
 /** The typed manual effect changes one selected message and its explicitly derived tracker state. */
 export function applyManualAgentRecords(directories, job, records, output) {
@@ -15,12 +15,16 @@ export function applyManualAgentRecords(directories, job, records, output) {
         || hash !== output?.agentOutput || hash !== roleplayHash(data) || data.identity !== roleplayHash(job.intent)
         || data.recordsHash !== roleplayHash(records) || typeof data.text !== 'string' || Buffer.byteLength(data.text) > 256 * 1024
         || !data.extra || typeof data.extra !== 'object' || Array.isArray(data.extra)) throw fail();
-    let completedCompanions = {};
+    let completedCompanions = {}, recovered = false;
     for (const [name, expected] of Object.entries(data.proofs ?? {})) {
-        if (!name.startsWith('roleplay-agent-post:manual') && name !== 'roleplay-companions') throw fail();
+        if (!name.startsWith('roleplay-agent-post:manual') && name !== 'roleplay-companions' && name !== 'roleplay-thinking-recovery') throw fail();
         const value = readArtifact(directories, job.id, name);
         const { hash: proofHash, ...proof } = value ?? {};
         if (proofHash !== expected || proofHash !== roleplayHash(proof)) throw fail();
+        if (name === 'roleplay-thinking-recovery') {
+            if (proof.intentHash !== roleplayHash(job.intent) || !request.agent.ids.includes(proof.agentId)) throw fail();
+            recovered = Boolean(proof.text);
+        }
         if (name === 'roleplay-companions') completedCompanions = Object.fromEntries((proof.completed ?? [])
             .map(id => [id, proof.results?.[id]]));
     }
@@ -31,6 +35,12 @@ export function applyManualAgentRecords(directories, job, records, output) {
     const changed = message.mes !== data.text;
     message.mes = data.text;
     message.extra = { ...message.extra, ...structuredClone(data.extra) };
+    const clearRecoveredOutcome = extra => {
+        if (!recovered) return;
+        if (extra.generation_outcome?.reason === 'reasoning_only') delete extra.generation_outcome;
+        delete extra.reasoning_continuation_empty;
+    };
+    clearRecoveredOutcome(message.extra);
     if (changed) { delete message.extra.display_text; delete message.extra.server_narration; }
     if (!message.is_user) {
         const selected = message.swipe_id ?? 0;
@@ -40,6 +50,7 @@ export function applyManualAgentRecords(directories, job, records, output) {
         }
         if (Array.isArray(message.swipe_info) && message.swipe_info[selected]) {
             message.swipe_info[selected].extra = { ...message.swipe_info[selected].extra, ...structuredClone(data.extra) };
+            clearRecoveredOutcome(message.swipe_info[selected].extra);
             if (changed) { delete message.swipe_info[selected].extra.display_text; delete message.swipe_info[selected].extra.server_narration; }
         }
     }

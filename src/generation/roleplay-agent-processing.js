@@ -360,8 +360,9 @@ const UNSAFE_RECOVERY_CODES = new Set(['PROVIDER_OUTCOME_UNKNOWN', 'ROLEPLAY_AGE
 export async function runRoleplayThinkingRecovery(context, options) {
     const { base, snapshot, records, reasoning, generationType } = options;
     if (!snapshot.agents || typeof reasoning !== 'string' || !reasoning.trim()) return null;
-    const active = activeAgents(context, base, snapshot, options.agentCache);
-    const agent = active.agents.find(isThinkingRecoveryAgent);
+    const agents = options.manualAgentId ? readRoleplayAgents(base, snapshot, options.agentCache)
+        .filter(agent => agent.id === options.manualAgentId) : activeAgents(context, base, snapshot, options.agentCache).agents;
+    const agent = agents.find(isThinkingRecoveryAgent);
     if (!agent || !agent.prompt.trim()) return null;
     const continuation = options.continuation === true;
     const toolResults = options.toolResults ?? '';
