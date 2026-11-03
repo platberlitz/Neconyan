@@ -16,11 +16,11 @@ test('Character and greeting length targets are separate, migrate old values and
     draft.writing = { targets: { words: '700 words', tokens: '900 tokens' } };
     let prompt = buildDossierRequest(draft).messages[0].content;
     assert.match(prompt, /Description and personality length \(word target: 700 words; approximate token target: 900 tokens\)/);
-    assert.ok(!prompt.includes('Opening greeting length'));
+    assert.match(prompt, /Opening greeting length.*word target: ~500 words each/);
     assert.ok(!prompt.includes('NSFW instructions'));
     draft.writing.targets = { characterWords: '600 words', greetingWords: '500 words', greetingTokens: '700 tokens' };
     prompt = buildDossierRequest(draft).messages[0].content;
-    assert.match(prompt, /Description and personality length \(word target: 600 words\)/);
+    assert.match(prompt, /Description and personality length \(word target: 600 words; approximate token target: ~1,600-2,600 tokens\)/);
     assert.match(prompt, /Opening greeting length.*word target: 500 words; approximate token target: 700 tokens/);
     const before = creatorTargetsSignature(draft);
     draft.writing.nsfw = { enabled: true };

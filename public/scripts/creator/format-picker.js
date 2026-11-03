@@ -1,5 +1,5 @@
 import { element, button, textField } from './fields.js';
-import { CREATOR_FORMATS, CREATOR_TENSES, CREATOR_POVS, CREATOR_CANON_MODES, CREATOR_NSFW_GUIDANCE, creatorTargetValue, creatorTargetsSignature } from './formats.js';
+import { CREATOR_FORMATS, CREATOR_TENSES, CREATOR_POVS, CREATOR_CANON_MODES, CREATOR_NSFW_GUIDANCE, CREATOR_TARGET_DEFAULTS, creatorTargetValue, creatorTargetsSignature } from './formats.js';
 
 export function renderCreatorTargets(workspace, host, { open = false } = {}) {
     const targets = workspace.session.draft.writing?.targets ?? {};
@@ -9,7 +9,9 @@ export function renderCreatorTargets(workspace, host, { open = false } = {}) {
         // Older drafts kept one shared length target; it now belongs to the character fields.
         if (key === 'characterWords') delete next.writing.targets.words;
         if (key === 'characterTokens') delete next.writing.targets.tokens;
-        if (value === '' || value === undefined || value === null || (key === 'tense' && value === 'unset') || (key === 'pov' && value === 'unset') || (key === 'canon' && value === 'source_only')) {
+        if (key in CREATOR_TARGET_DEFAULTS) {
+            next.writing.targets[key] = String(value ?? '');
+        } else if (value === '' || value === undefined || value === null || (key === 'tense' && value === 'unset') || (key === 'pov' && value === 'unset') || (key === 'canon' && value === 'source_only')) {
             delete next.writing.targets[key];
         } else {
             next.writing.targets[key] = value;
@@ -18,28 +20,31 @@ export function renderCreatorTargets(workspace, host, { open = false } = {}) {
 
     const details = element('details', 'creator-subdetails creator-targets-panel');
     details.open = open;
-    details.append(element('summary', '', 'Conversion targets & style'));
+    details.append(element('summary', '', 'Length, tense and style'));
     const body = element('div', 'creator-subdetails-body');
-    body.append(element('p', 'creator-muted', 'Approximate writing targets for Dossier conversion, per-field generation and Writing partner requests. Unset fields leave length and style open; provider output token limits still apply separately.'));
+    body.append(element('p', 'creator-muted', 'Guides Convert, Generate and the Writing partner. Lengths are rough targets, not hard limits. Clear a box to drop that target.'));
 
     const pillRow = (title, options, currentKey, defaultVal, key) => {
         const group = element('div', 'creator-target-group');
         group.append(element('span', 'creator-target-label', title));
         const strip = element('div', 'creator-actions creator-chip-strip');
+        const selected = options[currentKey || defaultVal];
         for (const [id, item] of Object.entries(options)) {
             const btn = button(item.label, () => setTarget(key, id, true), false, 'creator-chip-btn');
             btn.setAttribute('aria-pressed', String((currentKey || defaultVal) === id));
+            if (item.hint) btn.title = item.hint;
             strip.append(btn);
         }
         group.append(strip);
+        if (selected?.hint) group.append(element('p', 'creator-muted', selected.hint));
         return group;
     };
 
     const togglesGrid = element('div', 'creator-targets-toggles');
     togglesGrid.append(
         pillRow('Narrative tense', CREATOR_TENSES, targets.tense, 'unset', 'tense'),
-        pillRow('Narrative POV', CREATOR_POVS, targets.pov, 'unset', 'pov'),
-        pillRow('Canon supplementation', CREATOR_CANON_MODES, targets.canon, 'source_only', 'canon'),
+        pillRow('Point of view', CREATOR_POVS, targets.pov, 'unset', 'pov'),
+        pillRow('Where details come from', CREATOR_CANON_MODES, targets.canon, 'source_only', 'canon'),
     );
     body.append(togglesGrid);
 
@@ -50,15 +55,19 @@ export function renderCreatorTargets(workspace, host, { open = false } = {}) {
         textField('Greeting words', creatorTargetValue(targets, 'greetingWords'), val => setTarget('greetingWords', val), { rows: 1, placeholder: 'e.g. ~500 words each' }),
         textField('Greeting tokens', creatorTargetValue(targets, 'greetingTokens'), val => setTarget('greetingTokens', val), { rows: 1, placeholder: 'e.g. ~700 tokens each' }),
     );
-    body.append(lengthGrid, textField('Paragraph target', targets.paragraphs ?? '', val => setTarget('paragraphs', val), { rows: 1, placeholder: 'e.g. 3-5 paragraphs' }));
+    body.append(lengthGrid, textField('Paragraph target', creatorTargetValue(targets, 'paragraphs'), val => setTarget('paragraphs', val), { rows: 1, placeholder: 'e.g. 3-5 paragraphs' }));
 
     const taskGrid = element('div', 'creator-form-grid');
     taskGrid.append(
-        textField('Interview question count', targets.interviewQuestions ?? '', val => setTarget('interviewQuestions', val), { rows: 1, placeholder: 'e.g. 5-10 questions' }),
-        textField('PList category focus', targets.plistCategories ?? '', val => setTarget('plistCategories', val), { rows: 1, placeholder: 'e.g. persona, body, quirks' }),
+        textField('ALIchat questions', creatorTargetValue(targets, 'interviewQuestions'), val => setTarget('interviewQuestions', val), { rows: 1, placeholder: 'e.g. 5-10 questions' }),
+        textField('PList categories', creatorTargetValue(targets, 'plistCategories'), val => setTarget('plistCategories', val), { rows: 1, placeholder: 'e.g. persona, body, quirks' }),
     );
     body.append(taskGrid);
-    body.append(textField('Opening scenario mix', targets.openingScenarios ?? '', val => setTarget('openingScenarios', val), { rows: 2, placeholder: 'e.g. 4 everyday scenarios grounded in routine, varied emotional arcs, sensation-first hooks' }));
+    body.append(textField('What each greeting should do', creatorTargetValue(targets, 'openingScenarios'), val => setTarget('openingScenarios', val), { rows: 2, placeholder: 'e.g. 4 everyday scenarios grounded in routine, varied emotional arcs, sensation-first hooks' }));
+
+    body.append(button('Reset lengths and lists to defaults', () => workspace.edit(next => {
+        for (const key of [...Object.keys(CREATOR_TARGET_DEFAULTS), 'words', 'tokens']) delete next.writing?.targets?.[key];
+    }, true), false, 'creator-chip-btn'));
 
     const nsfw = workspace.session.draft.writing?.nsfw ?? {};
     const nsfwGroup = element('div', 'creator-target-group');

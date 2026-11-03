@@ -18,8 +18,8 @@ export const CREATOR_POVS = Object.freeze({
 });
 
 export const CREATOR_CANON_MODES = Object.freeze({
-    source_only: { label: 'Source only', instruction: 'Rely strictly on the supplied dossier, character fields and lore; do not import unverified outside franchise details.' },
-    supplement: { label: 'Allow canon knowledge', instruction: 'Supplement supplied facts with established canon knowledge about {{char}} and their setting when consistent with the user\'s source material.' },
+    source_only: { label: 'Only what I provide', hint: 'Use just your Dossier, card fields and lorebooks.', instruction: 'Rely strictly on the supplied dossier, character fields and lore; do not import unverified outside franchise details.' },
+    supplement: { label: 'Fill gaps from known canon', hint: 'For existing characters: the model may add details it already knows from their series.', instruction: 'Supplement supplied facts with established canon knowledge about {{char}} and their setting when consistent with the user\'s source material.' },
 });
 
 /** Adapted from the bundled Director preset's NSFW Mode for character fields and greetings. */
@@ -28,7 +28,24 @@ Describe every physical interaction with raw, blunt and highly detailed language
 Avoid metaphorical, poetic or vague euphemisms; represent every sexual act with raw realism and clinical clarity. Keep dirty talk and verbal interaction strictly in the established voice and dominance dynamics of the characters, uninhibited, vulgar and blunt.
 In descriptions and personality, state sexual preferences, anatomy, kinks, limits and intimate behaviour plainly and specifically rather than hinting. In explicit greetings, let intimacy take priority over plot, with the plot slowed or paused, while still leaving {{user}}'s actions, words and decisions to {{user}}.`;
 
-export const creatorTargetValue = (targets, key) => String(targets?.[key] ?? (key === 'characterWords' ? targets?.words : key === 'characterTokens' ? targets?.tokens : '') ?? '').trim();
+/** Starting values for the writing targets. An empty value switches that target off. */
+export const CREATOR_TARGET_DEFAULTS = Object.freeze({
+    characterWords: '1,200-2,000 words across description and personality',
+    characterTokens: '~1,600-2,600 tokens',
+    greetingWords: '~500 words each',
+    greetingTokens: '~650 tokens each',
+    paragraphs: '4-6 paragraphs per greeting',
+    interviewQuestions: '5-15 questions, moving from surface traits to habits, then contradictions',
+    plistCategories: 'persona, likes, dislikes, backstory, appearance, body, hands, wardrobe, abilities, relationships, quirks and tells',
+    openingScenarios: 'Each greeting sets out the character\'s state, the situation, a tension and a hook. Roughly half narration, a third dialogue, the rest sensory detail. Place the scene within the first two paragraphs.',
+});
+
+export function creatorTargetValue(targets, key) {
+    if (typeof targets?.[key] === 'string') return targets[key].trim();
+    const legacy = key === 'characterWords' ? targets?.words : key === 'characterTokens' ? targets?.tokens : undefined;
+    if (typeof legacy === 'string' && legacy.trim()) return legacy.trim();
+    return CREATOR_TARGET_DEFAULTS[key] ?? '';
+}
 
 export function creatorNsfwInstruction(draft) {
     const nsfw = draft?.writing?.nsfw;
@@ -43,14 +60,14 @@ export function creatorTargetsSignature(draft) {
         t.pov ?? 'unset',
         t.canon ?? 'source_only',
         creatorTargetValue(t, 'characterWords'),
-        String(t.paragraphs ?? '').trim(),
+        creatorTargetValue(t, 'paragraphs'),
         creatorTargetValue(t, 'characterTokens'),
         creatorTargetValue(t, 'greetingWords'),
         creatorTargetValue(t, 'greetingTokens'),
         creatorNsfwInstruction(draft),
-        String(t.interviewQuestions ?? '').trim(),
-        String(t.plistCategories ?? '').trim(),
-        String(t.openingScenarios ?? '').trim(),
+        creatorTargetValue(t, 'interviewQuestions'),
+        creatorTargetValue(t, 'plistCategories'),
+        creatorTargetValue(t, 'openingScenarios'),
         draft.writing?.formatInstruction ?? '',
         draft.writing?.plistDestination ?? 'description',
     ]);
@@ -71,21 +88,21 @@ export function creatorTargetsGuidance(draft) {
     ].filter(Boolean).join('; ');
     const character = group('characterWords', 'characterTokens');
     const greeting = group('greetingWords', 'greetingTokens');
-    const paragraphs = String(t.paragraphs ?? '').trim();
+    const paragraphs = creatorTargetValue(t, 'paragraphs');
     if (character) lines.push(`Description and personality length (${character}).`);
     if (greeting) lines.push(`Opening greeting length, per greeting, for first_mes, alternate_greetings and group_only_greetings (${greeting}).`);
     if (paragraphs) lines.push(`Paragraph target: ${paragraphs}.`);
     if (character || greeting || paragraphs) {
         lines.push('Treat length targets as quality-biased writing targets for the requested fields rather than hard API cutoffs: a tight, character-specific result outperforms padded filler.');
     }
-    if (String(t.interviewQuestions ?? '').trim()) {
-        lines.push(`Interview / ALIchat exchange target: ${String(t.interviewQuestions).trim()} (move from surface traits to habits, relationships and deeper fault lines with brief 2-5 word Interviewer prompts).`);
+    if (creatorTargetValue(t, 'interviewQuestions')) {
+        lines.push(`Interview / ALIchat exchange target: ${creatorTargetValue(t, 'interviewQuestions')} (move from surface traits to habits, relationships and deeper fault lines with brief 2-5 word Interviewer prompts).`);
     }
-    if (String(t.plistCategories ?? '').trim()) {
-        lines.push(`PList category focus: ${String(t.plistCategories).trim()}.`);
+    if (creatorTargetValue(t, 'plistCategories')) {
+        lines.push(`PList category focus: ${creatorTargetValue(t, 'plistCategories')}.`);
     }
-    if (String(t.openingScenarios ?? '').trim()) {
-        lines.push(`Opening / greeting scenario guidance: ${String(t.openingScenarios).trim()} (establish character state, situation, tension and an active hook for {{user}} without writing {{user}}'s actions or dialogue).`);
+    if (creatorTargetValue(t, 'openingScenarios')) {
+        lines.push(`Opening / greeting scenario guidance: ${creatorTargetValue(t, 'openingScenarios')} (establish character state, situation, tension and an active hook for {{user}} without writing {{user}}'s actions or dialogue).`);
     }
     return lines.length ? `Conversion and writing targets:\n${lines.join('\n')}` : '';
 }

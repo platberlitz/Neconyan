@@ -16,7 +16,7 @@ for (const phone of [false, true]) {
         await creator.getByLabel('Character dossier', { exact: true }).fill('Mira repairs ships with {{poss}} tools and seeks her sister.');
         await creator.getByRole('button', { name: 'ALIchat', exact: true }).click();
         await expect(creator.getByRole('button', { name: 'ALIchat', exact: true })).toHaveAttribute('aria-pressed', 'true');
-        await creator.locator('summary').filter({ hasText: 'Conversion targets & style' }).click();
+        await creator.locator('summary').filter({ hasText: 'Length, tense and style' }).click();
         await creator.getByRole('button', { name: 'Present tense', exact: true }).click();
         await creator.getByRole('button', { name: 'Third person', exact: true }).click();
         await creator.getByLabel('Description & personality words', { exact: true }).fill('2500-4000 interview');

@@ -325,9 +325,9 @@ class CreatorWorkspace {
 
     dossier(main) {
         renderCreatorFormat(this, main);
-        main.append(element('h3', '', 'Everything about your character, in one place.'), textField('Character dossier', this.session.draft.dossier ?? '', value => this.edit(next => { next.dossier = value; }), {
+        main.append(element('h3', '', 'Put all your canon info and extra details here'), textField('Character dossier', this.session.draft.dossier ?? '', value => this.edit(next => { next.dossier = value; }), {
             rows: 10,
-            hint: 'Paste notes, history, appearance, relationships, voice, setting and scene ideas. Convert sends this dossier and the chosen existing fields to your current model. Your original notes stay in this draft, outside the published card.',
+            hint: 'Paste anything you have: canon wiki notes, history, appearance, relationships, voice, setting, and your own additions or headcanons. Convert turns it into card fields for you to review. This text stays private to the draft and is never published with the card.',
         }));
         const selection = new Set(DOSSIER_FIELDS.filter(field => !this.session.draft.locks.includes(field)));
         const choices = element('fieldset', 'creator-fieldset');
