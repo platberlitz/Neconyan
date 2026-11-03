@@ -60,6 +60,7 @@ export const refreshedKnowledgeCases = [
     ['Can Scratchpad create a new character from a note?', 'scratchpad.create-character', 'not an immediately saved card'],
     ['Can I edit Miso prompt instructions in Scratchpad?', 'scratchpad.prompts', 'Save prompt applies your text'],
     ['Does Scratchpad review highlight changes as I edit?', 'scratchpad.changes', 'updates the comparison while you edit'],
+    ['Can Scratchpad edit every character card field?', 'scratchpad.changes', 'All character editor fields are editable'],
     ['How do expression sets work for multiple characters in one card?', 'images.expression-sets', 'not ordinary mentions'],
     ['Can I Add expressions in a batch and find Missing images?', 'images.expression-library', 'separated by commas or new lines'],
     ['Should I Remove background for full-bleed sprites?', 'images.expression-generation', 'leave it off for full-bleed artwork'],
