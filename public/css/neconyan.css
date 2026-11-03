@@ -371,13 +371,13 @@ body.neconyan .sb-shell-tab.is-active { background: var(--neco-raised); border-c
 body.neconyan .sb-shell-tab-copy strong { font-size: 12px; font-weight: 500; }
 body.neconyan :is(.sb-shell-header, #right-nav-panel.openDrawer > .sb-character-shell-header) {
     padding: 16px 52px 16px 18px; border-bottom: 1px solid var(--neco-border);
+    &:has(.neconyan-page-intro-header) { padding-right: 70px; }
 }
 body.neconyan .sb-shell-header .sb-shell-kicker { display: none; }
 body.neconyan .sb-shell-header .sb-shell-title { font-size: 16px; font-weight: 600; }
 body.neconyan .sb-shell-header .sb-shell-subtitle { color: var(--neco-muted); font-size: 12px; font-weight: 400; }
 body.neconyan .neconyan-shell-page-intro:empty { display: none; }
 body.neconyan .sb-shell-header:has(.neconyan-page-intro-header) {
-    --neco-shell-close-top: 26px;
     display: grid;
     grid-template-columns: fit-content(calc(100% - 90px)) minmax(0, 1fr);
     flex-shrink: 0;

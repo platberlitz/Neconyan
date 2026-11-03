@@ -3680,6 +3680,7 @@ body.neconyan #open_chat_expressions .expression_buttons > .menu_button > span {
 @media (max-width: 768px) {
     body.neconyan :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header:has(.neconyan-page-intro-header) {
         --neco-shell-header-padding: 10px 12px 12px;
+        --neco-shell-close-top: 26px;
         display: grid;
         grid-template-columns: fit-content(calc(100% - 132px)) minmax(0, 1fr) 42px;
         align-items: stretch;
