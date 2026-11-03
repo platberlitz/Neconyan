@@ -1,7 +1,7 @@
 import { creatorAssistantContext, TEXT_FIELDS, PROPOSAL_FIELDS, creatorTextValue } from './model.js';
 import { creatorFormatFields, creatorTargetValue } from './formats.js';
 import { creatorGuidance } from './guidance.js';
-import { dossierProposal } from './dossier.js';
+import { startCreatorWriting } from './conversion.js';
 import { element, button, textField } from './fields.js';
 import { requestCreatorConnection, withCreatorAbort } from './connection.js';
 
@@ -119,12 +119,9 @@ export function renderWritingPartner(workspace, main) {
         const request = buildCreatorWritingRequest(source, instruction, [...fields], { includePrivate: privateInput.checked });
         controller = new AbortController(); cancel.hidden = false;
         try {
-            const output = await requestCreatorReply(workspace, source, request.messages, { signal: controller.signal });
-            const proposal = dossierProposal(source, output, request.fields);
-            delete proposal.dossierBefore;
-            proposal.label = 'Writing partner';
+            const proposal = startCreatorWriting(source, request, 'Writing partner');
             if (!workspace.edit(next => { next.proposals.push(proposal); })) return;
-            if (main.isConnected) workspace.proposal(proposal);
+            await workspace.continueWriting(proposal.id, controller.signal);
             workspace.status('Your writing proposal is ready to review.');
         } finally { cancel.hidden = true; }
     }), true), cancel);

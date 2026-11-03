@@ -30,6 +30,7 @@ for (const phone of [false, true]) {
         app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: JSON.stringify({ fields: { name: 'Mira', description: '<START>\nInterviewer: What do you do?\n{{char}}: I repair ships.' }, questions: [], coverage: ['Kept her occupation.'] }) } }] };
         await creator.getByRole('button', { name: 'Convert dossier to card', exact: true }).click();
         await expect(creator.locator('.creator-proposal')).toBeVisible({ timeout: 30000 });
+        await expect(creator.getByRole('button', { name: 'Accept all fields', exact: true })).toBeVisible({ timeout: 60000 });
         expect(app.provider.calls.some(call => call.messages?.some(message => message.content?.includes('Selected writing format: ALIchat') && message.content?.includes('Description and personality length (word target: 2500-4000 interview') && message.content?.includes('word target: 500 opening') && message.content?.includes('NSFW instructions for descriptions and greetings') && message.content?.includes('Fetish focus for greetings only') && message.content?.includes('body worship, oral sex') && message.content?.includes('present tense outside dialogue quotes')))).toBe(true);
         await creator.getByRole('button', { name: 'Accept all fields', exact: true }).click();
         await creator.getByRole('button', { name: 'Identity', exact: true }).click();

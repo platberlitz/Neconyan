@@ -1,5 +1,5 @@
 import { element, button, textField } from './fields.js';
-import { CREATOR_FORMATS, CREATOR_TENSES, CREATOR_POVS, CREATOR_CANON_MODES, CREATOR_NSFW_GUIDANCE, CREATOR_TARGET_DEFAULTS, creatorTargetValue, creatorTargetsSignature } from './formats.js';
+import { CREATOR_FORMATS, CREATOR_TENSES, CREATOR_POVS, CREATOR_CANON_MODES, CREATOR_NSFW_GUIDANCE, CREATOR_TARGET_DEFAULTS, creatorTargetValue } from './formats.js';
 
 export function renderCreatorTargets(workspace, host, { open = false } = {}) {
     const targets = workspace.session.draft.writing?.targets ?? {};
@@ -179,19 +179,15 @@ export function renderCreatorFormat(workspace, main) {
             const source = structuredClone(workspace.session.draft);
             const fields = ['description', 'personality', 'scenario', 'mes_example'].filter(field => source.card.data[field]?.trim() && !source.locks.includes(field));
             if (!fields.length) throw new Error('Add descriptive text or example dialogue first, or convert your Dossier into fields. Locked fields are left alone.');
-            const { buildCreatorWritingRequest, requestCreatorReply } = await import('./assistant.js');
-            const { dossierProposal } = await import('./dossier.js');
+            const { buildCreatorWritingRequest } = await import('./assistant.js');
+            const { startCreatorWriting } = await import('./conversion.js');
             const instruction = 'Convert the selected existing fields to the selected writing format. Preserve every established fact, literal macro, secret boundary and meaningful voice detail. Do not add new facts. In coverage, identify what was kept, reworded or omitted; questions must identify anything that cannot be converted faithfully.';
             const request = buildCreatorWritingRequest(source, instruction, fields);
             convert.disabled = true; cancel.hidden = false; controller = new AbortController();
             feedback.textContent = 'Converting existing text. Your fields stay unchanged until you accept the proposal.';
-            const output = await requestCreatorReply(workspace, source, request.messages, { signal: controller.signal });
-            const proposal = dossierProposal(source, output, request.fields);
-            delete proposal.dossierBefore;
-            proposal.formatBefore = source.style;
-            proposal.targetsBefore = creatorTargetsSignature(source);
-            proposal.label = `${CREATOR_FORMATS[source.style]?.label || 'Natural description'} conversion`;
-            workspace.proposal(proposal);
+            const proposal = startCreatorWriting(source, request, `${CREATOR_FORMATS[source.style]?.label || 'Natural description'} conversion`);
+            if (!workspace.edit(next => { next.proposals.push(proposal); })) return;
+            await workspace.continueWriting(proposal.id, controller.signal);
             feedback.textContent = 'Conversion ready for review.';
         } catch (error) {
             feedback.hidden = false;
