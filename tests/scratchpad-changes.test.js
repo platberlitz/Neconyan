@@ -57,6 +57,29 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks());
 
 describe('Scratchpad reviewed saves', () => {
+    test.each([
+        ['depth_prompt_prompt', 'New note', { data: { extensions: { depth_prompt: { prompt: 'New note' } } } }],
+        ['depth_prompt_depth', 0, { data: { extensions: { depth_prompt: { depth: 0 } } } }],
+        ['fav', false, { data: { extensions: { fav: false } }, fav: false }],
+        ['talkativeness', 0, { data: { extensions: { talkativeness: 0 } }, talkativeness: 0 }],
+        ['name', 'Renamed Nova', { data: { name: 'Renamed Nova' }, name: 'Renamed Nova' }],
+        ['world', 'Garden', { data: { extensions: { world: 'Garden' } } }],
+    ])('saves reviewed %s with the revision and correct card path', async (field, value, patch) => {
+        const plan = await prepareChange({ type: 'character', character: 'Nova', field, value }, source);
+        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+        await plan.commit(plan.after);
+        const [url, options] = globalThis.fetch.mock.calls[1];
+        expect(url).toBe('/api/characters/merge-attributes');
+        expect(JSON.parse(options.body)).toEqual({ avatar: 'Nova.png', expected_revision: 'a'.repeat(64), ...patch });
+    });
+    test('refuses a missing lorebook and invalid edited settings before saving', async () => {
+        const plan = await prepareChange({ type: 'character', character: 'Nova', field: 'world', value: 'Missing' }, source);
+        await expect(plan.commit(plan.after)).rejects.toThrow('no lorebook');
+        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+        const numeric = await prepareChange({ type: 'character', character: 'Nova', field: 'talkativeness', value: 0.5 }, source);
+        await expect(numeric.commit('2')).rejects.toThrow('0 to 1');
+        expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    });
     test.each(['review', 'save'])('General waits for pending sharing settings before %s and refuses an unshared card', async stage => {
         let release;
         const queued = new Promise(resolve => { release = resolve; });

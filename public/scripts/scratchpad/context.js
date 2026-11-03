@@ -397,7 +397,10 @@ function formatCharacter(character, source) {
         tags.length ? `Tags [tags]: ${tags.join(', ')}` : '',
         data.extensions?.world ? `Linked lorebook: ${data.extensions.world}` : '',
         extraBooks.length ? `Extra lorebooks: ${extraBooks.join(', ')}` : '',
-        source.groupId && talkativeness !== undefined && talkativeness !== '' ? `Talkativeness: ${talkativeness}` : '',
+        `Talkativeness: ${talkativeness ?? 0.5} [extensions.talkativeness]`,
+        `Favourite: ${data.extensions?.fav ?? character.fav ?? false} [extensions.fav]`,
+        `Character's note depth [extensions.depth_prompt.depth]: ${data.extensions?.depth_prompt?.depth ?? 4}`,
+        `Character's note role [extensions.depth_prompt.role]: ${data.extensions?.depth_prompt?.role || 'system'}`,
     ].filter(Boolean);
     const fields = CARD_FIELDS.map(([field, label]) => cardField(character, field, label)).filter(Boolean);
     if (depthPrompt) {

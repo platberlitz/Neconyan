@@ -170,6 +170,14 @@ test('General keeps one account-owned list, context origins and ordinary session
     assert.equal(b.read(GENERAL).cleanup.enabled, false);
 });
 
+test('Scratchpad explains the complete existing-character field contract', () => {
+    const result = buildScratchpadSystemPrompt({ assistant: 'miso', gender: 'neutral', sourceKind: 'general', userName: 'Kris', capabilities: { character: true } });
+    for (const field of ['character_version', 'group_only_greetings', 'extensions.depth_prompt.prompt', 'extensions.depth_prompt.depth', 'extensions.depth_prompt.role', 'extensions.talkativeness', 'extensions.fav', 'extensions.world']) {
+        assert.ok(result.text.includes(field), `Missing ${field}`);
+    }
+    assert.match(result.text, /without moving its file or chats/);
+});
+
 test('General prompts and custom prompts describe no story and disable chat and lore changes', () => {
     for (const customPrompt of [undefined, 'MY-CUSTOM-VOICE']) {
         const result = buildScratchpadSystemPrompt({ assistant: 'miso', gender: 'neutral', sourceKind: 'general', userName: 'Kris',

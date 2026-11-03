@@ -4,34 +4,14 @@
  */
 import { NOTE_TOOL_DEFINITIONS, NOTE_MUTATING_KINDS } from '../notebooks/assistant-note-tools.js';
 import { normaliseCharacterDraft } from '../neconyan-character-draft.js';
+import { CHARACTER_FIELDS, characterField, characterFieldName } from './character-fields.js';
 
 export const CHANGE_FENCE = 'scratchpad-change';
 const FENCE_PATTERN = /```scratchpad-change[^\n]*\n([\s\S]*?)```/g;
 const MAX_CHANGES = 24;
 
-export const TEXT_FIELDS = Object.freeze({
-    description: 'description',
-    personality: 'personality',
-    scenario: 'scenario',
-    first_mes: 'first message',
-    mes_example: 'example messages',
-    creator_notes: 'creator\'s notes',
-    system_prompt: 'system prompt',
-    post_history_instructions: 'post-history instructions',
-});
-export const LIST_FIELDS = Object.freeze({
-    alternate_greetings: 'alternate greetings',
-    tags: 'tags',
-});
-export const TOP_LEVEL_FIELDS = Object.freeze({
-    description: 'description',
-    personality: 'personality',
-    scenario: 'scenario',
-    first_mes: 'first_mes',
-    mes_example: 'mes_example',
-    creator_notes: 'creatorcomment',
-    tags: 'tags',
-});
+export const TEXT_FIELDS = Object.freeze(Object.fromEntries(Object.entries(CHARACTER_FIELDS).filter(([, value]) => value.type === 'text').map(([key, value]) => [key, value.label])));
+export const LIST_FIELDS = Object.freeze(Object.fromEntries(Object.entries(CHARACTER_FIELDS).filter(([, value]) => ['greetings', 'tags'].includes(value.type)).map(([key, value]) => [key, value.label])));
 export const GREETING_SEPARATOR = '\n\n---\n\n';
 
 export class ScratchpadChangeError extends Error {
@@ -135,14 +115,14 @@ export function normaliseChange(value) {
             } catch (error) { fail(error.message); }
         }
         const character = text(value.character, 200).trim();
-        const field = String(value.field ?? '');
+        const field = characterFieldName(String(value.field ?? ''));
         if (!character) fail('This character change does not say which character.');
         const append = value.action === 'append' || value.action === 'add';
         if (append && field !== 'alternate_greetings') fail('Scratchpad can only append alternate greetings.');
         if (!append && ![undefined, 'replace', 'edit'].includes(value.action)) fail('This character change has an unknown action.');
         if (Object.hasOwn(TEXT_FIELDS, field)) {
             if (typeof value.value !== 'string') fail('This character change has no new text.');
-            return { type: 'character', character, field, value: text(value.value), reason };
+            return { type: 'character', character, field, value: parseField(field, text(value.value)), reason };
         }
         if (Object.hasOwn(LIST_FIELDS, field)) {
             const list = Array.isArray(value.value)
@@ -150,6 +130,9 @@ export function normaliseChange(value) {
                 : field === 'tags' ? stringList(value.value) : String(value.value ?? '').split(/\n\s*---\s*\n/).filter(item => item.trim());
             if (append && !list.length) fail('This addition has no new greetings.');
             return { type: 'character', character, field, value: list.slice(0, 200), reason, ...(append ? { action: 'append' } : {}) };
+        }
+        if (characterField(field)) {
+            return { type: 'character', character, field, value: validateScalar(field, value.value), reason };
         }
         fail('Scratchpad cannot change that character field.');
     }
@@ -219,7 +202,7 @@ export function describeChange(change) {
     if (change.type === 'character') {
         if (change.action === 'create') return `Create character '${change.character.name}'`;
         if (change.action === 'append') return `Add alternate greetings to ${change.character}`;
-        const label = TEXT_FIELDS[change.field] || LIST_FIELDS[change.field];
+        const label = characterField(change.field)?.label;
         return `Change ${change.character}'s ${label}`;
     }
     switch (change.action) {
@@ -253,14 +236,38 @@ export function parseEntry(value, fallback) {
 }
 
 export function formatField(field, value) {
+    field = characterFieldName(field);
     if (field === 'tags') return value.join(', ');
-    if (field === 'alternate_greetings') return value.join(GREETING_SEPARATOR);
-    return value;
+    if (characterField(field)?.type === 'greetings') return value.join(GREETING_SEPARATOR);
+    return String(value);
 }
 
 export function parseField(field, edited) {
+    field = characterFieldName(field);
     if (field === 'tags') return stringList(edited);
-    if (field === 'alternate_greetings') return String(edited ?? '').split(/\n\s*---\s*\n/).map(item => item.trim()).filter(Boolean);
+    if (characterField(field)?.type === 'greetings') return String(edited ?? '').split(/\n\s*---\s*\n/).map(item => item.trim()).filter(Boolean);
+    if (field === 'name' && !String(edited ?? '').trim()) fail('The character name cannot be empty.');
+    const type = characterField(field)?.type;
+    if (type === 'number') {
+        const text = String(edited ?? '').trim();
+        return validateScalar(field, text ? Number(text) : NaN);
+    }
+    if (type === 'boolean') {
+        const text = String(edited ?? '').trim();
+        return validateScalar(field, text === 'true' ? true : text === 'false' ? false : text);
+    }
+    if (type === 'role') return validateScalar(field, String(edited ?? '').trim());
     return String(edited ?? '');
+}
+
+function validateScalar(field, value) {
+    const definition = characterField(field);
+    if (definition.type === 'number' && (typeof value !== 'number' || !Number.isFinite(value)
+        || value < definition.min || value > definition.max || definition.integer && !Number.isInteger(value))) {
+        fail(`Use ${definition.integer ? 'a whole number' : 'a number'} from ${definition.min} to ${definition.max} for ${definition.label}.`);
+    }
+    if (definition.type === 'boolean' && typeof value !== 'boolean') fail('Use true or false for favourite status.');
+    if (definition.type === 'role' && !['system', 'user', 'assistant'].includes(value)) fail('Use system, user or assistant for the character\'s note role.');
+    return value;
 }
 import { normaliseScratchpadCreator } from '../creator/scratchpad-draft.js';

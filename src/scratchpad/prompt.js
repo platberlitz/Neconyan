@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { serverDirectory } from '../server-directory.js';
 import { CHARACTER_CREATION_INSTRUCTIONS } from './character-tools.js';
+import { CHARACTER_FIELD_INSTRUCTIONS } from '../../public/scripts/scratchpad/character-fields.js';
 import { CREATOR_SCRATCHPAD_INSTRUCTIONS } from '../../public/scripts/creator/scratchpad-draft.js';
 import { normaliseAssistant, normaliseGender } from './store.js';
 import { isCustomAssistant, assistantProfileError } from './assistant-profiles.js';
@@ -113,7 +114,7 @@ function changeInstructions({ lore, character, chat, members, notebook }) {
         kinds.push([
             'Character card fields:',
             '{"type":"character","action":"replace","character":"<character name>","field":"<field>","value":"<the complete new text>","reason":"<why>"}',
-            '- field is one of description, personality, scenario, first_mes, mes_example, creator_notes, system_prompt, post_history_instructions, alternate_greetings (value is a list of strings) or tags (value is a list of strings).',
+            CHARACTER_FIELD_INSTRUCTIONS,
             '- For replacements, value replaces the whole field, so include every part that should stay.',
             'Adding alternate greetings:',
             '{"type":"character","action":"append","character":"<character name>","field":"alternate_greetings","value":["<new greeting>"],"reason":"<why>"}',

@@ -25,7 +25,8 @@ import { getMessageTimeStamp } from '../RossAscends-mods.js';
 import { getNameAndAvatarForMessage } from '../slash-commands.js';
 import { createWorldInfoEntry, deleteWorldInfoEntry, loadWorldInfo, saveWorldInfo, updateWorldInfoList, world_names } from '../world-info.js';
 import { isCurrentSource, sourceCharacters } from './context.js';
-import { LIST_FIELDS, TEXT_FIELDS, TOP_LEVEL_FIELDS, fail, formatEntry, formatField, normaliseChange, parseEntry, parseField, stringList } from './proposals.js';
+import { fail, formatEntry, formatField, normaliseChange, parseEntry, parseField } from './proposals.js';
+import { characterField, characterFieldPatch, readCharacterField } from './character-fields.js';
 
 function entryView(entry) {
     return {
@@ -130,14 +131,6 @@ async function lorebookPlan(change, source) {
     };
 }
 
-function readCharacterField(character, field) {
-    if (field === 'tags') return Array.isArray(character?.tags) ? character.tags.map(String) : stringList(character?.data?.tags);
-    if (field === 'alternate_greetings') return Array.isArray(character?.data?.alternate_greetings) ? character.data.alternate_greetings.map(String) : [];
-    const data = character?.data?.[field];
-    if (typeof data === 'string') return data;
-    return String(character?.[TOP_LEVEL_FIELDS[field] || field] ?? '');
-}
-
 function findCharacter(source, name) {
     const wanted = name.trim().toLowerCase();
     const matches = sourceCharacters(source).filter(item => String(item?.name ?? '').trim().toLowerCase() === wanted);
@@ -162,7 +155,7 @@ async function characterPlan(change, source) {
     const before = formatField(change.field, current);
     return {
         target: character.name,
-        field: append ? 'Add alternate greetings' : TEXT_FIELDS[change.field] || LIST_FIELDS[change.field],
+        field: append ? 'Add alternate greetings' : characterField(change.field).label,
         before,
         beforeLabel: append ? 'Existing greetings (kept)' : undefined,
         after: formatField(change.field, change.value),
@@ -170,15 +163,19 @@ async function characterPlan(change, source) {
         getAfterText: append ? edited => formatField(change.field, [...current, ...parseField(change.field, edited)]) : undefined,
         editable: true,
         hint: append ? 'New greetings go after the last existing alternate greeting. Separate new greetings with a line containing only ---.'
-            : change.field === 'alternate_greetings' ? 'Separate greetings with a line containing only ---.' : change.field === 'tags' ? 'Separate tags with commas.' : '',
+            : characterField(change.field).type === 'greetings' ? 'Separate greetings with a line containing only ---.' : change.field === 'tags' ? 'Separate tags with commas.' : characterField(change.field).hint || '',
         async commit(edited) {
             requireSource(source);
             if (findCharacter(source, change.character).avatar !== avatar) conflict();
             const proposed = parseField(change.field, edited);
             if (append && !proposed.length) fail('This addition has no new greetings.');
             const value = append ? [...current, ...proposed] : proposed;
-            const body = { avatar, expected_revision: revision, data: { [change.field]: value } };
-            if (TOP_LEVEL_FIELDS[change.field]) body[TOP_LEVEL_FIELDS[change.field]] = value;
+            if (change.field === 'extensions.world' && value) {
+                await updateWorldInfoList();
+                requireSource(source);
+                if (!world_names.includes(value)) fail(`There is no lorebook called '${value}'.`);
+            }
+            const body = { avatar, expected_revision: revision, ...characterFieldPatch(change.field, value) };
             const response = await fetch('/api/characters/merge-attributes', {
                 method: 'POST',
                 headers: getRequestHeaders(),

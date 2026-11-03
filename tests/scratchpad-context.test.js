@@ -263,7 +263,7 @@ describe('Scratchpad source context', () => {
                 alternate_greetings: ['Hello again.', 'A quieter hello.'], group_only_greetings: ['Hello, everyone.'],
                 mes_example: '<START>\n{{char}}: Hi.', creator_notes: 'Use with care.', system_prompt: 'Stay in voice.',
                 post_history_instructions: 'Keep it short.',
-                extensions: { ...characters[1].data.extensions, depth_prompt: { prompt: 'Nova hates rain.', depth: 2, role: 'user' } },
+                extensions: { ...characters[1].data.extensions, fav: true, talkativeness: 0, depth_prompt: { prompt: 'Nova hates rain.', depth: 2, role: 'user' } },
             },
         });
         const { text } = await buildContext({ source: currentSource(), settings });
@@ -279,6 +279,8 @@ describe('Scratchpad source context', () => {
             '### Example messages [mes_example]\n<START>\n{{char}}: Hi.', '### Creator\'s notes [creator_notes]\nUse with care.',
             '### System prompt [system_prompt]\nStay in voice.', '### Post-history instructions [post_history_instructions]\nKeep it short.',
             '### Character\'s note (inserted at depth 2 as user)\nNova hates rain.',
+            'Talkativeness: 0 [extensions.talkativeness]', 'Favourite: true [extensions.fav]',
+            'Character\'s note depth [extensions.depth_prompt.depth]: 2', 'Character\'s note role [extensions.depth_prompt.role]: user',
         ]) expect(text).toContain(part);
     });
 
