@@ -113,7 +113,6 @@ for (const phone of [false, true]) {
         });
         const locator = await chat(account, 'Thinking recovery');
         const page = await reopen(account, locator.chat, info);
-        await page.setViewportSize(phone ? { width: 393, height: 852 } : { width: 1280, height: 900 });
         await page.evaluate(async () => {
             const core = await import('/script.js');
             const message = core.chat[0];
@@ -124,13 +123,11 @@ for (const phone of [false, true]) {
             core.updateMessageBlock(0, message);
             await core.saveChatConditional();
         });
-        const screenshots = path.resolve('..', 'screenshots');
-        fs.mkdirSync(screenshots, { recursive: true });
-        await page.screenshot({ path: path.join(screenshots, `thinking-recovery-${viewport}-before.png`) });
+        await expect(page.locator('.mes[mesid="0"] .generation_outcome')).toContainText('The provider returned thinking but no reply text. Automatic agents were not run.');
         const manual = await page.evaluate(async () => (await import('/scripts/extensions/in-chat-agents/agent-runner.js')).runAgentOnMessage('recover', 0));
         expect(manual.changed).toBe(true);
         await expect(page.locator('.mes[mesid="0"] .mes_text')).toContainText('She opens the door and smiles.');
-        await page.screenshot({ path: path.join(screenshots, `thinking-recovery-${viewport}-after.png`) });
+        await expect(page.locator('.mes[mesid="0"] .generation_outcome')).toHaveCount(0);
         const automatic = await page.evaluate(async () => {
             const core = await import('/script.js');
             const runner = await import('/scripts/extensions/in-chat-agents/agent-runner.js');
@@ -149,6 +146,7 @@ for (const phone of [false, true]) {
         expect(automatic.text).toBe('She opens the door and smiles.');
         expect(automatic.outcome).toBeUndefined();
         expect(automatic.recovery.status).toBe('done');
+        await expect(page.locator('.mes:last-of-type .generation_outcome')).toHaveCount(0);
     });
 
     test(`${viewport} parallel reply passes overlap over HTTP and publish one combined reply`, async ({ app, browser }, info) => {

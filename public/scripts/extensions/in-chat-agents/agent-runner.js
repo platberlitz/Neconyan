@@ -4078,16 +4078,42 @@ async function runThinkingRecoveryAgent(agent, message, generationType, reasonin
     const helperRequest = appendConfiguredHelperPrefillMessages(buildThinkingRecoveryMessages(expandedPrompt, {
         reasoning, assistantName, generationType, recentChat: getPromptTransformRecentChat(agent, message, messageIndex), continuation, prefix, toolResults,
     }));
+    const showNotifications = shouldShowPromptTransformNotifications(agent);
+    const runningToast = showNotifications ? showPromptTransformRunningToast(agent, 'rewrite', profileId) : null;
     try {
         const response = await requestPromptTransform(agent, helperRequest.promptMessages,
             normalizePromptTransformMaxTokens(agent.postProcess?.promptTransformMaxTokens),
             { allowAssistantPrefillTail: helperRequest.allowAssistantPrefillTail, preserveWhitespace: continuation });
-        if (cancelRevision !== agentGenerationCancelRevision) return { ...base, status: 'cancelled', text: '' };
+        const runBase = {
+            ...base,
+            profileId: response.profileId ?? profileId,
+            ...getPromptTransformRunMetadata(agent, response.profileId ?? profileId, response.model),
+            runner: response.runner || 'none',
+        };
+        if (cancelRevision !== agentGenerationCancelRevision) return { ...runBase, status: 'cancelled', text: '' };
         const status = response.lengthLimited ? 'length-limited' : 'done';
         const text = cleanThinkingRecoveryOutput(response.output, { status, reasoning, continuation, refusalGuard: true });
-        return { ...base, status: text ? 'done' : status === 'done' ? 'empty' : status, text };
+        const finalStatus = text ? 'done' : status === 'done' ? 'empty' : status;
+        if (showNotifications) {
+            if (text) {
+                showPromptTransformResultToast(agent, { status: 'changed' });
+            } else if (response.lengthLimited) {
+                toastr.warning('Agent output hit the Max Response Tokens limit and was cut off; original message preserved. Raise Max Response Tokens in this agent\u2019s settings.', escapeToastHtml(agent.name), { timeOut: 8000 });
+            } else if (String(response.output ?? '').trim()) {
+                toastr.warning('Agent returned a refusal or repeated thinking instead of the requested reply; original message preserved.', escapeToastHtml(agent.name), { timeOut: 7000 });
+            } else {
+                showPromptTransformResultToast(agent, { status: 'empty-response' });
+            }
+        }
+        return { ...runBase, status: finalStatus, text };
     } catch (error) {
-        return { ...base, status: 'error', text: '', error: describeAgentError(error) };
+        const errorMessage = describeAgentError(error);
+        if (showNotifications && cancelRevision === agentGenerationCancelRevision) {
+            showPromptTransformResultToast(agent, { status: 'error', error: errorMessage, errorCode: error?.code });
+        }
+        return { ...base, status: 'error', text: '', error: errorMessage };
+    } finally {
+        clearPromptTransformRunningToast(runningToast);
     }
 }
 
@@ -6613,6 +6639,79 @@ function readServerAgentRun(agent, messageIndex, beforeText, remote) {
     };
 }
 
+async function runManualThinkingRecoveryFollowUp(message, messageIndex, generationType, recoveryResult, target, postProcessingTarget, cancelRevision) {
+    if (target.state) target.state.mes = message.mes;
+    if (cancelRevision !== agentGenerationCancelRevision || !target.isCurrent()) return;
+    const activeAgents = getActiveAgentsForMessage(generationType, buildActivationSnapshot(generationType))
+        .filter(item => !isThinkingRecoveryAgent(item));
+    if (!activeAgents.length) return;
+    const recoveredBaseline = message.mes;
+    const isFollowUpCurrent = () => cancelRevision === agentGenerationCancelRevision && target.isCurrent();
+    const companionStageArgs = { messageIndex, message, generationType, activeAgents: activeAgents.filter(isAgentRuntimeAllowed) };
+    const runCompanions = Boolean(companionRuntime?.runCompanionStage);
+    const concurrentCompanionStage = runCompanions && getGlobalSettings().companionConcurrentWithPostGen
+        ? companionRuntime.runCompanionStage(companionStageArgs).catch(error => {
+            console.warn('[InChatAgents] Companion stage failed:', error);
+        })
+        : null;
+    try {
+        let currentText = recoveredBaseline;
+        let promptRuns = [];
+        const promptTransformAgents = getPromptTransformAgentsForMessage(activeAgents, generationType);
+        if (promptTransformAgents.length > 0 && isFollowUpCurrent()) {
+            const promptStage = await runPromptTransformPasses(promptTransformAgents, message, generationType, currentText, messageIndex, {
+                cancelRevision,
+                stopOnBlocked: true,
+                isCurrent: isFollowUpCurrent,
+            });
+            promptRuns = promptStage.promptRuns ?? [];
+            if (promptStage.staleTarget || !isFollowUpCurrent()) return;
+            if (promptStage.changed) {
+                currentText = promptStage.text;
+            }
+        }
+        if (!isFollowUpCurrent()) return;
+        for (const postAgent of activeAgents) {
+            if (!isAgentRuntimeAllowed(postAgent)) continue;
+            if (!['post', 'both'].includes(postAgent.phase) || !postAgent.postProcess?.enabled) continue;
+            if (postAgent.postProcess.type === 'append' && postAgent.postProcess.appendText) {
+                const appendedText = substituteParams(postAgent.postProcess.appendText);
+                if (appendedText.trim()) {
+                    currentText += appendedText;
+                }
+            }
+        }
+        if (typeof message.mes === 'string') {
+            currentText = applyAgentRegexScriptsToText(activeAgents, currentText, { characterOverride: message.name, includeDisplay: false });
+        }
+        if (!isFollowUpCurrent()) return;
+        const combinedChanged = typeof message.mes === 'string' && currentText !== recoveredBaseline;
+        if (combinedChanged) {
+            if (!applyManualTargetWrite(target, () => setPostProcessingText(message, currentText, postProcessingTarget))) return;
+            recordAppliedTransformation(message, recoveredBaseline, promptRuns);
+            if (!await syncPromptTransformMessageStateAsync(message, messageIndex)) return;
+        }
+        if (!isFollowUpCurrent()) return;
+        updatePromptTransformRuns(message, [recoveryResult, ...promptRuns]);
+        reconcileTrackerMetadata(activeAgents);
+        updateMessageRegexSnapshot(message, activeAgents, generationType);
+        syncAssistantMessageStateToSwipe(message, messageIndex);
+        saveChatDebouncedForAgent({ deferBackup: false });
+        scheduleMessageRefresh(messageIndex, message, { deferBackup: true });
+        if (concurrentCompanionStage) {
+            await concurrentCompanionStage;
+        } else if (runCompanions && isFollowUpCurrent()) {
+            try {
+                await companionRuntime.runCompanionStage(companionStageArgs);
+            } catch (error) {
+                console.warn('[InChatAgents] Companion stage failed:', error);
+            }
+        }
+    } finally {
+        if (concurrentCompanionStage) await Promise.allSettled([concurrentCompanionStage]);
+    }
+}
+
 async function executeManualAgentRun(agentId, target, cancelRevision = agentGenerationCancelRevision) {
     const runTarget = normalizeManualRunTarget(target);
     const agent = getAgentById(agentId);
@@ -6672,8 +6771,20 @@ async function executeManualAgentRun(agentId, target, cancelRevision = agentGene
         return await companionRuntime.runCompanionAgentOnMessage(agent.id, messageIndex, { cancelRevision });
     }
 
+    const beforeServerText = message.mes;
     const remote = await runAgentActionOnServer({ mode: 'run', agentIds: [agent.id], messageIndex });
-    if (remote) return remote.current ? readServerAgentRun(agent, messageIndex, message.mes, remote) : null;
+    if (remote) {
+        if (!remote.current) return null;
+        const serverResult = readServerAgentRun(agent, messageIndex, beforeServerText, remote);
+        if (shouldShowPromptTransformNotifications(agent)) {
+            if (serverResult.status === 'done') {
+                showPromptTransformResultToast(agent, { status: serverResult.changed ? 'changed' : 'unchanged' });
+            } else if (serverResult.status === 'failed') {
+                showPromptTransformResultToast(agent, { status: 'error', error: serverResult.error });
+            }
+        }
+        return serverResult;
+    }
 
     const generationType = 'normal';
     const beforeText = message.mes;
@@ -6693,6 +6804,9 @@ async function executeManualAgentRun(agentId, target, cancelRevision = agentGene
             continuation: recoveryInput.continuation, prefix: recoveryInput.prefix,
             toolResults: formatToolResults(precedingToolInvocations(chat, messageIndex)),
         }) : null;
+    if (recoveryInput && !recoveryInput.eligible && shouldShowPromptTransformNotifications(agent)) {
+        toastr.info('This message already has a reply or has no completed thinking to recover.', escapeToastHtml(agent.name), { timeOut: 5000 });
+    }
     const result = recoveryInput ? { ...recovery, agentId: agent.id, agentName: agent.name,
         status: recovery?.status ?? 'skipped-not-eligible',
         nextMessageText: recovery?.text ? recoveryInput.prefix + recovery.text : beforeText,
@@ -6743,6 +6857,18 @@ async function executeManualAgentRun(agentId, target, cancelRevision = agentGene
 
     if (result.changed || regexSnapshotChanged) {
         scheduleMessageRefresh(messageIndex, message);
+    }
+
+    if (recoveryInput && result.changed) {
+        await runManualThinkingRecoveryFollowUp(
+            message,
+            messageIndex,
+            recoveryInput.continuation ? 'continue' : generationType,
+            result,
+            target,
+            postProcessingTarget,
+            cancelRevision,
+        );
     }
 
     return result;

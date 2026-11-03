@@ -12,7 +12,7 @@ import { savedRoleplayMacroSnapshot } from './roleplay-prompt.js';
 import { captureRoleplayAgents, readRoleplayAgents, readRoleplayHistoryAgents, agentHistorySources } from './roleplay-agents-source.js';
 import { isNativeCompanion, nativeAgentDefinition } from './agent-definition.js';
 import { agentMessageExtra, agentTransformHistory, mergeAgentRegexSnapshot, reconcileAgentTrackerMetadata } from './agent-message-state.js';
-import { prepareRoleplayAgentContributions, runRoleplayAgentPostprocessing, runRoleplayThinkingRecovery } from './roleplay-agent-processing.js';
+import { prepareRoleplayAgentContributions, roleplayAgentOutputBaseline, runRoleplayAgentPostprocessing, runRoleplayThinkingRecovery } from './roleplay-agent-processing.js';
 import { formatToolResults, isThinkingRecoveryAgent, precedingToolInvocations, thinkingRecoveryInput, THINKING_RECOVERY_RUN_EXTRA_KEY } from '../../public/scripts/extensions/in-chat-agents/thinking-recovery.js';
 import { runRoleplayCompanions } from './roleplay-companions.js';
 import { getActiveCompanionResults } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
@@ -94,7 +94,8 @@ export async function runAgentJob(context, { generate, host = roleplayNativeHost
         const selected = agents.filter(agent => request.agent.ids.includes(agent.id));
         const options = { base, snapshot: request.worldInfo, records, policyRecords: saved.records, macros: request.macros, binding: request.binding,
             generationType: 'normal', assistantName: message.name || request.worldInfo.speakerNames.character, assertCurrent, generate, metadataRecords: saved.records };
-        prepareRoleplayAgentContributions(context, options);
+        const isManualThinkingRecovery = request.agent.mode === 'run' && isThinkingRecoveryAgent(selected[0]);
+        if (!isManualThinkingRecovery) prepareRoleplayAgentContributions(context, options);
         let text = message.mes, extra = {}, metadata = {}, proofs = {}, preserveMessage = false;
         if (['companions', 'repair-companions'].includes(request.agent.mode)) {
             const result = await runRoleplayCompanions(context, { ...options, value: text, effect: 'continue', selectedAgentIds: request.agent.ids, repair: request.agent.mode === 'repair-companions' });
@@ -117,13 +118,14 @@ export async function runAgentJob(context, { generate, host = roleplayNativeHost
                 extra.inChatAgentTransformRedo = redoList;
             }
             extra.inChatAgentTransformHistory = Array.isArray(stored) ? stored : [];
-        } else if (request.agent.mode === 'run' && isThinkingRecoveryAgent(selected[0])) {
+        } else if (isManualThinkingRecovery) {
             const input = thinkingRecoveryInput(message, saved.records[source.message.index + 2]);
             if (!input.eligible) throw fail('This message has no completed thinking-only reply to recover.');
+            const recoveryGenerationType = input.continuation ? 'continue' : 'normal';
             const result = await runRoleplayThinkingRecovery(context, { ...options, manualAgentId: selected[0].id,
                 reasoning: input.reasoning, continuation: input.continuation, continuationPrefix: input.prefix,
                 toolResults: formatToolResults(precedingToolInvocations(saved.records, source.message.index + 1)),
-                generationType: input.continuation ? 'continue' : 'normal' });
+                generationType: recoveryGenerationType });
             if (!result) throw fail('Thinking Reply Recovery could not run.');
             proofs['roleplay-thinking-recovery'] = result.hash;
             extra[THINKING_RECOVERY_RUN_EXTRA_KEY] = { agentId: result.agentId, agentName: result.agentName,
@@ -131,11 +133,41 @@ export async function runAgentJob(context, { generate, host = roleplayNativeHost
                 reasoning: input.reasoning, continuation: input.continuation,
                 profileLabel: result.profileLabel, modelLabel: result.modelLabel, timestamp: result.timestamp };
             if (result.text) {
-                text = input.prefix + result.text;
+                const recoveredText = input.prefix + result.text;
                 const history = agentTransformHistory(agentMessageExtra(message, 'inChatAgentTransformHistory'), message.mes);
-                extra.inChatAgentTransformHistory = [...history, { agentId: result.agentId, agentName: result.agentName,
-                    beforeText: message.mes, afterText: text, timestamp: result.timestamp }].slice(-10);
-                extra.inChatAgentTransformRedo = [];
+                const recoveryHistory = [...history, { agentId: result.agentId, agentName: result.agentName,
+                    beforeText: message.mes, afterText: recoveredText, timestamp: result.timestamp }].slice(-10);
+                const recoveryMetadataRecords = structuredClone(saved.records);
+                recoveryMetadataRecords[source.message.index + 1].mes = recoveredText;
+                recoveryMetadataRecords[source.message.index + 1].extra = {
+                    ...recoveryMetadataRecords[source.message.index + 1].extra,
+                    inChatAgentTransformHistory: recoveryHistory,
+                    inChatAgentTransformRedo: [],
+                };
+                const recoveryRecords = recoveryMetadataRecords.slice(0, source.message.index + 2);
+                const postOptions = { ...options, records: recoveryRecords, policyRecords: recoveryMetadataRecords,
+                    metadataRecords: recoveryMetadataRecords, generationType: recoveryGenerationType };
+                const pre = prepareRoleplayAgentContributions(context, postOptions);
+                let post, companions;
+                if (request.worldInfo.agents?.concurrentCompanions) {
+                    [post, companions] = await Promise.all([
+                        runRoleplayAgentPostprocessing(context, { ...postOptions, namespace: 'manual', value: recoveredText }),
+                        runRoleplayCompanions(context, { ...postOptions, value: roleplayAgentOutputBaseline(recoveredText, pre), effect: 'continue' }),
+                    ]);
+                } else {
+                    post = await runRoleplayAgentPostprocessing(context, { ...postOptions, namespace: 'manual', value: recoveredText });
+                    companions = await runRoleplayCompanions(context, { ...postOptions, value: post.text, continuityRuns: post.runs, effect: 'continue' });
+                }
+                proofs['roleplay-agent-post:manual'] = post.hash;
+                proofs['roleplay-companions'] = companions.hash;
+                text = post.text;
+                extra = {
+                    ...extra,
+                    ...post.extra,
+                    inChatAgentTransformHistory: post.extra?.inChatAgentTransformHistory ?? recoveryHistory,
+                    inChatAgentTransformRedo: [],
+                    ...(Object.keys(companions.results ?? {}).length ? { inChatAgentCompanionResults: companions.results } : {}),
+                };
             } else preserveMessage = true;
         } else {
             const note = request.agent.mode === 'companion-output' ? getActiveCompanionResults(message)[request.agent.companionId] : null;

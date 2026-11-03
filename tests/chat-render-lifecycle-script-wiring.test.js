@@ -338,6 +338,12 @@ describe('chat render lifecycle script wiring', () => {
         expect(source).toContain('if (isChatRenderLifecycleRolloutEnabled(CHAT_RENDER_LIFECYCLE_ROUTE.MESSAGE_UPDATE))');
         expect(source).toContain('updateMessageBlockThroughLifecycle(messageId, message, { rerenderMessage });');
         expect(source).toContain('applyMessageBlockUpdate(messageId, message, { rerenderMessage });');
+
+        const applyMessageBlockUpdate = findFunctionDeclaration('applyMessageBlockUpdate');
+        const applySource = getSource(applyMessageBlockUpdate);
+
+        expect(applySource).toContain('updateMessageMetaBadges(messageElement, message);');
+        expect(applySource).toContain('renderGenerationOutcome(messageElement, message);');
     });
 
     test('guard-on updateMessageBlock delegates queue mechanics to the lifecycle update queue helper', () => {
