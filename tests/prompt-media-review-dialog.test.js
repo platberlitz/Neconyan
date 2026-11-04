@@ -620,6 +620,40 @@ describe('change history (HIS)', () => {
         expect(env.confirmations.at(-1).content.children[1].textContent).toBe('You will no longer be able to undo this change. Image files, including compatible copies, are kept. Download the backup first if you might need it.');
         expect(env.requests.map(request => request.action)).toContain('backup/remove');
     });
+
+    test('a change a completed undo put back keeps Download and Delete backup but loses Undo', async () => {
+        env.routes.history = () => ({ operations: [{ ...operations[0], undone: true }, operations[0]], next: null });
+        const dialog = await env.open(null);
+        await byTag(dialog.navigation, 'button')[1].click(); await settle();
+        const rows = byTag(dialog.panel.children.at(-1), 'fieldset');
+        const names = row => byTag(row, 'button').map(node => node.textContent);
+        expect(names(rows[0])).toEqual(['Download backup', 'Delete backup']);
+        expect(names(rows[1])).toEqual(['Download backup', 'Undo change', 'Delete backup']);
+    });
+
+    // Another window undid the change first: the server's code says so, and the dialog shows the fresh list.
+    const pressUndo = async refusal => {
+        env.routes.history = () => ({ operations: [operations[0]], next: null });
+        env.routes.scan = body => scanResult([], body.locator);
+        env.routes.apply = () => ({ failure: { status: 409, body: refusal } });
+        const dialog = await env.open(null);
+        await byTag(dialog.navigation, 'button')[1].click(); await settle();
+        await buttonsNamed(byTag(dialog.panel.children.at(-1), 'fieldset')[0], 'Undo change')[0].click(); await settle();
+        return dialog;
+    };
+    const listRequests = () => env.requests.map(request => request.action).filter(action => action === 'history' || action === 'apply');
+
+    test('an undo the server says was already done shows its sentence and loads the change history again', async () => {
+        const { status } = await pressUndo({ error: 'This change has already been undone.', code: 'ROLEPLAY_IMAGE_ALREADY_UNDONE' });
+        expect(status.textContent).toBe('This change has already been undone.');
+        expect(listRequests()).toEqual(['history', 'apply', 'history']);
+    });
+
+    test('any other refusal of an undo shows its text and does not reload the change history', async () => {
+        const { status } = await pressUndo({ error: 'This repair ID already has different choices.', code: 'ROLEPLAY_IMAGE_RECOVERY' });
+        expect(status.textContent).toBe('This repair ID already has different choices.');
+        expect(listRequests()).toEqual(['history', 'apply']);
+    });
 });
 
 describe('the status line once a list has loaded (D-1)', () => {

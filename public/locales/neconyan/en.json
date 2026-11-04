@@ -23435,6 +23435,7 @@
   "This change was discarded. Make the change again if you still want it.": "This change was discarded. Make the change again if you still want it.",
   "This change did not finish preparing. Discard it in Change history, then try again.": "This change did not finish preparing. Discard it in Change history, then try again.",
   "Close this window and open it again to confirm your account.": "Close this window and open it again to confirm your account.",
+  "This change has already been undone.": "This change has already been undone.",
   "The chat changed after its images were listed, so nothing was changed. List them again, then choose.": "The chat changed after its images were listed, so nothing was changed. List them again, then choose.",
   "This chat has changed since, so undoing would lose later work. Download the backup instead.": "This chat has changed since, so undoing would lose later work. Download the backup instead.",
   "This change's backup is no longer available.": "This change's backup is no longer available.",

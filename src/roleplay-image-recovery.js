@@ -298,6 +298,14 @@ function execute(lease, id, plan, host, checkpoint) {
     checkpoint('unpinned');
     return { id, ...result, replayed: false };
 }
+/** The change a completed undo under this repair id put back, or null. Read only from what the server wrote, never from the key. */
+function completedUndoOf(scope, id, entry) {
+    if (!entry?.complete || entry.phase === 'aborted') return null;
+    const plan = readRepairJson(repairPath(scope, id, 'plan.json'), REPAIR_LIMIT, true)?.value;
+    const manifest = readRepairJson(repairPath(scope, id, 'manifest.json'), REPAIR_LIMIT, true)?.value;
+    if (typeof plan?.undoOf !== 'string' || manifest?.stage !== 'committed') return null;
+    return roleplayHash(plan) === entry.planHash && manifest.planHash === entry.planHash ? plan.undoOf : null;
+}
 function operationId(scope, key) {
     if (typeof key !== 'string' || !key || key.length > 128) throw repairFailure('A stable image repair ID is required.');
     return roleplayHash([scope.accountId, scope.dataEpoch, 'image-repair', key]);
@@ -313,7 +321,13 @@ export function applyRoleplayImageRepair(base, input, host, { checkpoint = () =>
         const reservation = repairCatalogue(scope).value.entries[id];
         if (reservation) {
             validateRepairReservation(scope, reservation);
-            if (reservation.requestHash !== requestHash) throw repairFailure('This repair ID already has different choices.');
+            if (reservation.requestHash !== requestHash) {
+                // A second Undo of the same change (a stale list, another window): say so, but only when the saved records prove it.
+                if (typeof input.undoOf === 'string' && completedUndoOf(scope, id, reservation) === input.undoOf) {
+                    throw Object.assign(repairFailure(uiText('This change has already been undone.')), { code: 'ROLEPLAY_IMAGE_ALREADY_UNDONE' });
+                }
+                throw repairFailure('This repair ID already has different choices.');
+            }
             if (reservation.phase === 'aborted') throw repairFailure(uiText('This change was discarded. Make the change again if you still want it.'));
         }
         const existing = readRepairJson(repairPath(scope, id, 'plan.json'), REPAIR_LIMIT, true);
@@ -442,11 +456,13 @@ export function roleplayImageRepairHistory(base, input) {
         if (!Number.isSafeInteger(offset) || offset < 0) throw repairFailure('Invalid recovery history page.');
         const entries = repairCatalogue(scope).value.entries;
         const ids = Object.keys(entries);
+        // One page may not hold both an undo and its original, so every entry is read to find the changes a completed undo put back.
+        const undone = new Set(ids.map(id => completedUndoOf(scope, id, entries[id])).filter(Boolean));
         return { operations: ids.slice(offset, offset + 50).map(id => {
             const plan = readRepairJson(repairPath(scope, id, 'plan.json'), REPAIR_LIMIT, true)?.value;
             const manifest = readRepairJson(repairPath(scope, id, 'manifest.json'), REPAIR_LIMIT, true)?.value;
             return { id, locator: plan?.input.source.locator ?? entries[id].locator ?? null, createdAt: plan?.createdAt ?? entries[id].createdAt ?? null,
-                phase: entries[id].phase, stage: entries[id].phase === 'aborted' ? 'discarded' : manifest?.stage ?? 'staging-incomplete', result: manifest?.result ?? null, backupAvailable: manifest?.stage === 'committed' && !manifest.backupRemoved };
+                phase: entries[id].phase, stage: entries[id].phase === 'aborted' ? 'discarded' : manifest?.stage ?? 'staging-incomplete', result: manifest?.result ?? null, backupAvailable: manifest?.stage === 'committed' && !manifest.backupRemoved, undone: undone.has(id) };
         }), next: offset + 50 < ids.length ? offset + 50 : null };
     });
 }

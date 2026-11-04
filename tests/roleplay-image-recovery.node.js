@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { fixture, png } from './roleplay-transactions-fixture.js';
-const { scanRoleplayImages, applyRoleplayImageRepair, discardRoleplayImageRepair, resumeRoleplayImageRepair } = await import('../src/roleplay-image-recovery.js');
+const { scanRoleplayImages, applyRoleplayImageRepair, discardRoleplayImageRepair, resumeRoleplayImageRepair, roleplayImageRepairHistory } = await import('../src/roleplay-image-recovery.js');
 const { roleplayNativeHost } = await import('../src/endpoints/chats.js');
 const { readRoleplayAccount, roleplayHash, readRoleplayFile, withRoleplayAccountLock, roleplayStoreDirectory } = await import('../src/roleplay-store.js');
 const { commitSingleChatWrite } = await import('../src/roleplay-lifecycle.js');
@@ -104,6 +104,98 @@ test('changed source and changed retry intent refuse without overwriting current
     assert.equal(readRoleplayFile(f.filename).rawHash, after);
     assert.equal(result.revision, 2);
     assert.equal(roleplayHash(f.input.account).length, 64);
+});
+
+// A second Undo of one change (a stale list, another window): the saved records, not the key's text, decide whether to say it was already undone.
+const applyOnce = (f, input, options) => applyRoleplayImageRepair(f.scope, input, roleplayNativeHost, options);
+const rescan = f => scanRoleplayImages(f.scope, { locator: f.locator });
+const historyOf = f => roleplayImageRepairHistory(f.scope, { account: f.input.account }).operations;
+const undoInput = (f, result, extra = {}) => ({ account: f.input.account, key: `undo:${result.id}`, observation: rescan(f).observation, undoOf: result.id, ...extra });
+test('a second undo of the same change says it was already undone and changes nothing', t => {
+    const f = setup(t);
+    const result = applyOnce(f, f.input);
+    applyOnce(f, undoInput(f, result));
+    const chat = fs.readFileSync(f.filename);
+    const catalogue = fs.readFileSync(path.join(repairDirectory(f.scope), 'catalogue.json'));
+    assert.throws(() => applyOnce(f, undoInput(f, result)), { message: 'This change has already been undone.', code: 'ROLEPLAY_IMAGE_ALREADY_UNDONE' });
+    assert.deepEqual(fs.readFileSync(f.filename), chat);
+    assert.deepEqual(fs.readFileSync(path.join(repairDirectory(f.scope), 'catalogue.json')), catalogue);
+});
+test('history marks the change a completed undo put back', t => {
+    const f = setup(t);
+    const result = applyOnce(f, f.input);
+    assert.ok(historyOf(f).every(operation => operation.undone === false), JSON.stringify(historyOf(f).map(operation => operation.undone)));
+    const undo = applyOnce(f, undoInput(f, result));
+    const after = Object.fromEntries(historyOf(f).map(operation => [operation.id, operation.undone]));
+    assert.equal(after[result.id], true);
+    assert.equal(after[undo.id], false);
+});
+test('an undo interrupted after the native write, pressed again with a fresh scan, keeps the general refusal', t => {
+    const f = setup(t);
+    const result = applyOnce(f, f.input);
+    assert.throws(() => applyOnce(f, undoInput(f, result), { checkpoint(value) { if (value === 'native-committed') throw new Error('crash'); } }), /crash/);
+    assert.throws(() => applyOnce(f, undoInput(f, result)), /different choices/);
+});
+test('an undo discarded before it started, then a changed chat, keeps the general refusal and the change is not undone', t => {
+    const f = setup(t);
+    const result = applyOnce(f, f.input);
+    const undoKey = `undo:${result.id}`;
+    assert.throws(() => applyOnce(f, undoInput(f, result), { checkpoint(value) { if (value === 'reserved') throw new Error('crash'); } }), /crash/);
+    const undoId = roleplayHash([f.scope.accountId, f.scope.dataEpoch, 'image-repair', undoKey]);
+    assert.equal(discardRoleplayImageRepair(f.scope, { account: f.input.account, id: undoId }).discarded, true);
+    const records = fs.readFileSync(f.filename, 'utf8').split('\n').map(JSON.parse);
+    records[1].mes = 'Later edit';
+    commitSingleChatWrite(f.scope, { operationKey: 'later-0', mode: 'update', source: f.source(), records }, roleplayNativeHost);
+    assert.throws(() => applyOnce(f, undoInput(f, result)), /different choices/);
+    assert.equal(historyOf(f).find(operation => operation.id === result.id).undone, false);
+});
+test('a different or missing undoOf under the key of a completed undo keeps the general refusal', t => {
+    const f = setup(t);
+    const result = applyOnce(f, f.input);
+    applyOnce(f, undoInput(f, result));
+    assert.throws(() => applyOnce(f, undoInput(f, result, { undoOf: 'f'.repeat(64) })), /different choices/);
+    const { undoOf, ...withoutUndoOf } = undoInput(f, result);
+    assert.equal(undoOf, result.id);
+    assert.throws(() => applyOnce(f, withoutUndoOf), /different choices/);
+});
+test('undoOf null is not an undo: a completed ordinary change keeps the general refusal', t => {
+    const f = setup(t);
+    applyOnce(f, f.input);
+    assert.throws(() => applyOnce(f, { ...f.input, observation: rescan(f).observation, undoOf: null }), /different choices/);
+});
+test('undoOf null under the key of an undo interrupted after the native write keeps the general refusal', t => {
+    const f = setup(t);
+    const result = applyOnce(f, f.input);
+    assert.throws(() => applyOnce(f, undoInput(f, result), { checkpoint(value) { if (value === 'native-committed') throw new Error('crash'); } }), /crash/);
+    assert.throws(() => applyOnce(f, undoInput(f, result, { undoOf: null })), /different choices/);
+});
+test('a history page that holds only the original, not its undo, still marks the original undone', t => {
+    const f = setup(t);
+    const result = applyOnce(f, f.input);
+    // Fifty discarded entries push the undo onto the second page of 50.
+    for (let index = 0; index < 50; index++) {
+        const key = `filler-${index}`;
+        assert.throws(() => applyOnce(f, { account: f.input.account, key, observation: rescan(f).observation, undoOf: result.id },
+            { checkpoint(value) { if (value === 'reserved') throw new Error('crash'); } }), /crash/);
+        discardRoleplayImageRepair(f.scope, { account: f.input.account, id: roleplayHash([f.scope.accountId, f.scope.dataEpoch, 'image-repair', key]) });
+    }
+    const undo = applyOnce(f, undoInput(f, result));
+    const first = roleplayImageRepairHistory(f.scope, { account: f.input.account, offset: 0 });
+    const second = roleplayImageRepairHistory(f.scope, { account: f.input.account, offset: 50 });
+    assert.equal(first.operations.length, 50);
+    assert.ok(first.operations.some(operation => operation.id === result.id), 'the original is on the first page');
+    assert.ok(!first.operations.some(operation => operation.id === undo.id), 'its undo is not');
+    assert.ok(second.operations.some(operation => operation.id === undo.id), 'its undo is on the second page');
+    assert.equal(first.operations.find(operation => operation.id === result.id).undone, true);
+});
+test('an identical retry of the completed undo replays', t => {
+    const f = setup(t);
+    const result = applyOnce(f, f.input);
+    const input = undoInput(f, result);
+    const undo = applyOnce(f, input);
+    const retry = applyOnce(f, input);
+    assert.equal(retry.replayed, true);
+    assert.equal(retry.writeId, undo.writeId);
 });
 
 test('exact embedded save creates an immutable prompt copy and leaves original display bytes intact', async t => {
