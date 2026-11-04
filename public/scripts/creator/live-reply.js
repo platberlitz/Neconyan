@@ -21,7 +21,8 @@ export function renderCreatorLiveReply(workspace, main) {
         field.hidden = key === 'reasoning' && !reply.reasoning;
         panel.append(field);
     }
-    main.append(panel);
+    // Streaming output leads the section so it stays visible while the model writes.
+    main.prepend(panel);
 }
 
 export function updateCreatorLiveReply(workspace, change) {
