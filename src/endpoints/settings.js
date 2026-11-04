@@ -244,13 +244,26 @@ function isDuplicateBackup(handle, sourceFile) {
  * @param {string} file2 File path
  */
 function areFilesEqual(file1, file2) {
-    if (!fs.existsSync(file1) || !fs.existsSync(file2)) {
+    // Size first: a mismatch avoids reading both files at all. Buffers compare
+    // byte for byte, so multi-megabyte backups never round-trip through strings.
+    let stat1;
+    let stat2;
+    try {
+        stat1 = fs.statSync(file1);
+        stat2 = fs.statSync(file2);
+    } catch {
         return false;
     }
 
-    const content1 = fs.readFileSync(file1);
-    const content2 = fs.readFileSync(file2);
-    return content1.toString() === content2.toString();
+    if (stat1.size !== stat2.size) {
+        return false;
+    }
+
+    try {
+        return fs.readFileSync(file1).equals(fs.readFileSync(file2));
+    } catch {
+        return false;
+    }
 }
 
 /**
@@ -282,9 +295,17 @@ router.post('/save', function (request, response) {
             return response.status(400).send({ error: 'invalid_settings' });
         }
 
-        const currentSettings = fs.existsSync(pathToSettings)
-            ? JSON.parse(fs.readFileSync(pathToSettings, 'utf8'))
-            : {};
+        // Neconyan: reuse the parsed settings snapshot when the file identity is unchanged,
+        // so a save does not re-read and re-parse a multi-megabyte file. The snapshot is
+        // shared and read-only; prepareSettingsSave treats it that way. A missing file
+        // keeps starting from an empty object.
+        let currentSettings;
+        try {
+            currentSettings = readParsedSettingsFile(pathToSettings, request.user.profile.handle);
+        } catch (error) {
+            if (error?.code !== 'ENOENT') throw error;
+            currentSettings = {};
+        }
 
         // Neconyan: prevent one open device or tab from overwriting newer settings from another.
         const preparedSave = prepareSettingsSave(request.body, currentSettings, { acknowledgeAccount: request.user.profile.handle });

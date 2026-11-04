@@ -4,6 +4,7 @@ import { readRoleplayFile, roleplayError, roleplayLease, roleplayStoreDirectory 
 import { getConversationThreadKey } from './endpoints/conversation-store.js';
 import { readRoleplayEntityLocked } from './generation/roleplay-source.js';
 import { prepareSettingsSave } from './settings-version.js';
+import { invalidateParsedSettingsFile } from './settings-file-cache.js';
 import { tryWriteFileSync } from './util.js';
 
 function readSettings(file) {
@@ -92,6 +93,9 @@ export function finishChatNavigationCharacterRename(lease) {
             const prepared = prepareSettingsSave(next, before, { conversationOnly: true, trustedConversationEffects: true, navigationMoves: moves });
             if (!prepared.ok) throw roleplayError('navigation_conflict', 'Conversation changed during rename.', 409);
             tryWriteFileSync(filename, JSON.stringify(prepared.settings, null, 4));
+            // This process wrote settings.json directly: drop any cached parse so the
+            // next request cannot observe the pre-rename settings.
+            invalidateParsedSettingsFile(filename);
         }
     }
     for (const alias of aliases) {

@@ -41,7 +41,7 @@ import { createFileSummaryCache, createLimiter, fileStatIdentity, sameFileStatId
 import { applyImportedCharacterPurrks } from '../purrks.js';
 import { decodeServerImage } from '../media-codecs.js';
 import { createEntityDateAdded, ensureEntityDateAdded, prepareEntityDateAddedMove, reconcileEntityDateAdded, removeEntityDateAdded, ENTITY_DATE_ADDED_FILE } from '../entity-date-added.js';
-import { getEntityLastChat, prepareEntityLastChatMove, readEntityLastChats, removeEntityLastChat, setEntityLastChat, ENTITY_LAST_CHAT_FILE } from '../entity-last-chat.js';
+import { getEntityLastChat, prepareEntityLastChatMove, readEntityLastChats, removeEntityLastChat, setEntityLastChat } from '../entity-last-chat.js';
 import {
     clearChatRecoveryState,
     createCharacterChatTarget,
@@ -89,7 +89,7 @@ const characterChatStatLimit = createLimiter(CHARACTER_CHAT_STATS_CONCURRENCY);
  * The shallow character list is requested many times per page load (home, search, tags,
  * editor refreshes). Rebuilding it re-reads and re-parses every card, so remember the
  * finished response for a short while and drop it as soon as a card is written.
- * @type {Map<string, { data: object[], expiresAt: number }>}
+ * @type {Map<string, {data: object[], probes: Map<string, object>, signature: string, expiresAt: number}>}
  */
 const characterListCache = new Map();
 const CHARACTER_LIST_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -97,16 +97,18 @@ const CHARACTER_LIST_CACHE_MAX_USERS = 8;
 
 /**
  * Cheap signature of everything the shallow list is built from: the card
- * directory, plus the two sidecar stores that supply date_added and last chat.
- * Three stat calls replace re-reading and re-parsing every card, and any write
- * that bypasses the explicit invalidations below still changes one of them.
+ * directory and the date-added sidecar. Two stat calls replace re-reading
+ * and re-parsing every card, and any write that bypasses the explicit
+ * invalidations below still changes one of them. The last-chat sidecar is
+ * deliberately excluded: a chat switch would otherwise re-stat every chat
+ * file of every character, so its pointer is overlaid fresh per request and
+ * the switched character's stats are refreshed on the hit path instead.
  * @param {object} directories User directory map
  * @returns {string} Signature of the current inputs
  */
 function characterListCacheSignature(directories) {
     const targets = [directories.characters,
-        path.join(getEntityDateAddedRoot(directories), ENTITY_DATE_ADDED_FILE),
-        path.join(getEntityDateAddedRoot(directories), ENTITY_LAST_CHAT_FILE)];
+        path.join(getEntityDateAddedRoot(directories), ENTITY_DATE_ADDED_FILE)];
     return targets.map(target => {
         try {
             const stat = fs.statSync(target);
@@ -118,35 +120,171 @@ function characterListCacheSignature(directories) {
 }
 
 /**
- * Returns the cached shallow list for a user, if it is still fresh.
+ * Returns the cached shallow-list entry for a user, if it is still fresh. The entry
+ * carries the list (with each card's own chat pointer as the fallback value) and the
+ * last-chat probes taken when it was built.
  * @param {string} handle User handle
  * @param {object} directories User directory map
- * @returns {object[] | undefined}
+ * @returns {{data: object[], probes: Map<string, {chat: string, size: number|null, mtimeMs: number|null}>} | undefined}
  */
-function getCharacterListCache(handle, directories) {
+function getCharacterListCacheEntry(handle, directories) {
     const entry = characterListCache.get(handle);
     if (!entry) return undefined;
     if (entry.expiresAt <= Date.now() || entry.signature !== characterListCacheSignature(directories)) {
         characterListCache.delete(handle);
         return undefined;
     }
-    return entry.data;
+    return entry;
+}
+
+/**
+ * Snapshots the chat file named by each avatar's last-chat pointer BEFORE the list scan
+ * starts, so a probe can never observe a save that the scan's statistics missed: the
+ * probe may only lag the statistics behind it. A pointer with no chat file probes as
+ * absent, so the hit path refreshes that character.
+ * @param {object} directories User directory map
+ * @param {string[]} avatars Avatar file names the list is built from
+ * @param {Map<string, string>} lastChatByFile Last-chat pointers keyed by avatar file name
+ * @returns {Map<string, {chat: string, size: number|null, mtimeMs: number|null}>}
+ */
+function buildCharacterListChatProbes(directories, avatars, lastChatByFile) {
+    const probes = new Map();
+    for (const avatar of avatars) {
+        const chatName = lastChatByFile.get(avatar);
+        if (typeof chatName !== 'string' || chatName === '') continue;
+        try {
+            const stat = fs.statSync(characterChatProbePath(directories, avatar, chatName));
+            probes.set(avatar, { chat: chatName, size: stat.size, mtimeMs: stat.mtimeMs });
+        } catch {
+            probes.set(avatar, { chat: chatName, size: null, mtimeMs: null });
+        }
+    }
+    return probes;
+}
+
+/**
+ * Overlays the fresh last-chat pointer on freshly built characters without mutating
+ * them. A missing pointer keeps the card's own value, matching the original
+ * sidecar-over-card fallback.
+ * @param {object[]} characters Freshly built characters
+ * @param {Map<string, string>} lastChatByFile Last-chat pointers keyed by avatar file name
+ * @returns {object[]} Characters for the response
+ */
+function overlayCharacterListChats(characters, lastChatByFile) {
+    return characters.map(character => {
+        const chatName = lastChatByFile.get(character.avatar);
+        if (chatName === undefined || chatName === null || chatName === character.chat) return character;
+        return { ...character, chat: chatName };
+    });
+}
+
+/** Path of the chat file a last-chat pointer names. */
+function characterChatProbePath(directories, avatar, chatName) {
+    return path.join(directories.chats, avatar.replace('.png', ''), `${chatName}.jsonl`);
+}
+
+/**
+ * Overlays the fresh last-chat pointer on every cached character and refreshes the chat
+ * statistics of characters whose pointed chat file changed since the last listing.
+ * Refreshed statistics and probes are published back into this cache entry, so repeated
+ * hits serve the fresh values without rescanning; only a later change rescans again.
+ * Cached rows keep the card's own chat pointer as the fallback and are replaced, never
+ * mutated, because a row can be a shared shallow-card object.
+ * @param {object} directories User directory map
+ * @param {{data: object[], probes: Map<string, {chat: string, size: number|null, mtimeMs: number|null}>}} entry Cached list entry
+ * @param {Map<string, string>} lastChatByFile Last-chat pointers keyed by avatar file name
+ * @returns {Promise<object[]>} Characters for the response
+ */
+async function applyCharacterListChatOverlay(directories, entry, lastChatByFile) {
+    const probes = entry.probes instanceof Map ? entry.probes : new Map();
+    const pending = new Map();
+    for (const character of entry.data) {
+        const chatName = lastChatByFile.get(character.avatar);
+        const probe = probes.get(character.avatar);
+        if (typeof chatName !== 'string' && !probe) continue;
+        if (!probe || probe.chat !== chatName) {
+            pending.set(character, chatName);
+            continue;
+        }
+        if (probe.size === null) {
+            // The pointed chat was absent at the last refresh; rescan only once it appears.
+            try {
+                fs.statSync(characterChatProbePath(directories, character.avatar, probe.chat));
+            } catch {
+                continue;
+            }
+            pending.set(character, chatName);
+            continue;
+        }
+        try {
+            const stat = fs.statSync(characterChatProbePath(directories, character.avatar, probe.chat));
+            if (stat.size === probe.size && stat.mtimeMs === probe.mtimeMs) continue;
+        } catch { /* the pointed file is gone; refresh this character */ }
+        pending.set(character, chatName);
+    }
+
+    await Promise.all([...pending].map(async ([character, chatName]) => {
+        const avatar = character.avatar;
+        try {
+            const chatsDirectory = path.join(directories.chats, avatar.replace('.png', ''));
+            // Sample the probe BEFORE the scan: it may then only lag the statistics
+            // behind it. A save landing between the sample and the scan is already in
+            // the fresh statistics and leaves a lagging probe, so the next hit
+            // rechecks once instead of hiding the save until the TTL runs out.
+            let probe = null;
+            if (typeof chatName === 'string' && chatName !== '') {
+                try {
+                    const stat = fs.statSync(characterChatProbePath(directories, avatar, chatName));
+                    probe = { chat: chatName, size: stat.size, mtimeMs: stat.mtimeMs };
+                } catch {
+                    probe = { chat: chatName, size: null, mtimeMs: null };
+                }
+            }
+            const { chatSize, dateLastChat } = await calculateChatSize(chatsDirectory);
+            // Publish the row and its probe as one coherent pair, and only while this
+            // refresh still owns the row. A concurrent refresh that finished first has
+            // already replaced the row with its own pair, so losing the identity check
+            // here discards our statistics AND our probe together. Never publish a lone
+            // probe: a newer probe over older statistics could hide a save until the
+            // TTL runs out. Writes go to THIS entry object; a rebuild replaces the
+            // entry wholesale, so they can never reach a newer entry.
+            const index = entry.data.indexOf(character);
+            if (index === -1) {
+                return;
+            }
+            entry.data[index] = { ...character, chat_size: chatSize, date_last_chat: dateLastChat };
+            if (probe) probes.set(avatar, probe);
+            else probes.delete(avatar);
+        } catch (error) {
+            // A failed recheck keeps the cached statistics instead of failing the listing.
+            console.error(`Could not refresh chat statistics: ${avatar}`, error);
+        }
+    }));
+
+    return entry.data.map(character => {
+        const chatName = lastChatByFile.get(character.avatar);
+        if (chatName === undefined || chatName === null || chatName === character.chat) return character;
+        return { ...character, chat: chatName };
+    });
 }
 
 /**
  * Stores the shallow list for a user and evicts the oldest entry when the map is full.
+ * The list keeps each card's own chat pointer as the fallback value; the fresh sidecar
+ * pointer and chat statistics are overlaid per request on shallow copies.
  * @param {string} handle User handle
  * @param {object[]} data Shallow character list
  * @param {object} directories User directory map
+ * @param {Map<string, object>} probes Last-chat file probes taken at build time
  * @returns {void}
  */
-function setCharacterListCache(handle, data, directories) {
+function setCharacterListCache(handle, data, directories, probes) {
     while (characterListCache.size >= CHARACTER_LIST_CACHE_MAX_USERS && !characterListCache.has(handle)) {
         const oldest = characterListCache.keys().next().value;
         if (oldest === undefined) break;
         characterListCache.delete(oldest);
     }
-    characterListCache.set(handle, { data, signature: characterListCacheSignature(directories),
+    characterListCache.set(handle, { data, probes: probes instanceof Map ? probes : new Map(), signature: characterListCacheSignature(directories),
         expiresAt: Date.now() + CHARACTER_LIST_CACHE_TTL_MS });
 }
 
@@ -247,11 +385,17 @@ function loadAssistantManifest() {
 const assistantManifest = loadAssistantManifest();
 
 async function getInstalledAssistantRecords(request) {
+    const avatars = getAssistantCharacterFiles(request);
+    // Metadata reads (stat plus a PNG parse on a miss) are independent per file, so a
+    // bounded batch runs them together; records keep the sorted avatar order.
+    const metadataLimit = createLimiter(16);
+    const metadatas = await Promise.all(avatars.map(avatar => metadataLimit(() =>
+        readAssistantMetadata(path.join(request.user.directories.characters, avatar)))));
     const records = [];
-    for (const avatar of getAssistantCharacterFiles(request)) {
-        const metadata = await readAssistantMetadata(path.join(request.user.directories.characters, avatar));
+    for (const [index, metadata] of metadatas.entries()) {
         const assistant = assistantManifest.get(String(metadata?.id || ''));
         if (!assistant) continue;
+        const avatar = avatars[index];
         const version = Number.isFinite(Number(metadata.version)) ? Number(metadata.version) : 0;
         records.push({
             id: assistant.id,
@@ -2652,9 +2796,14 @@ router.post('/regenerate-thumbnail', validateAvatarUrlMiddleware, async function
 router.post('/all', async function (request, response) {
     try {
         recoverFileWritesInDirectorySync(request.user.directories.characters);
-        const cachedList = useShallowCharacters ? getCharacterListCache(request.user.profile.handle, request.user.directories) : undefined;
-        if (cachedList) {
-            return response.send(cachedList);
+        const lastChatByFile = readEntityLastChats(getEntityDateAddedRoot(request.user.directories));
+        const cachedEntry = useShallowCharacters ? getCharacterListCacheEntry(request.user.profile.handle, request.user.directories) : undefined;
+        if (cachedEntry) {
+            // Cache hit: overlay the fresh last-chat pointer on shallow copies and
+            // refresh only the characters whose pointed chat file changed, so a chat
+            // switch or a saved message never serves stale sizes.
+            const data = await applyCharacterListChatOverlay(request.user.directories, cachedEntry, lastChatByFile);
+            return response.send(data);
         }
         const files = fs.readdirSync(request.user.directories.characters);
         const pngFiles = files.filter(file => file.endsWith('.png'));
@@ -2673,22 +2822,27 @@ router.post('/all', async function (request, response) {
             'characters',
             dateAddedEntries,
         );
+        // Neconyan: capture the initial probes BEFORE the scan tasks start, so a probe
+        // can never observe a save that the statistics it is stored beside missed.
+        const initialProbes = useShallowCharacters
+            ? buildCharacterListChatProbes(request.user.directories, pngFiles, lastChatByFile)
+            : undefined;
         const processingPromises = pngFiles.map(file => processCharacter(file, request.user.directories, {
             shallow: useShallowCharacters,
             fileStat: fileStats.get(file),
         }));
         const data = (await Promise.all(processingPromises)).filter(c => c.name);
-        // Neconyan: the sidecar owns the last opened chat; the card's own value is
-        // only a fallback for installs that predate it.
-        const lastChatByFile = readEntityLastChats(getEntityDateAddedRoot(request.user.directories));
+        // Neconyan: the sidecar owns the date added. The last-chat pointer is NOT baked
+        // into the cached objects: each card keeps its own pointer as the fallback, and
+        // the sidecar value is overlaid per request below so later switches and seeds
+        // are reflected on cache hits.
         for (const character of data) {
             character.date_added = dateAddedByFile.get(character.avatar);
-            character.chat = lastChatByFile.get(character.avatar) ?? character.chat;
         }
         if (useShallowCharacters) {
-            setCharacterListCache(request.user.profile.handle, data, request.user.directories);
+            setCharacterListCache(request.user.profile.handle, data, request.user.directories, initialProbes);
         }
-        return response.send(data);
+        return response.send(overlayCharacterListChats(data, lastChatByFile));
     } catch (err) {
         console.error(err);
         const isRangeError = err instanceof RangeError;

@@ -1477,10 +1477,14 @@ async function firstLoadInit() {
         initCardScriptRuntime();
         reloadMarkdownProcessor();
         applyBrowserFixes();
-        await getClientVersion();
-        await initSecrets();
-        await readSecretState();
-        const initialSettingsData = await requestSettingsData();
+        // Neconyan: the settings bootstrap, the version probe and the secrets handshake
+        // are independent requests, so they start together instead of in a waterfall.
+        // The settings data is the first element and feeds initLocales below.
+        const [initialSettingsData] = await Promise.all([
+            requestSettingsData(),
+            getClientVersion(),
+            initSecrets().then(() => readSecretState()),
+        ]);
         await initLocales(initialSettingsData);
         // The top bar was first built before the translations loaded, and its title is protected from the localiser, so rebuild its label now.
         globalThis.NeconyanShell?.refreshTopBarLabel?.();
@@ -3042,24 +3046,28 @@ function getMobileMessageUpdateQueue() {
     return mobileMessageUpdateQueue;
 }
 
-function applyStreamingVisibleWrite(messageId, {
-    isCurrent,
-    messageTextDom,
-    messageTimerDom,
-    messageTokenCounterDom,
-    messageDom,
-    message,
-    formattedText,
-    timePassed,
-    currentTokenCount,
-    shouldRefreshTokenCount,
-    shouldUpdateMetaBadges,
-    shouldUseStreamFadeIn,
-    bypassFadeIn,
-}, { isFinal = false } = {}) {
+function applyStreamingVisibleWrite(messageId, write, { isFinal = false } = {}) {
+    const {
+        isCurrent,
+        messageTextDom,
+        messageTimerDom,
+        messageTokenCounterDom,
+        messageDom,
+        message,
+        currentTokenCount,
+        shouldRefreshTokenCount,
+        shouldUpdateMetaBadges,
+        shouldUseStreamFadeIn,
+        bypassFadeIn,
+    } = write;
     if (isCurrent && !isCurrent()) return false;
     if (messageDom instanceof HTMLElement && (!messageDom.isConnected || messageDom.getAttribute('mesid') !== String(messageId))) return false;
     if (message === chat[messageId] && messageDom?.querySelector('.mes_text') === messageTextDom) setCardScriptMessageStreaming(messageId, !isFinal);
+    // Lazy producers resolve only after the stale-generation and DOM checks above:
+    // a cancelled or switched generation never pays for formatting, and a burst
+    // of chunks coalesced into this frame formats only the latest text once.
+    const formattedText = typeof write.formattedText === 'function' ? write.formattedText() : write.formattedText;
+    const timePassed = typeof write.timePassed === 'function' ? write.timePassed() : write.timePassed;
     if (shouldRefreshTokenCount && messageTokenCounterDom instanceof HTMLElement) {
         messageTokenCounterDom.textContent = `${currentTokenCount}t`;
     }
@@ -3296,8 +3304,16 @@ function getMessageBlockElement(messageElement) {
     return element.matches('.mes_block') ? element : element.querySelector('.mes_block');
 }
 
+// Neconyan: messages rendered in one batch share a single observation frame, so the
+// per-message viewport anchor is captured once per frame instead of once per message.
+const pendingResizeObserveBlocks = new Set();
+let resizeObserveFrame = 0;
+
 function unobserveChatMessageResizeBlock(messageBlock) {
     if (messageBlock instanceof HTMLElement) {
+        // Drop a queued observation too: an explicit unobserve before the shared frame
+        // must not let that frame re-observe the block.
+        pendingResizeObserveBlocks.delete(messageBlock);
         chatMessageResizeObserver?.unobserve(messageBlock);
         chatMessageResizeStates.delete(messageBlock);
     }
@@ -3314,20 +3330,38 @@ function observeChatMessageResize(messageElement) {
         return;
     }
 
-    requestAnimationFrame(() => {
-        if (!isChatRenderLifecycleRolloutEnabled(CHAT_RENDER_LIFECYCLE_ROUTE.MEDIA_RESIZE) || !messageBlock.isConnected) {
+    pendingResizeObserveBlocks.add(messageBlock);
+    if (resizeObserveFrame) {
+        return;
+    }
+
+    resizeObserveFrame = requestAnimationFrame(() => {
+        resizeObserveFrame = 0;
+        const blocks = [...pendingResizeObserveBlocks];
+        pendingResizeObserveBlocks.clear();
+
+        if (!isChatRenderLifecycleRolloutEnabled(CHAT_RENDER_LIFECYCLE_ROUTE.MEDIA_RESIZE)) {
             return;
         }
 
         const observer = getChatMessageResizeObserver();
-        unobserveChatMessageResizeBlock(messageBlock);
+        // One anchor capture per batch: every block in this frame sees the same scroll state.
+        const viewportState = captureChatMessageResizeViewportState();
 
-        const metadata = captureChatMessageResizeState(messageBlock);
-        if (readerPreservingResizeBlocks.has(messageBlock)) {
-            metadata.growthBelowReader = true;
-        }
-        if (observer.observe(messageBlock, metadata)) {
-            chatMessageResizeStates.set(messageBlock, metadata);
+        for (const block of blocks) {
+            if (!block.isConnected) {
+                continue;
+            }
+
+            unobserveChatMessageResizeBlock(block);
+
+            const metadata = { ...viewportState, blockHeight: getObservedElementHeight(block) };
+            if (readerPreservingResizeBlocks.has(block)) {
+                metadata.growthBelowReader = true;
+            }
+            if (observer.observe(block, metadata)) {
+                chatMessageResizeStates.set(block, metadata);
+            }
         }
     });
 }
@@ -3344,6 +3378,11 @@ function unobserveChatMessageResize(messageElement) {
 }
 
 function disposeChatMessageResizeObserver() {
+    if (resizeObserveFrame) {
+        cancelAnimationFrame(resizeObserveFrame);
+        resizeObserveFrame = 0;
+    }
+    pendingResizeObserveBlocks.clear();
     chatMessageResizeObserver?.dispose();
     chatMessageResizeObserver = null;
     chatMessageResizeStates.clear();
@@ -8208,9 +8247,17 @@ class StreamingProcessor {
                 )
                 : null;
             const previewText = preparedPreview?.mes ?? processedText;
-            const markdownText = isFinal ? processedText : balanceStreamingMarkdown(processedText);
-
-            const formattedText = shouldUsePlainTextPreview || shouldUseBasicMarkdown
+            // Formatting runs lazily at flush time: chunks that arrive within one frame
+            // overwrite each other in the buffer, so only the last one formats and paints.
+            // The tick state is captured now so the deferred timer shows the generation
+            // clock as it stood when the chunk arrived, not at the moment of the flush.
+            const reasoningDuration = this.reasoningHandler.getDuration();
+            const generationStart = this.timeStarted;
+            const timeToFirstToken = this.timeToFirstToken;
+            const messageName = chat[messageId].name;
+            const messageIsSystem = chat[messageId].is_system;
+            const messageIsUser = chat[messageId].is_user;
+            const formattedText = () => shouldUsePlainTextPreview || shouldUseBasicMarkdown
                 ? formatMobileStreamingPreview(
                     shouldUseBasicMarkdown ? balanceStreamingMarkdown(previewText) : previewText,
                     {
@@ -8221,15 +8268,15 @@ class StreamingProcessor {
                     },
                 )
                 : messageFormatting(
-                    markdownText,
-                    chat[messageId].name,
-                    chat[messageId].is_system,
-                    chat[messageId].is_user,
+                    isFinal ? processedText : balanceStreamingMarkdown(processedText),
+                    messageName,
+                    messageIsSystem,
+                    messageIsUser,
                     messageId,
                     {},
                     false,
                 );
-            const timePassed = formatGenerationTimer(this.timeStarted, currentTime, currentTokenCount, this.reasoningHandler.getDuration(), this.timeToFirstToken, currentReasoningTokens);
+            const timePassed = () => formatGenerationTimer(generationStart, currentTime, currentTokenCount, reasoningDuration, timeToFirstToken, currentReasoningTokens);
             this.#queueStreamingVisibleWrite({
                 messageId,
                 write: {

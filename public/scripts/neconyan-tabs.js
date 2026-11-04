@@ -7287,6 +7287,62 @@ function failChatFileListing(throwOnError, message) {
     return [];
 }
 
+// Neconyan: the chatbar and the bottom chat bar refresh on the same events and both list
+// the same character's chats, so two concurrent listings for one avatar share a single
+// request instead of racing duplicates. A generation counter drops shared entries when
+// the chat listing changes, so a caller after a chat rename, create, delete or switch
+// never receives a listing that was captured before the change.
+let characterChatFileListingGeneration = 0;
+const characterChatFileListingsInFlight = new Map();
+
+function invalidateInFlightCharacterChatFileListings() {
+    characterChatFileListingGeneration += 1;
+    characterChatFileListingsInFlight.clear();
+}
+
+// A chat rename, create, delete or switch changes the chat listing, so it invalidates
+// any shared in-flight chat file request and the next refresh cannot reuse a listing
+// captured before the change. Plain in-place saves change no listing's set of chats and
+// emit no event of their own.
+function bindChatListingInvalidation(eventSource, eventTypes) {
+    for (const eventName of new Set([
+        eventTypes?.CHAT_CHANGED,
+        eventTypes?.CHAT_RENAMED,
+        eventTypes?.CHAT_LOADED,
+        eventTypes?.CHAT_CREATED,
+        eventTypes?.GROUP_CHAT_CREATED,
+        eventTypes?.CHAT_DELETED,
+        eventTypes?.GROUP_CHAT_DELETED,
+    ].filter(Boolean))) {
+        eventSource.on(eventName, invalidateInFlightCharacterChatFileListings);
+    }
+}
+
+async function requestCharacterChatFiles(chatContext, avatarUrl) {
+    const headers = await getAuthorizedRequestHeadersOrNull(2000, chatContext.context);
+    if (!headers) {
+        throw new Error('Chat list request is not authorised yet.');
+    }
+
+    const response = await fetch('/api/characters/chats', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ avatar_url: avatarUrl }),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Chat list request failed (${response.status}).`);
+    }
+
+    const data = await response.json();
+    if (typeof data === 'object' && data?.error === true) {
+        throw new Error('Chat list request was refused.');
+    }
+
+    const chats = Array.isArray(data) ? data : Object.values(data ?? {});
+    return sortChatFiles(chats.map(normalizeChatInfo).filter(chat => chat.fileName));
+}
+
 async function fetchCharacterChatFiles(chatContext, { throwOnError = false } = {}) {
     const avatarUrl = chatContext.character?.avatar;
 
@@ -7294,29 +7350,22 @@ async function fetchCharacterChatFiles(chatContext, { throwOnError = false } = {
         return [];
     }
 
+    const generation = characterChatFileListingGeneration;
+    let inFlight = characterChatFileListingsInFlight.get(avatarUrl);
+    if (!inFlight || inFlight.generation !== generation) {
+        const request = requestCharacterChatFiles(chatContext, avatarUrl);
+        inFlight = { generation, request };
+        characterChatFileListingsInFlight.set(avatarUrl, inFlight);
+        const cleanup = () => {
+            if (characterChatFileListingsInFlight.get(avatarUrl)?.request === request) {
+                characterChatFileListingsInFlight.delete(avatarUrl);
+            }
+        };
+        request.then(cleanup, cleanup);
+    }
+
     try {
-        const headers = await getAuthorizedRequestHeadersOrNull(2000, chatContext.context);
-        if (!headers) {
-            return failChatFileListing(throwOnError, 'Chat list request is not authorised yet.');
-        }
-
-        const response = await fetch('/api/characters/chats', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ avatar_url: avatarUrl }),
-        });
-
-        if (!response.ok) {
-            return failChatFileListing(throwOnError, `Chat list request failed (${response.status}).`);
-        }
-
-        const data = await response.json();
-        if (typeof data === 'object' && data?.error === true) {
-            return failChatFileListing(throwOnError, 'Chat list request was refused.');
-        }
-
-        const chats = Array.isArray(data) ? data : Object.values(data ?? {});
-        return sortChatFiles(chats.map(normalizeChatInfo).filter(chat => chat.fileName));
+        return await inFlight.request;
     } catch (error) {
         if (throwOnError) {
             throw error;
@@ -8947,34 +8996,6 @@ async function getConnectionStatusText() {
     return modelValue ? `${apiValue} - ${modelValue}` : apiValue;
 }
 
-function nodeTouchesConnectionProfilesSource(node) {
-    if (!(node instanceof Element)) {
-        return false;
-    }
-
-    return node.id === 'connection_profiles' || Boolean(node.querySelector('#connection_profiles'));
-}
-
-function mutationTouchesConnectionProfilesSource(mutation) {
-    if (nodeTouchesConnectionProfilesSource(mutation.target)) {
-        return true;
-    }
-
-    for (const node of mutation.addedNodes) {
-        if (nodeTouchesConnectionProfilesSource(node)) {
-            return true;
-        }
-    }
-
-    for (const node of mutation.removedNodes) {
-        if (nodeTouchesConnectionProfilesSource(node)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 function bindConnectionProfileSourceElement(sourceElement) {
     const chatbarState = getChatbarState();
     const normalizedSource = sourceElement instanceof HTMLSelectElement ? sourceElement : null;
@@ -9022,12 +9043,17 @@ function bindConnectionProfileSourceObserver() {
         return;
     }
 
-    const observer = new MutationObserver(mutations => {
-        if (!mutations.some(mutationTouchesConnectionProfilesSource)) {
+    // A body-wide subtree observer sees every DOM change in the app, but the only thing
+    // it must react to is the arrival, replacement or removal of #connection_profiles.
+    // When the resolved element is the one already bound, the dedicated source observer
+    // on the select is still attached and there is nothing to rebind.
+    const observer = new MutationObserver(() => {
+        const current = document.getElementById('connection_profiles');
+        if (current === chatbarState.sourceObservedElement) {
             return;
         }
 
-        bindConnectionProfileSourceElement(document.getElementById('connection_profiles'));
+        bindConnectionProfileSourceElement(current);
         scheduleChatbarRefresh(60);
     });
 
@@ -9257,6 +9283,8 @@ function bindChatbarEvents() {
     for (const eventName of new Set(events)) {
         eventSource.on(eventName, refresh);
     }
+
+    bindChatListingInvalidation(eventSource, eventTypes);
 
     chatbarState.boundEventSource = eventSource;
     scheduleChatbarRefresh(0);
@@ -20429,9 +20457,12 @@ async function refreshBottomChatSelect() {
             chatSelect.prepend(fallback);
         }
 
+        // Neconyan: an empty listing for a character with a current chat is almost always
+        // a save still in flight, so retry a few times instead of hammering the endpoint
+        // thirty times. With no open chat there is nothing to wait for.
         if (chatContext.canBrowseChats && chats.length === 0) {
             const attempts = Number(nnState.bottomChatBarRefreshAttempts ?? 0);
-            if (attempts < 30) {
+            if (attempts < 3 && Boolean(currentChatName)) {
                 nnState.bottomChatBarRefreshAttempts = attempts + 1;
                 scheduleBottomChatBarRefresh(200 + Math.random() * 50);
             }
@@ -20776,6 +20807,8 @@ function bindBottomChatBarEvents() {
     for (const eventName of new Set(events)) {
         eventSource.on(eventName, refresh);
     }
+
+    bindChatListingInvalidation(eventSource, eventTypes);
 
     for (const eventName of new Set(personaEvents)) {
         eventSource.on(eventName, refreshPersona);

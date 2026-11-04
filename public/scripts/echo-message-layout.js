@@ -230,11 +230,13 @@ export function isTideEmptyParagraph(childNodes) {
 }
 export function markTideEmptyParagraphs(message) {
     if (!message?.querySelectorAll) return;
-    const paragraphs = [...message.querySelectorAll('.mes_text > p')];
     if (!tideRoleplayActive(message.ownerDocument || document)) {
-        for (const paragraph of paragraphs) paragraph.removeAttribute('data-nn-tide-empty');
+        // Tide is off: only rows that still carry a stale marker need touching, so skip
+        // the full paragraph scan of every message on every pass.
+        for (const paragraph of message.querySelectorAll('[data-nn-tide-empty]')) paragraph.removeAttribute('data-nn-tide-empty');
         return;
     }
+    const paragraphs = [...message.querySelectorAll('.mes_text > p')];
     for (const paragraph of paragraphs) {
         // Set and remove on every pass, so an edit that fills a paragraph clears its stale marker.
         if (isTideEmptyParagraph(paragraph.childNodes)) paragraph.setAttribute('data-nn-tide-empty', '');
@@ -249,6 +251,18 @@ function writeTide(element, name, value) {
 export function clearTideMessage(message, clearEmptyMarkers = true) {
     if (!message) return;
     const hasLayout = message.classList.contains('nn-tide-layout');
+    if (!hasLayout) {
+        // Most rows carry no Tide state at all. The layout class, the custom properties
+        // and the plate/container decorations only ever exist together with an inline
+        // --nn-tide-* write (measureTideMessage writes them as one pass), so the style
+        // attribute is a sound absence check that avoids the element queries below.
+        if (!(message.getAttribute('style') || '').includes('--nn-tide-')) {
+            if (clearEmptyMarkers) {
+                for (const paragraph of message.querySelectorAll('[data-nn-tide-empty]')) paragraph.removeAttribute('data-nn-tide-empty');
+            }
+            return;
+        }
+    }
     const properties = tideProperties.map(name => '--nn-tide-' + name).filter(key => message.style.getPropertyValue(key));
     const plate = message.querySelector(':scope > .nn-tide-header-plate');
     const container = message.querySelector(':scope > .nn-tide-container');

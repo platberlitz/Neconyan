@@ -565,12 +565,16 @@ describe('chat render lifecycle script wiring', () => {
 
         expect(observeSource).toContain('if (!isChatRenderLifecycleRolloutEnabled(CHAT_RENDER_LIFECYCLE_ROUTE.MEDIA_RESIZE) || !canObserveChatMessageResize())');
         expect(observeSource).toContain('const messageBlock = getMessageBlockElement(messageElement);');
+        expect(observeSource).toContain('pendingResizeObserveBlocks.add(messageBlock);');
         expect(observeSource).toContain('requestAnimationFrame(() =>');
+        // Blocks queued in the same frame flush in one batch with one shared viewport capture.
+        expect(observeSource).toContain('const blocks = [...pendingResizeObserveBlocks];');
+        expect(observeSource).toContain('const viewportState = captureChatMessageResizeViewportState();');
         expect(observeSource).toContain('const observer = getChatMessageResizeObserver();');
-        expect(observeSource).toContain('unobserveChatMessageResizeBlock(messageBlock);');
-        expect(observeSource).toContain('const metadata = captureChatMessageResizeState(messageBlock);');
-        expect(observeSource).toContain('observer.observe(messageBlock, metadata)');
-        expect(observeSource).toContain('chatMessageResizeStates.set(messageBlock, metadata);');
+        expect(observeSource).toContain('unobserveChatMessageResizeBlock(block);');
+        expect(observeSource).toContain('const metadata = { ...viewportState, blockHeight: getObservedElementHeight(block) };');
+        expect(observeSource).toContain('observer.observe(block, metadata)');
+        expect(observeSource).toContain('chatMessageResizeStates.set(block, metadata);');
 
         const getMessageBlockElement = findFunctionDeclaration('getMessageBlockElement');
         expect(getSource(getMessageBlockElement)).toContain('element.matches(\'.mes_block\') ? element : element.querySelector(\'.mes_block\')');
@@ -578,6 +582,10 @@ describe('chat render lifecycle script wiring', () => {
         const getChatMessageResizeObserver = findFunctionDeclaration('getChatMessageResizeObserver');
         expect(getSource(getChatMessageResizeObserver)).toContain('createDelegatedResizeObserver({');
         expect(getSource(getChatMessageResizeObserver)).toContain('onResize: onChatMessageResize');
+
+        // An explicit unobserve before the shared observation frame must also drop the
+        // block from the pending batch, so the frame cannot re-observe it.
+        expect(getSource(findFunctionDeclaration('unobserveChatMessageResizeBlock'))).toContain('pendingResizeObserveBlocks.delete(messageBlock);');
     });
 
     test('guard-on message resize resolves media-resize intent through lifecycle scroll rules', () => {
