@@ -8,6 +8,7 @@ import { getConversationThreadKey, readUserSettingsWithStatus, saveConversationS
 import { authorizeConversationGroup } from './conversation-groups.js';
 import { getConversationSettings, normalizeConversationSettings } from './conversation-generation.js';
 import { getSettingsVersion, prepareSettingsSave } from '../settings-version.js';
+import { invalidateParsedSettingsFile } from '../settings-file-cache.js';
 import { tryWriteFileSync } from '../util.js';
 import { CHAT_LINK_ID } from '../../public/scripts/chat-navigation-policy.js';
 
@@ -275,6 +276,9 @@ export function retireNavigationPersona(request, avatar, remove) {
             const prepared = prepareSettingsSave(structuredClone(before), before, { conversationOnly: true, navigationRetirePersona: avatar });
             if (!prepared.ok) throw roleplayError('navigation_conflict', 'Conversation changed during persona deletion.', 409);
             tryWriteFileSync(path.join(request.user.directories.root, 'settings.json'), JSON.stringify(prepared.settings, null, 4));
+            // This process wrote settings.json directly: drop any cached parse so the
+            // next request cannot observe the pre-retirement settings.
+            invalidateParsedSettingsFile(path.join(request.user.directories.root, 'settings.json'));
             delete document.personas[avatar];
             writeNavigationState(lease, document);
         }

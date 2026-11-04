@@ -216,6 +216,58 @@ describe('entity last chat endpoints', () => {
         return response.json();
     }
 
+    test('a cached list refreshes chat statistics when the pointed chat file is saved', async () => {
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+        jest.spyOn(console, 'info').mockImplementation(() => {});
+        await createAlice();
+        const chatDirectory = path.join(directories.chats, 'Alice');
+        fs.mkdirSync(chatDirectory, { recursive: true });
+        const chatPath = path.join(chatDirectory, 'first.jsonl');
+        fs.writeFileSync(chatPath, JSON.stringify([{ name: 'Alice', is_user: false, mes: 'Hello!', send_date: 0 }]));
+        await postJson('/api/characters/last-chat', { avatar: 'Alice.png', chat: 'first' });
+
+        const [before] = await getCharacters();
+        expect(before.chat).toBe('first');
+        expect(before.chat_size).toBeGreaterThan(0);
+        expect(before.date_last_chat).toBeGreaterThan(0);
+
+        // A plain save: the card file and the characters directory stay untouched, so the
+        // next listing is a cache hit that must still see the grown chat file.
+        await delay();
+        fs.writeFileSync(chatPath, JSON.stringify([
+            { name: 'Alice', is_user: false, mes: 'Hello!', send_date: 0 },
+            { name: 'Alice', is_user: false, mes: 'A second message makes the file longer.', send_date: 0 },
+        ]));
+
+        const [after] = await getCharacters();
+        expect(after.chat).toBe('first');
+        expect(after.chat_size).toBeGreaterThan(before.chat_size);
+        expect(after.date_last_chat).toBeGreaterThan(before.date_last_chat);
+
+        // The card was never rewritten, so the second listing cannot have been a rebuild.
+        const statBefore = fs.statSync(path.join(directories.characters, 'Alice.png'));
+        await delay();
+        const [again] = await getCharacters();
+        expect(again.chat_size).toBe(after.chat_size);
+        expect(fs.statSync(path.join(directories.characters, 'Alice.png')).mtimeMs).toBe(statBefore.mtimeMs);
+    });
+
+    test('a cached list still reports the embedded chat once the sidecar row is removed', async () => {
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+        jest.spyOn(console, 'info').mockImplementation(() => {});
+        await createAlice();
+        await postJson('/api/characters/last-chat', { avatar: 'Alice.png', chat: 'first' });
+        const [before] = await getCharacters();
+        expect(before.chat).toBe('first');
+
+        fs.rmSync(path.join(tempRoot, ENTITY_LAST_CHAT_FILE), { force: true });
+
+        const [after] = await getCharacters();
+        expect(typeof after.chat).toBe('string');
+        expect(after.chat.length).toBeGreaterThan(0);
+        expect(after.chat).not.toBe('first');
+    });
+
     async function getCharacter(avatarUrl) {
         const response = await postJson('/api/characters/get', { avatar_url: avatarUrl });
         expect(response.status).toBe(200);

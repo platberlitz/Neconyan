@@ -1086,8 +1086,13 @@ export function removeOldBackups(directory, prefix, limit = null) {
 
     let files = fs.readdirSync(directory).filter(f => f.startsWith(prefix));
     if (files.length > MAX_BACKUPS) {
-        files = files.map(f => path.join(directory, f));
-        files.sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs);
+        // Stat once per candidate: sorting must not re-stat the same file O(log n) times.
+        files = files.map(f => {
+            const filePath = path.join(directory, f);
+            return { filePath, mtimeMs: fs.statSync(filePath).mtimeMs };
+        });
+        files.sort((a, b) => a.mtimeMs - b.mtimeMs);
+        files = files.map(file => file.filePath);
 
         while (files.length > MAX_BACKUPS) {
             const oldest = files.shift();
@@ -1108,18 +1113,7 @@ export function removeOldBackups(directory, prefix, limit = null) {
  * @returns {string[]} List of image file names
  */
 export function getImages(directoryPath, sortBy = 'name', type = MEDIA_REQUEST_TYPE.IMAGE) {
-    function getSortFunction() {
-        switch (sortBy) {
-            case 'name':
-                return Intl.Collator().compare;
-            case 'date':
-                return (a, b) => fs.statSync(path.join(directoryPath, a)).mtimeMs - fs.statSync(path.join(directoryPath, b)).mtimeMs;
-            default:
-                return (_a, _b) => 0;
-        }
-    }
-
-    return fs
+    const mediaFiles = fs
         .readdirSync(directoryPath, { withFileTypes: true })
         .filter(dirent => dirent.isFile())
         .map(dirent => dirent.name)
@@ -1138,8 +1132,18 @@ export function getImages(directoryPath, sortBy = 'name', type = MEDIA_REQUEST_T
                 return true;
             }
             return false;
-        })
-        .sort(getSortFunction());
+        });
+
+    if (sortBy !== 'date') {
+        const sortFunction = sortBy === 'name' ? Intl.Collator().compare : (_a, _b) => 0;
+        return mediaFiles.sort(sortFunction);
+    }
+
+    // Stat once per file before sorting, so the comparator never re-stats the same file.
+    return mediaFiles
+        .map(file => ({ file, mtimeMs: fs.statSync(path.join(directoryPath, file)).mtimeMs }))
+        .sort((a, b) => a.mtimeMs - b.mtimeMs)
+        .map(entry => entry.file);
 }
 
 function getStreamingConnectionPollingInterval() {

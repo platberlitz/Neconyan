@@ -140,7 +140,8 @@ const observer = new MutationObserver(function (mutations) {
             checkStatusDebounced();
         } else if (mutation.target.parentNode === SelectedCharacterTab) {
             countTokensShortDebounced();
-        } else if (mutation.target.classList.contains('mes_text')) {
+        } else if (mutation.addedNodes.length > 0 && mutation.target.classList.contains('mes_text')) {
+            // Only additions can bring new math markup; removal-only churn skips the scan.
             for (const element of mutation.target.getElementsByTagName('math')) {
                 element.childNodes.forEach(function (child) {
                     if (child.nodeType === Node.TEXT_NODE) {

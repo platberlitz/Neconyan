@@ -201,7 +201,23 @@ export function createBubblesBottomBoundary({ chat, toolbar, getMode, documentRe
         } else transitions.delete(key);
         queue();
     };
+    // The boundary only paints in desktop bubble-family roleplay. When it is inactive
+    // and nothing is painted, body-wide mutations (streaming text, badge churn) can skip
+    // the whole update: cap stays hidden with no owned clip or row, and the attribute
+    // mutations that reactivate the mode are observed here, so the skip is self-correcting.
+    const isBoundaryModeActive = () => {
+        const body = documentRef.body;
+        const sheld = documentRef.getElementById('sheld');
+        const echo = body.classList?.contains('echostyle') === true;
+        const tide = !echo && body.classList?.contains('tidestyle') === true;
+        const cardStyle = !echo && ['whisperstyle', 'hushstyle', 'ripplestyle'].find(name => body.classList?.contains(name));
+        if (windowRef.innerWidth <= 768 || getMode() !== 'roleplay' || sheld?.dataset.sbtwMode === 'on' || sheld?.dataset.sbConversationMode === 'on') {
+            return false;
+        }
+        return body.matches(echo ? '.neconyan.echostyle:not(.sbterm):not(.sbstory)' : tide ? '.neconyan.tidestyle:not(.sbterm):not(.sbstory)' : cardStyle ? `.neconyan.${cardStyle}:not(.sbterm):not(.sbstory)` : '.neconyan.bubblechat:not(.sbterm):not(.sbstory)');
+    };
     const observer = new windowRef.MutationObserver(records => {
+        if (cap.hidden && !ownedClip && !activeRow && !isBoundaryModeActive()) return;
         if (records.some(record => !(record.target === chat && record.type === 'attributes' && record.attributeName === 'style' && chat.getAttribute('style') === ownedChatStyle) && !cap.contains(record.target)
             && !record.target.parentElement?.closest('.sb-message-screenshot-shell'))) queue();
     });

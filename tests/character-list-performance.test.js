@@ -286,6 +286,112 @@ describe('character list performance', () => {
         expect(third.body[0].chat_size).toBe(expectedSize + 10 - 7);
     });
 
+    test('a chat switch serves the cached list without re-parsing cards and keeps the switched character fresh', async () => {
+        fs.writeFileSync(path.join(directories.characters, 'Nova.png'), createCard('Nova', 'SHALLOW_CARD_MARKER switch'));
+        const chatDirectory = path.join(directories.chats, 'Nova');
+        fs.writeFileSync(path.join(chatDirectory, 'First.jsonl'), '12345');
+        fs.utimesSync(path.join(chatDirectory, 'First.jsonl'), new Date(1_700_000_001_000), new Date(1_700_000_001_000));
+        expect((await fetch(`${baseUrl}/api/characters/last-chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ avatar: 'Nova.png', chat: 'First' }) })).status).toBe(200);
+
+        const counter = countCardParses();
+        const first = (await postJson('/api/characters/all')).body;
+        expect(first[0].chat).toBe('First');
+        expect(first[0].chat_size).toBe(5);
+
+        // Switching chats writes the sidecar only. The first cached hit rescans just
+        // this character (a calculateChatSize run is the only readdir on the hit path).
+        counter.reset();
+        const readdirSpy = jest.spyOn(fs.promises, 'readdir');
+        fs.writeFileSync(path.join(chatDirectory, 'Second.jsonl'), '1234567890');
+        fs.utimesSync(path.join(chatDirectory, 'Second.jsonl'), new Date(1_700_000_003_000), new Date(1_700_000_003_000));
+        expect((await fetch(`${baseUrl}/api/characters/last-chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ avatar: 'Nova.png', chat: 'Second' }) })).status).toBe(200);
+
+        const second = await postJson('/api/characters/all');
+        expect(counter.parses).toBe(0);
+        expect(second.body[0].chat).toBe('Second');
+        expect(second.body[0].chat_size).toBe(5 + 10);
+        expect(Math.abs(second.body[0].date_last_chat - 1_700_000_003_000)).toBeLessThan(1);
+        expect(readdirSpy.mock.calls.some(([directory]) => directory === chatDirectory)).toBe(true);
+
+        // The refresh is cached: the immediately following hit serves the same fresh
+        // values without rescanning the chat directory again.
+        readdirSpy.mockClear();
+        const third = await postJson('/api/characters/all');
+        expect(counter.parses).toBe(0);
+        expect(third.body[0].chat).toBe('Second');
+        expect(third.body[0].chat_size).toBe(15);
+        expect(Math.abs(third.body[0].date_last_chat - 1_700_000_003_000)).toBeLessThan(1);
+        expect(readdirSpy).not.toHaveBeenCalled();
+
+        // A later in-place save of the pointed chat is not hidden by the cached probe:
+        // the next hit rescans once, and the one after that serves the new values.
+        readdirSpy.mockClear();
+        await new Promise(resolve => setTimeout(resolve, 25));
+        fs.writeFileSync(path.join(chatDirectory, 'Second.jsonl'), '1234567890 plus a saved message');
+        const fourth = await postJson('/api/characters/all');
+        expect(fourth.body[0].chat_size).toBe(5 + '1234567890 plus a saved message'.length);
+        expect(readdirSpy.mock.calls.some(([directory]) => directory === chatDirectory)).toBe(true);
+
+        readdirSpy.mockClear();
+        const fifth = await postJson('/api/characters/all');
+        expect(fifth.body[0].chat_size).toBe(fourth.body[0].chat_size);
+        expect(readdirSpy).not.toHaveBeenCalled();
+    });
+
+    test('a save landing after the scan cannot hide behind the initial probes', async () => {
+        fs.writeFileSync(path.join(directories.characters, 'Nova.png'), createCard('Nova', 'SHALLOW_CARD_MARKER probe-order'));
+        fs.writeFileSync(path.join(directories.characters, 'Kit.png'), createCard('Kit', 'SHALLOW_CARD_MARKER probe-order-kit'));
+        const novaChatDirectory = path.join(directories.chats, 'Nova');
+        const kitChatDirectory = path.join(directories.chats, 'Kit');
+        fs.mkdirSync(kitChatDirectory, { recursive: true });
+        const novaChat = path.join(novaChatDirectory, 'First.jsonl');
+        const kitChat = path.join(kitChatDirectory, 'Kit.jsonl');
+        fs.writeFileSync(novaChat, '12345');
+        fs.writeFileSync(kitChat, '12345');
+        expect((await fetch(`${baseUrl}/api/characters/last-chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ avatar: 'Nova.png', chat: 'First' }) })).status).toBe(200);
+
+        // Hold Kit's chat stat so the first listing cannot finish, while Nova's scan
+        // completes. A save landing in that window happened after Nova's scan observed
+        // the file but before a post-scan probe sample would run.
+        const originalStat = fs.promises.stat.bind(fs.promises);
+        let releaseKitChat;
+        const kitChatStat = new Promise(resolve => { releaseKitChat = resolve; });
+        let novaChatStatObserved;
+        const novaChatStatDone = new Promise(resolve => { novaChatStatObserved = resolve; });
+        let kitChatStatRequested;
+        const kitChatStatRequestedDone = new Promise(resolve => { kitChatStatRequested = resolve; });
+        const statSpy = jest.spyOn(fs.promises, 'stat').mockImplementation((filePath, ...args) => {
+            if (filePath === kitChat) {
+                kitChatStatRequested();
+                return kitChatStat;
+            }
+            if (filePath === novaChat) {
+                const result = originalStat(filePath, ...args);
+                result.then(() => novaChatStatObserved(), () => novaChatStatObserved());
+                return result;
+            }
+            return originalStat(filePath, ...args);
+        });
+
+        try {
+            const firstAll = postJson('/api/characters/all');
+            await Promise.all([novaChatStatDone, kitChatStatRequestedDone]);
+            fs.writeFileSync(novaChat, '1234567890');
+            releaseKitChat({ size: 5, mtimeMs: 1_700_000_001_000 });
+            const first = (await firstAll).body;
+            const nova = first.find(character => character.avatar === 'Nova.png');
+            expect(nova.chat_size).toBe(5);
+
+            // The probes were captured before the scan started, so they record the
+            // pre-save file: the next listing detects the save and refreshes instead of
+            // serving the stale pre-save statistics forever.
+            const second = await postJson('/api/characters/all');
+            expect(second.body.find(character => character.avatar === 'Nova.png').chat_size).toBe(10);
+        } finally {
+            statSpy.mockRestore();
+        }
+    });
+
     test('keeps the surviving chats when one stat fails during the scan', async () => {
         fs.writeFileSync(path.join(directories.characters, 'Nova.png'), createCard('Nova', 'SHALLOW_CARD_MARKER stat'));
         const chatDirectory = path.join(directories.chats, 'Nova');

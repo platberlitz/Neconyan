@@ -3,6 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { types } from 'node:util';
 import { assertUntrackedRoleplayFiles, createRoleplayDirectory, readRoleplayFile, roleplayAccountBase, roleplayAccountStamp, roleplayError, roleplayHash, roleplayLease, withRoleplayAccount, withRoleplayFileHandle } from './roleplay-store.js';
+import { invalidateParsedSettingsFile } from './settings-file-cache.js';
 import { fsyncDirectorySync, tryWriteFileSync, withDirectoryFlushBatchSync } from './util.js';
 
 export const AUTHORING_FILE_LIMIT = 32 * 1024 * 1024;
@@ -68,6 +69,12 @@ export function publishAuthoringFileLocked(lease, staged, { checkpoint, ephemera
         assertAuthoringEvidence(lease, temporary, staged.after, staged.limit);
         fs.renameSync(temporary, target);
         fsyncDirectorySync(path.dirname(target));
+        if (target === path.join(root, 'settings.json')) {
+            // Central settings.json writer: operations publishing snapshots, imports,
+            // custom CSS and creator bindings all land here. Drop any cached parse so
+            // the next request cannot observe the pre-publication settings.
+            invalidateParsedSettingsFile(target);
+        }
         const verify = () => {
             const held = readAt(target);
             if (held.rawHash !== prepared.rawHash || held.size !== prepared.size || held.physical.dev !== prepared.physical.dev || held.physical.birthtimeNs !== prepared.physical.birthtimeNs) {

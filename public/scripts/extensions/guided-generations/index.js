@@ -527,7 +527,14 @@ function startQrIntegration() {
     }, 30000);
 
     qrObserver?.disconnect();
+    // The body-wide observer only matters when the bar sits on the side the setting
+    // does not want, so an already-integrated (or already restored) bar skips the
+    // integration work and the mutation storm from streaming text does nothing.
     qrObserver = new MutationObserver(() => {
+        const qrBar = document.getElementById('qr--bar');
+        if (!qrBar) return;
+        const integrated = qrBar.parentElement?.id === 'gg-qr-container';
+        if (integrated === Boolean(getSettings().integrateQrBar)) return;
         integrateQrBar();
     });
     qrObserver.observe(document.body, { childList: true, subtree: true });

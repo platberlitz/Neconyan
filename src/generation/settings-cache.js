@@ -33,13 +33,18 @@ function trim() {
  */
 export function readRoleplaySettingsJson(filename, { limit = 64 * 1024 * 1024 } = {}) {
     const key = path.resolve(filename);
-    const inspected = inspectRoleplayFile(key, limit);
-    if (!inspected) return null;
+    // Cache hits keep the protected-content hash check. Cache misses skip the
+    // inspection read: readRoleplayFile performs the same protected-file checks and
+    // computes the same hash, so a miss reads and hashes the file once, not twice.
     const cached = cache.get(key);
-    if (cached && cached.rawHash === inspected.rawHash) {
-        cache.delete(key);
-        cache.set(key, cached);
-        return cached.data;
+    if (cached) {
+        const inspected = inspectRoleplayFile(key, limit);
+        if (!inspected) return null;
+        if (cached.rawHash === inspected.rawHash) {
+            cache.delete(key);
+            cache.set(key, cached);
+            return cached.data;
+        }
     }
     const file = readRoleplayFile(key, limit);
     if (!file) return null;

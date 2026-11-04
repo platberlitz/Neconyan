@@ -72,10 +72,14 @@ const PRE_WRITE_BACKUP_RING_SIZE = 3;
  */
 export function removeOldRegularChatBackups(directory, limit) {
     const reservedPrefixes = [CHAT_PRE_WRITE_BACKUPS_PREFIX, CHAT_FORCED_OVERWRITE_BACKUPS_PREFIX];
+    // Stat once per candidate: sorting must not re-stat the same file O(log n) times.
     const files = fs.readdirSync(directory)
         .filter(file => file.startsWith(CHAT_BACKUPS_PREFIX) && !reservedPrefixes.some(reserved => file.startsWith(reserved)))
-        .map(file => path.join(directory, file))
-        .sort((left, right) => fs.statSync(left).mtimeMs - fs.statSync(right).mtimeMs);
+        .map(file => {
+            const filePath = path.join(directory, file);
+            return { filePath, mtimeMs: fs.statSync(filePath).mtimeMs };
+        })
+        .sort((left, right) => left.mtimeMs - right.mtimeMs);
 
     while (files.length > limit) {
         const oldest = files.shift();
@@ -83,7 +87,7 @@ export function removeOldRegularChatBackups(directory, limit) {
             break;
         }
 
-        fs.unlinkSync(oldest);
+        fs.unlinkSync(oldest.filePath);
     }
 }
 
@@ -310,16 +314,15 @@ function isChatSaveExtension(newSerializedChat, existingSerializedChat, options 
 }
 
 function getLatestBackupFilePath(directory, prefix) {
+    // Stat once per candidate: sorting must not re-stat the same file O(log n) times,
+    // and the name tie-break for equal mtimes is preserved.
     const backupFiles = fs.readdirSync(directory)
         .filter(fileName => fileName.startsWith(prefix))
-        .map(fileName => ({
-            fileName,
-            filePath: path.join(directory, fileName),
-        }))
-        .sort((a, b) => {
-            const mtimeDifference = fs.statSync(b.filePath).mtimeMs - fs.statSync(a.filePath).mtimeMs;
-            return mtimeDifference || b.fileName.localeCompare(a.fileName);
-        });
+        .map(fileName => {
+            const filePath = path.join(directory, fileName);
+            return { fileName, filePath, mtimeMs: fs.statSync(filePath).mtimeMs };
+        })
+        .sort((a, b) => (b.mtimeMs - a.mtimeMs) || b.fileName.localeCompare(a.fileName));
 
     return backupFiles[0]?.filePath ?? null;
 }
@@ -981,7 +984,9 @@ function repairRejectedChatRecoverySnapshot(recoveryTarget, rejectedSnapshotData
 // bound both the cache and the number of files parsed at once. This is not a
 // byte hash: a writer that restored every identity field could defeat it.
 const CHAT_INFO_CACHE_MAX_BYTES = 32 * 1024 * 1024;
-const CHAT_INFO_CACHE_MAX_ENTRIES = 4096;
+// Entry cap sits far above the byte budget for realistic summaries, so a large
+// library evicts on bytes (32 MiB), not on a 4096-entry ceiling.
+const CHAT_INFO_CACHE_MAX_ENTRIES = 32768;
 const CHAT_INFO_PARSE_CONCURRENCY = 8;
 const chatInfoCache = createFileSummaryCache({ maxBytes: CHAT_INFO_CACHE_MAX_BYTES, maxEntries: CHAT_INFO_CACHE_MAX_ENTRIES });
 const chatInfoParseLimit = createLimiter(CHAT_INFO_PARSE_CONCURRENCY);

@@ -193,6 +193,23 @@ function injectRestoreDefaultPresetButtons() {
     });
 }
 
+/**
+ * Resolves a preset manager's select to the native element when possible. Managers are
+ * constructed with a jQuery object; selector strings and plain elements are supported so
+ * test doubles and alternate constructions keep working. Without a document there is
+ * nothing to resolve and the caller falls back to the jQuery lookup.
+ * @param {any} select jQuery object, selector string, or native select element
+ * @returns {HTMLSelectElement|null}
+ */
+function getPresetManagerSelectElement(select) {
+    if (typeof document === 'undefined') return null;
+    let element = null;
+    if (select?.jquery) element = select[0];
+    else if (typeof select === 'string') element = document.querySelector(select);
+    else if (select instanceof HTMLSelectElement) element = select;
+    return element instanceof HTMLSelectElement ? element : null;
+}
+
 class PresetManager {
     constructor(select, apiId) {
         this.select = select;
@@ -499,6 +516,14 @@ class PresetManager {
      * @returns {any} Selected preset value
      */
     getSelectedPreset() {
+        // Neconyan: called on every formatted message, so read the selection natively
+        // when the real select element is reachable and keep the jQuery lookup as the
+        // fallback for test doubles. With options present, `selectedOptions[0]` is the
+        // same node jQuery's `option:selected` matches; with none, both return undefined.
+        const selectElement = getPresetManagerSelectElement(this.select);
+        if (selectElement) {
+            return selectElement.selectedOptions[0]?.value;
+        }
         return $(this.select).find('option:selected').val();
     }
 
@@ -507,6 +532,10 @@ class PresetManager {
      * @returns {string} Selected preset name
      */
     getSelectedPresetName() {
+        const selectElement = getPresetManagerSelectElement(this.select);
+        if (selectElement) {
+            return selectElement.selectedOptions[0]?.textContent ?? '';
+        }
         return $(this.select).find('option:selected').text();
     }
 
