@@ -7,6 +7,7 @@ import { unregisterToolAction, unregisterToolFormatter } from './tool-action-reg
 import { deinitAutoSummary, initAutoSummary } from './pathfinder/auto-summary.js';
 import { initCommands, removeCommands } from './pathfinder/commands.js';
 import { getPathfinderToolDefinitions } from './pathfinder/tool-definitions.js';
+import { installPathfinderKeywordPolicy, uninstallPathfinderKeywordPolicy } from './pathfinder/activation-policy.js';
 
 import { registerActions as registerSearchActions } from './pathfinder/tools/search.js';
 import { registerActions as registerRememberActions } from './pathfinder/tools/remember.js';
@@ -60,6 +61,7 @@ export function initPathfinder(context) {
     const revision = ++initializationRevision;
 
     registerPathfinderToolActions();
+    installPathfinderKeywordPolicy();
 
     initActivityFeed();
 
@@ -101,6 +103,7 @@ export function teardownPathfinder() {
     }
 
     unregisterPathfinderToolActions();
+    uninstallPathfinderKeywordPolicy();
     deinitAutoSummary();
     removeCommands();
     // Stale trees would survive a disable/enable cycle and shadow any

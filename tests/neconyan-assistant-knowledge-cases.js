@@ -346,4 +346,7 @@ export const refreshedKnowledgeCases = [
     ['Does Neconyan cancel a running held reply when the resumable registry is full?', 'recovery.replies', 'never cancels a running held reply to make room'],
     ['Does Update all in the Agent updates ready banner replace my edited built-in agents?', 'agents.versions', 'marks them (edited by you) and warns before replacing their prompt and settings'],
     ['What does Update all keep when updating built-in agents?', 'agents.versions', 'companion settings, context choices, enabled state, pin, order and profile overrides'],
+    ['How do I stop World Info keywords and rely on Pawthfinder alone?', 'pathfinder.keywords', 'Disable World Info keyword activation'],
+    ['Do constant entries still activate when Pawthfinder suppresses keywords?', 'pathfinder.keywords', 'constant, sticky and decorated entries still activate'],
+    ['Why does Pawthfinder show no processing toast with no lorebooks selected?', 'pathfinder.keywords', 'no processing toast appears'],
 ];

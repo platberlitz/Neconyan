@@ -531,6 +531,7 @@ describe('in-chat agent post-processing runner', () => {
         await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/pathfinder/pathfinder-tool-bridge.js', () => ({
             CONFIRMABLE_TOOLS: new Set(['Pathfinder_Summarize']),
             getContextualLorebooks: jest.fn(() => []),
+            getReadableBooks: jest.fn(() => ['Book A']),
             getForcedToolChoice,
             prepareToolCall: async (_tool, args, options) => ({ args, options }),
         }));
@@ -6208,6 +6209,50 @@ describe('in-chat agent post-processing runner', () => {
         await generationPromise;
 
         expect(globalThis.toastr.clear).toHaveBeenCalledWith({ toast: true });
+    });
+
+    test('skips the processing toast when no lorebook is readable', async () => {
+        usePrePromptAgent();
+        enabledAgents.unshift({
+            id: 'agent-pathfinder',
+            name: 'Pathfinder',
+            category: 'tool',
+            sourceTemplateId: 'tpl-pathfinder',
+            phase: 'both',
+            prompt: '',
+            injection: { order: 0 },
+            settings: { pipelineEnabled: true, sidecarEnabled: false },
+            tools: [],
+            conditions: {
+                triggerKeywords: [],
+                triggerProbability: 100,
+                generationTypes: ['normal'],
+            },
+        });
+
+        const bridge = await import('../public/scripts/extensions/in-chat-agents/pathfinder/pathfinder-tool-bridge.js');
+        bridge.getReadableBooks.mockReturnValue([]);
+
+        let resolveRetrieval;
+        const retrievalDone = new Promise(resolve => {
+            resolveRetrieval = resolve;
+        });
+        runSidecarRetrieval.mockImplementation(async () => {
+            await retrievalDone;
+        });
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        const generationPromise = eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
+        await Promise.resolve();
+
+        expect(globalThis.toastr.info).not.toHaveBeenCalled();
+
+        resolveRetrieval();
+        await generationPromise;
+
+        expect(globalThis.toastr.clear).not.toHaveBeenCalled();
     });
 
     test.each([

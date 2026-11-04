@@ -12,6 +12,7 @@ import { getTagKeyForEntity } from './tags.js';
 import { debounce_timeout } from './constants.js';
 import { newWorldInfoEntryDefinition, newWorldInfoEntryTemplate } from './world-info-entry.js';
 export { newWorldInfoEntryDefinition, newWorldInfoEntryTemplate } from './world-info-entry.js';
+import { isKeywordActivationSuppressed } from './world-info-policy.js';
 import { getRegexedString, regex_placement } from './extensions/regex/engine.js';
 import { SlashCommandParser } from './slash-commands/SlashCommandParser.js';
 import { SlashCommand } from './slash-commands/SlashCommand.js';
@@ -6050,6 +6051,14 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
 
             if (!Array.isArray(entry.key) || !entry.key.length) {
                 log('has no keys defined, skipped');
+                continue;
+            }
+
+            // Neconyan: an external policy (Pawthfinder) may veto keyword
+            // activation for entries it retrieves on its own. Constant, sticky,
+            // decorated and externally activated entries are unaffected.
+            if (isKeywordActivationSuppressed(entry)) {
+                log('keyword activation suppressed by policy');
                 continue;
             }
 

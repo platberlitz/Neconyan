@@ -82,9 +82,10 @@ import { onPathfinderWorldInfoUpdated, onPathfinderWorldInfoRenamed, onPathfinde
 import { initializePromptStore, setPromptStorePersistHook } from './pathfinder/prompts/prompt-store.js';
 import { getDefaultPrompts, getDefaultPipelines } from './pathfinder/prompts/default-prompts.js';
 import { getPathfinderToolDefinitions } from './pathfinder/tool-definitions.js';
-import { getContextualLorebooks, getForcedToolChoice, prepareToolCall } from './pathfinder/pathfinder-tool-bridge.js';
+import { getContextualLorebooks, getForcedToolChoice, getReadableBooks, prepareToolCall } from './pathfinder/pathfinder-tool-bridge.js';
 import { confirmToolCall, shouldConfirmToolCall } from './pathfinder/tool-confirmation.js';
 import { injectPathfinderRetrieval, PATHFINDER_RETRIEVAL_PROMPT_KEYS, runSidecarRetrieval } from './pathfinder/sidecar-retrieval.js';
+import { setPathfinderRetrievalState } from './pathfinder/activation-policy.js';
 import { resetAutoSummaryCount, shouldAutoSummarize } from './pathfinder/auto-summary.js';
 import { buildRegexScriptRefsForAgent, cacheAgentRegexScripts, migrateLegacyRegexSnapshotsInMessages } from './regex-snapshot-store.js';
 import { AGENT_REGEX_PLACEMENT, applyRegexScriptList } from './regex-scripts.js';
@@ -624,7 +625,9 @@ function clearInitialGenerationToast() {
 
 function shouldShowPathfinderRetrievalToast(pathfinderAgent) {
     const settings = pathfinderAgent?.settings ?? {};
-    return Boolean(settings.pipelineEnabled || settings.sidecarEnabled);
+    // Neconyan: with no readable lorebooks the retrieval finishes instantly and
+    // injects nothing, so the 'processing lore' toast would be pure noise.
+    return Boolean(settings.pipelineEnabled || settings.sidecarEnabled) && getReadableBooks().length > 0;
 }
 
 async function processManualAgentRunQueue(queue) {
@@ -4883,6 +4886,9 @@ async function onGenerationAfterCommands(generationType, options, dryRun) {
         isNativeRoleplayGeneration = Boolean(options?.nativeRoleplay);
     }
     if (options?.nativeRoleplay || options?.isAuxiliaryGeneration || normalizeGenerationType(generationType) === 'quiet') {
+        // Neconyan: these replies never run Pawthfinder retrieval, so keyword
+        // suppression from a previous response must not leak into their scans.
+        setPathfinderRetrievalState(null);
         return;
     }
 
@@ -4972,6 +4978,11 @@ async function onGenerationAfterCommands(generationType, options, dryRun) {
             }
         }
 
+        // Neconyan: remember whether this response's own retrieval succeeded so
+        // the World Info keyword-activation policy can fall back to native
+        // keywords whenever it did not.
+        setPathfinderRetrievalState({ retrievalSucceeded: run.result?.success === true });
+
         if (run.controller.signal.aborted || pathfinderRetrievalRun !== run || (!run.isCurrent() && isAgentRuntimeAllowed(pathfinderAgent))
             || generationStopRequested || options?.signal?.aborted || run.cancelRevision !== agentGenerationCancelRevision
             || run.runId !== postProcessingGenerationRunId || run.chatId !== getCurrentSnapshotChatId()) {
@@ -4996,6 +5007,12 @@ async function onGenerationAfterCommands(generationType, options, dryRun) {
             // when the model skipped or failed the tool call, preventing future
             // summaries from triggering. (#530)
         }
+    }
+
+    if (!dryRun && !pathfinderAgent) {
+        // Neconyan: Pawthfinder is not part of this response; drop any stale
+        // keyword suppression from a previous response.
+        setPathfinderRetrievalState(null);
     }
 
     injectPreGenerationAgentPrompts(activeAgents, generationType);

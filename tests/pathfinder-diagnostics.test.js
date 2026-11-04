@@ -113,4 +113,16 @@ describe('Pawthfinder diagnostics', () => {
         expect(load).not.toHaveBeenCalled();
         expect(save).not.toHaveBeenCalled();
     });
+
+    test('reports the World Info keyword suppression state for Pawthfinder books', async () => {
+        let results = await runDiagnostics();
+        expect(results['World Info Keywords'].ok).toBe(true);
+        expect(results['World Info Keywords'].message).toBe('On. World Info keyword activation runs normally.');
+        replaceSettings({ enabledLorebooks: ['Manual Book'], includeContextualLorebooks: false, suppressKeywordActivation: true });
+        results = await runDiagnostics();
+        expect(results['World Info Keywords'].ok).toBe(true);
+        expect(results['World Info Keywords'].message).toContain('Manual Book');
+        expect(results['World Info Keywords'].message).toContain('Constant and sticky entries still activate');
+        expect(results['World Info Keywords'].message).toContain('keywords return if a retrieval fails');
+    });
 });

@@ -32,6 +32,8 @@ const storage = await import('../public/scripts/extensions/in-chat-agents/pathfi
 const { setSummaryMemoryCreated, getSummaryMemoryState, saveSummaryMemoryContent } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/summary-memory-store.js');
 const { replaceSettings, getSettings, clearAllTrees, getTree, findNodeById, isPathfinderSelfWrite } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/tree-store.js');
 const { buildTreeFromMetadata } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/tree-builder.js');
+const { getKeywordActivationPolicy } = await import('../public/scripts/world-info-policy.js');
+const activationPolicy = await import('../public/scripts/extensions/in-chat-agents/pathfinder/activation-policy.js');
 const runnerSource = readFileSync(new URL('../public/scripts/extensions/in-chat-agents/agent-runner.js', import.meta.url), 'utf8');
 
 function functionSource(name) {
@@ -192,5 +194,44 @@ describe('Pathfinder storage and runtime lifecycle wiring', () => {
         release({ entries: {} });
         await new Promise(resolve => setImmediate(resolve));
         expect(getSummaryMemoryState()).toMatchObject({ uid: 1, bookName: 'Book', content: 'new' });
+    });
+
+    test('installs the World Info keyword policy on init and removes it on teardown', () => {
+        expect(getKeywordActivationPolicy()).toBeNull();
+        initPathfinder(context);
+        expect(getKeywordActivationPolicy()).toBe(activationPolicy.shouldSuppressWorldInfoKeywords);
+        teardownPathfinder();
+        expect(getKeywordActivationPolicy()).toBeNull();
+    });
+
+    test('suppresses World Info keywords only for enabled Pawthfinder retrieval over readable books', () => {
+        const suppress = entry => activationPolicy.shouldSuppressWorldInfoKeywords(entry);
+        replaceSettings({ enabledLorebooks: ['Book'], includeContextualLorebooks: false, suppressKeywordActivation: true, sidecarEnabled: true });
+        activationPolicy.setPathfinderRetrievalState({ retrievalSucceeded: true });
+        expect(suppress({ world: 'Book' })).toBe(true);
+        expect(suppress({ world: 'Other' })).toBe(false);
+        activationPolicy.setPathfinderRetrievalState({ retrievalSucceeded: false });
+        expect(suppress({ world: 'Book' })).toBe(false);
+        activationPolicy.setPathfinderRetrievalState(null);
+        expect(suppress({ world: 'Book' })).toBe(false);
+        replaceSettings({ enabledLorebooks: ['Book'], includeContextualLorebooks: false, suppressKeywordActivation: false, sidecarEnabled: true });
+        activationPolicy.setPathfinderRetrievalState({ retrievalSucceeded: true });
+        expect(suppress({ world: 'Book' })).toBe(false);
+        replaceSettings({ enabledLorebooks: ['Book'], includeContextualLorebooks: false, suppressKeywordActivation: true });
+        expect(suppress({ world: 'Book' })).toBe(false);
+        activationPolicy.setPathfinderRetrievalState(null);
+    });
+
+    test('shows the processing toast only when retrieval has readable lorebooks', () => {
+        const source = functionSource('shouldShowPathfinderRetrievalToast');
+        const gate = (agent, books) => {
+            const runtime = vm.createContext({ getReadableBooks: () => books });
+            return vm.runInContext(`(${source})(${JSON.stringify(agent)})`, runtime);
+        };
+        expect(gate({ settings: { pipelineEnabled: true } }, ['Book'])).toBe(true);
+        expect(gate({ settings: { sidecarEnabled: true } }, ['Book'])).toBe(true);
+        expect(gate({ settings: { pipelineEnabled: true } }, [])).toBe(false);
+        expect(gate({ settings: {} }, ['Book'])).toBe(false);
+        expect(gate(null, ['Book'])).toBe(false);
     });
 });

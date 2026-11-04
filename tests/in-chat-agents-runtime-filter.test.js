@@ -192,6 +192,7 @@ beforeEach(async () => {
     }));
     jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/pathfinder/pathfinder-tool-bridge.js', () => ({
         getContextualLorebooks: () => [],
+        getReadableBooks: () => [],
         getForcedToolChoice: jest.fn(() => null),
         prepareToolCall: async (_tool, args, options) => ({ args, options }),
     }));

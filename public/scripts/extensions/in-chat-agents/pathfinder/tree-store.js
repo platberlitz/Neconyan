@@ -29,6 +29,7 @@ export const SETTING_DEFAULTS = {
     autoUseAttachedLorebook: false,
     autoSyncLorebooksOnChatChange: true,
     dedupeNaturalActivation: true,
+    suppressKeywordActivation: false,
     toolStates: {},
     confirmTools: {},
     bookPermissions: {},

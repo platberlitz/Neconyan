@@ -189,14 +189,27 @@ export async function runSidecarRetrieval(setExtensionPrompt, extensionPromptTyp
     const chatId = getCurrentChatId();
     const isCurrent = () => !signal?.aborted && isPathfinderSubmoduleEnabled() && getCurrentChatId() === chatId;
     const writePrompt = (...args) => isCurrent() ? setExtensionPrompt(...args) : false;
+    const mode = s.pipelineEnabled ? 'pipeline' : 'tool-retrieval';
+    const promptKey = s.pipelineEnabled ? PIPELINE_RETRIEVAL_KEY : RETRIEVAL_PROMPT_KEY;
+
+    // Neconyan: with no readable lorebooks there is nothing to retrieve, so
+    // stay quiet: no 'processing lore' toast, no slow-retrieval timer, no
+    // prompt churn, just one truthful row in the retrieval log.
+    const books = getReadableBooks();
+    if (books.length === 0) {
+        const result = { success: true, books: [], selectedEntries: [], stageResults: [], mode, promptKey, dedupeNaturalActivation: s.dedupeNaturalActivation, metadata: { reason: 'no-readable-lorebooks' } };
+        if (isCurrent()) {
+            await injectPathfinderRetrieval(result, writePrompt, extensionPromptTypes, extensionPromptRoles);
+        }
+        return result;
+    }
+
     const ctx = globalThis.window?.SillyTavern?.getContext?.();
     const messages = (chatMessages ?? ctx?.chat ?? chat).slice(-10).map(message => ({
         name: message.name,
         is_user: message.is_user || message.role === 'user',
         mes: String(message.mes ?? message.content ?? ''),
     }));
-    const mode = s.pipelineEnabled ? 'pipeline' : 'tool-retrieval';
-    const promptKey = s.pipelineEnabled ? PIPELINE_RETRIEVAL_KEY : RETRIEVAL_PROMPT_KEY;
     const seconds = Number(s.retrievalTimeoutSeconds ?? 8);
     const timeoutMs = Math.max(1, Math.min(60, Number.isFinite(seconds) ? seconds : 8)) * 1000;
     const timeoutId = setTimeout(() => {
@@ -210,14 +223,14 @@ export async function runSidecarRetrieval(setExtensionPrompt, extensionPromptTyp
         for (const key of PATHFINDER_RETRIEVAL_PROMPT_KEYS) {
             clearRetrievalPrompt(writePrompt, key, extensionPromptTypes, extensionPromptRoles);
         }
-        const books = await ensureReadableBookTrees(getReadableBooks(), signal);
+        const treeBooks = await ensureReadableBookTrees(books, signal);
         const selection = s.pipelineEnabled
-            ? await runPipelineRetrieval(books, messages, signal)
-            : await runLegacySidecarRetrieval(books, messages, signal);
+            ? await runPipelineRetrieval(treeBooks, messages, signal)
+            : await runLegacySidecarRetrieval(treeBooks, messages, signal);
         throwIfAborted(signal);
         if (!isCurrent()) return { success: false };
 
-        const result = { ...selection, books, mode, promptKey, dedupeNaturalActivation: s.dedupeNaturalActivation };
+        const result = { ...selection, books: treeBooks, mode, promptKey, dedupeNaturalActivation: s.dedupeNaturalActivation };
         await injectPathfinderRetrieval(result, writePrompt, extensionPromptTypes, extensionPromptRoles);
         return result;
     } catch (err) {
