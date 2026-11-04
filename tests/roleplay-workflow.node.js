@@ -2,6 +2,7 @@ import { authoringRenameTest } from './authoring-rename-fixture.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import http from 'node:http';
 import test from 'node:test';
 import { fixture, png } from './roleplay-transactions-fixture.js';
 
@@ -31,7 +32,7 @@ const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', 
 prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }],
 function_calling: true };
 
-function prepared(t, effect = 'append', { assistant = false, pathfinder = false, agents = false, recovery = false, rewrite = true, autoSwipe = false, autoContinue = false, continueTarget = 30, bundledMacros = null, history = 0 } = {}) {
+function prepared(t, effect = 'append', { assistant = false, pathfinder = false, pathfinderSettings = {}, agents = false, recovery = false, rewrite = true, autoSwipe = false, autoContinue = false, continueTarget = 30, bundledMacros = null, history = 0 } = {}) {
     const f = fixture(t);
     const dirs = f.scope.directories;
     // Keep small history budgets elsewhere; assistant lifecycle checks include every tool schema.
@@ -58,7 +59,7 @@ function prepared(t, effect = 'append', { assistant = false, pathfinder = false,
         } }));
         if (pathfinder) fs.writeFileSync(path.join(dirs.inChatAgents, 'pathfinder.json'), JSON.stringify({ id: 'pathfinder',
             name: 'Pathfinder', category: 'tool', enabled: true, sourceTemplateId: 'tpl-pathfinder',
-            settings: { sidecarEnabled: true, pipelineEnabled: false, enabledLorebooks: ['Manual'], includeContextualLorebooks: false } }));
+            settings: { sidecarEnabled: true, pipelineEnabled: false, enabledLorebooks: ['Manual'], includeContextualLorebooks: false, ...pathfinderSettings } }));
         if (agents && rewrite) fs.writeFileSync(path.join(dirs.inChatAgents, 'rewrite.json'), JSON.stringify({ id: 'rewrite', name: 'Rewrite',
             enabled: true, phase: 'post', prompt: 'REWRITE', postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64 } }));
         if (recovery) fs.writeFileSync(path.join(dirs.inChatAgents, 'tpl-thinking-reply-recovery.json'), JSON.stringify({ id: 'tpl-thinking-reply-recovery',
@@ -1067,6 +1068,54 @@ test('an accepted request without the capture refuses the dialogue colours place
     await assert.rejects(f.candidate('Never sent.', calls, { promptControls }), { code: 'MACRO_BUNDLED_MISSING' });
     assert.equal(calls.count, 0);
     assert.equal(f.records().length, 3);
+});
+
+test('Jev retrieval works in server pipeline and waypoint jobs, and recovery reuses paid scores', async t => {
+    for (const pipelineEnabled of [false, true]) await t.test(`pipeline: ${pipelineEnabled}`, async t => {
+        const requests = [];
+        const server = http.createServer(async (req, res) => {
+            let body = '';
+            for await (const chunk of req) body += chunk;
+            const input = JSON.parse(body);
+            requests.push(input);
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ decisions: Object.fromEntries(Object.keys(input.questions).map(key => [key, 0.9])) }));
+        });
+        await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+        t.after(() => { server.closeAllConnections(); server.close(); });
+        const f = prepared(t, 'append', { pathfinder: true, pathfinderSettings: { pipelineEnabled,
+            modelConnection: 'manual', modelEndpoint: `http://127.0.0.1:${server.address().port}/v1/systemone`,
+            modelOverride: 'open-jev-9b', decisionThreshold: 0.1 } });
+        updateJob(f.dirs, f.jobId, { state: 'running' });
+        await runRoleplayWorkflowJob(f.context());
+        const child = f.childJob();
+        await assert.rejects(f.runChild(child, { generate: async () => { throw new Error('Stopped before main reply'); } }), /Stopped before main reply/);
+        const count = requests.length;
+        assert.equal(count, pipelineEnabled ? 2 : 1);
+        const result = readArtifact(f.dirs, child.id, 'roleplay-pathfinder');
+        assert.match(result.prompt.content, /broken telescope/);
+        assert.equal(result.stageResults[0].scores[0].score, 0.9);
+        await f.candidate('The telescope is broken.', { count: 0, check(options) {
+            assert.match(JSON.stringify(options.messages), /broken telescope/);
+        } });
+        assert.equal(requests.length, count, 'recovery must reuse the saved retrieval');
+    });
+});
+
+test('an unknown Jev outcome in server retrieval cannot be charged again on recovery', async t => {
+    let requests = 0;
+    const server = http.createServer(req => { requests++; req.socket.destroy(); });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    t.after(() => { server.closeAllConnections(); server.close(); });
+    const f = prepared(t, 'append', { pathfinder: true, pathfinderSettings: { modelConnection: 'manual',
+        modelEndpoint: `http://127.0.0.1:${server.address().port}/v1/systemone`, modelOverride: 'open-jev-9b' } });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const child = f.childJob();
+    const generate = async () => { assert.fail('The main model must wait for retrieval.'); };
+    await assert.rejects(f.runChild(child, { generate }), /socket|hang up/i);
+    await assert.rejects(f.runChild(child, { generate }), /unknown|recovery/i);
+    assert.equal(requests, 1);
 });
 
 const markedControls = (extra = []) => ({

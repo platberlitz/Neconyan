@@ -85,10 +85,11 @@ export function capturePathfinderSource(directories, policy, { chatBook, persona
     }
     const books = [...new Set(names.filter(name => typeof name === 'string' && name.trim()))]
         .filter(name => settings.bookPermissions?.[name]?.enabled !== false && canReadBook(name, settings));
-    const profiles = new Set([settings.connectionProfile].filter(Boolean));
+    const defaultProfile = settings.modelConnection === 'manual' ? '' : settings.connectionProfile;
+    const profiles = new Set([defaultProfile].filter(Boolean));
     if (settings.pipelineEnabled) {
         const { pipeline, prompts } = pathfinderPipeline(settings);
-        for (const stage of pipeline.stages) profiles.add(prompts[stage.promptId].connectionProfile || settings.connectionProfile || '');
+        for (const stage of pipeline.stages) profiles.add(prompts[stage.promptId].connectionProfile || defaultProfile || '');
     }
     if ([...profiles].some(id => typeof id !== 'string' || id.length > 256)) invalid('A saved Pathfinder connection profile is invalid.');
     return { agentId: reference.id, revision: reference.revision, physical: reference.physical, books,

@@ -260,9 +260,14 @@ export async function runDiagnostics() {
     // Check connection profile
     results['Connection Profile'] = {
         ok: true,
-        message: s.connectionProfile
+        message: s.modelConnection === 'manual' ? `Manual retrieval model: ${s.modelOverride || 'not set'}` : s.connectionProfile
             ? `Using profile: ${s.connectionProfile}`
             : 'Using main model',
+    };
+
+    results['Decision Model'] = {
+        ok: s.modelConnection !== 'manual' || Boolean(s.modelEndpoint && s.modelOverride),
+        message: `Protocol: ${s.decisionMode || 'auto'}. Threshold: ${s.decisionThreshold ?? 'model default'}. Decision scores appear in the retrieval log.`,
     };
 
     return results;

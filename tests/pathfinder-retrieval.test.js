@@ -17,12 +17,14 @@ await jest.unstable_mockModule('../public/script.js', () => ({
     chat,
     getCurrentChatId: () => chatId,
     generateRaw,
+    getRequestHeaders: () => ({}),
     normalizeContentText: value => String(value ?? ''),
 }));
-await jest.unstable_mockModule('../public/scripts/extensions.js', () => ({ getContext: () => context }));
+await jest.unstable_mockModule('../public/scripts/extensions.js', () => ({ getContext: () => context, extension_settings: {} }));
+await jest.unstable_mockModule('../public/scripts/openai.js', () => ({ getChatCompletionModel: () => 'chat-model', oai_settings: {} }));
 await jest.unstable_mockModule('../public/scripts/reasoning.js', () => ({ removeReasoningFromString: value => value }));
 await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-store.js', () => ({ isPathfinderSubmoduleEnabled: () => enabled }));
-await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-runner.js', () => ({ runAsInternalPromptTransform }));
+await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-runner.js', () => ({ runAsInternalPromptTransform, getPathfinderRuntimeAgent: () => ({ id: 'test-pathfinder' }) }));
 await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/pathfinder/summary-memory-store.js', () => ({
     isSummaryMemoryEntry: entry => entry.name?.startsWith('[Summary]'),
     markSummaryMemoryInjected,

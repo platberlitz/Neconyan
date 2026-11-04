@@ -40,6 +40,11 @@ export const SETTING_DEFAULTS = {
     entryContentMode: 'full',  // 'full' | 'truncated'
     truncateLength: 500,
     retrievalTimeoutSeconds: 8,
+    modelConnection: 'profile',
+    modelEndpoint: '',
+    modelOverride: '',
+    decisionMode: 'auto',
+    decisionThreshold: null,
     // Per-prompt storage (managed by prompt-store.js)
     pipelinePrompts: {},
     pipelines: {},

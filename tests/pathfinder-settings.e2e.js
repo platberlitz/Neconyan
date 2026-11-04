@@ -1,9 +1,11 @@
 /* global document, window */
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import { dismissOnboardingIfPresent, dismissOpenDialogIfPresent } from './chat-scroll-regression-helpers.js';
 
-test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
+test.use({ serviceWorkers: 'block', reducedMotion: 'reduce', hasTouch: true });
 test.setTimeout(120000);
 
 const MANUAL_BOOK = 'Pathfinder test memory';
@@ -12,7 +14,7 @@ const ATTACHED_BOOK = 'Attached Pathfinder lorebook with a long name '.repeat(4)
 async function openSettings(page, baseURL) {
     const origin = new URL(baseURL).origin;
     expect(['127.0.0.1', 'localhost', '[::1]']).toContain(new URL(baseURL).hostname);
-    const state = { saveMode: 'success', saves: [], heldSaves: [], generation: [], reads: [], writes: [], failBookWrite: false };
+    const state = { saveMode: 'success', saves: [], heldSaves: [], generation: [], reads: [], writes: [], keys: [], failBookWrite: false };
     const books = new Map([MANUAL_BOOK, ATTACHED_BOOK].map(name => [name, {
         entries: { 0: { uid: 0, comment: 'Saved summary', content: 'Saved memory.', key: ['summary'], disable: false, constant: false } },
     }]));
@@ -21,6 +23,10 @@ async function openSettings(page, baseURL) {
         const request = route.request();
         const url = new URL(request.url());
         if (url.origin !== origin) return route.abort();
+        if (url.pathname === '/api/in-chat-agents/pathfinder/key') {
+            state.keys.push(request.postDataJSON());
+            return route.fulfill({ json: { hasKey: Boolean(request.postDataJSON().key) } });
+        }
         if (url.pathname === '/__pathfinder-test-generation') {
             state.generation.push(route);
             return;
@@ -127,6 +133,97 @@ async function openSettings(page, baseURL) {
     await expect(page.locator('#pf-e2e-host #pf--master-enable')).toBeVisible();
     return state;
 }
+
+test('Pawthfinder Jev presets, threshold and protected key controls', async ({ page, baseURL }) => {
+    const state = await openSettings(page, baseURL);
+    {
+        await page.getByLabel('Jev / decision model preset', { exact: true }).selectOption('open-jev-9b');
+        await expect(page.getByLabel('Retrieval connection', { exact: true })).toHaveValue('manual');
+        await expect(page.getByLabel('Model / model override', { exact: true })).toHaveValue('ZefanCai/Open-Jev-9B');
+        await expect(page.getByLabel('Decision score threshold', { exact: true })).toHaveValue('0.1');
+        await page.getByLabel('Decision score threshold', { exact: true }).fill('0');
+        await page.getByLabel('Decision score threshold', { exact: true }).press('Tab');
+        await expect.poll(() => state.saves.at(-1)?.settings.decisionThreshold).toBe(0);
+        await page.getByLabel('API key for this endpoint', { exact: true }).fill('test-only-key');
+        await page.getByRole('button', { name: 'Save API key', exact: true }).click();
+        await expect(page.locator('#pf--model-key-status')).toHaveText('API key saved.');
+        expect(JSON.stringify(state.saves)).not.toContain('test-only-key');
+        await page.getByLabel('Jev / decision model preset', { exact: true }).selectOption('jev-1.14');
+        await expect(page.getByLabel('Decision score threshold', { exact: true })).toHaveValue('0.5');
+    }
+    const directory = path.resolve('../screenshots');
+    fs.mkdirSync(directory, { recursive: true });
+    for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 }]) {
+        await page.setViewportSize(viewport);
+        await page.locator('#pf--retrieval-model').scrollIntoViewIfNeeded();
+        const overflow = await page.locator('#pf-e2e-host').evaluate(host => host.scrollWidth > host.clientWidth);
+        expect(overflow).toBe(false);
+        await page.screenshot({ path: path.join(directory, `pawthfinder-jev-after-${viewport.width}.png`) });
+    }
+    {
+        for (const accent of [null, 'rgba(245, 235, 215, 1)', 'rgba(48, 24, 76, 1)']) {
+            const contrasts = await page.evaluate(async colour => {
+                if (colour) for (const id of ['sb-accent-primary-picker', 'sb-accent-secondary-picker']) {
+                    document.getElementById(id).dispatchEvent(new CustomEvent('change', { detail: { rgba: colour } }));
+                }
+                await new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+                const canvas = document.createElement('canvas');
+                canvas.width = canvas.height = 1;
+                const ctx = canvas.getContext('2d');
+                const luminance = rgb => rgb.slice(0, 3).map(value => {
+                    value /= 255;
+                    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+                }).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+                return [...document.querySelectorAll('#pf--model-key-save, #pf--model-key-clear')].map(button => {
+                    const ancestors = [];
+                    for (let element = button; element; element = element.parentElement) ancestors.unshift(element);
+                    ctx.fillStyle = 'white'; ctx.fillRect(0, 0, 1, 1);
+                    for (const element of ancestors) { ctx.fillStyle = window.getComputedStyle(element).backgroundColor; ctx.fillRect(0, 0, 1, 1); }
+                    const background = luminance([...ctx.getImageData(0, 0, 1, 1).data]);
+                    ctx.fillStyle = window.getComputedStyle(button).color; ctx.fillRect(0, 0, 1, 1);
+                    const foreground = luminance([...ctx.getImageData(0, 0, 1, 1).data]);
+                    return (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05);
+                });
+            }, accent);
+            expect(contrasts).toHaveLength(2);
+            for (const contrast of contrasts) expect(contrast).toBeGreaterThanOrEqual(4.5);
+        }
+    }
+});
+
+test('Jev browser pipeline keeps candidate identities and handles an empty selection', async ({ page, baseURL }) => {
+    await openSettings(page, baseURL);
+    await page.route('**/api/worldinfo/get', route => route.fulfill({ json: { entries: {
+        1: { uid: 1, comment: 'Harbour', content: 'The harbour has a lighthouse.', key: ['harbour'], disable: false, constant: false },
+    } } }));
+    const requests = [];
+    let accept = true;
+    await page.route('**/api/in-chat-agents/pathfinder/retrieve', async route => {
+        const input = route.request().postDataJSON();
+        requests.push(input);
+        const selected = accept ? input.candidates.map(candidate => candidate.id) : [];
+        await route.fulfill({ json: { protocol: 'decision', selected, text: JSON.stringify(selected), threshold: 0.1,
+            scores: input.candidates.map(candidate => ({ id: candidate.id, score: accept ? 0.9 : 0 })) } });
+    });
+    const run = () => page.evaluate(async manualBook => {
+        const tree = await import('/scripts/extensions/in-chat-agents/pathfinder/tree-store.js');
+        const { runPipeline } = await import('/scripts/extensions/in-chat-agents/pathfinder/prompts/pipeline-runner.js');
+        tree.replaceSettings({ ...tree.getSettings(), modelConnection: 'manual', modelEndpoint: 'http://127.0.0.1:8000/v1/systemone',
+            modelOverride: 'ZefanCai/Open-Jev-9B', decisionMode: 'decision', decisionThreshold: 0.1 });
+        tree.saveTree(manualBook, { id: 'node_harbour', name: 'Harbour', entries: [1], children: [] });
+        return runPipeline('default', [{ name: 'User', mes: 'Remember the harbour.', is_user: true }], 10, null, [manualBook]);
+    }, MANUAL_BOOK);
+    const result = await run();
+    expect(result.success).toBe(true);
+    expect(result.selectedEntryData).toEqual(expect.arrayContaining([expect.objectContaining({ bookName: MANUAL_BOOK, uid: 1 })]));
+    expect(requests).toHaveLength(2);
+    expect(requests[1].candidates.map(candidate => candidate.id)).toEqual(requests[0].candidates.map(candidate => candidate.id));
+    expect(result.stageResults[0].scores[0].score).toBe(0.9);
+    accept = false;
+    const empty = await run();
+    expect(empty.success).toBe(true);
+    expect(empty.selectedEntryData).toEqual([]);
+});
 
 test('Pathfinder uses native keyboard disclosures, labelled controls and narrow layouts', async ({ page, baseURL }, testInfo) => {
     const state = await openSettings(page, baseURL);
@@ -236,6 +333,8 @@ test('Pathfinder preserves failed prompt and summary drafts, including an empty 
 
 test('Stop cancels a real auxiliary request without saving a late summary', async ({ page, baseURL }) => {
     const state = await openSettings(page, baseURL);
+    await page.getByLabel('Jev / decision model preset', { exact: true }).selectOption('open-jev-9b');
+    await expect(page.locator('#pf--settings-save-status')).toHaveText('Saved!');
     await page.evaluate(async () => (await import('/scripts/extensions/in-chat-agents/pathfinder/summary-memory-store.js')).setSummaryMemoryCreated({ title: '', content: '', bookName: '', uid: null }));
     await page.locator('#pf--summary-create').click();
     await expect.poll(() => state.generation.length).toBe(1);

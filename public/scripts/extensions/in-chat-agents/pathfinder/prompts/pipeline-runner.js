@@ -3,7 +3,7 @@
  */
 
 import { getPrompt, getPipeline } from './prompt-store.js';
-import { sidecarGenerateWithProfile } from '../llm-sidecar.js';
+import { retrieveWithModel, entryDecisionCandidates } from '../retrieval-model.js';
 import { canReadBook, getSettings, getTree, getAllEntryUids, isEntryEligible } from '../tree-store.js';
 import { getReadableBooks } from '../pathfinder-tool-bridge.js';
 import { logPipelineStageStart, logPipelineStageComplete, logPipelineError } from '../activity-feed.js';
@@ -120,24 +120,25 @@ export async function runPipeline(pipelineId, chatMessages, maxMessages = 10, si
             const profileId = prompt.connectionProfile || settings.connectionProfile || '';
             const maxTokens = prompt.settings?.maxTokens ?? DEFAULT_PIPELINE_MAX_TOKENS;
 
-            // Call the LLM
-            const response = await sidecarGenerateWithProfile(
+            const mappings = Object.values(stage.inputMapping ?? {});
+            const filtersCandidates = mappings.includes('prev:candidate_entries') && !mappings.includes('source:entry_names');
+            const offeredEntries = filtersCandidates
+                ? new Map(currentEntries.slice(0, maxCandidates).map(name => [name, context.entriesByName.get(name)]))
+                : context.entriesByName;
+            const result = await retrieveWithModel(
                 userPrompt,
                 prompt.systemPrompt,
                 profileId,
                 maxTokens,
                 signal,
-                { temperature: prompt.settings?.temperature },
+                { temperature: prompt.settings?.temperature, stageProfile: prompt.connectionProfile,
+                    candidates: entryDecisionCandidates(offeredEntries, settings, filtersCandidates) },
             );
+            const response = result.text;
             throwIfAborted(signal);
 
             // Parse the output
-            const mappings = Object.values(stage.inputMapping ?? {});
-            const filtersCandidates = mappings.includes('prev:candidate_entries') && !mappings.includes('source:entry_names');
-            const offeredEntries = filtersCandidates
-                ? new Map(currentEntries.map(name => [name, context.entriesByName.get(name)]))
-                : context.entriesByName;
-            const parsed = parseOutput(response, prompt.outputFormat, offeredEntries);
+            const parsed = result.protocol === 'decision' ? { entries: result.selected } : parseOutput(response, prompt.outputFormat, offeredEntries);
 
             currentEntries = parsed.entries.filter(name => getReadableBooks().includes(context.entriesByName.get(name)?.bookName)).slice(0, maxCandidates);
             context.stageOutputs.set(stage.outputKey, {
@@ -154,6 +155,7 @@ export async function runPipeline(pipelineId, chatMessages, maxMessages = 10, si
                 success: true,
                 entriesFound: currentEntries.length,
                 reasoning: parsed.reasoning,
+                ...(result.scores ? { scores: result.scores, threshold: result.threshold } : {}),
             });
         } catch (error) {
             if (isAbortLikeError(error, signal)) {
