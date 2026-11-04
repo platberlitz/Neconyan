@@ -2,8 +2,20 @@ import { applyClaudeModelParameterConstraints, applyKimiK3ModelParameterConstrai
 import { LINKAPI_ENDPOINT, getLinkApiRequestFormat } from './linkapi-utils.js';
 import { getChatReasoningCapabilities, getNativeReasoningRoute } from './chat-reasoning-capabilities.js';
 
+/** Copy settings once so every field of one request comes from the same moment. */
+function snapshotSettings(settings) {
+    const copy = {};
+    for (const key in settings) {
+        const value = settings[key];
+        if (value === null || typeof value !== 'object') { copy[key] = value; continue; }
+        try { copy[key] = structuredClone(value); } catch { copy[key] = value; }
+    }
+    return copy;
+}
+
 /** Build a request using explicit operation capabilities, without reading browser state. */
-export async function createChatGenerationParameters(settings, model, type, messages, context, { jsonSchema = null, cacheScope = null } = {}) {
+export async function createChatGenerationParameters(liveSettings, model, type, messages, context, { jsonSchema = null, cacheScope = null } = {}) {
+    const settings = snapshotSettings(liveSettings);
     if (!Array.isArray(messages)) throw new Error('messages must be an array');
     messages = context.appendReasoning(messages.filter(message => message && typeof message === 'object'));
     const source = settings.chat_completion_source;
@@ -16,6 +28,10 @@ export async function createChatGenerationParameters(settings, model, type, mess
     const stream = settings.stream_openai && type !== 'quiet' && !(gpt && ['o1-2024-12-17', 'o1'].includes(model)) && !(source === 'workers_ai' && jsonSchema);
     const canMultiSwipe = settings.n > 1 && !['quiet', 'impersonate', 'continue'].includes(type)
         && ['openai', 'azure_openai', 'custom', 'xai', 'aimlapi', 'moonshot'].includes(source) && !kimi;
+    const includeReasoning = context.getIncludeReasoning();
+    const verbosity = context.getVerbosity();
+    const performToolCalls = !canMultiSwipe && context.canPerformToolCalls();
+    const serviceTier = source === 'nanogpt' ? await context.getServiceTier() : undefined;
     let bias = {};
     if (settings.bias_preset_selected && ['openai', 'azure_openai', 'openrouter', 'electronhub', 'chutes', 'custom'].includes(source)
         && Array.isArray(settings.bias_presets[settings.bias_preset_selected]) && settings.bias_presets[settings.bias_preset_selected].length) bias = await context.getLogitBias();
@@ -26,11 +42,11 @@ export async function createChatGenerationParameters(settings, model, type, mess
         max_tokens: settings.openai_max_tokens, stream, logit_bias: Object.keys(bias).length ? bias : undefined,
         stop: context.getStoppingStrings(4), chat_completion_source: source, n: canMultiSwipe ? settings.n : undefined,
         user_name: context.userName, char_name: context.characterName, group_names: context.getGroupNames(),
-        include_reasoning: context.getIncludeReasoning(), reasoning_effort: reasoningEffort,
+        include_reasoning: includeReasoning, reasoning_effort: reasoningEffort,
         enable_web_search: Boolean(settings.enable_web_search), request_images: Boolean(settings.request_images),
         // Absent image settings mean no preference: send '', never the text "undefined".
         request_image_resolution: String(settings.request_image_resolution ?? ''), request_image_aspect_ratio: String(settings.request_image_aspect_ratio ?? ''),
-        custom_prompt_post_processing: settings.custom_prompt_post_processing, verbosity: context.getVerbosity(),
+        custom_prompt_post_processing: settings.custom_prompt_post_processing, verbosity,
         cacheScope: cacheScope ?? (type === 'quiet' ? 'auxiliary' : 'main'),
     };
     if (source === 'azure_openai') {
@@ -39,10 +55,10 @@ export async function createChatGenerationParameters(settings, model, type, mess
         data.azure_api_version = settings.azure_api_version;
         if (/^gpt-[34]/.test(model)) delete data.reasoning_effort;
     }
-    if (!canMultiSwipe && context.canPerformToolCalls()) await context.registerTools(data);
+    if (performToolCalls) await context.registerTools(data);
     if (!Array.isArray(data.stop) || !data.stop.length) delete data.stop;
     if (settings.reverse_proxy && context.reverseProxySources.includes(source)) {
-        await context.validateReverseProxy();
+        await context.validateReverseProxy(settings.reverse_proxy);
         data.reverse_proxy = settings.reverse_proxy;
         data.proxy_password = settings.proxy_password;
     }
@@ -55,7 +71,7 @@ export async function createChatGenerationParameters(settings, model, type, mess
     if (gpt && /gpt-4.5/.test(model)) delete data.logprobs;
     applyChatProviderParameters(data, settings, {
         model, type, getStoppingStrings: context.getStoppingStrings, getAssistantPrefill: context.getAssistantPrefill,
-        serviceTier: source === 'nanogpt' ? await context.getServiceTier() : undefined,
+        serviceTier,
         samplerMetadata, reasoningRoute,
     });
     if (jsonSchema) data.json_schema = jsonSchema;

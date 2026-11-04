@@ -626,23 +626,23 @@ export function getCurrentOpenAIPresetPromptOrder(characterId) {
     return Array.isArray(promptOrderEntry?.order) ? promptOrderEntry.order : [];
 }
 
-async function validateReverseProxy(signal) {
-    if (!oai_settings.reverse_proxy) {
+async function validateReverseProxy(signal, proxy = oai_settings.reverse_proxy) {
+    if (!proxy) {
         return;
     }
 
     try {
-        new URL(oai_settings.reverse_proxy);
+        new URL(proxy);
     } catch (err) {
         toastr.error(t`The reverse proxy address is not a valid web address`);
         setOnlineStatus('no_connection');
         resultCheckStatus();
         throw err;
     }
-    const rememberKey = `Proxy_SkipConfirm_${getStringHash(oai_settings.reverse_proxy)}`;
+    const rememberKey = `Proxy_SkipConfirm_${getStringHash(proxy)}`;
     const skipConfirm = accountStorage.getItem(rememberKey) === 'true';
 
-    const confirmation = skipConfirm || await Popup.show.confirm(t`Connecting To Proxy`, await renderTemplateAsync('proxyConnectionWarning', { proxyURL: DOMPurify.sanitize(oai_settings.reverse_proxy) }));
+    const confirmation = skipConfirm || await Popup.show.confirm(t`Connecting To Proxy`, await renderTemplateAsync('proxyConnectionWarning', { proxyURL: DOMPurify.sanitize(proxy) }));
 
     if (signal?.aborted) {
         return;
@@ -5379,6 +5379,7 @@ function getVerbosity(settings = null) {
  * @returns {Promise<object>} Final generation parameters object appropriate for the chat completion source
  */
 export async function createGenerationParameters(settings, model, type, messages, { jsonSchema = null, cacheScope = null } = {}) {
+    const forwardProxy = settings.reverse_proxy === oai_settings.reverse_proxy;
     return createChatGenerationParameters(settings, model, type, messages, {
         getReasoningRoute: () => getChatReasoningRoute(settings),
         appendReasoning: value => appendAutoAppendReasoningInstruction(value, settings, model, type),
@@ -5392,7 +5393,7 @@ export async function createGenerationParameters(settings, model, type, messages
         canPerformToolCalls: () => ToolManager.canPerformToolCalls(type, settings, model),
         registerTools: data => ToolManager.registerFunctionToolsOpenAI(data),
         reverseProxySources: REVERSE_PROXY_SUPPORTED_SOURCES,
-        validateReverseProxy: () => validateReverseProxy(),
+        validateReverseProxy: proxy => validateReverseProxy(undefined, forwardProxy ? proxy : undefined),
         getStoppingStrings: limit => getGroupSpeakerStopStrings(getCustomStoppingStrings(limit), limit, type),
         getAssistantPrefill: () => type === 'impersonate'
             ? getEffectiveAssistantImpersonationPrefill(settings) : substituteParams(settings.assistant_prefill),

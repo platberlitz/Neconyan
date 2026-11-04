@@ -1,4 +1,4 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, jest, test } from '@jest/globals';
 
 import { createChatGenerationParameters } from '../public/scripts/chat-provider-parameters.js';
 import { resolveChatReasoningEffort } from '../public/scripts/chat-request-controls.js';
@@ -144,4 +144,107 @@ test('captures future native route with reasoning intent before asynchronous bia
     expect(data.chat_completion_source).toBe('openai');
     expect(data.reasoning_effort).toBe('none');
     expect(data.temperature).toBeUndefined();
+});
+
+test('builds one request from the settings as they were before the bias lookup', async () => {
+    const settings = { ...baseSettings, chat_completion_source: 'openrouter', temp_openai: 0.7, top_p_openai: 0.9, openai_max_tokens: 400, seed: 5,
+        show_thoughts: false, verbosity: 'low', tools_on: false, openrouter_providers: ['A'], openrouter_middleout: 'off',
+        openrouter_service_tier: 'flex', openrouter_allow_fallbacks: true,
+        bias_preset_selected: 's', bias_presets: { s: [{ text: 'a', value: 1 }] } };
+    const registerSpy = jest.fn(async () => {});
+    let release;
+    let enter;
+    const gate = new Promise(resolve => { release = resolve; });
+    const entered = new Promise(resolve => { enter = resolve; });
+    const pending = createChatGenerationParameters(settings, 'gpt-4o', 'normal', [{ role: 'user', content: 'Hello' }], {
+        ...context,
+        getLogitBias: async () => { enter(); await gate; return { 1: 1 }; },
+        getIncludeReasoning: () => settings.show_thoughts,
+        getVerbosity: () => settings.verbosity,
+        canPerformToolCalls: () => settings.tools_on,
+        registerTools: registerSpy,
+        reverseProxySources: ['openrouter'],
+    });
+    await entered;
+    Object.assign(settings, { chat_completion_source: 'nanogpt', temp_openai: 1.5, top_p_openai: 0.1, openai_max_tokens: 9, seed: 99,
+        show_thoughts: true, verbosity: 'high', tools_on: true, openrouter_middleout: 'on', openrouter_service_tier: 'priority',
+        openrouter_allow_fallbacks: false, nanogpt_provider: 'P', reverse_proxy: 'https://later.invalid' });
+    settings.openrouter_providers.push('B');
+    release();
+    const { generate_data: data } = await pending;
+    expect(data.chat_completion_source).toBe('openrouter');
+    expect(data.temperature).toBe(0.7);
+    expect(data.top_p).toBe(0.9);
+    expect(data.max_tokens).toBe(400);
+    expect(data.seed).toBe(5);
+    expect(data.include_reasoning).toBe(false);
+    expect(data.verbosity).toBe('low');
+    expect(data.provider).toEqual(['A']);
+    expect(data.middleout).toBe('off');
+    expect(data.service_tier).toBe('flex');
+    expect(data.allow_fallbacks).toBe(true);
+    expect(data.logit_bias).toEqual({ 1: 1 });
+    expect(data).not.toHaveProperty('nanogpt_provider');
+    expect(data).not.toHaveProperty('reverse_proxy');
+    expect(registerSpy).not.toHaveBeenCalled();
+    expect(settings.openrouter_providers).toEqual(['A', 'B']);
+});
+
+test('keeps NanoGPT fields and service tier from before a held tool registration', async () => {
+    const settings = { ...baseSettings, chat_completion_source: 'nanogpt', temp_openai: 0.7, nanogpt_provider: 'P1',
+        nanogpt_allowed_providers: ['A'], nanogpt_ignored_providers: [], nanogpt_payg_override: false, nanogpt_service_tier: 'priority' };
+    let release;
+    let enter;
+    const gate = new Promise(resolve => { release = resolve; });
+    const entered = new Promise(resolve => { enter = resolve; });
+    const pending = createChatGenerationParameters(settings, 'gpt-4o', 'normal', [{ role: 'user', content: 'Hello' }], {
+        ...context,
+        canPerformToolCalls: () => true,
+        registerTools: async () => { enter(); await gate; },
+        getServiceTier: async () => settings.nanogpt_service_tier,
+    });
+    await entered;
+    Object.assign(settings, { chat_completion_source: 'openrouter', temp_openai: 1.5, nanogpt_provider: 'P2', nanogpt_service_tier: 'flex' });
+    settings.nanogpt_allowed_providers.push('B');
+    release();
+    const { generate_data: data } = await pending;
+    expect(data.chat_completion_source).toBe('nanogpt');
+    expect(data.temperature).toBe(0.7);
+    expect(data.nanogpt_provider).toBe('P1');
+    expect(data.nanogpt_allowed_providers).toEqual(['A']);
+    expect(data.nanogpt_payg_override).toBe(false);
+    expect(data.service_tier).toBe('priority');
+    expect(data).not.toHaveProperty('provider');
+    expect(data).not.toHaveProperty('middleout');
+});
+
+test('does not throw on settings holding uncloneable nested values', async () => {
+    const settings = { ...baseSettings, opaque: { callback() {} } };
+    await expect(createChatGenerationParameters(settings, 'gpt-4o', 'normal', [{ role: 'user', content: 'Hello' }], context))
+        .resolves.toMatchObject({ generate_data: { temperature: 1 } });
+});
+
+test.each(['https://b.invalid', ''])('validates the reverse proxy that the request sends when the setting changes to %j during a held bias lookup', async changed => {
+    const settings = { ...baseSettings, chat_completion_source: 'openai', reverse_proxy: 'https://a.invalid', proxy_password: 'one',
+        bias_preset_selected: 's', bias_presets: { s: [{ text: 'a', value: 1 }] } };
+    const validate = jest.fn(async () => {});
+    let release;
+    let enter;
+    const gate = new Promise(resolve => { release = resolve; });
+    const entered = new Promise(resolve => { enter = resolve; });
+    const pending = createChatGenerationParameters(settings, 'gpt-4o', 'normal', [{ role: 'user', content: 'Hello' }], {
+        ...context,
+        reverseProxySources: ['openai'],
+        validateReverseProxy: validate,
+        getLogitBias: async () => { enter(); await gate; return { 1: 1 }; },
+    });
+    await entered;
+    settings.reverse_proxy = changed;
+    settings.proxy_password = 'two';
+    release();
+    const { generate_data: data } = await pending;
+    expect(data.reverse_proxy).toBe('https://a.invalid');
+    expect(data.proxy_password).toBe('one');
+    expect(validate).toHaveBeenCalledTimes(1);
+    expect(validate.mock.calls[0][0]).toBe(data.reverse_proxy);
 });

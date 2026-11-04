@@ -959,3 +959,60 @@ describe('owned host generation flow', () => {
         expect(context.chat[0].mes).toBe(buffer ? 'Existing prose. ' : 'Existing prose. abcd');
     });
 });
+
+describe('reverse proxy confirmation with a held bias lookup', () => {
+    function proxyRuntime({ held = false } = {}) {
+        const runtime = makeRuntime();
+        const { context } = runtime;
+        load(context, 'scripts/openai.js', ['validateReverseProxy']);
+        Object.assign(context, {
+            URL, biasCache: null, REVERSE_PROXY_SUPPORTED_SOURCES: ['openai'],
+            Popup: { show: { confirm: jest.fn(async () => true) } },
+            renderTemplateAsync: jest.fn(async () => 'warning'),
+            DOMPurify: { sanitize: value => value },
+            getStringHash: value => `hash(${value})`,
+            accountStorage: { getItem: () => 'false', setItem: jest.fn() },
+            setOnlineStatus: jest.fn(), resultCheckStatus: jest.fn(),
+        });
+        if (held) {
+            let enterBias;
+            const entered = new Promise(resolve => { enterBias = resolve; });
+            let releaseBias;
+            const gate = new Promise(resolve => { releaseBias = resolve; });
+            context.calculateLogitBias = async () => { enterBias(); await gate; return { 1: 1 }; };
+            runtime.entered = entered;
+            runtime.releaseBias = releaseBias;
+        }
+        return runtime;
+    }
+
+    test.each([
+        ['https://b.invalid', { temperature: 0.4 }, 0.4],
+        ['', { temperature: 0.4 }, 0.4],
+        ['https://b.invalid', {}, 0.9],
+    ])('a main chat request confirms and sends the original proxy when the setting becomes %j (options %j)', async (live, options, expectedTemperature) => {
+        const { context, requests, entered, releaseBias } = proxyRuntime({ held: true });
+        Object.assign(context.oai_settings, { temp_openai: 0.9, reverse_proxy: 'https://a.invalid', proxy_password: 'pw', bias_preset_selected: 's', bias_presets: { s: [{ text: 'a', value: 1 }] } });
+        const sending = context.sendOpenAIRequest('quiet', [{ role: 'user', content: 'Hello' }], undefined, options);
+        await entered;
+        context.oai_settings.reverse_proxy = live;
+        releaseBias();
+        await sending;
+        expect(context.renderTemplateAsync).toHaveBeenCalledTimes(1);
+        expect(context.renderTemplateAsync).toHaveBeenCalledWith('proxyConnectionWarning', { proxyURL: 'https://a.invalid' });
+        expect(context.accountStorage.setItem).toHaveBeenCalledWith('Proxy_SkipConfirm_hash(https://a.invalid)', 'true');
+        expect(requests).toHaveLength(1);
+        expect(requests[0].body.reverse_proxy).toBe('https://a.invalid');
+        expect(requests[0].body.temperature).toBe(expectedTemperature);
+    });
+
+    test('a preset or profile request whose proxy differs from the global one still confirms the global proxy', async () => {
+        const { context } = proxyRuntime();
+        context.oai_settings.reverse_proxy = 'https://global.invalid';
+        const { generate_data } = await context.createGenerationParameters({ ...context.oai_settings, reverse_proxy: 'https://profile.invalid' }, 'gpt-4o', 'quiet', [{ role: 'user', content: 'Hello' }]);
+        expect(generate_data.reverse_proxy).toBe('https://profile.invalid');
+        expect(context.renderTemplateAsync).toHaveBeenCalledTimes(1);
+        expect(context.renderTemplateAsync).toHaveBeenCalledWith('proxyConnectionWarning', { proxyURL: 'https://global.invalid' });
+        expect(context.accountStorage.setItem).toHaveBeenCalledWith('Proxy_SkipConfirm_hash(https://global.invalid)', 'true');
+    });
+});
