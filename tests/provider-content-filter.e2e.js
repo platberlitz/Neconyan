@@ -316,8 +316,11 @@ for (const buffered of [false, true]) {
 test('filtered impersonation suppresses its opted-in Agent and the next ordinary impersonation can run it', async ({ app }) => {
     const impersonationAgent = { ...post, conditions: { generationTypes: ['impersonate'], runOnImpersonate: true } };
     const { page } = await setup(app, { agents: [impersonationAgent] });
+    const originalChat = await page.evaluate(async () => (await import('/script.js')).chat);
     app.provider.mode.streamEvents = stream(PARTIAL);
     await send(page, '', 'impersonate');
+    await expect(page.locator('#send_textarea')).toHaveValue(PARTIAL);
+    expect(await page.evaluate(async () => (await import('/script.js')).chat)).toEqual(originalChat);
     await expect(page.locator('#toast-container')).toContainText('content filter');
     await wakeRecovery(page);
     expect(app.provider.calls.map(call => call.model)).toEqual([MODEL]);

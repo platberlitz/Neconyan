@@ -30,6 +30,7 @@ async function stream(type = 'normal') {
     const thinking = { update: jest.fn(), clear: jest.fn() };
     class Element {
         isConnected = true;
+        dispatchEvent = jest.fn();
         classList = { toggle() {} };
         querySelector() { return this; }
         getAttribute() { return '0'; }
@@ -37,7 +38,7 @@ async function stream(type = 'normal') {
     const element = new Element();
     const context = vm.createContext({
         ...generationOutcome,
-        console, AbortController, structuredClone,
+        console, AbortController, structuredClone, Event,
         StreamingThinkingIndicator: class { constructor() { return thinking; } },
         chat: [], chat_metadata: { tainted: true }, chatId: 'original', chatGeneration: 1, activeGenerationRun: {}, streamingProcessor: null,
         saveChatConditional: jest.fn(async () => true),
@@ -52,7 +53,7 @@ async function stream(type = 'normal') {
             hasReasoningContent() { return false; }
             getDuration() { return 0; }
         },
-        event_types: { STREAM_TOKEN_RECEIVED: 'token' }, eventSource: { emit: jest.fn(async () => {}) },
+        event_types: { STREAM_TOKEN_RECEIVED: 'token', IMPERSONATE_READY: 'impersonate' }, eventSource: { emit: jest.fn(async () => {}) },
         delay: async () => {}, Stopwatch: class { async tick(callback) { await callback(); } },
         getStoppingStrings: () => [], getStreamingUpdateInterval: () => 1,
         cleanUpMessage: ({ getMessage }) => getMessage,
@@ -62,7 +63,7 @@ async function stream(type = 'normal') {
         getPositiveTokenCount: value => Number(value) || 0,
         updateMessageTokenAccounting: jest.fn(async () => ({ outputTokens: 1, reasoningTokens: 0 })),
         balanceStreamingMarkdown: value => value, messageFormatting: value => value,
-        formatGenerationTimer: () => ({}), deactivateSendButtons() {}, hideSwipeButtons() {}, unblockGeneration() {},
+        formatGenerationTimer: () => ({}), deactivateSendButtons() {}, hideSwipeButtons() {}, unblockGeneration: jest.fn(),
         scrollStartedStreamingMessageThroughLifecycle() {}, scrollChatToBottom: jest.fn(),
         CHAT_RENDER_LIFECYCLE_ROUTE: { STREAM_PROGRESS: 'stream' },
         isChatRenderLifecycleRolloutEnabled: () => true,
@@ -89,6 +90,24 @@ async function stream(type = 'normal') {
 }
 
 describe('streaming message origin', () => {
+    test('finalises an impersonated composer draft without touching chat messages', async () => {
+        const { context, processor } = await stream('impersonate');
+        const message = replacement();
+        context.chat.push(message);
+        const before = structuredClone(message);
+        processor.reasoningHandler.finish = jest.fn();
+
+        await processor.finalizeIntermediaryMessage(-1, 'My draft.', { unlockUI: true });
+
+        expect(processor.sendTextarea.value).toBe('My draft.');
+        expect(context.chat).toEqual([before]);
+        expect(processor.reasoningHandler.finish).not.toHaveBeenCalled();
+        expect(context.unblockGeneration).toHaveBeenCalledWith('impersonate', { emitGenerationEnded: true });
+        expect(context.eventSource.emit).toHaveBeenCalledWith('impersonate', 'My draft.', {
+            generationContext: processor.agentGenerationContext, type: 'impersonate',
+        });
+    });
+
     test('records a provider length stop without turning an ordinary reply into a local prose limit', async () => {
         const { processor } = await stream();
         processor.generator = async function* () {
