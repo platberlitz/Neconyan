@@ -46,7 +46,7 @@ async function colours(locator) {
 
 for (const phone of [false, true]) {
     test(`Regex Agent Themes uses accent pairs on every shell on ${phone ? 'phone' : 'desktop'}`, async ({ browser }, info) => {
-        test.setTimeout(240000);
+        test.setTimeout(300000);
         const context = await browser.newContext({
             baseURL: info.project.use.baseURL,
             viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 },
@@ -139,7 +139,7 @@ for (const phone of [false, true]) {
     });
 
     test(`accent button pairs across every shell on ${phone ? 'phone' : 'desktop'}`, async ({ browser }, info) => {
-        test.setTimeout(240000);
+        test.setTimeout(300000);
         const context = await browser.newContext({
             baseURL: info.project.use.baseURL,
             viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 },

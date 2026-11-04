@@ -1320,6 +1320,15 @@
       "visualBrief": "Default wallpaper for the slate-flat Shell Style: a giant sleepy calico resting in a scene that matches the style, with a calm centre for chat text."
     },
     {
+      "path": "public/img/neconyan/shell-starlight-conservatory.webp",
+      "size": [1536, 1024],
+      "frames": 1,
+      "sha256": "2d350f599cb46bbbd8ae3be207ce0432731bd06be636304d566cbaa236ba1fba",
+      "model": "gpt-image-2.5-sunburst",
+      "processing": "Lossy WebP quality 78 from the generated PNG, no crop.",
+      "visualBrief": "Default wallpaper for the starlight-conservatory Shell Style: a giant sleepy calico resting in a scene that matches the style, with a calm centre for chat text."
+    },
+    {
       "path": "public/img/neconyan/sleeping-grey-tabby-left.webp",
       "size": [384, 308],
       "frames": 1,

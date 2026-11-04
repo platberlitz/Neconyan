@@ -13,7 +13,7 @@ const catalogue = source.match(/const NN_THEMES = Object\.freeze\(\[([\s\S]*?)\]
 const styles = [...catalogue.matchAll(/id:\s*'([^']+)'/g)].map(match => match[1]);
 const sizes = { calico: [40, 40], kittyless: [40, 40], 'windows-xp': [40, 40], 'windows-98': [40, 40],
     'windows-aero': [44, 40], 'clean-minimal': [44, 40], 'macos-minimal': [44, 44], 'cozy-warm': [44, 40],
-    'hypr-glow': [44, 40], 'slate-flat': [44, 40] };
+    'hypr-glow': [44, 40], 'slate-flat': [44, 40], 'starlight-conservatory': [44, 40] };
 
 async function setup(app, options = {}) {
     const { ios = false, ...accountOptions } = options;
@@ -97,7 +97,7 @@ test('generic geometry covers native routes, included tool, styles and ordinary 
         const selector = await open(page, side, tab);
         aligned(await geometry(page, selector), sizes['windows-xp'], tab);
     }
-    expect(styles).toHaveLength(10);
+    expect(styles).toHaveLength(11);
     for (const id of styles) {
         await style(page, id);
         const selector = await open(page, 'right', 'server');

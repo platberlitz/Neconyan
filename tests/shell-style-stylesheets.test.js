@@ -42,13 +42,21 @@ function collectSelectors(source) {
     const selectors = [];
     const stripped = stripCssBlockComments(source);
     let buffer = '';
+    let keyframeDepth = 0;
     for (const char of stripped) {
         if (char === '{') {
             const text = buffer.trim();
-            // At-rules such as @media wrap ordinary rules; only the selectors themselves count.
-            if (text && !text.startsWith('@')) selectors.push(text);
+            if (keyframeDepth > 0) {
+                keyframeDepth += 1;
+            } else if (/^@(?:-\w+-)?keyframes\b/i.test(text)) {
+                keyframeDepth = 1;
+            } else if (text && !text.startsWith('@')) {
+                // At-rules such as @media wrap ordinary rules; only the selectors themselves count.
+                selectors.push(text);
+            }
             buffer = '';
         } else if (char === '}') {
+            if (keyframeDepth > 0) keyframeDepth -= 1;
             buffer = '';
         } else {
             buffer += char;
@@ -77,7 +85,18 @@ function splitSelectorList(group) {
 }
 
 const backedLibraryStyles = new Set(['windows-aero', 'macos-minimal', 'hypr-glow']);
+const animatedStyles = new Set(['starlight-conservatory']);
 const importantPattern = /!\s*important\b/gi;
+
+function auditMotionDeclarations(stripped, id) {
+    if (animatedStyles.has(id)) {
+        const missing = [];
+        if (!/@media\s*\(\s*prefers-reduced-motion:\s*reduce\s*\)/.test(stripped)) missing.push('prefers-reduced-motion');
+        if (!stripped.includes('body.neconyan.reduced-motion')) missing.push('body.neconyan.reduced-motion');
+        return missing;
+    }
+    return stripped.match(/\b(transition|animation)\s*:/g) ?? [];
+}
 const normaliseInnerSpaces = text => text.trim().replace(/\s+/g, ' ').replace(/([([])\s+/g, '$1').replace(/\s+([)\]])/g, '$1');
 const normaliseSelector = text => normaliseInnerSpaces(text).replace(/\s*([>+~,=])\s*/g, '$1');
 const normaliseValue = text => normaliseInnerSpaces(text).replace(/\s*,\s*/g, ',').replace(/\s*!\s*important\b/gi, '!important');
@@ -205,8 +224,7 @@ describe('shell style runtime stylesheets', () => {
 
             // Only the three reviewed desktop library backings may use !important.
             expect(auditImportantDeclarations(source, id)).toEqual([]);
-            // Motion would need a reduced-motion guard the sheets do not carry.
-            expect(stripped).not.toMatch(/\b(transition|animation)\s*:/);
+            expect(auditMotionDeclarations(stripped, id)).toEqual([]);
             expect(stripped).not.toMatch(/(^|[^:])\/\//m);
 
             for (const [, asset] of stripped.matchAll(/url\('\.\.\/\.\.\/([^'?]+)(?:\?[^']*)?'\)/g)) {
@@ -242,7 +260,7 @@ describe('shell style runtime stylesheets', () => {
     });
 
     test('every style, Calico included, follows the chosen accent colour', () => {
-        const signatureHues = { kittyless: '--kittyless-primary:', 'windows-aero': '--aero-hue:', 'windows-xp': '--xp-hue:', 'windows-98': '--w98-title:', 'cozy-warm': '--cozy-amber:', 'hypr-glow': '--hypr-b:', 'slate-flat': '--slate-cool:', 'clean-minimal': '--clean-line-strong:' };
+        const signatureHues = { kittyless: '--kittyless-primary:', 'windows-aero': '--aero-hue:', 'windows-xp': '--xp-hue:', 'windows-98': '--w98-title:', 'cozy-warm': '--cozy-amber:', 'hypr-glow': '--hypr-b:', 'slate-flat': '--slate-cool:', 'clean-minimal': '--clean-line-strong:', 'starlight-conservatory': '--starlight-brass:' };
         for (const [id, hueVar] of Object.entries(signatureHues)) {
             const source = stripCssBlockComments(readSource('public', 'css', 'shell-styles', `${id}.css`));
             const customBlock = source.match(new RegExp(`:root\\[data-sb-theme='${id}'\\]\\[data-neconyan-accent='custom'\\] body\\.neconyan:not\\(\\.sbterm\\) \\{([^}]*)\\}`));

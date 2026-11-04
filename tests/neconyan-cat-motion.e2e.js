@@ -406,3 +406,74 @@ for (const width of [320, 390]) {
         }
     });
 }
+
+test('Starlight Conservatory animates fireflies, lantern sheen and cat glow and pauses under reduced motion', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
+    await page.route('**/api/settings/get', async route => {
+        const response = await route.fetch({ maxRetries: 2 });
+        const data = await response.json();
+        if (typeof data.settings !== 'string') return route.fulfill({ response });
+        const settings = JSON.parse(data.settings);
+        settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
+        settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
+        settings.power_user.neconyan_shell_style = 'starlight-conservatory';
+        settings.power_user.reduced_motion = false;
+        data.settings = JSON.stringify(settings);
+        await route.fulfill({ response, json: data });
+    });
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 45000 });
+    await expect(page.locator('html')).toHaveAttribute('data-sb-theme', 'starlight-conservatory');
+
+    const activeMotion = await page.evaluate(() => ({
+        wallpaper: window.getComputedStyle(document.body, '::before').backgroundImage,
+        fireflies: window.getComputedStyle(document.body, '::after').animationName,
+        topBarLantern: window.getComputedStyle(document.querySelector('#top-bar')).animationName,
+        homeCatGlow: window.getComputedStyle(document.querySelector('.neconyan-home-cat')).animationName,
+        bottomBarGlow: window.getComputedStyle(document.querySelector('#sb-bottom-chat-bar')).animationName,
+    }));
+
+    expect(activeMotion.wallpaper).toContain('shell-starlight-conservatory.webp');
+    expect(activeMotion.fireflies).toBe('starlight-conservatory-fireflies');
+    expect(activeMotion.topBarLantern).toBe('starlight-conservatory-lantern-pulse');
+    expect(activeMotion.homeCatGlow).toBe('starlight-conservatory-cat-glow');
+    expect(activeMotion.bottomBarGlow).toBe('starlight-conservatory-composer-glow');
+
+    await page.locator('#reduced_motion').evaluate(input => {
+        input.checked = true;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    await expect.poll(() => page.evaluate(() => ({
+        fireflies: window.getComputedStyle(document.body, '::after').animationName,
+        topBarLantern: window.getComputedStyle(document.querySelector('#top-bar')).animationName,
+        homeCatGlow: window.getComputedStyle(document.querySelector('.neconyan-home-cat')).animationName,
+        bottomBarGlow: window.getComputedStyle(document.querySelector('#sb-bottom-chat-bar')).animationName,
+    }))).toEqual({
+        fireflies: 'none',
+        topBarLantern: 'none',
+        homeCatGlow: 'none',
+        bottomBarGlow: 'none',
+    });
+
+    await page.locator('#reduced_motion').evaluate(input => {
+        input.checked = false;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+
+    await expect.poll(() => page.evaluate(() => ({
+        fireflies: window.getComputedStyle(document.body, '::after').animationName,
+        topBarLantern: window.getComputedStyle(document.querySelector('#top-bar')).animationName,
+        homeCatGlow: window.getComputedStyle(document.querySelector('.neconyan-home-cat')).animationName,
+        bottomBarGlow: window.getComputedStyle(document.querySelector('#sb-bottom-chat-bar')).animationName,
+    }))).toEqual({
+        fireflies: 'none',
+        topBarLantern: 'none',
+        homeCatGlow: 'none',
+        bottomBarGlow: 'none',
+    });
+});
+

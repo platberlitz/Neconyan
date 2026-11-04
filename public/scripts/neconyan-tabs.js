@@ -523,7 +523,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261104-scratchpad-session-grid';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261104-starlight-conservatory';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -564,6 +564,10 @@ const NN_THEMES = Object.freeze([
     {
         id: 'slate-flat',
         label: 'Slate Flat',
+    },
+    {
+        id: 'starlight-conservatory',
+        label: 'Starlight Conservatory',
     },
 ]);
 

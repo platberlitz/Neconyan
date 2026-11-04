@@ -5,12 +5,12 @@ import { test } from './neconyan-conversation-durable-fixture.js';
 import { selectSampleCharacter } from './chat-scroll-regression-helpers.js';
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
-const styles = ['calico', 'windows-aero', 'macos-minimal', 'clean-minimal', 'cozy-warm', 'hypr-glow', 'slate-flat', 'kittyless', 'windows-98', 'windows-xp'];
+const styles = ['calico', 'windows-aero', 'macos-minimal', 'clean-minimal', 'cozy-warm', 'hypr-glow', 'slate-flat', 'kittyless', 'windows-98', 'windows-xp', 'starlight-conservatory'];
 
 for (const device of ['desktop', 'phone', 'ios']) {
     const phone = device !== 'desktop';
     test(`generating edge follows the secondary accent on ${device}`, async ({ app }) => {
-        test.setTimeout(120000);
+        test.setTimeout(180000);
         const account = await app.account({ phone, contextOptions: device === 'ios' ? IPHONE_SAFARI_CONTEXT : {} });
         if (device === 'ios') await installIPhoneSafari(account.context, { standalone: true });
         const page = await account.open({ workspace: false });
