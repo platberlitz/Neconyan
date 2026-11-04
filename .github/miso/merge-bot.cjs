@@ -345,7 +345,7 @@ async function processPullRequest({ github, core, owner, repo, number, random, s
     ]);
 
     const evaluation = evaluatePullRequest({ pr, checkRuns, statuses: combined.data.statuses || [], reviews });
-    const existing = comments.find(comment => comment.user?.login === BOT_LOGIN && String(comment.body || '').includes(MARKER));
+    const existing = comments.find(isMisoComment);
     const body = planComment({ evaluation, existingBody: existing?.body, sha, random });
     core.info(`#${number}: ${evaluation.state}${evaluation.reasons.length ? ` (${evaluation.reasons.join(' ')})` : ''}.`);
 
@@ -356,16 +356,54 @@ async function processPullRequest({ github, core, owner, repo, number, random, s
         await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
         core.info(`#${number}: updated comment ${existing.id}.`);
     } else {
-        await github.rest.issues.createComment({ owner, repo, issue_number: number, body });
-        core.info(`#${number}: posted a new comment.`);
+        await postComment({ github, core, owner, repo, number, body });
     }
     return evaluation.state;
 }
 
-async function run({ github, context, core, random = Math.random, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), settleChecks = false, now = Date.now }) {
+function isMisoComment(comment) {
+    return comment.user?.login === BOT_LOGIN && String(comment.body || '').includes(MARKER);
+}
+
+/**
+ * A pull request run and a staging sweep can look at the same pull request at
+ * once, so both may post. The oldest comment wins: a later one removes itself
+ * and moves its text into the oldest.
+ */
+async function postComment({ github, core, owner, repo, number, body }) {
+    const created = (await github.rest.issues.createComment({ owner, repo, issue_number: number, body })).data;
+    const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
+    const oldest = comments.filter(isMisoComment).sort((a, b) => Number(a.id) - Number(b.id))[0];
+    if (!created?.id || !oldest || oldest.id === created.id) {
+        core.info(`#${number}: posted a new comment.`);
+        return;
+    }
+    await github.rest.issues.deleteComment({ owner, repo, comment_id: created.id });
+    if (oldest.body !== body) {
+        await github.rest.issues.updateComment({ owner, repo, comment_id: oldest.id, body });
+    }
+    core.info(`#${number}: another run posted first, so comment ${oldest.id} was kept.`);
+}
+
+/**
+ * Pull request and review events only look at their own pull request and wait
+ * for its checks. Staging pushes and manual runs sweep every open pull request
+ * without waiting, because a merge can only change conflicts, which are known at once.
+ */
+function optionsForEvent(context) {
+    const number = Number(context.payload?.pull_request?.number);
+    if (Number.isInteger(number) && number > 0) {
+        return { pullNumber: number, settleChecks: true };
+    }
+    return { pullNumber: null, settleChecks: false };
+}
+
+async function run({ github, context, core, random = Math.random, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), settleChecks = false, pullNumber = null, now = Date.now }) {
     const { owner, repo } = context.repo;
     const deadline = now() + CHECK_WAIT_MINUTES * 60000;
-    const pulls = await github.paginate(github.rest.pulls.list, { owner, repo, state: 'open', per_page: 100 });
+    const pulls = pullNumber
+        ? [{ number: pullNumber }]
+        : await github.paginate(github.rest.pulls.list, { owner, repo, state: 'open', per_page: 100 });
     const results = {};
     for (const pull of pulls) {
         try {
@@ -383,6 +421,7 @@ module.exports = {
     CHARACTERS,
     MARKER,
     evaluatePullRequest,
+    optionsForEvent,
     parseMarker,
     pickPicture,
     planComment,

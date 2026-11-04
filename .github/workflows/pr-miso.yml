@@ -20,9 +20,11 @@ permissions:
   pull-requests: write
   statuses: read
 
-# Every run checks all open pull requests, so a newer event replaces a stale wait
+# Each pull request gets its own queue, so a newer event on the same pull request
+# replaces its stale wait, but activity on one pull request never cancels the
+# check on another. Staging pushes and manual runs share one queue of their own.
 concurrency:
-  group: miso-merge-check
+  group: miso-merge-check-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -52,9 +54,12 @@ jobs:
         with:
           script: |
             const miso = require(`${process.env.GITHUB_WORKSPACE}/.github/miso/merge-bot.cjs`);
-            // Wait for checks here because GitHub only wakes workflow_run on
-            // the default branch, which this bot does not reach until a release
-            const results = await miso.run({ github, context, core, settleChecks: true });
+            // Pull request runs wait for their own checks here because GitHub
+            // only wakes workflow_run on the default branch, which this bot does
+            // not reach until a release. Staging sweeps never wait. The bot comes
+            // from the base branch, which can predate optionsForEvent.
+            const options = miso.optionsForEvent?.(context) ?? { settleChecks: true };
+            const results = await miso.run({ github, context, core, ...options });
             core.summary.addHeading('Miso merge check').addTable([
               [{ data: 'Pull request', header: true }, { data: 'State', header: true }],
               ...Object.entries(results).map(([number, state]) => [`#${number}`, state]),

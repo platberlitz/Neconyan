@@ -17,34 +17,46 @@ function check(name, conclusion = 'success', overrides = {}) {
     return { id: 1, name, status: 'completed', conclusion, ...overrides };
 }
 
-function fakeGitHub({ pull, checkRuns = [], checkRunsQueue, statuses = [], reviews = [], comments = [], onGet }) {
-    const calls = { created: [], updated: [], checks: 0, gets: 0 };
+function fakeGitHub({ pull, pulls = [pull], checkRuns = [], checkRunsQueue, statuses = [], reviews = [], comments = [], commentsQueue, createdId = 100, onGet }) {
+    const calls = { created: [], updated: [], deleted: [], checks: 0, gets: 0, lists: 0, gotNumbers: [] };
     const rest = {
         pulls: {
             list: () => {},
-            get: async () => { calls.gets += 1; onGet?.(); return { data: pull }; },
+            get: async ({ pull_number }) => {
+                calls.gets += 1;
+                calls.gotNumbers.push(pull_number);
+                onGet?.();
+                return { data: pulls.find(item => item.number === pull_number) || pull };
+            },
             listReviews: () => {},
         },
         checks: { listForRef: () => {} },
         repos: { getCombinedStatusForRef: async () => ({ data: { statuses } }) },
         issues: {
             listComments: () => {},
-            createComment: async args => { calls.created.push(args); },
+            createComment: async args => { calls.created.push(args); return { data: { id: createdId } }; },
             updateComment: async args => { calls.updated.push(args); },
+            deleteComment: async args => { calls.deleted.push(args); },
         },
     };
     const pages = new Map([
-        [rest.pulls.list, [pull]],
+        [rest.pulls.list, pulls],
         [rest.pulls.listReviews, reviews],
         [rest.checks.listForRef, checkRuns],
         [rest.issues.listComments, comments],
     ]);
     const paginate = async method => {
+        if (method === rest.pulls.list) {
+            calls.lists += 1;
+        }
         if (method === rest.checks.listForRef) {
             calls.checks += 1;
             if (checkRunsQueue) {
                 return checkRunsQueue.length > 1 ? checkRunsQueue.shift() : checkRunsQueue[0];
             }
+        }
+        if (method === rest.issues.listComments && commentsQueue) {
+            return commentsQueue.length > 1 ? commentsQueue.shift() : commentsQueue[0];
         }
         return pages.get(method);
     };
@@ -314,6 +326,68 @@ test('the workflow job name matches the check Miso ignores', () => {
     assert.match(workflow, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
     assert.match(workflow, /ref: \$\{\{ github\.event\.pull_request\.base\.ref \|\| github\.ref \}\}/);
     assert.match(workflow, /timeout-minutes: 20/);
-    assert.match(workflow, /cancel-in-progress: true/);
-    assert.match(workflow, /settleChecks: true/);
+    assert.match(workflow, /miso\.optionsForEvent\?\.\(context\) \?\? \{ settleChecks: true \}/);
+    assert.match(workflow, /miso\.run\(\{ github, context, core, \.\.\.options \}\)/);
+});
+
+test('each pull request has its own concurrency queue', () => {
+    const workflow = fs.readFileSync(new URL('../.github/workflows/pr-miso.yml', import.meta.url), 'utf8');
+    const concurrency = workflow.match(/^concurrency:\n((?:\s{2}.*\n)+)/m)?.[1] || '';
+    assert.match(concurrency, /^\s{2}group: miso-merge-check-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}$/m);
+    assert.match(concurrency, /^\s{2}cancel-in-progress: true$/m);
+    assert.doesNotMatch(workflow, /group: miso-merge-check\s*$/m, 'one shared group lets any pull request cancel the others');
+});
+
+test('pull request events check one pull request and staging pushes sweep without waiting', () => {
+    assert.deepEqual(miso.optionsForEvent({ payload: { pull_request: { number: 434 } } }), { pullNumber: 434, settleChecks: true });
+    assert.deepEqual(miso.optionsForEvent({ payload: { review: {}, pull_request: { number: 433 } } }), { pullNumber: 433, settleChecks: true });
+    assert.deepEqual(miso.optionsForEvent({ payload: { ref: 'refs/heads/staging' } }), { pullNumber: null, settleChecks: false });
+    assert.deepEqual(miso.optionsForEvent({ payload: {} }), { pullNumber: null, settleChecks: false });
+});
+
+test('a pull request run never waits on another pull request', async () => {
+    const clock = fakeClock();
+    const ready = pr({ number: 434 });
+    const busy = pr({ number: 433, head: { sha: 'busy' } });
+    const fake = fakeGitHub({ pull: ready, pulls: [busy, ready], checkRuns: [check('lint')] });
+    const results = await miso.run({ ...fake, context, core, ...miso.optionsForEvent({ payload: { pull_request: { number: 434 } } }), sleep: clock.sleep, now: clock.now, random: () => 0 });
+    assert.deepEqual(results, { 434: 'ready' });
+    assert.equal(fake.calls.lists, 0, 'the open pull request list is not read');
+    assert.deepEqual([...new Set(fake.calls.gotNumbers)], [434]);
+    assert.equal(fake.calls.created.length, 1);
+    assert.equal(fake.calls.created[0].issue_number, 434);
+    assert.equal(clock.time, 0);
+});
+
+test('a staging sweep reports every pull request without waiting for running checks', async () => {
+    const clock = fakeClock();
+    const fake = fakeGitHub({
+        pull: pr(),
+        pulls: [pr({ number: 7 }), pr({ number: 8, mergeable: false })],
+        checkRuns: [check('lint'), check('tests', null, { status: 'in_progress' })],
+    });
+    const results = await miso.run({ ...fake, context, core, ...miso.optionsForEvent({ payload: { ref: 'refs/heads/staging' } }), sleep: clock.sleep, now: clock.now, random: () => 0 });
+    assert.deepEqual(results, { 7: 'pending', 8: 'blocked' });
+    assert.deepEqual(clock.naps, []);
+    assert.equal(fake.calls.created.length, 1);
+    assert.equal(fake.calls.created[0].issue_number, 8);
+});
+
+test('when two runs post at once the oldest comment is kept', async () => {
+    const earlier = { id: 50, user: { login: 'github-actions[bot]' }, body: miso.planComment({ evaluation: { state: 'ready', reasons: [] }, sha: SHA, random: () => 0.5 }) };
+    const fake = fakeGitHub({
+        pull: pr(),
+        checkRuns: [check('lint')],
+        createdId: 60,
+        commentsQueue: [[], [earlier, { id: 60, user: { login: 'github-actions[bot]' }, body: 'ours' }]],
+    });
+    assert.deepEqual(await miso.run({ ...fake, context, core, sleep, random: () => 0 }), { 7: 'ready' });
+    assert.deepEqual(fake.calls.deleted.map(call => call.comment_id), [60]);
+    assert.equal(fake.calls.updated.length, 1);
+    assert.equal(fake.calls.updated[0].comment_id, 50);
+    assert.equal(fake.calls.updated[0].body, fake.calls.created[0].body);
+
+    const alone = fakeGitHub({ pull: pr(), checkRuns: [check('lint')], createdId: 60, commentsQueue: [[], [{ id: 60, user: { login: 'github-actions[bot]' }, body: 'ours' }]] });
+    await miso.run({ ...alone, context, core, sleep, random: () => 0 });
+    assert.equal(alone.calls.deleted.length + alone.calls.updated.length, 0);
 });
