@@ -523,7 +523,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261104-starlight-calm';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261104-character-purrks';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -20270,13 +20270,21 @@ function buildBottomChatBar() {
             .then(module => module.toggleScratchpad())
             .catch(() => toastr.error(t`Scratchpad could not open. Try reloading the page.`));
     });
+    const purrksBtn = createBottomChatButton({ icon: 'fa-paw', title: 'Character Purrks', className: 'sb-bottom-chat-purrks' }, () => {
+        void import('./purrks/index.js')
+            .then(module => module.toggleChatPurrksPopover(purrksBtn))
+            .catch(() => toastr.error(t`Character Purrks could not open. Try reloading the page.`));
+    });
+    purrksBtn.id = 'sb-bottom-chat-purrks-btn';
+    purrksBtn.setAttribute('aria-haspopup', 'dialog');
+    purrksBtn.setAttribute('aria-expanded', 'false');
     const hideBtn = createBottomChatButton({ icon: 'fa-eye-slash', title: 'Hide bottom chat bar' }, () => {
         setBottomChatBarVisible(false);
     });
     const deleteBtn = createBottomChatButton({ icon: 'fa-trash', title: 'Delete chat' }, () => { void handleDeleteChat(); });
 
     navCluster.append(topBtn, bottomBtn);
-    managementCluster.append(regenerateBtn, scratchpadBtn, chatManagerBtn, newBtn, massDeleteBtn, autoNameBtn, renameBtn, searchToggleBtn, hideBtn, deleteBtn);
+    managementCluster.append(regenerateBtn, scratchpadBtn, purrksBtn, chatManagerBtn, newBtn, massDeleteBtn, autoNameBtn, renameBtn, searchToggleBtn, hideBtn, deleteBtn);
     secondaryRow.append(managementCluster);
     container.append(personaBubble, reasoningButton, chatSelect, chatPickerButton, search.field, navCluster, collapseToggleBtn, secondaryRow);
 

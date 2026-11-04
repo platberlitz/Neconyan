@@ -22,6 +22,7 @@ import {
     uuidv4,
 } from './utils.js';
 import { ensureMewmoryMessageIds } from './mewmory/message-identity.js';
+import { evaluateCharacterPurrks } from './purrks/model.js';
 import { RA_CountCharTokens, humanizedDateTime, dragElement, favsToHotswap, getMessageTimeStamp } from './RossAscends-mods.js';
 import { power_user, loadMovingUIState, sortEntitiesList } from './power-user.js';
 import { getCurrentUserHandle } from './user.js';
@@ -1474,12 +1475,23 @@ export function getGroupDepthPrompts(groupId, characterId) {
             continue;
         }
 
-        const depthPromptText = baseChatReplace(character.data?.extensions?.depth_prompt?.prompt?.trim(), null, character.name) || '';
+        const memberPurrks = typeof evaluateCharacterPurrks === 'function'
+            ? evaluateCharacterPurrks(character, {
+                chatMetadata: chat_metadata,
+                messages: Array.isArray(chat) ? chat.filter(m => !m?.is_system) : [],
+                characterKey: character.avatar || member,
+            })
+            : null;
+        const baseDepthText = character.data?.extensions?.depth_prompt?.prompt?.trim() || '';
+        const depthPromptText = baseChatReplace(baseDepthText, null, character.name) || '';
         const depthPromptDepth = character.data?.extensions?.depth_prompt?.depth ?? depth_prompt_depth_default;
         const depthPromptRole = character.data?.extensions?.depth_prompt?.role ?? depth_prompt_role_default;
 
         if (depthPromptText) {
             depthPrompts.push({ text: depthPromptText, depth: depthPromptDepth, role: depthPromptRole });
+        }
+        for (const purrk of memberPurrks?.placements.depth ?? []) {
+            depthPrompts.push({ text: baseChatReplace(purrk.prompt, null, character.name), depth: purrk.depth, role: purrk.roleNumber });
         }
     }
 
@@ -1582,7 +1594,16 @@ export function getGroupCharacterCardsLazy(groupId, characterId) {
     const mesExamplesOverride = String(chat_metadata.mes_example || '');
 
     return createLazyFields({
-        description: () => collectField('Description', c => c.description),
+        description: () => collectField('Description', c => {
+            const memberPurrks = typeof evaluateCharacterPurrks === 'function'
+                ? evaluateCharacterPurrks(c, {
+                    chatMetadata: chat_metadata,
+                    messages: Array.isArray(chat) ? chat.filter(m => !m?.is_system) : [],
+                    characterKey: c.avatar || '',
+                })
+                : null;
+            return [c.description?.trim() || '', ...(memberPurrks?.placements.description ?? [])].filter(Boolean).join('\n\n');
+        }),
         personality: () => collectField('Personality', c => c.personality),
         scenario: () => baseChatReplace(scenarioOverride?.trim()) || collectField('Scenario', c => c.scenario),
         mesExamples: () => baseChatReplace(mesExamplesOverride?.trim()) ||

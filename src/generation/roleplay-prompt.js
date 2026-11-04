@@ -69,9 +69,16 @@ export function prepareRoleplayHistoryContent(records, snapshot, environment, ag
         global.characterPersonality = collect('personality', 'Personality');
         if (!snapshot.metadata.scenario?.trim()) global.scenario = collect('scenario', 'Scenario');
         if (!snapshot.metadata.mes_example?.trim()) characterExamples = collect('mes_example', 'Example Messages');
-        depthPrompts = group.members.filter(member => member.selected || !member.disabled).map(member => ({
-            prompt: memberSubstitute(String(member.depth.prompt ?? '').trim(), member),
-            depth: member.depth.depth ?? 4, role: member.depth.role ?? 'system',
+        depthPrompts = group.members.filter(member => member.selected || !member.disabled).flatMap(member =>
+            [member.depth, ...(member.purrkDepths ?? [])].map(item => ({
+                prompt: memberSubstitute(String(item.prompt ?? '').trim(), member),
+                depth: item.depth ?? 4, role: item.role ?? 'system',
+            }))).filter(prompt => prompt.prompt);
+    } else if (Array.isArray(snapshot.depthPrompts) && snapshot.depthPrompts.length > 0) {
+        depthPrompts = snapshot.depthPrompts.map(item => ({
+            prompt: substitute(String(item.prompt ?? '').trim()).replace(/\r/g, ''),
+            depth: item.depth ?? 4,
+            role: item.role ?? 'system',
         })).filter(prompt => prompt.prompt);
     }
     environment.character = { ...environment.character };

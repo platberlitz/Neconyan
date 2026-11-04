@@ -114,6 +114,8 @@ import {
 } from './scripts/group-chats.js';
 import { filterGroupPromptMessages } from './scripts/group-chat-visibility.js';
 import { rememberGroupSpeaker, restoreGroupSpeaker } from './scripts/group-chat-speakers.js';
+import { evaluateCharacterPurrks } from './scripts/purrks/model.js';
+import { initCharacterPurrks, renderCharacterEditorPurrks } from './scripts/purrks/index.js';
 
 import {
     collapseNewlines,
@@ -7646,22 +7648,45 @@ export function getCharacterCardFieldsLazy({ chid = undefined } = {}) {
     const useGroupCards = selected_group && character;
     const groupCardsLazy = useGroupCards ? getGroupCharacterCardsLazy(selected_group, Number(currentChid)) : null;
 
+    let cachedPurrksEvaluation = null;
+    const getPurrks = () => {
+        if (!character || typeof evaluateCharacterPurrks !== 'function') return null;
+        if (!cachedPurrksEvaluation) {
+            cachedPurrksEvaluation = evaluateCharacterPurrks(character, {
+                chatMetadata: chat_metadata,
+                messages: Array.isArray(chat) ? chat.filter(m => !m?.is_system) : [],
+                characterKey: character.avatar || '',
+            });
+        }
+        return cachedPurrksEvaluation;
+    };
+
     /** @type {Record<string, () => string|string[]>} */
     const resolvers = {
         persona: () => baseChatReplace(power_user.persona_description?.trim()),
         system: () => {
             if (!character) return '';
-            const systemPrompt = chat_metadata.system_prompt || character.data?.system_prompt || '';
-            return power_user.prefer_character_prompt ? baseChatReplace(systemPrompt.trim()) : '';
+            const purrks = getPurrks();
+            const baseSystem = chat_metadata.system_prompt || character.data?.system_prompt || '';
+            const combined = [baseSystem.trim(), ...(purrks?.placements.system ?? [])].filter(Boolean).join('\n\n');
+            return power_user.prefer_character_prompt ? baseChatReplace(combined) : '';
         },
         jailbreak: () => {
             if (!character) return '';
-            return power_user.prefer_character_jailbreak ? baseChatReplace(character.data?.post_history_instructions?.trim()) : '';
+            const purrks = getPurrks();
+            const baseJailbreak = character.data?.post_history_instructions || '';
+            const combined = [baseJailbreak.trim(), ...(purrks?.placements.post_history ?? [])].filter(Boolean).join('\n\n');
+            return power_user.prefer_character_jailbreak ? baseChatReplace(combined) : '';
         },
         version: () => character?.data?.character_version ?? '',
         charDepthPrompt: () => {
             if (!character) return '';
-            return baseChatReplace(character.data?.extensions?.depth_prompt?.prompt?.trim());
+            const purrks = getPurrks();
+            const baseDepth = character.data?.extensions?.depth_prompt?.prompt || '';
+            const combined = [baseDepth.trim(), ...(purrks?.placements.depth.map(item => item.prompt) ?? [])]
+                .filter(Boolean)
+                .join('\n\n');
+            return baseChatReplace(combined);
         },
         creatorNotes: () => {
             if (!character) return '';
@@ -7671,7 +7696,10 @@ export function getCharacterCardFieldsLazy({ chid = undefined } = {}) {
         description: () => {
             if (groupCardsLazy) return groupCardsLazy.description;
             if (!character) return '';
-            return baseChatReplace(character.description?.trim());
+            const purrks = getPurrks();
+            const baseDesc = character.description || '';
+            const combined = [baseDesc.trim(), ...(purrks?.placements.description ?? [])].filter(Boolean).join('\n\n');
+            return baseChatReplace(combined);
         },
         personality: () => {
             if (groupCardsLazy) return groupCardsLazy.personality;
@@ -9463,10 +9491,31 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                 setExtensionPrompt(inject_ids.DEPTH_PROMPT_INDEX(index), value.text, extension_prompt_types.IN_CHAT, value.depth, extension_settings.note.allowWIScan, role);
             });
         } else {
-            const depthPromptText = charDepthPrompt || '';
-            const depthPromptDepth = characters[this_chid]?.data?.extensions?.depth_prompt?.depth ?? depth_prompt_depth_default;
-            const depthPromptRole = getExtensionPromptRoleByName(characters[this_chid]?.data?.extensions?.depth_prompt?.role ?? depth_prompt_role_default);
-            setExtensionPrompt(inject_ids.DEPTH_PROMPT, depthPromptText, extension_prompt_types.IN_CHAT, depthPromptDepth, extension_settings.note.allowWIScan, depthPromptRole);
+            const activeCharacter = characters[this_chid];
+            const purrksEval = activeCharacter && typeof evaluateCharacterPurrks === 'function'
+                ? evaluateCharacterPurrks(activeCharacter, {
+                    chatMetadata: chat_metadata,
+                    messages: Array.isArray(chat) ? chat.filter(m => !m?.is_system) : [],
+                    characterKey: activeCharacter.avatar || '',
+                })
+                : null;
+            const purrkDepthEntries = purrksEval?.placements.depth ?? [];
+            if (purrkDepthEntries.length > 0) {
+                const baseDepthText = baseChatReplace(activeCharacter?.data?.extensions?.depth_prompt?.prompt?.trim() || '');
+                const baseDepthDepth = activeCharacter?.data?.extensions?.depth_prompt?.depth ?? depth_prompt_depth_default;
+                const baseDepthRole = getExtensionPromptRoleByName(activeCharacter?.data?.extensions?.depth_prompt?.role ?? depth_prompt_role_default);
+                setExtensionPrompt(inject_ids.DEPTH_PROMPT, baseDepthText, extension_prompt_types.IN_CHAT, baseDepthDepth, extension_settings.note.allowWIScan, baseDepthRole);
+                purrkDepthEntries.forEach((entry, index) => {
+                    const entryText = baseChatReplace(entry.prompt?.trim() || '');
+                    const entryRole = getExtensionPromptRoleByName(entry.role ?? depth_prompt_role_default);
+                    setExtensionPrompt(inject_ids.DEPTH_PROMPT_INDEX(index), entryText, extension_prompt_types.IN_CHAT, entry.depth ?? depth_prompt_depth_default, extension_settings.note.allowWIScan, entryRole);
+                });
+            } else {
+                const depthPromptText = charDepthPrompt || '';
+                const depthPromptDepth = activeCharacter?.data?.extensions?.depth_prompt?.depth ?? depth_prompt_depth_default;
+                const depthPromptRole = getExtensionPromptRoleByName(activeCharacter?.data?.extensions?.depth_prompt?.role ?? depth_prompt_role_default);
+                setExtensionPrompt(inject_ids.DEPTH_PROMPT, depthPromptText, extension_prompt_types.IN_CHAT, depthPromptDepth, extension_settings.note.allowWIScan, depthPromptRole);
+            }
         }
 
         // First message in fresh 1-on-1 chat reacts to user/character settings changes
@@ -17554,6 +17603,7 @@ function select_rm_create({ switchMenu = true, resetForm = true } = {}) {
     $('#form_create').attr('actiontype', 'createcharacter');
     $('.form_create_bottom_buttons_block .chat_lorebook_button').hide();
     $('#character_open_media_overrides').hide();
+    renderCharacterEditorPurrks();
     setCharacterSaveStatus('draft');
 }
 
@@ -19468,6 +19518,10 @@ async function importCharacter(file, { preserveFileName = '', importTags = false
     formData.append('avatar', file);
     formData.append('file_type', format);
     formData.append('user_name', name1);
+    const autoPurrksCheckbox = document.getElementById('sb_character_import_auto_purrks');
+    if (autoPurrksCheckbox instanceof HTMLInputElement) {
+        formData.append('auto_purrks', String(autoPurrksCheckbox.checked));
+    }
     if (preserveFileName) formData.append('preserved_name', preserveFileName);
 
     try {
@@ -21580,6 +21634,8 @@ jQuery(async function () {
             '#sbpl-page',
             '#neconyan-chat-route',
             '#neconyan-chat-link-settings',
+            '#neconyan-purrks-popover',
+            '#sb-bottom-chat-purrks-btn',
             // Companion windows float beside every drawer and must not close them on press.
             '.ica--cwin',
             '#floatingPrompt',
@@ -22087,6 +22143,7 @@ jQuery(async function () {
 
     // Added here to prevent execution before script.js is loaded and get rid of quirky timeouts
     await firstLoadInit();
+    initCharacterPurrks();
 
     window.addEventListener('beforeunload', (e) => {
         if (isChatSaving || hasPendingChatSave() || this_edit_mes_id >= 0) {

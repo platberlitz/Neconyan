@@ -38,6 +38,7 @@ import { forgetSharedScratchpadsLocked, moveSharedScratchpadsLocked } from '../s
 import { assertScratchpadAvatarWriteLocked } from '../scratchpad/images.js';
 import { scratchpadAccountBase, withScratchpad } from '../scratchpad/store.js';
 import { createFileSummaryCache, createLimiter, fileStatIdentity, sameFileStatIdentity } from '../file-summary-cache.js';
+import { applyImportedCharacterPurrks } from '../purrks.js';
 import { decodeServerImage } from '../media-codecs.js';
 import { createEntityDateAdded, ensureEntityDateAdded, prepareEntityDateAddedMove, reconcileEntityDateAdded, removeEntityDateAdded, ENTITY_DATE_ADDED_FILE } from '../entity-date-added.js';
 import { getEntityLastChat, prepareEntityLastChatMove, readEntityLastChats, removeEntityLastChat, setEntityLastChat, ENTITY_LAST_CHAT_FILE } from '../entity-last-chat.js';
@@ -1579,6 +1580,17 @@ function convertWorldInfoToCharacterBook(name, entries, extensions = {}) {
 }
 
 /**
+ * Heuristic Purrks extraction runs only when the import dialog asks for it, so bundled
+ * assistant installs and extension imports keep their cards unchanged.
+ * @param {import('express').Request} request
+ * @returns {boolean}
+ */
+function shouldAutoExtractImportedPurrks(request) {
+    const raw = String(request?.body?.auto_purrks ?? '').trim().toLowerCase();
+    return raw === 'true' || raw === '1';
+}
+
+/**
  * Import a character from a YAML file.
  * @param {string} uploadPath Path to the uploaded file
  * @param {{ request: import('express').Request, response: import('express').Response }} context Express request and response objects
@@ -1607,6 +1619,7 @@ async function importFromYaml(uploadPath, context, preservedFileName) {
         'creator': '',
         'tags': '',
     }, context.request.user.directories);
+    applyImportedCharacterPurrks(char, { autoExtract: shouldAutoExtractImportedPurrks(context.request) });
     const result = await writeCharacterData(DEFAULT_AVATAR_PATH, JSON.stringify(char), fileName, context.request);
     return result ? fileName : '';
 }
@@ -1633,6 +1646,7 @@ async function importFromCharX(uploadPath, { request }, preservedFileName) {
     unsetPrivateFields(processedCard);
     processedCard.create_date = new Date().toISOString();
     processedCard.name = sanitize(processedCard.name);
+    applyImportedCharacterPurrks(processedCard, { autoExtract: shouldAutoExtractImportedPurrks(request) });
 
     const fileName = preservedFileName || getPngName(processedCard.name, request.user.directories, request);
     // Use the actual character name for asset folders, not the unique filename
@@ -1669,6 +1683,7 @@ async function importFromByaf(uploadPath, { request }, preservedFileName) {
 
     const byafData = await new ByafParser(data).parse();
     const card = readFromV2(byafData.card);
+    applyImportedCharacterPurrks(card, { autoExtract: shouldAutoExtractImportedPurrks(request) });
     const sanitizedNameCandidate = sanitize(byafData.character.displayName || card.name, { replacement: sanitizeSafeCharacterReplacements }) || 'character';
     const fileName = preservedFileName || getPngName(sanitizedNameCandidate, request.user.directories, request);
 
@@ -1783,6 +1798,7 @@ async function importFromJson(uploadPath, { request }, preservedFileName) {
         unsetPrivateFields(jsonData);
         jsonData = readFromV2(jsonData);
         jsonData.create_date = new Date().toISOString();
+        applyImportedCharacterPurrks(jsonData, { autoExtract: shouldAutoExtractImportedPurrks(request) });
         const pngName = preservedFileName || getPngName(jsonData.data?.name || jsonData.name, request.user.directories, request);
         const char = JSON.stringify(jsonData);
         const result = await writeCharacterData(DEFAULT_AVATAR_PATH, char, pngName, request);
@@ -1810,6 +1826,7 @@ async function importFromJson(uploadPath, { request }, preservedFileName) {
             'tags': jsonData.tags ?? '',
         };
         char = convertToV2(char, request.user.directories);
+        applyImportedCharacterPurrks(char, { autoExtract: shouldAutoExtractImportedPurrks(request) });
         let charJSON = JSON.stringify(char);
         const result = await writeCharacterData(DEFAULT_AVATAR_PATH, charJSON, pngName, request);
         return result ? pngName : '';
@@ -1837,6 +1854,7 @@ async function importFromJson(uploadPath, { request }, preservedFileName) {
             'tags': jsonData.tags ?? '',
         };
         char = convertToV2(char, request.user.directories);
+        applyImportedCharacterPurrks(char, { autoExtract: shouldAutoExtractImportedPurrks(request) });
         const charJSON = JSON.stringify(char);
         const result = await writeCharacterData(DEFAULT_AVATAR_PATH, charJSON, pngName, request);
         return result ? pngName : '';
@@ -1867,6 +1885,7 @@ async function importFromPng(uploadPath, { request }, preservedFileName) {
         unsetPrivateFields(jsonData);
         jsonData = readFromV2(jsonData);
         jsonData.create_date = new Date().toISOString();
+        applyImportedCharacterPurrks(jsonData, { autoExtract: shouldAutoExtractImportedPurrks(request) });
         const char = JSON.stringify(jsonData);
         const result = await writeCharacterData(uploadPath, char, pngName, request);
         fs.unlinkSync(uploadPath);
@@ -1894,6 +1913,7 @@ async function importFromPng(uploadPath, { request }, preservedFileName) {
             'tags': jsonData.tags ?? '',
         };
         char = convertToV2(char, request.user.directories);
+        applyImportedCharacterPurrks(char, { autoExtract: shouldAutoExtractImportedPurrks(request) });
         const charJSON = JSON.stringify(char);
         const result = await writeCharacterData(uploadPath, charJSON, pngName, request);
         fs.unlinkSync(uploadPath);
