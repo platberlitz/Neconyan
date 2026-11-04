@@ -211,10 +211,12 @@ export function applyChatProviderParameters(data, settings, {
     });
     const declaredOpenRouterReasoning = data.chat_completion_source === 'openrouter'
         && (reasoningCapabilities.state === 'effort-list' || reasoningCapabilities.forbiddenEfforts.length > 0);
+    // NanoGPT's catalogue declares efforts per exact model, like OpenRouter's; keep that choice for the final server guard.
+    const declaredNanoGptReasoning = data.chat_completion_source === 'nanogpt' && reasoningCapabilities.state === 'effort-list';
     // Missing browser version evidence is not a route claim; retain intent for the authoritative server guard.
     const pendingMakerRoute = data.chat_completion_source === 'makersuite' && !reasoningRoute.reverseProxy
         && reasoningRoute.googleApiVersion == null;
-    applyClaudeModelParameterConstraints(data, { preserveReasoning: ['claude', 'linkapi'].includes(source) || declaredOpenRouterReasoning || reasoningCapabilities.nativeFallback || pendingMakerRoute });
+    applyClaudeModelParameterConstraints(data, { preserveReasoning: ['claude', 'linkapi'].includes(source) || declaredOpenRouterReasoning || reasoningCapabilities.nativeFallback || pendingMakerRoute || declaredNanoGptReasoning });
     if (['custom', 'moonshot', 'nanogpt', 'openrouter'].includes(source) && isKimiK3Model(model)) applyKimiK3ModelParameterConstraints(data);
     if (samplerMetadata) data.model_sampler_metadata = structuredClone(samplerMetadata);
     filterChatCompletionSamplingParameters(data, { source, model, metadata: samplerMetadata, stripMetadata: false });
