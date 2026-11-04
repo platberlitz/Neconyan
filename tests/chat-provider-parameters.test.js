@@ -284,3 +284,100 @@ test.each(['https://b.invalid', ''])('validates the reverse proxy that the reque
     expect(validate).toHaveBeenCalledTimes(1);
     expect(validate.mock.calls[0][0]).toBe(data.reverse_proxy);
 });
+
+describe('stopping strings and the assistant prefill come from the moment the request starts', () => {
+    const bias = { bias_preset_selected: 's', bias_presets: { s: [{ text: 'a', value: 1 }] } };
+    function liveContext(holdAt, overrides = {}) {
+        const live = { stops: ['early'], prefill: 'early' };
+        let release;
+        let enter;
+        const gate = new Promise(resolve => { release = resolve; });
+        const entered = new Promise(resolve => { enter = resolve; });
+        const hold = async () => { enter(); await gate; };
+        const holds = {
+            bias: { getLogitBias: async () => { await hold(); return { 1: 1 }; } },
+            service: { getServiceTier: async () => { await hold(); return undefined; } },
+            proxy: { reverseProxySources: ['claude'], validateReverseProxy: hold },
+            tools: { canPerformToolCalls: () => true, registerTools: hold },
+        };
+        return {
+            live, entered, release,
+            context: {
+                ...context,
+                getStoppingStrings: limit => (limit > 0 ? live.stops.slice(0, limit) : [...live.stops]),
+                getAssistantPrefill: () => live.prefill,
+                ...holds[holdAt],
+                ...overrides,
+            },
+        };
+    }
+    async function buildDuringChange(settings, model, type, holdAt) {
+        const { live, entered, release, context: requestContext } = liveContext(holdAt);
+        const pending = createChatGenerationParameters(settings, model, type, [{ role: 'user', content: 'Hello' }], requestContext);
+        await entered;
+        live.stops = ['later'];
+        live.prefill = 'later';
+        release();
+        return (await pending).generate_data;
+    }
+
+    test.each([
+        ['openai', 'a held bias lookup', { chat_completion_source: 'openai', ...bias }, 'gpt-4o', 'bias'],
+        ['nanogpt', 'a held service tier lookup', { chat_completion_source: 'nanogpt' }, 'gpt-4o', 'service'],
+        ['claude', 'a held proxy confirmation', { chat_completion_source: 'claude', reverse_proxy: 'https://a.invalid' }, 'claude-sonnet-4-5', 'proxy'],
+        ['makersuite', 'a held tool registration', { chat_completion_source: 'makersuite' }, 'gemini-2.5-pro', 'tools'],
+    ])('%s sends the stopping strings from before %s', async (_source, _wait, extra, model, holdAt) => {
+        const data = await buildDuringChange({ ...baseSettings, ...extra }, model, 'normal', holdAt);
+        expect(data.stop).toEqual(['early']);
+    });
+
+    test.each([
+        ['claude', 'a held proxy confirmation', { chat_completion_source: 'claude', reverse_proxy: 'https://a.invalid' }, 'claude-sonnet-4-5', 'proxy'],
+        ['linkapi (Anthropic format)', 'a held tool registration', { chat_completion_source: 'linkapi' }, 'claude-sonnet-4-5', 'tools'],
+    ])('%s sends the assistant prefill from before %s', async (_source, _wait, extra, model, holdAt) => {
+        const data = await buildDuringChange({ ...baseSettings, ...extra }, model, 'normal', holdAt);
+        expect(data.assistant_prefill).toBe('early');
+    });
+
+    test('reads the stopping strings once per request', async () => {
+        const getStoppingStrings = jest.fn(() => ['a']);
+        await createChatGenerationParameters({ ...baseSettings, chat_completion_source: 'claude' }, 'claude-sonnet-4-5', 'normal',
+            [{ role: 'user', content: 'Hello' }], { ...context, getStoppingStrings });
+        expect(getStoppingStrings).toHaveBeenCalledTimes(1);
+        expect(getStoppingStrings.mock.calls[0][0]).toBeUndefined();
+    });
+
+    test.each([
+        ['openai', 'normal', {}, 'gpt-4o'],
+        ['makersuite', 'normal', {}, 'gemini-2.5-pro'],
+        ['linkapi', 'normal', {}, 'gpt-5'],
+        ['claude', 'quiet', {}, 'claude-sonnet-4-5'],
+        ['claude', 'continue', { continue_prefill: true }, 'claude-sonnet-4-5'],
+    ])('does not build an assistant prefill for %s %s requests that send none (%j)', async (source, type, extra, model) => {
+        const getAssistantPrefill = jest.fn(() => 'x');
+        const { generate_data: data } = await createChatGenerationParameters({ ...baseSettings, chat_completion_source: source, ...extra }, model, type,
+            [{ role: 'user', content: 'Hello' }], { ...context, getAssistantPrefill });
+        expect(getAssistantPrefill).not.toHaveBeenCalled();
+        expect(data).not.toHaveProperty('assistant_prefill');
+    });
+
+    test('builds the prefill once for a Claude continue without its own prefill', async () => {
+        const getAssistantPrefill = jest.fn(() => 'x');
+        const { generate_data: data } = await createChatGenerationParameters({ ...baseSettings, chat_completion_source: 'claude', continue_prefill: false },
+            'claude-sonnet-4-5', 'continue', [{ role: 'user', content: 'Hello' }], { ...context, getAssistantPrefill });
+        expect(getAssistantPrefill).toHaveBeenCalledTimes(1);
+        expect(data.assistant_prefill).toBe('x');
+    });
+
+    test.each([
+        ['openai', 'gpt-4o', ['a', 'x'.repeat(17), 'c', 'd']],
+        ['claude', 'claude-sonnet-4-5', ['a', 'x'.repeat(17), 'c', 'd', 'e', 'f']],
+        ['makersuite', 'gemini-2.5-pro', ['a', 'c', 'd', 'e']],
+        ['zai', 'glm-4.6', ['a']],
+    ])('applies the %s stop limit to the captured strings', async (source, model, expected) => {
+        const stops = ['a', 'x'.repeat(17), 'c', 'd', 'e', 'f'];
+        const { generate_data: data } = await createChatGenerationParameters({ ...baseSettings, chat_completion_source: source }, model, 'normal',
+            [{ role: 'user', content: 'Hello' }], { ...context, getStoppingStrings: limit => (limit > 0 ? stops.slice(0, limit) : [...stops]) });
+        expect(data.stop).toEqual(expected);
+    });
+});

@@ -13,6 +13,13 @@ function snapshotSettings(settings) {
     return copy;
 }
 
+/** Anthropic-format requests send an assistant prefill, except quiet ones and continues that use their own prefill. */
+function usesAssistantPrefill(settings, model, type) {
+    const source = settings.chat_completion_source;
+    const anthropic = source === 'claude' || (source === 'linkapi' && getLinkApiRequestFormat(model) === 'anthropic');
+    return anthropic && type !== 'quiet' && !(type === 'continue' && settings.continue_prefill);
+}
+
 /** Build a request using explicit operation capabilities, without reading browser state. */
 export async function createChatGenerationParameters(liveSettings, model, type, messages, context, { jsonSchema = null, cacheScope = null } = {}) {
     const settings = snapshotSettings(liveSettings);
@@ -31,6 +38,12 @@ export async function createChatGenerationParameters(liveSettings, model, type, 
     const includeReasoning = context.getIncludeReasoning();
     const verbosity = context.getVerbosity();
     const performToolCalls = !canMultiSwipe && context.canPerformToolCalls();
+    // Stops, group names and the prefill read state outside the settings (power_user, the chat, macros): read them here, before any await.
+    const capturedStops = context.getStoppingStrings();
+    const stops = Array.isArray(capturedStops) ? capturedStops : [];
+    const getStoppingStrings = limit => (limit > 0 ? stops.slice(0, limit) : [...stops]);
+    const groupNames = context.getGroupNames();
+    const assistantPrefill = usesAssistantPrefill(settings, model, type) ? context.getAssistantPrefill() : undefined;
     const serviceTier = source === 'nanogpt' ? await context.getServiceTier() : undefined;
     let bias = {};
     if (settings.bias_preset_selected && ['openai', 'azure_openai', 'openrouter', 'electronhub', 'chutes', 'custom'].includes(source)
@@ -40,8 +53,8 @@ export async function createChatGenerationParameters(liveSettings, model, type, 
         temperature: Number(settings.temp_openai), frequency_penalty: Number(settings.freq_pen_openai),
         presence_penalty: Number(settings.pres_pen_openai), top_p: Number(settings.top_p_openai), typical_p: Number(settings.typical_p_openai),
         max_tokens: settings.openai_max_tokens, stream, logit_bias: Object.keys(bias).length ? bias : undefined,
-        stop: context.getStoppingStrings(4), chat_completion_source: source, n: canMultiSwipe ? settings.n : undefined,
-        user_name: context.userName, char_name: context.characterName, group_names: context.getGroupNames(),
+        stop: getStoppingStrings(4), chat_completion_source: source, n: canMultiSwipe ? settings.n : undefined,
+        user_name: context.userName, char_name: context.characterName, group_names: groupNames,
         include_reasoning: includeReasoning, reasoning_effort: reasoningEffort,
         enable_web_search: Boolean(settings.enable_web_search), request_images: Boolean(settings.request_images),
         // Absent image settings mean no preference: send '', never the text "undefined".
@@ -70,7 +83,7 @@ export async function createChatGenerationParameters(liveSettings, model, type, 
     }
     if (gpt && /gpt-4.5/.test(model)) delete data.logprobs;
     applyChatProviderParameters(data, settings, {
-        model, type, getStoppingStrings: context.getStoppingStrings, getAssistantPrefill: context.getAssistantPrefill,
+        model, type, getStoppingStrings, getAssistantPrefill: () => assistantPrefill,
         serviceTier,
         samplerMetadata, reasoningRoute,
     });
@@ -90,7 +103,7 @@ export function applyChatProviderParameters(data, settings, {
         data.top_k = topK;
         data.use_sysprompt = settings.use_sysprompt;
         data.stop = getStoppingStrings();
-        if (type !== 'quiet' && !(type === 'continue' && settings.continue_prefill)) data.assistant_prefill = getAssistantPrefill();
+        if (usesAssistantPrefill(settings, model, type)) data.assistant_prefill = getAssistantPrefill();
         data.claude_disable_temperature = Boolean(settings.claude_disable_temperature);
         data.claude_disable_top_p = Boolean(settings.claude_disable_top_p);
     }
