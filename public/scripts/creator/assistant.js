@@ -21,7 +21,7 @@ export function buildCreatorWritingRequest(draft, instruction, fields, { include
     ] };
 }
 
-export async function requestCreatorReply(workspace, draft, messages, { signal, isCurrent = () => true } = {}) {
+export async function requestCreatorReply(workspace, draft, messages, { signal, isCurrent = () => true, recovery } = {}) {
     const controller = new AbortController();
     const requestSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     workspace.requestController = controller;
@@ -29,7 +29,7 @@ export async function requestCreatorReply(workspace, draft, messages, { signal, 
     workspace.host?.querySelector('[data-creator-live-reply]')?.remove();
     workspace.syncRequestControls?.();
     try {
-        const reply = await withCreatorAbort(() => sendCreatorReply(workspace, draft, messages, { signal: requestSignal, isCurrent }), requestSignal);
+        const reply = await withCreatorAbort(() => sendCreatorReply(workspace, draft, messages, { signal: requestSignal, isCurrent, recovery }), requestSignal);
         updateCreatorLiveReply(workspace, { status: 'Reply received. Review the proposal before applying it.' });
         return reply;
     } catch (error) {
@@ -44,7 +44,9 @@ export async function requestCreatorReply(workspace, draft, messages, { signal, 
     }
 }
 
-async function sendCreatorReply(workspace, draft, messages, { signal, isCurrent }) {
+async function sendCreatorReply(workspace, draft, messages, { signal, isCurrent, recovery }) {
+    const { creatorUsesServer, requestCreatorServer } = await import('./server-generation.js');
+    if (await creatorUsesServer()) return (await requestCreatorServer(workspace, draft, { messages, connection: draft.writing?.connection, recovery }, { signal, isCurrent })).text;
     const { generateRawData, getGeneratingModel } = await import('../../script.js');
     const { extractProfileResponseText } = await import('../extensions/in-chat-agents/llm-utils.js');
     const { isGenerationLengthFinish } = await import('../generation-request-controls.js');

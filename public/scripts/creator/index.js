@@ -15,6 +15,7 @@ import { creatorTargetsSignature } from './formats.js';
 import { renderCreatorLiveReply } from './live-reply.js';
 import { creatorProposalDiff } from './proposal-diff.js';
 import { renderCreatorPurrks } from './purrks.js';
+import { creatorUsesServer, continueCreatorServerWriting, renderCreatorServerRequests } from './server-generation.js';
 
 const sections = [['dossier', 'Dossier'], ['notebooks', 'Notebook sources'], ['identity', 'Identity'], ['facts', 'Guided facts'], ['greetings', 'Greetings & examples'], ['interview', 'Interview'], ['prompts', 'Prompts'], ['lore', 'Lorebooks'], ['macros', 'Macros & pronouns'], ['regex', 'Pretty HTML'], ['game', 'Gamify'], ['portrait', 'Portrait'], ['helper', 'Writing partner'], ['agents', 'Post-process with agents'], ['instructions', 'Writing instructions'], ['metadata', 'Details'], ['preview', 'Preview & export']];
 const labels = { name: 'Display name', description: 'Description', personality: 'Personality', scenario: 'Scenario', first_mes: 'First greeting', mes_example: 'Interviewer examples', creator_notes: 'Public creator notes', system_prompt: 'Main prompt', post_history_instructions: 'Post-history instructions', creator: 'Creator', character_version: 'Card version' };
@@ -294,6 +295,7 @@ class CreatorWorkspace {
         cancelRequest.dataset.creatorCancelRequest = '';
         cancelRequest.hidden = !this.requestController;
         actions.append(cancelRequest);
+        renderCreatorServerRequests(this, actions);
         header.append(heading, actions);
         const layout = element('div', 'creator-layout');
         const nav = element('nav', 'creator-sections');
@@ -541,6 +543,7 @@ class CreatorWorkspace {
     }
 
     async continueWriting(id, signal) {
+        if (await creatorUsesServer()) return continueCreatorServerWriting(this, id, signal);
         const { requestCreatorReply } = await import('./assistant.js');
         const source = structuredClone(this.session.draft);
         const content = this.host.querySelector('.creator-content');
@@ -606,6 +609,7 @@ class CreatorWorkspace {
                 await this.continueWriting(id);
                 return;
             }
+            if (await creatorUsesServer()) return continueCreatorServerWriting(this, id, undefined, field);
             const { requestCreatorReply } = await import('./assistant.js');
             const source = structuredClone(this.session.draft);
             const original = JSON.stringify(proposal.changes.find(change => change.field === field));
