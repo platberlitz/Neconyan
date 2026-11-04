@@ -161,6 +161,64 @@
     </div>
 
     <!-- Pipeline Settings (shown when pipeline enabled) -->
+    <div id="pf--retrieval-model" class="pf--section pf--section-collapsible">
+        <button type="button" class="pf--section-header pf--collapsible-header" aria-expanded="true" aria-controls="pf--retrieval-model-body">
+            <i class="fa-solid fa-chevron-down pf--chevron"></i>
+            <strong>Retrieval Model</strong>
+        </button>
+        <div class="pf--section-body" id="pf--retrieval-model-body">
+            <div class="pf--setting-group">
+                <label class="pf--setting-label" for="pf--decision-preset">Jev / decision model preset</label>
+                <select id="pf--decision-preset" class="text_pole"></select>
+                <div class="pf--setting-help">Jev scores which lore to retrieve. Choose a preset, then connect its endpoint or use a saved profile. Summary writing still uses your chat model.</div>
+            </div>
+            <div class="pf--setting-group">
+                <label class="pf--setting-label" for="pf--model-connection">Retrieval connection</label>
+                <select id="pf--model-connection" class="text_pole" data-pf-setting="modelConnection">
+                    <option value="profile">Main model or saved profile</option>
+                    <option value="manual">Manual endpoint and API key</option>
+                </select>
+            </div>
+            <div class="pf--setting-group" id="pf--model-profile-fields">
+                <label class="pf--setting-label" for="pf--pipeline-profile">Connection Profile for Retrieval</label>
+                <select id="pf--pipeline-profile" class="text_pole" data-pf-setting="connectionProfile"><option value="">Use main model</option></select>
+            </div>
+            <div id="pf--model-manual-fields">
+                <div class="pf--setting-group">
+                    <label class="pf--setting-label" for="pf--model-endpoint">Model endpoint</label>
+                    <input id="pf--model-endpoint" class="text_pole" type="url" data-pf-setting="modelEndpoint" placeholder="https://openrouter.ai/api/alpha/decisions" />
+                </div>
+                <div class="pf--setting-group">
+                    <label class="pf--setting-label" for="pf--model-key">API key for this endpoint</label>
+                    <input id="pf--model-key" class="text_pole" type="password" autocomplete="new-password" />
+                    <div class="pf--prompt-actions">
+                        <button type="button" class="menu_button" id="pf--model-key-save">Save API key</button>
+                        <button type="button" class="menu_button" id="pf--model-key-clear">Clear API key</button>
+                    </div>
+                    <div id="pf--model-key-status" class="pf--setting-help" role="status" aria-live="polite"></div>
+                    <div class="pf--setting-help">Stored separately from the agent, for this endpoint only. Local servers may not need a key.</div>
+                </div>
+            </div>
+            <div class="pf--setting-group">
+                <label class="pf--setting-label" for="pf--model-override">Model / model override</label>
+                <input id="pf--model-override" class="text_pole" type="text" data-pf-setting="modelOverride" placeholder="Leave blank to use the connection's model" />
+            </div>
+            <div class="pf--setting-row">
+                <div class="pf--setting-group">
+                    <label class="pf--setting-label" for="pf--decision-mode">Decision protocol</label>
+                    <select id="pf--decision-mode" class="text_pole" data-pf-setting="decisionMode">
+                        <option value="auto">Auto-detect</option><option value="decision">Jev / System One decisions</option><option value="chat">Chat completions</option>
+                    </select>
+                </div>
+                <div class="pf--setting-group">
+                    <label class="pf--setting-label" for="pf--decision-threshold">Decision score threshold</label>
+                    <input id="pf--decision-threshold" class="text_pole" type="number" min="0" max="1" step="0.01" data-pf-setting="decisionThreshold" />
+                </div>
+            </div>
+            <div class="pf--setting-help">Scores at or above the threshold are kept, highest first. A stage-specific profile takes precedence. These controls apply to pipeline and waypoint retrieval.</div>
+        </div>
+    </div>
+
     <div id="pf--pipeline-settings" class="pf--section pf--section-collapsible" style="display: none;">
         <button type="button" class="pf--section-header pf--collapsible-header" aria-expanded="true" aria-controls="pf--pipeline-body">
             <i class="fa-solid fa-chevron-down pf--chevron"></i>
@@ -197,14 +255,6 @@
                     <input type="number" id="pf--retrieval-timeout" class="text_pole" min="1" max="60" value="8" data-pf-setting="retrievalTimeoutSeconds" />
                     <div class="pf--setting-help">Seconds before Pawthfinder shows a slow-retrieval warning. Generation still waits unless cancelled.</div>
                 </div>
-            </div>
-
-            <div class="pf--setting-group">
-                <label class="pf--setting-label" for="pf--pipeline-profile">Connection Profile for Pipeline</label>
-                <select id="pf--pipeline-profile" class="text_pole" data-pf-setting="connectionProfile">
-                    <option value="">Use main model</option>
-                </select>
-                <div class="pf--setting-help">Use a faster/cheaper model for the pipeline (e.g., Haiku, GPT-4o-mini)</div>
             </div>
 
             <div class="pf--setting-group">

@@ -465,7 +465,7 @@ export function buildDecisionPayload(input) {
     return { state, questions };
 }
 
-function extractDecisionScore(entry) {
+export function extractDecisionScore(entry) {
     const probability = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1 ? value : NaN;
     if (typeof entry === 'number') return probability(entry);
     if (typeof entry === 'boolean') return entry ? 1 : 0;

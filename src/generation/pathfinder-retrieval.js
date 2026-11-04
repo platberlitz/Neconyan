@@ -2,11 +2,13 @@ import { createHash } from 'node:crypto';
 import { readTreeLayout, getEntryPlacement } from '../../public/scripts/extensions/in-chat-agents/pathfinder/layout-data.js';
 import { isEntryEligible } from '../../public/scripts/extensions/in-chat-agents/pathfinder/lorebook-policy.js';
 import { getCounter } from '../mewmory/tokens.js';
-import { readArtifact, unresolvedProviderStep, writeArtifact } from '../jobs/artifacts.js';
+import { readArtifact, unresolvedProviderStep, writeArtifact, providerStep, providerRefused, isDefiniteProviderRefusal } from '../jobs/artifacts.js';
 import { getJob } from '../jobs/store.js';
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 import { createMacroEnvironment } from '../macros/index.js';
-import { getChatProfileContextLimit } from './profiles.js';
+import { getChatProfileContextLimit, resolveGenerationProfile } from './profiles.js';
+import { resolvePathfinderModel, requestPathfinderModel, buildPathfinderDecisions, parsePathfinderResponse } from './pathfinder-model.js';
+import { entryDecisionCandidates, waypointDecisionCandidates } from '../../public/scripts/extensions/in-chat-agents/pathfinder/decision-input.js';
 import { runChatProfile } from './service.js';
 import { pathfinderPipeline, readPathfinderAgent } from './world-info-pathfinder.js';
 import { assertRoleplayWorldInfoCurrent, readBoundPathfinderBooks } from './world-info.js';
@@ -94,7 +96,7 @@ function entriesForBooks(names, books, hashes) {
             if (!isEntryEligible(entry) || !uids.has(String(uid))) continue;
             if (entry.content !== undefined && typeof entry.content !== 'string') invalid('A Pathfinder lorebook entry must contain text.');
             const title = String(entry.comment || entry.key?.[0] || `Entry ${uid}`);
-            entries.push({ bookName: name, uid, name: title, content: entry.content || '',
+            entries.push({ bookName: name, uid, name: title, content: entry.content || '', key: entry.key || [],
                 label: `${JSON.stringify([name, uid])} ${title}` });
         }
     }
@@ -165,13 +167,35 @@ function selectedNames(text, format, entries) {
 }
 
 async function paidStage(context, { base, snapshot, identity, stageId, binding, messages, requestedTokens,
-    temperature, generate, count, macroSnapshot, assertBeforeDispatch }) {
+    temperature, generate, count, macroSnapshot, assertBeforeDispatch, settings = {}, stageProfile = '', candidates = [] }) {
     const { directories, job } = context;
+    const model = resolvePathfinderModel(directories, settings, { agentId: snapshot.pathfinder.agentId, profileId: stageProfile,
+        material: settings.modelConnection === 'manual' && !stageProfile ? undefined : resolveGenerationProfile(directories, binding) });
+    if (model) {
+        buildPathfinderDecisions(messages, candidates);
+        const input = { identity, binding, messages, candidates, requestedTokens, temperature: temperature ?? null,
+            model: { url: model.url, model: model.model, protocol: model.protocol, threshold: model.threshold } };
+        const artifact = `pathfinder:${stageId}:input`;
+        const saved = readArtifact(directories, job.id, artifact);
+        if (saved !== undefined && roleplayHash(saved) !== roleplayHash(input)) recovery('The saved Pathfinder stage has different inputs.');
+        if (saved === undefined) writeArtifact(directories, job.id, artifact, input);
+        assertBeforeDispatch();
+        assertRoleplayWorldInfoCurrent(base, snapshot);
+        const response = await providerStep(context, `pathfinder:${stageId}:model`, async () => {
+            try { return await requestPathfinderModel(model, { messages, candidates, maxTokens: requestedTokens, temperature, signal: context.signal, raw: true }); } catch (error) {
+                if (isDefiniteProviderRefusal(error.providerStatus)) throw providerRefused(error);
+                throw error;
+            }
+        });
+        return parsePathfinderResponse(model, response.data, candidates);
+    }
     const contextLimit = getChatProfileContextLimit(directories, binding) ?? 8192;
     const inputTokens = await count(messages.map(message => message.content).join('\n\n'));
     const maxTokens = Math.min(64000, Math.floor(Number(requestedTokens) || 2048), contextLimit - inputTokens - 64);
     if (!Number.isSafeInteger(maxTokens) || maxTokens < 1) invalid('The Pathfinder request exceeds its saved connection context limit.');
-    const input = { identity, binding, messages, maxTokens, temperature: Number.isFinite(temperature) ? temperature : null };
+    const modelOverride = stageProfile ? '' : settings.modelOverride || '';
+    const input = { identity, binding, messages, maxTokens, temperature: Number.isFinite(temperature) ? temperature : null,
+        ...(modelOverride ? { modelOverride } : {}) };
     const artifact = `pathfinder:${stageId}:input`;
     const saved = readArtifact(directories, job.id, artifact);
     if (saved !== undefined && roleplayHash(saved) !== roleplayHash(input)) recovery('The saved Pathfinder stage has different inputs.');
@@ -182,7 +206,7 @@ async function paidStage(context, { base, snapshot, identity, stageId, binding, 
     const named = binding.kind === 'profile';
     // The sidecar must not advance the main prompt's saved variable or random-macro state.
     const macroEnvironment = createMacroEnvironment(macroSnapshot, {}, { readOnly: true });
-    const response = await generate({ context: base, jobContext: context, binding, messages, maxTokens,
+    const response = await generate({ context: base, jobContext: context, binding, messages, maxTokens, modelOverride,
         signal: context.signal, macroEnvironment, userName: snapshot.speakerNames.user,
         characterName: snapshot.speakerNames.character, stream: false,
         rawOptions: { ...(binding.backend === 'text' && named ? {} : { cacheScope: 'auxiliary' }),
@@ -198,7 +222,7 @@ async function paidStage(context, { base, snapshot, identity, stageId, binding, 
     if (typeof response?.text !== 'string' || Buffer.byteLength(response.text) > 1024 * 1024) {
         invalid('The saved Pathfinder provider result has no usable text.');
     }
-    return response.text;
+    return { text: response.text };
 }
 
 /** Each accepted sidecar stage saves exact model input and result; an uncertain result cannot repeat on recovery. */
@@ -249,22 +273,24 @@ export async function runBoundPathfinderRetrieval(context, { base, snapshot, rec
                     continue;
                 }
                 const prompt = prompts[stage.promptId];
-                const profile = prompt.connectionProfile || settings.connectionProfile;
+                const profile = prompt.connectionProfile || (settings.modelConnection === 'manual' ? '' : settings.connectionProfile);
                 const binding = profile ? { kind: 'profile', ...snapshot.pathfinder.bindings[profile] } : mainBinding;
                 if (!binding?.fingerprint) invalid('The selected Pathfinder connection was not captured at admission.');
                 const inputs = mappedPrompt(stage, settings, entries, chatHistory, selection, outputs);
                 const messages = [{ role: 'system', content: prompt.systemPrompt }, { role: 'user', content: Object.entries(inputs)
                     .reduce((text, [key, value]) => text.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), () => value), prompt.userPromptTemplate) }];
-                const text = await paidStage(context, { base, snapshot, identity, stageId: `${index}`,
-                    binding, messages, requestedTokens: prompt.settings?.maxTokens ?? 64000,
-                    temperature: prompt.settings?.temperature, generate, count, macroSnapshot: stageMacros, assertBeforeDispatch });
                 const filtering = Object.values(stage.inputMapping).includes('prev:candidate_entries')
                     && !Object.values(stage.inputMapping).includes('source:entry_names');
+                const offered = filtering ? entries.filter(entry => selection.includes(entry.label)).slice(0, maxCandidates) : entries;
+                const result = await paidStage(context, { base, snapshot, identity, stageId: `${index}`,
+                    binding, messages, requestedTokens: prompt.settings?.maxTokens ?? 64000, settings, stageProfile: prompt.connectionProfile,
+                    candidates: entryDecisionCandidates(offered.map(entry => [entry.label, entry]), settings, filtering),
+                    temperature: prompt.settings?.temperature, generate, count, macroSnapshot: stageMacros, assertBeforeDispatch });
                 try {
-                    const offered = filtering ? entries.filter(entry => selection.includes(entry.label)) : entries;
-                    selection = selectedNames(text, prompt.outputFormat, offered).slice(0, maxCandidates);
+                    selection = (result.protocol === 'decision' ? result.selected : selectedNames(result.text, prompt.outputFormat, offered)).slice(0, maxCandidates);
                     outputs.set(stage.outputKey, selection);
-                    stageResults.push({ index, promptId: stage.promptId, selected: selection });
+                    stageResults.push({ index, promptId: stage.promptId, selected: selection,
+                        ...(result.scores ? { scores: result.scores, threshold: result.threshold } : {}) });
                 } catch (error) {
                     if (!stage.optional) throw error;
                     stageResults.push({ index, promptId: stage.promptId, failed: true });
@@ -274,13 +300,14 @@ export async function runBoundPathfinderRetrieval(context, { base, snapshot, rec
         } else {
             const contextText = snapshot.pathfinder.books.map(name => `\n### ${name}\n${guide(trees.get(name))}\n`).join('');
             const prompt = `Given the current conversation context, which of these lorebook waypoints contain information relevant to what's happening right now? List the waypoint/node IDs (the "id: node_..." values) you'd retrieve.\n\n${chatHistory}\n\n${contextText}`;
-            const profile = settings.connectionProfile;
+            const profile = settings.modelConnection === 'manual' ? '' : settings.connectionProfile;
             const binding = profile ? { kind: 'profile', ...snapshot.pathfinder.bindings[profile] } : mainBinding;
             if (!binding?.fingerprint) invalid('The selected Pathfinder connection was not captured at admission.');
-            const text = await paidStage(context, { base, snapshot, identity, stageId: 'legacy', binding,
+            const result = await paidStage(context, { base, snapshot, identity, stageId: 'legacy', binding, settings,
+                candidates: waypointDecisionCandidates(trees),
                 messages: [{ role: 'system', content: NODE_SYSTEM }, { role: 'user', content: prompt }],
                 requestedTokens: 2048, generate, count, macroSnapshot: stageMacros, assertBeforeDispatch });
-            const ids = new Set(text.split('\n').map(line => line.match(/node_[a-z0-9]+/i)?.[0]).filter(Boolean));
+            const ids = new Set(result.protocol === 'decision' ? result.selected : result.text.split('\n').map(line => line.match(/node_[a-z0-9]+/i)?.[0]).filter(Boolean));
             const matches = new Set();
             const visit = node => {
                 if (ids.has(node.id)) for (const uid of node.entries) matches.add(String(uid));
@@ -291,7 +318,8 @@ export async function runBoundPathfinderRetrieval(context, { base, snapshot, rec
                 visit(tree);
                 selection.push(...entries.filter(entry => entry.bookName === name && matches.has(String(entry.uid))));
             }
-            stageResults.push({ index: 0, promptId: 'legacy-sidecar', ids: [...ids] });
+            stageResults.push({ index: 0, promptId: 'legacy-sidecar', ids: [...ids],
+                ...(result.scores ? { scores: result.scores, threshold: result.threshold } : {}) });
         }
     }
     const activated = new Set(worldInfo.activated.map(entry => JSON.stringify([entry.world, String(entry.uid)])));

@@ -182,6 +182,8 @@ function backgroundSaves() {
 beforeEach(() => {
     jest.clearAllMocks();
     globalThis.$ = value => value instanceof Control ? value : new Control();
+    globalThis.Option = class { constructor(text, value) { this.text = text; this.value = value; } };
+    globalThis.document = { createElement: () => ({ append() {} }) };
     globalThis.toastr = { info: jest.fn(), error: jest.fn(), warning: jest.fn(), success: jest.fn() };
     globalThis.window = { SillyTavern: { getContext: () => context }, matchMedia: () => ({ matches: true }) };
     globalThis.fetch = jest.fn(async () => ({ ok: true }));
@@ -212,6 +214,8 @@ beforeEach(() => {
 afterEach(() => {
     ui.closePathfinderSettings();
     delete globalThis.$;
+    delete globalThis.Option;
+    delete globalThis.document;
     delete globalThis.toastr;
     delete globalThis.window;
     delete globalThis.fetch;

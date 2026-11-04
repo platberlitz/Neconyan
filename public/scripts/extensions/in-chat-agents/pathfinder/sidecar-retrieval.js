@@ -3,7 +3,7 @@ import { isAbortLikeError } from '../../../util/abort-error.js';
 import { isPathfinderSubmoduleEnabled } from '../agent-store.js';
 import { getTree, findNodeById, getSettings } from './tree-store.js';
 import { getReadableBooks } from './pathfinder-tool-bridge.js';
-import { sidecarGenerate } from './llm-sidecar.js';
+import { retrieveWithModel, waypointDecisionCandidates } from './retrieval-model.js';
 import { logPathfinderRetrievalDetail, logSidecarRetrieval, logPipelineStart, logPipelineComplete } from './activity-feed.js';
 import { buildTreeFromMetadata } from './tree-builder.js';
 import { loadRetrievalEntries, runPipeline } from './prompts/pipeline-runner.js';
@@ -100,9 +100,10 @@ async function runLegacySidecarRetrieval(books, chatMessages, signal) {
 
     const history = chatMessages.map(message => `${message.is_user || message.role === 'user' ? 'User' : (message.name || 'Assistant')}: ${message.mes}`).join('\n\n');
     const prompt = `Given the current conversation context, which of these lorebook waypoints contain information relevant to what's happening right now? List the waypoint/node IDs (the "id: node_..." values) you'd retrieve.\n\n${history}\n\n${contextText}`;
-    const response = await sidecarGenerate(prompt, 'You are a lorebook retrieval assistant. Analyze the conversation and identify which waypoints are relevant. Respond with waypoint/node IDs (the "id: node_..." values), one per line.', signal);
+    const result = await retrieveWithModel(prompt, 'You are a lorebook retrieval assistant. Analyze the conversation and identify which waypoints are relevant. Respond with waypoint/node IDs (the "id: node_..." values), one per line.', getSettings().connectionProfile || '', 2048, signal,
+        { candidates: waypointDecisionCandidates(books.map(book => [book, getTree(book)])) });
     throwIfAborted(signal);
-    const nodeIds = [...new Set(response.split('\n').map(line => line.match(/node_[a-z0-9]+/i)?.[0]).filter(Boolean))];
+    const nodeIds = result.protocol === 'decision' ? result.selected : [...new Set(result.text.split('\n').map(line => line.match(/node_[a-z0-9]+/i)?.[0]).filter(Boolean))];
     const selectedEntries = [];
 
     for (const bookName of books) {
@@ -120,7 +121,8 @@ async function runLegacySidecarRetrieval(books, chatMessages, signal) {
     return {
         success: true,
         selectedEntries,
-        stageResults: [{ stageIndex: 0, promptId: 'legacy-sidecar', success: true, entriesFound: selectedEntries.length, nodeIds }],
+        stageResults: [{ stageIndex: 0, promptId: 'legacy-sidecar', success: true, entriesFound: selectedEntries.length, nodeIds,
+            ...(result.scores ? { scores: result.scores, threshold: result.threshold } : {}) }],
         metadata: { nodeIds },
     };
 }

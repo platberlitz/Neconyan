@@ -19,6 +19,9 @@ await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agen
 await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/profile-utils.js', () => ({ listConnectionProfiles: () => [] }));
 await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/pathfinder/pathfinder-tool-bridge.js', () => ({ getReadableBooks: () => ['Lore'] }));
 await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/pathfinder/llm-sidecar.js', () => ({ sidecarGenerate: jest.fn(), sidecarGenerateWithProfile: jest.fn() }));
+await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/pathfinder/retrieval-model.js', () => ({
+    retrieveWithModel: jest.fn(), entryDecisionCandidates: () => [], waypointDecisionCandidates: () => [],
+}));
 await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/pathfinder/summary-memory-store.js', () => ({ isSummaryMemoryEntry: () => false, markSummaryMemoryInjected: jest.fn() }));
 const { injectPathfinderRetrieval } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/sidecar-retrieval.js');
 

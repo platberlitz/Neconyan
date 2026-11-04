@@ -181,8 +181,8 @@ export default [
     },
     {
         id: 'pathfinder.retrieval', title: 'Pawthfinder Tool Mode and Predictive Pipeline', keys: ['Predictive Pipeline', 'Tool Mode', 'Two-Stage', 'Single-Pass', 'retrieval timeout', 'Max Candidates'],
-        sources: [agents + 'pathfinder-settings.html', agents + 'pathfinder/sidecar-retrieval.js', agents + 'pathfinder/tools/search.js'], anchors: ['Predictive Pipeline', 'Max Candidates', 'Connection Profile for Pipeline', 'Use main model'],
-        content: 'Tool Mode lets a model with tool/function calling browse, search and edit lorebook entries. Predictive Pipeline retrieves lore before each reply using extra model requests: Pipeline Type Two-Stage selects candidates then filters them, Single-Pass selects only. Connection Profile for Pipeline can use a cheaper profile or Use main model. Entry Content Mode, Truncate Length and Max Candidates shape supplied material. Retrieval Timeout only shows a slow-retrieval warning; generation still waits. Skip entries already activated by World Info avoids duplicates. Enabling both modes uses more tokens.',
+        sources: [agents + 'pathfinder-settings.html', agents + 'pathfinder/sidecar-retrieval.js', agents + 'pathfinder/tools/search.js'], anchors: ['Predictive Pipeline', 'Max Candidates', 'Connection Profile for Retrieval', 'Use main model'],
+        content: 'Tool Mode lets a model with tool/function calling browse, search and edit lorebook entries. Predictive Pipeline retrieves lore before each reply using extra model requests: Pipeline Type Two-Stage selects candidates then filters them, Single-Pass selects only. Connection Profile for Retrieval can use a cheaper profile or Use main model. Entry Content Mode, Truncate Length and Max Candidates shape supplied material. Retrieval Timeout only shows a slow-retrieval warning; generation still waits. Skip entries already activated by World Info avoids duplicates. Enabling both modes uses more tokens.',
     },
     {
         id: 'agents.start', title: 'Creating, enabling and stopping Agents', keys: ['Agents', 'Create agent', 'Browse library', 'Switched on', 'agent types', 'agent not running'],

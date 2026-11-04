@@ -3,7 +3,8 @@
  */
 
 import { renderExtensionTemplateAsync, getContext } from '../../extensions.js';
-import { eventSource, event_types, online_status } from '../../../script.js';
+import { eventSource, event_types, online_status, getRequestHeaders } from '../../../script.js';
+import { JEV_DECISION_PRESETS, findDecisionPreset, defaultDecisionThreshold } from '../../mewmory/jev-presets.js';
 import { accountStorage } from '../../util/AccountStorage.js';
 import { escapeHtml } from '../../utils.js';
 import { attachTextareaFullscreen } from './textarea-fullscreen.js';
@@ -588,6 +589,7 @@ function loadSettingsIntoUI() {
 
     // Populate connection profiles
     populateConnectionProfiles();
+    loadRetrievalModelUI();
 
     // Load tool states from agent
     renderToolToggles();
@@ -606,6 +608,47 @@ function populateConnectionProfiles() {
         emptyLabel: 'Use main model',
         selectedValue: currentAgent.settings.connectionProfile ?? '',
     });
+}
+
+function loadRetrievalModelUI() {
+    const s = currentAgent.settings;
+    const select = settingsEl.find('#pf--decision-preset').empty();
+    select.append(new Option('Use current model', ''));
+    for (const family of new Set(JEV_DECISION_PRESETS.map(preset => preset.family))) {
+        const group = document.createElement('optgroup');
+        group.label = family;
+        for (const preset of JEV_DECISION_PRESETS.filter(item => item.family === family)) group.append(new Option(preset.label, preset.id));
+        select.append(group);
+    }
+    select.append(new Option('Custom Jev / System One model…', 'custom'));
+    select.val(findDecisionPreset(s.modelOverride)?.id || (s.decisionMode === 'decision' ? 'custom' : ''));
+    for (const [id, key] of [['model-connection', 'modelConnection'], ['model-endpoint', 'modelEndpoint'], ['model-override', 'modelOverride'], ['decision-mode', 'decisionMode']]) {
+        settingsEl.find(`#pf--${id}`).val(s[key] ?? SETTING_DEFAULTS[key]);
+    }
+    settingsEl.find('#pf--decision-threshold').val(s.decisionThreshold ?? defaultDecisionThreshold(s.modelOverride));
+    settingsEl.find('#pf--model-manual-fields').toggle(s.modelConnection === 'manual');
+    settingsEl.find('#pf--model-profile-fields').toggle(s.modelConnection !== 'manual');
+    settingsEl.find('#pf--model-key').val('');
+    void updateModelKeyStatus();
+}
+
+async function updateModelKeyStatus(key) {
+    const panel = settingsEl;
+    const agent = currentAgent;
+    const endpoint = agent.settings.modelEndpoint;
+    if (agent.settings.modelConnection !== 'manual' || !endpoint) return;
+    const status = panel.find('#pf--model-key-status');
+    try {
+        const response = await fetch('/api/in-chat-agents/pathfinder/key', { method: 'POST', headers: getRequestHeaders(),
+            body: JSON.stringify({ agentId: agent.id, endpoint, ...(key !== undefined ? { key } : {}) }) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Could not save API key.');
+        if (settingsEl !== panel || currentAgent !== agent || agent.settings.modelEndpoint !== endpoint) return;
+        status.text(result.hasKey ? 'API key saved.' : 'No API key saved for this endpoint.');
+        if (key !== undefined) panel.find('#pf--model-key').val('');
+    } catch (error) {
+        if (settingsEl === panel && currentAgent === agent && agent.settings.modelEndpoint === endpoint) status.text(error.message);
+    }
 }
 
 
@@ -826,6 +869,21 @@ function bindEvents() {
 
     settingsEl.find('#pf--settings-retry').on('click', () => save());
 
+    settingsEl.find('#pf--decision-preset').on('change', function () {
+        const preset = findDecisionPreset(this.value);
+        const changes = !this.value ? { modelConnection: 'profile', modelOverride: '', decisionMode: 'auto', decisionThreshold: null } : preset ? { modelConnection: 'manual', modelOverride: preset.model, modelEndpoint: preset.endpoint,
+            decisionMode: 'decision', decisionThreshold: preset.threshold } : { modelConnection: 'manual', decisionMode: 'decision' };
+        Object.assign(currentAgent.settings, changes);
+        loadRetrievalModelUI();
+        return save(Object.keys(changes));
+    });
+    settingsEl.find('#pf--model-key-save, #pf--model-key-clear').on('click', async function () {
+        const key = this.id.endsWith('clear') ? '' : String(panel.find('#pf--model-key').val() || '');
+        if (!key && !this.id.endsWith('clear')) return;
+        this.disabled = true;
+        try { await updateModelKeyStatus(key); } finally { this.disabled = false; }
+    });
+
     settingsEl.find('#pf--refresh-lorebooks').on('click', () => {
         refreshPathfinderSettings();
         toastr.info('Lorebook list refreshed');
@@ -835,12 +893,13 @@ function bindEvents() {
         const key = this.dataset.pfSetting;
         let value = this.type === 'checkbox' ? this.checked : this.value;
         if (this.type === 'number') {
-            value = key === 'autoSummaryInterval'
+            value = key === 'decisionThreshold' ? Math.max(0, Math.min(1, Number(value))) : key === 'autoSummaryInterval'
                 ? normalizeSummaryIntervalInput(value)
                 : Math.max(Number(this.min), Math.min(Number(this.max), parseInt(value, 10) || SETTING_DEFAULTS[key]));
             this.value = String(value);
         }
         currentAgent.settings[key] = value;
+        if (['modelConnection', 'modelEndpoint', 'modelOverride', 'decisionMode'].includes(key)) loadRetrievalModelUI();
         const keys = [key];
         if (key === 'autoSummary' && value) {
             setPathfinderToolEnabled('Pathfinder_Summarize', true);
@@ -1194,6 +1253,7 @@ function formatStageLine(stage) {
     if (stage.reason) extras.push(stage.reason);
     if (stage.error) extras.push(`Error: ${stage.error}`);
     if (stage.reasoning) extras.push(`Reasoning: ${compactText(stage.reasoning, 180)}`);
+    if (stage.scores) extras.push(`Decision scores (threshold ${stage.threshold}): ${stage.scores.map(item => `${item.id}: ${item.score}`).join(', ')}`);
 
     return `  ${stageNumber ? `${stageNumber}. ` : '- '}${label}: ${status}, ${formatCount(count, 'entry')}${extras.length ? `; ${extras.join('; ')}` : ''}`;
 }

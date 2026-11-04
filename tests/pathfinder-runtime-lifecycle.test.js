@@ -22,6 +22,9 @@ for (const tool of ['search', 'remember', 'update', 'forget', 'summarize', 'reor
 await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/pathfinder/commands.js', () => ({ initCommands: jest.fn(), removeCommands: jest.fn() }));
 await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/pathfinder/diagnostics.js', () => ({ runDiagnostics: jest.fn() }));
 await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/pathfinder/llm-sidecar.js', () => ({ sidecarGenerateWithProfile: jest.fn() }));
+await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/pathfinder/retrieval-model.js', () => ({
+    retrieveWithModel: jest.fn(), entryDecisionCandidates: () => [], waypointDecisionCandidates: () => [],
+}));
 await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/pathfinder/prompts/prompt-editor-ui.js', () => ({ initPromptEditorUI: jest.fn(), refreshPromptEditorUI: jest.fn() }));
 
 const { initPathfinder, teardownPathfinder } = await import('../public/scripts/extensions/in-chat-agents/pathfinder-init.js');

@@ -1,9 +1,27 @@
 import path from 'node:path';
 import express from 'express';
+import { pathfinderKey, resolvePathfinderModel, requestPathfinderModel } from '../generation/pathfinder-model.js';
 import { readAgentCollection, writeAgentRecord } from '../in-chat-agent-storage.js';
 import { normalizeAgentGroup, normalizeAgentSetupPreset } from '../../public/scripts/extensions/in-chat-agents/setup-presets.js';
 
 export const router = express.Router();
+
+router.post('/pathfinder/key', (request, response) => {
+    try { response.json(pathfinderKey(request.user.directories, request.body)); } catch (error) { response.status(error.status ?? 500).json({ error: error.message }); }
+});
+
+router.post('/pathfinder/retrieve', async (request, response) => {
+    const controller = new AbortController();
+    const abort = () => { if (!response.writableEnded) controller.abort(); };
+    response.on('close', abort);
+    try {
+        const { settings, agentId, profileId, ...input } = request.body;
+        const model = resolvePathfinderModel(request.user.directories, settings, { agentId, profileId });
+        response.json(model ? await requestPathfinderModel(model, { ...input, signal: controller.signal }) : { protocol: 'chat', useExistingConnection: true });
+    } catch (error) {
+        if (!controller.signal.aborted) response.status(error.status >= 400 && error.status <= 599 ? error.status : 500).json({ error: error.message });
+    } finally { response.off('close', abort); }
+});
 
 const collections = [
     { prefix: '', kind: 'agent', directory: user => user.directories.inChatAgents, normalize: value => value },

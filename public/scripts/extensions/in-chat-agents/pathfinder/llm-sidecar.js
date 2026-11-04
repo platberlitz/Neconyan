@@ -5,6 +5,8 @@ import { runAsInternalPromptTransform } from '../agent-runner.js';
 import { getSettings } from './tree-store.js';
 import { getRetrievalOutputLimit } from './retrieval-budget.js';
 import { isGenerationLengthFinish } from '../../../generation-request-controls.js';
+import { extension_settings } from '../../../extensions.js';
+import { isDecisionModel } from '../../../mewmory/jev-presets.js';
 
 // Throttled so a multi-stage pipeline failure doesn't stack toasts
 let lastSidecarIssueToastAt = 0;
@@ -25,7 +27,8 @@ function notifySidecarIssue(message, level = 'warning') {
  */
 export async function sidecarGenerate(prompt, systemPrompt = '', signal = null) {
     const s = getSettings();
-    const profileId = s.connectionProfile ?? '';
+    const profile = extension_settings.connectionManager?.profiles?.find(item => item.id === s.connectionProfile);
+    const profileId = isDecisionModel(profile?.model, profile?.['api-url']) ? '' : s.connectionProfile ?? '';
     return sidecarGenerateWithProfile(prompt, systemPrompt, profileId, 2048, signal);
 }
 
@@ -49,14 +52,14 @@ function isUnknownSidecarOutcome(error) {
  * @param {AbortSignal?} [signal=null] - Optional abort signal
  * @returns {Promise<string>}
  */
-export async function sidecarGenerateWithProfile(prompt, systemPrompt = '', profileId = '', maxTokens = 2048, signal = null, { temperature } = {}) {
+export async function sidecarGenerateWithProfile(prompt, systemPrompt = '', profileId = '', maxTokens = 2048, signal = null, { temperature, modelOverride } = {}) {
     signal?.throwIfAborted();
     const ctx = window?.SillyTavern?.getContext?.();
 
     const messages = [];
     if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
     messages.push({ role: 'user', content: prompt });
-    const temperatureOverride = Number.isFinite(temperature) ? { temperature } : {};
+    const temperatureOverride = { ...(Number.isFinite(temperature) ? { temperature } : {}), ...(modelOverride ? { model: modelOverride } : {}) };
 
     // Try specified profile first
     if (ctx?.ConnectionManagerRequestService && profileId) {
