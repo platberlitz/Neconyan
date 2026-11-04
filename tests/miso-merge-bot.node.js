@@ -326,7 +326,8 @@ test('the workflow job name matches the check Miso ignores', () => {
     assert.match(workflow, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
     assert.match(workflow, /ref: \$\{\{ github\.event\.pull_request\.base\.ref \|\| github\.ref \}\}/);
     assert.match(workflow, /timeout-minutes: 20/);
-    assert.match(workflow, /miso\.optionsForEvent\(context\)/);
+    assert.match(workflow, /miso\.optionsForEvent\?\.\(context\) \?\? \{ settleChecks: true \}/);
+    assert.match(workflow, /miso\.run\(\{ github, context, core, \.\.\.options \}\)/);
 });
 
 test('each pull request has its own concurrency queue', () => {

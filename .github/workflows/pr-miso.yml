@@ -56,8 +56,10 @@ jobs:
             const miso = require(`${process.env.GITHUB_WORKSPACE}/.github/miso/merge-bot.cjs`);
             // Pull request runs wait for their own checks here because GitHub
             // only wakes workflow_run on the default branch, which this bot does
-            // not reach until a release. Staging sweeps never wait.
-            const results = await miso.run({ github, context, core, ...miso.optionsForEvent(context) });
+            // not reach until a release. Staging sweeps never wait. The bot comes
+            // from the base branch, which can predate optionsForEvent.
+            const options = miso.optionsForEvent?.(context) ?? { settleChecks: true };
+            const results = await miso.run({ github, context, core, ...options });
             core.summary.addHeading('Miso merge check').addTable([
               [{ data: 'Pull request', header: true }, { data: 'State', header: true }],
               ...Object.entries(results).map(([number, state]) => [`#${number}`, state]),
