@@ -1849,3 +1849,4 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #459 (2026-11-04) `feat(catelier): keep writing on the server after closing the page`
 - PR #460 (2026-11-04) `fix(import): restore windows imports and enable zip app updates`
 - PR #461 (2026-11-04) `fix(android): prevent startup and export crashes`
+- PR #462 (2026-11-04) `fix(agents): use refusal fallbacks and keep successful parallel edits`
