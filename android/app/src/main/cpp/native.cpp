@@ -22,6 +22,7 @@ struct NodeLaunch {
     int argc;
     char** argv;
     std::string diagnostics;
+    std::string note;
     int result = 1;
 };
 
@@ -35,11 +36,18 @@ void* RunNode(void* opaque) {
     }
     if (FILE* report = fopen(launch.diagnostics.c_str(), "w")) {
         fprintf(report, "Node runs on a dedicated native thread. Stack: %zu KiB.\n", bytes / 1024);
+        if (!launch.note.empty()) fputs(launch.note.c_str(), report);
         fclose(report);
     }
     printf("Native server stack: %zu KiB\n", bytes / 1024);
     launch.result = node::Start(launch.argc, launch.argv);
     return nullptr;
+}
+
+void ThrowOrReturn(JNIEnv* env, const char* message) {
+    // GetStringUTFChars failures arrive with an OutOfMemoryError already pending;
+    // only queue a diagnostic of our own when the JVM has none.
+    if (!env->ExceptionCheck()) env->ThrowNew(env->FindClass("java/io/IOException"), message);
 }
 }
 
@@ -84,21 +92,49 @@ NODE_MODULE_LINKED(neconyan_fs, Initialize)
 
 extern "C" JNIEXPORT jint JNICALL
 Java_io_github_platberlitz_neconyan_ServerService_startNode(JNIEnv* env, jclass, jobjectArray arguments, jstring cachePath) {
+    if (cachePath == nullptr || arguments == nullptr) {
+        ThrowOrReturn(env, "Missing local server launch configuration.");
+        return 1;
+    }
     const char* cache = env->GetStringUTFChars(cachePath, nullptr);
+    if (cache == nullptr) {
+        ThrowOrReturn(env, "Cannot read the local server cache path.");
+        return 1;
+    }
     setenv("TMPDIR", cache, 1);
     setenv("NODE_COMPILE_CACHE", (std::string(cache) + "/node-cache").c_str(), 1);
     setenv("NECONYAN_SUPERVISED", "1", 1);
-    freopen((std::string(cache) + "/server.log").c_str(), "w", stdout);
-    dup2(fileno(stdout), STDERR_FILENO);
-    setvbuf(stdout, nullptr, _IOLBF, 0);
-    std::string diagnostics = std::string(cache) + "/native-startup.txt";
+    // Redirect stdout and stderr to the server log without closing the original
+    // descriptors first. freopen() closes stdout before it knows the log can open,
+    // so a failure there would leave Node writing to a closed descriptor, or to a
+    // descriptor another file has reused in the meantime. With open and dup2 the
+    // originals survive an open failure, and the failure is recorded instead.
+    const std::string diagnostics = std::string(cache) + "/native-startup.txt";
+    std::string logNote;
+    if (int log = open((std::string(cache) + "/server.log").c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600); log >= 0) {
+        // open() may return a standard descriptor when the launcher inherited a
+        // closed one. Do not close stdout/stderr after duplicating that descriptor.
+        if (dup2(log, STDOUT_FILENO) < 0 || dup2(log, STDERR_FILENO) < 0) {
+            logNote = "Could not redirect the server log: " + std::string(strerror(errno)) + ".\n";
+        }
+        if (log != STDOUT_FILENO && log != STDERR_FILENO) close(log);
+        if (log == STDOUT_FILENO || log == STDERR_FILENO) fcntl(log, F_SETFD, 0);
+        setvbuf(stdout, nullptr, _IOLBF, 0);
+    } else {
+        logNote = "Could not open the server log: " + std::string(strerror(errno)) + ". Console output keeps its original destinations.\n";
+    }
     env->ReleaseStringUTFChars(cachePath, cache);
     int count = env->GetArrayLength(arguments);
     std::vector<std::string> values;
     size_t size = 0;
     for (int i = 0; i < count; ++i) {
         auto item = static_cast<jstring>(env->GetObjectArrayElement(arguments, i));
-        const char* value = env->GetStringUTFChars(item, nullptr);
+        const char* value = item == nullptr ? nullptr : env->GetStringUTFChars(item, nullptr);
+        if (value == nullptr) {
+            env->DeleteLocalRef(item);
+            ThrowOrReturn(env, "Cannot read the local server launch arguments.");
+            return 1;
+        }
         values.emplace_back(value);
         size += values.back().size() + 1;
         env->ReleaseStringUTFChars(item, value);
@@ -114,7 +150,7 @@ Java_io_github_platberlitz_neconyan_ServerService_startNode(JNIEnv* env, jclass,
     }
     // Keep the argument storage alive on the calling thread until Node returns.
     // The native thread never accesses JNI objects or attaches to the Java VM.
-    NodeLaunch launch{count, argv.data(), diagnostics};
+    NodeLaunch launch{count, argv.data(), diagnostics, logNote};
     pthread_attr_t attributes;
     int error = pthread_attr_init(&attributes);
     pthread_t thread;

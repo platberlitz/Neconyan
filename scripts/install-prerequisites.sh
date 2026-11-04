@@ -29,7 +29,9 @@ while (($#)); do
 done
 
 OS_NAME="$(uname -s 2>/dev/null || echo unknown)"
-BUN_INSTALL_DIR="${BUN_INSTALL:-$HOME/.bun}"
+# HOME can be absent in stripped-down environments; the defaults below must not
+# abort the launcher, so they fall back to the current directory instead.
+BUN_INSTALL_DIR="${BUN_INSTALL:-${HOME:-.}/.bun}"
 TERMUX_PREFIX_DEFAULT='/data/data/com.termux/files/usr'
 TERMUX_PREFIX="${PREFIX:-$TERMUX_PREFIX_DEFAULT}"
 TERMUX_GLIBC_ROOT="${GLIBC_ROOT:-$TERMUX_PREFIX/glibc}"
@@ -38,7 +40,7 @@ TERMUX_BUN_WRAPPER_MARKER='Neconyan Termux Bun wrapper'
 # tracked by commit rather than by branch.
 TERMUX_BUN_MANAGER_COMMIT='b9f47733b0198d59dc9775a487a8a731cde322cb'
 TERMUX_BUN_MANAGER_URL="https://raw.githubusercontent.com/Happ1ness-dev/bun-termux/$TERMUX_BUN_MANAGER_COMMIT/helper_scripts/bun-termux-manager"
-TERMUX_BUN_SOURCE_DIR="${TERMUX_BUN_SOURCE_DIR:-$HOME/bun-termux}"
+TERMUX_BUN_SOURCE_DIR="${TERMUX_BUN_SOURCE_DIR:-${HOME:-.}/bun-termux}"
 TERMUX_BUN_SHIM_PATH="$BUN_INSTALL_DIR/lib/bun-shim.so"
 
 have_command() {
@@ -54,7 +56,7 @@ is_termux() {
         return 0
     fi
 
-    if [[ "$HOME" == /data/data/com.termux/files/home* && -x "$TERMUX_PREFIX_DEFAULT/bin/pkg" ]]; then
+    if [[ "${HOME:-}" == /data/data/com.termux/files/home* && -x "$TERMUX_PREFIX_DEFAULT/bin/pkg" ]]; then
         return 0
     fi
 

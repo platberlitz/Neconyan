@@ -51,6 +51,8 @@ public final class MainActivity extends Activity {
     private volatile boolean serverSafe;
     private volatile boolean serverSeen;
     private volatile boolean autoRestarted;
+    private volatile boolean closed;
+    private final Object serviceStartLock = new Object();
     private volatile long healthySince;
     private volatile long recordedExitAt;
     private volatile boolean failed;
@@ -72,6 +74,10 @@ public final class MainActivity extends Activity {
     private TextView crashSummary, crashDetails;
     private boolean pendingSaved = true;
     private CrashReport.Entry serverIncident;
+    // Set on the UI thread only; renderer report actions must not accumulate across repeat crashes.
+    private boolean rendererActionsAdded;
+    private CrashReport.Entry rendererReport;
+    private boolean rendererReportSaved;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -111,7 +117,7 @@ public final class MainActivity extends Activity {
         addAction("Save a backup of my data", view -> offerBackup());
         addAction("Copy details for a bug report", view -> copyDetails());
         addAction("Saved crash reports", view -> showCrashReports());
-        addAction("Close Neconyan", view -> { ActivityBreadcrumbs.state("closed"); stopService(new Intent(this, ServerService.class)); finish(); });
+        addAction("Close Neconyan", view -> closeNeconyan());
         root.addView(actions);
         // Cookie policy must be ready before the connection worker signs the page in.
         CookieManager.getInstance().setAcceptCookie(true);
@@ -178,19 +184,21 @@ public final class MainActivity extends Activity {
                 else connect();
             }
             @Override public void onPageFinished(WebView view, String url) {
-                if (!local(Uri.parse(url)) || loadFailed || failed) return;
+                if (url == null || !local(Uri.parse(url)) || loadFailed || failed) return;
                 workspaceRequested = false;
                 String nonce = UUID.randomUUID().toString();
                 long generation = navigationGeneration;
                 view.evaluateJavascript("window.NeconyanCrashDiagnostics?.getActivity?.()?.snapshot?.pageSessionId || ''", value -> {
                     try {
                         String session = new org.json.JSONArray("[" + value + "]").getString(0);
-                        if (generation != navigationGeneration || web != view || !local(Uri.parse(view.getUrl())) || !session.matches("[a-zA-Z0-9:-]{1,100}")) return;
+                        String currentUrl = view.getUrl();
+                        if (generation != navigationGeneration || web != view || currentUrl == null || !local(Uri.parse(currentUrl)) || !session.matches("[a-zA-Z0-9:-]{1,100}")) return;
                         diagnosticsBridge.allow(nonce, session);
                         view.evaluateJavascript("window.NeconyanCrashDiagnostics?.setNativeBridgeToken?.(" + JSONObject.quote(nonce) + ")", null);
                     } catch (Exception ignored) { }
                 });
-                if (Uri.parse(url).getPath().equals("/login")) { connect(); return; }
+                // getPath() is null for opaque URLs; compare the constant to the path.
+                if ("/login".equals(Uri.parse(url).getPath())) { connect(); return; }
                 if (!loggedPageFinished) {
                     loggedPageFinished = true;
                     logStartup("page finished");
@@ -295,6 +303,27 @@ public final class MainActivity extends Activity {
     private String reportSummary(CrashReport.Entry entry, boolean saved) {
         return CrashReport.displayText(entry, saved);
     }
+    // Dialogs whose window can outlive the activity throw BadTokenException on show, and
+    // teardown can make dismissal fail. Both are expected lifecycle races: log them and
+    // treat them as "no dialog" instead of crashing the process.
+    private AlertDialog safeShow(AlertDialog.Builder builder) {
+        if (closed || isFinishing() || isDestroyed()) return null;
+        try { return builder.show(); }
+        catch (RuntimeException error) { android.util.Log.w("Neconyan", "Dialog could not be shown", error); return null; }
+    }
+
+    private static void safeDismiss(Dialog dialog) {
+        if (dialog == null) return;
+        try { if (dialog.isShowing()) dialog.dismiss(); }
+        catch (RuntimeException error) { android.util.Log.w("Neconyan", "Dialog could not be dismissed", error); }
+    }
+
+    private AlertDialog safeShow(AlertDialog dialog) {
+        if (closed || isFinishing() || isDestroyed()) return null;
+        try { dialog.show(); return dialog; }
+        catch (RuntimeException error) { android.util.Log.w("Neconyan", "Dialog could not be shown", error); return null; }
+    }
+
     private void acknowledgeReport(CrashReport.Entry entry) {
         SharedPreferences preferences = getSharedPreferences("crash-diagnostics", MODE_PRIVATE);
         List<String> incidents = new ArrayList<>(preferences.getStringSet("seen-incidents-v1", Collections.emptySet()));
@@ -314,10 +343,11 @@ public final class MainActivity extends Activity {
             share.setOnClickListener(view -> shareReport(visibleReport)); content.addView(share);
             crashDetails = new TextView(this); crashDetails.setText(entry.text); crashDetails.setTextIsSelectable(true); content.addView(crashDetails);
             ScrollView scroll = new ScrollView(this); scroll.addView(content);
-            crashDialog = new AlertDialog.Builder(this).setTitle("Crash report").setView(scroll).setPositiveButton("Close", null).create();
+            AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Crash report").setView(scroll).setPositiveButton("Close", null).create();
             visibleReport = entry;
-            crashDialog.setOnDismissListener(dialog -> { crashDialog = null; visibleReport = null; if (pendingReport != null) presentPendingReport(); else if (serverSafe && !safeNoticeShown) showSafeNotice(); });
-            crashDialog.show();
+            dialog.setOnDismissListener(dismissed -> { if (crashDialog == dismissed) crashDialog = null; visibleReport = null; if (pendingReport != null) presentPendingReport(); else if (serverSafe && !safeNoticeShown) showSafeNotice(); });
+            if (safeShow(dialog) == null) return false;
+            crashDialog = dialog;
             if (acknowledge) acknowledgeReport(entry);
             return true;
         } catch (RuntimeException error) { crashDialog = null; return false; }
@@ -359,10 +389,16 @@ public final class MainActivity extends Activity {
             runOnUiThread(() -> {
                 if (isFinishing() || isDestroyed()) return;
                 if (mainView) {
+                    rendererReport = result.entry;
+                    rendererReportSaved = result.saved;
                     setStatusText(reportSummary(result.entry, result.saved) + "\n\nTap Try again to reopen your workspace.");
-                    addAction("Copy report", button -> copyReport(result.entry));
-                    addAction("Share report", button -> shareReport(result.entry));
-                    addAction("Full details", button -> showCrashReport(result.entry, false, result.saved));
+                    // A repeat crash must not stack another copy of the same actions.
+                    if (!rendererActionsAdded) {
+                        rendererActionsAdded = true;
+                        addAction("Copy report", button -> copyReport(rendererReport));
+                        addAction("Share report", button -> shareReport(rendererReport));
+                        addAction("Full details", button -> showCrashReport(rendererReport, false, rendererReportSaved));
+                    }
                     if (resumed) acknowledgeReport(result.entry);
                     else { pendingReport = result.entry; pendingSaved = result.saved; }
                 } else offerCrashReport(result.entry, result.saved);
@@ -390,12 +426,12 @@ public final class MainActivity extends Activity {
                 readingCrashes.set(false);
                 if (token != null && !bridgeGate.accepts(token)) return;
                 if (!resumed || isFinishing() || isDestroyed()) return;
-                if (entries.isEmpty()) { new AlertDialog.Builder(this).setMessage(readError.isEmpty() ? "No saved Android crash reports." : readError).setPositiveButton("Close", null).show(); return; }
+                if (entries.isEmpty()) { safeShow(new AlertDialog.Builder(this).setMessage(readError.isEmpty() ? "No saved Android crash reports." : readError).setPositiveButton("Close", null)); return; }
                 String[] labels = entries.stream().map(entry -> (entry.at > 0 ? java.text.DateFormat.getDateTimeInstance().format(new Date(entry.at)) + "\n" : "") + entry.summary).toArray(String[]::new);
-                new AlertDialog.Builder(this).setTitle("Saved crash reports").setItems(labels, (dialog, index) -> ActivityBreadcrumbs.execute(() -> {
+                safeShow(new AlertDialog.Builder(this).setTitle("Saved crash reports").setItems(labels, (dialog, index) -> ActivityBreadcrumbs.execute(() -> {
                     CrashReport.Entry entry = CrashDiagnostics.store(this).readEntry(entries.get(index).id);
                     runOnUiThread(() -> showCrashReport(entry, false, true));
-                })).setPositiveButton("Close", null).show();
+                })).setPositiveButton("Close", null));
             });
         }, () -> readingCrashes.set(false));
     }
@@ -437,11 +473,11 @@ public final class MainActivity extends Activity {
         return origin != null && uri != null && (uri.getScheme() + "://" + uri.getAuthority()).equals(origin);
     }
     private void external(Uri uri) {
-        if (!Arrays.asList("https", "http", "mailto").contains(uri.getScheme())) return;
+        if (uri == null || !Arrays.asList("https", "http", "mailto").contains(uri.getScheme())) return;
         try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); } catch (ActivityNotFoundException error) { Toast.makeText(this, "No app can open this link.", Toast.LENGTH_LONG).show(); }
     }
     private void connect() {
-        if (failed || pageLoadInProgress() || !connecting.compareAndSet(false, true)) return;
+        if (closed || failed || pageLoadInProgress() || !connecting.compareAndSet(false, true)) return;
         loggedPageFinished = false;
         worker.execute(() -> {
             try { connectNow(); }
@@ -472,7 +508,7 @@ public final class MainActivity extends Activity {
     // A server that stops while starting is restarted once in safe mode before giving up.
     private void connectNow() throws Exception {
         String stopped = null;
-        while (!isFinishing() && !failed) {
+        while (!isFinishing() && !failed && !closed) {
             if (stopped != null) {
                 if (!restartAfterStop(stopped)) return;
             } else if (!serverProcessRunning()) {
@@ -498,7 +534,7 @@ public final class MainActivity extends Activity {
         long deadline = System.currentTimeMillis() + 300000;
         long lastProbe = 0;
         Exception last = null;
-        while (!isFinishing() && !failed && System.currentTimeMillis() < deadline) {
+        while (!isFinishing() && !failed && !closed && System.currentTimeMillis() < deadline) {
             boolean marker = readyMarkerPresent();
             if (marker) logMarkerSeen();
             try {
@@ -529,7 +565,7 @@ public final class MainActivity extends Activity {
                 Thread.sleep(marker ? 500 : 100);
             }
         }
-        if (isFinishing() || failed) return null;
+        if (isFinishing() || failed || closed) return null;
         return "Neconyan took more than five minutes to start" + (last == null ? "." : " (" + last.getMessage() + ").");
     }
     private boolean restartAfterStop(String reason) throws InterruptedException {
@@ -597,14 +633,17 @@ public final class MainActivity extends Activity {
         } catch (Throwable ignored) { }
     }
     private void startServer(boolean safe) {
-        serverSafe = safe;
-        serverSeen = false;
-        loggedMarkerSeen = false;
-        serverStartedAt = System.currentTimeMillis();
-        if (firstStartAt == 0) firstStartAt = serverStartedAt;
-        logStartup("server requested");
-        new File(getCacheDir(), "startup-status.txt").delete();
-        startForegroundService(new Intent(this, ServerService.class).putExtra(ServerService.SAFE, safe));
+        synchronized (serviceStartLock) {
+            if (closed || isFinishing() || isDestroyed()) return;
+            serverSafe = safe;
+            serverSeen = false;
+            loggedMarkerSeen = false;
+            serverStartedAt = System.currentTimeMillis();
+            if (firstStartAt == 0) firstStartAt = serverStartedAt;
+            logStartup("server requested");
+            new File(getCacheDir(), "startup-status.txt").delete();
+            startForegroundService(new Intent(this, ServerService.class).putExtra(ServerService.SAFE, safe));
+        }
     }
     private boolean serverProcessRunning() {
         List<ActivityManager.RunningAppProcessInfo> processes = getSystemService(ActivityManager.class).getRunningAppProcesses();
@@ -745,17 +784,17 @@ public final class MainActivity extends Activity {
     private void showSafeNotice() {
         if (!resumed || pendingReport != null || crashDialog != null && crashDialog.isShowing()) return;
         safeNoticeShown = true;
-        new AlertDialog.Builder(this).setTitle("Neconyan is in safe mode")
+        safeShow(new AlertDialog.Builder(this).setTitle("Neconyan is in safe mode")
             .setMessage("Neconyan stopped while starting, so it started again with background tasks paused: automatic memory updates and automatic messages are off, and replies or jobs that were interrupted are paused so you can retry them.\n\nYour chats are safe. Safe mode ends when you stop Neconyan and open it again.")
             .setPositiveButton("Continue", null)
-            .setNeutralButton("Save a backup", (dialog, which) -> offerBackup()).show();
+            .setNeutralButton("Save a backup", (dialog, which) -> offerBackup()));
     }
     private void offerBackup() {
-        new AlertDialog.Builder(this).setTitle("Save a backup of your data")
+        safeShow(new AlertDialog.Builder(this).setTitle("Save a backup of your data")
             .setMessage("This saves your chats, characters, lorebooks, settings and other Neconyan data as a ZIP file. It works even when Neconyan cannot start.\n\nSaved API keys are left out unless you include them. Anyone with a backup that has keys can use them.")
             .setPositiveButton("Save backup", (dialog, which) -> chooseBackupFile(false))
             .setNeutralButton("Include API keys", (dialog, which) -> chooseBackupFile(true))
-            .setNegativeButton("Cancel", null).show();
+            .setNegativeButton("Cancel", null));
     }
     private void chooseBackupFile(boolean includeKeys) {
         backupKeys = includeKeys;
@@ -777,19 +816,19 @@ public final class MainActivity extends Activity {
                 message = "The backup could not be saved: " + error.getMessage() + "\n\nCheck free storage and try another location.";
             }
             String text = message;
-            runOnUiThread(() -> { if (!isFinishing()) new AlertDialog.Builder(this).setMessage(text).setPositiveButton("OK", null).show(); });
+            runOnUiThread(() -> safeShow(new AlertDialog.Builder(this).setMessage(text).setPositiveButton("OK", null)));
         }, "neconyan-backup").start();
     }
     private final Runnable watchdog = new Runnable() {
         @Override public void run() {
-            if (!resumed) return;
+            if (!resumed || closed) return;
             if (web != null && web.getVisibility() == View.VISIBLE && !failed && !connecting.get())
                 worker.execute(() -> { if (!connecting.get() && !failed && !serverProcessRunning()) runOnUiThread(MainActivity.this::reconnect); });
             main.postDelayed(this, 5000);
         }
     };
     private void reconnect() {
-        if (failed || web == null || web.getVisibility() != View.VISIBLE) return;
+        if (closed || failed || web == null || web.getVisibility() != View.VISIBLE) return;
         workspaceRequested = false;
         web.setVisibility(View.GONE);
         setStatusText("Reconnecting to your workspace…");
@@ -887,9 +926,20 @@ public final class MainActivity extends Activity {
         try { exportStream.close(); exportStream = null; } catch (IOException error) { cancelExport(); return; }
         runOnUiThread(() -> {
             if (token != null && !bridgeGate.accepts(token)) return;
-            Intent save = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/octet-stream").putExtra(Intent.EXTRA_TITLE, exportName);
-            try { startActivityForResult(save, 13); } catch (ActivityNotFoundException error) { cancelExport(); Toast.makeText(this, "Install a file manager to save exports.", Toast.LENGTH_LONG).show(); }
+            chooseExportDestination();
         });
+    }
+    // Shared by the first save prompt and the retry after a failed write, so both
+    // handle a missing file manager the same way instead of crashing on the retry.
+    private void chooseExportDestination() {
+        if (closed || isFinishing() || isDestroyed()) { cancelExport(); return; }
+        if (exportStream == null && export == null) return;
+        Intent save = new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/octet-stream").addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_TITLE, exportName);
+        try { startActivityForResult(save, 13); }
+        catch (ActivityNotFoundException error) {
+            cancelExport();
+            Toast.makeText(this, "Install a file manager to save exports.", Toast.LENGTH_LONG).show();
+        }
     }
     @JavascriptInterface public synchronized boolean cancelExport(String token) {
         if (!bridgeGate.accepts(token)) return false;
@@ -954,9 +1004,9 @@ public final class MainActivity extends Activity {
                     }
                     runOnUiThread(() -> Toast.makeText(this, "Export saved.", Toast.LENGTH_SHORT).show());
                     cancelExport();
-                } catch (Exception error) { runOnUiThread(() -> new AlertDialog.Builder(this).setMessage("The export could not be saved. Choose another location.")
-                    .setPositiveButton("Try again", (dialog, which) -> startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/octet-stream").addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_TITLE, exportName), 13))
-                    .setNegativeButton("Cancel", (dialog, which) -> cancelExport()).show()); }
+                } catch (Exception error) { runOnUiThread(() -> safeShow(new AlertDialog.Builder(this).setMessage("The export could not be saved. Choose another location.")
+                    .setPositiveButton("Try again", (dialog, which) -> chooseExportDestination())
+                    .setNegativeButton("Cancel", (dialog, which) -> cancelExport()))); }
             });
         }
     }
@@ -975,11 +1025,23 @@ public final class MainActivity extends Activity {
     private void handleBack() {
         if (web == null) { finish(); return; }
         if (web.canGoBack()) { web.goBack(); return; }
-        new AlertDialog.Builder(this).setMessage("Keep Neconyan running in the background?")
+        safeShow(new AlertDialog.Builder(this).setMessage("Keep Neconyan running in the background?")
             .setPositiveButton("Keep running", (dialog, which) -> moveTaskToBack(true))
-            .setNegativeButton("Stop and close", (dialog, which) -> { ActivityBreadcrumbs.state("closed"); stopService(new Intent(this, ServerService.class)); finish(); }).show();
+            .setNegativeButton("Stop and close", (dialog, which) -> closeNeconyan()));
+    }
+    // Marks the stop before the service goes away: a pending connect worker must not
+    // restart the server the user just asked to stop.
+    private void closeNeconyan() {
+        synchronized (serviceStartLock) {
+            closed = true;
+            worker.shutdownNow();
+            ActivityBreadcrumbs.state("closed");
+            stopService(new Intent(this, ServerService.class));
+        }
+        finish();
     }
     @Override public void onDestroy() {
+        synchronized (serviceStartLock) { closed = true; }
         navigationGeneration++; diagnosticsBridge.invalidate();
         bridgeGate.clear();
         bridgeToken = null;
@@ -988,6 +1050,7 @@ public final class MainActivity extends Activity {
         if (chooser != null) chooser.onReceiveValue(null);
         if (media != null) media.deny();
         cancelExport();
+        safeDismiss(crashDialog);
         if (web != null) web.destroy();
         if (apkUpdater != null) apkUpdater.close();
         super.onDestroy();

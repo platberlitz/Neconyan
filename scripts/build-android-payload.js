@@ -26,6 +26,7 @@ for (const name of files) {
     fs.copyFileSync(path.join(root, name), target);
 }
 fs.copyFileSync(path.join(root, 'android/server-bootstrap.mjs'), path.join(staging, 'server-bootstrap.mjs'));
+fs.copyFileSync(path.join(root, 'android/bootstrap-config.mjs'), path.join(staging, 'bootstrap-config.mjs'));
 fs.copyFileSync(path.join(root, 'android/file-stats.mjs'), path.join(staging, 'file-stats.mjs'));
 // The Android Node runtime carries English-only ICU data without word-break rules, so
 // Intl.Segmenter crashes it (issue 80). Ship the full official data for the same ICU major.

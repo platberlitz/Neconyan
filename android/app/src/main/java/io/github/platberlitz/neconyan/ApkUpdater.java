@@ -50,11 +50,12 @@ public final class ApkUpdater {
                 if (!activity.getPackageName().equals("io.github.platberlitz.neconyan")) throw new IOException("A debug app cannot be replaced by a release APK. Install the release app separately.");
                 String url = ApkUpdatePolicy.downloadUrl(version, architecture());
                 busy = true;
-                new AlertDialog.Builder(activity).setTitle("Update Neconyan to v" + version + "?")
+                AlertDialog confirm = new AlertDialog.Builder(activity).setTitle("Update Neconyan to v" + version + "?")
                     .setMessage("Download the official APK from GitHub? It may use several hundred MB. Android will ask you to approve installation. Your saved data stays on this device.")
                     .setNegativeButton("Cancel", (dialog, which) -> busy = false)
                     .setOnCancelListener(dialog -> busy = false)
-                    .setPositiveButton("Download APK", (dialog, which) -> { if (bridgeGate.accepts(token)) download(version, url); else busy = false; }).show();
+                    .setPositiveButton("Download APK", (dialog, which) -> { if (bridgeGate.accepts(token)) download(version, url); else busy = false; }).create();
+                if (!showDialog(confirm)) busy = false;
             } catch (Exception error) { fail(error); }
         });
         return true;
@@ -91,6 +92,16 @@ public final class ApkUpdater {
             && (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR1 || !activity.isDestroyed());
     }
 
+    // A dialog whose window is bound to a destroyed activity throws BadTokenException.
+    // That is an expected lifecycle race: log it and report "not shown" so the caller
+    // can clear its state instead of the process crashing.
+    private boolean showDialog(Dialog dialog) {
+        try {
+            if (isActivityAlive()) { dialog.show(); return true; }
+        } catch (RuntimeException error) { android.util.Log.w("Neconyan", "Update dialog could not be shown", error); }
+        return false;
+    }
+
     private void download(String version, String url) {
         if (!isActivityAlive()) { busy = false; return; }
         cancelled = false;
@@ -102,7 +113,7 @@ public final class ApkUpdater {
         progress.setIndeterminate(true);
         progress.setCancelable(false);
         progress.setButton(DialogInterface.BUTTON_NEGATIVE, "Cancel", (dialog, which) -> cancel());
-        progress.show();
+        if (!showDialog(progress)) { progress = null; busy = false; return; }
         worker.execute(() -> {
             File apk = UpdateApkProvider.apkFile(activity);
             File partial = null;
@@ -200,14 +211,16 @@ public final class ApkUpdater {
         if (!isActivityAlive()) { busy = false; return; }
         try {
             if (!activity.getPackageManager().canRequestPackageInstalls()) {
-                new AlertDialog.Builder(activity).setTitle("Allow this APK update")
+                AlertDialog notice = new AlertDialog.Builder(activity).setTitle("Allow this APK update")
                     .setMessage("In Android settings, allow Neconyan to install apps, then return here to approve the update.")
                     .setNegativeButton("Cancel", (dialog, which) -> finishPendingUpdate())
                     .setOnCancelListener(dialog -> finishPendingUpdate())
                     .setPositiveButton("Open settings", (dialog, which) -> {
                         try { activity.startActivityForResult(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + activity.getPackageName())), INSTALL_PERMISSION); }
                         catch (Exception error) { fail(error); }
-                    }).show();
+                    }).create();
+                // A lost window must not leave the updater claiming a busy update.
+                if (!showDialog(notice)) finishPendingUpdate();
                 return;
             }
             String version = pendingVersion;
@@ -265,11 +278,18 @@ public final class ApkUpdater {
         if (closed) return;
         finishPendingUpdate();
         if (!isActivityAlive()) return;
-        new AlertDialog.Builder(activity).setTitle("APK update not installed")
+        AlertDialog notice = new AlertDialog.Builder(activity).setTitle("APK update not installed")
             .setMessage(error.getMessage() == null ? "Could not update the APK. Your saved data has not been changed." : error.getMessage())
-            .setPositiveButton("OK", null).show();
+            .setPositiveButton("OK", null).create();
+        if (!showDialog(notice)) android.util.Log.w("Neconyan", "The update failure notice could not be shown");
     }
-    private void dismissProgress() { if (progress != null) { progress.dismiss(); progress = null; } }
+    private void dismissProgress() {
+        ProgressDialog current = progress;
+        progress = null;
+        if (current == null) return;
+        try { if (current.isShowing()) current.dismiss(); }
+        catch (RuntimeException error) { android.util.Log.w("Neconyan", "Update progress could not be dismissed", error); }
+    }
     private void cancel() { cancelled = true; HttpURLConnection active = connection; if (active != null) active.disconnect(); }
     void close() { closed = true; cancel(); dismissProgress(); worker.shutdownNow(); }
 }
