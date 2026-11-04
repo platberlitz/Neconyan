@@ -194,7 +194,7 @@ const NECONYAN_PALETTE_BINDINGS = Object.freeze([
     ['shadow_color', '#shadow-color-picker', 'shadow'],
     ['border_color', '#border-color-picker', 'border'],
 ]);
-const NN_ACCENT_PROFILE_SEED_VERSION = 3;
+const NN_ACCENT_PROFILE_SEED_VERSION = 4;
 const MAX_NN_ACCENT_PROFILE_NAME_LENGTH = 40;
 const NECONYAN_ACCENT_PROFILE_SEEDS = Object.freeze([
     { name: 'Warm Signal', quote_text_color: 'rgba(201, 198, 168, 1)', underline_text_color: 'rgba(166, 164, 147, 1)' },
@@ -235,6 +235,36 @@ const NECONYAN_ACCENT_PROFILE_SEEDS = Object.freeze([
     { name: 'Espresso', quote_text_color: 'rgba(66, 42, 33, 1)', underline_text_color: 'rgba(119, 79, 54, 1)' },
     { name: 'Storm Slate', quote_text_color: 'rgba(45, 52, 64, 1)', underline_text_color: 'rgba(93, 107, 127, 1)' },
     { name: 'Oxblood', quote_text_color: 'rgba(89, 27, 32, 1)', underline_text_color: 'rgba(145, 60, 49, 1)' },
+    { name: 'Biohazard Pastel', quote_text_color: 'rgba(190, 242, 100, 1)', underline_text_color: 'rgba(249, 168, 212, 1)' },
+    { name: 'Bruised Velvet', quote_text_color: 'rgba(109, 40, 217, 1)', underline_text_color: 'rgba(244, 114, 182, 1)' },
+    { name: 'Absinthe Hour', quote_text_color: 'rgba(163, 230, 53, 1)', underline_text_color: 'rgba(253, 224, 71, 1)' },
+    { name: 'Oil Slick', quote_text_color: 'rgba(91, 33, 182, 1)', underline_text_color: 'rgba(8, 145, 178, 1)' },
+    { name: 'Peacock Ore', quote_text_color: 'rgba(20, 184, 166, 1)', underline_text_color: 'rgba(217, 70, 239, 1)' },
+    { name: 'Acid Wash Denim', quote_text_color: 'rgba(217, 249, 157, 1)', underline_text_color: 'rgba(30, 64, 175, 1)' },
+    { name: 'Warning Tape', quote_text_color: 'rgba(250, 204, 21, 1)', underline_text_color: 'rgba(23, 23, 23, 1)' },
+    { name: 'Foxfire', quote_text_color: 'rgba(190, 242, 100, 1)', underline_text_color: 'rgba(29, 78, 216, 1)' },
+    { name: 'Rose Window', quote_text_color: 'rgba(219, 39, 119, 1)', underline_text_color: 'rgba(56, 189, 248, 1)' },
+    { name: 'Mallwave', quote_text_color: 'rgba(244, 114, 182, 1)', underline_text_color: 'rgba(103, 232, 249, 1)' },
+    { name: 'Late Night Laundromat', quote_text_color: 'rgba(103, 232, 249, 1)', underline_text_color: 'rgba(253, 224, 71, 1)' },
+    { name: 'Cryptid Spotting', quote_text_color: 'rgba(74, 222, 128, 1)', underline_text_color: 'rgba(30, 27, 75, 1)' },
+    { name: 'Radioactive Tangerine', quote_text_color: 'rgba(251, 146, 60, 1)', underline_text_color: 'rgba(163, 230, 53, 1)' },
+    { name: 'Deep Sea Lure', quote_text_color: 'rgba(34, 211, 238, 1)', underline_text_color: 'rgba(15, 23, 42, 1)' },
+    { name: 'Amber Fossil', quote_text_color: 'rgba(245, 158, 11, 1)', underline_text_color: 'rgba(120, 53, 15, 1)' },
+    { name: 'Solarized Rust', quote_text_color: 'rgba(185, 28, 28, 1)', underline_text_color: 'rgba(253, 186, 116, 1)' },
+    { name: 'Cathedral Dusk', quote_text_color: 'rgba(124, 58, 237, 1)', underline_text_color: 'rgba(251, 191, 36, 1)' },
+    { name: 'Swamp Gas', quote_text_color: 'rgba(101, 163, 13, 1)', underline_text_color: 'rgba(56, 189, 248, 1)' },
+    { name: 'Vantablush', quote_text_color: 'rgba(24, 24, 27, 1)', underline_text_color: 'rgba(251, 113, 133, 1)' },
+    { name: 'Neon Requiem', quote_text_color: 'rgba(236, 72, 153, 1)', underline_text_color: 'rgba(49, 46, 129, 1)' },
+    { name: 'Cursed Caramel', quote_text_color: 'rgba(180, 83, 9, 1)', underline_text_color: 'rgba(253, 230, 138, 1)' },
+    { name: 'Gilded Rot', quote_text_color: 'rgba(234, 179, 8, 1)', underline_text_color: 'rgba(22, 101, 52, 1)' },
+    { name: 'Kintsugi', quote_text_color: 'rgba(224, 178, 68, 1)', underline_text_color: 'rgba(30, 41, 59, 1)' },
+    { name: 'Liquid Mercury', quote_text_color: 'rgba(148, 163, 184, 1)', underline_text_color: 'rgba(15, 118, 110, 1)' },
+    { name: 'Overgrown Arcade', quote_text_color: 'rgba(168, 85, 247, 1)', underline_text_color: 'rgba(132, 204, 22, 1)' },
+    { name: 'Combustion Lemon', quote_text_color: 'rgba(254, 240, 138, 1)', underline_text_color: 'rgba(239, 68, 68, 1)' },
+    { name: 'Petrol Sheen', quote_text_color: 'rgba(13, 148, 136, 1)', underline_text_color: 'rgba(250, 232, 88, 1)' },
+    { name: 'Volcanic Glass', quote_text_color: 'rgba(28, 25, 23, 1)', underline_text_color: 'rgba(251, 146, 60, 1)' },
+    { name: 'Bone and Neon', quote_text_color: 'rgba(214, 211, 209, 1)', underline_text_color: 'rgba(217, 70, 239, 1)' },
+    { name: 'Frostbite', quote_text_color: 'rgba(125, 211, 252, 1)', underline_text_color: 'rgba(194, 65, 199, 1)' },
 ]);
 const THEME_COLOR_PROPERTIES = Object.freeze([
     { key: 'main_text_color', selector: '#main-text-color-picker', type: 'main' },
