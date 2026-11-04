@@ -383,8 +383,25 @@ async function jevPresetsAndQuickControlsSave({ page }) {
         await quick.getByLabel('Recall decision model', { exact: true }).selectOption('jev-1.14');
         await expect.poll(async () => {
             const selector = (await readConfig(page)).config.roles.selector;
-            return [selector.enabled, selector.model, selector.decisionMode, selector.decisionThreshold];
-        }, { timeout: 15000 }).toEqual([true, 'typesafe/jev-1.14', 'decision', 0.5]);
+            return [selector.enabled, selector.useShared, selector.endpoint, selector.model, selector.decisionMode, selector.decisionThreshold];
+        }, { timeout: 15000 }).toEqual([true, false, 'https://openrouter.ai/api/alpha/decisions', 'typesafe/jev-1.14', 'decision', 0.5]);
+        await expect(quick.getByLabel('Selector connection', { exact: true })).toHaveValue('');
+        await expect(quick.getByLabel('Selector endpoint', { exact: true })).toHaveValue('https://openrouter.ai/api/alpha/decisions');
+        await expect(quick.getByLabel('Selector model', { exact: true })).toHaveValue('typesafe/jev-1.14');
+        await expect(quick.getByLabel('Selector API key', { exact: true })).toBeVisible();
+
+        await quick.getByLabel('Recall decision model', { exact: true }).selectOption('custom');
+        await quick.getByLabel('Selector endpoint', { exact: true }).fill('http://127.0.0.1:8000/v1/systemone');
+        await quick.getByLabel('Selector model', { exact: true }).fill('my-org/custom-jev-9b');
+        await expect.poll(async () => {
+            const selector = (await readConfig(page)).config.roles.selector;
+            return [selector.enabled, selector.endpoint, selector.model, selector.decisionMode];
+        }, { timeout: 15000 }).toEqual([true, 'http://127.0.0.1:8000/v1/systemone', 'my-org/custom-jev-9b', 'decision']);
+
+        await quick.getByLabel('Recall decision model', { exact: true }).selectOption('jev-1.14');
+        await quick.getByLabel('Selector endpoint', { exact: true }).fill('https://openrouter.ai/api/alpha/decisions');
+        await expect.poll(async () => (await readConfig(page)).config.roles.selector.model, { timeout: 15000 })
+            .toBe('typesafe/jev-1.14');
 
         await quick.getByLabel('Memory window preset', { exact: true }).selectOption('jev-recommended');
         await expect.poll(async () => {
@@ -401,6 +418,9 @@ async function jevPresetsAndQuickControlsSave({ page }) {
             .toBe('Keep exact inventory items and promises.');
 
         await workspace.locator('#mewmory-role-selector').click();
+        await expect(workspace.getByLabel('Connection profile', { exact: true })).toHaveValue('');
+        await expect(workspace.getByLabel('OpenAI-compatible endpoint', { exact: true })).toBeVisible();
+        await expect(workspace.getByLabel('API key', { exact: true })).toBeVisible();
         await expect(workspace.getByLabel('Jev / decision model preset', { exact: true })).toHaveValue('jev-1.14');
         await expect(workspace.getByLabel('Decision protocol', { exact: true })).toHaveValue('decision');
         await expect(workspace.getByLabel('Decision score threshold', { exact: true })).toHaveValue('0.5');
@@ -408,8 +428,8 @@ async function jevPresetsAndQuickControlsSave({ page }) {
         await workspace.getByLabel('Jev / decision model preset', { exact: true }).selectOption('open-jev-9b');
         await expect.poll(async () => {
             const selector = (await readConfig(page)).config.roles.selector;
-            return [selector.model, selector.decisionThreshold];
-        }, { timeout: 15000 }).toEqual(['ZefanCai/Open-Jev-9B', 0.1]);
+            return [selector.model, selector.endpoint, selector.decisionThreshold];
+        }, { timeout: 15000 }).toEqual(['ZefanCai/Open-Jev-9B', 'http://127.0.0.1:8000/v1/systemone', 0.1]);
         await expect(workspace.getByLabel('Decision score threshold', { exact: true })).toHaveValue('0.1');
     } finally {
         const { config } = await readConfig(page);

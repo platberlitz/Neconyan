@@ -15,6 +15,7 @@ const {
     defaultConfig,
     legacyRoleVersion,
     parseDecisionOutput,
+    publicConfig,
     readConfig,
     resolveDecisionUrl,
     roleVersion,
@@ -89,11 +90,13 @@ test('extractionContract preserves base contract and appends focus and custom in
     assert.match(compact, /Extraction focus: KEY MILESTONES ONLY\./);
 });
 
-test('resolveDecisionUrl maps OpenRouter and System One endpoints cleanly', () => {
+test('resolveDecisionUrl maps OpenRouter, System One and custom endpoints cleanly', () => {
     assert.equal(resolveDecisionUrl('https://openrouter.ai/api/v1'), 'https://openrouter.ai/api/alpha/decisions');
     assert.equal(resolveDecisionUrl('http://127.0.0.1:8000/v1'), 'http://127.0.0.1:8000/v1/systemone');
+    assert.equal(resolveDecisionUrl('http://127.0.0.1:8000'), 'http://127.0.0.1:8000/v1/systemone');
     assert.equal(resolveDecisionUrl('http://127.0.0.1:8000/v1/systemone'), 'http://127.0.0.1:8000/v1/systemone');
     assert.equal(resolveDecisionUrl('https://api.example.com/v1/decisions'), 'https://api.example.com/v1/decisions');
+    assert.equal(resolveDecisionUrl('https://proxy.example.com/custom/jev-decide'), 'https://proxy.example.com/custom/jev-decide');
 });
 
 test('buildDecisionPayload and parseDecisionOutput produce valid SELECTION_CONTRACT selections', () => {
@@ -127,9 +130,11 @@ test('callJsonRole uses the System One decision endpoint for Jev selector roles 
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mewmory-jev-'));
     const directories = { root };
     let receivedUrl = '';
+    let receivedAuth = '';
     let receivedBody = null;
     const server = http.createServer((req, res) => {
         receivedUrl = req.url;
+        receivedAuth = req.headers.authorization || '';
         let raw = '';
         req.on('data', chunk => { raw += chunk; });
         req.on('end', () => {
@@ -157,6 +162,7 @@ test('callJsonRole uses the System One decision endpoint for Jev selector roles 
         nextConfig.roles.selector.enabled = true;
         nextConfig.roles.selector.endpoint = `http://127.0.0.1:${port}/v1`;
         nextConfig.roles.selector.model = 'typesafe/jev-1.14';
+        nextConfig.roles.selector.apiKey = 'sk-jev-test-secret';
         nextConfig.roles.selector.decisionMode = 'decision';
         nextConfig.roles.selector.decisionThreshold = 0.5;
 
@@ -165,10 +171,12 @@ test('callJsonRole uses the System One decision endpoint for Jev selector roles 
         assert.equal(saved.extractionInstructions, 'Record every inventory item.');
         assert.equal(saved.roles.selector.decisionMode, 'decision');
         assert.equal(saved.roles.selector.decisionThreshold, 0.5);
+        assert.equal(saved.roles.selector.hasKey, true);
 
         const loaded = readConfig(directories);
         assert.equal(loaded.extractionFocus, 'every');
         assert.equal(loaded.roles.selector.model, 'typesafe/jev-1.14');
+        assert.equal(publicConfig(directories, loaded).roles.selector.hasKey, true);
         assert.equal(roleVersion(loaded, 'extractor'), beforeExtractorVersion);
         assert.equal(processingVersion(loaded), beforeProcessingVersion);
 
@@ -188,6 +196,7 @@ test('callJsonRole uses the System One decision endpoint for Jev selector roles 
             candidates,
         });
         assert.equal(receivedUrl, '/v1/systemone');
+        assert.equal(receivedAuth, 'Bearer sk-jev-test-secret');
         assert.equal(receivedBody.model, 'typesafe/jev-1.14');
         assert.equal(typeof receivedBody.questions?.q_0?.instructions, 'string');
         assert.deepEqual(result.value.selections.map(item => item.recordId), ['rec-a']);

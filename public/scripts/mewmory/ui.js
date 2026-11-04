@@ -321,18 +321,34 @@ function resolvedDraftRoleModel(draft, roleName) {
 
 function applyDecisionPresetToRole(draft, roleName, presetId) {
     const role = draft?.roles?.[roleName];
+    if (!role) return;
+    if (presetId === 'custom') {
+        if (role.useShared) {
+            role.useShared = false;
+            role.profileId = draft.sharedProfileId || '';
+        }
+        if (!role.profileId && !role.endpoint) {
+            role.endpoint = 'http://127.0.0.1:8000/v1/systemone';
+        }
+        role.decisionMode = 'decision';
+        if (role.profileId || String(role.model || '').trim()) {
+            role.enabled = true;
+        }
+        return;
+    }
     const preset = findDecisionPreset(presetId);
-    if (!role || !preset) return;
+    if (!preset) return;
     role.enabled = true;
-    if (role.useShared && draft.sharedProfileId) {
+    if (role.useShared) {
         role.useShared = false;
-        role.profileId = draft.sharedProfileId;
+        role.profileId = draft.sharedProfileId || '';
     }
     if (role.profileId) {
         role.modelOverride = preset.model;
     } else {
+        const previousDefaultEndpoint = JEV_DECISION_PRESETS.some(item => item.endpoint === role.endpoint);
         role.model = preset.model;
-        if (!role.endpoint && preset.endpoint) role.endpoint = preset.endpoint;
+        if ((!role.endpoint || previousDefaultEndpoint) && preset.endpoint) role.endpoint = preset.endpoint;
     }
     role.decisionMode = 'decision';
     role.decisionThreshold = preset.threshold;
@@ -358,23 +374,26 @@ function renderQuickSetup(root) {
     const draft = ui.draft;
     if (!draft || !mewmory.config) return;
     const selectorRole = draft.roles?.selector;
+    const allProfiles = mewmory.config.profiles || [];
+    const sharedProfile = allProfiles.find(profile => profile.id === draft.sharedProfileId);
     const { model: selectorModel, endpoint: selectorEndpoint } = resolvedDraftRoleModel(draft, 'selector');
-    const selectorDecision = Boolean(selectorRole?.enabled && effectiveDecisionMode({
+    const selectorDecision = Boolean(effectiveDecisionMode({
         ...selectorRole,
         model: selectorModel,
         endpoint: selectorEndpoint,
     }) === 'decision');
     const quick = section('Memory focus and window',
-        ...(selectorDecision ? [badge('Jev / System One', 'accent')] : []),
+        ...(selectorRole?.enabled && selectorDecision ? [badge('Jev / System One', 'accent')] : []),
         button('All model settings', () => switchTab('settings')));
     quick.id = 'mewmory-now-quick-controls';
     quick.classList.add('mewmory-quick-controls');
     const matchedDecision = findDecisionPreset(selectorModel);
+    const presetSelectValue = matchedDecision?.id || (selectorDecision ? 'custom' : '');
     const windowPresetId = detectMessageWindowPreset(draft);
     const focusOption = EXTRACTION_FOCUS_OPTIONS.find(item => item.value === (draft.extractionFocus || 'balanced')) || EXTRACTION_FOCUS_OPTIONS[1];
     const fields = node('div', 'mewmory-fields');
     fields.append(
-        field('Recall decision model', matchedDecision?.id || '', value => {
+        field('Recall decision model', presetSelectValue, value => {
             if (!value) return;
             applyDecisionPresetToRole(draft, 'selector', value);
             render();
@@ -384,11 +403,83 @@ function renderQuickSetup(root) {
             options: [
                 ['', selectorModel ? 'Current selector: ' + selectorModel : 'Choose a Jev or decision model…'],
                 ...JEV_DECISION_PRESETS.map(item => [item.id, item.label]),
+                ['custom', 'Custom Jev / System One model…'],
             ],
             hint: matchedDecision
                 ? matchedDecision.family + ' · ' + matchedDecision.model + ' (threshold ' + (selectorRole?.decisionThreshold ?? matchedDecision.threshold) + ').'
-                : 'Pick Jev or another System One decision model to score recalled memories in one pass.',
+                : 'Pick Jev, another System One model, or a custom decision endpoint to score recalled memories in one pass.',
         }),
+    );
+    if (selectorRole && (selectorRole.enabled || selectorDecision)) {
+        const usesShared = selectorRole.useShared === true;
+        const ownProfile = allProfiles.find(profile => profile.id === selectorRole.profileId);
+        const selectedProfile = usesShared ? sharedProfile : ownProfile;
+        fields.append(
+            field('Selector connection', usesShared ? SHARED_PROFILE : selectorRole.profileId || '', value => {
+                selectorRole.useShared = value === SHARED_PROFILE;
+                if (!selectorRole.useShared) {
+                    selectorRole.profileId = value;
+                    if (value && selectorModel && !selectorRole.modelOverride) {
+                        selectorRole.modelOverride = selectorModel;
+                    }
+                }
+                render();
+            }, {
+                key: 'now-selector-profile',
+                autosave: true,
+                options: [
+                    ...(draft.sharedProfileId ? [[SHARED_PROFILE, 'Use the profile for all roles (' + (sharedProfile?.name || 'Saved profile') + ')']] : []),
+                    ['', 'Manual endpoint & API key'],
+                    ...allProfiles.map(profile => [profile.id, profile.name]),
+                ],
+                hint: usesShared || selectorRole.profileId
+                    ? 'Uses the saved Connection Manager profile’s server-side API key and endpoint.'
+                    : 'Enter a decision or OpenAI-compatible endpoint URL, model ID and API key below.',
+            }),
+        );
+        if (!usesShared && selectorRole.profileId) {
+            fields.append(
+                field(selectedProfile?.model ? 'Selector model override' : 'Selector model', selectorRole.modelOverride || '', value => {
+                    selectorRole.modelOverride = value;
+                    if (String(value || '').trim()) selectorRole.enabled = true;
+                }, {
+                    key: 'now-selector-model-override',
+                    autosave: true,
+                    hint: selectedProfile?.model
+                        ? 'Overrides the profile’s model (' + selectedProfile.model + ') for Recall selector.'
+                        : 'Enter the Jev or decision model ID supported by this connection profile.',
+                }),
+            );
+        } else if (!usesShared && !selectorRole.profileId) {
+            fields.append(
+                field('Selector endpoint', selectorRole.endpoint || '', value => {
+                    selectorRole.endpoint = value;
+                    if (String(value || '').trim() && String(selectorRole.model || '').trim()) selectorRole.enabled = true;
+                }, {
+                    key: 'now-selector-endpoint',
+                    autosave: true,
+                    hint: 'For example: https://openrouter.ai/api/alpha/decisions, https://api.typesafe.ai/v1/systemone, or http://127.0.0.1:8000/v1/systemone',
+                }),
+                field('Selector model', selectorRole.model || '', value => {
+                    selectorRole.model = value;
+                    if (String(value || '').trim() && String(selectorRole.endpoint || '').trim()) selectorRole.enabled = true;
+                }, {
+                    key: 'now-selector-model',
+                    autosave: true,
+                    hint: 'Model ID sent to the endpoint (for example typesafe/jev-1.14, ZefanCai/Open-Jev-9B, or your custom Jev-like model).',
+                }),
+                field('Selector API key', selectorRole.apiKey || '', value => {
+                    selectorRole.apiKey = value;
+                }, {
+                    type: 'password',
+                    key: 'now-selector-api-key',
+                    autosave: true,
+                    hint: selectorRole.hasKey ? 'A key is saved. Leave blank to keep it.' : 'Stored in the server’s protected credentials (leave blank for local endpoints that need no key).',
+                }),
+            );
+        }
+    }
+    fields.append(
         field('Memory window preset', windowPresetId, value => {
             if (value === 'custom') return;
             applyWindowPresetToDraft(draft, value);
@@ -1280,8 +1371,20 @@ function renderSettings(root) {
         ? 'Leave blank to use the profile’s model: ' + selectedProfile.model
         : 'This profile has no saved model. Enter the model name provided by your service.' }));
     if (!native && !usesShared && !role.profileId) fields.append(
-        configField('OpenAI-compatible endpoint', role.endpoint, value => { role.endpoint = value; }, { hint: 'For example: http://127.0.0.1:8000/v1', key: 'endpoint-' + ui.role }),
-        configField('Model', role.model, value => { role.model = value; render(); }, { key: 'model-' + ui.role }),
+        configField('OpenAI-compatible endpoint', role.endpoint, value => {
+            role.endpoint = value;
+            if (role.decisionMode === 'decision' && String(value || '').trim() && String(role.model || '').trim()) role.enabled = true;
+        }, {
+            hint: DECISION_ROLES.includes(ui.role)
+                ? 'For example: https://openrouter.ai/api/alpha/decisions, https://api.typesafe.ai/v1/systemone, or http://127.0.0.1:8000/v1/systemone'
+                : 'For example: http://127.0.0.1:8000/v1',
+            key: 'endpoint-' + ui.role,
+        }),
+        configField('Model', role.model, value => {
+            role.model = value;
+            if (role.decisionMode === 'decision' && String(value || '').trim() && String(role.endpoint || '').trim()) role.enabled = true;
+            render();
+        }, { key: 'model-' + ui.role }),
         configField('API key', role.apiKey || '', value => { role.apiKey = value; }, { type: 'password', hint: role.hasKey ? 'A key is saved. Leave blank to keep it.' : 'Stored in the server’s protected credentials.', key: 'api-key-' + ui.role }),
     );
     const usedProfileId = usesShared ? draft.sharedProfileId : role.profileId;
@@ -1291,8 +1394,9 @@ function renderSettings(root) {
         const matchedPreset = findDecisionPreset(modelName);
         const autoDecision = isDecisionModel(modelName, role.endpoint);
         const activeProtocol = effectiveDecisionMode({ ...role, model: modelName });
+        const presetValue = matchedPreset?.id || (role.decisionMode === 'decision' ? 'custom' : '');
         fields.append(
-            configField('Jev / decision model preset', matchedPreset?.id || '', value => {
+            configField('Jev / decision model preset', presetValue, value => {
                 if (!value) return;
                 applyDecisionPresetToRole(draft, ui.role, value);
                 render();
@@ -1301,10 +1405,11 @@ function renderSettings(root) {
                 options: [
                     ['', 'Choose a Jev or decision model…'],
                     ...JEV_DECISION_PRESETS.map(preset => [preset.id, preset.label]),
+                    ['custom', 'Custom Jev / System One model…'],
                 ],
                 hint: matchedPreset
                     ? matchedPreset.family + ' · ' + matchedPreset.model + ' (threshold ' + matchedPreset.threshold + ').'
-                    : 'Quick-fill Jev or another System One decision model for fast memory selection.',
+                    : 'Quick-fill Jev, another System One model, or a custom decision endpoint for fast memory selection.',
             }),
             configField('Decision protocol', role.decisionMode || 'auto', value => {
                 role.decisionMode = value;

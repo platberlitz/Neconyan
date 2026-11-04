@@ -426,8 +426,16 @@ export function resolveDecisionUrl(endpoint, connection) {
     const base = (raw || (connection?.api === 'openrouter' ? 'https://openrouter.ai/api/v1' : connection?.api === 'openai' ? 'https://api.openai.com/v1' : ''))
         .replace(/\/(?:chat\/completions|embeddings)\/?$/i, '')
         .replace(/\/+$/, '');
+    if (!base) return '';
     if (/openrouter\.ai\/api\/v1$/i.test(base)) return base.replace(/\/api\/v1$/i, '') + '/api/alpha/decisions';
-    return base ? base + '/systemone' : '';
+    if (/\/v1$/i.test(base)) return base + '/systemone';
+    try {
+        const parsed = new URL(base);
+        if (!parsed.pathname || parsed.pathname === '/') return base + '/v1/systemone';
+    } catch {
+        // Keep non-URL strings unchanged for caller validation.
+    }
+    return base;
 }
 
 export function buildDecisionPayload(input) {
