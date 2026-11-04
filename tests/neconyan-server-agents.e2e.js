@@ -217,6 +217,75 @@ for (const phone of [false, true]) {
         await after.close();
     });
 
+    test(`${viewport} post-Agent refusals exhaust fallbacks and retain successful parallel edits`, async ({ app, browser }, info) => {
+        const original = 'The lantern flickers beside the open door.';
+        let improved = 'The lantern glows beside the open door.';
+        const refused = 'I’m sorry, but I can’t help with that.';
+        app.provider.mode.reply = body => {
+            const instruction = body.messages[0].content;
+            if (instruction.startsWith('REFUSE')) return body.model === 'fallback-2'
+                ? { choices: [{ finish_reason: 'content_filter', message: { content: '' } }] } : completed(refused);
+            if (instruction.startsWith('EDIT_LIGHT')) return completed(body.model === 'fallback-4' ? improved : refused);
+            if (instruction.startsWith('MENU')) return completed('1. Enter\n2. Wait outside');
+            return completed(original);
+        };
+        const account = await app.account({ phone, activeConnection: true, configureSettings: settings => {
+            const profiles = settings.extension_settings.connectionManager.profiles;
+            profiles[0].model = 'primary-agent';
+            const fallbackIds = Array.from({ length: 4 }, (_, index) => `fallback-${index + 1}`);
+            profiles.push(...fallbackIds.map(id => ({ ...profiles[0], id, name: id, model: id })));
+            settings.extension_settings.inChatAgents = { globalSettings: { enabled: true,
+                connectionProfile: profiles[0].id, connectionFallbacks: fallbackIds,
+                appendAgentsExecutionMode: 'parallel', postMainInterceptShowMessageFirst: false } };
+        } });
+        await account.open({ workspace: false });
+        await noPages(browser);
+        const native = accountScope(app);
+        withRoleplayAccount(native.base, native.account, lease => {
+            for (const [order, prompt] of ['REFUSE', 'EDIT_LIGHT', 'MENU'].entries()) {
+                writeAgentRecordLocked(lease, 'agent', { id: prompt.toLowerCase(), name: prompt, enabled: true,
+                    category: 'custom', phase: 'post', prompt, injection: { order }, postProcess: { enabled: true,
+                        promptTransformEnabled: true, promptTransformMode: prompt === 'MENU' ? 'append' : 'rewrite', promptTransformMaxTokens: 256 } });
+            }
+        });
+        const locator = await chat(account, 'Refusal fallback reply');
+        const before = await reopen(account, locator.chat, info);
+        const screenshots = path.resolve('..', 'screenshots');
+        fs.mkdirSync(screenshots, { recursive: true });
+        await before.screenshot({ path: path.join(screenshots, `refusal-fallback-${viewport}-before.png`) });
+        const bundledMacros = await noPages(browser);
+        const jobId = reply(native, account.avatar, locator, 'refusal-fallback-reply', bundledMacros);
+        await account.settled(jobId);
+        const message = readRoleplayChat(native.scope, locator).records.at(-1);
+        expect(message.mes).toBe(`${improved}\n\n1. Enter\n2. Wait outside`);
+        expect(message.extra.inChatAgentTransformHistory).toHaveLength(1);
+        expect(message.extra.inChatAgentPromptRuns.find(run => run.agentId === 'refuse').status).toBe('refused');
+        for (const instruction of ['REFUSE', 'EDIT_LIGHT']) expect(app.provider.calls
+            .filter(call => call.messages[0].content.startsWith(instruction)).map(call => call.model))
+            .toEqual(['primary-agent', 'fallback-1', 'fallback-2', 'fallback-3', 'fallback-4']);
+        const count = app.provider.calls.length;
+        await app.restart();
+        const after = await reopen(account, locator.chat, info);
+        await expect(after.locator('#chat .mes').last()).toContainText(improved);
+        await expect(after.locator('#chat .mes').last()).toContainText('Wait outside');
+        // The fixture deliberately kills the server during restart; dismiss its expected notice for the screenshot.
+        await after.locator('#neconyan-crash-notice [data-crash-action="dismiss"]').click();
+        await after.screenshot({ path: path.join(screenshots, `refusal-fallback-${viewport}-after.png`) });
+        expect(app.provider.calls).toHaveLength(count);
+        // The manual rerun uses the browser runner rather than the durable server runner.
+        improved = 'The lantern glows beside the open oak door.';
+        await after.evaluate(async () => {
+            const core = await import('/script.js');
+            const runner = await import('/scripts/extensions/in-chat-agents/agent-runner.js');
+            await runner.rerunPostGenerationAgentsOnMessage(core.chat.length - 1);
+        });
+        await expect(after.locator('#chat .mes').last()).toContainText(improved);
+        await expect(after.locator('#chat .mes').last()).toContainText('Wait outside');
+        for (const instruction of ['REFUSE', 'EDIT_LIGHT']) expect(app.provider.calls.slice(count)
+            .filter(call => call.messages[0].content.startsWith(instruction)).map(call => call.model))
+            .toEqual(['primary-agent', 'fallback-1', 'fallback-2', 'fallback-3', 'fallback-4']);
+    });
+
     test(`${viewport} saved Agents and Quick Reply finish a protected reply with every page closed`, async ({ app, browser }, info) => {
         app.provider.mode.reply = body => completed(JSON.stringify(body.messages).includes('CHANGE RESPONSE TO ORBIT')
             ? 'Edited by Agent.' : 'Original from model.');

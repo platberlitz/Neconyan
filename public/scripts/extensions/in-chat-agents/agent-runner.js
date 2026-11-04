@@ -3982,7 +3982,8 @@ export async function requestPromptTransform(agent, promptMessages, maxTokens, o
                         model: String(response?.model ?? '').trim() || getPromptTransformRequestModel(attempt.profileId, attempt.modelOverride),
                     };
                 } catch (error) {
-                    if (error?.code === 'GENERATION_BLOCKED' || isAbortSignalTriggered(error, requestAbortController.signal) || !isRequestCurrent()) throw error;
+                    const refused = options.fallbackOnRefusal && error?.generationOutcome?.status === 'blocked';
+                    if (error?.code === 'GENERATION_BLOCKED' && !refused || isAbortSignalTriggered(error, requestAbortController.signal) || !isRequestCurrent()) throw error;
                     lastError = error;
                     if (index < attempts.length - 1) {
                         console.warn(`[InChatAgents] ${agent?.name || 'Agent'} failed on ${target}; trying the next fallback connection.`, error);
@@ -4237,16 +4238,17 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
 
         try {
             const maxTokens = normalizePromptTransformMaxTokens(agent.postProcess?.promptTransformMaxTokens);
+            const cleanOutput = output => stripEchoedPartialPrefill(unwrapAssistantResponseWrapper(output).trim(),
+                promptTransformMode === 'append' ? '' : protectedPartialPrefill);
             const response = await requestPromptTransform(
                 agent,
                 helperRequest.promptMessages,
                 maxTokens,
-                { allowAssistantPrefillTail: helperRequest.allowAssistantPrefillTail, runtimeAgents: options.runtimeAgents, diagnosticHandle, acceptOutput: options.acceptOutput },
+                { allowAssistantPrefillTail: helperRequest.allowAssistantPrefillTail, runtimeAgents: options.runtimeAgents, diagnosticHandle,
+                    fallbackOnRefusal: true, isEmptyOutput: output => !cleanOutput(output),
+                    acceptOutput: output => !isGuardedRefusal(cleanOutput(output), transformMessageText) && (!options.acceptOutput || options.acceptOutput(output)) },
             );
-            const promptOutputText = stripEchoedPartialPrefill(
-                unwrapAssistantResponseWrapper(response.output).trim(),
-                promptTransformMode === 'append' ? '' : protectedPartialPrefill,
-            );
+            const promptOutputText = cleanOutput(response.output);
 
             if (!promptOutputText) {
                 console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" returned an empty response.`);
@@ -4480,6 +4482,10 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
     return { results, outputs };
 }
 
+function isRefusedPromptTransformRun(run) {
+    return run?.status === 'refused' || run?.code === 'GENERATION_BLOCKED' && run.generationOutcome?.status === 'blocked';
+}
+
 /**
  * Runs post-generation prompt transforms over one reply. Rewrite agents edit the
  * reply in Order in sequential mode; parallel rewrites share the original and
@@ -4492,7 +4498,8 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
     const outcome = { cancelled: false, staleTarget: false, failed: false };
     const initialText = unwrapAssistantResponseWrapper(text);
     const isCancelled = () => (cancelRevision !== null && agentGenerationCancelRevision !== cancelRevision) || !runtimeAgents.every(isAgentRuntimeAllowed);
-    const isFailureStatus = status => status === 'error' || Boolean(stopOnFailureStatuses?.has?.(status));
+    const skippedRefusal = run => executionMode !== 'sequential' && isRefusedPromptTransformRun(run);
+    const isFailure = run => !skippedRefusal(run) && (run?.status === 'error' || Boolean(stopOnFailureStatuses?.has?.(run?.status)));
     const rethrowBlockedResult = result => {
         if (stopOnBlocked && result?.code === 'GENERATION_BLOCKED') throw Object.assign(new Error(result.error), {
             code: result.code, generationOutcome: result.generationOutcome,
@@ -4534,13 +4541,14 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
             } catch (error) {
                 const run = errorRun(agent, error);
                 promptRuns.push(run);
+                if (skippedRefusal(run)) return {};
                 rethrowBlockedResult(run);
                 outcome.cancelled = isCancelled();
                 outcome.failed = !outcome.cancelled;
                 return { stop: outcome.cancelled || stopOnFailure };
             }
             promptRuns.push(result);
-            rethrowBlockedResult(result);
+            if (!skippedRefusal(result)) rethrowBlockedResult(result);
             if (result.status === 'stale-target') {
                 outcome.staleTarget = true;
                 return { stop: true };
@@ -4549,7 +4557,7 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
                 outcome.cancelled = true;
                 return { stop: true };
             }
-            if (isFailureStatus(result.status)) {
+            if (isFailure(result)) {
                 outcome.failed = true;
                 if (stopOnFailure) return { stop: true };
             }
@@ -4566,8 +4574,8 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
                 outcome.staleTarget = true;
                 return { stop: true };
             }
-            if (batch.results.some(result => isFailureStatus(result?.status))) {
-                batch.results.forEach(rethrowBlockedResult);
+            if (batch.results.some(isFailure)) {
+                batch.results.filter(isFailure).forEach(rethrowBlockedResult);
                 outcome.failed = true;
                 if (stopOnFailure) return { stop: true };
             }
@@ -4596,6 +4604,13 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
     const agentOrder = new Map(agents.map((agent, index) => [agent.id, index]));
     promptRuns.sort((left, right) => (agentOrder.get(left.agentId) ?? 0) - (agentOrder.get(right.agentId) ?? 0));
     const finalText = composePromptTransformDraft(draft, joinPromptTransformText);
+    if (stopOnFailure && promptRuns.some(skippedRefusal) && !promptRuns.some(run => ['changed', 'unchanged'].includes(run.status))) {
+        outcome.failed = true;
+    }
+    if (stopOnBlocked && !outcome.cancelled && !outcome.staleTarget && isCurrent()
+        && promptRuns.some(run => skippedRefusal(run) && run.code === 'GENERATION_BLOCKED')) {
+        toastr.warning(t`The provider blocked an Agent request. Any successful parallel Agent edits were kept.`, 'In-Chat Agents');
+    }
     return { promptRuns, text: finalText, changed: finalText !== initialText, ...outcome };
 }
 
@@ -7620,7 +7635,8 @@ async function executeRerunPostGenerationAgentsOnMessage(submittedTarget, cancel
         return null;
     }
     const promptRunsFailed = promptTransformResult.failed
-        || promptRuns.some(run => RERUN_AGENT_FAILURE_STATUSES.has(String(run?.status ?? '')));
+        || promptRuns.some(run => RERUN_AGENT_FAILURE_STATUSES.has(String(run?.status ?? ''))
+            && !(executionMode !== 'sequential' && isRefusedPromptTransformRun(run)));
     if (promptRunsFailed) {
         warnRerunIncomplete();
         return null;
