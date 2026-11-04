@@ -350,6 +350,78 @@ describe('request-local output controls', () => {
         expect(applyGenerationRequestControls(preset, { responseLength: 64, preserveReasoningBudget: true })).toBe(preset);
     });
 
+    describe('native DeepSeek v4-pro explicit None', () => {
+        const v4 = (extra = {}) => ({ chat_completion_source: 'deepseek', model: 'deepseek-v4-pro', max_tokens: 4000, ...extra });
+        const controls = { maxOutputTokens: 500, responseLength: 300, preserveReasoningBudget: true };
+
+        test.each(['none', 'None'])('classifies native v4-pro with effort %j as non-reasoning', effort => {
+            expect(requestUsesReasoning(v4({ reasoning_effort: effort }))).toBe(false);
+        });
+
+        const unchanged = [
+            ['effort unsent', v4()],
+            ['effort undefined', v4({ reasoning_effort: undefined })],
+            ['effort high', v4({ reasoning_effort: 'high' })],
+            ['reverse proxy', v4({ reasoning_effort: 'none', reverse_proxy: 'https://proxy.invalid' })],
+            ['v4-flash', v4({ reasoning_effort: 'none', model: 'deepseek-v4-flash' })],
+            ['mixed-case id', v4({ reasoning_effort: 'none', model: 'DeepSeek-V4-Pro' })],
+            ['suffixed id', v4({ reasoning_effort: 'none', model: 'deepseek-v4-pro-0601' })],
+            ['no source', { model: 'deepseek-v4-pro', reasoning_effort: 'none' }],
+            ['custom source', v4({ chat_completion_source: 'custom', reasoning_effort: 'none' })],
+            ['explicit enabled thinking', v4({ reasoning_effort: 'none', thinking: { type: 'enabled', budget_tokens: 2048 } })],
+        ];
+
+        test.each(unchanged)('still classifies as reasoning: %s', (_label, data) => {
+            expect(requestUsesReasoning(data)).toBe(true);
+        });
+
+        test('applies the cap and response length when thinking is off on the wire', () => {
+            const data = v4({ reasoning_effort: 'none' });
+            const result = applyGenerationRequestControls(data, controls);
+            expect(result.max_tokens).toBe(300);
+            expect(Object.keys(result)).toEqual(Object.keys(data));
+            expect(applyGenerationRequestControls(data, { maxOutputTokens: 500 }).max_tokens).toBe(500);
+            expect(data.max_tokens).toBe(4000);
+        });
+
+        test.each(unchanged)('returns the same request object: %s', (_label, data) => {
+            expect(applyGenerationRequestControls(data, controls)).toBe(data);
+        });
+
+        test('an explicit reasoning argument still overrides the classifier', () => {
+            const data = v4({ reasoning_effort: 'none' });
+            expect(applyGenerationRequestControls(data, { maxOutputTokens: 500, reasoning: true })).toBe(data);
+        });
+
+        test.each([
+            ['deepseek-v4-pro', false],
+            ['deepseek-v4-flash', true],
+        ])('classifies the real builder output for %s', async (model, expected) => {
+            const settings = { chat_completion_source: 'deepseek', reasoning_effort: 'none', temp_openai: 1, freq_pen_openai: 0, pres_pen_openai: 0, top_p_openai: 1, typical_p_openai: 1, n: 1 };
+            const { generate_data: data } = await createChatGenerationParameters(settings, model, 'normal', [{ role: 'user', content: 'Hello' }], {
+                appendReasoning: messages => messages,
+                userName: 'User',
+                characterName: 'Character',
+                getGroupNames: () => [],
+                getLogitBias: async () => ({}),
+                getStoppingStrings: () => [],
+                getIncludeReasoning: () => false,
+                getReasoningEffort: metadata => resolveChatReasoningEffort(settings, model, undefined, metadata),
+                getVerbosity: () => undefined,
+                canPerformToolCalls: () => false,
+                registerTools: async () => {},
+                reverseProxySources: ['deepseek'],
+                validateReverseProxy: () => {},
+                getAssistantPrefill: () => '',
+                getServiceTier: async () => undefined,
+                getSamplerMetadata: () => undefined,
+            });
+            expect(data.reasoning_effort).toBe('none');
+            expect(getNativeReasoningRoute(data).reverseProxy).toBe('');
+            expect(requestUsesReasoning(data)).toBe(expected);
+        });
+    });
+
     test('ordinary helper responseLength can exceed the preset while a prose cap never raises it', () => {
         const preset = { model: 'gpt-4o', max_tokens: 128, include_reasoning: true };
         expect(applyGenerationRequestControls(preset, { responseLength: 1024, preserveReasoningBudget: true }).max_tokens).toBe(1024);

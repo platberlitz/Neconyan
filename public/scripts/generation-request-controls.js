@@ -1,7 +1,15 @@
 import { isKimiK3Model } from './openai-model-capabilities.js';
+import { getChatReasoningCapabilities, getNativeReasoningRoute } from './chat-reasoning-capabilities.js';
 
 function positiveLimit(value) {
     return Number.isFinite(value) && value > 0 ? Math.max(1, Math.floor(value)) : 0;
+}
+
+/** Native DeepSeek v4-pro documents None as thinking off, and the server sends it; the default 'none' elsewhere is unsent. */
+function nativeDeepSeekThinkingOff(data, effort) {
+    if (effort !== 'none' || data.chat_completion_source !== 'deepseek' || typeof data.model !== 'string') return false;
+    const capabilities = getChatReasoningCapabilities({ source: 'deepseek', model: data.model, route: getNativeReasoningRoute(data) });
+    return capabilities.provenance === 'deepseek-documentation' && capabilities.declaredEfforts.includes('none');
 }
 
 export function requestUsesReasoning(data) {
@@ -22,6 +30,9 @@ export function requestUsesReasoning(data) {
         || positiveLimit(data.reasoning?.max_tokens) || data.enable_thinking === true
         || thinkingConfig?.thinkingBudget > 0 || thinkingConfig?.thinkingBudget === -1 || thinkingConfig?.thinkingLevel) {
         return true;
+    }
+    if (nativeDeepSeekThinkingOff(data, effort)) {
+        return false;
     }
     if (/non[-_ ]?(?:reasoning|thinking)|gpt-5(?:\.\d+)?-chat/.test(model)) {
         return false;
