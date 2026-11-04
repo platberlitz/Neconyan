@@ -16,11 +16,11 @@ describe('Neconyan accent color profiles', () => {
     test('ships a generous seeded profile set by default', () => {
         const seedNames = [...seedBlock.matchAll(/name: '([^']+)'/g)].map(match => match[1]);
 
-        expect(powerUserSource).toContain('const NN_ACCENT_PROFILE_SEED_VERSION = 3;');
+        expect(powerUserSource).toContain('const NN_ACCENT_PROFILE_SEED_VERSION = 4;');
         expect(powerUserSource).toContain('sb_accent_profiles: NECONYAN_ACCENT_PROFILE_SEEDS.map(profile => ({ ...profile }))');
         expect(powerUserSource).toContain('sb_accent_profiles_seed_version: NN_ACCENT_PROFILE_SEED_VERSION');
         expect(powerUserSource).toContain('function normalizeAccentProfiles()');
-        expect(seedNames).toHaveLength(38);
+        expect(seedNames).toHaveLength(68);
         expect(seedNames).toEqual(expect.arrayContaining([
             'Warm Signal',
             'Story Moss',
@@ -49,12 +49,12 @@ describe('Neconyan accent color profiles', () => {
         const state = { sb_accent_profiles: [personal, editedSeed], sb_accent_profiles_seed_version: 2 };
         const normalize = runInNewContext(`${constants}\n${functions}\nnormalizeAccentProfiles`, { power_user: state });
         expect(normalize()).toBe(true);
-        expect(state.sb_accent_profiles_seed_version).toBe(3);
-        expect(state.sb_accent_profiles).toHaveLength(39);
+        expect(state.sb_accent_profiles_seed_version).toBe(4);
+        expect(state.sb_accent_profiles).toHaveLength(69);
         expect(state.sb_accent_profiles.slice(0, 2)).toEqual([personal, editedSeed]);
         expect(state.sb_accent_profiles.some(profile => profile.name === 'Midnight Ink')).toBe(true);
         expect(normalize()).toBe(false);
-        expect(state.sb_accent_profiles).toHaveLength(39);
+        expect(state.sb_accent_profiles).toHaveLength(69);
     });
 
     test('persists profiles in power_user and migrates seeds during settings load', () => {
