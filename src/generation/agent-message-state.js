@@ -4,6 +4,15 @@ import { isNativeCompanion } from './agent-definition.js';
 import { roleplayError } from '../roleplay-store.js';
 
 const text = value => typeof value === 'string' ? value : '';
+const chainText = value => text(value)
+    .replace(/<\/?font\b[^>]*>/gi, '')
+    .replace(/\s*\[COLORS?:[^\]\n]*\]/gi, '')
+    .replace(/&(?:quot|#34|#x22);/gi, '"')
+    .replace(/&(?:apos|#39|#x27);/gi, '\'')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&')
+    .trim();
 
 export function agentMessageExtra(message, key) {
     const selected = message?.swipe_info?.[message.swipe_id ?? 0]?.extra;
@@ -11,13 +20,31 @@ export function agentMessageExtra(message, key) {
 }
 
 /** Follow the edit chain that actually produced this selected text, including an undone chain. */
-export function agentTransformHistory(history, currentText) {
+export function agentTransformHistory(history, currentText, { linkContinuation = false } = {}) {
+    const entries = Array.isArray(history) ? history.filter(entry => entry && typeof entry === 'object') : [];
     const result = [];
-    let expected = text(currentText);
-    for (const entry of [...(Array.isArray(history) ? history : [])].reverse()) {
-        if (!entry || typeof entry !== 'object' || text(entry.afterText) !== expected) continue;
+    let expected = chainText(currentText);
+    for (const entry of [...entries].reverse()) {
+        if (chainText(entry.afterText) !== expected) continue;
         result.unshift(entry);
-        expected = text(entry.beforeText);
+        expected = chainText(entry.beforeText);
+    }
+    if (!result.length && linkContinuation && entries.length) {
+        const last = entries.at(-1);
+        const lastAfter = text(last.afterText);
+        const current = text(currentText);
+        if (lastAfter && current !== lastAfter && !entries.some(entry => chainText(entry.beforeText) === expected)) {
+            const prior = agentTransformHistory(entries, lastAfter);
+            if (prior.length) {
+                return [...prior, {
+                    agentName: 'Continued',
+                    mode: 'continue',
+                    beforeText: lastAfter,
+                    afterText: current,
+                    timestamp: Date.now(),
+                }].slice(-10);
+            }
+        }
     }
     return result.slice(-10);
 }

@@ -22,7 +22,8 @@ const FOLLOWED_STAGES = new Set(['preparing', 'waiting-memory', 'generating', 'a
 const PREVIEW_STRUCTURE_FIELDS = Object.freeze([
     'childId', 'stage', 'name', 'avatar', 'gen_started', 'gen_finished',
     'reasoning', 'reasoning_finished', 'reasoning_duration',
-    'inChatAgents', 'inChatAgentCompanionResults', 'generation',
+    'inChatAgents', 'inChatAgentCompanionResults',
+    'inChatAgentTransformHistory', 'inChatAgentPreGenerationInterceptHistory', 'generation',
 ]);
 
 /**
@@ -122,6 +123,8 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             force_avatar: latest.avatar ? getThumbnailUrl('avatar', latest.avatar) : undefined,
             extra: { reasoning: latest.reasoning || '', inChatAgents: latest.inChatAgents,
                 inChatAgentCompanionResults: latest.inChatAgentCompanionResults,
+                inChatAgentTransformHistory: latest.inChatAgentTransformHistory,
+                inChatAgentPreGenerationInterceptHistory: latest.inChatAgentPreGenerationInterceptHistory,
                 api: latest.generation?.source, model: latest.generation?.model,
                 reasoning_effort: latest.generation?.reasoning_effort,
                 token_count: latest.token_count, reasoning_tokens: latest.reasoning_tokens,
@@ -353,6 +356,10 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
             reasoning_effort: latest.generation?.reasoning_effort,
             // Display and prompt regexes need the exact rules accepted for this reply.
             inChatAgents: latest.inChatAgents ? structuredClone(latest.inChatAgents) : undefined,
+            inChatAgentTransformHistory: Array.isArray(latest.inChatAgentTransformHistory)
+                ? structuredClone(latest.inChatAgentTransformHistory) : undefined,
+            inChatAgentPreGenerationInterceptHistory: Array.isArray(latest.inChatAgentPreGenerationInterceptHistory)
+                ? structuredClone(latest.inChatAgentPreGenerationInterceptHistory) : undefined,
             token_count: latest.token_count, reasoning_tokens: latest.reasoning_tokens,
             time_to_first_token: latest.time_to_first_token, reasoning_duration: latest.reasoning_duration })
             .filter(([, value]) => value !== undefined && value !== null));

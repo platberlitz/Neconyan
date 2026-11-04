@@ -513,15 +513,45 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     // A rewrite trims its output, which would glue a joined chunk onto the earlier turn. The chunk's own leading whitespace
     // replaces whatever the pass returned, so the saved post text is the text the proof and the delivered reply both use.
     if (options.continuationChunk && !companionOutput) text = String(baseline ?? '').match(/^\s*/)[0] + text.replace(/^\s+/, '');
+    const utilities = agents.filter(agent => inline(agent) && agent.postProcess.enabled
+        && (['post', 'both'].includes(agent.phase) || agent.postProcess.type === 'extract'));
+    const buildPostMetadataAndExtra = () => {
+        const trackerRecords = structuredClone(originalMetadataRecords);
+        const effect = context.job.intent.effect;
+        if (['continue', 'swipe', 'agent'].includes(effect) && context.job.intent.source?.message) trackerRecords[context.job.intent.source.message.index + 1].mes = text;
+        else if (effect === 'replace' && context.job.intent.source?.range) trackerRecords.splice(context.job.intent.source.range.start + 1, context.job.intent.source.range.count, { mes: text, is_user: false });
+        else trackerRecords.push({ mes: text, is_user: false });
+        const metadata = generationType === 'impersonate' ? {} : reconcileAgentTrackerMetadata(utilities, trackerRecords);
+        const extra = { inChatAgentPromptRuns: runs, inChatAgents: displaySnapshot(pre, agents, generationType) };
+        if (options.recordHistory !== false) {
+            const previous = agentMessageExtra(records.at(-1), 'inChatAgentTransformHistory');
+            const isContinue = effect === 'continue' || generationType === 'continue';
+            const history = agentTransformHistory(previous, baseline, { linkContinuation: isContinue });
+            if (text !== baseline) {
+                const changedRuns = runs.filter(run => run.status === 'done' && run.outputText);
+                const historyRuns = changedRuns.length ? changedRuns : runs;
+                extra.inChatAgentTransformHistory = [...history, { agentId: historyRuns.at(-1)?.agentId || '', agentName: historyRuns.map(run => run.agentName).join(', '),
+                    mode: 'combined', order: historyRuns.at(-1)?.order ?? 0, profileLabel: historyRuns.at(-1)?.profileLabel || '', modelLabel: historyRuns.at(-1)?.modelLabel || '',
+                    beforeText: baseline, afterText: text, timestamp: Date.now() }].slice(-10);
+                extra.inChatAgentTransformRedo = [];
+            } else if (isContinue && history.length) {
+                extra.inChatAgentTransformHistory = history;
+            }
+        }
+        return { metadata, extra };
+    };
     if (roleplayAgentsStopped(context)) {
+        if (!companionOutput && text !== baseline) {
+            const { metadata, extra } = buildPostMetadataAndExtra();
+            return savePhase(context, snapshot.account, phaseName, { identity, baseline, text,
+                extra, metadata, runs, stopped: true });
+        }
         return savePhase(context, snapshot.account, phaseName, { identity, baseline, text,
-            extra: { inChatAgentPromptRuns: runs }, metadata: {}, runs, stopped: true });
+            extra: { inChatAgentPromptRuns: runs, ...(!companionOutput ? { inChatAgents: displaySnapshot(pre, agents, generationType) } : {}) }, metadata: {}, runs, stopped: true });
     }
     if (companionOutput && postFailed || manual && !options.repairTrackers && runs.some(run => ['length-limited', 'refused'].includes(run.status))) {
         return savePhase(context, snapshot.account, phaseName, { identity, text: value, extra: {}, metadata: {}, runs, failed: true });
     }
-    const utilities = agents.filter(agent => inline(agent) && agent.postProcess.enabled
-        && (['post', 'both'].includes(agent.phase) || agent.postProcess.type === 'extract'));
     const environment = createMacroEnvironment(macros, {}, { readOnly: true });
     if (options.repairTrackers) {
         for (const agent of utilities.filter(item => item.postProcess.type === 'extract' && item.postProcess.extractVariable)) {
@@ -577,20 +607,6 @@ export async function runRoleplayAgentPostprocessing(context, options) {
         } catch (error) { outcome = 'error'; throw error; } finally { endDiagnosticAgent(activity, outcome); }
     }
     if (companionOutput) return savePhase(context, snapshot.account, phaseName, { identity, text, extra: {}, metadata: {}, runs });
-    const trackerRecords = structuredClone(originalMetadataRecords);
-    const effect = context.job.intent.effect;
-    if (['continue', 'swipe', 'agent'].includes(effect) && context.job.intent.source?.message) trackerRecords[context.job.intent.source.message.index + 1].mes = text;
-    else if (effect === 'replace' && context.job.intent.source?.range) trackerRecords.splice(context.job.intent.source.range.start + 1, context.job.intent.source.range.count, { mes: text, is_user: false });
-    else trackerRecords.push({ mes: text, is_user: false });
-    const metadata = generationType === 'impersonate' ? {} : reconcileAgentTrackerMetadata(utilities, trackerRecords);
-    const extra = { inChatAgentPromptRuns: runs, inChatAgents: displaySnapshot(pre, agents, generationType) };
-    if (text !== baseline && options.recordHistory !== false) {
-        const previous = agentMessageExtra(records.at(-1), 'inChatAgentTransformHistory');
-        const history = agentTransformHistory(previous, baseline);
-        extra.inChatAgentTransformHistory = [...history, { agentId: runs.at(-1)?.agentId || '', agentName: runs.map(run => run.agentName).join(', '),
-            mode: 'combined', order: runs.at(-1)?.order ?? 0, profileLabel: runs.at(-1)?.profileLabel || '', modelLabel: runs.at(-1)?.modelLabel || '',
-            beforeText: baseline, afterText: text, timestamp: Date.now() }].slice(-10);
-        extra.inChatAgentTransformRedo = [];
-    }
+    const { metadata, extra } = buildPostMetadataAndExtra();
     return savePhase(context, snapshot.account, phaseName, { identity, baseline, text, extra, metadata, runs });
 }

@@ -1058,13 +1058,17 @@ export function unregisterAllAgentTools() {
 }
 
 function normalizeGenerationType(generationType) {
-    switch (String(generationType ?? '').trim().toLowerCase()) {
+    const normalized = String(generationType ?? '').trim().toLowerCase();
+    switch (normalized) {
         case 'continue':
+        case 'append':
+        case 'appendfinal':
+            return 'continue';
         case GREETING_GENERATION_TYPE:
         case 'impersonate':
         case 'quiet':
         case COMPANION_OUTPUT_GENERATION_TYPE:
-            return String(generationType).trim().toLowerCase();
+            return normalized;
         default:
             return 'normal';
     }
@@ -1761,10 +1765,15 @@ function deferPostProcessing(messageIndex, generationType, activationSnapshot = 
     const snapshot = activationSnapshot
         ? cloneActivationSnapshot(activationSnapshot, generationType)
         : getDeferredActivationSnapshot(generationType);
+    const existing = deferredPostProcessingQueue.get(numericMessageIndex);
+    const pendingGenerationTypes = existing && existing.message === (chat[numericMessageIndex] ?? null)
+        ? [...new Set([...(existing.pendingGenerationTypes ?? [existing.generationType]), snapshot.generationType])]
+        : [snapshot.generationType];
 
     deferredPostProcessingQueue.set(numericMessageIndex, {
         messageIndex: numericMessageIndex,
-        generationType: snapshot.generationType,
+        generationType: pendingGenerationTypes[0],
+        pendingGenerationTypes,
         message: chat[numericMessageIndex] ?? null,
         activationSnapshot: snapshot,
         wasStreamingStopped: wasStreamingMessageStopped(numericMessageIndex),
@@ -3102,7 +3111,7 @@ function shouldRefreshTransformHistoryUi(messageIndex, message) {
 function getTransformChainText(value) {
     return normalizeContentText(value)
         .replace(/<\/?font\b[^>]*>/gi, '')
-        .replace(/\s*\[COLORS?:[^\]\n]*\]\s*$/i, '')
+        .replace(/\s*\[COLORS?:[^\]\n]*\]/gi, '')
         .replace(/&(?:quot|#34|#x22);/gi, '"')
         .replace(/&(?:apos|#39|#x27);/gi, '\'')
         .replace(/&lt;/gi, '<')
@@ -3142,32 +3151,36 @@ function getPromptTransformHistoryForText(history, currentText) {
  * @param {object} message - Chat message that was just edited.
  * @returns {boolean} True when a step was added
  */
-function linkExternalEditToTransformHistory(message) {
+function linkExternalEditToTransformHistory(message, options = {}) {
     if (!message || message.is_user || message.is_system) {
         return false;
     }
 
+    const targetText = Object.hasOwn(options, 'targetText') ? options.targetText : message?.mes;
     const storedHistory = getAgentExtraValue(message, PROMPT_TRANSFORM_HISTORY_KEY);
     const entries = Array.isArray(storedHistory) ? storedHistory.filter(entry => entry && typeof entry === 'object') : [];
     const lastEntry = entries.at(-1);
-    if (!lastEntry || getPromptTransformHistoryForText(entries, message.mes).length > 0) {
+    if (!lastEntry || getPromptTransformHistoryForText(entries, targetText).length > 0) {
         return false;
     }
 
     // Editing back to an earlier version reads as an undo, not a new step.
-    const currentText = getTransformChainText(message.mes);
+    const currentText = getTransformChainText(targetText);
     if (entries.some(entry => getTransformChainText(entry.beforeText) === currentText)) {
         return false;
     }
 
     const history = getPromptTransformHistoryForText(entries, lastEntry.afterText);
-    history.push({
+    const stepEntry = {
         agentName: 'Edited',
         mode: 'edit',
+        ...(options.agentName ? { agentName: options.agentName } : {}),
+        ...(options.mode ? { mode: options.mode } : {}),
         beforeText: normalizeContentText(lastEntry.afterText),
-        afterText: normalizeContentText(message.mes),
+        afterText: normalizeContentText(targetText),
         timestamp: new Date().toISOString(),
-    });
+    };
+    history.push(stepEntry);
 
     while (history.length > MAX_TRANSFORM_HISTORY) {
         history.shift();
@@ -3178,7 +3191,7 @@ function linkExternalEditToTransformHistory(message) {
     if (rerunProvenance) {
         setRerunProvenance(message, {
             baselineText: getRerunPostGenerationBaselineText(message),
-            resultText: message.mes,
+            resultText: targetText,
             generatedBlocks: rerunProvenance.generatedBlocks,
         });
     }
@@ -3556,19 +3569,31 @@ const claimedInterceptRunsByMessage = new WeakMap();
  * @param {object} message
  */
 function claimPendingInterceptRunsForMessage(message, origin = getAgentGenerationContext()) {
+    const currentSwipeId = message.swipe_id ?? 0;
     const existing = claimedInterceptRunsByMessage.get(message);
-    if (existing?.origin.runId === origin.runId && existing.origin.cancelRevision === origin.cancelRevision && existing.origin.chatId === origin.chatId && existing.swipeId === (message.swipe_id ?? 0)) return existing;
+    if (existing?.origin.runId === origin.runId && existing.origin.cancelRevision === origin.cancelRevision && existing.origin.chatId === origin.chatId && (existing.swipeId === currentSwipeId || existing.swipeId === 0 && currentSwipeId === 1)) {
+        existing.swipeId = currentSwipeId;
+        return existing;
+    }
     const record = getGenerationRecord(origin, true);
-    const claimed = { ...record, swipeId: message.swipe_id ?? 0 };
+    const claimed = { ...record, swipeId: currentSwipeId };
     claimedInterceptRunsByMessage.set(message, claimed);
     return claimed;
 }
 
-function takeInterceptRunsForMessage(message) {
+function peekInterceptRunsForMessage(message) {
     const claimed = claimedInterceptRunsByMessage.get(message);
-    if (!claimed || claimed.swipeId !== (message.swipe_id ?? 0)) return [];
+    const currentSwipeId = message?.swipe_id ?? 0;
+    if (!claimed || (claimed.swipeId !== currentSwipeId && !(claimed.swipeId === 0 && currentSwipeId === 1))) return [];
+    claimed.swipeId = currentSwipeId;
+    return Array.isArray(claimed.runs) ? [...claimed.runs] : [];
+}
+
+function clearInterceptRunsForMessage(message) {
+    const claimed = claimedInterceptRunsByMessage.get(message);
+    if (!claimed) return;
     pendingGenerationRecords.delete(claimed.key);
-    return claimed.runs.splice(0);
+    if (Array.isArray(claimed.runs)) claimed.runs.length = 0;
 }
 
 function storePreGenerationInterceptHistory(message, runs) {
@@ -5105,6 +5130,12 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
         // first, so the Agents and Companions below run once on the recovered prose. A failed or ineligible recovery leaves
         // the reply untouched by them.
         const continuation = normalizeGenerationType(generationType) === 'continue';
+        let historyLinked = false;
+        if (continuation && linkExternalEditToTransformHistory(message, { agentName: 'Continued', mode: 'continue', targetText: currentPromptTransformText })) {
+            historyLinked = true;
+            chatStateChanged = true;
+            messageDisplayChanged = true;
+        }
         const recoveryDue = Boolean(thinkingRecoveryAgent) && !refusedReply && typeof message.extra?.reasoning === 'string'
             && message.extra.reasoning.trim() !== ''
             && (continuation ? message.extra.reasoning_continuation_empty === true : !currentPromptTransformText.trim());
@@ -5148,6 +5179,9 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
                 setAgentExtraValue(message, THINKING_RECOVERY_RUN_EXTRA_KEY, recoveryRun);
                 currentPromptTransformText = recoveredReply;
                 historyBaselineText = recoveredReply;
+                if (continuation && linkExternalEditToTransformHistory(message, { agentName: 'Continued', mode: 'continue', targetText: recoveredReply })) {
+                    historyLinked = true;
+                }
                 chatStateChanged = true;
                 messageDisplayChanged = true;
                 if (!await syncPromptTransformMessageStateAsync(message, messageIndex)) return;
@@ -5180,7 +5214,7 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
                 ),
             );
 
-        const interceptRuns = takeInterceptRunsForMessage(message);
+        const interceptRuns = peekInterceptRunsForMessage(message);
         const promptTransformResult = await runPromptTransformPasses(promptTransformAgents, message, generationType, currentPromptTransformText, messageIndex, {
             cancelRevision: operationCancelRevision,
             stopOnBlocked: true,
@@ -5233,7 +5267,9 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
             chatStateChanged = true;
             messageDisplayChanged = true;
         }
-        if (storePreGenerationInterceptHistory(message, interceptRuns)) {
+        const interceptHistoryStored = storePreGenerationInterceptHistory(message, interceptRuns);
+        clearInterceptRunsForMessage(message);
+        if (interceptHistoryStored) {
             chatStateChanged = true;
             messageDisplayChanged = true;
         }
@@ -5246,7 +5282,7 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
             messageDisplayChanged = true;
         }
 
-        if (textNeedsCommit && !await syncPromptTransformMessageStateAsync(message, messageIndex)) return;
+        if ((textNeedsCommit || historyLinked || interceptHistoryStored) && !await syncPromptTransformMessageStateAsync(message, messageIndex)) return;
         if (!isOperationCurrent()) return;
         if (chatStateChanged) {
             syncAssistantMessageStateToSwipe(message, messageIndex);
@@ -5307,8 +5343,30 @@ async function runReceivedMessagePostProcessing(messageIndex, message, generatio
 }
 
 async function onMessageReceived(messageIndex, generationType, generationContext = null) {
-    if (automaticGenerationSuppressed(generationContext ?? getAgentGenerationContext()) || messageAutomaticGenerationSuppressed(chat[Number(messageIndex)])) {
-        clearDeferredPostProcessing(Number(messageIndex));
+    const numericMessageIndex = Number(messageIndex);
+    const message = chat[numericMessageIndex];
+    const persistClaimedInterceptsOnEarlyExit = async () => {
+        if (!message || message.is_user || message.is_system || isNativeRoleplayGeneration || !areAgentsGloballyEnabled()) {
+            return;
+        }
+        if (generationContext && (generationContext.chatId !== getCurrentSnapshotChatId() || generationContext.cancelRevision !== agentGenerationCancelRevision)) {
+            return;
+        }
+        claimPendingInterceptRunsForMessage(message, generationContext ?? getAgentGenerationContext());
+        const interceptRuns = peekInterceptRunsForMessage(message);
+        if (storePreGenerationInterceptHistory(message, interceptRuns)) {
+            clearInterceptRunsForMessage(message);
+            syncAssistantMessageStateToSwipe(message, numericMessageIndex);
+            await syncPromptTransformMessageStateAsync(message, numericMessageIndex);
+            saveChatDebouncedForAgent({ deferBackup: false });
+            scheduleMessageRefresh(numericMessageIndex, message, { deferBackup: true });
+        } else {
+            clearInterceptRunsForMessage(message);
+        }
+    };
+    if (automaticGenerationSuppressed(generationContext ?? getAgentGenerationContext()) || messageAutomaticGenerationSuppressed(message)) {
+        await persistClaimedInterceptsOnEarlyExit();
+        clearDeferredPostProcessing(numericMessageIndex);
         return;
     }
     if (isNativeRoleplayGeneration || !areAgentsGloballyEnabled()) {
@@ -5317,7 +5375,7 @@ async function onMessageReceived(messageIndex, generationType, generationContext
 
     if (isGreetingGenerationType(generationType)) {
         swipeNavigationPending = false;
-        clearDeferredPostProcessing(Number(messageIndex));
+        clearDeferredPostProcessing(numericMessageIndex);
         return;
     }
 
@@ -5330,8 +5388,6 @@ async function onMessageReceived(messageIndex, generationType, generationContext
         return;
     }
 
-    const numericMessageIndex = Number(messageIndex);
-    const message = chat[numericMessageIndex];
     if (!message || message.is_user || message.is_system) {
         return;
     }
@@ -5343,6 +5399,7 @@ async function onMessageReceived(messageIndex, generationType, generationContext
     ensureMessageRegexSnapshot(numericMessageIndex, generationType, activationSnapshot);
 
     if (generationStopRequested || wasStreamingMessageStopped(numericMessageIndex)) {
+        await persistClaimedInterceptsOnEarlyExit();
         clearDeferredPostProcessing(numericMessageIndex);
         return;
     }
@@ -7346,7 +7403,7 @@ function getRerunPostGenerationBaselineText(message) {
 
     if (history.length > 0) {
         const boundaryEntry = [...history].reverse().find(entry =>
-            entry?.mode === 'edit' || !entry?.mode || entry?.agentName === 'Tracker repair');
+            entry?.mode === 'edit' || entry?.mode === 'continue' || !entry?.mode || entry?.agentName === 'Tracker repair');
         if (boundaryEntry && typeof boundaryEntry.afterText === 'string') {
             source = boundaryEntry.afterText;
         } else if (provenance?.baselineText && isRerunProvenanceLinkedToCurrentReply(message, history, provenance)) {

@@ -11323,6 +11323,77 @@ Helper context.`;
         expect(saveChatDebounced).toHaveBeenCalledTimes(2);
     });
 
+    test('links continuation text into transform history and ignores mid-message Dialogue Colours tags', async () => {
+        usePromptTransformPostAgent();
+        generateQuietPrompt.mockResolvedValueOnce('Rewritten first part [COLORS:#ff8800]');
+
+        const { initAgentRunner, getPromptTransformHistoryForMessage } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        chat.push({
+            name: 'Assistant',
+            mes: 'Raw first part',
+            is_user: false,
+            is_system: false,
+            extra: {},
+        });
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        expect(chat[0].mes).toBe('Rewritten first part [COLORS:#ff8800]');
+        expect(getPromptTransformHistoryForMessage(chat[0]).length).toBe(1);
+
+        // Simulate Dialogue Colours stripping the tag and an automatic/manual continuation extending the message
+        enabledAgents[0].conditions.generationTypes = ['normal'];
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'continue', {}, false);
+        chat[0].mes = 'Rewritten first part and continued ending';
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'appendFinal');
+        await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length);
+
+        const history = getPromptTransformHistoryForMessage(chat[0]);
+        expect(history.map(entry => ({ mode: entry.mode, beforeText: entry.beforeText, afterText: entry.afterText }))).toEqual([
+            { mode: 'rewrite', beforeText: 'Raw first part', afterText: 'Rewritten first part [COLORS:#ff8800]' },
+            { mode: 'continue', beforeText: 'Rewritten first part [COLORS:#ff8800]', afterText: 'Rewritten first part and continued ending' },
+        ]);
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('preserves pre-generation intercept history when the main reply ends early as truncated', async () => {
+        enabledAgents = [createPreInterceptAgent()];
+        generateQuietPrompt.mockResolvedValueOnce('Expanded user prompt');
+
+        const { initAgentRunner, getPreGenerationInterceptHistoryForMessage } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        const eventData = { prompt: 'Short prompt', dryRun: false };
+        await eventSource.emit(eventTypes.GENERATE_AFTER_COMBINE_PROMPTS, eventData);
+        expect(eventData.prompt).toBe('Expanded user prompt');
+
+        chat.push({
+            name: 'Assistant',
+            mes: 'Partial truncated reply...',
+            is_user: false,
+            is_system: false,
+            extra: {
+                generation_outcome: {
+                    version: 1,
+                    status: 'truncated',
+                    reason: 'incomplete_stream',
+                },
+            },
+        });
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await new Promise(resolve => setTimeout(resolve, 5));
+
+        expect(getPreGenerationInterceptHistoryForMessage(chat[0])).toEqual([
+            expect.objectContaining({
+                agentName: 'Pre Intercept',
+                changed: true,
+            }),
+        ]);
+    });
+
     test('scopes inherited transform history to the active swipe text', async () => {
         usePromptTransformPostAgent();
         generateQuietPrompt.mockResolvedValueOnce('Second swipe rewrite');
