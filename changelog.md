@@ -1838,4 +1838,5 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #446 (2026-11-04) `feat(appearance): add 30 esoteric accent profile seeds`
 - PR #447 (2026-11-04) `fix(creator): show the streaming live reply at the top of the section`
 - PR #448 (2026-11-04) `fix(catelier): accept plain-text coverage summaries`
+- PR #449 (2026-11-04) `test: repair current browser test failures`
 - PR #450 (2026-11-04) `fix(purrks): stop the phone bottom bar clipping the badge`
