@@ -51,7 +51,7 @@ for (const phone of [false, true]) {
                 if (profile) await page.locator(`.sb-accent-profile-apply[aria-label="Apply ${profile} accent profile"]`).evaluate(el => el.click());
                 for (const [btnName, btn] of [['primary', primarySave], ['selected', selectedFormat], ['secondary', secondaryDrafts]]) {
                     const { ink, bg } = await sampleButtonContrast(btn);
-                    expect(contrastRatio(ink, bg), `${theme} / ${profile || 'default'} / ${btnName}`).toBeGreaterThanOrEqual(4.5);
+                    expect(contrastRatio(ink, bg), `${theme} / ${profile || 'default'} / ${btnName}: ${ink} on ${bg}`).toBeGreaterThanOrEqual(4.5);
                 }
             }
         }
