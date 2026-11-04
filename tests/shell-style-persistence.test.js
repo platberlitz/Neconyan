@@ -30,7 +30,7 @@ function createHarness(options = {}) {
         safeRemoveItem: key => { if (writable) storage.delete(key); },
         flushNnStorageWrites: () => {},
         saveSettingsDebounced: () => writes.push(context.power_user.neconyan_shell_style),
-        syncShellStyleStylesheet: () => {}, syncKittylessStylesheet: () => {},
+        syncShellStyleStylesheet: () => {}, syncKittylessStylesheet: () => {}, syncStarlightConservatoryStage: () => {},
         updateThemePickerUi: () => {}, updateThemeBadge: () => {}, syncShellStyleAssistantArt: () => {},
     };
     vm.createContext(context);
