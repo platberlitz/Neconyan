@@ -1836,3 +1836,4 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #439 (2026-11-04) `feat(characters): add switchable character card Purrks and Orb fragment import`
 - PR #440 (2026-11-04) `fix(jev): fix direct connections and server retrieval logs`
 - PR #446 (2026-11-04) `feat(appearance): add 30 esoteric accent profile seeds`
+- PR #447 (2026-11-04) `fix(creator): show the streaming live reply at the top of the section`
