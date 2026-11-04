@@ -1830,3 +1830,4 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #433 (2026-11-04) `feat(shell): add animated Starlight Conservatory shell style`
 - PR #434 (2026-11-04) `feat(pathfinder): add Jev decision model presets`
 - PR #435 (2026-11-04) `fix(time-machine): use account-relative snapshot deletion paths`
+- PR #436 (2026-11-04) `ci(github): stop Miso runs cancelling other pull requests`
