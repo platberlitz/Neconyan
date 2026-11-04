@@ -18,7 +18,9 @@ const response = value => new Response(JSON.stringify(value));
 
 function temporary(t) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-zip-update-test-'));
-    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    // The detached restart fixture can still be releasing its working directory
+    // immediately after writing the marker, which briefly locks it on Windows.
+    t.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
     return root;
 }
 

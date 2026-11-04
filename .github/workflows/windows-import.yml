@@ -1,4 +1,4 @@
-name: Windows account imports
+name: Windows imports and updates
 
 on:
   pull_request:
@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   imports:
-    name: Windows folder and ZIP imports
+    name: Windows imports and ZIP app updates
     runs-on: windows-2025
     timeout-minutes: 15
     steps:
@@ -40,6 +40,8 @@ jobs:
           bun-version: 1.3.14
       - name: Check imports with the default Windows runtime
         run: bun test ./tests/application-import.node.js --test-name-pattern="whole folder import|lost upload readback|ZIP source detection"
+      - name: Check ZIP updates with the default Windows runtime
+        run: bun test ./tests/server-admin-zip-update.node.js ./tests/retained-file-publication.node.js
       - name: Check imports on an exFAT data drive
         shell: pwsh
         run: |
