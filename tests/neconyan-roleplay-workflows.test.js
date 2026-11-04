@@ -150,6 +150,7 @@ globalThis.fetch = async (url, options = {}) => {
 
 const response = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
 const workflows = await import('../public/scripts/neconyan-conversation/roleplay-workflows.js');
+const policy = await import('../public/scripts/prompt-media-policy.js');
 
 beforeEach(() => {
     callGenericPopup.mockReset().mockResolvedValue(null);
@@ -1876,6 +1877,7 @@ describe('an image refusal on the solo and group routes', () => {
         expect(failure).toBeInstanceOf(Error);
         expect(failure.message).toBe(words);
         expect(failure.body.imageIssue).toEqual(issue);
+        expect(policy.isReportedImageRefusal?.(failure)).toBe(true);
         expect(refusalEvents()).toHaveLength(1);
         expect(refusalEvents()[0].detail).toEqual({ ...issue, message: words, origin: groupOrigin });
         expect(requests.at(-1).url.endsWith('/group/submit')).toBe(true);
@@ -1885,6 +1887,7 @@ describe('an image refusal on the solo and group routes', () => {
         submitHandler = async () => response(400, { error: 'Refused' });
         const failure = await workflows.submitRoleplayGroupTurn({ groupId: 'group-1', forcedAvatars: ['nova.png'], generationId: 1 }).catch(error => error);
         expect(failure.message).toBe('Refused');
+        expect(policy.isReportedImageRefusal?.(failure)).toBe(false);
         expect(refusalEvents()).toHaveLength(0);
     });
 
