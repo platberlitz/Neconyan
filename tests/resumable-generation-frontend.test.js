@@ -241,6 +241,41 @@ describe('fetchResumable', () => {
             expect(callsTo(RESUME_URL)).toHaveLength(20);
         });
 
+        test('a 504 from the resume call counts as an attempt, so the loop still gives up', async () => {
+            fetchMock.mockImplementation(async (url) => {
+                if (url === RESUME_URL) return new Response(null, { status: 504 });
+                throw new TypeError('Load failed');
+            });
+            const outcome = fetchResumable('/generate', { method: 'POST', headers: {}, body: '{}' }).catch(error => error);
+            await jest.advanceTimersByTimeAsync(10 * 60 * 1000);
+            const error = await outcome;
+            expect(error.code).toBe('GENERATION_CONNECTION_LOST');
+            expect(callsTo(RESUME_URL)).toHaveLength(20);
+        });
+
+        test('Stop while the resume loop is waiting still cancels the generation on the server', async () => {
+            const controller = new AbortController();
+            fetchMock.mockImplementation(async (url) => {
+                if (url === CANCEL_URL) return new Response(null, { status: 204 });
+                throw new TypeError('Load failed');
+            });
+            const outcome = fetchResumable('/generate', { method: 'POST', headers: { 'X-CSRF-Token': 'csrf' }, body: '{}', signal: controller.signal }).catch(error => error);
+            await jest.advanceTimersByTimeAsync(500);
+            expect(callsTo(RESUME_URL)).toHaveLength(1);
+            expect(callsTo(CANCEL_URL)).toHaveLength(0);
+
+            controller.abort();
+            await jest.advanceTimersByTimeAsync(10 * 60 * 1000);
+
+            const error = await outcome;
+            expect(error).toMatchObject({ name: 'AbortError' });
+            expect(callsTo(RESUME_URL)).toHaveLength(1);
+            const cancelCalls = callsTo(CANCEL_URL);
+            expect(cancelCalls).toHaveLength(1);
+            expect(cancelCalls[0][1].headers['X-CSRF-Token']).toBe('csrf');
+            expect(JSON.parse(cancelCalls[0][1].body)).toEqual({ id: fetchMock.mock.calls[0][1].headers['X-Generation-Id'] });
+        });
+
         test('a lost connection leaves the held reply on the server for recovery and sends no cancel', async () => {
             const controller = new AbortController();
             const context = { v: 2, chatId: 'chat', type: 'normal' };
