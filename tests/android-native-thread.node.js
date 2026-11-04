@@ -44,6 +44,18 @@ public class ServerService {
     private static native int startNode(String[] args, String cache);
     public static void main(String[] args) throws Exception {
         System.load(args[0]);
+        if (args.length > 3 && args[3].equals("invalid")) {
+            String[][] inputs = {null, new String[]{"node", null}, new String[]{"node"}};
+            for (int i = 0; i < inputs.length; i++) {
+                try {
+                    startNode(inputs[i], i == 2 ? null : args[2]);
+                    throw new AssertionError("Missing JNI input was accepted");
+                } catch (Throwable error) {
+                    if (!(error instanceof java.io.IOException)) throw new AssertionError(error);
+                }
+            }
+            return;
+        }
         Thread thread = new Thread(null, () -> {
             int result = startNode(new String[]{"node", args[1]}, args[2]);
             if (result != 0) throw new AssertionError("Node exit " + result);
@@ -66,4 +78,13 @@ console.log('STACK_GUARD_OK');
     run('java', ['-cp', directory, 'io.github.platberlitz.neconyan.ServerService', library, script, directory]);
     assert.match(fs.readFileSync(path.join(directory, 'server.log'), 'utf8'), /STACK_GUARD_OK/);
     assert.match(fs.readFileSync(path.join(directory, 'native-startup.txt'), 'utf8'), /Stack: 8192 KiB/);
+    // Invalid JNI arguments must throw back to Java rather than crash the VM.
+    run('java', ['-cp', directory, 'io.github.platberlitz.neconyan.ServerService', library, script, directory, 'invalid']);
+    // A directory at the log path forces open() to fail, while the cache remains
+    // writable for the diagnostic. Node must still run with usable console output.
+    const failedLog = path.join(directory, 'failed-log');
+    fs.mkdirSync(path.join(failedLog, 'server.log'), { recursive: true });
+    const output = run('java', ['-cp', directory, 'io.github.platberlitz.neconyan.ServerService', library, script, failedLog]);
+    assert.match(output, /STACK_GUARD_OK/);
+    assert.match(fs.readFileSync(path.join(failedLog, 'native-startup.txt'), 'utf8'), /Could not open the server log/);
 });

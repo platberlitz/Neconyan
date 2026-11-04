@@ -151,7 +151,7 @@ test('an early connection marks the page load before posting and bounds duplicat
     assert.match(load, /loadFailed = false;\s*web\.loadUrl\(origin\)/);
     assert.doesNotMatch(activity, /pendingPageLoad|webReady/);
     assert.match(block(activity, 'private String waitForWorkspace()', 'private boolean restartAfterStop'), /loadWorkspace\(\);/);
-    assert.match(activity, /if \(failed \|\| pageLoadInProgress\(\) \|\| !connecting\.compareAndSet\(false, true\)\) return;/);
+    assert.match(activity, /if \(closed \|\| failed \|\| pageLoadInProgress\(\) \|\| !connecting\.compareAndSet\(false, true\)\) return;/);
     assert.match(block(activity, 'private boolean pageLoadInProgress()', 'private void loadWorkspace()'), /workspaceRequested && SystemClock\.elapsedRealtime\(\) - workspaceRequestedAt < PAGE_LOAD_RETRY_MS/);
     assert.match(activity, /PAGE_LOAD_RETRY_MS = 30000/);
     assert.match(block(activity, 'public void onReceivedError', 'public void onPageFinished'), /workspaceRequested = false;/);
@@ -172,8 +172,76 @@ test('startup polling checks the marker quickly but throttles disk and process w
     assert.match(bootstrap, /serverEvents\.once\(EVENT_NAMES\.SERVER_STARTED[\s\S]*?writeFileAtomicSync\(readyPath/);
 });
 
-test('startup status skips an unchanged UI post and still records direct changes', () => {
-    const set = block(activity, 'private void setStatusText', 'private void show');
+test('the service serialises stop against the runtime claim and only signals a booted server', () => {
+    const thread = block(service, 'new Thread(() -> {', '}, "neconyan-server").start();');
+    // A stop observed while preparing must cancel the start before the native runtime;
+    // otherwise the destroy either prevents it or reliably signals it, under one lock.
+    assert.ok(thread.indexOf('runtimeClaimed.compareAndSet(false, true)') > thread.indexOf('synchronized (stopLock)'));
+    assert.match(thread, /if \(stopping\) \{[\s\S]*?stopSelf\(\);\s*return;/);
+    assert.ok(thread.indexOf('stopSelf();') < thread.indexOf('nodeStarted = true;'));
+    assert.match(thread, /nodeStarted = true;\s*\}\s*ActivityBreadcrumbs\.state\("running"\);/);
+    assert.doesNotMatch(service, /runtimeClaimed\.set\(false\)/, 'Node must never be initialised twice in one process');
+    const destroy = block(service, 'public void onDestroy()', 'public IBinder onBind');
+    assert.match(destroy, /boolean serverReady = new File\(getFilesDir\(\), "android-ready\.json"\)\.isFile\(\);/);
+    assert.match(destroy, /synchronized \(stopLock\) \{\s*stopping = true;\s*terminate = nodeStarted;\s*\}/);
+    // Before the server has booted, SIGTERM would end the process without flushing.
+    assert.match(destroy, /if \(serverReady\) android\.os\.Process\.sendSignal\(android\.os\.Process\.myPid\(\), 15\);/);
+    assert.ok(destroy.indexOf('killProcess') < destroy.indexOf('if (serverReady)'), 'the kill grace period is armed before any signal');
+    assert.match(service, /private volatile boolean nodeStarted;/);
+    assert.match(service, /private volatile boolean stopping;/);
+});
+
+test('the activity stops reconnects before it stops the service', () => {
+    const close = block(activity, 'private void closeNeconyan()', '@Override public void onDestroy()');
+    assert.ok(close.indexOf('closed = true;') < close.indexOf('worker.shutdownNow();'));
+    assert.ok(close.indexOf('worker.shutdownNow();') < close.indexOf('stopService'));
+    assert.ok(close.indexOf('stopService') < close.indexOf('finish();'));
+    // Every restart path checks the flag, and no close path bypasses it.
+    assert.match(activity, /while \(!isFinishing\(\) && !failed && !closed\) \{/);
+    assert.match(activity, /while \(!isFinishing\(\) && !failed && !closed && System\.currentTimeMillis\(\) < deadline\) \{/);
+    assert.match(activity, /private void startServer\(boolean safe\) \{\s*synchronized \(serviceStartLock\) \{\s*if \(closed \|\| isFinishing\(\) \|\| isDestroyed\(\)\) return;/);
+    assert.match(close, /synchronized \(serviceStartLock\)/, 'start and explicit stop must use the same lock');
+    assert.match(activity, /if \(!resumed \|\| closed\) return;/);
+    assert.equal((activity.match(/-> closeNeconyan\(\)/g) || []).length, 2);
+    assert.doesNotMatch(activity, /state\("closed"\); stopService/);
+});
+
+test('dialog presentation and dismissal survive a destroyed window', () => {
+    assert.match(activity, /private AlertDialog safeShow\(AlertDialog\.Builder builder\) \{\s*if \(closed \|\| isFinishing\(\) \|\| isDestroyed\(\)\) return null;\s*try \{ return builder\.show\(\); \}\s*catch \(RuntimeException error\) \{ android\.util\.Log\.w/);
+    assert.match(activity, /private static void safeDismiss\(Dialog dialog\)/);
+    assert.ok(activity.indexOf('cancelExport();') < activity.indexOf('safeDismiss(crashDialog);'));
+    assert.match(activity, /runOnUiThread\(\(\) -> safeShow\(new AlertDialog\.Builder\(this\)\.setMessage\(text\)\.setPositiveButton\("OK", null\)\)\);/);
+    // The retained crash report dialog is only registered once its show succeeded.
+    const report = block(activity, 'private boolean showCrashReport', 'private void copyReport');
+    assert.ok(report.indexOf('if (safeShow(dialog) == null) return false;') < report.indexOf('crashDialog = dialog;'));
+    assert.match(report, /if \(crashDialog == dismissed\) crashDialog = null;/);
+    assert.match(activity, /safeShow\(new AlertDialog\.Builder\(this\)\.setTitle\("Neconyan is in safe mode"\)/);
+    assert.match(activity, /safeShow\(new AlertDialog\.Builder\(this\)\.setTitle\("Save a backup of your data"\)/);
+    assert.match(activity, /safeShow\(new AlertDialog\.Builder\(this\)\.setTitle\("Saved crash reports"\)/);
+});
+
+test('page lifecycle callbacks tolerate null URLs and repeat crashes do not stack actions', () => {
+    const finished = block(activity, 'public void onPageFinished', 'web.setWebChromeClient');
+    assert.match(finished, /if \(url == null \|\| !local\(Uri\.parse\(url\)\) \|\| loadFailed \|\| failed\) return;/);
+    assert.match(finished, /String currentUrl = view\.getUrl\(\);/);
+    assert.ok(finished.indexOf('currentUrl == null') < finished.indexOf('!local(Uri.parse(currentUrl))'));
+    assert.match(finished, /if \("\/login"\.equals\(Uri\.parse\(url\)\.getPath\(\)\)\)/);
+    assert.match(activity, /if \(uri == null \|\| !Arrays\.asList\("https", "http", "mailto"\)\.contains\(uri\.getScheme\(\)\)\) return;/);
+    const gone = block(activity, 'if (mainView) {', '} else offerCrashReport');
+    assert.match(gone, /if \(!rendererActionsAdded\) \{\s*rendererActionsAdded = true;/);
+    assert.match(gone, /rendererReport = result.entry;/);
+    assert.match(gone, /copyReport\(rendererReport\)/);
+});
+
+test('export save prompts and retries share one ActivityNotFound-aware chooser', () => {
+    const chooser = block(activity, 'private void chooseExportDestination()', 'private void download');
+    assert.match(chooser, /catch \(ActivityNotFoundException error\) \{/);
+    assert.match(chooser, /cancelExport\(\);/);
+    assert.equal((activity.match(/ACTION_CREATE_DOCUMENT\)\.setType\("application\/octet-stream"\)/g) || []).length, 1);
+    assert.match(activity, /setPositiveButton\("Try again", \(dialog, which\) -> chooseExportDestination\(\)\)/);
+});
+
+test('startup status skips an unchanged UI post and still records direct changes', () => {    const set = block(activity, 'private void setStatusText', 'private void show');
     const show = block(activity, 'private void show(String text)', 'private void showFailure');
     assert.match(set, /shownStatus = text;\s*status\.setText\(text\);/);
     assert.match(show, /String message = DiagnosticStore\.redact\(text\);/);

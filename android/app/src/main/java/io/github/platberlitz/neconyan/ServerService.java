@@ -17,10 +17,11 @@ public final class ServerService extends Service {
     public static final String SAFE = "safe";
     private static native int startNode(String[] arguments, String cache);
     private boolean started;
-    private boolean nodeStarted;
+    private volatile boolean nodeStarted;
     private PowerManager.WakeLock wake;
     private FileObserver busyWatcher;
-    private boolean stopping;
+    private volatile boolean stopping;
+    private final Object stopLock = new Object();
     private static final String BUSY = "android-busy";
     private static final java.util.concurrent.atomic.AtomicBoolean runtimeClaimed = new java.util.concurrent.atomic.AtomicBoolean();
 
@@ -75,8 +76,18 @@ public final class ServerService extends Service {
                     JSONObject credentials = credentials(this);
                     status("Starting your workspace…");
                     System.loadLibrary("neconyan-node");
-                    if (!runtimeClaimed.compareAndSet(false, true)) throw new IOException("The previous local server is still stopping");
-                    nodeStarted = true;
+                    synchronized (stopLock) {
+                        if (stopping) {
+                            // A stop during payload preparation cancels the native start.
+                            stopSelf();
+                            return;
+                        }
+                        // node::Start owns process-global state: keep this claim until
+                        // process exit, even after Node returns. It cannot start twice.
+                        if (!runtimeClaimed.compareAndSet(false, true)) throw new IOException("The previous local server is still stopping");
+                        // Destroy either prevents startup or schedules termination.
+                        nodeStarted = true;
+                    }
                     ActivityBreadcrumbs.state("running");
                     // Keep the previous run's log and request trace so a crash can still be explained after the restart.
                     rotate("server.log", "server.previous.log");
@@ -238,13 +249,23 @@ public final class ServerService extends Service {
 
     @Override public void onDestroy() {
         ActivityBreadcrumbs.state("stopping");
+        // Read before the marker is removed below: its presence proves the server booted
+        // far enough to have installed its graceful shutdown handler for SIGTERM.
+        boolean serverReady = new File(getFilesDir(), "android-ready.json").isFile();
+        boolean terminate;
+        synchronized (stopLock) {
+            stopping = true;
+            terminate = nodeStarted;
+        }
         new File(getFilesDir(), "android-ready.json").delete();
         stopWake();
-        if (nodeStarted) {
-            // Node handles SIGTERM through Neconyan's existing orderly shutdown.
+        if (terminate) {
+            // Node handles SIGTERM through Neconyan's existing orderly shutdown, but that
+            // handler exists only after the server has booted. Before it, a SIGTERM would
+            // end the process without flushing, so the kill grace period below closes it.
             try { CrashDiagnostics.markServerStopping(this); } catch (Throwable ignored) { }
             new Handler(Looper.getMainLooper()).postDelayed(() -> android.os.Process.killProcess(android.os.Process.myPid()), 10000);
-            android.os.Process.sendSignal(android.os.Process.myPid(), 15);
+            if (serverReady) android.os.Process.sendSignal(android.os.Process.myPid(), 15);
         }
         super.onDestroy();
     }

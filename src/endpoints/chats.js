@@ -2271,26 +2271,45 @@ router.post('/export', validateAvatarUrlMiddleware, async function (request, res
             input: readStream,
         });
         let buffer = '';
-        rl.on('line', (line) => {
-            const data = JSON.parse(line);
-            // Skip non-printable/prompt-hidden messages
-            if (data.is_system) {
-                return;
-            }
-            if (data.mes) {
-                const name = data.name;
-                const message = (data?.extra?.display_text || data?.mes || '').replace(/\r?\n/g, '\n');
-                buffer += (`${name}: ${message}\n\n`);
-            }
-        });
-        rl.on('close', () => {
+        try {
+            // The stream is consumed through an awaited promise: a damaged line or a
+            // failing read must reach this handler as a rejection, not as an exception
+            // inside a 'line' callback, which would escape the router and end the process.
+            await new Promise((resolve, reject) => {
+                rl.on('line', (line) => {
+                    if (!line.trim()) return;
+                    try {
+                        const data = JSON.parse(line);
+                        if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid chat entry');
+                        // Skip non-printable/prompt-hidden messages.
+                        if (data.is_system) return;
+                        if (data.mes) {
+                            const name = data.name;
+                            const text = data?.extra?.display_text || data.mes;
+                            if (typeof text !== 'string') throw new Error('Invalid chat message');
+                            buffer += `${name}: ${text.replace(/\r?\n/g, '\n')}\n\n`;
+                        }
+                    } catch {
+                        reject(new Error('The chat file contains a damaged line and cannot be exported.'));
+                    }
+                });
+                rl.on('error', reject);
+                rl.on('close', resolve);
+                readStream.on('error', reject);
+            });
             const successMessage = {
                 message: `Chat saved to ${exportfilename}`,
                 result: buffer,
             };
             console.info(`Chat exported as ${exportfilename}`);
             return response.status(200).json(successMessage);
-        });
+        } catch (error) {
+            console.error('chat export failed.', error);
+            return response.status(400).json({ message: error.message || 'Could not export the chat file.' });
+        } finally {
+            rl.close();
+            readStream.destroy();
+        }
     } catch (err) {
         console.error('chat export failed.', err);
         return response.sendStatus(400);

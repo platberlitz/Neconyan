@@ -59,6 +59,38 @@ describe('module-private Android caller capability', () => {
         expect(globalThis.NeconyanExport.cancelExport).toHaveBeenCalledWith(secret);
     });
 
+    test('a refused beginExport cancels nothing; own append and finish failures cancel the export this call opened', async () => {
+        bridge.installAndroidNativeBridge(secret, window.location.origin);
+        globalThis.fetch = jest.fn(async () => ({ blob: async () => new Blob(['data']) }));
+        // Another export is open: beginExport refuses. This call must leave that export alone.
+        globalThis.NeconyanExport.beginExport.mockReturnValue(false);
+        expect(await bridge.saveAndroidBlob('blob:http://127.0.0.1:8000/x', 'file')).toBe(false);
+        expect(globalThis.NeconyanExport.beginExport).toHaveBeenCalledWith(secret, 'file', 4);
+        expect(globalThis.NeconyanExport.cancelExport).not.toHaveBeenCalled();
+        // A failing finish belongs to this call's own export, so it is cancelled.
+        globalThis.NeconyanExport.beginExport.mockReturnValue(true);
+        globalThis.NeconyanExport.finishExport.mockReturnValue(false);
+        expect(await bridge.saveAndroidBlob('blob:http://127.0.0.1:8000/x', 'file')).toBe(false);
+        expect(globalThis.NeconyanExport.cancelExport).toHaveBeenCalledWith(secret);
+    });
+
+    test('a multi-chunk export sends the exact bytes through bounded base64 chunks', async () => {
+        bridge.installAndroidNativeBridge(secret, window.location.origin);
+        const bytes = new Uint8Array(150000);
+        for (let at = 0; at < bytes.length; ++at) bytes[at] = (at * 31 + (at >> 7)) & 0xff;
+        const source = Buffer.from(bytes);
+        globalThis.fetch = jest.fn(async () => ({ blob: async () => new Blob([source]) }));
+        const appended = [];
+        globalThis.NeconyanExport.appendExport.mockImplementation((token, chunk) => { appended.push(chunk); return true; });
+        expect(await bridge.saveAndroidBlob('blob:http://127.0.0.1:8000/x', 'file')).toBe(true);
+        expect(appended.length).toBeGreaterThan(1);
+        // Each chunk must stay inside the native 100000-character append limit.
+        for (const chunk of appended) expect(chunk.length).toBeLessThanOrEqual(100000);
+        expect(Buffer.concat(appended.map(chunk => Buffer.from(chunk, 'base64')))).toEqual(source);
+        // The conversion itself never spreads a whole chunk as call arguments.
+        expect(globalThis.NeconyanExport.cancelExport).not.toHaveBeenCalled();
+    });
+
     test('hands optional Android memory profile to low-memory mode only after origin and token validation', async () => {
         const lowMemory = await import('../public/scripts/low-memory-mode.js');
         lowMemory.resetLowMemoryRuntimeForTests({

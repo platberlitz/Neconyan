@@ -28,7 +28,8 @@ is_truthy() {
 }
 
 is_termux() {
-    [[ -n "${TERMUX_VERSION:-}" || "${PREFIX:-}" == /data/data/com.termux/files/usr ]]
+    [[ -n "${TERMUX_VERSION:-}" || "${PREFIX:-}" == /data/data/com.termux/files/usr
+        || "${HOME:-}" == /data/data/com.termux/files/home* ]]
 }
 
 is_termux_shared_storage_repo() {
@@ -111,7 +112,8 @@ resolve_runtime_command() {
         return 0
     fi
 
-    if [[ -x "$BUN_INSTALL/bin/bun" ]]; then
+    # BUN_INSTALL may be unset here when callers resolve before the launcher exports it.
+    if [[ -n "${BUN_INSTALL:-}" && -x "$BUN_INSTALL/bin/bun" ]]; then
         printf '%s\n' "$BUN_INSTALL/bin/bun"
         return 0
     fi
@@ -166,7 +168,7 @@ done
 if (( ! self_update_only )) && is_termux_shared_storage_repo; then
     echo "[Neconyan] Termux installs must stay in your Termux home, not Android shared storage." >&2
     echo "[Neconyan] Android blocks the node_modules links Bun and npm need under paths like /storage/emulated/0." >&2
-    echo "[Neconyan] Reclone into '$HOME/Neconyan', then rerun this launcher. Use 'termux-setup-storage' only to grant file access." >&2
+    echo "[Neconyan] Reclone into '${HOME:-.}/Neconyan', then rerun this launcher. Use 'termux-setup-storage' only to grant file access." >&2
     exit 1
 fi
 
@@ -208,7 +210,7 @@ if (( self_update_only )); then
     exit 0
 fi
 
-export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
+export BUN_INSTALL="${BUN_INSTALL:-${HOME:-.}/.bun}"
 if [[ -d "$BUN_INSTALL/bin" ]]; then
     export PATH="$BUN_INSTALL/bin:$PATH"
 fi

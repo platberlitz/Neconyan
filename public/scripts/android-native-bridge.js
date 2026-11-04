@@ -46,20 +46,36 @@ export function showAndroidCrashReports() {
     return invoke('NeconyanExport', 'showCrashReports');
 }
 
+// Spreading the whole chunk into String.fromCharCode can exceed the JavaScript
+// argument limit and the native stack, so convert in bounded slices.
+const BASE64_CONVERT_CHUNK = 8192;
+
+function bytesToBase64(bytes) {
+    let binary = '';
+    for (let at = 0; at < bytes.length; at += BASE64_CONVERT_CHUNK) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(at, at + BASE64_CONVERT_CHUNK));
+    }
+    return globalThis.btoa(binary);
+}
+
 export async function saveAndroidBlob(url, name) {
     const token = callerToken;
+    // Only an export this call opened may be cancelled by it. A refused beginExport
+    // means another export is in flight, and cancelling its token would delete that one.
+    let opened = false;
     try {
         if (!isMainPage() || !token) return false;
         const blob = await (await globalThis.fetch(url)).blob();
         if (invoke('NeconyanExport', 'beginExport', [name || 'Neconyan-export', blob.size], token) !== true) throw new Error(t`Another export is open, the page changed, or the file exceeds 1 GiB.`);
+        opened = true;
         for (let at = 0; at < blob.size; at += 49152) {
             const bytes = new Uint8Array(await blob.slice(at, at + 49152).arrayBuffer());
-            if (invoke('NeconyanExport', 'appendExport', [globalThis.btoa(String.fromCharCode(...bytes))], token) !== true) throw new Error(t`Could not save the export. Check free storage.`);
+            if (invoke('NeconyanExport', 'appendExport', [bytesToBase64(bytes)], token) !== true) throw new Error(t`Could not save the export. Check free storage.`);
         }
         if (invoke('NeconyanExport', 'finishExport', [], token) !== true) throw new Error(t`The page changed before the export finished. Try again.`);
         return true;
     } catch (error) {
-        invoke('NeconyanExport', 'cancelExport', [], token);
+        if (opened) invoke('NeconyanExport', 'cancelExport', [], token);
         globalThis.alert(error.message);
         return false;
     }
