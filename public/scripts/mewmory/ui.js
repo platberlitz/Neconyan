@@ -329,6 +329,8 @@ function applyDecisionPresetToRole(draft, roleName, presetId) {
         }
         if (!role.profileId && !role.endpoint) {
             role.endpoint = 'http://127.0.0.1:8000/v1/systemone';
+            role.apiKey = '';
+            role.hasKey = false;
         }
         role.decisionMode = 'decision';
         if (role.profileId || String(role.model || '').trim()) {
@@ -348,7 +350,11 @@ function applyDecisionPresetToRole(draft, roleName, presetId) {
     } else {
         const previousDefaultEndpoint = JEV_DECISION_PRESETS.some(item => item.endpoint === role.endpoint);
         role.model = preset.model;
-        if ((!role.endpoint || previousDefaultEndpoint) && preset.endpoint) role.endpoint = preset.endpoint;
+        if ((!role.endpoint || previousDefaultEndpoint) && preset.endpoint && preset.endpoint !== role.endpoint) {
+            role.endpoint = preset.endpoint;
+            role.apiKey = '';
+            role.hasKey = false;
+        }
     }
     role.decisionMode = 'decision';
     role.decisionThreshold = preset.threshold;

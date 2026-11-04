@@ -185,7 +185,9 @@ export function validateConfig(input) {
             };
             if (!TOKENIZERS.includes(role.tokenizer)) fail('Choose a token counter for this role from the list.');
             if (result.roles[name].allowedData.some(type => !SOURCE_TYPES.includes(type))) fail('Choose what this role may read from the list.');
-            if (role.maxOutputTokens >= role.contextTokens) fail('Maximum response length, tokens must be lower than Model context size, tokens.');
+            const decision = DECISION_ROLES.includes(name) && effectiveDecisionMode({ ...result.roles[name],
+                model: useShared ? result.sharedModelOverride || modelText : modelOverride || modelText }) === 'decision';
+            if (!decision && role.maxOutputTokens >= role.contextTokens) fail('Maximum response length, tokens must be lower than Model context size, tokens.');
         } catch (error) {
             fail(ROLE_LABELS[name] + ': ' + error.message, error.status);
         }
@@ -323,6 +325,11 @@ export function saveConfig(directories, input) {
             if (input[key] === undefined) validated[key] = current[key] ?? defaultConfig()[key];
         }
         for (const roleName of DECISION_ROLES) {
+            // A manual key belongs to its saved destination, including when a preset changes it.
+            if (current.roles?.[roleName]?.endpoint !== validated.roles[roleName].endpoint
+                && !credentials.some(([name]) => name === roleName)) {
+                credentials.push([roleName, null]);
+            }
             if (input.roles?.[roleName]?.decisionMode === undefined && current.roles?.[roleName]?.decisionMode !== undefined) {
                 validated.roles[roleName].decisionMode = current.roles[roleName].decisionMode;
             }
@@ -421,21 +428,21 @@ function authorizeRole(config, name, dataTypes) {
 }
 
 export function resolveDecisionUrl(endpoint, connection) {
-    const raw = String(endpoint || '').trim();
-    if (/\/(?:systemone|decisions|decide)\/?$/i.test(raw)) return raw.replace(/\/+$/, '');
-    const base = (raw || (connection?.api === 'openrouter' ? 'https://openrouter.ai/api/v1' : connection?.api === 'openai' ? 'https://api.openai.com/v1' : ''))
-        .replace(/\/(?:chat\/completions|embeddings)\/?$/i, '')
-        .replace(/\/+$/, '');
-    if (!base) return '';
-    if (/openrouter\.ai\/api\/v1$/i.test(base)) return base.replace(/\/api\/v1$/i, '') + '/api/alpha/decisions';
-    if (/\/v1$/i.test(base)) return base + '/systemone';
+    const raw = String(endpoint || '').trim()
+        || (connection?.api === 'openrouter' ? 'https://openrouter.ai/api/v1' : connection?.api === 'openai' ? 'https://api.openai.com/v1' : '');
+    if (!raw) return '';
     try {
-        const parsed = new URL(base);
-        if (!parsed.pathname || parsed.pathname === '/') return base + '/v1/systemone';
+        const parsed = new URL(raw);
+        const pathname = parsed.pathname.replace(/\/+$/, '').replace(/\/(?:chat\/completions|embeddings)$/i, '');
+        if (parsed.hostname === 'openrouter.ai' && /^\/api(?:\/v1)?$/i.test(pathname)) parsed.pathname = '/api/alpha/decisions';
+        else if (/\/v1$/i.test(pathname)) parsed.pathname = pathname + '/systemone';
+        else if (!pathname) parsed.pathname = '/v1/systemone';
+        else parsed.pathname = pathname;
+        return parsed.href;
     } catch {
         // Keep non-URL strings unchanged for caller validation.
+        return raw;
     }
-    return base;
 }
 
 export function buildDecisionPayload(input) {
@@ -459,18 +466,19 @@ export function buildDecisionPayload(input) {
 }
 
 function extractDecisionScore(entry) {
-    if (typeof entry === 'number' && Number.isFinite(entry)) return Math.max(0, Math.min(1, entry));
+    const probability = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1 ? value : NaN;
+    if (typeof entry === 'number') return probability(entry);
     if (typeof entry === 'boolean') return entry ? 1 : 0;
     if (!entry || typeof entry !== 'object') return NaN;
     for (const key of ['noul', 'probability', 'score', 'p']) {
-        if (typeof entry[key] === 'number' && Number.isFinite(entry[key])) return Math.max(0, Math.min(1, entry[key]));
+        if (entry[key] !== undefined) return probability(entry[key]);
     }
     if (entry.probabilities && typeof entry.probabilities === 'object') {
         const yes = entry.probabilities.true ?? entry.probabilities.yes ?? entry.probabilities['1'];
-        if (typeof yes === 'number' && Number.isFinite(yes)) return Math.max(0, Math.min(1, yes));
+        if (yes !== undefined) return probability(yes);
     }
     if (typeof entry.answer === 'boolean') {
-        const confidence = typeof entry.confidence === 'number' && Number.isFinite(entry.confidence) ? Math.max(0, Math.min(1, entry.confidence)) : 1;
+        const confidence = entry.confidence === undefined ? 1 : probability(entry.confidence);
         return entry.answer ? confidence : 1 - confidence;
     }
     return NaN;
@@ -481,10 +489,10 @@ export function parseDecisionOutput(data, input, threshold = 0.5) {
     if (typeof payload?.choices?.[0]?.message?.content === 'string') {
         payload = parseJsonReply(payload.choices[0].message.content);
     }
-    object(payload, 'Decision output');
+    if (!Array.isArray(payload)) object(payload, 'Decision output');
     if (typeof payload.status === 'string' && Array.isArray(payload.selections)) return payload;
     const bag = payload.decisions || payload.questions || payload.results || payload.answers || payload;
-    object(bag, 'Decision output');
+    if (!Array.isArray(bag)) object(bag, 'Decision output');
     const candidates = Array.isArray(input?.candidates) ? input.candidates : [];
     const scene = Array.isArray(input?.scene) ? input.scene : [];
     if (!candidates.length) return { status: 'complete', selections: [], rejections: [], needsEvidence: [] };
@@ -494,9 +502,9 @@ export function parseDecisionOutput(data, input, threshold = 0.5) {
         const candidate = candidates[index];
         const raw = bag[`q_${index}`] ?? bag[candidate.recordId] ?? (Array.isArray(bag) ? bag[index] : undefined);
         const score = extractDecisionScore(raw);
-        if (Number.isFinite(score)) scored.push({ candidate, score });
+        if (!Number.isFinite(score)) throw new Error('Missing or invalid decision score for q_' + index + '.');
+        scored.push({ candidate, score });
     }
-    if (!scored.length) throw new Error('No readable decision scores.');
     const chosen = cueRefs.length
         ? scored.filter(item => item.score >= threshold).sort((a, b) => b.score - a.score)
         : [];
@@ -531,6 +539,7 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
     const { role, endpoint } = authorizeRole(connectionRole ? { ...config, roles: { ...config.roles, [name]: connectionRole } } : config, name, dataTypes);
     const base = (endpoint || (role.connection?.api === 'openai' ? 'https://api.openai.com/v1' : '')).replace(/\/(?:chat\/completions|embeddings)\/?$/, '');
     const decisionUrl = decision ? resolveDecisionUrl(endpoint, role.connection) : '';
+    if (decision && !decisionUrl) fail('The connection for ' + ROLE_LABELS[name] + ' has no System One endpoint. Choose a custom connection with its decision endpoint in Mewmory settings.', 502);
     const url = decision && decisionUrl ? decisionUrl : base + (name === 'embedding' ? '/embeddings' : '/chat/completions');
     const key = role.connection
         ? role.connection.payload.reverse_proxy ? role.connection.payload.proxy_password
@@ -620,6 +629,10 @@ function fallbackRoles(directories, config, name, dataTypes) {
         try {
             const connection = resolveModelProfile(directories, profileId, false, '');
             const role = { ...config.roles[name], profileId, modelOverride: '', connection, model: connection.model, endpoint: connection.endpoint, error: undefined };
+            if (DECISION_ROLES.includes(name)) {
+                role.decisionMode = 'auto';
+                role.decisionThreshold = defaultDecisionThreshold(connection.model);
+            }
             authorizeRole({ ...config, roles: { ...config.roles, [name]: role } }, name, dataTypes);
             return [role];
         } catch {
@@ -635,25 +648,26 @@ export async function callJsonRole(directories, config, name, contract, input, {
     const brokenConnection = Boolean(ROLE_NAMES.includes(name) && saved?.enabled && saved.error);
     const { role } = brokenConnection ? { role: saved } : authorizeRole(config, name, dataTypes);
     if (brokenConnection && dataTypes.some(type => !role.allowedData.includes(type))) fail(ROLE_LABELS[name] + ' cannot read the information it needs. Check ‘This role may read’ in Mewmory settings.', 403);
-    const counter = await getCounter(role.tokenizer, { tokenizerKey: 'openai', tokenizerName: role.model });
     const messages = [
         { role: 'system', content: contract + '\n' + RESPONSE_RULES },
         { role: 'user', content: JSON.stringify(input) },
     ];
-    const inputTokens = counter.count(JSON.stringify(messages)) + 16;
-    if (inputTokens + role.maxOutputTokens > role.contextTokens) {
-        fail(ROLE_LABELS[name] + ' needs ' + inputTokens.toLocaleString('en-GB') + ' tokens for this request and reserves '
-            + role.maxOutputTokens.toLocaleString('en-GB') + ' for the reply, but its Mewmory context limit is '
-            + role.contextTokens.toLocaleString('en-GB') + '. In Mewmory settings, set '
-            + ROLE_LABELS[name] + ' > Context limit, tokens to the limit your model service supports'
-            + (name === 'extractor' ? ', or reduce Messages per update.' : '.'), 409);
-    }
     const attempt = async connectionRole => {
         signal?.throwIfAborted();
         const activeRole = connectionRole || role;
+        const counter = await getCounter(activeRole.tokenizer, { tokenizerKey: 'openai', tokenizerName: activeRole.model });
+        const checkBudget = (tokens, reserve) => {
+            if (tokens + reserve <= activeRole.contextTokens) return;
+            fail(ROLE_LABELS[name] + ' needs ' + tokens.toLocaleString('en-GB') + ' tokens for this request and reserves '
+                + reserve.toLocaleString('en-GB') + ' for the reply, but its Mewmory context limit is '
+                + activeRole.contextTokens.toLocaleString('en-GB') + '. In Mewmory settings, set '
+                + ROLE_LABELS[name] + ' > Context limit, tokens to the limit your model service supports'
+                + (name === 'extractor' ? ', or reduce Messages per update.' : '.'), 409);
+        };
         if (DECISION_ROLES.includes(name) && effectiveDecisionMode(activeRole) === 'decision' && Array.isArray(input?.candidates)) {
             const decisionPayload = buildDecisionPayload(input);
             const decisionTokens = counter.count(JSON.stringify(decisionPayload)) + 16;
+            checkBudget(decisionTokens, 0);
             const threshold = typeof activeRole.decisionThreshold === 'number' && Number.isFinite(activeRole.decisionThreshold)
                 ? activeRole.decisionThreshold
                 : defaultDecisionThreshold(activeRole.model);
@@ -667,8 +681,10 @@ export async function callJsonRole(directories, config, name, contract, input, {
             }
             return { value, usage: { ...result.usage, input: result.usage.input || decisionTokens, tokenizer: counter.name, decision: true } };
         }
+        const inputTokens = counter.count(JSON.stringify(messages)) + 16;
+        checkBudget(inputTokens, activeRole.maxOutputTokens);
         const result = await requestModel(directories, config, name, {
-            messages, stream: false, max_tokens: role.maxOutputTokens, temperature: 0.2,
+            messages, stream: false, max_tokens: activeRole.maxOutputTokens, temperature: 0.2,
         }, dataTypes, signal, connectionRole);
         const content = result.data.choices?.[0]?.message?.content;
         if (result.data.choices?.[0]?.finish_reason === 'length') fail('The ' + ROLE_LABELS[name] + ' model ran out of reply space, so its answer was cut short and nothing was saved. Raise ' + ROLE_LABELS[name] + ' > Output limit, tokens in Mewmory settings if your model supports it, or lower Messages per update.', 502);

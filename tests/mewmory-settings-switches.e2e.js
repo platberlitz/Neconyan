@@ -390,6 +390,17 @@ async function jevPresetsAndQuickControlsSave({ page }) {
         await expect(quick.getByLabel('Selector model', { exact: true })).toHaveValue('typesafe/jev-1.14');
         await expect(quick.getByLabel('Selector API key', { exact: true })).toBeVisible();
 
+        await quick.getByLabel('Selector API key', { exact: true }).fill('test-old-endpoint-key');
+        await expect.poll(async () => (await readConfig(page)).config.roles.selector.hasKey, { timeout: 15000 }).toBe(true);
+        await quick.getByLabel('Recall decision model', { exact: true }).selectOption('open-jev-9b');
+        await expect.poll(async () => {
+            const selector = (await readConfig(page)).config.roles.selector;
+            return [selector.endpoint, selector.hasKey];
+        }, { timeout: 15000 }).toEqual(['http://127.0.0.1:8000/v1/systemone', false]);
+        await expect(quick.getByLabel('Selector API key', { exact: true })).toHaveValue('');
+        await quick.getByLabel('Recall decision model', { exact: true }).selectOption('jev-1.14');
+        await expect.poll(async () => (await readConfig(page)).config.roles.selector.model, { timeout: 15000 }).toBe('typesafe/jev-1.14');
+
         await quick.getByLabel('Recall decision model', { exact: true }).selectOption('custom');
         await quick.getByLabel('Selector endpoint', { exact: true }).fill('http://127.0.0.1:8000/v1/systemone');
         await quick.getByLabel('Selector model', { exact: true }).fill('my-org/custom-jev-9b');
