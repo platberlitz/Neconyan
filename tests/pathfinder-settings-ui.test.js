@@ -499,6 +499,15 @@ describe('Pathfinder settings persistence', () => {
         expect(panel.find('#pf--master-scope').text()).toBe(`Enable Pawthfinder for ${separateRecentChats ? 'individual' : 'all'} chats`);
     });
 
+    test.each([false, true])('saves and reloads the World Info keyword suppression option (%s)', async value => {
+        const agent = store.getAgentById('agent-a');
+        agent.settings.suppressKeywordActivation = value;
+        const panel = await ui.openPathfinderSettings(agent);
+        expect(panel.find('#pf--suppress-keyword-activation').prop('checked')).toBe(value);
+        await setting(panel, 'suppressKeywordActivation', !value);
+        expect(store.getAgentById('agent-a').settings.suppressKeywordActivation).toBe(!value);
+    });
+
     test('refreshes committed auto-sync selections without overwriting a summary draft', async () => {
         const panel = await ui.openPathfinderSettings(store.getAgentById('agent-a'));
         editSummary(panel, 'Keep this draft');

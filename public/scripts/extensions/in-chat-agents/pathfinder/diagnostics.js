@@ -260,6 +260,13 @@ export async function runDiagnostics() {
             : `Enabled. Last pipeline skipped ${skippedNaturalCount} naturally activated entr${skippedNaturalCount === 1 ? 'y' : 'ies'}.`,
     };
 
+    results['World Info Keywords'] = {
+        ok: true,
+        message: s.suppressKeywordActivation === true
+            ? `Off for Pawthfinder's readable books (${formatNameList(readableBooks)}). Constant and sticky entries still activate, and keywords return if a retrieval fails.`
+            : 'On. World Info keyword activation runs normally.',
+    };
+
     // Check connection profile
     results['Connection Profile'] = {
         ok: true,
