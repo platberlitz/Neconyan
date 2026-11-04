@@ -9,6 +9,34 @@ const extension = '/scripts/extensions/third-party/Neconyan-Time-Machine';
 const moduleName = 'NeconyanCardTimeMachine';
 const screenshots = fileURLToPath(new URL('../screenshots/', import.meta.url));
 
+test('startup history cleanup deletes expired snapshots and keeps the latest', async ({ app }) => {
+    test.setTimeout(180000);
+    const account = await app.account();
+    const page = await account.open({ workspace: false });
+    const result = await page.evaluate(async extension => {
+        const store = await import(extension + '/src/store.js');
+        const rows = [];
+        for (let version = 0; version < 3; version++) {
+            rows.push(await store.save({
+                kind: 'preset', target: 'openai/Cleanup regression', label: 'Cleanup regression',
+                data: { temperature: version },
+            }, { skipPrune: true }));
+        }
+        store.getSettings().keepPerTarget = 1;
+        await store.commitSettings();
+        await store.reconcile();
+        const statuses = [];
+        for (const row of rows) {
+            statuses.push((await fetch(row.url, { cache: 'no-store' })).status);
+        }
+        const remaining = store.listSnapshots().filter(row => row.target === 'openai/Cleanup regression');
+        await store.reconcile();
+        return { statuses, remaining: remaining.map(row => row.id), latest: rows[2].id };
+    }, extension);
+    expect(result.statuses).toEqual([404, 404, 200]);
+    expect(result.remaining).toEqual([result.latest]);
+});
+
 test('character restore refuses a concurrent edit and succeeds after a fresh read', async ({ app }) => {
     const account = await app.account();
     const page = await account.open({ workspace: false });

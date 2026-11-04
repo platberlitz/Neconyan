@@ -446,7 +446,8 @@ function forget(row) {
 
 async function deleteBlob(row) {
     try {
-        await post('/api/files/delete', { path: requireRow(row).url });
+        // The delete endpoint accepts an account-relative path, not a public URL.
+        await post('/api/files/delete', { path: `user/files/${requireRow(row).name}` });
     } catch (error) {
         if (error.status !== 404) {
             throw error;
