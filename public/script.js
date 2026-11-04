@@ -19787,10 +19787,10 @@ export async function renameGroupOrCharacterChat({ characterId, groupId, oldFile
             detail.setAttribute('data-i18n-ignore', '');
             detail.setAttribute('translate', 'no');
             detail.textContent = error.serverMessage;
-            notice.append('An error has occurred. Chat was not renamed.', detail);
+            notice.append(t`An error has occurred. Chat was not renamed.`, detail);
             await callGenericPopup(notice, POPUP_TYPE.TEXT);
         } else {
-            await callGenericPopup('An error has occurred. Chat was not renamed.', POPUP_TYPE.TEXT);
+            await callGenericPopup(t`An error has occurred. Chat was not renamed.`, POPUP_TYPE.TEXT);
         }
         throw error;
     } finally {

@@ -266,6 +266,16 @@ describe('background chat renames', () => {
         await expect(rename(manual, {})).rejects.toThrow('Unsuccessful chat rename request.');
         expect(manual.callGenericPopup).toHaveBeenCalledWith('An error has occurred. Chat was not renamed.', 1);
     });
+
+    test('the manual rename failure text goes through the translator', async () => {
+        const failing = {
+            sendRoleplayLifecycle: async () => ({ ok: false, json: async () => ({}) }),
+            t: (strings, ...values) => `T:${String.raw({ raw: strings }, ...values)}`,
+        };
+        const manual = loadRename(failing).context;
+        await expect(rename(manual, {})).rejects.toThrow('Unsuccessful chat rename request.');
+        expect(manual.callGenericPopup).toHaveBeenCalledWith('T:An error has occurred. Chat was not renamed.', 1);
+    });
 });
 
 describe('automatic chat naming wiring', () => {
