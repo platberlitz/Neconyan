@@ -84,7 +84,18 @@ test('the launcher runs the Bun path end to end when Bun is selected and not on 
     } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
-test('launcher helper functions survive unset HOME and BUN_INSTALL under set -u', () => {
+test('launcher helper functions survive unset HOME and BUN_INSTALL under set -u', t => {
+    // CI installs Node outside /usr/bin, and a developer may have Bun there.
+    // Resolve Bash first, then give the helpers only the runtimes this test owns.
+    const bash = spawnSync('bash', ['-c', 'command -v bash'], { encoding: 'utf8' });
+    assert.equal(bash.status, 0, bash.stderr);
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-bun-home-'));
+    t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+    const bin = path.join(directory, 'runtime-bin');
+    fs.mkdirSync(bin);
+    const run = (env = {}) => spawnSync(bash.stdout.trim(), ['-c', script], {
+        encoding: 'utf8', env: { PATH: bin, ...env },
+    });
     const source = fs.readFileSync(path.join(root, 'start.sh'), 'utf8');
     const end = source.indexOf('\nself_update_requested=0');
     assert.ok(end > 0, 'could not find the helper section end marker');
@@ -100,25 +111,27 @@ test('launcher helper functions survive unset HOME and BUN_INSTALL under set -u'
         'bun_path="$(resolve_runtime_command bun || true)"; echo "BUN=${bun_path}"',
         'if resolve_runtime_command node >/dev/null 2>&1; then echo NODEFOUND; else echo NODENOTFOUND; fi',
     ].join('\n');
-    const unset = spawnSync('bash', ['-c', script], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } });
+    const absent = run();
+    assert.equal(absent.status, 0, absent.stderr);
+    assert.equal(absent.stdout, 'DESKTOP\nBUN=\nNODENOTFOUND\n');
+
+    fs.writeFileSync(path.join(bin, 'node'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    const unset = run();
     assert.equal(unset.status, 0, `helpers failed with HOME and BUN_INSTALL unset: ${unset.stderr}`);
     assert.equal(unset.stdout, 'DESKTOP\nBUN=\nNODEFOUND\n');
     assert.doesNotMatch(unset.stderr, /unbound variable/);
 
     // The Termux HOME fallback matches src/runtime.js detection.
-    const home = spawnSync('bash', ['-c', script], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: '/data/data/com.termux/files/home' } });
+    const home = run({ HOME: '/data/data/com.termux/files/home' });
     assert.equal(home.status, 0, home.stderr);
     assert.equal(home.stdout, 'TERMUX\nBUN=\nNODEFOUND\n');
 
     // A normal desktop home and a bun that lives only in BUN_INSTALL keep working.
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-bun-home-'));
-    try {
-        fs.mkdirSync(path.join(directory, 'bin'));
-        fs.writeFileSync(path.join(directory, 'bin', 'bun'), '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 });
-        const found = spawnSync('bash', ['-c', script], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: '/home/someone', BUN_INSTALL: directory } });
-        assert.equal(found.status, 0, found.stderr);
-        assert.equal(found.stdout, `DESKTOP\nBUN=${path.join(directory, 'bin/bun')}\nNODEFOUND\n`);
-    } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+    fs.mkdirSync(path.join(directory, 'bin'));
+    fs.writeFileSync(path.join(directory, 'bin', 'bun'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    const found = run({ HOME: '/home/someone', BUN_INSTALL: directory });
+    assert.equal(found.status, 0, found.stderr);
+    assert.equal(found.stdout, `DESKTOP\nBUN=${path.join(directory, 'bin/bun')}\nNODEFOUND\n`);
 });
 
 test('install-prerequisites.sh survives unset HOME without installing anything', () => {
