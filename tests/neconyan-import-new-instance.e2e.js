@@ -141,7 +141,7 @@ for (const phone of [false, true]) {
         const geometry = await panel.evaluate(element => ({
             bottom: element.getBoundingClientRect().bottom,
             buttonBottom: element.querySelector('#sb_character_chat_import_action').getBoundingClientRect().bottom,
-            labelHeight: element.querySelector('label').getBoundingClientRect().height,
+            labelHeight: element.querySelector('label[for="sb_character_import_new_instance"]').getBoundingClientRect().height,
         }));
         expect(geometry.bottom).toBeGreaterThanOrEqual(geometry.buttonBottom);
         expect(geometry.labelHeight).toBeGreaterThanOrEqual(44);

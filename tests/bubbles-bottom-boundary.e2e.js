@@ -7,7 +7,10 @@ import { test } from './neconyan-conversation-durable-fixture.js';
 
 test('desktop Bubbles follows stationary paint, native edits and the real lower edge', async ({ app }, info) => {
     test.setTimeout(180000);
-    const account = await app.account();
+    const account = await app.account({ configureSettings(saved) {
+        // This test owns the crossing position; late reload scrolling must not move it to the natural lower edge.
+        saved.power_user.auto_scroll_chat_to_bottom = false;
+    } });
     const page = await account.open({ workspace: false });
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.evaluate(async avatar => {
