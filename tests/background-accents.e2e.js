@@ -30,7 +30,7 @@ async function readSelectedState(el) {
 
 for (const phone of [false, true]) {
     test(`${phone ? 'iPhone stand-in' : 'desktop'} background fitting and paired accents`, async ({ browser }, testInfo) => {
-        test.setTimeout(120000);
+        test.setTimeout(180000);
         const context = await browser.newContext(phone ? IPHONE_SAFARI_CONTEXT : { viewport: { width: 1280, height: 900 } });
         if (phone) await installIPhoneSafari(context, { standalone: true });
         const page = await context.newPage();
@@ -106,6 +106,7 @@ for (const phone of [false, true]) {
             'slate-flat': ['#background_fitting', null, 'borderTopColor'],
             'clean-minimal': ['#background_fitting', null, 'borderTopColor'],
             'macos-minimal': ['#background_fitting', null, 'borderTopColor'],
+            'starlight-conservatory': [phone ? '#form_sheld' : '#send_form', null, 'borderTopColor'],
         };
         for (const [theme, decoration] of Object.entries(decorations)) {
             await page.evaluate(id => NeconyanShell.applyTheme(id), theme);

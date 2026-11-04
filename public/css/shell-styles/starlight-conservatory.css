@@ -1,0 +1,393 @@
+/* Shell Style: Starlight Conservatory. Loaded at runtime only while this style is active.
+   Keeps the Calico palette and cats; frames the workspace in burnished brass filigree
+   and midnight conservatory glass, lit by drifting fireflies and warm star-lanterns. */
+
+@keyframes starlight-conservatory-fireflies {
+    0% {
+        background-position: 0% 0%, 100% 0%, 0% 100%, 50% 50%;
+        opacity: 0.78;
+    }
+    50% {
+        background-position: 18% -14%, 82% -10%, 12% 88%, 50% 50%;
+        opacity: 0.96;
+    }
+    100% {
+        background-position: -12% -24%, 92% -20%, 24% 78%, 50% 50%;
+        opacity: 0.84;
+    }
+}
+
+@keyframes starlight-conservatory-lantern-pulse {
+    0% {
+        box-shadow: 0 4px 20px var(--starlight-lantern), inset 0 1px 0 rgb(255 244 214 / 0.22);
+    }
+    50% {
+        box-shadow: 0 6px 28px color-mix(in srgb, var(--starlight-brass) 34%, transparent), 0 0 18px var(--starlight-celeste-glow), inset 0 1px 0 rgb(255 244 214 / 0.34);
+    }
+    100% {
+        box-shadow: 0 4px 22px var(--starlight-lantern), inset 0 1px 0 rgb(255 244 214 / 0.24);
+    }
+}
+
+@keyframes starlight-conservatory-cat-glow {
+    0% {
+        filter: drop-shadow(0 4px 10px var(--starlight-lantern));
+    }
+    50% {
+        filter: drop-shadow(0 6px 16px color-mix(in srgb, var(--starlight-brass) 42%, transparent)) drop-shadow(0 0 10px var(--starlight-celeste-glow));
+    }
+    100% {
+        filter: drop-shadow(0 4px 10px var(--starlight-lantern));
+    }
+}
+
+@keyframes starlight-conservatory-composer-glow {
+    0% {
+        box-shadow: var(--starlight-shadow), inset 0 0 0 3px var(--starlight-surface), 0 0 14px var(--starlight-lantern);
+    }
+    50% {
+        box-shadow: var(--starlight-shadow), inset 0 0 0 3px var(--starlight-surface), 0 0 24px color-mix(in srgb, var(--starlight-brass) 32%, transparent), 0 0 16px var(--starlight-celeste-glow);
+    }
+    100% {
+        box-shadow: var(--starlight-shadow), inset 0 0 0 3px var(--starlight-surface), 0 0 16px var(--starlight-lantern);
+    }
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) {
+    --starlight-brass: color-mix(in srgb, var(--neco-ginger) 58%, #e6b86a);
+    --starlight-lantern: color-mix(in srgb, var(--starlight-brass) 24%, transparent);
+    --starlight-celeste: color-mix(in srgb, var(--neco-accent-secondary) 52%, #5bc4dc);
+    --starlight-celeste-glow: color-mix(in srgb, var(--starlight-celeste) 22%, transparent);
+    --starlight-surface: color-mix(in srgb, var(--neco-surface) 88%, #132235);
+    --starlight-rail: color-mix(in srgb, var(--neco-rail) 90%, #0f1b2b);
+    --starlight-raised: color-mix(in srgb, var(--neco-raised) 84%, var(--starlight-brass));
+    --starlight-filigree: color-mix(in srgb, var(--neco-accent-secondary) 46%, color-mix(in srgb, var(--starlight-brass) 52%, var(--neco-border)));
+    --starlight-shadow: 0 12px 32px color-mix(in srgb, var(--starlight-brass) 16%, rgb(4 10 22 / 0.42));
+    --starlight-glass-top: color-mix(in srgb, #161c26 84%, transparent);
+    --starlight-glass-bottom: color-mix(in srgb, #0e131b 70%, transparent);
+    --starlight-glass-raised: linear-gradient(180deg, color-mix(in srgb, #1a222d 82%, transparent), color-mix(in srgb, #10161f 70%, transparent));
+    --starlight-glass-rail: color-mix(in srgb, #141a23 80%, transparent);
+    --starlight-glass-control: linear-gradient(180deg, color-mix(in srgb, #1d2631 86%, transparent), color-mix(in srgb, #131a23 74%, transparent));
+    --neco-panel-gradient: linear-gradient(180deg, color-mix(in srgb, var(--starlight-surface) 92%, var(--starlight-brass)), var(--starlight-surface));
+    --sb-radius-button: 999px;
+    --sb-radius-sm: 10px;
+    --sb-radius-md: 14px;
+    --sb-radius-lg: 18px;
+    --sb-radius-xl: 22px;
+    --sb-message-radius: 18px;
+}
+
+:root[data-sb-theme='starlight-conservatory'][data-sb-surface-tone='light'] body.neconyan:not(.sbterm) {
+    --starlight-surface: color-mix(in srgb, var(--neco-surface) 90%, #f5efe2);
+    --starlight-rail: color-mix(in srgb, var(--neco-rail) 90%, #efe6d5);
+    --starlight-shadow: 0 12px 30px color-mix(in srgb, var(--starlight-brass) 24%, rgb(40 30 12 / 0.16));
+    --starlight-glass-top: color-mix(in srgb, #fbf6ea 88%, transparent);
+    --starlight-glass-bottom: color-mix(in srgb, #f1e8d6 76%, transparent);
+    --starlight-glass-raised: linear-gradient(180deg, color-mix(in srgb, #fdf9f0 92%, transparent), color-mix(in srgb, #f4ecdc 80%, transparent));
+    --starlight-glass-rail: color-mix(in srgb, #f7f1e3 86%, transparent);
+    --starlight-glass-control: linear-gradient(180deg, color-mix(in srgb, #fdf9f0 94%, transparent), color-mix(in srgb, #f2e9d7 84%, transparent));
+}
+
+/* Custom accents steer both the burnished brass filigree and the celestial moonlight glow. */
+:root[data-sb-theme='starlight-conservatory'][data-neconyan-accent='custom'] body.neconyan:not(.sbterm) {
+    --starlight-brass: color-mix(in srgb, var(--neco-ginger) 82%, #e6b86a);
+    --starlight-celeste: color-mix(in srgb, var(--neco-accent-secondary) 78%, #5bc4dc);
+}
+
+/* Conservatory wallpaper: sleeping calico under warm star-lanterns and arched glass. */
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm)::before {
+    background-image: url('../../img/neconyan/shell-starlight-conservatory.webp?v=20261104a');
+    --neconyan-wallpaper-focus: 100% 50%;
+    opacity: 0.74;
+}
+
+/* Drifting golden firefly motes and soft conservatory lantern pools behind the workspace. */
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm)::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    pointer-events: none;
+    background-image:
+        radial-gradient(circle at 18% 26%, color-mix(in srgb, var(--starlight-brass) 38%, transparent) 0, transparent 2.5%),
+        radial-gradient(circle at 82% 22%, color-mix(in srgb, var(--starlight-brass) 42%, transparent) 0, transparent 3%),
+        radial-gradient(circle at 74% 72%, color-mix(in srgb, var(--starlight-celeste) 34%, transparent) 0, transparent 3.5%),
+        radial-gradient(ellipse at 86% 88%, var(--starlight-lantern) 0, transparent 54%);
+    background-size: 120% 120%, 125% 125%, 130% 130%, 100% 100%;
+    animation: starlight-conservatory-fireflies 16s ease-in-out infinite alternate;
+}
+
+/* Interactive night sky. The stage itself generates no box (display: contents), so each
+   canvas joins the body stacking context directly: the sky sits behind the glass panels,
+   while the constellations and the pointer wake sit above them. */
+:root[data-sb-theme='starlight-conservatory'] #sb-starlight-conservatory-stage {
+    display: contents;
+    pointer-events: none;
+}
+
+:root[data-sb-theme='starlight-conservatory'] #sb-starlight-conservatory-stage canvas {
+    position: fixed;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+:root[data-sb-theme='starlight-conservatory'] #sb-starlight-conservatory-sky {
+    z-index: -1;
+}
+
+:root[data-sb-theme='starlight-conservatory'] #sb-starlight-conservatory-overlay {
+    z-index: calc(var(--sb-z-shell-panel, 1100) - 1);
+}
+
+:root[data-sb-theme='starlight-conservatory'] #sb-starlight-conservatory-trail {
+    z-index: calc(var(--sb-z-critical, 10000) - 1);
+}
+
+/* Top bar and workspace rail: burnished brass trim and gently breathing lantern light. */
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) #top-bar {
+    border-bottom: 1px solid var(--starlight-filigree);
+    animation: starlight-conservatory-lantern-pulse 8s ease-in-out infinite alternate;
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) #sb-topbar-inner :is(button, .sb-proxy-button):is(:hover, [aria-pressed='true']) {
+    background: var(--starlight-lantern);
+    border-radius: 999px;
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) #neconyan-workspace-rail {
+    background: linear-gradient(180deg, var(--starlight-rail), color-mix(in srgb, var(--starlight-rail) 90%, var(--starlight-brass)));
+    border-right: 1px solid var(--starlight-filigree);
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) #neconyan-workspace-rail .neconyan-rail-section-label {
+    font-family: var(--sb-font-display);
+    letter-spacing: 0.03em;
+    color: var(--starlight-brass);
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action, #sb-mobile-nav .sb-nav-item) {
+    border-radius: 999px;
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action, #sb-mobile-nav .sb-nav-item):hover {
+    background: var(--starlight-lantern);
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action, #sb-mobile-nav .sb-nav-item):is([aria-current='page'], .is-active),
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) .neconyan-mode-button[aria-pressed='true'] {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--starlight-brass) 30%, var(--starlight-raised)), var(--starlight-raised));
+    box-shadow: inset 0 1px 0 rgb(255 248 225 / 0.22), 0 2px 10px var(--starlight-lantern);
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) #sb-mobile-nav-content {
+    background: var(--starlight-rail);
+    border: 1px solid var(--starlight-filigree);
+    border-radius: 22px;
+    box-shadow: var(--starlight-shadow);
+}
+
+/* Home cat and startup cat: bathed in a breathing warm star-lantern aura. */
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(.neconyan-home-cat, .neconyan-startup-cat) {
+    animation: starlight-conservatory-cat-glow 6s ease-in-out infinite alternate;
+}
+
+/* Conservatory glass: the Home cards turn into real panes, so the night sky drifting behind
+   them stays visible as soft bokeh while the constellations drawn on top stay crisp. */
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(.neconyan-home-intro, .neconyan-assistant-picker) {
+    background:
+        linear-gradient(180deg, var(--starlight-glass-top), var(--starlight-glass-bottom));
+    border-color: color-mix(in srgb, var(--starlight-brass) 42%, transparent);
+    backdrop-filter: blur(22px) saturate(94%);
+    -webkit-backdrop-filter: blur(22px) saturate(94%);
+    box-shadow:
+        inset 0 1px 0 rgb(255 246 220 / 0.16),
+        inset 0 0 60px color-mix(in srgb, var(--starlight-celeste) 9%, transparent),
+        0 22px 52px color-mix(in srgb, var(--starlight-brass) 10%, rgb(2 6 16 / 0.5));
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(.neconyan-home-intro, .neconyan-assistant-picker) :is(h1, h2) {
+    text-shadow: 0 0 22px color-mix(in srgb, var(--starlight-celeste) 42%, transparent);
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) .neconyan-home-actions > button:not(.neconyan-home-primary) {
+    background: var(--starlight-glass-raised);
+    backdrop-filter: blur(10px) saturate(112%);
+    -webkit-backdrop-filter: blur(10px) saturate(112%);
+}
+
+/* The primary Home action keeps the accent fill and its own contrast ink: the glass rule
+   above must never swallow it, or the label turns dark on dark. */
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) .neconyan-home-actions > .neconyan-home-primary,
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) .neconyan-home-actions > .neconyan-home-primary:is(:hover, :focus-visible) {
+    background: var(--neco-action-gradient);
+    color: var(--neco-charcoal);
+    border-color: transparent;
+    box-shadow: 0 6px 20px color-mix(in srgb, var(--starlight-brass) 28%, transparent);
+}
+
+/* The Home layout switcher is a brass rail across the night glass, not a khaki bar. */
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) .neconyan-home-layout-bar {
+    background: var(--starlight-glass-rail);
+    border-color: color-mix(in srgb, var(--starlight-brass) 34%, transparent);
+    backdrop-filter: blur(18px) saturate(108%);
+    -webkit-backdrop-filter: blur(18px) saturate(108%);
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) .neconyan-home-layout-bar :is(button, .menu_button) {
+    background: var(--starlight-glass-control);
+    border-color: color-mix(in srgb, var(--starlight-brass) 30%, transparent);
+    color: var(--neco-ink);
+}
+
+/* The top bar becomes a glass canopy: the same brass trim, now lit from the sky behind it. */
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) #top-bar {
+    background: color-mix(in srgb, var(--starlight-rail) 76%, transparent);
+    backdrop-filter: blur(18px) saturate(120%);
+    -webkit-backdrop-filter: blur(18px) saturate(120%);
+}
+
+/* Secondary controls: faceted conservatory glass pills with burnished brass rims. */
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(#neconyan-home-host .neconyan-home-layout-bar *):not(.neconyan-cat-control, .menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset) {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--starlight-raised) 88%, #fff), var(--starlight-raised));
+    border: 1px solid color-mix(in srgb, var(--starlight-brass) 32%, var(--neco-border));
+    border-radius: 999px;
+    color: var(--neco-ink);
+    box-shadow: inset 0 1px 0 rgb(255 248 225 / 0.2), 0 2px 7px rgb(0 0 0 / 0.16);
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(#neconyan-home-host .neconyan-home-layout-bar *):not(.neconyan-cat-control, .menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset):hover {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--starlight-brass) 18%, var(--starlight-raised)), var(--starlight-raised));
+    box-shadow: inset 0 1px 0 rgb(255 248 225 / 0.28), 0 3px 12px var(--starlight-lantern);
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea:not(#send_textarea)) {
+    border-radius: 12px;
+    border: 1px solid color-mix(in srgb, var(--starlight-brass) 28%, var(--neco-border));
+}
+
+/* Composer: conservatory glass frame with double brass inlay and animated starlight pulse. */
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) #sb-bottom-chat-bar {
+    --neco-surface: var(--starlight-surface);
+    border-radius: 18px 18px 0 0;
+    animation: starlight-conservatory-composer-glow 7s ease-in-out infinite alternate;
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) #send_form {
+    --neco-surface: var(--starlight-surface);
+    border: 1px solid var(--starlight-filigree);
+    border-radius: 22px;
+    padding: 8px;
+    box-shadow: var(--starlight-shadow), inset 0 0 0 3px var(--starlight-surface), 0 0 14px var(--starlight-lantern);
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) #send_form:focus-within {
+    border-color: var(--starlight-brass);
+    box-shadow: 0 0 0 3px var(--starlight-lantern), var(--starlight-shadow), inset 0 0 0 3px var(--starlight-surface);
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) #send_but {
+    border-radius: 999px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--starlight-brass) 82%, #fff), var(--starlight-brass));
+    color: var(--neco-on-accent);
+    box-shadow: 0 0 16px var(--starlight-lantern);
+}
+
+/* Drawers: conservatory glass panels with brass dividers and celestial accents. */
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(.sb-shell-root, #right-nav-panel).openDrawer {
+    --neco-rail: var(--starlight-rail);
+    --neco-raised: var(--starlight-raised);
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) .sb-shell-header {
+    border-bottom: 1px solid var(--starlight-filigree);
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) .sb-shell-title {
+    font-family: var(--sb-font-display);
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(.sb-shell-tab, .sb-settings-tab-btn, #right-nav-panel .sb-character-editor-subtab) {
+    border-radius: 999px;
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) .sb-shell-tab.is-active,
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) .sb-settings-tab-btn.active,
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) #right-nav-panel .sb-character-editor-subtab.is-active {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--starlight-brass) 32%, var(--starlight-raised)), var(--starlight-raised));
+    box-shadow: inset 0 1px 0 rgb(255 248 225 / 0.2);
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) .sb-shell-panel-scroller {
+    background: color-mix(in srgb, var(--starlight-surface) 74%, transparent);
+    border-radius: 18px;
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) .sb-shell-close {
+    border-radius: 999px;
+    min-width: 44px;
+    background: var(--starlight-raised);
+    border: 1px solid color-mix(in srgb, var(--starlight-brass) 32%, var(--neco-border));
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(.sb-theme-card, .sb-settings-group, .sb-shell-callout, .sb-admin-card) {
+    background: color-mix(in srgb, var(--starlight-surface) 82%, transparent);
+    border: 1px solid var(--starlight-filigree);
+    border-radius: 18px;
+    box-shadow: inset 0 1px 0 rgb(255 248 225 / 0.14), 0 4px 14px rgb(0 0 0 / 0.12);
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) dialog.popup {
+    background: var(--starlight-surface);
+    border: 1px solid var(--starlight-filigree);
+    border-radius: 22px;
+    box-shadow: var(--starlight-shadow), inset 0 0 0 3px var(--starlight-surface);
+}
+
+/* Primary action buttons retain their accessible accent fill and contrast text. */
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]) {
+    border-radius: 999px;
+    box-shadow: var(--starlight-shadow);
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]):hover {
+    box-shadow: var(--starlight-shadow), inset 0 0 0 2px color-mix(in srgb, var(--sb-on-accent) 35%, transparent);
+}
+
+/* Phones: style the outer bottom bar box as one unified conservatory frame. */
+@media (max-width: 768px) {
+    :root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel {
+        --neco-surface: var(--starlight-surface);
+        border: 1px solid var(--starlight-filigree);
+        border-radius: 22px;
+        box-shadow: var(--starlight-shadow);
+    }
+    :root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel #sb-bottom-chat-bar {
+        background-image: none;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        animation: none;
+    }
+}
+
+/* Reduced-motion guard: respects both system preference and Neconyan's Reduced Motion toggle. */
+:root[data-sb-theme='starlight-conservatory'] body.neconyan.reduced-motion:not(.sbterm)::after,
+:root[data-sb-theme='starlight-conservatory'] body.neconyan.reduced-motion:not(.sbterm) #top-bar,
+:root[data-sb-theme='starlight-conservatory'] body.neconyan.reduced-motion:not(.sbterm) :is(.neconyan-home-cat, .neconyan-startup-cat),
+:root[data-sb-theme='starlight-conservatory'] body.neconyan.reduced-motion:not(.sbterm) #sb-bottom-chat-bar {
+    animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm)::after,
+    :root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) #top-bar,
+    :root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(.neconyan-home-cat, .neconyan-startup-cat),
+    :root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) #sb-bottom-chat-bar {
+        animation: none;
+    }
+}
