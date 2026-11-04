@@ -46,6 +46,9 @@ describe('Neconyan assistant catalog and installer', () => {
             server.once('error', reject);
         });
         baseUrl = `http://127.0.0.1:${server.address().port}`;
+        // Installing artwork can block the loop past an idle socket deadline under load.
+        // Keep fixture connections open until teardown rather than racing the fetch pool.
+        server.keepAliveTimeout = 0;
     });
 
     beforeEach(() => {
