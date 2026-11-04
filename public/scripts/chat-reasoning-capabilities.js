@@ -30,7 +30,8 @@ const NATIVE_EFFORTS = Object.freeze({
         'gemini-3.1-flash-lite': ['min', 'low', 'medium', 'high'], 'gemini-3-flash-preview': ['min', 'low', 'medium', 'high'],
     },
     vertexai: { 'gemini-3.1-pro-preview': ['low', 'medium', 'high'], 'gemini-3-flash-preview': ['min', 'low', 'medium', 'high'] },
-    deepseek: { 'deepseek-v4-pro': ['none', 'low', 'high', 'max'] },
+    // The Chat Completions reference lists none, low, high and max for every model; DeepSeek names Flash 'deepseek-flash'.
+    deepseek: { 'deepseek-v4-pro': ['none', 'low', 'high', 'max'], 'deepseek-v4-flash': ['none', 'low', 'high', 'max'], 'deepseek-flash': ['none', 'low', 'high', 'max'] },
     moonshot: { 'kimi-k3': ['low', 'high', 'max'] },
     zai: { 'glm-5.3': ['low', 'high', 'max'], 'glm-5.3-flash': ['low', 'high', 'max'] },
     minimax: { 'MiniMax-M3.1-Flash': ['low', 'medium', 'high', 'xhigh', 'max'] },

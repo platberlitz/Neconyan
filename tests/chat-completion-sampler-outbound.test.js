@@ -262,6 +262,8 @@ describe('Chat Completion sampler wire filtering', () => {
         ['makersuite', 'gemini-3.8-flash', 'low', 'generationConfig.thinkingConfig.thinkingLevel', 'low'],
         ['vertexai', 'gemini-3-flash-preview', 'min', 'generationConfig.thinkingConfig.thinkingLevel', 'minimal'],
         ['deepseek', 'deepseek-v4-pro', 'none', 'reasoning_effort', 'none'],
+        ['deepseek', 'deepseek-v4-flash', 'none', 'reasoning_effort', 'none'],
+        ['deepseek', 'deepseek-flash', 'max', 'reasoning_effort', 'max'],
         ['moonshot', 'kimi-k3', 'low', 'reasoning_effort', 'low'],
         ['zai', 'glm-5.3', 'high', 'reasoning_effort', 'high'],
         ['minimax', 'MiniMax-M3.1-Flash', 'high', 'reasoning_effort', 'high'],
@@ -295,7 +297,8 @@ describe('Chat Completion sampler wire filtering', () => {
     test.each([
         ['openai', 'gpt-5', 'none'], ['openai_responses', 'gpt-6-astra', 'none'],
         ['makersuite', 'gemini-3.8-flash', 'none'], ['vertexai', 'gemini-3-flash-preview', 'max'],
-        ['deepseek', 'deepseek-v4-pro', 'medium'], ['moonshot', 'kimi-k3', 'none'], ['zai', 'glm-5.3', 'medium'],
+        ['deepseek', 'deepseek-v4-pro', 'medium'],
+        ['deepseek', 'deepseek-v4-flash', 'medium'], ['deepseek', 'deepseek-flash', 'min'], ['moonshot', 'kimi-k3', 'none'], ['zai', 'glm-5.3', 'medium'],
         ['minimax', 'MiniMax-M3.1-Flash', 'none'], ['mistralai', 'mistral-small-2603', 'low'],
         ['groq', 'openai/gpt-oss-20b', 'max'], ['aimlapi', 'openai/gpt-oss-20b', 'none'],
         ['fireworks', 'accounts/fireworks/models/gpt-oss-20b', 'max'],
@@ -452,7 +455,7 @@ describe('Chat Completion sampler wire filtering', () => {
         expect(invalid.status).toBe(400);
         expect((await invalid.json()).error.code).toBe('UNSUPPORTED_REASONING_EFFORT');
         expect(nodeFetchMock).not.toHaveBeenCalled();
-        for (const [fields, noneValue] of [[{ model: 'deepseek-v4-flash' }, 'none'],
+        for (const [fields, noneValue] of [[{ model: 'deepseek-v4-future' }, 'none'],
             [{ model: 'deepseek-v4-pro', reverse_proxy: 'https://fixture.invalid/v1', proxy_password: 'fixture' }, undefined]]) {
             expect((await request('deepseek', { ...fields, reasoning_effort: 'min' })).status).toBe(200);
             expect(capturedBody.reasoning_effort).toBe('minimal');
@@ -468,9 +471,37 @@ describe('Chat Completion sampler wire filtering', () => {
             tool_calls: [{ id: 'call-fixture', type: 'function', function: { name: 'probe', arguments: '{}' } }] },
         { role: 'tool', tool_call_id: 'call-fixture', content: 'done' }];
         const tools = [{ type: 'function', function: { name: 'probe', parameters: { type: 'object', properties: {} } } }];
-        const response = await request('deepseek', { model: 'deepseek-v4-flash', reasoning_effort: 'none', messages, tools, logprobs: 3 });
+        const response = await request('deepseek', { model: 'deepseek-v4-future', reasoning_effort: 'none', messages, tools, logprobs: 3 });
         expect(response.status).toBe(200);
         expect(capturedBody.reasoning_effort).toBe('none');
+        expect(capturedBody.logprobs).toBeUndefined();
+        expect(capturedBody.messages.find(message => message.tool_calls)?.reasoning_content).toBe('');
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    test.each(['deepseek-v4-flash', 'deepseek-flash'])('native %s None turns thinking off like v4-pro', async model => {
+        const messages = [{ role: 'user', content: 'Hello' }, { role: 'assistant', content: '', reasoning_content: 'Private thought',
+            tool_calls: [{ id: 'call-fixture', type: 'function', function: { name: 'probe', arguments: '{}' } }] },
+        { role: 'tool', tool_call_id: 'call-fixture', content: 'Tool result' }];
+        const tools = [{ type: 'function', function: { name: 'probe', parameters: { type: 'object', properties: {} } } }];
+        const original = structuredClone(messages);
+        expect((await request('deepseek', { model, reasoning_effort: 'none', messages, tools, logprobs: 3 })).status).toBe(200);
+        expect(capturedBody.reasoning_effort).toBe('none');
+        expect(capturedBody).not.toHaveProperty('thinking');
+        expect(capturedBody.messages.every(message => !Object.hasOwn(message, 'reasoning_content'))).toBe(true);
+        expect(capturedBody.logprobs).toBe(true);
+        expect(capturedBody.top_logprobs).toBe(3);
+        expect(messages).toEqual(original);
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    test.each(['deepseek-v4-flash', 'deepseek-flash'])('native %s High keeps the thinking-mode history and log probability policy', async model => {
+        const messages = [{ role: 'user', content: 'Hello' }, { role: 'assistant', content: '',
+            tool_calls: [{ id: 'call-fixture', type: 'function', function: { name: 'probe', arguments: '{}' } }] },
+        { role: 'tool', tool_call_id: 'call-fixture', content: 'done' }];
+        const tools = [{ type: 'function', function: { name: 'probe', parameters: { type: 'object', properties: {} } } }];
+        expect((await request('deepseek', { model, reasoning_effort: 'high', messages, tools, logprobs: 3 })).status).toBe(200);
+        expect(capturedBody.reasoning_effort).toBe('high');
         expect(capturedBody.logprobs).toBeUndefined();
         expect(capturedBody.messages.find(message => message.tool_calls)?.reasoning_content).toBe('');
         expect(nodeFetchMock).toHaveBeenCalledTimes(1);

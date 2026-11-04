@@ -34,7 +34,7 @@ describe('DeepSeek reasoning effort', () => {
     test('recognises thinking models and preserves the documented wire spelling', () => {
         const handler = chatCompletionsSource.match(/async function sendDeepSeekRequest\(request, response\) \{([\s\S]*?)\n\}/);
         expect(handler).not.toBeNull();
-        expect(handler[1]).toContain('const isThinkingModel = /(?:^|-)reasoner$|deepseek-v4/i.test(String(request.body.model || \'\'));');
+        expect(handler[1]).toContain('const isThinkingModel = /(?:^|-)reasoner$|deepseek-v4|^deepseek-flash$/i.test(String(request.body.model || \'\'));');
         expect(handler[1]).toContain('bodyParams[\'reasoning_effort\'] = toWireReasoningEffort(request.body.reasoning_effort);');
     });
 
