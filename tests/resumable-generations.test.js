@@ -493,10 +493,10 @@ describe('registry capacity', () => {
     });
 
     test('an over-cap profile makes room from its finished replies first, then from ones it already cancelled', () => {
-        const finished = registerGeneration('own-finished');
-        finished.response.end('cached');
         const stopped = registerGeneration('own-stopped');
         stopped.generation.cancel();
+        const finished = registerGeneration('own-finished');
+        finished.response.end('cached');
         for (let index = 2; index < testExports.MAX_GENERATIONS_PER_PROFILE; index++) {
             registerGeneration(`own-${String(index).padStart(6, '0')}`);
         }
