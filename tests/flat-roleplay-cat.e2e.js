@@ -135,24 +135,29 @@ test('Flat Roleplay assistant cats follow avatar width and preserve excluded mod
     // Enter Terminal UI through its real settings control, then return to the same Flat Roleplay layout.
     await page.locator('#sbterm-enabled').evaluate(el => { el.checked = true; el.dispatchEvent(new Event('change', { bubbles: true })); });
     await expect(page.locator('body')).toHaveClass(/sbterm/);
-    const terminal = await page.locator('#chat > .mes[is_user="false"][mesid]').first().evaluate(row => {
-        const cat = row.querySelector(':scope > .neconyan-message-sleeper').getBoundingClientRect();
-        const outer = row.getBoundingClientRect();
-        return { overhang: outer.left - cat.left, pawError: cat.top + 41 - outer.top };
-    });
-    expect(terminal.overhang, 'Terminal cat remains anchored to its outer row').toBeCloseTo(17, 0);
-    expect(Math.abs(terminal.pawError)).toBeLessThanOrEqual(1);
+    // Placement responds to the mode change on the next animation frame.
+    await expect(async () => {
+        const terminal = await page.locator('#chat > .mes[is_user="false"][mesid]').first().evaluate(row => {
+            const cat = row.querySelector(':scope > .neconyan-message-sleeper').getBoundingClientRect();
+            const outer = row.getBoundingClientRect();
+            return { overhang: outer.left - cat.left, pawError: cat.top + 41 - outer.top };
+        });
+        expect(terminal.overhang, 'Terminal cat remains anchored to its outer row').toBeCloseTo(17, 0);
+        expect(Math.abs(terminal.pawError)).toBeLessThanOrEqual(1);
+    }).toPass({ timeout: 5000 });
     await page.locator('#sbterm-enabled').evaluate(el => { el.checked = false; el.dispatchEvent(new Event('change', { bubbles: true })); });
     await expect(page.locator('body')).not.toHaveClass(/sbterm/);
     await expect(page.locator('body')).toHaveAttribute('data-neconyan-chat-mode', 'roleplay');
     for (const row of await page.locator('#chat > .mes[is_user="false"][mesid]').all()) {
-        const geometry = await row.evaluate(element => {
-            const cat = element.querySelector(':scope > .neconyan-message-sleeper').getBoundingClientRect();
-            const block = element.querySelector('.mes_block').getBoundingClientRect();
-            return { overhang: block.left - cat.left, pawError: cat.top + 41 - block.top };
-        });
-        expect(geometry.overhang, 'Flat Roleplay cat returns to its block').toBeCloseTo(17, 0);
-        expect(Math.abs(geometry.pawError)).toBeLessThanOrEqual(1);
+        await expect(async () => {
+            const geometry = await row.evaluate(element => {
+                const cat = element.querySelector(':scope > .neconyan-message-sleeper').getBoundingClientRect();
+                const block = element.querySelector('.mes_block').getBoundingClientRect();
+                return { overhang: block.left - cat.left, pawError: cat.top + 41 - block.top };
+            });
+            expect(geometry.overhang, 'Flat Roleplay cat returns to its block').toBeCloseTo(17, 0);
+            expect(Math.abs(geometry.pawError)).toBeLessThanOrEqual(1);
+        }).toPass({ timeout: 5000 });
     }
 
     // Native draft construction follows the real preview path, which hides the checkbox placeholder.
