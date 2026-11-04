@@ -51,7 +51,7 @@ for (const phone of [false, true]) {
                 if (profile) await page.locator(`.sb-accent-profile-apply[aria-label="Apply ${profile} accent profile"]`).evaluate(el => el.click());
                 for (const [btnName, btn] of [['primary', primarySave], ['selected', selectedFormat], ['secondary', secondaryDrafts]]) {
                     const { ink, bg } = await sampleButtonContrast(btn);
-                    expect(contrastRatio(ink, bg), `${theme} / ${profile || 'default'} / ${btnName}`).toBeGreaterThanOrEqual(4.5);
+                    expect(contrastRatio(ink, bg), `${theme} / ${profile || 'default'} / ${btnName}: ${ink} on ${bg}`).toBeGreaterThanOrEqual(4.5);
                 }
             }
         }
@@ -100,7 +100,11 @@ for (const phone of [false, true]) {
         await creator.getByRole('button', { name: 'Review & save', exact: true }).click();
         await page.screenshot({ path: `../screenshots/creator-redesign-review-${phone ? 'phone' : 'desktop'}.png` });
         await creator.getByRole('button', { name: 'Save to library', exact: true }).click();
-        await expect(creator.getByRole('status')).toHaveText('Character and reviewed lorebooks saved to your library.', { timeout: 30000 });
+        const status = creator.locator('.creator-status');
+        await expect(status.locator(':scope > span')).toHaveText('Character and reviewed lorebooks saved to your library.', { timeout: 30000 });
+        await status.getByRole('button', { name: 'Dismiss', exact: true }).click();
+        await expect(status).toBeHidden();
+        await expect(status).toHaveText('');
         await creator.getByRole('button', { name: 'Preview & export', exact: true }).click();
         const preview = creator.locator('pre');
         await expect(preview).toContainText('Mira keeps {{charposs}} promises.');
@@ -121,7 +125,8 @@ for (const phone of [false, true]) {
         await expect(creator.getByRole('button', { name: 'Creator Mira', exact: true }).first()).toBeVisible();
         await creator.getByRole('button', { name: 'Discard Creator Mira', exact: true }).click();
         await creator.getByRole('button', { name: 'Confirm discard', exact: true }).click();
-        await expect(creator.getByRole('status')).toHaveText('Draft discarded. Published library items were not changed.');
+        await expect(status.locator(':scope > span')).toHaveText('Draft discarded. Published library items were not changed.');
+        await expect(status.getByRole('button', { name: 'Dismiss', exact: true })).toBeVisible();
         await expect(creator.locator('.creator-draft-list').getByRole('button', { name: 'Creator Mira', exact: true })).toHaveCount(0);
         await expect(creator.locator('.creator-library-grid').getByRole('button', { name: 'Creator Mira', exact: true })).toBeVisible();
     });

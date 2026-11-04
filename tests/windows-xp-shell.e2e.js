@@ -2,7 +2,7 @@
 import { expect, test } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import { contrastRatio } from '../public/scripts/theme-contrast.js';
-import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
+import { isolateSettingsSaves } from './chat-scroll-regression-helpers.js';
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
 const SCHEMES = [
@@ -65,17 +65,11 @@ async function expectXpWallpaper(page) {
 
 async function openXpShell(page, phone) {
     await page.route('**/api/characters/all', route => route.fulfill({ json: [] }));
-    await page.route('**/api/settings/get', async route => {
-        const response = await route.fetch();
-        const data = await response.json();
-        if (typeof data.settings !== 'string') return route.fulfill({ response });
-        const settings = JSON.parse(data.settings);
+    // Reloads must read this page's saved appearance, not the preview account's.
+    await isolateSettingsSaves(page, settings => {
         settings.firstRun = false;
-        settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
         settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', WelcomePage_PanelMode: 'full' };
-        await route.fulfill({ response, json: { ...data, settings: JSON.stringify(settings) } });
     });
-    await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
     await page.goto('/');
     await page.waitForFunction(() => window.NeconyanShell && document.querySelector('.neconyan-home'));
     await expect(page.locator('#preloader')).toHaveCount(0);
@@ -160,6 +154,10 @@ for (const phone of [false, true]) {
         const geometry = await page.evaluate(() => ({ width: window.innerWidth, scrollWidth: document.documentElement.scrollWidth }));
         expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.width);
 
+        expect(await page.evaluate(async () => {
+            const { saveSettings } = await import('/script.js');
+            return saveSettings(0, { returnResult: true });
+        })).toBe(true);
         await page.reload();
         await page.waitForFunction(() => window.NeconyanShell && document.querySelector('.neconyan-home'));
         await expect(page.locator('html')).toHaveAttribute('data-sb-theme', 'windows-xp');

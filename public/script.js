@@ -8284,6 +8284,12 @@ class StreamingProcessor {
         applyGenerationOutcome(chat[messageId], this.outcome);
         await this.onProgressStreaming(messageId, text, true);
         if (!this.#isCurrent(messageId)) return;
+        // Impersonation fills the composer without creating a chat message.
+        if (this.type === 'impersonate') {
+            if (unlockUI) this.markUIGenStopped();
+            await eventSource.emit(event_types.IMPERSONATE_READY, text, { generationContext: this.agentGenerationContext, type: this.type });
+            return;
+        }
         const messageElement = chatElement.find(`.mes[mesid="${messageId}"]`);
         const message = chat[messageId];
         addCopyToCodeBlocks(messageElement);
@@ -8348,13 +8354,9 @@ class StreamingProcessor {
             this.markUIGenStopped();
         }
 
-        if (this.type !== 'impersonate') {
-            await eventSource.emit(event_types.MESSAGE_RECEIVED, this.messageId, this.type, this.agentGenerationContext);
-            if (!this.#isCurrent(messageId)) return;
-            await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, this.messageId, this.type, this.agentGenerationContext);
-        } else {
-            await eventSource.emit(event_types.IMPERSONATE_READY, text, { generationContext: this.agentGenerationContext, type: this.type });
-        }
+        await eventSource.emit(event_types.MESSAGE_RECEIVED, this.messageId, this.type, this.agentGenerationContext);
+        if (!this.#isCurrent(messageId)) return;
+        await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, this.messageId, this.type, this.agentGenerationContext);
         if (!this.#isCurrent(messageId)) return;
 
         updateSwipeCounter(messageId, { message, messageElement });

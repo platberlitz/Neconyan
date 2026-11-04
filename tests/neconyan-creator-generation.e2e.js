@@ -40,8 +40,8 @@ for (const phone of [false, true]) {
         await creator.getByRole('button', { name: 'Convert dossier to card', exact: true }).click();
         await expect(creator.locator('.creator-conversion-status')).toContainText('dossier');
         await creator.getByLabel('Character dossier', { exact: true }).fill('Mira repairs ships with {{poss}} tools and seeks her sister.');
-        await creator.getByRole('button', { name: 'ALIchat', exact: true }).click();
-        await expect(creator.getByRole('button', { name: 'ALIchat', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        await creator.getByRole('radio', { name: 'ALIchat', exact: true }).check();
+        await expect(creator.getByRole('radio', { name: 'ALIchat', exact: true })).toBeChecked();
         await creator.locator('summary').filter({ hasText: 'Length, tense and style' }).click();
         await creator.getByRole('button', { name: 'Present tense', exact: true }).click();
         await creator.getByRole('button', { name: 'Third person', exact: true }).click();
@@ -57,10 +57,14 @@ for (const phone of [false, true]) {
         await creator.getByRole('button', { name: 'Convert dossier to card', exact: true }).click();
         await expect(creator.locator('.creator-proposal')).toBeVisible({ timeout: 30000 });
         await expect(creator.getByRole('button', { name: 'Accept all fields', exact: true })).toBeVisible({ timeout: 60000 });
+        // Partial fields are reviewable while later conversion steps are still running.
+        // Finish those requests before accepting fields or changing the mock reply.
+        await expect(creator).not.toHaveAttribute('aria-busy', 'true', { timeout: 60000 });
         expect(app.provider.calls.some(call => call.messages?.some(message => message.content?.includes('Selected writing format: ALIchat') && message.content?.includes('Description and personality length (word target: 2500-4000 interview') && message.content?.includes('word target: 500 opening') && message.content?.includes('NSFW instructions for descriptions and greetings') && message.content?.includes('Fetish focus for greetings only') && message.content?.includes('body worship, oral sex') && message.content?.includes('present tense outside dialogue quotes')))).toBe(true);
         await creator.getByRole('button', { name: 'Accept all fields', exact: true }).click();
         await creator.getByRole('button', { name: 'Identity', exact: true }).click();
         await expect(creator.getByLabel('Display name', { exact: true })).toHaveValue('Mira');
+        await expect(creator.getByLabel('Description', { exact: true })).toHaveValue('<START>\nInterviewer: What do you do?\n{{char}}: I repair ships.');
         const expand = creator.getByRole('button', { name: 'Expand Description', exact: true });
         await expect(expand).toHaveText('');
         await expect(expand.locator('.fa-expand')).toHaveCount(1);
@@ -69,13 +73,17 @@ for (const phone of [false, true]) {
         await lock.scrollIntoViewIfNeeded();
         const position = () => creator.evaluate(host => {
             const values = [];
-            for (let node = host; node; node = node.parentElement) values.push(node.scrollTop);
+            for (let node = host; node; node = node.parentElement) values.push({ top: node.scrollTop, max: node.scrollHeight - node.clientHeight });
             return values;
         });
         const before = await position();
         await lock.click();
         await expect(personality.getByRole('button', { name: 'Locked for AI', exact: true })).toBeVisible();
-        expect(await position()).toEqual(before);
+        const after = await position();
+        // Saving can shorten the notice above the form. Preserve each scroll position
+        // exactly, except where the browser must clamp it to the new bottom limit.
+        expect(after.map(value => value.top), JSON.stringify({ before, after }))
+            .toEqual(before.map((value, index) => Math.min(value.top, after[index].max)));
         await creator.getByRole('button', { name: 'Prompts', exact: true }).click();
         await creator.getByLabel('Custom User Instructions', { exact: true }).fill('Write terse, precise sentences.');
         await creator.getByRole('button', { name: 'Identity', exact: true }).click();

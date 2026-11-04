@@ -156,7 +156,17 @@ test.describe('mobile composer spacing at 320x568', () => {
             expect(generatingState).not.toBeNull();
             expect(generatingState.barBorderTopColor).not.toBe(defaultState.barBorderTopColor);
             expect(generatingState.barBackgroundImage).toBe(defaultState.barBackgroundImage);
-            expect(generatingState.barBoxShadow).toBe(`${generatingState.barBorderTopColor} 0px 0px 0px 3px inset`);
+            // Resolve the current two-layer accent glow in the browser's colour format.
+            // Keep its dimensions and opacity explicit so a missing or oversized ring fails.
+            const expectedShadow = await page.locator('#form_sheld').evaluate(bar => {
+                const reference = document.createElement('span');
+                reference.style.boxShadow = 'inset 0 0 0 1.5px color-mix(in srgb, var(--neco-accent-secondary) 78%, transparent), 0 0 12px color-mix(in srgb, var(--neco-accent-secondary) 14%, transparent)';
+                bar.append(reference);
+                const shadow = getComputedStyle(reference).boxShadow;
+                reference.remove();
+                return shadow;
+            });
+            expect(generatingState.barBoxShadow).toBe(expectedShadow);
             expect(generatingState.barHeight).toBe(defaultState.barHeight);
             expect(generatingState.composerBackgroundImage).toBe('none');
             expect(generatingState.composerBackgroundColor).toBe(defaultState.composerBackgroundColor);

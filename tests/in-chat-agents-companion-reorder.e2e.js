@@ -16,6 +16,8 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
         test.use({ viewport, hasTouch: viewport.width === 393 });
 
         test.beforeEach(async ({ page }) => {
+            const errors = [];
+            page.on('pageerror', error => errors.push(error.message));
             await page.setContent('<aside id="ica--tracker-panel" class="ica--tpanel is-open" data-edge="right"></aside>');
             await page.addStyleTag({ content: read('../public/scripts/extensions/in-chat-agents/style.css') });
             await page.addStyleTag({ content: '#ica--tracker-panel { --mainFontSize: 15px; box-sizing: border-box; } .test-content { height: 120px; }' });
@@ -33,6 +35,10 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                 window.restoreVisibleMessageAnchor = () => {};
                 // companion-panel.js imports this from companion-windows.js, which this fixture does not load.
                 window.refreshCompanionWindows = () => {};
+                // Dice widgets are outside this reorder fixture, but panel rendering preserves them.
+                window.captureDiceCompanionWidget = () => null;
+                window.restoreDiceCompanionWidget = () => {};
+                window.notifyDiceCompanionHostsChanged = () => {};
                 window.captureMessageTargetState = () => ({});
                 window.isMessageTargetCurrent = () => true;
                 window.toastr = { error: message => { window.saveError = message; } };
@@ -53,6 +59,7 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                     </section>`).join('')}</div>`;
             }, read('../public/scripts/extensions/in-chat-agents/companion/view-state.js'));
             await page.addScriptTag({ content: `${panelDeclarations}\npanelOpen = true; renderPanel();` });
+            expect(errors, 'Companion panel fixture renders without script errors').toEqual([]);
         });
 
         async function startDrag(page, from = 'a', to = 'b') {

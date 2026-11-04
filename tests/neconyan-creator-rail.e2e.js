@@ -32,12 +32,14 @@ for (const phone of [false, true]) {
         }
         await rail.getByRole('button', { name: 'Dossier', exact: true }).click();
         await creator.getByLabel('Character dossier', { exact: true }).fill('Mira repairs ships.');
-        await creator.getByRole('button', { name: 'PList', exact: true }).click();
+        await creator.getByRole('radio', { name: 'PList', exact: true }).check();
+        await expect(creator.getByRole('radio', { name: 'PList', exact: true })).toBeChecked();
         await creator.getByLabel('Custom writing format instructions', { exact: true }).fill('Use bracketed categories.');
         await creator.getByRole('button', { name: 'Expand Custom writing format instructions', exact: true }).click();
         await expect(page.locator('.creator-fullscreen textarea')).toHaveValue('Use bracketed categories.');
         await page.keyboard.press('Escape');
-        await creator.getByRole('button', { name: 'Character’s Note', exact: true }).click();
+        await creator.getByRole('radio', { name: 'Character’s Note', exact: true }).check();
+        await expect(creator.getByRole('radio', { name: 'Character’s Note', exact: true })).toBeChecked();
         await page.screenshot({ path: `../screenshots/creator-note-format-${phone ? 'phone' : 'desktop'}.png` });
         app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: JSON.stringify({ fields: { depth_prompt: '[Work: ship repairs]' }, questions: [], coverage: ['Kept occupation'] }) } }] };
         await creator.getByRole('button', { name: 'Convert dossier to card', exact: true }).click();
