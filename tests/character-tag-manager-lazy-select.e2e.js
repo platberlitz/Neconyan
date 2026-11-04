@@ -16,11 +16,17 @@ async function openTagManager(page) {
     await page.evaluate(() => window.NeconyanShell.openTab('characters', 'characters'));
     await page.locator('#right-nav-panel').waitFor({ state: 'visible' });
 
-    if (!await page.locator('[title="Manage tags"]:visible').count()) {
-        await page.getByText('Filter and organise', { exact: true }).click();
+    // The shell moves these controls into a closed disclosure after opening the panel.
+    // A transiently visible legacy control is not proof that its new parent is open.
+    const filters = page.locator('.neconyan-character-filters');
+    const manageTags = filters.locator('[title="Manage tags"]');
+    await expect(manageTags).toBeAttached();
+    if (!await filters.evaluate(element => element.open)) {
+        await filters.locator('summary').click();
     }
 
-    await page.locator('[title="Manage tags"]:visible').first().click();
+    await expect(manageTags).toBeVisible();
+    await manageTags.click();
     await page.locator('#tag_view_list:visible').waitFor();
 }
 

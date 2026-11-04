@@ -24,7 +24,9 @@ async function fixture(page, palette = theme) {
         settings ??= JSON.parse(envelope.settings);
         settings.firstRun = false;
         settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
-        Object.assign(settings.power_user, palette, { theme: palette.name, chat_display: 6 });
+        // Other suites persist Shell Styles with translucent/gradient buttons.
+        // This fixture measures the opaque Calico palette, so own both appearance settings.
+        Object.assign(settings.power_user, palette, { theme: palette.name, neconyan_shell_style: 'calico', chat_display: 6 });
         settings.power_user.personas = { 'robin.png': 'Robin', 'robin-alt.png': 'Robin' };
         settings.power_user.persona_descriptions = { 'robin.png': { description: 'Blue eyes and a green coat.' }, 'robin-alt.png': { description: 'Red hair and a blue jacket.' } };
         settings.extension_settings.expressions = { ...settings.extension_settings.expressions, api: 99, showDefault: true };
@@ -452,10 +454,11 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
                                     return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3);
                                 };
                                 const style = getComputedStyle(element), box = element.getBoundingClientRect();
-                                return { contrast: contrastRatio(channels(style.color), channels(style.backgroundColor)),
+                                return { colour: style.color, background: style.backgroundColor,
+                                    contrast: contrastRatio(channels(style.color), channels(style.backgroundColor)),
                                     height: box.height, left: box.left, right: box.right, viewport: window.innerWidth };
                             });
-                            expect(result.contrast, `${id}: ${accent}, hover ${hover}`).toBeGreaterThanOrEqual(4.5);
+                            expect(result.contrast, `${id}: ${accent}, hover ${hover}, ${JSON.stringify(result)}`).toBeGreaterThanOrEqual(4.5);
                             expect(result.height).toBeGreaterThanOrEqual(44);
                             expect(result.left).toBeGreaterThanOrEqual(0);
                             expect(result.right).toBeLessThanOrEqual(result.viewport);
