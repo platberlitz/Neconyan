@@ -48,8 +48,11 @@ async function resetSettings(page) {
         excludeHistory: true,
         historyMode: 'tokens',
         historyCatchUp: 'reply',
+        extractionFocus: 'balanced',
+        extractionInstructions: '',
         recentMessages: 10,
         historyBatchMessages: 5,
+        batchMessages: 12,
         autoHideTokens: 30000,
         fallbackProfileIds: [],
         sharedProfileId: '',
@@ -58,6 +61,7 @@ async function resetSettings(page) {
             ...role,
             tokenizer: 'auto',
             ...(name === 'embedding' ? {} : { useShared: false }),
+            ...(name === 'selector' || name === 'fallback' ? { decisionMode: 'auto', decisionThreshold: 0.5 } : {}),
             ...(role.profileId?.startsWith('e2e-fallback-') ? { profileId: '', modelOverride: '' } : {}),
         }])),
     };
@@ -366,6 +370,54 @@ async function sharedProfileDrivesEveryRole({ page }) {
     }
 }
 
+async function jevPresetsAndQuickControlsSave({ page }) {
+    await load(page);
+    const original = await resetSettings(page);
+    try {
+        await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
+        const workspace = page.locator('#mewmory-workspace');
+        await workspace.getByRole('tab', { name: 'Now', exact: true }).click();
+        const quick = workspace.locator('#mewmory-now-quick-controls');
+        await expect(quick).toBeVisible();
+
+        await quick.getByLabel('Recall decision model', { exact: true }).selectOption('jev-1.14');
+        await expect.poll(async () => {
+            const selector = (await readConfig(page)).config.roles.selector;
+            return [selector.enabled, selector.model, selector.decisionMode, selector.decisionThreshold];
+        }, { timeout: 15000 }).toEqual([true, 'typesafe/jev-1.14', 'decision', 0.5]);
+
+        await quick.getByLabel('Memory window preset', { exact: true }).selectOption('jev-recommended');
+        await expect.poll(async () => {
+            const saved = (await readConfig(page)).config;
+            return [saved.historyMode, saved.recentMessages, saved.historyBatchMessages, saved.batchMessages, saved.extractionFocus];
+        }, { timeout: 15000 }).toEqual(['messages', 10, 5, 5, 'every']);
+
+        await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
+        await expect(workspace.getByLabel('Memory window preset', { exact: true })).toHaveValue('jev-recommended');
+        await expect(workspace.getByLabel('Memory detail focus', { exact: true })).toHaveValue('every');
+        const extraInstructions = workspace.getByLabel('Extra memory instructions (optional)', { exact: true });
+        await extraInstructions.fill('Keep exact inventory items and promises.');
+        await expect.poll(async () => (await readConfig(page)).config.extractionInstructions, { timeout: 15000 })
+            .toBe('Keep exact inventory items and promises.');
+
+        await workspace.locator('#mewmory-role-selector').click();
+        await expect(workspace.getByLabel('Jev / decision model preset', { exact: true })).toHaveValue('jev-1.14');
+        await expect(workspace.getByLabel('Decision protocol', { exact: true })).toHaveValue('decision');
+        await expect(workspace.getByLabel('Decision score threshold', { exact: true })).toHaveValue('0.5');
+
+        await workspace.getByLabel('Jev / decision model preset', { exact: true }).selectOption('open-jev-9b');
+        await expect.poll(async () => {
+            const selector = (await readConfig(page)).config.roles.selector;
+            return [selector.model, selector.decisionThreshold];
+        }, { timeout: 15000 }).toEqual(['ZefanCai/Open-Jev-9B', 0.1]);
+        await expect(workspace.getByLabel('Decision score threshold', { exact: true })).toHaveValue('0.1');
+    } finally {
+        const { config } = await readConfig(page);
+        await saveConfig(page, { ...original, revision: config.revision });
+        await resetSettings(page);
+    }
+}
+
 const SHARED_TITLE = 'a connection profile for all roles switches every following role together';
 const AUTOSAVE_TITLE = 'every setting saves automatically, including token limits and model roles';
 const FALLBACK_TITLE = 'fallback connections are added, reordered and removed, and save in order';
@@ -374,6 +426,7 @@ const CONFLICT_TITLE = 'a revision conflict keeps local edits and merges the new
 const RAPID_TITLE = 'rapid edits and panel navigation keep the newest draft and send one request';
 const OLD_SERVER_TITLE = 'a server still running older code is reported instead of silently dropping a switch';
 const WINDOW_TITLE = 'message mode saves its own recent window without changing token mode';
+const JEV_TITLE = 'Jev decision presets, window presets and memory detail focus save from Now and Settings';
 
 test.describe('desktop', () => {
     test.use({ viewport: { width: 1280, height: 900 } });
@@ -385,6 +438,7 @@ test.describe('desktop', () => {
     test(FALLBACK_TITLE, fallbackConnectionsSaveInOrder);
     test(SHARED_TITLE, sharedProfileDrivesEveryRole);
     test(WINDOW_TITLE, messageWindowSettingsSave);
+    test(JEV_TITLE, jevPresetsAndQuickControlsSave);
 });
 
 test.describe('touch phone', () => {
@@ -394,4 +448,5 @@ test.describe('touch phone', () => {
     test(SHARED_TITLE, sharedProfileDrivesEveryRole);
     test(OLD_SERVER_TITLE, oldServerIsReported);
     test(WINDOW_TITLE, messageWindowSettingsSave);
+    test(JEV_TITLE, jevPresetsAndQuickControlsSave);
 });

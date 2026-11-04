@@ -12,6 +12,10 @@ import { getCounter, getTokenizerModel, TOKENIZERS } from './tokens.js';
 import { listModelProfiles, resolveModelProfile } from './connection-profiles.js';
 import { captureVectorPolicy, requestVectorEmbedding } from '../operations/vector-provider.js';
 import { RAG_DEFAULTS } from '../../public/scripts/mewmory/rag-settings.js';
+import {
+    DECISION_MODES, DECISION_ROLES, defaultDecisionThreshold,
+    effectiveDecisionMode, EXTRACTION_FOCUS_MODES,
+} from '../../public/scripts/mewmory/jev-presets.js';
 
 export const ROLE_LABELS = { extractor: 'Facts and events', pawspective: 'Pawspective interviews', embedding: 'Embeddings', selector: 'Recall selector', fallback: 'Recall fallback' };
 export const MAX_FALLBACK_PROFILES = 10;
@@ -21,6 +25,7 @@ export function defaultConfig() {
         revision: 0, defaultsVersion: 2, localOnly: false, autoUpdate: true, historyWindow: 30000,
         memoryTokens: 6000, batchMessages: 12, candidateLimit: 24,
         historyMode: 'tokens', recentMessages: 10, historyBatchMessages: 5, historyCatchUp: 'reply',
+        extractionFocus: 'balanced', extractionInstructions: '',
         writerTokenizer: 'auto', excludeHistory: true, autoHide: false, autoHideTokens: 30000, enableNewChats: false,
         retrieval: { ...RAG_DEFAULTS }, fallbackProfileIds: [], sharedProfileId: '', sharedModelOverride: '',
         roles: Object.fromEntries(ROLE_NAMES.map(name => [name, {
@@ -29,6 +34,7 @@ export function defaultConfig() {
             contextTokens: 200000, maxOutputTokens: name === 'embedding' ? 0 : 32000,
             timeoutMs: 300000, tokenizer: 'auto', allowedData: [...SOURCE_TYPES],
             queryPrefix: '', documentPrefix: '', ...(name === 'embedding' ? { provider: 'custom' } : {}),
+            ...(DECISION_ROLES.includes(name) ? { decisionMode: 'auto', decisionThreshold: 0.5 } : {}),
         }])),
     };
 }
@@ -115,6 +121,9 @@ export function validateConfig(input) {
     if (!['tokens', 'messages'].includes(result.historyMode)) fail('Choose whether to keep recent chat by tokens or messages.');
     result.historyCatchUp = input.historyCatchUp === undefined ? 'reply' : input.historyCatchUp;
     if (!['reply', 'wait'].includes(result.historyCatchUp)) fail('Choose whether to reply immediately or wait for memory.');
+    result.extractionFocus = input.extractionFocus === undefined ? 'balanced' : input.extractionFocus;
+    if (!EXTRACTION_FOCUS_MODES.includes(result.extractionFocus)) fail('Choose a Memory detail focus from the list.');
+    result.extractionInstructions = text(input.extractionInstructions || '', 'Custom memory focus instructions, optional', 2000, true);
     result.recentMessages = integer(input.recentMessages === undefined ? 10 : input.recentMessages, 'Keep at least this many recent messages', 1, 100000);
     result.historyBatchMessages = integer(input.historyBatchMessages === undefined ? 5 : input.historyBatchMessages, 'Remove older chat in groups of', 1, 10000);
     result.autoHideTokens = integer(input.autoHideTokens, 'Hide older messages at this chat size, tokens', 1024, 2000000);
@@ -142,12 +151,28 @@ export function validateConfig(input) {
             const ownOptional = !enabled || useShared || Boolean(profileId) || native;
             const endpoint = text(role.endpoint, 'Endpoint', 2048, ownOptional);
             const allowRemote = role.allowRemote === true;
+            const modelText = text(role.model, 'Model', 250, ownOptional);
+            const modelOverride = text(role.modelOverride, 'Model override', 250, true);
+            const decisionFields = {};
+            if (DECISION_ROLES.includes(name)) {
+                const decisionMode = role.decisionMode === undefined ? 'auto' : role.decisionMode;
+                if (!DECISION_MODES.includes(decisionMode)) fail('Choose a Decision protocol from the list.');
+                const decisionThreshold = role.decisionThreshold === undefined
+                    ? defaultDecisionThreshold(modelOverride || modelText)
+                    : role.decisionThreshold;
+                if (typeof decisionThreshold !== 'number' || !Number.isFinite(decisionThreshold) || decisionThreshold < 0 || decisionThreshold > 1) {
+                    fail('Decision score threshold must be between 0 and 1.');
+                }
+                decisionFields.decisionMode = decisionMode;
+                decisionFields.decisionThreshold = decisionThreshold;
+            }
             result.roles[name] = {
                 enabled, ...(name === 'embedding' ? {} : { useShared }),
                 profileId: native ? '' : profileId, endpoint: !native && !profileId && endpoint ? enabled && !useShared ? validateEndpoint(endpoint, { localOnly: result.localOnly, allowRemote }) : endpoint : '',
-                model: text(role.model, 'Model', 250, ownOptional),
+                model: modelText,
                 ...(name === 'embedding' ? { provider } : {}),
-                modelOverride: text(role.modelOverride, 'Model override', 250, true),
+                ...decisionFields,
+                modelOverride,
                 modelRevision: text(role.modelRevision, 'Model revision', 250, true), allowRemote,
                 contextTokens: integer(role.contextTokens, 'Model context size, tokens', 1024, 2000000),
                 maxOutputTokens: integer(role.maxOutputTokens, 'Maximum response length, tokens', name === 'embedding' ? 0 : 128, 64000),
@@ -195,7 +220,15 @@ function readSavedConfig(directories) {
     config.fallbackProfileIds ??= [];
     config.sharedProfileId ??= '';
     config.sharedModelOverride ??= '';
-    for (const name of ROLE_NAMES) if (name !== 'embedding') config.roles[name].useShared ??= false;
+    config.extractionFocus ??= 'balanced';
+    config.extractionInstructions ??= '';
+    for (const name of ROLE_NAMES) {
+        if (name !== 'embedding') config.roles[name].useShared ??= false;
+        if (DECISION_ROLES.includes(name)) {
+            config.roles[name].decisionMode ??= 'auto';
+            config.roles[name].decisionThreshold ??= defaultDecisionThreshold(config.roles[name].modelOverride || config.roles[name].model);
+        }
+    }
     config.roles.embedding.provider ||= 'custom';
     return config;
 }
@@ -286,8 +319,16 @@ export function saveConfig(directories, input) {
     withChatFileLocks([filename, secretsFile], () => {
         const current = readJson(filename, null) || defaultConfig();
         if (input.revision !== current.revision) fail('Mewmory settings were changed in another tab. Reload the page, then save again.', 409);
-        for (const key of ['historyMode', 'recentMessages', 'historyBatchMessages', 'historyCatchUp']) {
+        for (const key of ['historyMode', 'recentMessages', 'historyBatchMessages', 'historyCatchUp', 'extractionFocus', 'extractionInstructions']) {
             if (input[key] === undefined) validated[key] = current[key] ?? defaultConfig()[key];
+        }
+        for (const roleName of DECISION_ROLES) {
+            if (input.roles?.[roleName]?.decisionMode === undefined && current.roles?.[roleName]?.decisionMode !== undefined) {
+                validated.roles[roleName].decisionMode = current.roles[roleName].decisionMode;
+            }
+            if (input.roles?.[roleName]?.decisionThreshold === undefined && current.roles?.[roleName]?.decisionThreshold !== undefined) {
+                validated.roles[roleName].decisionThreshold = current.roles[roleName].decisionThreshold;
+            }
         }
         const previousSecrets = credentials.length && fs.existsSync(secretsFile) ? fs.readFileSync(secretsFile) : null;
         try {
@@ -340,7 +381,10 @@ export function legacyRoleVersion(config, name) {
         const { endpoint, model, modelRevision, queryPrefix, documentPrefix, profileId, nativePolicy } = config.roles.embedding;
         return hash({ endpoint, model, modelRevision, queryPrefix, documentPrefix, profileId, ...(nativePolicy ? { nativePolicy } : {}) });
     }
-    return hash([config.localOnly, { ...connectionRole(config, config.roles[name]), timeoutMs: undefined }]);
+    const legacyRole = { ...connectionRole(config, config.roles[name]), timeoutMs: undefined };
+    delete legacyRole.decisionMode;
+    delete legacyRole.decisionThreshold;
+    return hash([config.localOnly, legacyRole]);
 }
 
 /**
@@ -376,8 +420,98 @@ function authorizeRole(config, name, dataTypes) {
     return { role, endpoint };
 }
 
+export function resolveDecisionUrl(endpoint, connection) {
+    const raw = String(endpoint || '').trim();
+    if (/\/(?:systemone|decisions|decide)\/?$/i.test(raw)) return raw.replace(/\/+$/, '');
+    const base = (raw || (connection?.api === 'openrouter' ? 'https://openrouter.ai/api/v1' : connection?.api === 'openai' ? 'https://api.openai.com/v1' : ''))
+        .replace(/\/(?:chat\/completions|embeddings)\/?$/i, '')
+        .replace(/\/+$/, '');
+    if (/openrouter\.ai\/api\/v1$/i.test(base)) return base.replace(/\/api\/v1$/i, '') + '/api/alpha/decisions';
+    return base ? base + '/systemone' : '';
+}
+
+export function buildDecisionPayload(input) {
+    const scene = Array.isArray(input?.scene) ? input.scene : [];
+    const candidates = Array.isArray(input?.candidates) ? input.candidates : [];
+    const sceneLines = scene.map(cue => `[${cue.id}] ${cue.speaker}: ${cue.text}`).join('\n');
+    const candidateLines = candidates.map((candidate, index) => `[q_${index} | id=${candidate.recordId} | kind=${candidate.kind} | status=${candidate.status} | significance=${candidate.significance}] ${candidate.excerpt || candidate.searchDescription || ''}`).join('\n');
+    const state = `Current scene:\n${sceneLines || '(empty)'}\n\nCandidate memories:\n${candidateLines || '(none)'}`;
+    const questions = Object.fromEntries(candidates.map((candidate, index) => [
+        `q_${index}`,
+        {
+            type: 'noul',
+            instructions: `Is candidate memory "${candidate.recordId}" (${candidate.kind}) relevant and helpful for writing the next reply in the current scene? Memory: ${String(candidate.excerpt || candidate.searchDescription || '').slice(0, 600)}`,
+            criteria: {
+                true: 'Directly or associatively relevant to the current scene, active characters, unresolved commitments, or continuity.',
+                false: 'Unrelated to the current scene, redundant, or superseded by newer state.',
+            },
+        },
+    ]));
+    return { state, questions };
+}
+
+function extractDecisionScore(entry) {
+    if (typeof entry === 'number' && Number.isFinite(entry)) return Math.max(0, Math.min(1, entry));
+    if (typeof entry === 'boolean') return entry ? 1 : 0;
+    if (!entry || typeof entry !== 'object') return NaN;
+    for (const key of ['noul', 'probability', 'score', 'p']) {
+        if (typeof entry[key] === 'number' && Number.isFinite(entry[key])) return Math.max(0, Math.min(1, entry[key]));
+    }
+    if (entry.probabilities && typeof entry.probabilities === 'object') {
+        const yes = entry.probabilities.true ?? entry.probabilities.yes ?? entry.probabilities['1'];
+        if (typeof yes === 'number' && Number.isFinite(yes)) return Math.max(0, Math.min(1, yes));
+    }
+    if (typeof entry.answer === 'boolean') {
+        const confidence = typeof entry.confidence === 'number' && Number.isFinite(entry.confidence) ? Math.max(0, Math.min(1, entry.confidence)) : 1;
+        return entry.answer ? confidence : 1 - confidence;
+    }
+    return NaN;
+}
+
+export function parseDecisionOutput(data, input, threshold = 0.5) {
+    let payload = data;
+    if (typeof payload?.choices?.[0]?.message?.content === 'string') {
+        payload = parseJsonReply(payload.choices[0].message.content);
+    }
+    object(payload, 'Decision output');
+    if (typeof payload.status === 'string' && Array.isArray(payload.selections)) return payload;
+    const bag = payload.decisions || payload.questions || payload.results || payload.answers || payload;
+    object(bag, 'Decision output');
+    const candidates = Array.isArray(input?.candidates) ? input.candidates : [];
+    const scene = Array.isArray(input?.scene) ? input.scene : [];
+    if (!candidates.length) return { status: 'complete', selections: [], rejections: [], needsEvidence: [] };
+    const cueRefs = scene.slice(-12).map(cue => cue.id);
+    const scored = [];
+    for (let index = 0; index < candidates.length; index++) {
+        const candidate = candidates[index];
+        const raw = bag[`q_${index}`] ?? bag[candidate.recordId] ?? (Array.isArray(bag) ? bag[index] : undefined);
+        const score = extractDecisionScore(raw);
+        if (Number.isFinite(score)) scored.push({ candidate, score });
+    }
+    if (!scored.length) throw new Error('No readable decision scores.');
+    const chosen = cueRefs.length
+        ? scored.filter(item => item.score >= threshold).sort((a, b) => b.score - a.score)
+        : [];
+    const rejected = scored.filter(item => item.score < threshold).sort((a, b) => b.score - a.score).slice(0, 8);
+    return {
+        status: 'complete',
+        selections: chosen.map(({ candidate, score }) => ({
+            recordId: candidate.recordId,
+            relevanceType: 'direct',
+            currentCueRefs: cueRefs,
+            memoryEvidenceRefs: (candidate.sourceRefs?.length ? candidate.sourceRefs : [candidate.recordId]).slice(0, 24),
+            justification: `Picked by Jev decision model (score ${score.toFixed(2)}, threshold ${threshold.toFixed(2)}).`,
+        })),
+        rejections: rejected.map(({ candidate, score }) => ({
+            recordId: candidate.recordId,
+            justification: `Below Jev decision threshold (${score.toFixed(2)} < ${threshold.toFixed(2)}).`,
+        })),
+        needsEvidence: [],
+    };
+}
+
 /** `connectionRole` swaps in a fallback connection while the saved role still guards against mid-run setting changes. */
-async function requestModel(directories, config, name, payload, dataTypes, signal, connectionRole = null) {
+async function requestModel(directories, config, name, payload, dataTypes, signal, connectionRole = null, { decision = false } = {}) {
     if (signal?.aborted) fail('Mewmory request cancelled.', 499);
     const checkCurrent = () => {
         const current = readConfig(directories);
@@ -388,7 +522,8 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
     checkCurrent();
     const { role, endpoint } = authorizeRole(connectionRole ? { ...config, roles: { ...config.roles, [name]: connectionRole } } : config, name, dataTypes);
     const base = (endpoint || (role.connection?.api === 'openai' ? 'https://api.openai.com/v1' : '')).replace(/\/(?:chat\/completions|embeddings)\/?$/, '');
-    const url = base + (name === 'embedding' ? '/embeddings' : '/chat/completions');
+    const decisionUrl = decision ? resolveDecisionUrl(endpoint, role.connection) : '';
+    const url = decision && decisionUrl ? decisionUrl : base + (name === 'embedding' ? '/embeddings' : '/chat/completions');
     const key = role.connection
         ? role.connection.payload.reverse_proxy ? role.connection.payload.proxy_password
             : role.connection.secretId ? readSecret(directories, role.connection.secretType, role.connection.secretId) : ''
@@ -410,7 +545,7 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
             });
             checkCurrent();
             data = { data: result.vectors.map((embedding, index) => ({ embedding, index })) };
-        } else if (role.connection && name !== 'embedding') {
+        } else if (role.connection && name !== 'embedding' && !(decision && decisionUrl)) {
             const { runBackendGeneration, extractGeneratedText } = await import('../endpoints/conversation-generation.js');
             const request = { user: { directories }, headers: {} };
             const connection = { ...role.connection.payload };
@@ -436,7 +571,8 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
             usage: {
                 role: name, model: role.model, modelRevision: role.modelRevision,
                 ...(connectionRole ? { fallbackProfileId: connectionRole.profileId } : {}),
-                input: Number(data.usage?.prompt_tokens) || 0, output: Number(data.usage?.completion_tokens) || 0,
+                input: Number(data.usage?.prompt_tokens ?? data.usage?.input_tokens) || 0,
+                output: Number(data.usage?.completion_tokens ?? data.usage?.output_tokens) || 0,
                 milliseconds: Date.now() - started,
             },
         };
@@ -506,6 +642,23 @@ export async function callJsonRole(directories, config, name, contract, input, {
     }
     const attempt = async connectionRole => {
         signal?.throwIfAborted();
+        const activeRole = connectionRole || role;
+        if (DECISION_ROLES.includes(name) && effectiveDecisionMode(activeRole) === 'decision' && Array.isArray(input?.candidates)) {
+            const decisionPayload = buildDecisionPayload(input);
+            const decisionTokens = counter.count(JSON.stringify(decisionPayload)) + 16;
+            const threshold = typeof activeRole.decisionThreshold === 'number' && Number.isFinite(activeRole.decisionThreshold)
+                ? activeRole.decisionThreshold
+                : defaultDecisionThreshold(activeRole.model);
+            const result = await requestModel(directories, config, name, decisionPayload, dataTypes, signal, connectionRole, { decision: true });
+            let value;
+            try {
+                value = parseDecisionOutput(result.data, input, threshold);
+                object(value, 'Model output');
+            } catch {
+                fail('The ' + ROLE_LABELS[name] + ' model replied in a format Mewmory cannot read, so nothing was saved. Try again; if it keeps happening, choose a different model for ' + ROLE_LABELS[name] + ' in Mewmory settings.', 502);
+            }
+            return { value, usage: { ...result.usage, input: result.usage.input || decisionTokens, tokenizer: counter.name, decision: true } };
+        }
         const result = await requestModel(directories, config, name, {
             messages, stream: false, max_tokens: role.maxOutputTokens, temperature: 0.2,
         }, dataTypes, signal, connectionRole);
