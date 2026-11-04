@@ -1,0 +1,32 @@
+name: Windows account imports
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'src/**'
+      - 'tests/application-import.node.js'
+      - 'tests/roleplay-transactions-fixture.js'
+      - 'package*.json'
+      - '.github/workflows/windows-import.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-import-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  imports:
+    name: Windows folder and ZIP imports
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e # v4.3.0
+        with:
+          node-version: 24
+      - run: npm ci --ignore-scripts
+      - name: Check folder imports and retained ZIPs
+        run: node --test --test-name-pattern="whole folder import|lost upload readback|ZIP source detection" tests/application-import.node.js
