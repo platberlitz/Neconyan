@@ -1827,3 +1827,4 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #424 (2026-11-03) `fix(agents): complete manual thinking reply recovery flow`
 - PR #431 (2026-11-03) `fix(agents): show companion tracker portraits`
 - PR #432 (2026-11-04) `feat(mewmory): add Jev decision presets and memory focus controls`
+- PR #434 (2026-11-04) `feat(pathfinder): add Jev decision model presets`
