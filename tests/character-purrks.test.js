@@ -556,7 +556,7 @@ describe('Character Purrks UI, CSS, and shell contracts', () => {
     const creatorIndexJs = fs.readFileSync(path.join(repoRoot, 'public/scripts/creator/index.js'), 'utf8');
 
     test('ships neconyan-purrks.css as a deferred stylesheet with accent-aware tokens and reduced-motion guard', () => {
-        expect(indexHtml).toContain('href="css/neconyan-purrks.css?v=20261104-shell-style-previews" rel="preload" as="style" data-sb-deferred-style data-sb-media="all"');
+        expect(indexHtml).toContain('href="css/neconyan-purrks.css?v=20261104-purrks-badge" rel="preload" as="style" data-sb-deferred-style data-sb-media="all"');
         expect(purrksCss).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
         expect(purrksCss).not.toMatch(/!important/);
         expect(purrksCss).not.toMatch(/(^|\s)\/\//m);
@@ -569,5 +569,23 @@ describe('Character Purrks UI, CSS, and shell contracts', () => {
         expect(indexHtml).toContain('id="option_toggle_purrks"');
         expect(tabsJs).toContain('sb-bottom-chat-purrks-btn');
         expect(creatorIndexJs).toContain('renderCreatorPurrks(this, main)');
+    });
+
+    test('gives the secondary row vertical headroom so the Purrks badge arc is not clipped', () => {
+        const tabsCss = fs.readFileSync(path.join(repoRoot, 'public/css/neconyan-tabs.css'), 'utf8');
+        const rules = [...tabsCss.matchAll(/\.sb-bottom-chat-secondary-row\s*\{([^}]*)\}/g)].map(match => match[1]);
+        // The phone-only rule is the one that turns the row into a clipping scroll
+        // container; the desktop rule stays display: contents and cannot clip.
+        const phoneRule = rules.find(body => body.includes('overflow-y: hidden'));
+        expect(phoneRule).toBeDefined();
+        // The badge sits 3px above its button, so neconyan-purrks.css (a deferred
+        // sheet, and after the core ones in the cascade) gives the row symmetric
+        // padding-block with a matching negative margin-block: headroom inside the
+        // padding box, no shift in the outer geometry.
+        expect(purrksCss).toContain('top: -3px');
+        const headroomRule = purrksCss.match(/\.sb-bottom-chat-secondary-row\s*\{([^}]*)\}/);
+        expect(headroomRule).toBeDefined();
+        expect(headroomRule[1]).toContain('padding-block: 4px;');
+        expect(headroomRule[1]).toContain('margin-block: -4px;');
     });
 });

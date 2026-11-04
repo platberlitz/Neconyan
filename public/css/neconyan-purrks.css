@@ -361,6 +361,16 @@
     pointer-events: none;
 }
 
+/* The badge pokes 3px above its button, and on phones the secondary row is the
+   clipping scroll container. Symmetric padding with a matching negative margin
+   gives the badge headroom inside the padding box while leaving the outer
+   geometry and the centring of the buttons unchanged. On desktop the row is
+   display: contents, so these declarations have no effect. */
+.sb-bottom-chat-secondary-row {
+    padding-block: 4px;
+    margin-block: -4px;
+}
+
 @media (max-width: 768px) {
     .neconyan-purrks-list .neconyan-purrk-label-btn,
     .neconyan-purrks-list .menu_button,
