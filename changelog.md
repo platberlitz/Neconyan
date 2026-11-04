@@ -1833,3 +1833,4 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #436 (2026-11-04) `ci(github): stop Miso runs cancelling other pull requests`
 - PR #437 (2026-11-04) `feat(shell-styles): calm the Starlight Conservatory sky`
 - PR #438 (2026-11-04) `fix(agents): preserve agent change history when replies end early`
+- PR #440 (2026-11-04) `fix(jev): fix direct connections and server retrieval logs`
