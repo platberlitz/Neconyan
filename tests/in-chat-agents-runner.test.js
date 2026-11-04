@@ -10673,6 +10673,63 @@ describe('in-chat agent post-processing runner', () => {
         expect(agent.connectionProfile).toBe('independent');
     });
 
+    test.each(['rewrite', 'append'])('post-generation %s tries four fallbacks after text and provider refusals', async mode => {
+        usePromptTransformPostAgent();
+        enabledAgents[0].connectionProfile = 'primary';
+        enabledAgents[0].postProcess.promptTransformMode = mode;
+        globalSettings.connectionFallbacks = ['backup-1', 'backup-2', 'backup-3', 'backup-4'];
+        const blocked = await blockedCallerError();
+        connectionManagerRequestService = {
+            constructPrompt: jest.fn(messages => messages),
+            sendRequest: jest.fn(async profile => {
+                if (profile === 'backup-4') return { content: 'Successful edit' };
+                if (profile === 'backup-2') throw blocked;
+                return { content: '<assistant_response>I’m sorry, but I can’t help with that.</assistant_response>' };
+            }),
+        };
+        chat.push({ name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, extra: {} });
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        expect(connectionManagerRequestService.sendRequest.mock.calls.map(call => call[0]))
+            .toEqual(['primary', 'backup-1', 'backup-2', 'backup-3', 'backup-4']);
+        expect(chat[0].mes).toBe(mode === 'append' ? 'Original reply\n\nSuccessful edit' : 'Successful edit');
+        expect(chat[0].extra.inChatAgentPromptRuns[0].profileId).toBe('backup-4');
+    });
+
+    test.each(['automatic', 'manual'].flatMap(trigger => ['rewrite', 'append'].flatMap(mode =>
+        ['text', 'provider'].map(refusal => [trigger, mode, refusal]))))('parallel %s post passes keep successful peers after an exhausted %s %s refusal', async (trigger, mode, refusal) => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'parallel';
+        globalSettings.connectionFallbacks = ['backup'];
+        for (const agent of enabledAgents) agent.postProcess.enabled = true;
+        enabledAgents[0].postProcess.promptTransformMode = mode;
+        enabledAgents.push({ ...enabledAgents[1], id: 'append-success', prompt: 'Append a note',
+            postProcess: { ...enabledAgents[1].postProcess, promptTransformMode: 'append' } });
+        generateQuietPrompt.mockImplementation(async request => {
+            if (request.quietPrompt.includes('Rewrite as A')) throw await blockedCallerError();
+            return request.quietPrompt.includes('Append a note') ? 'Successful note' : 'Successful rewrite';
+        });
+        connectionManagerRequestService = {
+            constructPrompt: jest.fn(messages => messages),
+            sendRequest: jest.fn(async () => {
+                if (refusal === 'provider') throw await blockedCallerError();
+                return { content: 'I’m sorry, but I can’t help with that.' };
+            }),
+        };
+        chat.push({ name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, extra: {} });
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        if (trigger === 'manual') await runner.rerunPostGenerationAgentsOnMessage(0);
+        else await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        expect(chat[0].mes).toBe('Successful rewrite\n\nSuccessful note');
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(3);
+        expect(connectionManagerRequestService.sendRequest).toHaveBeenCalledTimes(1);
+        expect(chat[0].extra.inChatAgentTransformHistory).toHaveLength(1);
+        const refusedRun = chat[0].extra.inChatAgentPromptRuns.find(run => run.agentId === 'agent-manual-a');
+        expect(refusedRun).toMatchObject(refusal === 'provider' ? { generationOutcome: { status: 'blocked' } } : { status: 'refused' });
+    });
+
     test('saved fallback connections take over in order when an Agent connection fails or returns nothing', async () => {
         globalSettings.connectionFallbacks = ['primary', 'empty', 'backup', 'unused'];
         globalSettings.companionConnectionFallbacks = ['companion-backup'];

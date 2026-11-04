@@ -18,8 +18,9 @@ const limited = result => ['length', 'max_tokens', 'MAX_TOKENS', 'max_output_tok
 const NO_FALLBACK_CODES = new Set(['GENERATION_BLOCKED', 'ROLEPLAY_AGENT_RECOVERY', 'PROVIDER_OUTCOME_UNKNOWN',
     'ROLEPLAY_SOURCE_CHANGED', 'ROLEPLAY_AGENT_SOURCE_CHANGED']);
 
-function canTryFallback(context, error) {
-    return !context.signal?.aborted && error?.name !== 'AbortError' && !NO_FALLBACK_CODES.has(error?.code);
+function canTryFallback(context, error, options) {
+    const refused = options.fallbackOnRefusal && error?.code === 'GENERATION_BLOCKED' && error.generationOutcome?.status === 'blocked';
+    return !context.signal?.aborted && error?.name !== 'AbortError' && (refused || !NO_FALLBACK_CODES.has(error?.code));
 }
 
 /**
@@ -57,7 +58,9 @@ async function runAgentModelWithFallbacks(context, options) {
         const failed = lock(() => readArtifact(context.directories, context.job.id, failedKey));
         if (failed !== undefined && !last) {
             if (failed?.identity !== attemptIdentity) throw fail('The saved Agent fallback record is damaged.');
-            lastError = Object.assign(new Error(String(failed.reason || 'The Agent connection failed.')), { status: failed.status });
+            lastError = Object.assign(new Error(String(failed.reason || 'The Agent connection failed.')), {
+                status: failed.status, code: failed.code, generationOutcome: failed.generationOutcome,
+            });
             continue;
         }
         try {
@@ -70,7 +73,7 @@ async function runAgentModelWithFallbacks(context, options) {
             if (empty) emptyResult ??= labelled;
             else rejectedResult ??= labelled;
         } catch (error) {
-            if (!canTryFallback(context, error)) throw error;
+            if (!canTryFallback(context, error, options)) throw error;
             if (last) return settle(error);
             lastError = error;
             abandonAttempt(context, lock, attempt.name, attemptIdentity, error);
@@ -88,6 +91,7 @@ function abandonAttempt(context, lock, name, identity, error, reason = 'fallback
     const key = `agent-model:${name}`;
     lock(() => {
         writeArtifact(context.directories, context.job.id, `${key}:failed`, { identity, reason: String(error?.message ?? error).slice(0, 2000),
+            ...(error?.code === 'GENERATION_BLOCKED' ? { code: error.code, generationOutcome: error.generationOutcome } : {}),
             status: Number.isInteger(error?.status) ? error.status : null, failedAt: Date.now() });
         const reference = readArtifact(context.directories, context.job.id, `${key}:provider`);
         const step = reference?.identity === identity && /^provider:[a-f0-9]{64}$/.test(reference?.step) ? reference.step : '';

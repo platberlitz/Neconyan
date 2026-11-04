@@ -614,7 +614,7 @@ test('source and Agent source refusals never consume fallback connections', asyn
     for (const [code, name] of [['ROLEPLAY_SOURCE_CHANGED', 'blocked-source'], ['ROLEPLAY_AGENT_SOURCE_CHANGED', 'blocked-agent-source']]) {
         let calls = 0;
         await assert.rejects(runAgentModelStep(f.context, {
-            base: f.scope, account: f.account, name, identity: name, binding: f.binding, fallbacks: [{ binding: aux, profileLabel: 'Backup' }],
+            base: f.scope, account: f.account, name, identity: name, binding: f.binding, fallbacks: [{ binding: aux, profileLabel: 'Backup' }], fallbackOnRefusal: true,
             maxTokens: 64, macros: { names: { char: 'Nova', user: 'Ari' } },
             assertCurrent: () => { throw Object.assign(new Error('The saved source changed.'), { code, status: 409 }); },
             buildMessages: () => [{ role: 'user', content: 'A task' }],
@@ -628,6 +628,93 @@ test('source and Agent source refusals never consume fallback connections', asyn
         assert.equal(calls, 1, `${code} stops before a fallback connection is tried`);
         assert.equal(readArtifact(f.directories, f.job.id, `agent-model:${name}:fallback:1:failed`), undefined);
     }
+});
+
+for (const mode of ['rewrite', 'append']) test(`post-generation ${mode} tries four fallbacks after text and provider refusals and replays without paying`, async t => {
+    const f = prepared(t, [{ id: 'post', enabled: true, phase: 'post', prompt: 'Edit the reply',
+        postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMode: mode } }],
+    { connectionProfile: 'main', connectionFallbacks: ['backup-1', 'backup-2', 'backup-3', 'backup-4'] });
+    for (let index = 1; index <= 4; index++) f.settings.extension_settings.connectionManager.profiles.push({
+        ...f.settings.extension_settings.connectionManager.profiles[0], id: `backup-${index}`, model: `backup-${index}`,
+    });
+    fs.writeFileSync(path.join(f.directories.root, 'settings.json'), JSON.stringify(f.settings));
+    const calls = [];
+    const options = { ...phases(f), value: 'Original reply', generate: modelResponse(({ binding }) => {
+        calls.push(binding.profileId);
+        if (binding.profileId === 'backup-4') return { text: 'Successful edit' };
+        if (binding.profileId === 'backup-2') return { text: '', response: { choices: [{ finish_reason: 'content_filter' }] } };
+        return { text: '<assistant_response>I’m sorry, but I can’t help with that.</assistant_response>' };
+    }) };
+    prepareRoleplayAgentContributions(f.context, options);
+    const result = await runRoleplayAgentPostprocessing(f.context, options);
+    assert.equal(result.text, mode === 'append' ? 'Original reply\n\nSuccessful edit' : 'Successful edit');
+    assert.equal(result.runs[0].profileLabel, 'backup-4');
+    assert.deepEqual(await runRoleplayAgentPostprocessing(f.context, options), result);
+    assert.deepEqual(calls, ['main', 'backup-1', 'backup-2', 'backup-3', 'backup-4']);
+});
+
+for (const trigger of ['automatic', 'manual', 'companion']) {
+    for (const mode of ['rewrite', 'append']) for (const refusal of ['text', 'provider']) test(`parallel ${trigger} post passes retain peers after an exhausted ${mode} ${refusal} refusal`, async t => {
+        const agents = ['refused', 'rewrite', 'append'].map((id, index) => ({ id, name: id, enabled: true, phase: 'post', prompt: id,
+            injection: { order: index }, conditions: { runOnCompanionOutputs: true },
+            postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMode: id === 'refused' ? mode : id === 'append' ? 'append' : 'rewrite' } }));
+        const f = prepared(t, agents, { connectionProfile: 'main', connectionFallbacks: ['aux'], appendAgentsExecutionMode: 'parallel' });
+        const calls = [];
+        const options = { ...phases(f), value: 'Original reply',
+            ...(trigger === 'manual' ? { manualAgentIds: agents.map(agent => agent.id) } : {}),
+            ...(trigger === 'companion' ? { companionAgent: { id: 'note' } } : {}),
+            generate: modelResponse(({ binding, stepNamespace }) => {
+                calls.push([binding.profileId, stepNamespace]);
+                if (stepNamespace.includes('post:refused')) return refusal === 'text'
+                    ? { text: 'I’m sorry, but I can’t help with that.' }
+                    : { text: '', response: { choices: [{ finish_reason: 'content_filter' }] } };
+                return { text: stepNamespace.includes('post:append') ? 'Successful note' : 'Successful rewrite' };
+            }) };
+        prepareRoleplayAgentContributions(f.context, options);
+        const result = await runRoleplayAgentPostprocessing(f.context, options);
+        assert.equal(result.text, 'Successful rewrite\n\nSuccessful note');
+        assert.equal(result.failed, undefined);
+        assert.equal(result.runs.find(run => run.agentId === 'refused').status, 'refused');
+        if (trigger !== 'companion') assert.equal(result.extra.inChatAgentTransformHistory.length, 1);
+        assert.deepEqual(await runRoleplayAgentPostprocessing(f.context, options), result);
+        assert.equal(calls.length, 4);
+    });
+}
+
+test('an opted-in refused model step replays the successful fallback without paying again', async t => {
+    const f = prepared(t);
+    const aux = { kind: 'profile', ...captureChatProfile(f.directories, 'aux') };
+    const calls = [];
+    const options = { base: f.scope, account: f.account, name: 'refusal-fallback', identity: 'refusal-fallback', binding: f.binding,
+        maxTokens: 64, macros: {}, assertCurrent() {}, fallbackOnRefusal: true, fallbacks: [{ binding: aux, profileLabel: 'Backup' }],
+        buildMessages: () => [{ role: 'user', content: 'Edit the reply' }],
+        generate: modelResponse(({ binding }) => {
+            calls.push(binding.profileId);
+            return binding.profileId === 'main' ? { text: '', response: { choices: [{ finish_reason: 'content_filter' }] } } : { text: 'Successful edit' };
+        }) };
+    const result = await runAgentModelStep(f.context, options);
+    assert.equal(result.text, 'Successful edit');
+    assert.equal(result.fallbackIndex, 1);
+    assert.deepEqual(await runAgentModelStep({ ...f.context, providerScope: createProviderScope(f.context) }, options), result);
+    assert.deepEqual(calls, ['main', 'aux']);
+});
+
+test('an exhausted refusal followed by an empty fallback retains its classification on replay', async t => {
+    const f = prepared(t);
+    const aux = { kind: 'profile', ...captureChatProfile(f.directories, 'aux') };
+    const calls = [];
+    const options = { base: f.scope, account: f.account, name: 'refusal-empty', identity: 'refusal-empty', binding: f.binding,
+        maxTokens: 64, macros: {}, assertCurrent() {}, fallbackOnRefusal: true, fallbacks: [{ binding: aux, profileLabel: 'Backup' }],
+        buildMessages: () => [{ role: 'user', content: 'Edit the reply' }],
+        generate: modelResponse(({ binding }) => {
+            calls.push(binding.profileId);
+            return binding.profileId === 'main' ? { text: '', response: { choices: [{ finish_reason: 'content_filter' }] } } : { text: '' };
+        }) };
+    for (let replay = 0; replay < 2; replay++) {
+        await assert.rejects(runAgentModelStep({ ...f.context, providerScope: createProviderScope(f.context) }, options),
+            error => error.code === 'GENERATION_BLOCKED' && error.generationOutcome?.status === 'blocked');
+    }
+    assert.deepEqual(calls, ['main', 'aux']);
 });
 
 test('a blocked Agent model step neither rewrites nor tries fallback and replays without paying', async t => {

@@ -230,7 +230,10 @@ async function modelRun(context, options, agent, text, name, intercept = false, 
     const endIndex = !isNote && ['continue', 'agent'].includes(effect) && Number.isInteger(source?.message?.index)
         ? source.message.index + 1 : records.length;
     const recentChat = intercept ? '' : buildPromptTransformRecentChat(records.slice(1, endIndex), agent.postProcess.promptTransformContextMessages, unwrap);
+    const postTransform = !intercept && !options.thinkingRecovery;
+    const isRefusal = output => snapshot.agents.refusalGuard !== false && isLikelyPromptTransformRefusal(unwrap(output), text);
     const result = await runAgentModelStep(context, { base, account: snapshot.account, name,
+        ...(postTransform ? { fallbackOnRefusal: true, isEmptyOutput: output => !unwrap(output), acceptOutput: output => !isRefusal(output) } : {}),
         diagnostic: { id: agent.id, sourceTemplateId: agent.sourceTemplateId, synthesis: Boolean(options.synthesisMessages),
             phase: options.synthesisMessages ? 'synthesis' : name.includes(':repair:') ? 'repair' : intercept && agent.preProcess.interceptTiming !== 'post-main-generation' ? 'pre' : 'post' },
         identity: roleplayHash({ intent: context.job.intent, agent: snapshot.agents.agents.find(item => item.id === agent.id), text, intercept, format, generationType,
@@ -247,12 +250,18 @@ async function modelRun(context, options, agent, text, name, intercept = false, 
                 { reasoning: text, assistantName: options.assistantName, generationType, recentChat, continuation: options.thinkingRecovery === 'continue', prefix: options.continuationPrefix ?? '', toolResults: options.toolResults ?? '' }), snapshot.agents.helperPrefill);
             return appendHelperPrefillMessages(messagesFor(agent, text, prompt, generationType, options.assistantName, format, intercept, recentChat), snapshot.agents.helperPrefill);
         } }).catch(error => {
+        // An exhausted parallel peer contributes no edit; its successful siblings still apply.
+        // Synthesis is one combined edit and must retain its existing failure contract.
+        if (postTransform && !options.synthesisMessages && snapshot.agents.appendMode === 'parallel'
+            && error?.code === 'GENERATION_BLOCKED' && error.generationOutcome?.status === 'blocked') {
+            return { refused: true, text: '', model: '', completedAt: Date.now(), hash: null };
+        }
         if (!isRoleplayAgentStop(error)) throw error;
         return { stopped: true, text: '', model: '', completedAt: Date.now(), hash: null };
     });
     const outputText = result.lengthLimited ? '' : unwrap(result.text);
     // A refusal never replaces the text it was asked to work on.
-    const refused = snapshot.agents.refusalGuard !== false && isLikelyPromptTransformRefusal(outputText, text);
+    const refused = result.refused || isRefusal(outputText);
     return { agentId: agent.id, agentName: agent.name, order: agent.injection.order,
         outputText: refused ? '' : outputText, rawText: refused ? '' : result.lengthLimited ? '' : String(result.text ?? ''),
         status: result.stopped ? 'stopped' : result.lengthLimited ? 'length-limited' : refused ? 'refused' : result.text.trim() ? 'done' : 'empty',
@@ -453,6 +462,7 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     let postFailed = false;
     const runs = [];
     const parallel = snapshot.agents.appendMode === 'parallel';
+    const failedPostRun = run => run.status !== 'done' && !(parallel && run.status === 'refused');
     // Run together shares one provider scope, so rewrite and append steps can be in flight at once.
     const scope = parallel ? { ...context, providerScope: context.providerScope ?? createProviderScope(context) } : context;
     const runStages = version === 1 ? runLegacyPromptTransformStages : version === 2 ? runOrderedPromptTransformStages : runPromptTransformStages;
@@ -470,7 +480,7 @@ export async function runRoleplayAgentPostprocessing(context, options) {
             // The Continuity Companion is told what the Corrector fixed, so it does not report those slips again.
             const corrections = !companionOutput && isContinuityCorrector(agent) && run.outputText ? { corrections: describeTextCorrections(body, run.outputText) } : {};
             runs.push({ ...run, ...corrections, mode: 'rewrite' });
-            if (companionOutput && run.status !== 'done') { postFailed = true; return { stop: true }; }
+            if (companionOutput && failedPostRun(run)) { postFailed = true; return { stop: true }; }
             return run.outputText ? { text: run.outputText } : {};
         },
         runAppend: async (batch, body, onProgress = () => {}) => {
@@ -492,7 +502,7 @@ export async function runRoleplayAgentPostprocessing(context, options) {
                 for (const item of batch) results.push(await runAppend(item));
             }
             runs.push(...results.map(run => ({ ...run, mode: 'append' })));
-            if (companionOutput && results.some(run => run.status !== 'done')) { postFailed = true; return { stop: true }; }
+            if (companionOutput && results.some(failedPostRun)) { postFailed = true; return { stop: true }; }
             return { outputs: results.map((run, offset) => ({ agent: batch[offset], text: run.outputText })) };
         },
         runSynthesis: async (original, rewrites, draft) => {
@@ -549,7 +559,9 @@ export async function runRoleplayAgentPostprocessing(context, options) {
         return savePhase(context, snapshot.account, phaseName, { identity, baseline, text,
             extra: { inChatAgentPromptRuns: runs, ...(!companionOutput ? { inChatAgents: displaySnapshot(pre, agents, generationType) } : {}) }, metadata: {}, runs, stopped: true });
     }
-    if (companionOutput && postFailed || manual && !options.repairTrackers && runs.some(run => ['length-limited', 'refused'].includes(run.status))) {
+    const allRefused = runs.length > 0 && runs.every(run => run.status === 'refused');
+    if (companionOutput && (postFailed || allRefused) || manual && !options.repairTrackers
+        && (allRefused || runs.some(run => run.status === 'length-limited' || !parallel && run.status === 'refused'))) {
         return savePhase(context, snapshot.account, phaseName, { identity, text: value, extra: {}, metadata: {}, runs, failed: true });
     }
     const environment = createMacroEnvironment(macros, {}, { readOnly: true });
