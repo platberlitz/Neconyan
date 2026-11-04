@@ -35,3 +35,22 @@ jobs:
           bun-version: 1.3.14
       - name: Check imports with the default Windows runtime
         run: bun test ./tests/application-import.node.js --test-name-pattern="whole folder import|lost upload readback|ZIP source detection"
+      - name: Check imports on an exFAT data drive
+        shell: pwsh
+        run: |
+          $disk = Join-Path $env:RUNNER_TEMP 'imports.vhd'
+          @"
+          create vdisk file="$disk" maximum=512 type=expandable
+          select vdisk file="$disk"
+          attach vdisk
+          create partition primary
+          format fs=exfat quick
+          assign letter=R
+          "@ | Set-Content (Join-Path $env:RUNNER_TEMP 'imports-disk.txt')
+          diskpart /s (Join-Path $env:RUNNER_TEMP 'imports-disk.txt')
+          New-Item -ItemType Directory R:\temp -ErrorAction Stop
+          $env:TEMP = 'R:\temp'
+          $env:TMP = 'R:\temp'
+          node --test --test-name-pattern="whole folder import|lost upload readback|ZIP source detection" tests/application-import.node.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bun test ./tests/application-import.node.js --test-name-pattern="whole folder import|lost upload readback|ZIP source detection"
