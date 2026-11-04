@@ -50,7 +50,7 @@ export function creatorStepMessages(draft, proposal) {
     const step = proposal.plan.steps[proposal.plan.next];
     const existingFields = Object.fromEntries(step.fields.map(field => [field, field === 'alternate_greetings' ? draft.card.data[field] ?? [] : creatorTextValue(draft, field)]));
     return [
-        { role: 'system', content: `${proposal.plan.system}\nWrite only this small step: ${step.label}. Other fields are written separately. Return a JSON object with fields, questions and coverage. Leave unsupported fields absent. Do not repeat questions already asked or answered.${step.count ? ` Return "alternate_greetings" as an array holding exactly one new greeting: alternative ${step.start + 1}. Make it distinct from the first greeting and every greeting in writtenFields.` : ''}` },
+        { role: 'system', content: `${proposal.plan.system}\nWrite only this small step: ${step.label}. Other fields are written separately. Return a JSON object with fields, questions and coverage; questions and coverage must be arrays of strings, using [] when empty. Leave unsupported fields absent. Do not repeat questions already asked or answered.${step.count ? ` Return "alternate_greetings" as an array holding exactly one new greeting: alternative ${step.start + 1}. Make it distinct from the first greeting and every greeting in writtenFields.` : ''}` },
         { role: 'user', content: JSON.stringify({ ...proposal.plan.source, requestedFields: step.fields, dossier: proposal.dossierBefore, existingFields, writtenFields: { ...proposal.plan.accepted, ...Object.fromEntries(proposal.changes.map(change => [change.field, change.after])) }, alreadyAsked: proposal.questions, answers: [...(proposal.resolved ?? []), ...Object.entries(proposal.answers ?? {}).map(([question, answer]) => ({ question, answer }))], revisionNote: proposal.note ?? '', step }) },
     ];
 }
@@ -76,7 +76,8 @@ export function mergeCreatorStep(draft, proposal, output) {
         else change.after = value;
     }
     for (const key of ['questions', 'coverage']) {
-        const items = result[key] ?? [];
+        // A single coverage paragraph is still a complete, readable change summary.
+        const items = key === 'coverage' && typeof result[key] === 'string' ? [result[key]] : result[key] ?? [];
         if (!Array.isArray(items) || items.length > 100 || items.some(item => typeof item !== 'string' || item.length > 10000)) throw new Error('This step returned invalid questions or coverage. Retry this step.');
         next[key] = [...new Set([...(next[key] ?? []), ...items])].filter(item => key !== 'questions' || !next.resolved?.some(answer => answer.question === item));
     }

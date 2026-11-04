@@ -4,6 +4,45 @@ import { createCreatorDraft, acceptCreatorProposal, acceptCreatorGreeting } from
 import { startCreatorConversion, mergeCreatorStep, creatorStepMessages, reviseCreatorConversion } from '../public/scripts/creator/conversion.js';
 import { creatorQuestionMessages, mergeCreatorQuestions, generateCreatorProposal } from '../public/scripts/creator/questions.js';
 
+test('a plain-text coverage summary preserves finished interviewer examples for review', () => {
+    let draft = createCreatorDraft({ id: 'coverage-string', card: { data: {} } });
+    draft.dossier = 'Mira repairs ships.';
+    let proposal = startCreatorConversion(draft, ['name', 'mes_example']);
+    proposal = mergeCreatorStep(draft, proposal, JSON.stringify({ fields: { name: 'Mira' }, coverage: ['Kept her name.'] }));
+    const before = structuredClone(proposal);
+    const mes_example = 'Interviewer: What do you want {{user}} to understand?\n\nMira: "I repair ships."';
+    const coverage = 'Updated mes_example: an interviewer exchange about her work and the {{user}} dynamic.';
+    const finished = mergeCreatorStep(draft, proposal, JSON.stringify({ fields: { mes_example }, questions: [], coverage }));
+    assert.deepEqual(proposal, before);
+    assert.equal(finished.plan.next, finished.plan.steps.length);
+    assert.deepEqual(finished.coverage, ['Kept her name.', coverage]);
+    assert.deepEqual(finished.questions, []);
+    assert.equal(finished.changes.find(change => change.field === 'mes_example').after, mes_example);
+    draft.proposals = [finished];
+    draft = acceptCreatorProposal(draft, finished);
+    assert.equal(draft.card.data.mes_example, mes_example);
+    assert.equal(draft.card.data.name, 'Mira');
+});
+
+test('coverage strings retain metadata limits and failed steps remain untouched', () => {
+    const draft = createCreatorDraft({ id: 'coverage-validation', card: { data: {} } });
+    draft.dossier = 'A shipwright.';
+    const proposal = startCreatorConversion(draft, ['mes_example']);
+    const before = structuredClone(proposal);
+    for (const coverage of [{ summary: 'Wrong shape' }, 42, true, ['Valid', 42], Array(101).fill('Summary'), 'x'.repeat(10001), ['x'.repeat(10001)]]) {
+        assert.throws(() => mergeCreatorStep(draft, proposal, JSON.stringify({ fields: { mes_example: 'Interview' }, coverage })), /invalid questions or coverage/);
+        assert.deepEqual(proposal, before);
+    }
+    assert.throws(() => mergeCreatorStep(draft, proposal, JSON.stringify({ fields: { mes_example: 'Interview' }, questions: 'Where?', coverage: 'Summary' })), /invalid questions or coverage/);
+    for (const coverage of ['Summary', ['Summary'], 'x'.repeat(10000), '', [], null, undefined]) {
+        const finished = mergeCreatorStep(draft, proposal, JSON.stringify({ fields: { mes_example: 'Interview' }, coverage }));
+        assert.equal(finished.plan.next, 1);
+        assert.ok(Array.isArray(finished.coverage));
+    }
+    const messages = creatorStepMessages(draft, proposal);
+    assert.match(messages[0].content, /questions and coverage must be arrays of strings/);
+});
+
 test('conversion keeps completed fields and resumes exactly the failed step', () => {
     const draft = createCreatorDraft({ id: 'steps', card: { data: {} } });
     draft.dossier = 'A shipwright.';

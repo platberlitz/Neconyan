@@ -2,6 +2,32 @@ import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 
 for (const phone of [false, true]) {
+    test(`Catelier accepts interviewer examples with plain-text coverage on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
+        test.setTimeout(180000);
+        const account = await app.account({ phone, activeConnection: true });
+        const page = await account.open({ workspace: false });
+        await page.getByRole('button', { name: 'Choose a character', exact: true }).click();
+        await page.locator('#sb_character_tab_creator').click();
+        const creator = page.locator('#sb_character_creator_panel');
+        await creator.getByRole('button', { name: 'Create a character', exact: true }).click();
+        await creator.getByRole('button', { name: 'Writing partner', exact: true }).click();
+        await creator.getByLabel('What would you like to work on?', { exact: true }).fill('Write interviewer examples for a shipwright.');
+        const choices = creator.getByRole('group', { name: 'Fields to propose', exact: true });
+        await choices.getByRole('checkbox', { name: 'description', exact: true }).uncheck();
+        await choices.getByRole('checkbox', { name: 'mes example', exact: true }).check();
+        const mes_example = 'Interviewer: What should {{user}} know?\n\nMira: "I repair ships."';
+        const coverage = 'Added an interviewer exchange about her work and the {{user}} dynamic.';
+        app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: JSON.stringify({ fields: { mes_example }, questions: [], coverage }) } }] };
+        await creator.getByRole('button', { name: 'Ask for a proposal', exact: true }).click();
+        const proposal = creator.locator('.creator-proposal');
+        await expect(proposal).toContainText('Written 1 of 1 steps. Ready to review.', { timeout: 30000 });
+        await expect(proposal.getByText(coverage, { exact: true })).toBeVisible();
+        await expect(proposal.getByRole('button', { name: 'Continue writing', exact: true })).toHaveCount(0);
+        await proposal.getByRole('button', { name: 'Accept all fields', exact: true }).click();
+        await creator.getByRole('button', { name: 'Greetings & examples', exact: true }).click();
+        await expect(creator.getByLabel('Interviewer examples', { exact: true })).toHaveValue(mes_example);
+    });
+
     test(`Creator generation, formats and collaborators on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
         test.setTimeout(180000);
         const account = await app.account({ phone, activeConnection: true });
