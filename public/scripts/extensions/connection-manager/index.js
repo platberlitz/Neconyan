@@ -18,7 +18,7 @@ import { getSecretLabelById } from '../../secrets.js';
 import { chat_completion_sources, maybeApplyModelSamplingProfile, oai_settings, selected_custom_endpoint_preset, syncCustomEndpointPresetSelectionBySecretId } from '../../openai.js';
 import { performFuzzySearch } from '/scripts/power-user.js';
 import { StreamingDisplay } from '/scripts/streaming-display.js';
-import { ConnectionManagerRequestService, getProfileServiceTier } from '../shared.js';
+import { confirmProfileProxy, ConnectionManagerRequestService, getProfileServiceTier } from '../shared.js';
 import { formatReasoning } from '/scripts/reasoning.js';
 
 const MODULE_NAME = 'connection-manager';
@@ -834,6 +834,10 @@ async function createConnectionProfile(forceName = null) {
         }
     }
 
+    if (!await confirmProfileProxy(profile)) {
+        return null;
+    }
+
     profile.name = String(name);
     return profile;
 }
@@ -1086,11 +1090,19 @@ async function applyConnectionProfile(profile) {
 /**
  * Updates the selected connection profile.
  * @param {ConnectionProfile} profile Connection profile
- * @returns {Promise<void>}
+ * @param {ConnectionProfile} [previous] Copy to restore if the user declines the profile's proxy
+ * @returns {Promise<boolean>} False when the proxy was declined and the profile was restored
  */
-async function updateConnectionProfile(profile) {
+async function updateConnectionProfile(profile, previous = structuredClone(profile)) {
     profile.mode = main_api === 'openai' ? 'cc' : 'tc';
     await readProfileFromCommands(profile.mode, profile, true);
+    if (await confirmProfileProxy(profile)) {
+        return true;
+    }
+    // Declined: put the same object back as it was, so nothing unconfirmed is saved later.
+    for (const key of Object.keys(profile)) delete profile[key];
+    Object.assign(profile, previous);
+    return false;
 }
 
 /**
@@ -1734,7 +1746,9 @@ export async function init() {
             return;
         }
         const oldProfile = structuredClone(profile);
-        await updateConnectionProfile(profile);
+        if (!await updateConnectionProfile(profile)) {
+            return;
+        }
         await renderDetailsContent(detailsContent);
         await saveSettings();
         await eventSource.emit(event_types.CONNECTION_PROFILE_UPDATED, oldProfile, profile);
@@ -1834,7 +1848,9 @@ export async function init() {
                 delete profile[command];
             }
             if (saveChanges) {
-                await updateConnectionProfile(profile);
+                if (!await updateConnectionProfile(profile, oldProfile)) {
+                    return;
+                }
             } else {
                 toastr.info('Press "Update" to record them into the profile.', 'Included settings list updated');
             }
@@ -1983,7 +1999,9 @@ export async function init() {
                 return '';
             }
             const oldProfile = structuredClone(profile);
-            await updateConnectionProfile(profile);
+            if (!await updateConnectionProfile(profile)) {
+                return '';
+            }
             await renderDetailsContent(detailsContent);
             await saveSettings();
             await eventSource.emit(event_types.CONNECTION_PROFILE_UPDATED, oldProfile, profile);

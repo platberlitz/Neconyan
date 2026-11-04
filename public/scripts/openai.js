@@ -626,7 +626,7 @@ export function getCurrentOpenAIPresetPromptOrder(characterId) {
     return Array.isArray(promptOrderEntry?.order) ? promptOrderEntry.order : [];
 }
 
-async function validateReverseProxy(signal, proxy = oai_settings.reverse_proxy) {
+export async function validateReverseProxy(signal, proxy = oai_settings.reverse_proxy, { markConnection = true } = {}) {
     if (!proxy) {
         return;
     }
@@ -635,14 +635,14 @@ async function validateReverseProxy(signal, proxy = oai_settings.reverse_proxy) 
         new URL(proxy);
     } catch (err) {
         toastr.error(t`The reverse proxy address is not a valid web address`);
-        setOnlineStatus('no_connection');
-        resultCheckStatus();
+        if (markConnection) {
+            setOnlineStatus('no_connection');
+            resultCheckStatus();
+        }
         throw err;
     }
-    const rememberKey = `Proxy_SkipConfirm_${getStringHash(proxy)}`;
-    const skipConfirm = accountStorage.getItem(rememberKey) === 'true';
 
-    const confirmation = skipConfirm || await Popup.show.confirm(t`Connecting To Proxy`, await renderTemplateAsync('proxyConnectionWarning', { proxyURL: DOMPurify.sanitize(proxy) }));
+    const confirmation = await confirmProxyAddress(proxy, { signal });
 
     if (signal?.aborted) {
         return;
@@ -650,12 +650,67 @@ async function validateReverseProxy(signal, proxy = oai_settings.reverse_proxy) 
 
     if (!confirmation) {
         toastr.error(t`Update or remove your reverse proxy settings.`);
-        setOnlineStatus('no_connection');
-        resultCheckStatus();
+        if (markConnection) {
+            setOnlineStatus('no_connection');
+            resultCheckStatus();
+        }
         throw new Error('Proxy connection denied.');
     }
+}
 
-    accountStorage.setItem(rememberKey, String(true));
+// One 'Connecting To Proxy' question per address at a time, shared by every caller waiting on it.
+const pendingProxyConfirmations = new Map();
+
+/**
+ * Asks once whether to connect to a proxy address and remembers a yes for this account.
+ * @param {string} proxy Proxy address
+ * @param {object} [options]
+ * @param {AbortSignal} [options.signal] A caller that has been cancelled does not record the answer
+ * @returns {Promise<boolean>} True when the address is confirmed, now or before
+ */
+export async function confirmProxyAddress(proxy, { signal } = {}) {
+    const rememberKey = `Proxy_SkipConfirm_${getStringHash(proxy)}`;
+    if (accountStorage.getItem(rememberKey) === 'true') {
+        return true;
+    }
+    if (!pendingProxyConfirmations.has(rememberKey)) {
+        const question = (async () => Popup.show.confirm(t`Connecting To Proxy`, await renderTemplateAsync('proxyConnectionWarning', { proxyURL: DOMPurify.sanitize(proxy) })))();
+        pendingProxyConfirmations.set(rememberKey, question);
+        question.finally(() => pendingProxyConfirmations.delete(rememberKey)).catch(() => {});
+    }
+    const confirmed = Boolean(await pendingProxyConfirmations.get(rememberKey));
+    if (confirmed && !signal?.aborted) {
+        accountStorage.setItem(rememberKey, String(true));
+    }
+    return confirmed;
+}
+
+/**
+ * Confirms the proxy a profile or preset will send to when it is saved or imported.
+ * @param {string} proxy Proxy address
+ * @param {string} source Chat Completion source
+ * @param {string} declinedMessage Shown when the user says no
+ * @returns {Promise<boolean>} False when the user declined, so the caller does not save
+ */
+export async function confirmSavedProxy(proxy, source, declinedMessage) {
+    if (!proxy || !REVERSE_PROXY_SUPPORTED_SOURCES.includes(source) || !URL.canParse(proxy)) {
+        return true;
+    }
+    if (await confirmProxyAddress(proxy)) {
+        return true;
+    }
+    toastr.warning(declinedMessage);
+    return false;
+}
+
+/**
+ * Confirms the proxy a Chat Completion preset carries before it is saved or imported.
+ * @param {object} preset Preset body
+ * @param {string} declinedMessage Shown when the user says no
+ * @returns {Promise<boolean>} False when the user declined
+ */
+async function confirmPresetProxy(preset, declinedMessage) {
+    return confirmSavedProxy(preset?.reverse_proxy, preset?.chat_completion_source ?? oai_settings.chat_completion_source, declinedMessage);
 }
 
 /**
@@ -5379,7 +5434,8 @@ function getVerbosity(settings = null) {
  * @returns {Promise<object>} Final generation parameters object appropriate for the chat completion source
  */
 export async function createGenerationParameters(settings, model, type, messages, { jsonSchema = null, cacheScope = null } = {}) {
-    const forwardProxy = settings.reverse_proxy === oai_settings.reverse_proxy;
+    // Every request confirms the proxy it sends to; only the main settings' proxy can mark the main connection offline.
+    const mainProxy = settings.reverse_proxy === oai_settings.reverse_proxy;
     return createChatGenerationParameters(settings, model, type, messages, {
         getReasoningRoute: () => getChatReasoningRoute(settings),
         appendReasoning: value => appendAutoAppendReasoningInstruction(value, settings, model, type),
@@ -5393,7 +5449,7 @@ export async function createGenerationParameters(settings, model, type, messages
         canPerformToolCalls: () => ToolManager.canPerformToolCalls(type, settings, model),
         registerTools: data => ToolManager.registerFunctionToolsOpenAI(data),
         reverseProxySources: REVERSE_PROXY_SUPPORTED_SOURCES,
-        validateReverseProxy: proxy => validateReverseProxy(undefined, forwardProxy ? proxy : undefined),
+        validateReverseProxy: proxy => validateReverseProxy(undefined, proxy, { markConnection: mainProxy }),
         getStoppingStrings: limit => getGroupSpeakerStopStrings(getCustomStoppingStrings(limit), limit, type),
         getAssistantPrefill: () => type === 'impersonate'
             ? getEffectiveAssistantImpersonationPrefill(settings) : substituteParams(settings.assistant_prefill),
@@ -7558,6 +7614,10 @@ async function onPresetImportFileChange(e) {
         }
     }
 
+    if (!await confirmPresetProxy(presetBody, t`Preset not imported. Import it again and confirm its proxy address, or remove the proxy fields.`)) {
+        return;
+    }
+
     if (name in openai_setting_names) {
         const confirm = await callGenericPopup('Preset name already exists. Overwrite?', POPUP_TYPE.CONFIRM);
 
@@ -8896,6 +8956,10 @@ async function onNewPresetClick() {
     const name = await Popup.show.input(t`Preset name:`, t`Hint: Use a character/group name to bind preset to a specific chat.`, oai_settings.preset_settings_openai);
 
     if (!name) {
+        return;
+    }
+
+    if (!await confirmPresetProxy(getChatCompletionPreset(oai_settings), t`Preset not saved. Confirm its proxy address to save it.`)) {
         return;
     }
 
@@ -10419,6 +10483,9 @@ export function initOpenAI() {
 
     $('#update_oai_preset').on('click', async function () {
         const name = oai_settings.preset_settings_openai;
+        if (!await confirmPresetProxy(getChatCompletionPreset(oai_settings), t`Preset not saved. Confirm its proxy address to save it.`)) {
+            return;
+        }
         await saveOpenAIPreset(name, oai_settings, false);
         toastr.success(t`Preset updated`);
     });

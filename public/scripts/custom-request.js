@@ -8,7 +8,8 @@ import { getInstructStoppingSequences } from './instruct-mode.js';
 import { selected_group } from './group-chats.js';
 import { power_user } from './power-user.js';
 import { constructScopedTextPrompt, cleanScopedTextResponse } from './generation-format.js';
-import { chat_completion_sources, getStreamingReply, tryParseStreamingError, createGenerationParameters, getNanoGptServiceTier, oai_settings } from './openai.js';
+import { chat_completion_sources, getStreamingReply, tryParseStreamingError, createGenerationParameters, getNanoGptServiceTier, oai_settings, validateReverseProxy } from './openai.js';
+import { REVERSE_PROXY_SUPPORTED_SOURCES } from './chat-request-controls.js';
 import EventSourceStream from './sse-stream.js';
 import { fetchResumable } from './resumable-generation.js';
 import { buildChatPresetPayload, createChatRequestData } from './chat-preset-request.js';
@@ -376,6 +377,10 @@ export class ChatCompletionService {
     static async sendRequest(data, extractData = true, signal = null) {
         delete data.__connectionProfileRequestFields;
         delete data.modelOverride;
+        // Profiles and presets are confirmed when saved; this asks only for an address never confirmed before.
+        if (data.reverse_proxy && REVERSE_PROXY_SUPPORTED_SOURCES.includes(data.chat_completion_source)) {
+            await validateReverseProxy(signal, data.reverse_proxy, { markConnection: data.reverse_proxy === oai_settings.reverse_proxy });
+        }
         if (data.service_tier === '') delete data.service_tier;
         if (data.chat_completion_source === chat_completion_sources.NANOGPT && data.service_tier) {
             data.service_tier = await getNanoGptServiceTier({ ...data, nanogpt_service_tier: data.service_tier }, data.model);

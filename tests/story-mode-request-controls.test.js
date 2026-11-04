@@ -1036,7 +1036,7 @@ describe('reverse proxy confirmation with a held bias lookup', () => {
     function proxyRuntime({ held = false } = {}) {
         const runtime = makeRuntime();
         const { context } = runtime;
-        load(context, 'scripts/openai.js', ['validateReverseProxy']);
+        load(context, 'scripts/openai.js', ['validateReverseProxy', 'pendingProxyConfirmations', 'confirmProxyAddress']);
         Object.assign(context, {
             URL, biasCache: null, REVERSE_PROXY_SUPPORTED_SOURCES: ['openai'],
             Popup: { show: { confirm: jest.fn(async () => true) } },
@@ -1078,13 +1078,23 @@ describe('reverse proxy confirmation with a held bias lookup', () => {
         expect(requests[0].body.temperature).toBe(expectedTemperature);
     });
 
-    test('a preset or profile request whose proxy differs from the global one still confirms the global proxy', async () => {
+    test('a preset or profile request whose proxy differs from the global one confirms the proxy it sends', async () => {
         const { context } = proxyRuntime();
         context.oai_settings.reverse_proxy = 'https://global.invalid';
         const { generate_data } = await context.createGenerationParameters({ ...context.oai_settings, reverse_proxy: 'https://profile.invalid' }, 'gpt-4o', 'quiet', [{ role: 'user', content: 'Hello' }]);
         expect(generate_data.reverse_proxy).toBe('https://profile.invalid');
         expect(context.renderTemplateAsync).toHaveBeenCalledTimes(1);
-        expect(context.renderTemplateAsync).toHaveBeenCalledWith('proxyConnectionWarning', { proxyURL: 'https://global.invalid' });
-        expect(context.accountStorage.setItem).toHaveBeenCalledWith('Proxy_SkipConfirm_hash(https://global.invalid)', 'true');
+        expect(context.renderTemplateAsync).toHaveBeenCalledWith('proxyConnectionWarning', { proxyURL: 'https://profile.invalid' });
+        expect(context.accountStorage.setItem).toHaveBeenCalledWith('Proxy_SkipConfirm_hash(https://profile.invalid)', 'true');
+    });
+
+    test('a declined profile proxy stops that request without marking the main connection offline', async () => {
+        const { context } = proxyRuntime();
+        context.oai_settings.reverse_proxy = 'https://global.invalid';
+        context.Popup.show.confirm.mockResolvedValueOnce(false);
+        await expect(context.createGenerationParameters({ ...context.oai_settings, reverse_proxy: 'https://profile.invalid' }, 'gpt-4o', 'quiet', [{ role: 'user', content: 'Hello' }]))
+            .rejects.toThrow('Proxy connection denied.');
+        expect(context.renderTemplateAsync).toHaveBeenCalledWith('proxyConnectionWarning', { proxyURL: 'https://profile.invalid' });
+        expect(context.setOnlineStatus).not.toHaveBeenCalled();
     });
 });

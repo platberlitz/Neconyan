@@ -89,6 +89,9 @@ function createHarness() {
         function saveModelList(data) { models = data; }
         ${functionSource(scriptSource, 'cancelStatusCheck')}
         ${functionSource(openAiSource, 'validateReverseProxy')}
+const pendingProxyConfirmations = new Map();
+${functionSource(openAiSource, 'confirmProxyAddress')}
+${functionSource(openAiSource, 'confirmSavedProxy')}
         ${functionSource(openAiSource, 'getStatusOpen')}
         ${functionSource(openAiSource, 'onConnectButtonClick')}
     `, context);
@@ -333,8 +336,93 @@ describe('Chat Completion reverse proxy validation', () => {
         expect(context.accountStorage.setItem).toHaveBeenCalledWith('Proxy_SkipConfirm_https://live.invalid', 'true');
     });
 
-    test('forwards the snapshot proxy only when the settings proxy equals the global proxy', () => {
-        expect(openAiSource).toContain('const forwardProxy = settings.reverse_proxy === oai_settings.reverse_proxy;');
-        expect(openAiSource).toContain('validateReverseProxy: proxy => validateReverseProxy(undefined, forwardProxy ? proxy : undefined),');
+    test('confirms the proxy every request sends, and only the main proxy marks the connection', () => {
+        expect(openAiSource).toContain('const mainProxy = settings.reverse_proxy === oai_settings.reverse_proxy;');
+        expect(openAiSource).toContain('validateReverseProxy: proxy => validateReverseProxy(undefined, proxy, { markConnection: mainProxy }),');
+        expect(openAiSource).not.toContain('forwardProxy');
+    });
+
+    test('a declined proxy for a side request leaves the main connection status alone', async () => {
+        const { context } = createHarness();
+        context.online_status = 'Valid';
+        context.accountStorage.getItem = () => 'false';
+        context.Popup.show.confirm.mockResolvedValueOnce(false);
+        await expect(context.validateReverseProxy(undefined, 'https://profile.invalid', { markConnection: false })).rejects.toThrow('Proxy connection denied.');
+        expect(context.toastr.error).toHaveBeenCalledTimes(1);
+        expect(context.online_status).toBe('Valid');
+    });
+
+    test('an invalid proxy for a side request leaves the main connection status alone', async () => {
+        const { context } = createHarness();
+        context.online_status = 'Valid';
+        await expect(context.validateReverseProxy(undefined, 'not a url', { markConnection: false })).rejects.toThrow();
+        expect(context.toastr.error).toHaveBeenCalledTimes(1);
+        expect(context.online_status).toBe('Valid');
+    });
+
+    test('requests waiting on the same new address share one confirmation', async () => {
+        const { context } = createHarness();
+        const popup = deferred();
+        context.accountStorage.getItem = () => 'false';
+        context.Popup.show.confirm.mockReturnValueOnce(popup.promise);
+        const first = context.validateReverseProxy(undefined, 'https://shared.invalid');
+        const second = context.validateReverseProxy(undefined, 'https://shared.invalid');
+        await new Promise(resolve => setImmediate(resolve));
+        popup.resolve(true);
+        await Promise.all([first, second]);
+        expect(context.Popup.show.confirm).toHaveBeenCalledTimes(1);
+    });
+
+    test('a confirmed address is not asked about again', async () => {
+        const { context } = createHarness();
+        const stored = new Map();
+        context.accountStorage.getItem = key => stored.get(key) ?? null;
+        context.accountStorage.setItem.mockImplementation((key, value) => stored.set(key, value));
+        await context.validateReverseProxy(undefined, 'https://once.invalid');
+        await context.validateReverseProxy(undefined, 'https://once.invalid');
+        expect(context.Popup.show.confirm).toHaveBeenCalledTimes(1);
+        expect(stored.get('Proxy_SkipConfirm_https://once.invalid')).toBe('true');
+    });
+});
+
+describe('confirming a proxy when a profile or preset is saved', () => {
+    function savedHarness(stored = {}) {
+        const { context } = createHarness();
+        const storage = new Map(Object.entries(stored));
+        context.accountStorage.getItem = key => storage.get(key) ?? null;
+        context.accountStorage.setItem.mockImplementation((key, value) => storage.set(key, value));
+        context.toastr.warning = jest.fn();
+        return { context, storage };
+    }
+
+    test('does not ask about an address confirmed before', async () => {
+        const { context } = savedHarness({ 'Proxy_SkipConfirm_https://known.invalid': 'true' });
+        await expect(context.confirmSavedProxy('https://known.invalid', 'openai', 'declined')).resolves.toBe(true);
+        expect(context.Popup.show.confirm).not.toHaveBeenCalled();
+    });
+
+    test('asks once about a new address and remembers a yes', async () => {
+        const { context, storage } = savedHarness();
+        await expect(context.confirmSavedProxy('https://new.invalid', 'claude', 'declined')).resolves.toBe(true);
+        expect(context.renderTemplateAsync).toHaveBeenCalledWith('proxyConnectionWarning', { proxyURL: 'https://new.invalid' });
+        expect(storage.get('Proxy_SkipConfirm_https://new.invalid')).toBe('true');
+    });
+
+    test('a no shows the caller message and remembers nothing', async () => {
+        const { context, storage } = savedHarness();
+        context.Popup.show.confirm.mockResolvedValueOnce(false);
+        await expect(context.confirmSavedProxy('https://new.invalid', 'openai', 'Not saved fixture')).resolves.toBe(false);
+        expect(context.toastr.warning).toHaveBeenCalledWith('Not saved fixture');
+        expect(storage.size).toBe(0);
+    });
+
+    test.each([
+        ['no proxy', '', 'openai'],
+        ['a source that sends no proxy', 'https://new.invalid', 'openrouter'],
+        ['an address that is not a web address', 'not a url', 'openai'],
+    ])('does not ask for %s', async (_label, proxy, source) => {
+        const { context } = savedHarness();
+        await expect(context.confirmSavedProxy(proxy, source, 'declined')).resolves.toBe(true);
+        expect(context.Popup.show.confirm).not.toHaveBeenCalled();
     });
 });

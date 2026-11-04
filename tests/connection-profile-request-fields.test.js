@@ -27,6 +27,7 @@ await jest.unstable_mockModule('../public/scripts/i18n.js', () => ({
 }));
 
 await jest.unstable_mockModule('../public/scripts/openai.js', () => ({
+    confirmSavedProxy: jest.fn(async () => true),
     oai_settings: mockOpenAiSettings,
     proxies: mockProxies,
     ZAI_ENDPOINT: {
