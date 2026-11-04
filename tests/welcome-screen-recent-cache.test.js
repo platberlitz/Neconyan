@@ -364,3 +364,71 @@ describe('welcome startup listener order', () => {
         expect(calls).toEqual(['open', 'rail']);
     });
 });
+
+describe('recent chat rename failures', () => {
+    const renameFunctions = [
+        { name: 'renameRecentCharacterChat', call: (context) => context.renameRecentCharacterChat('Nova.png', 'Old'), message: 'Could not rename that recent chat. Try again.' },
+        { name: 'renameRecentGroupChat', call: (context) => context.renameRecentGroupChat('group-1', 'Old'), message: 'Could not rename that recent group chat. Try again.' },
+    ];
+
+    function createRenameContext({ rename, refresh = async () => undefined, renderTemplate = async () => '<div></div>' } = {}) {
+        const toasts = [];
+        const context = vm.createContext({
+            console: { ...console, error: () => undefined, log: () => undefined },
+            t: (strings, ...values) => String.raw({ raw: strings }, ...values),
+            characters: [{ avatar: 'Nova.png' }],
+            groups: [{ id: 'group-1' }],
+            POPUP_TYPE: { INPUT: 'input' },
+            renderTemplateAsync: renderTemplate,
+            callGenericPopup: async () => 'New',
+            renameGroupOrCharacterChat: rename,
+            refreshWelcomeScreen: refresh,
+            toastr: {
+                success: message => toasts.push(['success', message]),
+                error: message => toasts.push(['error', message]),
+            },
+        });
+        context.globalThis = context;
+        vm.runInContext(renameFunctions.map(({ name }) => functionSource(name)).join('\n'), context);
+        return { context, toasts };
+    }
+
+    describe.each(renameFunctions)('$name', ({ call, message }) => {
+        test('adds no toast when the rename failed, because the rename already showed its popup', async () => {
+            const { context, toasts } = createRenameContext({ rename: async () => { throw new Error('Unsuccessful chat rename request.'); } });
+
+            await call(context);
+
+            expect(toasts).toEqual([]);
+        });
+
+        test('toasts when the failure happened outside the rename call', async () => {
+            const { context, toasts } = createRenameContext({
+                rename: async () => ({ oldFileName: 'Old', newFileName: 'New' }),
+                refresh: async () => { throw new Error('refresh failed'); },
+            });
+
+            await call(context);
+
+            expect(toasts).toEqual([['error', message]]);
+        });
+
+        test('toasts when the rename was cancelled before any popup', async () => {
+            const { context, toasts } = createRenameContext({
+                rename: async () => { throw new DOMException('The chat rename was cancelled.', 'AbortError'); },
+            });
+
+            await call(context);
+
+            expect(toasts).toEqual([['error', message]]);
+        });
+
+        test('shows the success toast and no error toast when the rename works', async () => {
+            const { context, toasts } = createRenameContext({ rename: async () => ({ oldFileName: 'Old', newFileName: 'New' }) });
+
+            await call(context);
+
+            expect(toasts.map(([kind]) => kind)).toEqual(['success']);
+        });
+    });
+});

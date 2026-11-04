@@ -2601,6 +2601,8 @@ async function renameRecentCharacterChat(avatarId, fileName) {
         console.error(`Character not found for avatar ID: ${avatarId}`);
         return;
     }
+    // renameGroupOrCharacterChat shows its own popup for every failure except an AbortError.
+    let popupShown = false;
     try {
         const popupText = await renderTemplateAsync('chatRename');
         const newName = await callGenericPopup(popupText, POPUP_TYPE.INPUT, fileName);
@@ -2613,12 +2615,17 @@ async function renameRecentCharacterChat(avatarId, fileName) {
             oldFileName: fileName,
             newFileName: newName,
             loader: false,
+        }).catch((error) => {
+            popupShown = error?.name !== 'AbortError';
+            throw error;
         });
         await refreshWelcomeScreen();
         toastr.success(t`Chat renamed.`);
     } catch (error) {
         console.error('Error renaming recent character chat:', error);
-        toastr.error(t`Could not rename that recent chat. Try again.`);
+        if (!popupShown) {
+            toastr.error(t`Could not rename that recent chat. Try again.`);
+        }
     }
 }
 
@@ -2633,6 +2640,7 @@ async function renameRecentGroupChat(groupId, fileName) {
         console.error(`Group not found for ID: ${groupId}`);
         return;
     }
+    let popupShown = false;
     try {
         const popupText = await renderTemplateAsync('chatRename');
         const newName = await callGenericPopup(popupText, POPUP_TYPE.INPUT, fileName);
@@ -2645,12 +2653,17 @@ async function renameRecentGroupChat(groupId, fileName) {
             oldFileName: fileName,
             newFileName: String(newName),
             loader: false,
+        }).catch((error) => {
+            popupShown = error?.name !== 'AbortError';
+            throw error;
         });
         await refreshWelcomeScreen();
         toastr.success(t`Group chat renamed.`);
     } catch (error) {
         console.error('Error renaming recent group chat:', error);
-        toastr.error(t`Could not rename that recent group chat. Try again.`);
+        if (!popupShown) {
+            toastr.error(t`Could not rename that recent group chat. Try again.`);
+        }
     }
 }
 
