@@ -109,6 +109,19 @@ return getMessageIconLabel;`)(settings);
         expect(scriptJs).toContain('insertAfter(icon.length ? icon : mes.find(\'.timestamp\').first())');
     });
 
+    test('model icons are inserted next to the first timestamp only', () => {
+        // Live replies also have a status timestamp; the icon belongs next to the real one only.
+        expect(scriptJs).toContain('const target = mes.find(targetSelector).first();');
+        expect(scriptJs).toContain('insertBefore ? target.prevAll(`.${className}`).first() : target.nextAll(`.${className}`).first()');
+        expect(scriptJs).toContain('if (insertBefore) target.before(image);');
+        expect(scriptJs).toContain('else target.after(image);');
+        // No unscoped target lookups left behind.
+        expect(scriptJs).not.toContain('mes.find(targetSelector).prevAll');
+        expect(scriptJs).not.toContain('mes.find(targetSelector).nextAll');
+        expect(scriptJs).not.toContain('mes.find(targetSelector).before(image)');
+        expect(scriptJs).not.toContain('mes.find(targetSelector).after(image)');
+    });
+
     test('the label is cleared before messages are repainted', () => {
         expect(scriptJs).toContain('.timestamp-icon, .thinking-icon, .timestamp-model\').remove()');
     });

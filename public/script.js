@@ -5456,14 +5456,16 @@ function insertSVGIcon(mes, extra) {
     }
 
     const insertOrReplaceSVG = (image, className, targetSelector, insertBefore) => {
+        // Live replies also have a status timestamp; the icon belongs next to the real one only.
+        const target = mes.find(targetSelector).first();
         image.onload = async function () {
             // The model name label can sit between the timestamp and its icon, so match past it.
-            let existingSVG = insertBefore ? mes.find(targetSelector).prevAll(`.${className}`).first() : mes.find(targetSelector).nextAll(`.${className}`).first();
+            let existingSVG = insertBefore ? target.prevAll(`.${className}`).first() : target.nextAll(`.${className}`).first();
             if (existingSVG.length) {
                 existingSVG.replaceWith(image);
             } else {
-                if (insertBefore) mes.find(targetSelector).before(image);
-                else mes.find(targetSelector).after(image);
+                if (insertBefore) target.before(image);
+                else target.after(image);
             }
             await SVGInject(image);
         };
