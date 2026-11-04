@@ -31,7 +31,7 @@ Si quieres SillyTavern con todo funcionando exactamente igual que en el proyecto
 - **Memoria de la historia.** [Mewmory](../docs/mewmory.md) lleva la cuenta de tu historia, de los PNJ que has conocido y de lo que dijeron, para que no tengas que volver a explicarlo todo 200 mensajes después.
 - **Lo bueno viene de serie.** Agentes, Archivo de chat, Quick Image Gen, Guided Generations, BotSearcher y algunos más, cada uno con sus propios ajustes. [Aquí tienes los que empezaron como proyectos independientes y quién los hizo.](../docs/neconyan-native-tools.md)
 - **Un sitio para tus notas.** [Cuadernos](../docs/notebooks.md) te da espacio para borradores de personajes, lugares, planes de escenas y diarios de sesión, justo al lado de tus chats. Las notas se enlazan entre sí y con tus lorebooks, y los asistentes pueden editarlas si les dejas.
-- **Pequeños ayudantes.** Miso, Taro y Nori pueden usar llamadas a herramientas para crear personajes con retrato, editar lorebooks y retocar preajustes o agentes. El breve «Paseo de primeras patitas» te enseña lo básico, y [Simple Mode](#simple-mode) deja lo avanzado a un lado hasta que lo quieras.
+- **Pequeños ayudantes.** Miso, Taro y Nori pueden usar llamadas a herramientas para crear personajes con retrato, editar lorebooks y retocar preajustes o agentes. El breve recorrido de Primeros pasos te enseña lo básico, y [Simple Mode](#simple-mode) deja lo avanzado a un lado hasta que lo quieras.
 - **Alguien con quien comentar la historia.** [Scratchpad](../docs/scratchpad.md) es un chat lateral junto a tu historia donde los asistentes, tus propios personajes o toda una mesa redonda de ellos pueden leer la escena y darte ideas, sin que nada de eso acabe en el chat.
 - **Es mono.** Temas Calico, gatos echándose la siesta sobre tus mensajes y un gato pixelado en Inicio. De eso se trataba, la verdad.
 - **Tus archivos siguen siendo tuyos.** Lee las mismas fichas de personaje, chats, lorebooks y preajustes que SillyTavern, y no hay telemetría.
@@ -57,7 +57,7 @@ Lo primero que ves al entrar. Elige un personaje, empieza un chat temporal, cone
 
 ### Simple Mode
 
-Aquí dentro hay un montón de botones, y el primer día no necesitas la mayoría. Simple Mode esconde Mewmory, Archivo de chat, Extensiones, el selector de modos, casi todo lo de Ajuste fino y los botones extra que rodean el cuadro de mensaje, y te deja con los personajes, las conexiones, los preajustes, los lorebooks, Agentes, Cuadernos y Scratchpad. Nori te pregunta si lo quieres antes de que empiece el «Paseo de primeras patitas». No se desactiva nada, solo se oculta, así que pulsa **Show all features** en la barra lateral o desactívalo en Ajustes > Apariencia cuando quieras recuperarlo todo.
+Aquí dentro hay un montón de botones, y el primer día no necesitas la mayoría. Simple Mode esconde Mewmory, Archivo de chat, Extensiones, el selector de modos, casi todo lo de Ajuste fino y los botones extra que rodean el cuadro de mensaje, y te deja con los personajes, las conexiones, los preajustes, los lorebooks, Agentes, Cuadernos y Scratchpad. Nori te pregunta si lo quieres antes de que empiece el recorrido de Primeros pasos. No se desactiva nada, solo se oculta, así que pulsa **Show all features** en la barra lateral o desactívalo en Ajustes > Apariencia cuando quieras recuperarlo todo.
 
 <table>
   <tr>
@@ -270,7 +270,7 @@ Los dos navegadores usan los mismos datos. Si lo que necesitas es mover una inst
    - **Linux:** ejecuta `hostname -I`.
 4. En el navegador del móvil, escribe esa dirección con `http://` delante y `:4433` detrás, por ejemplo `http://192.168.1.20:4433`.
 
-Si Windows te pregunta si quieres dejar pasar a Bun o Node.js por el cortafuegos, permítelo en las redes privadas. Si el móvil muestra una página que solo dice **Forbidden**, tu red reparte direcciones que empiezan por `10.`, y Neconyan las bloquea por defecto. Añade esta línea debajo de `whitelist:` en `config.yaml` y reinicia Neconyan:
+Si Windows te pregunta si quieres dejar pasar a Bun o Node.js por el cortafuegos, permítelo en las redes privadas. Si el móvil muestra una página que solo dice **Prohibido**, tu red reparte direcciones que empiezan por `10.`, y Neconyan las bloquea por defecto. Añade esta línea debajo de `whitelist:` en `config.yaml` y reinicia Neconyan:
 
 ```yaml
   - 10.0.0.0/8

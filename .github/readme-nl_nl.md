@@ -270,7 +270,7 @@ Beide browsers gebruiken dezelfde gegevens. Wil je in plaats daarvan een offline
    - **Linux:** voer `hostname -I` uit.
 4. Typ in de browser op je telefoon dat adres met `http://` ervoor en `:4433` erachter, bijvoorbeeld `http://192.168.1.20:4433`.
 
-Vraagt Windows om Bun of Node.js door de firewall te laten, sta dat dan toe op privénetwerken. Toont je telefoon een pagina waarop alleen **Forbidden** staat, dan deelt je netwerk adressen uit die beginnen met `10.`, en die blokkeert Neconyan standaard. Zet deze regel onder `whitelist:` in `config.yaml` en start Neconyan daarna opnieuw:
+Vraagt Windows om Bun of Node.js door de firewall te laten, sta dat dan toe op privénetwerken. Toont je telefoon een pagina waarop alleen **Verboden** staat, dan deelt je netwerk adressen uit die beginnen met `10.`, en die blokkeert Neconyan standaard. Zet deze regel onder `whitelist:` in `config.yaml` en start Neconyan daarna opnieuw:
 
 ```yaml
   - 10.0.0.0/8

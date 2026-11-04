@@ -31,7 +31,7 @@ Se vuoi un SillyTavern che funzioni in tutto e per tutto come l'originale, usa i
 - **Memoria della storia.** [Mewmory](../docs/mewmory.md) tiene traccia della tua storia, degli NPC che hai incontrato e di quello che hanno detto, così non devi rispiegare tutto da capo dopo 200 messaggi.
 - **Il meglio è già incluso.** Agenti, Archivio chat, Quick Image Gen, Guided Generations, BotSearcher e qualcun altro, ognuno con le sue impostazioni. [Ecco quelli nati come progetti separati, e chi li ha creati.](../docs/neconyan-native-tools.md)
 - **Un posto per gli appunti.** [Taccuini](../docs/notebooks.md) ti dà spazio per bozze di personaggi, luoghi, piani delle scene e diari delle sessioni, proprio accanto alle tue chat. Le note si collegano tra loro e ai tuoi lorebook, e gli assistenti possono modificarle se glielo permetti.
-- **Piccoli aiutanti.** Miso, Taro e Nori possono usare le chiamate agli strumenti per creare personaggi con tanto di ritratto, modificare i lorebook e regolare preset o agenti. Il breve «Tour dei primi passi felpati» ti mostra le basi, e la [Simple Mode](#simple-mode) tiene da parte le funzioni avanzate finché non ti servono.
+- **Piccoli aiutanti.** Miso, Taro e Nori possono usare le chiamate agli strumenti per creare personaggi con tanto di ritratto, modificare i lorebook e regolare preset o agenti. Il breve tour dei primi passi felpati ti mostra le basi, e la [Simple Mode](#simple-mode) tiene da parte le funzioni avanzate finché non ti servono.
 - **Qualcuno con cui parlare della storia.** [Scratchpad](../docs/scratchpad.md) è una chat laterale accanto alla tua storia, dove gli assistenti, i tuoi personaggi o un'intera tavola rotonda formata da loro possono leggere la scena e darti idee, senza che niente di tutto questo finisca nella chat.
 - **È carino.** Temi Calico, gatti che sonnecchiano sui tuoi messaggi e un gatto in pixel art nella Home. In fondo era proprio questo lo scopo.
 - **I tuoi file restano tuoi.** Legge le stesse schede personaggio, chat, lorebook e preset di SillyTavern, e non c'è telemetria.
@@ -57,7 +57,7 @@ Sono esempi messi in scena: chat, note e risposte di Scratchpad con gli assisten
 
 ### Simple Mode
 
-Qui dentro ci sono un sacco di pulsanti, e il primo giorno la maggior parte non ti serve. La Simple Mode mette da parte Mewmory, Archivio chat, Estensioni, il selettore delle modalità, quasi tutta la Regolazione fine e i pulsanti extra intorno alla casella del messaggio, e ti lascia personaggi, connessioni, preset, lorebook, Agenti, Taccuini e Scratchpad. Nori ti chiede se la vuoi prima che parta il «Tour dei primi passi felpati». Non viene disattivato niente, è solo nascosto, quindi quando vuoi riavere tutto premi **Show all features** nella barra laterale o disattivala in Impostazioni > Aspetto.
+Qui dentro ci sono un sacco di pulsanti, e il primo giorno la maggior parte non ti serve. La Simple Mode mette da parte Mewmory, Archivio chat, Estensioni, il selettore delle modalità, quasi tutta la Regolazione fine e i pulsanti extra intorno alla casella del messaggio, e ti lascia personaggi, connessioni, preset, lorebook, Agenti, Taccuini e Scratchpad. Nori ti chiede se la vuoi prima che parta il tour dei primi passi felpati. Non viene disattivato niente, è solo nascosto, quindi quando vuoi riavere tutto premi **Show all features** nella barra laterale o disattivala in Impostazioni > Aspetto.
 
 <table>
   <tr>
@@ -270,7 +270,7 @@ I due browser usano gli stessi dati. Se invece devi spostare un'installazione of
    - **Linux:** esegui `hostname -I`.
 4. Nel browser del telefono, digita quell'indirizzo con `http://` davanti e `:4433` dopo, per esempio `http://192.168.1.20:4433`.
 
-Se Windows ti chiede se lasciar passare Bun o Node.js attraverso il firewall, consentilo sulle reti private. Se il telefono mostra una pagina con scritto solo **Forbidden**, la tua rete assegna indirizzi che iniziano con `10.`, che Neconyan blocca di default. Aggiungi questa riga sotto `whitelist:` in `config.yaml`, poi riavvia Neconyan:
+Se Windows ti chiede se lasciar passare Bun o Node.js attraverso il firewall, consentilo sulle reti private. Se il telefono mostra una pagina con scritto solo **Vietato**, la tua rete assegna indirizzi che iniziano con `10.`, che Neconyan blocca di default. Aggiungi questa riga sotto `whitelist:` in `config.yaml`, poi riavvia Neconyan:
 
 ```yaml
   - 10.0.0.0/8

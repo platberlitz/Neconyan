@@ -270,7 +270,7 @@ Beide Browser nutzen dieselben Daten. Wenn du stattdessen eine Offline-Installat
    - **Linux:** Führe `hostname -I` aus.
 4. Gib im Browser deines Handys diese Adresse ein, mit `http://` davor und `:4433` dahinter, zum Beispiel `http://192.168.1.20:4433`.
 
-Wenn Windows fragt, ob Bun oder Node.js durch die Firewall dürfen, erlaube es für private Netzwerke. Wenn dein Handy eine Seite anzeigt, auf der nur **Forbidden** steht, vergibt dein Netzwerk Adressen, die mit `10.` beginnen, und die blockiert Neconyan standardmäßig. Füg diese Zeile unter `whitelist:` in `config.yaml` hinzu und starte Neconyan dann neu:
+Wenn Windows fragt, ob Bun oder Node.js durch die Firewall dürfen, erlaube es für private Netzwerke. Wenn dein Handy eine Seite anzeigt, auf der nur **Verboten** steht, vergibt dein Netzwerk Adressen, die mit `10.` beginnen, und die blockiert Neconyan standardmäßig. Füg diese Zeile unter `whitelist:` in `config.yaml` hinzu und starte Neconyan dann neu:
 
 ```yaml
   - 10.0.0.0/8
