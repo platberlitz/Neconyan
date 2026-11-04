@@ -1843,3 +1843,4 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #450 (2026-11-04) `fix(purrks): stop the phone bottom bar clipping the badge`
 - PR #452 (2026-11-04) `test(resumable): pin eviction order, 504 resume attempts and Stop while resuming`
 - PR #453 (2026-11-04) `refactor(editor): remove duplicate empty placeholder attributes`
+- PR #454 (2026-11-04) `fix(i18n): translate the chat rename failure message`
