@@ -796,9 +796,10 @@ describe('Character Tag Manager template, wiring and styling contracts', () => {
     });
 
     test('bumps every stylesheet cache version together', () => {
-        expect(cacheVersion).toBe('20261104-starlight-calm');
+        expect(cacheVersion).toBe('20261104-character-purrks');
         expect(tabsJs).toContain(`NN_SHELL_STYLE_STYLESHEET_VERSION = '${cacheVersion}'`);
         expect(indexHtml).not.toContain('20261101-faithful-trackers');
+        expect(indexHtml).not.toContain('20261104-agents-prefill');
         expect(indexHtml).toContain(`css/neconyan-character-tags.css?v=${cacheVersion}`);
     });
 });

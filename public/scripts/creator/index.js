@@ -14,6 +14,7 @@ import { renderCreatorFormat } from './format-picker.js';
 import { creatorTargetsSignature } from './formats.js';
 import { renderCreatorLiveReply } from './live-reply.js';
 import { creatorProposalDiff } from './proposal-diff.js';
+import { renderCreatorPurrks } from './purrks.js';
 
 const sections = [['dossier', 'Dossier'], ['notebooks', 'Notebook sources'], ['identity', 'Identity'], ['facts', 'Guided facts'], ['greetings', 'Greetings & examples'], ['interview', 'Interview'], ['prompts', 'Prompts'], ['lore', 'Lorebooks'], ['macros', 'Macros & pronouns'], ['regex', 'Pretty HTML'], ['game', 'Gamify'], ['portrait', 'Portrait'], ['helper', 'Writing partner'], ['agents', 'Post-process with agents'], ['instructions', 'Writing instructions'], ['metadata', 'Details'], ['preview', 'Preview & export']];
 const labels = { name: 'Display name', description: 'Description', personality: 'Personality', scenario: 'Scenario', first_mes: 'First greeting', mes_example: 'Interviewer examples', creator_notes: 'Public creator notes', system_prompt: 'Main prompt', post_history_instructions: 'Post-history instructions', creator: 'Creator', character_version: 'Card version' };
@@ -354,6 +355,7 @@ class CreatorWorkspace {
                 if (!Number.isInteger(value.depth) || value.depth < 0 || !['system', 'user', 'assistant'].includes(value.role)) throw new Error('Use a non-negative depth and system, user or assistant role.');
                 this.edit(next => { next.card.data.extensions ??= {}; next.card.data.extensions.depth_prompt = { ...depth, ...next.card.data.extensions.depth_prompt, ...value }; });
             });
+            renderCreatorPurrks(this, main);
         } else if (section === 'metadata') {
             const metaRow = element('div', 'creator-form-grid');
             metaRow.append(this.field('creator'), this.field('character_version'));

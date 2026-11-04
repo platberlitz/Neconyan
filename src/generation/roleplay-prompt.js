@@ -73,6 +73,12 @@ export function prepareRoleplayHistoryContent(records, snapshot, environment, ag
             prompt: memberSubstitute(String(member.depth.prompt ?? '').trim(), member),
             depth: member.depth.depth ?? 4, role: member.depth.role ?? 'system',
         })).filter(prompt => prompt.prompt);
+    } else if (Array.isArray(snapshot.depthPrompts) && snapshot.depthPrompts.length > 0) {
+        depthPrompts = snapshot.depthPrompts.map(item => ({
+            prompt: substitute(String(item.prompt ?? '').trim()).replace(/\r/g, ''),
+            depth: item.depth ?? 4,
+            role: item.role ?? 'system',
+        })).filter(prompt => prompt.prompt);
     }
     environment.character = { ...environment.character };
     for (const [field, macro] of Object.entries({ characterDescription: 'description', characterPersonality: 'personality',

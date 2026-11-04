@@ -39,6 +39,10 @@ const stylesheets = [
         url: new URL('../public/css/neconyan-authors-note.css', import.meta.url),
     },
     {
+        name: 'character purrks',
+        url: new URL('../public/css/neconyan-purrks.css', import.meta.url),
+    },
+    {
         name: 'input history',
         url: new URL('../public/scripts/extensions/input-history/style.css', import.meta.url),
     },
