@@ -5,27 +5,27 @@
 @keyframes starlight-conservatory-fireflies {
     0% {
         background-position: 0% 0%, 100% 0%, 0% 100%, 50% 50%;
-        opacity: 0.78;
+        opacity: 0.62;
     }
     50% {
         background-position: 18% -14%, 82% -10%, 12% 88%, 50% 50%;
-        opacity: 0.96;
+        opacity: 0.8;
     }
     100% {
         background-position: -12% -24%, 92% -20%, 24% 78%, 50% 50%;
-        opacity: 0.84;
+        opacity: 0.68;
     }
 }
 
 @keyframes starlight-conservatory-lantern-pulse {
     0% {
-        box-shadow: 0 4px 20px var(--starlight-lantern), inset 0 1px 0 rgb(255 244 214 / 0.22);
+        box-shadow: 0 4px 18px var(--starlight-lantern), inset 0 1px 0 rgb(255 244 214 / 0.18);
     }
     50% {
-        box-shadow: 0 6px 28px color-mix(in srgb, var(--starlight-brass) 34%, transparent), 0 0 18px var(--starlight-celeste-glow), inset 0 1px 0 rgb(255 244 214 / 0.34);
+        box-shadow: 0 5px 22px color-mix(in srgb, var(--starlight-brass) 26%, transparent), inset 0 1px 0 rgb(255 244 214 / 0.24);
     }
     100% {
-        box-shadow: 0 4px 22px var(--starlight-lantern), inset 0 1px 0 rgb(255 244 214 / 0.24);
+        box-shadow: 0 4px 18px var(--starlight-lantern), inset 0 1px 0 rgb(255 244 214 / 0.2);
     }
 }
 
@@ -34,7 +34,7 @@
         filter: drop-shadow(0 4px 10px var(--starlight-lantern));
     }
     50% {
-        filter: drop-shadow(0 6px 16px color-mix(in srgb, var(--starlight-brass) 42%, transparent)) drop-shadow(0 0 10px var(--starlight-celeste-glow));
+        filter: drop-shadow(0 5px 14px color-mix(in srgb, var(--starlight-brass) 34%, transparent));
     }
     100% {
         filter: drop-shadow(0 4px 10px var(--starlight-lantern));
@@ -43,13 +43,13 @@
 
 @keyframes starlight-conservatory-composer-glow {
     0% {
-        box-shadow: var(--starlight-shadow), inset 0 0 0 3px var(--starlight-surface), 0 0 14px var(--starlight-lantern);
+        box-shadow: var(--starlight-shadow), inset 0 0 0 3px var(--starlight-surface), 0 0 12px var(--starlight-lantern);
     }
     50% {
-        box-shadow: var(--starlight-shadow), inset 0 0 0 3px var(--starlight-surface), 0 0 24px color-mix(in srgb, var(--starlight-brass) 32%, transparent), 0 0 16px var(--starlight-celeste-glow);
+        box-shadow: var(--starlight-shadow), inset 0 0 0 3px var(--starlight-surface), 0 0 18px color-mix(in srgb, var(--starlight-brass) 24%, transparent);
     }
     100% {
-        box-shadow: var(--starlight-shadow), inset 0 0 0 3px var(--starlight-surface), 0 0 16px var(--starlight-lantern);
+        box-shadow: var(--starlight-shadow), inset 0 0 0 3px var(--starlight-surface), 0 0 12px var(--starlight-lantern);
     }
 }
 
@@ -118,8 +118,9 @@
 }
 
 /* Interactive night sky. The stage itself generates no box (display: contents), so each
-   canvas joins the body stacking context directly: the sky sits behind the glass panels,
-   while the constellations and the pointer wake sit above them. */
+   canvas joins the body stacking context directly: the sky and its constellations sit
+   behind the glass panels, a faint glass dust layer sits on them, and the pointer wake
+   floats above everything. */
 :root[data-sb-theme='starlight-conservatory'] #sb-starlight-conservatory-stage {
     display: contents;
     pointer-events: none;
@@ -195,7 +196,7 @@
 }
 
 /* Conservatory glass: the Home cards turn into real panes, so the night sky drifting behind
-   them stays visible as soft bokeh while the constellations drawn on top stay crisp. */
+   them, constellations included, stays visible as soft bokeh behind the words. */
 :root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(.neconyan-home-intro, .neconyan-assistant-picker) {
     background:
         linear-gradient(180deg, var(--starlight-glass-top), var(--starlight-glass-bottom));
@@ -209,7 +210,7 @@
 }
 
 :root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(.neconyan-home-intro, .neconyan-assistant-picker) :is(h1, h2) {
-    text-shadow: 0 0 22px color-mix(in srgb, var(--starlight-celeste) 42%, transparent);
+    text-shadow: 0 1px 0 rgb(2 6 16 / 0.35), 0 0 14px color-mix(in srgb, var(--starlight-celeste) 18%, transparent);
 }
 
 :root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) .neconyan-home-actions > button:not(.neconyan-home-primary) {

@@ -310,14 +310,13 @@ const PHONE_LAYOUT = [
 ];
 
 const SPARKLE_GROUPS = [
-    { selector: '#top-bar', count: 7, reach: 18 },
-    { selector: '.neconyan-home-intro', count: 6, reach: 12 },
-    { selector: '.neconyan-assistant-picker', count: 5, reach: 12 },
-    { selector: '.neconyan-home-cat', count: 4, reach: 14 },
-    { selector: '.neconyan-home-actions', count: 4, reach: 10 },
-    { selector: '#send_form', count: 7, reach: 14 },
-    { selector: '#neconyan-workspace-rail', count: 5, reach: 12 },
-    { selector: '#sb-bottom-chat-bar', count: 4, reach: 12 },
+    { selector: '#top-bar', count: 3, reach: 18 },
+    { selector: '.neconyan-home-intro', count: 3, reach: 12 },
+    { selector: '.neconyan-assistant-picker', count: 2, reach: 12 },
+    { selector: '.neconyan-home-cat', count: 3, reach: 14 },
+    { selector: '.neconyan-home-actions', count: 2, reach: 10 },
+    { selector: '#send_form', count: 3, reach: 14 },
+    { selector: '#neconyan-workspace-rail', count: 2, reach: 12 },
 ];
 
 /* ---------------------------------------------------------------------------
@@ -368,15 +367,15 @@ function seedSky() {
         });
     }
     const glass = [];
-    for (let index = 0; index < 120; index += 1) {
+    for (let index = 0; index < 54; index += 1) {
         glass.push({
             x: Math.random(),
             y: Math.random(),
-            radius: randomBetween(0.6, 1.55),
-            base: randomBetween(0.32, 0.78),
+            radius: randomBetween(0.5, 1.3),
+            base: randomBetween(0.14, 0.42),
             phase: randomBetween(0, Math.PI * 2),
             speed: randomBetween(0.3, 1.2),
-            glint: Math.random() < 0.22,
+            glint: Math.random() < 0.12,
             drift: randomBetween(-0.0009, 0.0009),
         });
     }
@@ -392,16 +391,16 @@ function seedSparkles() {
                 x: 0,
                 y: 0,
                 placed: false,
-                size: randomBetween(13, 34),
+                size: randomBetween(9, 22),
                 phase: randomBetween(0, Math.PI * 2),
-                speed: randomBetween(0.5, 1.4),
+                speed: randomBetween(0.4, 1.1),
                 spin: randomBetween(-0.35, 0.35),
                 rotation: randomBetween(0, Math.PI * 2),
                 tone: Math.random() < 0.55 ? 'brass' : (Math.random() < 0.6 ? 'celeste' : 'accent'),
                 points: Math.random() < 0.4 ? 8 : 4,
                 life: randomBetween(1.4, 5.2),
                 lifeMax: 0,
-                power: randomBetween(0.65, 1),
+                power: randomBetween(0.45, 0.8),
             });
             const sparkle = state.sparkles[state.sparkles.length - 1];
             sparkle.lifeMax = sparkle.life;
@@ -414,7 +413,7 @@ function seedSparkles() {
             y: Math.random() * 0.85,
             normalized: true,
             placed: true,
-            size: randomBetween(10, 22),
+            size: randomBetween(8, 18),
             phase: randomBetween(0, Math.PI * 2),
             speed: randomBetween(0.4, 1.1),
             spin: randomBetween(-0.25, 0.25),
@@ -467,10 +466,10 @@ function placeSparkles(force) {
         sparkle.x = clamp(sparkle.x, 4, width - 4);
         sparkle.y = clamp(sparkle.y, 4, height - 4);
         sparkle.placed = true;
-        sparkle.life = randomBetween(1.6, 5.4);
+        sparkle.life = randomBetween(2.2, 6);
         sparkle.lifeMax = sparkle.life;
         sparkle.phase = randomBetween(0, Math.PI * 2);
-        sparkle.size = randomBetween(13, 35);
+        sparkle.size = randomBetween(9, 22);
         sparkle.tone = Math.random() < 0.52 ? 'brass' : (Math.random() < 0.6 ? 'celeste' : 'accent');
         sparkle.points = Math.random() < 0.42 ? 8 : 4;
     }
@@ -486,9 +485,9 @@ function seedConstellations() {
             x: slot.x * state.width,
             y: slot.y * state.height,
             size: slot.size * scale,
-            offset: index * 2.7,
-            cycle: 16,
-            window: 0.72,
+            offset: index * 7,
+            cycle: 42,
+            window: 0.32,
         };
     });
 }
@@ -514,9 +513,9 @@ function drawSky(delta) {
 
     // Nebulae sit in three corners so the middle of the workspace stays calm behind chat text.
     const nebulae = [
-        { sprite: sprites.nebulae[0], x: 0.14, y: 0.2, scale: 0.75, alpha: 0.5, phase: 0 },
-        { sprite: sprites.nebulae[1], x: 0.86, y: 0.28, scale: 0.68, alpha: 0.42, phase: 1.7 },
-        { sprite: sprites.nebulae[2], x: 0.76, y: 0.9, scale: 0.72, alpha: 0.4, phase: 3.1 },
+        { sprite: sprites.nebulae[0], x: 0.14, y: 0.2, scale: 0.75, alpha: 0.38, phase: 0 },
+        { sprite: sprites.nebulae[1], x: 0.86, y: 0.28, scale: 0.68, alpha: 0.32, phase: 1.7 },
+        { sprite: sprites.nebulae[2], x: 0.76, y: 0.9, scale: 0.72, alpha: 0.3, phase: 3.1 },
     ];
     for (const nebula of nebulae) {
         const size = Math.max(width, height) * nebula.scale;
@@ -550,6 +549,8 @@ function drawSky(delta) {
     }
     context.globalAlpha = 1;
 
+    for (const entry of state.constellations) drawConstellation(entry);
+    drawSparkles(delta, context, true);
     drawShootingStar(delta);
 }
 
@@ -570,7 +571,7 @@ function drawShootingStar(delta) {
             life: 1,
             length: randomBetween(0.09, 0.16),
         };
-        sky.nextShooting = randomBetween(6, 13);
+        sky.nextShooting = randomBetween(9, 18);
         return;
     }
 
@@ -626,7 +627,7 @@ function constellationAlpha(progress) {
 }
 
 function drawConstellation(entry) {
-    const { context } = state.layers.overlay;
+    const { context } = state.layers.sky;
     const phase = constellationPhase(entry);
     if (!phase.visible) return 0;
     const alpha = constellationAlpha(phase.progress);
@@ -650,11 +651,11 @@ function drawConstellation(entry) {
         y: entry.y + (star[1] - 0.5) * entry.size,
     });
 
-    // A breath of night air behind the figure lifts it off busy wallpaper and glass alike.
-    const bloomRadius = entry.size * 1.08;
+    // A faint breath of night air behind the figure lifts it off busy wallpaper.
+    const bloomRadius = entry.size * 0.9;
     const bloom = context.createRadialGradient(entry.x, entry.y, 0, entry.x, entry.y, bloomRadius);
-    bloom.addColorStop(0, rgba(colour, 0.22 * fade));
-    bloom.addColorStop(0.55, rgba(colour, 0.09 * fade));
+    bloom.addColorStop(0, rgba(colour, 0.1 * fade));
+    bloom.addColorStop(0.55, rgba(colour, 0.035 * fade));
     bloom.addColorStop(1, rgba(colour, 0));
     context.fillStyle = bloom;
     context.beginPath();
@@ -665,11 +666,11 @@ function drawConstellation(entry) {
     const total = definition.edges.length;
     context.save();
     context.globalAlpha = 1;
-    context.lineWidth = 1.35;
+    context.lineWidth = 1;
     context.lineCap = 'round';
-    context.strokeStyle = rgba(colour, 0.85 * fade);
-    context.setLineDash([3, 4]);
-    context.lineDashOffset = -state.elapsed * 5;
+    context.strokeStyle = rgba(colour, 0.5 * fade);
+    context.setLineDash([2, 5]);
+    context.lineDashOffset = -state.elapsed * 1.5;
     for (let index = 0; index < total; index += 1) {
         const progress = clamp(trace * total - index, 0, 1);
         if (progress <= 0) break;
@@ -690,9 +691,9 @@ function drawConstellation(entry) {
         const flare = clamp((phase.progress - delay) / 0.14, 0, 1);
         if (flare <= 0) continue;
         const { x, y } = point(definition.stars[index]);
-        const shimmer = 0.7 + 0.3 * Math.sin(state.elapsed * 1.6 + index * 0.9);
-        const size = entry.size * 0.15 * lerp(0.4, 1, flare) * shimmer;
-        context.globalAlpha = flare * fade;
+        const shimmer = 0.75 + 0.25 * Math.sin(state.elapsed * 1.1 + index * 0.9);
+        const size = entry.size * 0.11 * lerp(0.4, 1, flare) * shimmer;
+        context.globalAlpha = flare * fade * 0.85;
         context.drawImage(sprite, x - size / 2, y - size / 2, size, size);
     }
     context.globalAlpha = 1;
@@ -700,11 +701,11 @@ function drawConstellation(entry) {
     // The figure's name fades in under it like an engraved brass plate. Phones drop the
     // plate so the small screen keeps its text columns clear.
     if (phase.progress > 0.34 && state.width >= 760) {
-        const labelAlpha = clamp((phase.progress - 0.34) / 0.16, 0, 1) * fade * 0.82;
+        const labelAlpha = clamp((phase.progress - 0.34) / 0.16, 0, 1) * fade * 0.5;
         context.save();
         context.globalAlpha = labelAlpha;
         context.fillStyle = rgba(colour, 1);
-        context.font = `600 ${Math.max(8, entry.size * 0.052)}px 'Iowan Old Style', 'Palatino Linotype', Georgia, serif`;
+        context.font = `600 ${Math.max(8, entry.size * 0.046)}px 'Iowan Old Style', 'Palatino Linotype', Georgia, serif`;
         context.textAlign = 'center';
         context.textBaseline = 'top';
         if ('letterSpacing' in context) context.letterSpacing = `${Math.max(1, entry.size * 0.008)}px`;
@@ -715,9 +716,9 @@ function drawConstellation(entry) {
     return alpha;
 }
 
-function drawSparkles(delta) {
-    const { context } = state.layers.overlay;
+function drawSparkles(delta, context, drifting) {
     for (const sparkle of state.sparkles) {
+        if (Boolean(sparkle.normalized) !== drifting) continue;
         if (sparkle.normalized) {
             sparkle.y -= delta * 0.004;
             if (sparkle.y < -0.05) sparkle.y = 1.02;
@@ -750,7 +751,7 @@ function drawSparkles(delta) {
         const y = sparkle.normalized ? sparkle.y * state.height : sparkle.y;
 
         context.save();
-        context.globalAlpha = clamp(flare * 0.95, 0, 1);
+        context.globalAlpha = clamp(flare * 0.8, 0, 1);
         context.translate(x, y);
         context.rotate(sparkle.rotation);
         context.drawImage(sprite, -size / 2, -size / 2, size, size);
@@ -768,8 +769,8 @@ function drawGlassStars() {
         const x = star.x * state.width;
         const y = star.y * state.height;
         if (star.glint) {
-            const size = star.radius * 17;
-            context.globalAlpha = alpha * 0.95;
+            const size = star.radius * 12;
+            context.globalAlpha = alpha * 0.8;
             context.drawImage(state.sprites.tiny, x - size / 2, y - size / 2, size, size);
             continue;
         }
@@ -786,8 +787,7 @@ function drawOverlay(delta) {
     const { context } = state.layers.overlay;
     context.clearRect(0, 0, state.width, state.height);
     drawGlassStars();
-    for (const entry of state.constellations) drawConstellation(entry);
-    drawSparkles(delta);
+    drawSparkles(delta, context, false);
 }
 
 /* ---------------------------------------------------------------------------
@@ -805,7 +805,7 @@ function spawnTrailStar(x, y, options = {}) {
         vy: options.vy ?? randomBetween(-30, 6),
         life: options.life ?? randomBetween(0.9, 1.7),
         lifeMax: 0,
-        size: options.size ?? randomBetween(20, 46),
+        size: options.size ?? randomBetween(12, 28),
         rotation: randomBetween(0, Math.PI * 2),
         spin: randomBetween(-2.4, 2.4),
         tone,
@@ -819,15 +819,15 @@ function spawnTrailStar(x, y, options = {}) {
 }
 
 function spawnNova(x, y) {
-    state.novae.push({ x, y, life: 1, lifeMax: 1, rays: 12, rotation: randomBetween(0, Math.PI) });
-    for (let index = 0; index < 14; index += 1) {
-        const angle = (Math.PI * 2 * index) / 14 + randomBetween(-0.16, 0.16);
-        const speed = randomBetween(80, 260);
+    state.novae.push({ x, y, life: 1, lifeMax: 1, rays: 8, rotation: randomBetween(0, Math.PI) });
+    for (let index = 0; index < 8; index += 1) {
+        const angle = (Math.PI * 2 * index) / 8 + randomBetween(-0.16, 0.16);
+        const speed = randomBetween(60, 180);
         spawnTrailStar(x, y, {
             vx: Math.cos(angle) * speed,
             vy: Math.sin(angle) * speed,
             life: randomBetween(0.6, 1.3),
-            size: randomBetween(16, 34),
+            size: randomBetween(10, 22),
             kind: index % 4 === 0 ? 'eight' : 'four',
             anchor: true,
         });
@@ -871,20 +871,20 @@ function drawTrail(delta) {
         companion.x = lerp(companion.x, companion.targetX, ease);
         companion.y = lerp(companion.y, companion.targetY, ease);
         const bob = Math.sin(state.elapsed * 1.8) * 3;
-        const size = 48;
+        const size = 32;
         context.save();
-        context.globalAlpha = 0.95;
+        context.globalAlpha = 0.8;
         context.translate(companion.x, companion.y + bob);
         context.rotate(state.elapsed * 0.35);
         context.drawImage(state.sprites.accent8, -size / 2, -size / 2, size, size);
         context.restore();
         const orbit = state.elapsed * 1.5;
-        const moteSize = 16;
-        context.globalAlpha = 0.8;
+        const moteSize = 11;
+        context.globalAlpha = 0.65;
         context.drawImage(
             state.sprites.brass4,
-            companion.x + Math.cos(orbit) * 24 - moteSize / 2,
-            companion.y + bob + Math.sin(orbit) * 16 - moteSize / 2,
+            companion.x + Math.cos(orbit) * 18 - moteSize / 2,
+            companion.y + bob + Math.sin(orbit) * 12 - moteSize / 2,
             moteSize,
             moteSize,
         );
@@ -927,7 +927,7 @@ function drawTrail(delta) {
         star.rotation += star.spin * delta;
 
         const age = 1 - star.life / star.lifeMax;
-        const alpha = Math.sin(Math.PI * clamp(age, 0, 1)) ** 0.8;
+        const alpha = (Math.sin(Math.PI * clamp(age, 0, 1)) ** 0.8) * 0.75;
         if (star.kind === 'paw') {
             drawPaw(context, star, alpha);
             continue;
@@ -952,8 +952,8 @@ function drawTrail(delta) {
             continue;
         }
         const progress = 1 - nova.life / nova.lifeMax;
-        const alpha = Math.sin(Math.PI * progress) * 0.85;
-        const radius = 14 + progress * 130;
+        const alpha = Math.sin(Math.PI * progress) * 0.6;
+        const radius = 10 + progress * 80;
         context.save();
         context.strokeStyle = rgba(state.palette.secondary, alpha * 0.7);
         context.lineWidth = 1.4;
@@ -1008,27 +1008,27 @@ function drawStill() {
         const definition = entry.definition;
         const sprite = state.sprites.brass4;
         const colour = definition.tone === 'celeste' ? state.palette.celeste : state.palette.brass;
-        overlay.save();
-        overlay.strokeStyle = rgba(colour, 0.24);
-        overlay.lineWidth = 0.9;
-        overlay.setLineDash([2, 5]);
+        sky.save();
+        sky.strokeStyle = rgba(colour, 0.2);
+        sky.lineWidth = 0.9;
+        sky.setLineDash([2, 5]);
         for (const [from, to] of definition.edges) {
             const start = definition.stars[from];
             const end = definition.stars[to];
-            overlay.beginPath();
-            overlay.moveTo(entry.x + (start[0] - 0.5) * entry.size, entry.y + (start[1] - 0.5) * entry.size);
-            overlay.lineTo(entry.x + (end[0] - 0.5) * entry.size, entry.y + (end[1] - 0.5) * entry.size);
-            overlay.stroke();
+            sky.beginPath();
+            sky.moveTo(entry.x + (start[0] - 0.5) * entry.size, entry.y + (start[1] - 0.5) * entry.size);
+            sky.lineTo(entry.x + (end[0] - 0.5) * entry.size, entry.y + (end[1] - 0.5) * entry.size);
+            sky.stroke();
         }
-        overlay.setLineDash([]);
+        sky.setLineDash([]);
         for (const star of definition.stars) {
             const x = entry.x + (star[0] - 0.5) * entry.size;
             const y = entry.y + (star[1] - 0.5) * entry.size;
             const size = entry.size * 0.065;
-            overlay.globalAlpha = 0.6;
-            overlay.drawImage(sprite, x - size / 2, y - size / 2, size, size);
+            sky.globalAlpha = 0.5;
+            sky.drawImage(sprite, x - size / 2, y - size / 2, size, size);
         }
-        overlay.restore();
+        sky.restore();
     }
 }
 
@@ -1099,7 +1099,7 @@ function onPointerMove(event) {
     const distance = state.lastSpawn
         ? Math.hypot(x - state.lastSpawn.x, y - state.lastSpawn.y)
         : Infinity;
-    if (distance < 9) return;
+    if (distance < 14) return;
     state.lastSpawn = { x, y };
     spawnTrailStar(x, y, { anchor: true, vx: randomBetween(-12, 12), vy: randomBetween(-8, 8) });
     if (Math.random() < 0.35) {
