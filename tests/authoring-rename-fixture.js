@@ -19,7 +19,7 @@ export function assertSavedAuthoring(root, effects) {
 }
 
 /** Model only the observed exFAT inode transition; bytes and descriptor I/O remain real. */
-export function simulateAuthoringRename(t, { field = 'ino', afterRename } = {}) {
+export function simulateAuthoringRename(t, { field = 'ino', afterRename, matches = from => /^\.author-[a-f0-9-]+\.tmp$/.test(path.basename(String(from))) } = {}) {
     const native = { lstatSync: fs.lstatSync, fstatSync: fs.fstatSync, renameSync: fs.renameSync };
     const changed = new Map();
     const key = stat => `${stat.dev}:${stat.ino}:${stat.birthtimeNs ?? BigInt(Math.round(stat.birthtimeMs * 1e6))}`;
@@ -33,7 +33,7 @@ export function simulateAuthoringRename(t, { field = 'ino', afterRename } = {}) 
     t.mock.method(fs, 'lstatSync', (...args) => adjust(native.lstatSync(...args)));
     t.mock.method(fs, 'fstatSync', (...args) => adjust(native.fstatSync(...args)));
     t.mock.method(fs, 'renameSync', (from, to) => {
-        const authoring = /^\.author-[a-f0-9-]+\.tmp$/.test(path.basename(String(from)));
+        const authoring = matches(from);
         const before = authoring ? native.lstatSync(from, { bigint: true }) : null;
         const result = native.renameSync(from, to);
         if (authoring) {

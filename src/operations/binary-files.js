@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { createRoleplayDirectory, inspectRoleplayFile, readRoleplayFile, roleplayHash, roleplayStoreDirectory, withRoleplayAccount } from '../roleplay-store.js';
 import { fsyncDirectorySync, tryWriteFileSync } from '../util.js';
 import { operationError, readOperation, withOperation } from './store.js';
+import { publishRetainedFile } from './retained-file-publication.js';
 
 // Streamed files are bounded by their captured size, not a fixed storage quota.
 // Keep byte counts exactly representable in saved JSON records and filesystem calls.
@@ -82,7 +83,10 @@ export function publishBinaryOutput(context, prepared, result, { afterBinaryPubl
             if (current) throw operationError('Another file occupies this saved binary. It was kept.');
             const temporary = inspectRoleplayFile(prepared.filename, effect.limit);
             if (!temporary || roleplayHash(evidence(temporary)) !== roleplayHash(evidence(effect.publication))) throw operationError('The prepared binary needs recovery.');
-            fs.renameSync(prepared.filename, destination); fsyncDirectorySync(prepared.root);
+            publishRetainedFile(prepared.filename, destination, evidence(effect.publication), effect.publication.size, finalEvidence => {
+                effect.publication = { ...finalEvidence, size: effect.publication.size };
+                save();
+            });
         }
         const written = inspectRoleplayFile(destination, effect.limit, { flush: true });
         if (!written || roleplayHash(evidence(written)) !== roleplayHash(evidence(effect.publication))) throw operationError('The binary publication needs recovery.');

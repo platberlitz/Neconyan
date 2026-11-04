@@ -1,6 +1,7 @@
 import { assertMutableImagePath } from '../managed-image-files.js';
 import { assertOrdinaryImportPath, publishManagedImportLocked } from './import-managed-images.js';
 import fs from 'node:fs';
+import { publishRetainedFile } from './retained-file-publication.js';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
@@ -262,7 +263,10 @@ export async function publishImportBatches(context, plan, { archive, managed = n
                         const retained = inspectRoleplayFile(temporary, BINARY_FILE_LIMIT);
                         if (!retained || !same(evidence(retained), staged.after) || retained.size !== staged.size) throw operationError('The prepared import publication is missing.');
                         assertMutableImagePath(scope.directories, filename);
-                        fs.renameSync(temporary, filename);
+                        publishRetainedFile(temporary, filename, staged.after, staged.size, finalEvidence => {
+                            staged.after = finalEvidence;
+                            save();
+                        }, { flushDirectory: false });
                         if (!same(physical(fs.lstatSync(filename, { bigint: true })), staged.after.physical)) throw operationError('The imported file publication needs recovery.');
                     }
                     // Also flush a replayed rename which may have stopped before the earlier directory flush.

@@ -7,6 +7,7 @@ import { createRoleplayDirectory, inspectRoleplayFile, readRoleplayFile, rolepla
 import { fsyncDirectorySync, tryWriteFileSync } from '../util.js';
 import { BINARY_FILE_LIMIT } from './binary-files.js';
 import { operationError } from './store.js';
+import { publishRetainedFile } from './retained-file-publication.js';
 
 const directory = base => path.join(roleplayStoreDirectory(base), 'application-inputs');
 const physical = stat => ({ dev: String(stat.dev), ino: String(stat.ino), birthtimeNs: String(stat.birthtimeNs) });
@@ -115,11 +116,14 @@ async function copyUploadedArchive(base, account, key, filename) {
             fs.createWriteStream(prepared.temporary, { fd: prepared.output, autoClose: true }));
         if (size !== source.size || hash.digest('hex') !== source.rawHash) throw operationError('The uploaded ZIP changed while being retained.');
         withRoleplayAccount(base, account, () => {
-            const saved = readAllocation(prepared.recordPath);
+            let saved = readAllocation(prepared.recordPath);
             if (!saved || roleplayHash(saved.value) !== roleplayHash(prepared.value)) throw operationError('The retained upload record changed during copying.');
             assertBytes(prepared.temporary, saved.value);
             if (inspectRoleplayFile(prepared.destination, source.size)) throw operationError('Another file occupies this retained upload. It was kept.');
-            fs.renameSync(prepared.temporary, prepared.destination); fsyncDirectorySync(path.dirname(prepared.destination));
+            publishRetainedFile(prepared.temporary, prepared.destination, { rawHash: saved.value.rawHash, physical: saved.value.physical }, saved.value.size, finalEvidence => {
+                saveAllocation(prepared.recordPath, { ...saved.value, physical: finalEvidence.physical }, saved);
+                saved = readAllocation(prepared.recordPath);
+            });
             assertBytes(prepared.destination, saved.value);
             saved.value.state = 'complete'; saveAllocation(prepared.recordPath, saved.value, saved);
         });
