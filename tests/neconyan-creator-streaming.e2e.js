@@ -38,6 +38,8 @@ for (const phone of [false, true]) {
         await creator.getByRole('button', { name: 'Ask for a proposal', exact: true }).click();
         const live = creator.getByLabel('Model reply', { exact: true });
         await expect(live).toHaveValue('{"fields":{"description":"A patient', { timeout: 30000 });
+        // Streaming output leads the section so it stays visible while the model writes.
+        expect(await creator.locator('[data-creator-live-reply]').evaluate(node => node === node.parentElement.firstElementChild)).toBe(true);
         expect(app.provider.calls.at(-1).completedAt).toBeNull();
         const lastMessage = app.provider.calls.at(-1).messages.at(-1);
         expect(lastMessage.role).toBe('assistant');
