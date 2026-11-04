@@ -9,6 +9,10 @@ import { uuidv4 } from '../utils.js';
 import { dismissJob, retryJob } from '../jobs.js';
 import { mewmoryConfigAutosave } from './config-autosave.js';
 import { PREFIX_PRESETS, RAG_DEFAULTS } from './rag-settings.js';
+import {
+    DECISION_ROLES, EXTRACTION_FOCUS_OPTIONS, JEV_DECISION_PRESETS, MESSAGE_WINDOW_PRESETS,
+    defaultDecisionThreshold, detectMessageWindowPreset, effectiveDecisionMode, findDecisionPreset, isDecisionModel,
+} from './jev-presets.js';
 
 function displayedSkipReason(reason) {
     if (reason === 'Entity ID is empty or too long.') return 'A character or object reference is missing or invalid.';
@@ -302,18 +306,231 @@ function renderRecord(record, root, { editable = true } = {}) {
     root.append(article);
 }
 
+function resolvedDraftRoleModel(draft, roleName) {
+    const role = draft?.roles?.[roleName];
+    if (!role) return { model: '', endpoint: '' };
+    const allProfiles = mewmory.config?.profiles || [];
+    const usesShared = roleName !== 'embedding' && role.useShared === true;
+    const profileId = usesShared ? draft.sharedProfileId : role.profileId;
+    const profile = allProfiles.find(item => item.id === profileId);
+    const override = usesShared ? draft.sharedModelOverride : role.modelOverride;
+    const model = profileId ? (override || profile?.model || '') : (role.model || '');
+    const endpoint = profileId ? '' : (role.endpoint || '');
+    return { model, endpoint };
+}
+
+function applyDecisionPresetToRole(draft, roleName, presetId) {
+    const role = draft?.roles?.[roleName];
+    if (!role) return;
+    if (presetId === 'custom') {
+        if (role.useShared) {
+            role.useShared = false;
+            role.profileId = draft.sharedProfileId || '';
+        }
+        if (!role.profileId && !role.endpoint) {
+            role.endpoint = 'http://127.0.0.1:8000/v1/systemone';
+            role.apiKey = '';
+            role.hasKey = false;
+        }
+        role.decisionMode = 'decision';
+        if (role.profileId || String(role.model || '').trim()) {
+            role.enabled = true;
+        }
+        return;
+    }
+    const preset = findDecisionPreset(presetId);
+    if (!preset) return;
+    role.enabled = true;
+    if (role.useShared) {
+        role.useShared = false;
+        role.profileId = draft.sharedProfileId || '';
+    }
+    if (role.profileId) {
+        role.modelOverride = preset.model;
+    } else {
+        const previousDefaultEndpoint = JEV_DECISION_PRESETS.some(item => item.endpoint === role.endpoint);
+        role.model = preset.model;
+        if ((!role.endpoint || previousDefaultEndpoint) && preset.endpoint && preset.endpoint !== role.endpoint) {
+            role.endpoint = preset.endpoint;
+            role.apiKey = '';
+            role.hasKey = false;
+        }
+    }
+    role.decisionMode = 'decision';
+    role.decisionThreshold = preset.threshold;
+}
+
+function applyWindowPresetToDraft(draft, presetId) {
+    const preset = MESSAGE_WINDOW_PRESETS.find(item => item.id === presetId);
+    if (!draft || !preset) return;
+    draft.historyMode = preset.historyMode;
+    if (preset.historyMode === 'messages') {
+        draft.recentMessages = preset.recentMessages;
+        draft.historyBatchMessages = preset.historyBatchMessages;
+        draft.batchMessages = preset.batchMessages;
+    } else if (typeof preset.historyWindow === 'number') {
+        draft.historyWindow = preset.historyWindow;
+        if (typeof preset.batchMessages === 'number') draft.batchMessages = preset.batchMessages;
+    }
+    if (preset.extractionFocus) draft.extractionFocus = preset.extractionFocus;
+}
+
+function renderQuickSetup(root) {
+    syncSettingsDraft();
+    const draft = ui.draft;
+    if (!draft || !mewmory.config) return;
+    const selectorRole = draft.roles?.selector;
+    const allProfiles = mewmory.config.profiles || [];
+    const sharedProfile = allProfiles.find(profile => profile.id === draft.sharedProfileId);
+    const { model: selectorModel, endpoint: selectorEndpoint } = resolvedDraftRoleModel(draft, 'selector');
+    const selectorDecision = Boolean(effectiveDecisionMode({
+        ...selectorRole,
+        model: selectorModel,
+        endpoint: selectorEndpoint,
+    }) === 'decision');
+    const quick = section('Memory focus and window',
+        ...(selectorRole?.enabled && selectorDecision ? [badge('Jev / System One', 'accent')] : []),
+        button('All model settings', () => switchTab('settings')));
+    quick.id = 'mewmory-now-quick-controls';
+    quick.classList.add('mewmory-quick-controls');
+    const matchedDecision = findDecisionPreset(selectorModel);
+    const presetSelectValue = matchedDecision?.id || (selectorDecision ? 'custom' : '');
+    const windowPresetId = detectMessageWindowPreset(draft);
+    const focusOption = EXTRACTION_FOCUS_OPTIONS.find(item => item.value === (draft.extractionFocus || 'balanced')) || EXTRACTION_FOCUS_OPTIONS[1];
+    const fields = node('div', 'mewmory-fields');
+    fields.append(
+        field('Recall decision model', presetSelectValue, value => {
+            if (!value) return;
+            applyDecisionPresetToRole(draft, 'selector', value);
+            render();
+        }, {
+            key: 'now-jev-preset',
+            autosave: true,
+            options: [
+                ['', selectorModel ? 'Current selector: ' + selectorModel : 'Choose a Jev or decision model…'],
+                ...JEV_DECISION_PRESETS.map(item => [item.id, item.label]),
+                ['custom', 'Custom Jev / System One model…'],
+            ],
+            hint: matchedDecision
+                ? matchedDecision.family + ' · ' + matchedDecision.model + ' (threshold ' + (selectorRole?.decisionThreshold ?? matchedDecision.threshold) + ').'
+                : 'Pick Jev, another System One model, or a custom decision endpoint to score recalled memories in one pass.',
+        }),
+    );
+    if (selectorRole && (selectorRole.enabled || selectorDecision)) {
+        const usesShared = selectorRole.useShared === true;
+        const ownProfile = allProfiles.find(profile => profile.id === selectorRole.profileId);
+        const selectedProfile = usesShared ? sharedProfile : ownProfile;
+        fields.append(
+            field('Selector connection', usesShared ? SHARED_PROFILE : selectorRole.profileId || '', value => {
+                selectorRole.useShared = value === SHARED_PROFILE;
+                if (!selectorRole.useShared) {
+                    selectorRole.profileId = value;
+                    if (value && selectorModel && !selectorRole.modelOverride) {
+                        selectorRole.modelOverride = selectorModel;
+                    }
+                }
+                render();
+            }, {
+                key: 'now-selector-profile',
+                autosave: true,
+                options: [
+                    ...(draft.sharedProfileId ? [[SHARED_PROFILE, 'Use the profile for all roles (' + (sharedProfile?.name || 'Saved profile') + ')']] : []),
+                    ['', 'Manual endpoint & API key'],
+                    ...allProfiles.map(profile => [profile.id, profile.name]),
+                ],
+                hint: usesShared || selectorRole.profileId
+                    ? 'Uses the saved Connection Manager profile’s server-side API key and endpoint.'
+                    : 'Enter a decision or OpenAI-compatible endpoint URL, model ID and API key below.',
+            }),
+        );
+        if (!usesShared && selectorRole.profileId) {
+            fields.append(
+                field(selectedProfile?.model ? 'Selector model override' : 'Selector model', selectorRole.modelOverride || '', value => {
+                    selectorRole.modelOverride = value;
+                    if (String(value || '').trim()) selectorRole.enabled = true;
+                }, {
+                    key: 'now-selector-model-override',
+                    autosave: true,
+                    hint: selectedProfile?.model
+                        ? 'Overrides the profile’s model (' + selectedProfile.model + ') for Recall selector.'
+                        : 'Enter the Jev or decision model ID supported by this connection profile.',
+                }),
+            );
+        } else if (!usesShared && !selectorRole.profileId) {
+            fields.append(
+                field('Selector endpoint', selectorRole.endpoint || '', value => {
+                    selectorRole.endpoint = value;
+                    if (String(value || '').trim() && String(selectorRole.model || '').trim()) selectorRole.enabled = true;
+                }, {
+                    key: 'now-selector-endpoint',
+                    autosave: true,
+                    hint: 'For example: https://openrouter.ai/api/alpha/decisions, https://api.typesafe.ai/v1/systemone, or http://127.0.0.1:8000/v1/systemone',
+                }),
+                field('Selector model', selectorRole.model || '', value => {
+                    selectorRole.model = value;
+                    if (String(value || '').trim() && String(selectorRole.endpoint || '').trim()) selectorRole.enabled = true;
+                }, {
+                    key: 'now-selector-model',
+                    autosave: true,
+                    hint: 'Model ID sent to the endpoint (for example typesafe/jev-1.14, ZefanCai/Open-Jev-9B, or your custom Jev-like model).',
+                }),
+                field('Selector API key', selectorRole.apiKey || '', value => {
+                    selectorRole.apiKey = value;
+                }, {
+                    type: 'password',
+                    key: 'now-selector-api-key',
+                    autosave: true,
+                    hint: selectorRole.hasKey ? 'A key is saved. Leave blank to keep it.' : 'Stored in the server’s protected credentials (leave blank for local endpoints that need no key).',
+                }),
+            );
+        }
+    }
+    fields.append(
+        field('Memory window preset', windowPresetId, value => {
+            if (value === 'custom') return;
+            applyWindowPresetToDraft(draft, value);
+            render();
+        }, {
+            key: 'now-window-preset',
+            autosave: true,
+            options: [
+                ...MESSAGE_WINDOW_PRESETS.map(item => [item.id, item.label]),
+                ...(windowPresetId === 'custom' ? [['custom', 'Custom window (' + (draft.historyMode === 'messages'
+                    ? 'keep ' + draft.recentMessages + ', group by ' + draft.historyBatchMessages
+                    : draft.historyWindow + ' tokens') + ')']] : []),
+            ],
+            hint: draft.historyMode === 'messages'
+                ? 'Keep ' + draft.recentMessages + ' recent messages in full and leave out older chat in groups of ' + draft.historyBatchMessages + ' once remembered.'
+                : 'Keep roughly ' + draft.historyWindow + ' tokens of recent chat in replies.',
+        }),
+        field('Memory detail focus', draft.extractionFocus || 'balanced', value => {
+            draft.extractionFocus = value;
+            render();
+        }, {
+            key: 'now-extraction-focus',
+            autosave: true,
+            options: EXTRACTION_FOCUS_OPTIONS.map(item => [item.value, item.label]),
+            hint: focusOption.description,
+        }),
+    );
+    quick.append(fields);
+    root.append(quick);
+}
+
 function renderNow(root) {
     const view = mewmory.view;
     if (!view?.enabled) {
         empty(root, 'Keep the story, and how it felt.',
             'Mewmory remembers events and NPC details. Pawspective tracks how each character’s view changes, linked back to the messages behind it. Switch on Use Mewmory in this chat above, then pick the models it uses.',
             'Set up model roles', () => switchTab('settings'));
+        renderQuickSetup(root);
         return;
     }
     const actions = node('div', 'mewmory-actions');
     actions.append(button('Preview next memory', () => act(() => requestMewmory('recall', { tokenizer: getFriendlyTokenizerName() })), { primary: true }),
         button(mewmory.busy ? 'Updating…' : 'Update now', () => processMewmory({ all: true }), { disabled: mewmory.busy }));
     renderPreview(root, { actions });
+    renderQuickSetup(root);
     const cast = section('Active NPCs', button('Add NPC reference', () => openEditor(null, 'entity')));
     cast.append(node('p', 'mewmory-caption', 'Character references and current states sent with replies.'));
     cast.append(check('Choose active characters automatically', view.activeNpcIds === null,
@@ -713,10 +930,19 @@ function incompleteConfigDraft(draft) {
         add(label + ': Model context size, tokens', role.contextTokens);
         add(label + ': Maximum response length, tokens', role.maxOutputTokens);
         add(label + ': Request timeout, seconds', role.timeoutMs);
+        if (DECISION_ROLES.includes(name) && role.decisionThreshold !== undefined) {
+            add(label + ': Minimum decision score', role.decisionThreshold);
+        }
     }
     if (!missing.length) {
         if (!Number.isSafeInteger(draft.recentMessages) || draft.recentMessages < 1 || draft.recentMessages > 100000) return 'Keep at least this many recent messages must be between 1 and 100000.';
         if (!Number.isSafeInteger(draft.historyBatchMessages) || draft.historyBatchMessages < 1 || draft.historyBatchMessages > 10000) return 'Remove older chat in groups of must be between 1 and 10000.';
+        for (const name of DECISION_ROLES) {
+            const role = draft.roles?.[name];
+            if (role && typeof role.decisionThreshold === 'number' && (role.decisionThreshold < 0 || role.decisionThreshold > 1)) {
+                return (roles[name] || name) + ': Minimum decision score must be between 0 and 1.';
+            }
+        }
         return '';
     }
     const shown = missing.slice(0, 3).join('; ');
@@ -744,6 +970,15 @@ function syncSettingsDraft() {
         ui.draft.historyCatchUp ??= 'reply';
         ui.draft.recentMessages ??= 10;
         ui.draft.historyBatchMessages ??= 5;
+        ui.draft.extractionFocus ??= 'balanced';
+        ui.draft.extractionInstructions ??= '';
+        for (const roleName of DECISION_ROLES) {
+            const role = ui.draft.roles?.[roleName];
+            if (role) {
+                role.decisionMode ??= 'auto';
+                role.decisionThreshold ??= defaultDecisionThreshold(role.modelOverride || role.model);
+            }
+        }
         ui.draft.retrieval = { ...RAG_DEFAULTS, ...ui.draft.retrieval };
     }
     mewmoryConfigAutosave.sync(mewmory.config, mewmory.config.account || currentUser?.handle || null);
@@ -838,7 +1073,7 @@ window.addEventListener('neconyan:account-changing', () => {
 // A server still running older code drops switches it does not know and saves the rest.
 function confirmSavedSwitches(saved, expected) {
     if (SWITCHES.some(key => typeof expected[key] === 'boolean' && saved?.[key] !== expected[key])
-        || ['historyMode', 'recentMessages', 'historyBatchMessages', 'historyCatchUp'].some(key => expected[key] !== undefined && saved?.[key] !== expected[key])
+        || ['historyMode', 'recentMessages', 'historyBatchMessages', 'historyCatchUp', 'extractionFocus', 'extractionInstructions'].some(key => expected[key] !== undefined && saved?.[key] !== expected[key])
         || (Array.isArray(expected.fallbackProfileIds) && !Array.isArray(saved?.fallbackProfileIds))
         || (expected.sharedProfileId && saved?.sharedProfileId !== expected.sharedProfileId)) {
         throw new Error('Neconyan was updated but is still running the old version. Restart Neconyan, then try again.');
@@ -958,7 +1193,23 @@ function renderSettings(root) {
         configCheck('Replace older chat with Mewmory context', draft.excludeHistory, value => { draft.excludeHistory = value; render(); }),
         node('p', 'mewmory-caption', 'Leave older messages out of replies only after Mewmory has recorded them. The original messages stay saved.'));
     const budgets = node('div', 'mewmory-fields');
-    budgets.append(configField('Choose recent chat by', draft.historyMode, value => { draft.historyMode = value; render(); }, {
+    const windowPresetId = detectMessageWindowPreset(draft);
+    const updateWindowPresetSelect = () => {
+        const select = document.getElementById('mewmory-field-window-preset');
+        if (select) select.value = detectMessageWindowPreset(draft);
+    };
+    budgets.append(configField('Memory window preset', windowPresetId, value => {
+        if (value === 'custom') return;
+        applyWindowPresetToDraft(draft, value);
+        render();
+    }, {
+        key: 'window-preset',
+        options: [
+            ...MESSAGE_WINDOW_PRESETS.map(item => [item.id, item.label]),
+            ['custom', 'Custom window'],
+        ],
+        hint: 'Recommended window keeps 10 recent messages in full and removes older chat in groups of 5 once remembered.',
+    }), configField('Choose recent chat by', draft.historyMode, value => { draft.historyMode = value; render(); }, {
         key: 'history-mode', options: [['tokens', 'Token allowance'], ['messages', 'Number of messages']],
         hint: 'Tokens measure text length. Message counts are easier to predict, but long messages still need enough model context.',
     }), configField('When memory is behind', draft.historyCatchUp, value => { draft.historyCatchUp = value; render(); }, {
@@ -975,6 +1226,7 @@ function renderSettings(root) {
             const y = draft.historyBatchMessages;
             example.textContent = Number.isSafeInteger(x) && x > 0 && Number.isSafeInteger(y) && y > 0
                 ? 'Keep ' + x + '–' + (x + y - 1) + ' messages. At ' + (x + y) + ', leave out the oldest ' + y + ' once remembered, leaving ' + x + '. More may remain while memory updates catch up.' : '';
+            updateWindowPresetSelect();
         };
         budgets.append(configField('Keep at least this many recent messages', draft.recentMessages, value => { draft.recentMessages = value; updateExample(); }, {
             type: 'number', key: 'recent-messages', hint: 'Include these messages in full with each reply. User messages and character replies count separately.',
@@ -984,13 +1236,23 @@ function renderSettings(root) {
         updateExample();
         budgets.append(example);
     } else {
-        budgets.append(configField('Recent chat allowance, tokens', draft.historyWindow, value => { draft.historyWindow = value; }, {
+        budgets.append(configField('Recent chat allowance, tokens', draft.historyWindow, value => { draft.historyWindow = value; updateWindowPresetSelect(); }, {
             type: 'number', key: 'history-window', hint: 'Keep roughly this much original chat text. Character references, recalled memories and the rest of your prompt need additional room. Older chat stays until remembered.',
         }));
     }
-    budgets.append(configField('Space for recalled memories, tokens', draft.memoryTokens, value => { draft.memoryTokens = value; }, {
+    const focusOption = EXTRACTION_FOCUS_OPTIONS.find(item => item.value === (draft.extractionFocus || 'balanced')) || EXTRACTION_FOCUS_OPTIONS[1];
+    budgets.append(configField('Memory detail focus', draft.extractionFocus || 'balanced', value => { draft.extractionFocus = value; render(); }, {
+        key: 'extraction-focus',
+        options: EXTRACTION_FOCUS_OPTIONS.map(item => [item.value, item.label]),
+        hint: focusOption.description,
+    }), configField('Extra memory instructions (optional)', draft.extractionInstructions || '', value => { draft.extractionInstructions = value; }, {
+        key: 'extraction-instructions',
+        multiline: true,
+        placeholder: 'For example: Record every promised favour, inventory item, exact time reference and small emotional shift.',
+        hint: 'Extra instructions for Facts and events when deciding what to record from each batch of messages.',
+    }), configField('Space for recalled memories, tokens', draft.memoryTokens, value => { draft.memoryTokens = value; }, {
         type: 'number', key: 'memory-tokens', hint: 'Maximum space for selected memories and original passages. Active character references need additional room.',
-    }), configField('Maximum messages per memory request', draft.batchMessages, value => { draft.batchMessages = value; }, {
+    }), configField('Maximum messages per memory request', draft.batchMessages, value => { draft.batchMessages = value; updateWindowPresetSelect(); }, {
         type: 'number', key: 'batch-messages', hint: 'Read up to this many messages together when updating facts and character perspectives. A request can contain fewer. This does not set the recent-message window.',
     }), configField('Search matches considered for recall', draft.candidateLimit, value => { draft.candidateLimit = value; }, {
         type: 'number', key: 'candidate-limit', hint: 'How many possible matches to consider before choosing what helps the next reply.',
@@ -1115,13 +1377,68 @@ function renderSettings(root) {
         ? 'Leave blank to use the profile’s model: ' + selectedProfile.model
         : 'This profile has no saved model. Enter the model name provided by your service.' }));
     if (!native && !usesShared && !role.profileId) fields.append(
-        configField('OpenAI-compatible endpoint', role.endpoint, value => { role.endpoint = value; }, { hint: 'For example: http://127.0.0.1:8000/v1', key: 'endpoint-' + ui.role }),
-        configField('Model', role.model, value => { role.model = value; render(); }, { key: 'model-' + ui.role }),
+        configField('OpenAI-compatible endpoint', role.endpoint, value => {
+            role.endpoint = value;
+            if (role.decisionMode === 'decision' && String(value || '').trim() && String(role.model || '').trim()) role.enabled = true;
+        }, {
+            hint: DECISION_ROLES.includes(ui.role)
+                ? 'For example: https://openrouter.ai/api/alpha/decisions, https://api.typesafe.ai/v1/systemone, or http://127.0.0.1:8000/v1/systemone'
+                : 'For example: http://127.0.0.1:8000/v1',
+            key: 'endpoint-' + ui.role,
+        }),
+        configField('Model', role.model, value => {
+            role.model = value;
+            if (role.decisionMode === 'decision' && String(value || '').trim() && String(role.endpoint || '').trim()) role.enabled = true;
+            render();
+        }, { key: 'model-' + ui.role }),
         configField('API key', role.apiKey || '', value => { role.apiKey = value; }, { type: 'password', hint: role.hasKey ? 'A key is saved. Leave blank to keep it.' : 'Stored in the server’s protected credentials.', key: 'api-key-' + ui.role }),
     );
     const usedProfileId = usesShared ? draft.sharedProfileId : role.profileId;
     const usedOverride = usesShared ? draft.sharedModelOverride : role.modelOverride;
     const modelName = usedProfileId ? usedOverride || selectedProfile?.model : role.model;
+    if (DECISION_ROLES.includes(ui.role) && !native) {
+        const matchedPreset = findDecisionPreset(modelName);
+        const autoDecision = isDecisionModel(modelName, role.endpoint);
+        const activeProtocol = effectiveDecisionMode({ ...role, model: modelName });
+        const presetValue = matchedPreset?.id || (role.decisionMode === 'decision' ? 'custom' : '');
+        fields.append(
+            configField('Jev / decision model preset', presetValue, value => {
+                if (!value) return;
+                applyDecisionPresetToRole(draft, ui.role, value);
+                render();
+            }, {
+                key: 'jev-preset-' + ui.role,
+                options: [
+                    ['', 'Choose a Jev or decision model…'],
+                    ...JEV_DECISION_PRESETS.map(preset => [preset.id, preset.label]),
+                    ['custom', 'Custom Jev / System One model…'],
+                ],
+                hint: matchedPreset
+                    ? matchedPreset.family + ' · ' + matchedPreset.model + ' (threshold ' + matchedPreset.threshold + ').'
+                    : 'Quick-fill Jev, another System One model, or a custom decision endpoint for fast memory selection.',
+            }),
+            configField('Decision protocol', role.decisionMode || 'auto', value => {
+                role.decisionMode = value;
+                render();
+            }, {
+                key: 'decision-mode-' + ui.role,
+                options: [
+                    ['auto', 'Auto (' + (autoDecision ? 'Jev / System One detected' : 'Standard JSON chat') + ')'],
+                    ['decision', 'Jev / System One decision API'],
+                    ['chat', 'Standard JSON chat completion'],
+                ],
+                hint: 'Jev and System One decision models score candidate memories in one pass (/systemone or /api/alpha/decisions) instead of writing JSON prose.',
+            }),
+            configField('Decision score threshold', role.decisionThreshold ?? defaultDecisionThreshold(modelName), value => {
+                role.decisionThreshold = value;
+            }, {
+                type: 'number',
+                key: 'decision-threshold-' + ui.role,
+                disabled: activeProtocol !== 'decision',
+                hint: 'Include candidate memories scored at or above this probability (0–1). Calibrated Jev and System One models use 0.5; Open-Jev uses 0.1.',
+            }),
+        );
+    }
     const savedRole = mewmory.config.roles[ui.role];
     const savedShared = savedRole.useShared === true;
     if (savedRole.error && savedShared === usesShared && (usesShared ? draft.sharedProfileId === mewmory.config.sharedProfileId : role.profileId === savedRole.profileId)
@@ -1445,6 +1762,7 @@ function render() {
                 empty(page, 'Open a saved Roleplay chat', 'Choose a character or group chat to inspect its memory. Model roles can be configured in Settings.');
                 page.dataset.mewmoryNoChat = 'true';
             }
+            if (id === 'now') renderQuickSetup(page);
             if (locator && mewmory.error && !mewmory.loading) renderTransfers(page, true);
         } else {
             ({ now: renderNow, pawspective: renderPawspective, archive: renderArchive, recall: renderRecall, settings: renderSettings })[id](page);

@@ -1,3 +1,23 @@
+export const EXTRACTION_FOCUS_MODES = ['every', 'balanced', 'compact'];
+
+const EXTRACTION_FOCUS_INSTRUCTIONS = {
+    every: 'Extraction focus: EVERY MEMORY. Record every distinct fact, event, state change, relationship shift, promise, item, preference, and detail mentioned in these messages, even minor or everyday details, so nothing from the scene is lost before older messages leave context.',
+    balanced: '',
+    compact: 'Extraction focus: KEY MILESTONES ONLY. Record only high-significance plot turns, enduring character facts, major relationship changes, and explicit commitments. Skip minor banter or transient scene details.',
+};
+
+export function extractionContract(config = {}) {
+    const focus = EXTRACTION_FOCUS_MODES.includes(config?.extractionFocus) ? config.extractionFocus : 'balanced';
+    const focusLine = EXTRACTION_FOCUS_INSTRUCTIONS[focus] || '';
+    const custom = typeof config?.extractionInstructions === 'string' ? config.extractionInstructions.trim() : '';
+    if (!focusLine && !custom) return EXTRACTION_CONTRACT;
+    return [
+        EXTRACTION_CONTRACT,
+        focusLine,
+        custom ? `Additional memory instructions: ${custom}` : '',
+    ].filter(Boolean).join('\n\n');
+}
+
 export const EXTRACTION_CONTRACT = [
     'Mewmory objective extraction contract v7.',
     'Work decisively. Read the sources once and write the JSON straight away: no planning out loud, no listing alternatives, no second-guessing. Put all of your effort into the records themselves.',

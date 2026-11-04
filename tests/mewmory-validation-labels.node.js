@@ -46,3 +46,14 @@ test('token counter errors point at the replies setting', async () => {
         'Choose a token counter for replies from the list.');
     await assert.rejects(getCounter('auto', { tokenizerKey: 'api_current' }), /Choose a Token counter for replies/);
 });
+
+test('decision and memory focus validation names the UI labels', () => {
+    assert.equal(messageFor(config => { config.extractionFocus = 'invalid'; }),
+        'Choose a Memory detail focus from the list.');
+    assert.equal(messageFor(config => { config.extractionInstructions = 'x'.repeat(2001); }),
+        'Custom memory focus instructions, optional is empty or too long.');
+    assert.equal(messageFor(config => { config.roles.selector.decisionMode = 'invalid'; }),
+        'Recall selector: Choose a Decision protocol from the list.');
+    assert.equal(messageFor(config => { config.roles.selector.decisionThreshold = 1.5; }),
+        'Recall selector: Decision score threshold must be between 0 and 1.');
+});
