@@ -9,8 +9,17 @@ export const EXTRACTION_FOCUS_MODES = Object.freeze(['every', 'balanced', 'compa
 
 export const JEV_DECISION_PRESETS = Object.freeze([
     {
+        id: 'jev-latest',
+        label: 'TypeSafe direct: Jev Latest (jev-latest)',
+        shortLabel: 'Jev Latest',
+        model: 'jev-latest',
+        endpoint: 'https://api.typesafe.ai/v1/systemone',
+        threshold: 0.5,
+        family: 'TypeSafe direct',
+    },
+    {
         id: 'jev-1.14',
-        label: 'TypeSafe Jev 1.14 (typesafe/jev-1.14)',
+        label: 'OpenRouter: Jev 1.14 (typesafe/jev-1.14)',
         shortLabel: 'Jev 1.14',
         model: 'typesafe/jev-1.14',
         endpoint: 'https://openrouter.ai/api/alpha/decisions',
@@ -19,7 +28,7 @@ export const JEV_DECISION_PRESETS = Object.freeze([
     },
     {
         id: 'jev-1.13',
-        label: 'TypeSafe Jev 1.13 (typesafe/jev-1.13)',
+        label: 'OpenRouter: Jev 1.13 (typesafe/jev-1.13)',
         shortLabel: 'Jev 1.13',
         model: 'typesafe/jev-1.13',
         endpoint: 'https://openrouter.ai/api/alpha/decisions',
@@ -27,8 +36,8 @@ export const JEV_DECISION_PRESETS = Object.freeze([
         family: 'Hosted System One',
     },
     {
-        id: 'jev-latest',
-        label: 'TypeSafe Jev Latest (~typesafe/jev-latest)',
+        id: 'openrouter-jev-latest',
+        label: 'OpenRouter: Jev Latest (~typesafe/jev-latest)',
         shortLabel: 'Jev Latest',
         model: '~typesafe/jev-latest',
         endpoint: 'https://openrouter.ai/api/alpha/decisions',

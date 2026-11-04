@@ -51,6 +51,9 @@ function getLastPipelineRunMessage(settings) {
     }
 
     const metadata = lastRun.metadata || {};
+    if (metadata.serverJobId && !metadata.serverRetrievalCompleted) {
+        return `Enabled (${pipelineId} pipeline). Server run: ${metadata.serverState}. ${metadata.error || metadata.reason || ''}`;
+    }
     const selectedCount = Number(metadata.selectedEntryCount ?? lastRun.selectedEntries?.length ?? 0) || 0;
     const candidateCount = Number(metadata.candidateCount ?? 0) || 0;
     const stageFailure = (lastRun.stageResults || []).find(stage => stage && stage.success === false);
@@ -160,7 +163,7 @@ export async function runDiagnostics() {
             ? 'No lorebooks enabled'
             : treesBuilt === activeBooks.length
                 ? `${treesBuilt} tree(s) built with ${totalEntries} total entries`
-                : `${treesBuilt}/${activeBooks.length} trees built - some lorebooks need tree building`,
+                : `${treesBuilt}/${activeBooks.length} browser trees built. Server retrieval builds its own trees automatically.`,
     };
 
     // Check tool registration

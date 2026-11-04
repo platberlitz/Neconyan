@@ -390,6 +390,14 @@ async function jevPresetsAndQuickControlsSave({ page }) {
         await expect(quick.getByLabel('Selector model', { exact: true })).toHaveValue('typesafe/jev-1.14');
         await expect(quick.getByLabel('Selector API key', { exact: true })).toBeVisible();
 
+        await quick.getByLabel('Recall decision model', { exact: true }).selectOption('jev-latest');
+        await expect.poll(async () => {
+            const selector = (await readConfig(page)).config.roles.selector;
+            return [selector.endpoint, selector.model, selector.decisionMode];
+        }, { timeout: 15000 }).toEqual(['https://api.typesafe.ai/v1/systemone', 'jev-latest', 'decision']);
+        await expect(quick.getByLabel('Selector endpoint', { exact: true })).toHaveValue('https://api.typesafe.ai/v1/systemone');
+        await expect(quick.getByLabel('Selector model', { exact: true })).toHaveValue('jev-latest');
+
         await quick.getByLabel('Selector API key', { exact: true }).fill('test-old-endpoint-key');
         await expect.poll(async () => (await readConfig(page)).config.roles.selector.hasKey, { timeout: 15000 }).toBe(true);
         await quick.getByLabel('Recall decision model', { exact: true }).selectOption('open-jev-9b');

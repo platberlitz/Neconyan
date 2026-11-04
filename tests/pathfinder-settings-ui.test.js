@@ -123,7 +123,7 @@ await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agen
 }));
 
 const { ALL_TOOL_NAMES: toolNames, getActiveTunnelVisionBooks: activeBooks } = await import('../public/scripts/extensions/in-chat-agents/pathfinder/pathfinder-tool-bridge.js');
-await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/pathfinder/activity-feed.js', () => ({ clearFeed: jest.fn(), getFeedItems: () => [] }));
+await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/pathfinder/activity-feed.js', () => ({ clearFeed: jest.fn(), getFeedItems: () => [], setServerActivity: jest.fn() }));
 await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/pathfinder/summary-memory-store.js', () => ({
     getSummaryMemoryState: () => ({ ...summary }),
     onSummaryMemoryChanged: listener => { summaryListeners.add(listener); return () => summaryListeners.delete(listener); },

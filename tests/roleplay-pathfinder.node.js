@@ -12,6 +12,7 @@ const { admitRoleplayJob } = await import('../src/roleplay-jobs.js');
 const { readArtifact, providerStep } = await import('../src/jobs/artifacts.js');
 const { getJob, recoverJobs, releaseJob, updateJob } = await import('../src/jobs/store.js');
 const { readRoleplayChat } = await import('../src/generation/roleplay-source.js');
+const { readPathfinderActivity } = await import('../src/generation/pathfinder-activity.js');
 
 const controls = { function_calling: true, prompts: [{ identifier: 'main', role: 'system', system_prompt: true, content: '' },
     { identifier: 'chatHistory', marker: true, system_prompt: true }], prompt_order: [{ character_id: 100001,
@@ -81,6 +82,24 @@ function paidResponse(f, texts, requests) {
     };
 }
 
+test('server retrieval activity distinguishes pending, failed and empty successful runs', async t => {
+    const f = prepared(t);
+    const input = { agentId: 'pathfinder', locator: f.f.locator };
+    const pending = readPathfinderActivity(f.f.scope, input);
+    assert.equal(pending.metadata.serverRetrievalCompleted, false);
+    assert.match(pending.metadata.reason, /No completed/);
+    updateJob(f.f.scope.directories, f.jobId, { state: 'failed', error: { message: 'Unknown model' } });
+    assert.equal(readPathfinderActivity(f.f.scope, input).metadata.error, 'Unknown model');
+    updateJob(f.f.scope.directories, f.jobId, { state: 'queued', error: null });
+    await f.run(paidResponse(f, { candidate: '{"candidates":[]}', filter: '{"selected":[]}' }, []));
+    const empty = readPathfinderActivity(f.f.scope, input);
+    assert.equal(empty.metadata.serverRetrievalCompleted, true);
+    assert.deepEqual(empty.selectedEntries, []);
+    assert.equal(empty.metadata.error, undefined);
+    assert.equal(readPathfinderActivity(f.f.scope, { ...input, locator: { ...f.f.locator, avatar: 'Other.png' } }), null);
+    assert.equal(readPathfinderActivity(f.f.scope, { ...input, locator: { ...f.f.locator, group: true } }), null);
+});
+
 test('native two-stage retrieval binds manual lore, uses the explicit profile, and injects only selected text', async t => {
     const f = prepared(t, { connectionProfile: 'aux' });
     const requests = [];
@@ -88,6 +107,15 @@ test('native two-stage retrieval binds manual lore, uses the explicit profile, a
     await f.run(paidResponse(f, { candidate: JSON.stringify({ candidates: [name] }),
         filter: JSON.stringify({ selected: [name] }) }, requests));
     assert.equal(requests.length, 2);
+    const activity = readPathfinderActivity(f.f.scope, { agentId: 'pathfinder', locator: f.f.locator });
+    assert.equal(activity.metadata.serverRetrievalCompleted, true);
+    assert.equal(activity.selectedEntries[0].bookName, 'Manual');
+    assert.equal(activity.selectedEntries[0].uid, 12);
+    assert.equal(activity.stageResults[0].entriesFound, 1);
+    assert.match(activity.injectedPrompt, /telescope is broken/);
+    assert.equal(readPathfinderActivity(f.f.scope, { agentId: 'other', locator: f.f.locator }), null);
+    assert.equal(readPathfinderActivity(f.f.scope, { agentId: 'pathfinder', locator: { ...f.f.locator, chat: 'Other' } }), null);
+    assert.equal(readPathfinderActivity({ ...f.f.scope, owner: 'other' }, { agentId: 'pathfinder', locator: f.f.locator }), null);
     assert(requests.every(request => request.binding.profileId === 'aux'));
     assert.match(requests[0].messages[1].content, /\["Manual",12\] Location: Observatory/);
     assert.match(requests[1].messages[1].content, /The telescope is broken/);

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import fetch from 'node-fetch';
 import { readJsonShared } from '../mewmory/store.js';
 import { resolveModelProfile } from '../mewmory/connection-profiles.js';
-import { extractDecisionScore, resolveDecisionUrl, validateEndpoint } from '../mewmory/models.js';
+import { extractDecisionScore, resolveDecisionUrl, validateDecisionModel, validateEndpoint } from '../mewmory/models.js';
 import { readSecret, SecretManager, SECRET_KEYS } from '../endpoints/secrets.js';
 import { defaultDecisionThreshold, effectiveDecisionMode } from '../../public/scripts/mewmory/jev-presets.js';
 
@@ -104,6 +104,7 @@ export async function requestPathfinderModel(model, { messages, candidates, maxT
     const decisions = buildPathfinderDecisions(messages, candidates);
     signal?.throwIfAborted();
     if (model.protocol === 'decision' && !candidates.length) return raw ? { data: {} } : parsePathfinderDecisions({}, [], model.threshold);
+    if (model.protocol === 'decision') validateDecisionModel(model.url, model.model);
     const body = model.protocol === 'decision' ? { model: model.model, ...decisions }
         : { model: model.model, messages, max_tokens: Math.min(64000, Math.max(1, Number(maxTokens) || 2048)), stream: false,
             ...(Number.isFinite(temperature) ? { temperature } : {}) };
