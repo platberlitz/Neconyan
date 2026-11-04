@@ -250,11 +250,56 @@ function candidateText(output) {
     return text;
 }
 
+function messageContainerOf(output) {
+    return output?.message ?? output?.messages?.[0] ?? output;
+}
+
+function mergeCombinedMessageExtra(previous, current, first, second) {
+    const prevMsg = messageContainerOf(previous);
+    const currMsg = messageContainerOf(current);
+    const prevExtra = prevMsg?.extra ?? previous?.extra ?? {};
+    const currExtra = currMsg?.extra ?? current?.extra ?? {};
+    const prevPreIntercept = Array.isArray(prevExtra.inChatAgentPreGenerationInterceptHistory)
+        ? prevExtra.inChatAgentPreGenerationInterceptHistory : [];
+    const currPreIntercept = Array.isArray(currExtra.inChatAgentPreGenerationInterceptHistory)
+        ? currExtra.inChatAgentPreGenerationInterceptHistory : [];
+    if (prevPreIntercept.length || currPreIntercept.length) {
+        currExtra.inChatAgentPreGenerationInterceptHistory = [...prevPreIntercept, ...currPreIntercept].slice(-10);
+    }
+    const prevHistory = Array.isArray(prevExtra.inChatAgentTransformHistory)
+        ? prevExtra.inChatAgentTransformHistory.filter(entry => entry && typeof entry === 'object') : [];
+    const currHistory = Array.isArray(currExtra.inChatAgentTransformHistory)
+        ? currExtra.inChatAgentTransformHistory.filter(entry => entry && typeof entry === 'object') : [];
+    if (prevHistory.length || currHistory.length) {
+        const prefixedCurr = currHistory.map(entry => ({
+            ...entry,
+            beforeText: typeof entry.beforeText === 'string' && !entry.beforeText.startsWith(first) ? first + entry.beforeText : entry.beforeText,
+            afterText: typeof entry.afterText === 'string' && !entry.afterText.startsWith(first) ? first + entry.afterText : entry.afterText,
+        }));
+        const combined = [...prevHistory];
+        const nextBaseline = prefixedCurr.length ? prefixedCurr[0].beforeText : first + second;
+        if (combined.length && combined.at(-1).afterText !== nextBaseline) {
+            combined.push({
+                agentName: 'Continued',
+                mode: 'continue',
+                beforeText: combined.at(-1).afterText,
+                afterText: nextBaseline,
+                timestamp: prefixedCurr[0]?.timestamp ?? Date.now(),
+            });
+        }
+        combined.push(...prefixedCurr);
+        currExtra.inChatAgentTransformHistory = combined.slice(-10);
+        currExtra.inChatAgentTransformRedo = [];
+    }
+}
+
 function combinedCandidateOutput(previous, current, effect) {
     if (!previous) return current;
     const first = candidateText(previous), second = candidateText(current);
     if (Buffer.byteLength(first + second) > 256 * 1024) throw error('The combined reply exceeds its saved capacity.', 'ROLEPLAY_WORKFLOW_CAPACITY');
     const output = structuredClone(current);
+    const effectiveFirst = effect === 'continue' && typeof previous.continuedText === 'string' ? previous.continuedText : first;
+    if (!current.blockedProof) mergeCombinedMessageExtra(previous, output, effectiveFirst, second);
     if (effect === 'append') {
         if (previous.message?.name !== output.message?.name || previous.message?.is_user !== false
             || output.message?.is_user !== false) throw error('The saved speaker changed during a continuation.');
@@ -406,9 +451,9 @@ function finalPlan(context, job, chosen, { key = FINAL, speakerIndex = null, pri
     const source = chosen.child.intent.source;
     const before = withNativeMediaReceipt(context, ({ lease }) => {
         const effect = job.intent.request.effect;
-        // A joined non-continue chunk is verified against the child's own Agent output. A blocked-continuation proof lives on
-        // the combined output, so that output stays the verified value. Continue keeps its combined output, as before.
-        const proofOutput = effect !== 'continue' && !chosen.output?.blockedContinuationProof ? chosen.candidate.output : chosen.output;
+        // A joined chunk is verified against the child's own Agent output. A blocked-continuation proof lives on
+        // the combined output, so that output stays the verified value.
+        const proofOutput = !chosen.output?.blockedContinuationProof ? chosen.candidate.output : chosen.output;
         const selected = previewRoleplayWorkflowEffect(lease, { source, effect, output: chosen.output, proofOutput,
             request: chosen.child.intent.request, job: chosen.child });
         const currentSource = assertRoleplaySourceLocked(lease, source, { effect });

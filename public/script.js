@@ -6760,12 +6760,12 @@ function hasPromptTransformHistoryForActiveSwipe(message) {
     return Array.isArray(preGenerationHistory) && preGenerationHistory.some(entry => entry && typeof entry === 'object');
 }
 
-// Mirrors the agent runner: Dialogue Colors <font> tags, its trailing [COLORS:...] line
+// Mirrors the agent runner: Dialogue Colors <font> tags, its [COLORS:...] tag
 // and the entities its recolour escapes do not count as a text change.
 function getTransformChainText(value) {
     return normalizeContentText(value)
         .replace(/<\/?font\b[^>]*>/gi, '')
-        .replace(/\s*\[COLORS?:[^\]\n]*\]\s*$/i, '')
+        .replace(/\s*\[COLORS?:[^\]\n]*\]/gi, '')
         .replace(/&(?:quot|#34|#x22);/gi, '"')
         .replace(/&(?:apos|#39|#x27);/gi, '\'')
         .replace(/&lt;/gi, '<')
@@ -12335,6 +12335,32 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
 
     let oldMessage = '';
     const generationFinished = new Date();
+    const syncReplySwipeBeforeEvents = (item) => {
+        if (!item) return;
+        if (item.swipe_info === undefined) {
+            item.swipe_info = [];
+        }
+        if (item.swipe_id !== undefined) {
+            const swipeId = item.swipe_id;
+            item.swipes[swipeId] = item.mes;
+            item.swipe_info[swipeId] = {
+                send_date: item.send_date,
+                gen_started: item.gen_started,
+                gen_finished: item.gen_finished,
+                extra: structuredClone(item.extra),
+            };
+        } else {
+            item.swipe_id = 0;
+            item.swipes = [];
+            item.swipes[0] = item.mes;
+            item.swipe_info[0] = {
+                send_date: item.send_date,
+                gen_started: item.gen_started,
+                gen_finished: item.gen_finished,
+                extra: structuredClone(item.extra),
+            };
+        }
+    };
     if (type === 'swipe') {
         if (selected_group) rememberGroupSpeaker(lastMessage);
         oldMessage = lastMessage.mes;
@@ -12370,6 +12396,7 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
             if (!isReplyCurrent()) return { type, getMessage };
             await updateMessageTokenAccounting(lastMessage, { reasoning, reasoningTokens });
             if (!isReplyCurrent()) return { type, getMessage };
+            syncReplySwipeBeforeEvents(lastMessage);
             const chat_id = replyIndex;
             !fromStreaming && await eventSource.emit(event_types.MESSAGE_RECEIVED, chat_id, type, generationContext);
             if (!isReplyCurrent()) return { type, getMessage };
@@ -12377,6 +12404,7 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
             !fromStreaming && await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, chat_id, type, generationContext);
         } else {
             lastMessage.mes = getMessage;
+            syncReplySwipeBeforeEvents(lastMessage);
         }
     } else if (type === 'append' || type === 'continue') {
         console.debug('Trying to append.');
@@ -12403,6 +12431,7 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
         if (!isReplyCurrent()) return { type, getMessage };
         await updateMessageTokenAccounting(lastMessage, { reasoning, reasoningTokens });
         if (!isReplyCurrent()) return { type, getMessage };
+        syncReplySwipeBeforeEvents(lastMessage);
         const chat_id = replyIndex;
         !fromStreaming && await eventSource.emit(event_types.MESSAGE_RECEIVED, chat_id, type, generationContext);
         if (!isReplyCurrent()) return { type, getMessage };
@@ -12436,6 +12465,7 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
             reasoningTokens: Math.max(getPositiveTokenCount(lastMessage.extra.reasoning_tokens), getPositiveTokenCount(reasoningTokens)),
         });
         if (!isReplyCurrent()) return { type, getMessage };
+        syncReplySwipeBeforeEvents(lastMessage);
         const chat_id = replyIndex;
         !fromStreaming && await eventSource.emit(event_types.MESSAGE_RECEIVED, chat_id, type, generationContext);
         if (!isReplyCurrent()) return { type, getMessage };
@@ -12490,6 +12520,7 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
 
         await processImageAttachment(newMessage, { imageUrls });
         if (!isReplyCurrent()) return { type, getMessage };
+        syncReplySwipeBeforeEvents(newMessage);
         const chat_id = replyIndex;
 
         !fromStreaming && await eventSource.emit(event_types.MESSAGE_RECEIVED, chat_id, type, generationContext);
@@ -12500,29 +12531,7 @@ export async function saveReply({ type, getMessage, fromStreaming = false, title
 
     if (!isReplyCurrent()) return { type, getMessage };
     const item = replyMessage;
-    if (item.swipe_info === undefined) {
-        item.swipe_info = [];
-    }
-    if (item.swipe_id !== undefined) {
-        const swipeId = item.swipe_id;
-        item.swipes[swipeId] = item.mes;
-        item.swipe_info[swipeId] = {
-            send_date: item.send_date,
-            gen_started: item.gen_started,
-            gen_finished: item.gen_finished,
-            extra: structuredClone(item.extra),
-        };
-    } else {
-        item.swipe_id = 0;
-        item.swipes = [];
-        item.swipes[0] = item.mes;
-        item.swipe_info[0] = {
-            send_date: item.send_date,
-            gen_started: item.gen_started,
-            gen_finished: item.gen_finished,
-            extra: structuredClone(item.extra),
-        };
-    }
+    syncReplySwipeBeforeEvents(item);
 
     if (Array.isArray(swipes) && swipes.length > 0) {
         const swipeInfoExtra = structuredClone(item.extra ?? {});

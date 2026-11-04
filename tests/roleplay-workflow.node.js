@@ -1270,3 +1270,28 @@ for (const changesPrefix of [false, true]) test(`a filtered automatic continuati
     assert.throws(() => saveBlockedContinuationProof(f.dirs, child, combined, { ...proof.previousOutput, continuedText: 'Fabricated prefix' }),
         { code: 'ROLEPLAY_BLOCKED_RECOVERY' });
 });
+
+test('an automatic continuation preserves and aligns Agent transform history with the combined reply text', async t => {
+    const f = prepared(t, 'append', { agents: true, autoContinue: true, continueTarget: 20 });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const calls = { count: 0 };
+    let agentTurn = 0;
+    const secondRewritten = 'Polished ending that completes the reply with enough detail to reach the continuation target length easily.';
+    const generateAgent = async () => {
+        agentTurn++;
+        return { text: agentTurn === 1 ? 'Polished start.' : secondRewritten };
+    };
+    await f.candidate('Raw start.', calls, { generateAgent });
+    assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
+    await f.candidate(' Raw ending.', calls, { turn: 1, generateAgent });
+    const done = await runRoleplayWorkflowJob(f.context());
+    assert.equal(done.result.status, 'completed');
+    const saved = f.records().at(-1);
+    assert.equal(saved.mes, `Polished start. ${secondRewritten}`);
+    const history = saved.extra.inChatAgentTransformHistory;
+    assert.ok(Array.isArray(history) && history.length >= 2);
+    assert.equal(history[0].beforeText, 'Raw start.');
+    assert.equal(history[0].afterText, 'Polished start.');
+    assert.equal(history.at(-1).afterText, saved.mes);
+});

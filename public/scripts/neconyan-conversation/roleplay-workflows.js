@@ -877,6 +877,14 @@ async function keepUnsavedReply(reply, { name, messageIndex, locator, account, i
                 anchor.extra ??= {};
                 anchor.extra.inChatAgents = structuredClone(reply.extra.inChatAgents);
             }
+            if (Array.isArray(reply.extra?.inChatAgentTransformHistory)) {
+                anchor.extra ??= {};
+                anchor.extra.inChatAgentTransformHistory = structuredClone(reply.extra.inChatAgentTransformHistory);
+            }
+            if (Array.isArray(reply.extra?.inChatAgentPreGenerationInterceptHistory)) {
+                anchor.extra ??= {};
+                anchor.extra.inChatAgentPreGenerationInterceptHistory = structuredClone(reply.extra.inChatAgentPreGenerationInterceptHistory);
+            }
             if (anchor.extra) delete anchor.extra.display_text;
             syncMesToSwipe(messageIndex);
             await updateMessageBlock(messageIndex, anchor);

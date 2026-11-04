@@ -260,6 +260,47 @@ function readAgentBaseText({ directories, job }) {
     return hash === roleplayHash(data) ? saved.value : '';
 }
 
+function readPreGenerationIntercepts({ directories, job }) {
+    const runs = [];
+    for (const key of ['roleplay-agent-intercepts:pre-generation', 'roleplay-agent-intercepts:post-main-generation']) {
+        const saved = readArtifactSafe(directories, job.id, key);
+        if (!saved || typeof saved !== 'object' || Array.isArray(saved)) continue;
+        const { hash, ...data } = saved;
+        if (hash && hash !== roleplayHash(data)) continue;
+        if (Array.isArray(saved.runs)) runs.push(...saved.runs);
+        else if (Array.isArray(saved.extra?.inChatAgentPreGenerationInterceptHistory)) {
+            runs.push(...saved.extra.inChatAgentPreGenerationInterceptHistory);
+        }
+    }
+    return runs.length ? runs.slice(-10) : undefined;
+}
+
+function readAgentPostReply({ directories, job }) {
+    const saved = readArtifactSafe(directories, job.id, 'roleplay-agent-post');
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved) || !isText(saved.text)) return null;
+    const { hash, ...data } = saved;
+    if (hash && hash !== roleplayHash(data)) return null;
+    const recovered = readRecoveredThinkingReply({ directories, job });
+    const preIntercepts = readPreGenerationIntercepts({ directories, job });
+    const extra = cleanExtra({
+        ...(saved.extra ?? {}),
+        ...(recovered ? { inChatAgentThinkingRecovery: recoveryRunOf(recovered) } : {}),
+        ...(preIntercepts ? { inChatAgentPreGenerationInterceptHistory: preIntercepts } : {}),
+    });
+    return {
+        text: saved.text,
+        chunk: false,
+        reasoning: recovered?.reasoning ?? '',
+        extra,
+        timings: {},
+        model: undefined,
+        api: undefined,
+        tokenCount: undefined,
+        reasoningTokens: undefined,
+        reasoningDuration: undefined,
+    };
+}
+
 /**
  * The verified thinking-recovery phase for this job. It is used only when its
  * saved hash, job intent, continuation flag and original thinking all match, so
@@ -346,13 +387,24 @@ export function collectRoleplayKeptReply({ directories, job, rootJobId = null })
         if (captured) source = 'output';
     }
     if (!captured) {
+        const agentPost = readAgentPostReply({ directories, job });
+        if (agentPost) {
+            source = 'main';
+            captured = agentPost;
+        }
+    }
+    if (!captured) {
         const base = readAgentBaseText({ directories, job });
         if (isText(base)) {
             source = 'main';
             // A saved base that came from recovery keeps the original thinking, which the base alone does not carry.
             const recovered = readRecoveredThinkingReply({ directories, job });
+            const preIntercepts = readPreGenerationIntercepts({ directories, job });
             captured = { text: base, chunk: false, reasoning: recovered?.reasoning ?? '',
-                extra: recovered ? { inChatAgentThinkingRecovery: recoveryRunOf(recovered) } : {}, timings: {},
+                extra: cleanExtra({
+                    ...(recovered ? { inChatAgentThinkingRecovery: recoveryRunOf(recovered) } : {}),
+                    ...(preIntercepts ? { inChatAgentPreGenerationInterceptHistory: preIntercepts } : {}),
+                }), timings: {},
                 model: undefined, api: undefined, tokenCount: undefined, reasoningTokens: undefined, reasoningDuration: undefined };
         }
     }

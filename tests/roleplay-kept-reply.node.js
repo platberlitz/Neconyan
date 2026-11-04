@@ -682,3 +682,43 @@ test('a restart interruption with a saved delivery proof stays retryable and wri
     assert.equal(plainFailure, null);
     assert.equal(f.records().length, 3);
 });
+
+test('a reply stopped after Agent postprocessing keeps its rewritten text and Agent transform history', async t => {
+    const f = prepared(t);
+    const child = await f.child();
+    writeArtifact(f.dirs, child.id, 'roleplay-agent-output-base', {
+        intentHash: roleplayHash(child.intent),
+        base: 'Raw reply before Agent.',
+        reasoning: 'Saved reasoning',
+    });
+    const inChatAgentTransformHistory = [{
+        id: 'tx-1',
+        agentName: 'Polish',
+        mode: 'rewrite',
+        beforeText: 'Raw reply before Agent.',
+        afterText: 'Polished reply after Agent.',
+    }];
+    const inChatAgentPreGenerationInterceptHistory = [{
+        id: 'pre-1',
+        agentName: 'Expander',
+        changed: true,
+        beforeText: 'Original',
+        afterText: 'Expanded Original',
+    }];
+    writeArtifact(f.dirs, child.id, 'roleplay-agent-intercepts:pre-generation', {
+        extra: { inChatAgentPreGenerationInterceptHistory },
+    });
+    writeArtifact(f.dirs, child.id, 'roleplay-agent-post', {
+        text: 'Polished reply after Agent.',
+        extra: {
+            inChatAgentTransformHistory,
+            inChatAgents: { activeAgentIds: ['polish'], generationType: 'normal', edited: false },
+        },
+    });
+    const kept = keepRoleplayReply(f.context(child), { reason: 'stopped', rootJobId: f.jobId });
+    assert.equal(kept.state, 'done');
+    const saved = f.records().at(-1);
+    assert.equal(saved.mes, 'Polished reply after Agent.');
+    assert.deepEqual(saved.extra.inChatAgentTransformHistory, inChatAgentTransformHistory);
+    assert.deepEqual(saved.extra.inChatAgentPreGenerationInterceptHistory, inChatAgentPreGenerationInterceptHistory);
+});

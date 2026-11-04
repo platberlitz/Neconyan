@@ -1127,3 +1127,30 @@ test('an approved review publishes pending Companions before post-reply work on 
     assert.equal(f.saved().at(-1).mes, 'Edited answer');
     assert.equal(f.saved().at(-1).extra.inChatAgentCompanionResults.side.content, 'Side note');
 });
+
+test('stopping a sequential second Agent keeps the first Agent transform history and display snapshot', async t => {
+    const f = prepared(t, [
+        { id: 'first', name: 'First Rewrite', phase: 'post', prompt: 'FIRST_REWRITE',
+            postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMode: 'rewrite', promptTransformMaxTokens: 64 },
+            injection: { order: 0 } },
+        { id: 'second', name: 'Second Rewrite', phase: 'post', prompt: 'SECOND_REWRITE',
+            postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMode: 'rewrite', promptTransformMaxTokens: 64 },
+            injection: { order: 1 } },
+    ], { globalSettings: { appendAgentsExecutionMode: 'sequential' } });
+    await f.run({
+        generate: paid('main', () => 'Original reply'),
+        generateAgent: paid('agents', ({ stepNamespace, jobContext }) => {
+            if (stepNamespace.endsWith(':second')) {
+                assert.equal(requestRoleplayAgentStop(f.context()), true);
+                jobContext.signal.throwIfAborted();
+            }
+            return 'First Agent polished reply';
+        }),
+    });
+    const reply = f.saved().at(-1);
+    assert.equal(reply.mes, 'First Agent polished reply');
+    assert.equal(reply.extra.inChatAgentTransformHistory?.length, 1);
+    assert.equal(reply.extra.inChatAgentTransformHistory[0].beforeText, 'Original reply');
+    assert.equal(reply.extra.inChatAgentTransformHistory[0].afterText, 'First Agent polished reply');
+    assert.ok(reply.extra.inChatAgents);
+});
