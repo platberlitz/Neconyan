@@ -458,3 +458,420 @@
         grid-template-columns: minmax(0, 1fr);
     }
 }
+
+/* Shell style miniatures: one isolated sample window per Shell Style option. They share the
+   active palette tokens without loading the real shell sheets, and they carry no motion. */
+#sb-shell-style-drawer .sb-shell-style-preview {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 64px;
+    flex: none;
+    isolation: isolate;
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+    background: var(--neco-surface);
+    pointer-events: none;
+}
+
+:root[data-sb-compact-mode='true'] #sb-shell-style-drawer .sb-shell-style-preview {
+    height: 52px;
+}
+
+#sb-shell-style-drawer .sb-shell-preview-bar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 15px;
+    flex: none;
+    padding: 0 6px;
+    overflow: hidden;
+    border-bottom: 1px solid var(--neco-border);
+    border-radius: 9px 9px 0 0;
+    background: var(--neco-raised);
+}
+
+#sb-shell-style-drawer .sb-shell-preview-dots {
+    display: none;
+    align-items: center;
+    gap: 2px;
+    flex: none;
+}
+
+#sb-shell-style-drawer .sb-shell-preview-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--neco-ink) 30%, transparent);
+}
+
+#sb-shell-style-drawer .sb-shell-preview-title {
+    flex: 1;
+    height: 3px;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--neco-ink) 28%, transparent);
+}
+
+#sb-shell-style-drawer .sb-shell-preview-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 4px;
+    min-height: 0;
+    padding: 6px 7px;
+    overflow: hidden;
+    border-radius: 0 0 9px 9px;
+}
+
+#sb-shell-style-drawer .sb-shell-preview-line {
+    width: 100%;
+    height: 2px;
+    border-radius: 1px;
+    background: color-mix(in srgb, var(--neco-ink) 38%, transparent);
+}
+
+#sb-shell-style-drawer .sb-shell-preview-line.is-heading {
+    width: 46%;
+    background: var(--neco-ginger);
+}
+
+#sb-shell-style-drawer .sb-shell-preview-line.is-short {
+    width: 62%;
+}
+
+#sb-shell-style-drawer .sb-shell-preview-dock {
+    width: 100%;
+    height: 9px;
+    margin-top: auto;
+    border: 1px solid var(--neco-border);
+    border-radius: 5px;
+    background: var(--neco-raised);
+}
+
+/* Calico: soft window with cat ears. Kittyless keeps the same window without them. */
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='calico']::before,
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='calico']::after {
+    content: '';
+    position: absolute;
+    top: -5px;
+    width: 14px;
+    height: 5px;
+    background: color-mix(in srgb, var(--neco-raised) 78%, var(--neco-border));
+    clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='calico']::before {
+    left: 12%;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='calico']::after {
+    right: 12%;
+}
+
+/* Windows Aero: glassy caption with a static gloss sweep. */
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-aero'] {
+    border-radius: 6px;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-aero'] .sb-shell-preview-bar {
+    position: relative;
+    border-radius: 5px 5px 0 0;
+    background: color-mix(in srgb, var(--neco-ginger) 14%, var(--neco-raised));
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-aero'] .sb-shell-preview-bar::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to bottom, rgb(255 255 255 / 0.4), rgb(255 255 255 / 0.06) 55%, rgb(0 0 0 / 0.08));
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-aero'] .sb-shell-preview-dots {
+    display: flex;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-aero'] .sb-shell-preview-dot {
+    background: rgb(255 255 255 / 0.55);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-aero'] .sb-shell-preview-body {
+    border-radius: 0 0 5px 5px;
+}
+
+/* Windows XP: the Luna caption gradient with the start hint and close button on the right. */
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-xp'] {
+    border-color: #7f9db9;
+    border-radius: 6px;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-xp'] .sb-shell-preview-bar {
+    flex-direction: row-reverse;
+    border-bottom: 1px solid #1941a5;
+    border-radius: 5px 5px 0 0;
+    background: linear-gradient(to bottom, #2b5fd9, #4d90ef 48%, #2b5fd9);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-xp'] .sb-shell-preview-dots {
+    display: flex;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-xp'] .sb-shell-preview-dot:nth-child(1) {
+    background: #37a93c;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-xp'] .sb-shell-preview-dot:nth-child(2) {
+    background: rgb(255 255 255 / 0.7);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-xp'] .sb-shell-preview-dot:nth-child(3) {
+    background: #d6493c;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-xp'] .sb-shell-preview-title {
+    background: rgb(255 255 255 / 0.8);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-xp'] .sb-shell-preview-body {
+    border-radius: 0 0 5px 5px;
+}
+
+/* Windows 98: navy caption strip, grey bevels and a sunken work area. */
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-98'] {
+    border: 1px solid #0a0a0a;
+    border-radius: 0;
+    background: #c6c6c6;
+    box-shadow: inset 1px 1px 0 rgb(255 255 255 / 0.9), inset -1px -1px 0 #868686;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-98'] .sb-shell-preview-bar {
+    flex-direction: row-reverse;
+    border-bottom: none;
+    border-radius: 0;
+    background: #000082;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-98'] .sb-shell-preview-dots {
+    display: flex;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-98'] .sb-shell-preview-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 0;
+    background: #c6c6c6;
+    box-shadow: inset 1px 1px 0 rgb(255 255 255 / 0.9), inset -1px -1px 0 #868686;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-98'] .sb-shell-preview-title {
+    background: rgb(255 255 255 / 0.85);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-98'] .sb-shell-preview-line {
+    background: #6f6f6f;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-98'] .sb-shell-preview-line.is-heading {
+    background: #000082;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='windows-98'] .sb-shell-preview-dock {
+    border-color: #868686;
+    background: #ffffff;
+    box-shadow: inset 1px 1px 0 #868686, inset -1px -1px 0 rgb(255 255 255 / 0.9);
+}
+
+/* Clean Minimal: hairlines on a flat sheet. */
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='clean-minimal'] {
+    border-radius: 4px;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='clean-minimal'] .sb-shell-preview-bar {
+    height: 13px;
+    border-radius: 3px 3px 0 0;
+    background: transparent;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='clean-minimal'] .sb-shell-preview-title {
+    background: color-mix(in srgb, var(--neco-ink) 22%, transparent);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='clean-minimal'] .sb-shell-preview-line {
+    background: color-mix(in srgb, var(--neco-ink) 30%, transparent);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='clean-minimal'] .sb-shell-preview-body {
+    border-radius: 0 0 3px 3px;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='clean-minimal'] .sb-shell-preview-dock {
+    border-radius: 3px;
+    background: transparent;
+}
+
+/* macOS Minimal: traffic lights on a rounded title strip. */
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='macos-minimal'] .sb-shell-preview-dots {
+    display: flex;
+    gap: 3px;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='macos-minimal'] .sb-shell-preview-dot:nth-child(1) {
+    background: #ff5f57;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='macos-minimal'] .sb-shell-preview-dot:nth-child(2) {
+    background: #febc2e;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='macos-minimal'] .sb-shell-preview-dot:nth-child(3) {
+    background: #28c840;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='macos-minimal'] .sb-shell-preview-title {
+    margin-left: 2px;
+}
+
+/* Cozy Warm: ginger-tinted sheet with stitching that wraps all four sides. */
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='cozy-warm'] {
+    border: 1px dashed color-mix(in srgb, var(--neco-ginger) 45%, var(--neco-border));
+    background: color-mix(in srgb, var(--neco-ginger) 6%, var(--neco-surface));
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='cozy-warm']::before {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    z-index: -1;
+    border: 1px dashed color-mix(in srgb, var(--neco-ginger) 30%, var(--neco-border));
+    border-radius: 7px;
+    pointer-events: none;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='cozy-warm'] .sb-shell-preview-bar {
+    border-bottom: 1px dashed color-mix(in srgb, var(--neco-ginger) 25%, var(--neco-border));
+    background: color-mix(in srgb, var(--neco-ginger) 8%, var(--neco-raised));
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='cozy-warm'] .sb-shell-preview-dock {
+    background: color-mix(in srgb, var(--neco-ginger) 10%, var(--neco-raised));
+}
+
+/* Hypr Glow: dark tile with a static accent glow. Fixed dark base keeps it dark in every tone. */
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='hypr-glow'] {
+    border-color: color-mix(in srgb, var(--neco-ginger) 45%, rgb(16 17 23));
+    background: color-mix(in srgb, var(--neco-ginger) 7%, rgb(16 17 23));
+    box-shadow: 0 0 9px color-mix(in srgb, var(--neco-ginger) 30%, transparent), inset 0 0 7px color-mix(in srgb, var(--neco-ginger) 16%, transparent);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='hypr-glow'] .sb-shell-preview-bar {
+    border-bottom-color: rgb(255 255 255 / 0.14);
+    background: transparent;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='hypr-glow'] .sb-shell-preview-title {
+    background: rgb(255 255 255 / 0.45);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='hypr-glow'] .sb-shell-preview-line {
+    background: rgb(255 255 255 / 0.38);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='hypr-glow'] .sb-shell-preview-line.is-heading {
+    background: var(--neco-ginger);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='hypr-glow'] .sb-shell-preview-dock {
+    border-color: color-mix(in srgb, var(--neco-ginger) 35%, transparent);
+    background: color-mix(in srgb, var(--neco-ginger) 14%, rgb(16 17 23));
+}
+
+/* Slate Flat: flat grey blocks with sharp corners. */
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='slate-flat'] {
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--neco-ink) 8%, var(--neco-surface));
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='slate-flat'] .sb-shell-preview-bar {
+    border-bottom: none;
+    border-radius: 2px 2px 0 0;
+    background: color-mix(in srgb, var(--neco-ink) 14%, transparent);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='slate-flat'] .sb-shell-preview-title {
+    background: color-mix(in srgb, var(--neco-ink) 35%, transparent);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='slate-flat'] .sb-shell-preview-body {
+    border-radius: 0 0 2px 2px;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='slate-flat'] .sb-shell-preview-line {
+    border-radius: 0;
+    background: color-mix(in srgb, var(--neco-ink) 32%, transparent);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='slate-flat'] .sb-shell-preview-line.is-heading {
+    background: color-mix(in srgb, var(--neco-ink) 55%, transparent);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='slate-flat'] .sb-shell-preview-dock {
+    border-color: transparent;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--neco-ink) 10%, transparent);
+}
+
+/* Starlight Conservatory: still sky, pinprick stars and a moon, no motion by design.
+   Fixed night-sky base and fixed white details keep it a night sky in every tone. */
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='starlight-conservatory'] {
+    border-color: rgb(255 255 255 / 0.16);
+    background: rgb(12 14 22);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='starlight-conservatory']::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background-image:
+        radial-gradient(1px 1px at 18% 34%, rgb(255 255 255 / 0.9) 45%, transparent 55%),
+        radial-gradient(1px 1px at 42% 68%, rgb(255 255 255 / 0.7) 45%, transparent 55%),
+        radial-gradient(1px 1px at 64% 26%, rgb(255 255 255 / 0.8) 45%, transparent 55%),
+        radial-gradient(1px 1px at 82% 58%, rgb(255 255 255 / 0.6) 45%, transparent 55%),
+        radial-gradient(1px 1px at 30% 82%, rgb(255 255 255 / 0.5) 45%, transparent 55%);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='starlight-conservatory']::after {
+    content: '';
+    position: absolute;
+    top: 5px;
+    right: 8px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgb(255 255 255 / 0.9);
+    box-shadow: 0 0 5px rgb(255 255 255 / 0.45);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='starlight-conservatory'] .sb-shell-preview-bar {
+    border-bottom-color: rgb(255 255 255 / 0.12);
+    background: transparent;
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='starlight-conservatory'] .sb-shell-preview-title {
+    background: rgb(255 255 255 / 0.4);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='starlight-conservatory'] .sb-shell-preview-line {
+    background: rgb(255 255 255 / 0.35);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='starlight-conservatory'] .sb-shell-preview-line.is-heading {
+    background: var(--neco-ginger);
+}
+
+#sb-shell-style-drawer .sb-shell-style-preview[data-sb-shell-preview='starlight-conservatory'] .sb-shell-preview-dock {
+    border-color: rgb(255 255 255 / 0.2);
+    background: rgb(255 255 255 / 0.1);
+}

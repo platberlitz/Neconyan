@@ -5,6 +5,7 @@ import { finishUiMotion, getUiDrawerEdge, getUiSlideOptions, isUiClosing, reveal
 import { DEFAULT_SCROLL_EDGE_SETTLE_DELAYS, jumpScrollElementToEdge } from './chat-scroll-edges.js';
 import { getChatPickerTitle } from './chat-picker-model.js';
 import { createChatPicker } from './chat-picker.js';
+import { createShellStylePreview } from './neconyan-shell-style-preview.js';
 import {
     clampMobileShellText as clampText,
     createMobileShellLifecycle,
@@ -523,7 +524,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261104-character-purrks';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261104-shell-style-previews';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -16532,9 +16533,11 @@ function injectThemePicker() {
             },
         });
 
-        button.innerHTML = `
-            <span class="sb-theme-option-label">${theme.label}</span>
-        `;
+        const preview = createShellStylePreview(theme.id);
+        const label = document.createElement('span');
+        label.className = 'sb-theme-option-label';
+        label.textContent = theme.label;
+        button.append(preview, label);
 
         button.addEventListener('click', () => setShellTheme(theme.id));
         optionRow.appendChild(button);
