@@ -100,10 +100,11 @@ for (const phone of [false, true]) {
         await creator.getByRole('button', { name: 'Review & save', exact: true }).click();
         await page.screenshot({ path: `../screenshots/creator-redesign-review-${phone ? 'phone' : 'desktop'}.png` });
         await creator.getByRole('button', { name: 'Save to library', exact: true }).click();
-        const status = creator.getByRole('status');
+        const status = creator.locator('.creator-status');
         await expect(status.locator(':scope > span')).toHaveText('Character and reviewed lorebooks saved to your library.', { timeout: 30000 });
         await status.getByRole('button', { name: 'Dismiss', exact: true }).click();
-        await expect(status).toBeEmpty();
+        await expect(status).toBeHidden();
+        await expect(status).toHaveText('');
         await creator.getByRole('button', { name: 'Preview & export', exact: true }).click();
         const preview = creator.locator('pre');
         await expect(preview).toContainText('Mira keeps {{charposs}} promises.');
