@@ -445,6 +445,12 @@ export function resolveDecisionUrl(endpoint, connection) {
     }
 }
 
+export function validateDecisionModel(url, model) {
+    if (new URL(url).hostname === 'api.typesafe.ai' && /^~?typesafe\//i.test(model.trim())) {
+        fail('This Jev model name belongs to OpenRouter. For the TypeSafe API, choose the TypeSafe direct preset or set the model to jev-latest.');
+    }
+}
+
 export function buildDecisionPayload(input) {
     const scene = Array.isArray(input?.scene) ? input.scene : [];
     const candidates = Array.isArray(input?.candidates) ? input.candidates : [];
@@ -541,6 +547,7 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
     const decisionUrl = decision ? resolveDecisionUrl(endpoint, role.connection) : '';
     if (decision && !decisionUrl) fail('The connection for ' + ROLE_LABELS[name] + ' has no System One endpoint. Choose a custom connection with its decision endpoint in Mewmory settings.', 502);
     const url = decision && decisionUrl ? decisionUrl : base + (name === 'embedding' ? '/embeddings' : '/chat/completions');
+    if (decision) validateDecisionModel(url, role.model);
     const key = role.connection
         ? role.connection.payload.reverse_proxy ? role.connection.payload.proxy_password
             : role.connection.secretId ? readSecret(directories, role.connection.secretType, role.connection.secretId) : ''

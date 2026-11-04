@@ -38,6 +38,10 @@ test('Jev and System One presets detect decision models and default thresholds',
     assert.ok(JEV_DECISION_PRESETS.length >= 10);
     assert.equal(findDecisionPreset('typesafe/jev-1.14')?.id, 'jev-1.14');
     assert.equal(findDecisionPreset('jev-1.14')?.model, 'typesafe/jev-1.14');
+    assert.equal(findDecisionPreset('jev-latest')?.model, 'jev-latest');
+    assert.equal(findDecisionPreset('jev-latest')?.endpoint, 'https://api.typesafe.ai/v1/systemone');
+    assert.equal(findDecisionPreset('~typesafe/jev-latest')?.id, 'openrouter-jev-latest');
+    assert.equal(findDecisionPreset('openrouter-jev-latest')?.endpoint, 'https://openrouter.ai/api/alpha/decisions');
     assert.equal(findDecisionPreset('ZefanCai/Open-Jev-9B')?.threshold, 0.1);
     assert.equal(defaultDecisionThreshold('ZefanCai/Open-Jev-2B'), 0.1);
     assert.equal(defaultDecisionThreshold('typesafe/jev-1.14'), 0.5);
@@ -174,6 +178,18 @@ test('decision requests budget their actual payload without a generated reply re
     saveConfig(directories, chat);
     await assert.rejects(callJsonRole(directories, readConfig(directories), 'selector', SELECTION_CONTRACT, decisionInput), /reserves 32,000/);
     assert.equal(state.calls.length, 1, 'chat requests still reserve reply space');
+});
+
+test('both Mewmory decision roles explain a TypeSafe and OpenRouter model mismatch', async t => {
+    const { directories } = await decisionFixture(t);
+    for (const role of ['selector', 'fallback']) {
+        const config = readConfig(directories);
+        Object.assign(config.roles[role], { enabled: true, endpoint: 'https://api.typesafe.ai/v1/systemone',
+            model: 'typesafe/jev-1.14', decisionMode: 'decision' });
+        saveConfig(directories, config);
+        await assert.rejects(callJsonRole(directories, readConfig(directories), role, SELECTION_CONTRACT, decisionInput),
+            error => error.status === 400 && /TypeSafe direct.*jev-latest/.test(error.message));
+    }
 });
 
 test('incomplete decision output falls back using each connection model and threshold', async t => {

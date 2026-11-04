@@ -150,6 +150,10 @@ test('Pawthfinder Jev presets, threshold and protected key controls', async ({ p
         expect(JSON.stringify(state.saves)).not.toContain('test-only-key');
         await page.getByLabel('Jev / decision model preset', { exact: true }).selectOption('jev-1.14');
         await expect(page.getByLabel('Decision score threshold', { exact: true })).toHaveValue('0.5');
+        await page.getByLabel('Jev / decision model preset', { exact: true }).selectOption('jev-latest');
+        await expect(page.getByLabel('Model / model override', { exact: true })).toHaveValue('jev-latest');
+        await expect(page.locator('#pf--model-endpoint')).toHaveValue('https://api.typesafe.ai/v1/systemone');
+        await expect.poll(() => state.saves.at(-1)?.settings.modelOverride).toBe('jev-latest');
     }
     const directory = path.resolve('../screenshots');
     fs.mkdirSync(directory, { recursive: true });

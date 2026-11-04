@@ -11,6 +11,13 @@ const { buildPathfinderDecisions, parsePathfinderDecisions, pathfinderKey, resol
 const candidates = [{ id: '["Book A",1] Same name', text: 'A lighthouse' }, { id: '["Book B",1] Same name', text: 'A forest' }];
 const messages = [{ role: 'user', content: 'We enter the lighthouse.' }];
 
+test('TypeSafe rejects OpenRouter model names with an actionable error before dispatch', async () => {
+    for (const model of ['typesafe/jev-1.14', '~typesafe/jev-latest']) {
+        await assert.rejects(requestPathfinderModel({ url: 'https://api.typesafe.ai/v1/systemone', model, protocol: 'decision' },
+            { messages, candidates }), error => error.status === 400 && /TypeSafe direct.*jev-latest/.test(error.message));
+    }
+});
+
 test('decisions preserve book identity, sort scores and accept an inclusive zero threshold', () => {
     const payload = buildPathfinderDecisions(messages, candidates);
     assert.deepEqual(Object.keys(payload.questions), ['q_0', 'q_1']);
@@ -79,7 +86,7 @@ test('real HTTP requests use decision payloads, propagate cancellation and never
         if (req.url === '/redirect') { res.writeHead(302, { Location: '/other' }); res.end(); return; }
         if (req.url === '/wait') return;
         res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ decisions: { q_0: 0.9, q_1: 0.2 } }));
+        res.end(JSON.stringify({ answers: { q_0: { type: 'noul', noul: 0.9 }, q_1: { type: 'noul', noul: 0.2 } } }));
     });
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     t.after(() => { server.closeAllConnections(); server.close(); });
