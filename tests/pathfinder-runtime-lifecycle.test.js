@@ -221,4 +221,17 @@ describe('Pathfinder storage and runtime lifecycle wiring', () => {
         expect(suppress({ world: 'Book' })).toBe(false);
         activationPolicy.setPathfinderRetrievalState(null);
     });
+
+    test('shows the processing toast only when retrieval has readable lorebooks', () => {
+        const source = functionSource('shouldShowPathfinderRetrievalToast');
+        const gate = (agent, books) => {
+            const runtime = vm.createContext({ getReadableBooks: () => books });
+            return vm.runInContext(`(${source})(${JSON.stringify(agent)})`, runtime);
+        };
+        expect(gate({ settings: { pipelineEnabled: true } }, ['Book'])).toBe(true);
+        expect(gate({ settings: { sidecarEnabled: true } }, ['Book'])).toBe(true);
+        expect(gate({ settings: { pipelineEnabled: true } }, [])).toBe(false);
+        expect(gate({ settings: {} }, ['Book'])).toBe(false);
+        expect(gate(null, ['Book'])).toBe(false);
+    });
 });

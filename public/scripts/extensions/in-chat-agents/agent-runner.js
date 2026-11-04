@@ -82,7 +82,7 @@ import { onPathfinderWorldInfoUpdated, onPathfinderWorldInfoRenamed, onPathfinde
 import { initializePromptStore, setPromptStorePersistHook } from './pathfinder/prompts/prompt-store.js';
 import { getDefaultPrompts, getDefaultPipelines } from './pathfinder/prompts/default-prompts.js';
 import { getPathfinderToolDefinitions } from './pathfinder/tool-definitions.js';
-import { getContextualLorebooks, getForcedToolChoice, prepareToolCall } from './pathfinder/pathfinder-tool-bridge.js';
+import { getContextualLorebooks, getForcedToolChoice, getReadableBooks, prepareToolCall } from './pathfinder/pathfinder-tool-bridge.js';
 import { confirmToolCall, shouldConfirmToolCall } from './pathfinder/tool-confirmation.js';
 import { injectPathfinderRetrieval, PATHFINDER_RETRIEVAL_PROMPT_KEYS, runSidecarRetrieval } from './pathfinder/sidecar-retrieval.js';
 import { setPathfinderRetrievalState } from './pathfinder/activation-policy.js';
@@ -625,7 +625,9 @@ function clearInitialGenerationToast() {
 
 function shouldShowPathfinderRetrievalToast(pathfinderAgent) {
     const settings = pathfinderAgent?.settings ?? {};
-    return Boolean(settings.pipelineEnabled || settings.sidecarEnabled);
+    // Neconyan: with no readable lorebooks the retrieval finishes instantly and
+    // injects nothing, so the 'processing lore' toast would be pure noise.
+    return Boolean(settings.pipelineEnabled || settings.sidecarEnabled) && getReadableBooks().length > 0;
 }
 
 async function processManualAgentRunQueue(queue) {

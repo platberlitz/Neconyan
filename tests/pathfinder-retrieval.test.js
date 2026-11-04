@@ -284,6 +284,24 @@ describe('Pawthfinder retrieval with real pipeline and model transport stubs', (
         expect(prompts.pathfinder_pipeline_retrieval).toContain('The first town.');
     });
 
+    test('stays quiet with no readable lorebooks: instant success, no timer, one empty log row', async () => {
+        setSettings({ enabledLorebooks: [] });
+        const result = await runSidecarRetrieval(writePrompt, promptTypes, promptRoles);
+
+        expect(result).toMatchObject({ success: true, books: [], selectedEntries: [], stageResults: [], mode: 'pipeline', metadata: { reason: 'no-readable-lorebooks' } });
+        expect(sendRequest).not.toHaveBeenCalled();
+        expect(generateRaw).not.toHaveBeenCalled();
+        expect(loadWorldInfo).not.toHaveBeenCalled();
+        expect(globalThis.toastr.warning).not.toHaveBeenCalled();
+        expect(writePrompt).toHaveBeenCalledTimes(1);
+        expect(writePrompt.mock.calls[0][0]).toBe('pathfinder_pipeline_retrieval');
+        expect(writePrompt.mock.calls[0][1]).toBe('');
+        const rows = getFeedItems().filter(item => item.type === 'pathfinder_retrieval_detail');
+        expect(rows).toHaveLength(1);
+        expect(rows[0].books).toEqual([]);
+        expect(rows[0].metadata.reason).toBe('no-readable-lorebooks');
+    });
+
     test('keeps the public pipeline title list and also returns unambiguous entry data', async () => {
         await buildTreeFromMetadata('Book A', books['Book A']);
         const result = await runPipeline('single-pass', chat);
