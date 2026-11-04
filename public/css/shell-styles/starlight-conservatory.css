@@ -63,6 +63,11 @@
     --starlight-raised: color-mix(in srgb, var(--neco-raised) 84%, var(--starlight-brass));
     --starlight-filigree: color-mix(in srgb, var(--neco-accent-secondary) 46%, color-mix(in srgb, var(--starlight-brass) 52%, var(--neco-border)));
     --starlight-shadow: 0 12px 32px color-mix(in srgb, var(--starlight-brass) 16%, rgb(4 10 22 / 0.42));
+    --starlight-glass-top: color-mix(in srgb, #161c26 84%, transparent);
+    --starlight-glass-bottom: color-mix(in srgb, #0e131b 70%, transparent);
+    --starlight-glass-raised: linear-gradient(180deg, color-mix(in srgb, #1a222d 82%, transparent), color-mix(in srgb, #10161f 70%, transparent));
+    --starlight-glass-rail: color-mix(in srgb, #141a23 80%, transparent);
+    --starlight-glass-control: linear-gradient(180deg, color-mix(in srgb, #1d2631 86%, transparent), color-mix(in srgb, #131a23 74%, transparent));
     --neco-panel-gradient: linear-gradient(180deg, color-mix(in srgb, var(--starlight-surface) 92%, var(--starlight-brass)), var(--starlight-surface));
     --sb-radius-button: 999px;
     --sb-radius-sm: 10px;
@@ -76,6 +81,11 @@
     --starlight-surface: color-mix(in srgb, var(--neco-surface) 90%, #f5efe2);
     --starlight-rail: color-mix(in srgb, var(--neco-rail) 90%, #efe6d5);
     --starlight-shadow: 0 12px 30px color-mix(in srgb, var(--starlight-brass) 24%, rgb(40 30 12 / 0.16));
+    --starlight-glass-top: color-mix(in srgb, #fbf6ea 88%, transparent);
+    --starlight-glass-bottom: color-mix(in srgb, #f1e8d6 76%, transparent);
+    --starlight-glass-raised: linear-gradient(180deg, color-mix(in srgb, #fdf9f0 92%, transparent), color-mix(in srgb, #f4ecdc 80%, transparent));
+    --starlight-glass-rail: color-mix(in srgb, #f7f1e3 86%, transparent);
+    --starlight-glass-control: linear-gradient(180deg, color-mix(in srgb, #fdf9f0 94%, transparent), color-mix(in srgb, #f2e9d7 84%, transparent));
 }
 
 /* Custom accents steer both the burnished brass filigree and the celestial moonlight glow. */
@@ -105,6 +115,35 @@
         radial-gradient(ellipse at 86% 88%, var(--starlight-lantern) 0, transparent 54%);
     background-size: 120% 120%, 125% 125%, 130% 130%, 100% 100%;
     animation: starlight-conservatory-fireflies 16s ease-in-out infinite alternate;
+}
+
+/* Interactive night sky. The stage itself generates no box (display: contents), so each
+   canvas joins the body stacking context directly: the sky sits behind the glass panels,
+   while the constellations and the pointer wake sit above them. */
+:root[data-sb-theme='starlight-conservatory'] #sb-starlight-conservatory-stage {
+    display: contents;
+    pointer-events: none;
+}
+
+:root[data-sb-theme='starlight-conservatory'] #sb-starlight-conservatory-stage canvas {
+    position: fixed;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+:root[data-sb-theme='starlight-conservatory'] #sb-starlight-conservatory-sky {
+    z-index: -1;
+}
+
+:root[data-sb-theme='starlight-conservatory'] #sb-starlight-conservatory-overlay {
+    z-index: calc(var(--sb-z-shell-panel, 1100) - 1);
+}
+
+:root[data-sb-theme='starlight-conservatory'] #sb-starlight-conservatory-trail {
+    z-index: calc(var(--sb-z-critical, 10000) - 1);
 }
 
 /* Top bar and workspace rail: burnished brass trim and gently breathing lantern light. */
@@ -155,15 +194,71 @@
     animation: starlight-conservatory-cat-glow 6s ease-in-out infinite alternate;
 }
 
+/* Conservatory glass: the Home cards turn into real panes, so the night sky drifting behind
+   them stays visible as soft bokeh while the constellations drawn on top stay crisp. */
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(.neconyan-home-intro, .neconyan-assistant-picker) {
+    background:
+        linear-gradient(180deg, var(--starlight-glass-top), var(--starlight-glass-bottom));
+    border-color: color-mix(in srgb, var(--starlight-brass) 42%, transparent);
+    backdrop-filter: blur(22px) saturate(94%);
+    -webkit-backdrop-filter: blur(22px) saturate(94%);
+    box-shadow:
+        inset 0 1px 0 rgb(255 246 220 / 0.16),
+        inset 0 0 60px color-mix(in srgb, var(--starlight-celeste) 9%, transparent),
+        0 22px 52px color-mix(in srgb, var(--starlight-brass) 10%, rgb(2 6 16 / 0.5));
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(.neconyan-home-intro, .neconyan-assistant-picker) :is(h1, h2) {
+    text-shadow: 0 0 22px color-mix(in srgb, var(--starlight-celeste) 42%, transparent);
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) .neconyan-home-actions > button:not(.neconyan-home-primary) {
+    background: var(--starlight-glass-raised);
+    backdrop-filter: blur(10px) saturate(112%);
+    -webkit-backdrop-filter: blur(10px) saturate(112%);
+}
+
+/* The primary Home action keeps the accent fill and its own contrast ink: the glass rule
+   above must never swallow it, or the label turns dark on dark. */
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) .neconyan-home-actions > .neconyan-home-primary,
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) .neconyan-home-actions > .neconyan-home-primary:is(:hover, :focus-visible) {
+    background: var(--neco-action-gradient);
+    color: var(--neco-charcoal);
+    border-color: transparent;
+    box-shadow: 0 6px 20px color-mix(in srgb, var(--starlight-brass) 28%, transparent);
+}
+
+/* The Home layout switcher is a brass rail across the night glass, not a khaki bar. */
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) .neconyan-home-layout-bar {
+    background: var(--starlight-glass-rail);
+    border-color: color-mix(in srgb, var(--starlight-brass) 34%, transparent);
+    backdrop-filter: blur(18px) saturate(108%);
+    -webkit-backdrop-filter: blur(18px) saturate(108%);
+}
+
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) .neconyan-home-layout-bar :is(button, .menu_button) {
+    background: var(--starlight-glass-control);
+    border-color: color-mix(in srgb, var(--starlight-brass) 30%, transparent);
+    color: var(--neco-ink);
+}
+
+/* The top bar becomes a glass canopy: the same brass trim, now lit from the sky behind it. */
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) #top-bar {
+    background: color-mix(in srgb, var(--starlight-rail) 76%, transparent);
+    backdrop-filter: blur(18px) saturate(120%);
+    -webkit-backdrop-filter: blur(18px) saturate(120%);
+}
+
 /* Secondary controls: faceted conservatory glass pills with burnished brass rims. */
-:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control, .menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset) {
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(#neconyan-home-host .neconyan-home-layout-bar *):not(.neconyan-cat-control, .menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset) {
     background: linear-gradient(180deg, color-mix(in srgb, var(--starlight-raised) 88%, #fff), var(--starlight-raised));
     border: 1px solid color-mix(in srgb, var(--starlight-brass) 32%, var(--neco-border));
     border-radius: 999px;
+    color: var(--neco-ink);
     box-shadow: inset 0 1px 0 rgb(255 248 225 / 0.2), 0 2px 7px rgb(0 0 0 / 0.16);
 }
 
-:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control, .menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset):hover {
+:root[data-sb-theme='starlight-conservatory'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(#neconyan-home-host .neconyan-home-layout-bar *):not(.neconyan-cat-control, .menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset):hover {
     background: linear-gradient(180deg, color-mix(in srgb, var(--starlight-brass) 18%, var(--starlight-raised)), var(--starlight-raised));
     box-shadow: inset 0 1px 0 rgb(255 248 225 / 0.28), 0 3px 12px var(--starlight-lantern);
 }

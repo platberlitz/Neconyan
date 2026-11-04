@@ -477,3 +477,105 @@ test('Starlight Conservatory animates fireflies, lantern sheen and cat glow and 
     });
 });
 
+
+test('Starlight Conservatory paints constellations, sparkles and a pointer trail and freezes them for reduced motion', async ({ page }, testInfo) => {
+    test.setTimeout(180000);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
+    await page.route('**/api/settings/get', async route => {
+        const response = await route.fetch({ maxRetries: 2 });
+        const data = await response.json();
+        if (typeof data.settings !== 'string') return route.fulfill({ response });
+        const settings = JSON.parse(data.settings);
+        settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
+        settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
+        settings.power_user.neconyan_shell_style = 'starlight-conservatory';
+        settings.power_user.reduced_motion = false;
+        data.settings = JSON.stringify(settings);
+        await route.fulfill({ response, json: data });
+    });
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('.neconyan-home-intro')).toBeVisible({ timeout: 60000 });
+    await expect(page.locator('html')).toHaveAttribute('data-sb-theme', 'starlight-conservatory');
+
+    const snapshot = () => page.evaluate(() => window.NeconyanStarlightConservatory.snapshot());
+    const stage = page.locator('#sb-starlight-conservatory-stage');
+    await expect(stage).toHaveCount(1);
+    await expect(stage).toHaveAttribute('data-starlight-motion', 'active');
+
+    // Wait until at least one figure has finished drawing itself, not just started to glint.
+    await expect.poll(async () => (await snapshot()).constellations.filter(item => item.visible && item.progress > 0.3).length, { timeout: 45000 }).toBeGreaterThan(0);
+
+    const initial = await snapshot();
+    expect(initial.motion).toBe('active');
+    expect(initial.sparkles).toBeGreaterThan(10);
+    expect(initial.layers).toEqual({ sky: true, overlay: true, trail: true });
+    expect(initial.constellations.map(item => item.id)).toEqual([
+        'corona-felis', 'stellata-palma', 'horologium-muris', 'lyra-mystax', 'felis-somnus', 'caelum-caudae',
+    ]);
+
+    const geometry = await page.evaluate(() => {
+        const stageElement = document.getElementById('sb-starlight-conservatory-stage');
+        const canvases = [...stageElement.querySelectorAll('canvas')];
+        return {
+            display: window.getComputedStyle(stageElement).display,
+            pointerEvents: canvases.map(canvas => window.getComputedStyle(canvas).pointerEvents),
+            sizes: canvases.map(canvas => [canvas.width, canvas.height]),
+            positions: canvases.map(canvas => window.getComputedStyle(canvas).position),
+        };
+    });
+    expect(geometry.display).toBe('contents');
+    expect(geometry.pointerEvents).toEqual(['none', 'none', 'none']);
+    expect(geometry.positions).toEqual(['fixed', 'fixed', 'fixed']);
+    for (const [width, height] of geometry.sizes) {
+        expect(width).toBeGreaterThanOrEqual(1280);
+        expect(height).toBeGreaterThanOrEqual(900);
+    }
+
+    await page.screenshot({ path: testInfo.outputPath('starlight-sky.png') });
+
+    // A pointer sweep leaves a wake of stars with a companion star riding along.
+    for (let step = 0; step <= 26; step += 1) {
+        const angle = (step / 26) * Math.PI;
+        await page.mouse.move(420 + Math.cos(angle) * 240, 520 - Math.sin(angle) * 180);
+        await page.waitForTimeout(16);
+    }
+    await expect.poll(async () => (await snapshot()).trail, { timeout: 10000 }).toBeGreaterThan(0);
+    expect((await snapshot()).companion).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('starlight-sky-trail.png') });
+
+    // Custom accents repaint the sparkles and constellation threads without a reload.
+    const before = (await snapshot()).palette;
+    await page.evaluate(async () => {
+        document.body.style.setProperty('--neco-accent-secondary', '#ff2d95');
+        document.body.style.setProperty('--neco-ginger', '#38f5c8');
+        document.documentElement.dataset.neconyanAccent = 'custom';
+        await new Promise(resolve => setTimeout(resolve, 500));
+    });
+    const after = (await snapshot()).palette;
+    expect(after.secondary).not.toBe(before.secondary);
+    expect(after.brass).not.toBe(before.brass);
+
+    // Reduced Motion stops the frame loop and leaves a still sky.
+    await page.locator('#reduced_motion').evaluate(input => {
+        input.checked = true;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await expect(stage).toHaveAttribute('data-starlight-motion', 'still');
+    const still = await snapshot();
+    expect(still.motion).toBe('still');
+    expect(still.trail).toBe(0);
+    expect(still.companion).toBe(false);
+    const overlay = page.locator('#sb-starlight-conservatory-overlay');
+    const frozenA = await overlay.screenshot();
+    await page.waitForTimeout(700);
+    const frozenB = await overlay.screenshot();
+    expect(Buffer.compare(frozenA, frozenB)).toBe(0);
+
+    await page.locator('#reduced_motion').evaluate(input => {
+        input.checked = false;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await expect(stage).toHaveAttribute('data-starlight-motion', 'active');
+});

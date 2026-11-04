@@ -523,7 +523,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261104-starlight-conservatory';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261104-starlight-sparkles';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -5413,6 +5413,38 @@ function syncShellStyleStylesheet(themeId) {
     }
 }
 
+// The Starlight Conservatory night sky is a sizeable canvas module, so it arrives through a
+// dynamic import only while that style is selected. Every other style never downloads it.
+let starlightConservatoryModule = null;
+let starlightConservatoryLoading = null;
+
+function ensureStarlightConservatoryModule() {
+    if (starlightConservatoryModule) return Promise.resolve(starlightConservatoryModule);
+    if (!starlightConservatoryLoading) {
+        starlightConservatoryLoading = import('./neconyan-starlight-conservatory.js')
+            .then(module => {
+                starlightConservatoryModule = module;
+                return module;
+            })
+            .catch(() => {
+                starlightConservatoryLoading = null;
+                return null;
+            });
+    }
+    return starlightConservatoryLoading;
+}
+
+function syncStarlightConservatoryStage(themeId) {
+    if (themeId !== 'starlight-conservatory') {
+        starlightConservatoryModule?.unmountStarlightConservatory();
+        return;
+    }
+    ensureStarlightConservatoryModule().then(module => {
+        if (!module || nnState.theme !== 'starlight-conservatory') return;
+        module.mountStarlightConservatory();
+    });
+}
+
 // An explicit selection made before account settings arrive must survive hydration.
 let pendingShellTheme = null;
 
@@ -5476,6 +5508,7 @@ function setShellTheme(themeId, { persist = true } = {}) {
     nnState.theme = nextTheme;
     document.documentElement.dataset.sbTheme = nextTheme;
     syncShellStyleStylesheet(nextTheme);
+    syncStarlightConservatoryStage(nextTheme);
     syncKittylessStylesheet();
 
     if (persist) {

@@ -233,6 +233,21 @@ describe('shell style runtime stylesheets', () => {
         });
     }
 
+    test('the Starlight Conservatory night sky stays lazy and unmounts with its style', () => {
+        expect(tabsSource).toContain('import(\'./neconyan-starlight-conservatory.js\')');
+        expect(tabsSource).toMatch(/function syncStarlightConservatoryStage\(themeId\) \{/);
+        expect(tabsSource).toMatch(/if \(themeId !== 'starlight-conservatory'\) \{\s*starlightConservatoryModule\?\.unmountStarlightConservatory\(\);/);
+        expect(tabsSource).toMatch(/if \(!module \|\| nnState\.theme !== 'starlight-conservatory'\) return;/);
+        // The canvas stage is a dynamic import, never a blocking startup script.
+        expect(indexHtml).not.toContain('neconyan-starlight-conservatory.js');
+
+        const source = readSource('public', 'css', 'shell-styles', 'starlight-conservatory.css');
+        expect(source).toContain('#sb-starlight-conservatory-sky {');
+        expect(source).toContain('#sb-starlight-conservatory-overlay {');
+        expect(source).toContain('#sb-starlight-conservatory-trail {');
+        expect(source).toContain('display: contents;');
+    });
+
     test('the backing exception rejects additional or widened important declarations', () => {
         const id = 'windows-aero';
         const selector = `:root[data-sb-theme='${id}'] body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='characters'], [data-menu-type='world-info'])`;
@@ -318,7 +333,7 @@ describe('Hide cats works with every shell style', () => {
 
         expect(tabsSource).toContain('kittyless: \'sb-kittyless\',');
         expect(tabsSource).toContain('const NN_KITTYLESS_STYLESHEET_HREF = `css/neconyan-kittyless.css?v=${NN_SHELL_STYLE_STYLESHEET_VERSION}`;');
-        expect(tabsSource).toMatch(/function setShellTheme\([\s\S]*?syncShellStyleStylesheet\(nextTheme\);\s*syncKittylessStylesheet\(\);/);
+        expect(tabsSource).toMatch(/function setShellTheme\([\s\S]*?syncShellStyleStylesheet\(nextTheme\);\s*syncStarlightConservatoryStage\(nextTheme\);\s*syncKittylessStylesheet\(\);/);
         expect(tabsSource).toMatch(/function isKittylessActive\(\) \{\s*return nnState\.theme === 'kittyless' \|\| nnState\.kittyless;/);
         expect(tabsSource).toMatch(/function setKittylessEnabled\([\s\S]*?safeSetItem\(NN_STORAGE_KEYS\.kittyless/);
     });
