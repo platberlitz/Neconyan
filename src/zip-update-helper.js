@@ -3,10 +3,11 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawn, spawnSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
 
 import { isPathInside } from './path-containment.js';
 
-const PROTECTED_TOP_LEVEL = new Set(['.git', 'backups', 'cache', 'data', 'node_modules']);
+const PROTECTED_TOP_LEVEL = new Set(['.git', '.env', '.local-runtime', 'backups', 'cache', 'config.yaml', 'data', 'node_modules', 'plugins']);
 
 function decodePayload(encoded) {
     const decoded = Buffer.from(String(encoded ?? ''), 'base64').toString('utf8');
@@ -58,7 +59,7 @@ function appendLog(logPath, message) {
 
 function shouldSkipRelativePath(relativePath) {
     const topLevel = String(relativePath ?? '').split(path.sep)[0];
-    return PROTECTED_TOP_LEVEL.has(topLevel);
+    return PROTECTED_TOP_LEVEL.has(topLevel.toLowerCase());
 }
 
 function collectReleaseEntries(releaseRoot, currentDirectory = releaseRoot, entries = []) {
@@ -101,14 +102,29 @@ function copyFileWithMode(sourcePath, destinationPath, mode) {
     fs.chmodSync(destinationPath, mode || 0o644);
 }
 
-function applyReleaseOverlay({ releaseRoot, installDir, backupRoot, logPath }, state) {
-    const entries = collectReleaseEntries(releaseRoot);
+export function applyReleaseOverlay({ releaseRoot, installDir, backupRoot, logPath, preservePaths = [] }, state) {
+    const preserved = preservePaths.map(value => path.resolve(value));
+    const isPreserved = (destination, type) => preserved.some(root => isPathInside(root, destination, { allowEqual: true })
+        || (type === 'file' && isPathInside(destination, root)));
+    const entries = collectReleaseEntries(releaseRoot).filter(entry => !isPreserved(path.resolve(installDir, entry.relativePath), entry.type));
+    const manifest = path.join(installDir, 'dist', 'frontend', 'asset-manifest.json');
+    const invalidateManifest = !isPreserved(manifest, 'file');
+
+    // Check the whole destination tree before replacing any files. An existing
+    // junction or symlink must never redirect an update into user-owned storage.
+    for (const relative of [...entries.map(entry => entry.relativePath), ...(invalidateManifest ? [path.relative(installDir, manifest)] : [])]) {
+        let target = path.join(installDir, relative);
+        while (isPathInside(installDir, target)) {
+            const stat = fs.lstatSync(target, { throwIfNoEntry: false });
+            if (stat?.isSymbolicLink()) throw new Error(`An installed path is a link: ${relative}`);
+            target = path.dirname(target);
+        }
+    }
 
     appendLog(logPath, `Applying ${entries.length} release entries from ${releaseRoot}.`);
 
     for (const entry of entries) {
         const destinationPath = path.resolve(installDir, entry.relativePath);
-
         if (!isPathInside(installDir, destinationPath, { allowEqual: true })) {
             throw new Error(`Release entry escapes the install directory: ${entry.relativePath}`);
         }
@@ -139,9 +155,16 @@ function applyReleaseOverlay({ releaseRoot, installDir, backupRoot, logPath }, s
 
         copyFileWithMode(entry.sourcePath, destinationPath, entry.mode);
     }
+
+    // A source release has no generated frontend. Fall back to its public files
+    // rather than continuing to serve a previous version's hashed build.
+    if (invalidateManifest && fs.existsSync(manifest)) {
+        backupDestination(manifest, backupRoot, installDir, state);
+        removePath(manifest);
+    }
 }
 
-function rollbackOverlay(installDir, state, logPath) {
+export function rollbackOverlay(installDir, state, logPath) {
     appendLog(logPath, 'Rolling back ZIP update overlay.');
 
     for (const createdPath of [...state.createdPaths].sort((left, right) => right.length - left.length)) {
@@ -157,36 +180,53 @@ function rollbackOverlay(installDir, state, logPath) {
         fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
         fs.cpSync(backupPath, destinationPath, { recursive: true, force: true, verbatimSymlinks: true });
     }
+    if (state.dependenciesBackup) {
+        const destination = path.join(installDir, 'node_modules');
+        removePath(destination);
+        fs.renameSync(state.dependenciesBackup, destination);
+    }
 }
 
 function hasCommand(command) {
-    const result = spawnSync(command, ['--version'], { stdio: 'ignore', windowsHide: true });
+    const result = spawnSync(command, ['--version'], { stdio: 'ignore', windowsHide: true, shell: command.endsWith('.cmd') });
     return result.status === 0;
 }
 
-function runInstallCommand(installDir, logPath) {
+function runInstallCommand(installDir, logPath, backupRoot, state) {
     const hasDevDependencies = fs.existsSync(path.join(installDir, 'node_modules', 'eslint', 'package.json'));
     let command = '';
     let args = [];
+    const bun = process.versions.bun ? process.execPath : 'bun';
+    const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
-    if (fs.existsSync(path.join(installDir, 'bun.lock')) && hasCommand('bun')) {
-        command = 'bun';
+    if (fs.existsSync(path.join(installDir, 'bun.lock')) && hasCommand(bun)) {
+        command = bun;
         args = hasDevDependencies ? ['install'] : ['install', '--production'];
-    } else if (fs.existsSync(path.join(installDir, 'package-lock.json')) && hasCommand('npm')) {
-        command = 'npm';
+    } else if (fs.existsSync(path.join(installDir, 'package-lock.json')) && hasCommand(npm)) {
+        command = npm;
         args = hasDevDependencies
             ? ['ci', '--no-audit', '--no-fund']
             : ['ci', '--no-audit', '--no-fund', '--omit=dev'];
-    } else if (fs.existsSync(path.join(installDir, 'package.json')) && hasCommand('npm')) {
-        command = 'npm';
+    } else if (fs.existsSync(path.join(installDir, 'package.json')) && hasCommand(npm)) {
+        command = npm;
         args = hasDevDependencies
             ? ['install', '--no-audit', '--no-fund']
             : ['install', '--no-audit', '--no-fund', '--omit=dev'];
     }
 
     if (!command) {
-        appendLog(logPath, 'Dependency install skipped because Bun/npm was unavailable.');
-        return;
+        throw new Error('Bun or npm is required to install the updated application dependencies.');
+    }
+
+    // npm ci replaces node_modules. Keep the previous set intact so a failed
+    // install can restart the old application with its matching dependencies.
+    const dependencies = path.join(installDir, 'node_modules');
+    if (fs.lstatSync(dependencies, { throwIfNoEntry: false })) {
+        const backup = path.join(backupRoot, 'previous-node-modules');
+        fs.renameSync(dependencies, backup);
+        state.dependenciesBackup = backup;
+    } else {
+        state.createdPaths.push(dependencies);
     }
 
     appendLog(logPath, `Running dependency install: ${[command, ...args].join(' ')}`);
@@ -196,6 +236,7 @@ function runInstallCommand(installDir, logPath) {
         encoding: 'utf8',
         maxBuffer: 20 * 1024 * 1024,
         windowsHide: false,
+        shell: command.endsWith('.cmd'),
     });
 
     if (result.stdout) {
@@ -266,6 +307,7 @@ async function main() {
 
     fs.mkdirSync(backupRoot, { recursive: true });
     appendLog(logPath, `Waiting for parent process ${parentPid} to exit before applying ZIP update.`);
+    process.send?.({ type: 'zip-update-ready' });
     await waitForParentExit(parentPid);
 
     const supervisorPid = Number(payload?.supervisorPid);
@@ -277,8 +319,8 @@ async function main() {
     await delay(800);
 
     try {
-        applyReleaseOverlay({ releaseRoot, installDir, backupRoot, logPath }, state);
-        runInstallCommand(installDir, logPath);
+        applyReleaseOverlay({ releaseRoot, installDir, backupRoot, logPath, preservePaths: payload.preservePaths }, state);
+        runInstallCommand(installDir, logPath, backupRoot, state);
         fs.rmSync(stagingRoot, { recursive: true, force: true });
         appendLog(logPath, 'ZIP update applied successfully. Relaunching Neconyan.');
     } catch (error) {
@@ -298,10 +340,12 @@ async function main() {
     }
 }
 
-try {
-    await main();
-    process.exit(0);
-} catch (error) {
-    console.error('ZIP update helper failed.', error);
-    process.exit(1);
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+    try {
+        await main();
+        process.exit(0);
+    } catch (error) {
+        console.error('ZIP update helper failed.', error);
+        process.exit(1);
+    }
 }

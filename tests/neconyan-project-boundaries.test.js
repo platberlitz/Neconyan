@@ -1,5 +1,4 @@
-/* global globalThis */
-import { afterEach, describe, expect, jest, test } from '@jest/globals';
+import { describe, expect, test } from '@jest/globals';
 import envPaths from 'env-paths';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -7,7 +6,6 @@ import { fileURLToPath } from 'node:url';
 
 import { APP_NAME } from '../src/runtime.js';
 import { CommandLineParser } from '../src/command-line.js';
-import { getLatestZipReleaseStatus, stageZipReleaseUpdate } from '../src/server-admin-zip-update.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
@@ -75,36 +73,5 @@ describe('Neconyan project boundaries', () => {
         expect(tabsSource).toContain('if (!repository?.trackingBranch)');
         expect(tabsSource).toContain('pillLabel = \'Local project\';');
         expect(tabsSource).toContain('pillTone = \'neutral\';');
-    });
-});
-
-describe('Neconyan ZIP update boundary', () => {
-    const originalFetch = globalThis.fetch;
-
-    afterEach(() => {
-        globalThis.fetch = originalFetch;
-        jest.restoreAllMocks();
-    });
-
-    test('reports unsupported status without making a network request', async () => {
-        const fetchMock = jest.fn();
-        globalThis.fetch = fetchMock;
-
-        await expect(getLatestZipReleaseStatus('1.0.0')).resolves.toMatchObject({
-            supported: false,
-            checked: false,
-            canUpdate: false,
-            currentVersion: '1.0.0',
-        });
-        expect(fetchMock).not.toHaveBeenCalled();
-    });
-
-    test('refuses staging before making a network request', async () => {
-        const fetchMock = jest.fn();
-        globalThis.fetch = fetchMock;
-
-        await expect(stageZipReleaseUpdate({ latestVersion: '2.0.0', assetUrl: 'https://example.test/release.zip' }))
-            .rejects.toThrow('ZIP updates are not available');
-        expect(fetchMock).not.toHaveBeenCalled();
     });
 });

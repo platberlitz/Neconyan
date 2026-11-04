@@ -1,6 +1,7 @@
 import { assertOrdinaryImportPath } from './import-managed-images.js';
 import { assertMutableImagePath } from '../managed-image-files.js';
 import fs from 'node:fs';
+import { publishRetainedFile } from './retained-file-publication.js';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
@@ -277,8 +278,10 @@ export function publishImportFile(context, file, index, prepared, { afterImportP
                 const input = inspectRoleplayFile(temporary, BINARY_FILE_LIMIT, { flush: true });
                 if (!input || !same(evidence(input), staged.after) || input.size !== staged.size) throw operationError('The prepared import publication is missing.');
                 assertMutableImagePath(scope.directories, filename);
-                fs.renameSync(temporary, filename);
-                fsyncDirectorySync(path.dirname(filename));
+                publishRetainedFile(temporary, filename, staged.after, staged.size, finalEvidence => {
+                    staged.after = finalEvidence;
+                    save();
+                });
             }
             const published = inspectRoleplayFile(filename, BINARY_FILE_LIMIT, { flush: true });
             if (!same(evidence(published), staged.after)) throw operationError('The imported file publication needs recovery.');

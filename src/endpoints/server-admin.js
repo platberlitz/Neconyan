@@ -57,6 +57,7 @@ const GIT_OPTIONS = Object.freeze({
     config: ['gc.auto=0', 'maintenance.auto=false'],
 });
 const RESTART_RESPONSE_DELAY_MS = 200;
+let zipUpdatePending = false;
 const refreshRepositoryRemote = createRemoteRefresh();
 const CHAT_COMPLETION_CONFIG_DEFAULTS = Object.freeze({
     claude: Object.freeze({
@@ -381,6 +382,7 @@ function getZipUpdatePayload(stagedUpdate) {
         releaseRoot: stagedUpdate.releaseRoot,
         version: stagedUpdate.version,
         assetName: stagedUpdate.assetName,
+        preservePaths: [getConfigFilePath(), globalThis.DATA_ROOT].filter(value => typeof value === 'string' && value),
         command: [process.argv[0], ...process.argv.slice(1)],
         // Clear inherited supervision markers so the helper's replacement
         // process starts a fresh supervisor after the old process tree exits.
@@ -441,19 +443,32 @@ function scheduleRestart(response, { reloadSupervisor = false } = {}) {
     });
 }
 
-function scheduleZipUpdate(response, stagedUpdate) {
+async function scheduleZipUpdate(response, stagedUpdate) {
     const helperScriptPath = path.join(serverDirectory, 'src', 'zip-update-helper.js');
     const helper = spawn(process.argv[0], [helperScriptPath, getZipUpdatePayload(stagedUpdate)], {
         cwd: serverDirectory,
         detached: true,
-        stdio: process.platform === 'win32' ? ['ignore', 'inherit', 'inherit'] : 'ignore',
+        stdio: process.platform === 'win32' ? ['ignore', 'inherit', 'inherit', 'ipc'] : ['ignore', 'ignore', 'ignore', 'ipc'],
         env: process.env,
         windowsHide: false,
     });
 
-    helper.once('error', (error) => {
-        console.error('Failed to start ZIP update helper.', error);
+    await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => finish(new Error('The ZIP update helper did not become ready.')), 15000);
+        const finish = error => {
+            clearTimeout(timer);
+            helper.removeListener('error', finish);
+            helper.removeListener('exit', onExit);
+            helper.removeListener('message', onMessage);
+            if (error) { helper.kill(); reject(error); } else resolve();
+        };
+        const onExit = () => finish(new Error('The ZIP update helper stopped before it was ready.'));
+        const onMessage = message => { if (message?.type === 'zip-update-ready') finish(); };
+        helper.once('error', finish);
+        helper.once('exit', onExit);
+        helper.on('message', onMessage);
     });
+    helper.disconnect();
     helper.unref();
 
     response.once('finish', () => {
@@ -691,7 +706,8 @@ router.post('/status', requireAdminMiddleware, async (request, response) => {
         const autoStash = typeof request.body?.autoStash === 'boolean' ? request.body.autoStash : undefined;
         const repository = await getRepositoryStatus({ refresh: forceRefresh, autoStash });
         const androidRelease = await getLatestAndroidReleaseStatus(version.pkgVersion, { force: forceRefresh });
-        const release = repository.isRepo || androidRelease ? null : await getLatestZipReleaseStatus(version.pkgVersion);
+        const release = repository.isRepo || androidRelease || process.env.NECONYAN_IOS_APP === '1'
+            ? null : await getLatestZipReleaseStatus(version.pkgVersion, { force: forceRefresh });
         const userRoot = request.user?.directories?.root;
         response.json({
             runtime: formatRuntimeLabel(),
@@ -1024,7 +1040,13 @@ router.post('/restart', requireAdminMiddleware, async (_request, response) => {
 });
 
 router.post('/zip-update', requireAdminMiddleware, async (_request, response) => {
+    if (process.env.NECONYAN_ANDROID_APP === '1' || process.env.NECONYAN_IOS_APP === '1') {
+        return response.status(400).json({ error: 'Update the installed phone app instead of replacing its bundled server files.' });
+    }
+    if (zipUpdatePending) return response.status(409).json({ error: 'A ZIP update is already being prepared.' });
+    zipUpdatePending = true;
     let stagedUpdate = null;
+    let handedOff = false;
 
     try {
         const version = await getVersion();
@@ -1034,7 +1056,7 @@ router.post('/zip-update', requireAdminMiddleware, async (_request, response) =>
             return response.status(400).json({ error: 'This copy of Neconyan was set up with Git (a tool that tracks code changes), so update it through Git.', repository });
         }
 
-        const release = await getLatestZipReleaseStatus(version.pkgVersion);
+        const release = await getLatestZipReleaseStatus(version.pkgVersion, { force: true });
 
         if (!release.supported) {
             return response.status(400).json({
@@ -1061,7 +1083,8 @@ router.post('/zip-update', requireAdminMiddleware, async (_request, response) =>
         }
 
         stagedUpdate = await stageZipReleaseUpdate(release);
-        scheduleZipUpdate(response, stagedUpdate);
+        await scheduleZipUpdate(response, stagedUpdate);
+        handedOff = true;
 
         response.status(202).json({
             updated: true,
@@ -1082,6 +1105,8 @@ router.post('/zip-update', requireAdminMiddleware, async (_request, response) =>
         }
         console.error('Failed to start ZIP update.', error);
         response.status(500).json({ error: error.message || 'Could not start the ZIP update.' });
+    } finally {
+        if (!handedOff) zipUpdatePending = false;
     }
 });
 

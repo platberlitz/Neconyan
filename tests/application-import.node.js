@@ -1,4 +1,4 @@
-import { authoringRenameTest, assertSavedAuthoring } from './authoring-rename-fixture.js';
+import { authoringRenameTest, assertSavedAuthoring, simulateAuthoringRename } from './authoring-rename-fixture.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -20,6 +20,15 @@ const { write: writeCard, read: readCard } = await import('../src/character-card
 const { getJob, updateJob, recoverJobs } = await import('../src/jobs/store.js');
 const { stageImportBatch } = await import('../src/operations/import-batches.js');
 const { prepareBinaryOutput } = await import('../src/operations/binary-files.js');
+
+function importRenameTest(name, run) {
+    test(name, run);
+    test(`${name} (live import inode transition)`, async t => {
+        const simulation = simulateAuthoringRename(t, { matches: from => /\.pending$|\.application-import-.*\.tmp$/.test(String(from)) });
+        await run(t);
+        assert.ok(simulation.transitions.length > 0);
+    });
+}
 
 function setup(t, owner = 'fixture') {
     const f = fixture(t, false, owner);
@@ -169,7 +178,7 @@ test('extension sync retains manifest diagnostics and native-name shadowing with
     assert.equal(fs.existsSync(path.join(p.base.directories.root, 'extensions/Good/.git/config')), false);
 });
 
-test('lost upload readback recognises only its recorded published file and its owning account', async t => {
+importRenameTest('lost upload readback recognises only its recorded published file and its owning account', async t => {
     const p = setup(t, 'alice'); const bob = setup(t, 'bob');
     const filename = sourceFile(p, 'uploaded.zip', Buffer.from('Retained upload fixture'));
     assert.equal(readUploadedArchive(p.base, p.f.scope, 'upload'), null);
@@ -186,7 +195,7 @@ test('lost upload readback recognises only its recorded published file and its o
     assert.equal(fs.readFileSync(retained.filename, 'utf8'), 'Later replacement');
 });
 
-test('whole folder import validates retained inputs before replacing chats, cards, settings and large files', async t => {
+importRenameTest('whole folder import validates retained inputs before replacing chats, cards, settings and large files', async t => {
     const p = setup(t);
     const settings = path.join(p.base.directories.root, 'settings.json');
     fs.writeFileSync(settings, JSON.stringify({ _version: 9, _settingsRevision: 5, name1: 'Current' }));
