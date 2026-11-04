@@ -17,7 +17,7 @@ export function attachCreatorGenerator(workspace, node, target) {
             const messages = buildCreatorFieldRequest(source, target);
             controller = new AbortController(); generate.disabled = true; cancel.hidden = false;
             feedback.textContent = 'Generating a suggestion…';
-            const output = await requestCreatorReply(workspace, source, messages, { signal: controller.signal });
+            const output = await requestCreatorReply(workspace, source, messages, { signal: controller.signal, recovery: { kind: 'field', target } });
             const parsed = JSON.parse(output.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/, '$1'));
             // Validate against the current draft before showing, and again when accepted.
             acceptCreatorField(workspace.session.draft, source, target, parsed.value);

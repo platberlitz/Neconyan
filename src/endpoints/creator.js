@@ -5,8 +5,21 @@ import { creatorCharacterSource, creatorBookSource } from '../creator/resources.
 import { publishCreatorDraft, getCreatorReceipt, getCreatorPublication, acknowledgeCreatorPublication, recoverCreatorPublication, discardCreatorDraft } from '../creator/publish.js';
 import { previewCreatorMacros } from '../creator/macro-preview.js';
 import { readAssistantPersona } from '../scratchpad/prompt.js';
+import { acceptCreatorGeneration, creatorGenerationStatus } from '../creator/generation.js';
 
 export const router = express.Router();
+
+for (const [path, handler] of [['/generate', acceptCreatorGeneration], ['/generation', creatorGenerationStatus]]) {
+    router.post(path, (request, response) => {
+        try {
+            const base = roleplayAccountBase(request.user?.directories);
+            if (!base || base.owner !== request.user?.profile?.handle || request.get('X-Neconyan-Account') !== base.owner) throw roleplayError('CREATOR_ACCOUNT', 'The account changed. Reopen Catelier.', 409);
+            response.json({ owner: base.owner, ...handler(base, request.body ?? {}) });
+        } catch (error) {
+            response.status(error.status || 500).json({ code: error.code || 'CREATOR_FAILED', message: error.status ? error.message : 'Catelier could not save this server request.' });
+        }
+    });
+}
 
 function route(handler) {
     return (request, response) => {

@@ -67,7 +67,7 @@ export function renderLoreWriter(workspace, panel, book) {
         try {
             const messages = buildCreatorLoreRequest(draft, book.id, instruction || 'Extract useful setting, people, places and background from the Dossier. Generate precise activation keywords.', 'keep', 'dossier');
             feedback.textContent = 'Creating entries and keywords from the Dossier…';
-            const output = await requestCreatorReply(workspace, draft, messages, { signal: controller.signal });
+            const output = await requestCreatorReply(workspace, draft, messages, { signal: controller.signal, recovery: { kind: 'lore', bookId: book.id, mode: 'keep', source: 'dossier' } });
             const proposal = parseCreatorLoreProposal(draft, book.id, output, 'keep', 'dossier');
             acceptCreatorLoreProposal(workspace.session.draft, proposal);
             if (!workspace.edit(next => { next.proposals.push(proposal); })) return;
@@ -81,7 +81,7 @@ export function renderLoreWriter(workspace, panel, book) {
         const messages = buildCreatorLoreRequest(draft, book.id, instruction, selectedMode);
         controller = new AbortController(); cancel.hidden = false;
         try {
-            const output = await requestCreatorReply(workspace, draft, messages, { signal: controller.signal });
+            const output = await requestCreatorReply(workspace, draft, messages, { signal: controller.signal, recovery: { kind: 'lore', bookId: book.id, mode: selectedMode } });
             const proposal = parseCreatorLoreProposal(draft, book.id, output, selectedMode);
             if (!workspace.edit(next => { next.proposals.push(proposal); })) return;
             if (reviews.isConnected) show(proposal);

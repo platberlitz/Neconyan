@@ -68,6 +68,7 @@ export async function renderInterview(workspace, main) {
         try {
             const output = await requestCreatorReply(workspace, source, messages, { signal: controller.signal,
                 isCurrent: () => JSON.stringify(workspace.session.draft.interview?.turns ?? []) === before,
+                recovery: { kind: 'interview', question: questionText, speaker },
             });
             if (typeof output !== 'string' || !output.trim() || output.length > 100000) throw new Error('The reply was empty or too long. Try a shorter question.');
             workspace.edit(next => {
