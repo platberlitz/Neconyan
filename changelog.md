@@ -1847,3 +1847,4 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #454 (2026-11-04) `fix(i18n): translate the chat rename failure message`
 - PR #455 (2026-11-04) `fix(welcome): show one message when a recent chat rename fails`
 - PR #459 (2026-11-04) `feat(catelier): keep writing on the server after closing the page`
+- PR #460 (2026-11-04) `fix(import): restore windows imports and enable zip app updates`
