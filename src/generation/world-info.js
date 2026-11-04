@@ -31,6 +31,18 @@ import { captureRoleplayToolBindings } from './roleplay-tool-bindings.js';
 import { activeRoleplayAuthorNote, isWorldInfoAuthorNoteActive, selectRoleplayPromptRecords, savedRoleplayMacroSnapshot } from './roleplay-prompt.js';
 import { evaluateCharacterPurrks } from '../purrks.js';
 
+/**
+ * Adds active Purrk text after a card field. Without Purrks the field stays exactly as saved,
+ * including a non-text value that later validation rejects.
+ * @param {unknown} base
+ * @param {string[]} additions
+ * @returns {unknown}
+ */
+function appendPurrkText(base, additions) {
+    if (!additions.length || (base !== undefined && base !== null && typeof base !== 'string')) return base;
+    return [base ?? '', ...additions].map(part => String(part).trim()).filter(Boolean).join('\n\n');
+}
+
 const SETTINGS = ['world_info_depth', 'world_info_min_activations', 'world_info_min_activations_depth_max',
     'world_info_budget', 'world_info_budget_cap', 'world_info_recursive', 'world_info_case_sensitive',
     'world_info_match_whole_words', 'world_info_use_group_scoring', 'world_info_character_strategy',
@@ -407,12 +419,9 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         });
         const baseDepthPrompt = character.data?.data?.extensions?.depth_prompt?.prompt
             ?? character.data?.extensions?.depth_prompt?.prompt ?? '';
-        const depthPrompt = [baseDepthPrompt, ...evaluatedPurrks.placements.depth.map(item => item.prompt)]
-            .map(part => String(part ?? '').trim())
-            .filter(Boolean)
-            .join('\n\n');
+        const depthPrompt = appendPurrkText(baseDepthPrompt, evaluatedPurrks.placements.depth.map(item => item.prompt));
         const purrksDepthEntries = [
-            ...(baseDepthPrompt && String(baseDepthPrompt).trim() ? [{
+            ...(typeof baseDepthPrompt === 'string' && baseDepthPrompt.trim() ? [{
                 prompt: String(baseDepthPrompt),
                 depth: (character.data?.data?.extensions ?? character.data?.extensions)?.depth_prompt?.depth ?? 4,
                 role: (character.data?.data?.extensions ?? character.data?.extensions)?.depth_prompt?.role ?? 'system',
@@ -439,10 +448,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
                             });
                             const memberBaseDepth = card.data?.data?.extensions?.depth_prompt?.prompt
                                 ?? card.data?.extensions?.depth_prompt?.prompt ?? '';
-                            return [memberBaseDepth, ...memberPurrks.placements.depth.map(item => item.prompt)]
-                                .map(part => String(part ?? '').trim())
-                                .filter(Boolean)
-                                .join('\n\n');
+                            return appendPurrkText(memberBaseDepth, memberPurrks.placements.depth.map(item => item.prompt));
                         }).filter(prompt => typeof prompt === 'string' && prompt.trim());
                     if (!depthPrompts.length) depthPrompts = [depthPrompt];
                 }
@@ -510,12 +516,8 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
                         characterKey: member.avatar,
                     });
                     const baseDesc = member.card.data?.description ?? member.card.description ?? '';
-                    const memberDesc = [baseDesc, ...memberPurrks.placements.description].filter(Boolean).join('\n\n');
+                    const memberDesc = appendPurrkText(baseDesc, memberPurrks.placements.description);
                     const baseDepthObj = member.card.data?.extensions?.depth_prompt ?? member.card.extensions?.depth_prompt ?? {};
-                    const combinedMemberDepth = [baseDepthObj.prompt ?? '', ...memberPurrks.placements.depth.map(item => item.prompt)]
-                        .map(part => String(part ?? '').trim())
-                        .filter(Boolean)
-                        .join('\n\n');
                     return {
                         name: memberName(member),
                         selected: member.avatar === avatar,
@@ -524,23 +526,21 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
                             ...Object.fromEntries(['description', 'personality', 'scenario', 'mes_example'].map(key => [key, member.card.data?.[key] ?? member.card[key] ?? ''])),
                             description: memberDesc,
                         },
-                        depth: { ...baseDepthObj, prompt: combinedMemberDepth },
+                        depth: baseDepthObj,
+                        ...(memberPurrks.placements.depth.length ? { purrkDepths: memberPurrks.placements.depth.map(item => ({
+                            prompt: item.prompt, depth: item.depth, role: item.role,
+                        })) } : {}),
                     };
                 }) } : null,
             attachments,
             images,
             mediaDisplay: settings.power_user?.media_display ?? 'list',
             systemPrompt: (settings.power_user?.prefer_character_prompt ?? true)
-                ? [
-                    saved.records[0].chat_metadata?.system_prompt || character.data?.data?.system_prompt
-                        || character.data?.system_prompt || '',
-                    ...evaluatedPurrks.placements.system,
-                ].filter(Boolean).join('\n\n') : '',
+                ? appendPurrkText(saved.records[0].chat_metadata?.system_prompt || character.data?.data?.system_prompt
+                    || character.data?.system_prompt || '', evaluatedPurrks.placements.system) : '',
             postHistory: { character: (settings.power_user?.prefer_character_jailbreak ?? true)
-                ? [
-                    character.data?.data?.post_history_instructions ?? character.data?.post_history_instructions ?? '',
-                    ...evaluatedPurrks.placements.post_history,
-                ].filter(Boolean).join('\n\n') : '',
+                ? appendPurrkText(character.data?.data?.post_history_instructions ?? character.data?.post_history_instructions ?? '',
+                    evaluatedPurrks.placements.post_history) : '',
             textEnabled: Boolean(settings.power_user?.sysprompt?.enabled),
             text: settings.power_user?.sysprompt?.post_history ?? '' },
             storyTemplate: settings.power_user?.context?.story_string ?? '',
@@ -551,7 +551,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             depthPrompt: { prompt: depthPrompt,
                 depth: (character.data?.data?.extensions ?? character.data?.extensions)?.depth_prompt?.depth ?? 4,
                 role: (character.data?.data?.extensions ?? character.data?.extensions)?.depth_prompt?.role ?? 'system' },
-            ...(purrksDepthEntries.length > 1 ? { depthPrompts: purrksDepthEntries } : {}),
+            ...(evaluatedPurrks.placements.depth.length > 0 ? { depthPrompts: purrksDepthEntries } : {}),
             enhancedLoreMacros: enhancedMacros,
             noteScanEnabled: Boolean(note.allowWIScan), cfg: extensions.cfg ?? null,
             reasoningInPrompt: Boolean(settings.power_user?.reasoning?.add_to_prompts),
@@ -584,10 +584,8 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             authorNote,
             global: {
                 trigger, ...(promptEffect ? { promptEffect } : {}),
-                characterDescription: [
-                    character.data?.data?.description ?? character.data?.description ?? '',
-                    ...evaluatedPurrks.placements.description,
-                ].filter(Boolean).join('\n\n'),
+                characterDescription: appendPurrkText(character.data?.data?.description ?? character.data?.description ?? '',
+                    evaluatedPurrks.placements.description),
                 characterPersonality: character.data?.data?.personality ?? character.data?.personality ?? '',
                 personaDescription: persona.description,
                 characterDepthPrompt: depthPrompt,

@@ -1580,18 +1580,23 @@ function convertWorldInfoToCharacterBook(name, entries, extensions = {}) {
 }
 
 /**
+ * Heuristic Purrks extraction runs only when the import dialog asks for it, so bundled
+ * assistant installs and extension imports keep their cards unchanged.
+ * @param {import('express').Request} request
+ * @returns {boolean}
+ */
+function shouldAutoExtractImportedPurrks(request) {
+    const raw = String(request?.body?.auto_purrks ?? '').trim().toLowerCase();
+    return raw === 'true' || raw === '1';
+}
+
+/**
  * Import a character from a YAML file.
  * @param {string} uploadPath Path to the uploaded file
  * @param {{ request: import('express').Request, response: import('express').Response }} context Express request and response objects
  * @param {string|undefined} preservedFileName Preserved file name
  * @returns {Promise<string>} Internal name of the character
  */
-function shouldAutoExtractImportedPurrks(request) {
-    const raw = request?.body?.auto_purrks;
-    if (raw === undefined || raw === null || raw === '') return true;
-    return String(raw).toLowerCase() !== 'false' && String(raw) !== '0';
-}
-
 async function importFromYaml(uploadPath, context, preservedFileName) {
     const fileText = new TextDecoder('utf-8', { fatal: true }).decode(fs.readFileSync(uploadPath));
     fs.unlinkSync(uploadPath);

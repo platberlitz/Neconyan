@@ -300,7 +300,7 @@ describe('Character Purrks model and evaluation', () => {
             evalTurn1.evaluatedItems,
         );
         expect(stateAfterTurn1.prevActiveIds).toContain('jealous');
-        expect(stateAfterTurn1.cooldowns.jealous).toBe(2);
+        expect(stateAfterTurn1.cooldowns.jealous).toBeUndefined();
 
         // If 'jealous' is paused due to cooldown, negativePrompt should NOT inject
         const evalCooldownTurn = evaluateCharacterPurrks(character, {
@@ -308,6 +308,7 @@ describe('Character Purrks model and evaluation', () => {
                 [PURRKS_CHAT_METADATA_KEY]: {
                     ...stateAfterTurn1,
                     activeSceneIds: [],
+                    cooldowns: { jealous: 2 },
                 },
             },
             messages: [{ mes: 'Clear skies today.' }],
@@ -386,6 +387,55 @@ describe('Character Purrks model and evaluation', () => {
             parsedPurrks,
         );
         expect(activeIds).toEqual(['lab-panic']);
+        expect(parseSceneDirectorResponse('{"activeIds":["lab-panic","unknown"]}', ['lab-panic'])).toEqual(['lab-panic']);
+    });
+
+    test('keeps blank editor items, imports only once and leaves inferred prompts off', () => {
+        expect(normalizeCharacterPurrks({ items: [{ id: 'new', prompt: '' }] }).items).toHaveLength(1);
+        const card = { data: { description: '### Speech Style\nSpeak in clipped, dry sentences with deadpan humour and quiet sighs.', extensions: {
+            orb: { fragments: { mood: [{ id: 'shy', prompt_text: 'Look away.' }] } },
+        } } };
+        expect(readCharacterPurrks(card).items).toEqual([]);
+        applyImportedCharacterPurrks(card);
+        expect(readCharacterPurrks(card).items).toHaveLength(1);
+        expect(readCharacterPurrks(card).items[0].enabled).toBe(false);
+        applyImportedCharacterPurrks(card, { autoExtract: true });
+        expect(readCharacterPurrks(card).items).toHaveLength(1);
+        card.data.extensions.neconyan_purrks.items = [];
+        applyImportedCharacterPurrks(card, { autoExtract: true });
+        expect(readCharacterPurrks(card).items).toEqual([]);
+        delete card.data.extensions.orb;
+        delete card.data.extensions.neconyan_purrks;
+        expect(applyImportedCharacterPurrks(card)).toBeNull();
+        applyImportedCharacterPurrks(card, { autoExtract: true });
+        expect(readCharacterPurrks(card).items.length).toBeGreaterThan(0);
+        expect(readCharacterPurrks(card).items.every(item => !item.enabled)).toBe(true);
+    });
+
+    test('ignores system records in keyword lookback and matches short CJK keywords', () => {
+        const config = { items: [{ id: 'rain', mode: 'keyword', keywords: ['雨'], prompt: 'Wet coat.' }] };
+        const messages = [{ mes: '下雨了' }, ...Array.from({ length: 8 }, () => ({ is_system: true, mes: 'Hidden' }))];
+        expect(evaluateCharacterPurrks(config, { messages }).activeItems).toHaveLength(1);
+        expect(evaluateCharacterPurrks(config, { messages: [{ is_system: true, mes: '雨' }] }).activeItems).toHaveLength(0);
+    });
+
+    test('starts scoped cooldowns only after deactivation and advances all members once', () => {
+        const config = { items: [{ id: 'mood', mode: 'scene', prompt: 'Tense.', negativePrompt: 'Relax.', cooldownTurns: 2 }] };
+        const metadata = { neconyan_purrks: { activeSceneIds: ['a:mood', 'b:mood'] } };
+        const evaluate = key => evaluateCharacterPurrks(config, { chatMetadata: metadata, characterKey: key }).evaluatedItems;
+        const first = advanceChatPurrksTurnState(metadata.neconyan_purrks, [...evaluate('a'), ...evaluate('b')]);
+        expect(first.prevActiveIds).toEqual(['a:mood', 'b:mood']);
+        expect(first.cooldowns).toEqual({});
+        metadata.neconyan_purrks = { ...first, activeSceneIds: [] };
+        expect(evaluate('a')[0].injectNegative).toBe(true);
+        const second = advanceChatPurrksTurnState(metadata.neconyan_purrks, [...evaluate('a'), ...evaluate('b')]);
+        expect(second.cooldowns).toEqual({ 'a:mood': 2, 'b:mood': 2 });
+        metadata.neconyan_purrks = second;
+        const third = advanceChatPurrksTurnState(second, [...evaluate('a'), ...evaluate('b')]);
+        expect(third.cooldowns).toEqual({ 'a:mood': 1, 'b:mood': 1 });
+        config.enabled = false;
+        metadata.neconyan_purrks = first;
+        expect(evaluate('a')[0].injectNegative).toBe(false);
     });
 
     test('server roleplay prompt assembly substitutes macros and registers multi-depth Purrks', () => {
@@ -480,6 +530,21 @@ describe('Character Purrks model and evaluation', () => {
                 depth: 1,
                 role: 'user',
             },
+        ]);
+        snapshot.groupPrompt = {
+            mode: 1, prefix: '', suffix: '', members: [{
+                name: 'Mittens', selected: true, disabled: false,
+                fields: { description: '', personality: '', scenario: '', mes_example: '' },
+                depth: { prompt: 'Base note', depth: 4, role: 'system' },
+                purrkDepths: [{ prompt: 'Separate instruction', depth: 1, role: 'user' }],
+            }],
+        };
+        const groupPrepared = prepareRoleplayHistoryContent(
+            [{ chat_metadata: {} }, { name: 'Tester', is_user: true, mes: 'Hello!' }], snapshot, environment,
+        );
+        expect(groupPrepared.depthPrompts).toEqual([
+            { prompt: 'Base note', depth: 4, role: 'system' },
+            { prompt: 'Separate instruction', depth: 1, role: 'user' },
         ]);
     });
 });

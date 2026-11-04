@@ -1483,15 +1483,15 @@ export function getGroupDepthPrompts(groupId, characterId) {
             })
             : null;
         const baseDepthText = character.data?.extensions?.depth_prompt?.prompt?.trim() || '';
-        const combinedDepthRaw = [baseDepthText, ...(memberPurrks?.placements.depth.map(item => item.prompt) ?? [])]
-            .filter(Boolean)
-            .join('\n\n');
-        const depthPromptText = baseChatReplace(combinedDepthRaw, null, character.name) || '';
+        const depthPromptText = baseChatReplace(baseDepthText, null, character.name) || '';
         const depthPromptDepth = character.data?.extensions?.depth_prompt?.depth ?? depth_prompt_depth_default;
         const depthPromptRole = character.data?.extensions?.depth_prompt?.role ?? depth_prompt_role_default;
 
         if (depthPromptText) {
             depthPrompts.push({ text: depthPromptText, depth: depthPromptDepth, role: depthPromptRole });
+        }
+        for (const purrk of memberPurrks?.placements.depth ?? []) {
+            depthPrompts.push({ text: baseChatReplace(purrk.prompt, null, character.name), depth: purrk.depth, role: purrk.roleNumber });
         }
     }
 
