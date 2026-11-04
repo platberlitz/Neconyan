@@ -11107,6 +11107,51 @@ describe('in-chat agent post-processing runner', () => {
         expect(chat[0].mes).toBe('Formatted rewrite');
     });
 
+    test('keeps a Kimi partial prefill last on the main connection without exposing seeded reasoning', async () => {
+        mainApi = 'openai';
+        generatingModel = 'kimi-k3';
+        globalSettings.kimiPartialPrefill = '<think>Check the instructions.';
+        generateRaw.mockResolvedValue('Visible answer');
+        const { requestPromptTransform } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const result = await requestPromptTransform({ id: 'helper' }, [{ role: 'user', content: 'Task' }], 100);
+        expect(generateRaw.mock.calls[0][0].prompt.at(-1)).toEqual({ role: 'assistant', content: globalSettings.kimiPartialPrefill, partial: true });
+        expect(result.output).toBe('Visible answer');
+    });
+
+    test('selects partial prefills again when falling back to a Kimi connection', async () => {
+        globalSettings.kimiPartialPrefill = 'Answer: ';
+        globalSettings.connectionFallbacks = ['backup'];
+        connectionManagerRequestService = {
+            getProfile: jest.fn(id => ({ name: id, model: id === 'backup' ? 'kimi-k3.1-pro' : 'other-model' })),
+            constructPrompt: jest.fn(messages => messages),
+            sendRequest: jest.fn(async id => ({ content: id === 'backup' ? 'Done' : '' })),
+        };
+        const { requestPromptTransform } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const messages = [{ role: 'user', content: 'Task' }];
+        const result = await requestPromptTransform({ id: 'helper', connectionProfile: 'primary' }, messages, 100);
+        expect(connectionManagerRequestService.sendRequest.mock.calls[0][1]).toEqual(messages);
+        expect(connectionManagerRequestService.sendRequest.mock.calls[1][1].at(-1)).toEqual({ role: 'assistant', content: 'Answer: ', partial: true });
+        expect(result.output).toBe('Answer: Done');
+    });
+
+    test('uses the Agent model for partial prefills and restores only the visible answer prefix', async () => {
+        usePromptTransformPostAgent();
+        globalSettings.kimiPartialPrefill = '<think>Check the instructions.</think>Answer: ';
+        connectionManagerRequestService = {
+            getProfile: jest.fn(() => ({ name: 'Kimi', model: 'kimi-k3.1-pro' })),
+            sendRequest: jest.fn(async () => ({ content: 'Done' })),
+        };
+        const { requestPromptTransform } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const messages = [{ role: 'user', content: 'Task' }];
+        const result = await requestPromptTransform({ id: 'helper', connectionProfile: 'kimi' }, messages, 100);
+        expect(connectionManagerRequestService.sendRequest.mock.calls[0][1].at(-1)).toEqual({
+            role: 'assistant', content: globalSettings.kimiPartialPrefill, partial: true,
+        });
+        expect(result.output).toBe('Answer: Done');
+        await requestPromptTransform({ id: 'helper', connectionProfile: 'kimi', modelOverride: 'other-model' }, messages, 100);
+        expect(connectionManagerRequestService.sendRequest.mock.calls[1][1]).toEqual(messages);
+    });
+
     test('appends global helper prefill messages to profile prompt-transform requests', async () => {
         usePromptTransformPostAgent();
         enabledAgents[0].connectionProfile = 'profile-cc';

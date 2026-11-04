@@ -513,16 +513,7 @@ button.ica--card-pill--version-update {
     flex: 1;
 }
 
-.ica--helper-prefill-label {
-    align-items: flex-start;
-}
-
-.ica--helper-prefill-label span {
-    padding-top: 8px;
-}
-
 .ica--helper-prefill-field {
-    flex: 1 1 320px;
     width: 100%;
     min-height: 92px;
     resize: vertical;

@@ -196,6 +196,7 @@ const defaultGlobalSettings = {
     companionAutoCleanupEnabled: false,
     companionAutoCleanupOlderNotes: 3,
     helperPrefillMessages: '',
+    kimiPartialPrefill: '',
     hiddenCompanionAgentIds: [],
 };
 let globalSettings = structuredClone(defaultGlobalSettings);
@@ -431,6 +432,7 @@ function normalizeGlobalSettingsRecord(settings, update) {
     settings.postMainInterceptShowMessageFirst = settings.postMainInterceptShowMessageFirst !== false;
     settings.promptTransformRefusalGuard = settings.promptTransformRefusalGuard !== false;
     settings.enabledAgentIdsByChatType = normalizeScopedEnabledAgentIds(settings.enabledAgentIdsByChatType);
+    settings.kimiPartialPrefill = typeof settings.kimiPartialPrefill === 'string' ? settings.kimiPartialPrefill : '';
     settings.helperPrefillMessages = typeof settings.helperPrefillMessages === 'string'
         ? settings.helperPrefillMessages
         : '';

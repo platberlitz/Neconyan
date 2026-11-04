@@ -5,7 +5,8 @@ import { readArtifact, unresolvedProviderStep, writeArtifact } from '../jobs/art
 import { markProviderSettled } from '../jobs/store.js';
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 import { MAX_AGENT_FALLBACK_CONNECTIONS } from './agent-definition.js';
-import { getChatProfileContextLimit } from './profiles.js';
+import { getChatProfileContextLimit, resolveGenerationProfile } from './profiles.js';
+import { prepareHelperPartialPrefill, joinHelperPartialPrefill } from '../../public/scripts/extensions/helper-prefill.js';
 import { runChatProfile } from './service.js';
 import { beginDiagnosticAgent, endDiagnosticAgent } from '../diagnostic-activity.js';
 import { isRoleplayAgentStop, withRoleplayAgentStop } from './roleplay-agent-stop.js';
@@ -28,6 +29,7 @@ function canTryFallback(context, error) {
  * Fallbacks never reuse the Agent's model override, which belongs to its own connection.
  */
 export async function runAgentModelStep(context, options) {
+    if (options.partialPrefill) options = { ...options, identity: roleplayHash({ identity: options.identity, partialPrefill: options.partialPrefill }) };
     return withRoleplayAgentStop(context, scoped => runAgentModelWithFallbacks(scoped, options));
 }
 
@@ -98,7 +100,7 @@ function abandonAttempt(context, lock, name, identity, error, reason = 'fallback
 
 /** A single saved model call, including its exact expanded input. It never substitutes or retries a connection. */
 async function runSingleAgentModelStep(context, { base, account, name, identity, binding, modelOverride = '', maxTokens = 8192,
-    macros, tokenizer, fallbackContext = 8192, buildMessages, assertCurrent, generate = runChatProfile, diagnostic = null }) {
+    macros, tokenizer, fallbackContext = 8192, buildMessages, assertCurrent, generate = runChatProfile, diagnostic = null, partialPrefill = '' }) {
     const lock = callback => withRoleplayAccount(base, account, callback);
     const read = key => lock(() => readArtifact(context.directories, context.job.id, key));
     const save = (key, value) => lock(() => writeArtifact(context.directories, context.job.id, key, value));
@@ -117,14 +119,18 @@ async function runSingleAgentModelStep(context, { base, account, name, identity,
         let input = read(`${key}:input`);
         if (input === undefined) {
             const environment = createMacroEnvironment(macros, {}, { readOnly: true });
-            const messages = buildMessages(environment);
+            const material = partialPrefill ? lock(() => resolveGenerationProfile(context.directories, binding)) : null;
+            const prefill = prepareHelperPartialPrefill(buildMessages(environment), partialPrefill,
+                material && (!material.backend || material.backend === 'chat') ? modelOverride || material.profile.model : '');
+            const messages = prefill.messages;
             if (!Array.isArray(messages) || !messages.length || Buffer.byteLength(JSON.stringify(messages)) > 2 * 1024 * 1024) throw fail('The Agent request is empty or too large.');
             const limit = lock(() => getChatProfileContextLimit(context.directories, binding)) ?? fallbackContext;
             const counter = await getCounter(tokenizer);
             const tokens = messages.reduce((sum, message) => sum + counter.count(JSON.stringify(message)) + 4, 16);
             const outputTokens = Math.min(maxTokens, limit - tokens - 64);
             if (!Number.isSafeInteger(outputTokens) || outputTokens < 1) throw roleplayError('ROLEPLAY_AGENT_BUDGET', 'The complete Agent input does not fit its saved model context.', 409);
-            const data = { identity: inputIdentity, messages, maxTokens: outputTokens, macroState: environment.captureState() };
+            const data = { identity: inputIdentity, messages, maxTokens: outputTokens, macroState: environment.captureState(),
+                ...(prefill.active ? { prefillReply: prefill.reply } : {}) };
             input = { ...data, hash: roleplayHash(data) };
             save(`${key}:input`, input);
         }
@@ -160,7 +166,7 @@ async function runSingleAgentModelStep(context, { base, account, name, identity,
         const blocked = classifyGenerationOutcome(response?.response);
         if (blocked) throw providerBlockedError(blocked);
         if (typeof response?.text !== 'string' || Buffer.byteLength(response.text) > 256 * 1024) throw fail('The Agent returned no valid bounded text result.');
-        const result = { identity: inputIdentity, inputHash, text: response.text, lengthLimited: limited(response), macroState: input.macroState,
+        const result = { identity: inputIdentity, inputHash, text: joinHelperPartialPrefill(response.text, input.prefillReply), lengthLimited: limited(response), macroState: input.macroState,
             profileId: binding.profileId ?? '', model: modelOverride || response.generation?.model || '', completedAt: Date.now() };
         completed = { ...result, hash: roleplayHash(result) };
         save(`${key}:result`, completed);

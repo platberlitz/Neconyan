@@ -3,7 +3,7 @@ import {
     putRecord, recordEligible, recordRevision, refKey, sourceAt, sourceEligible, sourceFingerprint,
     strings, uniqueRefs, validateRecord, validateRefs,
 } from './core.js';
-import { EXTRACTION_CONTRACT, PAWSPECTIVE_CONTRACT } from './contracts.js';
+import { extractionContract, PAWSPECTIVE_CONTRACT } from './contracts.js';
 import { callJsonRole, readConfig, resolvedRoleIdentity, ROLE_LABELS, roleVersion } from './models.js';
 import { loadCurrentState } from './sources.js';
 import { mutateState, readStateShared, statePath } from './store.js';
@@ -336,7 +336,7 @@ async function runBatch(directories, locator, options, call) {
         input.provenance = { policy: POLICY_VERSION, jobId, role: 'extractor', model: config.roles.extractor.model, modelRevision: config.roles.extractor.modelRevision };
         const dataTypes = [...new Set([...input.sources.map(source => source.type), ...(input.existing.length || input.authorOverrides.length ? ['memory'] : [])])];
         assertEnabled();
-        const extraction = await call(directories, config, 'extractor', EXTRACTION_CONTRACT, input, { dataTypes, signal: options.signal });
+        const extraction = await call(directories, config, 'extractor', extractionContract(config), input, { dataTypes, signal: options.signal });
         usage.push(extraction.usage);
         const requestAsOf = request => Math.max(-1, ...request.refs.map(ref => sourceAt(state, ref).sequence));
         // A suggestion from a switched-off interview role is ignored, not reported as a skipped
