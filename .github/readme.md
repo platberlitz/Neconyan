@@ -4,9 +4,9 @@
 
 Latest release: **[1.4.1](https://github.com/platberlitz/Neconyan/releases/tag/v1.4.1)**. Development continues on `staging`.
 
-**Other languages:** [Deutsch](readme-de_de.md) · [日本語](readme-ja_jp.md) · [한국어](readme-ko_kr.md) · [Русский](readme-ru_ru.md) · [简体中文](readme-zh_cn.md) · [繁體中文](readme-zh_tw.md)
+**Other languages:** [Deutsch](readme-de_de.md) · [Español](readme-es_es.md) · [Français](readme-fr_fr.md) · [Italiano](readme-it_it.md) · [Nederlands](readme-nl_nl.md) · [Português](readme-pt_pt.md) · [Íslenska](readme-is_is.md) · [Русский](readme-ru_ru.md) · [Українська](readme-uk_ua.md) · [العربية](readme-ar_sa.md) · [ไทย](readme-th_th.md) · [Tiếng Việt](readme-vi_vn.md) · [日本語](readme-ja_jp.md) · [한국어](readme-ko_kr.md) · [简体中文](readme-zh_cn.md) · [繁體中文](readme-zh_tw.md)
 
-These are short introductions. I keep the full README below up to date in English.
+The translations follow this English README. If they ever disagree, this one is current.
 
 <p align="center">
   <img src="../docs/readme/banner-neconyan.webp" alt="Neconyan - The Cutest LLM RP Frontend">
