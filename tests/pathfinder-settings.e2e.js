@@ -2,6 +2,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import { dismissOnboardingIfPresent, dismissOpenDialogIfPresent } from './chat-scroll-regression-helpers.js';
 
@@ -194,6 +195,54 @@ test('Pawthfinder Jev presets, threshold and protected key controls', async ({ p
         }
     }
 });
+
+for (const width of [393, 1280]) {
+    test(`server retrieval log survives reopening at ${width}px`, async ({ page, baseURL }) => {
+        await page.setViewportSize({ width, height: width === 393 ? 852 : 900 });
+        await openSettings(page, baseURL);
+        const requests = [];
+        await page.route('**/api/in-chat-agents/pathfinder/activity', route => {
+            requests.push(route.request().postDataJSON());
+            return route.fulfill({ json: { activity: {
+                type: 'pathfinder_retrieval_detail', timestamp: Date.now(), mode: 'pipeline', books: [MANUAL_BOOK],
+                selectedEntries: [{ bookName: MANUAL_BOOK, uid: 0, name: 'Entry 0' }],
+                stageResults: [{ stageIndex: 0, promptId: 'candidate-selection', success: true, entriesFound: 1,
+                    scores: [{ id: 'entry-0', score: 0.84 }], threshold: 0.5 }],
+                injectedPrompt: 'The lighthouse keeper remembers the visitor.',
+                metadata: { serverJobId: 'fixture-job', serverState: 'succeeded', serverRetrievalCompleted: true },
+            } } });
+        });
+        await page.evaluate(async () => {
+            const script = await import('/script.js');
+            const ctx = window.SillyTavern.getContext();
+            ctx.characters.push({ name: 'Retrieval fixture', avatar: 'retrieval-fixture.png', chat: 'Retrieval fixture chat' });
+            script.setCharacterId(ctx.characters.length - 1);
+        });
+        await page.locator('[aria-controls="pf--retrieval-log-body"]').click();
+        const output = page.locator('#pf--retrieval-log-output');
+        await expect(output).toContainText('No Pawthfinder retrieval activity recorded yet');
+        const screenshots = fileURLToPath(new URL('../screenshots/', import.meta.url));
+        fs.mkdirSync(screenshots, { recursive: true });
+        await page.screenshot({ path: path.join(screenshots, `jev-server-log-before-${width}.png`) });
+        await page.locator('#pf--refresh-log').click();
+        await expect(output).toContainText('entry-0: 0.84');
+        await expect(output).toContainText('Server run: succeeded');
+        expect(requests.at(-1)).toEqual({ agentId: 'pf-e2e-agent', locator: { chat: 'Retrieval fixture chat', avatar: 'retrieval-fixture.png', group: false } });
+        await page.evaluate(async () => {
+            const ui = await import('/scripts/extensions/in-chat-agents/pathfinder-settings-ui.js');
+            const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+            const activity = await import('/scripts/extensions/in-chat-agents/pathfinder/activity-feed.js');
+            ui.closePathfinderSettings();
+            activity.clearFeed();
+            document.getElementById('pf-e2e-host').replaceChildren();
+            const panel = await ui.openPathfinderSettings(store.getAgentById('pf-e2e-agent'));
+            document.getElementById('pf-e2e-host').append(...panel.toArray());
+        });
+        await expect(output).toContainText('entry-0: 0.84');
+        await output.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: path.join(screenshots, `jev-server-log-after-${width}.png`) });
+    });
+}
 
 test('Jev browser pipeline keeps candidate identities and handles an empty selection', async ({ page, baseURL }) => {
     await openSettings(page, baseURL);

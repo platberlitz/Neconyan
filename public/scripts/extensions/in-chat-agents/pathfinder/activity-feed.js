@@ -1,16 +1,23 @@
 const feedItems = [];
+let serverActivity = null;
 const MAX_FEED_ITEMS = 50;
 
 export function initActivityFeed() {
     feedItems.length = 0;
+    serverActivity = null;
 }
 
 export function clearFeed() {
     feedItems.length = 0;
+    serverActivity = null;
+}
+
+export function setServerActivity(activity) {
+    serverActivity = activity;
 }
 
 export function getFeedItems() {
-    return [...feedItems];
+    return [...feedItems, ...(serverActivity ? [serverActivity] : [])].sort((a, b) => b.timestamp - a.timestamp);
 }
 
 function addFeedItem(item) {
@@ -118,4 +125,3 @@ export function logPipelineError(pipelineName, stageName, error) {
         error: String(error),
     });
 }
-

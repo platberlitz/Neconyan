@@ -25,7 +25,7 @@ import { ALL_TOOL_NAMES, CONFIRMABLE_TOOLS, getActiveTunnelVisionBooks, getReada
 import { initializePromptStore } from './pathfinder/prompts/prompt-store.js';
 import { getDefaultPrompts, getDefaultPipelines } from './pathfinder/prompts/default-prompts.js';
 import { populateConnectionProfileSelect } from './profile-utils.js';
-import { clearFeed, getFeedItems } from './pathfinder/activity-feed.js';
+import { clearFeed, getFeedItems, setServerActivity } from './pathfinder/activity-feed.js';
 import { getSummaryMemoryState, onSummaryMemoryChanged, saveSummaryMemoryContent } from './pathfinder/summary-memory-store.js';
 import { sidecarGenerate } from './pathfinder/llm-sidecar.js';
 import { createSeparateSummaryMemoryEntry, createSummaryMemoryEntry, deriveSummaryLorebookTitle } from './pathfinder/tools/summarize.js';
@@ -55,6 +55,7 @@ export function closePathfinderSettings(panel = settingsEl) {
     settingsEl?.off().find('*').off();
     settingsEl?.find('input, button, select, textarea').prop('disabled', true);
     settingsSession = null;
+    setServerActivity(null);
     settingsEl = null;
     currentAgent = null;
 }
@@ -293,6 +294,8 @@ export async function openPathfinderSettings(agent) {
         session.summaryController?.abort();
         // A chat switch invalidates queued edits; the runner owns auto-sync.
         session.contextRevision++;
+        setServerActivity(null);
+        void refreshServerRetrievalLog();
         session.dirtySettings.clear();
         session.permissionEdits.clear();
         session.enabledChange = undefined;
@@ -348,6 +351,7 @@ export async function openPathfinderSettings(agent) {
     updateStatusBanner();
     updateModeCardStates();
     renderRetrievalLog();
+    void refreshServerRetrievalLog();
     renderSummaryMemoryEditor();
     attachTextareaFullscreen(settingsEl);
 
@@ -1070,6 +1074,7 @@ function bindEvents() {
         output.text('Running diagnostics...');
 
         try {
+            await refreshServerRetrievalLog();
             const results = await runDiagnostics();
             if (settingsSession !== session) return;
             let text = '';
@@ -1104,6 +1109,7 @@ function bindEvents() {
 
     settingsEl.find('#pf--refresh-log').on('click', () => {
         renderRetrievalLog();
+        void refreshServerRetrievalLog();
     });
 
     settingsEl.find('#pf--log-mode').on('change', function () {
@@ -1113,6 +1119,7 @@ function bindEvents() {
     });
 
     settingsEl.find('#pf--clear-log').on('click', () => {
+        if (settingsSession) settingsSession.logRequestId = (settingsSession.logRequestId || 0) + 1;
         clearFeed();
         renderRetrievalLog();
     });
@@ -1174,6 +1181,35 @@ function updateStatusBanner() {
     banner.find('.pf--status-icon i').toggleClass('fa-circle-check', ready).toggleClass('fa-circle-xmark', !ready);
     banner.find('.pf--status-text strong').text(title);
     banner.find('.pf--status-text span').text(message);
+}
+
+async function refreshServerRetrievalLog() {
+    const session = settingsSession;
+    if (!session) return;
+    const revision = session.contextRevision;
+    const requestId = session.logRequestId = (session.logRequestId || 0) + 1;
+    const current = () => settingsSession === session && session.contextRevision === revision && session.logRequestId === requestId;
+    const context = getContext();
+    const chat = String(context?.chatId || '').replace(/\.jsonl$/, '');
+    const group = Boolean(context?.groupId);
+    const avatar = String(context?.characters?.[context.characterId]?.avatar || '');
+    setServerActivity(null);
+    if (!chat || (!group && !avatar)) { renderRetrievalLog(); return; }
+    try {
+        const response = await fetch('/api/in-chat-agents/pathfinder/activity', {
+            method: 'POST', headers: getRequestHeaders(),
+            body: JSON.stringify({ agentId: session.agent.id, locator: { chat, group, avatar } }),
+        });
+        const result = await response.json();
+        if (!current()) return;
+        if (!response.ok) throw new Error(result.error || 'Could not read server retrieval activity.');
+        setServerActivity(result.activity ?? null);
+        renderRetrievalLog();
+    } catch (error) {
+        if (!current()) return;
+        renderRetrievalLog();
+        session.element.find('#pf--retrieval-log-output').append(document.createTextNode(`\nServer retrieval log unavailable: ${error.message}`));
+    }
 }
 
 function renderRetrievalLog() {
@@ -1272,6 +1308,7 @@ function formatRetrievalDetail(item, { detailed = false } = {}) {
     if (metadata.reason) {
         lines.push(`  Note: ${metadata.reason.replace(/-/g, ' ')}`);
     }
+    if (metadata.serverJobId) lines.push(`  Server run: ${metadata.serverState || 'unknown'}`);
 
     if (metadata.skippedNaturalActivationCount > 0) {
         lines.push(`  Skipped native World Info activations: ${formatCount(metadata.skippedNaturalActivationCount, 'entry')}`);

@@ -1,10 +1,20 @@
 import path from 'node:path';
 import express from 'express';
+import { readPathfinderActivity } from '../generation/pathfinder-activity.js';
 import { pathfinderKey, resolvePathfinderModel, requestPathfinderModel } from '../generation/pathfinder-model.js';
 import { readAgentCollection, writeAgentRecord } from '../in-chat-agent-storage.js';
 import { normalizeAgentGroup, normalizeAgentSetupPreset } from '../../public/scripts/extensions/in-chat-agents/setup-presets.js';
 
 export const router = express.Router();
+
+router.post('/pathfinder/activity', (request, response) => {
+    try {
+        const owner = request.user.profile.handle;
+        const expected = request.get('X-Neconyan-Account');
+        if (expected !== undefined && expected !== owner) return response.status(409).json({ error: 'account_changed' });
+        response.json({ activity: readPathfinderActivity({ owner, directories: request.user.directories }, request.body) });
+    } catch (error) { response.status(error.status ?? 500).json({ error: error.message }); }
+});
 
 router.post('/pathfinder/key', (request, response) => {
     try { response.json(pathfinderKey(request.user.directories, request.body)); } catch (error) { response.status(error.status ?? 500).json({ error: error.message }); }
