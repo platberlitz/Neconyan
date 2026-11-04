@@ -30,9 +30,12 @@ export function simulateAuthoringRename(t, { field = 'ino', afterRename, matches
         return stat;
     };
     const state = { transitions: [], native };
-    t.mock.method(fs, 'lstatSync', (...args) => adjust(native.lstatSync(...args)));
-    t.mock.method(fs, 'fstatSync', (...args) => adjust(native.fstatSync(...args)));
-    t.mock.method(fs, 'renameSync', (from, to) => {
+    // Bun's node:test runner has no t.mock yet. Restore the real methods with
+    // the shared teardown API so both runtimes exercise the same transition.
+    t.after(() => Object.assign(fs, native));
+    fs.lstatSync = (...args) => adjust(native.lstatSync(...args));
+    fs.fstatSync = (...args) => adjust(native.fstatSync(...args));
+    fs.renameSync = (from, to) => {
         const authoring = matches(from);
         const before = authoring ? native.lstatSync(from, { bigint: true }) : null;
         const result = native.renameSync(from, to);
@@ -43,7 +46,7 @@ export function simulateAuthoringRename(t, { field = 'ino', afterRename, matches
             afterRename?.(from, to, state);
         }
         return result;
-    });
+    };
     return state;
 }
 
