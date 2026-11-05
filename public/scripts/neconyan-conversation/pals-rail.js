@@ -1,3 +1,4 @@
+import { normalizeScenarioAvatar } from '../persona-appendix-avatar.js';
 import {
     characters,
     default_user_avatar,
@@ -187,6 +188,8 @@ export function getScheduleEditorTargets(baseAvatar = getCurrentCharAvatar()) {
 
 export function getConversationMessageAvatar(message, avatar = getCurrentCharAvatar()) {
     if (message.role === 'user') {
+        const scenarioAvatar = normalizeScenarioAvatar(message.extra?.scenario_avatar);
+        if (scenarioAvatar) return scenarioAvatar;
         return (typeof user_avatar === 'string' && user_avatar)
             ? getThumbnailUrlForViewport('persona', user_avatar) || default_user_avatar
             : default_user_avatar;

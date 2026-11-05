@@ -1,4 +1,5 @@
 import { renderGenerationOutcome } from '../generation-outcome-ui.js';
+import { normalizeScenarioAvatar } from '../persona-appendix-avatar.js';
 import {
     characters,
     default_user_avatar,
@@ -362,7 +363,7 @@ function createConversationMessageElement(message, { avatar, groupId, settings, 
     const avatarWrap = document.createElement('div');
     avatarWrap.className = 'sb-conversation-message-avatar';
     const messageAvatar = message.role === 'user'
-        ? user_avatar
+        ? normalizeScenarioAvatar(message.extra?.scenario_avatar) || user_avatar
         : message.role === 'partner' || message.role === 'system'
             ? message.extra?.partner_avatar || avatar
             : avatar;

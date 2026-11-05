@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
 import sanitize from 'sanitize-filename';
 import { read as readCharacterCard, write as writeCharacterCard } from './character-card-parser.js';
+import { normalizeScenarioAvatar } from '../public/scripts/persona-appendix-avatar.js';
 
 const SPEC = 'neconyan_persona';
 const VERSION = '1.0';
@@ -38,7 +39,9 @@ export function normalizePersonaCard(card) {
         if (!id || ids.has(id)) id = `note-${index + 1}-${ids.size}`;
         while (ids.has(id)) id += '-copy';
         ids.add(id);
-        return { id, name: text(note.name), description: text(note.description) };
+        const avatar = normalizeScenarioAvatar(note.avatar);
+        if (note.avatar && !avatar) throw new Error('Invalid Scenario Note avatar.');
+        return { id, name: text(note.name), description: text(note.description), ...(avatar ? { avatar } : {}) };
     });
     return {
         spec: SPEC,

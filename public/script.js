@@ -317,6 +317,7 @@ import { hasServedCodeChanged } from './scripts/server-restart-monitor.js';
 import { getFriendlyTokenizerName, getTokenCount, getTokenCountAsync, initTokenizers, saveTokenCache } from './scripts/tokenizers.js';
 import {
     user_avatar,
+    getPersonaScenarioAvatar,
     getUserAvatars,
     getUserAvatar,
     setUserAvatar,
@@ -11558,7 +11559,10 @@ export async function sendMessageAsUser(messageText, messageBias, insertAt = nul
     }
 
     // Lock user avatar to a persona.
-    if (avatar in power_user.personas) {
+    const scenarioAvatar = getPersonaScenarioAvatar(avatar);
+    if (scenarioAvatar) {
+        message.force_avatar = scenarioAvatar;
+    } else if (avatar in power_user.personas) {
         message.force_avatar = getThumbnailUrl('persona', avatar);
     }
 

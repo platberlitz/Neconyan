@@ -3193,3 +3193,10 @@
 @media (prefers-reduced-motion: reduce) {
     :root:not([data-sb-theme='windows-98']):not([data-sb-theme='windows-xp']) body.neconyan:not(.sbterm) #sheld[data-sb-conversation-mode='on'] #sb_conversation_header :is(#sb_conversation_pals_toggle, .sb-conversation-header-actions .menu_button_icon, .sb-conversation-connection-link) { transition: none; }
 }
+.sb-conversation-persona-note-option .persona-appendix-avatar {
+    width: 28px;
+    height: 28px;
+    object-fit: cover;
+    border-radius: 6px;
+    flex: 0 0 28px;
+}

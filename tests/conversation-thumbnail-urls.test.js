@@ -120,6 +120,12 @@ const palsRail = await import('../public/scripts/neconyan-conversation/pals-rail
 const settingsStore = await import('../public/scripts/neconyan-conversation/settings-store.js');
 
 describe('Conversation viewport-aware portrait URLs', () => {
+    test('uses the saved Scenario Note portrait on a message and ignores invalid data', () => {
+        const portrait = 'data:image/png;base64,aGVsbG8=';
+        expect(palsRail.getConversationMessageAvatar({ role: 'user', extra: { scenario_avatar: portrait } }, 'aster.png')).toBe(portrait);
+        expect(palsRail.getConversationMessageAvatar({ role: 'user', extra: { scenario_avatar: 'https://example.com/x' } }, 'aster.png'))
+            .toBe('/thumbnail?type=persona&file=user-persona.png');
+    });
     beforeEach(() => {
         isMobileViewport = false;
         currentAvatar = 'aster.png';
@@ -188,7 +194,7 @@ describe('Conversation viewport-aware portrait URLs', () => {
 
         const chromeSource = fs.readFileSync(path.join(conversationDir, 'chrome.js'), 'utf8');
         expect(chromeSource).toContain('function getConversationFullAvatarUrl(file, type)');
-        expect(chromeSource).toContain('return getUserAvatar(file);');
+        expect(chromeSource).toContain('return normalizeScenarioAvatar(file) || getUserAvatar(file);');
         expect(chromeSource).toContain('return `/characters/${encodeURIComponent(file)}`;');
     });
 });

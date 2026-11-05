@@ -556,7 +556,7 @@ describe('Character Purrks UI, CSS, and shell contracts', () => {
     const creatorIndexJs = fs.readFileSync(path.join(repoRoot, 'public/scripts/creator/index.js'), 'utf8');
 
     test('ships neconyan-purrks.css as a deferred stylesheet with accent-aware tokens and reduced-motion guard', () => {
-        expect(indexHtml).toContain('href="css/neconyan-purrks.css?v=20261105-scenario-note-header" rel="preload" as="style" data-sb-deferred-style data-sb-media="all"');
+        expect(indexHtml).toContain('href="css/neconyan-purrks.css?v=20261105-scenario-avatars" rel="preload" as="style" data-sb-deferred-style data-sb-media="all"');
         expect(purrksCss).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
         expect(purrksCss).not.toMatch(/!important/);
         expect(purrksCss).not.toMatch(/(^|\s)\/\//m);

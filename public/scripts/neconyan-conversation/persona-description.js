@@ -1,4 +1,5 @@
 import { PERSONA_APPENDICES_DEFAULT_SCOPE_KEY, PERSONA_APPENDICES_SELECTIONS_KEY } from './constants.js';
+import { normalizeScenarioAvatar } from '../persona-appendix-avatar.js';
 
 export function conversationPersonaAppendices(descriptor) {
     if (!Array.isArray(descriptor?.appendices)) return [];
@@ -7,6 +8,7 @@ export function conversationPersonaAppendices(descriptor) {
         return {
             id: String(appendix?.id || `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${index}`).trim(),
             name, description: String(appendix?.description ?? ''),
+            ...(normalizeScenarioAvatar(appendix?.avatar) ? { avatar: appendix.avatar } : {}),
         };
     }).filter(appendix => appendix.id);
 }
