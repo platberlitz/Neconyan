@@ -940,9 +940,19 @@ export function bindConversationChromeControls(sheld) {
             event.preventDefault();
             void submitConversationInput();
         });
+        let pendingInputHeightFrame = 0;
         input.addEventListener('input', () => {
-            input.style.height = 'auto';
-            input.style.height = `${input.scrollHeight}px`;
+            if (pendingInputHeightFrame) {
+                cancelAnimationFrame(pendingInputHeightFrame);
+            }
+            pendingInputHeightFrame = requestAnimationFrame(() => {
+                pendingInputHeightFrame = 0;
+                if (!input.isConnected) {
+                    return;
+                }
+                input.style.height = 'auto';
+                input.style.height = `${input.scrollHeight}px`;
+            });
         });
         input.addEventListener('paste', (event) => {
             const files = Array.from(event.clipboardData?.files || []);
