@@ -37,7 +37,7 @@ import { clearScratchpadPreview, publishScratchpadPreview } from './preview.js';
 import { scratchpadMacroEnvironment } from './macros.js';
 import { notebookContextLocked, withNotebookPreparation, captureReplyNotebookProposalsLocked, notifyScratchpadNotebookResult } from './notebooks.js';
 import { sameSourceContext } from '../../public/scripts/scratchpad/source.js';
-import { captureImageTargetsLocked, imagePersonaIdLocked, normaliseImageTargets } from './image-targets.js';
+import { captureImageTargetsLocked, capturePersonaTargetLocked, imagePersonaIdLocked, normaliseImageTargets, normalisePersonaTarget } from './image-targets.js';
 import { hasPendingImages } from './image-state.js';
 import { readScratchpadImageAvailability } from './images.js';
 import { WEB_SEARCH_PLACEHOLDER, buildWebSearchPrompt, performWebSearch, planWebSearch, readWebSearchLocked, webSearchAcknowledgement, webSearchFailure, webSearchHistoryLine, webSearchMetadata } from './web-search.js';
@@ -70,6 +70,7 @@ export function normaliseCapabilities(input, sourceKind = 'roleplay', source = {
         : [];
     const general = sourceKind === 'general';
     return { lore: !general && value.lore === true, character: value.character === true && (!general || Boolean(source.avatar)),
+        ...(sourceKind !== 'notebook' && normalisePersonaTarget(value.persona) ? { persona: normalisePersonaTarget(value.persona) } : {}),
         chat: !general && value.chat === true, members: general ? [] : members,
         ...(value.image !== undefined ? { image: value.image === true } : {}) };
 }
@@ -192,12 +193,13 @@ export async function acceptScratchpadReply(request, body = {}) {
         const webSearch = session.settings.webSearch ? planWebSearch(base.directories, readWebSearchLocked(lease), plan.prompt) : null;
         // Target checking only runs when images are available, so a stale or renamed shared card cannot fail a text reply.
         const targets = images ? captureImageTargetsLocked(lease, bucket.source, input.targets, { shared: session.settings.include.card }) : [];
+        const sharedPersona = capturePersonaTargetLocked(lease, bucket.source, input.capabilities.persona, session.settings.include.persona);
         const notebook = notebookContextLocked(lease, session.settings);
         const instructions = readInstructionsLocked(lease);
         const library = readAssistantsLocked(lease);
         const snapshots = refreshSessionAssistants(session, library);
         writeBucketLocked(lease, bucket);
-        return { ...plan, targets, imagePersonaId: imagePersonaIdLocked(lease, bucket.source), notebook, webSearch, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens, stream: session.settings.stream !== false,
+        return { ...plan, targets, sharedPersona, imagePersonaId: imagePersonaIdLocked(lease, bucket.source), notebook, webSearch, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens, stream: session.settings.stream !== false,
             instructionsRevision: instructions.revision,
             assistantsRevision: library.revision,
             assistantNames: Object.fromEntries(Object.entries(snapshots).map(([id, profile]) => [id, profile.name])),
@@ -214,7 +216,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         const binding = captureGenerationBinding(directories, selection, body.acknowledgement);
         const system = buildScratchpadSystemPrompt({ ...speaker, assistantNames: planned.assistantNames, userName: input.names.user, participants: planned.participants, randomReply: planned.randomReply,
             characterName: input.names.character, sourceKind: input.source.kind, webSearch: Boolean(planned.webSearch),
-            capabilities: { ...input.capabilities, image: Boolean(images), avatar: Boolean(images && planned.targets.length), notebook: Boolean(planned.notebook.text) }, help: input.help });
+            capabilities: { ...input.capabilities, persona: planned.sharedPersona, image: Boolean(images), avatar: Boolean(images && planned.targets.length), notebook: Boolean(planned.notebook.text) }, help: input.help });
         const messages = buildScratchpadMessages({ system: system.text, context: input.context, notebookContext: planned.notebook.text, history: planned.history, text: planned.prompt, assistant: speaker.assistant, assistantNames: planned.assistantNames,
             webSearchPlaceholder: planned.webSearch ? WEB_SEARCH_PLACEHOLDER : '' });
         const rawOptions = binding.kind === 'active' ? { trimNames: false } : {};
@@ -265,7 +267,7 @@ export async function acceptScratchpadReply(request, body = {}) {
             const shared = input.source.kind === 'general' && input.capabilities.character ? { sharedAvatar: input.source.avatar } : {};
             if (!input.regenerate) session.messages.push({ id: newScratchpadId(), role: 'user', text: input.text, created, contextSource });
             const pending = replies.map(reply => ({ id: reply.replyId, role: 'assistant', text: '', created, contextSource, ...shared,
-                targets: planned.targets, imageNames: input.names, imagePersonaId: planned.imagePersonaId,
+                targets: planned.targets, sharedPersona: planned.sharedPersona, imageNames: input.names, imagePersonaId: planned.imagePersonaId,
                 state: 'pending', jobId: job.id, assistant: reply.assistant, assistantName: reply.characterName, gender: reply.gender }));
             if (planned.replace) session.messages.splice(session.messages.findIndex(message => message.id === planned.replace), 1, ...pending);
             else session.messages.push(...pending);

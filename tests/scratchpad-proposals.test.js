@@ -12,6 +12,18 @@ import {
 const fence = value => `\`\`\`scratchpad-change\n${JSON.stringify(value)}\n\`\`\``;
 
 describe('Scratchpad reply parsing', () => {
+    test('keeps persona, Scenario Note and avatar targets distinct', () => {
+        const persona = normaliseChange({ type: 'persona', persona: 'Kris', field: 'description', value: '{{user}} is a traveller.' });
+        expect(persona).toMatchObject({ type: 'persona', persona: 'Kris', value: '{{user}} is a traveller.' });
+        const note = normaliseChange({ type: 'persona-note', persona: 'Kris', noteId: 'harbour', field: 'name', value: '  At sea  ' });
+        expect(note).toMatchObject({ noteId: 'harbour', value: 'At sea' });
+        expect(describeChange(note)).toContain('Scenario Note');
+        expect(describeChange(normaliseChange({ type: 'image', action: 'generate', target: 'persona-avatar', persona: 'Kris', prompt: 'A portrait.' }))).toBe('New persona avatar for Kris');
+        for (const extra of [{ noteId: '' }, { field: 'title' }, { action: 'delete' }]) {
+            expect(() => normaliseChange({ ...note, ...extra })).toThrow();
+        }
+        expect(() => normaliseChange({ type: 'image', action: 'generate', target: 'persona-avatar', persona: 'Kris', character: 'Nova', prompt: 'A portrait.' })).toThrow();
+    });
     test.each(['alternateGreetings', 'alternate_greetings'])('recovers nested creation fields from a fenced draft with %s', key => {
         const parts = splitReply(fence({ type: 'character', action: 'create', character: { name: 'New Nova',
             characterNote: '  Keep this note.\n', [key]: ['  Keep this greeting.\n'] } }));

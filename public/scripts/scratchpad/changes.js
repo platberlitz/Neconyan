@@ -322,9 +322,13 @@ function chatPlan(change, source) {
  * Reads the live value a change would replace and returns everything the
  * review needs. Nothing is written until commit() is called.
  */
-export async function prepareChange(change, source, { sharedAvatar = '', creatorKey = '' } = {}) {
+export async function prepareChange(change, source, { sharedAvatar = '', sharedPersona, personaGuard, creatorKey = '' } = {}) {
     if (!isCurrentSource(source)) fail(t`Return to this Scratchpad context before applying changes.`);
     change = normaliseChange(change);
+    if (change.type === 'persona' || change.type === 'persona-note') {
+        const { preparePersonaChange } = await import('./persona-changes.js');
+        return preparePersonaChange(change, source, sharedPersona, personaGuard);
+    }
     if (change.type === 'creator') {
         const { CreatorSession } = await import('../creator/session.js');
         const { scratchpadCreatorDraft } = await import('../creator/scratchpad-draft.js');

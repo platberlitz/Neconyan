@@ -11,6 +11,8 @@ const capability = { ensureReady: jest.fn() };
 const readImageAvailability = jest.fn();
 const readAvatarReview = jest.fn();
 const generateImage = jest.fn();
+const refreshPersonaAvatar = jest.fn();
+jest.unstable_mockModule('../public/scripts/personas.js', () => ({ getUserAvatars: jest.fn(), refreshPersonaAvatar }));
 jest.unstable_mockModule('../public/script.js', () => ({ characters, getOneCharacter, refreshCharacterAvatar, printCharactersDebounced,
     select_selected_character: jest.fn(), this_chid: 0, getRequestHeaders: () => ({}) }));
 jest.unstable_mockModule('../public/scripts/events.js', () => ({ event_types: { CHARACTER_EDITED: 'edited' }, eventSource: { emit } }));
@@ -39,6 +41,18 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks());
 
 describe('Scratchpad images and avatar reviews', () => {
+    test('persona avatar review writes only the saved persona image and refreshes it', async () => {
+        readAvatarReview.mockResolvedValue({ avatar: 'User.png', name: 'Kris', kind: 'persona', revision: 'b'.repeat(64),
+            currentUrl: '/user/images/Scratchpad/scratchpad-old.png', proposedUrl: '/user/images/Scratchpad/scratchpad-new.png' });
+        const proposal = { index: 0, change: { target: 'persona-avatar', persona: 'Kris' } };
+        const plan = await prepareAvatarChange({ source, session, message: { id: 'reply', images: { 0: { avatar: 'User.png' } } }, part: proposal, guard: () => {} });
+        expect(plan.field).toBe('Persona avatar');
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+        await plan.commit();
+        expect(globalThis.fetch).toHaveBeenCalledWith('/api/scratchpad/images/persona-avatar', expect.objectContaining({ body: JSON.stringify({ source, sessionId: 'session', messageId: 'reply', index: 0, avatar: 'User.png', revision: 'b'.repeat(64) }) }));
+        expect(refreshPersonaAvatar).toHaveBeenCalledWith('User.png');
+        expect(getOneCharacter).not.toHaveBeenCalled();
+    });
     test('rendering, reopening and applied-state rendering never generate or upload an image', () => {
         const onGenerate = jest.fn();
         const render = msg => renderImageCard({ session, message: msg, part, availability: { image: true }, onGenerate,

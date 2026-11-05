@@ -468,7 +468,7 @@ function reloadPersonaAvatar(avatarId, cacheBust = false) {
     }
 }
 
-async function refreshPersonaAvatar(avatarId) {
+export async function refreshPersonaAvatar(avatarId) {
     const sources = getPersonaAvatarSources(avatarId);
     await Promise.all([
         fetch(sources.desktopThumbnail, { method: 'GET', cache: 'reload' }),
