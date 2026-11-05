@@ -2092,7 +2092,30 @@ async function deletePersonaAvatar(avatarId) {
     return deletePersona(avatarId);
 }
 
-async function onPersonaDescriptionInput() {
+// Keep typing on the data-only path. PERSONA_UPDATED refreshes Scenario Notes,
+// the masthead and extension controls, so publish once after a typing burst.
+// Retain every edited avatar when the user switches personas before the timer fires.
+const pendingPersonaDescriptionUpdates = new Map();
+const refreshPersonaDescriptionAfterInput = debounce(async () => {
+    const updates = Array.from(pendingPersonaDescriptionUpdates);
+    pendingPersonaDescriptionUpdates.clear();
+
+    for (const [avatarId, description] of updates) {
+        const baseDescription = power_user.persona_descriptions[avatarId]?.description ?? description;
+        $(`.avatar-container[data-avatar-id="${avatarId}"] .ch_description`)
+            .text(baseDescription || $('#user_avatar_block').attr('no_desc_text'))
+            .toggleClass('text_muted', !baseDescription);
+
+        if (power_user.personas[avatarId]) {
+            await eventSource.emit(event_types.PERSONA_UPDATED, avatarId);
+        } else if (avatarId === user_avatar) {
+            $('#persona_effective_description_preview').text(power_user.persona_description || t`[No description]`);
+            countPersonaDescriptionTokens();
+        }
+    }
+}, debounce_timeout.standard);
+
+function onPersonaDescriptionInput() {
     const baseDescription = String($('#persona_description').val());
 
     if (power_user.personas[user_avatar]) {
@@ -2113,22 +2136,14 @@ async function onPersonaDescriptionInput() {
         }
 
         object.description = baseDescription;
-        syncPersonaDescriptionFromDescriptor();
+        power_user.persona_description = composePersonaDescription();
     } else {
         power_user.persona_description = baseDescription;
     }
 
-    countPersonaDescriptionTokens();
-    renderPersonaAppendices();
-
-    $(`.avatar-container[data-avatar-id="${user_avatar}"] .ch_description`)
-        .text(baseDescription || $('#user_avatar_block').attr('no_desc_text'))
-        .toggleClass('text_muted', !baseDescription);
     saveSettingsDebounced();
-
-    if (power_user.personas[user_avatar]) {
-        await eventSource.emit(event_types.PERSONA_UPDATED, user_avatar);
-    }
+    pendingPersonaDescriptionUpdates.set(user_avatar, baseDescription);
+    refreshPersonaDescriptionAfterInput();
 }
 
 async function onPersonaDescriptionDepthValueInput() {

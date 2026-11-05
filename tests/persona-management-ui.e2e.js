@@ -1,4 +1,4 @@
-/* global window */
+/* global document, MutationObserver, window */
 import { devices, expect, test } from '@playwright/test';
 import { isolateSettingsSaves, openPersonaEditor, openQuietChatForSmoke } from './chat-scroll-regression-helpers.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
@@ -17,6 +17,65 @@ test.beforeEach(async ({ page }) => {
 for (const phone of [true, false]) {
     test.describe(`Scenario Note scroll on ${phone ? 'phone' : 'desktop'}`, () => {
         test.use(phone ? IPHONE_SAFARI_CONTEXT : { viewport: { width: 1280, height: 900 } });
+
+        test('keeps description typing data immediate without redrawing notes on each keystroke', async ({ page, context }) => {
+            if (phone) await installIPhoneSafari(context);
+            await openQuietChatForSmoke(page, { selectCharacter: false });
+            await page.evaluate(async () => {
+                const { power_user } = await import('/scripts/power-user.js');
+                const { user_avatar, setPersonaDescription } = await import('/scripts/personas.js');
+                power_user.personas[user_avatar] = 'Typing Test';
+                power_user.persona_descriptions[user_avatar] = {
+                    description: 'Base persona. '.repeat(300),
+                    appendices: Array.from({ length: 24 }, (_, index) => ({
+                        id: `typing-note-${index}`, name: `Scenario ${index + 1}`, description: 'Keep this scenario context.',
+                    })),
+                    activeAppendices: {},
+                };
+                setPersonaDescription();
+                window.NeconyanShell.openTab('characters', 'persona');
+            });
+            await openPersonaEditor(page);
+            if (phone) await applyIOSOnlyCss(page);
+            const input = page.locator('#persona_description');
+            await input.focus();
+            const result = await page.evaluate(async () => {
+                const { power_user } = await import('/scripts/power-user.js');
+                const { user_avatar } = await import('/scripts/personas.js');
+                const { eventSource, event_types } = await import('/script.js');
+                const input = document.getElementById('persona_description');
+                const observer = new MutationObserver(() => {});
+                observer.observe(document.getElementById('persona_appendices_list'), { subtree: true, childList: true, attributes: true });
+                window.personaTypingEvents = [];
+                eventSource.on(event_types.PERSONA_UPDATED, avatar => window.personaTypingEvents.push(avatar));
+                for (const character of ' typing test') {
+                    input.value += character;
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+                const mutations = observer.takeRecords().length;
+                observer.disconnect();
+                return {
+                    value: input.value, stored: power_user.persona_descriptions[user_avatar].description,
+                    prompt: power_user.persona_description, mutations, events: window.personaTypingEvents.length, avatar: user_avatar,
+                };
+            });
+            expect(result.stored).toBe(result.value);
+            expect(result.prompt).toBe(result.value);
+            expect(result.mutations).toBe(0);
+            expect(result.events).toBe(0);
+            await expect(page.locator('#persona_effective_description_preview')).toHaveText(result.value);
+            await expect.poll(() => page.evaluate(() => window.personaTypingEvents)).toEqual([result.avatar]);
+            await expect(input).toBeFocused();
+
+            const saved = page.waitForRequest(request => request.url().endsWith('/api/settings/save')
+                && request.postDataJSON()?.power_user?.persona_descriptions?.[result.avatar]?.description === `${result.value} more text`);
+            await input.press('Control+End');
+            await input.pressSequentially(' more text', { delay: 40 });
+            await expect(page.locator('#persona_effective_description_preview')).toHaveText(`${result.value} more text`);
+            await expect.poll(() => page.evaluate(() => window.personaTypingEvents.length)).toBe(2);
+            await expect(input).toHaveValue(`${result.value} more text`);
+            await saved;
+        });
 
         test('keeps the toggled note in place and preserves keyboard focus', async ({ page, context }) => {
             if (phone) {
