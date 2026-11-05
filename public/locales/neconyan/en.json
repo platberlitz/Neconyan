@@ -6719,6 +6719,7 @@
   "Folder name cannot be empty.": "Folder name cannot be empty.",
   "Folder not found.": "Folder not found.",
   "Profile not found.": "Profile not found.",
+  "The profile changed while you were confirming it. Try again.": "The profile changed while you were confirming it. Try again.",
   "Select a profile to toggle favorite": "Select a profile to toggle favorite",
   "Remove from favorites": "Remove from favorites",
   "Add to favorites": "Add to favorites",

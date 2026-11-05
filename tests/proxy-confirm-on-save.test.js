@@ -24,8 +24,25 @@ function profileContext(confirmProfileProxy, commands = profile => Object.assign
         makeFancyProfile: profile => profile, renderExtensionTemplateAsync: async () => '', $: () => element,
         extension_settings: { connectionManager: { profiles: [] } }, getUniqueName: name => name, collapseSpaces: value => value,
         callGenericPopup: jest.fn(), POPUP_TYPE: { INPUT: 'input' }, DOMPurify: { sanitize: value => value },
-        toastr: { error: jest.fn() }, confirmProfileProxy,
+        toastr: { error: jest.fn(), warning: jest.fn() }, t: strings => strings.join(''), confirmProfileProxy,
     });
+}
+
+/** Build a context for updating a stored profile whose proxy confirmation is held, with the real settings body builder loaded. */
+function stagedUpdateContext(decision) {
+    const entered = Promise.withResolvers();
+    const context = profileContext(profile => { entered.resolve(); return decision.promise; }, profile => Object.assign(profile, { api: 'openai', proxy: 'New proxy', model: 'New model' }));
+    const profile = { id: 'id-1', mode: 'cc', api: 'openai', proxy: 'Old proxy', model: 'Old model', exclude: [] };
+    context.extension_settings.connectionManager.profiles.push(profile);
+    context.CONVERSATION_STORE_KEY = 'conversation';
+    load(context, 'scripts/extensions/connection-manager/index.js', ['updateConnectionProfile']);
+    load(context, 'script.js', ['buildSettingsPayloadExtensionSettings']);
+    return { context, profile, entered };
+}
+
+/** Serialise the settings body the way an overlapping save would, and return the stored profile. */
+function savedProfile(context) {
+    return JSON.parse(JSON.stringify(context.buildSettingsPayloadExtensionSettings())).connectionManager.profiles[0];
 }
 
 describe('a connection profile confirms its proxy when it is saved', () => {
@@ -86,6 +103,70 @@ describe('a connection profile confirms its proxy when it is saved', () => {
         load(context, 'scripts/extensions/shared.js', ['getChatCompletionProfileReverseProxy', 'confirmProfileProxy']);
         await expect(context.confirmProfileProxy({ mode: 'tc', api: 'koboldcpp' })).resolves.toBe(true);
         expect(confirmSavedProxy).not.toHaveBeenCalled();
+    });
+
+    test('updating a profile holds the proposed proxy until the user approves it', async () => {
+        const decision = Promise.withResolvers();
+        const { context, profile, entered } = stagedUpdateContext(decision);
+        const updating = context.updateConnectionProfile(profile);
+        await entered.promise;
+        expect(savedProfile(context)).toMatchObject({ proxy: 'Old proxy', model: 'Old model' });
+        decision.resolve(true);
+        await expect(updating).resolves.toBe(true);
+        expect(profile.proxy).toBe('New proxy');
+    });
+
+    test('declining a profile proxy leaves the saved settings and the live profile unchanged', async () => {
+        const decision = Promise.withResolvers();
+        const { context, profile, entered } = stagedUpdateContext(decision);
+        const before = structuredClone(profile);
+        const updating = context.updateConnectionProfile(profile);
+        await entered.promise;
+        expect(savedProfile(context).proxy).toBe('Old proxy');
+        decision.resolve(false);
+        await expect(updating).resolves.toBe(false);
+        expect(savedProfile(context)).toEqual(before);
+        expect(profile).toEqual(before);
+    });
+
+    test('approving a profile whose live values changed meanwhile commits nothing', async () => {
+        const decision = Promise.withResolvers();
+        const { context, profile, entered } = stagedUpdateContext(decision);
+        const updating = context.updateConnectionProfile(profile);
+        await entered.promise;
+        Object.assign(profile, { proxy: 'Newer proxy', model: 'Newer model' });
+        decision.resolve(true);
+        const committed = await updating;
+        expect(profile).toMatchObject({ proxy: 'Newer proxy', model: 'Newer model' });
+        expect(committed).toBe(false);
+        expect(context.toastr.warning).toHaveBeenCalledWith('The profile changed while you were confirming it. Try again.');
+    });
+
+    test('declining a profile whose live values changed meanwhile keeps the newer values', async () => {
+        const decision = Promise.withResolvers();
+        const { context, profile, entered } = stagedUpdateContext(decision);
+        const previous = structuredClone(profile);
+        profile.folderId = 'folder-1';
+        const updating = context.updateConnectionProfile(profile, previous);
+        await entered.promise;
+        Object.assign(profile, { proxy: 'Newer proxy', model: 'Newer model' });
+        decision.resolve(false);
+        await expect(updating).resolves.toBe(false);
+        expect(profile).toMatchObject({ proxy: 'Newer proxy', model: 'Newer model' });
+        expect(profile.folderId).toBe('folder-1');
+        expect(context.toastr.warning).toHaveBeenCalledWith('The profile changed while you were confirming it. Try again.');
+    });
+
+    test('declining a profile restores the edits the caller made before it called', async () => {
+        const decision = Promise.withResolvers();
+        const { context, profile, entered } = stagedUpdateContext(decision);
+        const previous = structuredClone(profile);
+        profile.folderId = 'folder-1';
+        const updating = context.updateConnectionProfile(profile, previous);
+        await entered.promise;
+        decision.resolve(false);
+        await expect(updating).resolves.toBe(false);
+        expect(profile).toEqual(previous);
     });
 });
 

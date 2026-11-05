@@ -1090,19 +1090,41 @@ async function applyConnectionProfile(profile) {
 /**
  * Updates the selected connection profile.
  * @param {ConnectionProfile} profile Connection profile
- * @param {ConnectionProfile} [previous] Copy to restore if the user declines the profile's proxy
- * @returns {Promise<boolean>} False when the proxy was declined and the profile was restored
+ * @param {ConnectionProfile} [previous] Copy to restore if the user declines the profile's proxy, for callers that changed the live profile before this call
+ * @returns {Promise<boolean>} True when the proposal was committed; false when nothing was committed, because the proxy was declined or a newer update replaced the profile first
  */
-async function updateConnectionProfile(profile, previous = structuredClone(profile)) {
-    profile.mode = main_api === 'openai' ? 'cc' : 'tc';
-    await readProfileFromCommands(profile.mode, profile, true);
-    if (await confirmProfileProxy(profile)) {
-        return true;
+async function updateConnectionProfile(profile, previous) {
+    const mode = main_api === 'openai' ? 'cc' : 'tc';
+    // Neconyan: hold the proposed profile on a copy until its proxy is confirmed, so an
+    // overlapping settings save cannot serialise a proxy the user has not approved yet.
+    const snapshot = structuredClone(profile);
+    const proposed = structuredClone(snapshot);
+    proposed.mode = mode;
+    await readProfileFromCommands(mode, proposed, true);
+    // Neconyan: a newer update can commit while this proxy is being confirmed, so the live
+    // profile is only touched while it still holds the values this update started from.
+    const same = (a, b) => a === b
+        || (typeof a === 'object' && typeof b === 'object' && a !== null && b !== null
+            && Object.keys(a).length === Object.keys(b).length
+            && Object.keys(a).every(key => Object.hasOwn(b, key) && same(a[key], b[key])));
+    const approved = await confirmProfileProxy(proposed);
+    if (!same(profile, snapshot)) {
+        // A newer update already committed, so it keeps the profile; say so instead of pretending.
+        toastr.warning(t`The profile changed while you were confirming it. Try again.`);
+        return false;
     }
-    // Declined: put the same object back as it was, so nothing unconfirmed is saved later.
+    if (!approved) {
+        // The live profile was not touched, so only a caller that changed it before this call
+        // (the edit dialog changes the include list and folder) has something to put back.
+        if (previous) {
+            for (const key of Object.keys(profile)) delete profile[key];
+            Object.assign(profile, previous);
+        }
+        return false;
+    }
     for (const key of Object.keys(profile)) delete profile[key];
-    Object.assign(profile, previous);
-    return false;
+    Object.assign(profile, proposed);
+    return true;
 }
 
 /**
