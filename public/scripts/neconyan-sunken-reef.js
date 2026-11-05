@@ -11,7 +11,8 @@
  *      ray gliding across the upper current, a sleek swordfish cruising past,
  *      a cheerful pink axolotl with feathery gills swimming and bobbing near
  *      the reef shelves, and a small school of bioluminescent reef fish.
- *   3. Pointer wake layer (below toasts): bioluminescent plankton sparkles,
+ *   3. Water and pointer wake layer (below toasts): flowing refracted light,
+ *      subtle click/tap ripples, bioluminescent plankton sparkles,
  *      expanding water ripples and swirling bubble trails with a tiny bubble
  *      companion riding the cursor.
  *
@@ -612,6 +613,7 @@ function createStage() {
         reefSchool: buildReefSchool(),
         wakeBubbles: [],
         wakeRipples: [],
+        touchRipples: [],
         pointer: {
             x: 0,
             y: 0,
@@ -888,6 +890,36 @@ function createStage() {
         });
     }
 
+    function renderWaterCurrent(elapsedSeconds) {
+        const { width, height, palette } = state;
+        // Two crossing swells bend the light into slow, travelling ribbons.
+        // Paint on the existing foreground canvas so water passes over panels
+        // as well as the wallpaper, without moving text or intercepting input.
+        const spacing = height / 6;
+        const amplitude = Math.min(48, width * 0.055);
+        const drift = elapsedSeconds * 24;
+        wakeCtx.save();
+        wakeCtx.lineJoin = 'round';
+        for (let band = -1; band < 8; band += 1) {
+            const baseY = band * spacing + Math.sin(elapsedSeconds * 0.23 + band * 0.7) * spacing * 0.4;
+            wakeCtx.beginPath();
+            for (let x = -32; x <= width + 32; x += 24) {
+                const y = baseY
+                    + Math.sin((x - drift) / 170 + band * 1.3) * amplitude
+                    + Math.sin((x + drift * 0.6) / 85 + band * 0.8) * amplitude * 0.3;
+                if (x === -32) wakeCtx.moveTo(x, y);
+                else wakeCtx.lineTo(x, y);
+            }
+            wakeCtx.strokeStyle = rgba(palette.lagoon, palette.lightSurface ? 0.025 : 0.035);
+            wakeCtx.lineWidth = 24;
+            wakeCtx.stroke();
+            wakeCtx.strokeStyle = rgba(palette.pearl, palette.lightSurface ? 0.07 : 0.09);
+            wakeCtx.lineWidth = 2;
+            wakeCtx.stroke();
+        }
+        wakeCtx.restore();
+    }
+
     function renderWake(now, dtSeconds, reducedMotion) {
         if (!wakeCtx) return;
         const { width, height, palette, pointer } = state;
@@ -896,7 +928,31 @@ function createStage() {
         if (reducedMotion) {
             state.wakeBubbles.length = 0;
             state.wakeRipples.length = 0;
+            state.touchRipples.length = 0;
             return;
+        }
+
+        renderWaterCurrent((now - state.startTime) / 1000);
+
+        // A click or completed tap sends out two soft, fading wave fronts.
+        for (let i = state.touchRipples.length - 1; i >= 0; i -= 1) {
+            const ripple = state.touchRipples[i];
+            const progress = (now - ripple.bornAt) / 1100;
+            if (progress >= 1) {
+                state.touchRipples.splice(i, 1);
+                continue;
+            }
+            for (let ring = 0; ring < 2; ring += 1) {
+                const t = (progress - ring * 0.16) / (1 - ring * 0.16);
+                if (t < 0) continue;
+                const radius = 5 + (1 - (1 - t) ** 2) * 64;
+                const alpha = Math.sin(Math.PI * t) * (1 - t) * 0.34;
+                wakeCtx.strokeStyle = rgba(palette.lagoon, alpha);
+                wakeCtx.lineWidth = 1.4;
+                wakeCtx.beginPath();
+                wakeCtx.ellipse(ripple.x, ripple.y, radius, radius * 0.82, -0.12, 0, Math.PI * 2);
+                wakeCtx.stroke();
+            }
         }
 
         // Expanding water ripples
@@ -1047,7 +1103,17 @@ function createStage() {
     function onResize() {
         if (state.destroyed) return;
         resizeCanvases();
-        renderFrame(performance.now());
+        scheduleLoop();
+    }
+
+    function onClick(event) {
+        // Native click covers mouse, pen and completed touch taps, but not
+        // scrolling gestures. Keyboard activation has no pointer location.
+        if (state.destroyed || document.hidden || isReducedMotionPreferred()
+            || event.detail === 0 || event.button !== 0) return;
+        state.touchRipples.push({ x: event.clientX, y: event.clientY, bornAt: performance.now() });
+        if (state.touchRipples.length > 8) state.touchRipples.shift();
+        if (!state.rafId) scheduleLoop();
     }
 
     function onVisibilityChange() {
@@ -1091,7 +1157,7 @@ function createStage() {
     });
 
     window.addEventListener('pointermove', onPointerMove, { passive: true });
-    window.addEventListener('mousemove', onPointerMove, { passive: true });
+    window.addEventListener('click', onClick, { passive: true, capture: true });
     window.addEventListener('resize', onResize, { passive: true });
     document.addEventListener('visibilitychange', onVisibilityChange);
     if (motionMedia && typeof motionMedia.addEventListener === 'function') {
@@ -1114,6 +1180,7 @@ function createStage() {
                 schoolSize: state.reefSchool.length,
                 wakeBubbles: state.wakeBubbles.length,
                 wakeRipples: state.wakeRipples.length,
+                touchRipples: state.touchRipples.length,
                 companion: !state.reducedMotion && state.pointer.hasMoved && now < state.pointer.activeUntil,
                 palette: {
                     lagoon: state.palette.lagoon.css,
@@ -1137,7 +1204,7 @@ function createStage() {
             }
             observer.disconnect();
             window.removeEventListener('pointermove', onPointerMove);
-            window.removeEventListener('mousemove', onPointerMove);
+            window.removeEventListener('click', onClick, true);
             window.removeEventListener('resize', onResize);
             document.removeEventListener('visibilitychange', onVisibilityChange);
             if (motionMedia && typeof motionMedia.removeEventListener === 'function') {
@@ -1181,6 +1248,7 @@ export function snapshotSunkenReef() {
             schoolSize: 0,
             wakeBubbles: 0,
             wakeRipples: 0,
+            touchRipples: 0,
             companion: false,
             palette: null,
             creatures: [],
