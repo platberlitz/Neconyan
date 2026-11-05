@@ -530,6 +530,25 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     object-fit: cover;
 }
 
+.scratchpad-code-block {
+    min-width: 0;
+    margin-block: 8px;
+}
+
+.scratchpad-code-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.scratchpad-app .scratchpad-code-block .scratchpad-copy {
+    min-height: 44px;
+    margin: 0;
+}
+
+.scratchpad-app .scratchpad-code-block pre {
+    margin-top: 4px;
+}
+
 .scratchpad-plain {
     margin: 0;
     white-space: pre-wrap;

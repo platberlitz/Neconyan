@@ -57,9 +57,11 @@ Replies are written on the server with streaming on or off. Once your message ha
 
 Streaming has a separate 64 MiB transfer allowance because the provider repeats data around each small piece of text. Scratchpad saves up to 2 MiB each for the answer and thinking. These byte limits are separate from the model's token limit; long replies are no longer cut off at the old 64 KiB saving limit. Messages you type stay limited to 64 KiB. When a long reply is sent back to the model as earlier conversation, only its first 128 KiB is included, so one long answer does not push older turns out. Each saved Scratchpad file holds up to 32 MiB. Older chat-specific files stay in place and appear in the shared list without being combined into one oversized file. If a file fills up, delete old sessions or long replies, or enable automatic cleanup in **Sessions**.
 
-Each message has a few buttons:
+Each Markdown code block in an assistant reply has its own **Copy** button at the top-right. It copies only that block's contents, keeping the Markdown formatting without the surrounding fences.
 
-- **Copy** copies the text.
+Each message also has an actions menu:
+
+- **Copy** copies the raw text, change cards included.
 - **Save selection or message to note** saves a selected passage or the message to a new Inbox note or an existing note. Replies omit change cards; reasoning is never copied. The quotation keeps its Scratchpad speaker and date.
 - **Edit message** lets you correct either side of the conversation. The assistant sees the edited text next time.
 - **Use as draft in the chat box**, only with a visible Roleplay or Conversation chat, copies an assistant reply (without any change cards) into the story's message box. Nothing is sent; you decide what to do with it. General never writes into a chat hidden beneath Home.
