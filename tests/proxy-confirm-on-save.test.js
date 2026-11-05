@@ -108,6 +108,38 @@ describe('a Chat Completion preset confirms its proxy when it is saved or import
         load(context, 'scripts/openai.js', ['sensitiveFields', 'onPresetImportFileChange']);
         return { context, fetch };
     }
+    /** The real save and New-preset functions with a held proxy confirmation and a capturing fetch. */
+    function presetSaveContext(decision) {
+        const entered = Promise.withResolvers();
+        const presented = [];
+        const saved = [];
+        const selection = { prop: () => selection, trigger: () => selection, append: () => selection };
+        const settings = { preset_settings_openai: 'Fixture', bind_preset_to_connection: true, chat_completion_source: 'openai', reverse_proxy: 'https://a.invalid' };
+        const context = vm.createContext({
+            console, t: strings => strings.join(''),
+            oai_settings: settings,
+            Popup: { show: { input: jest.fn(async () => 'Fixture') } },
+            getChatCompletionPreset: s => ({ reverse_proxy: s.reverse_proxy, chat_completion_source: s.chat_completion_source }),
+            confirmPresetProxy: jest.fn(preset => { presented.push(preset); entered.resolve(); return decision.promise; }),
+            fetch: jest.fn(async (_url, options) => { saved.push(JSON.parse(options.body).preset); return { ok: true, json: async () => ({ name: 'Fixture' }) }; }),
+            getRequestHeaders: () => ({}), toastr: { error: jest.fn(), success: jest.fn() },
+            openai_settings: [], openai_setting_names: {},
+            $: () => selection, document: { createElement: () => ({}) },
+            eventSource: { emit: jest.fn(async () => {}) }, event_types: { PRESET_CHANGED: 'changed' },
+        });
+        load(context, 'scripts/openai.js', ['saveOpenAIPreset', 'onNewPresetClick']);
+        return { context, settings, entered, presented, saved };
+    }
+
+    /** Run the real '#update_oai_preset' click body against a preset-save context. */
+    function updateHandlerRunner() {
+        const source = readFileSync(new URL('../public/scripts/openai.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+        const start = source.indexOf('$(\'#update_oai_preset\').on(\'click\'');
+        const handler = source.slice(start, source.indexOf('$(\'#impersonation_prompt_restore\')', start));
+        const body = handler.slice(handler.indexOf('async function () {') + 'async function () {'.length, handler.lastIndexOf('});'));
+        return new Function('oai_settings', 'confirmPresetProxy', 'getChatCompletionPreset', 'saveOpenAIPreset', 'toastr', 't', `return (async () => {${body}})();`);
+    }
+
     const proxyPreset = { name: 'Fixture.json', text: JSON.stringify({ chat_completion_source: 'openai', reverse_proxy: 'https://import.invalid', temperature: 1 }) };
 
     test('importing a preset with its proxy kept asks about that proxy, then saves it', async () => {
@@ -151,7 +183,9 @@ describe('a Chat Completion preset confirms its proxy when it is saved or import
     test('Update preset asks about the proxy before saving', () => {
         const source = readFileSync(new URL('../public/scripts/openai.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
         const handler = source.slice(source.indexOf('$(\'#update_oai_preset\').on(\'click\''), source.indexOf('$(\'#impersonation_prompt_restore\')'));
-        expect(handler).toContain('if (!await confirmPresetProxy(getChatCompletionPreset(oai_settings), t`Preset not saved. Confirm its proxy address to save it.`)) {');
+        expect(handler).toContain('const preset = getChatCompletionPreset(oai_settings);');
+        expect(handler).toContain('if (!await confirmPresetProxy(preset, t`Preset not saved. Confirm its proxy address to save it.`)) {');
+        expect(handler).toContain('await saveOpenAIPreset(name, preset, false);');
         expect(handler.indexOf('confirmPresetProxy')).toBeLessThan(handler.indexOf('saveOpenAIPreset'));
     });
 
@@ -164,5 +198,45 @@ describe('a Chat Completion preset confirms its proxy when it is saved or import
         load(context, 'scripts/openai.js', ['confirmPresetProxy']);
         await context.confirmPresetProxy(preset, 'message');
         expect(confirmSavedProxy).toHaveBeenCalledWith('https://p.invalid', source, 'message');
+    });
+
+    test('a new preset saves the body whose proxy the user approved even while the live proxy changes', async () => {
+        const decision = Promise.withResolvers();
+        const { context, settings, entered, presented, saved } = presetSaveContext(decision);
+        const saving = context.onNewPresetClick();
+        await entered.promise;
+        settings.reverse_proxy = 'https://b.invalid';
+        decision.resolve(true);
+        await saving;
+        expect(presented).toEqual([{ reverse_proxy: 'https://a.invalid', chat_completion_source: 'openai' }]);
+        expect(saved).toHaveLength(1);
+        expect(saved[0].reverse_proxy).toBe('https://a.invalid');
+    });
+
+    test('Update preset saves the body whose proxy the user approved while the live proxy changes', async () => {
+        const decision = Promise.withResolvers();
+        const { context, settings, entered, presented, saved } = presetSaveContext(decision);
+        const updating = updateHandlerRunner()(context.oai_settings, context.confirmPresetProxy, context.getChatCompletionPreset, context.saveOpenAIPreset, context.toastr, context.t);
+        await entered.promise;
+        settings.reverse_proxy = 'https://b.invalid';
+        decision.resolve(true);
+        await updating;
+        expect(presented).toEqual([{ reverse_proxy: 'https://a.invalid', chat_completion_source: 'openai' }]);
+        expect(saved).toHaveLength(1);
+        expect(saved[0].reverse_proxy).toBe('https://a.invalid');
+    });
+
+    test('the preset-change wiring still builds a body for the PromptManager migration', () => {
+        const source = readFileSync(new URL('../public/scripts/openai.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+        const wiring = 'savePreset: (name, settings, triggerUi) => saveOpenAIPreset(name, getChatCompletionPreset(settings), triggerUi),';
+        expect(source).toContain(wiring);
+        const build = new Function('saveOpenAIPreset', 'getChatCompletionPreset', `return ${wiring.slice('savePreset: '.length).replace(/,$/, '')};`);
+        const saveOpenAIPreset = jest.fn();
+        const getChatCompletionPreset = jest.fn(settings => ({ temperature: settings.temperature, chat_completion_source: 'openai' }));
+        const savePreset = build(saveOpenAIPreset, getChatCompletionPreset);
+        const migrated = { temperature: 0.7 };
+        savePreset('Fixture', migrated, false);
+        expect(getChatCompletionPreset).toHaveBeenCalledWith(migrated);
+        expect(saveOpenAIPreset).toHaveBeenCalledWith('Fixture', { temperature: 0.7, chat_completion_source: 'openai' }, false);
     });
 });

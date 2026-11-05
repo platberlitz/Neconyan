@@ -7408,12 +7408,11 @@ function refreshLogitBiasPresetOptions() {
  * Persist a settings preset with the given name
  *
  * @param {string} name - Name of the preset
- * @param {ChatCompletionSettings} settings The settings object
+ * @param {object} presetBody The preset body to save, already built from the settings the user approved
  * @param {boolean} triggerUi Whether the change event of preset UI element should be emitted
  * @returns {Promise<void>}
  */
-async function saveOpenAIPreset(name, settings, triggerUi = true) {
-    const presetBody = getChatCompletionPreset(settings);
+async function saveOpenAIPreset(name, presetBody, triggerUi = true) {
     const savePresetSettings = await fetch('/api/presets/save', {
         method: 'POST',
         headers: getRequestHeaders(),
@@ -7851,7 +7850,7 @@ function onSettingsPresetChange() {
         presetName: presetName,
         settingsToUpdate: settingsToUpdate,
         settings: oai_settings,
-        savePreset: saveOpenAIPreset,
+        savePreset: (name, settings, triggerUi) => saveOpenAIPreset(name, getChatCompletionPreset(settings), triggerUi),
         presetNameBefore: presetNameBefore,
     }).finally(async () => {
         if (changeGeneration !== settingsPresetChangeGeneration) {
@@ -8959,11 +8958,13 @@ async function onNewPresetClick() {
         return;
     }
 
-    if (!await confirmPresetProxy(getChatCompletionPreset(oai_settings), t`Preset not saved. Confirm its proxy address to save it.`)) {
+    const preset = getChatCompletionPreset(oai_settings);
+
+    if (!await confirmPresetProxy(preset, t`Preset not saved. Confirm its proxy address to save it.`)) {
         return;
     }
 
-    await saveOpenAIPreset(name, oai_settings);
+    await saveOpenAIPreset(name, preset);
 }
 
 function onReverseProxyInput() {
@@ -10483,10 +10484,11 @@ export function initOpenAI() {
 
     $('#update_oai_preset').on('click', async function () {
         const name = oai_settings.preset_settings_openai;
-        if (!await confirmPresetProxy(getChatCompletionPreset(oai_settings), t`Preset not saved. Confirm its proxy address to save it.`)) {
+        const preset = getChatCompletionPreset(oai_settings);
+        if (!await confirmPresetProxy(preset, t`Preset not saved. Confirm its proxy address to save it.`)) {
             return;
         }
-        await saveOpenAIPreset(name, oai_settings, false);
+        await saveOpenAIPreset(name, preset, false);
         toastr.success(t`Preset updated`);
     });
 
