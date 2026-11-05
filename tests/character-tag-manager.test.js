@@ -796,7 +796,7 @@ describe('Character Tag Manager template, wiring and styling contracts', () => {
     });
 
     test('bumps every stylesheet cache version together', () => {
-        expect(cacheVersion).toBe('20261104-purrks-badge');
+        expect(cacheVersion).toBe('20261105-style-preview-cards');
         expect(tabsJs).toContain(`NN_SHELL_STYLE_STYLESHEET_VERSION = '${cacheVersion}'`);
         expect(indexHtml).not.toContain('20261101-faithful-trackers');
         expect(indexHtml).not.toContain('20261104-agents-prefill');
