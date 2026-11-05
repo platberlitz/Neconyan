@@ -2120,14 +2120,21 @@ function isNeconyanRecentChatLabelNamed(recentChat) {
     return Boolean(String(recentChat?.chat_name || recentChat?.conversation_branch_name || '').trim()) && recentChat?.conversation_label_named !== false;
 }
 
+const neconyanRailRecentSnapshots = new WeakMap();
+
 function renderNeconyanRailRecentChats(chats) {
     const recentHost = document.querySelector('#neconyan-workspace-rail [data-neconyan-recent-list]');
     if (!(recentHost instanceof HTMLElement)) {
         return;
     }
 
-    recentHost.replaceChildren();
     const visibleChats = Array.isArray(chats) ? chats.slice(0, 6) : [];
+    // Include the full action payload: retained buttons must still open the right chat.
+    const snapshot = JSON.stringify([visibleChats, document.documentElement.lang,
+        translate('Character'), translate('Group chat'), translate('Chat')]);
+    if (neconyanRailRecentSnapshots.get(recentHost) === snapshot) return;
+    neconyanRailRecentSnapshots.set(recentHost, snapshot);
+    recentHost.replaceChildren();
     if (!visibleChats.length) {
         const empty = document.createElement('p');
         empty.className = 'neconyan-rail-empty';

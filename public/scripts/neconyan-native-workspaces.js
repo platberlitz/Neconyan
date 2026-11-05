@@ -443,6 +443,8 @@ function createLorebookLibrary(worldInfo) {
     return library;
 }
 
+const lorebookLibrarySnapshots = new WeakMap();
+
 function renderLorebookLibrary(library) {
     if (!(library instanceof HTMLElement)) return;
     const metadata = getNeconyanLorebookFolders();
@@ -452,13 +454,14 @@ function renderLorebookLibrary(library) {
     const selectedIndex = selectedValue === '' ? -1 : Number(selectedValue);
     nativeState.lorebookSelected = Number.isInteger(selectedIndex) && selectedIndex >= 0 ? names[selectedIndex] || '' : '';
     const view = nativeState.lorebookSelected && !nativeState.lorebookBrowsing ? 'book' : 'library';
-    library.dataset.view = view;
+    if (library.dataset.view !== view) library.dataset.view = view;
     const worldInfo = library.closest('#WorldInfo');
-    if (worldInfo) worldInfo.dataset.neconyanLorebookView = view;
+    if (worldInfo && worldInfo.dataset.neconyanLorebookView !== view) worldInfo.dataset.neconyanLorebookView = view;
     const selectedCopy = library.querySelector('.neconyan-lorebook-selected');
-    if (selectedCopy instanceof HTMLElement) selectedCopy.textContent = view === 'book'
+    const selectedText = view === 'book'
         ? `${nativeState.lorebookSelected} · ${getLorebookFolderName(metadata, metadata.assignments[nativeState.lorebookSelected])}`
         : 'Choose a book to edit its entries.';
+    if (selectedCopy instanceof HTMLElement && selectedCopy.textContent !== selectedText) selectedCopy.textContent = selectedText;
     const primaryActions = library.querySelector('#world_popup_primary_actions');
     const primaryGroup = primaryActions?.querySelector('.world_popup_action_group--select');
     if (primaryGroup) {
@@ -479,6 +482,13 @@ function renderLorebookLibrary(library) {
     const folderNav = library.querySelector('.neconyan-lorebook-folders');
     const books = library.querySelector('.neconyan-lorebook-books');
     if (!(folderNav instanceof HTMLElement) || !(books instanceof HTMLElement)) return;
+    // The book editor hides both lists. Read their latest state when returning
+    // to the library, rather than rebuilding them after every editor update.
+    if (view === 'book') return;
+    const snapshot = JSON.stringify([names, metadata.folders, metadata.assignments,
+        nativeState.lorebookFolder, nativeState.lorebookQuery, document.documentElement.lang, t`All books`, t`Unfiled`]);
+    if (lorebookLibrarySnapshots.get(library) === snapshot) return;
+    lorebookLibrarySnapshots.set(library, snapshot);
     folderNav.replaceChildren();
 
     const counts = new Map(metadata.folders.map(folder => [folder.id, 0]));

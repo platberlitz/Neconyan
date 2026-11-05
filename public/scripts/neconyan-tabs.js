@@ -1523,6 +1523,7 @@ const nnState = {
         refreshPending: false,
         refreshToken: 0,
         bindingRetryTimer: 0,
+        renderFrame: 0,
         boundEventSource: null,
         windowBindingsAttached: false,
     },
@@ -6391,14 +6392,24 @@ function updateTopBarBrand() {
     const isActiveChat = hasActiveTopBarChat(context);
 
     bindTopBarTitleCycle(title);
-    title.textContent = label;
-    title.title = label;
-    title.setAttribute('aria-label', isTopbarLabelClickCycleEnabled()
+    if (title.textContent !== label) title.textContent = label;
+    if (title.title !== label) title.title = label;
+    const accessibleLabel = isTopbarLabelClickCycleEnabled()
         ? t`${label}. Tap to switch the top bar label.`
-        : t`${label}. Tap to return to the chat.`);
+        : t`${label}. Tap to return to the chat.`;
+    if (title.getAttribute('aria-label') !== accessibleLabel) title.setAttribute('aria-label', accessibleLabel);
     title.classList.toggle('is-chat', isActiveChat);
-    brand.dataset.brandState = isActiveChat ? 'chat' : 'idle';
+    const brandState = isActiveChat ? 'chat' : 'idle';
+    if (brand.dataset.brandState !== brandState) brand.dataset.brandState = brandState;
     queueTopbarBrandFit();
+}
+
+function queueTopBarBrandUpdate() {
+    if (nnState.topbarLabel.renderFrame) return;
+    nnState.topbarLabel.renderFrame = window.requestAnimationFrame(() => {
+        nnState.topbarLabel.renderFrame = 0;
+        updateTopBarBrand();
+    });
 }
 
 function scheduleTopBarBrandBindingRetry(delay = 240) {
@@ -6414,7 +6425,7 @@ function bindTopBarBrandWindowEvents() {
     }
 
     const refreshWithContext = () => {
-        window.requestAnimationFrame(updateTopBarBrand);
+        queueTopBarBrandUpdate();
         scheduleTopbarContextRefresh(0);
         bindTopBarBrand();
     };
@@ -6429,7 +6440,7 @@ function bindTopBarBrandWindowEvents() {
     document.addEventListener('input', event => {
         const targetId = event.target instanceof HTMLElement ? event.target.id : '';
         if (targetId === 'messageModelNameShortEnabled' || targetId.endsWith('_model_id')) {
-            window.requestAnimationFrame(updateTopBarBrand);
+            queueTopBarBrandUpdate();
         }
     });
     window.addEventListener('pageshow', requestForegroundRefresh, { passive: true });
@@ -6450,7 +6461,7 @@ function bindTopBarBrand() {
     bindTopBarBrandWindowEvents();
 
     if (!eventSource || !eventTypes) {
-        window.requestAnimationFrame(updateTopBarBrand);
+        queueTopBarBrandUpdate();
         scheduleTopbarContextRefresh(0);
         scheduleTopBarBrandBindingRetry();
         return;
@@ -6459,12 +6470,12 @@ function bindTopBarBrand() {
     window.clearTimeout(nnState.topbarLabel.bindingRetryTimer);
 
     if (nnState.topbarLabel.boundEventSource === eventSource) {
-        window.requestAnimationFrame(updateTopBarBrand);
+        queueTopBarBrandUpdate();
         scheduleTopbarContextRefresh(0);
         return;
     }
 
-    const refresh = () => window.requestAnimationFrame(updateTopBarBrand);
+    const refresh = queueTopBarBrandUpdate;
     const refreshWithContext = () => {
         refresh();
         scheduleTopbarContextRefresh();

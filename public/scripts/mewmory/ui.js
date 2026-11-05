@@ -1673,9 +1673,24 @@ function renderOverview(root) {
     root.append(overview);
 }
 
+let renderFrame = null;
+
+function queueRender() {
+    if (renderFrame !== null) return;
+    renderFrame = window.requestAnimationFrame(() => {
+        renderFrame = null;
+        render();
+    });
+}
+
 function render() {
+    if (renderFrame !== null) {
+        window.cancelAnimationFrame(renderFrame);
+        renderFrame = null;
+    }
     const root = ui.root;
-    if (!root) return;
+    // Activating the shell tab mounts it again with the latest state.
+    if (!root || !root.isConnected || root.closest('[hidden], [aria-hidden="true"], .closedDrawer')) return;
     const active = root.contains(document.activeElement) ? document.activeElement : null;
     const focusId = active?.id;
     const selection = active instanceof HTMLTextAreaElement || (active instanceof HTMLInputElement && ['text', 'password'].includes(active.type))
@@ -1808,7 +1823,7 @@ export async function mountMewmory(root) {
     await loadMewmoryStyles();
     if (ui.root !== root) {
         ui.root = root;
-        window.addEventListener('mewmory:updated', render);
+        window.addEventListener('mewmory:updated', queueRender);
     }
     render();
     await act(() => refreshMewmory(filters()), { refresh: false });
