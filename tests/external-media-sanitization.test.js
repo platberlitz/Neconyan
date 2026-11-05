@@ -67,7 +67,7 @@ describe('external media privacy boundary', () => {
         await jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: strings => strings.join(''), translate: text => text }));
         await jest.unstable_mockModule('../public/scripts/RossAscends-mods.js', () => ({ humanizedDateTime: jest.fn() }));
         await jest.unstable_mockModule('../public/scripts/util/AccountStorage.js', () => ({ accountStorage: { getItem: jest.fn(() => 'true'), setItem: jest.fn() } }));
-        await jest.unstable_mockModule('../public/scripts/constants.js', () => ({ MEDIA_DISPLAY: {}, MEDIA_SOURCE: {}, MEDIA_TYPE: {}, SCROLL_BEHAVIOR: {}, SWIPE_DIRECTION: {} }));
+        await jest.unstable_mockModule('../public/scripts/constants.js', () => ({ MEDIA_DISPLAY: {}, MEDIA_SOURCE: {}, MEDIA_TYPE: {}, SCROLL_BEHAVIOR: {}, SWIPE_DIRECTION: {}, debounce_timeout: { short: 100, standard: 300 } }));
 
         globalThis.window = { location: { origin: 'http://127.0.0.1:8000' } };
         globalThis.HTMLUnknownElement = class {};
