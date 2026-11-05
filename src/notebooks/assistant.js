@@ -160,8 +160,11 @@ export function createGrantLocked(lease, { notebookId, noteId = null, folder = n
     data.entries[grant.id] = grant;
     const ids = Object.keys(data.entries);
     if (ids.length > MAX_GRANTS) {
-        ids.sort((a, b) => Date.parse(data.entries[a].createdAt) - Date.parse(data.entries[b].createdAt));
-        for (const id of ids.slice(0, ids.length - MAX_GRANTS)) delete data.entries[id];
+        // Expired shares were already dropped by readGrants. Of the live ones, those that end soonest go first (the older on a tie);
+        // the share being created is never the one removed, or its caller would get an id that already reads as ended.
+        const ending = ids.filter(id => id !== grant.id).sort((a, b) => Date.parse(data.entries[a].expiresAt) - Date.parse(data.entries[b].expiresAt)
+            || Date.parse(data.entries[a].createdAt) - Date.parse(data.entries[b].createdAt));
+        for (const id of ending.slice(0, ids.length - MAX_GRANTS)) delete data.entries[id];
     }
     writeJsonLocked(lease, grantsFile(lease), data);
     return publicGrant(grant);
@@ -195,7 +198,7 @@ function grantFor(lease, grantId, at) {
     if (!grantId) return null;
     if (typeof grantId !== 'string' || !/^g_[a-f0-9]{24}$/.test(grantId)) throw denied();
     const grant = readGrants(lease, at).entries[grantId];
-    /* A missing grant was ended by its owner, timed out, or was the oldest of 100. Nothing records which, so the wording must be true for all three. */
+    /* A missing grant was ended by its owner, timed out, or was the share ending soonest when more than 100 were open. Nothing records which, so the wording must be true for all three. */
     if (!grant) throw new NotebookError('GRANT_EXPIRED', 'That note or selection is no longer shared. Share it again to continue.', 403);
     return grant;
 }

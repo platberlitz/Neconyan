@@ -371,3 +371,52 @@ test('a changed selection tells the reader to share it again', t => {
     assert.throws(() => capture('read-note', { notebookId, noteId, grantId: grant.id }),
         error => error.code === 'NOTE_SELECTION_STALE' && error.message === 'The shared selection changed. Share it again to continue.');
 });
+
+function shareFixture(t) {
+    const { run, notebookId, create } = prepared(t);
+    const noteId = create('Shared', 'Text.');
+    const t0 = Date.now();
+    const share = (minutes, offset) => run(lease => assistant.createGrantLocked(lease, { notebookId, noteId, scope: 'note', operations: ['read'], minutes }, t0 + offset));
+    const kept = () => new Set(run(lease => assistant.listGrantsLocked(lease)).map(grant => grant.id));
+    return { run, notebookId, noteId, share, kept, t0 };
+}
+
+test('past 100 shares, the one that ends soonest is removed, not the oldest', t => {
+    const { share, kept } = shareFixture(t);
+    const oldest = share(120, 0);
+    const soonest = share(30, 1);
+    for (let i = 2; i <= 99; i++) share(60, i);
+    const newest = share(90, 100);
+    const ids = kept();
+    assert.equal(ids.size, 100);
+    assert.deepEqual([oldest, soonest, newest].map(grant => ids.has(grant.id)), [true, false, true]);
+});
+
+test('the share being created is kept even when it ends soonest', t => {
+    const { share, kept } = shareFixture(t);
+    const first = [];
+    for (let i = 0; i < 100; i++) first.push(share(120, i));
+    const fresh = share(1, 100);
+    const ids = kept();
+    assert.equal(ids.size, 100);
+    assert.deepEqual([ids.has(first[0].id), ids.has(fresh.id)], [false, true]);
+});
+
+test('an expired share makes room before any live share is removed', t => {
+    const { run, notebookId, noteId, share, kept, t0 } = shareFixture(t);
+    run(lease => assistant.createGrantLocked(lease, { notebookId, noteId, scope: 'note', operations: ['read'], minutes: 30 }, t0 - 40 * 60000));
+    const live = [];
+    for (let i = 1; i <= 100; i++) live.push(share(60, i));
+    const ids = kept();
+    assert.equal(ids.size, 100);
+    assert.deepEqual(live.map(grant => ids.has(grant.id)), live.map(() => true));
+});
+
+test('two live shares that end at the same instant: the older one is removed', t => {
+    const { share, kept } = shareFixture(t);
+    const b = share(30, 30 * 60000), a = share(60, 0);
+    for (let i = 0; i < 99; i++) share(120, 30 * 60000 + 1 + i);
+    const ids = kept();
+    assert.equal(ids.size, 100);
+    assert.deepEqual([ids.has(a.id), ids.has(b.id)], [false, true]);
+});
