@@ -499,3 +499,48 @@ test('Roleplay change cards wait for successful saves and persist message and lo
     const lore = await account.post('/api/worldinfo/get', { name: 'Scratchpad Garden' });
     expect(Object.values(lore.entries)).toEqual([expect.objectContaining({ content: 'Reviewed lore.', comment: 'Flower', key: ['flower'] })]);
 });
+
+for (const phone of [false, true]) {
+    test(`${phone ? 'iPhone stand-in' : 'desktop'} Markdown blocks each have a top-right Copy button`, async ({ app }) => {
+        test.setTimeout(120000);
+        const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {} });
+        if (phone) await installIPhoneSafari(account.context, { standalone: true });
+        await account.context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        const page = await account.open();
+        const source = await openScratchpad(page);
+        if (phone) await applyIOSOnlyCss(page);
+        const proposal = { type: 'chat', action: 'edit', message: 0, text: 'Reviewed original.' };
+        const drafts = ['# Moonflowers\n\n- Keep **petals** dry\n- Water at midnight\n', '## Second draft\n\n[Garden](https://example.com) & <leaves>\n'];
+        const reply = 'Two drafts to choose from.\n\n```markdown\n' + drafts[0] + '```\n\nAnother option:\n\n```md\n' + drafts[1]
+            + '```\n\n```javascript\nconst flower = "moonflower";\n```\n\n```scratchpad-change\n' + JSON.stringify(proposal) + '\n```';
+        await account.post('/api/scratchpad/session/import', { source, session: { name: 'Copy', messages: [
+            { role: 'user', text: '```markdown\nMy notes\n```' },
+            { role: 'assistant', text: reply },
+        ] } });
+        await openScratchpad(page);
+        const assistant = page.locator('.scratchpad-message.is-assistant').last();
+        const user = page.locator('.scratchpad-message.is-user').last();
+        const blocks = assistant.locator('.scratchpad-code-block');
+        await expect(blocks).toHaveCount(2);
+        await expect(user.locator('.scratchpad-copy')).toHaveCount(0);
+        await expect(assistant.locator('.scratchpad-author .scratchpad-copy')).toHaveCount(0);
+        for (const [index, draft] of drafts.entries()) {
+            const block = blocks.nth(index);
+            const chip = block.getByRole('button', { name: 'Copy', exact: true });
+            await expect(chip).toHaveCount(1);
+            await chip.click();
+            await expect.poll(() => page.evaluate(() => window.navigator.clipboard.readText())).toBe(draft);
+            const box = await chip.boundingBox();
+            const blockBox = await block.boundingBox();
+            const codeBox = await block.locator('pre').boundingBox();
+            expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
+            expect(Math.abs(box.x + box.width - blockBox.x - blockBox.width)).toBeLessThanOrEqual(2);
+            expect(box.y + box.height).toBeLessThanOrEqual(codeBox.y);
+        }
+        // The overflow menu keeps copying the raw reply, change block included.
+        await assistant.locator('.scratchpad-author summary[aria-label="Message actions"]').click();
+        await assistant.locator('.scratchpad-message-actions').getByRole('button', { name: 'Copy', exact: true }).click();
+        await expect.poll(() => page.evaluate(() => window.navigator.clipboard.readText())).toBe(reply);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(phone ? 393 : 1280);
+    });
+}

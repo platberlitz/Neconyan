@@ -46,7 +46,7 @@ import * as images from './images.js';
 import { integerSettingValue, reflectSavedValue, reflectedSettingValue } from './setting-input.js';
 import { renderWebSearchSettings, renderWebSearchSources, setWebSearchToggle } from './web-search.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261021b-scratchpad-icons';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261105-scratchpad-copy';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -1276,6 +1276,15 @@ function renderReply(session, message) {
             if (!part.text.trim()) continue;
             const block = h('div', { class: 'scratchpad-text mes_text' });
             block.innerHTML = messageFormatting(part.text, '', false, false, -1, {}, false);
+            for (const code of block.querySelectorAll('pre > code')) {
+                if (![...code.classList].some(name => /^(?:custom-)?(?:language-)?(?:markdown|md)$/i.test(name))) continue;
+                const pre = code.parentElement;
+                const wrapper = h('div', { class: 'scratchpad-code-block' });
+                const text = code.textContent;
+                pre.replaceWith(wrapper);
+                wrapper.append(h('div', { class: 'scratchpad-code-actions' },
+                    iconButton(t`Copy`, () => void copyText(text), { icon: 'fa-copy', title: t`Copy Markdown`, className: 'scratchpad-copy' })), pre);
+            }
             body.append(block);
         } else {
             body.append(renderChangeCard(session, message, part));
@@ -1583,13 +1592,17 @@ function useAsDraft(message) {
     target.focus();
 }
 
-async function copyMessage(message) {
+async function copyText(text) {
     try {
-        await navigator.clipboard.writeText(message.text);
+        await navigator.clipboard.writeText(text);
         toastr.success(t`Copied.`);
     } catch {
         toastr.warning(t`Copying is not available here.`);
     }
+}
+
+async function copyMessage(message) {
+    await copyText(message.text);
 }
 
 async function removeMessage(session, message) {
