@@ -217,6 +217,17 @@
       "prompt": "Desktop wallpaper, 3:2 landscape. Flat design vector illustration: geometric low-detail slate-blue and grey-blue mountains in flat colour bands, a flat pale sky, simple flat clouds, no gradients or textures. A gigantic sleepy calico cat (white body with large orange and dark grey-brown patches, pink inner ears, closed eyes, tiny smile) rests along the mountains on the right, drawn in the same flat vector style with simple shapes and a couple of shading tones. Muted cool slate palette with the cat's warm orange as the only warm accent. Keep the centre of the image calm and low-detail so text can sit over it. The calico's markings follow the second reference image; gentle feeling like the first reference image. No text, no watermark."
     },
     {
+      "path": "output/imagegen/neconyan-shell-styles/sunken-reef-sunburst.png",
+      "sha256": "38202fbf70949d536853364a1f6435179e05c51eb748a1eeef60ff85a9027ccc",
+      "generated_at": "2026-11-05",
+      "model": "gpt-image-2.5-sunburst",
+      "references": [
+        "public/img/neconyan/kitty-clouds.webp",
+        "public/img/neconyan/sleeping-calico-left.webp"
+      ],
+      "prompt": "Desktop wallpaper, 3:2 landscape. An enchanting deep-ocean sunken coral reef sanctuary submerged underwater: deep abyssal sapphire and teal ocean water with shimmering turquoise sunbeams and caustic light patterns filtering down from the distant water surface high above, a silhouette of a graceful manta ray gliding high in the upper water column, a sleek swordfish cruising in the mid-distance, and a cute pink axolotl with feathery gills resting on a glowing bioluminescent coral shelf on the lower left. On the lower right, a gigantic sleepy calico cat (white body with large warm orange and dark grey-brown patches, pink inner ears, closed eyes, tiny content smile) curls up peacefully atop a bed of giant glowing sea anemones, pastel brain corals, kelp ribbons and pearl-bearing giant clam shells, with tiny rising pearlescent bubbles. Painterly storybook style like the first reference image (the cloud cats); the calico's markings follow the second reference image. Keep the centre of the image deep, calm and low-detail abyssal teal water so chat text can sit clearly over it. No text, no watermark."
+    },
+    {
       "path": "grey-tabby-flare.png",
       "sha256": "e0bcd9c2e0b94763259462f5f8ed6265f412c0e7e43f5a2ec226d8ef8779cf5f",
       "generated_at": "2026-10-09",
@@ -1327,6 +1338,15 @@
       "model": "gpt-image-2.5-sunburst",
       "processing": "Lossy WebP quality 78 from the generated PNG, no crop.",
       "visualBrief": "Default wallpaper for the starlight-conservatory Shell Style: a giant sleepy calico resting in a scene that matches the style, with a calm centre for chat text."
+    },
+    {
+      "path": "public/img/neconyan/shell-sunken-reef.webp",
+      "size": [1536, 1024],
+      "frames": 1,
+      "sha256": "fe7bfe53d23bbd4bc9045b94281eacd3d44b4b0ac555067ce575905c86b218a9",
+      "model": "gpt-image-2.5-sunburst",
+      "processing": "Lossy WebP quality 78 from the generated PNG, no crop.",
+      "visualBrief": "Default wallpaper for the sunken-reef Shell Style: a giant sleepy calico resting in a scene that matches the style, with a calm centre for chat text."
     },
     {
       "path": "public/img/neconyan/sleeping-grey-tabby-left.webp",

@@ -107,6 +107,7 @@ for (const phone of [false, true]) {
             'clean-minimal': ['#background_fitting', null, 'borderTopColor'],
             'macos-minimal': ['#background_fitting', null, 'borderTopColor'],
             'starlight-conservatory': [phone ? '#form_sheld' : '#send_form', null, 'borderTopColor'],
+            'sunken-reef': [phone ? '#form_sheld' : '#send_form', null, 'borderTopColor'],
         };
         for (const [theme, decoration] of Object.entries(decorations)) {
             await page.evaluate(id => NeconyanShell.applyTheme(id), theme);

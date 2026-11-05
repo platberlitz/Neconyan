@@ -1,7 +1,7 @@
 /* global document, localStorage, window */
 import { expect, test } from '@playwright/test';
 
-const styles = ['calico', 'kittyless', 'windows-aero', 'windows-xp', 'windows-98', 'clean-minimal', 'macos-minimal', 'cozy-warm', 'hypr-glow', 'slate-flat', 'starlight-conservatory'];
+const styles = ['calico', 'kittyless', 'windows-aero', 'windows-xp', 'windows-98', 'clean-minimal', 'macos-minimal', 'cozy-warm', 'hypr-glow', 'slate-flat', 'starlight-conservatory', 'sunken-reef'];
 test.describe.configure({ mode: 'serial' });
 test.setTimeout(480000);
 
@@ -81,7 +81,7 @@ for (const { name, viewport, hasTouch } of [
         await prepare(freshPage);
         await freshPage.goto('/');
         await ready(freshPage);
-        await expectStyle(freshPage, 'starlight-conservatory');
+        await expectStyle(freshPage, 'sunken-reef');
         await fresh.close();
         await context.close();
     });

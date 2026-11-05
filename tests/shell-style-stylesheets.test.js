@@ -85,7 +85,7 @@ function splitSelectorList(group) {
 }
 
 const backedLibraryStyles = new Set(['windows-aero', 'macos-minimal', 'hypr-glow']);
-const animatedStyles = new Set(['starlight-conservatory']);
+const animatedStyles = new Set(['starlight-conservatory', 'sunken-reef']);
 const importantPattern = /!\s*important\b/gi;
 
 function auditMotionDeclarations(stripped, id) {
@@ -248,6 +248,20 @@ describe('shell style runtime stylesheets', () => {
         expect(source).toContain('display: contents;');
     });
 
+    test('the Sunken Reef ocean stage stays lazy and unmounts with its style', () => {
+        expect(tabsSource).toContain('import(\'./neconyan-sunken-reef.js\')');
+        expect(tabsSource).toMatch(/function syncSunkenReefStage\(themeId\) \{/);
+        expect(tabsSource).toMatch(/if \(themeId !== 'sunken-reef'\) \{\s*sunkenReefModule\?\.unmountSunkenReef\(\);/);
+        expect(tabsSource).toMatch(/if \(!module \|\| nnState\.theme !== 'sunken-reef'\) return;/);
+        expect(indexHtml).not.toContain('neconyan-sunken-reef.js');
+
+        const source = readSource('public', 'css', 'shell-styles', 'sunken-reef.css');
+        expect(source).toContain('#sb-sunken-reef-backdrop {');
+        expect(source).toContain('#sb-sunken-reef-creatures {');
+        expect(source).toContain('#sb-sunken-reef-wake {');
+        expect(source).toContain('display: contents;');
+    });
+
     test('the backing exception rejects additional or widened important declarations', () => {
         const id = 'windows-aero';
         const selector = `:root[data-sb-theme='${id}'] body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='characters'], [data-menu-type='world-info'])`;
@@ -275,7 +289,7 @@ describe('shell style runtime stylesheets', () => {
     });
 
     test('every style, Calico included, follows the chosen accent colour', () => {
-        const signatureHues = { kittyless: '--kittyless-primary:', 'windows-aero': '--aero-hue:', 'windows-xp': '--xp-hue:', 'windows-98': '--w98-title:', 'cozy-warm': '--cozy-amber:', 'hypr-glow': '--hypr-b:', 'slate-flat': '--slate-cool:', 'clean-minimal': '--clean-line-strong:', 'starlight-conservatory': '--starlight-brass:' };
+        const signatureHues = { kittyless: '--kittyless-primary:', 'windows-aero': '--aero-hue:', 'windows-xp': '--xp-hue:', 'windows-98': '--w98-title:', 'cozy-warm': '--cozy-amber:', 'hypr-glow': '--hypr-b:', 'slate-flat': '--slate-cool:', 'clean-minimal': '--clean-line-strong:', 'starlight-conservatory': '--starlight-brass:', 'sunken-reef': '--reef-coral:' };
         for (const [id, hueVar] of Object.entries(signatureHues)) {
             const source = stripCssBlockComments(readSource('public', 'css', 'shell-styles', `${id}.css`));
             const customBlock = source.match(new RegExp(`:root\\[data-sb-theme='${id}'\\]\\[data-neconyan-accent='custom'\\] body\\.neconyan:not\\(\\.sbterm\\) \\{([^}]*)\\}`));
@@ -333,7 +347,7 @@ describe('Hide cats works with every shell style', () => {
 
         expect(tabsSource).toContain('kittyless: \'sb-kittyless\',');
         expect(tabsSource).toContain('const NN_KITTYLESS_STYLESHEET_HREF = `css/neconyan-kittyless.css?v=${NN_SHELL_STYLE_STYLESHEET_VERSION}`;');
-        expect(tabsSource).toMatch(/function setShellTheme\([\s\S]*?syncShellStyleStylesheet\(nextTheme\);\s*syncStarlightConservatoryStage\(nextTheme\);\s*syncKittylessStylesheet\(\);/);
+        expect(tabsSource).toMatch(/function setShellTheme\([\s\S]*?syncShellStyleStylesheet\(nextTheme\);\s*syncStarlightConservatoryStage\(nextTheme\);\s*syncSunkenReefStage\(nextTheme\);\s*syncKittylessStylesheet\(\);/);
         expect(tabsSource).toMatch(/function isKittylessActive\(\) \{\s*return nnState\.theme === 'kittyless' \|\| nnState\.kittyless;/);
         expect(tabsSource).toMatch(/function setKittylessEnabled\([\s\S]*?safeSetItem\(NN_STORAGE_KEYS\.kittyless/);
     });

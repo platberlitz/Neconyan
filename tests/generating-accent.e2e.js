@@ -5,7 +5,7 @@ import { test } from './neconyan-conversation-durable-fixture.js';
 import { selectSampleCharacter } from './chat-scroll-regression-helpers.js';
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
-const styles = ['calico', 'windows-aero', 'macos-minimal', 'clean-minimal', 'cozy-warm', 'hypr-glow', 'slate-flat', 'kittyless', 'windows-98', 'windows-xp', 'starlight-conservatory'];
+const styles = ['calico', 'windows-aero', 'macos-minimal', 'clean-minimal', 'cozy-warm', 'hypr-glow', 'slate-flat', 'kittyless', 'windows-98', 'windows-xp', 'starlight-conservatory', 'sunken-reef'];
 
 for (const device of ['desktop', 'phone', 'ios']) {
     const phone = device !== 'desktop';
