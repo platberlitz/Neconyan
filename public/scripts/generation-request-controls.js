@@ -34,6 +34,10 @@ export function requestUsesReasoning(data) {
     if (nativeDeepSeekThinkingOff(data, effort)) {
         return false;
     }
+    // Native DeepSeek Flash thinks at its default 'high' when no effort reaches the wire (unset, auto, or None behind a proxy).
+    if (data.chat_completion_source === 'deepseek' && model === 'deepseek-flash') {
+        return true;
+    }
     if (/non[-_ ]?(?:reasoning|thinking)|gpt-5(?:\.\d+)?-chat/.test(model)) {
         return false;
     }
