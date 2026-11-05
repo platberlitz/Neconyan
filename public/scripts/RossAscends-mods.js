@@ -805,7 +805,8 @@ function revealSendTextAreaEnd() {
     // Only follow an active end caret; editing or selecting earlier text stays put.
     if (document.activeElement === sendTextArea
         && sendTextArea.selectionStart === sendTextArea.value.length
-        && sendTextArea.selectionEnd === sendTextArea.value.length) {
+        && sendTextArea.selectionEnd === sendTextArea.value.length
+        && sendTextArea.scrollTop + sendTextArea.clientHeight < sendTextArea.scrollHeight - 1) {
         sendTextArea.scrollTo({ top: sendTextArea.scrollHeight, behavior: 'instant' });
     }
 }
@@ -815,13 +816,14 @@ function revealSendTextAreaEnd() {
  */
 function autoFitSendTextArea() {
     const originalScrollBottom = chatBlock.scrollHeight - (chatBlock.scrollTop + chatBlock.offsetHeight);
+    const previousHeight = sendTextArea.offsetHeight;
 
     sendTextArea.style.height = '1px'; // Reset height to 1px to force recalculation of scrollHeight
     const newHeight = sendTextArea.scrollHeight;
     sendTextArea.style.height = `${newHeight}px`;
     revealSendTextAreaEnd();
 
-    if (!isFirefox) {
+    if (!isFirefox && newHeight !== previousHeight) {
         chatBlock.scrollTop = chatBlock.scrollHeight - (chatBlock.offsetHeight + originalScrollBottom);
     }
 }
@@ -985,6 +987,7 @@ export function initRossMods() {
     }
 
     let lastSendTextAreaLength = sendTextArea?.value?.length ?? 0;
+    let pendingSendTextAreaFit = 0;
     sendTextArea.addEventListener('input', () => {
         saveUserInputDebounced();
 
@@ -997,11 +1000,16 @@ export function initRossMods() {
             return;
         }
 
-        const currentLength = sendTextArea.value.length;
-        const didShrink = currentLength < lastSendTextAreaLength;
-        lastSendTextAreaLength = currentLength;
+        if (pendingSendTextAreaFit) {
+            cancelAnimationFrame(pendingSendTextAreaFit);
+        }
+        pendingSendTextAreaFit = requestAnimationFrame(() => {
+            pendingSendTextAreaFit = 0;
 
-        requestAnimationFrame(() => {
+            const currentLength = sendTextArea.value.length;
+            const didShrink = currentLength < lastSendTextAreaLength;
+            lastSendTextAreaLength = currentLength;
+
             const hasContent = sendTextArea.value !== '';
             const offsetHeight = sendTextArea.offsetHeight;
             const scrollHeight = sendTextArea.scrollHeight;
