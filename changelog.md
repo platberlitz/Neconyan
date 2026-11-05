@@ -1885,3 +1885,4 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #494 (2026-11-05) `perf(typing): stop per-keystroke redraws in editors and composer`
 - PR #495 (2026-11-05) `fix(chats): rework Hush spacing and correct style descriptions`
 - PR #496 (2026-11-05) `perf(startup): avoid repeated scans and serial template loads`
+- PR #497 (2026-11-05) `fix(personas): keep scenario note portraits at full size`
