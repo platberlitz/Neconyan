@@ -1,7 +1,7 @@
 import { CONNECT_API_MAP, createModelIcon, getRequestHeaders } from '../../script.js';
 import { extension_settings, openThirdPartyExtensionMenu } from '../extensions.js';
 import { t } from '../i18n.js';
-import { oai_settings, proxies, ZAI_ENDPOINT } from '../openai.js';
+import { confirmSavedProxy, oai_settings, proxies, ZAI_ENDPOINT } from '../openai.js';
 import { getPresetManager } from '../preset-manager.js';
 import { SECRET_KEYS, secret_state } from '../secrets.js';
 import { textgen_types, textgenerationwebui_settings } from '../textgen-settings.js';
@@ -39,6 +39,18 @@ export function getChatCompletionProfileRequestOverrides(profile, overridePayloa
 
 export function getChatCompletionProfileReverseProxy(profile, chatCompletionSource) {
     return resolveProfileProxy(profile, chatCompletionSource, proxies, oai_settings);
+}
+
+/**
+ * Confirms the proxy a Chat Completion profile will send to, when the profile is saved.
+ * @param {import('./connection-manager/index.js').ConnectionProfile} profile Connection profile
+ * @returns {Promise<boolean>} False when the user declined, so the profile is not saved
+ */
+export async function confirmProfileProxy(profile) {
+    if (profile?.mode !== 'cc') return true;
+    const source = CONNECT_API_MAP[profile.api]?.source;
+    const { reverse_proxy: proxy } = getChatCompletionProfileReverseProxy(profile, source);
+    return confirmSavedProxy(proxy, source, t`Connection profile not saved. Confirm its proxy address to save it.`);
 }
 
 /**

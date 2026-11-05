@@ -128,6 +128,55 @@ describe('real agent request boundaries', () => {
         expect(ctx.removeReasoningFromString('<think>unfinished', { force: true })).toBe('');
     });
 
+    function profileRuntime(validate) {
+        const ctx = runtime();
+        const host = { ChatCompletionService: ctx.ChatCompletionService,
+            CONNECT_API_MAP: { openai: { selected: 'openai', source: 'openai' } },
+            extensionSettings: { disabledExtensions: [], connectionManager: { profiles: [{ id: 'saved', api: 'openai', model: 'fixture' }] } } };
+        Object.assign(ctx, {
+            t: strings => strings.join(''),
+            SillyTavern: { getContext: () => host },
+            getChatCompletionProfileRequestOverrides: () => ({ overrides: {}, profileFieldNames: [] }),
+            getChatCompletionProfileReverseProxy: () => ({ reverse_proxy: 'https://profile.invalid', proxy_password: 'pw' }), getProfileServiceTier: () => '',
+            REVERSE_PROXY_SUPPORTED_SOURCES: ['openai'], validateReverseProxy: validate,
+        });
+        load(ctx, 'scripts/extensions/shared.js', ['ConnectionManagerRequestService']);
+        ctx.fetchResumable.mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: 'Reply' } }] }) });
+        return ctx;
+    }
+    const profileOptions = { stream: false, extractData: true, includePreset: false, includeInstruct: false };
+
+    test('a profile request without a preset confirms the proxy it sends before dispatch', async () => {
+        const validate = jest.fn(async () => {});
+        const ctx = profileRuntime(validate);
+        await ctx.ConnectionManagerRequestService.sendRequest('saved', 'Hello', 64, profileOptions);
+        expect(validate).toHaveBeenCalledTimes(1);
+        expect(validate.mock.calls[0][1]).toBe('https://profile.invalid');
+        expect(validate.mock.calls[0][2]).toEqual({ markConnection: false });
+        expect(ctx.fetchResumable).toHaveBeenCalledTimes(1);
+    });
+
+    test('a declined profile proxy stops the request before dispatch', async () => {
+        const ctx = profileRuntime(jest.fn(async () => { throw new Error('Proxy connection denied.'); }));
+        await expect(ctx.ConnectionManagerRequestService.sendRequest('saved', 'Hello', 64, profileOptions))
+            .rejects.toMatchObject({ message: 'API request failed', cause: { message: 'Proxy connection denied.' } });
+        expect(ctx.fetchResumable).not.toHaveBeenCalled();
+    });
+
+    test.each([
+        ['no proxy', {}],
+        ['a source that sends no proxy', { chat_completion_source: 'openrouter', reverse_proxy: 'https://profile.invalid' }],
+    ])('a direct request with %s asks nothing', async (_label, fields) => {
+        const ctx = runtime();
+        const validate = jest.fn(async () => {});
+        Object.assign(ctx, { REVERSE_PROXY_SUPPORTED_SOURCES: ['openai'], validateReverseProxy: validate });
+        ctx.fetchResumable.mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: 'Reply' } }] }) });
+        await ctx.ChatCompletionService.sendRequest({ stream: false, chat_completion_source: 'openai', ...fields });
+        expect(validate).not.toHaveBeenCalled();
+        expect(ctx.fetchResumable).toHaveBeenCalledTimes(1);
+    });
+
+
     test.each(['gpt-4', 'gpt-5', 'o3'])('preset merging keeps the converted output limit for %s', async model => {
         const ctx = runtime();
         ctx.createGenerationParameters = async settings => ({ generate_data: model === 'gpt-4'
