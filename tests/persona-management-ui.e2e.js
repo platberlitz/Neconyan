@@ -15,6 +15,57 @@ test.beforeEach(async ({ page }) => {
 });
 
 for (const phone of [true, false]) {
+    test.describe(`Scenario Note editor on ${phone ? 'phone' : 'desktop'}`, () => {
+        test.use({ viewport: { width: phone ? 393 : 1280, height: phone ? 852 : 900 }, hasTouch: phone, isMobile: phone });
+
+        test('aligns the label and fullscreen button with the note field', async ({ page }, testInfo) => {
+            test.slow();
+            await openQuietChatForSmoke(page, { selectCharacter: false });
+            await page.evaluate(async () => {
+                const { power_user } = await import('/scripts/power-user.js');
+                const { user_avatar, setPersonaDescription } = await import('/scripts/personas.js');
+                power_user.personas[user_avatar] = 'Scenario Test';
+                power_user.persona_descriptions[user_avatar] = { description: 'Base persona', appendices: [], activeAppendices: {} };
+                setPersonaDescription();
+                window.NeconyanShell.openTab('characters', 'persona');
+            });
+            await openPersonaEditor(page);
+            await page.locator('#persona_appendices_heading').click();
+            await page.locator('#persona_appendix_add').click();
+            await page.locator('#persona_appendix_name_input').fill('Genshin');
+
+            const field = page.locator('#persona_appendix_description_input');
+            const header = page.locator('.persona-appendix-editor-label');
+            const expand = header.getByRole('button', { name: 'Expand the editor' });
+            await expect(field).toBeVisible();
+            await page.screenshot({ path: testInfo.outputPath(`scenario-note-${phone ? 'phone' : 'desktop'}.png`) });
+            const fieldBox = await field.boundingBox();
+            const headerBox = await header.boundingBox();
+            const buttonBox = await expand.boundingBox();
+            const textLeft = await header.evaluate(element => {
+                const range = element.ownerDocument.createRange();
+                range.selectNodeContents(element.firstChild);
+                return range.getBoundingClientRect().left;
+            });
+            expect(Math.abs(textLeft - fieldBox.x)).toBeLessThan(2);
+            expect(Math.abs(buttonBox.x + buttonBox.width - fieldBox.x - fieldBox.width)).toBeLessThan(2);
+            expect(Math.abs(headerBox.y + headerBox.height / 2 - buttonBox.y - buttonBox.height / 2)).toBeLessThan(2);
+
+            await field.fill('Additional persona details for this scenario.');
+            await expand.click();
+            const expanded = page.locator('textarea.maximized_textarea');
+            await expect(expanded).toHaveValue('Additional persona details for this scenario.');
+            await expanded.fill('Updated in fullscreen.');
+            await page.locator('dialog[open]').last().locator('.popup-button-ok').click();
+            await expect(expanded).toBeHidden();
+            await expect(field).toHaveValue('Updated in fullscreen.');
+            await page.locator('dialog[open] .popup-button-ok').click();
+            await expect(page.locator('.persona-appendix-card')).toContainText('Genshin');
+        });
+    });
+}
+
+for (const phone of [true, false]) {
     test.describe(`Scenario Note scroll on ${phone ? 'phone' : 'desktop'}`, () => {
         test.use(phone ? IPHONE_SAFARI_CONTEXT : { viewport: { width: 1280, height: 900 } });
 
