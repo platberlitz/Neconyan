@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import { parse } from 'acorn';
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
-import { promptMediaError } from '../public/scripts/prompt-media-policy.js';
+import * as policy from '../public/scripts/prompt-media-policy.js';
+
+const { promptMediaError } = policy;
 
 // A browser Roleplay refusal must show its notice once and leave Send usable. These tests load the real startup module with
 // stand-ins for everything it imports, then run the Send funnel as it is cut out of script.js. The source-shape checks pin where the
@@ -96,6 +98,17 @@ describe('browser image refusal notice', () => {
         expect(events).toHaveLength(1);
         expect(events[0]).not.toHaveProperty('origin');
         expect(client.isReportedImageRefusal(noAvatar)).toBe(true);
+    });
+
+    test('a server refusal whose notice was shown counts as reported, and one nobody showed does not', () => {
+        expect(typeof policy.markImageRefusalShown).toBe('function');
+        const [shown, unshown] = serverRefusals();
+        policy.markImageRefusalShown(shown);
+        expect(client.isReportedImageRefusal(shown)).toBe(true);
+        expect(client.isReportedImageRefusal(unshown)).toBe(false);
+        // M10 D1: the browser helper must not report a refusal that was already shown, or the group route reports twice.
+        expect(client.reportBrowserImageRefusal(shown, soloLocator, 'alice')).toBe(false);
+        expect(events).toHaveLength(0);
     });
 
     // The Send funnel, cut from script.js as it stands (the export keyword is not part of the slice), with a test-owned set standing in for

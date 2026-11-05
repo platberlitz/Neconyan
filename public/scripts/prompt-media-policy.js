@@ -1,6 +1,6 @@
 import { uiText } from './ui-text.js';
 
-/** Shared, side-effect-free image selection. Account/file validation belongs to the host. */
+/** Shared, side-effect-free image selection. Account/file validation belongs to the host. The record of refusals already shown is the one piece of browser state, and the server never touches it. */
 export const PROMPT_MEDIA_VERSION = 1;
 export const PROMPT_MEDIA_MODES = Object.freeze(['include', 'display-only', 'caption']);
 /** Sent on the window when a setting that decides whether images are sent changes (the account or chat choice). */
@@ -22,6 +22,15 @@ export function promptMediaError(reason, index, mediaIndex, message) {
 export function isImageInputIssue(error) {
     return [error, error?.body].some(source => source?.code === 'ROLEPLAY_IMAGE_INPUT' || (source?.imageIssue !== null && typeof source?.imageIssue === 'object'));
 }
+
+// Refusals whose notice this page has shown, by error object. Browser state only: the server never adds to it.
+const shownImageRefusals = new WeakSet();
+/** Records that the notice for this refusal was sent, so Send and other callers may treat it as handled. */
+export function markImageRefusalShown(error) {
+    if (error !== null && typeof error === 'object') shownImageRefusals.add(error);
+}
+/** Whether this page already showed the notice for this refusal, wherever its code lives (on the error or on error.body). */
+export const isReportedImageRefusal = error => error !== null && typeof error === 'object' && shownImageRefusals.has(error);
 
 /**
  * What a server reply or a stored job error keeps of an image refusal, besides its message: the code and the imageIssue

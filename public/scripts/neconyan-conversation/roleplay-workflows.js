@@ -27,7 +27,7 @@ import { getCurrentCharAvatar } from './context.js';
 import { getRoleplaySourceMessageRevision } from './roleplay-source.js';
 import { beginRoleplayReplacement } from './roleplay-replacement.js';
 import { withAbortSignal } from '../abort.js';
-import { imageInputIssueDetail, isImageInputIssue, roleplayImageOrigin } from '../prompt-media-policy.js';
+import { imageInputIssueDetail, isImageInputIssue, markImageRefusalShown, roleplayImageOrigin } from '../prompt-media-policy.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
 import { roleplayKeptReplyNotice, roleplayReplyNotice } from '../roleplay-reply-notice.js';
 
@@ -462,9 +462,16 @@ async function postSubmission(payload, account, url = '/api/roleplay/workflow/su
     const body = await response.json().catch(() => null);
     if (account !== getCurrentUserHandle()) throw new Error('account_changed');
     // One notice for an image refusal, whichever route asked (see showImageChoiceNotice in prompt-media-ui.js); callers show no second toast.
-    // Its origin is the chat this request was for (payload.source.locator), not the chat open when the refusal arrives.
-    if (!response.ok && isImageInputIssue(body)) globalThis.dispatchEvent(new CustomEvent(IMAGE_REFUSED_EVENT, { detail: imageInputIssueDetail(body, roleplayImageOrigin(payload.source?.locator, account)) }));
-    if (!response.ok) throw Object.assign(new Error(body?.error || `The ${payload.name} workflow was refused (${response.status}).`), { status: response.status, body });
+    // Its origin is the chat this request was for (payload.source.locator), not the chat open when the refusal arrives. The error is
+    // recorded as shown first, so Send treats it as handled (isReportedImageRefusal) instead of raising it again.
+    if (!response.ok) {
+        const error = Object.assign(new Error(body?.error || `The ${payload.name} workflow was refused (${response.status}).`), { status: response.status, body });
+        if (isImageInputIssue(body)) {
+            markImageRefusalShown(error);
+            globalThis.dispatchEvent(new CustomEvent(IMAGE_REFUSED_EVENT, { detail: imageInputIssueDetail(body, roleplayImageOrigin(payload.source?.locator, account)) }));
+        }
+        throw error;
+    }
     return body;
 }
 
