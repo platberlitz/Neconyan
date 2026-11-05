@@ -20,6 +20,10 @@ Neconyan is my cat-themed fork of [SillyTavern](https://github.com/SillyTavern/S
 
 ## What's in here?
 
+<p align="center">
+  <img src="../docs/readme/banner-why.webp" alt="Why Neconyan?">
+</p>
+
 - **Four ways to chat:** classic Roleplay, messenger-style Conversation, a social feed called Meower, and Story Mode for continuous prose.
 - **A layout made for phones**, with labelled controls, a bottom chat bar and a sliding menu. **Simple Mode** hides the less-used controls until you want them.
 - **Mewmory** remembers story events and characters. **Agents** can keep trackers, check a reply or write a separate Companion note.
@@ -30,6 +34,10 @@ Neconyan is my cat-themed fork of [SillyTavern](https://github.com/SillyTavern/S
 Your character cards, chats, lorebooks and presets use familiar SillyTavern formats. There's no telemetry. Some upstream features and extensions behave differently here; I only bring across the bits I want. The [included tools list](../docs/neconyan-native-tools.md) credits the projects bundled with Neconyan.
 
 ## Have a look
+
+<p align="center">
+  <img src="../docs/readme/banner-modes.webp" alt="Modes">
+</p>
 
 Fresh desktop and phone screenshots, using demo chats and notes with the bundled assistants.
 
@@ -121,6 +129,10 @@ Talk the story over with an assistant or a round table of characters, without ad
 
 ## Get started
 
+<p align="center">
+  <img src="../docs/readme/banner-getting-started.webp" alt="Getting Started">
+</p>
+
 ### On a computer
 
 1. Download the file ending in **-source.zip** from the [latest release](https://github.com/platberlitz/Neconyan/releases/latest). Unzip it first; on Windows, right-click and choose **Extract All**.
@@ -177,6 +189,10 @@ I would start with the [handbook](https://platberlitz.github.io/neconyan-docs/),
 For missing settings, try **Search** in the sidebar. For errors, use the [troubleshooting guide](https://platberlitz.github.io/neconyan-docs/help/troubleshooting/) or [report an issue](https://github.com/platberlitz/Neconyan/issues) with what you were doing and the error shown.
 
 ## Credits
+
+<p align="center">
+  <img src="../docs/readme/banner-credits.webp" alt="Credits">
+</p>
 
 Neconyan is built on the work of everyone behind SillyTavern and SillyBunny; none of this would exist without them. The [included tools list](../docs/neconyan-native-tools.md) credits their original authors.
 
