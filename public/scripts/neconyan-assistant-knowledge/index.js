@@ -6,8 +6,9 @@ import tools from './tools.js';
 import connections from './connections.js';
 import notes from './notes.js';
 import scratchpad from './scratchpad.js';
+import creator from './creator.js';
 
 // Knowledge revisions are independent of the assistant cards and artwork.
-export const KNOWLEDGE_REVISION = 57;
-export const topics = Object.freeze([...core, ...appearance, ...modes, ...memory, ...tools, ...connections, ...notes, ...scratchpad]
+export const KNOWLEDGE_REVISION = 58;
+export const topics = Object.freeze([...core, ...appearance, ...modes, ...memory, ...tools, ...connections, ...notes, ...scratchpad, ...creator]
     .map(topic => Object.freeze({ ...topic, verification: 'source' })));
