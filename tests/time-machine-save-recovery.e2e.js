@@ -105,7 +105,13 @@ test('direct recovery completes while terminal delivery is held and keeps local 
         await startCapture(page);
         const record = await waitForHeldRecord(page, gate);
         expect(record.state).toBe('completed');
-        expect(record.result.previousSettingsRevision).toBe(pageRevision);
+        // startCapture saves the page settings in prepareInput before submitting, so the
+        // capture is based on that acknowledged revision, not the one read before it.
+        await expect.poll(() => saves.filter(entry => entry.status === 200)
+            .every(entry => Number.isSafeInteger(entry.responseSettingsRevision))).toBe(true);
+        const preparedRevision = lastAcceptedRevision(saves, pageRevision);
+        expect(preparedRevision).toBeGreaterThanOrEqual(pageRevision);
+        expect(record.result.previousSettingsRevision).toBe(preparedRevision);
         const heldServer = await readServer(account);
         expect(heldServer.settingsRevision).toBe(record.result.settingsRevision);
         expect(heldServer.tm.lastCommit).toBe(record.result.module.lastCommit);
@@ -254,7 +260,13 @@ test('held recovery reads give a bounded conflict and leave the complete local i
         await startCapture(page);
         const record = await waitForHeldRecord(page, gate);
         expect(record.state).toBe('completed');
-        expect(record.result.previousSettingsRevision).toBe(pageRevision);
+        // startCapture saves the page settings in prepareInput before submitting, so the
+        // capture is based on that acknowledged revision, not the one read before it.
+        await expect.poll(() => saves.filter(entry => entry.status === 200)
+            .every(entry => Number.isSafeInteger(entry.responseSettingsRevision))).toBe(true);
+        const preparedRevision = lastAcceptedRevision(saves, pageRevision);
+        expect(preparedRevision).toBeGreaterThanOrEqual(pageRevision);
+        expect(record.result.previousSettingsRevision).toBe(preparedRevision);
         const heldServer = await readServer(account);
         expect(heldServer.settingsRevision).toBe(record.result.settingsRevision);
         expect(heldServer.tm.lastCommit).toBe(record.result.module.lastCommit);
