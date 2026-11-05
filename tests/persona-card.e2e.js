@@ -11,12 +11,13 @@ async function dismissTour(page) {
         return eventSource.autoFireLastArgs.has(event_types.APP_READY);
     });
     const skip = page.getByRole('button', { name: 'Skip', exact: true });
-    await page.addLocatorHandler(skip, async () => {
+    const dismiss = async () => {
         await skip.click();
         await skip.waitFor({ state: 'hidden' });
         await page.evaluate(() => window.NeconyanShell.openTab('characters', 'persona'));
-    });
-    if (await skip.isVisible()) await skip.click();
+    };
+    if (await skip.isVisible()) await dismiss();
+    await page.addLocatorHandler(skip, dismiss);
 }
 
 async function openPersonaBrowser(page) {
