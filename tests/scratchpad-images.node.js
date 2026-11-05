@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fixture, png } from './roleplay-transactions-fixture.js';
 import * as store from '../src/scratchpad/store.js';
-import { acceptScratchpadImage, prepareScratchpadAvatarReview, registerScratchpadImageJobs, readScratchpadImageAvailability, assertScratchpadAvatarWriteLocked, assertScratchpadImageRetry } from '../src/scratchpad/images.js';
+import { acceptScratchpadImage, prepareScratchpadAvatarReview, saveScratchpadPersonaAvatar, registerScratchpadImageJobs, readScratchpadImageAvailability, assertScratchpadAvatarWriteLocked, assertScratchpadImageRetry } from '../src/scratchpad/images.js';
 import { generateQuickImageGenJobImage } from '../src/generation/quick-image-gen-job.js';
 import { readArtifact, writeArtifact } from '../src/jobs/artifacts.js';
 import { explicitRetryRecovery, getJob, jobKey, mutateJobs, requestCancellation, setJobResume, updateJob } from '../src/jobs/store.js';
@@ -24,9 +24,14 @@ function account(t, { change = {}, qig = {}, source = SOURCE, targets = [{ avata
     const f = fixture(t, false, 'image-owner');
     const directories = f.scope.directories;
     directories.userImages = path.join(directories.root, 'user/images');
+    directories.avatars = path.join(directories.root, 'User Avatars');
+    directories.thumbnailsPersona = path.join(directories.root, 'thumbnails/persona');
+    directories.thumbnailsPersonaMobile = path.join(directories.root, 'thumbnails/persona-mobile');
+    fs.mkdirSync(directories.avatars, { recursive: true });
+    fs.writeFileSync(path.join(directories.avatars, 'User.png'), png);
     const settings = { extension_settings: { 'quick-image-gen': { provider: 'together', togetherKey: 'not-a-real-provider-key', togetherModel: 'mock-image',
         width: 512, height: 768, seed: 37, style: 'none', appendQuality: true, qualityTags: 'QUALITY', useSTStyle: true, negativePrompt: 'BASE-NEGATIVE', reviewBeforeGenerate: false, ...qig },
-    sd: { prompt_prefix: 'GLOBAL-STYLE', negative_prompt: 'GLOBAL-NEGATIVE' } }, power_user: { persona_descriptions: { 'User.png': { description: 'EXPLICIT-PERSONA' } } } };
+    sd: { prompt_prefix: 'GLOBAL-STYLE', negative_prompt: 'GLOBAL-NEGATIVE' } }, power_user: { personas: { 'User.png': 'Kris' }, persona_descriptions: { 'User.png': { description: 'EXPLICIT-PERSONA' } } } };
     const saveSettings = () => fs.writeFileSync(path.join(directories.root, 'settings.json'), JSON.stringify(settings));
     saveSettings();
     const request = { user: { profile: { handle: f.scope.owner }, directories }, get: () => undefined };
@@ -37,7 +42,7 @@ function account(t, { change = {}, qig = {}, source = SOURCE, targets = [{ avata
     const session = mutate(bucket => {
         const session = store.createSession(bucket);
         session.messages.push({ id: 'reply', role: 'assistant', state: 'done', text: fence(proposal), contextSource: source,
-            targets, sharedAvatar: source.avatar, imageNames: { user: 'Kris', character: 'Nova' }, imagePersonaId: 'User.png' });
+            targets, sharedAvatar: source.avatar, sharedPersona: { avatar: 'User.png', name: 'Kris' }, imageNames: { user: 'Kris', character: 'Nova' }, imagePersonaId: 'User.png' });
         return session;
     });
     const body = { source, sessionId: session.id, messageId: 'reply', index: 0, submissionKey: `image-${++serial}` };
@@ -53,6 +58,36 @@ function account(t, { change = {}, qig = {}, source = SOURCE, targets = [{ avata
     const image = () => read().sessions[0].messages[0].images?.[0];
     return { f, directories, base, request, source, settings, saveSettings, mutate, read, session, body, accept, run, image, calls };
 }
+
+test('persona avatar uses global settings, preserves a backup and rejects changes after review', async t => {
+    const a = account(t, { change: { target: 'persona-avatar', persona: 'Kris' } });
+    const original = fs.readFileSync(path.join(a.directories.avatars, 'User.png'));
+    const accepted = await a.accept();
+    await a.run(accepted);
+    assert.equal(getJob(a.directories, accepted.job.id).state, 'completed');
+    assert.equal(a.calls[0].body.width, 512);
+    const review = await prepareScratchpadAvatarReview(a.base, a.source, a.body);
+    assert.equal(review.kind, 'persona');
+    assert.deepEqual(fs.readFileSync(path.join(a.directories.root, review.currentUrl.slice(1))), original);
+    fs.appendFileSync(path.join(a.directories.avatars, 'User.png'), 'changed');
+    await assert.rejects(saveScratchpadPersonaAvatar(a.base, { ...a.body, avatar: 'User.png', revision: review.revision }), /changed after review/);
+    fs.writeFileSync(path.join(a.directories.avatars, 'User.png'), original);
+    await saveScratchpadPersonaAvatar(a.base, { ...a.body, avatar: 'User.png', revision: review.revision });
+    assert.deepEqual(fs.readFileSync(path.join(a.directories.root, review.currentUrl.slice(1))), original);
+    assert.equal(a.calls.length, 1);
+});
+
+test('persona image refuses revoked sharing, missing capture and renamed personas', async t => {
+    const a = account(t, { change: { target: 'persona-avatar', persona: 'Kris' } });
+    a.mutate(bucket => { bucket.sessions[0].settings.include.persona = false; });
+    await assert.rejects(a.accept(), /original persona/);
+    a.mutate(bucket => { bucket.sessions[0].settings.include.persona = true; delete bucket.sessions[0].messages[0].sharedPersona; });
+    await assert.rejects(a.accept(), /original persona/);
+    a.mutate(bucket => { bucket.sessions[0].messages[0].sharedPersona = { avatar: 'User.png', name: 'Kris' }; });
+    a.settings.power_user.personas['User.png'] = 'Renamed'; a.saveSettings();
+    await assert.rejects(a.accept(), /original persona/);
+    assert.equal(a.calls.length, 0);
+});
 
 test('explicit global settings restore the saved base, never the last selected card or its references', () => {
     const raw = { width: 1024, height: 1024, style: 'character-style', customApiRefImages: ['/user/images/private-card.png'],

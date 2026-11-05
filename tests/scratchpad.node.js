@@ -86,6 +86,43 @@ function saveAssistant(a, input, revision) {
     return store.withScratchpad(a.base, lease => saveAssistantLocked(lease, input, revision ?? readAssistantsLocked(lease).revision));
 }
 
+test('persona edit authority is captured from saved settings without image configuration and stripped on import', async t => {
+    const a = account(t);
+    const target = { avatar: 'User.png', name: 'Kris' };
+    a.directories.avatars = path.join(a.directories.root, 'User Avatars');
+    fs.mkdirSync(a.directories.avatars, { recursive: true });
+    fs.writeFileSync(path.join(a.directories.avatars, target.avatar), png);
+    const settingsPath = path.join(a.directories.root, SETTINGS_FILE);
+    const saved = JSON.parse(fs.readFileSync(settingsPath));
+    saved.power_user = { personas: { [target.avatar]: target.name } };
+    fs.writeFileSync(settingsPath, JSON.stringify(saved));
+    const session = a.mutate(GENERAL, bucket => store.createSession(bucket, { settings: { connection: { kind: 'profile', profileId: 'saved' } } }));
+    registerScratchpadJobs({ generate: async () => ({ text: 'A persona suggestion.' }) });
+    const body = sendBody(session, { source: GENERAL, capabilities: { persona: target } });
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    await runJob(getJob(a.directories, accepted.job.id));
+    const message = a.read(GENERAL).sessions[0].messages.at(-1);
+    assert.deepEqual(message.sharedPersona, target);
+    const imported = a.mutate(GENERAL, bucket => store.createSession(bucket, { messages: [message] }));
+    assert.equal(imported.messages[0].sharedPersona, undefined);
+    const next = sendBody(imported, { source: GENERAL, capabilities: { persona: { ...target, name: 'Forged' } } });
+    const refusedTarget = await acceptScratchpadReply(a.request(next), next);
+    await runJob(getJob(a.directories, refusedTarget.job.id));
+    assert.equal(a.read(GENERAL).sessions[0].messages.at(-1).sharedPersona, undefined);
+});
+
+test('persona and Scenario Note contracts are available in default and custom prompts only when shared', () => {
+    for (const customPrompt of [undefined, 'Be helpful.']) {
+        const input = { assistant: 'miso', sourceKind: 'general', customPrompt, capabilities: { image: true, persona: { avatar: 'User.png', name: 'Kris' } } };
+        const shared = buildScratchpadSystemPrompt(input).text;
+        assert.match(shared, /"type":"persona-note"/);
+        assert.match(shared, /"target":"persona-avatar","persona":"Kris"/);
+        assert.match(shared, /Connections and additions are kept/);
+        const hidden = buildScratchpadSystemPrompt({ ...input, capabilities: { image: true } }).text;
+        assert.doesNotMatch(hidden, /"type":"persona-note"|"target":"persona-avatar"/);
+    }
+});
+
 test('General with no card clamps a forged character capability and records no shared avatar', async t => {
     const a = account(t);
     const source = { kind: 'general', key: 'general', label: 'General Scratchpad' };

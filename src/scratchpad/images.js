@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { sync as writeFileAtomicSync } from 'write-file-atomic';
+import { Jimp } from '../jimp.js';
+import { invalidateThumbnail } from '../endpoints/thumbnails.js';
 import { readArtifact, unresolvedProviderStep, writeArtifact } from '../jobs/artifacts.js';
 import { readImageArtifact } from '../jobs/image-artifacts.js';
 import { acceptJob, getJob, listJobs, providerRecoverySteps, releaseJob, requestCancellation, updateJob } from '../jobs/store.js';
@@ -21,7 +24,7 @@ import { sameSourceContext } from '../../public/scripts/scratchpad/source.js';
 import { ScratchpadError, assistantConnection, findSession, findMessage, normaliseSource, requireId, newScratchpadId,
     scratchpadAccountBase, withScratchpad, readBucketLocked, writeBucketLocked, publicBucket, projectPending } from './store.js';
 import { imageChangeHash, imagePart, SCRATCHPAD_IMAGE_URL } from './image-state.js';
-import { resolveImageTargetLocked, readImageCardLocked } from './image-targets.js';
+import { resolveImageTargetLocked, readImageCardLocked, readPersonaTargetLocked, resolvePersonaTargetLocked } from './image-targets.js';
 
 export const SCRATCHPAD_IMAGE_JOB = 'scratchpad.image';
 const TERMINAL = new Set(['completed', 'cancelled', 'failed', 'interrupted', 'conflict']);
@@ -82,6 +85,7 @@ function selection(lease, source, body) {
 }
 
 function requireTarget(lease, source, session, message, change) {
+    if (change.target === 'persona-avatar') return resolvePersonaTargetLocked(lease, source, session, message, change.persona);
     if (!change.character) return null;
     if (!session.settings.include.card) throw fail('Share the character card before generating or reviewing its image.');
     if (source.kind === 'general' && (!sameSourceContext(source, message.contextSource) || message.sharedAvatar !== source.avatar)) {
@@ -101,11 +105,13 @@ function assertImageLocked(lease, request, jobId) {
 
 function imageSnapshot(lease, source, session, message, target, acknowledgement) {
     const { directories } = roleplayLease(lease).scope;
+    const personaTarget = target?.kind === 'persona' ? target : null;
+    if (personaTarget) target = null;
     const scope = target ? { avatar: target.avatar } : { kind: 'global' };
     const { saved, settings } = configured(directories, scope);
     const sd = saved.extension_settings?.sd || saved.extension_settings?.['stable-diffusion'] || {};
     const personaId = message.imagePersonaId || source.personaId || '';
-    const persona = target ? String(saved.power_user?.persona_descriptions?.[personaId]?.description || '').slice(0, 64000) : '';
+    const persona = personaTarget ? personaTarget.description.slice(0, 64000) : target ? String(saved.power_user?.persona_descriptions?.[personaId]?.description || '').slice(0, 64000) : '';
     const character = target ? { avatar: target.avatar, name: target.name,
         ...Object.fromEntries(['description', 'personality', 'scenario', 'creator_notes'].map(key => [key, String(target.character[key] || '').slice(0, 64000)])),
         data: { extensions: { sd_character_prompt: Object.fromEntries(['positive', 'negative'].map(key => [key,
@@ -198,7 +204,7 @@ export async function acceptScratchpadImage(request, body = {}) {
         const captured = imageSnapshot(lease, bucket.source, session, message, target, body.acknowledgement);
         const { job, created } = acceptJob(base.directories, { owner: base.owner, type: SCRATCHPAD_IMAGE_JOB, submissionKey,
             intent: { kind: 'scratchpad', source: { kind: source.kind, key: source.key }, sessionId: session.id, messageId: message.id, index, changeHash, requestHash },
-            automatic: false, paused: true, target: { kind: 'scratchpad', id: session.id }, label: change.target === 'avatar' ? `Scratchpad avatar for ${target.name}` : 'Scratchpad image' });
+            automatic: false, paused: true, target: { kind: 'scratchpad', id: session.id }, label: change.target !== 'image' ? `Scratchpad avatar for ${target.name}` : 'Scratchpad image' });
         if (!created) throw fail('The image request changed during acceptance.');
         const image = { id: newScratchpadId(), jobId: job.id, state: 'pending', target: change.target, changeHash, providerReached: false,
             ...(captured.review ? { review: true } : {}),
@@ -292,7 +298,7 @@ export async function prepareScratchpadAvatarReview(base, source, body) {
     const captured = withScratchpad(base, (lease, account) => {
         const current = selection(lease, source, body);
         const image = current.message.images?.[current.index];
-        if (!image || image.state !== 'done' || image.target !== 'avatar' || !SCRATCHPAD_IMAGE_URL.test(image.url)) throw fail('Generate and save the avatar image before reviewing it.');
+        if (!image || image.state !== 'done' || !['avatar', 'persona-avatar'].includes(image.target) || !SCRATCHPAD_IMAGE_URL.test(image.url)) throw fail('Generate and save the avatar image before reviewing it.');
         const target = requireTarget(lease, current.bucket.source, current.session, current.message, current.change);
         if (target.avatar !== image.avatar) throw fail('The avatar suggestion belongs to a different card.');
         const filename = path.join(base.directories.root, image.url.replace(/^\//, ''));
@@ -300,24 +306,26 @@ export async function prepareScratchpadAvatarReview(base, source, body) {
         const format = generated && detectImageFormat(generated.bytes);
         if (!format || !['png', 'jpeg', 'webp'].includes(format.ext)) throw fail('This generated picture cannot be used as a card avatar. Download it separately.');
         if (!IMAGE_HASH.test(image.imageHash) || generated.rawHash !== image.imageHash) throw fail('The saved avatar picture could not be verified. Generate it again.');
-        return { avatar: target.avatar, name: target.name, bytes: target.file.bytes, revision: target.file.rawHash, url: image.url, account };
+        return { avatar: target.avatar, name: target.name, kind: target.kind, bytes: target.file.bytes, revision: target.file.rawHash, url: image.url, account };
     });
-    const previousAvatarUrl = await saveQuickImageToUserImages(base.directories, { base64: captured.bytes.toString('base64'), format: 'png', chName: 'Scratchpad',
+    const originalFormat = detectImageFormat(captured.bytes)?.ext;
+    if (!originalFormat) throw fail('The previous avatar picture could not be preserved.');
+    const previousAvatarUrl = await saveQuickImageToUserImages(base.directories, { base64: captured.bytes.toString('base64'), format: originalFormat === 'jpeg' ? 'jpg' : originalFormat, chName: 'Scratchpad',
         filename: `scratchpad-avatar-before-${roleplayHash([captured.avatar, captured.revision])}`, owner: base.owner, account: captured.account,
-        assertSourceLocked: lease => { if (readImageCardLocked(lease, captured.avatar).file.rawHash !== captured.revision) throw fail('The card changed while preserving its previous picture. Review it again.'); } });
+        assertSourceLocked: lease => { if ((captured.kind === 'persona' ? readPersonaTargetLocked : readImageCardLocked)(lease, captured.avatar).file.rawHash !== captured.revision) throw fail('The avatar changed while preserving its previous picture. Review it again.'); } });
     return withRoleplayAccount(base, captured.account, lease => {
         const current = selection(lease, source, body);
         const target = requireTarget(lease, current.bucket.source, current.session, current.message, current.change);
         if (target.avatar !== captured.avatar || target.file.rawHash !== captured.revision) throw fail('The character changed before the avatar review. Review it again.');
         Object.assign(current.message.images[current.index], { previousAvatarUrl: previousAvatarUrl.startsWith('/') ? previousAvatarUrl : `/${previousAvatarUrl}`, previousAvatarRevision: captured.revision });
         writeBucketLocked(lease, current.bucket);
-        return { avatar: captured.avatar, name: captured.name, revision: captured.revision, currentUrl: current.message.images[current.index].previousAvatarUrl,
+        return { avatar: captured.avatar, name: captured.name, kind: captured.kind, revision: captured.revision, currentUrl: current.message.images[current.index].previousAvatarUrl,
             proposedUrl: captured.url, bucket: publicBucket(current.bucket) };
     });
 }
 
 /** Called inside the character writer's account lease, not just when opening the review. */
-export function assertScratchpadAvatarWriteLocked(lease, input, avatar, revision) {
+export function assertScratchpadAvatarWriteLocked(lease, input, avatar, revision, targetKind = 'avatar') {
     let body;
     try {
         if (typeof input !== 'string' || Buffer.byteLength(input) > 10000) throw new Error();
@@ -326,10 +334,11 @@ export function assertScratchpadAvatarWriteLocked(lease, input, avatar, revision
     const source = normaliseSource(body.source);
     const current = selection(lease, source, body);
     const image = current.message.images?.[current.index];
-    if (!image || image.state !== 'done' || image.target !== 'avatar' || image.avatar !== avatar || image.previousAvatarRevision !== revision
+    if (!image || image.state !== 'done' || image.target !== targetKind || image.avatar !== avatar || image.previousAvatarRevision !== revision
         || !SCRATCHPAD_IMAGE_URL.test(image.previousAvatarUrl) || current.message.proposals?.[current.index] === 'rejected') throw fail('Review this saved avatar suggestion again before replacing the card.');
     const target = requireTarget(lease, current.bucket.source, current.session, current.message, current.change);
     if (target.avatar !== avatar) throw fail('The shared avatar target changed.');
+    if (target.file.rawHash !== revision) throw fail('The avatar changed after review. Review it again.');
     const root = roleplayLease(lease).scope.directories.root;
     const backup = readRoleplayFile(path.join(root, image.previousAvatarUrl.replace(/^\//, '')), 64 * 1024 * 1024);
     if (!backup || backup.rawHash !== revision) throw fail('The saved previous picture could not be verified. Nothing was replaced.');
@@ -342,6 +351,19 @@ export function assertScratchpadAvatarWriteLocked(lease, input, avatar, revision
     if (!proposed) throw fail('The saved avatar picture is no longer available. Generate it again.');
     if (proposed.rawHash !== image.imageHash) throw fail('The saved avatar picture changed after review. Review it again.');
     return proposed.bytes;
+}
+
+export async function saveScratchpadPersonaAvatar(base, body) {
+    const input = JSON.stringify({ source: body.source, sessionId: body.sessionId, messageId: body.messageId, index: body.index });
+    const captured = withScratchpad(base, (lease, account) => ({ account,
+        bytes: assertScratchpadAvatarWriteLocked(lease, input, body.avatar, body.revision, 'persona-avatar') }));
+    const image = await (await Jimp.read(captured.bytes)).getBuffer('image/png');
+    return withRoleplayAccount(base, captured.account, lease => {
+        assertScratchpadAvatarWriteLocked(lease, input, body.avatar, body.revision, 'persona-avatar');
+        writeFileAtomicSync(path.join(base.directories.avatars, body.avatar), image);
+        invalidateThumbnail(base.directories, 'persona', body.avatar);
+        return { avatar: body.avatar };
+    });
 }
 
 export function finalizeScratchpadImageSubmission(context) {

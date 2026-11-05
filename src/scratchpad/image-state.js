@@ -13,7 +13,7 @@ export function normaliseStoredImages(value) {
     for (const [index, input] of Object.entries(value).slice(0, 24)) {
         if (!/^\d{1,2}$/.test(index) || String(Number(index)) !== index || Number(index) > 23 || !input || typeof input !== 'object'
             || !['pending', 'done', 'failed', 'cancelled'].includes(input.state) || !/^[a-f0-9]{64}$/.test(input.changeHash)
-            || !['image', 'avatar'].includes(input.target)) continue;
+            || !['image', 'avatar', 'persona-avatar'].includes(input.target)) continue;
         const image = { state: input.state, target: input.target, changeHash: input.changeHash };
         if (typeof input.providerReached === 'boolean') image.providerReached = input.providerReached;
         if (typeof input.review === 'boolean') image.review = input.review;

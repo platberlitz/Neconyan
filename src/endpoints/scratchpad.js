@@ -28,11 +28,19 @@ import { assistantPortrait, deleteAssistantLocked, readAssistantCardLocked, read
 import { normaliseAssistantProfile } from '../scratchpad/assistant-profiles.js';
 import { notebookContextLocked, withNotebookPreparation, prepareNotebookProposalLocked, decideNotebookProposalLocked,
     projectNotebookProposalsLocked, notifyScratchpadNotebookResult } from '../scratchpad/notebooks.js';
-import { acceptScratchpadImage, readScratchpadImageAvailability, prepareScratchpadAvatarReview } from '../scratchpad/images.js';
-import { captureImageTargetsLocked } from '../scratchpad/image-targets.js';
+import { acceptScratchpadImage, readScratchpadImageAvailability, prepareScratchpadAvatarReview, saveScratchpadPersonaAvatar } from '../scratchpad/images.js';
+import { captureImageTargetsLocked, capturePersonaTargetLocked } from '../scratchpad/image-targets.js';
 import { updateWebSearchLocked, webSearchState, webSearchStateLocked } from '../scratchpad/web-search.js';
 
 export const router = express.Router();
+
+router.post('/images/persona-avatar', async (request, response) => {
+    try {
+        response.json(await saveScratchpadPersonaAvatar(scratchpadAccountBase(request), request.body ?? {}));
+    } catch (error) {
+        sendError(response, error);
+    }
+});
 
 const TERMINAL = new Set(['completed', 'cancelled', 'failed', 'interrupted', 'conflict']);
 
@@ -181,10 +189,16 @@ router.post('/prompt', (request, response) => {
             const ids = [body.assistant, ...(Array.isArray(body.participants) ? body.participants.slice(0, 3) : [])];
             return Object.fromEntries(ids.map(id => [id, resolveAssistant(library, id, session?.settings.assistants)]));
         });
+        const persona = source ? withScratchpad(base, lease => {
+            const bucket = readBucketLocked(lease, source);
+            const session = body.sessionId ? findSession(bucket, requireId(body.sessionId, 'session')) : null;
+            return capturePersonaTargetLocked(lease, source, body.capabilities?.persona, session?.settings.include.persona !== false);
+        }) : null;
         response.json(buildScratchpadSystemPrompt({ assistant: body.assistant, gender: body.gender,
             persona: profiles[body.assistant], assistantNames: Object.fromEntries(Object.entries(profiles).map(([id, profile]) => [id, profile?.name])),
             sourceKind: source?.kind, userName: body.names?.user, characterName: body.names?.character,
             capabilities: { ...normaliseCapabilities(body.capabilities, source?.kind, source ?? {}), notebook: body.capabilities?.notebook === true,
+                persona,
                 image: imageAvailability.image && body.capabilities?.image === true, avatar: imageAvailability.image && body.capabilities?.image === true && targets.length > 0 },
             participants: Array.isArray(body.participants) ? body.participants.slice(0, 3) : [], randomReply: body.randomReply === true }));
     } catch (error) {
