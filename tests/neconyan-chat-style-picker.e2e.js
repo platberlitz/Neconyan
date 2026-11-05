@@ -133,7 +133,7 @@ for (const width of [393, 1280]) {
             }
             const options = shellDrawer.locator('[data-sb-theme-option]');
             const themes = await options.evaluateAll(buttons => buttons.map(button => button.dataset.sbThemeOption));
-            expect(themes).toHaveLength(11);
+            expect(themes).toHaveLength(12);
             for (const theme of themes) {
                 const option = shellDrawer.locator(`[data-sb-theme-option="${theme}"]`);
                 await option.click();
