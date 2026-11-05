@@ -2,6 +2,7 @@
 import { expect } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { settleCssTransitions } from './chat-scroll-regression-helpers.js';
 
 for (const phone of [false, true]) {
     test(`Catelier asks before writing and revises follow-up answers on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
@@ -111,6 +112,7 @@ test('Writing partner waits for Generate even with no questions and keeps accent
         if (accent) await page.evaluate(rgba => {
             for (const id of ['sb-accent-primary-picker', 'sb-accent-secondary-picker']) document.getElementById(id).dispatchEvent(new CustomEvent('change', { detail: { rgba } }));
         }, accent);
+        await settleCssTransitions(page);
         const contrast = await generate.evaluate(node => {
             const style = getComputedStyle(node);
             const canvas = document.createElement('canvas'); canvas.width = 1; canvas.height = 1;

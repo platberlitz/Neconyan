@@ -1,6 +1,7 @@
-/* global globalThis, document, requestAnimationFrame, getComputedStyle */
+/* global globalThis, document, getComputedStyle */
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { settleCssTransitions } from './chat-scroll-regression-helpers.js';
 
 for (const phone of [false, true]) {
     test(`Catelier finishes server writing after closing the ${phone ? 'phone' : 'desktop'} page`, async ({ app }) => {
@@ -56,10 +57,13 @@ for (const phone of [false, true]) {
         await page.screenshot({ path: `../screenshots/catelier-server-review-${phone ? 'phone' : 'desktop'}.png` });
         expect((await account.post('/api/creator/get', { id: stored.id })).draft.card.data.description).toBe('');
         expect(app.provider.calls).toHaveLength(2);
+        const recover = creator.getByRole('button', { name: 'Recover proposal for review', exact: true });
         for (const accent of [null, 'rgba(245, 235, 210, 1)', 'rgba(45, 20, 70, 1)']) {
-            const contrast = await creator.getByRole('button', { name: 'Recover proposal for review', exact: true }).evaluate(async (node, colour) => {
-                if (colour) for (const id of ['sb-accent-primary-picker', 'sb-accent-secondary-picker']) document.getElementById(id).dispatchEvent(new CustomEvent('change', { detail: { rgba: colour } }));
-                await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            if (accent) await page.evaluate(rgba => {
+                for (const id of ['sb-accent-primary-picker', 'sb-accent-secondary-picker']) document.getElementById(id).dispatchEvent(new CustomEvent('change', { detail: { rgba } }));
+            }, accent);
+            await settleCssTransitions(page);
+            const contrast = await recover.evaluate(node => {
                 const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
                 const ctx = canvas.getContext('2d');
                 const rgba = value => {
@@ -76,7 +80,7 @@ for (const phone of [false, true]) {
                 const foreground = luminance(rgba(getComputedStyle(node).color));
                 const backdrop = luminance(background);
                 return (Math.max(foreground, backdrop) + 0.05) / (Math.min(foreground, backdrop) + 0.05);
-            }, accent);
+            });
             expect(contrast).toBeGreaterThanOrEqual(4.5);
         }
     });
