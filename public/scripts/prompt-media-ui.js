@@ -449,14 +449,20 @@ async function showRoleplayPromptMediaReview(initialLocator, { fromOrigin = fals
             })));
             if (operation.backupAvailable) {
                 row.append(button(translate('Download backup', 'scoped.prompt_media.HIS-09'), () => run(async () => download(await request('backup/export', { id: operation.id }, captured, { binary: true }), 'chat-before-image-repair.jsonl'))),
-                    button(translate('Undo change', 'scoped.prompt_media.HIS-10'), () => run(async () => {
+                    ...operation.undone ? [] : [button(translate('Undo change', 'scoped.prompt_media.HIS-10'), () => run(async () => {
                         if (!await confirmChange(translate('Undo this change?', 'scoped.prompt_media.HIS-11'), t`The chat goes back to how it was before this change. This works only if the chat has not changed since. Images that were missing stay missing.`)) return;
                         const beforeLocal = JSON.stringify(chat);
                         const scan = await request('scan', { locator: operation.locator }, captured);
-                        await request('apply', { key: `undo:${operation.id}`, observation: scan.observation, undoOf: operation.id }, captured);
+                        try {
+                            await request('apply', { key: `undo:${operation.id}`, observation: scan.observation, undoOf: operation.id }, captured);
+                        } catch (error) {
+                            // Another window undid this change first: show the fresh list; run() then writes the server's sentence.
+                            if (error?.code === 'ROLEPLAY_IMAGE_ALREADY_UNDONE') await showHistory(offset).catch(() => {});
+                            throw error;
+                        }
                         if (sameLocator(operation.locator) && beforeLocal === JSON.stringify(chat)) await refreshCurrentChatFromSaved();
                         await showHistory(offset); say(translate('Change undone.', 'scoped.prompt_media.HIS-13'));
-                    })), button(t`Delete backup`, () => run(async () => {
+                    }))], button(t`Delete backup`, () => run(async () => {
                         if (!await confirmChange(translate('Delete this backup?', 'scoped.prompt_media.HIS-15'), t`You will no longer be able to undo this change. Image files, including compatible copies, are kept. Download the backup first if you might need it.`)) return;
                         await request('backup/remove', { id: operation.id }, captured); await showHistory(offset);
                     })));

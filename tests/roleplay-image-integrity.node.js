@@ -65,7 +65,7 @@ const INTEGRITY = {
     'FIL-I08': 'The destination immutable image record differs.',
     'FIL-I09': 'Different bytes occupy the destination prompt-copy location.',
 };
-// Request-validation messages: no person reaches them from the dialog, so they stay as written and unwrapped.
+// Request-validation messages kept plain. 'This repair ID already has different choices.' can reach a person (a genuine conflicting request under one key) and stays plain by decision.
 const UNWRAPPED = new Set([
     'Invalid image review page.',
     'Invalid image coordinates.',

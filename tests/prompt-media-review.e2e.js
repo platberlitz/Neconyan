@@ -1,6 +1,7 @@
 /* global window */
 import { expect } from '@playwright/test';
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { checkImageControlContrast } from './scratchpad-image-contrast-helpers.js';
 
@@ -89,4 +90,62 @@ test('opening legacy attachments keeps their descriptions subject to the image c
         { text: 'Gallery text', appendTitle: false },
         { text: 'Modern text', appendTitle: true },
     ]);
+});
+
+const confirmOk = page => page.locator('dialog.popup:not(:has(#prompt-media-review)) .popup-button-ok');
+async function chatFiles(root) {
+    const found = [];
+    for (const entry of await fs.readdir(root, { withFileTypes: true, recursive: true })) {
+        if (entry.isFile() && entry.name.endsWith('.jsonl')) found.push(path.join(entry.parentPath ?? entry.path, entry.name));
+    }
+    return found;
+}
+
+for (const phone of [false, true]) test(`${phone ? 'phone' : 'desktop'} a stale second window is told the change was already undone and loses Undo`, async ({ app }) => {
+    test.setTimeout(240000);
+    const account = await app.account({ phone });
+    const pageA = await account.open({ workspace: false });
+    await pageA.evaluate(async ({ avatar, url }) => {
+        const core = await import('/script.js');
+        const context = window.SillyTavern.getContext();
+        await context.getCharacters();
+        await core.selectCharacterById(context.characters.findIndex(char => char.avatar === avatar), { switchMenu: false });
+        core.chat.push({ name: 'User', is_user: true, is_system: false, mes: 'Keep my message.', extra: { media: [{ type: 'image', url, title: 'An image for review' }] } });
+        if (!await core.saveChatConditional()) throw new Error('Fixture chat was not saved.');
+        void (await import('/scripts/prompt-media-ui.js')).showPromptMediaReview();
+    }, { avatar: account.avatar, url: `data:image/png;base64,${png.toString('base64')}` });
+    const panelA = pageA.locator('#prompt-media-review');
+    await panelA.getByRole('combobox', { name: 'What the model receives from this image' }).selectOption('display-only');
+    await panelA.getByRole('button', { name: 'Save choice', exact: true }).click();
+    await expect(panelA.getByRole('status')).toContainText('Saved.');
+
+    const pageB = await account.open({ workspace: false });
+    await pageB.evaluate(async () => { void (await import('/scripts/prompt-media-ui.js')).showPromptMediaReview(); });
+    const panelB = pageB.locator('#prompt-media-review');
+    await panelB.getByRole('button', { name: 'Change history', exact: true }).click();
+    await expect(panelB.getByRole('button', { name: 'Undo change', exact: true })).toHaveCount(1);
+
+    await panelA.getByRole('button', { name: 'Change history', exact: true }).click();
+    await panelA.getByRole('button', { name: 'Undo change', exact: true }).click();
+    await confirmOk(pageA).click();
+    await expect(panelA.getByRole('status')).toHaveText('Change undone.');
+
+    const chatsRoot = path.join(app.dataRoot, 'default-user', 'chats');
+    const files = await chatFiles(chatsRoot);
+    expect(files).toHaveLength(1);
+    const before = await fs.readFile(files[0]);
+    await panelB.getByRole('button', { name: 'Undo change', exact: true }).click();
+    await confirmOk(pageB).click();
+    const statusB = panelB.getByRole('status');
+    await expect(statusB).not.toHaveText(/Working|^$/);
+    await fs.mkdir('../screenshots', { recursive: true });
+    await pageB.screenshot({ path: `../screenshots/undo-twice-${phone ? 'phone' : 'desktop'}-${process.env.NECONYAN_REVIEW_SCREENSHOT_STAGE ?? 'after'}.png` });
+    await expect(statusB).toHaveText('This change has already been undone.');
+    expect(await fs.readFile(files[0])).toEqual(before);
+    const rows = panelB.locator('fieldset');
+    await expect(rows).toHaveCount(2);
+    await expect(rows.nth(0).getByRole('button', { name: 'Undo change', exact: true })).toHaveCount(0);
+    await expect(rows.nth(0).getByRole('button', { name: 'Download backup', exact: true })).toHaveCount(1);
+    await expect(rows.nth(0).getByRole('button', { name: 'Delete backup', exact: true })).toHaveCount(1);
+    await expect(rows.nth(1).getByRole('button', { name: 'Undo change', exact: true })).toHaveCount(1);
 });
