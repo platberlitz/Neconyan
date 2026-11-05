@@ -7,7 +7,8 @@ let current;
 let owner;
 jest.unstable_mockModule('../public/script.js', () => ({ saveSettings, setUserName }));
 jest.unstable_mockModule('../public/scripts/power-user.js', () => ({ power_user }));
-jest.unstable_mockModule('../public/scripts/personas.js', () => ({ user_avatar: 'User.png', getUserAvatars: jest.fn(), setPersonaDescription: jest.fn() }));
+jest.unstable_mockModule('../public/scripts/personas.js', () => ({ user_avatar: 'User.png', getUserAvatar: file => `/User Avatars/${file}`, getUserAvatars: jest.fn(), setPersonaDescription: jest.fn() }));
+jest.unstable_mockModule('../public/scripts/notebooks/dom.js', () => ({ h: (tag, attributes, ...children) => ({ tag, attributes, children }) }));
 jest.unstable_mockModule('../public/scripts/events.js', () => ({ event_types: { PERSONA_UPDATED: 'updated' }, eventSource: { emit: jest.fn() } }));
 jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => owner }));
 jest.unstable_mockModule('../public/scripts/scratchpad/context.js', () => ({ sourcePersona: () => current, isCurrentSource: () => true }));
@@ -86,4 +87,31 @@ test('invalid fields, blank names and ambiguous note IDs are refused', async () 
     expect(() => proposal({ type: 'persona-note', noteId: 'au', field: 'title' })).toThrow();
     descriptor().appendices.push({ id: 'au', name: 'Duplicate' });
     await expect(prepare({ type: 'persona-note', noteId: 'au' })).rejects.toThrow('ambiguous');
+});
+
+test('Scenario Note portraits are reviewed, saved independently and removable with rollback', async () => {
+    const portrait = 'data:image/webp;base64,aGVsbG8=';
+    const change = { type: 'persona-note', persona: 'Kris', noteId: 'au', field: 'avatar', value: portrait };
+    const plan = await preparePersonaChange(change, source, shared, () => {});
+    expect(plan.editable).toBe(false);
+    expect(plan.visual).toBeDefined();
+    expect(descriptor().appendices[0].avatar).toBeUndefined();
+    await plan.commit(portrait);
+    expect(descriptor().appendices[0]).toEqual({ id: 'au', name: 'Modern AU', description: 'Original note', avatar: portrait });
+    const remove = await prepare({ type: 'persona-note', noteId: 'au', field: 'avatar', value: '' });
+    saveSettings.mockResolvedValue(false);
+    await expect(remove.commit('')).rejects.toThrow('not saved');
+    expect(descriptor().appendices[0].avatar).toBe(portrait);
+    saveSettings.mockResolvedValue(true);
+    await remove.commit('');
+    expect(descriptor().appendices[0]).not.toHaveProperty('avatar');
+    expect(descriptor().appendices[1]).toEqual({ id: 'other', name: 'Other', description: 'Keep' });
+});
+
+test('Scenario Note avatar proposals reject arbitrary images and require an existing note identity', () => {
+    expect(() => proposal({ type: 'persona-note', noteId: 'au', field: 'avatar', value: 'https://example.com/avatar.png' })).toThrow();
+    const image = { type: 'image', action: 'generate', target: 'persona-note-avatar', persona: 'Kris', noteId: 'au', prompt: 'Winter portrait' };
+    expect(normaliseChange(image)).toMatchObject(image);
+    expect(() => normaliseChange({ ...image, noteId: '' })).toThrow();
+    expect(() => normaliseChange({ ...image, character: 'Nova' })).toThrow();
 });

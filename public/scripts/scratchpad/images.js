@@ -6,6 +6,7 @@ import { getExtensionCapability } from '../neconyan-conversation/extension-capab
 import { h } from '../notebooks/dom.js';
 import { getCurrentUserHandle } from '../user.js';
 import { getUserAvatars, refreshPersonaAvatar } from '../personas.js';
+import { normalizeScenarioAvatar } from '../persona-appendix-avatar.js';
 import * as api from './api.js';
 
 const safeImage = url => /^\/?user\/images\/Scratchpad\/scratchpad-[a-z0-9-]+\.(?:png|jpe?g|webp|gif)$/.test(url || '');
@@ -33,7 +34,7 @@ export function renderImageCard({ session, message, part, button, availability, 
     const applied = message.proposals?.[part.index] === 'applied';
     const dismissed = message.proposals?.[part.index] === 'rejected';
     const card = h('div', { class: 'scratchpad-change scratchpad-image-card', dataset: { imageIndex: part.index } },
-        h('p', { class: 'scratchpad-change-title', text: part.change.target === 'persona-avatar' ? t`New persona avatar for ${part.change.persona}` : part.change.target === 'avatar' ? t`New avatar for ${part.change.character}` : t`Image suggestion` }),
+        h('p', { class: 'scratchpad-change-title', text: part.change.target === 'persona-note-avatar' ? t`New Scenario Note avatar for ${part.change.persona}` : part.change.target === 'persona-avatar' ? t`New persona avatar for ${part.change.persona}` : part.change.target === 'avatar' ? t`New avatar for ${part.change.character}` : t`Image suggestion` }),
         h('p', { class: 'scratchpad-image-prompt', text: part.change.prompt, 'data-i18n-ignore': '' }),
         part.change.negative ? h('p', { class: 'scratchpad-muted', text: t`Exclude: ${part.change.negative}` }) : null,
         part.change.reason ? h('p', { class: 'scratchpad-change-reason', text: part.change.reason, 'data-i18n-ignore': '' }) : null);
@@ -43,9 +44,9 @@ export function renderImageCard({ session, message, part, button, availability, 
             ...(image.width && image.height ? { width: image.width, height: image.height } : {}) }));
         actions.append(h('a', { class: 'scratchpad-button scratchpad-image-link', href: image.url, target: '_blank', rel: 'noopener', text: t`Open image` }),
             h('a', { class: 'scratchpad-button scratchpad-image-link', href: image.url, download: '', text: t`Download` }));
-        if (['avatar', 'persona-avatar'].includes(image.target) && !dismissed) actions.append(button(applied ? t`Avatar saved` : t`Review avatar`, onReview, { primary: true, disabled: applied }));
+        if (['avatar', 'persona-avatar', 'persona-note-avatar'].includes(image.target) && !dismissed) actions.append(button(applied ? t`Avatar saved` : t`Review avatar`, onReview, { primary: true, disabled: applied }));
         if (safeImage(image.previousAvatarUrl)) actions.append(h('a', { class: 'scratchpad-button scratchpad-image-link', href: image.previousAvatarUrl, target: '_blank', rel: 'noopener', text: t`Previous avatar` }));
-        card.append(h('p', { class: 'scratchpad-change-state', text: applied ? t`Avatar saved` : image.target === 'persona-avatar' ? t`Image saved. The persona is unchanged.` : image.target === 'avatar' ? t`Image saved. The character card is unchanged.` : t`Image saved to your user images.` }));
+        card.append(h('p', { class: 'scratchpad-change-state', text: applied ? t`Avatar saved` : image.target === 'persona-note-avatar' ? t`Image saved. The Scenario Note is unchanged.` : image.target === 'persona-avatar' ? t`Image saved. The persona is unchanged.` : image.target === 'avatar' ? t`Image saved. The character card is unchanged.` : t`Image saved to your user images.` }));
     } else if (image?.state === 'pending') {
         const approval = Boolean(job?.result?.approval);
         const reviewing = approval || (Boolean(image.review) && job?.stage !== 'approved');
@@ -70,7 +71,7 @@ export function renderImageCard({ session, message, part, button, availability, 
     return card;
 }
 
-export async function prepareAvatarChange({ source, session, message, part, guard }) {
+export async function prepareAvatarChange({ source, personaSource = source, session, message, part, guard }) {
     const owner = getCurrentUserHandle();
     const check = () => { guard(); if (getCurrentUserHandle() !== owner) throw new Error(t`The account changed. Reopen the avatar review.`); };
     check();
@@ -81,6 +82,19 @@ export async function prepareAvatarChange({ source, session, message, part, guar
     const persona = part.change.target === 'persona-avatar';
     if (persona && review.kind !== 'persona') throw new Error(t`The persona avatar target could not be verified.`);
     if (image?.avatar !== review.avatar) throw new Error(t`The avatar target changed. Request a new suggestion.`);
+    if (part.change.target === 'persona-note-avatar') {
+        if (review.kind !== 'persona-note' || review.noteId !== part.change.noteId || !normalizeScenarioAvatar(review.proposedAvatar)) throw new Error(t`The Scenario Note avatar could not be verified.`);
+        const { preparePersonaChange } = await import('./persona-changes.js');
+        const plan = await preparePersonaChange({ type: 'persona-note', persona: part.change.persona, noteId: part.change.noteId, field: 'avatar', value: review.proposedAvatar }, personaSource, message.sharedPersona, check);
+        if (plan.before !== review.avatarValue) throw new Error(t`Save the current Scenario Note before reviewing its avatar.`);
+        return { ...plan, bucket: review.bucket, async commit() {
+            check();
+            const fresh = await api.readAvatarReview(source, session.id, message.id, part.index);
+            check();
+            if (fresh.avatar !== review.avatar || fresh.noteId !== review.noteId || fresh.revision !== review.revision || fresh.avatarValue !== review.avatarValue || fresh.proposedAvatar !== review.proposedAvatar) throw new Error(t`The Scenario Note avatar changed. Review it again.`);
+            return plan.commit(review.proposedAvatar);
+        } };
+    }
     const picture = (label, url) => h('figure', {}, h('figcaption', { text: label }), h('img', { src: url, alt: label, loading: 'eager' }));
     return { target: review.name, field: persona ? t`Persona avatar` : t`Character avatar`, editable: false, before: '', after: '', bucket: review.bucket,
         visual: h('div', { class: 'scratchpad-avatar-review' }, picture(t`Current avatar`, review.currentUrl), picture(t`Proposed avatar`, review.proposedUrl)),

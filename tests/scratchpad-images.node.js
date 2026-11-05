@@ -89,6 +89,35 @@ test('persona image refuses revoked sharing, missing capture and renamed persona
     assert.equal(a.calls.length, 0);
 });
 
+test('Scenario Note images retain their target, resize for review and refuse stale or revoked notes', async t => {
+    const a = account(t, { change: { target: 'persona-note-avatar', persona: 'Kris', noteId: 'winter' } });
+    const descriptor = a.settings.power_user.persona_descriptions['User.png'];
+    descriptor.appendices = [{ id: 'winter', name: 'Winter', description: 'Snowy clothes' }];
+    a.saveSettings();
+    const accepted = await a.accept();
+    await a.run(accepted);
+    assert.equal(getJob(a.directories, accepted.job.id).state, 'completed');
+    assert.equal(a.image().target, 'persona-note-avatar');
+    const review = await prepareScratchpadAvatarReview(a.base, a.source, a.body);
+    assert.equal(review.kind, 'persona-note');
+    assert.equal(review.noteId, 'winter');
+    assert.equal(review.avatarValue, '');
+    assert.match(review.proposedAvatar, /^data:image\/webp;base64,/);
+    assert.ok(review.proposedAvatar.length < 96 * 1024);
+    assert.equal(descriptor.appendices[0].avatar, undefined);
+    assert.deepEqual(fs.readFileSync(path.join(a.directories.avatars, 'User.png')), png);
+    descriptor.appendices[0].avatar = review.proposedAvatar; a.saveSettings();
+    const changed = await prepareScratchpadAvatarReview(a.base, a.source, a.body);
+    assert.equal(changed.avatarValue, review.proposedAvatar);
+    assert.notEqual(changed.revision, review.revision);
+    a.mutate(bucket => { bucket.sessions[0].settings.include.persona = false; });
+    await assert.rejects(prepareScratchpadAvatarReview(a.base, a.source, a.body), /original persona/);
+    a.mutate(bucket => { bucket.sessions[0].settings.include.persona = true; });
+    descriptor.appendices = []; a.saveSettings();
+    await assert.rejects(prepareScratchpadAvatarReview(a.base, a.source, a.body), /no longer exists/);
+    assert.equal(a.calls.length, 1);
+});
+
 test('explicit global settings restore the saved base, never the last selected card or its references', () => {
     const raw = { width: 1024, height: 1024, style: 'character-style', customApiRefImages: ['/user/images/private-card.png'],
         _charSettingsBaseState: { width: 512, height: 768, style: 'none', customApiRefImages: [] }, _backupCharSettings: { 'card:nova.png': { width: 256 } } };

@@ -57,6 +57,7 @@ for (const phone of [false, true]) {
             fence({ type: 'persona', persona: 'Kris', field: 'description', value: 'A curious traveller who records every journey.' }),
             fence({ type: 'persona-note', persona: 'Kris', noteId: 'harbour', field: 'description', value: 'The last ferry leaves at sunset.' }),
             fence({ type: 'image', action: 'generate', target: 'persona-avatar', persona: 'Kris', prompt: 'A friendly traveller with a notebook.' }),
+            fence({ type: 'image', action: 'generate', target: 'persona-note-avatar', persona: 'Kris', noteId: 'harbour', prompt: 'A traveller in a blue raincoat at the harbour.' }),
         ].join('\n'));
         if (phone) await page.locator('.scratchpad-overview-toggle').click();
         await page.evaluate(() => window.toastr.remove());
@@ -88,7 +89,7 @@ for (const phone of [false, true]) {
         await expect.poll(async () => (await savedPersona()).appendices[0].description).toBe('The last ferry leaves at sunset.');
         expect((await savedPersona()).appendices[1]).toEqual(notes[1]);
         expect((await savedPersona()).appendices[0].id).toBe('harbour');
-        const card = page.locator('.scratchpad-image-card');
+        const card = page.locator('.scratchpad-image-card').first();
         const generating = page.waitForResponse('**/api/scratchpad/images/generate');
         await card.getByRole('button', { name: 'Generate image', exact: true }).click();
         const generated = await generating;
@@ -111,10 +112,39 @@ for (const phone of [false, true]) {
         expect(await fs.readFile(avatarPath)).not.toEqual(original);
         expect(await fs.readFile(path.join(app.dataRoot, 'default-user', previous.slice(1)))).toEqual(original);
         expect(images.calls).toHaveLength(1);
+        const noteCard = page.locator('.scratchpad-image-card').last();
+        await noteCard.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `../screenshots/scratchpad-note-avatar-${size}-before.png` });
+        const noteGenerating = page.waitForResponse('**/api/scratchpad/images/generate');
+        await noteCard.getByRole('button', { name: 'Generate image', exact: true }).click();
+        const noteGenerated = await noteGenerating;
+        expect(noteGenerated.ok(), await noteGenerated.text()).toBe(true);
+        await account.settled((await noteGenerated.json()).job.id);
+        await expect(noteCard.getByRole('button', { name: 'Review avatar', exact: true })).toBeVisible();
+        await noteCard.getByRole('button', { name: 'Review avatar', exact: true }).click();
+        await expect(popup).toContainText('Kris: At the harbour');
+        const portrait = await popup.locator('.scratchpad-avatar-review img').last().getAttribute('src');
+        expect(portrait).toMatch(/^data:image\/webp;base64,/);
+        await page.screenshot({ path: `../screenshots/scratchpad-note-avatar-${size}-after.png` });
+        await popup.getByRole('button', { name: 'Not now', exact: true }).click();
+        expect((await savedPersona()).appendices[0]).not.toHaveProperty('avatar');
+        await noteCard.getByRole('button', { name: 'Review avatar', exact: true }).click();
+        await popup.getByRole('button', { name: 'Save change', exact: true }).click();
+        await expect(noteCard).toContainText('Avatar saved');
+        expect((await savedPersona()).appendices[0].avatar).toBe(portrait);
+        expect((await savedPersona()).appendices[1]).toEqual(notes[1]);
+        expect(images.calls).toHaveLength(2);
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(phone ? 393 : 1280);
         await page.reload();
         await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
         expect((await savedPersona()).description).toBe('A curious traveller with a well-worn notebook.');
         expect((await savedPersona()).appendices[0].description).toBe('The last ferry leaves at sunset.');
+        expect((await savedPersona()).appendices[0].avatar).toBe(portrait);
+        await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
+        await send(fence({ type: 'persona-note', persona: 'Kris', noteId: 'harbour', field: 'avatar', value: '' }));
+        await page.getByRole('button', { name: 'Review', exact: true }).last().click();
+        await expect(popup).toContainText('Persona avatar (fallback)');
+        await popup.getByRole('button', { name: 'Save change', exact: true }).click();
+        await expect.poll(async () => (await savedPersona()).appendices[0].avatar).toBeUndefined();
     });
 }
