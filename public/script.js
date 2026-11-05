@@ -16005,22 +16005,15 @@ function openMessageDelete(fromSlashCommand) {
     is_delete_mode = true;
 }
 
-function messageEditAuto(div) {
-    const { mesBlock, text, mes, bias } = updateMessage(div);
-
-    mesBlock.find('.mes_text').val('');
-    mesBlock.find('.mes_text').val(messageFormatting(
-        text,
-        this_edit_mes_chname,
-        mes.is_system,
-        mes.is_user,
-        this_edit_mes_id,
-        {},
-        false,
-    ));
-    notifyCardScriptStripped(mesBlock.closest('.mes'), this_edit_mes_id);
+const messageEditPreviewDebounced = debounce((mesBlock, messageId, bias) => {
     mesBlock.find('.mes_bias').empty();
     mesBlock.find('.mes_bias').append(messageFormatting(bias, '', false, false, -1, {}, false));
+    notifyCardScriptStripped(mesBlock.closest('.mes'), messageId);
+}, debounce_timeout.standard);
+
+function messageEditAuto(div) {
+    const { mesBlock, bias } = updateMessage(div);
+    messageEditPreviewDebounced(mesBlock, this_edit_mes_id, bias);
     saveChatDebounced();
 }
 
@@ -16029,6 +16022,7 @@ function messageEditAuto(div) {
  * @param {number} editMessageId The ID of the message to edit
  */
 export async function messageEdit(editMessageId) {
+    cancelDebounce(messageEditPreviewDebounced);
     const editMessage = chat[editMessageId];
     if (!editMessage) {
         console.warn(`Message with id ${editMessageId} not found in chat array.`);
@@ -16111,6 +16105,7 @@ export async function messageEdit(editMessageId) {
  * @param {number} [messageId=this_edit_mes_id]
  */
 async function messageEditCancel(messageId = this_edit_mes_id) {
+    cancelDebounce(messageEditPreviewDebounced);
     let text = chat[messageId].mes;
     let thisMesDiv;
     // If this is the button then select it's parent. Otherwise, select by messageId.
@@ -16210,6 +16205,7 @@ async function messageEditDone(div) {
         return;
     }
 
+    cancelDebounce(messageEditPreviewDebounced);
     let { mesBlock, text, mes, bias } = updateMessage(div);
 
     await eventSource.emit(event_types.MESSAGE_EDITED, this_edit_mes_id);
@@ -17545,6 +17541,8 @@ export function select_rm_info(type, charId, previousCharId = null) {
     }
 }
 
+let creatorNotesPreviewDebounced = null;
+
 /**
  * Selects the right menu for displaying the character editor.
  * @param {string} chid Character array index
@@ -17552,6 +17550,7 @@ export function select_rm_info(type, charId, previousCharId = null) {
  * @param {boolean} [param1.switchMenu=true] Whether to switch the menu
  */
 export function select_selected_character(chid, { switchMenu = true } = {}) {
+    cancelDebounce(creatorNotesPreviewDebounced);
     //character select
     //console.log('select_selected_character() -- starting with input of -- ' + chid + ' (name:' + characters[chid].name + ')');
     select_rm_create({ switchMenu, resetForm: false });
@@ -17648,6 +17647,9 @@ export function select_selected_character(chid, { switchMenu = true } = {}) {
  * @param {boolean} [options.resetForm=true] Whether to reset the editor form to create defaults
  */
 function select_rm_create({ switchMenu = true, resetForm = true } = {}) {
+    if (resetForm) {
+        cancelDebounce(creatorNotesPreviewDebounced);
+    }
     resetForm && switchMenu && setMenuType('create');
 
     //console.log('select_rm_Create() -- selected button: '+selected_button);
@@ -20562,19 +20564,38 @@ jQuery(async function () {
          * @param {HTMLTextAreaElement} e Textarea element to auto-fit
          */
         const autoFitEditTextArea = (e) => {
+            const previousHeight = e.offsetHeight;
             const scrollTop = chatElement.scrollTop();
             e.style.height = '0px';
             const newHeight = e.scrollHeight + 4;
             e.style.height = `${newHeight}px`;
-            chatElement.scrollTop(scrollTop);
+            if (newHeight !== previousHeight) {
+                chatElement.scrollTop(scrollTop);
+            }
         };
         const autoFitEditTextAreaDebounced = debounce(autoFitEditTextArea, debounce_timeout.short);
+        let pendingEditFitFrame = 0;
+        let pendingEditFitTarget = null;
         document.addEventListener('input', e => {
-            if (e.target instanceof HTMLTextAreaElement && e.target.classList.contains('edit_textarea')) {
-                const scrollbarShown = e.target.clientWidth < e.target.offsetWidth && e.target.offsetHeight >= window.innerHeight * 0.75;
-                const immediately = (e.target.scrollHeight > e.target.offsetHeight && !scrollbarShown) || e.target.value === '';
-                immediately ? autoFitEditTextArea(e.target) : autoFitEditTextAreaDebounced(e.target);
+            if (!(e.target instanceof HTMLTextAreaElement) || !e.target.classList.contains('edit_textarea')) {
+                return;
             }
+            pendingEditFitTarget = e.target;
+            if (pendingEditFitFrame) {
+                return;
+            }
+            pendingEditFitFrame = requestAnimationFrame(() => {
+                pendingEditFitFrame = 0;
+                const target = pendingEditFitTarget;
+                pendingEditFitTarget = null;
+                if (!target?.isConnected) {
+                    return;
+                }
+                const scrollbarShown = target.clientWidth < target.offsetWidth && target.offsetHeight >= window.innerHeight * 0.75;
+                const immediately = (target.scrollHeight > target.offsetHeight && !scrollbarShown) || target.value === '';
+                if (immediately) autoFitEditTextArea(target);
+                else autoFitEditTextAreaDebounced(target);
+            });
         });
     }
 
@@ -20846,11 +20867,12 @@ jQuery(async function () {
         });
     });
 
-    $('#creator_notes_textarea').on('input', function () {
+    creatorNotesPreviewDebounced = debounce(() => {
         const notes = String($('#creator_notes_textarea').val());
         const avatar = menu_type === 'create' ? '' : characters[this_chid]?.avatar;
         $('#creator_notes_spoiler').html(formatCreatorNotes(notes, avatar));
-    });
+    }, debounce_timeout.standard);
+    $('#creator_notes_textarea').on('input', creatorNotesPreviewDebounced);
 
     $('#favorite_button').on('click', function () {
         updateFavButtonState(!fav_ch_checked);
