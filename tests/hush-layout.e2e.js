@@ -40,7 +40,9 @@ async function measure(row) {
         const rgb = colour => { const c = document.createElement('canvas'), ctx = c.getContext('2d'); ctx.fillStyle = colour; ctx.fillRect(0, 0, 1, 1); return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3); };
         const visible = node => { const s = getComputedStyle(node), r = node.getBoundingClientRect(); return s.display !== 'none' && s.visibility === 'visible' && Number(s.opacity) > 0 && r.width && r.height; };
         const footer = el.querySelector('.nn-response-controls'), text = el.querySelector('.mes_text'), block = el.querySelector(':scope > .mes_block'), rs = getComputedStyle(el), bs = getComputedStyle(block);
-        return { row: box(el), text: box(text), header: box(el.querySelector('.ch_name')), avatar: box(el.querySelector('.mesAvatarWrapper')), picture: box(el.querySelector('.mesAvatarWrapper > .avatar img')),
+        return { row: box(el), text: box(text), header: box(el.querySelector('.ch_name')), buttons: box(el.querySelector('.ch_name .mes_buttons')), avatar: box(el.querySelector('.mesAvatarWrapper')), picture: box(el.querySelector('.mesAvatarWrapper > .avatar img')), stats: box(el.querySelector('.mesAvatarWrapper > .mes_stats')),
+            reasoning: box(el.querySelector('.mes_reasoning_details')), summary: box(el.querySelector('.mes_reasoning_summary')),
+            name: box(el.querySelector('.ch_name > .flex-container')),
             notes: el.querySelector('.ica--companion-ledger') ? box(el.querySelector('.ica--companion-ledger')) : null,
             regex: el.querySelector('.mes_text details') ? box(el.querySelector('.mes_text details')) : null,
             ink: rgb(rs.getPropertyValue('--neco-ink')),
@@ -84,7 +86,7 @@ test('Hush native, Deep Swipe and single-alternative tracks keep equal dimension
                             if (placement === 'below') { expect(m.footer.width).toBe(138); expect(m.footer.height).toBe(44); expect(x(counter)).toBeCloseTo(m.footer.x + 69, 0); }
                         } else {
                             expect(m.padding).toBe(40); for (const a of arrows) expect(m.row.bottom - a.bottom).toBeCloseTo(13, 0);
-                            expect(m.text.left).toBeCloseTo(m.picture.left + m.picture.width / 2, 0);
+                            expect(m.text.left).toBeCloseTo(m.row.left + m.inset, 0);
                             expect(m.row.right - m.text.right).toBeCloseTo(m.text.left - m.row.left, 0);
                         }
                         await info.attach(`${width}-${placement}-${all}-${id}`, { body: JSON.stringify(m), contentType: 'application/json' });
@@ -104,22 +106,22 @@ test('Hush native, Deep Swipe and single-alternative tracks keep equal dimension
             if (width <= 1000) {
                 await row.locator('.mes_reasoning_details').evaluate(el => el.open = true);
                 const m = await measure(row);
-                expect(m.text.x).toBeCloseTo(m.picture.left + m.picture.width / 2, 0); expect(m.row.right - m.text.right).toBeCloseTo(m.text.left - m.row.left, 0);
+                expect(m.text.x).toBeCloseTo(m.row.left + m.inset, 0); expect(m.row.right - m.text.right).toBeCloseTo(m.text.left - m.row.left, 0);
                 expect(m.text.top).toBeGreaterThanOrEqual(Math.max(m.header.bottom, m.avatar.bottom)); expect(m.textAlign).toBe('left');
                 expect(m.notes.x).toBeCloseTo(m.text.x, 0); expect(m.notes.width).toBeCloseTo(m.text.width, 0);
                 expect(m.regex.x).toBeCloseTo(m.text.x, 0); expect(m.regex.width).toBeCloseTo(m.text.width, 0);
                 expect(m.scrollWidth).toBe(m.chatWidth);
-                await row.locator('.mes_edit').dispatchEvent('click'); const editor = row.locator('.edit_textarea'); await expect(editor).toBeVisible();
+                await row.locator('.mes_edit').click(); const editor = row.locator('.edit_textarea'); await expect(editor).toBeVisible();
                 const content = await row.locator('.mes_text').evaluate(el => ({ left: el.getBoundingClientRect().left, width: el.clientWidth - parseFloat(getComputedStyle(el).paddingLeft) - parseFloat(getComputedStyle(el).paddingRight) }));
                 const e = await editor.boundingBox(); expect(e.x).toBeCloseTo(content.left, 0); expect(e.width).toBeCloseTo(content.width, 0);
-                await row.locator('.mes_edit_cancel').dispatchEvent('click'); await expect(editor).toHaveCount(0);
+                await row.locator('.mes_edit_cancel').click(); await expect(editor).toHaveCount(0);
             }
         }
         await account.context.close();
     }
 });
 
-test('Hush portrait-centred gutters survive narrow boundaries, custom and hidden portraits', async ({ app }, info) => {
+test('Hush uses the card width with default, custom and hidden portraits', async ({ app }, info) => {
     test.setTimeout(180000);
     const account = await app.account({ phone: true, contextOptions: IPHONE_SAFARI_CONTEXT });
     await installIPhoneSafari(account.context); const page = await account.open({ workspace: false }); await seed(page, account.avatar); await applyIOSOnlyCss(page);
@@ -136,13 +138,13 @@ test('Hush portrait-centred gutters survive narrow boundaries, custom and hidden
             await expect(page.locator('body')).toHaveClass(state === 'hidden' ? /hideChatAvatars/ : /^(?!.*hideChatAvatars)/);
             for (const id of ['0', '1', '4']) {
                 const row = page.locator(`#chat > .mes[mesid="${id}"]`);
-                const offset = m => m.text.left - (state === 'hidden' ? m.row.left + m.inset : m.picture.left + m.picture.width / 2);
+                const offset = m => m.text.left - (m.row.left + m.inset);
                 // A slow runner can measure the previous width's layout straight after a resize.
                 if (width <= 1000) await expect.poll(async () => Math.abs(offset(await measure(row))) < 0.5, { message: `${width} ${state} ${id} settles` }).toBe(true);
                 const m = await measure(row);
                 expect(m.scrollWidth).toBe(m.chatWidth);
                 if (width <= 1000) {
-                    const anchor = state === 'hidden' ? m.row.left + m.inset : m.picture.left + m.picture.width / 2;
+                    const anchor = m.row.left + m.inset;
                     expect(m.text.left, `${width} ${state} ${id}`).toBeCloseTo(anchor, 0); expect(m.row.right - m.text.right).toBeCloseTo(m.text.left - m.row.left, 0);
                     if (m.regex) { expect(m.regex.left).toBeCloseTo(anchor, 0); expect(m.regex.width).toBeCloseTo(m.text.width, 0); }
                     expect(m.text.top).toBeGreaterThanOrEqual(Math.max(m.header.bottom, m.avatar.bottom));
@@ -150,6 +152,50 @@ test('Hush portrait-centred gutters survive narrow boundaries, custom and hidden
                 await info.attach(`${width}-${state}-${id}`, { body: JSON.stringify(m), contentType: 'application/json' });
             }
         }
+    }
+});
+
+test('Hush keeps stats beside the portrait and removes blank bands before reading', async ({ app }) => {
+    test.setTimeout(120000);
+    const account = await app.account({ phone: true, contextOptions: IPHONE_SAFARI_CONTEXT });
+    await installIPhoneSafari(account.context); const page = await account.open({ workspace: false }); await seed(page, account.avatar); await applyIOSOnlyCss(page);
+    await page.evaluate(() => {
+        document.body.classList.remove('no-mesIDDisplay', 'no-tokenCount', 'no-timer');
+        const chat = document.querySelector('#chat');
+        chat.style.setProperty('--custom-ChatAvatar', '96px');
+        chat.style.setProperty('--avatar-base-width', '96px');
+        chat.style.setProperty('--avatar-base-height', '128px');
+    });
+    const row = page.locator('#chat > .mes[mesid="0"]'), stats = row.locator(':scope > .mesAvatarWrapper > .mes_stats');
+    await row.locator('.mesIDDisplay').evaluate(el => el.textContent = '#2');
+    await row.locator('.mes_timer').evaluate(el => el.textContent = '41.4s');
+    await row.locator('.tokenCounterDisplay').evaluate(el => el.textContent = '1168t');
+    await expect(stats).toBeVisible();
+    for (const width of [393, 600, 900, 1280]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect.poll(async () => (await measure(row)).stats.left - (await measure(row)).picture.right).toBeGreaterThan(0);
+        const m = await measure(row);
+        expect(m.stats.left).toBeCloseTo(m.name.left, 0);
+        expect(m.stats.top - m.name.bottom).toBeCloseTo(4, 0);
+        expect(m.stats.bottom).toBeLessThanOrEqual(m.picture.bottom);
+        expect(m.buttons.top - m.picture.bottom, `${width} actions immediately follow the portrait`).toBeLessThanOrEqual(4);
+        expect(m.reasoning.top - m.buttons.bottom, `${width} no blank band before reasoning`).toBeLessThanOrEqual(4);
+        expect(m.summary.top).toBeCloseTo(m.reasoning.top, 0);
+        expect(m.text.top - m.reasoning.bottom, `${width} no blank band before the message`).toBeLessThanOrEqual(4);
+        expect(m.text.top).toBeGreaterThanOrEqual(Math.max(m.header.bottom, m.picture.bottom));
+        expect(m.text.left).toBeCloseTo(m.row.left + m.inset, 0);
+        expect(m.scrollWidth).toBe(m.chatWidth);
+        await row.scrollIntoViewIfNeeded();
+        for (const selector of ['.mesAvatarWrapper > .avatar', '.mes_stats']) {
+            expect(await row.locator(selector).evaluate(el => {
+                const r = el.getBoundingClientRect();
+                return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+            }), `${width} ${selector} receives taps`).toBe(true);
+        }
+        await row.locator('.mes_edit').click();
+        await expect(row.locator('.edit_textarea')).toBeVisible();
+        await row.locator('.mes_edit_cancel').click();
+        await expect(row.locator('.edit_textarea')).toHaveCount(0);
     }
 });
 

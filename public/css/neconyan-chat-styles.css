@@ -1138,7 +1138,6 @@ body.echostyle.swipeAllMessages .mes:not(.last_mes) .swipes-counter {
 /* 訊息推理區塊間距 */
 body.echostyle,
 body.whisperstyle,
-body.hushstyle,
 body.tidestyle {
     .mes_reasoning_summary {
         margin-top: 15px !important;

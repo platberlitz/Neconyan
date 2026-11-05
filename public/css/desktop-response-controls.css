@@ -384,3 +384,67 @@ body.neconyan.ripplestyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbst
         bottom: calc(var(--moonlit-sb-swipe-edge-offset) + 2px) !important;
     }
 }
+
+/* Hush: portrait and name, a quiet metadata line, then full-width actions and reading.
+   Both native wrappers share the card's rows without moving renderer-owned nodes. */
+body.neconyan.hushstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #sheld #chat .mes:not(.smallSysMes, [is_system='true']) {
+    display: grid !important;
+    grid-template-columns: var(--avatar-base-width) minmax(0, 1fr) !important;
+    column-gap: 12px;
+    row-gap: 0;
+    align-items: start;
+
+    > .mesAvatarWrapper {
+        display: grid !important;
+        grid-area: 1 / 1 / 3 / -1;
+        grid-template-columns: subgrid;
+        grid-template-rows: subgrid;
+        width: auto !important; inline-size: auto; min-inline-size: 0; max-width: none !important;
+        padding: 0; gap: 0; min-height: 0;
+        pointer-events: none;
+        > * { pointer-events: auto; }
+        > .avatar { grid-area: 1 / 1 / 3 / 2; margin: 0; }
+        > .mes_stats {
+            grid-area: 2 / 2 / 3 / -1;
+            position: static;
+            flex-direction: row; flex-wrap: wrap; justify-content: flex-start;
+            inline-size: auto; min-inline-size: 0; max-inline-size: 100%;
+            gap: 4px 10px; margin: 4px 0 0; padding: 0; align-self: start;
+            border: 0; background: none;
+            > .agent-transform-badge { width: 44px; height: 44px; border: 0; margin: 0; }
+        }
+    }
+    > .mes_block {
+        display: grid;
+        grid-area: 1 / 1 / 12 / -1;
+        grid-template-columns: subgrid; grid-template-rows: subgrid;
+        transform: none !important; margin: 0; min-width: 0;
+        > * { grid-column: 1 / -1; min-width: 0; max-width: 100% !important; justify-self: stretch; }
+        > .ch_name {
+            display: grid; grid-area: 1 / 1 / 4 / -1;
+            grid-template-columns: subgrid; grid-template-rows: subgrid;
+            width: auto !important; max-width: 100% !important;
+            margin: 0 !important; gap: 0;
+            > .flex-container.flex1 { grid-area: 1 / 2; align-self: end; min-width: 0; }
+            > :is(.mes_buttons, .mes_edit_buttons) {
+                grid-area: 3 / 1 / 4 / -1;
+                width: auto; justify-content: flex-start; align-content: start;
+                gap: 2px; margin: 2px 0; padding: 0;
+            }
+        }
+        > .mes_reasoning_details { margin: 0 0 4px; width: auto; }
+        > .mes_text {
+            width: 100%; margin-top: 0 !important; padding: 0;
+            > :first-child { margin-top: 0; }
+            > :last-child { margin-bottom: 0; }
+        }
+        > .ica--companion-ledger { width: 100%; margin-inline: 0; }
+    }
+    .mes_reasoning_summary { left: auto; margin: 0; }
+    .mes_reasoning_header { margin: 0; }
+    > .nn-response-controls { grid-column: 1 / -1; }
+}
+body.neconyan.hushstyle.hideChatAvatars[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #sheld #chat .mes:not(.smallSysMes, [is_system='true']) {
+    grid-template-columns: 0 minmax(0, 1fr) !important;
+    column-gap: 0;
+}
