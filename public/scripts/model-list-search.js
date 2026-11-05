@@ -68,6 +68,7 @@ export function attachModelListSearch(select, options = {}) {
     let available = [];
     let searchText = new WeakMap();
     let revealOnRender = true;
+    let renderedGroups = [];
     lists.set(select, list);
 
     // Programmatic .val() calls do not fire a change event. Sync before the
@@ -206,15 +207,30 @@ export function attachModelListSearch(select, options = {}) {
             const text = searchText.get(option);
             return terms.every(term => text.includes(term));
         });
-        clear.disabled = !input.value;
-        status.textContent = !available.length
+        if (clear.disabled !== !input.value) clear.disabled = !input.value;
+        const statusText = !available.length
             ? t`Connect to load models, or enter a model ID above.`
             : !matches.length
                 ? t`No models match. Try another name or model ID.`
                 : t`${matches.length} of ${available.length} models`;
+        if (status.textContent !== statusText) status.textContent = statusText;
+
+        const groups = buildGroups(matches);
+        // Typing another term can leave exactly the same rows and headings.
+        // Keep those nodes attached so focus, selection and observers stay quiet.
+        const unchanged = !invalidate && groups.length === renderedGroups.length && groups.every((group, index) => {
+            const previous = renderedGroups[index];
+            return group.label === previous.label && group.items.length === previous.items.length
+                && group.items.every((option, itemIndex) => option === previous.items[itemIndex]);
+        });
+        if (unchanged) {
+            syncPressed();
+            return;
+        }
+        renderedGroups = groups;
 
         const fragment = document.createDocumentFragment();
-        for (const group of buildGroups(matches)) {
+        for (const group of groups) {
             if (group.label) {
                 const heading = document.createElement('div');
                 heading.className = 'nn-model-list-group';

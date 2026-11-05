@@ -179,8 +179,7 @@ describe('Conversation viewport-aware portrait URLs', () => {
 
         const timelineSource = fs.readFileSync(path.join(conversationDir, 'timeline-render.js'), 'utf8');
         expect(timelineSource).toContain('image.decoding = \'async\';');
-        expect(timelineSource).toContain('typingImage.decoding = \'async\';');
-        expect(timelineSource).toContain('pendingImage.decoding = \'async\';');
+        expect(timelineSource).toContain('<img alt="" decoding="async">');
         expect(timelineSource).toContain('loading="lazy" decoding="async"');
 
         const mediaSource = fs.readFileSync(path.join(conversationDir, 'media.js'), 'utf8');

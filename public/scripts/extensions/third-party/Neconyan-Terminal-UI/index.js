@@ -170,6 +170,8 @@ let registeredHomeCommand = null;
 let registeredTopLevel = [];
 let domController = null;
 let conversationObserver = null;
+let observedConversationTimeline = null;
+let conversationStatusTimer = null;
 let autocompleteObserver = null;
 let conversationAutocomplete = null;
 let conversationAutocompleteInput = null;
@@ -539,6 +541,9 @@ function teardownDom() {
     tokenSequence++;
     conversationObserver?.disconnect();
     conversationObserver = null;
+    observedConversationTimeline = null;
+    if (conversationStatusTimer !== null) clearTimeout(conversationStatusTimer);
+    conversationStatusTimer = null;
     autocompleteObserver?.disconnect();
     autocompleteObserver = null;
     conversationAutocomplete?.hide?.();
@@ -697,15 +702,18 @@ async function renderStatusline() {
     const nextStatusText = `run:${runState} | ${locationPrefix}:${location} | api:${cleanStatusPart(connectionText)} | prompt:${promptText}`;
     lastStatusText = nextStatusText;
     if (status.textContent !== nextStatusText) status.textContent = nextStatusText;
-    status.title = lastStatusText;
-    status.dataset.state = runState;
+    if (status.title !== lastStatusText) status.title = lastStatusText;
+    if (status.dataset.state !== runState) status.dataset.state = runState;
     const details = document.getElementById(STATUS_DETAILS_ID);
     if (details) {
         const disconnected = runState === 'disconnected';
-        details.textContent = disconnected ? 'connect' : 'more';
-        details.dataset.action = disconnected ? 'connect' : 'status';
-        details.setAttribute('aria-label', disconnected ? 'Open API connection settings' : 'Show full terminal status');
-        details.title = lastStatusText;
+        const label = disconnected ? 'connect' : 'more';
+        const action = disconnected ? 'connect' : 'status';
+        const description = disconnected ? 'Open API connection settings' : 'Show full terminal status';
+        if (details.textContent !== label) details.textContent = label;
+        if (details.dataset.action !== action) details.dataset.action = action;
+        if (details.getAttribute('aria-label') !== description) details.setAttribute('aria-label', description);
+        if (details.title !== lastStatusText) details.title = lastStatusText;
     }
     return lastStatusText;
 }
@@ -1227,17 +1235,22 @@ function bindMainCommandInput() {
 }
 
 function observeConversationTimeline() {
+    const timeline = active && getSettings().enabled ? document.getElementById('sb_conversation_timeline') : null;
+    if (conversationObserver && timeline === observedConversationTimeline) return;
     conversationObserver?.disconnect();
     conversationObserver = null;
-    if (!active || !getSettings().enabled || typeof MutationObserver === 'undefined') return;
-    const timeline = document.getElementById('sb_conversation_timeline');
-    if (!timeline) return;
-    conversationObserver = new MutationObserver(() => void renderStatusline());
+    observedConversationTimeline = null;
+    if (!timeline || typeof MutationObserver === 'undefined') return;
+    observedConversationTimeline = timeline;
+    conversationObserver = new MutationObserver(queueConversationStatusRefresh);
     conversationObserver.observe(timeline, { childList: true });
 }
 
 function queueConversationStatusRefresh() {
-    globalThis.setTimeout?.(() => {
+    if (!active || !getSettings().enabled || conversationStatusTimer !== null) return;
+    conversationStatusTimer = globalThis.setTimeout(() => {
+        conversationStatusTimer = null;
+        if (!active || !getSettings().enabled) return;
         observeConversationTimeline();
         void ensureConversationAutocomplete();
         void renderStatusline();
@@ -1363,6 +1376,9 @@ function bindHostEvents() {
 }
 
 function unbindEvents() {
+    globalThis.clearTimeout(conversationStatusTimer);
+    conversationStatusTimer = null;
+    observedConversationTimeline = null;
     for (const [source, event, handler] of eventBindings.splice(0)) {
         source.removeListener?.(event, handler);
     }

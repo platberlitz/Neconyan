@@ -547,9 +547,9 @@ export function checkEditor() {
         return;
     }
     for (const reasoning of document.querySelectorAll('#chat .reasoning_edit_textarea')) {
-        reasoning.setAttribute('aria-label', 'Edit reasoning');
+        if (reasoning.getAttribute('aria-label') !== 'Edit reasoning') reasoning.setAttribute('aria-label', 'Edit reasoning');
         const details = reasoning.closest('details');
-        if (details) {
+        if (details && !details.open) {
             details.open = true;
         }
     }
@@ -600,9 +600,9 @@ export function stampBlocks() {
             continue;
         }
         const { origin, cut } = classifyBlock(message);
-        mesEl.dataset.sbstoryOrigin = origin;
+        if (mesEl.dataset.sbstoryOrigin !== origin) mesEl.dataset.sbstoryOrigin = origin;
         if (joins.has(index)) {
-            mesEl.dataset.sbstoryJoin = '';
+            if (mesEl.dataset.sbstoryJoin !== '') mesEl.dataset.sbstoryJoin = '';
         } else {
             delete mesEl.dataset.sbstoryJoin;
         }
