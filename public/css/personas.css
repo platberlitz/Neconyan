@@ -1058,7 +1058,7 @@ body.neconyan #PersonaManagement #persona-management-block {
 .persona-appendix-editor-label {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: space-between;
     gap: 8px;
 }
 
