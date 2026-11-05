@@ -171,7 +171,7 @@
     display: none;
 }
 
-#nn-chat-style-gallery :is(.nn-chat-preview-echo, .nn-chat-preview-whisper, .nn-chat-preview-hush) .nn-chat-preview-avatar {
+#nn-chat-style-gallery :is(.nn-chat-preview-echo, .nn-chat-preview-whisper) .nn-chat-preview-avatar {
     position: absolute;
     inset: 0 auto 0 0;
     width: 35%;
@@ -187,10 +187,8 @@
     mask-image: linear-gradient(to left, black, transparent);
 }
 
-#nn-chat-style-gallery .nn-chat-preview-hush .nn-chat-preview-avatar {
-    width: 100%;
-    mask-image: none;
-    opacity: 0.2;
+#nn-chat-style-gallery .nn-chat-preview-hush .nn-chat-preview-row {
+    border-right: 3px solid var(--neco-ginger);
 }
 
 #nn-chat-style-gallery .nn-chat-preview-ripple .nn-chat-preview-row {
