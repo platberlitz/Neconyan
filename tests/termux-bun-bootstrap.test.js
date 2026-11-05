@@ -265,8 +265,8 @@ describe('install-prerequisites.sh Termux Bun bootstrap wiring', () => {
         ]);
     });
 
-    test('documents the repository and runner installs as separate transactions', () => {
-        expect(readmeSource).toContain('pkg update && pkg install -y glibc-repo && pkg install -y glibc-runner');
+    test('links to the handbook for detailed Termux setup and repair', () => {
+        expect(readmeSource).toContain('https://platberlitz.github.io/neconyan-docs/start/android/#prefer-termux');
         expect(readmeSource).not.toContain('pkg install glibc-repo glibc-runner');
     });
 
