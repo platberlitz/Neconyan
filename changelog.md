@@ -1875,4 +1875,5 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #482 (2026-11-05) `feat(scratchpad): edit personas, avatars and scenario notes`
 - PR #484 (2026-11-05) `fix(dialogue-colors): hide unequipped personas`
 - PR #485 (2026-11-05) `fix(proxy): wait for approval before updating a profile's proxy`
+- PR #486 (2026-11-05) `fix(personas): preserve scenario note avatar detail`
 - PR #487 (2026-11-05) `perf(frontend): avoid repeated redraws across workspaces`
