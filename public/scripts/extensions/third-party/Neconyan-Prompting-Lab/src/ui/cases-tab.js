@@ -7,6 +7,7 @@ import { MODE, PRESET_API_IDS, labelForApiId, modeOf } from '../presets.js';
 import { createCase, createSuite, pinnedMode, validateCase } from '../schema.js';
 import * as storage from '../storage.js';
 import { avatarThumbnail, createCharacterPicker } from './character-picker.js';
+import { debounce } from './debounce.js';
 
 const SCOPES = ['total', 'system', 'final'];
 
@@ -23,6 +24,7 @@ export function createCasesTab({ onChanged = null, onQuickRun = null } = {}) {
     let characterNames = new Map();
     let editorHost = null;
     let status = null;
+    const renderListDebounced = debounce(renderList);
 
     let suites = [];
     let activeSuite = null;
@@ -809,7 +811,11 @@ export function createCasesTab({ onChanged = null, onQuickRun = null } = {}) {
             className: 'text_pole sbpl-input',
             attributes: { type: 'search', placeholder: 'Search test cases', 'aria-label': 'Search test cases' },
         });
-        searchInput.addEventListener('input', renderList);
+        searchInput.addEventListener('input', renderListDebounced);
+        searchInput.addEventListener('change', () => {
+            renderListDebounced.cancel();
+            renderList();
+        });
 
         const newSuite = button('Create suite', async () => {
             const payload = createSuite({ name: `Suite ${suites.length + 1}` });

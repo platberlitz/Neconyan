@@ -52,6 +52,8 @@ beforeAll(async () => {
         escapeRegex: jest.fn(value => String(value ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
         getSortableDelay: jest.fn(() => 0),
         uuidv4: jest.fn(() => 'test-uuid'),
+        cancelDebounce: jest.fn(),
+        debounce: callback => callback,
     }));
 
     await jest.unstable_mockModule('../public/script.js', () => ({

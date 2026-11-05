@@ -50,6 +50,8 @@ import {
     convertTextToBase64,
     isSameFile,
     escapeHtml,
+    cancelDebounce,
+    debounce,
 } from './utils.js';
 import { extension_settings, renderExtensionTemplateAsync, saveMetadataDebounced } from './extensions.js';
 import { POPUP_RESULT, POPUP_TYPE, Popup, callGenericPopup } from './popup.js';
@@ -59,7 +61,7 @@ import { renderTemplateAsync } from './templates.js';
 import { t, translate } from './i18n.js';
 import { humanizedDateTime } from './RossAscends-mods.js';
 import { accountStorage } from './util/AccountStorage.js';
-import { MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE, SCROLL_BEHAVIOR, SWIPE_DIRECTION } from './constants.js';
+import { MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE, SCROLL_BEHAVIOR, SWIPE_DIRECTION, debounce_timeout } from './constants.js';
 
 /**
  * @typedef {Object} FileAttachment
@@ -2070,6 +2072,7 @@ async function openAttachmentManager() {
         const chatName = getCurrentChatId() || 'Unnamed chat';
         template.find('.chatAttachmentsName').text(chatName);
     }
+    const renderAttachmentsDebounced = debounce(renderAttachments, debounce_timeout.short);
 
     const dragDropHandler = new DragAndDropHandler('.popup', async (files, event) => {
         let selectedTarget = ATTACHMENT_SOURCE.GLOBAL;
@@ -2098,6 +2101,11 @@ async function openAttachmentManager() {
 
     template.find('.attachmentSearch').on('input', function () {
         filterString = String($(this).val());
+        renderAttachmentsDebounced();
+    });
+    template.find('.attachmentSearch').on('change', function () {
+        filterString = String($(this).val());
+        cancelDebounce(renderAttachmentsDebounced);
         renderAttachments();
     });
     template.find('.attachmentSort').on('change', function () {
@@ -2186,6 +2194,7 @@ async function openAttachmentManager() {
     await renderAttachments();
     await callGenericPopup(template, POPUP_TYPE.TEXT, '', { wide: true, large: true, okButton: 'Close', allowVerticalScrolling: true });
 
+    cancelDebounce(renderAttachmentsDebounced);
     cleanupFn();
     dragDropHandler.destroy();
 }

@@ -101,6 +101,8 @@ await jest.unstable_mockModule('../public/scripts/utils.js', () => ({
     uuidv4: () => 'test-id',
     escapeHtml: value => String(value),
     regexFromString: value => new RegExp(value),
+    cancelDebounce: jest.fn(),
+    debounce: callback => callback,
 }));
 await jest.unstable_mockModule('../public/scripts/util/AccountStorage.js', () => ({
     accountStorage: { getItem: () => null, setItem: jest.fn() },

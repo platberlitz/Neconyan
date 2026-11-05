@@ -13,6 +13,7 @@ import {
 import { addPromptModule } from '../presets.js';
 import { createPromptDraft, validatePromptDraft } from '../schema.js';
 import * as storage from '../storage.js';
+import { debounce } from './debounce.js';
 
 const ROLES = ['system', 'user', 'assistant'];
 
@@ -28,6 +29,7 @@ export function createPromptsTab({ onChanged = null } = {}) {
     let listHost = null;
     let editorHost = null;
     let status = null;
+    const renderListDebounced = debounce(renderList);
 
     let prompts = [];
     let presetDrafts = [];
@@ -383,7 +385,11 @@ export function createPromptsTab({ onChanged = null } = {}) {
             className: 'text_pole sbpl-input',
             attributes: { type: 'search', placeholder: 'Search prompts', 'aria-label': 'Search prompts' },
         });
-        searchInput.addEventListener('input', renderList);
+        searchInput.addEventListener('input', renderListDebounced);
+        searchInput.addEventListener('change', () => {
+            renderListDebounced.cancel();
+            renderList();
+        });
         controls.append(
             searchInput,
             button('New prompt', async () => {

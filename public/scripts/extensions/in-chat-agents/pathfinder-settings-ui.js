@@ -6,7 +6,8 @@ import { renderExtensionTemplateAsync, getContext } from '../../extensions.js';
 import { eventSource, event_types, online_status, getRequestHeaders } from '../../../script.js';
 import { JEV_DECISION_PRESETS, findDecisionPreset, defaultDecisionThreshold } from '../../mewmory/jev-presets.js';
 import { accountStorage } from '../../util/AccountStorage.js';
-import { escapeHtml } from '../../utils.js';
+import { cancelDebounce, debounce, escapeHtml } from '../../utils.js';
+import { debounce_timeout } from '../../constants.js';
 import { attachTextareaFullscreen } from './textarea-fullscreen.js';
 import { world_names } from '../../world-info.js';
 import { areAgentsGloballyEnabled, getActiveAgentChatScope, getAgentById, getGlobalSettings, isAgentEnabledForCurrentScope, isPathfinderSubmoduleEnabled, persistAgentGlobalSettings, saveAgent, setAgentEnabledForScope } from './agent-store.js';
@@ -40,6 +41,7 @@ const DEFAULT_PIPELINE_MAX_TOKENS = 64000;
 let settingsEl = null;
 let currentAgent = null;
 let settingsSession = null;
+const renderSummaryMemoryEditorDebounced = debounce(renderSummaryMemoryEditor, debounce_timeout.standard);
 let settingsOpenRevision = 0;
 let retrievalLogMode = safeGetAccountStorageItem(PATHFINDER_LOG_MODE_KEY) === 'detailed' ? 'detailed' : 'summary';
 
@@ -666,6 +668,7 @@ function formatSummaryTimestamp(timestamp) {
 }
 
 function renderSummaryMemoryEditor() {
+    cancelDebounce(renderSummaryMemoryEditorDebounced);
     if (!settingsEl) {
         return;
     }
@@ -968,7 +971,7 @@ function bindEvents() {
             content: this.value,
         };
         panel.find('#pf--summary-save-status').text('');
-        renderSummaryMemoryEditor();
+        renderSummaryMemoryEditorDebounced();
     });
 
     settingsEl.find('#pf--summary-save-entry').on('click', async () => {

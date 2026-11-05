@@ -2,7 +2,8 @@ import { buildTextDiffMarkup as buildPromptTransformDiffMarkup } from '../../tex
 import { extension_settings, renderExtensionTemplateAsync, getContext } from '../../extensions.js';
 import { Popup, POPUP_TYPE, POPUP_RESULT } from '../../popup.js';
 import { accountStorage } from '../../util/AccountStorage.js';
-import { download, escapeHtml, escapeRegex, getSortableDelay, uuidv4 } from '../../utils.js';
+import { cancelDebounce, debounce, download, escapeHtml, escapeRegex, getSortableDelay, uuidv4 } from '../../utils.js';
+import { debounce_timeout } from '../../constants.js';
 import { getStringHash } from '../../macro-primitives.js';
 import { activateSendButtons, CLIENT_VERSION, chat, getChatGeneration, getCurrentChatId, getRequestHeaders, is_send_press, normalizeContentText, saveChatDebounced, saveSettings, saveSettingsDebounced, substituteParams } from '../../../script.js';
 import { getCurrentUserHandle } from '../../user.js';
@@ -141,6 +142,7 @@ import { renderTemplateAsync } from '../../templates.js';
 import { TARO_GUIDE_MAX_NEW_PICKS, chooseInstalledCopy, copiesForTemplate, getTaroUndoBlockReason } from './agent-recommendations.js';
 
 const MODULE_NAME = 'in-chat-agents';
+const renderAgentListDebounced = debounce(renderAgentList, debounce_timeout.short);
 
 let collapsedCategories = new Set();
 let lastManualRunFeedback = null;
@@ -3541,6 +3543,7 @@ function syncAgentSelection() {
 }
 
 function renderAgentList() {
+    cancelDebounce(renderAgentListDebounced);
     agentListRenderPending = false;
     if (!applyingAgentSetup && selectedAgentSetupId && ['saved', 'modified'].includes(document.getElementById('ica--setupStatus')?.dataset.tone)) showAgentSetupMatch();
     const container = $('#ica--agentList');
@@ -5446,6 +5449,7 @@ async function openTemplateBrowser() {
     }
 
     function renderTemplateResults() {
+        cancelDebounce(renderTemplateResultsDebounced);
         const searchTerm = filterBar.find('.ica--template-search').val()?.toString() ?? '';
         templateBrowserSearchValue = searchTerm;
         const filteredTemplates = filterTemplates(visibleTemplates, {
@@ -5480,11 +5484,16 @@ async function openTemplateBrowser() {
         }
     }
 
+    const renderTemplateResultsDebounced = debounce(renderTemplateResults, debounce_timeout.short);
     categorySelect.on('change', function () {
         selectedCategory = this.value;
         renderTemplateResults();
     });
-    filterBar.find('.ica--template-search').on('input', renderTemplateResults);
+    filterBar.find('.ica--template-search').on('input', renderTemplateResultsDebounced);
+    filterBar.find('.ica--template-search').on('change', function () {
+        cancelDebounce(renderTemplateResultsDebounced);
+        renderTemplateResults();
+    });
     pillRow.on('click', '.ica--template-pill', function () {
         selectedCategory = $(this).attr('data-category') || '';
         renderTemplateResults();
@@ -7319,7 +7328,11 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         renderAgentList();
         document.querySelector(`#ica--agentTabs .ica--agent-tab[data-tab="${CSS.escape(nextTabId)}"]`)?.focus();
     });
-    $('#ica--search').on('input', renderAgentList);
+    $('#ica--search').on('input', renderAgentListDebounced);
+    $('#ica--search').on('change', function () {
+        cancelDebounce(renderAgentListDebounced);
+        renderAgentList();
+    });
     $('#ica--timingFilter').on('change', renderAgentList);
 
     // Wire up connection profile dropdown
