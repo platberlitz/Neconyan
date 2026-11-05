@@ -579,3 +579,171 @@ test('Starlight Conservatory paints constellations, sparkles and a pointer trail
     });
     await expect(stage).toHaveAttribute('data-starlight-motion', 'active');
 });
+
+test('Sunken Reef animates caustic sunbeams, tide sheen and cat buoyancy and pauses under reduced motion', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
+    await page.route('**/api/settings/get', async route => {
+        const response = await route.fetch({ maxRetries: 2 });
+        const data = await response.json();
+        if (typeof data.settings !== 'string') return route.fulfill({ response });
+        const settings = JSON.parse(data.settings);
+        settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
+        settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
+        settings.power_user.neconyan_shell_style = 'sunken-reef';
+        settings.power_user.reduced_motion = false;
+        data.settings = JSON.stringify(settings);
+        await route.fulfill({ response, json: data });
+    });
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 45000 });
+    await expect(page.locator('html')).toHaveAttribute('data-sb-theme', 'sunken-reef');
+
+    const activeMotion = await page.evaluate(() => ({
+        wallpaper: window.getComputedStyle(document.body, '::before').backgroundImage,
+        caustics: window.getComputedStyle(document.body, '::after').animationName,
+        topBarTide: window.getComputedStyle(document.querySelector('#top-bar')).animationName,
+        homeCatBuoyancy: window.getComputedStyle(document.querySelector('.neconyan-home-cat')).animationName,
+        bottomBarTrench: window.getComputedStyle(document.querySelector('#sb-bottom-chat-bar')).animationName,
+    }));
+
+    expect(activeMotion.wallpaper).toContain('shell-sunken-reef.webp');
+    expect(activeMotion.caustics).toBe('sunken-reef-caustics');
+    expect(activeMotion.topBarTide).toBe('sunken-reef-tide-pulse');
+    expect(activeMotion.homeCatBuoyancy).toBe('sunken-reef-cat-buoyancy');
+    expect(activeMotion.bottomBarTrench).toBe('sunken-reef-trench-composer');
+
+    await page.locator('#reduced_motion').evaluate(input => {
+        input.checked = true;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    await expect.poll(() => page.evaluate(() => ({
+        caustics: window.getComputedStyle(document.body, '::after').animationName,
+        topBarTide: window.getComputedStyle(document.querySelector('#top-bar')).animationName,
+        homeCatBuoyancy: window.getComputedStyle(document.querySelector('.neconyan-home-cat')).animationName,
+        bottomBarTrench: window.getComputedStyle(document.querySelector('#sb-bottom-chat-bar')).animationName,
+    }))).toEqual({
+        caustics: 'none',
+        topBarTide: 'none',
+        homeCatBuoyancy: 'none',
+        bottomBarTrench: 'none',
+    });
+
+    await page.locator('#reduced_motion').evaluate(input => {
+        input.checked = false;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+
+    await expect.poll(() => page.evaluate(() => ({
+        caustics: window.getComputedStyle(document.body, '::after').animationName,
+        topBarTide: window.getComputedStyle(document.querySelector('#top-bar')).animationName,
+        homeCatBuoyancy: window.getComputedStyle(document.querySelector('.neconyan-home-cat')).animationName,
+        bottomBarTrench: window.getComputedStyle(document.querySelector('#sb-bottom-chat-bar')).animationName,
+    }))).toEqual({
+        caustics: 'none',
+        topBarTide: 'none',
+        homeCatBuoyancy: 'none',
+        bottomBarTrench: 'none',
+    });
+});
+
+test('Sunken Reef paints manta ray, swordfish, axolotl, rising bubbles and a pointer wake and freezes them for reduced motion', async ({ page }, testInfo) => {
+    test.setTimeout(180000);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
+    await page.route('**/api/settings/get', async route => {
+        const response = await route.fetch({ maxRetries: 2 });
+        const data = await response.json();
+        if (typeof data.settings !== 'string') return route.fulfill({ response });
+        const settings = JSON.parse(data.settings);
+        settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
+        settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
+        settings.power_user.neconyan_shell_style = 'sunken-reef';
+        settings.power_user.reduced_motion = false;
+        data.settings = JSON.stringify(settings);
+        await route.fulfill({ response, json: data });
+    });
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('.neconyan-home-intro')).toBeVisible({ timeout: 60000 });
+    await expect(page.locator('html')).toHaveAttribute('data-sb-theme', 'sunken-reef');
+
+    const snapshot = () => page.evaluate(() => window.NeconyanSunkenReef.snapshot());
+    const stage = page.locator('#sb-sunken-reef-stage');
+    await expect(stage).toHaveCount(1);
+    await expect(stage).toHaveAttribute('data-reef-motion', 'active');
+
+    const initial = await snapshot();
+    expect(initial.motion).toBe('active');
+    expect(initial.bubbles).toBeGreaterThan(20);
+    expect(initial.causticBeams).toBeGreaterThanOrEqual(4);
+    expect(initial.schoolSize).toBeGreaterThanOrEqual(6);
+    expect(initial.layers).toEqual({ backdrop: true, creatures: true, wake: true });
+    expect(initial.creatures.map(item => item.id)).toEqual(['manta-ray', 'swordfish', 'axolotl']);
+
+    const geometry = await page.evaluate(() => {
+        const stageElement = document.getElementById('sb-sunken-reef-stage');
+        const canvases = [...stageElement.querySelectorAll('canvas')];
+        return {
+            display: window.getComputedStyle(stageElement).display,
+            pointerEvents: canvases.map(canvas => window.getComputedStyle(canvas).pointerEvents),
+            sizes: canvases.map(canvas => [canvas.width, canvas.height]),
+            positions: canvases.map(canvas => window.getComputedStyle(canvas).position),
+        };
+    });
+    expect(geometry.display).toBe('contents');
+    expect(geometry.pointerEvents).toEqual(['none', 'none', 'none']);
+    expect(geometry.positions).toEqual(['fixed', 'fixed', 'fixed']);
+    for (const [width, height] of geometry.sizes) {
+        expect(width).toBeGreaterThanOrEqual(1280);
+        expect(height).toBeGreaterThanOrEqual(900);
+    }
+
+    await page.screenshot({ path: testInfo.outputPath('sunken-reef-ocean.png') });
+
+    for (let step = 0; step <= 26; step += 1) {
+        const angle = (step / 26) * Math.PI;
+        await page.mouse.move(420 + Math.cos(angle) * 240, 520 - Math.sin(angle) * 180);
+        await page.waitForTimeout(16);
+    }
+    await expect.poll(async () => (await snapshot()).wakeBubbles, { timeout: 10000 }).toBeGreaterThan(0);
+    expect((await snapshot()).wakeRipples).toBeGreaterThan(0);
+    expect((await snapshot()).companion).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('sunken-reef-wake.png') });
+
+    const before = (await snapshot()).palette;
+    await page.evaluate(async () => {
+        document.body.style.setProperty('--neco-accent-secondary', '#00ffd5');
+        document.body.style.setProperty('--neco-ginger', '#ff4fa3');
+        document.documentElement.dataset.neconyanAccent = 'custom';
+        await new Promise(resolve => setTimeout(resolve, 500));
+    });
+    const after = (await snapshot()).palette;
+    expect(after.lagoon).not.toBe(before.lagoon);
+    expect(after.coral).not.toBe(before.coral);
+
+    await page.locator('#reduced_motion').evaluate(input => {
+        input.checked = true;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await expect(stage).toHaveAttribute('data-reef-motion', 'still');
+    const still = await snapshot();
+    expect(still.motion).toBe('still');
+    expect(still.wakeBubbles).toBe(0);
+    expect(still.wakeRipples).toBe(0);
+    expect(still.companion).toBe(false);
+    const creaturesCanvas = page.locator('#sb-sunken-reef-creatures');
+    const frozenA = await creaturesCanvas.screenshot();
+    await page.waitForTimeout(700);
+    const frozenB = await creaturesCanvas.screenshot();
+    expect(Buffer.compare(frozenA, frozenB)).toBe(0);
+
+    await page.locator('#reduced_motion').evaluate(input => {
+        input.checked = false;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await expect(stage).toHaveAttribute('data-reef-motion', 'active');
+});

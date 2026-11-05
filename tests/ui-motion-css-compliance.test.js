@@ -58,6 +58,10 @@ const stylesheets = [
         name: 'Starlight Conservatory shell style',
         url: new URL('../public/css/shell-styles/starlight-conservatory.css', import.meta.url),
     },
+    {
+        name: 'Sunken Reef shell style',
+        url: new URL('../public/css/shell-styles/sunken-reef.css', import.meta.url),
+    },
 ].map(stylesheet => ({
     ...stylesheet,
     source: readFileSync(fileURLToPath(stylesheet.url), 'utf8').replace(/\r\n/g, '\n'),

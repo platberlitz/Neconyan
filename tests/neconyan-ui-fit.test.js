@@ -10,7 +10,7 @@ const calicoCss = read('css/neconyan-calico.css');
 const tabsCss = read('css/neconyan-tabs.css');
 const mobileShellCss = read('css/neconyan-mobile-shell.css');
 
-const CAT_WALLPAPER_STYLES = ['windows-aero', 'cozy-warm', 'hypr-glow', 'macos-minimal', 'slate-flat', 'clean-minimal', 'starlight-conservatory'];
+const CAT_WALLPAPER_STYLES = ['windows-aero', 'cozy-warm', 'hypr-glow', 'macos-minimal', 'slate-flat', 'clean-minimal', 'starlight-conservatory', 'sunken-reef'];
 
 function ruleBody(css, selectorPattern) {
     const match = css.match(new RegExp(`${selectorPattern}\\s*\\{([^}]+)\\}`));

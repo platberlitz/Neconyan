@@ -576,6 +576,10 @@ const NN_THEMES = Object.freeze([
         id: 'starlight-conservatory',
         label: 'Starlight Conservatory',
     },
+    {
+        id: 'sunken-reef',
+        label: 'Sunken Reef',
+    },
 ]);
 
 const NN_MESSAGE_STYLES = Object.freeze([
@@ -5460,6 +5464,36 @@ function syncStarlightConservatoryStage(themeId) {
     });
 }
 
+let sunkenReefModule = null;
+let sunkenReefLoading = null;
+
+function ensureSunkenReefModule() {
+    if (sunkenReefModule) return Promise.resolve(sunkenReefModule);
+    if (!sunkenReefLoading) {
+        sunkenReefLoading = import('./neconyan-sunken-reef.js')
+            .then(module => {
+                sunkenReefModule = module;
+                return module;
+            })
+            .catch(() => {
+                sunkenReefLoading = null;
+                return null;
+            });
+    }
+    return sunkenReefLoading;
+}
+
+function syncSunkenReefStage(themeId) {
+    if (themeId !== 'sunken-reef') {
+        sunkenReefModule?.unmountSunkenReef();
+        return;
+    }
+    ensureSunkenReefModule().then(module => {
+        if (!module || nnState.theme !== 'sunken-reef') return;
+        module.mountSunkenReef();
+    });
+}
+
 // An explicit selection made before account settings arrive must survive hydration.
 let pendingShellTheme = null;
 
@@ -5524,6 +5558,7 @@ function setShellTheme(themeId, { persist = true } = {}) {
     document.documentElement.dataset.sbTheme = nextTheme;
     syncShellStyleStylesheet(nextTheme);
     syncStarlightConservatoryStage(nextTheme);
+    syncSunkenReefStage(nextTheme);
     syncKittylessStylesheet();
 
     if (persist) {
