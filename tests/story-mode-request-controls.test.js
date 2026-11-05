@@ -1117,7 +1117,7 @@ describe('reverse proxy confirmation with a held bias lookup', () => {
 describe('stopping strings and the assistant prefill while a proxy confirmation is open', () => {
     async function claudeRequestDuringConfirmation(change) {
         const { context } = makeRuntime();
-        load(context, 'scripts/openai.js', ['validateReverseProxy']);
+        load(context, 'scripts/openai.js', ['validateReverseProxy', 'pendingProxyConfirmations', 'confirmProxyAddress']);
         let enterConfirm;
         const entered = new Promise(resolve => { enterConfirm = resolve; });
         let releaseConfirm;
