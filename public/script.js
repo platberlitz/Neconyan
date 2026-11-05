@@ -431,6 +431,7 @@ import {
 import { configureCardScriptRuntime, initCardScriptRuntime, resetCardScriptSession, scheduleCardScriptReconcile, setCardScriptMessageStreaming, destroySandbox, getCardScriptChatScope } from './scripts/card-script-runtime.js';
 import { bindPortraitUrls } from './scripts/portrait-urls.js';
 import { installToastMinimumDuration } from './scripts/toast-duration.js';
+import { registerBackgroundMemoryHandler } from './scripts/background-memory-saver.js';
 
 const DEFERRED_STARTUP_STYLESHEETS = Object.freeze([
     { href: 'css/bright.min.css', id: 'deferred-highlight-theme-css' },
@@ -3674,6 +3675,61 @@ function pruneRenderedChatMessagesToWindow({ windowSize, pruneFrom, keepView = t
     restoreVisibleChatMessageAnchor(anchor);
 }
 
+/** Release only older, off-screen, reconstructable rows. The chat array and composer stay intact. */
+function releaseBackgroundChatView() {
+    const idle = () => isChatAutoNameIdle() && !isAgentWorkPending() && !loadingMoreMessagesOwner
+        && !document.body.classList.contains('neconyan-conversation-active');
+    if (!idle()) return;
+    let window = getRenderedChatMessageWindow();
+    // Custom large windows and interactive HTML may own state that paging cannot reconstruct.
+    if (window.renderedMessageCount <= 25 || window.renderedMessageCount > 200) return;
+    if (globalThis.getSelection()?.toString()) return;
+    const anchor = captureVisibleChatMessageAnchor();
+    const visibleIndex = window.elements.findIndex(element => element.getAttribute('mesid') === anchor?.messageId);
+    let count = Math.min(window.renderedMessageCount - 25, visibleIndex - 5);
+    const protectedIndex = window.elements.slice(0, Math.max(0, count)).findIndex(element =>
+        element.querySelector(`input:not(.del_checkbox), textarea, select, iframe, canvas, video, audio, details:not(.mes_reasoning_details), details[open], [contenteditable], .mes_text button, ${CARD_SCRIPT_MARKER_TAG}, .card-script-sandbox-slot`)
+        || element.contains(document.activeElement));
+    if (protectedIndex >= 0) count = protectedIndex;
+    if (count <= 0) return;
+    const isCurrent = captureChatRenderValidity();
+    const revision = chatSendStartRevision;
+    const length = chat.length;
+    const first = window.firstMessageId;
+    const last = window.lastMessageId;
+    // Do not retain DOM elements in the wake callback: those are precisely what we are releasing.
+    pruneRenderedChatMessagesToWindow({ windowSize: window.renderedMessageCount - count, pruneFrom: 'start' });
+    window = null;
+    return async canRestore => {
+        if (!canRestore()) return false;
+        let readerMoved = false;
+        const unchanged = () => canRestore() && isCurrent() && revision === chatSendStartRevision
+            && chat.length === length && isChatAutoNameIdle() && !isAgentWorkPending() && !readerMoved;
+        if (!unchanged() || !idle()) return;
+        const readingAnchor = captureVisibleChatMessageAnchor();
+        const chatNode = chatElement[0];
+        const inputs = ['wheel', 'touchstart', 'pointerdown', 'keydown'];
+        const moved = () => { readerMoved = true; };
+        for (const type of inputs) chatNode.addEventListener(type, moved, { passive: true });
+        try {
+            while (unchanged() && idle()) {
+                const current = getRenderedChatMessageWindow();
+                if (current.lastMessageId !== last || current.firstMessageId <= first || current.firstMessageId > first + count) return;
+                // Restore the nearest single batch first. Cancelling an ascending multi-batch
+                // page would leave a gap between its first batch and the retained history.
+                const batchSize = getMobileChatRenderBatchSize(current.firstMessageId - first);
+                await showMoreMessages(batchSize, { canRender: unchanged });
+                if (!canRestore()) return false;
+                // Paging listeners can change row geometry after the paging anchor settles.
+                if (unchanged()) restoreVisibleChatMessageAnchor(readingAnchor);
+                if (getRenderedChatMessageWindow().firstMessageId >= current.firstMessageId) return;
+            }
+        } finally {
+            for (const type of inputs) chatNode.removeEventListener(type, moved);
+        }
+    };
+}
+
 function removeRenderedChatMessages() {
     const renderedMessages = $(getRenderedChatMessageElements());
 
@@ -3780,8 +3836,10 @@ async function renderShowMoreMessages({
     await renderShowMoreMessagesLegacy(renderOptions);
 }
 
-export async function showMoreMessages(messagesToLoad = null) {
-    const isCurrent = captureChatRenderValidity();
+export async function showMoreMessages(messagesToLoad = null, { canRender = () => true } = {}) {
+    const isChatCurrent = captureChatRenderValidity();
+    const isCurrent = () => isChatCurrent() && canRender();
+    if (!isCurrent()) return;
     if (loadingMoreMessagesOwner?.isCurrent()) return;
     const owner = { isCurrent };
     loadingMoreMessagesOwner = owner;
@@ -21102,6 +21160,7 @@ jQuery(async function () {
     });
 
     initChatAutoNaming();
+    registerBackgroundMemoryHandler({ release: releaseBackgroundChatView });
 
     $('#chat_auto_label_current').on('click', async function (e) {
         e.preventDefault();

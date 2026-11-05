@@ -76,6 +76,7 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
             actions.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
         ])
         NotificationCenter.default.addObserver(self, selector: #selector(resume), name: UIApplication.didBecomeActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(background), name: UIApplication.didEnterBackgroundNotification, object: nil)
         connect()
     }
 
@@ -103,8 +104,21 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
     }
 
     @objc private func resume() {
+        notifyMemoryLifecycle("foreground")
         guard !connecting, let url = web.url else { return }
         if url.path == "/login" || web.isHidden { connect() }
+    }
+
+    @objc private func background() { notifyMemoryLifecycle("background") }
+
+    override func didReceiveMemoryWarning() {
+        super.didReceiveMemoryWarning()
+        notifyMemoryLifecycle("pressure")
+    }
+
+    private func notifyMemoryLifecycle(_ state: String) {
+        guard let web, let url = web.url, isLocal(url), ["foreground", "background", "pressure"].contains(state) else { return }
+        web.evaluateJavaScript("window.dispatchEvent(new CustomEvent('neconyan:memory-lifecycle',{detail:{state:'\(state)'}}))", completionHandler: nil)
     }
 
     @objc private func shareLog() { if let url = server?.logURL { share(url) } }

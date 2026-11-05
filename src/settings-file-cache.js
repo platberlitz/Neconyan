@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { registerMemoryReclaimer } from './memory-pressure.js';
 
 /**
  * Filesystem change-detection identity, not a digest of the file contents.
@@ -44,6 +45,10 @@ const MAX_CACHED_SETTINGS_BYTES = 64 * 1024 * 1024;
 const MAX_CACHED_SETTINGS_ENTRIES = 8;
 const parsedSettingsCache = new Map();
 let parsedSettingsBytes = 0;
+registerMemoryReclaimer(() => {
+    parsedSettingsCache.clear();
+    parsedSettingsBytes = 0;
+});
 
 function removeCachedSettings(key) {
     const cached = parsedSettingsCache.get(key);

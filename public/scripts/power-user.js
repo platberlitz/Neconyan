@@ -107,6 +107,7 @@ import {
     withLowMemoryControlHydration,
 } from './low-memory-mode.js';
 import { createBackgroundKeepAlive, isBackgroundKeepAliveDevice } from './background-keep-alive.js';
+import { getBackgroundMemorySaver } from './background-memory-saver.js';
 
 export const toastPositionClasses = [
     'toast-top-left',
@@ -5031,6 +5032,12 @@ jQuery(async () => {
     });
 
     initBackgroundKeepAliveSetting();
+    const backgroundMemoryToggle = document.getElementById('background_memory_saver');
+    if (backgroundMemoryToggle instanceof HTMLInputElement) {
+        const saver = getBackgroundMemorySaver();
+        backgroundMemoryToggle.checked = saver.isEnabled();
+        backgroundMemoryToggle.addEventListener('change', () => saver.setEnabled(backgroundMemoryToggle.checked));
+    }
 
     window.addEventListener('sb:conversation-workspace-state-changed', () => {
         syncLowMemorySettingsUi();

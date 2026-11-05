@@ -4382,6 +4382,8 @@
   "This choice applies to this browser on this device.": "This choice applies to this browser on this device.",
   "On": "On",
   "Use automatic recommendations": "Use automatic recommendations",
+  "Save memory in the background": "Save memory in the background",
+  "Release reusable caches and older off-screen chat messages when you switch away. Restore the chat view when you return. Active replies and edits are kept. Applies to this device.": "Release reusable caches and older off-screen chat messages when you switch away. Restore the chat view when you return. Active replies and edits are kept. Applies to this device.",
   "Leaving the tab": "Leaving the tab",
   "Android can unload Neconyan after you switch away for a while, so it reloads when you come back.": "Android can unload Neconyan after you switch away for a while, so it reloads when you come back.",
   "Stay open in the background": "Stay open in the background",

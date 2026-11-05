@@ -1,4 +1,5 @@
 import { assertMutableImagePath } from '../managed-image-files.js';
+import { registerMemoryReclaimer } from '../memory-pressure.js';
 import path from 'node:path';
 import fs from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
@@ -92,6 +93,12 @@ const characterChatStatLimit = createLimiter(CHARACTER_CHAT_STATS_CONCURRENCY);
  * @type {Map<string, {data: object[], probes: Map<string, object>, signature: string, expiresAt: number}>}
  */
 const characterListCache = new Map();
+registerMemoryReclaimer(() => {
+    memoryCache.clear();
+    shallowCardCache.clear();
+    assistantMetadataCache.clear();
+    characterListCache.clear();
+});
 const CHARACTER_LIST_CACHE_TTL_MS = 5 * 60 * 1000;
 const CHARACTER_LIST_CACHE_MAX_USERS = 8;
 

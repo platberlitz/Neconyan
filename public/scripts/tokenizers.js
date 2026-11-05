@@ -1,4 +1,5 @@
 import { resolveChatTokenizerModel } from './chat-prompt-tokens.js';
+import { registerBackgroundMemoryHandler } from './background-memory-saver.js';
 import { localforage } from '../lib.js';
 import { characters, event_types, eventSource, main_api, nai_settings, online_status, this_chid } from '../script.js';
 import { power_user, registerDebugFunction } from './power-user.js';
@@ -167,6 +168,7 @@ const TOKEN_CACHE_MAX_CHATS = 8;
 const TOKEN_CACHE_MAX_ENTRIES = 16384;
 /** @type {Map<string, Map<string, number>>} */
 const tokenCache = new Map();
+registerBackgroundMemoryHandler({ release: () => tokenCache.clear(), releaseCache: () => tokenCache.clear() });
 
 function getCachedTokenCount(cache, key) {
     const value = cache.get(key);
