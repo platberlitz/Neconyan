@@ -1870,6 +1870,7 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #477 (2026-11-05) `fix(personas): defer description redraws while typing`
 - PR #478 (2026-11-05) `fix(settings): improve style previews and keep cards rectangular`
 - PR #479 (2026-11-05) `fix(personas): align the scenario note editor header`
+- PR #480 (2026-11-05) `fix(proxy): save presets with the proxy address you approved`
 - PR #481 (2026-11-05) `fix(authors-note): defer panel redraws while typing`
 - PR #482 (2026-11-05) `feat(scratchpad): edit personas, avatars and scenario notes`
 - PR #484 (2026-11-05) `fix(dialogue-colors): hide unequipped personas`
