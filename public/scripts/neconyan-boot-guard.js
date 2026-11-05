@@ -34,6 +34,10 @@
                 return false;
             }
 
+            if (typeof window !== 'undefined' && typeof window.NeconyanCrashDiagnostics?.isIOSWebKitBrowser === 'function') {
+                return window.NeconyanCrashDiagnostics.isIOSWebKitBrowser();
+            }
+
             var userAgent = String(navigator.userAgent || '');
             var platform = String(navigator.platform || '');
             var isiPadOSDesktopUA = platform === 'MacIntel' && Number(navigator.maxTouchPoints || 0) > 1;
@@ -356,12 +360,27 @@
         return Date.now() - bootStartedAt;
     }
 
+    // Neconyan: the safe start screen holds the app on purpose. Its timer must not
+    // replace that screen with the failure panel while the user reads a report.
+    function isStartupHoldActive() {
+        try {
+            return typeof window !== 'undefined' && window.NeconyanCrashDiagnostics?.isStartupHoldActive?.() === true;
+        } catch (_error) {
+            return false;
+        }
+    }
+
     function scheduleBootTimeout(delay) {
         timeoutId = window.setTimeout(handleBootTimeout, delay);
     }
 
     function handleBootTimeout() {
         if (bootCompleted || failureShown || failureDismissed) {
+            return;
+        }
+
+        if (isStartupHoldActive()) {
+            scheduleBootTimeout(BOOT_TIMEOUT_RETRY_MS);
             return;
         }
 
@@ -374,7 +393,7 @@
     }
 
     function showFailure(details) {
-        if (!isBootGuardApplicable || bootCompleted || failureShown || failureDismissed) {
+        if (!isBootGuardApplicable || bootCompleted || failureShown || failureDismissed || isStartupHoldActive()) {
             return;
         }
 
@@ -477,12 +496,27 @@
     const neconyanBootGuard = {
         bootCompleted: function () {
             bootCompleted = true;
-            try { window.NeconyanCrashDiagnostics?.markAppReady?.(); } catch (_error) { /* Diagnostics cannot block startup. */ }
+            try {
+                // The app is still loading characters and the last chat; only the
+                // later 'neconyan:ready' event marks startup complete.
+                var diagnostics = window.NeconyanCrashDiagnostics;
+                (diagnostics?.markBootLoaderComplete ?? diagnostics?.markAppReady)?.();
+            } catch (_error) { /* Diagnostics cannot block startup. */ }
             if (timeoutId) {
                 window.clearTimeout(timeoutId);
             }
         },
         showFailure: showFailure,
+        resumeAfterStartupHold: function () {
+            bootStartedAt = Date.now();
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+                timeoutId = null;
+            }
+            if (isBootGuardApplicable && !bootCompleted && !failureShown && !failureDismissed) {
+                scheduleBootTimeout(BOOT_TIMEOUT_MS);
+            }
+        },
     };
     window.NeconyanBootGuard = neconyanBootGuard;
 
