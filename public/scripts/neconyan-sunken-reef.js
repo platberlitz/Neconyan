@@ -7,10 +7,11 @@
  *
  *   1. Reef backdrop layer (behind panels): shimmering caustic sunbeams,
  *      deep-sea marine snow, rising bubble columns and distant kelp sway.
- *   2. Marine creature overlay (above panels, below popups): a graceful manta
- *      ray gliding across the upper current, a sleek swordfish cruising past,
- *      a cheerful pink axolotl with feathery gills swimming and bobbing near
- *      the reef shelves, and a small school of bioluminescent reef fish.
+ *   2. Marine creature layer (above the reef backdrop, behind messages and
+ *      panels): a graceful manta ray gliding across the upper current, a sleek
+ *      swordfish cruising past, a cheerful pink axolotl with feathery gills
+ *      swimming and bobbing near the reef shelves, and a small school of
+ *      bioluminescent reef fish.
  *   3. Water and pointer wake layer (below toasts): flowing refracted light,
  *      subtle click/tap ripples, bioluminescent plankton sparkles,
  *      expanding water ripples and swirling bubble trails with a tiny bubble
@@ -575,13 +576,15 @@ function createStage() {
     const creaturesCanvas = document.createElement('canvas');
     creaturesCanvas.id = CREATURES_CANVAS_ID;
     creaturesCanvas.setAttribute('aria-hidden', 'true');
+    // Keep the fish above the backdrop (-1) but below #sheld (30), so they swim
+    // behind message cards and panels instead of over their text.
     creaturesCanvas.style.cssText = [
         'position:fixed',
         'inset:0',
         'width:100vw',
         'height:100vh',
         'pointer-events:none',
-        'z-index:calc(var(--sb-z-shell-panel, 1100) - 1)',
+        'z-index:0',
     ].join(';');
 
     const wakeCanvas = document.createElement('canvas');

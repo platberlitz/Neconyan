@@ -702,6 +702,15 @@ test('Sunken Reef paints manta ray, swordfish, axolotl, rising bubbles and a poi
         expect(height).toBeGreaterThanOrEqual(900);
     }
 
+    // The creatures sit below #sheld (30) so message cards and their text stay readable.
+    const layering = await page.evaluate(() => ({
+        creatures: Number(window.getComputedStyle(document.getElementById('sb-sunken-reef-creatures')).zIndex),
+        chat: Number(window.getComputedStyle(document.getElementById('sheld')).zIndex),
+        wake: Number(window.getComputedStyle(document.getElementById('sb-sunken-reef-wake')).zIndex),
+    }));
+    expect(layering.creatures).toBeLessThan(layering.chat);
+    expect(layering.wake).toBeGreaterThan(layering.chat);
+
     await page.screenshot({ path: testInfo.outputPath('sunken-reef-ocean.png') });
 
     for (let step = 0; step <= 26; step += 1) {

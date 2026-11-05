@@ -119,7 +119,8 @@
 
 /* Interactive underwater ocean stage. The stage uses display: contents so each canvas
    joins the body stacking context directly: caustic sunbeams and rising bubbles behind
-   glass panels, manta ray, swordfish and axolotl across the reef, and pointer wake on top. */
+   glass panels, manta ray, swordfish and axolotl behind messages and panels, and pointer
+   wake on top. */
 :root[data-sb-theme='sunken-reef'] #sb-sunken-reef-stage {
     display: contents;
     pointer-events: none;
@@ -138,8 +139,10 @@
     z-index: -1;
 }
 
+/* Body stacking context: 0 sits above the backdrop (-1) but below #sheld (30),
+   so the creatures stay behind message cards and panels. */
 :root[data-sb-theme='sunken-reef'] #sb-sunken-reef-creatures {
-    z-index: calc(var(--sb-z-shell-panel, 1100) - 1);
+    z-index: 0;
 }
 
 :root[data-sb-theme='sunken-reef'] #sb-sunken-reef-wake {
