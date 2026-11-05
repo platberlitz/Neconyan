@@ -800,13 +800,15 @@ const chatBlock = document.getElementById('chat');
 const isFirefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
 const MESSAGE_SWIPE_IGNORED_SELECTOR = '#group_speaker_controls, #group_scene_strip';
 
-function revealSendTextAreaEnd() {
+function revealSendTextAreaEnd({ force = false } = {}) {
     // WebKit can leave the newly typed line below the viewport until a later paint.
     // Only follow an active end caret; editing or selecting earlier text stays put.
+    // A resize reports the content as fitting until the browser reflows the new
+    // height, so the caller that changed the height must follow the end directly.
     if (document.activeElement === sendTextArea
         && sendTextArea.selectionStart === sendTextArea.value.length
         && sendTextArea.selectionEnd === sendTextArea.value.length
-        && sendTextArea.scrollTop + sendTextArea.clientHeight < sendTextArea.scrollHeight - 1) {
+        && (force || sendTextArea.scrollTop + sendTextArea.clientHeight < sendTextArea.scrollHeight - 1)) {
         sendTextArea.scrollTo({ top: sendTextArea.scrollHeight, behavior: 'instant' });
     }
 }
@@ -821,7 +823,7 @@ function autoFitSendTextArea() {
     sendTextArea.style.height = '1px'; // Reset height to 1px to force recalculation of scrollHeight
     const newHeight = sendTextArea.scrollHeight;
     sendTextArea.style.height = `${newHeight}px`;
-    revealSendTextAreaEnd();
+    revealSendTextAreaEnd({ force: true });
 
     if (!isFirefox && newHeight !== previousHeight) {
         chatBlock.scrollTop = chatBlock.scrollHeight - (chatBlock.offsetHeight + originalScrollBottom);
@@ -1001,7 +1003,10 @@ export function initRossMods() {
         }
 
         if (pendingSendTextAreaFit) {
-            cancelAnimationFrame(pendingSendTextAreaFit);
+            // A frame that is already queued reads the value when it runs, so it
+            // already covers this keystroke. Queueing a later frame would skip the
+            // resize and caret follow for the frame in which these keys arrived.
+            return;
         }
         pendingSendTextAreaFit = requestAnimationFrame(() => {
             pendingSendTextAreaFit = 0;
@@ -1021,7 +1026,7 @@ export function initRossMods() {
                         chatBlock.scrollTop = chatBlock.scrollHeight - (chatBlock.offsetHeight + originalScrollBottom);
                     }
                 }
-                revealSendTextAreaEnd();
+                revealSendTextAreaEnd({ force: scrollHeight > offsetHeight });
                 return;
             }
             const fitsCurrentSize = scrollHeight <= offsetHeight;

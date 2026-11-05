@@ -14,7 +14,7 @@ const casesSource = readFileSync(new URL('../public/scripts/extensions/third-par
 const promptsSource = readFileSync(new URL('../public/scripts/extensions/third-party/Neconyan-Prompting-Lab/src/ui/prompts-tab.js', import.meta.url), 'utf8');
 
 const revealSource = rossSource.slice(
-    rossSource.indexOf('function revealSendTextAreaEnd()'),
+    rossSource.indexOf('function revealSendTextAreaEnd('),
     rossSource.indexOf('/**\n * this makes the chat input'),
 );
 const messageEditSource = scriptSource.slice(
@@ -27,7 +27,7 @@ const creatorNotesSource = `let creatorNotesPreviewDebounced = null;\n${scriptSo
     scriptSource.indexOf(creatorNotesEnd) + creatorNotesEnd.length,
 )}`;
 
-function setupReveal({ focused = true, start = 5, end = 5, scrollTop = 0, clientHeight = 100, scrollHeight = 100 } = {}) {
+function setupReveal({ focused = true, start = 5, end = 5, scrollTop = 0, clientHeight = 100, scrollHeight = 100 } = {}, options) {
     const sendTextArea = {
         value: 'line\n',
         selectionStart: start,
@@ -42,7 +42,7 @@ function setupReveal({ focused = true, start = 5, end = 5, scrollTop = 0, client
         document: { activeElement: focused ? sendTextArea : {} },
     });
     vm.runInContext(revealSource, context);
-    context.revealSendTextAreaEnd();
+    context.revealSendTextAreaEnd(options);
     return sendTextArea;
 }
 
@@ -138,6 +138,9 @@ describe('Typing redraws', () => {
         expect(setupReveal({ scrollHeight: 200 }).scrollTo).toHaveBeenCalledWith({ top: 200, behavior: 'instant' });
         expect(setupReveal({ scrollHeight: 200, start: 0, end: 0 }).scrollTo).not.toHaveBeenCalled();
         expect(setupReveal({ scrollHeight: 200, focused: false }).scrollTo).not.toHaveBeenCalled();
+        // A caller that just changed the height follows the end even when the new
+        // height still reports the content as fitting, before the browser reflows.
+        expect(setupReveal({ scrollTop: 100, scrollHeight: 200 }, { force: true }).scrollTo).toHaveBeenCalledWith({ top: 200, behavior: 'instant' });
     });
 
     test('message edits update data and save every keystroke but redraw the preview once', async () => {
