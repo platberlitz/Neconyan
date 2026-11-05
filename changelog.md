@@ -1883,3 +1883,4 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #492 (2026-11-05) `feat(memory): add optional background memory saving`
 - PR #493 (2026-11-05) `fix(android): name the cause when the local server cannot start`
 - PR #494 (2026-11-05) `perf(typing): stop per-keystroke redraws in editors and composer`
+- PR #495 (2026-11-05) `fix(chats): rework Hush spacing and correct style descriptions`
