@@ -1,6 +1,17 @@
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, test } from '@jest/globals';
 
+import { assembleLocaleData } from '../public/scripts/locale-assembly.js';
 import { localizeString } from '../public/scripts/ui-localization.js';
+
+const localePath = name => fileURLToPath(new URL(`../public/locales/${name}`, import.meta.url));
+const readLocale = file => JSON.parse(fs.readFileSync(localePath(file), 'utf8'));
+const SHIPPED_LANGUAGES = fs.readdirSync(localePath('neconyan'))
+    .filter(file => file.endsWith('.json') && file !== 'en.json')
+    .map(file => file.slice(0, -'.json'.length))
+    .sort();
 
 // localizeString finds one whole message the way the run-time localiser finds it (exact key, then a ${n} key), but keeps
 // every value in a hole as written. It is for server, provider and browser text that is about to go into a t`` frame.
@@ -125,6 +136,69 @@ describe('localizeString', () => {
                 expect(localizeString(sentence(name, verb), dictionary))
                     .toBe(`${name} vem com o Neconyan e não pode ser ${value} pelo atualizador de extensões.`);
             }
+        }
+    });
+
+    test('a two-sentence text takes its own key, whichever key the dictionary lists first', () => {
+        const short = ['No settings are available for ${0}.', 'S ${0}.'];
+        const long = ['No settings are available for ${0}. Use Manage extensions to install or enable it.', 'L ${0}.'];
+
+        for (const pairs of [[short, long], [long, short]]) {
+            const dictionary = Object.fromEntries(pairs);
+
+            expect(localizeString('No settings are available for Story Mode. Use Manage extensions to install or enable it.', dictionary)).toBe('L Story Mode.');
+            expect(localizeString('No settings are available for Story Mode.', dictionary)).toBe('S Story Mode.');
+        }
+    });
+
+    test('there are 16 shipped languages besides English', () => {
+        expect(SHIPPED_LANGUAGES).toHaveLength(16);
+    });
+
+    test.each(SHIPPED_LANGUAGES)('every shipped language shows the whole missing-settings message: %s', language => {
+        const label = 'Card & Lorebook Time Machine';
+        const baseFile = `${language}.json`;
+        const { dictionary } = assembleLocaleData({
+            base: fs.existsSync(localePath(baseFile)) ? readLocale(baseFile) : {},
+            supplement: readLocale(`neconyan/${language}.json`),
+            catalogue: readLocale('neconyan/en.json'),
+        });
+        const key = 'No settings are available for ${0}. Use Manage extensions to install or enable it.';
+
+        expect(typeof dictionary[key]).toBe('string');
+        expect(typeof dictionary['No settings are available for ${0}.']).toBe('string');
+        expect(localizeString(`No settings are available for ${label}. Use Manage extensions to install or enable it.`, dictionary))
+            .toBe(dictionary[key].replace('${0}', label));
+    });
+
+    test('keys with the same amount of fixed text keep the order the dictionary lists them in', () => {
+        const first = ['Alpha ${0}beta', 'first [${0}]'];
+        const second = ['Alpha${0} beta', 'second [${0}]'];
+
+        // Both keys have ten characters of fixed text and both match this text.
+        expect(localizeString('Alpha one beta', Object.fromEntries([first, second]))).toBe('first [one ]');
+        expect(localizeString('Alpha one beta', Object.fromEntries([second, first]))).toBe('second [ one]');
+    });
+
+    test('a key with more fixed text beats a longer key whose length is mostly placeholders', () => {
+        // 'Move ${0} ${1}' is the longer key (14 characters against 12) but has less fixed text (6 against 8).
+        const holes = ['Move ${0} ${1}', 'Mover ${0} ${1}'];
+        const own = ['Move ${0} up', 'Subir ${0}'];
+
+        for (const pairs of [[holes, own], [own, holes]]) {
+            expect(localizeString('Move card up', Object.fromEntries(pairs))).toBe('Subir card');
+        }
+    });
+
+    test('keys that start with a hole are ordered by fixed text too', () => {
+        const short = ['${0} and ${1}', 'S ${0} ${1}'];
+        const long = ['${0} and ${1} too', 'L ${0} ${1}'];
+
+        for (const pairs of [[short, long], [long, short]]) {
+            const dictionary = Object.fromEntries(pairs);
+
+            expect(localizeString('cats and dogs too', dictionary)).toBe('L cats dogs');
+            expect(localizeString('cats and dogs', dictionary)).toBe('S cats dogs');
         }
     });
 });

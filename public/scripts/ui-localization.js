@@ -32,11 +32,16 @@ function templateIndex(dictionary) {
         if (parts.length < 3 || parts.filter((_, i) => i % 2 === 0).join('').replace(/\s/g, '').length < 3) continue;
         const order = parts.filter((_, i) => i % 2 === 1);
         const pattern = parts.map((part, i) => i % 2 ? '(.+?)' : part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('');
-        const template = { expression: new RegExp(`^${pattern}$`, 's'), order, value };
+        const template = { expression: new RegExp(`^${pattern}$`, 's'), order, value, fixed: parts.filter((_, i) => i % 2 === 0).join('').length };
         const prefix = parts[0].slice(0, 2);
         if (prefix.length < 2) index.leading.push(template);
         else index.byPrefix.set(prefix, [...(index.byPrefix.get(prefix) || []), template]);
     }
+    // The key with the most fixed text is tried first, so a short key such as 'No settings are available for ${0}.' cannot take a
+    // longer text that has its own key. Equal lengths keep dictionary order (the sort is stable).
+    const mostFixedFirst = (left, right) => right.fixed - left.fixed;
+    for (const templates of index.byPrefix.values()) templates.sort(mostFixedFirst);
+    index.leading.sort(mostFixedFirst);
     templateIndexes.set(dictionary, index);
     return index;
 }
