@@ -155,3 +155,13 @@ test('let them talk is wired into the speaker bar, editor, director and server',
     assert.match(groupChats, /continuing: Boolean\(burst\)/);
     assert.match(groupChats, /talk_burst: talkBurst,/);
 });
+
+test('a provider limit cut from the full stop list matches asking with that limit', () => {
+    const names = ['Ada', 'Bo', 'Cy', 'Di', 'Ed', 'Fi'];
+    for (const existing of [[], ['a'], ['a', 'b', 'c'], ['a', '\nBo:', 'c', 'd', 'e', 'f']]) {
+        const full = appendGroupSpeakerStops(existing, names);
+        for (const limit of [1, 4, 5]) {
+            assert.deepEqual(full.slice(0, limit), appendGroupSpeakerStops(existing.slice(0, limit), names, limit), `${existing.length} stops, limit ${limit}`);
+        }
+    }
+});

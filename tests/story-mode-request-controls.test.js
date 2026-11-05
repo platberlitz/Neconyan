@@ -1088,3 +1088,41 @@ describe('reverse proxy confirmation with a held bias lookup', () => {
         expect(context.accountStorage.setItem).toHaveBeenCalledWith('Proxy_SkipConfirm_hash(https://global.invalid)', 'true');
     });
 });
+
+describe('stopping strings and the assistant prefill while a proxy confirmation is open', () => {
+    async function claudeRequestDuringConfirmation(change) {
+        const { context } = makeRuntime();
+        load(context, 'scripts/openai.js', ['validateReverseProxy']);
+        let enterConfirm;
+        const entered = new Promise(resolve => { enterConfirm = resolve; });
+        let releaseConfirm;
+        const gate = new Promise(resolve => { releaseConfirm = resolve; });
+        const live = { stops: ['early'] };
+        Object.assign(context, {
+            URL, REVERSE_PROXY_SUPPORTED_SOURCES: ['claude'],
+            Popup: { show: { confirm: jest.fn(async () => { enterConfirm(); await gate; return true; }) } },
+            renderTemplateAsync: jest.fn(async () => 'warning'),
+            DOMPurify: { sanitize: value => value },
+            getStringHash: value => `hash(${value})`,
+            accountStorage: { getItem: () => 'false', setItem: jest.fn() },
+            setOnlineStatus: jest.fn(), resultCheckStatus: jest.fn(),
+            getCustomStoppingStrings: limit => (limit > 0 ? live.stops.slice(0, limit) : [...live.stops]),
+        });
+        Object.assign(context.oai_settings, { chat_completion_source: 'claude', reverse_proxy: 'https://a.invalid', assistant_prefill: 'early' });
+        const pending = context.createGenerationParameters(context.oai_settings, 'claude-sonnet-4-5', 'normal', [{ role: 'user', content: 'Hello' }]);
+        await entered;
+        change(context, live);
+        releaseConfirm();
+        return (await pending).generate_data;
+    }
+
+    test('a Claude request sends the prefill saved when it started, not one edited during the confirmation', async () => {
+        const data = await claudeRequestDuringConfirmation(context => { context.oai_settings.assistant_prefill = 'later'; });
+        expect(data.assistant_prefill).toBe('early');
+    });
+
+    test('a Claude request sends the stopping strings from when it started, not ones edited during the confirmation', async () => {
+        const data = await claudeRequestDuringConfirmation((_context, live) => { live.stops = ['later']; });
+        expect(data.stop).toEqual(['early']);
+    });
+});
