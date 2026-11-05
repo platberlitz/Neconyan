@@ -392,12 +392,13 @@ function loadAssistantManifest() {
 const assistantManifest = loadAssistantManifest();
 
 async function getInstalledAssistantRecords(request) {
+    recoverFileWritesInDirectorySync(request.user.directories.characters);
     const avatars = getAssistantCharacterFiles(request);
     // Metadata reads (stat plus a PNG parse on a miss) are independent per file, so a
     // bounded batch runs them together; records keep the sorted avatar order.
     const metadataLimit = createLimiter(16);
     const metadatas = await Promise.all(avatars.map(avatar => metadataLimit(() =>
-        readAssistantMetadata(path.join(request.user.directories.characters, avatar)))));
+        readAssistantMetadata(path.join(request.user.directories.characters, avatar), { recovered: true }))));
     const records = [];
     for (const [index, metadata] of metadatas.entries()) {
         const assistant = assistantManifest.get(String(metadata?.id || ''));
@@ -443,16 +444,20 @@ async function assistantUiCatalog(request) {
     }));
 }
 
-async function readAssistantMetadata(filePath) {
+function assistantMetadataFromCard(card) {
+    const metadata = card?.data?.extensions?.neconyan_assistant;
+    return metadata && typeof metadata.id === 'string' ? { id: metadata.id, version: metadata.version } : null;
+}
+
+async function readAssistantMetadata(filePath, { recovered = false } = {}) {
     try {
-        recoverFileWriteSync(filePath);
+        if (!recovered) recoverFileWriteSync(filePath);
         const key = path.resolve(filePath);
         const identity = fileStatIdentity(fs.statSync(filePath));
         const cached = assistantMetadataCache.get(key, identity);
         if (cached !== undefined) return cached;
         const card = JSON.parse(await readCharacterData(filePath));
-        const metadata = card?.data?.extensions?.neconyan_assistant;
-        const result = metadata && typeof metadata.id === 'string' ? { id: metadata.id, version: metadata.version } : null;
+        const result = assistantMetadataFromCard(card);
         if (sameFileStatIdentity(identity, fileStatIdentity(fs.statSync(filePath)))) {
             assistantMetadataCache.set(key, identity, result);
         }
@@ -1371,7 +1376,12 @@ const processCharacter = async (item, directories, { shallow, fileStat }) => {
         const imgData = await readCharacterData(imgFile);
         if (imgData === undefined) throw new Error('Failed to read character file');
 
-        let jsonObject = getCharaCardV2(JSON.parse(imgData), directories, false);
+        const parsedCard = JSON.parse(imgData);
+        if (cardCacheIdentity && sameFileStatIdentity(cardCacheIdentity, fileStatIdentity(fs.statSync(imgFile)))) {
+            // Reuse both assistant and non-assistant results on the following Home request.
+            assistantMetadataCache.set(path.resolve(imgFile), cardCacheIdentity, assistantMetadataFromCard(parsedCard));
+        }
+        let jsonObject = getCharaCardV2(parsedCard, directories, false);
         jsonObject.avatar = item;
         const character = jsonObject;
         character.json_data = imgData;

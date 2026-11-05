@@ -28,6 +28,34 @@ const WORLD_EXTENSION_KEYS = Object.freeze({
 const LEGACY_RECOVERY_SUFFIX = '.sillybunny-write-recovery';
 const LEGACY_LEFTOVER = /^\.sillybunny-(?:write-\d+\.[0-9a-f]{16}\.(?:tmp|restore)|chat-[0-9a-f]{64}\.lock|recovery-state\.lock)$/;
 const SKIPPED_DIRECTORIES = new Set(['node_modules', '.git']);
+const SCAN_CACHE_FILE = '.neconyan-legacy-name-scan.json';
+
+function scanIdentity(filePath) {
+    const stat = fs.lstatSync(filePath, { bigint: true });
+    return { stat, key: [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs, stat.birthtimeNs].join(':') };
+}
+
+function loadScanCache(root) {
+    try {
+        const cache = JSON.parse(fs.readFileSync(path.join(root, SCAN_CACHE_FILE), 'utf8'));
+        if (cache.version === 1 && isPlainObject(cache.directories) && isPlainObject(cache.files)) return cache;
+    } catch {
+        // A missing or damaged optimisation cache always falls back to a full scan.
+    }
+    return { version: 1, directories: {}, files: {} };
+}
+
+function migrateChangedFile(filePath, previous, next, migrate) {
+    const { key, stat } = scanIdentity(filePath);
+    if (stat.isFile() && previous.files[filePath] === key) {
+        next.files[filePath] = key;
+        return false;
+    }
+    const changed = migrate();
+    // Do not mark a failed or concurrently replaced read as checked.
+    if (stat.isFile() && scanIdentity(filePath).key === key) next.files[filePath] = key;
+    return changed;
+}
 
 const isPlainObject = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -74,15 +102,18 @@ export function migrateLegacySettingsNames(settings) {
     return changed;
 }
 
-function migrateSettingsFile(directories) {
+function migrateSettingsFile(directories, previous, next) {
     const filePath = path.join(directories.root, SETTINGS_FILE);
-    let text;
     try {
-        text = fs.readFileSync(filePath, 'utf8');
+        return migrateChangedFile(filePath, previous, next, () => migrateSettingsText(filePath));
     } catch (error) {
         if (error.code === 'ENOENT') return false;
         throw error;
     }
+}
+
+function migrateSettingsText(filePath) {
+    const text = fs.readFileSync(filePath, 'utf8');
     if (!/sillybunny/i.test(text)) return false;
     const settings = JSON.parse(text);
     if (!migrateLegacySettingsNames(settings)) return false;
@@ -123,19 +154,22 @@ export function migrateLegacyWorldNames(book) {
     return changed;
 }
 
-function migrateWorldFiles(directories) {
+function migrateWorldFiles(directories, previous, next) {
     let moved = 0;
     if (!directories.worlds || !fs.existsSync(directories.worlds)) return moved;
     for (const fileName of fs.readdirSync(directories.worlds)) {
         if (!fileName.endsWith('.json')) continue;
         const filePath = path.join(directories.worlds, fileName);
         try {
-            const text = fs.readFileSync(filePath, 'utf8');
-            if (!/sillybunny/i.test(text)) continue;
-            const book = JSON.parse(text);
-            if (!migrateLegacyWorldNames(book)) continue;
-            tryWriteFileSync(filePath, JSON.stringify(book, null, 4));
-            moved += 1;
+            const changed = migrateChangedFile(filePath, previous, next, () => {
+                const text = fs.readFileSync(filePath, 'utf8');
+                if (!/sillybunny/i.test(text)) return false;
+                const book = JSON.parse(text);
+                if (!migrateLegacyWorldNames(book)) return false;
+                tryWriteFileSync(filePath, JSON.stringify(book, null, 4));
+                return true;
+            });
+            if (changed) moved += 1;
         } catch (error) {
             console.warn(`Could not rename old Neconyan keys in world file ${fileName}:`, error);
         }
@@ -144,28 +178,50 @@ function migrateWorldFiles(directories) {
 }
 
 /** Give interrupted-write journals their new suffix and remove the old temporary files and locks. */
-function migrateWriteLeftovers(directory) {
+function migrateWriteLeftovers(directory, previous, next, root) {
     let moved = 0;
     let entries;
+    let identity;
     try {
+        identity = scanIdentity(directory);
+        if (!identity.stat.isDirectory()) return moved;
+        const cached = previous.directories[directory];
+        // Directory timestamps cover entry changes, not changes below a child. Always
+        // revisit each child, even when its parent's listing is unchanged.
+        if (directory !== root && cached?.identity === identity.key && Array.isArray(cached.children)
+            && cached.children.every(name => typeof name === 'string' && name && name !== '.' && name !== '..'
+                && !name.includes('/') && !name.includes('\\') && !SKIPPED_DIRECTORIES.has(name))) {
+            for (const name of cached.children) moved += migrateWriteLeftovers(path.join(directory, name), previous, next, root);
+            next.directories[directory] = cached;
+            return moved;
+        }
         entries = fs.readdirSync(directory, { withFileTypes: true });
     } catch {
         return moved;
     }
+    const children = [];
+    let clean = true;
     for (const entry of entries) {
         const entryPath = path.join(directory, entry.name);
         if (entry.name.endsWith(LEGACY_RECOVERY_SUFFIX) && entry.isFile()) {
+            clean = false;
             const target = entryPath.slice(0, -LEGACY_RECOVERY_SUFFIX.length) + FILE_WRITE_RECOVERY_SUFFIX;
             if (!fs.existsSync(target)) {
                 fs.renameSync(entryPath, target);
                 moved += 1;
             }
         } else if (LEGACY_LEFTOVER.test(entry.name)) {
+            clean = false;
             fs.rmSync(entryPath, { recursive: true, force: true });
             moved += 1;
         } else if (entry.isDirectory() && !SKIPPED_DIRECTORIES.has(entry.name)) {
-            moved += migrateWriteLeftovers(entryPath);
+            children.push(entry.name);
+            moved += migrateWriteLeftovers(entryPath, previous, next, root);
         }
+    }
+    // The cache itself changes the root listing, so never cache that small listing.
+    if (clean && directory !== root && scanIdentity(directory).key === identity.key) {
+        next.directories[directory] = { identity: identity.key, children };
     }
     return moved;
 }
@@ -176,9 +232,19 @@ function migrateWriteLeftovers(directory) {
  * @returns {{settings: boolean, worlds: number, files: number}}
  */
 export function migrateLegacyNamesForUser(directories) {
-    const files = migrateWriteLeftovers(directories.root);
-    const settings = migrateSettingsFile(directories);
-    const worlds = migrateWorldFiles(directories);
+    const previous = loadScanCache(directories.root);
+    const next = { version: 1, directories: {}, files: {} };
+    const files = migrateWriteLeftovers(directories.root, previous, next, directories.root);
+    const settings = migrateSettingsFile(directories, previous, next);
+    const worlds = migrateWorldFiles(directories, previous, next);
+    const serialized = JSON.stringify(next);
+    if (serialized !== JSON.stringify(previous)) {
+        try {
+            tryWriteFileSync(path.join(directories.root, SCAN_CACHE_FILE), serialized);
+        } catch (error) {
+            console.warn('Could not cache the legacy name scan; the next start will check again.', error);
+        }
+    }
     return { settings, worlds, files };
 }
 
