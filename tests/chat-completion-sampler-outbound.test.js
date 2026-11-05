@@ -161,6 +161,44 @@ describe('Chat Completion sampler wire filtering', () => {
         expect(nodeFetchMock).not.toHaveBeenCalled();
     });
 
+    async function buildNanoGptClaude(effort) {
+        const model = 'anthropic/claude-sonnet-5';
+        const metadata = { source: 'nanogpt', model, reasoning_efforts: ['high', 'max'] };
+        const settings = { chat_completion_source: 'nanogpt', reasoning_effort: effort, temp_openai: 1,
+            top_p_openai: 1, freq_pen_openai: 0, pres_pen_openai: 0, typical_p_openai: 1, n: 1, openai_max_tokens: 32 };
+        const { generate_data: data } = await createChatGenerationParameters(settings, model, 'normal', [{ role: 'user', content: 'Hello' }], {
+            appendReasoning: messages => messages, userName: 'User', characterName: 'Character', getGroupNames: () => [],
+            getLogitBias: async () => ({}), getStoppingStrings: () => [], getIncludeReasoning: () => false,
+            getReasoningEffort: snapshot => resolveChatReasoningEffort(settings, model, undefined, snapshot),
+            getVerbosity: () => undefined, canPerformToolCalls: () => false, registerTools: async () => {},
+            reverseProxySources: [], validateReverseProxy: () => {}, getAssistantPrefill: () => '',
+            getServiceTier: async () => undefined, getSamplerMetadata: () => metadata,
+        });
+        return data;
+    }
+
+    test('NanoGPT Claude-family requests retain a declared effort through the imported handler', async () => {
+        const response = await request('nanogpt', await buildNanoGptClaude('high'));
+        expect(response.status).toBe(200);
+        expect(nodeFetchMock).toHaveBeenCalledTimes(1);
+        expect(capturedBody.reasoning).toEqual({ effort: 'high' });
+        expect(capturedBody).not.toHaveProperty('model_sampler_metadata');
+    });
+
+    test('NanoGPT Claude-family requests reject an undeclared effort before dispatch', async () => {
+        const response = await request('nanogpt', await buildNanoGptClaude('low'));
+        expect(response.status).toBe(400);
+        expect((await response.json()).error.code).toBe('UNSUPPORTED_REASONING_EFFORT');
+        expect(nodeFetchMock).not.toHaveBeenCalled();
+    });
+
+    test('NanoGPT Claude-family requests reject the default None when the declared list lacks it', async () => {
+        const response = await request('nanogpt', await buildNanoGptClaude('none'));
+        expect(response.status).toBe(400);
+        expect((await response.json()).error.code).toBe('UNSUPPORTED_REASONING_EFFORT');
+        expect(nodeFetchMock).not.toHaveBeenCalled();
+    });
+
     test.each([['min', 'minimal'], ['MINIMAL', 'minimal'], ['none', 'none'], ['auto', undefined], ['AUTO', undefined]])(
         'OpenRouter covered raw effort %s reaches the wire as %s', async (effort, wire) => {
             const model_sampler_metadata = { source: 'openrouter', model: 'test-model', reasoning: { supported_efforts: ['minimal', 'high', 'none'] } };

@@ -123,6 +123,42 @@ test('keeps existing Claude-family omission for unknown, stale and non-OpenRoute
     }
 });
 
+test.each(['anthropic/claude-sonnet-5', 'anthropic/claude-opus-5', 'anthropic/claude-fable-5'])(
+    'retains declared NanoGPT effort for %s', async model => {
+        for (const effort of ['high', 'low']) {
+            const metadata = { source: 'nanogpt', model, reasoning_efforts: ['low', 'high'] };
+            const settings = { ...baseSettings, chat_completion_source: 'nanogpt', reasoning_effort: effort };
+            const { generate_data: data } = await createChatGenerationParameters(settings, model, 'normal', [{ role: 'user', content: 'Hello' }], {
+                ...context, getSamplerMetadata: () => metadata,
+                getReasoningEffort: snapshot => resolveChatReasoningEffort(settings, model, undefined, snapshot),
+            });
+            expect(data.reasoning_effort).toBe(effort);
+            expect(data.model_sampler_metadata).toEqual(metadata);
+            expect(data.temperature).toBeUndefined();
+            expect(data.top_p).toBeUndefined();
+        }
+    },
+);
+
+const nanoClaudeModel = 'anthropic/claude-sonnet-5';
+test.each([
+    ['nanogpt', undefined],
+    ['nanogpt', { source: 'nanogpt', model: `${nanoClaudeModel}:online`, reasoning_efforts: ['high'] }],
+    ['nanogpt', { source: 'nanogpt', model: nanoClaudeModel, reasoning_efforts: [] }],
+    ['nanogpt', { source: 'nanogpt', model: nanoClaudeModel, reasoning_efforts: ['auto'] }],
+    ['custom', undefined],
+    ['custom', { source: 'nanogpt', model: nanoClaudeModel, reasoning_efforts: ['low', 'high'] }],
+])('keeps Claude-family omission for undeclared NanoGPT and for sources that do not preserve (%s, %j)', async (source, metadata) => {
+    const model = nanoClaudeModel;
+    const settings = { ...baseSettings, chat_completion_source: source, reasoning_effort: 'high' };
+    const { generate_data: data } = await createChatGenerationParameters(settings, model, 'normal', [{ role: 'user', content: 'Hello' }], {
+        ...context, getSamplerMetadata: () => metadata,
+        getReasoningEffort: snapshot => resolveChatReasoningEffort(settings, model, undefined, snapshot),
+    });
+    expect(data.reasoning_effort).toBeUndefined();
+    expect(data.temperature).toBeUndefined();
+});
+
 test('captures future native route with reasoning intent before asynchronous bias', async () => {
     const model = 'anthropic/claude-sonnet-5-future';
     const settings = { ...baseSettings, chat_completion_source: 'openai', reasoning_effort: 'none',
