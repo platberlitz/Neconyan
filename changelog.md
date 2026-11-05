@@ -1881,3 +1881,4 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #490 (2026-11-05) `fix(roleplay): recover thinking-only replies after a chat save`
 - PR #491 (2026-11-05) `fix(shell-styles): keep Sunken Reef creatures behind messages`
 - PR #492 (2026-11-05) `feat(memory): add optional background memory saving`
+- PR #493 (2026-11-05) `fix(android): name the cause when the local server cannot start`
