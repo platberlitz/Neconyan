@@ -251,7 +251,7 @@ for (const phone of [false, true]) {
                         ['How do I retry failed companions?', 'Successful companions are not rerun'],
                         ['How do I import a SillyBunny persona backup JSON?', 'no picture bytes'],
                         ['Can I try a Vectorization search without a reply?', 'one embedding query'],
-                        ['How do I update my source ZIP installation?', 'copy your data folder'],
+                        ['How do I update my source ZIP installation?', 'downloads and verifies the official release'],
                         ['How do I activate the relationship tracker?', 'Agents → Manage agents → Browse library'],
                         ['How do I edit the sidebar Quick Actions?', 'Desktop and mobile keep separate lists'],
                         ['How do I start the Nori Presets tour?', 'with a new name keeps the original'],
@@ -270,7 +270,7 @@ for (const phone of [false, true]) {
             }
             return { revision: KNOWLEDGE_REVISION, results };
         }, refreshedKnowledgeCases);
-        expect(references.revision).toBe(57);
+        expect(references.revision).toBe(58);
         expect(references.results).toHaveLength((13 + refreshedKnowledgeCases.length) * 9);
         expect(references.results.filter(result => !result.found)).toEqual([]);
     });

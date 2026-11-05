@@ -1,5 +1,13 @@
 // Questions and distinguishing facts shared by Node and real-browser retrieval checks.
 export const refreshedKnowledgeCases = [
+    ['How do I start a private character draft in Catelier?', 'catelier.start', 'Save to library publishes it'],
+    ['How does Ask questions first work in Catelier writing?', 'catelier.writing', 'answer what you want, then choose Generate'],
+    ['Can Catelier close the page while writing?', 'catelier.server', 'Closing the page is different from Cancel'],
+    ['What are Character Purrks?', 'characters.purrks', 'adds them switched off'],
+    ['How do I choose a Mewmory Jev model?', 'mewmory.jev', 'does not write the reply'],
+    ['How do I set up Pawthfinder Jev?', 'pathfinder.jev', 'Summary writing still uses your chat model'],
+    ['How do I install the standalone iPhone app?', 'start.iphone-app', 're-signing every seven days'],
+    ['Can I update a source ZIP installation inside Neconyan?', 'start.updates', 'downloads and verifies the official release'],
     ['Can Miso save browser macros for me?', 'tools.browser-macro-authoring', 'complete definition and an isolated preview'],
     ['Do AI custom macros sync to my other browser?', 'tools.browser-macro-authoring', 'do not sync or enter account backups'],
     ['What does macro expectedTemplate mean?', 'tools.browser-macro-authoring', 'exact current template as expectedTemplate'],
