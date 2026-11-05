@@ -12,7 +12,7 @@ import {
 } from '../script.js';
 import { getGroupMembers, getSelectedGroupSpeakerAvatar, groups, selected_group } from './group-chats.js';
 import { extension_settings, getContext, saveMetadataDebounced } from './extensions.js';
-import { getCharaFilename, debounce, delay, uuidv4 } from './utils.js';
+import { getCharaFilename, debounce, cancelDebounce, delay, uuidv4 } from './utils.js';
 import { POPUP_RESULT, Popup } from './popup.js';
 import {
     DEFAULT_NOTE_PROFILE_ID,
@@ -61,8 +61,8 @@ const DEFAULT_INTERVAL = 1;
 // dead zone while this module body runs. The default role has to be read lazily, at call time.
 const getDefaultRole = () => extension_prompt_roles.SYSTEM;
 
-// Every keystroke in a note re-renders the panel; an attribute selector on the whole document
-// scans every element of a long chat, so look inside the panel instead.
+// An attribute selector on the whole document scans every element of a long chat,
+// so keep panel refreshes scoped to the panel itself.
 const findInNotePanel = selector => $('#floatingPrompt').find(selector);
 
 // Neconyan: resolving these at read time keeps a chat that never used an Author's Note out of
@@ -365,13 +365,13 @@ function isUnusedNote(note, enabledKey) {
     return !note[enabledKey] && !note.perPersona && note.profiles.length === 1 && !note.profiles[0].prompt;
 }
 
-function commitCharacterNote(note) {
+function commitCharacterNote(note, { deferRender = false } = {}) {
     syncNoteMirror(note);
 
     if (getContext().groupId) {
         chat_metadata[metadata_keys.chara] = note;
         saveMetadataDebounced();
-        updateSettings({ saveExtensionSettings: false });
+        updateSettings({ saveExtensionSettings: false, deferRender });
         return;
     }
 
@@ -381,7 +381,7 @@ function commitCharacterNote(note) {
         store.splice(index, 1);
     }
 
-    updateSettings();
+    updateSettings({ deferRender });
 }
 
 function ensurePersonaNoteStore() {
@@ -411,7 +411,7 @@ function getWritablePersonaNote() {
     return ensureNoteProfiles(store[avatar]);
 }
 
-function commitPersonaNote(note) {
+function commitPersonaNote(note, { deferRender = false } = {}) {
     syncNoteMirror(note);
 
     const store = ensurePersonaNoteStore();
@@ -420,7 +420,7 @@ function commitPersonaNote(note) {
         delete store[avatar];
     }
 
-    updateSettings();
+    updateSettings({ deferRender });
 }
 
 /**
@@ -469,7 +469,7 @@ function getEditingNotePrompt(slotName) {
     return entry ? getNoteView(slotName, entry).profile.prompt : '';
 }
 
-function editNote(slotName, mutate) {
+function editNote(slotName, mutate, options) {
     const slot = noteSlots[slotName];
     const note = slot.getWritable();
     if (!note) {
@@ -482,7 +482,7 @@ function editNote(slotName, mutate) {
 
     const editingId = getNoteView(slotName, note).profile.id;
     mutate(note, note.profiles.find(profile => profile.id === editingId) ?? note.profiles[0]);
-    slot.commit(note);
+    slot.commit(note, options);
     return true;
 }
 
@@ -503,7 +503,7 @@ function onNotePromptInput(slotName, value) {
     noteSlots[slotName].setTokenCounter(value);
     editNote(slotName, (_note, profile) => {
         profile.prompt = value;
-    });
+    }, { deferRender: true });
 }
 
 function onNoteEnabledChanged(slotName, value) {
@@ -985,11 +985,19 @@ function setNoteRoleCommand(_, text) {
     return Object.keys(validRoles).find(key => validRoles[key] == getAuthorsNoteRole());
 }
 
-function updateSettings({ saveExtensionSettings = true } = {}) {
+// Only the display waits for a pause. Update note data and prompt composition, and schedule
+// saving immediately, so switching profiles/chats or sending uses the latest text.
+const loadSettingsDebounced = debounce(() => loadSettings(), debounce_timeout.standard);
+
+function updateSettings({ saveExtensionSettings = true, deferRender = false } = {}) {
     if (saveExtensionSettings) {
         saveSettingsDebounced();
     }
-    loadSettings();
+    if (deferRender) {
+        loadSettingsDebounced();
+    } else {
+        loadSettings();
+    }
     setFloatingPrompt();
 }
 
@@ -1001,7 +1009,7 @@ const setDefaultPromptTokenCounterDebounced = debounce(async (value) => $('#exte
 async function onExtensionFloatingPromptInput() {
     chat_metadata[metadata_keys.prompt] = $(this).val();
     setMainPromptTokenCounterDebounced(chat_metadata[metadata_keys.prompt]);
-    updateSettings();
+    updateSettings({ deferRender: true });
     saveMetadataDebounced();
 }
 
@@ -1066,10 +1074,11 @@ function onExtensionDefaultRoleInput(e) {
 function onExtensionFloatingDefaultInput() {
     extension_settings.note.default = $(this).val();
     setDefaultPromptTokenCounterDebounced(extension_settings.note.default);
-    updateSettings();
+    updateSettings({ deferRender: true });
 }
 
 function loadSettings() {
+    cancelDebounce(loadSettingsDebounced);
     if (extension_settings.note.defaultPosition === undefined) {
         extension_settings.note.defaultPosition = DEFAULT_POSITION;
     }
@@ -1147,7 +1156,7 @@ export function setFloatingPrompt() {
     const shouldAddPrompt = messagesTillInsertion == 0;
     shouldWIAddPrompt = shouldAddPrompt;
 
-    let prompt = shouldAddPrompt ? $('#extension_floating_prompt').val() : '';
+    let prompt = shouldAddPrompt ? getAuthorsNotePrompt() : '';
     if (shouldAddPrompt) {
         const charaNote = context.groupId ? getActiveGroupCharacterNote(context) : getEditableCharacterNote();
         prompt = composeAuthorsNote(prompt, [...getNoteParts('chara', charaNote), ...getNoteParts('persona', getPersonaNote())]);
