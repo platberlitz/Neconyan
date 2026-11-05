@@ -98,7 +98,7 @@ public final class ServerService extends Service {
                     // crashes without them, so Node loads the full data shipped in the payload.
                     int exit = startNode(new String[] { "node", "--max-old-space-size=" + heapMegabytes(this), "--disable-wasm-trap-handler", "--icu-data-dir=" + new File(runtime, "icu").getPath(), "--import", new File(runtime, "file-stats.mjs").getPath(), new File(runtime, "server-bootstrap.mjs").getPath(),
                         getFilesDir().getPath(), credentials.getString("port"), credentials.getString("password"), safe ? "safe" : "normal" }, getCacheDir().getPath());
-                    status("Neconyan stopped (" + exit + "). Reopen the app to start it again.");
+                    if (!serverNoteWritten()) status("Neconyan stopped (" + exit + "). Reopen the app to start it again.");
                     // Diagnostic writes must never stop the service from closing cleanly.
                     if (exit != 0) try { CrashDiagnostics.recordReport(this, "server", "native-runtime-exit", null, "Local server returned exit code " + exit + ". No Java exception was supplied.", String.valueOf(exit), ActivityBreadcrumbs.current()); } catch (Throwable ignored) { }
                     stopSelf();
@@ -140,6 +140,17 @@ public final class ServerService extends Service {
 
     private void status(String text) throws IOException {
         Files.write(new File(getCacheDir(), "startup-status.txt").toPath(), DiagnosticStore.redact(text).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    // A note the server wrote for this start explains the failure better than the generic
+    // stop line, and MainActivity reads this file only every 500 ms. Read failures fall
+    // back to writing the generic line, which is today's behaviour.
+    private boolean serverNoteWritten() {
+        try {
+            File file = new File(getCacheDir(), "startup-status.txt");
+            if (!file.isFile()) return false;
+            return new String(Files.readAllBytes(file.toPath()), java.nio.charset.StandardCharsets.UTF_8).trim().startsWith("Could not start Neconyan:");
+        } catch (Exception error) { return false; }
     }
 
     private File installPayload() throws Exception {
