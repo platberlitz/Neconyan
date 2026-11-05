@@ -8,6 +8,7 @@ import { verifyAndroidStorage } from './file-stats.mjs';
 import { initialiseCrashDiagnostics, installCrashHandlers } from './src/crash-diagnostics.js';
 import { beginServerWork, configureServerWakeMarker } from './src/android-wake.js';
 import { ensureBootstrapConfigSections } from './bootstrap-config.mjs';
+import { startupNoteMessage } from './src/startup-note.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const [privatePath, port, password, mode = 'normal'] = process.argv.slice(2);
@@ -22,7 +23,7 @@ let started = false;
 if (process.platform === 'android') process.on('uncaughtExceptionMonitor', error => {
     if (started) return;
     try {
-        writeFileAtomicSync(path.join(process.env.TMPDIR, 'startup-status.txt'), `Could not start Neconyan: ${error.message}. Saved data has been kept.`, { mode: 0o600 });
+        writeFileAtomicSync(path.join(process.env.TMPDIR, 'startup-status.txt'), startupNoteMessage(error), { mode: 0o600 });
     } catch { /* The original error still reaches the private server log. */ }
 });
 if (process.platform === 'android') {

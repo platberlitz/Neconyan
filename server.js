@@ -2,6 +2,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { runSupervisor, shouldSupervise } from './src/server-supervisor.js';
+import { writeStartupNote } from './src/startup-note.js';
 
 // Supervise a child copy so restarts and transactional plugin replacement are
 // owned by one process. Launcher scripts may wrap this supervisor so host-code
@@ -42,6 +43,8 @@ try {
     await configureTermuxStartup(cliArgs);
     await import('./src/server-main.js');
 } catch (error) {
+    // The phone only learns why a start failed from this note; nothing here may alter the exit.
+    writeStartupNote(error);
     if (diagnosticsReady) recordFatalError('startup-failure', error);
     console.error('A critical error has occurred while starting the server:', error);
     if (error.code === 'DATA_ROOT_OWNED') {

@@ -700,7 +700,9 @@ public final class MainActivity extends Activity {
     private String failureSummary(String reason) {
         String cause;
         ApplicationExitInfo exit = lastServerExit(firstStartAt);
-        if (serverIncident != null) cause = serverIncident.summary + "\n" + serverIncident.error;
+        // The server's own note names the cause better than the exit record can.
+        if (reason != null && reason.startsWith("Could not start Neconyan:")) cause = DiagnosticStore.redact(reason);
+        else if (serverIncident != null) cause = serverIncident.summary + "\n" + serverIncident.error;
         else if (exit != null && exit.getReason() == ApplicationExitInfo.REASON_LOW_MEMORY)
             cause = "Android closed Neconyan's local server to free memory.";
         else if (reason != null && !reason.isEmpty()) cause = DiagnosticStore.redact(reason);
