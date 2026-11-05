@@ -1867,3 +1867,5 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #474 (2026-11-05) `fix(reasoning): list none in the deepseek effort hint`
 - PR #475 (2026-11-05) `feat(settings): add and reorder bottom chat bar buttons`
 - PR #476 (2026-11-05) `docs(readme): bring the translations in line with the new README`
+- PR #477 (2026-11-05) `fix(personas): defer description redraws while typing`
+- PR #478 (2026-11-05) `fix(settings): improve style previews and keep cards rectangular`
