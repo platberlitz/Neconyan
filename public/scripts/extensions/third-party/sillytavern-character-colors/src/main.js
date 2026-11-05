@@ -442,18 +442,20 @@ export function registerEventHandlers() {
                 .catch(error => console.warn('[Dialogue Colors] Character storage rename migration failed.', error));
         },
         personaChanged: () => {
-            if (!settings.enabled || !automaticRuntimeActive) return;
+            if (!settings.enabled || !automaticRuntimeActive) {
+                updateCharList();
+                return;
+            }
             // Each persona keeps its own pinned color, so a switch has to swap the pin in
             // before anything repaints, whether or not the persona entry is auto-created.
             // applyRestoredPersonaColor persists and repaints the swap; the settings list
             // alone would leave the chat showing the previous persona's color.
             const autoPersona = settings.autoPersonaCharacter === true;
-            const restored = applyRestoredPersonaColor();
+            applyRestoredPersonaColor();
             if (autoPersona) ensurePersonaCharacter({ silent: true });
             const kept = markCurrentPersonaKept();
             if (kept) saveData();
             if (!isDomEngine()) decorateAllMessages();
-            if (!autoPersona && !restored && !kept) return;
             updateCharList();
         },
         personaRenamed: payload => {

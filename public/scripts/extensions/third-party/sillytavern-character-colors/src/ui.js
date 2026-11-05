@@ -18,7 +18,7 @@ import { getTransientNarratorCount, getNarratorVisual, normalizeNarratorStyle, s
 import { applyGradientPreset, applyThemeReadabilityAndBrightness, buildCharacterEntry, collectDuplicateColorKeys, createGradientRandomMasterSeed, createRandomGradient, deleteColorPreset, deleteCustomPalette, detectTheme, flipColorsForTheme, generateCustomPaletteFromWords, getBaseColor, getCustomPaletteMeta, getCustomPalettes, getEntryEffectiveColor, getNextColor, getPerceptualConflictReport, getPersonaName, getPresets, invalidateThemeCache, loadColorPreset, refreshPaletteDropdown, refreshPresetDropdown, regenerateAllColors, regenerateAllGradients, removeCharacterKeys, repairPerceptualConflicts, resolveColorPresetName, saveColorPreset, saveCustomPalette, setEntryFromBaseColor, setEntryGradient, showHarmonyPopup, suggestColorForName, swapEntryColorData, syncAllEffectiveColors } from './palettes.js';
 import { injectPrompt, updateSystemPromptDisplay } from './prompts.js';
 import { addExcludedSpeakerName, getExcludedSpeakerNames, isExcludedCharacterEntry, removeExcludedSpeakerName } from './speaker-exclusions.js';
-import { escapeHtml, eventSource, event_types, getContext } from './st-api.js';
+import { escapeHtml, eventSource, event_types, getContext, power_user } from './st-api.js';
 import { autoRecolorHintShown, characterColors, expandedCharacterRows, groupProfiles, isDomEngine, searchTerm, selectedCharacterKeys, setAutoRecolorHintShown, setCharacterColors, setGroupProfiles, setSearchTerm, setSwapMode, settings, swapMode, synchronizeEnabledLifecycle } from './state.js';
 import { analyzeColorImport, analyzeSettingsImport, analyzeStylePackImport, applyCardData, applyColorImport, applySettingsImport, applyStylePackImport, archiveStoredColorData, deleteCustomGradientPreset, disableAutoSync, enableAutoSync, exportColors, exportSettings, getArchivedColorData, getCurrentStorageScope, getCustomGradientPresets, getLegendPosition, getPinnedPersonaColors, getStorageKey, getStorageKeyForScope, getStorageLabelForKey, getStorageScopeDescriptor, getStoredColorDataFingerprint, getStylePackRegistry, getUserColorDataStore, markCardCharactersKept, markCurrentPersonaKept, normalizeColorDataEntry, normalizeToggleSettings, readCardData, removePinnedCharacterKey, renameCustomGradientPreset, renamePinnedPersonaColor, resolveCustomGradientPresetName, restoreAllSettingsToDefaults, restoreArchivedColorData, restorePinnedPersonaColor, saveCustomGradientPreset, saveData, saveLegendPosition, saveToCard, switchColorStorageScope, syncPinnedPersonaColors, updateAutoSyncUI } from './storage.js';
 import { buildStylePackEnvelope } from './style-pack-adapter.js';
@@ -448,9 +448,24 @@ export function isPinnedPersonaEntry(entry) {
     });
 }
 
-export function getSortedEntries() {
+// Keep other personas' stored colours for their dialogue and for switching back,
+// but only show the equipped persona in the editing list and legends.
+function getPersonaVisibleEntries() {
+    const activeIdentity = normalizeRegistryIdentity(getPersonaName());
+    const personaIdentities = new Set([
+        ...Object.values(power_user.personas || {}),
+        ...Object.values(getPinnedPersonaColors()).flatMap(pinned => [pinned?.name, pinned?.persona]),
+    ].map(name => normalizeRegistryIdentity(name)).filter(Boolean));
+    return Object.entries(characterColors).filter(([, entry]) => {
+        if (activeIdentity && matchesPersonaIdentity(entry, activeIdentity)) return true;
+        return ![entry.name, ...(entry.aliases || [])]
+            .some(name => personaIdentities.has(normalizeRegistryIdentity(name)));
+    });
+}
+
+export function getSortedEntries(visibleEntries = getPersonaVisibleEntries()) {
     const needle = searchTerm.trim().toLowerCase();
-    const entries = Object.entries(characterColors).filter(([, entry]) => {
+    const entries = visibleEntries.filter(([, entry]) => {
         if (!needle) return true;
         return [entry.name, entry.group, entry.font, ...(entry.aliases || []), entry.keep ? 'kept pinned' : '', entry.locked ? 'locked' : '']
             .some(value => String(value || '').toLowerCase().includes(needle));
@@ -567,12 +582,12 @@ export async function extractAvatarColor(imgSrc) {
 
 // Phase 4A: Theme-aware PNG export
 export async function exportLegendPng() {
-    const characterCount = Object.keys(characterColors).length;
-    if (characterCount > LEGEND_CANVAS_ENTRY_LIMIT) {
+    const visibleEntries = getPersonaVisibleEntries();
+    if (visibleEntries.length > LEGEND_CANVAS_ENTRY_LIMIT) {
         toast.warning(`Legend image export is limited to ${LEGEND_CANVAS_ENTRY_LIMIT} characters; narrow the active table first.`);
         return;
     }
-    const characterEntries = Object.values(characterColors).map(entry => ({ entry, label: entry.name, kind: 'character' }));
+    const characterEntries = visibleEntries.map(([, entry]) => ({ entry, label: entry.name, kind: 'character' }));
     const narrator = getEffectiveNarratorVisual();
     const entries = [...characterEntries, ...(narrator ? [{ entry: narrator, label: 'Narration', kind: 'narrator' }] : [])];
     if (!entries.length) { toast.info('No character or narration visuals to export'); return; }
@@ -803,7 +818,7 @@ export function createLegend() {
 export function updateLegend() {
     const legend = createLegend();
     const visible = !!settings.enabled && !!settings.showLegend && !isSettingsFullscreen();
-    const allEntries = Object.entries(characterColors);
+    const allEntries = getPersonaVisibleEntries();
     const entries = allEntries.slice(0, FLOATING_LEGEND_RENDER_LIMIT);
     const omittedEntryCount = allEntries.length - entries.length;
     const narrator = getEffectiveNarratorVisual();
@@ -3556,11 +3571,16 @@ export function updateCharList() {
         key: focusedControl.closest('.dc-char')?.dataset.key,
         id: focusedControl.dataset.focusId,
     } : null;
-    const matchingEntries = getSortedEntries();
+    const visibleEntries = getPersonaVisibleEntries();
+    const visibleKeys = new Set(visibleEntries.map(([key]) => key));
+    for (const key of selectedCharacterKeys) {
+        if (!visibleKeys.has(key)) selectedCharacterKeys.delete(key);
+    }
+    const matchingEntries = getSortedEntries(visibleEntries);
     const entries = matchingEntries.slice(0, CHARACTER_LIST_RENDER_LIMIT);
     const omittedEntryCount = matchingEntries.length - entries.length;
     const countEl = document.getElementById('dc-count');
-    if (countEl) countEl.textContent = Object.keys(characterColors).length;
+    if (countEl) countEl.textContent = visibleEntries.length;
     updateBulkToolbar(entries);
     refreshGroupProfileControls();
 
