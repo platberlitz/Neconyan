@@ -19,7 +19,7 @@ import { captureQuickImageTextSettings } from '../generation/quick-image-gen-tex
 import { resolveCharacterImageSettings } from '../../public/scripts/extensions/quick-image-gen/lib/character-settings.js';
 import { detectImageFormat } from '../../public/scripts/extensions/quick-image-gen/lib/image-metadata.js';
 import { decodeServerImage, encodeServerImage } from '../media-codecs.js';
-import { normalizeScenarioAvatar } from '../../public/scripts/persona-appendix-avatar.js';
+import { fitScenarioAvatar } from '../../public/scripts/persona-appendix-avatar.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { sameSourceContext } from '../../public/scripts/scratchpad/source.js';
 import { ScratchpadError, assistantConnection, findSession, findMessage, normaliseSource, requireId, newScratchpadId,
@@ -317,11 +317,11 @@ export async function prepareScratchpadAvatarReview(base, source, body) {
     let proposedAvatar;
     if (captured.kind === 'persona-note') {
         const image = Jimp.fromBitmap(await decodeServerImage(captured.generated));
-        const scale = Math.min(128 / image.bitmap.width, 128 / image.bitmap.height, 1);
-        image.resize({ w: Math.max(1, Math.round(image.bitmap.width * scale)), h: Math.max(1, Math.round(image.bitmap.height * scale)) });
-        const bytes = await encodeServerImage(image.bitmap, 'webp', { quality: 80 });
-        proposedAvatar = normalizeScenarioAvatar(`data:image/webp;base64,${bytes.toString('base64')}`);
-        if (!proposedAvatar) throw fail('The Scenario Note portrait could not be resized. Choose another image.');
+        proposedAvatar = await fitScenarioAvatar(image.bitmap.width, image.bitmap.height, async (w, h) => {
+            const resized = image.clone().resize({ w, h });
+            const bytes = await encodeServerImage(resized.bitmap, 'webp', { quality: 85 });
+            return `data:image/webp;base64,${bytes.toString('base64')}`;
+        });
     }
     const originalFormat = detectImageFormat(captured.bytes)?.ext;
     if (!originalFormat) throw fail('The previous avatar picture could not be preserved.');

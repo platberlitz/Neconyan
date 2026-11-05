@@ -1,5 +1,6 @@
 /* global window */
 import { expect, test } from '@playwright/test';
+import { Jimp } from '../src/jimp.js';
 import { isolateSettingsSaves, openPersonaEditor, openQuietChatForSmoke } from './chat-scroll-regression-helpers.js';
 
 test.setTimeout(180000);
@@ -45,9 +46,12 @@ for (const phone of [true, false]) {
             await expect(card.locator('img')).toHaveCount(0);
 
             await edit.click();
-            await upload.setInputFiles('../public/img/user-default.png');
+            const buffer = await new Jimp({ width: 1200, height: 1600, color: 0x7799aaff }).getBuffer('image/png');
+            await upload.setInputFiles({ name: 'large-portrait.png', mimeType: 'image/png', buffer });
             await expect(preview).toHaveAttribute('src', /^data:image\//);
+            await expect.poll(() => preview.evaluate(image => [image.naturalWidth, image.naturalHeight])).toEqual([768, 1024]);
             const portrait = await preview.getAttribute('src');
+            expect(portrait.length).toBeLessThanOrEqual(96 * 1024);
             // A refresh normalises the model while the editor is still open.
             await page.evaluate(async () => (await import('/scripts/personas.js')).getOrCreatePersonaDescriptor());
             await save.click();
