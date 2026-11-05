@@ -1858,3 +1858,4 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #465 (2026-11-05) `fix(notebooks): drop the note share that ends soonest past the limit`
 - PR #466 (2026-11-05) `fix(localisation): prefer the most specific caption pattern`
 - PR #467 (2026-11-05) `fix(chat): read stopping strings and prefill with the settings snapshot`
+- PR #468 (2026-11-05) `fix(reasoning): treat None as thinking off for native DeepSeek Flash`
