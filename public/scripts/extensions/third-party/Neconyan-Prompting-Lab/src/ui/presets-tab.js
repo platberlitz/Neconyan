@@ -1,4 +1,5 @@
 import { copyPrompt, onClipboardChange, readClipboard } from '../clipboard.js';
+import { debounce } from './debounce.js';
 import { button, confirmButton, element, emptyState, errorMessage, field, promptField, replace, statusRegion } from '../dom.js';
 import { countTokens, getContext, listInstalledPresets, readInstalledPreset } from '../host.js';
 import { runPromptingLab } from '../native.js';
@@ -45,6 +46,7 @@ export function createPresetsTab({ onChanged = null, onPromptSaved = null } = {}
     let reloadHost = null;
     let unsubscribeClipboard = null;
     let pasteButton = null;
+    const renderLibraryDebounced = debounce(renderLibrary);
 
     let drafts = [];
     let editing = null;
@@ -834,7 +836,11 @@ export function createPresetsTab({ onChanged = null, onPromptSaved = null } = {}
             className: 'text_pole sbpl-input',
             attributes: { type: 'search', placeholder: 'Search presets', 'aria-label': 'Search presets' },
         });
-        searchInput.addEventListener('input', renderLibrary);
+        searchInput.addEventListener('input', renderLibraryDebounced);
+        searchInput.addEventListener('change', () => {
+            renderLibraryDebounced.cancel();
+            renderLibrary();
+        });
         typeSelect = element('select', {
             className: 'text_pole sbpl-select',
             attributes: { 'aria-label': 'Preset type' },
