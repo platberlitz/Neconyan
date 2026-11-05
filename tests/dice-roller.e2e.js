@@ -3,6 +3,7 @@
 import path from 'node:path';
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { searchAgentList } from './in-chat-agents-e2e-helpers.js';
 
 test.setTimeout(240000);
 
@@ -81,7 +82,7 @@ async function openAgentsTab(page) {
 
 async function saveDiceViaAgents(page, { enabled = true, displayMode = 'card' } = {}) {
     await openAgentsTab(page);
-    await page.locator('#ica--search').fill('Dice Roller');
+    await searchAgentList(page, 'Dice Roller', { count: 1 });
     const card = page.locator('#ica--agentList .ica--agent-card').filter({ hasText: 'Dice Roller' }).first();
     await expect(card).toBeVisible();
     const toggle = card.locator('.ica--card-toggle');
@@ -290,7 +291,7 @@ test('dice companion switches notes, cards and the global switch through the rea
     await saveDiceViaAgents(page, { enabled: true, displayMode: 'card' });
     await expect(page.locator('#chat .ica--companion-card--dice')).toBeVisible();
     await openAgentsTab(page);
-    await page.locator('#ica--search').fill('Dice Roller');
+    await searchAgentList(page, 'Dice Roller', { count: 1 });
     const agentCard = page.locator('#ica--agentList .ica--agent-card').filter({ hasText: 'Dice Roller' }).first();
     await expect(agentCard).toBeVisible();
     await agentCard.locator('.ica--card-more').click();

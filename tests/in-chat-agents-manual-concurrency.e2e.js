@@ -1,6 +1,7 @@
 /* global document, window */
 import { expect } from '@playwright/test';
 import { test, acknowledgeActiveSettings } from './neconyan-conversation-durable-fixture.js';
+import { searchAgentList } from './in-chat-agents-e2e-helpers.js';
 
 test.setTimeout(180000);
 // eslint-disable-next-line playwright/no-skipped-test -- Uses an owned server and a deterministic model provider.
@@ -82,12 +83,12 @@ for (const phone of [false, true]) {
                 element.dispatchEvent(new Event('change', { bubbles: true }));
             } else element.click();
         });
-        await page.locator('#ica--search').fill('Held Companion');
+        await searchAgentList(page, 'Held Companion', { count: 1 });
         // Use the rendered Run controls for both kinds of request.
         await page.locator('#ica--agentList [data-agent-id="held-companion"] .ica--btn-run').click();
         await expect.poll(() => app.provider.calls.filter(call => call.model === 'held-companion').length).toBe(1);
         for (const phase of ['pre', 'post']) {
-            await page.locator('#ica--search').fill(`Manual ${phase}`);
+            await searchAgentList(page, `Manual ${phase}`, { count: 1 });
             const run = page.locator(`#ica--agentList [data-agent-id="manual-${phase}"] .ica--btn-run`);
             await expect(run).toBeEnabled();
             await run.click();
@@ -140,10 +141,10 @@ for (const phone of [false, true]) {
             } else element.click();
         });
         const callsFor = model => app.provider.calls.filter(call => call.model === model);
-        await page.locator('#ica--search').fill('Manual first');
+        await searchAgentList(page, 'Manual first', { count: 1 });
         await page.locator('#ica--agentList [data-agent-id="manual-first"] .ica--btn-run').click();
         await expect.poll(() => callsFor('manual-first').length).toBe(1);
-        await page.locator('#ica--search').fill('Manual second');
+        await searchAgentList(page, 'Manual second', { count: 1 });
         const second = page.locator('#ica--agentList [data-agent-id="manual-second"] .ica--btn-run');
         await expect(second).toBeEnabled();
         await second.click();

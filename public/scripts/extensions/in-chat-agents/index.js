@@ -5498,10 +5498,6 @@ async function openTemplateBrowser() {
         renderTemplateResults();
     });
     filterBar.find('.ica--template-search').on('input', renderTemplateResultsDebounced);
-    filterBar.find('.ica--template-search').on('change', function () {
-        cancelDebounce(renderTemplateResultsDebounced);
-        renderTemplateResults();
-    });
     pillRow.on('click', '.ica--template-pill', function () {
         selectedCategory = $(this).attr('data-category') || '';
         renderTemplateResults();
@@ -7340,9 +7336,6 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
     $('#ica--search').on('input', () => {
         agentListSearchRenderPending = true;
         renderAgentListDebounced();
-    });
-    $('#ica--search').on('change', () => {
-        flushPendingAgentListSearchRender();
     });
     $('#ica--timingFilter').on('change', renderAgentList);
 

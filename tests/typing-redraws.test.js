@@ -200,7 +200,7 @@ describe('Typing redraws', () => {
     test('every search surface binds its input handler to the deferred render', () => {
         const agentSearchBinding = agentsSource.slice(
             agentsSource.indexOf('$(\'#ica--search\').on(\'input\''),
-            agentsSource.indexOf('$(\'#ica--search\').on(\'change\''),
+            agentsSource.indexOf('$(\'#ica--timingFilter\').on(\'change\''),
         );
         expect(agentSearchBinding).toContain('agentListSearchRenderPending = true;');
         expect(agentSearchBinding).toContain('renderAgentListDebounced();');
@@ -215,13 +215,16 @@ describe('Typing redraws', () => {
         expect(conversationSource).toContain('pendingInputHeightFrame');
     });
 
-    test('pending agent search renders settle on blur and before a bulk selection', () => {
-        const changeBinding = agentsSource.slice(
-            agentsSource.indexOf('$(\'#ica--search\').on(\'change\''),
+    test('a pending agent search render settles before a bulk selection, not on blur', () => {
+        // The search redraw owns the rows. Rebuilding them when a click moves focus
+        // replaces the row under the pointer, so the click never reaches its button.
+        const searchBinding = agentsSource.slice(
+            agentsSource.indexOf('$(\'#ica--search\').on(\'input\''),
             agentsSource.indexOf('$(\'#ica--timingFilter\').on(\'change\''),
         );
-        expect(changeBinding).toContain('flushPendingAgentListSearchRender();');
-        expect(changeBinding).not.toContain('renderAgentList();');
+        expect(searchBinding).not.toContain('.on(\'change\'');
+        expect(agentsSource).not.toContain('filterBar.find(\'.ica--template-search\').on(\'change\'');
+        expect(agentsSource).toContain('filterBar.find(\'.ica--template-search\').on(\'input\', renderTemplateResultsDebounced);');
 
         const bulkSelectionBinding = agentsSource.slice(
             agentsSource.indexOf('$(\'#ica--bulkSelectAll\').on(\'click\''),
