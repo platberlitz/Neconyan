@@ -1,9 +1,12 @@
 import { describe, expect, test } from '@jest/globals';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import '../src/fetch-patch.js';
 import { Jimp } from '../src/jimp.js';
 import { read as readCharacterCard } from '../src/character-card-parser.js';
 import { createPersonaCard, decodePersonaCard, decodePersonaImport, encodePersonaCard, normalizePersonaCard } from '../src/persona-card.js';
+import { embedScenarioAvatarPaths, storeScenarioAvatarFiles } from '../src/scenario-avatar-files.js';
 
 const image = fs.readFileSync(new URL('../public/img/user-default.png', import.meta.url));
 const descriptor = {
@@ -56,6 +59,42 @@ describe('portable persona cards', () => {
         expect(new Set(card.data.appendices.map(note => note.id)).size).toBe(3);
     });
 
+    test('embeds a full-size Scenario Note file in the export and restores it as a file on import', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-persona-avatar-'));
+        try {
+            const directories = { root, userImages: path.join(root, 'user', 'images') };
+            const notesFolder = path.join(directories.userImages, 'persona-notes');
+            fs.mkdirSync(notesFolder, { recursive: true });
+            const original = fs.readFileSync(new URL('../public/img/user-default.png', import.meta.url));
+            fs.writeFileSync(path.join(notesFolder, 'saved.png'), original);
+
+            const stored = {
+                appendices: [
+                    { id: 'rain', name: 'Rain', description: 'Wet streets.', avatar: '/user/images/persona-notes/saved.png' },
+                    { id: 'plain', name: 'Plain', description: 'No picture.' },
+                ],
+            };
+            const card = createPersonaCard('Rin', embedScenarioAvatarPaths(stored, directories));
+            const embedded = card.data.appendices[0].avatar;
+            expect(embedded).toMatch(/^data:image\/png;base64,/);
+            expect(Buffer.from(embedded.split(',')[1], 'base64').equals(original)).toBe(true);
+            expect(card.data.appendices[1]).toEqual(stored.appendices[1]);
+
+            const imported = storeScenarioAvatarFiles(card, directories);
+            const importedPath = imported.data.appendices[0].avatar;
+            expect(importedPath).toMatch(/^\/user\/images\/persona-notes\/[a-f0-9-]+\.png$/);
+            expect(fs.readFileSync(path.join(root, importedPath.slice(1))).equals(original)).toBe(true);
+            expect(imported.data.appendices[1]).toEqual(stored.appendices[1]);
+
+            const output = encodePersonaCard(card, image, 'json');
+            expect(decodePersonaCard(output, 'json').card.data.appendices[0].avatar).toBe(embedded);
+            const png = encodePersonaCard(card, image, 'png');
+            expect(decodePersonaCard(png, 'png').card.data.appendices[0].avatar).toBe(embedded);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     for (const [index, card] of [
         { spec: 'chara_card_v2', spec_version: '2.0', data: { name: 'Rin' } },
         { spec: 'neconyan_persona', spec_version: '2.0', data: { name: 'Rin' } },
@@ -89,6 +128,17 @@ describe('portable persona cards', () => {
         ]);
         expect(JSON.stringify(imported)).not.toContain('private-chat');
         expect(JSON.stringify(imported)).not.toContain('private-character');
+    });
+
+    test('a full persona backup keeps a saved Scenario Note picture path but a portable card requires the picture', () => {
+        const savedPath = '/user/images/persona-notes/full-size.png';
+        const backup = {
+            personas: { 'rin.png': 'Rin' },
+            persona_descriptions: { 'rin.png': { appendices: [{ id: 'rain', name: 'Rain', description: '', avatar: savedPath }] } },
+        };
+        const imported = decodePersonaImport(Buffer.from(JSON.stringify(backup)), 'json');
+        expect(imported.cards[0].card.data.appendices[0].avatar).toBe(savedPath);
+        expect(() => createPersonaCard('Rin', { appendices: [{ id: 'rain', avatar: savedPath }] })).toThrow('Invalid Scenario Note avatar');
     });
 
     test.each([

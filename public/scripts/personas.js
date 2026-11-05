@@ -40,6 +40,7 @@ import {
     flashHighlight,
     getBase64Async,
     getCharIndex,
+    saveBase64AsFile,
     getCharaFilename,
     isFalseBoolean,
     isTrueBoolean,
@@ -72,7 +73,7 @@ import { SlashCommandEnumValue, enumTypes } from './slash-commands/SlashCommandE
 import { SlashCommandParser } from './slash-commands/SlashCommandParser.js';
 import { isFirefox } from './browser-fixes.js';
 import { isMobile } from './RossAscends-mods.js';
-import { createScenarioAvatar, getScenarioAvatar, normalizeScenarioAvatar } from './persona-appendix-avatar.js';
+import { getScenarioAvatar, normalizeScenarioAvatar, SCENARIO_AVATAR_FOLDER } from './persona-appendix-avatar.js';
 import { slashCommandReturnHelper } from './slash-commands/SlashCommandReturnHelper.js';
 
 /**
@@ -1423,8 +1424,14 @@ async function showPersonaAppendixEditor(appendixId = '') {
         loadingAvatar = true;
         refreshAvatar();
         try {
-            if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) throw new Error('Unsupported image');
-            const avatar = await createScenarioAvatar(await getBase64Async(file));
+            const extension = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' }[file.type];
+            if (!extension) throw new Error('Unsupported image');
+            const dataUrl = await getBase64Async(file);
+            const separator = dataUrl.indexOf(',');
+            if (separator < 0) throw new Error('Invalid Scenario Note avatar');
+            const filename = `persona-note-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+            const path = await saveBase64AsFile(dataUrl.slice(separator + 1), SCENARIO_AVATAR_FOLDER, filename, extension);
+            const avatar = normalizeScenarioAvatar(String(path).startsWith('/') ? path : `/${path}`);
             if (!avatar) throw new Error('Invalid Scenario Note avatar');
             stagedAvatar = avatar;
         } catch {

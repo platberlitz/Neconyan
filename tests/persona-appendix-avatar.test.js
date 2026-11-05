@@ -1,41 +1,64 @@
 import { describe, expect, test } from '@jest/globals';
-import { fitScenarioAvatar, getScenarioAvatar, MAX_SCENARIO_AVATAR_LENGTH, normalizeScenarioAvatar } from '../public/scripts/persona-appendix-avatar.js';
+import {
+    getScenarioAvatar,
+    isScenarioAvatarPath,
+    MAX_SCENARIO_AVATAR_LENGTH,
+    normalizePortableScenarioAvatar,
+    normalizeScenarioAvatar,
+} from '../public/scripts/persona-appendix-avatar.js';
 
 const portrait = 'data:image/png;base64,aGVsbG8=';
 const other = 'data:image/webp;base64,d29ybGQ=';
+const savedPortrait = '/user/images/persona-notes/full-size-portrait.png';
 
 describe('Scenario Note portraits', () => {
-    test('retains large portrait detail and its aspect ratio', async () => {
-        const sizes = [];
-        expect(await fitScenarioAvatar(1536, 1024, (w, h) => { sizes.push([w, h]); return portrait; })).toBe(portrait);
-        expect(sizes).toEqual([[1024, 683]]);
+    test('accepts saved user image files at their original size', () => {
+        expect(normalizeScenarioAvatar(savedPortrait)).toBe(savedPortrait);
+        expect(normalizeScenarioAvatar('/user/images/Scratchpad/scratchpad-abc123.png')).toBe('/user/images/Scratchpad/scratchpad-abc123.png');
+        expect(normalizeScenarioAvatar('/user/images/persona-notes/picture.jpeg')).toBe('/user/images/persona-notes/picture.jpeg');
+        expect(normalizeScenarioAvatar('/user/images/persona-notes/picture.webp')).toBe('/user/images/persona-notes/picture.webp');
+        expect(normalizeScenarioAvatar('/user/images/persona-notes/picture.gif')).toBe('/user/images/persona-notes/picture.gif');
+        expect(isScenarioAvatarPath(savedPortrait)).toBe(true);
     });
 
-    test('reduces oversized portraits until they fit the existing limit', async () => {
-        const sizes = [];
-        const result = await fitScenarioAvatar(1200, 1600, (w, h) => {
-            sizes.push([w, h]);
-            return h > 512 ? `data:image/webp;base64,${'a'.repeat(MAX_SCENARIO_AVATAR_LENGTH)}` : portrait;
-        });
-        expect(result).toBe(portrait);
-        expect(sizes).toEqual([[768, 1024], [576, 768], [384, 512]]);
+    test('keeps older embedded portraits working within their saved-data budget', () => {
+        expect(normalizeScenarioAvatar(portrait)).toBe(portrait);
+        expect(normalizeScenarioAvatar('data:image/gif;base64,aGVsbG8=')).toBe('data:image/gif;base64,aGVsbG8=');
+        expect(normalizeScenarioAvatar(`data:image/png;base64,${'a'.repeat(MAX_SCENARIO_AVATAR_LENGTH)}`)).toBe('');
     });
 
-    test('does not enlarge small originals or retry duplicate sizes', async () => {
-        const sizes = [];
-        await expect(fitScenarioAvatar(80, 60, (w, h) => { sizes.push([w, h]); return ''; })).rejects.toThrow('storage limit');
-        expect(sizes).toEqual([[80, 60]]);
+    test('only portable embedded pictures belong in a persona card', () => {
+        expect(normalizePortableScenarioAvatar(portrait)).toBe(portrait);
+        expect(normalizePortableScenarioAvatar(savedPortrait)).toBe('');
+        expect(normalizePortableScenarioAvatar('https://example.com/a.png')).toBe('');
     });
 
     test('uses visible note order rather than the order notes were enabled', () => {
-        const notes = [{ id: 'plain' }, { id: 'first', avatar: portrait }, { id: 'second', avatar: other }];
-        expect(getScenarioAvatar(notes, ['second', 'plain', 'first'])).toBe(portrait);
+        const notes = [{ id: 'plain' }, { id: 'first', avatar: savedPortrait }, { id: 'second', avatar: other }];
+        expect(getScenarioAvatar(notes, ['second', 'plain', 'first'])).toBe(savedPortrait);
         expect(getScenarioAvatar(notes, ['second', 'plain'])).toBe(other);
         expect(getScenarioAvatar(notes, ['plain', 'deleted'])).toBe('');
         expect(getScenarioAvatar(notes, [])).toBe('');
     });
 
-    test.each([undefined, {}, 'https://example.com/a.png', '../a.png', 'data:image/svg+xml;base64,aGVsbG8=', 'data:image/png;base64,???', `data:image/png;base64,${'a'.repeat(MAX_SCENARIO_AVATAR_LENGTH)}`])('ignores unsupported or oversized portrait data (case %#)', value => {
+    test.each([
+        undefined,
+        {},
+        'https://example.com/a.png',
+        '../a.png',
+        '/user/images/../settings.json',
+        '/user/images/persona-notes/../../settings.json',
+        '/user/images/persona-notes/%2e%2e/settings.png',
+        '/user/images/persona-notes/picture.png?raw=1',
+        '/user/images/persona-notes/picture.svg',
+        '/characters/picture.png',
+        '/User%20Avatars/picture.png',
+        'user/images/persona-notes/picture.png',
+        'javascript:alert(1)',
+        'data:image/svg+xml;base64,aGVsbG8=',
+        'data:image/png;base64,???',
+        `data:image/png;base64,${'a'.repeat(MAX_SCENARIO_AVATAR_LENGTH)}`,
+    ])('ignores unsupported, unsafe or oversized portrait data (case %#)', value => {
         expect(normalizeScenarioAvatar(value)).toBe('');
         expect(getScenarioAvatar([{ id: 'bad', avatar: value }, { id: 'ok', avatar: portrait }], ['bad', 'ok'])).toBe(portrait);
     });

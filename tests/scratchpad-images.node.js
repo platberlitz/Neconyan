@@ -3,8 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { Jimp } from '../src/jimp.js';
-import { decodeServerImage, encodeServerImage } from '../src/media-codecs.js';
-import { fitScenarioAvatar, MAX_SCENARIO_AVATAR_LENGTH } from '../public/scripts/persona-appendix-avatar.js';
+import { decodeServerImage } from '../src/media-codecs.js';
 import { fixture, png } from './roleplay-transactions-fixture.js';
 import * as store from '../src/scratchpad/store.js';
 import { acceptScratchpadImage, prepareScratchpadAvatarReview, saveScratchpadPersonaAvatar, registerScratchpadImageJobs, readScratchpadImageAvailability, assertScratchpadAvatarWriteLocked, assertScratchpadImageRetry } from '../src/scratchpad/images.js';
@@ -22,29 +21,6 @@ import { write as writeCard } from '../src/character-card-parser.js';
 const SOURCE = { kind: 'general', key: 'general', label: 'General Scratchpad', avatar: 'Nova.png', contextMode: 'roleplay', personaId: 'User.png' };
 const fence = change => '```scratchpad-change\n' + JSON.stringify(change) + '\n```';
 let serial = 0;
-
-test('detailed portraits reduce dimensions to stay within the embedded-data limit', async () => {
-    const image = new Jimp({ width: 1024, height: 1024 });
-    let seed = 37;
-    for (let i = 0; i < image.bitmap.data.length; i += 4) {
-        for (let channel = 0; channel < 3; channel++) {
-            seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-            image.bitmap.data[i + channel] = seed >>> 24;
-        }
-        image.bitmap.data[i + 3] = 255;
-    }
-    let attempts = 0;
-    const avatar = await fitScenarioAvatar(1024, 1024, async (w, h) => {
-        attempts++;
-        const bytes = await encodeServerImage(image.clone().resize({ w, h }).bitmap, 'webp', { quality: 85 });
-        return `data:image/webp;base64,${bytes.toString('base64')}`;
-    });
-    assert.ok(attempts > 1);
-    assert.ok(avatar.length <= MAX_SCENARIO_AVATAR_LENGTH);
-    const decoded = await decodeServerImage(Buffer.from(avatar.split(',')[1], 'base64'));
-    assert.ok(decoded.width > 128 && decoded.width < 1024);
-    assert.equal(decoded.width, decoded.height);
-});
 
 function account(t, { change = {}, qig = {}, source = SOURCE, targets = [{ avatar: 'Nova.png', name: 'Nova' }], generatedImage = png } = {}) {
     const f = fixture(t, false, 'image-owner');
@@ -115,7 +91,7 @@ test('persona image refuses revoked sharing, missing capture and renamed persona
     assert.equal(a.calls.length, 0);
 });
 
-test('Scenario Note images retain their target, resize for review and refuse stale or revoked notes', async t => {
+test('Scenario Note images keep their full saved picture and refuse stale or revoked notes', async t => {
     const generatedImage = await new Jimp({ width: 1200, height: 1600, color: 0x7799aaff }).getBuffer('image/png');
     const a = account(t, { change: { target: 'persona-note-avatar', persona: 'Kris', noteId: 'winter' }, generatedImage });
     const descriptor = a.settings.power_user.persona_descriptions['User.png'];
@@ -129,11 +105,12 @@ test('Scenario Note images retain their target, resize for review and refuse sta
     assert.equal(review.kind, 'persona-note');
     assert.equal(review.noteId, 'winter');
     assert.equal(review.avatarValue, '');
-    assert.match(review.proposedAvatar, /^data:image\/webp;base64,/);
-    assert.ok(review.proposedAvatar.length < 96 * 1024);
-    const decoded = await decodeServerImage(Buffer.from(review.proposedAvatar.split(',')[1], 'base64'));
-    assert.equal(decoded.width, 768);
-    assert.equal(decoded.height, 1024);
+    assert.match(review.proposedAvatar, /^\/user\/images\/Scratchpad\/scratchpad-[a-z0-9-]+\.png$/);
+    assert.equal(review.proposedAvatar, review.proposedUrl);
+    assert.deepEqual(fs.readFileSync(path.join(a.directories.root, review.proposedAvatar.slice(1))), generatedImage);
+    const decoded = await decodeServerImage(fs.readFileSync(path.join(a.directories.root, review.proposedAvatar.slice(1))));
+    assert.equal(decoded.width, 1200);
+    assert.equal(decoded.height, 1600);
     assert.equal((await prepareScratchpadAvatarReview(a.base, a.source, a.body)).proposedAvatar, review.proposedAvatar);
     assert.equal(descriptor.appendices[0].avatar, undefined);
     assert.deepEqual(fs.readFileSync(path.join(a.directories.avatars, 'User.png')), png);

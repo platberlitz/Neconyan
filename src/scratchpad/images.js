@@ -18,8 +18,7 @@ import { captureQuickImageReferenceSources } from '../generation/quick-image-gen
 import { captureQuickImageTextSettings } from '../generation/quick-image-gen-text.js';
 import { resolveCharacterImageSettings } from '../../public/scripts/extensions/quick-image-gen/lib/character-settings.js';
 import { detectImageFormat } from '../../public/scripts/extensions/quick-image-gen/lib/image-metadata.js';
-import { decodeServerImage, encodeServerImage } from '../media-codecs.js';
-import { fitScenarioAvatar } from '../../public/scripts/persona-appendix-avatar.js';
+import { decodeServerImage } from '../media-codecs.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { sameSourceContext } from '../../public/scripts/scratchpad/source.js';
 import { ScratchpadError, assistantConnection, findSession, findMessage, normaliseSource, requireId, newScratchpadId,
@@ -312,16 +311,12 @@ export async function prepareScratchpadAvatarReview(base, source, body) {
         if (!format || !['png', 'jpeg', 'webp'].includes(format.ext)) throw fail('This generated picture cannot be used as a card avatar. Download it separately.');
         if (!IMAGE_HASH.test(image.imageHash) || generated.rawHash !== image.imageHash) throw fail('The saved avatar picture could not be verified. Generate it again.');
         return { avatar: target.avatar, name: target.name, kind: target.kind, noteId: target.noteId, avatarValue: target.avatarValue,
-            generated: generated.bytes, bytes: target.file.bytes, revision: target.file.rawHash, url: image.url, account };
+            bytes: target.file.bytes, revision: target.file.rawHash, url: image.url, account };
     });
     let proposedAvatar;
     if (captured.kind === 'persona-note') {
-        const image = Jimp.fromBitmap(await decodeServerImage(captured.generated));
-        proposedAvatar = await fitScenarioAvatar(image.bitmap.width, image.bitmap.height, async (w, h) => {
-            const resized = image.clone().resize({ w, h });
-            const bytes = await encodeServerImage(resized.bitmap, 'webp', { quality: 85 });
-            return `data:image/webp;base64,${bytes.toString('base64')}`;
-        });
+        // The generated picture is already saved at its original size, so the note points at that file.
+        proposedAvatar = captured.url.startsWith('/') ? captured.url : `/${captured.url}`;
     }
     const originalFormat = detectImageFormat(captured.bytes)?.ext;
     if (!originalFormat) throw fail('The previous avatar picture could not be preserved.');
