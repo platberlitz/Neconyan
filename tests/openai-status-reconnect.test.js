@@ -302,3 +302,39 @@ describe('Chat Completion reconnect status ownership', () => {
         expect(context.online_status).toBe('Valid');
     });
 });
+
+describe('Chat Completion reverse proxy validation', () => {
+    test.each(['https://live.invalid', ''])('confirms the proxy it is given, not the live setting (live: %j)', async live => {
+        const { context } = createHarness();
+        context.oai_settings.reverse_proxy = live;
+        context.accountStorage.getItem = () => 'false';
+        await context.validateReverseProxy(undefined, 'https://passed.invalid');
+        expect(context.renderTemplateAsync).toHaveBeenCalledWith('proxyConnectionWarning', { proxyURL: 'https://passed.invalid' });
+        expect(context.accountStorage.setItem).toHaveBeenCalledWith('Proxy_SkipConfirm_https://passed.invalid', 'true');
+        expect(context.accountStorage.setItem).toHaveBeenCalledTimes(1);
+    });
+
+    test('rejects an invalid passed proxy even when the live setting is valid', async () => {
+        const { context } = createHarness();
+        context.oai_settings.reverse_proxy = 'https://live.invalid';
+        context.online_status = 'Valid';
+        await expect(context.validateReverseProxy(undefined, 'not a url')).rejects.toThrow();
+        expect(context.toastr.error).toHaveBeenCalledTimes(1);
+        expect(context.online_status).toBe('no_connection');
+        expect(context.accountStorage.setItem).not.toHaveBeenCalled();
+    });
+
+    test('validates the live setting when no proxy is passed (status check path)', async () => {
+        const { context } = createHarness();
+        context.oai_settings.reverse_proxy = 'https://live.invalid';
+        context.accountStorage.getItem = () => 'false';
+        await context.validateReverseProxy(undefined);
+        expect(context.renderTemplateAsync).toHaveBeenCalledWith('proxyConnectionWarning', { proxyURL: 'https://live.invalid' });
+        expect(context.accountStorage.setItem).toHaveBeenCalledWith('Proxy_SkipConfirm_https://live.invalid', 'true');
+    });
+
+    test('forwards the snapshot proxy only when the settings proxy equals the global proxy', () => {
+        expect(openAiSource).toContain('const forwardProxy = settings.reverse_proxy === oai_settings.reverse_proxy;');
+        expect(openAiSource).toContain('validateReverseProxy: proxy => validateReverseProxy(undefined, forwardProxy ? proxy : undefined),');
+    });
+});
