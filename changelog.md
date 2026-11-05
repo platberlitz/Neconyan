@@ -2,6 +2,24 @@
 
 ## v1.5.0
 
+### Highlights
+- **Catelier** is a new character studio. Start a private draft, answer its questions before generating, then accept one proposed field while the rest is still being written. You can regenerate a field with optional revision notes, accept alternate greetings one at a time, and compare draft changes with your library. Nothing reaches your library until **Save to library**.
+- Catelier can start a reply with a saved **Prefill**, use a separate **Partial prefill** for Kimi K3 and K3.1 Pro, and show **Live model output** while it writes. Refusals, cancellations and cut-off replies stay out of the draft, and a server connection keeps writing after you close the page.
+- Characters gain **Purrks**: switchable traits, moods, keyword triggers or Scene AI directions. **Extract from card** finds existing traits and Orb fragments without a model request, and **Create switchable Purrks on import** adds them switched off.
+- **Thinking Reply Recovery** is a bundled Agent, off until you enable it, that writes the missing reply when a model finishes thinking and returns no text. Your other after-reply Agents and Companions then work on the recovered reply, and you can also run it by hand on an old thinking-only message.
+- Agents now have their own **Agent prefills** section. **Extra messages** accepts `[system]`, `[user]` or `[assistant]` role lines, and **Kimi K3 / K3.1 partial prefill** can seed reasoning with `<think>` or supply the start of the answer, following model overrides and fallback connections.
+- **Scratchpad** can edit every character card field, and with **Your persona and Scenario Notes** shared it can also propose persona details, Scenario Note text and reviewed persona or note avatars. Each suggestion needs **Save change** before anything is written.
+- **Jev** decision models now have saved presets in Mewmory and Pawthfinder, with memory focus and window controls in Mewmory. A saved connection profile can supply the model, so retrieval can use a smaller, cheaper connection than the reply.
+- The **Chat Style** and **Shell Style** pickers now show preview cards for every option, so you can see the message layout or miniature window before applying it. Previews follow your palette and accent, and the choice still saves as before.
+- Settings now have **Bottom Bar Buttons**, where you can hide, show and reorder the persona bubble, reasoning button, chat switcher, search field, scroll buttons and chat actions. The layout is saved for this browser and **Reset to defaults** brings everything back.
+- **Scenario Notes** can each have their own avatar. While a note is active, new Roleplay and Conversation messages use its picture, earlier messages keep theirs, and the note portrait travels with persona exports and backups.
+- **Starlight Conservatory** and **Sunken Reef** are new shell styles, with an animated night sky and an ocean scene. Both keep your chosen palette and accent, and the creatures stay behind your messages.
+- Saving a connection profile or Chat Completion preset with a reverse proxy now asks **Connecting To Proxy** once for that address. Declining stops the profile or preset from being saved or imported, and a confirmed address is not asked about again.
+- On native DeepSeek, an explicit **None** now turns thinking off for DeepSeek v4 Pro and DeepSeek Flash, so the reply length controls stop reserving room for reasoning. DeepSeek Flash offers only the effort levels it actually uses, and a request with no effort still counts as thinking.
+- When the Android app cannot start its local server, the failure page now shows the reason the server recorded, such as an unfinished identity repair, instead of saying no cause was supplied. The line is written as **Could not start Neconyan:** followed by the reason and **Saved data has been kept.**
+- Typing is smoother in the Roleplay and Conversation composers, the message editor, Author's Note, persona details, Agents searches, Prompting Lab and tag searches. Display work now waits for a short pause instead of redrawing on every key.
+- **Save memory in the background** is an optional switch under Settings > System & Device > Memory and performance, off by default and saved per device. When you switch away it releases older off-screen messages and reusable caches, then restores the chat and your reading position; drafts, edits and active replies are protected.
+
 ### Merged Staging PRs
 - PR #402 (2026-11-02) `fix(composer): contain the accent and finish the Cozy Warm border`
 - PR #403 (2026-11-02) `feat(appearance): add previews to the chat style picker`
