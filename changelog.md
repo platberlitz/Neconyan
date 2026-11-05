@@ -1860,3 +1860,4 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #467 (2026-11-05) `fix(chat): read stopping strings and prefill with the settings snapshot`
 - PR #468 (2026-11-05) `fix(reasoning): treat None as thinking off for native DeepSeek Flash`
 - PR #469 (2026-11-05) `fix(proxy): confirm a profile or preset proxy when it is saved`
+- PR #470 (2026-11-05) `docs: refresh the readme and assistant help for 1.5.0`
