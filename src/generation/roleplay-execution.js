@@ -8,7 +8,7 @@ import { getChatImageTokenCost } from '../../public/scripts/chat-prompt-tokens.j
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { registerHandler } from '../jobs/runner.js';
 import { explicitRetryRecovery, getJob, setJobResume, updateJob } from '../jobs/store.js';
-import { assertRoleplaySourceLocked, readRoleplayEntityLocked } from './roleplay-source.js';
+import { assertRoleplaySourceLocked, readRoleplayChatLocked, readRoleplayEntityLocked } from './roleplay-source.js';
 import { runChatProfile } from './service.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { admittedRoleplayChatLocator, applyRoleplayJobEffect, assertRoleplayCandidateOwner, completeRoleplayCandidateJob, readRoleplayJobResult, roleplayHidingModels } from '../roleplay-jobs.js';
@@ -200,7 +200,25 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
         // its saved prefix already, so its recovered text is the missing suffix that the existing continue merge appends.
         if (thinkingOnly?.extra.generation_outcome.reason === 'reasoning_only' && !result.reasoningUnclosed && !blocked
             && request.worldInfo?.agents) {
-            const current = assertSource();
+            // A routine chat save during an append reply must not skip recovery: the completed thinking is the
+            // only copy of the reply, and the kept-reply writer places it at the end of the saved chat. Any other
+            // source change, or a new message, still uses the old conflict path.
+            let current;
+            let sourceChanged = null;
+            try {
+                current = assertSource();
+            } catch (error) {
+                if (effect !== 'append' || error?.code !== 'ROLEPLAY_SOURCE_CHANGED' || error?.reason !== 'chat-saved') throw error;
+                try {
+                    current = withRoleplayAccount(base, account, lease =>
+                        readRoleplayChatLocked(lease, source.locator, { enrolMissing: false }));
+                } catch {
+                    throw error;
+                }
+                const savedLength = request.worldInfo.savedChatLength;
+                if (Number.isSafeInteger(savedLength) && current.records.length - 1 !== savedLength) throw error;
+                sourceChanged = error;
+            }
             // An explicit Continue, or an automatic continuation of an earlier turn, writes only the missing suffix.
             const workflowPrefix = request.workflowCandidate ? readWorkflowContinuationPrefix({ directories, job }) : null;
             const continuation = effect === 'continue' || workflowPrefix !== null;
@@ -214,7 +232,9 @@ async function executeRoleplayReplyJob(context, { generate = runChatProfile, hos
                 continuation, continuationPrefix, toolResults: formatToolResults(readRoleplayPromptContributions({ directories, job }).history),
                 macros: savedRoleplayMacroSnapshot(request.worldInfo, selectRoleplayPromptRecords(current.records, source, effect)),
                 activeLore: roleplayAgentLoreText(selection), mewmory: readAgentMewmory(), assistantName: request.characterName,
-                assertCurrent: () => { assertSource(); assertRoleplayWorldInfoCurrent(base, request.worldInfo); },
+                assertCurrent: sourceChanged
+                    ? () => { signal.throwIfAborted(); }
+                    : () => { assertSource(); assertRoleplayWorldInfoCurrent(base, request.worldInfo); },
                 generate: generateAgent, resolvePresetProfile: promptBackend, agentCache });
             if (recovery?.text) {
                 thinkingRecovery = { agentId: recovery.agentId, agentName: recovery.agentName, status: recovery.status,

@@ -6,7 +6,9 @@ import test, { after } from 'node:test';
 import { setImmediate as nextTurn } from 'node:timers/promises';
 import { fixture } from './roleplay-transactions-fixture.js';
 
-const { captureRoleplaySource } = await import('../src/generation/roleplay-source.js');
+const { captureRoleplaySource, captureRoleplayStorageSourceLocked } = await import('../src/generation/roleplay-source.js');
+const { commitSingleChatWriteLocked } = await import('../src/roleplay-lifecycle.js');
+const { roleplayNativeHost } = await import('../src/endpoints/chats.js');
 const { captureRoleplayWorldInfo } = await import('../src/generation/world-info.js');
 const { captureChatProfile } = await import('../src/generation/profiles.js');
 const { runRoleplayReplyJob } = await import('../src/generation/roleplay-execution.js');
@@ -83,6 +85,19 @@ function paid(label, response) {
             return typeof result === 'string' ? { text: result } : result;
         });
     };
+}
+
+let saveSequence = 0;
+/** An ordinary save through the protected writer, without adding or editing a message. */
+function saveChat(f) {
+    return withRoleplayAccount(f.scope, f.account, lease => {
+        const captured = captureRoleplayStorageSourceLocked(lease, f.locator);
+        const records = structuredClone(captured.saved.records);
+        records[0].chat_metadata = { ...records[0].chat_metadata, auto_save: ++saveSequence };
+        return commitSingleChatWriteLocked(lease, { operationKey: `test-save-${saveSequence}`,
+            mode: 'update', sourceKind: 'storage', source: captured.source, records,
+            backup: { deferBackup: true } }, roleplayNativeHost).writeId;
+    });
 }
 
 for (const effect of ['append', 'continue', 'swipe', 'replace']) {
@@ -214,6 +229,31 @@ test('an interruption after the missing reply is written keeps that prose and it
     assert.equal(kept.extra.reasoning, 'Plan the reply');
     assert.equal(kept.extra.inChatAgentThinkingRecovery.status, 'done');
     assert.equal(kept.extra.generation_outcome, undefined, 'a recovered reply is not marked as a thinking-only failure');
+});
+
+test('a routine chat save while a thinking-only reply is generated still writes the recovered reply automatically', async t => {
+    const f = prepared(t, [RECOVERY_AGENT, REWRITE_AGENT]);
+    const calls = [];
+    await assert.rejects(f.run({
+        generate: paid('main', async () => {
+            // The client autosaves the chat while the provider is still thinking.
+            saveChat(f);
+            return THINKING_ONLY;
+        }),
+        generateAgent: paid('agent', ({ messages }) => {
+            const body = JSON.stringify(messages);
+            calls.push(body.includes('RECOVER') ? 'recovery' : 'rewrite');
+            if (body.includes('RECOVER')) return { text: 'Recovered reply.' };
+            assert.fail('the rewrite must not run after the source changed');
+        }),
+    }), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    assert.deepEqual(calls, ['recovery']);
+    const kept = f.saved().at(-1);
+    assert.equal(kept.mes, 'Recovered reply.');
+    assert.equal(kept.extra.reasoning, 'Plan the reply');
+    assert.equal(kept.extra.inChatAgentThinkingRecovery.status, 'done');
+    assert.equal(kept.extra.generation_outcome, undefined, 'the kept reply carries the recovered prose, not the empty thinking-only notice');
+    assert.equal(readArtifact(f.directories, f.jobId, 'roleplay-thinking-recovery').text, 'Recovered reply.');
 });
 
 test('a recorded recovery failure is replayed without a second model request', async t => {
