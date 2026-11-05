@@ -2,6 +2,10 @@
 
 1.5.0
 
+**Read in your language:** [Deutsch](.github/readme-de_de.md) · [Español](.github/readme-es_es.md) · [Français](.github/readme-fr_fr.md) · [Italiano](.github/readme-it_it.md) · [Nederlands](.github/readme-nl_nl.md) · [Português](.github/readme-pt_pt.md) · [Íslenska](.github/readme-is_is.md) · [Русский](.github/readme-ru_ru.md) · [Українська](.github/readme-uk_ua.md) · [العربية](.github/readme-ar_sa.md) · [ไทย](.github/readme-th_th.md) · [Tiếng Việt](.github/readme-vi_vn.md) · [日本語](.github/readme-ja_jp.md) · [한국어](.github/readme-ko_kr.md) · [简体中文](.github/readme-zh_cn.md) · [繁體中文](.github/readme-zh_tw.md)
+
+Translations may lag behind. This English README is current.
+
 <p align="center">
   <img src="docs/readme/banner-neconyan.webp" alt="Neconyan - The Cutest LLM RP Frontend">
 </p>
@@ -169,15 +173,6 @@ Coming from SillyTavern or SillyBunny? **Back up first**, give Neconyan its own 
 I would start with the [handbook](https://platberlitz.github.io/neconyan-docs/), or ask Miso, Taro or Nori on Home. They can get things wrong, so check their advice before making a change you can't undo.
 
 For missing settings, try **Search** in the sidebar. For errors, use the [troubleshooting guide](https://platberlitz.github.io/neconyan-docs/help/troubleshooting/) or [report an issue](https://github.com/platberlitz/Neconyan/issues) with what you were doing and the error shown.
-
-<details>
-<summary><b>Other languages</b></summary>
-
-[Deutsch](.github/readme-de_de.md) · [Español](.github/readme-es_es.md) · [Français](.github/readme-fr_fr.md) · [Italiano](.github/readme-it_it.md) · [Nederlands](.github/readme-nl_nl.md) · [Português](.github/readme-pt_pt.md) · [Íslenska](.github/readme-is_is.md) · [Русский](.github/readme-ru_ru.md) · [Українська](.github/readme-uk_ua.md) · [العربية](.github/readme-ar_sa.md) · [ไทย](.github/readme-th_th.md) · [Tiếng Việt](.github/readme-vi_vn.md) · [日本語](.github/readme-ja_jp.md) · [한국어](.github/readme-ko_kr.md) · [简体中文](.github/readme-zh_cn.md) · [繁體中文](.github/readme-zh_tw.md)
-
-Translations may lag behind. This English README is current.
-
-</details>
 
 ## Credits
 
