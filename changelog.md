@@ -1855,3 +1855,4 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #462 (2026-11-04) `fix(agents): use refusal fallbacks and keep successful parallel edits`
 - PR #463 (2026-11-05) `fix(image-review): say when a change was already undone`
 - PR #464 (2026-11-05) `fix(image-input): treat a shown group image refusal as handled on send`
+- PR #465 (2026-11-05) `fix(notebooks): drop the note share that ends soonest past the limit`
