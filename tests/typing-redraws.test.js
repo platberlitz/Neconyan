@@ -204,6 +204,8 @@ describe('Typing redraws', () => {
         );
         expect(agentSearchBinding).toContain('agentListSearchRenderPending = true;');
         expect(agentSearchBinding).toContain('renderAgentListDebounced();');
+        expect(agentsSource).toContain('container.attr(\'data-rendered-search\'');
+        expect(agentsSource).toContain('wrapper.attr(\'data-rendered-search\'');
         expect(agentsSource).toContain('filterBar.find(\'.ica--template-search\').on(\'input\', renderTemplateResultsDebounced);');
         expect(tagsSource).toContain('html.find(\'#neconyan_assign_tag_search\').on(\'input\', renderTagManagerAssignChipsDebounced);');
         expect(chatsSource).toContain('renderAttachmentsDebounced();');

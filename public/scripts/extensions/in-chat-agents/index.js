@@ -3555,6 +3555,9 @@ function renderAgentList() {
     agentListRenderPending = false;
     if (!applyingAgentSetup && selectedAgentSetupId && ['saved', 'modified'].includes(document.getElementById('ica--setupStatus')?.dataset.tone)) showAgentSetupMatch();
     const container = $('#ica--agentList');
+    // Record the filter this render used, so a pending 200 ms redraw is distinguishable
+    // from the list already on screen (used by browser checks and support tooling).
+    container.attr('data-rendered-search', String($('#ica--search').val() ?? ''));
     const scrollState = captureAgentListScrollState(container[0]);
     container.empty();
     updateCancelGenerationButton();
@@ -5458,6 +5461,8 @@ async function openTemplateBrowser() {
 
     function renderTemplateResults() {
         cancelDebounce(renderTemplateResultsDebounced);
+        // Same marker as the agent list: a rendered filter, not a pending debounce.
+        wrapper.attr('data-rendered-search', String(filterBar.find('.ica--template-search').val() ?? ''));
         const searchTerm = filterBar.find('.ica--template-search').val()?.toString() ?? '';
         templateBrowserSearchValue = searchTerm;
         const filteredTemplates = filterTemplates(visibleTemplates, {
