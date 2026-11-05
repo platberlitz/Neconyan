@@ -19,7 +19,7 @@ import {
 import { FILTER_TYPES, FILTER_STATES, DEFAULT_FILTER_STATE, isFilterState, FilterHelper } from './filters.js';
 
 import { groupCandidatesFilter, groupMembersFilter, groups, selected_group, openGroupById } from './group-chats.js';
-import { download, onlyUnique, parseJsonFile, uuidv4, getSortableDelay, flashHighlight, equalsIgnoreCaseAndAccents, includesIgnoreCaseAndAccents, removeFromArray, getFreeName, debounce, findChar, escapeHtml } from './utils.js';
+import { cancelDebounce, download, onlyUnique, parseJsonFile, uuidv4, getSortableDelay, flashHighlight, equalsIgnoreCaseAndAccents, includesIgnoreCaseAndAccents, removeFromArray, getFreeName, debounce, findChar, escapeHtml } from './utils.js';
 import { power_user } from './power-user.js';
 import { SlashCommandParser } from './slash-commands/SlashCommandParser.js';
 import { SlashCommand } from './slash-commands/SlashCommand.js';
@@ -1930,7 +1930,9 @@ function wireTagManagerStaticControls(html) {
         renderTagManagerUndoBar();
     });
 
-    html.find('#neconyan_assign_tag_search').on('input', function () {
+    html.find('#neconyan_assign_tag_search').on('input', renderTagManagerAssignChipsDebounced);
+    html.find('#neconyan_assign_tag_search').on('change', function () {
+        cancelDebounce(renderTagManagerAssignChipsDebounced);
         renderTagManagerAssignChips();
     });
     html.find('.neconyan-assign-create-tag').on('click', onCreateAssignTagClick);
@@ -1944,6 +1946,7 @@ function wireTagManagerStaticControls(html) {
     html.find('#neconyan_bulk_remove_tags_btn').on('click', () => onBulkTagEntitiesClick(true));
     html.find('#neconyan_assign_clear_tags').on('click', () => {
         tagManagerState.selectedAssignTagIds.clear();
+        cancelDebounce(renderTagManagerAssignChipsDebounced);
         renderTagManagerAssignChips();
     });
 
@@ -3519,6 +3522,12 @@ const renderTagManagerTagsDebounced = debounce(() => {
 const renderTagManagerEntitiesDebounced = debounce(() => {
     if (getTagManagerRoot().length) {
         renderEntityPanel();
+    }
+}, debounce_timeout.short);
+
+const renderTagManagerAssignChipsDebounced = debounce(() => {
+    if (getTagManagerRoot().length) {
+        renderTagManagerAssignChips();
     }
 }, debounce_timeout.short);
 
