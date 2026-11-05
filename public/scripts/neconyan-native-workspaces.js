@@ -570,7 +570,10 @@ function renderLorebookLibrary(library) {
         move.value = metadata.assignments[name] || '';
         move.addEventListener('change', async () => {
             move.disabled = true;
-            await mutateLorebookFolders(current => moveNeconyanLorebook(current, name, move.value), () => renderLorebookLibrary(library));
+            const saved = await mutateLorebookFolders(current => moveNeconyanLorebook(current, name, move.value), () => renderLorebookLibrary(library));
+            // The library skips a redraw when the metadata is back where it was, so a
+            // refused move must put its own control back rather than wait for a render.
+            if (!saved) move.value = getNeconyanLorebookFolders().assignments[name] || '';
             move.disabled = false;
         });
         row.append(open, location, move);
