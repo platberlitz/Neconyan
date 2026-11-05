@@ -380,4 +380,8 @@ export const refreshedKnowledgeCases = [
     ['Can Scratchpad edit my persona and Scenario Notes?', 'scratchpad.persona-changes', 'propose persona edits to name, description and title'],
     ['What happens if I press Undo change on an image change that was already undone?', 'images.undo-history', 'This change has already been undone.'],
     ['Why did View agent changes disappear after I continued a reply that ended early?', 'agents.history', 'Continuing a reply that ended early keeps the earlier changes linked'],
+    ['Why does my scenario note avatar look blurry?', 'personas.scenario-notes', 'saved as an image file at the size you chose'],
+    ['Neconyan keeps crashing when it loads on my iPhone, how do I read the report?', 'recovery.safe-start', 'Read crash report opens the retained report before any application work begins'],
+    ['Why does the start screen turn on low-memory mode automatically on my iPhone?', 'recovery.safe-start', 'turns low-memory mode on automatically unless you set it off'],
+    ['Why did View agent changes disappear after Agents finished in a background tab?', 'agents.history', 'returning to the tab re-checks the message badges'],
 ];
