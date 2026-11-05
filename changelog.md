@@ -1878,3 +1878,4 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #486 (2026-11-05) `fix(personas): preserve scenario note avatar detail`
 - PR #487 (2026-11-05) `perf(frontend): avoid repeated redraws across workspaces`
 - PR #489 (2026-11-05) `feat(scratchpad): copy individual markdown blocks`
+- PR #490 (2026-11-05) `fix(roleplay): recover thinking-only replies after a chat save`
