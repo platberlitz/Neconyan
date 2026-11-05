@@ -212,8 +212,44 @@ function formatPrEntry(pr) {
     return `- PR #${pr.number} (${date}) \`${escapeInlineCode(pr.title)}\``;
 }
 
-function escapeRegExp(value) {
-    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function parseVersionNumbers(value) {
+    const match = /^v?(\d+(?:\.\d+)*)$/.exec(String(value).trim());
+    return match ? match[1].split('.').map(Number) : null;
+}
+
+function compareVersionNumbers(left, right) {
+    const length = Math.max(left.length, right.length);
+
+    for (let index = 0; index < length; index++) {
+        const difference = (left[index] || 0) - (right[index] || 0);
+        if (difference !== 0) {
+            return difference < 0 ? -1 : 1;
+        }
+    }
+
+    return 0;
+}
+
+function findCurrentVersionHeading(changelog, version) {
+    const headingPattern = /(^|\r?\n)## ([^\r\n]+)\r?\n/g;
+    const currentNumbers = parseVersionNumbers(version);
+
+    for (const match of changelog.matchAll(headingPattern)) {
+        const heading = match[2].trim();
+        const headingNumbers = parseVersionNumbers(heading);
+
+        // The current block sits above the newest released section. Older legacy
+        // sections further down the file can repeat a version number.
+        if (currentNumbers && headingNumbers && compareVersionNumbers(headingNumbers, currentNumbers) < 0) {
+            return null;
+        }
+
+        if (heading === version) {
+            return match;
+        }
+    }
+
+    return null;
 }
 
 function mergePrLines(existingText, prs) {
@@ -280,8 +316,7 @@ function insertMissingVersionBlock(changelog, version, prs) {
 }
 
 export function updateChangelog(changelog, version, prs) {
-    const versionHeadingPattern = new RegExp(`(^|\\r?\\n)## ${escapeRegExp(version)}\\r?\\n`);
-    const versionHeadingMatch = versionHeadingPattern.exec(changelog);
+    const versionHeadingMatch = findCurrentVersionHeading(changelog, version);
 
     if (!versionHeadingMatch) {
         return insertMissingVersionBlock(changelog, version, prs);

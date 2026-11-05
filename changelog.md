@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.4.2
+## v1.5.0
 
 ### Merged Staging PRs
 - PR #402 (2026-11-02) `fix(composer): contain the accent and finish the Cozy Warm border`
@@ -9,11 +9,94 @@
 - PR #405 (2026-11-02) `fix(roleplay): retain reasoning effort on server replies`
 - PR #406 (2026-11-02) `fix(archive): restore loading and refresh the native layout`
 - PR #407 (2026-11-02) `fix(connections): keep model selection from resetting scroll`
+- PR #408 (2026-11-02) `feat(settings): let miso help choose settings`
 - PR #409 (2026-11-02) `fix: restore rail taps and immediate composer scrolling`
 - PR #410 (2026-11-02) `feat(agents): recover replies from completed thinking`
+- PR #411 (2026-11-02) `feat(agents): move dice roller into companions`
+- PR #412 (2026-11-03) `feat(creator): add a draft character and lorebook workspace`
 - PR #413 (2026-11-02) `fix(agents): keep the page still when toggling agents`
 - PR #414 (2026-11-03) `fix(mewmory): avoid copying the search index when hiding messages`
 - PR #415 (2026-11-03) `fix(mobile): keep rail scroll lines on their rail when a sibling grows`
+- PR #416 (2026-11-03) `chore: set staging version to 1.5.0`
+- PR #417 (2026-11-03) `fix(storage): clean up empty ownership directories after failed creation`
+- PR #418 (2026-11-03) `fix(shell): align page titles and close controls`
+- PR #419 (2026-11-03) `fix(prompting-lab): keep sidebar labels readable`
+- PR #420 (2026-11-03) `fix(agents): restore thinking reply recovery`
+- PR #421 (2026-11-03) `feat(agents): redesign companion connections controls`
+- PR #422 (2026-11-03) `feat(creator): match format picker to field selector pills`
+- PR #423 (2026-11-03) `feat(catelier): ask questions before generating`
+- PR #424 (2026-11-03) `fix(agents): complete manual thinking reply recovery flow`
+- PR #425 (2026-11-03) `feat(catelier): add prefills and live model output`
+- PR #426 (2026-11-03) `fix(catelier): reject model refusals before applying replies`
+- PR #427 (2026-11-03) `feat(scratchpad): edit all character card fields`
+- PR #428 (2026-11-03) `fix(scratchpad): align session action buttons`
+- PR #429 (2026-11-03) `feat(catelier): add granular proposal review controls`
+- PR #430 (2026-11-03) `feat(agents): improve prefill settings and add Kimi partial prefills`
+- PR #431 (2026-11-03) `fix(agents): show companion tracker portraits`
+- PR #432 (2026-11-04) `feat(mewmory): add Jev decision presets and memory focus controls`
+- PR #433 (2026-11-04) `feat(shell): add animated Starlight Conservatory shell style`
+- PR #434 (2026-11-04) `feat(pathfinder): add Jev decision model presets`
+- PR #435 (2026-11-04) `fix(time-machine): use account-relative snapshot deletion paths`
+- PR #436 (2026-11-04) `ci(github): stop Miso runs cancelling other pull requests`
+- PR #437 (2026-11-04) `feat(shell-styles): calm the Starlight Conservatory sky`
+- PR #438 (2026-11-04) `fix(agents): preserve agent change history when replies end early`
+- PR #439 (2026-11-04) `feat(characters): add switchable character card Purrks and Orb fragment import`
+- PR #440 (2026-11-04) `fix(jev): fix direct connections and server retrieval logs`
+- PR #441 (2026-11-04) `fix: keep model icons next to the first timestamp only`
+- PR #442 (2026-11-04) `feat(appearance): add previews to shell style options`
+- PR #443 (2026-11-04) `feat(pathfinder): add option to disable World Info keyword activation`
+- PR #445 (2026-11-04) `docs: translate readme`
+- PR #446 (2026-11-04) `feat(appearance): add 30 esoteric accent profile seeds`
+- PR #447 (2026-11-04) `fix(creator): show the streaming live reply at the top of the section`
+- PR #448 (2026-11-04) `fix(catelier): accept plain-text coverage summaries`
+- PR #449 (2026-11-04) `test: repair current browser test failures`
+- PR #450 (2026-11-04) `fix(purrks): stop the phone bottom bar clipping the badge`
+- PR #451 (2026-11-04) `perf: reduce repeated chat rendering and library work`
+- PR #452 (2026-11-04) `test(resumable): pin eviction order, 504 resume attempts and Stop while resuming`
+- PR #453 (2026-11-04) `refactor(editor): remove duplicate empty placeholder attributes`
+- PR #454 (2026-11-04) `fix(i18n): translate the chat rename failure message`
+- PR #455 (2026-11-04) `fix(welcome): show one message when a recent chat rename fails`
+- PR #456 (2026-11-05) `fix(chat): build each request from one settings snapshot`
+- PR #457 (2026-11-05) `fix(reasoning): let an explicit None turn off DeepSeek v4 Pro reasoning`
+- PR #458 (2026-11-05) `fix(nanogpt): keep a declared reasoning effort on Claude models`
+- PR #459 (2026-11-04) `feat(catelier): keep writing on the server after closing the page`
+- PR #460 (2026-11-04) `fix(import): restore windows imports and enable zip app updates`
+- PR #461 (2026-11-04) `fix(android): prevent startup and export crashes`
+- PR #462 (2026-11-04) `fix(agents): use refusal fallbacks and keep successful parallel edits`
+- PR #463 (2026-11-05) `fix(image-review): say when a change was already undone`
+- PR #464 (2026-11-05) `fix(image-input): treat a shown group image refusal as handled on send`
+- PR #465 (2026-11-05) `fix(notebooks): drop the note share that ends soonest past the limit`
+- PR #466 (2026-11-05) `fix(localisation): prefer the most specific caption pattern`
+- PR #467 (2026-11-05) `fix(chat): read stopping strings and prefill with the settings snapshot`
+- PR #468 (2026-11-05) `fix(reasoning): treat None as thinking off for native DeepSeek Flash`
+- PR #469 (2026-11-05) `fix(proxy): confirm a profile or preset proxy when it is saved`
+- PR #470 (2026-11-05) `docs: refresh the readme and assistant help for 1.5.0`
+- PR #471 (2026-11-05) `test(chat): load the proxy helpers in the stopping-strings snapshot tests`
+- PR #472 (2026-11-05) `docs(readme): restore the decorative section banners`
+- PR #473 (2026-11-05) `fix(reasoning): treat deepseek-flash with no effort as thinking`
+- PR #474 (2026-11-05) `fix(reasoning): list none in the deepseek effort hint`
+- PR #475 (2026-11-05) `feat(settings): add and reorder bottom chat bar buttons`
+- PR #476 (2026-11-05) `docs(readme): bring the translations in line with the new README`
+- PR #477 (2026-11-05) `fix(personas): defer description redraws while typing`
+- PR #478 (2026-11-05) `fix(settings): improve style previews and keep cards rectangular`
+- PR #479 (2026-11-05) `fix(personas): align the scenario note editor header`
+- PR #480 (2026-11-05) `fix(proxy): save presets with the proxy address you approved`
+- PR #481 (2026-11-05) `fix(authors-note): defer panel redraws while typing`
+- PR #482 (2026-11-05) `feat(scratchpad): edit personas, avatars and scenario notes`
+- PR #483 (2026-11-05) `feat(personas): give scenario notes their own avatars`
+- PR #484 (2026-11-05) `fix(dialogue-colors): hide unequipped personas`
+- PR #485 (2026-11-05) `fix(proxy): wait for approval before updating a profile's proxy`
+- PR #486 (2026-11-05) `fix(personas): preserve scenario note avatar detail`
+- PR #487 (2026-11-05) `perf(frontend): avoid repeated redraws across workspaces`
+- PR #488 (2026-11-05) `feat(shell-styles): add the Sunken Reef ocean shell style`
+- PR #489 (2026-11-05) `feat(scratchpad): copy individual markdown blocks`
+- PR #490 (2026-11-05) `fix(roleplay): recover thinking-only replies after a chat save`
+- PR #491 (2026-11-05) `fix(shell-styles): keep Sunken Reef creatures behind messages`
+- PR #492 (2026-11-05) `feat(memory): add optional background memory saving`
+- PR #493 (2026-11-05) `fix(android): name the cause when the local server cannot start`
+- PR #494 (2026-11-05) `perf(typing): stop per-keystroke redraws in editors and composer`
+- PR #495 (2026-11-05) `fix(chats): rework Hush spacing and correct style descriptions`
+- PR #496 (2026-11-05) `perf(startup): avoid repeated scans and serial template loads`
 
 ## v1.4.1
 
@@ -1814,74 +1897,3 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - Cleaned up test lint references so nested test lint runs without warnings or undefined globals.
 - Kept `public/scripts/f-localStorage.js` in place for extension compatibility.
 - Bumped app-owned version strings to `1.5.0` without changing dependency versions.
-
-### Merged Staging PRs
-- PR #412 (2026-11-03) `feat(creator): add a draft character and lorebook workspace`
-- PR #416 (2026-11-03) `chore: set staging version to 1.5.0`
-- PR #418 (2026-11-03) `fix(shell): align page titles and close controls`
-- PR #419 (2026-11-03) `fix(prompting-lab): keep sidebar labels readable`
-- PR #420 (2026-11-03) `fix(agents): restore thinking reply recovery`
-- PR #421 (2026-11-03) `feat(agents): redesign companion connections controls`
-- PR #422 (2026-11-03) `feat(creator): match format picker to field selector pills`
-- PR #423 (2026-11-03) `feat(catelier): ask questions before generating`
-- PR #424 (2026-11-03) `fix(agents): complete manual thinking reply recovery flow`
-- PR #431 (2026-11-03) `fix(agents): show companion tracker portraits`
-- PR #432 (2026-11-04) `feat(mewmory): add Jev decision presets and memory focus controls`
-- PR #433 (2026-11-04) `feat(shell): add animated Starlight Conservatory shell style`
-- PR #434 (2026-11-04) `feat(pathfinder): add Jev decision model presets`
-- PR #435 (2026-11-04) `fix(time-machine): use account-relative snapshot deletion paths`
-- PR #436 (2026-11-04) `ci(github): stop Miso runs cancelling other pull requests`
-- PR #437 (2026-11-04) `feat(shell-styles): calm the Starlight Conservatory sky`
-- PR #438 (2026-11-04) `fix(agents): preserve agent change history when replies end early`
-- PR #439 (2026-11-04) `feat(characters): add switchable character card Purrks and Orb fragment import`
-- PR #440 (2026-11-04) `fix(jev): fix direct connections and server retrieval logs`
-- PR #445 (2026-11-04) `docs: translate readme`
-- PR #446 (2026-11-04) `feat(appearance): add 30 esoteric accent profile seeds`
-- PR #447 (2026-11-04) `fix(creator): show the streaming live reply at the top of the section`
-- PR #448 (2026-11-04) `fix(catelier): accept plain-text coverage summaries`
-- PR #449 (2026-11-04) `test: repair current browser test failures`
-- PR #450 (2026-11-04) `fix(purrks): stop the phone bottom bar clipping the badge`
-- PR #451 (2026-11-04) `perf: reduce repeated chat rendering and library work`
-- PR #452 (2026-11-04) `test(resumable): pin eviction order, 504 resume attempts and Stop while resuming`
-- PR #453 (2026-11-04) `refactor(editor): remove duplicate empty placeholder attributes`
-- PR #454 (2026-11-04) `fix(i18n): translate the chat rename failure message`
-- PR #455 (2026-11-04) `fix(welcome): show one message when a recent chat rename fails`
-- PR #456 (2026-11-05) `fix(chat): build each request from one settings snapshot`
-- PR #457 (2026-11-05) `fix(reasoning): let an explicit None turn off DeepSeek v4 Pro reasoning`
-- PR #458 (2026-11-05) `fix(nanogpt): keep a declared reasoning effort on Claude models`
-- PR #459 (2026-11-04) `feat(catelier): keep writing on the server after closing the page`
-- PR #460 (2026-11-04) `fix(import): restore windows imports and enable zip app updates`
-- PR #461 (2026-11-04) `fix(android): prevent startup and export crashes`
-- PR #462 (2026-11-04) `fix(agents): use refusal fallbacks and keep successful parallel edits`
-- PR #463 (2026-11-05) `fix(image-review): say when a change was already undone`
-- PR #464 (2026-11-05) `fix(image-input): treat a shown group image refusal as handled on send`
-- PR #465 (2026-11-05) `fix(notebooks): drop the note share that ends soonest past the limit`
-- PR #466 (2026-11-05) `fix(localisation): prefer the most specific caption pattern`
-- PR #467 (2026-11-05) `fix(chat): read stopping strings and prefill with the settings snapshot`
-- PR #468 (2026-11-05) `fix(reasoning): treat None as thinking off for native DeepSeek Flash`
-- PR #469 (2026-11-05) `fix(proxy): confirm a profile or preset proxy when it is saved`
-- PR #470 (2026-11-05) `docs: refresh the readme and assistant help for 1.5.0`
-- PR #471 (2026-11-05) `test(chat): load the proxy helpers in the stopping-strings snapshot tests`
-- PR #472 (2026-11-05) `docs(readme): restore the decorative section banners`
-- PR #473 (2026-11-05) `fix(reasoning): treat deepseek-flash with no effort as thinking`
-- PR #474 (2026-11-05) `fix(reasoning): list none in the deepseek effort hint`
-- PR #475 (2026-11-05) `feat(settings): add and reorder bottom chat bar buttons`
-- PR #476 (2026-11-05) `docs(readme): bring the translations in line with the new README`
-- PR #477 (2026-11-05) `fix(personas): defer description redraws while typing`
-- PR #478 (2026-11-05) `fix(settings): improve style previews and keep cards rectangular`
-- PR #479 (2026-11-05) `fix(personas): align the scenario note editor header`
-- PR #480 (2026-11-05) `fix(proxy): save presets with the proxy address you approved`
-- PR #481 (2026-11-05) `fix(authors-note): defer panel redraws while typing`
-- PR #482 (2026-11-05) `feat(scratchpad): edit personas, avatars and scenario notes`
-- PR #484 (2026-11-05) `fix(dialogue-colors): hide unequipped personas`
-- PR #485 (2026-11-05) `fix(proxy): wait for approval before updating a profile's proxy`
-- PR #486 (2026-11-05) `fix(personas): preserve scenario note avatar detail`
-- PR #487 (2026-11-05) `perf(frontend): avoid repeated redraws across workspaces`
-- PR #489 (2026-11-05) `feat(scratchpad): copy individual markdown blocks`
-- PR #490 (2026-11-05) `fix(roleplay): recover thinking-only replies after a chat save`
-- PR #491 (2026-11-05) `fix(shell-styles): keep Sunken Reef creatures behind messages`
-- PR #492 (2026-11-05) `feat(memory): add optional background memory saving`
-- PR #493 (2026-11-05) `fix(android): name the cause when the local server cannot start`
-- PR #494 (2026-11-05) `perf(typing): stop per-keystroke redraws in editors and composer`
-- PR #495 (2026-11-05) `fix(chats): rework Hush spacing and correct style descriptions`
-- PR #496 (2026-11-05) `perf(startup): avoid repeated scans and serial template loads`
