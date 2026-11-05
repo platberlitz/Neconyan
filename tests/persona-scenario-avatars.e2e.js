@@ -1,4 +1,4 @@
-/* global window */
+/* global window, document */
 import { expect, test } from '@playwright/test';
 import { isolateSettingsSaves, openPersonaEditor, openQuietChatForSmoke } from './chat-scroll-regression-helpers.js';
 
@@ -45,9 +45,21 @@ for (const phone of [true, false]) {
             await expect(card.locator('img')).toHaveCount(0);
 
             await edit.click();
-            await upload.setInputFiles('../public/img/user-default.png');
+            const imageData = await page.evaluate(() => {
+                const canvas = document.createElement('canvas');
+                canvas.width = 1200;
+                canvas.height = 1600;
+                const context = canvas.getContext('2d');
+                context.fillStyle = '#7799aa';
+                context.fillRect(0, 0, canvas.width, canvas.height);
+                return canvas.toDataURL('image/png').split(',')[1];
+            });
+            const buffer = Buffer.from(imageData, 'base64');
+            await upload.setInputFiles({ name: 'large-portrait.png', mimeType: 'image/png', buffer });
             await expect(preview).toHaveAttribute('src', /^data:image\//);
+            await expect.poll(() => preview.evaluate(image => [image.naturalWidth, image.naturalHeight])).toEqual([768, 1024]);
             const portrait = await preview.getAttribute('src');
+            expect(portrait.length).toBeLessThanOrEqual(96 * 1024);
             // A refresh normalises the model while the editor is still open.
             await page.evaluate(async () => (await import('/scripts/personas.js')).getOrCreatePersonaDescriptor());
             await save.click();

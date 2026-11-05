@@ -39,7 +39,6 @@ import {
     ensureImageFormatSupported,
     flashHighlight,
     getBase64Async,
-    createThumbnail,
     getCharIndex,
     getCharaFilename,
     isFalseBoolean,
@@ -73,7 +72,7 @@ import { SlashCommandEnumValue, enumTypes } from './slash-commands/SlashCommandE
 import { SlashCommandParser } from './slash-commands/SlashCommandParser.js';
 import { isFirefox } from './browser-fixes.js';
 import { isMobile } from './RossAscends-mods.js';
-import { getScenarioAvatar, normalizeScenarioAvatar } from './persona-appendix-avatar.js';
+import { createScenarioAvatar, getScenarioAvatar, normalizeScenarioAvatar } from './persona-appendix-avatar.js';
 import { slashCommandReturnHelper } from './slash-commands/SlashCommandReturnHelper.js';
 
 /**
@@ -1425,8 +1424,7 @@ async function showPersonaAppendixEditor(appendixId = '') {
         refreshAvatar();
         try {
             if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) throw new Error('Unsupported image');
-            const thumbnail = await createThumbnail(await getBase64Async(file), 128, 128, 'image/webp');
-            const avatar = normalizeScenarioAvatar(thumbnail);
+            const avatar = await createScenarioAvatar(await getBase64Async(file));
             if (!avatar) throw new Error('Invalid Scenario Note avatar');
             stagedAvatar = avatar;
         } catch {
