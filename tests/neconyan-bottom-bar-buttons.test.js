@@ -86,7 +86,7 @@ describe('bottom chat bar layout model', () => {
 
 describe('bottom chat bar layout wiring in neconyan-tabs.js', () => {
     test('the layout module is imported and the storage key is registered self-contained', () => {
-        expect(tabsSource).toContain("from './neconyan-bottom-bar-layout.js'");
+        expect(tabsSource).toContain('from \'./neconyan-bottom-bar-layout.js\'');
         // Slicing suites (topbar-label-persistence) evaluate the NN_STORAGE_KEYS
         // block in a bare VM, so it must not reference imports; the literal has
         // to match the module's exported key.
@@ -114,15 +114,15 @@ describe('bottom chat bar layout wiring in neconyan-tabs.js', () => {
     });
 
     test('the settings group is created for both viewports and mounted in both outlets and fallback lists', () => {
-        expect(tabsSource).toContain("createBottomChatBarButtonSettingsGroup('desktop')");
-        expect(tabsSource).toContain("createBottomChatBarButtonSettingsGroup('mobile')");
+        expect(tabsSource).toContain('createBottomChatBarButtonSettingsGroup(\'desktop\')');
+        expect(tabsSource).toContain('createBottomChatBarButtonSettingsGroup(\'mobile\')');
         expect(tabsSource.split('desktopBottomChatBarButtonSettingsGroup,').length - 1).toBe(2);
         expect(tabsSource.split('mobileBottomChatBarButtonSettingsGroup,').length - 1).toBe(2);
     });
 
     test('hiding every action hides the actions row and its collapse toggle together', () => {
         const applySource = getTabsFunctionSource('applyBottomChatBarButtonLayout');
-        expect(applySource).toContain("state.secondaryRow.classList.toggle('displayNone', !hasVisibleActions)");
-        expect(applySource).toContain("state.collapseToggleButton.classList.toggle('displayNone', !hasVisibleActions)");
+        expect(applySource).toContain('state.secondaryRow.classList.toggle(\'displayNone\', !hasVisibleActions)');
+        expect(applySource).toContain('state.collapseToggleButton.classList.toggle(\'displayNone\', !hasVisibleActions)');
     });
 });
