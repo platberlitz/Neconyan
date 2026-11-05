@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual, TextDecoder } from 'node:util';
 import sanitize from 'sanitize-filename';
+import { registerMemoryReclaimer } from '../memory-pressure.js';
 import { acquireChatFileLock } from '../chat-file-lock.js';
 import { parseChatJsonl } from '../chat-recovery.js';
 import { read as readCharacterCard } from '../character-card-parser.js';
@@ -38,6 +39,10 @@ function chatReadToken(held) {
 const decodedCharacters = new Map();
 const DECODED_CHARACTER_BYTES = 32 * 1024 * 1024;
 let decodedCharacterBytes = 0;
+registerMemoryReclaimer(() => {
+    decodedCharacters.clear();
+    decodedCharacterBytes = 0;
+});
 
 function decodedCharacter(filename, file, id) {
     const cached = decodedCharacters.get(filename);

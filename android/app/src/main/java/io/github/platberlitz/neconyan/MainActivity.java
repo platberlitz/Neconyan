@@ -839,6 +839,7 @@ public final class MainActivity extends Activity {
         super.onResume();
         ActivityBreadcrumbs.foreground(true);
         resumed = true;
+        notifyMemoryLifecycle("foreground");
         presentPendingReport();
         if (serverSafe && !safeNoticeShown) showSafeNotice();
         if (apkUpdater != null) apkUpdater.onResume();
@@ -852,6 +853,25 @@ public final class MainActivity extends Activity {
         resumed = false;
         main.removeCallbacks(watchdog);
         super.onPause();
+    }
+    @Override public void onStop() {
+        notifyMemoryLifecycle("background");
+        super.onStop();
+    }
+    @Override public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        // UI_HIDDEN is a lifecycle transition, not evidence of memory pressure.
+        if (level == android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) notifyMemoryLifecycle("background");
+        else notifyMemoryLifecycle("pressure");
+    }
+    @Override public void onLowMemory() {
+        super.onLowMemory();
+        notifyMemoryLifecycle("pressure");
+    }
+    private void notifyMemoryLifecycle(String state) {
+        if (web == null || failed || web.getUrl() == null || !local(Uri.parse(web.getUrl()))) return;
+        web.evaluateJavascript("window.dispatchEvent(new CustomEvent('neconyan:memory-lifecycle',{detail:{state:"
+            + JSONObject.quote(state) + "}}))", null);
     }
     private void addAction(String label, View.OnClickListener listener) {
         Button button = new Button(this);

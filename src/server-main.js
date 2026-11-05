@@ -1,4 +1,5 @@
 import './server-log-buffer.js';
+import { startMemoryPressureMonitor } from './memory-pressure.js';
 
 // native node modules
 import fs from 'node:fs';
@@ -809,6 +810,7 @@ async function postSetupTasks(result) {
     console.log('\n' + getSeparator(plainGoToLog.length) + '\n');
 
     setupLogLevel();
+    startMemoryPressureMonitor();
     serverEvents.emit(EVENT_NAMES.SERVER_STARTED, { url: browserLaunchUrl });
     notifyServerStartup(getLoadedServerPlugins());
     // Safe start follows a crash: skip background maintenance and pause work
