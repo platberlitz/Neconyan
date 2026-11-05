@@ -17,6 +17,7 @@ for (const width of [393, 1280]) {
                 await openQuietChatForSmoke(page, { selectCharacter: false });
                 await page.route('**/api/chats/save', route => storage.save(route));
                 await page.evaluate(async tone => {
+                    window.NeconyanShell.applyTheme('calico');
                     document.documentElement.dataset.neconyanPalette = 'calico';
                     document.documentElement.dataset.neconyanCalicoTone = tone;
                     const context = window.SillyTavern.getContext();
