@@ -1,4 +1,4 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
@@ -96,5 +96,18 @@ describe('agent shortcuts', () => {
         values['#ica--timingFilter'] = 'pre';
         tab = 'companion';
         expect(runtime.getFilteredAgentList(agents).map(agent => agent.id)).toEqual([]);
+    });
+
+    test('bulk selection settles a pending search redraw before reading the filter', () => {
+        const runtime = vm.createContext({ renderAgentList: jest.fn() });
+        vm.runInContext('let agentListSearchRenderPending = true;', runtime);
+        vm.runInContext(extract(index, 'flushPendingAgentListSearchRender'), runtime);
+        runtime.renderAgentList.mockImplementation(() => vm.runInContext('agentListSearchRenderPending = false;', runtime));
+
+        runtime.flushPendingAgentListSearchRender();
+        expect(runtime.renderAgentList).toHaveBeenCalledTimes(1);
+
+        runtime.flushPendingAgentListSearchRender();
+        expect(runtime.renderAgentList).toHaveBeenCalledTimes(1);
     });
 });

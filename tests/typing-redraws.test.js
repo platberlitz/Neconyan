@@ -195,7 +195,12 @@ describe('Typing redraws', () => {
     });
 
     test('every search surface binds its input handler to the deferred render', () => {
-        expect(agentsSource).toContain('$(\'#ica--search\').on(\'input\', renderAgentListDebounced);');
+        const agentSearchBinding = agentsSource.slice(
+            agentsSource.indexOf('$(\'#ica--search\').on(\'input\''),
+            agentsSource.indexOf('$(\'#ica--search\').on(\'change\''),
+        );
+        expect(agentSearchBinding).toContain('agentListSearchRenderPending = true;');
+        expect(agentSearchBinding).toContain('renderAgentListDebounced();');
         expect(agentsSource).toContain('filterBar.find(\'.ica--template-search\').on(\'input\', renderTemplateResultsDebounced);');
         expect(tagsSource).toContain('html.find(\'#neconyan_assign_tag_search\').on(\'input\', renderTagManagerAssignChipsDebounced);');
         expect(chatsSource).toContain('renderAttachmentsDebounced();');
@@ -205,5 +210,20 @@ describe('Typing redraws', () => {
         expect(rossSource).toContain('pendingSendTextAreaFit');
         expect(scriptSource).toContain('pendingEditFitFrame');
         expect(conversationSource).toContain('pendingInputHeightFrame');
+    });
+
+    test('pending agent search renders settle on blur and before a bulk selection', () => {
+        const changeBinding = agentsSource.slice(
+            agentsSource.indexOf('$(\'#ica--search\').on(\'change\''),
+            agentsSource.indexOf('$(\'#ica--timingFilter\').on(\'change\''),
+        );
+        expect(changeBinding).toContain('flushPendingAgentListSearchRender();');
+        expect(changeBinding).not.toContain('renderAgentList();');
+
+        const bulkSelectionBinding = agentsSource.slice(
+            agentsSource.indexOf('$(\'#ica--bulkSelectAll\').on(\'click\''),
+            agentsSource.indexOf('$(\'#ica--bulkClear\').on(\'click\''),
+        );
+        expect(bulkSelectionBinding).toContain('flushPendingAgentListSearchRender();');
     });
 });

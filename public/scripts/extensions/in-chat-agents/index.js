@@ -143,6 +143,7 @@ import { TARO_GUIDE_MAX_NEW_PICKS, chooseInstalledCopy, copiesForTemplate, getTa
 
 const MODULE_NAME = 'in-chat-agents';
 const renderAgentListDebounced = debounce(renderAgentList, debounce_timeout.short);
+let agentListSearchRenderPending = false;
 
 let collapsedCategories = new Set();
 let lastManualRunFeedback = null;
@@ -3542,8 +3543,15 @@ function syncAgentSelection() {
     updateBulkBar();
 }
 
+// Search redraws wait 200 ms. Bulk selection reads the live filter, so a pending redraw
+// must render first; otherwise it selects rows the user cannot see and then replaces them.
+function flushPendingAgentListSearchRender() {
+    if (agentListSearchRenderPending) renderAgentList();
+}
+
 function renderAgentList() {
     cancelDebounce(renderAgentListDebounced);
+    agentListSearchRenderPending = false;
     agentListRenderPending = false;
     if (!applyingAgentSetup && selectedAgentSetupId && ['saved', 'modified'].includes(document.getElementById('ica--setupStatus')?.dataset.tone)) showAgentSetupMatch();
     const container = $('#ica--agentList');
@@ -7193,6 +7201,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
     });
     $('#ica--bulkCancel').on('click', exitSelectMode);
     $('#ica--bulkSelectAll').on('click', () => {
+        flushPendingAgentListSearchRender();
         for (const agent of getFilteredAgentList()) {
             selectedAgentIds.add(agent.id);
         }
@@ -7328,10 +7337,12 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         renderAgentList();
         document.querySelector(`#ica--agentTabs .ica--agent-tab[data-tab="${CSS.escape(nextTabId)}"]`)?.focus();
     });
-    $('#ica--search').on('input', renderAgentListDebounced);
-    $('#ica--search').on('change', function () {
-        cancelDebounce(renderAgentListDebounced);
-        renderAgentList();
+    $('#ica--search').on('input', () => {
+        agentListSearchRenderPending = true;
+        renderAgentListDebounced();
+    });
+    $('#ica--search').on('change', () => {
+        flushPendingAgentListSearchRender();
     });
     $('#ica--timingFilter').on('change', renderAgentList);
 
