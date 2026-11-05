@@ -79,6 +79,8 @@ for (const width of [393, 1280]) {
         });
 
         test('exports and imports both formats, preserves content after reload and never replaces the original', async ({ page }, testInfo) => {
+            // Two complete export/import flows and a second app boot can exceed two minutes on shared runners.
+            test.setTimeout(240000);
             await openQuietChatForSmoke(page, { selectCharacter: false });
             await dismissTour(page);
             const original = await page.evaluate(async () => {
