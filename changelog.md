@@ -1863,3 +1863,4 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #470 (2026-11-05) `docs: refresh the readme and assistant help for 1.5.0`
 - PR #471 (2026-11-05) `test(chat): load the proxy helpers in the stopping-strings snapshot tests`
 - PR #472 (2026-11-05) `docs(readme): restore the decorative section banners`
+- PR #473 (2026-11-05) `fix(reasoning): treat deepseek-flash with no effort as thinking`
