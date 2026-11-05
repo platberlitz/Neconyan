@@ -1848,6 +1848,7 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #455 (2026-11-04) `fix(welcome): show one message when a recent chat rename fails`
 - PR #456 (2026-11-05) `fix(chat): build each request from one settings snapshot`
 - PR #457 (2026-11-05) `fix(reasoning): let an explicit None turn off DeepSeek v4 Pro reasoning`
+- PR #458 (2026-11-05) `fix(nanogpt): keep a declared reasoning effort on Claude models`
 - PR #459 (2026-11-04) `feat(catelier): keep writing on the server after closing the page`
 - PR #460 (2026-11-04) `fix(import): restore windows imports and enable zip app updates`
 - PR #461 (2026-11-04) `fix(android): prevent startup and export crashes`
