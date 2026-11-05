@@ -167,6 +167,13 @@ function sourcePersonaDescription(source) {
     return descriptor ? descriptor.description ?? '' : power_user.persona_description;
 }
 
+export function sourcePersona(source) {
+    if (!source || source.kind === 'notebook') return null;
+    const avatar = source.kind === 'roleplay' ? user_avatar : source.personaId;
+    const name = power_user.personas?.[avatar];
+    return avatar && name ? { avatar, name } : null;
+}
+
 /** An empty name means the chat uses the active connection rather than a saved profile. */
 export function sourceConnectionProfile(source) {
     return source?.kind === 'conversation'
@@ -529,6 +536,13 @@ export async function buildContext({ source, settings, pendingText = '', session
         const raw = String(description ?? '').trim();
         const persona = substituteSource(raw);
         if (persona) sections.push(`## ${names.user} (the user's persona)\n${persona}`);
+        const target = sourcePersona(source);
+        if (target) {
+            const descriptor = power_user.persona_descriptions?.[target.avatar];
+            sections.push(`## Editable persona fields (base values, exactly as saved)\n${JSON.stringify({ name: target.name, description: descriptor?.description || '', title: descriptor?.title || '' })}\nPersona edits replace only these base fields; chat-specific additions stay separate.`);
+            const notes = Array.isArray(descriptor?.appendices) ? descriptor.appendices.map(({ id, name, description, avatar }) => ({ id, name, description, hasAvatar: Boolean(avatar) })) : [];
+            if (notes.length) sections.push(`## Saved Persona Scenario Notes (exact values; activation is not shared)\n${JSON.stringify(notes)}\nEdit a note by its exact id. Changes affect every chat using that note; keep its activation unchanged.`);
+        }
     }
 
     if (include.card && people.length) {
@@ -617,6 +631,7 @@ export async function buildContext({ source, settings, pendingText = '', session
         leftOut,
         targets: include.card ? people.map(item => ({ avatar: item.avatar, name: item.name })) : [],
         capabilities: {
+            ...(include.persona && sourcePersona(source) ? { persona: sourcePersona(source) } : {}),
             lore: loreBooks.length > 0,
             character: people.length > 0 && (!general || include.card === true),
             chat: source.kind === 'roleplay',

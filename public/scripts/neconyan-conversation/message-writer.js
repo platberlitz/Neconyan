@@ -3,6 +3,7 @@ import { incrementUnreadCount, isConversationActiveThread, notifyNewConversation
 import { scheduleInterfaceRefresh, schedulePalsRailRender } from './render-scheduler.js';
 import { conversationState } from './state.js';
 import { appendConversationThreadMessage, markConversationSeen } from './thread-store.js';
+import { getConversationScenarioAvatar } from './personas.js';
 
 export async function appendConversationMessage(messageText, { name = getCurrentCharName(), role = 'character', extra = {}, branchId = '', groupId = undefined, personaId = getConversationPersonaId() } = {}, avatar = getCurrentCharAvatar()) {
     if (!avatar) {
@@ -10,11 +11,12 @@ export async function appendConversationMessage(messageText, { name = getCurrent
     }
 
     const resolvedGroupId = groupId !== undefined ? groupId : getConversationGroupIdForAvatar(avatar);
+    const scenarioAvatar = role === 'user' ? getConversationScenarioAvatar(personaId, { avatar, groupId: resolvedGroupId }) : '';
     const message = appendConversationThreadMessage(avatar, {
         role,
         name,
         mes: messageText,
-        extra,
+        extra: scenarioAvatar ? { ...extra, scenario_avatar: scenarioAvatar } : extra,
     }, { branchId, create: !branchId, groupId: resolvedGroupId, personaId });
     if (!message) {
         return null;

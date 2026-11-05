@@ -312,6 +312,9 @@ function normaliseMessage(input, { allowInternalKeys = false } = {}) {
                 && typeof target.name === 'string' && target.name.trim() && target.name.length <= 200).slice(0, 200).map(target => ({ avatar: target.avatar, name: target.name }));
             if (input.imageNames && typeof input.imageNames.user === 'string') message.imageNames = { user: input.imageNames.user.slice(0, 100), character: boundedString(input.imageNames.character, 200) };
             if (typeof input.imagePersonaId === 'string') message.imagePersonaId = input.imagePersonaId.slice(0, 256);
+            if (input.sharedPersona && typeof input.sharedPersona.avatar === 'string' && typeof input.sharedPersona.name === 'string') {
+                message.sharedPersona = { avatar: input.sharedPersona.avatar.slice(0, 255), name: input.sharedPersona.name.slice(0, 200) };
+            }
         }
         if (isPlainObject(input.notebookProposals)) {
             const refs = Object.fromEntries(Object.entries(input.notebookProposals).filter(([key, value]) => /^\d{1,3}$/.test(key)
@@ -655,7 +658,7 @@ export function createSession(bucket, input = {}) {
     if (Array.isArray(input.messages)) {
         const contextSource = Object.fromEntries(Object.entries(normaliseSource(bucket.source)).filter(([key]) => key !== 'scope'));
         session.messages = input.messages.map(item => normaliseMessage({ ...item, id: undefined, state: 'done', jobId: undefined, proposals: undefined, notebookProposals: undefined,
-            sharedAvatar: undefined, images: undefined, targets: undefined, contextSource }))
+            sharedAvatar: undefined, sharedPersona: undefined, images: undefined, targets: undefined, contextSource }))
             .filter(Boolean).slice(-MAX_MESSAGES);
     }
     bucket.sessions.unshift(session);

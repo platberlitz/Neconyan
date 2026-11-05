@@ -72,6 +72,7 @@ import { SlashCommandEnumValue, enumTypes } from './slash-commands/SlashCommandE
 import { SlashCommandParser } from './slash-commands/SlashCommandParser.js';
 import { isFirefox } from './browser-fixes.js';
 import { isMobile } from './RossAscends-mods.js';
+import { createScenarioAvatar, getScenarioAvatar, normalizeScenarioAvatar } from './persona-appendix-avatar.js';
 import { slashCommandReturnHelper } from './slash-commands/SlashCommandReturnHelper.js';
 
 /**
@@ -236,6 +237,7 @@ function normalizePersonaAppendices(descriptor) {
             id,
             name,
             description: String(appendix?.description ?? ''),
+            ...(normalizeScenarioAvatar(appendix?.avatar) ? { avatar: appendix.avatar } : {}),
         };
     });
 
@@ -277,6 +279,10 @@ function getActivePersonaAppendixIds(avatarId = user_avatar) {
 function getActivePersonaAppendices(avatarId = user_avatar) {
     const activeIds = new Set(getActivePersonaAppendixIds(avatarId));
     return getPersonaAppendices(avatarId).filter(appendix => activeIds.has(appendix.id));
+}
+
+export function getPersonaScenarioAvatar(avatarId = user_avatar) {
+    return getScenarioAvatar(getPersonaAppendices(avatarId), getActivePersonaAppendixIds(avatarId));
 }
 
 function composePersonaDescription(avatarId = user_avatar) {
@@ -468,7 +474,7 @@ function reloadPersonaAvatar(avatarId, cacheBust = false) {
     }
 }
 
-async function refreshPersonaAvatar(avatarId) {
+export async function refreshPersonaAvatar(avatarId) {
     const sources = getPersonaAvatarSources(avatarId);
     await Promise.all([
         fetch(sources.desktopThumbnail, { method: 'GET', cache: 'reload' }),
@@ -1256,8 +1262,8 @@ function renderPersonaAppendices() {
             checkbox.checked = activeIds.has(appendix.id);
             checkbox.setAttribute('aria-label', appendix.name);
             const name = existing.querySelector('.persona-appendix-name');
-            if (name.textContent !== appendix.name) {
-                name.textContent = appendix.name;
+            if (name.textContent !== appendix.name || name.querySelector('img')?.getAttribute('src') !== (appendix.avatar || undefined)) {
+                renderPersonaAppendixName(name, appendix);
             }
             const description = existing.querySelector('.persona-appendix-description');
             const text = appendix.description?.trim() || t`[No Scenario Note text]`;
@@ -1290,7 +1296,7 @@ function renderPersonaAppendices() {
 
         const name = document.createElement('summary');
         name.className = 'persona-appendix-name';
-        name.textContent = appendix.name;
+        renderPersonaAppendixName(name, appendix);
 
         const description = document.createElement('p');
         description.className = 'persona-appendix-description text_muted';
@@ -1318,6 +1324,17 @@ function renderPersonaAppendices() {
     }
 }
 
+function renderPersonaAppendixName(element, appendix) {
+    element.textContent = appendix.name;
+    if (appendix.avatar) {
+        const image = document.createElement('img');
+        image.className = 'persona-appendix-avatar';
+        image.src = appendix.avatar;
+        image.alt = '';
+        element.prepend(image);
+    }
+}
+
 async function persistPersonaAppendices(avatarId = user_avatar) {
     saveSettingsDebounced();
     syncPersonaDescriptionFromDescriptor(avatarId);
@@ -1327,9 +1344,12 @@ async function persistPersonaAppendices(avatarId = user_avatar) {
 }
 
 async function showPersonaAppendixEditor(appendixId = '') {
-    const descriptor = getOrCreatePersonaDescriptor();
-    const appendices = getPersonaAppendices(user_avatar);
+    const avatarId = user_avatar;
+    getOrCreatePersonaDescriptor();
+    const appendices = getPersonaAppendices(avatarId);
     const appendix = appendices.find(item => item.id === appendixId);
+    let stagedAvatar = appendix?.avatar || '';
+    let loadingAvatar = false;
     const popup = new Popup(
         appendix ? t`Edit Scenario Note` : t`Add Scenario Note`,
         POPUP_TYPE.CONFIRM,
@@ -1338,6 +1358,15 @@ async function showPersonaAppendixEditor(appendixId = '') {
             okButton: t`Save`,
             cancelButton: t`Cancel`,
             wide: true,
+            onClosing: popup => {
+                if (popup.result !== POPUP_RESULT.AFFIRMATIVE) return true;
+                if (loadingAvatar) return false;
+                if (!popup.dlg.querySelector('#persona_appendix_name_input').value.trim()) {
+                    toastr.warning(t`Scenario Note label is required.`, t`Scenario Notes`);
+                    return false;
+                }
+                return true;
+            },
             customInputs: [
                 {
                     id: 'persona_appendix_name_input',
@@ -1357,6 +1386,61 @@ async function showPersonaAppendixEditor(appendixId = '') {
             ],
         },
     );
+
+    const avatarControls = document.createElement('div');
+    avatarControls.className = 'persona-appendix-avatar-editor';
+    const preview = document.createElement('img');
+    preview.className = 'persona-appendix-avatar-preview';
+    preview.alt = t`Scenario Note avatar preview`;
+    const upload = document.createElement('input');
+    upload.type = 'file';
+    upload.accept = 'image/png,image/jpeg,image/webp,image/gif';
+    upload.hidden = true;
+    upload.id = 'persona_appendix_avatar_input';
+    const choose = document.createElement('button');
+    choose.type = 'button';
+    choose.className = 'menu_button';
+    choose.textContent = t`Choose avatar`;
+    choose.addEventListener('click', () => upload.click());
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'menu_button';
+    remove.textContent = t`Remove avatar`;
+    const refreshAvatar = () => {
+        preview.src = stagedAvatar || getUserAvatar(avatarId);
+        remove.hidden = !stagedAvatar;
+        choose.disabled = loadingAvatar;
+        remove.disabled = loadingAvatar;
+        popup.okButton.disabled = loadingAvatar;
+    };
+    remove.addEventListener('click', () => {
+        stagedAvatar = '';
+        refreshAvatar();
+    });
+    upload.addEventListener('change', async () => {
+        const file = upload.files?.[0];
+        if (!file || loadingAvatar) return;
+        loadingAvatar = true;
+        refreshAvatar();
+        try {
+            if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) throw new Error('Unsupported image');
+            const avatar = await createScenarioAvatar(await getBase64Async(file));
+            if (!avatar) throw new Error('Invalid Scenario Note avatar');
+            stagedAvatar = avatar;
+        } catch {
+            toastr.error(t`Choose a PNG, JPEG, WebP or GIF image.`, t`Scenario Notes`);
+        } finally {
+            loadingAvatar = false;
+            upload.value = '';
+            refreshAvatar();
+        }
+    });
+    const hint = document.createElement('p');
+    hint.className = 'text_muted persona-appendix-avatar-hint';
+    hint.textContent = t`Used for new messages while this note is active. If several active notes have avatars, the first in the list wins.`;
+    avatarControls.append(preview, choose, remove, upload, hint);
+    popup.inputControls.prepend(avatarControls);
+    refreshAvatar();
 
     // Popup custom inputs are built without an expand affordance, so wire the shared
     // .editor_maximize handler to the note body the way the Persona Description field does.
@@ -1390,18 +1474,27 @@ async function showPersonaAppendixEditor(appendixId = '') {
         return;
     }
 
-    if (appendix) {
-        appendix.name = name;
-        appendix.description = description;
+    // Normalisation replaces note objects while the editor is open. Resolve the
+    // original persona and note again before committing the staged changes.
+    const descriptor = power_user.persona_descriptions[avatarId];
+    if (!descriptor) return;
+    const current = getPersonaAppendices(avatarId).find(item => item.id === appendixId);
+    if (appendix && !current) return;
+    if (current) {
+        current.name = name;
+        current.description = description;
+        if (stagedAvatar) current.avatar = stagedAvatar;
+        else delete current.avatar;
     } else {
         descriptor.appendices.push({
             id: createPersonaAppendixId(name),
             name,
             description,
+            ...(stagedAvatar ? { avatar: stagedAvatar } : {}),
         });
     }
 
-    await persistPersonaAppendices();
+    await persistPersonaAppendices(avatarId);
 }
 
 function getSuggestedImportedAppendixName(sourceAvatarId) {
@@ -2092,7 +2185,30 @@ async function deletePersonaAvatar(avatarId) {
     return deletePersona(avatarId);
 }
 
-async function onPersonaDescriptionInput() {
+// Keep typing on the data-only path. PERSONA_UPDATED refreshes Scenario Notes,
+// the masthead and extension controls, so publish once after a typing burst.
+// Retain every edited avatar when the user switches personas before the timer fires.
+const pendingPersonaDescriptionUpdates = new Map();
+const refreshPersonaDescriptionAfterInput = debounce(async () => {
+    const updates = Array.from(pendingPersonaDescriptionUpdates);
+    pendingPersonaDescriptionUpdates.clear();
+
+    for (const [avatarId, description] of updates) {
+        const baseDescription = power_user.persona_descriptions[avatarId]?.description ?? description;
+        $(`.avatar-container[data-avatar-id="${avatarId}"] .ch_description`)
+            .text(baseDescription || $('#user_avatar_block').attr('no_desc_text'))
+            .toggleClass('text_muted', !baseDescription);
+
+        if (power_user.personas[avatarId]) {
+            await eventSource.emit(event_types.PERSONA_UPDATED, avatarId);
+        } else if (avatarId === user_avatar) {
+            $('#persona_effective_description_preview').text(power_user.persona_description || t`[No description]`);
+            countPersonaDescriptionTokens();
+        }
+    }
+}, debounce_timeout.standard);
+
+function onPersonaDescriptionInput() {
     const baseDescription = String($('#persona_description').val());
 
     if (power_user.personas[user_avatar]) {
@@ -2113,22 +2229,14 @@ async function onPersonaDescriptionInput() {
         }
 
         object.description = baseDescription;
-        syncPersonaDescriptionFromDescriptor();
+        power_user.persona_description = composePersonaDescription();
     } else {
         power_user.persona_description = baseDescription;
     }
 
-    countPersonaDescriptionTokens();
-    renderPersonaAppendices();
-
-    $(`.avatar-container[data-avatar-id="${user_avatar}"] .ch_description`)
-        .text(baseDescription || $('#user_avatar_block').attr('no_desc_text'))
-        .toggleClass('text_muted', !baseDescription);
     saveSettingsDebounced();
-
-    if (power_user.personas[user_avatar]) {
-        await eventSource.emit(event_types.PERSONA_UPDATED, user_avatar);
-    }
+    pendingPersonaDescriptionUpdates.set(user_avatar, baseDescription);
+    refreshPersonaDescriptionAfterInput();
 }
 
 async function onPersonaDescriptionDepthValueInput() {

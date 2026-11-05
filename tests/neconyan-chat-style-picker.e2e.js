@@ -117,3 +117,64 @@ test('preview labels and selected mark retain contrast with light and dark accen
         }
     }
 });
+
+for (const width of [393, 1280]) {
+    test(`style preview cards keep their shape across shells at ${width}px`, async ({ browser }) => {
+        test.setTimeout(480000);
+        const context = await browser.newContext({ viewport: { width, height: width < 768 ? 852 : 900 }, hasTouch: width < 768, serviceWorkers: 'block', reducedMotion: 'reduce' });
+        const page = await context.newPage();
+        await prepare(page);
+        try {
+            await page.goto('/', { waitUntil: 'domcontentloaded' });
+            await openPicker(page);
+            const shellDrawer = page.locator('#sb-shell-style-drawer');
+            if (!await shellDrawer.locator('.sb-theme-option-row').isVisible()) {
+                await shellDrawer.locator(':scope > .inline-drawer-header').click();
+            }
+            const options = shellDrawer.locator('[data-sb-theme-option]');
+            const themes = await options.evaluateAll(buttons => buttons.map(button => button.dataset.sbThemeOption));
+            expect(themes).toHaveLength(11);
+            for (const theme of themes) {
+                const option = shellDrawer.locator(`[data-sb-theme-option="${theme}"]`);
+                await option.click();
+                await expect(option).toHaveAttribute('aria-pressed', 'true');
+                await expect(page.locator('html')).toHaveAttribute('data-sb-theme', theme);
+                if (theme !== 'calico') {
+                    await page.waitForFunction(id => Boolean(document.querySelector(`link[data-sb-shell-style="${id}"]`)?.sheet), theme);
+                }
+                for (const compact of ['false', 'true']) {
+                    await page.evaluate(value => { document.documentElement.dataset.sbCompactMode = value; }, compact);
+                    const geometry = await page.evaluate(() => {
+                        const cards = [...document.querySelectorAll('.nn-chat-style-card, .nn-ui-theme-card, #sb-shell-style-drawer .sb-theme-option')];
+                        const grid = document.querySelector('#sb-shell-style-drawer .sb-theme-option-row');
+                        return {
+                            radii: cards.map(button => parseFloat(getComputedStyle(button).borderTopLeftRadius)),
+                            overflow: grid.scrollWidth > grid.clientWidth,
+                            columns: getComputedStyle(grid).gridTemplateColumns.split(' ').length,
+                            previews: [...grid.querySelectorAll('.sb-shell-style-preview')].map(preview => {
+                                const body = preview.querySelector('.sb-shell-preview-body');
+                                const dock = preview.querySelector('.sb-shell-preview-dock').getBoundingClientRect();
+                                const rows = [...preview.querySelectorAll('.sb-shell-preview-message')];
+                                return {
+                                    hidden: preview.getAttribute('aria-hidden'),
+                                    rows: rows.length,
+                                    avatars: preview.querySelectorAll('.sb-shell-preview-avatar').length,
+                                    fits: body.scrollHeight <= body.clientHeight,
+                                    separated: rows.at(-1)?.getBoundingClientRect().bottom <= dock.top,
+                                };
+                            }),
+                        };
+                    });
+                    expect(geometry.radii.every(radius => radius <= 14), `${theme}, compact ${compact}: card corners`).toBe(true);
+                    expect(geometry.overflow, `${theme}: horizontal overflow`).toBe(false);
+                    expect(geometry.columns).toBeGreaterThanOrEqual(2);
+                    for (const preview of geometry.previews) {
+                        expect(preview).toEqual({ hidden: 'true', rows: 2, avatars: 2, fits: true, separated: true });
+                    }
+                }
+            }
+        } finally {
+            await context.close();
+        }
+    });
+}

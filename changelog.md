@@ -1863,3 +1863,17 @@ Group Chats still work for normal group RP: you can pick a group, write as the u
 - PR #470 (2026-11-05) `docs: refresh the readme and assistant help for 1.5.0`
 - PR #471 (2026-11-05) `test(chat): load the proxy helpers in the stopping-strings snapshot tests`
 - PR #472 (2026-11-05) `docs(readme): restore the decorative section banners`
+- PR #473 (2026-11-05) `fix(reasoning): treat deepseek-flash with no effort as thinking`
+- PR #474 (2026-11-05) `fix(reasoning): list none in the deepseek effort hint`
+- PR #475 (2026-11-05) `feat(settings): add and reorder bottom chat bar buttons`
+- PR #476 (2026-11-05) `docs(readme): bring the translations in line with the new README`
+- PR #477 (2026-11-05) `fix(personas): defer description redraws while typing`
+- PR #478 (2026-11-05) `fix(settings): improve style previews and keep cards rectangular`
+- PR #479 (2026-11-05) `fix(personas): align the scenario note editor header`
+- PR #480 (2026-11-05) `fix(proxy): save presets with the proxy address you approved`
+- PR #481 (2026-11-05) `fix(authors-note): defer panel redraws while typing`
+- PR #482 (2026-11-05) `feat(scratchpad): edit personas, avatars and scenario notes`
+- PR #484 (2026-11-05) `fix(dialogue-colors): hide unequipped personas`
+- PR #485 (2026-11-05) `fix(proxy): wait for approval before updating a profile's proxy`
+- PR #486 (2026-11-05) `fix(personas): preserve scenario note avatar detail`
+- PR #487 (2026-11-05) `perf(frontend): avoid repeated redraws across workspaces`

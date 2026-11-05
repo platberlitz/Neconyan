@@ -3,6 +3,7 @@ import { debounce_timeout } from '../constants.js';
 import { loadStylesheetAsync } from '../dynamic-styles.js';
 import { isIOSWebKitPlatform } from '../mobile-send-button.js';
 import { getUserAvatar } from '../personas.js';
+import { normalizeScenarioAvatar } from '../persona-appendix-avatar.js';
 import { loadMovingUIState, power_user } from '../power-user.js';
 import { dragElement, shouldSendOnEnter } from '../RossAscends-mods.js';
 import { debounce } from '../utils.js';
@@ -282,7 +283,7 @@ function getConversationFullAvatarUrl(file, type) {
     }
 
     if (type === 'persona') {
-        return getUserAvatar(file);
+        return normalizeScenarioAvatar(file) || getUserAvatar(file);
     }
 
     return `/characters/${encodeURIComponent(file)}`;

@@ -42,7 +42,7 @@
     color: var(--neco-ink);
     background: var(--neco-raised);
     border: 1px solid var(--neco-border);
-    border-radius: var(--sb-radius-button, 12px);
+    border-radius: 8px;
     box-shadow: none;
     text-shadow: none;
     cursor: pointer;
@@ -398,6 +398,7 @@
     min-width: 0;
     padding: 9px;
     text-align: start;
+    border-radius: 8px;
 }
 
 #nn-ui-theme-gallery .nn-ui-theme-palette {
@@ -461,12 +462,25 @@
 
 /* Shell style miniatures: one isolated sample window per Shell Style option. They share the
    active palette tokens without loading the real shell sheets, and they carry no motion. */
+#sb-shell-style-drawer .sb-theme-option-row {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+    gap: 8px;
+}
+
+#sb-shell-style-drawer .sb-theme-option {
+    min-width: 0;
+    padding: 8px;
+    border-radius: 8px;
+    text-align: start;
+    align-items: stretch;
+}
+
 #sb-shell-style-drawer .sb-shell-style-preview {
     position: relative;
     display: flex;
     flex-direction: column;
     width: 100%;
-    height: 64px;
+    height: 96px;
     flex: none;
     isolation: isolate;
     border: 1px solid var(--neco-border);
@@ -476,7 +490,7 @@
 }
 
 :root[data-sb-compact-mode='true'] #sb-shell-style-drawer .sb-shell-style-preview {
-    height: 52px;
+    height: 88px;
 }
 
 #sb-shell-style-drawer .sb-shell-preview-bar {
@@ -525,10 +539,39 @@
 }
 
 #sb-shell-style-drawer .sb-shell-preview-line {
+    display: block;
     width: 100%;
     height: 2px;
     border-radius: 1px;
     background: color-mix(in srgb, var(--neco-ink) 38%, transparent);
+}
+
+#sb-shell-style-drawer .sb-shell-preview-message {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 17px;
+    flex: none;
+}
+
+#sb-shell-style-drawer .sb-shell-preview-avatar {
+    width: 17px;
+    height: 17px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--neco-raised) url('../img/ai4.png') center / cover;
+}
+
+#sb-shell-style-drawer .sb-shell-preview-message:nth-child(2) .sb-shell-preview-avatar {
+    background-image: url('../img/user-default.png');
+}
+
+#sb-shell-style-drawer .sb-shell-preview-content {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
 }
 
 #sb-shell-style-drawer .sb-shell-preview-line.is-heading {
@@ -543,6 +586,7 @@
 #sb-shell-style-drawer .sb-shell-preview-dock {
     width: 100%;
     height: 9px;
+    flex: none;
     margin-top: auto;
     border: 1px solid var(--neco-border);
     border-radius: 5px;

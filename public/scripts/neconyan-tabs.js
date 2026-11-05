@@ -49,6 +49,11 @@ import { isSimpleModeEnabled, setSimpleModeEnabled, SIMPLE_MODE_EVENT } from './
 import { getSleeperCoat, getSleeperCoatPair, setSleeperCoat, setSleeperCoatPair, SLEEPER_COAT_CHANGE_EVENT, SLEEPER_COAT_GROUPS, SLEEPER_COAT_PAIRS, SLEEPER_COATS, sleeperCoatArt } from './neconyan-sleeper-coats.js';
 import { t, translate } from './i18n.js';
 import {
+    BOTTOM_CHAT_BAR_BUTTON_LABELS,
+    readBottomChatBarLayout,
+    writeBottomChatBarLayout,
+} from './neconyan-bottom-bar-layout.js';
+import {
     MODEL_FILTER_BOTH_VIEWPORTS_SELECTORS,
     MODEL_FILTER_PHONE_ONLY_SELECTORS,
     computeVisibleModelOptions,
@@ -122,6 +127,7 @@ const NN_STORAGE_KEYS = Object.freeze({
     frontendIcon: 'sb-frontend-icon',
     characterEditorSubTab: 'sb-character-editor-sub-tab',
     bottomChatBarVisible: 'sb-bottom-chat-bar-visible',
+    bottomChatBarButtons: 'sb-bottom-chat-bar-buttons',
     paperTextureEnabled: 'sb-paper-texture-enabled',
     paperTextureOpacity: 'sb-paper-texture-opacity',
 });
@@ -1521,6 +1527,7 @@ const nnState = {
         refreshPending: false,
         refreshToken: 0,
         bindingRetryTimer: 0,
+        renderFrame: 0,
         boundEventSource: null,
         windowBindingsAttached: false,
     },
@@ -1620,6 +1627,13 @@ const nnState = {
         chatListRequest: 0,
         chatPicker: null,
         personaBubble: null,
+        reasoningButton: null,
+        navCluster: null,
+        scratchpadButton: null,
+        purrksButton: null,
+        newChatButton: null,
+        renameButton: null,
+        deleteButton: null,
         searchField: null,
         searchInput: null,
         searchStatus: null,
@@ -6413,14 +6427,24 @@ function updateTopBarBrand() {
     const isActiveChat = hasActiveTopBarChat(context);
 
     bindTopBarTitleCycle(title);
-    title.textContent = label;
-    title.title = label;
-    title.setAttribute('aria-label', isTopbarLabelClickCycleEnabled()
+    if (title.textContent !== label) title.textContent = label;
+    if (title.title !== label) title.title = label;
+    const accessibleLabel = isTopbarLabelClickCycleEnabled()
         ? t`${label}. Tap to switch the top bar label.`
-        : t`${label}. Tap to return to the chat.`);
+        : t`${label}. Tap to return to the chat.`;
+    if (title.getAttribute('aria-label') !== accessibleLabel) title.setAttribute('aria-label', accessibleLabel);
     title.classList.toggle('is-chat', isActiveChat);
-    brand.dataset.brandState = isActiveChat ? 'chat' : 'idle';
+    const brandState = isActiveChat ? 'chat' : 'idle';
+    if (brand.dataset.brandState !== brandState) brand.dataset.brandState = brandState;
     queueTopbarBrandFit();
+}
+
+function queueTopBarBrandUpdate() {
+    if (nnState.topbarLabel.renderFrame) return;
+    nnState.topbarLabel.renderFrame = window.requestAnimationFrame(() => {
+        nnState.topbarLabel.renderFrame = 0;
+        updateTopBarBrand();
+    });
 }
 
 function scheduleTopBarBrandBindingRetry(delay = 240) {
@@ -6436,7 +6460,7 @@ function bindTopBarBrandWindowEvents() {
     }
 
     const refreshWithContext = () => {
-        window.requestAnimationFrame(updateTopBarBrand);
+        queueTopBarBrandUpdate();
         scheduleTopbarContextRefresh(0);
         bindTopBarBrand();
     };
@@ -6451,7 +6475,7 @@ function bindTopBarBrandWindowEvents() {
     document.addEventListener('input', event => {
         const targetId = event.target instanceof HTMLElement ? event.target.id : '';
         if (targetId === 'messageModelNameShortEnabled' || targetId.endsWith('_model_id')) {
-            window.requestAnimationFrame(updateTopBarBrand);
+            queueTopBarBrandUpdate();
         }
     });
     window.addEventListener('pageshow', requestForegroundRefresh, { passive: true });
@@ -6472,7 +6496,7 @@ function bindTopBarBrand() {
     bindTopBarBrandWindowEvents();
 
     if (!eventSource || !eventTypes) {
-        window.requestAnimationFrame(updateTopBarBrand);
+        queueTopBarBrandUpdate();
         scheduleTopbarContextRefresh(0);
         scheduleTopBarBrandBindingRetry();
         return;
@@ -6481,12 +6505,12 @@ function bindTopBarBrand() {
     window.clearTimeout(nnState.topbarLabel.bindingRetryTimer);
 
     if (nnState.topbarLabel.boundEventSource === eventSource) {
-        window.requestAnimationFrame(updateTopBarBrand);
+        queueTopBarBrandUpdate();
         scheduleTopbarContextRefresh(0);
         return;
     }
 
-    const refresh = () => window.requestAnimationFrame(updateTopBarBrand);
+    const refresh = queueTopBarBrandUpdate;
     const refreshWithContext = () => {
         refresh();
         scheduleTopbarContextRefresh();
@@ -16116,6 +16140,151 @@ function createBottomChatBarSettingsGroup(mode = 'mobile') {
     return group;
 }
 
+const bottomChatBarButtonSettingsRefreshers = new Set();
+
+function refreshBottomChatBarButtonSettingsLists() {
+    for (const refresh of [...bottomChatBarButtonSettingsRefreshers]) {
+        if (typeof refresh !== 'function') {
+            bottomChatBarButtonSettingsRefreshers.delete(refresh);
+            continue;
+        }
+
+        refresh();
+    }
+}
+
+function updateBottomChatBarButtonLayout(mutate) {
+    const layout = readBottomChatBarLayout(globalThis.localStorage);
+    mutate(layout);
+    writeBottomChatBarLayout(globalThis.localStorage, layout);
+    applyBottomChatBarButtonLayout();
+    refreshBottomChatBarButtonSettingsLists();
+}
+
+function resetBottomChatBarButtonLayout() {
+    try {
+        globalThis.localStorage.removeItem(NN_STORAGE_KEYS.bottomChatBarButtons);
+    } catch {
+        // A blocked or full store cannot stop the reset below from applying.
+    }
+
+    applyBottomChatBarButtonLayout();
+    refreshBottomChatBarButtonSettingsLists();
+}
+
+function renderBottomChatBarButtonSettingsList(list) {
+    list.replaceChildren();
+    const layout = readBottomChatBarLayout(globalThis.localStorage);
+
+    for (const [zone, zoneTitle] of [['main', 'Main bar'], ['actions', 'Chat actions']]) {
+        list.append(createElement('strong', { text: zoneTitle }));
+
+        const order = layout.order[zone];
+        order.forEach((id, index) => {
+            const labelText = BOTTOM_CHAT_BAR_BUTTON_LABELS[id] || id;
+            const row = createElement('div', {
+                className: 'sb-mobile-quick-action-result',
+                attrs: { 'data-sb-bottom-bar-button-row': id },
+            });
+            const visibleLabel = createElement('label', {
+                className: 'sb-compact-mode-option sb-bottom-bar-buttons-visible',
+            });
+            const visibleCheckbox = createElement('input', {
+                className: 'sb-compact-mode-checkbox',
+                attrs: { type: 'checkbox', 'data-sb-bottom-bar-button-toggle': id },
+            });
+            visibleCheckbox.checked = !layout.hidden.includes(id);
+            visibleCheckbox.addEventListener('change', () => {
+                updateBottomChatBarButtonLayout(current => {
+                    current.hidden = current.hidden.includes(id)
+                        ? current.hidden.filter(entry => entry !== id)
+                        : [...current.hidden, id];
+                });
+            });
+            visibleLabel.append(visibleCheckbox, createElement('span', { className: 'sb-compact-mode-copy', text: labelText }));
+
+            const controls = createElement('span', { className: 'sb-mobile-quick-action-controls' });
+            const moveUp = createElement('button', {
+                className: 'menu_button sb-bottom-bar-buttons-move',
+                attrs: { type: 'button', 'aria-label': `Move ${labelText} up`, 'data-sb-bottom-bar-button-move': 'up' },
+            });
+            moveUp.innerHTML = '<i class="fa-solid fa-arrow-up"></i>';
+            moveUp.disabled = index === 0;
+            moveUp.addEventListener('click', () => {
+                updateBottomChatBarButtonLayout(current => {
+                    const entries = current.order[zone];
+                    const position = entries.indexOf(id);
+                    if (position > 0) {
+                        entries.splice(position, 1);
+                        entries.splice(position - 1, 0, id);
+                    }
+                });
+            });
+
+            const moveDown = createElement('button', {
+                className: 'menu_button sb-bottom-bar-buttons-move',
+                attrs: { type: 'button', 'aria-label': `Move ${labelText} down`, 'data-sb-bottom-bar-button-move': 'down' },
+            });
+            moveDown.innerHTML = '<i class="fa-solid fa-arrow-down"></i>';
+            moveDown.disabled = index === order.length - 1;
+            moveDown.addEventListener('click', () => {
+                updateBottomChatBarButtonLayout(current => {
+                    const entries = current.order[zone];
+                    const position = entries.indexOf(id);
+                    if (position >= 0 && position < entries.length - 1) {
+                        entries.splice(position, 1);
+                        entries.splice(position + 1, 0, id);
+                    }
+                });
+            });
+
+            controls.append(moveUp, moveDown);
+            row.append(visibleLabel, controls);
+            list.append(row);
+        });
+    }
+}
+
+function createBottomChatBarButtonSettingsGroup(mode = 'mobile') {
+    const group = createElement('section', {
+        className: 'sb-theme-slider-group sb-mobile-quick-actions-group sb-bottom-bar-buttons-group',
+    });
+    const header = createElement('div', { className: 'sb-mobile-quick-action-header' });
+    const heading = createElement('div', { className: 'sb-mobile-quick-action-heading' });
+    heading.append(
+        createElement('strong', { text: 'Bottom Bar Buttons' }),
+        createElement('p', {
+            className: 'sb-theme-slider-caption',
+            text: 'Choose which controls the bottom chat bar shows and in what order. Untick a button to hide it, use the arrows to move it within its row, and Reset to defaults to start over.',
+        }),
+    );
+    const resetButton = createElement('button', {
+        id: `sb-${mode}-bottom-bar-buttons-reset`,
+        className: 'menu_button sb-mobile-quick-action-reset',
+        text: 'Reset to defaults',
+        attrs: { type: 'button' },
+    });
+    resetButton.addEventListener('click', resetBottomChatBarButtonLayout);
+    header.append(heading, resetButton);
+
+    const list = createElement('div', {
+        id: `sb-${mode}-bottom-bar-buttons-list`,
+        className: 'sb-mobile-quick-action-list',
+    });
+    const refresh = () => {
+        if (list.isConnected) {
+            renderBottomChatBarButtonSettingsList(list);
+        } else {
+            bottomChatBarButtonSettingsRefreshers.delete(refresh);
+        }
+    };
+    bottomChatBarButtonSettingsRefreshers.add(refresh);
+    renderBottomChatBarButtonSettingsList(list);
+
+    group.append(header, list);
+    return group;
+}
+
 function createRailOrderSettingsGroup(mode) {
     const inputId = `sb-${mode}-rail-reorder-input`;
     const group = createElement('section', { className: 'sb-theme-slider-group sb-compact-mode-group' });
@@ -16580,6 +16749,8 @@ function injectThemePicker() {
     const mobileBottomChatBarSettingsGroup = createBottomChatBarSettingsGroup('mobile');
     const desktopRailOrderSettingsGroup = createRailOrderSettingsGroup('desktop');
     const mobileRailOrderSettingsGroup = createRailOrderSettingsGroup('mobile');
+    const desktopBottomChatBarButtonSettingsGroup = createBottomChatBarButtonSettingsGroup('desktop');
+    const mobileBottomChatBarButtonSettingsGroup = createBottomChatBarButtonSettingsGroup('mobile');
     const paperTextureSettingsGroup = createPaperTextureSettingsGroup();
     const frontendIconSettingsGroup = createFrontendIconSettingsGroup();
     const shortcutSettingsGroup = createShortcutSettingsGroup();
@@ -16702,6 +16873,7 @@ function injectThemePicker() {
             desktopCompactModeSettingsGroup,
             desktopBottomChatBarSettingsGroup,
             desktopRailOrderSettingsGroup,
+            desktopBottomChatBarButtonSettingsGroup,
             desktopQuickActionSettingsGroup,
         );
     }
@@ -16714,6 +16886,7 @@ function injectThemePicker() {
             mobileCompactModeSettingsGroup,
             mobileBottomChatBarSettingsGroup,
             mobileRailOrderSettingsGroup,
+            mobileBottomChatBarButtonSettingsGroup,
             paperTextureSettingsGroup,
             mobileQuickActionSettingsGroup,
         );
@@ -16729,6 +16902,7 @@ function injectThemePicker() {
             desktopCompactModeSettingsGroup,
             desktopBottomChatBarSettingsGroup,
             desktopRailOrderSettingsGroup,
+            desktopBottomChatBarButtonSettingsGroup,
             desktopQuickActionSettingsGroup,
         );
     }
@@ -16741,6 +16915,7 @@ function injectThemePicker() {
             mobileCompactModeSettingsGroup,
             mobileBottomChatBarSettingsGroup,
             mobileRailOrderSettingsGroup,
+            mobileBottomChatBarButtonSettingsGroup,
             mobileQuickActionSettingsGroup,
         );
     }
@@ -20248,6 +20423,166 @@ function installModelFilterInputs() {
     }
 }
 
+const BOTTOM_CHAT_BAR_UNITS = [
+    {
+        id: 'persona',
+        zone: 'main',
+        elements: () => [getBottomChatBarState().personaBubble],
+        onHide: () => closePersonaPicker(),
+    },
+    {
+        id: 'reasoning',
+        zone: 'main',
+        elements: () => [getBottomChatBarState().reasoningButton],
+    },
+    {
+        id: 'chats',
+        zone: 'main',
+        elements: () => [getBottomChatBarState().chatSelect, getBottomChatBarState().chatPickerButton],
+    },
+    {
+        id: 'search',
+        zone: 'main',
+        elements: () => [getBottomChatBarState().searchField],
+        onHide: () => {
+            if (getBottomChatBarState().searchOpen) {
+                setBottomChatSearchOpen(false);
+            }
+        },
+    },
+    {
+        id: 'scroll',
+        zone: 'main',
+        elements: () => [getBottomChatBarState().navCluster],
+    },
+    {
+        id: 'collapse',
+        zone: 'main',
+        elements: () => [getBottomChatBarState().collapseToggleButton],
+    },
+    {
+        id: 'regenerate',
+        zone: 'actions',
+        elements: () => [getBottomChatBarState().regenerateButton],
+    },
+    {
+        id: 'scratchpad',
+        zone: 'actions',
+        elements: () => [getBottomChatBarState().scratchpadButton],
+    },
+    {
+        id: 'purrks',
+        zone: 'actions',
+        elements: () => [getBottomChatBarState().purrksButton],
+    },
+    {
+        id: 'files',
+        zone: 'actions',
+        elements: () => [getBottomChatBarState().managerButton],
+    },
+    {
+        id: 'newChat',
+        zone: 'actions',
+        elements: () => [getBottomChatBarState().newChatButton],
+    },
+    {
+        id: 'massDelete',
+        zone: 'actions',
+        elements: () => [getBottomChatBarState().massDeleteButton],
+    },
+    {
+        id: 'autoName',
+        zone: 'actions',
+        elements: () => [getBottomChatBarState().autoNameButton],
+    },
+    {
+        id: 'rename',
+        zone: 'actions',
+        elements: () => [getBottomChatBarState().renameButton],
+    },
+    {
+        id: 'searchToggle',
+        zone: 'actions',
+        elements: () => [getBottomChatBarState().searchToggleButton],
+    },
+    {
+        id: 'hideBar',
+        zone: 'actions',
+        elements: () => [getBottomChatBarState().hideButton],
+    },
+    {
+        id: 'deleteChat',
+        zone: 'actions',
+        elements: () => [getBottomChatBarState().deleteButton],
+    },
+];
+
+function collectBottomChatBarUnitElements(unit) {
+    return unit.elements().filter(node => node instanceof HTMLElement);
+}
+
+function applyBottomChatBarButtonLayout() {
+    const container = document.getElementById('sb-bottom-chat-bar');
+    if (!(container instanceof HTMLElement)) {
+        return;
+    }
+
+    const state = getBottomChatBarState();
+    const layout = readBottomChatBarLayout(globalThis.localStorage);
+    const visibleIds = new Set();
+    const unitById = new Map();
+
+    for (const unit of BOTTOM_CHAT_BAR_UNITS) {
+        unitById.set(unit.id, unit);
+    }
+
+    const applyZone = (zone, host) => {
+        const orderedUnits = layout.order[zone]
+            .map(id => unitById.get(id))
+            .filter(unit => unit && unit.zone === zone);
+
+        for (const unit of orderedUnits) {
+            const nodes = collectBottomChatBarUnitElements(unit);
+            const isHidden = layout.hidden.includes(unit.id);
+
+            if (host instanceof HTMLElement) {
+                for (const node of nodes) {
+                    node.classList.toggle('displayNone', isHidden);
+                    host.append(node);
+                }
+            }
+
+            if (isHidden) {
+                unit.onHide?.();
+                continue;
+            }
+
+            visibleIds.add(unit.id);
+        }
+    };
+
+    applyZone('main', container);
+    if (state.secondaryRow instanceof HTMLElement) {
+        const managementCluster = state.secondaryRow.querySelector('.sb-bottom-chat-management-actions');
+        applyZone('actions', managementCluster instanceof HTMLElement ? managementCluster : state.secondaryRow);
+        container.append(state.secondaryRow);
+    }
+
+    // An empty actions row looks broken, so the row and its collapse toggle
+    // hide themselves whenever every chat action is hidden.
+    const hasVisibleActions = [...unitById.values()]
+        .filter(unit => unit.zone === 'actions')
+        .some(unit => visibleIds.has(unit.id));
+
+    if (state.secondaryRow instanceof HTMLElement) {
+        state.secondaryRow.classList.toggle('displayNone', !hasVisibleActions);
+    }
+
+    if (state.collapseToggleButton instanceof HTMLElement) {
+        state.collapseToggleButton.classList.toggle('displayNone', !hasVisibleActions);
+    }
+}
+
 function buildBottomChatBar() {
     const container = document.getElementById('sb-bottom-chat-bar');
     if (!(container instanceof HTMLElement)) {
@@ -20361,6 +20696,12 @@ function buildBottomChatBar() {
         chatPicker,
         personaBubble,
         reasoningButton,
+        navCluster,
+        scratchpadButton: scratchpadBtn,
+        purrksButton: purrksBtn,
+        newChatButton: newBtn,
+        renameButton: renameBtn,
+        deleteButton: deleteBtn,
         searchField: search.field,
         searchInput: search.input,
         searchStatus: search.status,
@@ -20375,6 +20716,7 @@ function buildBottomChatBar() {
         autoNameButton: autoNameBtn,
         hideButton: hideBtn,
     });
+    applyBottomChatBarButtonLayout();
     syncBottomChatBarSecondaryState();
     syncBottomChatBarSearchState();
     setBottomChatBarVisible(nnState.bottomChatBar.visible, { persist: false });

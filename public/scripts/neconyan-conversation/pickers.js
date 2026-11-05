@@ -25,6 +25,7 @@ import { getCharacterForAvatar } from './media.js';
 import {
     getActiveConversationPersonaAppendixIds,
     getConversationPersonaAppendices,
+    getConversationScenarioAvatar,
     getPersonaOptions,
     getUserPersonaStatus,
     getUserStatus,
@@ -144,7 +145,7 @@ export function updateUserFooter() {
     if (avatarEl instanceof HTMLImageElement) {
         const activeAvatar = typeof user_avatar === 'string' ? user_avatar : null;
         avatarEl.decoding = 'async';
-        avatarEl.src = activeAvatar ? getThumbnailUrlForViewport('persona', activeAvatar) : (default_user_avatar || '');
+        avatarEl.src = getConversationScenarioAvatar() || (activeAvatar ? getThumbnailUrlForViewport('persona', activeAvatar) : (default_user_avatar || ''));
         avatarEl.alt = personaName;
     }
     if (nameEl instanceof HTMLElement) {
@@ -235,6 +236,15 @@ export function renderConversationPersonaPicker(picker) {
                 const noteName = document.createElement('span');
                 noteName.textContent = appendix.name;
                 label.append(checkbox, noteName);
+                if (appendix.avatar) {
+                    const portrait = document.createElement('img');
+                    portrait.src = appendix.avatar;
+                    portrait.alt = '';
+                    portrait.width = 28;
+                    portrait.height = 28;
+                    portrait.className = 'persona-appendix-avatar';
+                    label.insertBefore(portrait, noteName);
+                }
                 notes.appendChild(label);
             }
 

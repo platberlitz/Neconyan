@@ -11,7 +11,7 @@ const descriptor = {
     title: 'Night traveller',
     position: 4, depth: 7, role: 2,
     lorebook: 'The places I know',
-    appendices: [{ id: 'arrival', name: 'Arrival', description: 'It is raining.' }],
+    appendices: [{ id: 'arrival', name: 'Arrival', description: 'It is raining.', avatar: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=' }],
     activeAppendices: { 'private-chat': ['arrival'] },
     connections: [{ type: 'character', id: 'private-character' }],
     default_persona: 'private-avatar.png',

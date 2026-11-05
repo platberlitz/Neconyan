@@ -23,6 +23,7 @@ import {
 } from './context.js';
 import { updateUserFooter } from './pickers.js';
 import { composePersonaDescription, conversationPersonaAppendices } from './persona-description.js';
+import { getScenarioAvatar } from '../persona-appendix-avatar.js';
 
 export function getAvailabilityCopy(status) {
     return AVAILABILITY_COPY[status] ?? AVAILABILITY_COPY.online;
@@ -159,6 +160,10 @@ export function getActiveConversationPersonaAppendixIds(avatarId, options = {}) 
 
 export function composeConversationPersonaDescription(avatarId, options = {}) {
     return composePersonaDescription(power_user?.persona_descriptions?.[avatarId], getActiveConversationPersonaAppendixIds(avatarId, options));
+}
+
+export function getConversationScenarioAvatar(avatarId = getConversationPersonaId(), options = {}) {
+    return getScenarioAvatar(getConversationPersonaAppendices(avatarId), getActiveConversationPersonaAppendixIds(avatarId, { ...options, personaId: avatarId }));
 }
 
 export function setActiveConversationPersonaAppendixIds(avatarId, ids, options = {}) {

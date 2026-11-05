@@ -11,12 +11,13 @@ async function dismissTour(page) {
         return eventSource.autoFireLastArgs.has(event_types.APP_READY);
     });
     const skip = page.getByRole('button', { name: 'Skip', exact: true });
-    await page.addLocatorHandler(skip, async () => {
+    const dismiss = async () => {
         await skip.click();
         await skip.waitFor({ state: 'hidden' });
         await page.evaluate(() => window.NeconyanShell.openTab('characters', 'persona'));
-    });
-    if (await skip.isVisible()) await skip.click();
+    };
+    if (await skip.isVisible()) await dismiss();
+    await page.addLocatorHandler(skip, dismiss);
 }
 
 async function openPersonaBrowser(page) {
@@ -78,6 +79,8 @@ for (const width of [393, 1280]) {
         });
 
         test('exports and imports both formats, preserves content after reload and never replaces the original', async ({ page }, testInfo) => {
+            // Two complete export/import flows and a second app boot can exceed two minutes on shared runners.
+            test.setTimeout(240000);
             await openQuietChatForSmoke(page, { selectCharacter: false });
             await dismissTour(page);
             const original = await page.evaluate(async () => {

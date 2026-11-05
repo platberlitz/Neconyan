@@ -1058,7 +1058,7 @@ body.neconyan #PersonaManagement #persona-management-block {
 .persona-appendix-editor-label {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: space-between;
     gap: 8px;
 }
 
@@ -1362,4 +1362,42 @@ body.neconyan #PersonaManagement #persona-management-block {
     #right-nav-panel #PersonaManagement .persona-editor-tabs .sb-shell-tab > i {
         display: none;
     }
+}
+.persona-appendix-avatar-editor {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-block-end: 12px;
+}
+
+.persona-appendix-avatar-editor .menu_button {
+    min-height: 44px;
+    margin: 0;
+}
+
+.persona-appendix-avatar-editor [hidden] {
+    display: none;
+}
+
+.persona-appendix-avatar-preview {
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: 8px;
+}
+
+.persona-appendix-avatar-hint {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: 0.85em;
+    text-align: start;
+}
+.persona-appendix-avatar {
+    width: 28px;
+    height: 28px;
+    object-fit: cover;
+    border-radius: 6px;
+    vertical-align: middle;
+    margin-inline-end: 6px;
 }

@@ -1,4 +1,5 @@
 import { renderGenerationOutcome } from '../generation-outcome-ui.js';
+import { normalizeScenarioAvatar } from '../persona-appendix-avatar.js';
 import {
     characters,
     default_user_avatar,
@@ -362,7 +363,7 @@ function createConversationMessageElement(message, { avatar, groupId, settings, 
     const avatarWrap = document.createElement('div');
     avatarWrap.className = 'sb-conversation-message-avatar';
     const messageAvatar = message.role === 'user'
-        ? user_avatar
+        ? normalizeScenarioAvatar(message.extra?.scenario_avatar) || user_avatar
         : message.role === 'partner' || message.role === 'system'
             ? message.extra?.partner_avatar || avatar
             : avatar;
@@ -562,7 +563,77 @@ function createConversationMessageElement(message, { avatar, groupId, settings, 
 }
 
 function removeTimelineTransientNodes(timeline) {
-    timeline.querySelectorAll('.sb-conversation-thread-empty, .sb-conversation-typing-indicator, .sb-conversation-image-pending').forEach(node => node.remove());
+    timeline.querySelectorAll('.sb-conversation-thread-empty').forEach(node => node.remove());
+}
+
+/** Keep live bubbles attached while text and counts change, including their animated dots. */
+function syncTimelineTransientNodes(timeline, participants, { avatar, groupId, branchId, personaId, settings, followingLatest }) {
+    const existing = new Map(Array.from(timeline.querySelectorAll('.sb-conversation-typing-indicator, .sb-conversation-image-pending'))
+        .map(node => [node.dataset.sbTransientKey, node]));
+    const rows = [];
+    const several = participants.length > 2 && !participants.some(participant => participant.token_count !== undefined);
+    if (followingLatest) {
+        if (several) {
+            rows.push({ key: 'several', avatar: participants[0]?.avatar, name: 'Several people', role: 'partner', several: true });
+        } else {
+            participants.forEach(participant => {
+                const typingAvatar = participant?.avatar || avatar;
+                rows.push({ key: `typing:${typingAvatar}`, avatar: typingAvatar,
+                    name: participant?.name || getCurrentCharName(), role: typingAvatar !== avatar ? 'partner' : 'character', participant });
+            });
+        }
+        if (conversationState.imageGenerationActive) {
+            const participant = getPrimaryTypingParticipant(avatar, { branchId, groupId, personaId });
+            const imageAvatar = participant?.avatar || avatar;
+            rows.push({ key: 'image', avatar: imageAvatar, name: 'Image generation',
+                role: participant && imageAvatar !== avatar ? 'partner' : 'character', image: true });
+        }
+    }
+    for (const [key, node] of existing) {
+        if (!rows.some(row => row.key === key)) node.remove();
+    }
+    let previous = Array.from(timeline.children).filter(node => !node.classList.contains('sb-conversation-typing-indicator')
+        && !node.classList.contains('sb-conversation-image-pending')).at(-1) || null;
+    for (const row of rows) {
+        let item = existing.get(row.key);
+        if (!item) {
+            item = document.createElement('div');
+            item.className = `sb-conversation-message ${row.image ? 'sb-conversation-image-pending' : 'sb-conversation-typing-indicator'}`;
+            item.dataset.sbTransientKey = row.key;
+            item.innerHTML = `<div class="sb-conversation-message-avatar"><img alt="" decoding="async"></div>
+                <div class="sb-conversation-message-bubble"><div class="sb-conversation-message-meta"><span class="sb-conversation-message-name"></span>${row.image
+        ? '<button type="button" class="sb-conversation-stop-image" data-sb-conversation-action="stop-image-generation">Stop</button>' : ''}</div>
+                <div class="sb-conversation-message-text sb-conversation-typing-dots"><span></span><span></span><span></span></div></div>`;
+            if (row.several) {
+                const text = item.querySelector('.sb-conversation-message-text');
+                text.className = 'sb-conversation-message-text';
+                text.style.cssText = 'font-style: italic; opacity: 0.8; display: flex; align-items: center; gap: 8px;';
+                text.innerHTML = '<span>Several people are typing</span><span class="sb-conversation-typing-dots"><span></span><span></span><span></span></span>';
+            }
+        }
+        if (item.dataset.role !== row.role) item.dataset.role = row.role;
+        const image = item.querySelector('img');
+        const src = getThumbnailUrlForViewport('avatar', row.avatar) || default_user_avatar;
+        if (image.getAttribute('src') !== src) image.setAttribute('src', src);
+        const name = item.querySelector('.sb-conversation-message-name');
+        if (name.textContent !== row.name) name.textContent = row.name;
+        if (row.participant) {
+            const meta = item.querySelector('.sb-conversation-message-meta');
+            if (row.participant.token_count !== undefined) updateMessageTokenCounts(meta, row.participant, { pending: true });
+            else meta.querySelector('.nn-message-token-counts')?.remove();
+            const text = item.querySelector('.sb-conversation-message-text');
+            const live = Boolean(settings.streaming && row.participant.text);
+            if (live) {
+                if (!text.classList.contains('sb-conversation-live-text')) text.className = 'sb-conversation-message-text sb-conversation-live-text';
+                if (text.textContent !== row.participant.text) text.textContent = row.participant.text;
+            } else if (!text.classList.contains('sb-conversation-typing-dots')) {
+                text.className = 'sb-conversation-message-text sb-conversation-typing-dots';
+                text.innerHTML = '<span></span><span></span><span></span>';
+            }
+        }
+        placeTimelineChildAfter(timeline, item, previous);
+        previous = item;
+    }
 }
 
 function requestConversationFrame(callback) {
@@ -655,8 +726,8 @@ export function syncConversationTimelineHistoryControlsDisabledState(timeline = 
     const disabled = hasActiveTimelineMessageEdit(timeline);
     timeline.querySelectorAll('.sb-conversation-history-button').forEach((button) => {
         if (button instanceof HTMLElement) {
-            button.disabled = disabled;
-            button.setAttribute('aria-disabled', String(disabled));
+            if (button.disabled !== disabled) button.disabled = disabled;
+            if (button.getAttribute('aria-disabled') !== String(disabled)) button.setAttribute('aria-disabled', String(disabled));
         }
     });
 }
@@ -807,22 +878,25 @@ function syncConversationTimelineHistoryControls(timeline, windowDescriptor) {
     }
 
     const existingNewer = findTimelineHistoryControl(timeline, 'newer');
-    if (existingNewer) {
-        existingNewer.remove();
-    }
     if (windowDescriptor?.hasNewer) {
-        const container = document.createElement('div');
-        container.className = 'sb-conversation-selfie-actions char-button-group-utility sb-conversation-history-controls sb-conversation-history-controls-bottom';
-        container.dataset.sbConversationHistoryNav = 'newer';
-        container.appendChild(createTimelineHistoryControlButton('timeline-newer', t`Newer messages`, 'Newer messages'));
-        container.appendChild(createTimelineHistoryControlButton('timeline-latest', t`Latest messages`, 'Latest messages'));
-        timeline.appendChild(container);
+        const newerControl = existingNewer || (() => {
+            const container = document.createElement('div');
+            container.className = 'sb-conversation-selfie-actions char-button-group-utility sb-conversation-history-controls sb-conversation-history-controls-bottom';
+            container.dataset.sbConversationHistoryNav = 'newer';
+            container.appendChild(createTimelineHistoryControlButton('timeline-newer', t`Newer messages`, 'Newer messages'));
+            container.appendChild(createTimelineHistoryControlButton('timeline-latest', t`Latest messages`, 'Latest messages'));
+            return container;
+        })();
+        const previous = Array.from(timeline.children).filter(node => node !== newerControl).at(-1) || null;
+        placeTimelineChildAfter(timeline, newerControl, previous);
+    } else if (existingNewer) {
+        existingNewer.remove();
     }
     syncConversationTimelineHistoryControlsDisabledState(timeline);
 }
 
 function reconcileConversationMessageNodes(timeline, messages, { avatar, groupId, personaId, settings, windowDescriptor }) {
-    syncConversationTimelineHistoryControls(timeline, { hasOlder: Boolean(windowDescriptor?.hasOlder), hasNewer: false });
+    syncConversationTimelineHistoryControls(timeline, windowDescriptor);
 
     const retainedIds = new Set(messages.map(message => String(message?.id || '')));
     const existingNodes = new Map();
@@ -899,13 +973,15 @@ export function markConversationMessageRuns(timeline, messages) {
         if (!(node instanceof HTMLElement)) return;
         const startsRun = !joinsPrevious[index];
         const endsRun = !joinsPrevious[index + 1];
-        node.dataset.sbRun = startsRun && endsRun ? 'single' : startsRun ? 'start' : endsRun ? 'end' : 'middle';
+        const run = startsRun && endsRun ? 'single' : startsRun ? 'start' : endsRun ? 'end' : 'middle';
+        if (node.dataset.sbRun !== run) node.dataset.sbRun = run;
 
         const sentAt = moments[index];
         const previous = moments[index - 1];
         const newDay = sentAt?.isValid?.() && (index === 0 || !previous?.isValid?.() || !sentAt.isSame(previous, 'day'));
         if (newDay) {
-            node.dataset.sbDayLabel = getConversationDayLabel(sentAt);
+            const label = getConversationDayLabel(sentAt);
+            if (node.dataset.sbDayLabel !== label) node.dataset.sbDayLabel = label;
         } else {
             delete node.dataset.sbDayLabel;
         }
@@ -1135,100 +1211,9 @@ export function renderConversationTimeline() {
         windowDescriptor,
     });
 
-    if (windowDescriptor.followingLatest) {
-        if (typingParticipants.length > 2 && !typingParticipants.some(participant => participant.token_count !== undefined)) {
-            const typingItem = document.createElement('div');
-            typingItem.className = 'sb-conversation-message sb-conversation-typing-indicator';
-            typingItem.dataset.role = 'partner';
-
-            const typingAvatarWrap = document.createElement('div');
-            typingAvatarWrap.className = 'sb-conversation-message-avatar';
-            const typingImage = document.createElement('img');
-            typingImage.alt = '';
-            typingImage.decoding = 'async';
-            typingImage.src = getThumbnailUrlForViewport('avatar', typingParticipants[0]?.avatar) || default_user_avatar;
-            typingAvatarWrap.appendChild(typingImage);
-
-            const typingBubble = document.createElement('div');
-            typingBubble.className = 'sb-conversation-message-bubble';
-            typingBubble.innerHTML = `
-                <div class="sb-conversation-message-meta">
-                    <span class="sb-conversation-message-name">Several people</span>
-                </div>
-                <div class="sb-conversation-message-text" style="font-style: italic; opacity: 0.8; display: flex; align-items: center; gap: 8px;">
-                    <span>Several people are typing</span>
-                    <span class="sb-conversation-typing-dots">
-                        <span></span><span></span><span></span>
-                    </span>
-                </div>
-            `;
-            typingItem.append(typingAvatarWrap, typingBubble);
-            timeline.appendChild(typingItem);
-        } else {
-            for (const typingParticipant of typingParticipants) {
-                const typingAvatar = typingParticipant?.avatar || getCurrentCharAvatar();
-                const typingName = typingParticipant?.name || getCurrentCharName();
-                const typingItem = document.createElement('div');
-                typingItem.className = 'sb-conversation-message sb-conversation-typing-indicator';
-                typingItem.dataset.role = typingAvatar !== getCurrentCharAvatar() ? 'partner' : 'character';
-
-                const typingAvatarWrap = document.createElement('div');
-                typingAvatarWrap.className = 'sb-conversation-message-avatar';
-                const typingImage = document.createElement('img');
-                typingImage.alt = '';
-                typingImage.decoding = 'async';
-                typingImage.src = getThumbnailUrlForViewport('avatar', typingAvatar) || default_user_avatar;
-                typingAvatarWrap.appendChild(typingImage);
-
-                const typingBubble = document.createElement('div');
-                typingBubble.className = 'sb-conversation-message-bubble';
-                typingBubble.innerHTML = `
-                    <div class="sb-conversation-message-meta">
-                        <span class="sb-conversation-message-name">${escapeHtmlText(typingName)}</span>
-                    </div>
-                    <div class="sb-conversation-message-text sb-conversation-typing-dots">
-                        <span></span><span></span><span></span>
-                    </div>
-                `;
-                if (typingParticipant.token_count !== undefined) updateMessageTokenCounts(typingBubble.querySelector('.sb-conversation-message-meta'), typingParticipant, { pending: true });
-                if (settings.streaming && typingParticipant.text) {
-                    const text = typingBubble.querySelector('.sb-conversation-message-text');
-                    text.className = 'sb-conversation-message-text sb-conversation-live-text';
-                    text.textContent = typingParticipant.text;
-                }
-                typingItem.append(typingAvatarWrap, typingBubble);
-                timeline.appendChild(typingItem);
-            }
-        }
-
-        if (conversationState.imageGenerationActive) {
-            const pendingParticipant = getPrimaryTypingParticipant(avatar, { branchId, groupId, personaId });
-            const pendingAvatar = pendingParticipant?.avatar || getCurrentCharAvatar();
-            const imageItem = document.createElement('div');
-            imageItem.className = 'sb-conversation-message sb-conversation-image-pending';
-            imageItem.dataset.role = pendingParticipant && pendingAvatar !== getCurrentCharAvatar() ? 'partner' : 'character';
-            const imageAvatarWrap = document.createElement('div');
-            imageAvatarWrap.className = 'sb-conversation-message-avatar';
-            const pendingImage = document.createElement('img');
-            pendingImage.alt = '';
-            pendingImage.decoding = 'async';
-            pendingImage.src = getThumbnailUrlForViewport('avatar', pendingAvatar) || default_user_avatar;
-            imageAvatarWrap.appendChild(pendingImage);
-            const imageBubble = document.createElement('div');
-            imageBubble.className = 'sb-conversation-message-bubble';
-            imageBubble.innerHTML = `
-                <div class="sb-conversation-message-meta">
-                    <span class="sb-conversation-message-name">Image generation</span>
-                    <button type="button" class="sb-conversation-stop-image" data-sb-conversation-action="stop-image-generation">Stop</button>
-                </div>
-                <div class="sb-conversation-message-text sb-conversation-typing-dots">
-                    <span></span><span></span><span></span>
-                </div>
-            `;
-            imageItem.append(imageAvatarWrap, imageBubble);
-            timeline.appendChild(imageItem);
-        }
-    }
+    syncTimelineTransientNodes(timeline, typingParticipants, {
+        avatar, groupId, branchId, personaId, settings, followingLatest: windowDescriptor.followingLatest,
+    });
 
     conversationState.lastRenderedAvatar = avatar;
     conversationState.lastRenderedThreadKey = renderThreadKey;

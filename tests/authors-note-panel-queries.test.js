@@ -15,10 +15,8 @@ function getFunctionSource(source, name) {
     return match[0];
 }
 
-// These run on every keystroke in a note (updateSettings -> loadSettings -> renderNoteSlot,
-// renderNoteTargetsAndSummary and setNoteSlotDisabled), so a document-wide attribute selector
-// makes typing slower as a chat grows.
-const PER_KEYSTROKE_FUNCTIONS = [
+// Panel refreshes must stay independent of the number of elements in the chat.
+const PANEL_FUNCTIONS = [
     'loadSettings',
     'renderNoteSlot',
     'renderNoteTargetsAndSummary',
@@ -32,12 +30,7 @@ describe('author\'s note panel queries', () => {
         expect(indexSource).toMatch(/<div id="floatingPrompt"[^>]*>/);
     });
 
-    test('typing still re-renders through loadSettings', () => {
-        const updateSettings = getFunctionSource(notesSource, 'updateSettings');
-        expect(updateSettings).toContain('loadSettings()');
-    });
-
-    test.each(PER_KEYSTROKE_FUNCTIONS)('%s does not scan the whole document with attribute selectors', (name) => {
+    test.each(PANEL_FUNCTIONS)('%s does not scan the whole document with attribute selectors', (name) => {
         const body = getFunctionSource(notesSource, name);
         const documentWideAttributeQueries = body.match(/(?<![\w.])\$\(`[^`]*\[[^`]*`\)/g) ?? [];
         expect(documentWideAttributeQueries).toEqual([]);

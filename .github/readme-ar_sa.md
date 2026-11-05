@@ -1,364 +1,203 @@
-<!-- Translated from README.md at commit 2921e92 (Neconyan 1.4.1). Keep the structure in step with the English README. -->
+<!-- Translated from README.md at commit de66c177 (Neconyan 1.5.0). Keep the structure in step with the English README. -->
 
 <div dir="rtl">
 
-# Neconyan 1.4.1
+# Neconyan~
 
-أحدث إصدار: **[1.4.1](https://github.com/platberlitz/Neconyan/releases/tag/v1.4.1)**. ويستمر التطوير على `staging`.
+أحدث إصدار هو [1.5.0](https://github.com/platberlitz/Neconyan/releases/latest).
 
-**لغات أخرى:** [English](../README.md) · [Deutsch](readme-de_de.md) · [Español](readme-es_es.md) · [Français](readme-fr_fr.md) · [Italiano](readme-it_it.md) · [Nederlands](readme-nl_nl.md) · [Português](readme-pt_pt.md) · [Íslenska](readme-is_is.md) · [Русский](readme-ru_ru.md) · [Українська](readme-uk_ua.md) · [ไทย](readme-th_th.md) · [Tiếng Việt](readme-vi_vn.md) · [日本語](readme-ja_jp.md) · [한국어](readme-ko_kr.md) · [简体中文](readme-zh_cn.md) · [繁體中文](readme-zh_tw.md)
+**اقرأ بلغتك:** [English](../README.md) · [Deutsch](readme-de_de.md) · [Español](readme-es_es.md) · [Français](readme-fr_fr.md) · [Italiano](readme-it_it.md) · [Nederlands](readme-nl_nl.md) · [Português](readme-pt_pt.md) · [Íslenska](readme-is_is.md) · [Русский](readme-ru_ru.md) · [Українська](readme-uk_ua.md) · [ไทย](readme-th_th.md) · [Tiếng Việt](readme-vi_vn.md) · [日本語](readme-ja_jp.md) · [한국어](readme-ko_kr.md) · [简体中文](readme-zh_cn.md) · [繁體中文](readme-zh_tw.md)
 
-هذه ترجمة لـ[ملف README الإنجليزي](../README.md). وإن اختلفا يومًا، فالنسخة الإنجليزية هي الأحدث.
+قد تتأخر هذه الترجمة عن الأصل. أما [ملف README الإنجليزي](../README.md) فهو الأحدث.
 
 <p align="center">
   <img src="../docs/readme/banner-neconyan.webp" alt="Neconyan - ألطف واجهة للعب الأدوار مع النماذج اللغوية الكبيرة">
 </p>
 
-> [!NOTE]
-> كل الشيفرة هنا كتبتها نماذج لغوية كبيرة أو كُتبت بمساعدتها، لكن كل موجّه وكل وكيل يأتي مع Neconyan من صنع إنسان.
+يُعدّ Neconyan نسخة متفرّعة بطابع القطط صنعتُها من [SillyTavern](https://github.com/SillyTavern/SillyTavern) و[SillyBunny](https://github.com/SillyBunnyTeam/SillyBunny)، للدردشة ولعب الأدوار مع شخصيات الذكاء الاصطناعي، على الكمبيوتر أو على هاتفك. وفّر مفتاح API الخاص بك أو نموذجًا محليًا؛ فالتطبيق لا يتضمّن أي وصول إلى نموذج ولا أي رصيد.
 
-يُعدّ Neconyan نسخة متفرّعة بطابع القطط صنعتُها من [SillyTavern](https://github.com/SillyTavern/SillyTavern) و[SillyBunny](https://github.com/SillyBunnyTeam/SillyBunny)، للدردشة ولعب الأدوار مع شخصيات الذكاء الاصطناعي، على الكمبيوتر أو على هاتفك. أما النموذج فعليك أنت توفيره، إما عبر واجهة خلفية محلية أو مفتاح API، إذ لا يأتي معه أي وصول إلى نموذج ولا أي رصيد.
+**[نزّل Neconyan](https://github.com/platberlitz/Neconyan/releases/latest)** · **[اقرأ الدليل](https://platberlitz.github.io/neconyan-docs/)** · **[احصل على مساعدة](https://platberlitz.github.io/neconyan-docs/help/troubleshooting/)**
 
-**[اقرأ دليل Neconyan الرسمي](https://platberlitz.github.io/neconyan-docs/).** ابدأ من هناك في كل ما يخص الإعداد والأسئلة عن استخدام Neconyan. ستجد فيه أدلة مصوّرة بلقطات الشاشة، ومرجعًا للماكرو، وتعليمات لصنع الإضافات. وإن لم يعمل شيء كما ينبغي، فجرّب [دليل حل المشكلات](https://platberlitz.github.io/neconyan-docs/help/troubleshooting/) قبل أن تفتح بلاغًا.
+> كل الشيفرة هنا كتبتها نماذج لغوية كبيرة أو كُتبت بمساعدتها. أما كل موجّه وكل وكيل يأتي مع Neconyan فمن صنع البشر.
 
-إن كنت تريد SillyTavern وكل شيء فيه يعمل تمامًا كما في المشروع الأصلي، فاستخدم [SillyBunny](https://github.com/SillyBunnyTeam/SillyBunny) بدلًا منه. فأنا لا أجلب من المشروع الأصلي إلا الأجزاء التي أريدها، لذا تختلف هنا بعض الأشياء في شكلها وسلوكها، وقد لا تعمل بعض الإضافات.
+## ماذا يوجد هنا؟
 
 <p align="center">
   <img src="../docs/readme/banner-why.webp" alt="لماذا Neconyan؟">
 </p>
 
-- **يواصل العمل حين تغادر.** تُكتب الردود في المتصفح وأنت تشاهد، لأن ذلك أسرع. فإن انتقلت إلى تطبيق آخر أو قفلت هاتفك في منتصف دردشة ثنائية، يحتفظ الخادم بالرد ويسلّمه إليك حين تعيد فتح تلك الدردشة، دون أن تدفع ثمنه مرتين. أما وضع «محادثة» وMeower وعمل الذاكرة فتستمر على الخادم في كل الأحوال. وإن أردت أن يستمر الوكلاء الذين يعملون بعد الرد أيضًا، فاضبط «Where replies are written» على **On the server**. ولا تزال بعض الأشياء تحتاج إلى بقاء الصفحة مفتوحة، مثل نماذج WebLLM التي تعمل داخل المتصفح وأصوات Kokoro.
-- **مصمَّم للهواتف فعلًا.** تبويبات حقيقية بعناوين واضحة، وشريط دردشة في الأسفل، وقائمة منزلقة، لا تخطيط الكمبيوتر وقد ضُغط ليتّسع للشاشة.
-- **أربع طرق للدردشة.** لعب الأدوار الكلاسيكي، و«محادثة» على طريقة تطبيقات المراسلة، وخط زمني اجتماعي اسمه Meower، و«وضع القصة» للكتابة الطويلة.
-- **ذاكرة للقصة.** يتابع [Mewmory](../docs/mewmory.md) قصتك والشخصيات الثانوية التي قابلتها وما قالته، حتى لا تضطر إلى شرح كل شيء من جديد بعد 200 رسالة.
-- **الأشياء المفيدة مدمجة من البداية.** الوكلاء، وأرشيف المحادثات، وQuick Image Gen، وGuided Generations، وBotSearcher، وبضع أدوات أخرى، ولكلٍّ منها إعداداته الخاصة. [هذه هي الأدوات التي بدأت مشاريعَ مستقلة، ومن صنعها.](../docs/neconyan-native-tools.md)
-- **مكان لتدوين الملاحظات.** تمنحك [الدفاتر](../docs/notebooks.md) مساحة لمسودات الشخصيات والأماكن وخطط المشاهد ويوميات الجلسات، بجوار دردشاتك مباشرة. وترتبط الملاحظات ببعضها وبكتب المعرفة لديك، ويستطيع المساعدون تعديلها إن سمحت لهم.
-- **مساعدون صغار.** يستطيع Miso وTaro وNori استخدام استدعاءات الأدوات لإنشاء شخصيات مع صورها، وتعديل كتب المعرفة، وضبط الإعدادات المسبقة أو الوكلاء. وتعرّفك «جولة First paws» القصيرة على الأساسيات، ويُبعد [Simple Mode](#simple-mode) الخيارات المتقدمة عن طريقك إلى أن تحتاجها.
-- **رفيق تتناقش معه في القصة.** [Scratchpad](../docs/scratchpad.md) دردشة جانبية بجوار قصتك، يستطيع فيها المساعدون، أو شخصياتك أنت، أو طاولة مستديرة كاملة منهم، قراءة المشهد ومنحك أفكارًا، دون أن يصل شيء من ذلك إلى الدردشة.
-- **إنه لطيف.** سمات Calico، وقطط تغفو فوق رسائلك، وقطة بكسلية في «الرئيسية». وهذا كان الهدف كله في الحقيقة.
-- **ملفاتك تبقى ملفاتك.** يقرأ Neconyan بطاقات الشخصيات والدردشات وكتب المعرفة والإعدادات المسبقة نفسها التي يقرأها SillyTavern، ولا يتضمن أي قياس عن بُعد.
+- **أربع طرق للدردشة:** لعب الأدوار الكلاسيكي، و«محادثة» على طريقة تطبيقات المراسلة، وخط زمني اجتماعي اسمه Meower، و«وضع القصة» للنثر المتصل.
+- **تخطيط مصمَّم للهواتف**، بعناصر تحكم ذات عناوين واضحة، وشريط دردشة في الأسفل، وقائمة منزلقة. ويُخفي **Simple Mode** عناصر التحكم الأقل استخدامًا إلى أن تحتاج إليها.
+- يتذكّر **Mewmory** أحداث القصة وشخصياتها. ويستطيع **الوكلاء** الاحتفاظ بمتتبعات، أو فحص ردّ، أو كتابة «ملاحظة الرفيق» بشكل منفصل.
+- يساعدك **Catelier** على كتابة بطاقات الشخصيات وكتب المعرفة. وتُبقي **الدفاتر** ملاحظاتك قريبة منك، ويمنحك **Scratchpad** دردشة منفصلة لتتحدث فيها عن أفكارك.
+- يساعدك **Miso وTaro وNori** على العثور على ما تبحث عنه، ويمكنهم إجراء التعديلات المدعومة بإذنك.
+- **السمات وألوان التمييز والقطط.** قطط كثيرة جدًا. يمكنك إخفاؤها، مع أنني لا أتخيل لماذا قد ترغب في ذلك.
+
+تستخدم بطاقات شخصياتك ودردشاتك وكتب المعرفة والإعدادات المسبقة صيغ SillyTavern المألوفة. لا يوجد أي قياس عن بُعد. وتعمل بعض ميزات المشروع الأصلي وإضافاته بشكل مختلف هنا؛ فأنا لا أجلب إلا الأجزاء التي أريدها. وتنسب [قائمة الأدوات المضمّنة](../docs/neconyan-native-tools.md) المشاريع المرفقة مع Neconyan إلى أصحابها.
+
+## ألقِ نظرة
 
 <p align="center">
   <img src="../docs/readme/banner-modes.webp" alt="الأوضاع">
 </p>
 
-هذه دردشات وملاحظات وردود Scratchpad تجريبية مُعدّة للعرض مع المساعدين المرفقين، فلا تحمّلها أكثر مما تحتمل.
+لقطات شاشة جديدة للكمبيوتر والهاتف، مأخوذة من دردشات وملاحظات تجريبية مع المساعدين المرفقين.
 
 ### الرئيسية
 
-أول مكان تصل إليه. اختر شخصية، أو ابدأ دردشة مؤقتة، أو اربط نموذجًا، أو ألقِ التحية على أحد المساعدين.
+اختر شخصية، أو اربط نموذجًا، أو ألقِ التحية على أحد المساعدين.
 
-<table>
-  <tr>
-    <td width="72%"><img src="../docs/readme/desktop-home.webp" alt="الرئيسية على الكمبيوتر"></td>
-    <td width="28%"><img src="../docs/readme/phone-home.webp" alt="الرئيسية على الهاتف"></td>
-  </tr>
-</table>
-
-<a id="simple-mode"></a>
-
-### Simple Mode
-
-في Neconyan أزرار كثيرة، ولن تحتاج إلى معظمها في يومك الأول. يُخفي Simple Mode كلًّا من Mewmory وأرشيف المحادثات والامتدادات ومبدّل الأوضاع ومعظم «الضبط الدقيق» والأزرار الإضافية حول مربع الرسالة، ويترك لك الشخصيات والاتصالات والإعدادات المسبقة وكتب المعرفة والوكلاء والدفاتر وScratchpad. ويسألك Nori إن كنت تريده قبل أن تبدأ «جولة First paws». لا يُعطَّل شيء، بل يُخفى فقط، فاضغط **Show all features** في الشريط الجانبي أو أوقفه من الإعدادات > المظهر متى أردت استعادة كل شيء.
-
-<table>
-  <tr>
-    <td width="72%"><img src="../docs/readme/desktop-simple.webp" alt="دردشة لعب أدوار مع تفعيل Simple Mode، على الكمبيوتر"></td>
-    <td width="28%"><img src="../docs/readme/phone-simple.webp" alt="دردشة لعب أدوار مع تفعيل Simple Mode، على الهاتف"></td>
-  </tr>
-</table>
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-home.webp" alt="الرئيسية على الكمبيوتر"></td>
+  <td width="28%"><img src="../docs/readme/phone-home.webp" alt="الرئيسية على الهاتف"></td>
+</tr></table>
 
 ### لعب الأدوار
 
-الدردشة الكلاسيكية التي تعرفها من SillyTavern، مع قطة نائمة فوق رسائلك.
+اكتب مشهدًا، أو جرّب ردًّا آخر، أو تابع دردشة قديمة.
 
-<table>
-  <tr>
-    <td width="72%"><img src="../docs/readme/desktop-roleplay.webp" alt="لعب الأدوار على الكمبيوتر"></td>
-    <td width="28%"><img src="../docs/readme/phone-roleplay.webp" alt="لعب الأدوار على الهاتف"></td>
-  </tr>
-</table>
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-roleplay.webp" alt="لعب الأدوار على الكمبيوتر"></td>
+  <td width="28%"><img src="../docs/readme/phone-roleplay.webp" alt="لعب الأدوار على الهاتف"></td>
+</tr></table>
+
+### Catelier
+
+اعمل على مسودة شخصية، واطلب مساعدة في الكتابة، وراجع التغييرات قبل حفظها في مكتبتك.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-catelier.webp" alt="Catelier على الكمبيوتر"></td>
+  <td width="28%"><img src="../docs/readme/phone-catelier.webp" alt="Catelier على الهاتف"></td>
+</tr></table>
+
+<details>
+<summary><b>مزيد من لقطات الشاشة: Simple Mode، و«محادثة»، وMeower، ووضع القصة، والدفاتر، وScratchpad</b></summary>
+
+### Simple Mode
+
+عناصر تحكم أقل ريثما تعتاد على التطبيق. ويعيدها **Show all features** في الشريط الجانبي؛ فلا يُعطَّل شيء.
+
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-simple.webp" alt="Simple Mode على الكمبيوتر"></td>
+  <td width="28%"><img src="../docs/readme/phone-simple.webp" alt="Simple Mode على الهاتف"></td>
+</tr></table>
 
 ### محادثة
 
-راسل شخصياتك كما تراسل صديقًا. فيها قائمة «الأصدقاء»، ومحادثات جماعية، وفروع، وشخصيات قد تكون مشغولة أو غير متصلة.
+راسل شخصياتك، وأنشئ محادثات جماعية، ودعها تكون مشغولة أو غير متصلة.
 
-<table>
-  <tr>
-    <td width="72%"><img src="../docs/readme/desktop-conversation.webp" alt="وضع «محادثة» على الكمبيوتر"></td>
-    <td width="28%"><img src="../docs/readme/phone-conversation.webp" alt="وضع «محادثة» على الهاتف"></td>
-  </tr>
-</table>
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-conversation.webp" alt="وضع «محادثة» على الكمبيوتر"></td>
+  <td width="28%"><img src="../docs/readme/phone-conversation.webp" alt="وضع «محادثة» على الهاتف"></td>
+</tr></table>
 
 ### Meower
 
-خط زمني اجتماعي صغير تنشر فيه شخصياتك، وترد على بعضها، وتُجري استطلاعات رأي عن الوجبات الخفيفة.
+خط زمني اجتماعي تنشر فيه شخصياتك وترد وتُجري استطلاعات رأي.
 
-<table>
-  <tr>
-    <td width="72%"><img src="../docs/readme/desktop-meower.webp" alt="Meower على الكمبيوتر"></td>
-    <td width="28%"><img src="../docs/readme/phone-meower.webp" alt="Meower على الهاتف"></td>
-  </tr>
-</table>
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-meower.webp" alt="Meower على الكمبيوتر"></td>
+  <td width="28%"><img src="../docs/readme/phone-meower.webp" alt="Meower على الهاتف"></td>
+</tr></table>
 
 ### وضع القصة
 
-الدردشة وقد تحوّلت إلى نثر متصل، لتلك الأوقات التي تفضّل فيها قراءة قصة على التمرير بين الفقاعات.
+اقرأ دردشتك نثرًا متصلًا.
 
-<table>
-  <tr>
-    <td width="72%"><img src="../docs/readme/desktop-story.webp" alt="وضع القصة على الكمبيوتر"></td>
-    <td width="28%"><img src="../docs/readme/phone-story.webp" alt="وضع القصة على الهاتف"></td>
-  </tr>
-</table>
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-story.webp" alt="وضع القصة على الكمبيوتر"></td>
+  <td width="28%"><img src="../docs/readme/phone-story.webp" alt="وضع القصة على الهاتف"></td>
+</tr></table>
 
 ### الدفاتر
 
-دفتر يعيش بجوار دردشاتك، لمسودات الشخصيات وخطط المشاهد التي كانت ستضيع لولاه في ملف نصي في مكان ما. فيه قوالب ومجلدات وخصائص وعرض للقراءة، ويمكنك فتحه بجانب أي دردشة. [المزيد عن الدفاتر.](../docs/notebooks.md)
+احتفظ بخطط المشاهد والأماكن ويوميات الجلسات بجوار دردشاتك.
 
-<table>
-  <tr>
-    <td width="72%"><img src="../docs/readme/desktop-notes.webp" alt="الدفاتر على الكمبيوتر"></td>
-    <td width="28%"><img src="../docs/readme/phone-notes.webp" alt="الدفاتر على الهاتف"></td>
-  </tr>
-</table>
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-notes.webp" alt="الدفاتر على الكمبيوتر"></td>
+  <td width="28%"><img src="../docs/readme/phone-notes.webp" alt="الدفاتر على الهاتف"></td>
+</tr></table>
 
 ### Scratchpad
 
-دردشة جانبية بجوار قصتك، لتلك الأوقات التي تريد فيها الحديث عن المشهد دون أن تسمعك الشخصيات. اسأل Miso أو Taro أو Nori، أو انسخ إحدى بطاقات شخصياتك، أو اصنع مساعدك الخاص، ثم ضع ما يصل إلى ثلاثة منهم حول طاولة مستديرة ودعهم يتجادلون في ما إذا كانت المفاجأة في حبكتك ستصيب هدفها. لا يدخل أي شيء تكتبه هناك إلى القصة. [المزيد عن Scratchpad.](../docs/scratchpad.md)
+ناقش القصة مع مساعد أو مع طاولة مستديرة من الشخصيات، دون أن تُضاف مناقشتهم إلى الدردشة الرئيسية.
 
-<table>
-  <tr>
-    <td width="72%"><img src="../docs/readme/desktop-scratchpad.webp" alt="Scratchpad بجانب دردشة في وضع القصة على الكمبيوتر"></td>
-    <td width="28%"><img src="../docs/readme/phone-scratchpad.webp" alt="Scratchpad على الهاتف"></td>
-  </tr>
-</table>
+<table><tr>
+  <td width="72%"><img src="../docs/readme/desktop-scratchpad.webp" alt="Scratchpad على الكمبيوتر"></td>
+  <td width="28%"><img src="../docs/readme/phone-scratchpad.webp" alt="Scratchpad على الهاتف"></td>
+</tr></table>
+
+</details>
+
+## البدء
 
 <p align="center">
   <img src="../docs/readme/banner-getting-started.webp" alt="البدء">
 </p>
 
-اختر ما يناسب ما لديك:
+### على الكمبيوتر
 
-| ما لديك | ما يناسبك |
-| --- | --- |
-| هاتف Android يعمل بإصدار Android 11 أو أحدث | [تطبيق Android](#android-app) |
-| هاتف Android أقدم، أو تحب العمل في الطرفية | [Termux](#android-with-termux) |
-| Windows أو macOS أو Linux | [التثبيت على الكمبيوتر](#on-a-computer) |
-| iPhone يعمل بإصدار iOS 17 أو أحدث، ولا تمانع التثبيت الجانبي | [تطبيق iPhone](#iphone-app) |
-| أي iPhone آخر، أو تفضّل إبقاء دردشاتك على الكمبيوتر | التثبيت على الكمبيوتر، ثم [فتحه على هاتفك](#opening-it-on-your-phone) |
+1. نزّل الملف الذي ينتهي بـ &lrm;**-source.zip**&lrm; من [أحدث إصدار](https://github.com/platberlitz/Neconyan/releases/latest). فُكّ ضغطه أولًا؛ وعلى Windows انقر بزر الفأرة الأيمن واختر **استخراج الكل**.
+2. افتح المجلد. شغّل **Start.bat** على Windows، أو **Start.command** على macOS، أو **bash start.sh** في طرفية على Linux.
+3. امنح التشغيل الأول بضع دقائق ليثبّت ما يحتاجه. أبقِ نافذة الطرفية مفتوحة طوال استخدامك لـ Neconyan.
+4. يُفترض أن يفتح متصفحك من تلقاء نفسه. وإن لم يفعل، فاذهب إلى &lrm;**http://127.0.0.1:4433/**&lrm;.
+5. افتح **الاتصالات**، واختر مزوّدك ونموذجك، وأدخل مفتاح API أو عنوان نموذجك المحلي. ثم افتح شخصية أو مساعدًا في «الرئيسية».
 
-وأيًّا كان اختيارك، فستحتاج مع ذلك إلى نموذج تتحدث إليه: مفتاح API من أحد المزوّدين، أو واجهة خلفية محلية مثل KoboldCpp أو Ollama.
+في المرة القادمة، شغّل ملف التشغيل نفسه. ولإيقاف Neconyan، اضغط **Ctrl+C** في الطرفية الخاصة به.
 
-<a id="android-app"></a>
+هل تفضّل Git؟ استنسخ المستودع، ثم استخدم ملف التشغيل نفسه:
+
+```sh
+git clone https://github.com/platberlitz/Neconyan.git
+```
+
+[إعداد الكمبيوتر ومشكلات بدء التشغيل الشائعة](https://platberlitz.github.io/neconyan-docs/start/computer/)
 
 ### تطبيق Android
 
-على Android 11 أو أحدث، نزّل الملف الذي ينتهي بـ &lrm;`-android-arm64.apk`&lrm; من [أحدث إصدار](https://github.com/platberlitz/Neconyan/releases/latest) وافتحه. على الأرجح سيطلب منك Android أولًا أن تسمح بتثبيت التطبيقات من متصفحك.
+نزّل الملف &lrm;**-android-arm64.apk**&lrm; من [أحدث إصدار](https://github.com/platberlitz/Neconyan/releases/latest) وافتحه. اسمح بالتثبيت من متصفحك إن طلب Android ذلك. ستحتاج إلى **Android 11 أو أحدث**، و**Android System WebView 124 أو أحدث**، ونحو **2 GiB** من المساحة الفارغة.
 
-يعمل كل شيء على الهاتف نفسه، فلا حاجة إلى Termux ولا إلى كمبيوتر. اترك نحو 2 GiB من المساحة فارغة، وامنح التشغيل الأول وقته لفك الملفات. ويحتاج التطبيق أيضًا إلى Android System WebView 124 أو أحدث، وسيخبرك إن كان الإصدار لديك قديمًا. وللتحديث، ثبّت ملف APK الجديد فوق القديم، وستبقى دردشاتك كما هي. [إعداد Android والنسخ الاحتياطي وتعليمات البناء.](../android/README.md)
+يعمل التطبيق على الهاتف نفسه، دون Termux ودون كمبيوتر. امنحه وقتًا عند فتحه أول مرة ليفك الملفات، ثم أعِدّ **الاتصالات**. ثبّت التحديثات فوق التطبيق الحالي حتى تبقى دردشاتك.
 
-<a id="iphone-app"></a>
+[إعداد Android](https://platberlitz.github.io/neconyan-docs/start/android/) · [تعليمات البناء](../android/README.md)
 
 ### تطبيق iPhone
 
-وهناك الآن أيضًا تطبيق iPhone مستقل. والفكرة هي نفسها في تطبيق Android: الخادم ودردشاتك وإعداداتك كلها موجودة على الهاتف، فلا تحتاج إلى كمبيوتر يشغّل Neconyan. التطبيق ليس على App Store، لذا عليك تثبيته جانبيًا بنفسك.
+نزّل الملف &lrm;**-ios-unsigned.ipa**&lrm; من [أحدث إصدار](https://github.com/platberlitz/Neconyan/releases/latest)، ثم ثبّته بأداة تثبيت جانبي مثل [iloader](https://github.com/nab138/iloader). ستحتاج إلى **iOS 17 أو أحدث**. خادم التطبيق ودردشاته موجودان على الهاتف؛ والتطبيق ليس على App Store.
 
-1. افتح [صفحة الإصدار](https://github.com/platberlitz/Neconyan/releases/latest) ونزّل الملف الذي ينتهي بـ &lrm;`-ios-unsigned.ipa`&lrm; إن كان ذلك الإصدار يتضمّنه. وإن لم يكن، فاستخدم [الإعداد عبر المتصفح](#opening-it-on-your-phone) بدلًا من ذلك.
-2. اختره في أداة تثبيت جانبي مثل [iloader](https://github.com/nab138/iloader). ستوقّعه الأداة بحساب Apple الخاص بك وتثبّته. ستحتاج إلى iOS 17 أو أحدث.
-3. افتح Neconyan واربط نموذجًا من **الاتصالات**، كما تفعل في أي مكان آخر.
+مع حساب Apple المجاني، عليك إعادة توقيع التطبيق كل سبعة أيام، ولا يُسمح لك إلا بتثبيت ثلاثة تطبيقات جانبيًا. ثبّت التحديثات فوق التطبيق الحالي بحساب Apple نفسه. **حذف التطبيق يحذف بياناته**، لذا صدّر نسخة احتياطية أولًا.
 
-مع حساب Apple المجاني، عليك إعادة توقيع التطبيق كل سبعة أيام، ولا يُسمح لك إلا بتثبيت ثلاثة تطبيقات جانبيًا. وللتحديث، ثبّت ملف IPA الجديد فوق القديم بحساب Apple نفسه، وستبقى دردشاتك كما هي. حذف التطبيق يحذف دردشاتك معه، لذا صدّر نسخة احتياطية للحساب أولًا إن كنت ستنتقل إلى أداة تثبيت جانبي أخرى.
+[إعداد iPhone وحدوده](../ios/README.md)
 
-يستمر الاستيراد حين تنتقل إلى تطبيق آخر أو تقفل الهاتف. اختر النسخة الاحتياطية بزر **استيراد ملف ZIP احتياطي** الموجود في التطبيق نفسه، ثم أكّد، وسيتولّى الخادم الأمر من هناك، فيشغّل صوتًا صامتًا حتى لا يجمّده iOS أثناء العمل، ويمكنك العودة لتتفقده متى شئت. والردود تستمر أيضًا، تمامًا كما في تبويب متصفح على الكمبيوتر: إن غادرت في منتصف الرد، تشغّل الصفحة صوتها الصامت الخاص حتى يُكتب الرد ويُحفظ وينتهي عمل أي وكلاء يأتون بعده. قد ترى «Neconyan is finishing a reply» على شاشة القفل أثناء ذلك، وقد تتوقف الموسيقى في تطبيق آخر مؤقتًا حتى ينتهي. ومع ذلك قد يُغلق iOS التطبيق إن شحّت ذاكرة الهاتف. اترك مساحة فارغة تعادل نحو ضعف حجم النسخة الاحتياطية أثناء نسخها إلى التطبيق. [إعداد iPhone وحدوده وتعليمات البناء.](../ios/README.md)
+### طرق أخرى لاستخدام هاتفك
 
-<a id="on-a-computer"></a>
+- **على Android عبر Termux:** اتبع [دليل Termux](https://platberlitz.github.io/neconyan-docs/start/android/#prefer-termux) إن كنت تفضّل الطرفية أو لديك هاتف أقدم.
+- **استخدم النسخة المثبّتة على الكمبيوتر:** اتبع [دليل شبكة Wi-Fi نفسها](https://platberlitz.github.io/neconyan-docs/start/phone/). يستخدم الجهازان الدردشات المحفوظة نفسها؛ أبقِ الكمبيوتر قيد التشغيل.
 
-### على الكمبيوتر
+## التحديثات والنسخ الاحتياطية ونقل دردشاتك
 
-1. **احصل على Neconyan.** هناك طريقتان، والثانية تُبقي نفسها محدّثة.
+افتح **الخادم ← التحديثات وإعادة التشغيل ← التحقق من وجود تحديثات**. توفّر النسخ المثبّتة عبر Git، وكذلك نسخ ZIP المصدرية المدعومة، خيار **تحديث وإعادة تشغيل**. وفي تطبيق Android تجد **Update APK**، ويُطلب منك الموافقة على التثبيت. أما نسخ ZIP الأقدم التي لا تضم أداة تحديث فتحتاج إلى [نقل يدوي إلى المجلد الأحدث](https://platberlitz.github.io/neconyan-docs/help/backups/#update-a-zip-installation).
 
-   - **نزّله.** خذ الملف الذي ينتهي بـ &lrm;`-source.zip`&lrm; من [أحدث إصدار](https://github.com/platberlitz/Neconyan/releases/latest) وفكّ ضغطه في مكان يسهل الوصول إليه، مثل مجلد «المستندات». على Windows، انقر بزر الفأرة الأيمن على ملف zip واختر **استخراج الكل** أولًا، لأن تشغيل ملف التشغيل من داخل ملف zip لن ينجح. ستحصل على مجلد يحمل اسم الإصدار، مثل `Neconyan-1.3.7`.
-   - **استنسخه باستخدام [Git](https://git-scm.com/downloads).** افتح طرفية في المكان الذي تريد أن يكون فيه المجلد وشغّل السطر أدناه. بعد ذلك يتحقق ملف التشغيل من وجود إصدار جديد في كل مرة تشغّله فيها، ويحدّث Neconyan قبل فتحه، ولهذا أفضّل هذه الطريقة.
+تتحقق النسخ المثبّتة عبر Git من وجود تحديثات عند تشغيلها أيضًا. وقد تمنع التعديلات التي أجريتها على ملفات التطبيق نفسه التحديثَ التلقائي؛ أما دردشاتك وإعداداتك فلا تُحتسب.
 
-     ```sh
-     git clone https://github.com/platberlitz/Neconyan.git
-     ```
+هل تنتقل من SillyTavern أو SillyBunny؟ **أنشئ نسخة احتياطية أولًا**، وخصّص لـ Neconyan مجلد بيانات خاصًا به، ثم اتبع [استيراد بياناتك](https://platberlitz.github.io/neconyan-docs/start/imports/). تحقّق من شخصياتك ودردشاتك قبل أن تحذف أي شيء. وقد تحتاج بعض الإضافات إلى تعديل.
 
-2. **شغّله.** افتح مجلد Neconyan وشغّل ملف التشغيل الخاص بنظامك.
+[النسخ الاحتياطي والاستعادة](https://platberlitz.github.io/neconyan-docs/help/backups/) · [نقل البيانات بين الأجهزة](../docs/data-portability.md)
 
-   | النظام | الطريقة |
-   | --- | --- |
-   | Windows | انقر نقرًا مزدوجًا على `Start.bat` |
-   | macOS | انقر نقرًا مزدوجًا على `Start.command` |
-   | Linux أو WSL | افتح طرفية في المجلد وشغّل &lrm;`./start.sh`&lrm; |
+## هل تحتاج إلى مساعدة؟
 
-   يستغرق التشغيل الأول بضع دقائق. إن لم يكن لديك Bun أو Node.js (البرنامجان اللذان يشغّلان Neconyan فعليًا)، فسيثبّت ملف التشغيل Bun لك، ثم ينزّل كل ما يحتاجه Neconyan. أبقِ تلك النافذة مفتوحة طوال استخدامك لـ Neconyan؛ فإغلاقها، أو الضغط على Ctrl+C فيها، يوقف Neconyan.
+لو كنتُ مكانك لبدأتُ بـ[الدليل](https://platberlitz.github.io/neconyan-docs/)، أو بسؤال Miso أو Taro أو Nori في «الرئيسية». قد يخطئون، لذا تحقّق من نصائحهم قبل إجراء أي تغيير لا يمكنك التراجع عنه.
 
-3. **افتحه.** يُفترض أن يفتح متصفحك من تلقاء نفسه. وإن لم يفعل، فاذهب إلى **http://127.0.0.1:4433/**.
-4. **اربط نموذجًا.** انقر **الاتصالات** في الشريط الجانبي، واختر المزوّد والنموذج، ثم الصق مفتاح API أو عنوان واجهتك الخلفية المحلية. بعد ذلك، استورد شخصية أو ألقِ التحية على Miso أو Taro أو Nori في «الرئيسية».
+إن لم تجد إعدادًا ما، فجرّب **يبحث** في الشريط الجانبي. وإن ظهرت لك أخطاء، فاستخدم [دليل حل المشكلات](https://platberlitz.github.io/neconyan-docs/help/troubleshooting/) أو [افتح بلاغًا](https://github.com/platberlitz/Neconyan/issues) تذكر فيه ما كنت تفعله والخطأ الذي ظهر.
 
-في المرة القادمة، شغّل ملف التشغيل نفسه مرة أخرى.
-
-**التحديث.** النسخ المثبّتة عبر Git تحدّث نفسها عند تشغيلها. أما مع ملف zip، فنزّل الجديد وفكّ ضغطه في مجلد جديد، وأغلق Neconyan، ثم انسخ مجلد `data` من مجلد Neconyan القديم إلى الجديد، ومعه `config.yaml` إن كنت قد عدّلته. شغّل النسخة الجديدة وتأكد من وجود دردشاتك قبل أن تحذف المجلد القديم.
-
-<a id="android-with-termux"></a>
-
-### على Android عبر Termux
-
-يُعدّ [Termux](https://termux.dev/) تطبيق طرفية لنظام Android. يتطلّب تعديلات يدوية أكثر من التطبيق أعلاه، لكنه يعمل على الهواتف الأقدم أيضًا.
-
-1. ثبّت Termux من [F-Droid](https://f-droid.org/packages/com.termux/) أو من [إصداراته على GitHub](https://github.com/termux/termux-app/releases).
-2. افتح Termux وحدّثه. إن توقف ليسألك عن ملف إعدادات، فاضغط Enter للإبقاء على الملف الحالي.
-
-   ```sh
-   pkg update && pkg upgrade -y
-   ```
-
-3. ثبّت Git، ثم نزّل Neconyan في مجلد Termux الرئيسي. يتخطى &lrm;`--depth 1`&lrm; السجل القديم للمشروع، فيصغر حجم التنزيل، وتبقى التحديثات تعمل مع ذلك.
-
-   ```sh
-   pkg install -y git
-   ```
-
-   ```sh
-   git clone --depth 1 https://github.com/platberlitz/Neconyan.git ~/Neconyan
-   ```
-
-4. شغّله. يثبّت التشغيل الأول Node.js وكل ما يحتاجه Neconyan، فامنحه بضع دقائق.
-
-   ```sh
-   cd ~/Neconyan && bash start.sh
-   ```
-
-5. عندما ترى `Go to: http://127.0.0.1:4433/ to open Neconyan`، افتح ذلك العنوان في Chrome أو أي متصفح آخر على الهاتف. ثم اربط نموذجًا من **الاتصالات**، كما على الكمبيوتر.
-
-بعض العادات التي تستحق أن تكتسبها مع Termux:
-
-- لإيقاف Neconyan، اضغط **CTRL** في صف المفاتيح الإضافية، ثم **C**.
-- في المرة القادمة، افتح Termux وشغّل `cd ~/Neconyan && bash start.sh` مرة أخرى. سيحدّث نفسه قبل أن يبدأ.
-- أبقِ المجلد في مجلد Termux الرئيسي. يرفض ملف التشغيل العمل من التخزين المشترك مثل &lrm;`/sdcard`&lrm;، لأن Android يمنع هناك روابط الملفات التي تحتاجها حزم Neconyan.
-- في قائمة Chrome، يمنح خيار **إضافة إلى الشاشة الرئيسية** تطبيق Neconyan أيقونته الخاصة.
-
-**إبقاؤه يعمل في الخلفية.** يحب Android إيقاف التطبيقات التي لا تنظر إليها، وTermux ليس استثناءً. هذه الخطوات تُبقي Neconyan حيًّا وأنت في تطبيق آخر:
-
-1. اسحب الإشعارات إلى الأسفل وتأكد من أن إشعار Termux يذكر أن wake lock مُفعَّل. يطلبه Neconyan عند بدء تشغيله؛ وإن لم يثبت، فاضغط **Acquire wakelock** هناك.
-2. افتح في Android **الإعدادات ← التطبيقات ← Termux ← البطارية** واختر **غير مقيَّد**. تختلف الأسماء وأماكنها من شركة هواتف إلى أخرى، لذا ابحث في الإعدادات عن «تحسين البطارية» إن لم تجده.
-3. على Android 12 أو أحدث، يُنهي Android أيضًا العمليات الإضافية التي يبدؤها Termux، وNeconyan واحد منها. على Android 14 وما بعده، فعّل خيارات المطوّرين (اضغط **رقم الإصدار** في **لمحة عن الهاتف** سبع مرات)، ثم فعّل **Disable child process restrictions**. أما على Android 12 و13 فلا يوجد مفتاح لذلك، لذا عليك تشغيل هذين الأمرين مرة واحدة من كمبيوتر عليه `adb` مع تفعيل تصحيح أخطاء USB:
-
-   ```sh
-   adb shell "/system/bin/device_config set_sync_disabled_for_tests persistent"
-   ```
-
-   ```sh
-   adb shell "/system/bin/device_config put activity_manager max_phantom_processes 2147483647"
-   ```
-
-حتى مع بقاء الخادم حيًّا، قد يُفرغ Chrome الصفحة نفسها من الذاكرة بعد فترة، فيُعاد تحميل Neconyan عند عودتك. إن أزعجك ذلك، ففعّل **Stay open in the background** في **الإعدادات ← النظام والجهاز ← Memory and performance**. يشغّل هذا الخيار صوتًا أخفت من أن يُسمع أثناء غيابك، فيعامل Chrome تطبيق Neconyan كمشغّل موسيقى ويتركه وشأنه. يستهلك بعض البطارية، ويُظهر إشعار وسائط، وقد يوقف مؤقتًا الموسيقى التي تعمل في تطبيقات أخرى، ولهذا هو معطّل افتراضيًا. لم أجرّبه حتى الآن إلا في متصفح هاتف مُحاكى، لا على هاتف حقيقي، فأخبرني إن تجاهله هاتفك.
-
-<a id="opening-it-on-your-phone"></a>
-
-### فتحه على هاتفك
-
-إن كان Neconyan يعمل على كمبيوترك، فيمكن لهاتفك استخدامه أيضًا، ما دام الجهازان على شبكة Wi-Fi نفسها. وهذه أيضًا الطريقة المناسبة على iPhone إن كنت تفضّل ألا تثبّت [تطبيق iPhone](#iphone-app) جانبيًا.
-
-يستخدم المتصفحان البيانات نفسها. أما إن كنت تحتاج بدلًا من ذلك إلى نقل إعداد يعمل دون اتصال من جهاز إلى آخر، فاقرأ [نقل البيانات بين الأجهزة](../docs/data-portability.md)، بما في ذلك إعداد مجلد البيانات عبر GitHub، قبل أن تنسخ المجلد أو تزامنه.
-
-1. أوقف Neconyan وافتح `config.yaml` في مجلد Neconyan بأي محرر نصوص. يظهر هذا الملف بعد التشغيل الأول. غيّر `listen: false` إلى `listen: true`.
-2. وما دمت هناك، فعّل كلمة مرور، وإلا فسيتمكن أي شخص على شبكة Wi-Fi لديك من فتحه. اضبط `basicAuthMode: true`، ثم غيّر `username` و`password` تحت `basicAuthUser`.
-3. شغّل Neconyan مجددًا واعثر على العنوان المحلي لكمبيوترك.
-   - **على Windows:** شغّل `ipconfig` في موجه الأوامر وابحث عن **IPv4 Address**.
-   - **على macOS:** اضغط مع الاستمرار على مفتاح Option وانقر أيقونة Wi-Fi في شريط القوائم، ثم ابحث عن **IP Address**.
-   - **على Linux:** شغّل `hostname -I`.
-4. في متصفح هاتفك، اكتب ذلك العنوان مع &lrm;`http://`&lrm; قبله و&lrm;`:4433`&lrm; بعده، مثل `http://192.168.1.20:4433`.
-
-إن سألك Windows عمّا إذا كان سيسمح لـ Bun أو Node.js بالمرور عبر جدار الحماية، فاسمح بذلك على الشبكات الخاصة. وإن عرض هاتفك صفحة لا تقول سوى **محظور**، فهذا يعني أن شبكتك توزّع عناوين تبدأ بـ &lrm;`10.`&lrm;، وهي عناوين يحظرها Neconyan افتراضيًا. أضف هذا السطر تحت &lrm;`whitelist:`&lrm; في `config.yaml`، ثم أعد تشغيل Neconyan:
-
-```yaml
-  - 10.0.0.0/8
-```
-
-<details>
-<summary><b>اختيار Node.js أو Bun، وخيارات أخرى لملفات التشغيل</b></summary>
-
-لكل نظام أيضًا ملفا تشغيل منفصلان لـ Node.js وBun، إن كنت تفضّل أن تختار بنفسك:
-
-| النظام | Node.js | Bun |
-| --- | --- | --- |
-| Windows | `Start-Node.bat` | `Start-Bun.bat` |
-| macOS | `Start-Node.command` | `Start-Bun.command` |
-| Linux / WSL | &lrm;`./start-node.sh`&lrm; | &lrm;`./start-bun.sh`&lrm; |
-| Android (Termux) | `bash start-termux-node.sh` | `bash start-termux-bun.sh` |
-
-للتثبيت يدويًا، تحتاج إلى Node.js 20 أو أحدث:
-
-```sh
-npm install
-npm run start:node
-```
-
-يعمل Bun 1.3.14 أو أحدث أيضًا: شغّل `bun install`، ثم `bun run start`، أو `bun run start:mobile` لاستهلاك ذاكرة أقل. اترك ملف &lrm;`.npmrc`&lrm; الموجود في المستودع كما هو.
-
-لمنع النسخة المثبّتة عبر Git من تحديث نفسها، اضبط `NECONYAN_AUTO_UPDATE=0` قبل تشغيل ملف التشغيل.
-
-</details>
-
-<details>
-<summary><b>إن تعذّر التشغيل</b></summary>
-
-- **يقول Windows إنه حمى جهازك:** انقر **More info**، ثم **Run anyway**. يقول ذلك عن معظم ملفات التشغيل التي تُنزَّل من الإنترنت.
-- **يرفض macOS فتح `Start.command` لأنه من مطوّر غير محدد الهوية:** انقر عليه بزر الفأرة الأيمن واختر **فتح**. أما في إصدارات macOS الأحدث، فاذهب بدلًا من ذلك إلى **إعدادات النظام ← الخصوصية والأمن** وانقر **Open Anyway**.
-- **يقول macOS أو Linux إن ملف التشغيل غير قابل للتنفيذ:** شغّل هذا في مجلد Neconyan.
-
-  ```sh
-  chmod +x Start*.command start*.sh scripts/*.sh
-  ```
-
-- **توقفت النسخة المثبّتة عبر Git عن التحديث:** يتخطى ملف التشغيل التحديثات إن كنت قد عدّلت أيًّا من ملفات Neconyan نفسه، ويذكر السبب عند بدء التشغيل. دردشاتك و`config.yaml` لا تُحتسب.
-- **على Android:** يُستخدم Node.js افتراضيًا في Termux. يحتاج Bun إلى حزمتين إضافيتين، يحاول ملف تشغيل Bun تثبيتهما لك. وإن فشل ذلك، فثبّتهما بنفسك:
-
-  ```sh
-  pkg update && pkg install -y glibc-repo && pkg install -y glibc-runner
-  ```
-
-  اضبط `GLIBC_ROOT` إن كانت glibc لديك في مكان غير &lrm;`$PREFIX/glibc`&lrm;.
-
-- **المنفذ 4433 مشغول:** مرّر &lrm;`--port`&lrm; مع رقم آخر، أو غيّر المنفذ في `config.yaml`.
-
-</details>
-
-### هل أنت قادم من SillyTavern أو SillyBunny؟
-
-يُفترض أن تنتقل معظم شخصياتك ودردشاتك وكتب المعرفة والـ Personas والإعدادات المسبقة دون مشاكل، لكن لا أستطيع أن أعدك بأن كل شيء سينتقل، وقد تحتاج الإضافات التي تعتمد على تخطيط صفحة SillyTavern إلى إصلاح.
-
-- **انسخ تثبيتك القديم احتياطيًا أولًا**، واحتفظ بتلك النسخة حتى تتأكد من أن كل شيء يعمل.
-- **خصّص لـ Neconyan مجلد بيانات خاصًا به.** لا توجّه تطبيقين إلى المجلد نفسه أبدًا.
-
-ينشئ Neconyan ملف `config.yaml` ومجلد &lrm;`data/`&lrm; الخاصين به في أول مرة يعمل فيها. بياناتك الشخصية ومفاتيحك والحزم التي ثبّتها لا تكون أبدًا جزءًا من الإصدار.
-
-<details>
-<summary><b>للمطوّرين</b></summary>
-
-يحتوي `main` على لقطات الإصدارات، و`staging` هو مكان العمل. استخدم نسخة مستقلة من المستودع ومجلد بيانات منفصلًا للاختبار، حتى تبقى دردشاتك اليومية بعيدة عنه.
-
-```sh
-npm run lint
-npm run build:frontend
-npm run check:frontend-budgets
-npm --prefix tests install
-npm --prefix tests run test:unit
-```
-
-توجد اختبارات المتصفح في &lrm;`tests/`&lrm; وتعمل على خادم مؤقت: اضبط `NECONYAN_TEST_BASE_URL` على عنوانه (القيمة الافتراضية هي `http://127.0.0.1:4433`). ابنِ الواجهة الأمامية قبل الاختبار، وأعد تشغيل الخادم بعد إعادة البناء. لقطات الشاشة المؤقتة وتقارير الاختبار ومخرجات البناء ومجلدات التشغيل المحلية تبقى خارج الإيداعات.
-
-</details>
+## شكر وتقدير
 
 <p align="center">
   <img src="../docs/readme/banner-credits.webp" alt="شكر وتقدير">
 </p>
 
-بُني Neconyan على عمل كل من يقف وراء SillyTavern وSillyBunny؛ ولولاهم لما وُجد شيء من هذا. الأدوات المرفقة والمشاريع التي جاءت منها مذكورة مع أصحابها في [قائمة الأدوات المضمّنة](../docs/neconyan-native-tools.md).
+بُني Neconyan على عمل كل من يقف وراء SillyTavern وSillyBunny؛ ولولاهم لما وُجد شيء من هذا. وتنسب [قائمة الأدوات المضمّنة](../docs/neconyan-native-tools.md) كل أداة إلى مؤلفيها الأصليين.
 
-من صنع [Platberlitz](https://github.com/platberlitz). مرخّص بموجب [GNU AGPL v3](../LICENSE)، لذا أبقِ الإشعارات والتراخيص في مكانها إن أعدت توزيعه.
+من صنع [Platberlitz](https://github.com/platberlitz). مرخّص بموجب [GNU AGPL v3](../LICENSE). أبقِ الإشعارات والتراخيص في مكانها إن أعدت توزيعه.
 
 </div>

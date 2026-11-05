@@ -30,6 +30,7 @@ import {
     loreScanText,
     sourceConnectionProfile,
     sourceCharacters,
+    sourcePersona,
     sourceMessages,
     sourceUserName,
     setNotebookSource,
@@ -1321,12 +1322,22 @@ function renderChangeCard(session, message, part) {
 
 function imageGuard(source, session, message, part) {
     requireScope(source, session.id);
+    if (part.change.persona) personaGuard(source, session, message, part);
     if (part.change.character) {
         const target = message.targets?.filter(target => target.name.toLowerCase() === part.change.character.toLowerCase());
         if (target?.length !== 1 || !currentSettings().include.card || !sourceCharacters(source).some(card => card.avatar === target[0].avatar)
             || source.kind === 'general' && (!sameChat(message.contextSource, source) || message.sharedAvatar !== source.avatar)) {
             throw new Error(t`Keep the original character selected and shared before using this image suggestion.`);
         }
+    }
+}
+
+function personaGuard(source, session, message, part) {
+    requireScope(source, session.id);
+    const target = sourcePersona(source);
+    if (!currentSettings().include.persona || !message.sharedPersona || target?.avatar !== message.sharedPersona.avatar
+        || target.name !== message.sharedPersona.name || part.change.persona.toLowerCase() !== target.name.toLowerCase()) {
+        throw new Error(t`Keep the original persona selected and shared before using this suggestion.`);
     }
 }
 
@@ -1453,8 +1464,9 @@ async function reviewAndSaveChange(session, message, part, key) {
             && (!sameChat(message.contextSource, source) || !currentSettings().include.card)) {
             throw new Error(t`Return to the original context and share the selected card before reviewing this change.`);
         }
-        plan = part.change.type === 'image' ? await images.prepareAvatarChange({ source: wireSource(source), session, message, part,
-            guard: () => imageGuard(source, session, message, part) }) : await prepareChange(part.change, source, { sharedAvatar: message.sharedAvatar, creatorKey: JSON.stringify([source.key, session.id, message.id, part.index]) });
+        plan = part.change.type === 'image' ? await images.prepareAvatarChange({ source: wireSource(source), personaSource: source, session, message, part,
+            guard: () => imageGuard(source, session, message, part) }) : await prepareChange(part.change, source, { sharedAvatar: message.sharedAvatar,
+            sharedPersona: message.sharedPersona, personaGuard: () => personaGuard(source, session, message, part), creatorKey: JSON.stringify([source.key, session.id, message.id, part.index]) });
         requireScope(source, session.id);
         if (plan.bucket) applyBucket(plan.bucket);
     } catch (error) {
@@ -1488,7 +1500,7 @@ async function reviewAndSaveChange(session, message, part, key) {
         }
         const saved = await plan.commit(editor ? editor.value : plan.after);
         creatorDraftId = saved?.creatorDraftId;
-        if (saved?.refreshFailed) toastr.info(t`The avatar was saved. Refresh this view to reload its picture.`);
+        if (saved?.refreshFailed) toastr.info(t`The change was saved. Refresh this view to see it.`);
     } catch (error) {
         reportError(error, t`That change could not be saved.`);
         return;
@@ -1839,7 +1851,7 @@ function renderContext({ force = true } = {}) {
         notebook ? null : h('section', { class: 'scratchpad-section' },
             h('h3', { class: 'scratchpad-section-title', text: t`Also share` }),
             !general || app.source.avatar ? checkbox(t`Character cards`, include.card, value => setInclude('card', value)) : null,
-            checkbox(t`Your persona`, include.persona, value => setInclude('persona', value)),
+            checkbox(t`Your persona and Scenario Notes`, include.persona, value => setInclude('persona', value)),
             roleplay ? checkbox(t`Author's Note`, include.authorsNote, value => setInclude('authorsNote', value)) : null,
             general ? null : checkbox(t`Lorebook entries`, include.lore, value => setInclude('lore', value), t`Entries are shared when their keywords appear, or when you set them to Always below.`),
             roleplay ? presetCheckbox(include.preset, value => setInclude('preset', value)) : null),

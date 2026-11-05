@@ -2,9 +2,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import { Jimp } from '../src/jimp.js';
+import { decodeServerImage, encodeServerImage } from '../src/media-codecs.js';
+import { fitScenarioAvatar, MAX_SCENARIO_AVATAR_LENGTH } from '../public/scripts/persona-appendix-avatar.js';
 import { fixture, png } from './roleplay-transactions-fixture.js';
 import * as store from '../src/scratchpad/store.js';
-import { acceptScratchpadImage, prepareScratchpadAvatarReview, registerScratchpadImageJobs, readScratchpadImageAvailability, assertScratchpadAvatarWriteLocked, assertScratchpadImageRetry } from '../src/scratchpad/images.js';
+import { acceptScratchpadImage, prepareScratchpadAvatarReview, saveScratchpadPersonaAvatar, registerScratchpadImageJobs, readScratchpadImageAvailability, assertScratchpadAvatarWriteLocked, assertScratchpadImageRetry } from '../src/scratchpad/images.js';
 import { generateQuickImageGenJobImage } from '../src/generation/quick-image-gen-job.js';
 import { readArtifact, writeArtifact } from '../src/jobs/artifacts.js';
 import { explicitRetryRecovery, getJob, jobKey, mutateJobs, requestCancellation, setJobResume, updateJob } from '../src/jobs/store.js';
@@ -20,13 +23,41 @@ const SOURCE = { kind: 'general', key: 'general', label: 'General Scratchpad', a
 const fence = change => '```scratchpad-change\n' + JSON.stringify(change) + '\n```';
 let serial = 0;
 
-function account(t, { change = {}, qig = {}, source = SOURCE, targets = [{ avatar: 'Nova.png', name: 'Nova' }] } = {}) {
+test('detailed portraits reduce dimensions to stay within the embedded-data limit', async () => {
+    const image = new Jimp({ width: 1024, height: 1024 });
+    let seed = 37;
+    for (let i = 0; i < image.bitmap.data.length; i += 4) {
+        for (let channel = 0; channel < 3; channel++) {
+            seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+            image.bitmap.data[i + channel] = seed >>> 24;
+        }
+        image.bitmap.data[i + 3] = 255;
+    }
+    let attempts = 0;
+    const avatar = await fitScenarioAvatar(1024, 1024, async (w, h) => {
+        attempts++;
+        const bytes = await encodeServerImage(image.clone().resize({ w, h }).bitmap, 'webp', { quality: 85 });
+        return `data:image/webp;base64,${bytes.toString('base64')}`;
+    });
+    assert.ok(attempts > 1);
+    assert.ok(avatar.length <= MAX_SCENARIO_AVATAR_LENGTH);
+    const decoded = await decodeServerImage(Buffer.from(avatar.split(',')[1], 'base64'));
+    assert.ok(decoded.width > 128 && decoded.width < 1024);
+    assert.equal(decoded.width, decoded.height);
+});
+
+function account(t, { change = {}, qig = {}, source = SOURCE, targets = [{ avatar: 'Nova.png', name: 'Nova' }], generatedImage = png } = {}) {
     const f = fixture(t, false, 'image-owner');
     const directories = f.scope.directories;
     directories.userImages = path.join(directories.root, 'user/images');
+    directories.avatars = path.join(directories.root, 'User Avatars');
+    directories.thumbnailsPersona = path.join(directories.root, 'thumbnails/persona');
+    directories.thumbnailsPersonaMobile = path.join(directories.root, 'thumbnails/persona-mobile');
+    fs.mkdirSync(directories.avatars, { recursive: true });
+    fs.writeFileSync(path.join(directories.avatars, 'User.png'), png);
     const settings = { extension_settings: { 'quick-image-gen': { provider: 'together', togetherKey: 'not-a-real-provider-key', togetherModel: 'mock-image',
         width: 512, height: 768, seed: 37, style: 'none', appendQuality: true, qualityTags: 'QUALITY', useSTStyle: true, negativePrompt: 'BASE-NEGATIVE', reviewBeforeGenerate: false, ...qig },
-    sd: { prompt_prefix: 'GLOBAL-STYLE', negative_prompt: 'GLOBAL-NEGATIVE' } }, power_user: { persona_descriptions: { 'User.png': { description: 'EXPLICIT-PERSONA' } } } };
+    sd: { prompt_prefix: 'GLOBAL-STYLE', negative_prompt: 'GLOBAL-NEGATIVE' } }, power_user: { personas: { 'User.png': 'Kris' }, persona_descriptions: { 'User.png': { description: 'EXPLICIT-PERSONA' } } } };
     const saveSettings = () => fs.writeFileSync(path.join(directories.root, 'settings.json'), JSON.stringify(settings));
     saveSettings();
     const request = { user: { profile: { handle: f.scope.owner }, directories }, get: () => undefined };
@@ -37,7 +68,7 @@ function account(t, { change = {}, qig = {}, source = SOURCE, targets = [{ avata
     const session = mutate(bucket => {
         const session = store.createSession(bucket);
         session.messages.push({ id: 'reply', role: 'assistant', state: 'done', text: fence(proposal), contextSource: source,
-            targets, sharedAvatar: source.avatar, imageNames: { user: 'Kris', character: 'Nova' }, imagePersonaId: 'User.png' });
+            targets, sharedAvatar: source.avatar, sharedPersona: { avatar: 'User.png', name: 'Kris' }, imageNames: { user: 'Kris', character: 'Nova' }, imagePersonaId: 'User.png' });
         return session;
     });
     const body = { source, sessionId: session.id, messageId: 'reply', index: 0, submissionKey: `image-${++serial}` };
@@ -46,13 +77,77 @@ function account(t, { change = {}, qig = {}, source = SOURCE, targets = [{ avata
     registerScratchpadImageJobs({ generate: (context, options) => generateQuickImageGenJobImage(context, { ...options,
         fetch: async (url, request) => {
             calls.push({ url, body: JSON.parse(request.body) });
-            return new Response(JSON.stringify({ data: [{ b64_json: png.toString('base64') }] }), { headers: { 'Content-Type': 'application/json' } });
+            return new Response(JSON.stringify({ data: [{ b64_json: generatedImage.toString('base64') }] }), { headers: { 'Content-Type': 'application/json' } });
         } }) });
     const accept = extra => acceptScratchpadImage(request, { ...body, ...extra });
     const run = accepted => runner.runJob(getJob(directories, accepted.job.id));
     const image = () => read().sessions[0].messages[0].images?.[0];
     return { f, directories, base, request, source, settings, saveSettings, mutate, read, session, body, accept, run, image, calls };
 }
+
+test('persona avatar uses global settings, preserves a backup and rejects changes after review', async t => {
+    const a = account(t, { change: { target: 'persona-avatar', persona: 'Kris' } });
+    const original = fs.readFileSync(path.join(a.directories.avatars, 'User.png'));
+    const accepted = await a.accept();
+    await a.run(accepted);
+    assert.equal(getJob(a.directories, accepted.job.id).state, 'completed');
+    assert.equal(a.calls[0].body.width, 512);
+    const review = await prepareScratchpadAvatarReview(a.base, a.source, a.body);
+    assert.equal(review.kind, 'persona');
+    assert.deepEqual(fs.readFileSync(path.join(a.directories.root, review.currentUrl.slice(1))), original);
+    fs.appendFileSync(path.join(a.directories.avatars, 'User.png'), 'changed');
+    await assert.rejects(saveScratchpadPersonaAvatar(a.base, { ...a.body, avatar: 'User.png', revision: review.revision }), /changed after review/);
+    fs.writeFileSync(path.join(a.directories.avatars, 'User.png'), original);
+    await saveScratchpadPersonaAvatar(a.base, { ...a.body, avatar: 'User.png', revision: review.revision });
+    assert.deepEqual(fs.readFileSync(path.join(a.directories.root, review.currentUrl.slice(1))), original);
+    assert.equal(a.calls.length, 1);
+});
+
+test('persona image refuses revoked sharing, missing capture and renamed personas', async t => {
+    const a = account(t, { change: { target: 'persona-avatar', persona: 'Kris' } });
+    a.mutate(bucket => { bucket.sessions[0].settings.include.persona = false; });
+    await assert.rejects(a.accept(), /original persona/);
+    a.mutate(bucket => { bucket.sessions[0].settings.include.persona = true; delete bucket.sessions[0].messages[0].sharedPersona; });
+    await assert.rejects(a.accept(), /original persona/);
+    a.mutate(bucket => { bucket.sessions[0].messages[0].sharedPersona = { avatar: 'User.png', name: 'Kris' }; });
+    a.settings.power_user.personas['User.png'] = 'Renamed'; a.saveSettings();
+    await assert.rejects(a.accept(), /original persona/);
+    assert.equal(a.calls.length, 0);
+});
+
+test('Scenario Note images retain their target, resize for review and refuse stale or revoked notes', async t => {
+    const generatedImage = await new Jimp({ width: 1200, height: 1600, color: 0x7799aaff }).getBuffer('image/png');
+    const a = account(t, { change: { target: 'persona-note-avatar', persona: 'Kris', noteId: 'winter' }, generatedImage });
+    const descriptor = a.settings.power_user.persona_descriptions['User.png'];
+    descriptor.appendices = [{ id: 'winter', name: 'Winter', description: 'Snowy clothes' }];
+    a.saveSettings();
+    const accepted = await a.accept();
+    await a.run(accepted);
+    assert.equal(getJob(a.directories, accepted.job.id).state, 'completed');
+    assert.equal(a.image().target, 'persona-note-avatar');
+    const review = await prepareScratchpadAvatarReview(a.base, a.source, a.body);
+    assert.equal(review.kind, 'persona-note');
+    assert.equal(review.noteId, 'winter');
+    assert.equal(review.avatarValue, '');
+    assert.match(review.proposedAvatar, /^data:image\/webp;base64,/);
+    assert.ok(review.proposedAvatar.length < 96 * 1024);
+    const decoded = await decodeServerImage(Buffer.from(review.proposedAvatar.split(',')[1], 'base64'));
+    assert.equal(decoded.width, 768);
+    assert.equal(decoded.height, 1024);
+    assert.equal((await prepareScratchpadAvatarReview(a.base, a.source, a.body)).proposedAvatar, review.proposedAvatar);
+    assert.equal(descriptor.appendices[0].avatar, undefined);
+    assert.deepEqual(fs.readFileSync(path.join(a.directories.avatars, 'User.png')), png);
+    descriptor.appendices[0].avatar = review.proposedAvatar; a.saveSettings();
+    const changed = await prepareScratchpadAvatarReview(a.base, a.source, a.body);
+    assert.equal(changed.avatarValue, review.proposedAvatar);
+    assert.notEqual(changed.revision, review.revision);
+    a.mutate(bucket => { bucket.sessions[0].settings.include.persona = false; });
+    await assert.rejects(prepareScratchpadAvatarReview(a.base, a.source, a.body), /original persona/);
+    a.mutate(bucket => { bucket.sessions[0].settings.include.persona = true; });
+    descriptor.appendices = []; a.saveSettings();
+    await assert.rejects(prepareScratchpadAvatarReview(a.base, a.source, a.body), /no longer exists/);
+    assert.equal(a.calls.length, 1);
+});
 
 test('explicit global settings restore the saved base, never the last selected card or its references', () => {
     const raw = { width: 1024, height: 1024, style: 'character-style', customApiRefImages: ['/user/images/private-card.png'],

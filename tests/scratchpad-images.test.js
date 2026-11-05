@@ -11,6 +11,10 @@ const capability = { ensureReady: jest.fn() };
 const readImageAvailability = jest.fn();
 const readAvatarReview = jest.fn();
 const generateImage = jest.fn();
+const refreshPersonaAvatar = jest.fn();
+const preparePersonaChange = jest.fn();
+jest.unstable_mockModule('../public/scripts/scratchpad/persona-changes.js', () => ({ preparePersonaChange }));
+jest.unstable_mockModule('../public/scripts/personas.js', () => ({ getUserAvatars: jest.fn(), refreshPersonaAvatar }));
 jest.unstable_mockModule('../public/script.js', () => ({ characters, getOneCharacter, refreshCharacterAvatar, printCharactersDebounced,
     select_selected_character: jest.fn(), this_chid: 0, getRequestHeaders: () => ({}) }));
 jest.unstable_mockModule('../public/scripts/events.js', () => ({ event_types: { CHARACTER_EDITED: 'edited' }, eventSource: { emit } }));
@@ -39,6 +43,37 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks());
 
 describe('Scratchpad images and avatar reviews', () => {
+    test('Scenario Note avatar save rechecks the saved image before committing the reviewed field', async () => {
+        const portrait = 'data:image/webp;base64,aGVsbG8=';
+        const review = { avatar: 'User.png', kind: 'persona-note', noteId: 'winter', avatarValue: '', proposedAvatar: portrait, revision: 'a'.repeat(64),
+            currentUrl: '/user/images/Scratchpad/scratchpad-old.png', proposedUrl: '/user/images/Scratchpad/scratchpad-new.png' };
+        readAvatarReview.mockResolvedValue(review);
+        const commit = jest.fn().mockResolvedValue({ committed: true });
+        preparePersonaChange.mockResolvedValue({ before: '', after: portrait, commit });
+        const proposal = { index: 0, change: { target: 'persona-note-avatar', persona: 'Kris', noteId: 'winter' } };
+        const sharedPersona = { avatar: 'User.png', name: 'Kris' };
+        const plan = await prepareAvatarChange({ source, session, message: { id: 'reply', sharedPersona, images: { 0: { avatar: 'User.png' } } }, part: proposal, guard: () => {} });
+        expect(commit).not.toHaveBeenCalled();
+        readAvatarReview.mockResolvedValue({ ...review, avatarValue: portrait });
+        await expect(plan.commit()).rejects.toThrow('changed');
+        expect(commit).not.toHaveBeenCalled();
+        readAvatarReview.mockResolvedValue(review);
+        await plan.commit();
+        expect(commit).toHaveBeenCalledWith(portrait);
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+    test('persona avatar review writes only the saved persona image and refreshes it', async () => {
+        readAvatarReview.mockResolvedValue({ avatar: 'User.png', name: 'Kris', kind: 'persona', revision: 'b'.repeat(64),
+            currentUrl: '/user/images/Scratchpad/scratchpad-old.png', proposedUrl: '/user/images/Scratchpad/scratchpad-new.png' });
+        const proposal = { index: 0, change: { target: 'persona-avatar', persona: 'Kris' } };
+        const plan = await prepareAvatarChange({ source, session, message: { id: 'reply', images: { 0: { avatar: 'User.png' } } }, part: proposal, guard: () => {} });
+        expect(plan.field).toBe('Persona avatar');
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+        await plan.commit();
+        expect(globalThis.fetch).toHaveBeenCalledWith('/api/scratchpad/images/persona-avatar', expect.objectContaining({ body: JSON.stringify({ source, sessionId: 'session', messageId: 'reply', index: 0, avatar: 'User.png', revision: 'b'.repeat(64) }) }));
+        expect(refreshPersonaAvatar).toHaveBeenCalledWith('User.png');
+        expect(getOneCharacter).not.toHaveBeenCalled();
+    });
     test('rendering, reopening and applied-state rendering never generate or upload an image', () => {
         const onGenerate = jest.fn();
         const render = msg => renderImageCard({ session, message: msg, part, availability: { image: true }, onGenerate,

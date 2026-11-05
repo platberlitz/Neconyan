@@ -5,6 +5,7 @@
 import { NOTE_TOOL_DEFINITIONS, NOTE_MUTATING_KINDS } from '../notebooks/assistant-note-tools.js';
 import { normaliseCharacterDraft } from '../neconyan-character-draft.js';
 import { CHARACTER_FIELDS, characterField, characterFieldName } from './character-fields.js';
+import { PERSONA_FIELDS, personaFieldValue } from './persona-fields.js';
 
 export const CHANGE_FENCE = 'scratchpad-change';
 const FENCE_PATTERN = /```scratchpad-change[^\n]*\n([\s\S]*?)```/g;
@@ -52,13 +53,20 @@ export function normaliseChange(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) fail('This change is not a JSON object.');
     const reason = text(value.reason, 1000).trim();
     if (value.type === 'image') {
-        if (value.action !== 'generate' || !['image', 'avatar'].includes(value.target)) fail('This image suggestion needs a valid action and target.');
+        if (value.action !== 'generate' || !['image', 'avatar', 'persona-avatar', 'persona-note-avatar'].includes(value.target)) fail('This image suggestion needs a valid action and target.');
+        const personaTarget = ['persona-avatar', 'persona-note-avatar'].includes(value.target);
+        if (personaTarget && (typeof value.persona !== 'string' || !value.persona.trim() || value.persona.length > 200 || value.character !== undefined)) fail('A persona avatar suggestion must name only the shared persona.');
+        if (!personaTarget && value.persona !== undefined) fail('Only a persona avatar suggestion can name a persona.');
+        if (value.target === 'persona-note-avatar') {
+            if (typeof value.noteId !== 'string' || !value.noteId.trim() || value.noteId.length > 200) fail('A Scenario Note avatar needs its exact saved note ID.');
+        } else if (value.noteId !== undefined) fail('Only a Scenario Note avatar can name a note.');
         if (typeof value.prompt !== 'string' || !value.prompt.trim() || value.prompt.length > 10_000) fail('Write an image prompt between 1 and 10000 characters.');
         if (value.negative !== undefined && (typeof value.negative !== 'string' || value.negative.length > 10_000)) fail('The negative image prompt must be text up to 10000 characters.');
         if (value.character !== undefined && (typeof value.character !== 'string' || !value.character.trim() || value.character.length > 200)) fail('This image suggestion needs an unambiguous shared character name.');
         if (value.target === 'avatar' && !value.character?.trim()) fail('An avatar suggestion must name a shared character.');
         return { type: 'image', action: 'generate', target: value.target, prompt: value.prompt.trim(), negative: value.negative?.trim() || '',
-            ...(value.character ? { character: value.character.trim() } : {}), reason };
+            ...(value.character ? { character: value.character.trim() } : {}), ...(value.persona ? { persona: value.persona.trim() } : {}),
+            ...(value.target === 'persona-note-avatar' ? { noteId: value.noteId } : {}), reason };
     }
     if (value.type === 'notebook') {
         const definition = Object.values(NOTE_TOOL_DEFINITIONS).find(item => item.kind === value.action && NOTE_MUTATING_KINDS.includes(item.kind));
@@ -107,6 +115,16 @@ export function normaliseChange(value) {
             return change;
         }
         fail('This lorebook change has an unknown action.');
+    }
+    if (value.type === 'persona' || value.type === 'persona-note') {
+        if (!['replace', 'edit', undefined].includes(value.action) || typeof value.persona !== 'string' || !value.persona.trim() || value.persona.length > 200) fail('This persona change needs the shared persona name and a replace action.');
+        try {
+            if (value.type === 'persona' && value.field === 'avatar') fail('Use a generated persona avatar suggestion to replace the portrait.');
+            if (value.type === 'persona-note' && (!['name', 'description', 'avatar'].includes(value.field) || typeof value.noteId !== 'string' || !value.noteId.trim() || value.noteId.length > 200)) fail('This Scenario Note change needs an existing note ID and a supported field.');
+            if (value.field === 'avatar' && value.value !== '') fail('Generate a Scenario Note avatar to replace it, or use an empty value to remove it.');
+            return { type: value.type, persona: value.persona.trim(), field: value.field, value: personaFieldValue(value.field, value.value), reason,
+                ...(value.type === 'persona-note' ? { noteId: value.noteId } : {}) };
+        } catch (error) { fail(error.message); }
     }
     if (value.type === 'character') {
         if (value.action === 'create') {
@@ -189,7 +207,9 @@ export function splitReply(reply) {
 
 export function describeChange(change) {
     if (change.type === 'creator') return `Catelier draft: ${change.name}`;
-    if (change.type === 'image') return change.target === 'avatar' ? `New avatar for ${change.character}` : 'Generate an image';
+    if (change.type === 'image') return change.target === 'persona-note-avatar' ? `New Scenario Note avatar for ${change.persona}` : change.target === 'persona-avatar' ? `New persona avatar for ${change.persona}` : change.target === 'avatar' ? `New avatar for ${change.character}` : 'Generate an image';
+    if (change.type === 'persona') return `Change ${change.persona}'s persona ${PERSONA_FIELDS[change.field].toLowerCase()}`;
+    if (change.type === 'persona-note') return `Change ${change.persona}'s Scenario Note ${PERSONA_FIELDS[change.field].toLowerCase()}`;
     if (change.type === 'notebook') {
         const label = Object.values(NOTE_TOOL_DEFINITIONS).find(item => item.kind === change.action)?.displayName || 'Change note';
         return `${label}${change.args.title ? ` '${change.args.title}'` : ''}`;

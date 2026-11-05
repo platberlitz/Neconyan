@@ -437,6 +437,54 @@ describe('request-local output controls', () => {
         });
     });
 
+    describe('native DeepSeek Flash with no effort on the wire', () => {
+        const flash = (extra = {}) => ({ chat_completion_source: 'deepseek', max_tokens: 4000, ...extra });
+        const controls = { maxOutputTokens: 500, responseLength: 300, preserveReasoningBudget: true };
+
+        describe.each(['deepseek-v4-flash', 'deepseek-flash'])('%s', model => {
+            test.each([
+                ['effort unset', flash({ model })],
+                ['effort undefined', flash({ model, reasoning_effort: undefined })],
+                ['effort empty', flash({ model, reasoning_effort: '' })],
+                ['effort auto', flash({ model, reasoning_effort: 'auto' })],
+                ['effort high', flash({ model, reasoning_effort: 'high' })],
+                ['effort max', flash({ model, reasoning_effort: 'max' })],
+                ['None behind a reverse proxy', flash({ model, reasoning_effort: 'none', reverse_proxy: 'https://proxy.invalid' })],
+                ['mixed-case id, effort unset', flash({ model: model.replace('deepseek', 'DeepSeek') })],
+            ])('classifies as reasoning: %s', (_label, data) => {
+                expect(requestUsesReasoning(data)).toBe(true);
+            });
+
+            test('keeps native None as non-reasoning', () => {
+                expect(requestUsesReasoning(flash({ model, reasoning_effort: 'none' }))).toBe(false);
+            });
+        });
+
+        test('matches the accepted DeepSeek-V4-Flash precedent for a mixed-case id with None', () => {
+            expect(requestUsesReasoning(flash({ model: 'DeepSeek-Flash', reasoning_effort: 'none' }))).toBe(true);
+        });
+
+        test.each([
+            ['suffixed id on deepseek', flash({ model: 'deepseek-flash-0601' })],
+            ['OpenRouter id', { chat_completion_source: 'openrouter', model: 'deepseek/deepseek-flash', max_tokens: 4000 }],
+            ['no source', { model: 'deepseek-flash', max_tokens: 4000 }],
+        ])('leaves other ids as non-reasoning with an unset effort: %s', (_label, data) => {
+            expect(requestUsesReasoning(data)).toBe(false);
+        });
+
+        test.each([
+            ['thinking disabled', flash({ model: 'deepseek-flash', thinking: { type: 'disabled' } })],
+            ['enable_thinking false', flash({ model: 'deepseek-flash', enable_thinking: false })],
+        ])('explicit off still wins: %s', (_label, data) => {
+            expect(requestUsesReasoning(data)).toBe(false);
+        });
+
+        test('does not apply the cap or response length while default thinking runs', () => {
+            const data = flash({ model: 'deepseek-flash' });
+            expect(applyGenerationRequestControls(data, controls)).toBe(data);
+        });
+    });
+
     test('ordinary helper responseLength can exceed the preset while a prose cap never raises it', () => {
         const preset = { model: 'gpt-4o', max_tokens: 128, include_reasoning: true };
         expect(applyGenerationRequestControls(preset, { responseLength: 1024, preserveReasoningBudget: true }).max_tokens).toBe(1024);

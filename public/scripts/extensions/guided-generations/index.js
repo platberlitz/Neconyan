@@ -352,10 +352,11 @@ function updateFlushGuideButton() {
     const activeCount = getActiveGuides().length;
     const label = getFlushGuideButtonLabel(activeCount);
 
-    button.title = label;
-    button.setAttribute('aria-label', label);
-    button.setAttribute('aria-disabled', String(activeCount === 0));
-    button.dataset.activeCount = String(activeCount);
+    if (button.title !== label) button.title = label;
+    if (button.getAttribute('aria-label') !== label) button.setAttribute('aria-label', label);
+    const disabled = String(activeCount === 0);
+    if (button.getAttribute('aria-disabled') !== disabled) button.setAttribute('aria-disabled', disabled);
+    if (button.dataset.activeCount !== String(activeCount)) button.dataset.activeCount = String(activeCount);
     button.classList.toggle('gg-flush-guides-active', activeCount > 0);
 }
 

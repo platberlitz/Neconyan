@@ -1,10 +1,59 @@
 import path from 'node:path';
+import sanitize from 'sanitize-filename';
+import { createHash } from 'node:crypto';
+import { normalizeScenarioAvatar } from '../../public/scripts/persona-appendix-avatar.js';
 import { roleplayLease, readRoleplayFile, validRoleplayAvatar } from '../roleplay-store.js';
 import { roleplayEntityContent } from '../generation/roleplay-source.js';
 import { CONVERSATION_STORE_KEY } from '../../public/scripts/neconyan-conversation/constants.js';
 import { ScratchpadError } from './store.js';
 
 const invalid = message => new ScratchpadError('SCRATCHPAD_IMAGE_TARGET', message, 409);
+
+export function normalisePersonaTarget(value) {
+    return value && typeof value.avatar === 'string' && value.avatar === sanitize(value.avatar) && value.avatar.length <= 255
+        && /\.(png|jpe?g|webp)$/i.test(value.avatar) && typeof value.name === 'string' && value.name.trim() && value.name.length <= 200
+        ? { avatar: value.avatar, name: value.name } : null;
+}
+
+export function readPersonaTargetLocked(lease, avatar) {
+    if (!normalisePersonaTarget({ avatar, name: 'Persona' })) throw invalid('Choose an existing shared persona.');
+    const directories = roleplayLease(lease).scope.directories;
+    const settingsFile = readRoleplayFile(path.join(directories.root, 'settings.json'), 32 * 1024 * 1024);
+    const settings = settingsFile && JSON.parse(settingsFile.bytes.toString('utf8'));
+    const name = settings?.power_user?.personas?.[avatar];
+    const file = readRoleplayFile(path.join(directories.avatars, avatar), 20 * 1024 * 1024);
+    if (!file || typeof name !== 'string' || !name.trim()) throw invalid('The shared persona no longer exists.');
+    const descriptor = settings.power_user.persona_descriptions?.[avatar];
+    return { avatar, name, file, kind: 'persona', description: String(descriptor?.description || ''), appendices: descriptor?.appendices };
+}
+
+export function readScenarioNoteTargetLocked(lease, avatar, noteId) {
+    const persona = readPersonaTargetLocked(lease, avatar);
+    const matches = Array.isArray(persona.appendices) ? persona.appendices.filter(note => note?.id === noteId) : [];
+    if (matches.length !== 1) throw invalid('This Scenario Note no longer exists or its ID is ambiguous. Ask for a fresh suggestion.');
+    const note = matches[0];
+    const portrait = normalizeScenarioAvatar(note.avatar);
+    const bytes = portrait ? Buffer.from(portrait.split(',')[1], 'base64') : persona.file.bytes;
+    return { ...persona, kind: 'persona-note', noteId, avatarValue: portrait, name: `${persona.name}: ${note.name}`,
+        description: [persona.description, note.description].filter(Boolean).join('\n\n'),
+        file: { bytes, rawHash: createHash('sha256').update(bytes).digest('hex') } };
+}
+
+export function capturePersonaTargetLocked(lease, source, value, shared) {
+    const target = normalisePersonaTarget(value);
+    if (!shared || source.kind === 'notebook' || !target || imagePersonaIdLocked(lease, source) !== target.avatar) return null;
+    try {
+        const current = readPersonaTargetLocked(lease, target.avatar);
+        return current.name === target.name ? target : null;
+    } catch { return null; }
+}
+
+export function resolvePersonaTargetLocked(lease, source, session, message, name) {
+    const shared = message.sharedPersona;
+    const target = capturePersonaTargetLocked(lease, source, shared, session.settings.include.persona);
+    if (!target || target.name.toLowerCase() !== name.trim().toLowerCase()) throw invalid('Keep the original persona selected and shared. Ask again if it has been renamed.');
+    return readPersonaTargetLocked(lease, target.avatar);
+}
 
 export function readImageCardLocked(lease, avatar) {
     if (!validRoleplayAvatar(avatar)) throw invalid('Choose an existing shared character card.');

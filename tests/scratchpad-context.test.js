@@ -326,6 +326,20 @@ describe('Scratchpad source context', () => {
 });
 
 describe('General Scratchpad context', () => {
+    test('shares editable base fields and saved Scenario Notes only with persona sharing', async () => {
+        home.visible = true;
+        power_user.personas = { 'User.png': 'Kris' };
+        power_user.persona_descriptions = { 'User.png': { description: '{{user}} keeps notes.', title: 'Traveller',
+            appendices: [{ id: 'harbour', name: 'Harbour', description: 'Wait for {{char}}.' }] } };
+        const shared = await buildContext({ source: currentSource(), settings });
+        expect(shared.capabilities.persona).toEqual({ avatar: 'User.png', name: 'Kris' });
+        expect(shared.text).toContain('"description":"{{user}} keeps notes."');
+        expect(shared.text).toContain('"id":"harbour"');
+        expect(shared.text).toContain('Wait for {{char}}.');
+        const hidden = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, persona: false } } });
+        expect(hidden.capabilities.persona).toBeFalsy();
+        expect(hidden.text).not.toContain('harbour');
+    });
     test.each(['chat', 'character'])('Home replaces a hidden %s-locked persona with the account default, including when sharing is off', async lock => {
         home.visible = true;
         power_user.default_persona = 'Default.png';

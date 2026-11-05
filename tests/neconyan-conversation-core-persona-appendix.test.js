@@ -42,6 +42,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/pickers.
 
 const {
     getActiveConversationPersonaAppendixIds,
+    getConversationScenarioAvatar,
     setActiveConversationPersonaAppendixIds,
 } = await import('../public/scripts/neconyan-conversation/personas.js');
 
@@ -57,6 +58,21 @@ function descriptor(activeAppendices) {
 }
 
 describe('Conversation persona appendix scoping', () => {
+    test('resolves portraits independently for each persona, character and group', () => {
+        const portrait = 'data:image/png;base64,aGVsbG8=';
+        const target = descriptor({ 'persona:target.png:char.png': ['note-a'] });
+        target.appendices[0].avatar = portrait;
+        powerUser.persona_descriptions['target.png'] = target;
+        expect(getConversationScenarioAvatar('target.png', { avatar: 'char.png', groupId: '' })).toBe(portrait);
+        expect(getConversationScenarioAvatar('target.png', { avatar: 'other.png', groupId: '' })).toBe('');
+        expect(getConversationScenarioAvatar('active.png', { avatar: 'char.png', groupId: '' })).toBe('');
+
+        const active = descriptor({ 'persona:active.png:group:active-group:char.png': ['note-a'] });
+        active.appendices[0].avatar = portrait;
+        powerUser.persona_descriptions['active.png'] = active;
+        expect(getConversationScenarioAvatar('active.png', { avatar: 'char.png', groupId: 'active-group' })).toBe(portrait);
+        expect(getConversationScenarioAvatar('active.png', { avatar: 'char.png', groupId: '' })).toBe('');
+    });
     beforeEach(() => {
         powerUser.persona_description = 'active persona description';
         powerUser.persona_descriptions = {};
