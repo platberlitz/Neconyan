@@ -244,3 +244,79 @@ test('keeps imported details available and reports a failed settings save', asyn
     await expect(page.locator(`.avatar-container[data-avatar-id="${imported.avatar}"]`)).toBeVisible();
     await expect(page.getByText('Persona card imported. Select it in Browse to use it.', { exact: true })).toHaveCount(0);
 });
+
+test('a persona export embeds a Scenario Note picture at full size and import restores its file', async ({ page }) => {
+    test.setTimeout(180000);
+    await openQuietChatForSmoke(page, { selectCharacter: false });
+    const fixture = await page.evaluate(async () => {
+        const { getRequestHeaders } = await import('/script.js');
+        const { user_avatar } = await import('/scripts/personas.js');
+        const canvas = document.createElement('canvas');
+        canvas.width = 900;
+        canvas.height = 1200;
+        const context = canvas.getContext('2d');
+        const pixels = context.createImageData(canvas.width, canvas.height);
+        let seed = 17;
+        for (let index = 0; index < pixels.data.length; index += 4) {
+            seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+            pixels.data[index] = seed >>> 24;
+            pixels.data[index + 1] = (seed >>> 16) & 255;
+            pixels.data[index + 2] = (seed >>> 8) & 255;
+            pixels.data[index + 3] = 255;
+        }
+        context.putImageData(pixels, 0, 0);
+        const image = canvas.toDataURL('image/png').split(',')[1];
+        const uploaded = await fetch('/api/images/upload', {
+            method: 'POST', headers: getRequestHeaders(),
+            body: JSON.stringify({ image, format: 'png', ch_name: 'persona-notes', filename: `full-note-${Date.now()}` }),
+        });
+        if (!uploaded.ok) throw new Error(`Upload failed: ${uploaded.status}`);
+        const { path } = await uploaded.json();
+        return { avatar: user_avatar, image, path, name: 'Full Note Portrait' };
+    });
+    expect(fixture.path).toMatch(/^\/user\/images\/persona-notes\/full-note-\d+\.png$/);
+    expect(fixture.image.length).toBeGreaterThan(96 * 1024);
+
+    const exported = await page.evaluate(async fixture => {
+        const { getRequestHeaders } = await import('/script.js');
+        const response = await fetch('/api/avatars/export-persona', {
+            method: 'POST', headers: getRequestHeaders(),
+            body: JSON.stringify({
+                avatar: fixture.avatar,
+                name: fixture.name,
+                descriptor: {
+                    description: 'A traveller with a full-size note picture.',
+                    appendices: [{ id: 'portrait', name: 'Portrait', description: 'A saved picture.', avatar: fixture.path }],
+                },
+                format: 'json',
+            }),
+        });
+        if (!response.ok) throw new Error(`Export failed: ${response.status}`);
+        return response.json();
+    }, fixture);
+    expect(exported.data.appendices[0].avatar).toBe(`data:image/png;base64,${fixture.image}`);
+
+    const imported = await page.evaluate(async card => {
+        const { getRequestHeaders } = await import('/script.js');
+        const form = new FormData();
+        form.append('avatar', new File([JSON.stringify(card)], 'full-note.persona.json', { type: 'application/json' }));
+        const response = await fetch('/api/avatars/import-persona', {
+            method: 'POST', headers: getRequestHeaders({ omitContentType: true }), body: form,
+        });
+        if (!response.ok) throw new Error(`Import failed: ${response.status}`);
+        return response.json();
+    }, exported);
+    const restored = imported.appendices[0].avatar;
+    expect(restored).toMatch(/^\/user\/images\/persona-notes\/[a-f0-9-]+\.png$/);
+    expect(restored).not.toBe(fixture.path);
+    const restoredFile = await page.request.get(restored);
+    expect(restoredFile.ok()).toBe(true);
+    expect(Buffer.from(await restoredFile.body()).equals(Buffer.from(fixture.image, 'base64'))).toBe(true);
+    const dimensions = await page.evaluate(async path => {
+        const image = new Image();
+        image.src = path;
+        await image.decode();
+        return [image.naturalWidth, image.naturalHeight];
+    }, restored);
+    expect(dimensions).toEqual([900, 1200]);
+});

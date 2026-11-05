@@ -89,8 +89,8 @@ test('invalid fields, blank names and ambiguous note IDs are refused', async () 
     await expect(prepare({ type: 'persona-note', noteId: 'au' })).rejects.toThrow('ambiguous');
 });
 
-test('Scenario Note portraits are reviewed, saved independently and removable with rollback', async () => {
-    const portrait = 'data:image/webp;base64,aGVsbG8=';
+test('Scenario Note portrait paths are reviewed, saved independently and removable with rollback', async () => {
+    const portrait = '/user/images/persona-notes/full-size-portrait.png';
     const change = { type: 'persona-note', persona: 'Kris', noteId: 'au', field: 'avatar', value: portrait };
     const plan = await preparePersonaChange(change, source, shared, () => {});
     expect(plan.editable).toBe(false);
@@ -110,6 +110,8 @@ test('Scenario Note portraits are reviewed, saved independently and removable wi
 
 test('Scenario Note avatar proposals reject arbitrary images and require an existing note identity', () => {
     expect(() => proposal({ type: 'persona-note', noteId: 'au', field: 'avatar', value: 'https://example.com/avatar.png' })).toThrow();
+    expect(() => proposal({ type: 'persona-note', noteId: 'au', field: 'avatar', value: '/user/images/../settings.json' })).toThrow();
+    expect(() => proposal({ type: 'persona-note', noteId: 'au', field: 'avatar', value: '/user/images/persona-notes/full.png' })).toThrow();
     const image = { type: 'image', action: 'generate', target: 'persona-note-avatar', persona: 'Kris', noteId: 'au', prompt: 'Winter portrait' };
     expect(normaliseChange(image)).toMatchObject(image);
     expect(() => normaliseChange({ ...image, noteId: '' })).toThrow();
