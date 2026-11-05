@@ -124,7 +124,18 @@ for (const phone of [false, true]) {
         await noteCard.getByRole('button', { name: 'Review avatar', exact: true }).click();
         await expect(popup).toContainText('Kris: At the harbour');
         const portrait = await popup.locator('.scratchpad-avatar-review img').last().getAttribute('src');
-        expect(portrait).toMatch(/^data:image\/webp;base64,/);
+        // Scenario Note portraits are stored as full user images (PR #497), not data URLs.
+        expect(portrait).toMatch(/^\/user\/images\/Scratchpad\/scratchpad-[a-f0-9]+\.png$/);
+        const portraitImage = popup.locator('.scratchpad-avatar-review img').last();
+        await portraitImage.evaluate(image => image.decode());
+        expect(await portraitImage.evaluate(image => ({ width: image.naturalWidth, height: image.naturalHeight })))
+            .toEqual({ width: 128, height: 128 });
+        const portraitResponse = await account.context.request.get(portrait, { headers: account.headers });
+        expect(portraitResponse.status()).toBe(200);
+        expect(portraitResponse.headers()['content-type']).toContain('image/png');
+        const portraitPng = PNG.sync.read(await portraitResponse.body());
+        expect({ width: portraitPng.width, height: portraitPng.height }).toEqual({ width: 128, height: 128 });
+        expect([...portraitPng.data.subarray(0, 3)]).toEqual([120, 160, 210]);
         await page.screenshot({ path: `../screenshots/scratchpad-note-avatar-${size}-after.png` });
         await popup.getByRole('button', { name: 'Not now', exact: true }).click();
         expect((await savedPersona()).appendices[0]).not.toHaveProperty('avatar');
