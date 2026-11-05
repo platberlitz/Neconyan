@@ -22275,6 +22275,9 @@ jQuery(async function () {
         await eventSource.emit(event_types.OPEN_CHARACTER_LIBRARY);
     });
 
+    // After two unfinished starts, let the user read the report and choose before any app work.
+    await globalThis.NeconyanCrashDiagnostics?.waitForStartupGate?.();
+
     registerNeconyanServiceWorker();
 
     // Added here to prevent execution before script.js is loaded and get rid of quirky timeouts
