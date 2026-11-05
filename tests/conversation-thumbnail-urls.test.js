@@ -122,7 +122,11 @@ const settingsStore = await import('../public/scripts/neconyan-conversation/sett
 describe('Conversation viewport-aware portrait URLs', () => {
     test('uses the saved Scenario Note portrait on a message and ignores invalid data', () => {
         const portrait = 'data:image/png;base64,aGVsbG8=';
+        const savedPortrait = '/user/images/persona-notes/full-size.png';
         expect(palsRail.getConversationMessageAvatar({ role: 'user', extra: { scenario_avatar: portrait } }, 'aster.png')).toBe(portrait);
+        expect(palsRail.getConversationMessageAvatar({ role: 'user', extra: { scenario_avatar: savedPortrait } }, 'aster.png')).toBe(savedPortrait);
+        expect(palsRail.getConversationMessageAvatar({ role: 'user', extra: { scenario_avatar: '/user/images/../private.png' } }, 'aster.png'))
+            .toBe('/thumbnail?type=persona&file=user-persona.png');
         expect(palsRail.getConversationMessageAvatar({ role: 'user', extra: { scenario_avatar: 'https://example.com/x' } }, 'aster.png'))
             .toBe('/thumbnail?type=persona&file=user-persona.png');
     });

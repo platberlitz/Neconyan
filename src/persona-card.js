@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer';
 import sanitize from 'sanitize-filename';
 import { read as readCharacterCard, write as writeCharacterCard } from './character-card-parser.js';
-import { normalizeScenarioAvatar } from '../public/scripts/persona-appendix-avatar.js';
+import { normalizePortableScenarioAvatar, normalizeScenarioAvatar } from '../public/scripts/persona-appendix-avatar.js';
 
 const SPEC = 'neconyan_persona';
 const VERSION = '1.0';
@@ -24,7 +24,7 @@ function integer(value, fallback, allowed) {
 }
 
 /** Keep portable content only; chat selections and character connections belong to the account. */
-export function normalizePersonaCard(card) {
+export function normalizePersonaCard(card, { allowSavedPaths = false } = {}) {
     if (!isObject(card) || card.spec !== SPEC || card.spec_version !== VERSION || !isObject(card.data)) {
         throw new Error('Not a supported persona card.');
     }
@@ -39,7 +39,8 @@ export function normalizePersonaCard(card) {
         if (!id || ids.has(id)) id = `note-${index + 1}-${ids.size}`;
         while (ids.has(id)) id += '-copy';
         ids.add(id);
-        const avatar = normalizeScenarioAvatar(note.avatar);
+        // A full-persona backup keeps pictures by their user image path; a portable card must embed them.
+        const avatar = allowSavedPaths ? normalizeScenarioAvatar(note.avatar) : normalizePortableScenarioAvatar(note.avatar);
         if (note.avatar && !avatar) throw new Error('Invalid Scenario Note avatar.');
         return { id, name: text(note.name), description: text(note.description), ...(avatar ? { avatar } : {}) };
     });
@@ -59,8 +60,8 @@ export function normalizePersonaCard(card) {
     };
 }
 
-export function createPersonaCard(name, descriptor) {
-    return normalizePersonaCard({ spec: SPEC, spec_version: VERSION, data: { ...descriptor, name } });
+export function createPersonaCard(name, descriptor, options = {}) {
+    return normalizePersonaCard({ spec: SPEC, spec_version: VERSION, data: { ...descriptor, name } }, options);
 }
 
 /** Use the existing PNG card format, with the complete persona in its extension field. */
@@ -113,7 +114,7 @@ export function decodePersonaImport(buffer, format) {
                 if (Object.hasOwn(data.persona_descriptions, key) && !isObject(data.persona_descriptions[key])) throw new Error('Invalid persona description.');
             }
             return { backup: true, cards: names.map(([key, name]) => ({
-                card: createPersonaCard(name, data.persona_descriptions[key] ?? {}), image: null,
+                card: createPersonaCard(name, data.persona_descriptions[key] ?? {}, { allowSavedPaths: true }), image: null,
             })) };
         }
     }

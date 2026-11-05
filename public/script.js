@@ -1463,6 +1463,10 @@ async function firstLoadInit() {
         // Neconyan: card script detection - see #94.
         eventSource.on(event_types.CHAT_CHANGED, scheduleHeldGenerationRecovery);
         document.addEventListener('visibilitychange', scheduleHeldGenerationRecovery);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState !== 'hidden') refreshRenderedMessageMetaBadges();
+        });
+        window.addEventListener('pageshow', refreshRenderedMessageMetaBadges);
         window.addEventListener('pageshow', scheduleHeldGenerationRecovery);
         window.addEventListener('online', scheduleHeldGenerationRecovery);
         document.addEventListener('visibilitychange', checkServedCodeIsCurrent);
@@ -5728,6 +5732,11 @@ function applyMessageBlockUpdate(messageId, message, { rerenderMessage = true } 
         return;
     }
 
+    // A deferred mobile update can outlive the message object it was queued for:
+    // a saved-chat readback replaces the array entry while the frame is held.
+    // Draw the live entry so the row cannot show stale text or lose its Agent badge.
+    message = chat[messageId] ?? message;
+
     const shouldPinMobileBottom = shouldPinMobileChatToBottom();
 
     if (rerenderMessage) {
@@ -6782,6 +6791,20 @@ async function ensureFirstMessageTokenCount(message, messageElement) {
     } finally {
         if (firstMessageTokenCounts.get(message) === pending) firstMessageTokenCounts.delete(message);
     }
+}
+
+/**
+ * Re-applies the token, reasoning and Agent badges to the rendered rows from the
+ * live chat array. A returning tab can otherwise keep a row drawn from a message
+ * object that a background readback already replaced.
+ */
+function refreshRenderedMessageMetaBadges() {
+    chatElement.find('.mes[mesid]').each((_, element) => {
+        const messageId = Number(element.getAttribute('mesid'));
+        if (Number.isInteger(messageId) && chat[messageId]) {
+            updateMessageMetaBadges(element, chat[messageId]);
+        }
+    });
 }
 
 export function updateMessageMetaBadges(messageElement, message) {
@@ -22274,6 +22297,9 @@ jQuery(async function () {
         await getCharacters();
         await eventSource.emit(event_types.OPEN_CHARACTER_LIBRARY);
     });
+
+    // After two unfinished starts, let the user read the report and choose before any app work.
+    await globalThis.NeconyanCrashDiagnostics?.waitForStartupGate?.();
 
     registerNeconyanServiceWorker();
 

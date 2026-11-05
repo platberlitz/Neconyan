@@ -111,7 +111,24 @@
         }
         return result;
     }
-    const api = { redact, describeError, validateActivity, validateEvents, safeAgentLabel, templateLabel: id => typeof id === 'string' ? own(LABELS, id) || null : null };
+    function isIOSWebKitBrowser() {
+        try {
+            if (typeof navigator === 'undefined') return false;
+            const userAgent = String(navigator.userAgent || '');
+            const platform = String(navigator.platform || '');
+            const isIPadOSDesktop = platform === 'MacIntel' && Number(navigator.maxTouchPoints || 0) > 1;
+            return (/iPad|iPhone|iPod/.test(userAgent) || /iPad|iPhone|iPod/.test(platform) || isIPadOSDesktop)
+                && /WebKit/i.test(userAgent);
+        } catch { return false; }
+    }
+    // Pure decision shared by the live guard and its unit tests.
+    function evaluateStartupGuard({ storedCount = 0, previous = null } = {}) {
+        const previousCount = Number.isSafeInteger(storedCount) && storedCount > 0 ? Math.min(storedCount, 99) : 0;
+        const unfinished = Boolean(previous && previous.state === 'running' && previous.ready !== true);
+        const count = unfinished ? Math.min(99, previousCount + 1) : previous ? 0 : previousCount;
+        return { count, unfinished, safeStart: unfinished && count >= 2 };
+    }
+    const api = { redact, describeError, validateActivity, validateEvents, safeAgentLabel, templateLabel: id => typeof id === 'string' ? own(LABELS, id) || null : null, isIOSWebKitBrowser, evaluateStartupGuard };
     globalThis.NeconyanCrashDiagnostics = api;
     if (typeof window === 'undefined' || !window.document) return;
 
@@ -123,6 +140,8 @@
     const startedAt = Date.now();
     const SESSION_PREFIX = 'neconyan.crash-session.v1:';
     const RECOVERY_KEY = 'neconyan.crash-recoveries.v1';
+    const STARTUP_FAILURES_KEY = 'neconyan.crash-startup-failures.v1';
+    const LOW_MEMORY_MODE_KEY = 'neconyan:low-memory-mode:v1';
     let recoveries = [];
     const TAB_KEY = 'neconyan.crash-tab.v1';
     const randomId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -172,6 +191,54 @@
                 limitation: 'Activity from another tab. This is not a crash report and never triggers an automatic notice.' });
         }
     } catch { /* Storage may be blocked. The current in-memory sample remains available. */ }
+
+    let startupFailureCount = 0;
+    let startupSafeStart = false;
+    let startupSafeStartShown = false;
+    let startupLowMemoryAuto = false;
+    let startupHoldActive = false;
+    let startupHoldChoice = null;
+    let startupGatePromise = null;
+    let startupGateResolve = null;
+    let startupSurfaceRestore = null;
+
+    function readStartupFailureCount() {
+        try {
+            const text = localStorage.getItem(STARTUP_FAILURES_KEY);
+            if (!text || text.length > 512) return 0;
+            const value = JSON.parse(text);
+            return Number.isSafeInteger(value?.count) && value.count > 0 ? Math.min(value.count, 99) : 0;
+        } catch { return 0; }
+    }
+    function writeStartupFailureCount(count) {
+        try {
+            if (!count) { localStorage.removeItem(STARTUP_FAILURES_KEY); return; }
+            localStorage.setItem(STARTUP_FAILURES_KEY, JSON.stringify({ schema: 1, count, at: Date.now() }));
+        } catch { /* The safe start still works for this page without persistence. */ }
+    }
+    function rememberStartupOutcome() {
+        const decision = evaluateStartupGuard({ storedCount: readStartupFailureCount(), previous: previousSession });
+        startupFailureCount = decision.count;
+        startupSafeStart = decision.safeStart;
+        if (decision.unfinished || previousSession) writeStartupFailureCount(startupFailureCount);
+        // iPhones expose no deviceMemory, so a loop is the only signal they give us.
+        // Respect an explicit off; the safe start still offers low-memory mode by hand.
+        if (startupSafeStart && isIOSWebKitBrowser()) {
+            try {
+                const mode = localStorage.getItem(LOW_MEMORY_MODE_KEY);
+                if (mode !== 'on' && mode !== 'off') {
+                    localStorage.setItem(LOW_MEMORY_MODE_KEY, 'on');
+                    startupLowMemoryAuto = true;
+                }
+            } catch { /* The mode choice below still sets it when storage allows. */ }
+        }
+    }
+    function resetStartupFailures() {
+        startupFailureCount = 0;
+        startupSafeStart = false;
+        try { localStorage.removeItem(STARTUP_FAILURES_KEY); } catch { /* Storage may be blocked. */ }
+    }
+    rememberStartupOutcome();
 
     function refreshAgents() {
         const running = Array.from(handles.values());
@@ -265,7 +332,10 @@
             refreshAgents(); scheduleFlush();
         }),
         observePhase: guarded((handle, phase) => { if (PHASES.includes(phase) && (phases.has(handle) || phases.size < 32)) phases.set(handle, phase); else if (!PHASES.includes(phase)) { phases.delete(handle); if (!phases.size) snapshot.generation = { phase: 'idle', location: 'unknown' }; } refreshAgents(); scheduleFlush(); }),
-        markAppReady: guarded(() => { snapshot.ready = true; api.fatalReportId = null; noteActivity('app-ready'); if (currentStartupNotice) dismissNotice(currentStartupNotice); }),
+        markAppReady: guarded(() => { snapshot.ready = true; api.fatalReportId = null; noteActivity('app-ready'); resetStartupFailures(); if (currentStartupNotice) dismissNotice(currentStartupNotice); try { flushActivity('app-ready'); } catch { /* Diagnostics cannot block startup. */ } }),
+        // The boot loader is gone, but characters and the last chat may still be
+        // loading. Only the app's own ready event means startup really finished.
+        markBootLoaderComplete: guarded(() => { api.fatalReportId = null; if (currentStartupNotice) dismissNotice(currentStartupNotice); }),
         setNativeBridgeToken: guarded(token => { if (typeof token !== 'string' || token.length > 100) return; nativeToken = token; scheduleFlush(); }),
     });
     try {
@@ -380,7 +450,7 @@
         document.body.append(dialog); dialog.showModal();
     }
     api.openReports = guarded(id => {
-        return import('./crash-report-reader.js').then(module => module.openCrashReportReader({ selectedReportId: id })).catch(() => fallbackReader(id));
+        return import('./crash-report-reader.js?v=20261105-ios-safe-start').then(module => module.openCrashReportReader({ selectedReportId: id })).catch(() => fallbackReader(id));
     });
     api.showNotice = guarded(({ id, title, message, onRead, onDismiss }) => {
         const stylesheet = document.querySelector('link[href^="css/neconyan-crash-reports.css"]');
@@ -434,8 +504,154 @@
         try { localStorage.setItem(RECOVERY_KEY, JSON.stringify(recoveries)); } catch { storageError = 'Could not save recovery activity. Copy it before closing this page.'; }
     }
     recoverPrevious();
+    function clearFrontendCachesBeforeReload() {
+        const tasks = [];
+        try {
+            if ('caches' in window && window.caches?.keys) {
+                tasks.push(window.caches.keys().then(keys => Promise.all(keys.map(key => window.caches.delete(key)))));
+            }
+        } catch { /* Cache Storage is unavailable in insecure contexts. */ }
+        try {
+            if (navigator.serviceWorker?.getRegistrations) {
+                tasks.push(navigator.serviceWorker.getRegistrations().then(registrations => Promise.all(registrations.map(registration => registration.unregister()))));
+            }
+        } catch { /* Service workers are unavailable in insecure contexts. */ }
+        return Promise.all(tasks).catch(() => {});
+    }
+    function safeStartButton(label, primary, onClick) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        button.dataset.i18n = label;
+        button.style.cssText = 'width:100%;margin-top:10px;border-radius:12px;padding:12px 14px;min-height:44px;cursor:pointer;font-family:inherit;'
+            + (primary
+                ? 'border:1px solid var(--neco-ginger, ButtonText);background:var(--neco-ginger, ButtonFace);color:var(--neco-on-accent, ButtonText);font-weight:700;font-size:16px;'
+                : 'border:1px solid var(--neco-ginger, ButtonText);background:transparent;color:var(--neco-ink, CanvasText);font-weight:600;font-size:15px;');
+        button.addEventListener('click', onClick);
+        return button;
+    }
+    function setLowMemoryMode(mode) {
+        try { localStorage.setItem(LOW_MEMORY_MODE_KEY, mode); return true; } catch { return false; }
+    }
+    function applyLowMemoryChoice(mode) {
+        setLowMemoryMode(mode);
+        // script.js imports the runtime before the gate opens, so storage alone
+        // would not change the mode this page is already holding.
+        return import('./low-memory-mode.js')
+            .then(module => { module.setLowMemoryMode?.(mode); })
+            .catch(() => { /* The saved choice still applies on the next start. */ });
+    }
+    function restoreStartupSurface() {
+        const preloader = document.getElementById('preloader');
+        const saved = startupSurfaceRestore;
+        startupSurfaceRestore = null;
+        if (!preloader || !saved) return;
+        preloader.innerHTML = saved.innerHTML;
+        preloader.hidden = saved.hidden;
+        if (saved.ariaHidden === null) preloader.removeAttribute('aria-hidden'); else preloader.setAttribute('aria-hidden', saved.ariaHidden);
+        if (saved.role === null) preloader.removeAttribute('role'); else preloader.setAttribute('role', saved.role);
+        preloader.removeAttribute('aria-modal');
+        preloader.removeAttribute('aria-label');
+        preloader.style.cssText = saved.style;
+    }
+    function resumeStartup(choice) {
+        if (!startupHoldActive) return;
+        startupHoldActive = false;
+        startupHoldChoice = choice;
+        restoreStartupSurface();
+        try { globalThis.NeconyanBootGuard?.resumeAfterStartupHold?.(); } catch { /* The boot guard timeout is optional. */ }
+        const resolve = startupGateResolve;
+        startupGateResolve = null;
+        resolve?.(choice);
+        try { flushActivity('startup-choice'); } catch { /* Diagnostics cannot block startup. */ }
+    }
+    function applyPreBootPalette(preloader) {
+        // Theme tokens are black until the saved theme loads. Use Calico Dark's
+        // loading-screen palette locally so the screen is readable before that.
+        for (const [name, value] of Object.entries({
+            '--neco-canvas': '#161716', '--neco-surface': '#242420', '--neco-ink': '#f6edda',
+            '--neco-muted': '#ddd0bf', '--neco-ginger': '#d69270', '--neco-border': '#61534d', '--neco-on-accent': '#141514',
+        })) preloader.style.setProperty(name, value);
+    }
+    function safeStartReport() {
+        if (previousSession?.fatalReportId) {
+            const fatal = reports.find(report => report.id === previousSession.fatalReportId);
+            if (fatal) return fatal;
+        }
+        return pendingRecovery || recoveries.at(-1) || null;
+    }
+    function showSafeStart() {
+        const preloader = document.getElementById('preloader');
+        if (!preloader || !document.body || typeof document.createElement !== 'function') return false;
+        const report = safeStartReport();
+        startupSurfaceRestore = { innerHTML: preloader.innerHTML, hidden: preloader.hidden, ariaHidden: preloader.getAttribute('aria-hidden'),
+            role: preloader.getAttribute('role'), style: preloader.style.cssText };
+        preloader.hidden = false;
+        preloader.removeAttribute('aria-hidden');
+        preloader.setAttribute('role', 'dialog');
+        preloader.setAttribute('aria-modal', 'true');
+        preloader.setAttribute('aria-label', 'Neconyan startup choices');
+        preloader.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;'
+            + 'background:var(--neco-canvas, Canvas);color:var(--neco-ink, CanvasText);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;'
+            + 'backdrop-filter:none;-webkit-backdrop-filter:none;overflow:auto;';
+        applyPreBootPalette(preloader);
+        preloader.innerHTML = '';
+        const panel = document.createElement('div');
+        panel.id = 'neconyan-safe-start';
+        panel.style.cssText = 'width:min(100%,520px);max-height:calc(100dvh - 32px);overflow:auto;box-sizing:border-box;padding:22px;'
+            + 'border:1px solid var(--neco-border, GrayText);border-radius:18px;background:var(--neco-surface, Canvas);line-height:1.45;';
+        const title = document.createElement('h1');
+        title.textContent = 'Neconyan could not finish starting';
+        title.style.cssText = 'margin:0 0 10px;font-size:22px;line-height:1.2;color:var(--neco-ink, CanvasText);';
+        const message = document.createElement('p');
+        message.textContent = `The last ${startupFailureCount === 2 ? 'two starts' : `${startupFailureCount} starts`} did not finish. Your characters, chats and reports are still available.`;
+        message.style.cssText = 'margin:0 0 8px;color:var(--neco-ink, CanvasText);';
+        const hint = document.createElement('p');
+        hint.textContent = startupLowMemoryAuto
+            ? 'Low-memory mode is on for this start: Neconyan loads fewer messages at once and turns off extra interface effects. You can turn it off in Settings later.'
+            : 'Low-memory mode loads fewer messages at once and turns off extra interface effects, which gives the browser more room to finish starting.';
+        hint.style.cssText = 'margin:0 0 16px;color:var(--neco-muted, GrayText);font-size:14px;';
+        panel.append(title, message, hint);
+        panel.append(safeStartButton('Start Neconyan', true, () => resumeStartup('start')));
+        panel.append(safeStartButton('Read crash report', false, () => { api.openReports(report?.id); }));
+        panel.append(startupLowMemoryAuto
+            ? safeStartButton('Start without low-memory mode', false, () => { void applyLowMemoryChoice('off').then(() => resumeStartup('normal')); })
+            : safeStartButton('Start in low-memory mode', false, () => { void applyLowMemoryChoice('on').then(() => resumeStartup('low-memory')); }));
+        const clearButton = safeStartButton('Clear frontend cache and reload', false, () => {
+            clearButton.disabled = true;
+            clearButton.textContent = 'Clearing cache...';
+            clearFrontendCachesBeforeReload().then(() => { resetStartupFailures(); window.location.reload(); });
+        });
+        panel.append(clearButton);
+        const details = document.createElement('p');
+        details.textContent = report?.lastKnownActivity?.snapshot?.at
+            ? `Last activity recorded at ${new Date(report.lastKnownActivity.snapshot.at).toLocaleString()}.`
+            : 'No earlier activity was recorded before the last start stopped.';
+        details.style.cssText = 'margin:14px 0 0;color:var(--neco-muted, GrayText);font-size:13px;';
+        panel.append(details);
+        preloader.append(panel);
+        try { panel.querySelector('button')?.focus(); } catch { /* Initial focus is a convenience. */ }
+        try { document.getElementById('neconyan-crash-notice')?.remove(); } catch { /* The safe start has its own report action. */ }
+        return true;
+    }
+    api.getStartupGuardState = () => ({ failures: startupFailureCount, safeStart: startupSafeStart, holdActive: startupHoldActive,
+        choice: startupHoldChoice, lowMemoryAuto: startupLowMemoryAuto, ios: isIOSWebKitBrowser() });
+    api.isStartupHoldActive = () => startupHoldActive;
+    api.waitForStartupGate = guarded(() => {
+        if (!startupSafeStart || startupHoldChoice) return Promise.resolve(startupHoldChoice);
+        if (startupGatePromise) return startupGatePromise;
+        startupHoldActive = true;
+        if (!showSafeStart()) {
+            startupHoldActive = false;
+            startupSafeStart = false;
+            return Promise.resolve(null);
+        }
+        startupSafeStartShown = true;
+        startupGatePromise = new Promise(resolve => { startupGateResolve = resolve; });
+        return startupGatePromise;
+    });
     function showPendingNotice() {
-        if (document.visibilityState !== 'visible') return;
+        if (document.visibilityState !== 'visible' || startupSafeStartShown || startupHoldActive) return;
         const native = typeof globalThis.NeconyanDiagnostics?.recordActivity === 'function';
         let report = api.fatalReportId ? reports.find(item => item.id === api.fatalReportId) : !native ? pendingRecovery : null;
         if (!report && previousSession?.fatalReportId && !previousSession.ready) report = reports.find(item => item.id === previousSession.fatalReportId);
@@ -453,6 +669,8 @@
     }
     document.addEventListener('DOMContentLoaded', showPendingNotice, { once: true });
     document.addEventListener('visibilitychange', showPendingNotice);
+    // script.js dispatches this after the last chat and the rest of startup.
+    window.addEventListener('neconyan:ready', () => api.markAppReady?.());
     window.addEventListener('error', event => {
         if (event.target && event.target !== window) {
             const tag = event.target.tagName;

@@ -12,13 +12,15 @@
 - **Jev** decision models now have saved presets in Mewmory and Pawthfinder, with memory focus and window controls in Mewmory. A saved connection profile can supply the model, so retrieval can use a smaller, cheaper connection than the reply.
 - The **Chat Style** and **Shell Style** pickers now show preview cards for every option, so you can see the message layout or miniature window before applying it. Previews follow your palette and accent, and the choice still saves as before.
 - Settings now have **Bottom Bar Buttons**, where you can hide, show and reorder the persona bubble, reasoning button, chat switcher, search field, scroll buttons and chat actions. The layout is saved for this browser and **Reset to defaults** brings everything back.
-- **Scenario Notes** can each have their own avatar. While a note is active, new Roleplay and Conversation messages use its picture, earlier messages keep theirs, and the note portrait travels with persona exports and backups.
+- **Scenario Notes** can each have their own avatar. While a note is active, new Roleplay and Conversation messages use its picture, earlier messages keep theirs, and the note portrait travels with persona exports and backups. The picture is kept at the size you chose, so it stays sharp when zoomed and on Ripple; notes set before this update keep their smaller copy until you choose the picture again.
 - **Starlight Conservatory** and **Sunken Reef** are new shell styles, with an animated night sky and an ocean scene. Both keep your chosen palette and accent, and the creatures stay behind your messages.
 - Saving a connection profile or Chat Completion preset with a reverse proxy now asks **Connecting To Proxy** once for that address. Declining stops the profile or preset from being saved or imported, and a confirmed address is not asked about again.
 - On native DeepSeek, an explicit **None** now turns thinking off for DeepSeek v4 Pro and DeepSeek Flash, so the reply length controls stop reserving room for reasoning. DeepSeek Flash offers only the effort levels it actually uses, and a request with no effort still counts as thinking.
 - When the Android app cannot start its local server, the failure page now shows the reason the server recorded, such as an unfinished identity repair, instead of saying no cause was supplied. The line is written as **Could not start Neconyan:** followed by the reason and **Saved data has been kept.**
 - Typing is smoother in the Roleplay and Conversation composers, the message editor, Author's Note, persona details, Agents searches, Prompting Lab and tag searches. Display work now waits for a short pause instead of redrawing on every key.
 - **Save memory in the background** is an optional switch under Settings > System & Device > Memory and performance, off by default and saved per device. When you switch away it releases older off-screen messages and reusable caches, then restores the chat and your reading position; drafts, edits and active replies are protected.
+- If the page fails to finish starting twice in a row, Neconyan now opens a safe start screen before loading the app. From there you can read the crash report, start in low-memory mode or clear the cached app files, instead of the browser reloading too fast to read anything. iPhones caught in a startup crash loop switch to low-memory mode automatically unless you turned it off.
+- The **View agent changes** icon no longer disappears when after-reply Agents finish while the tab is in the background.
 
 ### Merged Staging PRs
 - PR #402 (2026-11-02) `fix(composer): contain the accent and finish the Cozy Warm border`
@@ -115,6 +117,9 @@
 - PR #494 (2026-11-05) `perf(typing): stop per-keystroke redraws in editors and composer`
 - PR #495 (2026-11-05) `fix(chats): rework Hush spacing and correct style descriptions`
 - PR #496 (2026-11-05) `perf(startup): avoid repeated scans and serial template loads`
+- PR #497 (2026-11-05) `fix(personas): keep scenario note portraits at full size`
+- PR #498 (2026-11-05) `fix(startup): offer a safe start after repeated browser crashes`
+- PR #499 (2026-11-05) `fix(agents): keep the changes badge after returning to the tab`
 
 ## v1.4.1
 

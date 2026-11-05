@@ -2,6 +2,7 @@ import path from 'node:path';
 import sanitize from 'sanitize-filename';
 import { createHash } from 'node:crypto';
 import { normalizeScenarioAvatar } from '../../public/scripts/persona-appendix-avatar.js';
+import { readScenarioAvatarFile } from '../scenario-avatar-files.js';
 import { roleplayLease, readRoleplayFile, validRoleplayAvatar } from '../roleplay-store.js';
 import { roleplayEntityContent } from '../generation/roleplay-source.js';
 import { CONVERSATION_STORE_KEY } from '../../public/scripts/neconyan-conversation/constants.js';
@@ -33,7 +34,16 @@ export function readScenarioNoteTargetLocked(lease, avatar, noteId) {
     if (matches.length !== 1) throw invalid('This Scenario Note no longer exists or its ID is ambiguous. Ask for a fresh suggestion.');
     const note = matches[0];
     const portrait = normalizeScenarioAvatar(note.avatar);
-    const bytes = portrait ? Buffer.from(portrait.split(',')[1], 'base64') : persona.file.bytes;
+    let portraitFile = null;
+    if (portrait) {
+        try {
+            portraitFile = readScenarioAvatarFile(roleplayLease(lease).scope.directories, portrait);
+        } catch {
+            throw invalid('The Scenario Note portrait could not be read. Pick the picture again.');
+        }
+        if (!portraitFile) throw invalid('The Scenario Note portrait could not be read. Pick the picture again.');
+    }
+    const bytes = portraitFile ? portraitFile.bytes : persona.file.bytes;
     return { ...persona, kind: 'persona-note', noteId, avatarValue: portrait, name: `${persona.name}: ${note.name}`,
         description: [persona.description, note.description].filter(Boolean).join('\n\n'),
         file: { bytes, rawHash: createHash('sha256').update(bytes).digest('hex') } };

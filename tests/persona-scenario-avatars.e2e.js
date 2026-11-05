@@ -40,7 +40,7 @@ for (const phone of [true, false]) {
             await edit.click();
             await expect(page.getByRole('button', { name: 'Remove avatar', exact: true })).toHaveCount(0);
             await upload.setInputFiles('../public/img/user-default.png');
-            await expect(preview).toHaveAttribute('src', /^data:image\//);
+            await expect(preview).toHaveAttribute('src', /^\/user\/images\/persona-notes\/persona-note-[a-z0-9-]+\.png$/);
             await cancel.click();
             await expect(card.locator('img')).toHaveCount(0);
 
@@ -56,10 +56,10 @@ for (const phone of [true, false]) {
             });
             const buffer = Buffer.from(imageData, 'base64');
             await upload.setInputFiles({ name: 'large-portrait.png', mimeType: 'image/png', buffer });
-            await expect(preview).toHaveAttribute('src', /^data:image\//);
-            await expect.poll(() => preview.evaluate(image => [image.naturalWidth, image.naturalHeight])).toEqual([768, 1024]);
+            await expect(preview).toHaveAttribute('src', /^\/user\/images\/persona-notes\/persona-note-[a-z0-9-]+\.png$/);
+            await expect.poll(() => preview.evaluate(image => [image.naturalWidth, image.naturalHeight])).toEqual([1200, 1600]);
             const portrait = await preview.getAttribute('src');
-            expect(portrait.length).toBeLessThanOrEqual(96 * 1024);
+            expect(Buffer.from(await (await page.request.get(portrait)).body()).equals(buffer)).toBe(true);
             // A refresh normalises the model while the editor is still open.
             await page.evaluate(async () => (await import('/scripts/personas.js')).getOrCreatePersonaDescriptor());
             await save.click();
@@ -81,6 +81,7 @@ for (const phone of [true, false]) {
             expect(snapshot).toEqual({ roleplay: portrait, conversation: portrait });
             const sentPortrait = page.locator('#chat .mes[is_user="true"]').last().locator('.avatar img');
             await expect(sentPortrait).toHaveAttribute('src', portrait);
+            await expect.poll(() => sentPortrait.evaluate(image => [image.naturalWidth, image.naturalHeight])).toEqual([1200, 1600]);
 
             await edit.click();
             await page.getByRole('button', { name: 'Remove avatar', exact: true }).click();

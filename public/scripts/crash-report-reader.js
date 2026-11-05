@@ -1,5 +1,46 @@
 /** Retained reports are readable without application startup, Debugger or a server. */
 const redact = text => globalThis.NeconyanCrashDiagnostics?.redact?.(text, 60000) ?? text.slice(0, 60000);
+// Theme tokens are black until the saved theme loads. A reader opened from the
+// pre-boot safe start needs its own readable palette; after boot the saved theme wins.
+const PRE_BOOT_PALETTE = Object.freeze({
+    '--SmartThemeBodyColor': '#f6edda', '--SmartThemeEmColor': '#ddd0bf', '--SmartThemeChatTintColor': '#242420',
+    '--SmartThemeBlurTintColor': '#161716', '--SmartThemeBorderColor': '#61534d', '--SmartThemeQuoteColor': '#d69270',
+    '--SmartThemeUnderlineColor': '#f0b39d', '--neco-canvas': '#161716', '--neco-surface': '#242420',
+    '--neco-ink': '#f6edda', '--neco-muted': '#ddd0bf', '--neco-border': '#61534d',
+    '--neco-ginger': '#d69270', '--neco-on-accent': '#141514',
+});
+function applyPreBootPalette(dialog) {
+    try {
+        if (hasReadableTheme()) return;
+    } catch { /* Treat an unreadable theme as unthemed. */ }
+    for (const [name, value] of Object.entries(PRE_BOOT_PALETTE)) dialog.style.setProperty(name, value);
+    dialog.style.colorScheme = 'dark';
+}
+function parseColor(value) {
+    const text = String(value || '').trim();
+    const hex = text.match(/^#([0-9a-f]{3,8})$/i)?.[1];
+    if (hex) {
+        const expanded = hex.length === 3 || hex.length === 4 ? [...hex].map(character => character + character).join('') : hex;
+        return [0, 2, 4].map(offset => parseInt(expanded.slice(offset, offset + 2), 16));
+    }
+    const rgb = text.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
+    return rgb ? rgb.slice(1, 4).map(Number) : null;
+}
+function colorLuminance(value) {
+    const channels = value.map(channel => {
+        const unit = channel / 255;
+        return unit <= 0.04045 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4;
+    });
+    return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+}
+function hasReadableTheme() {
+    const style = getComputedStyle(document.documentElement);
+    const text = parseColor(style.getPropertyValue('--SmartThemeBodyColor'));
+    const canvas = parseColor(style.getPropertyValue('--SmartThemeBlurTintColor'));
+    if (!text || !canvas) return false;
+    const first = colorLuminance(text), second = colorLuminance(canvas);
+    return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05) >= 3;
+}
 function element(tag, text, className) {
     const node = document.createElement(tag);
     if (text) node.textContent = text;
@@ -16,6 +57,7 @@ export function showRetainedReportPopup(content) {
     const dialog = template?.content?.querySelector('dialog.popup')?.cloneNode(true) ?? element('dialog', '', 'popup');
     dialog.classList.add('neconyan-crash-popup');
     dialog.setAttribute('aria-label', 'Saved crash reports');
+    applyPreBootPalette(dialog);
     for (const node of dialog.querySelectorAll('.popup-crop-wrap, .popup-input, .popup-inputs, .popup-button-close')) node.remove();
     const host = dialog.querySelector('.popup-content') ?? dialog;
     host.replaceChildren(content);

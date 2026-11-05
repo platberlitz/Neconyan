@@ -1,45 +1,42 @@
-// Embedded portraits travel with persona cards and saved messages.
+// Scenario Note portraits are saved as original image files. Older notes can still carry an
+// embedded portrait inside the saved-data budget, and those keep working unchanged.
 export const MAX_SCENARIO_AVATAR_LENGTH = 96 * 1024;
+export const SCENARIO_AVATAR_FOLDER = 'persona-notes';
 
-/** Keep detail for enlarged portraits, reducing dimensions only to fit the saved-data budget. */
-export async function fitScenarioAvatar(width, height, encode) {
-    if (!(width > 0 && height > 0 && Number.isFinite(width) && Number.isFinite(height))) {
-        throw new Error('Invalid Scenario Note image dimensions');
+const DATA_URL_PATTERN = /^data:image\/(png|jpeg|webp|gif);base64,([A-Za-z0-9+/]+={0,2})$/;
+const PATH_PATTERN = /^\/user\/images\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.(?:png|jpe?g|webp|gif)$/i;
+
+/** Split a portable embedded portrait into its MIME type and bytes, without decoding them. */
+export function parseScenarioAvatarDataUrl(value) {
+    const match = typeof value === 'string' ? DATA_URL_PATTERN.exec(value) : null;
+    if (!match) {
+        return null;
     }
-    let previousSize = '';
-    for (const edge of [1024, 768, 512, 384, 256, 128]) {
-        const scale = Math.min(edge / width, edge / height, 1);
-        const w = Math.max(1, Math.round(width * scale));
-        const h = Math.max(1, Math.round(height * scale));
-        const size = `${w}x${h}`;
-        if (size === previousSize) continue;
-        previousSize = size;
-        const avatar = normalizeScenarioAvatar(await encode(w, h));
-        if (avatar) return avatar;
-    }
-    throw new Error('The Scenario Note portrait could not fit its storage limit');
+    return {
+        type: match[1],
+        extension: match[1] === 'jpeg' ? 'jpg' : match[1],
+        base64: match[2],
+    };
 }
 
-export async function createScenarioAvatar(dataUrl) {
-    const image = new Image();
-    image.src = dataUrl;
-    await image.decode();
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    return fitScenarioAvatar(image.naturalWidth, image.naturalHeight, (width, height) => {
-        canvas.width = width;
-        canvas.height = height;
-        context.imageSmoothingEnabled = true;
-        context.imageSmoothingQuality = 'high';
-        context.drawImage(image, 0, 0, width, height);
-        return canvas.toDataURL('image/webp', 0.85);
-    });
+/** A saved picture must stay inside this account's user images folder and use an image extension. */
+export function isScenarioAvatarPath(value) {
+    if (typeof value !== 'string' || value.length > 2048 || !value.startsWith('/user/images/') || !PATH_PATTERN.test(value)) {
+        return false;
+    }
+    return !value.split('/').some(part => part === '.' || part === '..');
 }
 
 export function normalizeScenarioAvatar(value) {
-    return typeof value === 'string' && value.length <= MAX_SCENARIO_AVATAR_LENGTH
-        && /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)
-        ? value : '';
+    if (typeof value === 'string' && value.length <= MAX_SCENARIO_AVATAR_LENGTH && parseScenarioAvatarDataUrl(value)) {
+        return value;
+    }
+    return isScenarioAvatarPath(value) ? value : '';
+}
+
+/** Persona cards travel between accounts, so they can only carry the picture inside the file. */
+export function normalizePortableScenarioAvatar(value) {
+    return typeof value === 'string' && parseScenarioAvatarDataUrl(value) ? value : '';
 }
 
 /** The first active note with a portrait wins, in the visible note order. */

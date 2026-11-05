@@ -12,6 +12,7 @@ import { getFileNameValidationFunction } from '../middleware/validateFileName.js
 import { applyAvatarCropResize } from './characters.js';
 import { invalidateThumbnail } from './thumbnails.js';
 import { createPersonaCard, decodePersonaImport, encodePersonaCard, MAX_PERSONA_CARD_BYTES } from '../persona-card.js';
+import { embedScenarioAvatarPaths, storeScenarioAvatarFiles } from '../scenario-avatar-files.js';
 import { retireNavigationPersona } from './chat-navigation.js';
 
 export const router = express.Router();
@@ -27,7 +28,7 @@ router.post('/export-persona', async (request, response) => {
         return response.sendStatus(400);
     }
     try {
-        const card = createPersonaCard(name, descriptor);
+        const card = createPersonaCard(name, embedScenarioAvatarPaths(descriptor, request.user.directories));
         const avatarPath = path.join(request.user.directories.avatars, avatar);
         if (!fs.existsSync(avatarPath)) return response.sendStatus(404);
         // Re-encode to PNG so JPEG/WebP avatars and old image metadata are handled consistently.
@@ -53,13 +54,15 @@ router.post('/import-persona', async (request, response) => {
         const fallback = backup ? fs.readFileSync(new URL('../../public/img/user-default.png', import.meta.url)) : null;
         const personas = [];
         for (const { card, image } of cards) {
+            // Imported Scenario Note portraits become ordinary user image files.
+            const importedCard = storeScenarioAvatarFiles(card, request.user.directories, created);
             // Validate and strip card metadata, preserving the full image without another crop.
             const avatarImage = image ? await (await Jimp.read(image)).getBuffer('image/png') : fallback;
             const avatar = `persona-${randomUUID()}.png`;
             const filename = path.join(request.user.directories.avatars, avatar);
             writeFileAtomicSync(filename, avatarImage);
             created.push(filename);
-            personas.push({ avatar, ...card.data });
+            personas.push({ avatar, ...importedCard.data });
         }
         return response.send(backup ? { personas, missingAvatars: personas.length } : personas[0]);
     } catch (error) {

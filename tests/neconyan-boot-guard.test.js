@@ -477,4 +477,27 @@ describe('Neconyan boot guard', () => {
         expect(labels).not.toContain('Read report');
         expect(labels).toContain('Continue anyway');
     });
+
+    test('leaves the safe start screen alone and restarts its timeout when the hold ends', () => {
+        let hold = true;
+        const diagnostics = { isStartupHoldActive: () => hold, redact: value => value, capture: () => ({ id: 'saved-1' }), openReports: jest.fn() };
+        const { document, setNow, timers, window } = createBootGuardHarness({ diagnostics });
+        const preloader = addPreloader(document);
+
+        window.NeconyanBootGuard.showFailure('boom');
+        expect(preloader.querySelector('button')).toBeNull();
+
+        setNow(26000);
+        timers.shift().callback();
+        expect(preloader.querySelector('button')).toBeNull();
+        expect(timers.at(-1).delay).toBe(10000);
+
+        hold = false;
+        window.NeconyanBootGuard.resumeAfterStartupHold();
+        expect(timers.at(-1).delay).toBe(25000);
+
+        setNow(51000);
+        timers.at(-1).callback();
+        expect(preloader.querySelector('button').textContent).toBe('Clear frontend cache and reload');
+    });
 });

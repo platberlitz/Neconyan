@@ -342,8 +342,19 @@ describe('chat render lifecycle script wiring', () => {
         const applyMessageBlockUpdate = findFunctionDeclaration('applyMessageBlockUpdate');
         const applySource = getSource(applyMessageBlockUpdate);
 
+        expect(applySource).toContain('message = chat[messageId] ?? message;');
         expect(applySource).toContain('updateMessageMetaBadges(messageElement, message);');
         expect(applySource).toContain('renderGenerationOutcome(messageElement, message);');
+    });
+
+    test('a returning tab repairs message badges from the live chat entry', () => {
+        const refresh = findFunctionDeclaration('refreshRenderedMessageMetaBadges');
+        const source = getSource(refresh);
+
+        expect(source).toContain('chatElement.find(\'.mes[mesid]\').each');
+        expect(source).toContain('updateMessageMetaBadges(element, chat[messageId]);');
+        expect(scriptSource).toContain('if (document.visibilityState !== \'hidden\') refreshRenderedMessageMetaBadges();');
+        expect(scriptSource).toContain('window.addEventListener(\'pageshow\', refreshRenderedMessageMetaBadges);');
     });
 
     test('guard-on updateMessageBlock delegates queue mechanics to the lifecycle update queue helper', () => {
