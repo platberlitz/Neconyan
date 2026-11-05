@@ -1118,7 +1118,7 @@ function createWindowBindersSandbox() {
         hidden: false,
         now: 0,
         chatbar: { windowBindingsAttached: false },
-        topbar: { windowBindingsAttached: false },
+        topbar: { windowBindingsAttached: false, renderFrame: 0 },
         bottom: { windowBindingsAttached: false, personaBubble: null },
     };
     const record = name => calls.push(name);
@@ -1169,6 +1169,7 @@ function createWindowBindersSandbox() {
     vm.runInContext([
         'let nnBottomChatBarLayoutWidth = null;',
         getFunctionSource('bindChatbarWindowEvents'),
+        getFunctionSource('queueTopBarBrandUpdate'),
         getFunctionSource('bindTopBarBrandWindowEvents'),
         getFunctionSource('bindBottomChatBarWindowEvents'),
         'globalThis.bindAllWindowEvents = () => { bindChatbarWindowEvents(); bindTopBarBrandWindowEvents(); bindBottomChatBarWindowEvents(); };',

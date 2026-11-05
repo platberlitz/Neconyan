@@ -90,6 +90,7 @@ for (const phone of [false, true]) {
                         render();
                     }
                     const result = { idleMutations, dotsRetained,
+                        portraitDecoding: [...timeline.querySelectorAll('img')].map(image => image.decoding),
                         bubbleRetained: bubble === timeline.querySelector('.sb-conversation-typing-indicator'),
                         stopRetained: stop === timeline.querySelector('button') && document.activeElement === stop,
                         text: bubble.querySelector('.sb-conversation-live-text').textContent,
@@ -113,6 +114,7 @@ for (const phone of [false, true]) {
                 };
             ` });
             expect(await page.evaluate(() => window.run())).toEqual({ idleMutations: 0, dotsRetained: true,
+                portraitDecoding: ['async', 'async'],
                 bubbleRetained: true, stopRetained: true, text: 'Reply 50', count: '50t', dotsRestored: 3, historyOnly: true, groupTyping: true, partnerRetained: true });
         });
 

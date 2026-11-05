@@ -55,6 +55,18 @@ drawer lifecycle, plus Conversation's saved and live messages, at the same sizes
 The Mewmory check requires twenty notifications to produce one visible rebuild and
 zero hidden rebuilds, followed by a fresh render when reopened.
 
+### Verified results
+
+- All 20 new Chromium checks passed across desktop and touch-enabled phone sizes.
+  The live-bubble checks also verify asynchronous portrait decoding.
+- The full Jest run passed 626 of 628 suites. Two source-extraction fixtures needed
+  updating for the shared top-bar scheduler and live-bubble markup; both then passed
+  all 47 tests in a focused rerun. Combined coverage is 9,234 passing tests with three
+  existing skips.
+- Root lint, frontend asset limits and the production frontend build passed. Changed
+  test files pass lint. Full test-folder lint still reports five existing quote errors
+  in the unchanged `tests/neconyan-bottom-bar-buttons.test.js`.
+
 These checks measure unnecessary page changes, not an end-to-end speed percentage.
 The audit does not establish that every possible third-party extension or interaction
 is free of repeated rendering. No physical-phone performance claim is made.
