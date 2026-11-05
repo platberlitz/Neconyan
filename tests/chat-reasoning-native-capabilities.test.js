@@ -15,6 +15,7 @@ const fixtures = [
     ...['gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3-flash-preview'].map(model => ['makersuite', model, ['min', 'low', 'medium', 'high']]),
     ['vertexai', 'gemini-3.1-pro-preview', ['low', 'medium', 'high']], ['vertexai', 'gemini-3-flash-preview', ['min', 'low', 'medium', 'high']],
     ['deepseek', 'deepseek-v4-pro', ['none', 'low', 'high', 'max']], ['moonshot', 'kimi-k3', ['low', 'high', 'max']],
+    ...['deepseek-v4-flash', 'deepseek-flash'].map(model => ['deepseek', model, ['none', 'low', 'high', 'max']]),
     ...['glm-5.3', 'glm-5.3-flash'].map(model => ['zai', model, ['low', 'high', 'max']]),
     ['minimax', 'MiniMax-M3.1-Flash', ['low', 'medium', 'high', 'xhigh', 'max']],
     ...['mistral-small-2603', 'mistral-medium-3-5'].map(model => ['mistralai', model, ['none', 'high']]),

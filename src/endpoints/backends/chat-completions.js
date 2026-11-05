@@ -1312,7 +1312,7 @@ async function sendDeepSeekRequest(request, response) {
 
     try {
         let bodyParams = {};
-        const isThinkingModel = /(?:^|-)reasoner$|deepseek-v4/i.test(String(request.body.model || ''));
+        const isThinkingModel = /(?:^|-)reasoner$|deepseek-v4|^deepseek-flash$/i.test(String(request.body.model || ''));
         const disableNativeThinking = request.reasoningCapabilities?.provenance === 'deepseek-documentation' && request.body.reasoning_effort === 'none';
         const effectiveThinking = isThinkingModel && !disableNativeThinking;
 

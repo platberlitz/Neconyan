@@ -5,7 +5,7 @@ function positiveLimit(value) {
     return Number.isFinite(value) && value > 0 ? Math.max(1, Math.floor(value)) : 0;
 }
 
-/** Native DeepSeek v4-pro documents None as thinking off, and the server sends it; the default 'none' elsewhere is unsent. */
+/** Native DeepSeek models listed with None turn thinking off with it, and the server sends it; the default 'none' elsewhere is unsent. */
 function nativeDeepSeekThinkingOff(data, effort) {
     if (effort !== 'none' || data.chat_completion_source !== 'deepseek' || typeof data.model !== 'string') return false;
     const capabilities = getChatReasoningCapabilities({ source: 'deepseek', model: data.model, route: getNativeReasoningRoute(data) });

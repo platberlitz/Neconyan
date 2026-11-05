@@ -363,7 +363,10 @@ describe('request-local output controls', () => {
             ['effort undefined', v4({ reasoning_effort: undefined })],
             ['effort high', v4({ reasoning_effort: 'high' })],
             ['reverse proxy', v4({ reasoning_effort: 'none', reverse_proxy: 'https://proxy.invalid' })],
-            ['v4-flash', v4({ reasoning_effort: 'none', model: 'deepseek-v4-flash' })],
+            ['unlisted v4 id', v4({ reasoning_effort: 'none', model: 'deepseek-v4-future' })],
+            ['v4-flash effort high', v4({ reasoning_effort: 'high', model: 'deepseek-v4-flash' })],
+            ['v4-flash behind a proxy', v4({ reasoning_effort: 'none', model: 'deepseek-v4-flash', reverse_proxy: 'https://proxy.invalid' })],
+            ['mixed-case Flash id', v4({ reasoning_effort: 'none', model: 'DeepSeek-V4-Flash' })],
             ['mixed-case id', v4({ reasoning_effort: 'none', model: 'DeepSeek-V4-Pro' })],
             ['suffixed id', v4({ reasoning_effort: 'none', model: 'deepseek-v4-pro-0601' })],
             ['no source', { model: 'deepseek-v4-pro', reasoning_effort: 'none' }],
@@ -388,6 +391,16 @@ describe('request-local output controls', () => {
             expect(applyGenerationRequestControls(data, controls)).toBe(data);
         });
 
+        test.each(['deepseek-v4-flash', 'deepseek-flash'])('classifies native %s with effort None as non-reasoning', model => {
+            expect(requestUsesReasoning(v4({ reasoning_effort: 'none', model }))).toBe(false);
+        });
+
+        test('applies the cap and response length to native v4-flash when None turns thinking off', () => {
+            const data = v4({ reasoning_effort: 'none', model: 'deepseek-v4-flash' });
+            expect(applyGenerationRequestControls(data, controls).max_tokens).toBe(300);
+            expect(data.max_tokens).toBe(4000);
+        });
+
         test('an explicit reasoning argument still overrides the classifier', () => {
             const data = v4({ reasoning_effort: 'none' });
             expect(applyGenerationRequestControls(data, { maxOutputTokens: 500, reasoning: true })).toBe(data);
@@ -395,7 +408,9 @@ describe('request-local output controls', () => {
 
         test.each([
             ['deepseek-v4-pro', false],
-            ['deepseek-v4-flash', true],
+            ['deepseek-v4-flash', false],
+            ['deepseek-flash', false],
+            ['deepseek-v4-future', true],
         ])('classifies the real builder output for %s', async (model, expected) => {
             const settings = { chat_completion_source: 'deepseek', reasoning_effort: 'none', temp_openai: 1, freq_pen_openai: 0, pres_pen_openai: 0, top_p_openai: 1, typical_p_openai: 1, n: 1 };
             const { generate_data: data } = await createChatGenerationParameters(settings, model, 'normal', [{ role: 'user', content: 'Hello' }], {
