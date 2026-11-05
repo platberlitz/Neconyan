@@ -396,10 +396,11 @@ export function getDefaultPresets(directories, { includeDeleted = true } = {}) {
     try {
         const contentIndex = getContentIndex(CONTENT_SCOPE.USER);
         const presets = [];
+        const deletions = includeDeleted ? null : getDefaultPresetDeletions(directories);
 
         for (const contentItem of contentIndex) {
             if (isPresetContentType(contentItem.type)) {
-                if (!includeDeleted && isDefaultPresetDeleted(directories, contentItem)) {
+                if (deletions && Object.hasOwn(deletions.deleted, getDefaultPresetDeletionKey(contentItem))) {
                     continue;
                 }
 
@@ -514,6 +515,7 @@ export function getDefaultPresetFile(filename) {
 function seedContent(contentIndex, contentLogPath, resolveTarget, forceCategories, directories = null) {
     let anyContentAdded = false;
     const contentLog = getContentLog(contentLogPath);
+    const initialLogLength = contentLog.length;
 
     for (const contentItem of contentIndex) {
         const hasLoggedContent = contentLog.includes(contentItem.filename);
@@ -574,7 +576,9 @@ function seedContent(contentIndex, contentLogPath, resolveTarget, forceCategorie
         anyContentAdded = true;
     }
 
-    writeFileAtomicSync(contentLogPath, contentLog.join('\n'));
+    if (contentLog.length !== initialLogLength || !fs.existsSync(contentLogPath)) {
+        writeFileAtomicSync(contentLogPath, contentLog.join('\n'));
+    }
     return anyContentAdded;
 }
 
@@ -1553,15 +1557,14 @@ async function seedContentForUser(contentIndex, directories, forceCategories) {
     }
 
     const contentLogPath = path.join(directories.root, 'content.log');
-    const contentLog = getContentLog(contentLogPath);
-    writeFileAtomicSync(contentLogPath, contentLog.join('\n'));
     reconcileManagedBundledQuickReplies(directories);
+    const deletions = getDefaultPresetDeletions(directories);
     const filteredContentIndex = contentIndex.filter(contentItem => {
         if (!isPresetContentType(contentItem.type)) {
             return true;
         }
 
-        return !isDefaultPresetDeleted(directories, contentItem);
+        return !Object.hasOwn(deletions.deleted, getDefaultPresetDeletionKey(contentItem));
     });
 
     return seedContent(filteredContentIndex, contentLogPath, (type) => getUserTargetByType(type, directories), forceCategories, directories);

@@ -148,6 +148,27 @@ afterAll(async () => {
 });
 
 describe('character list performance', () => {
+    test('the startup character list supplies assistant metadata without another card parse', async () => {
+        const cardPath = path.join(directories.characters, 'Nova.png');
+        fs.writeFileSync(cardPath, createCard('Nova', 'SHALLOW_CARD_MARKER assistant', [], { id: 'miso-male', version: 1 }));
+        fs.writeFileSync(path.join(directories.characters, 'Kit.png'), createCard('Kit', 'SHALLOW_CARD_MARKER regular'));
+        const counter = countCardParses();
+        expect((await postJson('/api/characters/all')).body).toHaveLength(2);
+        expect(counter.parses).toBe(2);
+        counter.reset();
+        const catalogue = async () => {
+            const response = await fetch(`${baseUrl}/api/characters/assistants`);
+            expect(response.status).toBe(200);
+            return (await response.json()).personalities.flatMap(personality => personality.variants).flatMap(variant => variant.installed);
+        };
+        expect(await catalogue()).toEqual([expect.objectContaining({ avatar: 'Nova.png', version: 1 })]);
+        expect(counter.parses).toBe(0);
+        fs.writeFileSync(cardPath, createCard('Nova', 'SHALLOW_CARD_MARKER assistant', [], { id: 'miso-male', version: 2 }));
+        counter.reset();
+        expect(await catalogue()).toEqual([expect.objectContaining({ avatar: 'Nova.png', version: 2 })]);
+        expect(counter.parses).toBe(1);
+    });
+
     test('assistant lists reuse positive and negative metadata, then detect edits, renames and deletion', async () => {
         const cardPath = path.join(directories.characters, 'Nova.png');
         const otherPath = path.join(directories.characters, 'Kit.png');

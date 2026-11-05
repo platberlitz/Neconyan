@@ -113,3 +113,102 @@ test('world books without old keys are reported unchanged', () => {
     assert.equal(migrateLegacyWorldNames({ entries: { 0: { extensions: { neconyan_pathfinder: {} } } } }), false);
     assert.equal(migrateLegacyWorldNames(null), false);
 });
+
+function scanFixture(t) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-legacy-scan-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const directories = { root, worlds: path.join(root, 'worlds') };
+    const chats = path.join(root, 'chats', 'Character');
+    fs.mkdirSync(chats, { recursive: true });
+    fs.mkdirSync(directories.worlds);
+    const settings = path.join(root, 'settings.json');
+    const world = path.join(directories.worlds, 'Book.json');
+    fs.writeFileSync(settings, '{"extension_settings":{}}');
+    fs.writeFileSync(world, '{"entries":{}}');
+    fs.writeFileSync(path.join(chats, 'Chat.jsonl'), 'unchanged chat');
+    return { directories, chats, settings, world, cache: path.join(root, '.neconyan-legacy-name-scan.json') };
+}
+
+test('repeat starts skip unchanged file contents and nested directory listings without rewriting the cache', t => {
+    const { directories, chats, settings, world, cache } = scanFixture(t);
+    migrateLegacyNamesForUser(directories);
+    const cacheBefore = fs.statSync(cache, { bigint: true });
+    const read = t.mock.method(fs, 'readFileSync');
+    const list = t.mock.method(fs, 'readdirSync');
+    assert.deepEqual(migrateLegacyNamesForUser(directories), { settings: false, worlds: 0, files: 0 });
+    assert.equal(read.mock.calls.some(call => [settings, world].includes(call.arguments[0])), false);
+    assert.equal(list.mock.calls.some(call => call.arguments[0] === chats), false);
+    assert.equal(fs.statSync(cache, { bigint: true }).ctimeNs, cacheBefore.ctimeNs);
+});
+
+test('later imports inside cached subdirectories and in-place settings/world edits are still migrated', t => {
+    const { directories, chats, settings, world } = scanFixture(t);
+    const settingsText = '{"extension_settings":{"sillybunny_conversation":{}}}';
+    const worldText = '{"extensions":{"sillybunny_pathfinder":{}}}';
+    // Keep size and mtime unchanged across replacement; ctime must invalidate the scan.
+    fs.writeFileSync(settings, ' '.repeat(settingsText.length));
+    fs.writeFileSync(world, ' '.repeat(worldText.length));
+    const settingsStat = fs.statSync(settings);
+    const worldStat = fs.statSync(world);
+    migrateLegacyNamesForUser(directories);
+    fs.writeFileSync(settings, settingsText);
+    fs.utimesSync(settings, settingsStat.atime, settingsStat.mtime);
+    fs.writeFileSync(world, worldText);
+    fs.utimesSync(world, worldStat.atime, worldStat.mtime);
+    const nested = path.join(chats, 'Imported');
+    fs.mkdirSync(nested);
+    fs.writeFileSync(path.join(nested, 'Chat.jsonl.sillybunny-write-recovery'), 'recovery bytes');
+    assert.deepEqual(migrateLegacyNamesForUser(directories), { settings: true, worlds: 1, files: 1 });
+    assert.equal(fs.readFileSync(path.join(nested, 'Chat.jsonl.neconyan-write-recovery'), 'utf8'), 'recovery bytes');
+    assert.deepEqual(JSON.parse(fs.readFileSync(settings)).extension_settings.neconyan_conversation, {});
+    assert.deepEqual(JSON.parse(fs.readFileSync(world)).extensions.neconyan_pathfinder, {});
+});
+
+test('a damaged cache falls back to reading the account again', t => {
+    const { directories, settings, cache } = scanFixture(t);
+    migrateLegacyNamesForUser(directories);
+    fs.writeFileSync(cache, '{broken');
+    const read = t.mock.method(fs, 'readFileSync');
+    migrateLegacyNamesForUser(directories);
+    assert.equal(read.mock.calls.some(call => call.arguments[0] === settings), true);
+    assert.equal(JSON.parse(fs.readFileSync(cache)).version, 1);
+});
+
+test('a temporarily unreadable world is retried rather than marked checked', t => {
+    const { directories, world } = scanFixture(t);
+    fs.writeFileSync(world, '{"extensions":{"sillybunny_pathfinder":{}}}');
+    const originalRead = fs.readFileSync;
+    const read = t.mock.method(fs, 'readFileSync', (filePath, ...args) => {
+        if (filePath === world) throw Object.assign(new Error('temporarily unreadable'), { code: 'EACCES' });
+        return originalRead(filePath, ...args);
+    });
+    t.mock.method(console, 'warn', () => {});
+    assert.equal(migrateLegacyNamesForUser(directories).worlds, 0);
+    read.mock.restore();
+    assert.equal(migrateLegacyNamesForUser(directories).worlds, 1);
+});
+
+test('cached child paths do not follow a replacement symlink', t => {
+    const { directories, chats } = scanFixture(t);
+    migrateLegacyNamesForUser(directories);
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-legacy-outside-'));
+    t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+    const journal = path.join(outside, 'Chat.jsonl.sillybunny-write-recovery');
+    fs.writeFileSync(journal, 'outside');
+    fs.rmSync(chats, { recursive: true });
+    fs.symlinkSync(outside, chats);
+    assert.equal(migrateLegacyNamesForUser(directories).files, 0);
+    assert.equal(fs.readFileSync(journal, 'utf8'), 'outside');
+});
+
+test('conflicting journals in nested folders are retried once the newer journal is removed', t => {
+    const { directories, chats } = scanFixture(t);
+    const oldJournal = path.join(chats, 'Chat.jsonl.sillybunny-write-recovery');
+    const newJournal = path.join(chats, 'Chat.jsonl.neconyan-write-recovery');
+    fs.writeFileSync(oldJournal, 'old');
+    fs.writeFileSync(newJournal, 'new');
+    assert.equal(migrateLegacyNamesForUser(directories).files, 0);
+    fs.unlinkSync(newJournal);
+    assert.equal(migrateLegacyNamesForUser(directories).files, 1);
+    assert.equal(fs.readFileSync(newJournal, 'utf8'), 'old');
+});

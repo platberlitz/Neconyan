@@ -33,6 +33,14 @@ export const system_message_types = {
 };
 
 export async function initSystemMessages() {
+    const [help, hotkeys, formatting, welcome, welcomePrompt, assistantNote] = await Promise.all([
+        renderTemplateAsync('help'),
+        renderTemplateAsync('hotkeys'),
+        renderTemplateAsync('formatting'),
+        renderTemplateAsync('welcome', { displayVersion }),
+        renderTemplateAsync('welcomePrompt'),
+        renderTemplateAsync('assistantNote'),
+    ]);
     /** @type {ChatMessage} */
     const defaultMessage = {
         name: systemUserName,
@@ -45,7 +53,7 @@ export async function initSystemMessages() {
     const result = {
         /** @type {ChatMessage} */
         help: lodash.merge(structuredClone(defaultMessage), {
-            mes: await renderTemplateAsync('help'),
+            mes: help,
         }),
         /** @type {ChatMessage} */
         slash_commands: lodash.merge(structuredClone(defaultMessage), {
@@ -53,11 +61,11 @@ export async function initSystemMessages() {
         }),
         /** @type {ChatMessage} */
         hotkeys: lodash.merge(structuredClone(defaultMessage), {
-            mes: await renderTemplateAsync('hotkeys'),
+            mes: hotkeys,
         }),
         /** @type {ChatMessage} */
         formatting: lodash.merge(structuredClone(defaultMessage), {
-            mes: await renderTemplateAsync('formatting'),
+            mes: formatting,
         }),
         /** @type {ChatMessage} */
         macros: lodash.merge(structuredClone(defaultMessage), {
@@ -65,7 +73,7 @@ export async function initSystemMessages() {
         }),
         /** @type {ChatMessage} */
         welcome: lodash.merge(structuredClone(defaultMessage), {
-            mes: await renderTemplateAsync('welcome', { displayVersion }),
+            mes: welcome,
             extra: {
                 uses_system_ui: true,
             },
@@ -80,7 +88,7 @@ export async function initSystemMessages() {
         }),
         /** @type {ChatMessage} */
         welcome_prompt: lodash.merge(structuredClone(defaultMessage), {
-            mes: await renderTemplateAsync('welcomePrompt'),
+            mes: welcomePrompt,
             extra: {
                 uses_system_ui: true,
                 isSmallSys: true,
@@ -88,7 +96,7 @@ export async function initSystemMessages() {
         }),
         /** @type {ChatMessage} */
         assistant_note: lodash.merge(structuredClone(defaultMessage), {
-            mes: await renderTemplateAsync('assistantNote'),
+            mes: assistantNote,
             extra: {
                 uses_system_ui: true,
                 isSmallSys: true,
