@@ -260,6 +260,13 @@ describe('shell style runtime stylesheets', () => {
         expect(source).toContain('#sb-sunken-reef-creatures {');
         expect(source).toContain('#sb-sunken-reef-wake {');
         expect(source).toContain('display: contents;');
+        // Creatures sit above the reef backdrop (-1) but below #sheld (30), so chat text
+        // stays readable. The pointer wake keeps its own layer above the interface.
+        expect(source).toMatch(/#sb-sunken-reef-creatures \{\s*z-index: 0;/);
+        expect(source).toMatch(/#sb-sunken-reef-wake \{\s*z-index: calc\(var\(--sb-z-critical, 10000\) - 1\);/);
+        const reefScript = readSource('public', 'scripts', 'neconyan-sunken-reef.js');
+        expect(reefScript).toContain('\'z-index:0\'');
+        expect(reefScript).toContain('\'z-index:calc(var(--sb-z-critical, 10000) - 1)\'');
     });
 
     test('the backing exception rejects additional or widened important declarations', () => {
