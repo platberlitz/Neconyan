@@ -1,5 +1,57 @@
 # Full server migration: continuation
 
+### 6 November 2026: 1.5.1 published, staging starts 1.5.2
+
+Published [Neconyan 1.5.1](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.1)
+with annotated tag `v1.5.1` on `ddd1fb9ce117ddbab49694ae12ee74ec5149f9ea`.
+PRs #502, #503, #505, #507, #508, #509 and #510 were merged since 1.5.0.
+Main was fast-forwarded from `6507b0b6` to the staging commit without a merge
+commit. The README mirror run `42207917639` passed and added no commit.
+No personal instance was deployed.
+
+The handbook update was published in `platberlitz/neconyan-docs` commits
+`c7b1171` and `ce646a72afe6d8b818ff775199e7a47806361276`; Pages runs
+`42202216310` and `42202901694` passed. The live About page names `ddd1fb9c`
+and the live Tools page documents 'Reuse the lore when swiping'. Assistant
+knowledge revision 63 covers the release.
+
+Verification and retained scope:
+
+- Browser checks were waived by the owner for this release and did not gate
+  publication. Staging run `42204091973` at the release commit was still running
+  when the release was published. Groups 1, 7, 8, 9, 10, 11, 13, 15 and 16
+  passed. Group 12 failed `mobile-field-layout.e2e.js:127` (focus outline offset)
+  and `mobile-swipe-rails.e2e.js:17` (120-second timeout). Group 14 failed eight
+  sidebar tests in `neconyan-rail-order.e2e.js` and `neconyan-rail-sections.e2e.js`
+  (section toggles never became visible or stable). These were not investigated,
+  fixed or retried; the sidebar failures may relate to the Quick Actions changes
+  in #505. Duplicate main browser run `42207917622` was cancelled.
+- Local checks at the release commit with Node 24: Jest 637 suites, 9,342 passed
+  and 3 existing skips; Node checks 3,784 passed; Mewmory 113 passed. Root/test
+  lint, frontend budgets and the production build passed. No CI unit run exists
+  on this commit.
+- Android run `42207933900` at the release commit passed signed packaging, the
+  WebView fixture and Android 11, 13 and 15 lifecycle/native checks first time.
+- iPhone run `42207937803` at the release commit passed storage checks, the real
+  13 GiB import, device IPA verification and simulator startup/relaunch first
+  time. Native checks used emulators and a simulator, not physical phones.
+
+All twelve release assets were independently verified before publication.
+All eight Android and two iPhone listed checksums passed. Both APK signatures
+match the official certificate SHA-256
+`49ed1e770b8a5269a008ed0d4763dd19a499377e35c85eec798c554178c4826c`.
+Native ELF and ZIP alignment passed the 16 KiB checks. Android provenance
+matched the independent verifier; all 4,795 source ZIP entries matched `git archive`
+of the release commit, including the `CLAUDE.md` symlink. The IPA's ARM64 device
+binaries, version, commit, 2,032 frontend assets and embedded provenance passed
+independent verification. All twelve published assets were downloaded again;
+their bytes matched the verified build files and their SHA-256 digests matched
+GitHub's records. The release is public and marked latest.
+
+Staging starts 1.5.2 with matching package metadata and boundary expectations.
+All four current boundary tests and lint on that test passed.
+The README already names 1.5.1 using the author's wording and latest-release link.
+
 ### 6 November 2026: 1.5.0 published, staging starts 1.5.1
 
 Published [Neconyan 1.5.0](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.0)
