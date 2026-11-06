@@ -175,7 +175,9 @@ async function checkFieldFocus(page, testInfo, shell) {
             document.documentElement.dataset.neconyanCalicoTone = tone === 'light' ? 'light' : 'dark';
         }, tone);
         for (const [id, className] of contexts) {
-            await page.evaluate(({ id, className }) => {
+            // Focus and sample each field in the browser together. Separate
+            // protocol calls per assertion made this matrix exceed its budget.
+            const rings = await page.evaluate(({ id, className }) => {
                 document.querySelector('#field-focus-probe')?.remove();
                 const host = document.createElement('div');
                 host.id = 'field-focus-probe';
@@ -187,16 +189,17 @@ async function checkFieldFocus(page, testInfo, shell) {
                 scope.innerHTML = '<input class="text_pole" type="search" aria-label="Search" value="Selected text"><input class="text_pole" type="text" aria-label="Text" value="Selected text"><textarea class="text_pole" aria-label="Editor">Selected text</textarea><select class="text_pole" aria-label="Choice"><option>Selected option</option></select>';
                 host.append(scope);
                 document.body.append(host);
-            }, { id, className });
-            const fields = page.locator('#field-focus-probe :is(input, textarea, select)');
-            for (const field of await fields.all()) {
-                await field.focus();
-                await expect(field).toBeFocused();
-                const ring = await field.evaluate(element => {
+                return [...scope.querySelectorAll('input, textarea, select')].map(element => {
+                    element.focus();
                     const style = getComputedStyle(element);
-                    return { width: parseFloat(style.outlineWidth), offset: parseFloat(style.outlineOffset),
+                    return { focused: document.activeElement === element,
+                        width: parseFloat(style.outlineWidth), offset: parseFloat(style.outlineOffset),
                         style: style.outlineStyle, colour: style.outlineColor };
                 });
+            }, { id, className });
+            expect(rings).toHaveLength(4);
+            for (const ring of rings) {
+                expect(ring.focused, `${tone}: ${id || className || 'core'}`).toBe(true);
                 expect(ring.style, `${tone}: ${id || className || 'core'}`).toBe('solid');
                 expect(ring.width).toBeGreaterThanOrEqual(2);
                 expect(ring.offset + ring.width).toBeLessThanOrEqual(0);
