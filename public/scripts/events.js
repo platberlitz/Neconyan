@@ -114,6 +114,7 @@ export const event_types = {
     PERSONA_CHANGED: 'persona_changed',
     PERSONA_CREATED: 'persona_created',
     PERSONA_UPDATED: 'persona_updated',
+    PERSONA_AVATAR_CHANGED: 'persona_avatar_changed',
     PERSONA_RENAMED: 'persona_renamed',
     PERSONA_DELETED: 'persona_deleted',
     TTS_JOB_STARTED: 'tts_job_started',

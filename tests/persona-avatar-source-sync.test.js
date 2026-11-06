@@ -69,7 +69,7 @@ function readAttribute(element, name) {
     return element.getAttribute(name);
 }
 
-function loadPersonaAvatarHelpers({ mobile, messages, fetchMock = jest.fn(async () => ({})), mastheadMock = jest.fn() }) {
+function loadPersonaAvatarHelpers({ mobile, messages, fetchMock = jest.fn(async () => ({})), mastheadMock = jest.fn(), eventEmitMock = jest.fn(async () => {}) }) {
     const body = [
         getFunctionSource(personasSource, 'getPersonaAvatarSources'),
         getFunctionSource(personasSource, 'messageUsesPersonaAvatar'),
@@ -95,6 +95,8 @@ function loadPersonaAvatarHelpers({ mobile, messages, fetchMock = jest.fn(async 
         'HTMLImageElement',
         'fetch',
         'updateSelectedPersonaMasthead',
+        'eventSource',
+        'event_types',
         'initialUserAvatar',
         `let user_avatar = initialUserAvatar;\n${body}`,
     );
@@ -116,6 +118,8 @@ function loadPersonaAvatarHelpers({ mobile, messages, fetchMock = jest.fn(async 
         FakeImage,
         fetchMock,
         mastheadMock,
+        { emit: eventEmitMock },
+        { PERSONA_AVATAR_CHANGED: 'persona_avatar_changed' },
         'First.png',
     );
 }
@@ -183,7 +187,8 @@ describe('persona avatar source synchronization', () => {
         const forcedOther = new FakeMessage({ is_user: 'true', force_avatar: 'true' }, new FakeImage({ src: '/desktop/persona/Other.png' }));
         const fetchMock = jest.fn(async () => ({}));
         const mastheadMock = jest.fn();
-        const helpers = loadPersonaAvatarHelpers({ mobile, messages: [currentUser, forcedCurrent, forcedOther], fetchMock, mastheadMock });
+        const eventEmitMock = jest.fn(async () => {});
+        const helpers = loadPersonaAvatarHelpers({ mobile, messages: [currentUser, forcedCurrent, forcedOther], fetchMock, mastheadMock, eventEmitMock });
 
         helpers.setUserAvatar('Current.png');
         const cacheBusted = helpers.getPersonaAvatarSources('Current.png', true);
@@ -205,6 +210,8 @@ describe('persona avatar source synchronization', () => {
         expect(readAttribute(forcedCurrent.image, 'data-original-src')).toMatch(/\?t=\d+$/);
         expect(readAttribute(forcedOther.image, 'src')).toBe('/desktop/persona/Other.png');
         expect(mastheadMock).toHaveBeenCalledWith(true);
+        expect(eventEmitMock).toHaveBeenCalledTimes(1);
+        expect(eventEmitMock).toHaveBeenCalledWith('persona_avatar_changed', 'Current.png');
     });
 
     test('encodes reserved characters in original persona URLs', () => {

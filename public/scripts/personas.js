@@ -487,6 +487,10 @@ export async function refreshPersonaAvatar(avatarId) {
     if (avatarId === user_avatar) {
         updateSelectedPersonaMasthead(true);
     }
+
+    // A replaced picture keeps its file name, so surfaces that draw it from a
+    // plain URL need to know the bytes behind that name changed.
+    await eventSource.emit(event_types.PERSONA_AVATAR_CHANGED, avatarId);
 }
 
 /**
