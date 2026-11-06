@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.5.1
+
+### Merged Staging PRs
+- PR #503 (2026-11-06) `feat(scratchpad): create personas and scenario notes`
+
 ## v1.5.0
 
 ### Highlights
