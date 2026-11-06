@@ -222,7 +222,10 @@ export function splitReply(reply) {
 }
 
 export function describeChange(change) {
-    if (change.type === 'preset') return `Edit preset '${change.preset}': ${change.module ? `${change.module} / ` : ''}${change.field}`;
+    if (change.type === 'preset') {
+        const field = change.module ? `${change.module} / ${change.field}` : change.field;
+        return `Edit preset '${change.preset}': ${field}`;
+    }
     if (change.type === 'persona' && change.action === 'create') return `Create persona '${change.name}'`;
     if (change.type === 'persona-note' && change.action === 'create') return `Create Scenario Note '${change.name}' for ${change.persona}`;
     if (change.type === 'creator') return `Catelier draft: ${change.name}`;
