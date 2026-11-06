@@ -4,6 +4,7 @@
 
 ### Merged Staging PRs
 - PR #511 (2026-11-06) `fix(personas): clarify chat and character lock badges`
+- PR #514 (2026-11-06) `feat(scratchpad): edit presets and copy every code block`
 
 ## v1.5.1
 
