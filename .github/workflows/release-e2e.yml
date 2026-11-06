@@ -91,23 +91,22 @@ jobs:
           NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc
         run: npm ci --ignore-scripts --prefix tests
 
-      # The Ubuntu package mirror sometimes stalls on one download, and apt
-      # waits two minutes before each retry, which once cost a group 50 minutes
-      # before any test ran. Give up on a stalled download sooner and retry it.
+      # Azure's Ubuntu mirror has taken 50 minutes to download browser packages.
+      # Use Ubuntu's main mirror and let apt retry stalled requests itself.
+      # Killing the unprivileged Playwright parent leaves sudo's apt process
+      # holding the package lock, so do not wrap it in a shell timeout/retry loop.
       - name: Install test browsers
         working-directory: tests
-        timeout-minutes: 45
+        timeout-minutes: 20
         run: |
-          printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' \
+          printf '%s\n' 'Acquire::Retries "3";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' \
             | sudo tee /etc/apt/apt.conf.d/80-neconyan-ci-downloads > /dev/null
-          for attempt in 1 2 3; do
-            if timeout 15m npx --no-install playwright install --with-deps chromium firefox webkit; then
-              exit 0
+          for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources /etc/apt/apt-mirrors*.txt; do
+            if [ -f "$source" ]; then
+              sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g; s|https://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$source"
             fi
-            echo "::warning::Browser install attempt $attempt failed or stalled; trying again."
-            sudo dpkg --configure -a || true
           done
-          exit 1
+          npx --no-install playwright install --with-deps chromium firefox webkit
 
       - name: Initialize server state
         run: |
