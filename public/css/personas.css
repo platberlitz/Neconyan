@@ -338,7 +338,8 @@ body.neconyan #PersonaManagement #persona-management-block {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
         'name states'
-        'description states';
+        'description states'
+        'status status';
     align-items: center;
     gap: 2px 8px;
     width: auto;
@@ -387,31 +388,16 @@ body.neconyan #PersonaManagement #persona-management-block {
     display: inline-flex;
 }
 
-#PersonaManagement #user_avatar_block .avatar_container_states :is(.locked_to_chat_label, .locked_to_character_label) {
-    gap: 2px;
-    width: auto;
-    min-width: 0;
-    min-height: 0;
-    margin: 0;
-    padding: 0 4px;
-    border: 0;
-    background: transparent;
-    box-shadow: none;
-    opacity: 1;
-    filter: none;
-    font-size: 11px;
-    color: var(--neco-ginger);
-    pointer-events: none;
-}
-
-#PersonaManagement #user_avatar_block .avatar_container_states :is(.locked_to_chat_label, .locked_to_character_label) .label {
+#PersonaManagement #user_avatar_block .persona-row-status {
+    grid-area: status;
     display: none;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-width: 0;
 }
 
-#PersonaManagement #user_avatar_block .avatar_container_states :is(.locked_to_chat_label, .locked_to_character_label) :is(.icon, .label_icon) {
-    display: inline-flex;
-    opacity: 1;
-    color: var(--neco-ginger);
+#PersonaManagement #user_avatar_block .avatar-container:is(.default_persona, .locked_to_chat, .locked_to_character) .persona-row-status {
+    display: flex;
 }
 
 #PersonaManagement #user_avatar_block .avatar_container_states :is(.persona_quick_rename, .persona_quick_delete) {
@@ -497,6 +483,10 @@ body.neconyan #PersonaManagement #persona-management-block {
     display: flex;
     justify-content: center;
     gap: 2px;
+}
+
+#PersonaManagement #user_avatar_block.gridView .persona-row-status {
+    justify-content: center;
 }
 
 #PersonaManagement #user_avatar_block.gridView .avatar-container :is(.persona_quick_rename, .persona_quick_delete) {
