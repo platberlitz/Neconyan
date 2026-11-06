@@ -394,4 +394,6 @@ export const refreshedKnowledgeCases = [
     ['My iPhone app closes straight away when I open it', 'start.iphone-recovery', 'close Neconyan in the app switcher and open it again'],
     ['Does checking for extension updates risk my installed extension?', 'extensions.update-safety', 'leaves the extension and its history as they were'],
     ['Can Quick Image Gen use gpt-image-2.6-sunburst?', 'images.responses', 'gpt-image-2.6-sunburst or gpt-image-2.6-flare'],
+    ['Does Pawthfinder pick new lore when I swipe a reply?', 'pathfinder.retrieval', 'a swipe or regenerate keeps the lore Pawthfinder already picked for that reply'],
+    ['How do I make Pawthfinder pick fresh lore on every swipe?', 'pathfinder.retrieval', 'Turn it off to pick lore fresh for every swipe'],
 ];
