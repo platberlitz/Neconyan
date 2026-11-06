@@ -5,6 +5,7 @@
 ### Merged Staging PRs
 - PR #502 (2026-11-06) `fix: protect extension setup and stop iPhone startup retry loops`
 - PR #503 (2026-11-06) `feat(scratchpad): create personas and scenario notes`
+- PR #504 (2026-11-06) `fix(android): let the app reclaim its own leftover data lock`
 - PR #505 (2026-11-06) `feat(quick-actions): add searchable pages and simple mode access`
 
 ## v1.5.0
