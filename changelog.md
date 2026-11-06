@@ -19,6 +19,7 @@
 - PR #507 (2026-11-06) `fix(quick-image-gen): route GPT Image 2.6 through Responses`
 - PR #508 (2026-11-06) `chore(release): prepare 1.5.1 for release`
 - PR #509 (2026-11-06) `fix(persona-bar): refresh the persona image after an avatar change`
+- PR #510 (2026-11-06) `feat(pathfinder): reuse lore retrieval when swiping`
 
 ## v1.5.0
 
