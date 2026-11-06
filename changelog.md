@@ -7,6 +7,7 @@
 - PR #512 (2026-11-06) `ci(e2e): balance release checks across 20 test groups`
 - PR #513 (2026-11-06) `fix(e2e): correct field focus and isolate release checks`
 - PR #514 (2026-11-06) `feat(scratchpad): edit presets and copy every code block`
+- PR #515 (2026-11-06) `fix(kimi): detect partial prefill for bracket-labelled models`
 
 ## v1.5.1
 
