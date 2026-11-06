@@ -90,6 +90,10 @@ export function isPathUnderOwnedDataRoot(targetPath) {
 
 const APP_SERVER_BUSY = 'The previous Neconyan server on this phone may still be using your data. Close Neconyan from the recent apps screen, or force stop it in Android settings, then open it again.';
 const APP_LOCK_DAMAGED = 'The data folder lock on this phone needs checking, so it was left untouched. Save a backup of your data from this screen and report the problem. Lock problem: ';
+const IOS_SERVER_BUSY = 'The previous Neconyan server on this iPhone may still be using your data. Close Neconyan in the app switcher, then open it again. If this keeps happening, restart the iPhone.';
+const IOS_LOCK_DAMAGED = 'The data folder lock on this iPhone needs checking, so it was left untouched. Keep Neconyan installed so your data stays on this iPhone, and report the problem. Lock problem: ';
+const ANDROID_APP_COPY = Object.freeze({ busy: APP_SERVER_BUSY, damaged: APP_LOCK_DAMAGED });
+const IOS_APP_COPY = Object.freeze({ busy: IOS_SERVER_BUSY, damaged: IOS_LOCK_DAMAGED });
 
 function fail(message, details) {
     const error = Object.assign(new Error(details ? `${message} ${formatLeaseDetails(details)}` : message), { code: 'DATA_ROOT_OWNED' });
@@ -213,6 +217,17 @@ export function isAndroidAppServer({ env = process.env, platform = process.platf
     return false;
 }
 
+const IOS_APP_DATA_ROOT = /^(?:\/private)?\/var\/mobile\/Containers\/Data\/Application\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/Library\/Application Support\/Neconyan\/data$/i;
+
+/** True only inside the iOS app's own server: the app marker plus the iOS platform, or a darwin runtime whose real data root is the app's container path (desktop macOS has neither). */
+export function isIosAppServer({ env = process.env, platform = process.platform, dataRoot, realpath = fs.realpathSync, warn = console.warn } = {}) {
+    if (env.NECONYAN_IOS_APP !== '1') return false;
+    if (platform === 'ios') return true;
+    try { if (platform === 'darwin' && IOS_APP_DATA_ROOT.test(realpath(path.resolve(dataRoot)))) return true; } catch { /* fall through */ }
+    warn(`The iOS app marker is set but this runtime reports platform ${leaseText(platform)} outside the app container, so the data folder lease keeps its strict checks.`);
+    return false;
+}
+
 function leaseReclaimed(reason, details) {
     return Object.freeze({ reason, details, message: `Reclaimed a stale data folder lease (${reason}). ${formatLeaseDetails(details)}` });
 }
@@ -259,40 +274,41 @@ function appLeaseReason(owner) {
     return 'unidentified';
 }
 
-/** The Android app is the only program that can use its private data folder, so a leftover lease is its own earlier run: only a live or unidentifiable owner, or unsafe evidence, is refused. */
-function reclaimAppServerLease(root, identity) {
+/** The phone app is the only program that can use its private data folder, so a leftover lease is its own earlier run: only a live or unidentifiable owner, or unsafe evidence, is refused. */
+function reclaimAppServerLease(root, identity, copy) {
     for (const held of activeOwners.values()) {
         if (held.root === root) throw fail('This server already holds the data folder.', leaseDetails(held.owner, identity));
     }
     let snapshot;
     try { snapshot = ownerRecoverySnapshot(root); } catch (error) {
-        if (error?.code === 'DATA_ROOT_OWNED') throw fail(APP_LOCK_DAMAGED + error.message, leaseDetails(null, identity));
+        if (error?.code === 'DATA_ROOT_OWNED') throw fail(copy.damaged + error.message, leaseDetails(null, identity));
         throw error;
     }
     // The directory vanished after EEXIST: something is changing the lease right now, so do not race it.
-    if (!snapshot.token) throw fail(APP_SERVER_BUSY, leaseDetails(null, identity));
+    if (!snapshot.token) throw fail(copy.busy, leaseDetails(null, identity));
     const owner = isOwnerRecord(snapshot.owner) ? snapshot.owner : null;
     const details = leaseDetails(owner, identity);
     const reason = appLeaseReason(owner);
-    if (reason === 'running' || reason === 'unidentified') throw fail(APP_SERVER_BUSY, details);
+    if (reason === 'running' || reason === 'unidentified') throw fail(copy.busy, details);
     try { removeCheckedOwner(root, snapshot.token); } catch (error) {
-        if (error?.code === 'DATA_ROOT_OWNED') throw fail(APP_SERVER_BUSY, details);
+        if (error?.code === 'DATA_ROOT_OWNED') throw fail(copy.busy, details);
         throw error;
     }
     return leaseReclaimed(reason, details);
 }
 
 /** Hold the fixed root-relative lease until every writer has stopped. No timeout steals it. */
-export function acquireDataRootOwner(dataRoot, purpose, { androidAppServer = false } = {}) {
+export function acquireDataRootOwner(dataRoot, purpose, { androidAppServer = false, iosAppServer = false } = {}) {
     if (!['server', 'repair'].includes(purpose)) throw new TypeError('Invalid data root ownership purpose.');
-    if (typeof androidAppServer !== 'boolean' || androidAppServer && purpose !== 'server') throw new TypeError('Invalid data root ownership option.');
+    if (typeof androidAppServer !== 'boolean' || androidAppServer && purpose !== 'server'
+        || typeof iosAppServer !== 'boolean' || iosAppServer && (purpose !== 'server' || androidAppServer)) throw new TypeError('Invalid data root ownership option.');
     const root = fs.realpathSync(path.resolve(dataRoot));
     const identity = Object.freeze(rootIdentity(root));
     const directory = path.join(root, DATA_ROOT_OWNER_DIRECTORY);
     let reclaimed = null;
     try { fs.mkdirSync(directory, { mode: 0o700 }); } catch (error) {
         if (error.code !== 'EEXIST') throw error;
-        reclaimed = androidAppServer ? reclaimAppServerLease(root, identity) : reclaimDeadLocalLease(root, directory, identity);
+        reclaimed = androidAppServer || iosAppServer ? reclaimAppServerLease(root, identity, iosAppServer ? IOS_APP_COPY : ANDROID_APP_COPY) : reclaimDeadLocalLease(root, directory, identity);
         fs.mkdirSync(directory, { mode: 0o700 });
     }
     flushDirectory(root);

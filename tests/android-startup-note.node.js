@@ -159,7 +159,7 @@ test('a lease refusal reaches the startup note with the lease evidence', () => {
 });
 
 test('the server asks for the Android lease policy only through the app check', () => {
-    assert.ok(server.includes('acquireDataRootOwner(globalThis.DATA_ROOT, \'server\', { androidAppServer: isAndroidAppServer() })'));
+    assert.ok(server.includes('acquireDataRootOwner(globalThis.DATA_ROOT, \'server\', { androidAppServer: isAndroidAppServer(), iosAppServer })'));
     assert.ok(server.includes('if (lease.reclaimed) console.info(lease.reclaimed.message);'));
     assert.ok(server.includes('error.code === \'DATA_ROOT_OWNED\' && process.env.NECONYAN_ANDROID_APP !== \'1\''));
     const marker = bootstrap.indexOf('process.env.NECONYAN_ANDROID_APP = \'1\'');

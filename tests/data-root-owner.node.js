@@ -594,3 +594,191 @@ for (const [name, failingRead] of [['the ownership record changed', 1], ['the re
         assert.deepEqual(fs.readFileSync(planted.filename), planted.bytes);
     });
 }
+
+// iOS app lease policy (IOS-LEASE-01).
+const ios = { iosAppServer: true };
+
+test('the iOS app reclaims a dead lease with a foreign hostname', t => {
+    const directory = root(t);
+    plantLease(directory, value => { value.hostname = 'foreign-host'; });
+    const owner = acquireDataRootOwner(directory, 'server', ios);
+    assert.equal(owner.reclaimed.reason, 'process-ended');
+    assert.deepEqual(owner.reclaimed.details.differs, ['hostname']);
+    assert.ok(owner.reclaimed.message.startsWith('Reclaimed a stale data folder lease (process-ended).'));
+    const record = inspectDataRootOwner(directory);
+    assert.equal(record.pid, process.pid);
+    assert.equal(record.hostname, os.hostname());
+    owner.release();
+    assert.equal(inspectDataRootOwner(directory), null);
+});
+
+test('the iOS app reclaims a dead lease with a foreign root device and inode', t => {
+    const directory = root(t);
+    plantLease(directory, value => { value.root.dev = bump(value.root.dev); value.root.ino = bump(value.root.ino); });
+    const owner = acquireDataRootOwner(directory, 'server', ios);
+    assert.deepEqual(owner.reclaimed.details.differs, ['root.dev', 'root.ino']);
+    owner.release();
+});
+
+test('the iOS app reclaims a dead lease with a foreign platform', t => {
+    const directory = root(t);
+    plantLease(directory, value => { value.platform = 'ios'; });
+    const owner = acquireDataRootOwner(directory, 'server', ios);
+    assert.deepEqual(owner.reclaimed.details.differs, ['platform']);
+    owner.release();
+});
+
+test('the iOS app reclaims a lease whose PID belongs to another app', { skip: !canSeeForeignPid }, t => {
+    const directory = root(t);
+    plantLease(directory, value => { value.pid = 1; value.processStart = null; });
+    const owner = acquireDataRootOwner(directory, 'server', ios);
+    assert.equal(owner.reclaimed.reason, 'pid-of-another-app');
+    owner.release();
+});
+
+function assertIosBusy(error, pid) {
+    assert.equal(error.code, 'DATA_ROOT_OWNED');
+    assert.match(error.message, /app switcher/);
+    assert.match(error.message, /restart the iPhone/);
+    assert.doesNotMatch(error.message, /force stop/);
+    assert.equal(error.details.owner.pid, pid);
+    return true;
+}
+
+test('the iOS app refuses a lease held by a live process it can signal', { skip: !linux }, async t => {
+    const directory = root(t);
+    const child = await liveChild(t);
+    const planted = plantLease(directory, value => { value.pid = child.pid; value.processStart = null; });
+    assert.throws(() => acquireDataRootOwner(directory, 'server', ios), error => assertIosBusy(error, child.pid));
+    assert.deepEqual(fs.readFileSync(planted.filename), planted.bytes);
+});
+
+test('the iOS app refuses a lease held by a live process with the same start', { skip: !linux }, async t => {
+    const directory = root(t);
+    const child = await liveChild(t);
+    const planted = plantLease(directory, value => { value.pid = child.pid; value.processStart = procStart(child.pid); });
+    assert.throws(() => acquireDataRootOwner(directory, 'server', ios), error => assertIosBusy(error, child.pid));
+    assert.deepEqual(fs.readFileSync(planted.filename), planted.bytes);
+});
+
+test('the iOS app reclaims a lease naming its own PID that it does not hold', t => {
+    const directory = root(t);
+    plantLease(directory, value => { value.pid = process.pid; value.hostname = 'foreign-host'; });
+    const owner = acquireDataRootOwner(directory, 'server', ios);
+    assert.equal(owner.reclaimed.reason, 'pid-reused');
+    owner.release();
+});
+
+test('a second iOS acquisition of one root in this process is refused', t => {
+    const directory = root(t);
+    const first = acquireDataRootOwner(directory, 'server', ios);
+    assert.throws(() => acquireDataRootOwner(directory, 'server', ios), { code: 'DATA_ROOT_OWNED' });
+    first.release();
+    assert.equal(inspectDataRootOwner(directory), null);
+});
+
+test('the iOS app reclaims each incomplete lease record', async t => {
+    const cases = {
+        'empty directory': () => {},
+        'empty owner file': lock => fs.writeFileSync(path.join(lock, 'owner.json'), ''),
+        'partial JSON': lock => fs.writeFileSync(path.join(lock, 'owner.json'), '{'),
+        'wrong schema version': lock => fs.writeFileSync(path.join(lock, 'owner.json'), JSON.stringify({ version: 2 })),
+    };
+    for (const [name, build] of Object.entries(cases)) await t.test(name, t => {
+        const { directory, lock } = ownedFixture(t);
+        fs.mkdirSync(lock);
+        build(lock);
+        const owner = acquireDataRootOwner(directory, 'server', ios);
+        assert.equal(owner.reclaimed.reason, 'incomplete-record');
+        assert.equal(inspectDataRootOwner(directory).pid, process.pid);
+        owner.release();
+    });
+});
+
+test('the iOS app refuses unsafe lease evidence and leaves it untouched', async t => {
+    const unsafe = {
+        'an extra file': ({ directory, lock }) => {
+            plantLease(directory);
+            fs.writeFileSync(path.join(lock, 'extra'), 'x');
+        },
+        'an oversized owner file': ({ lock }) => {
+            fs.mkdirSync(lock);
+            fs.writeFileSync(path.join(lock, 'owner.json'), Buffer.alloc(5000, 0x20));
+        },
+    };
+    for (const [name, build] of Object.entries(unsafe)) await t.test(name, t => {
+        const fixture = ownedFixture(t);
+        build(fixture);
+        const before = evidence(fixture.lock);
+        assert.throws(() => acquireDataRootOwner(fixture.directory, 'server', ios), error => {
+            assert.match(error.message, /Keep Neconyan installed/);
+            return true;
+        });
+        assert.deepEqual(evidence(fixture.lock), before);
+    });
+});
+
+test('an iOS lease that vanishes while it is checked is refused', t => {
+    const { directory, lock } = ownedFixture(t);
+    const planted = plantLease(directory, value => { value.hostname = 'foreign-host'; });
+    const lstat = fs.lstatSync;
+    t.mock.method(fs, 'lstatSync', function (name, ...args) {
+        if (name === lock) throw Object.assign(new Error('gone'), { code: 'ENOENT' });
+        return lstat.call(fs, name, ...args);
+    });
+    assert.throws(() => acquireDataRootOwner(directory, 'server', ios), error => {
+        assert.equal(error.code, 'DATA_ROOT_OWNED');
+        assert.match(error.message, /app switcher/);
+        assert.match(error.message, /Lease record: incomplete or unreadable/);
+        return true;
+    });
+    t.mock.restoreAll();
+    assert.deepEqual(fs.readFileSync(planted.filename), planted.bytes);
+});
+
+test('the iOS option is validated', t => {
+    const directory = root(t);
+    assert.throws(() => acquireDataRootOwner(directory, 'server', { iosAppServer: 'yes' }), TypeError);
+    assert.throws(() => acquireDataRootOwner(directory, 'repair', ios), TypeError);
+    assert.throws(() => acquireDataRootOwner(directory, 'server', { iosAppServer: true, androidAppServer: true }), TypeError);
+});
+
+test('the iOS server is recognised only with the marker and the iOS platform or container path', () => {
+    const marker = { NECONYAN_IOS_APP: '1' };
+    const uuid = '0A1B2C3D-0000-4000-8000-00000000ABCD';
+    const container = `/var/mobile/Containers/Data/Application/${uuid}/Library/Application Support/Neconyan/data`;
+    const simulator = `/Users/x/Library/Developer/CoreSimulator/Devices/${uuid}/data/Containers/Data/Application/${uuid}/Library/Application Support/Neconyan/data`;
+    const check = ({ realpath = () => { throw new Error('unexpected'); }, ...options }) => {
+        const warnings = [];
+        let realpathCalls = 0;
+        const result = ownerModule.isIosAppServer({ dataRoot: '/data', warn: message => warnings.push(message),
+            ...options, realpath: value => { realpathCalls++; return realpath(value); } });
+        return { result, warnings, realpathCalls };
+    };
+    const real = value => () => value;
+    let outcome = check({ platform: 'ios', env: marker });
+    assert.deepEqual(outcome, { result: true, warnings: [], realpathCalls: 0 });
+    for (const candidate of [container, `/private${container}`]) {
+        outcome = check({ platform: 'darwin', env: marker, realpath: real(candidate) });
+        assert.deepEqual(outcome, { result: true, warnings: [], realpathCalls: 1 });
+    }
+    for (const [platform, env] of [['ios', {}], ['darwin', {}], ['ios', { NECONYAN_IOS_APP: 'true' }], ['darwin', { NECONYAN_IOS_APP: 'true' }]]) {
+        outcome = check({ platform, env, realpath: real(container) });
+        assert.equal(outcome.result, false);
+        assert.deepEqual(outcome.warnings, []);
+    }
+    for (const platform of ['linux', 'android', 'win32']) {
+        outcome = check({ platform, env: marker, realpath: real(container) });
+        assert.equal(outcome.result, false);
+        assert.equal(outcome.warnings.length, 1);
+        assert.ok(outcome.warnings[0].includes(platform));
+    }
+    const falseRealpaths = [real('/Users/x/Library/Application Support/Neconyan/data'), real(simulator), real(`${container}/sub`),
+        () => { throw new Error('gone'); }];
+    for (const realpath of falseRealpaths) {
+        outcome = check({ platform: 'darwin', env: marker, realpath });
+        assert.equal(outcome.result, false);
+        assert.equal(outcome.warnings.length, 1);
+        assert.ok(outcome.warnings[0].includes('darwin'));
+    }
+});
