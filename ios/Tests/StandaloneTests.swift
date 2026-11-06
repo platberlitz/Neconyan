@@ -31,6 +31,38 @@ final class StandaloneTests: XCTestCase {
     }
 
     @MainActor
+    func testStartupRecoveryWaitsForExplicitRetry() throws {
+        for failure in ["termination", "navigation"] {
+            let app = XCUIApplication()
+            app.launchEnvironment["NECONYAN_TEST_PORT"] = "28193"
+            app.launchEnvironment["NECONYAN_TEST_STARTUP_FAILURE"] = failure
+            app.launch()
+            let status = app.staticTexts["startup-status"]
+            let recovered = NSPredicate(format: "exists == true AND label != %@", "Starting Neconyan on this iPhone…")
+            expectation(for: recovered, evaluatedWith: status)
+            waitForExpectations(timeout: 240)
+            let message = status.label
+            XCTAssertTrue(app.buttons["Try again"].isHittable)
+            XCTAssertTrue(app.buttons["Share startup log"].isHittable)
+            XCUIDevice.shared.press(.home)
+            app.activate()
+            XCTAssertEqual(status.label, message, "Returning to the app must not restart a failed page.")
+            app.buttons["Share startup log"].tap()
+            XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 10))
+            app.buttons["Close"].tap()
+            XCTAssertEqual(status.label, message)
+            let screenshot = XCTAttachment(screenshot: app.screenshot())
+            screenshot.name = "startup-recovery-\(failure)"
+            screenshot.lifetime = .keepAlways
+            add(screenshot)
+            app.buttons["Try again"].tap()
+            XCTAssertTrue(app.webViews["workspace-ready"].waitForExistence(timeout: 120))
+            XCTAssertFalse(status.exists)
+            app.terminate()
+        }
+    }
+
+    @MainActor
     func testBundledServerLoadsAndRelaunches() async throws {
         let app = XCUIApplication()
         app.launchEnvironment["NECONYAN_TEST_PORT"] = "28193"
