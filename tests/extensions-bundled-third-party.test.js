@@ -135,9 +135,13 @@ test('native discovery owns aliases once, protects every mutation, and preserves
         fs.mkdirSync(path.join(local, 'Neconyan-MacroEnhanced'));
         fs.writeFileSync(path.join(local, 'Neconyan-MacroEnhanced/retained.txt'), 'Retain this user copy');
         fs.mkdirSync(path.join(global, 'SillyTavern-ChatCompletionTabs'));
+        // A check in progress, or a locked cleanup directory, is not an installed extension.
+        fs.mkdirSync(path.join(global, '.neconyan-ext-pending'));
+        fs.writeFileSync(path.join(global, '.neconyan-ext-pending/manifest.json'), JSON.stringify({ js: 'index.js' }));
         fs.mkdirSync(path.join(local, 'CustomTool'));
         fs.writeFileSync(path.join(local, 'CustomTool/user.txt'), 'Custom settings');
         const discovered = await request('get', '/discover');
+        expect(discovered.body.some(entry => entry.name.includes('.neconyan-ext-'))).toBe(false);
         const native = discovered.body.filter(entry => entry.type === 'native');
         expect(native).toHaveLength(18);
         expect(native.find(entry => entry.name === 'third-party/MacroEnhanced').aliases).toContain('Neconyan-MacroEnhanced');

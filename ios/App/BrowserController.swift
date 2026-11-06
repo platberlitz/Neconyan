@@ -12,9 +12,22 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
     private let actions = UIStackView()
     private var downloads: [ObjectIdentifier: URL] = [:]
     private var connecting = false
+    private var recoveryRequired = false
+    private let diagnostics = StartupDiagnostics.shared
+    #if DEBUG
+    private var injectedStartupFailure = false
+    #endif
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        var hardware = utsname()
+        uname(&hardware)
+        let machineSize = MemoryLayout.size(ofValue: hardware.machine)
+        let model = withUnsafePointer(to: &hardware.machine) { pointer in
+            pointer.withMemoryRebound(to: CChar.self, capacity: machineSize) { String(cString: $0) }
+        }
+        let build = (try? Bundle.main.url(forResource: "payload-version", withExtension: "txt").map { try String(contentsOf: $0, encoding: .utf8) }) ?? "unknown"
+        diagnostics.record("app-launch", detail: "version=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") ?? "unknown") build=\(build.trimmingCharacters(in: .whitespacesAndNewlines)) device=\(model) os=\(ProcessInfo.processInfo.operatingSystemVersionString) physicalMemoryBytes=\(ProcessInfo.processInfo.physicalMemory)")
         view.backgroundColor = .systemBackground
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
@@ -23,17 +36,73 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
         config.userContentController.add(self, name: "nativeDiagnostics")
         config.userContentController.add(self, name: "neconyanBackground")
         config.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "neconyanImport")
-        config.userContentController.addUserScript(WKUserScript(source: """
+        config.userContentController.addUserScript(WKUserScript(source: #"""
         (() => {
-            const send = (kind, text) => window.webkit.messageHandlers.nativeDiagnostics.postMessage({kind, text: String(text).slice(0, 12000)});
-            addEventListener('error', e => send('error', e.error?.stack || e.message || e.target?.src), true);
-            addEventListener('unhandledrejection', e => send('error', e.reason?.stack || e.reason));
-            addEventListener('neconyan:ready', () => send('ready', 'Workspace initialisation completed'));
+            const resources = new Set();
+            const errors = new Set();
+            let suppressedResources = 0, suppressedErrors = 0;
+            const redact = value => String(value).slice(0, 12000)
+                .replace(/\b(Bearer|Basic)\s+[^\s,;"']+/gi, '$1 [redacted]')
+                .replace(/((?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|authorization|password|passwd|secret|cookie)\s*["']?\s*[:=]\s*)(?:"[^"]*(?:"|$)|'[^']*(?:'|$)|[^\s,;}]+)/gi, '$1[redacted]')
+                .replace(/\b(?:sk|sess)-[a-zA-Z0-9_-]{12,}/g, '[redacted]')
+                .replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi, '$1[redacted]@')
+                .replace(/((?:https?|file):\/\/[^\s?#)"']+)[?#][^\s)"']*/gi, '$1?[redacted]')
+                .replace(/(\/[\w/.-]+)[?#][^\s)"']*/g, '$1?[redacted]');
+            const send = (kind, text) => {
+                try { window.webkit.messageHandlers.nativeDiagnostics.postMessage({kind, text: redact(text)}); } catch {}
+            };
+            const snapshot = event => {
+                try {
+                    const api = window.NeconyanCrashDiagnostics;
+                    send('activity', JSON.stringify({ event, readyState: document.readyState, online: navigator.onLine,
+                        visibility: document.visibilityState, viewport: [innerWidth, innerHeight],
+                        navigationType: performance.getEntriesByType('navigation')[0]?.type || 'unknown',
+                        startup: api?.getStartupGuardState?.(), activity: api?.getActivity?.(),
+                        suppressedResources, suppressedErrors }));
+                } catch {}
+            };
+            const describe = (error, depth = 0) => {
+                if (error === null || typeof error !== 'object') return typeof error === 'string' ? redact(error) : 'Non-Error rejection (' + typeof error + ')';
+                const result = {};
+                for (const key of ['name', 'message', 'stack', 'code']) {
+                    try { if (typeof error[key] === 'string' || typeof error[key] === 'number') result[key] = redact(error[key]); } catch {}
+                }
+                try { if (error.cause !== undefined && depth < 3) result.cause = describe(error.cause, depth + 1); } catch {}
+                return result;
+            };
+            const reportError = (error, source = '', line = 0, column = 0) => {
+                const text = redact(JSON.stringify({ error: describe(error), source, line, column }));
+                if (errors.has(text) || errors.size >= 20) { suppressedErrors++; return; }
+                errors.add(text);
+                snapshot('before-error');
+                send('error', text);
+            };
+            addEventListener('error', e => {
+                if (e.error || e.message) { reportError(e.error || e.message, e.filename, e.lineno, e.colno); return; }
+                const target = e.target;
+                const source = target?.getAttribute?.('src') || target?.getAttribute?.('href');
+                if (!source) { suppressedResources++; return; }
+                const detail = String(target.tagName) + ': ' + redact(source);
+                if (resources.has(detail) || resources.size >= 30) { suppressedResources++; return; }
+                resources.add(detail);
+                send('resource-error', detail);
+            }, true);
+            addEventListener('unhandledrejection', e => reportError(e.reason));
+            addEventListener('neconyan:ready', () => { send('ready', 'Workspace initialisation completed'); snapshot('workspace-ready'); });
+            addEventListener('load', () => snapshot('window-load'));
+            addEventListener('pageshow', e => snapshot(e.persisted ? 'pageshow-restored' : 'pageshow'));
+            addEventListener('pagehide', () => snapshot('pagehide'));
+            document.addEventListener('visibilitychange', () => snapshot('visibilitychange'));
+            addEventListener('neconyan:memory-lifecycle', () => snapshot('native-memory-lifecycle'));
+            snapshot('document-start');
+            // Retain reviewed activity counters while the page is alive, not after a process kill.
+            setInterval(() => { if (document.visibilityState === 'visible') snapshot('heartbeat'); }, 30000);
             addEventListener('DOMContentLoaded', () => {
+                snapshot('dom-content-loaded');
                 let reportedFailure = false;
                 const inspect = () => {
                     const failure = document.querySelector('#preloader pre');
-                    if (failure && !reportedFailure) { reportedFailure = true; send('error', failure.textContent); }
+                    if (failure && !reportedFailure) { reportedFailure = true; reportError(failure.textContent); }
                 };
                 const observer = new MutationObserver(inspect);
                 observer.observe(document.documentElement, {subtree: true, childList: true});
@@ -41,7 +110,7 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
                 inspect();
             });
         })();
-        """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        """#, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         web = WKWebView(frame: .zero, configuration: config)
         web.accessibilityIdentifier = "workspace-loading"
         web.navigationDelegate = self
@@ -61,7 +130,7 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
         status.accessibilityIdentifier = "startup-status"
         let retry = UIButton(type: .system)
         retry.setTitle("Try again", for: .normal)
-        retry.addTarget(self, action: #selector(connect), for: .touchUpInside)
+        retry.addTarget(self, action: #selector(retryConnection), for: .touchUpInside)
         let logs = UIButton(type: .system)
         logs.setTitle("Share startup log", for: .normal)
         logs.addTarget(self, action: #selector(shareLog), for: .touchUpInside)
@@ -80,14 +149,30 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
         connect()
     }
 
-    @objc private func connect() {
+    @objc private func retryConnection() {
         guard !connecting else { return }
+        diagnostics.record("explicit-retry")
+        recoveryRequired = false
+        connect()
+    }
+
+    private func connect() {
+        guard !connecting, !recoveryRequired else { return }
         connecting = true
+        diagnostics.beginAttempt()
+        web.isHidden = true
         actions.isHidden = false
         status.text = "Starting Neconyan on this iPhone…"
         Task {
             defer { connecting = false }
             do {
+                diagnostics.stage("server-setup")
+                #if DEBUG
+                if !injectedStartupFailure, ProcessInfo.processInfo.environment["NECONYAN_TEST_STARTUP_FAILURE"] == "setup" {
+                    injectedStartupFailure = true
+                    throw LocalServerError.message("Test startup failure before the local server was created.")
+                }
+                #endif
                 if server == nil { server = try LocalServer() }
                 guard let server else { return }
                 if keeper == nil {
@@ -97,15 +182,18 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
                 // Installing the payload and starting Node must not block UIKit's main thread.
                 try await Task.detached { try server.start() }.value
                 let cookies = try await server.signIn()
+                diagnostics.stage("install-session-cookies", detail: "count=\(cookies.count)")
                 for cookie in cookies { await web.configuration.websiteDataStore.httpCookieStore.setCookie(cookie) }
+                guard !recoveryRequired else { return }
+                diagnostics.stage("load-workspace")
                 web.load(URLRequest(url: server.origin))
-            } catch { status.text = error.localizedDescription }
+            } catch { showRecovery(error.localizedDescription, reason: "connection-failed", error: error) }
         }
     }
 
     @objc private func resume() {
         notifyMemoryLifecycle("foreground")
-        guard !connecting, let url = web.url else { return }
+        guard !connecting, !recoveryRequired, let url = web.url else { return }
         if url.path == "/login" || web.isHidden { connect() }
     }
 
@@ -117,11 +205,21 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
     }
 
     private func notifyMemoryLifecycle(_ state: String) {
-        guard let web, let url = web.url, isLocal(url), ["foreground", "background", "pressure"].contains(state) else { return }
+        diagnostics.record("native-\(state)", detail: "thermalState=\(ProcessInfo.processInfo.thermalState.rawValue) lowPower=\(ProcessInfo.processInfo.isLowPowerModeEnabled) recovery=\(recoveryRequired)")
+        guard !recoveryRequired, let web, let url = web.url, isLocal(url), ["foreground", "background", "pressure"].contains(state) else { return }
         web.evaluateJavaScript("window.dispatchEvent(new CustomEvent('neconyan:memory-lifecycle',{detail:{state:'\(state)'}}))", completionHandler: nil)
     }
 
-    @objc private func shareLog() { if let url = server?.logURL { share(url) } }
+    @objc private func shareLog() {
+        do {
+            let destination = FileManager.default.temporaryDirectory.appendingPathComponent("exports/\(UUID().uuidString)", isDirectory: true)
+            let report = try diagnostics.export(serverLog: server?.logURL, to: destination)
+            share(report, removeAfterwards: true)
+        } catch {
+            diagnostics.record("share-failed", detail: StartupDiagnostics.errorDetails(error))
+            status.text = "Could not prepare the startup log: \(error.localizedDescription)"
+        }
+    }
 
     private func share(_ url: URL, removeAfterwards: Bool = false) {
         let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
@@ -147,8 +245,12 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
             return
         }
         guard let body = message.body as? [String: String], let text = body["text"] else { return }
-        if body["kind"] == "ready" { web.accessibilityIdentifier = "workspace-ready" }
-        NSLog("Neconyan web %@: %@", body["kind"] ?? "diagnostic", text)
+        let kind = body["kind"] ?? "diagnostic"
+        if kind == "ready", !recoveryRequired {
+            web.accessibilityIdentifier = "workspace-ready"
+            diagnostics.stage("workspace-ready")
+        }
+        diagnostics.record("web-\(kind)", detail: text)
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage, replyHandler: @escaping @MainActor @Sendable (Any?, String?) -> Void) {
@@ -214,28 +316,64 @@ final class BrowserController: UIViewController, WKNavigationDelegate, WKUIDeleg
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        if navigationResponse.isForMainFrame, let response = navigationResponse.response as? HTTPURLResponse {
+            diagnostics.record("navigation-response", detail: "status=\(response.statusCode) path=\(response.url?.path ?? "unknown")")
+        }
         let disposition = (navigationResponse.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? ""
         let attachment = disposition.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("attachment")
         decisionHandler(attachment || !navigationResponse.canShowMIMEType ? .download : .allow)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if webView.url?.path == "/login" { connect(); return }
+        guard !recoveryRequired else { return }
+        #if DEBUG
+        // Exercise the real recovery callbacks without private WebKit process APIs.
+        if !injectedStartupFailure, let failure = ProcessInfo.processInfo.environment["NECONYAN_TEST_STARTUP_FAILURE"] {
+            injectedStartupFailure = true
+            if failure == "termination" { webViewWebContentProcessDidTerminate(webView) }
+            if failure == "navigation" { self.webView(webView, didFailProvisionalNavigation: navigation, withError: URLError(.cannotConnectToHost)) }
+            // A late completion must not hide the recovery controls.
+            self.webView(webView, didFinish: navigation)
+            return
+        }
+        #endif
+        if webView.url?.path == "/login" {
+            showRecovery("Local sign-in did not finish. Try again or share the startup log.", reason: "sign-in-redirect")
+            return
+        }
         web.isHidden = false
         actions.isHidden = true
+        diagnostics.record("navigation-finished", detail: "path=\(webView.url?.path ?? "unknown") ready=\(web.accessibilityIdentifier == "workspace-ready")")
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         web.accessibilityIdentifier = "workspace-loading"
+        diagnostics.record("navigation-started", detail: "path=\(webView.url?.path ?? "unknown")")
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        diagnostics.record("navigation-committed", detail: "path=\(webView.url?.path ?? "unknown")")
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        keeper?.setPageBusy(false)
-        connect()
+        showRecovery("The Neconyan page stopped unexpectedly. Try again or share the startup log.", reason: "web-process-terminated; cause unavailable from WebKit")
     }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         if (error as NSError).code == NSURLErrorCancelled { return }
-        status.text = error.localizedDescription
+        showRecovery(error.localizedDescription, reason: "provisional-navigation-failed", error: error)
+    }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        if (error as NSError).code == NSURLErrorCancelled { return }
+        showRecovery(error.localizedDescription, reason: "committed-navigation-failed", error: error)
+    }
+
+    private func showRecovery(_ message: String, reason: String, error: Error? = nil) {
+        diagnostics.record("recovery", detail: "reason=\(reason) page=\(web.url?.path ?? "not loaded") state=\(web.accessibilityIdentifier ?? "unknown") \(error.map { StartupDiagnostics.errorDetails($0) } ?? message)")
+        recoveryRequired = true
+        keeper?.setPageBusy(false)
+        web.stopLoading()
+        web.isHidden = true
+        status.text = message
         actions.isHidden = false
     }
 

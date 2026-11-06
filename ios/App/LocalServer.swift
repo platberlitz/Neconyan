@@ -48,13 +48,15 @@ final class LocalServer {
     private struct Credentials: Codable { let password: String; let port: Int }
 
     func start() throws {
-        guard !started else { return }
+        guard !started else { StartupDiagnostics.shared.record("server-already-started"); return }
+        StartupDiagnostics.shared.stage("locate-payload")
         let fm = FileManager.default
         guard let bundled = Bundle.main.url(forResource: "server", withExtension: nil),
               let versionURL = Bundle.main.url(forResource: "payload-version", withExtension: "txt") else {
             throw LocalServerError.message("The bundled server is missing.")
         }
         let version = try String(contentsOf: versionURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        StartupDiagnostics.shared.stage("install-payload", detail: "commit=\(version)")
         let runtimeRoot = state.appendingPathComponent("runtimes", isDirectory: true)
         let runtime = try RuntimeInstaller.install(bundled: bundled, in: runtimeRoot, version: version)
         var excluded = runtimeRoot
@@ -65,17 +67,21 @@ final class LocalServer {
         // Picked ZIPs belong to the run that picked them; an abandoned one would hold gigabytes forever.
         try? fm.removeItem(at: importInbox)
         if let size = try? fm.attributesOfItem(atPath: logURL.path)[.size] as? NSNumber, size.intValue > 4 * 1024 * 1024 { try? fm.removeItem(at: logURL) }
+        StartupDiagnostics.shared.stage("start-node")
         NodeRunner.start(withArguments: ["node", runtime.appendingPathComponent("server-bootstrap.mjs").path, state.path, String(origin.port!), password], logPath: logURL.path)
         started = true
     }
 
     func signIn() async throws -> [HTTPCookie] {
+        StartupDiagnostics.shared.stage("wait-server-ready")
         let deadline = Date().addingTimeInterval(180)
         while !FileManager.default.fileExists(atPath: state.appendingPathComponent("ios-ready.json").path) {
             guard Date() < deadline else { throw LocalServerError.message("The local server has not started. Your saved data has been kept. Close and reopen Neconyan, or share the startup log.") }
             try await Task.sleep(nanoseconds: 250_000_000)
         }
+        StartupDiagnostics.shared.stage("request-sign-in-session")
         let (csrfData, csrfResponse) = try await session.data(from: origin.appendingPathComponent("csrf-token"))
+        StartupDiagnostics.shared.record("sign-in-session-response", detail: "status=\((csrfResponse as? HTTPURLResponse)?.statusCode ?? 0)")
         guard (csrfResponse as? HTTPURLResponse)?.statusCode == 200,
               let json = try JSONSerialization.jsonObject(with: csrfData) as? [String: Any], let token = json["token"] as? String else { throw LocalServerError.message("Could not open the private sign-in session.") }
         var request = URLRequest(url: origin.appendingPathComponent("api/auth/browser/login"))
@@ -84,7 +90,9 @@ final class LocalServer {
         request.setValue(token, forHTTPHeaderField: "X-CSRF-Token")
         request.setValue(origin.absoluteString, forHTTPHeaderField: "Origin")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["username": "neconyan", "password": password, "remember": true])
+        StartupDiagnostics.shared.stage("sign-in")
         let (_, response) = try await session.data(for: request)
+        StartupDiagnostics.shared.record("sign-in-response", detail: "status=\((response as? HTTPURLResponse)?.statusCode ?? 0)")
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw LocalServerError.message("Could not sign in to the private server.") }
         return session.configuration.httpCookieStorage?.cookies(for: origin) ?? []
     }

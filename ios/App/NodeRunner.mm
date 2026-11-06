@@ -19,7 +19,8 @@
             int argc = (int)arguments.count;
             char **argv = (char **)calloc(argc + 1, sizeof(char *));
             for (int i = 0; i < argc; i++) argv[i] = strdup(arguments[i].UTF8String);
-            node_start(argc, argv);
+            int result = node_start(argc, argv);
+            fprintf(stderr, "Neconyan startup: Node exited with code=%d\n", result);
             for (int i = 0; i < argc; i++) free(argv[i]);
             free(argv);
         }];

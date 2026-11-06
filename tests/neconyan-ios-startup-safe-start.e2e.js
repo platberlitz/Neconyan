@@ -1,7 +1,7 @@
-/* global localStorage, sessionStorage, globalThis */
+/* global localStorage, sessionStorage, globalThis, document, window, ErrorEvent */
 import fs from 'node:fs';
 import path from 'node:path';
-import { expect, test, webkit } from '@playwright/test';
+import { chromium, expect, test, webkit } from '@playwright/test';
 import { IPHONE_SAFARI_CONTEXT, applyIOSOnlyCss, installIPhoneSafari } from './ios-safari-emulation.js';
 
 const base = process.env.NECONYAN_TEST_BASE_URL;
@@ -156,5 +156,69 @@ test('iPhone: a normal load without crash history boots straight in', async () =
     } finally {
         await context.close();
         await browser.close();
+    }
+});
+
+test('native startup diagnostics bound resource failures without losing JavaScript errors or readiness', async () => {
+    const controller = fs.readFileSync(new URL('../ios/App/BrowserController.swift', import.meta.url), 'utf8');
+    const script = controller.match(/WKUserScript\(source: #"""\n([\s\S]*?)\n\s*"""#, injectionTime/)[1];
+    for (const browserType of [chromium, webkit]) {
+        const browser = await browserType.launch({ headless: true });
+        const context = await browser.newContext(IPHONE_SAFARI_CONTEXT);
+        await installIPhoneSafari(context, { standalone: true });
+        const page = await context.newPage();
+        try {
+            await page.setContent('<!doctype html><main>Native diagnostics fixture</main>');
+            await page.evaluate(() => {
+                globalThis.nativeMessages = [];
+                globalThis.webkit = { messageHandlers: { nativeDiagnostics: { postMessage: message => globalThis.nativeMessages.push(message) } } };
+                globalThis.NeconyanCrashDiagnostics = {
+                    getStartupGuardState: () => ({ failures: 2, safeStart: true }),
+                    getActivity: () => ({ snapshot: { ready: false, generation: { phase: 'rendering' }, chat: { messageCount: 30 } }, events: [{ type: 'chat-open' }] }),
+                };
+            });
+            await page.evaluate(script);
+            await page.evaluate(() => {
+                const resource = document.createElement('img');
+                // Empty image placeholders previously logged the page URL hundreds of times.
+                resource.setAttribute('src', '');
+                document.body.append(resource);
+                for (let i = 0; i < 100; i++) resource.dispatchEvent(new Event('error'));
+                for (let i = 0; i < 100; i++) {
+                    resource.setAttribute('src', '/missing-' + i + '.png');
+                    resource.dispatchEvent(new Event('error'));
+                    resource.dispatchEvent(new Event('error'));
+                }
+                for (let i = 0; i < 100; i++) window.dispatchEvent(new ErrorEvent('error', {
+                    message: 'Real startup exception', filename: '/startup.js', lineno: 42, colno: 7,
+                }));
+                window.dispatchEvent(new ErrorEvent('error', {
+                    error: new Error('Failed to load', { cause: new Error('Connection refused') }),
+                    filename: 'https://person:privatepass@example.com/script.js?private-query#private-fragment',
+                }));
+                window.dispatchEvent(new ErrorEvent('error', { message: 'password=private-password Authorization: Bearer private-bearer' }));
+                window.dispatchEvent(new Event('neconyan:ready'));
+            });
+            const messages = await page.evaluate(() => globalThis.nativeMessages);
+            expect(messages.filter(message => message.kind === 'resource-error')).toHaveLength(30);
+            expect(messages).toContainEqual({ kind: 'resource-error', text: 'IMG: /missing-0.png' });
+            const errors = messages.filter(message => message.kind === 'error');
+            expect(errors).toHaveLength(3);
+            expect(JSON.parse(errors[0].text)).toEqual({ error: 'Real startup exception', source: '/startup.js', line: 42, column: 7 });
+            expect(errors[1].text).toContain('Connection refused');
+            for (const secret of ['privatepass', 'private-query', 'private-fragment', 'private-password', 'private-bearer']) {
+                expect(JSON.stringify(messages)).not.toContain(secret);
+            }
+            expect(messages).toContainEqual({ kind: 'ready', text: 'Workspace initialisation completed' });
+            const activities = messages.filter(message => message.kind === 'activity').map(message => JSON.parse(message.text));
+            expect(activities.at(-1)).toMatchObject({
+                event: 'workspace-ready', suppressedErrors: 99, startup: { failures: 2, safeStart: true },
+                activity: { snapshot: { generation: { phase: 'rendering' }, chat: { messageCount: 30 } }, events: [{ type: 'chat-open' }] },
+            });
+            expect(activities.at(-1).suppressedResources).toBeGreaterThanOrEqual(270);
+        } finally {
+            await context.close();
+            await browser.close();
+        }
     }
 });

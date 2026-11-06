@@ -16,6 +16,10 @@ jobs:
         run: |
           swiftc ios/App/RuntimeInstaller.swift ios/tools/storage-tests/main.swift -o "$RUNNER_TEMP/neconyan-storage-tests"
           "$RUNNER_TEMP/neconyan-storage-tests"
+      - name: Check retained startup diagnostics
+        run: |
+          swiftc ios/App/StartupDiagnostics.swift ios/tools/diagnostics-tests/main.swift -o "$RUNNER_TEMP/neconyan-diagnostics-tests"
+          "$RUNNER_TEMP/neconyan-diagnostics-tests"
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -89,6 +93,7 @@ jobs:
           container=$(xcrun simctl get_app_container '${{ steps.simulator.outputs.id }}' io.github.platberlitz.neconyan data 2>/dev/null || true)
           if test -n "$container"; then
             cp "$container/Library/Application Support/Neconyan/server.log" ios/server.log || true
+            cp "$container/Library/Application Support/Neconyan/"startup-diagnostics*.jsonl ios/ || true
             xcrun simctl io '${{ steps.simulator.outputs.id }}' screenshot ios/simulator.png || true
           fi
           xcrun xcresulttool export attachments --path ios/test-results.xcresult --output-path ios/test-attachments || true
@@ -101,6 +106,7 @@ jobs:
             ios/*-build.log
             ios/*-test.log
             ios/server.log
+            ios/startup-diagnostics*.jsonl
             ios/model-fixture.log
             ios/simulator.png
             ios/test-results.xcresult
