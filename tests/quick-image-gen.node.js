@@ -796,15 +796,16 @@ test('invalid ComfyUI workflow and reference paths refuse before a paid image re
     }
 });
 
-for (const variant of ['sunburst', 'flare']) {
-    test(`GPT Image ${variant} uses Responses and saves the paid result without repeating it`, async () => {
+for (const model of ['gpt-image-2.5-sunburst', 'gpt-image-2.5-flare',
+    'gpt-image-2.6-sunburst', 'gpt-image-2.6-flare']) {
+    test(`GPT Image ${model} uses Responses and saves the paid result without repeating it`, async () => {
         const directories = tempRoot();
         const context = jobContext(directories);
         const settings = { provider: 'gptimage', gptImageProxyUrl: 'https://proxy.example.test/openai',
-            gptImageProxyKey: 'private-image-key', gptImageModel: `gpt-image-2.5-${variant}`,
+            gptImageProxyKey: 'private-image-key', gptImageModel: model,
             gptImageQuality: 'high', width: 768, height: 1024 };
         saveImageSettings(directories, settings);
-        const input = { effectId: `responses:${variant}`, prompt: 'cat portrait', negative: 'blur',
+        const input = { effectId: `responses:${model}`, prompt: 'cat portrait', negative: 'blur',
             settingsFingerprint: quickImageGenSettingsFingerprint(settings) };
         let calls = 0;
         const image = await generateQuickImageGenJobImage(context, { ...input, fetch: async (url, options) => {
