@@ -530,7 +530,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261105-hush-stats';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261106-quick-actions';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -1960,8 +1960,23 @@ function getMobileQuickActionTabConfig(shellKey, tabId) {
     ].find(tab => tab?.id === tabId) || null;
 }
 
+function getQuickActionPageEntry(action) {
+    if (action?.shellKey !== 'pages' || action.tabId !== action.dedupeKey) {
+        return null;
+    }
+    // Persist only a catalogue key, never a callback or an arbitrary URL.
+    return getSearchPageEntries().find(entry => entry.dedupeKey === action.dedupeKey) || null;
+}
+
 function getMobileQuickActionContext(value) {
     const route = nnMobileShellLifecycle.railModel.resolveQuickActionRoute(value);
+    if (route.shellKey === 'pages') {
+        const page = getQuickActionPageEntry(value);
+        return {
+            shellConfig: page ? { title: page.groupLabel } : null,
+            tabConfig: page ? { id: page.dedupeKey, label: page.displayText } : null,
+        };
+    }
     return {
         shellConfig: route.shellKey === 'characters' ? null : getShellConfig(route.shellKey),
         tabConfig: route.tabId ? getMobileQuickActionTabConfig(route.shellKey, route.tabId) : null,
@@ -2097,7 +2112,7 @@ function createMobileQuickActionFromMatch(match) {
     const normalizedMatch = normalizeMobileQuickAction({
         type: 'custom',
         shellKey: match?.shellKey,
-        tabId: match?.tabId,
+        tabId: match?.kind === 'page' ? match.dedupeKey : match?.tabId,
         icon: NN_MOBILE_QUICK_ACTION_ICON_FALLBACK,
         sectionLabel: match?.sectionLabel,
         displayText: match?.displayText,
@@ -15805,6 +15820,11 @@ function getMobileQuickActionContextLabel(action) {
         return '';
     }
 
+    const page = getQuickActionPageEntry(normalizedAction);
+    if (page) {
+        return `${page.groupLabel} · ${page.displayText}`;
+    }
+
     const shellLabel = normalizedAction.shellKey === 'characters'
         ? 'Characters'
         : getShellConfig(normalizedAction.shellKey)?.title || normalizedAction.shellKey;
@@ -15904,7 +15924,7 @@ function renderMobileQuickActionResults(query, resultsElement, mode = 'mobile') 
     if (trimmedQuery.length < 2) {
         resultsElement.appendChild(createElement('div', {
             className: 'sb-mobile-quick-action-empty',
-            text: 'Type at least 2 characters to find settings and extensions.',
+            text: 'Type at least 2 characters to find pages, settings and tools.',
         }));
         return;
     }
@@ -15934,7 +15954,9 @@ function renderMobileQuickActionResults(query, resultsElement, mode = 'mobile') 
         const copy = createElement('span', { className: 'sb-mobile-quick-action-copy' });
         const title = createElement('strong', { text: action.label });
         const detail = createElement('small', {
-            text: `${match.shellLabel} · ${match.tabLabel}${action.sectionLabel ? ` · ${action.sectionLabel}` : ''}`,
+            text: match.kind === 'page'
+                ? `${match.groupLabel} · ${match.detail}`
+                : `${match.shellLabel} · ${match.tabLabel}${action.sectionLabel ? ` · ${action.sectionLabel}` : ''}`,
         });
         const button = createElement('button', {
             className: 'menu_button sb-mobile-quick-action-add',
@@ -16016,8 +16038,8 @@ function createMobileQuickActionSettingsGroup(mode = 'mobile') {
     const description = createElement('p', {
         className: 'sb-theme-slider-caption',
         text: isDesktop
-            ? 'Choose the shortcuts shown beneath Fine-tuning in the desktop sidebar. Defaults can be removed or restored.'
-            : 'Choose the shortcuts shown beneath Fine-tuning in the phone sidebar. Defaults can be removed or restored.',
+            ? 'Choose pages, settings and tools for Quick Actions in the desktop sidebar. Available in Simple Mode too.'
+            : 'Choose pages, settings and tools for Quick Actions in the phone sidebar. Available in Simple Mode too.',
     });
     const resetButton = createElement('button', {
         id: `sb-${mode}-quick-action-reset`,
@@ -16033,9 +16055,9 @@ function createMobileQuickActionSettingsGroup(mode = 'mobile') {
         className: 'text_pole sb-mobile-quick-action-search',
         attrs: {
             type: 'search',
-            placeholder: 'Search settings or extensions...',
+            placeholder: 'Search pages, settings or tools...',
             autocomplete: 'off',
-            'aria-label': `Search settings and extensions to add as ${modeLabel} Quick Actions`,
+            'aria-label': `Search pages, settings and tools to add as ${modeLabel} Quick Actions`,
         },
     });
     const results = createElement('div', {
@@ -17573,45 +17595,54 @@ function getMobileQuickActionSearchMatches(query) {
 
     const matcher = createSearchMatcher(query);
     const matches = new Map();
+    const searchSources = [{ shellKey: 'pages', shellLabel: 'Pages', entries: getSearchPageEntries() }];
 
     for (const [shellKey, shellState] of Object.entries(nnState.shells)) {
         const shellLabel = getShellConfig(shellKey)?.title || shellKey;
-
+        const entries = [];
         for (const tabState of shellState.tabs.values()) {
-            for (const entry of getTabSearchEntries(tabState, { includeThemeCard: true })) {
-                if (!matcher(entry.searchText)) {
-                    continue;
-                }
+            entries.push(...getTabSearchEntries(tabState, { includeThemeCard: true }));
+        }
+        searchSources.push({ shellKey, shellLabel, entries });
+    }
+    searchSources.push({ shellKey: 'characters', shellLabel: 'Characters', entries: getCharacterPanelSearchEntries() });
 
-                const match = {
-                    ...entry,
-                    shellKey,
-                    shellLabel,
-                    advanced: entry.advanced === true || NN_ADVANCED_SEARCH_ROUTES.has(`${shellKey}:${entry.tabId}`),
-                    score: matcher(entry.displayText) || matcher(entry.searchText) / 2,
-                };
-                const matchKey = [
-                    shellKey,
-                    entry.dedupeKey,
-                ].filter(Boolean).join('::');
-                const existingMatch = matches.get(matchKey);
+    for (const { shellKey, shellLabel, entries } of searchSources) {
+        for (const entry of entries) {
+            if (!matcher(entry.searchText)) {
+                continue;
+            }
 
-                if (!existingMatch || match.score > existingMatch.score) {
-                    matches.set(matchKey, match);
-                }
+            const match = {
+                ...entry,
+                shellKey,
+                shellLabel,
+                advanced: entry.advanced === true || NN_ADVANCED_SEARCH_ROUTES.has(`${shellKey}:${entry.tabId}`),
+                score: matcher(entry.displayText) || matcher(entry.searchText) / 2,
+            };
+            const matchKey = [shellKey, entry.dedupeKey].filter(Boolean).join('::');
+            const existingMatch = matches.get(matchKey);
+
+            if (!existingMatch || match.score > existingMatch.score) {
+                matches.set(matchKey, match);
             }
         }
     }
 
-    return Array.from(matches.values())
-        .sort((left, right) => right.score - left.score)
-        .slice(0, NN_UNIVERSAL_SEARCH_RESULT_LIMIT);
+    const ranked = Array.from(matches.values()).sort((left, right) => right.score - left.score);
+    const pages = ranked.filter(match => match.kind === 'page').slice(0, NN_UNIVERSAL_SEARCH_PAGE_LIMIT);
+    const settings = ranked.filter(match => match.kind !== 'page').slice(0, NN_UNIVERSAL_SEARCH_RESULT_LIMIT - pages.length);
+    return [...pages, ...settings];
 }
 
 function findMobileQuickActionMatch(action) {
     const normalizedAction = normalizeMobileQuickAction(action);
     if (!normalizedAction) {
         return null;
+    }
+
+    if (normalizedAction.shellKey === 'pages') {
+        return getQuickActionPageEntry(normalizedAction);
     }
 
     const shellState = getShellState(normalizedAction.shellKey);
@@ -17642,6 +17673,10 @@ function findMobileQuickActionMatch(action) {
 
 function activateMobileQuickAction(action) {
     const match = findMobileQuickActionMatch(action);
+    if (action.shellKey === 'pages' && match) {
+        revealSearchMatch(action.shellKey, match);
+        return;
+    }
     if (!match) {
         if (action.shellKey === 'characters') {
             openCharacterPanelTab(action.tabId);
