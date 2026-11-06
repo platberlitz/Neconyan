@@ -3,8 +3,9 @@ import { buildGptImagePayload, buildImageResponsesPayload, extractProviderImageS
     getGptImageApiUrl, getOpenAICompatibleApiUrl, requestGptImageWithRouteRetry, usesImageResponsesApi } from '../public/scripts/extensions/quick-image-gen/lib/provider-adapters.js';
 
 describe('Responses image proxy compatibility', () => {
-    test.each(['sunburst', 'flare', 'sunburst-2026-09-10'])('routes %s through Responses with the proxy namespace intact', variant => {
-        const model = `gpt-image-2.5-${variant}`;
+    test.each(['sunburst', 'flare', 'sunburst-2026-09-10'].flatMap(variant => [
+        `gpt-image-2.5-${variant}`, `gpt-image-2.6-${variant}`,
+    ]))('routes %s through Responses with the proxy namespace intact', model => {
         for (const suffix of ['', '/v1', '/images', '/images/generations', '/chat/completions', '/responses/']) {
             const base = `https://proxy.example.test/openai${suffix}?token=test`;
             const expected = `https://proxy.example.test/openai${suffix === '/v1' ? '/v1' : ''}/responses?token=test`;
@@ -16,6 +17,7 @@ describe('Responses image proxy compatibility', () => {
     test('keeps ordinary GPT Image and chat proxy routing', () => {
         expect(usesImageResponsesApi('https://proxy.example.test/v1', 'gpt-image-2')).toBe(false);
         expect(usesImageResponsesApi('', 'gpt-image-2.5-flare')).toBe(false);
+        expect(usesImageResponsesApi('https://proxy.example.test/v1', 'gpt-image-2.6')).toBe(false);
         expect(getGptImageApiUrl('https://proxy.example.test/v1', 'gpt-image-2')).toBe('https://proxy.example.test/v1/images/generations');
         expect(getGptImageApiUrl()).toBe('https://api.openai.com/v1/images/generations');
         expect(getOpenAICompatibleApiUrl('https://proxy.example.test/v1', 'chat_completions')).toBe('https://proxy.example.test/v1/chat/completions');

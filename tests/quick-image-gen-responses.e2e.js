@@ -6,12 +6,11 @@ import { test } from './neconyan-conversation-durable-fixture.js';
 
 test.setTimeout(120000);
 
-for (const [layout, phone, provider, variant] of [
-    ['desktop', false, 'gptimage', 'sunburst'],
-    ['phone', true, 'proxy', 'flare'],
+for (const [layout, phone, provider, model] of [
+    ['desktop', false, 'gptimage', 'gpt-image-2.6-sunburst'],
+    ['phone', true, 'proxy', 'gpt-image-2.5-flare'],
 ]) {
-    test(`${layout} Quick Image Gen displays a Responses image from ${variant}`, async ({ app }, info) => {
-        const model = `gpt-image-2.5-${variant}`;
+    test(`${layout} Quick Image Gen displays a Responses image from ${model}`, async ({ app }, info) => {
         const image = (await readFile(new URL('../public/img/ai4.png', import.meta.url))).toString('base64');
         const reference = `data:image/png;base64,${image}`;
         const calls = [];

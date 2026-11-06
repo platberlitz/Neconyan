@@ -105,9 +105,13 @@ export function isNovelAICompatibleProxyUrl(value) {
     return /\/v1$/i.test(path) || /\/chat\/completions$/i.test(path);
 }
 
+// Sunburst and Flare IDs are Responses image tool models, never images endpoint models, so each
+// generation the proxy exposes them for belongs in this list.
+const RESPONSES_IMAGE_TOOL_MODEL = /^gpt-image-2\.(?:5|6)-(?:sunburst|flare)(?:-\d{4}-\d{2}-\d{2})?$/i;
+
 export function usesImageResponsesApi(proxyUrl, model) {
     return /\/responses$/i.test(getUrlPath(proxyUrl))
-        || !!String(proxyUrl || '').trim() && /^gpt-image-2\.5-(?:sunburst|flare)(?:-\d{4}-\d{2}-\d{2})?$/i.test(String(model || '').trim());
+        || !!String(proxyUrl || '').trim() && RESPONSES_IMAGE_TOOL_MODEL.test(String(model || '').trim());
 }
 
 export function getImageResponsesApiUrl(proxyUrl) {
