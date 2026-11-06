@@ -1,5 +1,72 @@
 # Full server migration: continuation
 
+### 6 November 2026: 1.5.0 published, staging starts 1.5.1
+
+Published [Neconyan 1.5.0](https://github.com/platberlitz/Neconyan/releases/tag/v1.5.0)
+with annotated tag `v1.5.0` on `6507b0b60c38988b6474f46503de21636fd487c5`.
+Readiness PR #500 merged as `6ef6f3ff`; separate fixes #497, #498 and #499
+were merged first. Main and staging were promoted together after reconciling
+the prior main README commit. The author's staging README was restored exactly
+in the release commit. No personal instance was deployed.
+
+The handbook update, `platberlitz/neconyan-docs` PR #6, was published at
+`89d79480d732c02805193184fb502152ec0cd875`. Pages run `42111919650` passed;
+all eleven changed live pages passed desktop and touch-phone checks without
+page errors or horizontal overflow. Assistant knowledge revision 60 covers
+all nine variants; source anchors, retrieval and eleven browser checks passed.
+
+Verification and retained scope:
+
+- Browser coverage: 2,398 passes and 36 existing skips across all sixteen groups.
+  Run `42125350099` at `cfb43edf` supplies groups 1, 2, 3, 4, 5, 6, 7, 8, 11
+  and 13. Unaffected groups 9, 10, 12, 14, 15 and 16 retain their passing
+  results from `42060448985` at `b1a488f1`. That earlier run remains failed.
+  Later release commits changed only the changelog and README, not application
+  behaviour. Duplicate main browser run `42137625123` was cancelled.
+- Corrected application defects included the coalesced composer caret update,
+  Agent search redraws intercepting clicks, refused lorebook folder selection
+  and Sunken Reef ripple bounds. Tests were corrected to await rendered filters,
+  settled colour transitions and acknowledged settings saves, restore their
+  shell baseline, and verify saved full-size portrait bytes. The real renderer
+  crash check passed after its actual group, 8, was moved to Ubuntu 22.04.
+  No crash assertion was replaced, no contrast threshold lowered and no skip added.
+- Full PR checks `42125222945` at `cfb43edf` passed Jest, server checks, Bun,
+  frontend assets, default-data checks and lint. Local Node checks passed
+  3,717 tests; Mewmory passed 113. Root/test lint, frontend budgets and the
+  production build passed. The production minifier now handles the extension's
+  top-level-await module without losing classic-script globals. The one local
+  server-status failure involved unavailable SSH authentication during fetch;
+  it passed alone and in the full PR checks without changing the test.
+- Android run `42138731138` at the release commit passed signed packaging,
+  the WebView fixture and Android 11, 13 and 15 lifecycle/native checks.
+  Android 15 initially failed while downloading an invalid SDK emulator ZIP,
+  before the app ran; the failed job passed unchanged on retry. Passing jobs
+  were retained. The optional older-release comparison was not requested.
+- iPhone run `42138735028` at the release commit passed storage checks,
+  the real 13 GiB import, device IPA verification and simulator startup/relaunch.
+  Earlier Android run `42137623962` passed on `3ea5866b`, but its files were
+  superseded after restoring the README. The matching older iPhone run
+  `42137627426` was cancelled. Native checks used emulators and a simulator,
+  not physical phones.
+
+All twelve release assets were independently verified before publication.
+All eight Android and two iPhone listed checksums passed. Both APK signatures
+match the official certificate SHA-256
+`49ed1e770b8a5269a008ed0d4763dd19a499377e35c85eec798c554178c4826c`.
+Native ELF and ZIP alignment passed the 16 KiB checks. Android provenance
+matched the independent verifier; all 4,788 source ZIP files matched `git archive`
+of the release commit. The IPA's ARM64 device binaries, version, commit,
+2,031 frontend assets and embedded provenance passed independent verification.
+All twelve published assets were downloaded again; their bytes matched the
+verified build files and their SHA-256 digests matched GitHub's records. The
+release is public and marked latest.
+
+Staging starts 1.5.1 with matching package metadata and boundary expectations.
+All four current boundary tests and lint on that test passed. The README mirror
+check passed.
+The README already names 1.5.0 using the author's wording and latest-release link;
+it is preserved on both branches.
+
 ### 2 November 2026: 1.4.1 published, staging starts 1.4.2
 
 Published [Neconyan 1.4.1](https://github.com/platberlitz/Neconyan/releases/tag/v1.4.1)
