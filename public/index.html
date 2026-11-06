@@ -7814,19 +7814,19 @@
                     </div>
                     <div class="ch_description"></div>
                     <div class="avatar_container_states buttons_block">
-                        <span class="persona-state-chip persona-default-label" data-i18n="Default">Default</span>
                         <button type="button" class="persona_quick_rename avatar_state menu_button fa-solid fa-pencil" title="Rename Persona" aria-label="Rename Persona" data-i18n="[title]Rename Persona;[aria-label]Rename Persona"></button>
                         <button type="button" class="persona_quick_delete avatar_state menu_button fa-solid fa-trash-can" title="Delete Persona" aria-label="Delete Persona" data-i18n="[title]Delete Persona;[aria-label]Delete Persona"></button>
-                        <div class="locked_to_chat_label avatar_state has_hover_label menu_button menu_button_icon disabled" title="Persona is locked to the current chat" data-i18n="[title]Persona is locked to the current chat">
-                            <i class="icon fa-solid fa-lock fa-fw"></i>
-                            <i class="label_icon icon fa-solid fa-comments fa-fw"></i>
-                            <div class="label" data-i18n="Chat">Chat</div>
-                        </div>
-                        <div class="locked_to_character_label avatar_state has_hover_label menu_button menu_button_icon disabled " title="Persona is locked to the current character" data-i18n="[title]Persona is locked to the current character">
-                            <i class="icon fa-solid fa-lock fa-fw"></i>
-                            <i class="label_icon icon fa-solid fa-user fa-fw"></i>
-                            <div class="label" data-i18n="Character">Character</div>
-                        </div>
+                    </div>
+                    <div class="persona-row-status">
+                        <span class="persona-state-chip persona-default-label" data-i18n="Default">Default</span>
+                        <span class="locked_to_chat_label persona-state-chip is-lock" title="Persona is locked to the current chat" data-i18n="[title]Persona is locked to the current chat">
+                            <i class="fa-solid fa-lock" aria-hidden="true"></i>
+                            <span data-i18n="Chat">Chat</span>
+                        </span>
+                        <span class="locked_to_character_label persona-state-chip is-lock" title="Persona is locked to the current character" data-i18n="[title]Persona is locked to the current character">
+                            <i class="fa-solid fa-lock" aria-hidden="true"></i>
+                            <span data-i18n="Character">Character</span>
+                        </span>
                     </div>
                 </div>
             </div>

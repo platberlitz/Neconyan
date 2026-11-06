@@ -15,6 +15,70 @@ test.beforeEach(async ({ page }) => {
 });
 
 for (const phone of [true, false]) {
+    test.describe(`Persona status badges on ${phone ? 'phone' : 'desktop'}`, () => {
+        test.use(phone ? IPHONE_SAFARI_CONTEXT : { viewport: { width: 1280, height: 900 } });
+
+        test('shows readable lock labels without crowding the row actions', async ({ page, context }) => {
+            if (phone) await installIPhoneSafari(context);
+            await openQuietChatForSmoke(page, { selectCharacter: false });
+            await page.evaluate(async () => {
+                const { power_user } = await import('/scripts/power-user.js');
+                const { user_avatar, getUserAvatars, setPersonaDescription } = await import('/scripts/personas.js');
+                const { chat_metadata } = await import('/script.js');
+                power_user.personas[user_avatar] = 'Marina';
+                power_user.persona_descriptions[user_avatar] = {
+                    description: 'A long persona description that must not crowd the status labels or actions.',
+                    appendices: [], activeAppendices: {},
+                };
+                chat_metadata.persona = user_avatar;
+                await getUserAvatars();
+                setPersonaDescription();
+                window.NeconyanShell.openTab('characters', 'persona');
+            });
+            await expect(page.locator('#PersonaManagement')).toBeVisible();
+            if (phone) await applyIOSOnlyCss(page);
+            const row = page.locator('#user_avatar_block .avatar-container.selected');
+            const chat = row.locator('.locked_to_chat_label');
+            await expect(chat).toBeVisible();
+            await expect(chat).toHaveText('Chat');
+            await expect(chat).not.toHaveAttribute('role', 'button');
+            await expect(chat).not.toHaveAttribute('tabindex', /.+/);
+            await expect(row.locator('.locked_to_character_label')).toBeHidden();
+
+            // Exercise all simultaneous visual states, including the narrow grid cards.
+            await row.evaluate(element => element.classList.add('default_persona', 'locked_to_character'));
+            for (const grid of [false, true]) {
+                if (grid) await page.locator('#persona_grid_toggle').click();
+                for (const selector of ['.persona-default-label', '.locked_to_chat_label', '.locked_to_character_label']) {
+                    const badge = row.locator(selector);
+                    await expect(badge).toBeVisible();
+                    const badgeBox = await badge.boundingBox();
+                    const rowBox = await row.boundingBox();
+                    expect(badgeBox.height).toBeGreaterThanOrEqual(20);
+                    expect(badgeBox.x).toBeGreaterThanOrEqual(rowBox.x);
+                    expect(badgeBox.x + badgeBox.width).toBeLessThanOrEqual(rowBox.x + rowBox.width);
+                    if (!grid) {
+                        const actionsBox = await row.locator('.avatar_container_states').boundingBox();
+                        expect(badgeBox.y).toBeGreaterThanOrEqual(actionsBox.y + actionsBox.height - 1);
+                    }
+                    expect(await badge.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+                }
+                for (const selector of ['.persona_quick_rename', '.persona_quick_delete']) {
+                    if (grid) {
+                        await expect(row.locator(selector)).toBeHidden();
+                        continue;
+                    }
+                    await expect(row.locator(selector)).toBeVisible();
+                    expect((await row.locator(selector).boundingBox()).height).toBeGreaterThanOrEqual(phone ? 44 : 32);
+                }
+            }
+            await row.evaluate(element => element.classList.remove('default_persona', 'locked_to_chat', 'locked_to_character'));
+            await expect(row.locator('.persona-row-status')).toBeHidden();
+        });
+    });
+}
+
+for (const phone of [true, false]) {
     test.describe(`Scenario Note editor on ${phone ? 'phone' : 'desktop'}`, () => {
         test.use({ viewport: { width: phone ? 393 : 1280, height: phone ? 852 : 900 }, hasTouch: phone, isMobile: phone });
 

@@ -42,6 +42,19 @@ describe('Persona Management mobile layout', () => {
         const personasJs = readFileSync(path.join(repoRoot, 'public', 'scripts', 'personas.js'), 'utf8');
         expect(personasJs).not.toContain('\\n\\xa0\\n\\xa0');
     });
+
+    test('renders lock states as labelled badges rather than disabled buttons', () => {
+        const template = indexHtml.slice(indexHtml.indexOf('id="user_avatar_template"'), indexHtml.indexOf('<template id="popup_template"'));
+        for (const state of ['chat', 'character']) {
+            const badge = template.match(new RegExp(`<span class="locked_to_${state}_label ([^"]+)"[^>]*>([\\s\\S]*?)</span>`));
+            expect(badge).not.toBeNull();
+            expect(badge[1]).toContain('persona-state-chip is-lock');
+            expect(badge[1]).not.toMatch(/menu_button|has_hover_label|disabled|avatar_state/);
+            expect(badge[2]).toContain('aria-hidden="true"');
+            expect(badge[2]).toContain(`data-i18n="${state === 'chat' ? 'Chat' : 'Character'}"`);
+        }
+        expect(getRuleBodies(personaCss, '#PersonaManagement #user_avatar_block .persona-row-status').join('\n')).toContain('flex-wrap: wrap;');
+    });
 });
 
 describe('Persona Management workspace layout', () => {
