@@ -38,11 +38,12 @@ for (const phone of [false, true]) {
         test('saved shortcuts, editing, section keyboard toggles and remembered state', async ({ page }, info) => {
             test.setTimeout(240000);
             let stored = '{}';
+            let savedSettings;
             await page.route('**/api/settings/get', async route => {
                 const response = await route.fetch();
                 const body = await response.json();
                 if (typeof body.settings !== 'string') return route.fulfill({ response, json: body });
-                const settings = JSON.parse(body.settings);
+                const settings = savedSettings ? structuredClone(savedSettings) : JSON.parse(body.settings);
                 settings.accountStorage = { ...settings.accountStorage, 'NeconyanWorkspaceRailCollapsed.v1': 'false', [sectionsKey]: stored };
                 await route.fulfill({ response, json: { ...body, settings: JSON.stringify(settings) } });
             });
@@ -50,6 +51,8 @@ for (const phone of [false, true]) {
                 let bytes = route.request().postDataBuffer();
                 if (route.request().headers()['content-encoding'] === 'gzip') bytes = gunzipSync(bytes);
                 const payload = JSON.parse(bytes.toString());
+                // Preserve extension ownership too, so reload does not invent a legacy-data import prompt.
+                savedSettings = structuredClone(payload);
                 stored = payload.accountStorage[sectionsKey] ?? stored;
                 await route.fulfill({ json: { result: 'ok', version: Number(payload._version || 0) + 1, settingsRevision: Number(payload._settingsRevision || 0) + 1 } });
             });
