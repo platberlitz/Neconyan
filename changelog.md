@@ -17,6 +17,7 @@
 - PR #505 (2026-11-06) `feat(quick-actions): add searchable pages and simple mode access`
 - PR #506 (2026-11-06) `fix(ios): let the app reclaim its own leftover data lock`
 - PR #507 (2026-11-06) `fix(quick-image-gen): route GPT Image 2.6 through Responses`
+- PR #508 (2026-11-06) `chore(release): prepare 1.5.1 for release`
 
 ## v1.5.0
 
