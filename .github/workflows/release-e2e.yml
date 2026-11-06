@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       shards:
-        description: 'JSON array of test groups to run, keeping the normal 16-group split'
+        description: 'JSON array of test groups to run, keeping the normal 20-group split'
         type: string
-        default: '[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]'
+        default: '[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]'
   pull_request:
     branches:
       - main
@@ -38,22 +38,22 @@ concurrency:
 jobs:
   run-release-e2e:
     name: Run Chromium E2E suite
-    # Groups other than 8 run ubuntu-24.04: the ubuntu-latest alias now resolves
-    # to Ubuntu 26.04, which Playwright 1.60 does not support. Group 8 currently
-    # contains crash-diagnostics.e2e.js, including the real renderer crash.
-    # Playwright 1.60 skips crash events on Ubuntu 24.04 because Chromium never
-    # delivers them there, so that group stays on 22.04. Re-check the group
-    # membership below when the test inventory changes.
+    # Groups other than 1 run ubuntu-24.04: the ubuntu-latest alias now resolves
+    # to Ubuntu 26.04, which Playwright 1.60 does not support. Group 1 always
+    # contains crash-diagnostics.e2e.js (pinned in scripts/release-e2e-groups.js),
+    # including the real renderer crash. Playwright 1.60 skips crash events on
+    # Ubuntu 24.04 because Chromium never delivers them there, so that group
+    # stays on 22.04.
     # https://github.com/microsoft/playwright/blob/v1.60.0/tests/library/page-event-crash.spec.ts
-    runs-on: ${{ matrix.shard == 8 && 'ubuntu-22.04' || 'ubuntu-24.04' }}
+    runs-on: ${{ matrix.shard == 1 && 'ubuntu-22.04' || 'ubuntu-24.04' }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(inputs.shards || '[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]') }}
+        shard: ${{ fromJSON(inputs.shards || '[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]') }}
     env:
       RELEASE_E2E_SHARD: ${{ matrix.shard }}
-      RELEASE_E2E_SHARD_TOTAL: 16
+      RELEASE_E2E_SHARD_TOTAL: 20
       CI: 'true'
       PLAYWRIGHT_HTML_OPEN: never
       NECONYAN_TEST_BASE_URL: http://127.0.0.1:4433
@@ -91,14 +91,37 @@ jobs:
           NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc
         run: npm ci --ignore-scripts --prefix tests
 
+      # The Ubuntu package mirror sometimes stalls on one download, and apt
+      # waits two minutes before each retry, which once cost a group 50 minutes
+      # before any test ran. Give up on a stalled download sooner and retry it.
       - name: Install test browsers
         working-directory: tests
-        run: npx --no-install playwright install --with-deps chromium firefox webkit
+        timeout-minutes: 45
+        run: |
+          printf '%s\n' 'Acquire::Retries "5";' 'Acquire::http::Timeout "30";' 'Acquire::https::Timeout "30";' \
+            | sudo tee /etc/apt/apt.conf.d/80-neconyan-ci-downloads > /dev/null
+          for attempt in 1 2 3; do
+            if timeout 15m npx --no-install playwright install --with-deps chromium firefox webkit; then
+              exit 0
+            fi
+            echo "::warning::Browser install attempt $attempt failed or stalled; trying again."
+            sudo dpkg --configure -a || true
+          done
+          exit 1
 
       - name: Initialize server state
         run: |
           mkdir -p /tmp/opencode
           npm run init
+
+      # Groups are balanced by measured running time rather than test count.
+      # Refresh tests/release-e2e-timings.json when the suite changes a lot.
+      - name: Plan this test group
+        run: |
+          set -euo pipefail
+          (cd tests && npx --no-install playwright test --list --reporter=json) > "$RUNNER_TEMP/e2e-list.json"
+          node scripts/release-e2e-groups.js plan --list "$RUNNER_TEMP/e2e-list.json" \
+            --group "$RELEASE_E2E_SHARD" --total "$RELEASE_E2E_SHARD_TOTAL" --out "$RUNNER_TEMP/e2e-group.txt"
 
       - name: Run release E2E suite
         env:
@@ -135,7 +158,7 @@ jobs:
           done
 
           node tests/prepare-release-fixture.js
-          npm run test:e2e --prefix tests -- --workers=1 --shard="$RELEASE_E2E_SHARD/$RELEASE_E2E_SHARD_TOTAL" --reporter=line,html
+          npm run test:e2e --prefix tests -- --workers=1 --test-list="$RUNNER_TEMP/e2e-group.txt" --reporter=line,html
 
       - name: Print server log on failure
         if: failure()

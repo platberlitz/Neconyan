@@ -1,0 +1,1360 @@
+{
+    "files": {
+        "agent-changes-badge-resume.e2e.js": {
+            "seconds": 41,
+            "tests": 2
+        },
+        "amoled-black.e2e.js": {
+            "seconds": 27,
+            "tests": 2
+        },
+        "application-archive-maintenance.e2e.js": {
+            "seconds": 186,
+            "tests": 8
+        },
+        "application-import.e2e.js": {
+            "seconds": 436,
+            "tests": 25
+        },
+        "application-translation.e2e.js": {
+            "seconds": 114,
+            "tests": 6
+        },
+        "application-vectors.e2e.js": {
+            "seconds": 167,
+            "tests": 7
+        },
+        "authors-note-typing.e2e.js": {
+            "seconds": 36,
+            "tests": 2
+        },
+        "backend-catalogue.e2e.js": {
+            "seconds": 20,
+            "tests": 2
+        },
+        "background-accents.e2e.js": {
+            "seconds": 86,
+            "tests": 2
+        },
+        "background-memory-saver.e2e.js": {
+            "seconds": 69,
+            "tests": 2
+        },
+        "bottom-bar-width.e2e.js": {
+            "seconds": 77,
+            "tests": 4
+        },
+        "browser-first-replies.e2e.js": {
+            "seconds": 301,
+            "tests": 16
+        },
+        "browser-reply-recovery.e2e.js": {
+            "seconds": 351,
+            "tests": 11
+        },
+        "bubbles-bottom-boundary.e2e.js": {
+            "seconds": 22,
+            "tests": 1
+        },
+        "bulk-selection-loader.e2e.js": {
+            "seconds": 262,
+            "tests": 8
+        },
+        "card-script-sandbox.e2e.js": {
+            "seconds": 159,
+            "tests": 16
+        },
+        "character-additional-lorebooks.e2e.js": {
+            "seconds": 85,
+            "tests": 3
+        },
+        "character-form-association.e2e.js": {
+            "seconds": 89,
+            "tests": 5
+        },
+        "character-purrks-editor.e2e.js": {
+            "seconds": 1,
+            "tests": 2
+        },
+        "character-tag-manager-lazy-select.e2e.js": {
+            "seconds": 14,
+            "tests": 1
+        },
+        "chat-auto-naming.e2e.js": {
+            "seconds": 199,
+            "tests": 7
+        },
+        "chat-history-dated-names.e2e.js": {
+            "seconds": 33,
+            "tests": 2
+        },
+        "chat-navigation.e2e.js": {
+            "seconds": 426,
+            "tests": 19
+        },
+        "chat-picker.e2e.js": {
+            "seconds": 55,
+            "tests": 3
+        },
+        "chat-reopen-scroll.e2e.js": {
+            "seconds": 244,
+            "tests": 16
+        },
+        "chat-scroll-regressions.e2e.js": {
+            "seconds": 165,
+            "tests": 11
+        },
+        "chat-scroll-state-machine.e2e.js": {
+            "seconds": 11,
+            "tests": 1
+        },
+        "chat-send-scroll.e2e.js": {
+            "seconds": 17,
+            "tests": 1
+        },
+        "compact-input-area.e2e.js": {
+            "seconds": 112,
+            "tests": 3
+        },
+        "companion-action-row.e2e.js": {
+            "seconds": 42,
+            "tests": 3
+        },
+        "companion-card-toggle-save.e2e.js": {
+            "seconds": 15,
+            "tests": 1
+        },
+        "companion-note-scroll.e2e.js": {
+            "seconds": 227,
+            "tests": 12
+        },
+        "companion-tracker-portrait.e2e.js": {
+            "seconds": 25,
+            "tests": 2
+        },
+        "composer-caret-scroll.e2e.js": {
+            "seconds": 25,
+            "tests": 2
+        },
+        "connection-profile-details.e2e.js": {
+            "seconds": 29,
+            "tests": 2
+        },
+        "connection-profile-scroll.e2e.js": {
+            "seconds": 75,
+            "tests": 6
+        },
+        "connections-native.e2e.js": {
+            "seconds": 48,
+            "tests": 2
+        },
+        "crash-diagnostics.e2e.js": {
+            "seconds": 51,
+            "tests": 9
+        },
+        "crash-relaunch-ui.e2e.js": {
+            "seconds": 48,
+            "tests": 4
+        },
+        "custom-model-search.e2e.js": {
+            "seconds": 65,
+            "tests": 4
+        },
+        "desktop-performance.e2e.js": {
+            "seconds": 46,
+            "tests": 3
+        },
+        "desktop-response-controls.e2e.js": {
+            "seconds": 79,
+            "tests": 2
+        },
+        "dialogue-colors-delete.e2e.js": {
+            "seconds": 79,
+            "tests": 3
+        },
+        "dialogue-colors-exclusions.e2e.js": {
+            "seconds": 39,
+            "tests": 2
+        },
+        "dialogue-colors-macro.e2e.js": {
+            "seconds": 118,
+            "tests": 8
+        },
+        "dialogue-colors-personas.e2e.js": {
+            "seconds": 33,
+            "tests": 2
+        },
+        "dialogue-colors-server-preview.e2e.js": {
+            "seconds": 46,
+            "tests": 3
+        },
+        "dialogue-colors-streaming-paint.e2e.js": {
+            "seconds": 29,
+            "tests": 2
+        },
+        "dialogue-quotes.e2e.js": {
+            "seconds": 31,
+            "tests": 2
+        },
+        "dice-roller.e2e.js": {
+            "seconds": 151,
+            "tests": 5
+        },
+        "docs-reader.e2e.js": {
+            "seconds": 3,
+            "tests": 2
+        },
+        "document-layout.e2e.js": {
+            "seconds": 38,
+            "tests": 1
+        },
+        "doom-extension-compatibility.e2e.js": {
+            "seconds": 40,
+            "tests": 2
+        },
+        "echo-message-layout.e2e.js": {
+            "seconds": 57,
+            "tests": 2
+        },
+        "echo-reading-footer.e2e.js": {
+            "seconds": 39,
+            "tests": 1
+        },
+        "expanded-editor-touch.e2e.js": {
+            "seconds": 33,
+            "tests": 3
+        },
+        "expressions-workspace.e2e.js": {
+            "seconds": 309,
+            "tests": 18
+        },
+        "favorites-hotswap.e2e.js": {
+            "seconds": 11,
+            "tests": 1
+        },
+        "flat-roleplay-cat.e2e.js": {
+            "seconds": 41,
+            "tests": 1
+        },
+        "frontend-performance.e2e.js": {
+            "seconds": 9,
+            "tests": 1
+        },
+        "frontend-redraw-workspaces.e2e.js": {
+            "seconds": 24,
+            "tests": 4
+        },
+        "frontend-redraws.e2e.js": {
+            "seconds": 1,
+            "tests": 16
+        },
+        "frontend/MacroEngine.e2e.js": {
+            "seconds": 1140,
+            "tests": 206
+        },
+        "frontend/MacroEnvBuilder.e2e.js": {
+            "seconds": 119,
+            "tests": 19
+        },
+        "frontend/MacroLexer.e2e.js": {
+            "seconds": 100,
+            "tests": 48
+        },
+        "frontend/MacroParser.e2e.js": {
+            "seconds": 79,
+            "tests": 49
+        },
+        "frontend/MacroRegistry.e2e.js": {
+            "seconds": 141,
+            "tests": 32
+        },
+        "frontend/MacroSlashCommands.e2e.js": {
+            "seconds": 55,
+            "tests": 12
+        },
+        "frontend/MacroStoryString.e2e.js": {
+            "seconds": 5,
+            "tests": 1
+        },
+        "frontend/MacrosParser.e2e.js": {
+            "seconds": 9,
+            "tests": 2
+        },
+        "generating-accent.e2e.js": {
+            "seconds": 141,
+            "tests": 3
+        },
+        "greeting-token-count.e2e.js": {
+            "seconds": 49,
+            "tests": 2
+        },
+        "group-chat-director.e2e.js": {
+            "seconds": 57,
+            "tests": 3
+        },
+        "group-chat-ensemble.e2e.js": {
+            "seconds": 82,
+            "tests": 3
+        },
+        "group-chat-narrator.e2e.js": {
+            "seconds": 32,
+            "tests": 1
+        },
+        "group-chat-presence.e2e.js": {
+            "seconds": 37,
+            "tests": 1
+        },
+        "group-chat-provider-outcome.e2e.js": {
+            "seconds": 89,
+            "tests": 4
+        },
+        "group-chat-speakers.e2e.js": {
+            "seconds": 43,
+            "tests": 1
+        },
+        "group-chat-talk.e2e.js": {
+            "seconds": 101,
+            "tests": 4
+        },
+        "group-chat-whispers.e2e.js": {
+            "seconds": 54,
+            "tests": 2
+        },
+        "group-handover-scroll.e2e.js": {
+            "seconds": 48,
+            "tests": 2
+        },
+        "guided-regenerate.e2e.js": {
+            "seconds": 72,
+            "tests": 2
+        },
+        "hush-layout.e2e.js": {
+            "seconds": 166,
+            "tests": 4
+        },
+        "import-character-auto-select.e2e.js": {
+            "seconds": 11,
+            "tests": 2
+        },
+        "import-validation.e2e.js": {
+            "seconds": 10,
+            "tests": 1
+        },
+        "in-chat-agents-companion-dom.e2e.js": {
+            "seconds": 3,
+            "tests": 12
+        },
+        "in-chat-agents-companion-reorder-durable.e2e.js": {
+            "seconds": 54,
+            "tests": 2
+        },
+        "in-chat-agents-companion-reorder.e2e.js": {
+            "seconds": 7,
+            "tests": 8
+        },
+        "in-chat-agents-companion-search.e2e.js": {
+            "seconds": 24,
+            "tests": 2
+        },
+        "in-chat-agents-companion-windows.e2e.js": {
+            "seconds": 84,
+            "tests": 8
+        },
+        "in-chat-agents-editor-dom.e2e.js": {
+            "seconds": 1,
+            "tests": 4
+        },
+        "in-chat-agents-editor-scroll.e2e.js": {
+            "seconds": 266,
+            "tests": 3
+        },
+        "in-chat-agents-full-app.e2e.js": {
+            "seconds": 18,
+            "tests": 2
+        },
+        "in-chat-agents-manual-concurrency.e2e.js": {
+            "seconds": 201,
+            "tests": 9
+        },
+        "in-chat-agents-quick-settings.e2e.js": {
+            "seconds": 60,
+            "tests": 2
+        },
+        "in-chat-agents-send-during-run.e2e.js": {
+            "seconds": 88,
+            "tests": 4
+        },
+        "in-chat-agents-tracker-repair.e2e.js": {
+            "seconds": 279,
+            "tests": 12
+        },
+        "input-history-native.e2e.js": {
+            "seconds": 39,
+            "tests": 4
+        },
+        "input-history-overflow.e2e.js": {
+            "seconds": 0,
+            "tests": 1
+        },
+        "kittyless-shell.e2e.js": {
+            "seconds": 83,
+            "tests": 2
+        },
+        "label-name-captions.e2e.js": {
+            "seconds": 10,
+            "tests": 9
+        },
+        "labs-native.e2e.js": {
+            "seconds": 877,
+            "tests": 22
+        },
+        "language-preference.e2e.js": {
+            "seconds": 323,
+            "tests": 9
+        },
+        "login-locale.e2e.js": {
+            "seconds": 11,
+            "tests": 32
+        },
+        "lorebook-batch-import.e2e.js": {
+            "seconds": 60,
+            "tests": 2
+        },
+        "macro-enhanced-native-appearance.e2e.js": {
+            "seconds": 87,
+            "tests": 3
+        },
+        "macro-enhanced-native-authoring.e2e.js": {
+            "seconds": 140,
+            "tests": 5
+        },
+        "macro-enhanced-native-flows.e2e.js": {
+            "seconds": 60,
+            "tests": 3
+        },
+        "macro-enhanced-native-integration.e2e.js": {
+            "seconds": 61,
+            "tests": 3
+        },
+        "macro-enhanced-native-state.e2e.js": {
+            "seconds": 49,
+            "tests": 3
+        },
+        "macro-enhanced-native-unused-globals.e2e.js": {
+            "seconds": 36,
+            "tests": 2
+        },
+        "macro-enhanced-native.e2e.js": {
+            "seconds": 51,
+            "tests": 3
+        },
+        "macro-enhanced-persona-pronouns.e2e.js": {
+            "seconds": 13,
+            "tests": 1
+        },
+        "meower-message-layout.e2e.js": {
+            "seconds": 38,
+            "tests": 2
+        },
+        "meower-native.e2e.js": {
+            "seconds": 182,
+            "tests": 7
+        },
+        "meower-selection.e2e.js": {
+            "seconds": 100,
+            "tests": 4
+        },
+        "message-formatting-inline-style.e2e.js": {
+            "seconds": 3,
+            "tests": 1
+        },
+        "message-screenshot.e2e.js": {
+            "seconds": 61,
+            "tests": 9
+        },
+        "message-sleepers.e2e.js": {
+            "seconds": 111,
+            "tests": 4
+        },
+        "mewmory-catch-up.e2e.js": {
+            "seconds": 97,
+            "tests": 3
+        },
+        "mewmory-hiding.e2e.js": {
+            "seconds": 0,
+            "tests": 4
+        },
+        "mewmory-rag.e2e.js": {
+            "seconds": 85,
+            "tests": 2
+        },
+        "mewmory-settings-switches.e2e.js": {
+            "seconds": 0,
+            "tests": 15
+        },
+        "mewmory-trackers.e2e.js": {
+            "seconds": 0,
+            "tests": 1
+        },
+        "mewmory.e2e.js": {
+            "seconds": 0,
+            "tests": 3
+        },
+        "mobile-composer-spacing.e2e.js": {
+            "seconds": 12,
+            "tests": 1
+        },
+        "mobile-field-layout.e2e.js": {
+            "seconds": 44,
+            "tests": 2
+        },
+        "mobile-ios26-keyboard-layout.e2e.js": {
+            "seconds": 5,
+            "tests": 11
+        },
+        "mobile-platform-performance.e2e.js": {
+            "seconds": 50,
+            "tests": 4
+        },
+        "mobile-preview-rendering.e2e.js": {
+            "seconds": 28,
+            "tests": 2
+        },
+        "mobile-shell-smoke.e2e.js": {
+            "seconds": 215,
+            "tests": 17
+        },
+        "mobile-swipe-rails.e2e.js": {
+            "seconds": 18,
+            "tests": 4
+        },
+        "model-list-search.e2e.js": {
+            "seconds": 0,
+            "tests": 2
+        },
+        "nanogpt-controls.e2e.js": {
+            "seconds": 608,
+            "tests": 17
+        },
+        "neconyan-account-recovery.e2e.js": {
+            "seconds": 15,
+            "tests": 2
+        },
+        "neconyan-account-search.e2e.js": {
+            "seconds": 107,
+            "tests": 4
+        },
+        "neconyan-account-server-logs.e2e.js": {
+            "seconds": 191,
+            "tests": 22
+        },
+        "neconyan-agent-choice-click.e2e.js": {
+            "seconds": 124,
+            "tests": 8
+        },
+        "neconyan-agent-rendering.e2e.js": {
+            "seconds": 16,
+            "tests": 1
+        },
+        "neconyan-agents-workspace.e2e.js": {
+            "seconds": 629,
+            "tests": 31
+        },
+        "neconyan-android-update.e2e.js": {
+            "seconds": 64,
+            "tests": 6
+        },
+        "neconyan-assistant-browser-macro.e2e.js": {
+            "seconds": 79,
+            "tests": 3
+        },
+        "neconyan-assistant-character-refresh.e2e.js": {
+            "seconds": 43,
+            "tests": 2
+        },
+        "neconyan-assistant-knowledge.e2e.js": {
+            "seconds": 353,
+            "tests": 11
+        },
+        "neconyan-assistant-picker.e2e.js": {
+            "seconds": 127,
+            "tests": 11
+        },
+        "neconyan-assistant-tools.e2e.js": {
+            "seconds": 60,
+            "tests": 2
+        },
+        "neconyan-cat-motion.e2e.js": {
+            "seconds": 148,
+            "tests": 14
+        },
+        "neconyan-catelier-agents.e2e.js": {
+            "seconds": 54,
+            "tests": 2
+        },
+        "neconyan-catelier-formats.e2e.js": {
+            "seconds": 50,
+            "tests": 2
+        },
+        "neconyan-catelier-image-prompt.e2e.js": {
+            "seconds": 51,
+            "tests": 2
+        },
+        "neconyan-catelier-proposals.e2e.js": {
+            "seconds": 165,
+            "tests": 8
+        },
+        "neconyan-catelier-questions.e2e.js": {
+            "seconds": 72,
+            "tests": 3
+        },
+        "neconyan-catelier-steps.e2e.js": {
+            "seconds": 51,
+            "tests": 2
+        },
+        "neconyan-catelier-tour.e2e.js": {
+            "seconds": 76,
+            "tests": 4
+        },
+        "neconyan-character-library-spacing.e2e.js": {
+            "seconds": 29,
+            "tests": 2
+        },
+        "neconyan-chat-file-picker.e2e.js": {
+            "seconds": 59,
+            "tests": 4
+        },
+        "neconyan-chat-qol.e2e.js": {
+            "seconds": 32,
+            "tests": 2
+        },
+        "neconyan-chat-style-picker.e2e.js": {
+            "seconds": 213,
+            "tests": 6
+        },
+        "neconyan-chats-archive.e2e.js": {
+            "seconds": 18,
+            "tests": 15
+        },
+        "neconyan-conversation-assistant-tools.e2e.js": {
+            "seconds": 132,
+            "tests": 4
+        },
+        "neconyan-conversation-durable.e2e.js": {
+            "seconds": 3883,
+            "tests": 141
+        },
+        "neconyan-conversation-empty.e2e.js": {
+            "seconds": 19,
+            "tests": 2
+        },
+        "neconyan-conversation-manual-helpers.e2e.js": {
+            "seconds": 192,
+            "tests": 6
+        },
+        "neconyan-conversation-workspace.e2e.js": {
+            "seconds": 130,
+            "tests": 6
+        },
+        "neconyan-creator-audit.e2e.js": {
+            "seconds": 50,
+            "tests": 2
+        },
+        "neconyan-creator-connections.e2e.js": {
+            "seconds": 86,
+            "tests": 2
+        },
+        "neconyan-creator-generation.e2e.js": {
+            "seconds": 118,
+            "tests": 4
+        },
+        "neconyan-creator-integrations.e2e.js": {
+            "seconds": 61,
+            "tests": 2
+        },
+        "neconyan-creator-portrait.e2e.js": {
+            "seconds": 39,
+            "tests": 2
+        },
+        "neconyan-creator-rail.e2e.js": {
+            "seconds": 54,
+            "tests": 2
+        },
+        "neconyan-creator-readable.e2e.js": {
+            "seconds": 49,
+            "tests": 2
+        },
+        "neconyan-creator-recovery.e2e.js": {
+            "seconds": 66,
+            "tests": 2
+        },
+        "neconyan-creator-review-fixes.e2e.js": {
+            "seconds": 46,
+            "tests": 2
+        },
+        "neconyan-creator-server.e2e.js": {
+            "seconds": 125,
+            "tests": 3
+        },
+        "neconyan-creator-streaming.e2e.js": {
+            "seconds": 107,
+            "tests": 3
+        },
+        "neconyan-creator.e2e.js": {
+            "seconds": 109,
+            "tests": 2
+        },
+        "neconyan-dark-backgrounds.e2e.js": {
+            "seconds": 46,
+            "tests": 2
+        },
+        "neconyan-debugger.e2e.js": {
+            "seconds": 4,
+            "tests": 11
+        },
+        "neconyan-edit-actions.e2e.js": {
+            "seconds": 64,
+            "tests": 4
+        },
+        "neconyan-formatting.e2e.js": {
+            "seconds": 72,
+            "tests": 4
+        },
+        "neconyan-frontend-icons.e2e.js": {
+            "seconds": 63,
+            "tests": 2
+        },
+        "neconyan-group-first-open.e2e.js": {
+            "seconds": 16,
+            "tests": 1
+        },
+        "neconyan-header-tours.e2e.js": {
+            "seconds": 125,
+            "tests": 4
+        },
+        "neconyan-import-new-instance.e2e.js": {
+            "seconds": 140,
+            "tests": 5
+        },
+        "neconyan-interaction-latency.e2e.js": {
+            "seconds": 56,
+            "tests": 2
+        },
+        "neconyan-ios-composer-corners.e2e.js": {
+            "seconds": 2,
+            "tests": 4
+        },
+        "neconyan-ios-startup-safe-start.e2e.js": {
+            "seconds": 48,
+            "tests": 4
+        },
+        "neconyan-ios-status-bar.e2e.js": {
+            "seconds": 1,
+            "tests": 3
+        },
+        "neconyan-login-passkeys.e2e.js": {
+            "seconds": 0,
+            "tests": 2
+        },
+        "neconyan-lore-persona-workflows.e2e.js": {
+            "seconds": 106,
+            "tests": 2
+        },
+        "neconyan-macro-host.e2e.js": {
+            "seconds": 64,
+            "tests": 3
+        },
+        "neconyan-message-action-layout.e2e.js": {
+            "seconds": 87,
+            "tests": 8
+        },
+        "neconyan-message-sleeper-layering.e2e.js": {
+            "seconds": 32,
+            "tests": 2
+        },
+        "neconyan-message-tokens.e2e.js": {
+            "seconds": 143,
+            "tests": 4
+        },
+        "neconyan-message-undo.e2e.js": {
+            "seconds": 204,
+            "tests": 28
+        },
+        "neconyan-miso-settings-guide.e2e.js": {
+            "seconds": 62,
+            "tests": 7
+        },
+        "neconyan-native-extensions.e2e.js": {
+            "seconds": 407,
+            "tests": 32
+        },
+        "neconyan-native-workspace-flows.e2e.js": {
+            "seconds": 23,
+            "tests": 2
+        },
+        "neconyan-page-close.e2e.js": {
+            "seconds": 51,
+            "tests": 4
+        },
+        "neconyan-page-intro-layout.e2e.js": {
+            "seconds": 69,
+            "tests": 6
+        },
+        "neconyan-pinned-prompt-toggles.e2e.js": {
+            "seconds": 291,
+            "tests": 8
+        },
+        "neconyan-preset-sections.e2e.js": {
+            "seconds": 71,
+            "tests": 2
+        },
+        "neconyan-rail-geometry.e2e.js": {
+            "seconds": 130,
+            "tests": 5
+        },
+        "neconyan-rail-order.e2e.js": {
+            "seconds": 231,
+            "tests": 8
+        },
+        "neconyan-rail-sections.e2e.js": {
+            "seconds": 39,
+            "tests": 2
+        },
+        "neconyan-relative-data-root.e2e.js": {
+            "seconds": 30,
+            "tests": 2
+        },
+        "neconyan-retired-content.e2e.js": {
+            "seconds": 39,
+            "tests": 7
+        },
+        "neconyan-roleplay-import-retry.e2e.js": {
+            "seconds": 219,
+            "tests": 10
+        },
+        "neconyan-roleplay-prompt.e2e.js": {
+            "seconds": 130,
+            "tests": 6
+        },
+        "neconyan-roleplay-relocation.e2e.js": {
+            "seconds": 100,
+            "tests": 4
+        },
+        "neconyan-roleplay-storage.e2e.js": {
+            "seconds": 444,
+            "tests": 12
+        },
+        "neconyan-roleplay-transfer-recovery.e2e.js": {
+            "seconds": 85,
+            "tests": 3
+        },
+        "neconyan-roleplay-workflow-browser.e2e.js": {
+            "seconds": 890,
+            "tests": 40
+        },
+        "neconyan-roleplay-world-info.e2e.js": {
+            "seconds": 74,
+            "tests": 6
+        },
+        "neconyan-sampling-capabilities.e2e.js": {
+            "seconds": 79,
+            "tests": 7
+        },
+        "neconyan-scratchpad-accents.e2e.js": {
+            "seconds": 42,
+            "tests": 2
+        },
+        "neconyan-scratchpad-anywhere.e2e.js": {
+            "seconds": 184,
+            "tests": 5
+        },
+        "neconyan-scratchpad-assistants.e2e.js": {
+            "seconds": 102,
+            "tests": 2
+        },
+        "neconyan-scratchpad-background.e2e.js": {
+            "seconds": 57,
+            "tests": 2
+        },
+        "neconyan-scratchpad-character-create.e2e.js": {
+            "seconds": 225,
+            "tests": 7
+        },
+        "neconyan-scratchpad-character-fields.e2e.js": {
+            "seconds": 49,
+            "tests": 2
+        },
+        "neconyan-scratchpad-composer.e2e.js": {
+            "seconds": 33,
+            "tests": 2
+        },
+        "neconyan-scratchpad-context-privacy.e2e.js": {
+            "seconds": 13,
+            "tests": 1
+        },
+        "neconyan-scratchpad-controls.e2e.js": {
+            "seconds": 177,
+            "tests": 6
+        },
+        "neconyan-scratchpad-diff.e2e.js": {
+            "seconds": 35,
+            "tests": 2
+        },
+        "neconyan-scratchpad-fold.e2e.js": {
+            "seconds": 22,
+            "tests": 2
+        },
+        "neconyan-scratchpad-greetings.e2e.js": {
+            "seconds": 35,
+            "tests": 2
+        },
+        "neconyan-scratchpad-images.e2e.js": {
+            "seconds": 180,
+            "tests": 6
+        },
+        "neconyan-scratchpad-instructions.e2e.js": {
+            "seconds": 92,
+            "tests": 2
+        },
+        "neconyan-scratchpad-notebooks.e2e.js": {
+            "seconds": 159,
+            "tests": 7
+        },
+        "neconyan-scratchpad-personas.e2e.js": {
+            "seconds": 74,
+            "tests": 2
+        },
+        "neconyan-scratchpad-portraits.e2e.js": {
+            "seconds": 33,
+            "tests": 2
+        },
+        "neconyan-scratchpad-prompts.e2e.js": {
+            "seconds": 123,
+            "tests": 4
+        },
+        "neconyan-scratchpad-random.e2e.js": {
+            "seconds": 61,
+            "tests": 2
+        },
+        "neconyan-scratchpad-rename-refused.e2e.js": {
+            "seconds": 28,
+            "tests": 2
+        },
+        "neconyan-scratchpad-rename.e2e.js": {
+            "seconds": 63,
+            "tests": 3
+        },
+        "neconyan-scratchpad-session-layout.e2e.js": {
+            "seconds": 36,
+            "tests": 2
+        },
+        "neconyan-scratchpad-settings-validation.e2e.js": {
+            "seconds": 43,
+            "tests": 2
+        },
+        "neconyan-scratchpad-shared-sessions.e2e.js": {
+            "seconds": 52,
+            "tests": 2
+        },
+        "neconyan-scratchpad-web-search.e2e.js": {
+            "seconds": 199,
+            "tests": 8
+        },
+        "neconyan-scratchpad.e2e.js": {
+            "seconds": 267,
+            "tests": 13
+        },
+        "neconyan-send-nya.e2e.js": {
+            "seconds": 81,
+            "tests": 5
+        },
+        "neconyan-server-agents.e2e.js": {
+            "seconds": 287,
+            "tests": 10
+        },
+        "neconyan-server-auto-stash.e2e.js": {
+            "seconds": 53,
+            "tests": 8
+        },
+        "neconyan-server-media.e2e.js": {
+            "seconds": 177,
+            "tests": 6
+        },
+        "neconyan-server-workflow.e2e.js": {
+            "seconds": 114,
+            "tests": 4
+        },
+        "neconyan-slash-commands.e2e.js": {
+            "seconds": 69,
+            "tests": 2
+        },
+        "neconyan-taro-agent-guide.e2e.js": {
+            "seconds": 28,
+            "tests": 2
+        },
+        "neconyan-tour-persistence.e2e.js": {
+            "seconds": 49,
+            "tests": 2
+        },
+        "neconyan-ui-motion.e2e.js": {
+            "seconds": 121,
+            "tests": 12
+        },
+        "neconyan-ui-theme-picker.e2e.js": {
+            "seconds": 148,
+            "tests": 4
+        },
+        "neconyan-update-toast.e2e.js": {
+            "seconds": 71,
+            "tests": 8
+        },
+        "notebooks-browser-fixture.e2e.js": {
+            "seconds": 0,
+            "tests": 1
+        },
+        "notebooks-button-colours.e2e.js": {
+            "seconds": 87,
+            "tests": 4
+        },
+        "notebooks-canvas.e2e.js": {
+            "seconds": 113,
+            "tests": 10
+        },
+        "notebooks-embeds.e2e.js": {
+            "seconds": 41,
+            "tests": 6
+        },
+        "notebooks-feedback.e2e.js": {
+            "seconds": 291,
+            "tests": 12
+        },
+        "notebooks-folding.e2e.js": {
+            "seconds": 58,
+            "tests": 7
+        },
+        "notebooks-graph.e2e.js": {
+            "seconds": 27,
+            "tests": 4
+        },
+        "notebooks-obsidian.e2e.js": {
+            "seconds": 85,
+            "tests": 8
+        },
+        "notebooks-property-table.e2e.js": {
+            "seconds": 57,
+            "tests": 6
+        },
+        "notebooks-recovery.e2e.js": {
+            "seconds": 214,
+            "tests": 12
+        },
+        "notebooks-tour-invitation.e2e.js": {
+            "seconds": 35,
+            "tests": 2
+        },
+        "notebooks-transfer.e2e.js": {
+            "seconds": 35,
+            "tests": 2
+        },
+        "notebooks-workspace-state.e2e.js": {
+            "seconds": 13,
+            "tests": 2
+        },
+        "notebooks-workspace.e2e.js": {
+            "seconds": 13,
+            "tests": 2
+        },
+        "notebooks-world-info.e2e.js": {
+            "seconds": 40,
+            "tests": 2
+        },
+        "notebooks-writing-controls.e2e.js": {
+            "seconds": 139,
+            "tests": 6
+        },
+        "notes-user-text-embeds.e2e.js": {
+            "seconds": 7,
+            "tests": 1
+        },
+        "notes-user-text.e2e.js": {
+            "seconds": 2,
+            "tests": 14
+        },
+        "openrouter-providers.e2e.js": {
+            "seconds": 1,
+            "tests": 2
+        },
+        "page-locale.e2e.js": {
+            "seconds": 92,
+            "tests": 18
+        },
+        "pages-before-app.e2e.js": {
+            "seconds": 390,
+            "tests": 28
+        },
+        "pathfinder-settings.e2e.js": {
+            "seconds": 73,
+            "tests": 8
+        },
+        "performance-defaults.e2e.js": {
+            "seconds": 170,
+            "tests": 8
+        },
+        "persona-card.e2e.js": {
+            "seconds": 109,
+            "tests": 8
+        },
+        "persona-management-ui.e2e.js": {
+            "seconds": 104,
+            "tests": 9
+        },
+        "persona-scenario-avatars.e2e.js": {
+            "seconds": 27,
+            "tests": 2
+        },
+        "popup-file-input-cancel.e2e.js": {
+            "seconds": 21,
+            "tests": 3
+        },
+        "prompt-media-review-buttons.e2e.js": {
+            "seconds": 202,
+            "tests": 10
+        },
+        "prompt-media-review.e2e.js": {
+            "seconds": 128,
+            "tests": 5
+        },
+        "prompting-lab-navigation.e2e.js": {
+            "seconds": 70,
+            "tests": 4
+        },
+        "provider-content-filter.e2e.js": {
+            "seconds": 624,
+            "tests": 23
+        },
+        "provider-model-search.e2e.js": {
+            "seconds": 54,
+            "tests": 4
+        },
+        "provider-reasoning-controls.e2e.js": {
+            "seconds": 215,
+            "tests": 8
+        },
+        "provider-reasoning-native.e2e.js": {
+            "seconds": 348,
+            "tests": 14
+        },
+        "quick-image-gen-responses.e2e.js": {
+            "seconds": 32,
+            "tests": 2
+        },
+        "quick-reply-bar-layout.e2e.js": {
+            "seconds": 0,
+            "tests": 1
+        },
+        "reasoning-length-stop.e2e.js": {
+            "seconds": 233,
+            "tests": 9
+        },
+        "reasoning-only-server.e2e.js": {
+            "seconds": 126,
+            "tests": 4
+        },
+        "regex-agent-themes-layout.e2e.js": {
+            "seconds": 31,
+            "tests": 2
+        },
+        "relationship-tracker-portrait.e2e.js": {
+            "seconds": 39,
+            "tests": 2
+        },
+        "reply-formats.e2e.js": {
+            "seconds": 96,
+            "tests": 2
+        },
+        "reply-generation-location.e2e.js": {
+            "seconds": 165,
+            "tests": 6
+        },
+        "ripple-controls.e2e.js": {
+            "seconds": 191,
+            "tests": 3
+        },
+        "ripple-expression-history.e2e.js": {
+            "seconds": 104,
+            "tests": 6
+        },
+        "roleplay-agent-start.e2e.js": {
+            "seconds": 79,
+            "tests": 4
+        },
+        "roleplay-companion-preview.e2e.js": {
+            "seconds": 106,
+            "tests": 3
+        },
+        "roleplay-group-native.e2e.js": {
+            "seconds": 417,
+            "tests": 18
+        },
+        "roleplay-helper-failure.e2e.js": {
+            "seconds": 300,
+            "tests": 10
+        },
+        "roleplay-live-preview.e2e.js": {
+            "seconds": 222,
+            "tests": 14
+        },
+        "roleplay-preview-scroll.e2e.js": {
+            "seconds": 379,
+            "tests": 24
+        },
+        "sample.e2e.js": {
+            "seconds": 2,
+            "tests": 1
+        },
+        "server-admin-zip-update.e2e.js": {
+            "seconds": 30,
+            "tests": 2
+        },
+        "server-reasoning-effort.e2e.js": {
+            "seconds": 51,
+            "tests": 2
+        },
+        "settings-category-spacing.e2e.js": {
+            "seconds": 13,
+            "tests": 1
+        },
+        "shell-button-accents.e2e.js": {
+            "seconds": 311,
+            "tests": 4
+        },
+        "shell-character-surfaces.e2e.js": {
+            "seconds": 153,
+            "tests": 4
+        },
+        "shell-generic-header-alignment.e2e.js": {
+            "seconds": 202,
+            "tests": 7
+        },
+        "shell-plain-header-alignment.e2e.js": {
+            "seconds": 68,
+            "tests": 4
+        },
+        "shell-style-persistence.e2e.js": {
+            "seconds": 350,
+            "tests": 3
+        },
+        "shell-tab-icons-only.e2e.js": {
+            "seconds": 50,
+            "tests": 2
+        },
+        "story-mode-manuscript.e2e.js": {
+            "seconds": 31,
+            "tests": 2
+        },
+        "stream-connection-lost.e2e.js": {
+            "seconds": 631,
+            "tests": 7
+        },
+        "stream-truncation.e2e.js": {
+            "seconds": 88,
+            "tests": 5
+        },
+        "streaming-thinking.e2e.js": {
+            "seconds": 50,
+            "tests": 3
+        },
+        "sunken-reef-water.e2e.js": {
+            "seconds": 5,
+            "tests": 2
+        },
+        "swipe-lock-release.e2e.js": {
+            "seconds": 66,
+            "tests": 4
+        },
+        "termux-import.e2e.js": {
+            "seconds": 0,
+            "tests": 2
+        },
+        "termux-startup.e2e.js": {
+            "seconds": 0,
+            "tests": 4
+        },
+        "text-generation-parity.e2e.js": {
+            "seconds": 79,
+            "tests": 6
+        },
+        "tide-layout.e2e.js": {
+            "seconds": 225,
+            "tests": 7
+        },
+        "time-machine-audit.e2e.js": {
+            "seconds": 88,
+            "tests": 4
+        },
+        "time-machine-save-recovery.e2e.js": {
+            "seconds": 60,
+            "tests": 3
+        },
+        "tokenizer-cache.e2e.js": {
+            "seconds": 55,
+            "tests": 2
+        },
+        "topbar-extension-adoption.e2e.js": {
+            "seconds": 113,
+            "tests": 10
+        },
+        "tracker-fallbacks.e2e.js": {
+            "seconds": 29,
+            "tests": 2
+        },
+        "tts-provider-lazy-loading.e2e.js": {
+            "seconds": 30,
+            "tests": 2
+        },
+        "ui-localization-panels.e2e.js": {
+            "seconds": 26,
+            "tests": 2
+        },
+        "ui-localization.e2e.js": {
+            "seconds": 3,
+            "tests": 12
+        },
+        "user-text-render.e2e.js": {
+            "seconds": 4,
+            "tests": 8
+        },
+        "welcome-starter-pack-actions.e2e.js": {
+            "seconds": 0,
+            "tests": 1
+        },
+        "whisper-bottom-boundary.e2e.js": {
+            "seconds": 61,
+            "tests": 2
+        },
+        "whisper-content-layout.e2e.js": {
+            "seconds": 151,
+            "tests": 4
+        },
+        "whisper-spacing.e2e.js": {
+            "seconds": 25,
+            "tests": 1
+        },
+        "win98-sleeper-coats.e2e.js": {
+            "seconds": 56,
+            "tests": 2
+        },
+        "windows-98-shell.e2e.js": {
+            "seconds": 42,
+            "tests": 3
+        },
+        "windows-xp-shell.e2e.js": {
+            "seconds": 219,
+            "tests": 4
+        },
+        "world-info-lab-shortcut.e2e.js": {
+            "seconds": 48,
+            "tests": 2
+        }
+    }
+}
