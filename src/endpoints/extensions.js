@@ -222,6 +222,7 @@ async function getRemoteDefaultBranch(git) {
 }
 
 const extensionRepoBootstraps = new Map();
+const EXTENSION_REPO_STAGING_PREFIX = '.neconyan-ext-';
 
 export async function ensureExtensionRepo(extensionPath, isGlobal = false) {
     const key = fs.realpathSync(extensionPath);
@@ -259,7 +260,7 @@ async function bootstrapExtensionRepo(extensionPath, isGlobal) {
 
     // Prepare everything beside the extension, on the same volume as the final rename.
     // A failed fetch or a locked file must never alter the installed extension.
-    const stagingPath = fs.mkdtempSync(path.join(path.dirname(extensionPath), '.neconyan-ext-'));
+    const stagingPath = fs.mkdtempSync(path.join(path.dirname(extensionPath), EXTENSION_REPO_STAGING_PREFIX));
     const stagedGit = simpleGit({ baseDir: stagingPath, ...OPTIONS });
 
     try {
@@ -1059,6 +1060,7 @@ router.get('/discover', async function (request, response) {
     // In case of a conflict, the extension will be loaded from the user folder
     const globalExtensions = fs
         .readdirSync(PUBLIC_DIRECTORIES.globalExtensions)
+        .filter(f => !f.startsWith(EXTENSION_REPO_STAGING_PREFIX))
         .filter(f => isAccessibleDirectory(path.join(PUBLIC_DIRECTORIES.globalExtensions, f)))
         .map(f => ({ type: isNativeExtension(f) ? 'native' : 'global', name: `third-party/${f}` }))
         .filter(f => !userExtensions.some(e => e.name === f.name));
