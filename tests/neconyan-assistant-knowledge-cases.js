@@ -386,4 +386,12 @@ export const refreshedKnowledgeCases = [
     ['Neconyan keeps crashing when it loads on my iPhone, how do I read the report?', 'recovery.safe-start', 'Read crash report opens the retained report before any application work begins'],
     ['Why does the start screen turn on low-memory mode automatically on my iPhone?', 'recovery.safe-start', 'turns low-memory mode on automatically unless you set it off'],
     ['Why did View agent changes disappear after Agents finished in a background tab?', 'agents.history', 'returning to the tab re-checks the message badges'],
+    ['Can Scratchpad create a new persona for me?', 'scratchpad.persona-create', 'a New persona card with a name, description and title'],
+    ['Can Scratchpad write a new Scenario Note for my persona?', 'scratchpad.persona-create', 'saved to the shared persona but not activated'],
+    ['My Android app keeps restarting and says the data folder is already owned', 'start.android-start-cause', 'clears a leftover lock itself'],
+    ['What does Reclaimed a stale data folder lease mean?', 'start.android-start-cause', 'writes a Reclaimed a stale data folder lease line to the server log'],
+    ['My iPhone app will not open and shows Try again and Share startup log', 'start.iphone-recovery', 'no longer retries on its own'],
+    ['My iPhone app closes straight away when I open it', 'start.iphone-recovery', 'close Neconyan in the app switcher and open it again'],
+    ['Does checking for extension updates risk my installed extension?', 'extensions.update-safety', 'leaves the extension and its history as they were'],
+    ['Can Quick Image Gen use gpt-image-2.6-sunburst?', 'images.responses', 'gpt-image-2.6-sunburst or gpt-image-2.6-flare'],
 ];

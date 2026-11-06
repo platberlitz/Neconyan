@@ -2,6 +2,14 @@
 
 ## v1.5.1
 
+### Highlights
+- **Scratchpad** can now create as well as edit. Ask an assistant for a new persona and review its name, description and title, or share your persona and ask for a new **Scenario Note**. **Save change** creates it. A new persona uses the default portrait and your selected persona stays selected, and a new note is saved to the persona without being switched on. Saving the same suggestion again doesn't make a duplicate.
+- **Quick Actions** can pin any page the main search finds, including Catelier, Notebooks, Scratchpad, the chat modes and the Handbook, alongside the settings shortcuts. Simple Mode now keeps Quick Actions in the sidebar and lets you edit it, and the desktop and phone lists stay separate.
+- The Android app now clears a data folder lock left behind by an earlier run, so a server closed without warning no longer sends it into a start loop that only clearing the app's data could end. It still refuses when the earlier server may be running or the lock holds anything the app never writes, and the Android failure page now says what to do. The iPhone app clears a leftover lock the same way. Each refusal names the lock fields that differed, and a clearance is logged in **server.log**.
+- The iPhone app stops retrying by itself after a page crash, a failed page load or a failed local sign-in. **Try again** and **Share startup log** stay available, including after you return from another app. The startup log survives relaunches, records the last startup step, timings, device details and recent activity, hides credentials it recognises, and can be shared even if the local server never started. The shared report includes the end of the server log.
+- **Quick Image Gen** now sends GPT Image 2.6 Sunburst and Flare through the Responses image route, as it already did for the 2.5 names. Choosing either model in the GPT Image provider with a proxy URL generates a picture instead of returning an error from the plain images endpoint.
+- Setting up update checks for an extension no longer touches the installed copy until its update history is ready. A failed download or a locked file leaves the extension and its history as they were, and temporary folders stay out of the extension list.
+
 ### Merged Staging PRs
 - PR #502 (2026-11-06) `fix: protect extension setup and stop iPhone startup retry loops`
 - PR #503 (2026-11-06) `feat(scratchpad): create personas and scenario notes`
