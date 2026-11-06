@@ -17,7 +17,12 @@ test.describe('phone discovery cues', () => {
     test('compact composer tools remain tappable and scroll in both directions', async ({ context, page }) => {
         await installIPhoneSafari(context, { standalone: true });
         await isolateSettingsSaves(page, settings => {
-            settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
+            settings.firstRun = false;
+            settings.accountStorage = {
+                ...settings.accountStorage,
+                'NeconyanTutorialStatus.v1': 'skipped',
+                'NeconyanSimpleMode.v1': 'off',
+            };
             settings.power_user.compact_input_area = true;
         });
         await openReadyChat(page);

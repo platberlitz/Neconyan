@@ -361,6 +361,9 @@ for (const phone of [false, true]) {
             await expect.poll(() => read(branchTarget).records?.[2]?.mes).toBe(confirmedText);
             await page.close();
             expect(account.context.pages()).toHaveLength(0);
+            // The server owns this data root exclusively. Offline native writes must
+            // not race its lock recovery or background maintenance from another process.
+            await app.stop();
             const before = read(branchTarget).records;
             const base = { owner: 'default-user', directories };
             const scope = withRoleplayAccount(base, null, (_lease, stamp) => ({ ...base, ...stamp }));
@@ -374,12 +377,14 @@ for (const phone of [false, true]) {
             expect(read(branchTarget).records.slice(1, -1)).toEqual(before.slice(1));
             expect(readRoleplayAccount(scope).resources[result.instanceId].head.rawHash).toBe(result.rawHash);
             expect(read(sourceTarget).records[2].mes).toBe(confirmedText);
-            await app.restart();
+            await app.start();
+            await app.stop();
             const committedBytes = fs.readFileSync(branchTarget.activePath);
             const committedMtime = fs.statSync(branchTarget.activePath, { bigint: true }).mtimeNs;
             expect(commitSingleChatWrite(scope, mutation, roleplayNativeHost)).toEqual(result);
             expect(fs.readFileSync(branchTarget.activePath)).toEqual(committedBytes);
             expect(fs.statSync(branchTarget.activePath, { bigint: true }).mtimeNs).toBe(committedMtime);
+            await app.start();
             page = await open(branchName);
             await expect(page.locator('#chat .mes_text').last()).toHaveText('Native storage result.');
             const loaded = await page.evaluate(() => {

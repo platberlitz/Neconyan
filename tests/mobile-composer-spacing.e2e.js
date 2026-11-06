@@ -80,9 +80,14 @@ test.describe('mobile composer spacing at 320x568', () => {
     });
 
     test('normal and compact modes keep the action rails clear of the textarea', async ({ page }) => {
-        // This suite measures the single-row input; whole-interface compact mode is a separate setting.
-        await isolateSettingsSaves(page, settings => { settings.power_user.compact_input_area = true; });
+        // Measure Calico's single-row input, not decoration inherited from another shell.
+        // Whole-interface compact mode is a separate setting.
+        await isolateSettingsSaves(page, settings => {
+            settings.power_user.compact_input_area = true;
+            settings.power_user.neconyan_shell_style = 'calico';
+        });
         await openQuietChatForSmoke(page);
+        await expect(page.locator('html')).toHaveAttribute('data-sb-theme', 'calico');
 
         await page.evaluate(async () => {
             document.documentElement.style.setProperty('--sb-bottom-bar-scale', '1.5');

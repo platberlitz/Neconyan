@@ -168,10 +168,13 @@ for (const phone of [false, true]) {
             if (phone) {
                 const box = await toggle.evaluate(element => {
                     const rect = element.getBoundingClientRect();
-                    return { width: rect.width, height: rect.height };
+                    const style = getComputedStyle(element);
+                    return { width: rect.width, height: rect.height, cssWidth: parseFloat(style.width), cssHeight: parseFloat(style.height) };
                 });
-                expect(box.width).toBeGreaterThanOrEqual(44);
-                expect(box.height).toBeGreaterThanOrEqual(44);
+                expect(box.cssWidth).toBeGreaterThanOrEqual(44);
+                expect(box.cssHeight).toBeGreaterThanOrEqual(44);
+                expect(box.width).toBeCloseTo(box.cssWidth, 3);
+                expect(box.height).toBeCloseTo(box.cssHeight, 3);
                 await toggle.tap();
             } else {
                 await toggle.click();
@@ -291,7 +294,11 @@ for (const phone of [false, true]) {
             await expect(bar).toBeHidden();
             await expect(troubleshooting).toBeHidden();
             const toggleBox = await toggle.boundingBox();
-            expect(toggleBox.width).toBeGreaterThanOrEqual(phone ? 44 : 28);
+            const toggleWidth = await toggle.evaluate(element => parseFloat(getComputedStyle(element).width));
+            expect(toggleWidth).toBeGreaterThanOrEqual(phone ? 44 : 28);
+            // Chromium's translated drawer can report 43.9999847 for a 44px box.
+            // Keep the exact CSS minimum and check that the rendered target matches it.
+            expect(toggleBox.width).toBeCloseTo(toggleWidth, 3);
 
             await toggle.click();
             await expect(toggle).toHaveAttribute('aria-pressed', 'true');
