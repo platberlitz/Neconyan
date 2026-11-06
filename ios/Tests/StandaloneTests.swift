@@ -32,7 +32,7 @@ final class StandaloneTests: XCTestCase {
 
     @MainActor
     func testStartupRecoveryWaitsForExplicitRetry() throws {
-        for failure in ["termination", "navigation"] {
+        for failure in ["setup", "termination", "navigation"] {
             let app = XCUIApplication()
             app.launchEnvironment["NECONYAN_TEST_PORT"] = "28193"
             app.launchEnvironment["NECONYAN_TEST_STARTUP_FAILURE"] = failure

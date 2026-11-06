@@ -161,7 +161,7 @@ test('iPhone: a normal load without crash history boots straight in', async () =
 
 test('native startup diagnostics bound resource failures without losing JavaScript errors or readiness', async () => {
     const controller = fs.readFileSync(new URL('../ios/App/BrowserController.swift', import.meta.url), 'utf8');
-    const script = controller.match(/WKUserScript\(source: """\n([\s\S]*?)\n\s*""", injectionTime/)[1];
+    const script = controller.match(/WKUserScript\(source: #"""\n([\s\S]*?)\n\s*"""#, injectionTime/)[1];
     for (const browserType of [chromium, webkit]) {
         const browser = await browserType.launch({ headless: true });
         const context = await browser.newContext(IPHONE_SAFARI_CONTEXT);
@@ -172,6 +172,10 @@ test('native startup diagnostics bound resource failures without losing JavaScri
             await page.evaluate(() => {
                 globalThis.nativeMessages = [];
                 globalThis.webkit = { messageHandlers: { nativeDiagnostics: { postMessage: message => globalThis.nativeMessages.push(message) } } };
+                globalThis.NeconyanCrashDiagnostics = {
+                    getStartupGuardState: () => ({ failures: 2, safeStart: true }),
+                    getActivity: () => ({ snapshot: { ready: false, generation: { phase: 'rendering' }, chat: { messageCount: 30 } }, events: [{ type: 'chat-open' }] }),
+                };
             });
             await page.evaluate(script);
             await page.evaluate(() => {
@@ -185,15 +189,33 @@ test('native startup diagnostics bound resource failures without losing JavaScri
                     resource.dispatchEvent(new Event('error'));
                     resource.dispatchEvent(new Event('error'));
                 }
-                window.dispatchEvent(new ErrorEvent('error', { message: 'Real startup exception' }));
+                for (let i = 0; i < 100; i++) window.dispatchEvent(new ErrorEvent('error', {
+                    message: 'Real startup exception', filename: '/startup.js', lineno: 42, colno: 7,
+                }));
+                window.dispatchEvent(new ErrorEvent('error', {
+                    error: new Error('Failed to load', { cause: new Error('Connection refused') }),
+                    filename: 'https://person:privatepass@example.com/script.js?private-query#private-fragment',
+                }));
+                window.dispatchEvent(new ErrorEvent('error', { message: 'password=private-password Authorization: Bearer private-bearer' }));
                 window.dispatchEvent(new Event('neconyan:ready'));
             });
             const messages = await page.evaluate(() => globalThis.nativeMessages);
             expect(messages.filter(message => message.kind === 'resource-error')).toHaveLength(30);
             expect(messages).toContainEqual({ kind: 'resource-error', text: 'IMG: /missing-0.png' });
-            expect(messages).toContainEqual({ kind: 'error', text: 'Real startup exception' });
+            const errors = messages.filter(message => message.kind === 'error');
+            expect(errors).toHaveLength(3);
+            expect(JSON.parse(errors[0].text)).toEqual({ error: 'Real startup exception', source: '/startup.js', line: 42, column: 7 });
+            expect(errors[1].text).toContain('Connection refused');
+            for (const secret of ['privatepass', 'private-query', 'private-fragment', 'private-password', 'private-bearer']) {
+                expect(JSON.stringify(messages)).not.toContain(secret);
+            }
             expect(messages).toContainEqual({ kind: 'ready', text: 'Workspace initialisation completed' });
-            expect(messages).toHaveLength(32);
+            const activities = messages.filter(message => message.kind === 'activity').map(message => JSON.parse(message.text));
+            expect(activities.at(-1)).toMatchObject({
+                event: 'workspace-ready', suppressedErrors: 99, startup: { failures: 2, safeStart: true },
+                activity: { snapshot: { generation: { phase: 'rendering' }, chat: { messageCount: 30 } }, events: [{ type: 'chat-open' }] },
+            });
+            expect(activities.at(-1).suppressedResources).toBeGreaterThanOrEqual(270);
         } finally {
             await context.close();
             await browser.close();
