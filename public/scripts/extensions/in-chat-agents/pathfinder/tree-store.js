@@ -30,6 +30,7 @@ export const SETTING_DEFAULTS = {
     autoSyncLorebooksOnChatChange: true,
     dedupeNaturalActivation: true,
     suppressKeywordActivation: false,
+    reuseRetrievalOnSwipe: true,
     toolStates: {},
     confirmTools: {},
     bookPermissions: {},

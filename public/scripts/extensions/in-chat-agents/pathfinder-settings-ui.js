@@ -589,6 +589,7 @@ function loadSettingsIntoUI() {
     settingsEl.find('#pf--include-contextual-lorebooks').prop('checked', s.includeContextualLorebooks !== false);
     settingsEl.find('#pf--dedupe-natural-activation').prop('checked', s.dedupeNaturalActivation !== false);
     settingsEl.find('#pf--suppress-keyword-activation').prop('checked', s.suppressKeywordActivation === true);
+    settingsEl.find('#pf--reuse-retrieval-on-swipe').prop('checked', s.reuseRetrievalOnSwipe !== false);
     settingsEl.find('#pf--auto-summary').prop('checked', s.autoSummary || false);
     settingsEl.find('#pf--auto-summary-interval').val(s.autoSummaryInterval ?? 20);
 

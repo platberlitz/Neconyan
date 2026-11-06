@@ -119,6 +119,7 @@ const PROMPT_TRANSFORM_REDO_KEY = 'inChatAgentTransformRedo';
 export const PRE_GENERATION_INTERCEPT_HISTORY_KEY = 'inChatAgentPreGenerationInterceptHistory';
 const MAX_TRANSFORM_HISTORY = 10;
 const MAX_PATHFINDER_RETRIEVAL_CACHE = 6;
+const MAX_PATHFINDER_SWIPE_RETRIEVAL_MEMORY = 8;
 const PATHFINDER_RETRIEVAL_CONTEXT_MESSAGE_LIMIT = 10;
 const pendingRefreshTimeouts = new Map();
 const pendingRegexSnapshotSaves = new WeakSet();
@@ -193,6 +194,11 @@ const activeToolApprovals = new Map();
 const pathfinderRetrievalCacheSession = uuidv4();
 // ponytail: invalidate all retrieval caches on book changes; use per-book revisions only if this becomes costly.
 let pathfinderRetrievalCacheRevision = 0;
+// Neconyan: the retrieval a reply was generated with is remembered in memory so
+// the first swipe of that reply reuses the lore already picked for it instead of
+// paying for a second retrieval call. The key covers the messages before the
+// reply and the lorebook revision, so an edited message still retrieves fresh.
+const pathfinderSwipeRetrievalMemory = new Map();
 let pathfinderToolRevision = 0;
 let pathfinderRetrievalRun = null;
 let pathfinderChatSyncRevision = 0;
@@ -1699,6 +1705,60 @@ function storePathfinderRetrievalCache(message, signature, retrieval) {
 
     setAgentExtraValue(message, PATHFINDER_RETRIEVAL_CACHE_EXTRA_KEY, caches.slice(-MAX_PATHFINDER_RETRIEVAL_CACHE));
     saveChatDebouncedForAgent();
+}
+
+/**
+ * Key for the retrieval a reply was generated with. A swipe of that reply sees
+ * exactly the same messages before it, so the key deliberately leaves out the
+ * message being swiped and its index.
+ */
+function buildPathfinderSwipeRetrievalSignature(pathfinderAgent, activationSnapshot, generationType, contextEndIndex) {
+    const signaturePayload = normalizePathfinderCacheValue({
+        version: 1,
+        cacheSession: pathfinderRetrievalCacheSession,
+        lorebookRevision: pathfinderRetrievalCacheRevision,
+        chatId: normalizeSnapshotChatId(activationSnapshot?.chatId ?? getCurrentSnapshotChatId()),
+        generationType: normalizeGenerationType(generationType),
+        promptKeys: PATHFINDER_RETRIEVAL_PROMPT_KEYS,
+        context: getPathfinderRetrievalContextSnapshot(contextEndIndex),
+        pathfinder: getPathfinderRetrievalSettingsSnapshot(pathfinderAgent),
+    });
+
+    try {
+        return JSON.stringify(signaturePayload);
+    } catch {
+        return '';
+    }
+}
+
+function shouldReusePathfinderRetrievalOnSwipe(pathfinderAgent) {
+    return pathfinderAgent?.settings?.reuseRetrievalOnSwipe !== false;
+}
+
+function findPathfinderSwipeRetrieval(signature) {
+    if (!signature) {
+        return null;
+    }
+
+    return pathfinderSwipeRetrievalMemory.get(signature) ?? null;
+}
+
+function rememberPathfinderSwipeRetrieval(signature, retrieval) {
+    if (!signature || retrieval?.success !== true) {
+        return;
+    }
+
+    pathfinderSwipeRetrievalMemory.delete(signature);
+    pathfinderSwipeRetrievalMemory.set(signature, {
+        signature,
+        prompts: capturePathfinderRetrievalPromptSnapshot(),
+        retrieval: { ...retrieval, stageResults: [], metadata: {} },
+        savedAt: Date.now(),
+    });
+
+    while (pathfinderSwipeRetrievalMemory.size > MAX_PATHFINDER_SWIPE_RETRIEVAL_MEMORY) {
+        pathfinderSwipeRetrievalMemory.delete(pathfinderSwipeRetrievalMemory.keys().next().value);
+    }
 }
 
 function hasProcessedPostProcessingRun(message, runKey, messageIndex = null, indexRunKey = '') {
@@ -4699,6 +4759,7 @@ export function deactivatePathfinderRuntime() {
     invalidateToolApprovals();
     clearPathfinderRetrievalToast();
     abortActivePathfinderRetrieval('Pawthfinder disabled.');
+    pathfinderSwipeRetrievalMemory.clear();
     clearPathfinderExtensionPrompts();
     toolRecursionDepth = 0;
     pendingToolSync = true;
@@ -4960,13 +5021,27 @@ async function onGenerationAfterCommands(generationType, options, dryRun) {
         syncPathfinderRuntimeSettings(pathfinderAgent);
         run.settingsSignature = JSON.stringify(getPathfinderRetrievalSettingsSnapshot(pathfinderAgent));
         const retrievalCacheTarget = getPathfinderRetrievalCacheTarget(normalizedGenerationType);
+        const reuseRetrievalOnSwipe = shouldReusePathfinderRetrievalOnSwipe(pathfinderAgent);
+        const swipeRetrievalSignature = reuseRetrievalOnSwipe
+            ? buildPathfinderSwipeRetrievalSignature(pathfinderAgent, activationSnapshot, normalizedGenerationType, retrievalCacheTarget?.messageIndex ?? chat.length)
+            : '';
         const retrievalCacheSignature = buildPathfinderRetrievalCacheSignature(pathfinderAgent, activationSnapshot, normalizedGenerationType, retrievalCacheTarget);
-        const cachedRetrieval = findPathfinderRetrievalCache(retrievalCacheTarget?.message, retrievalCacheSignature);
+        const cachedRetrieval = reuseRetrievalOnSwipe ? findPathfinderRetrievalCache(retrievalCacheTarget?.message, retrievalCacheSignature) : null;
+        // Neconyan: a reply keeps the lore it was generated with, so swiping or
+        // regenerating it reuses that selection instead of asking the retrieval
+        // model to pick the same lore again.
+        const reusedRetrieval = cachedRetrieval ? null : findPathfinderSwipeRetrieval(swipeRetrievalSignature);
+        const reusableRetrieval = cachedRetrieval ?? reusedRetrieval;
 
-        if (cachedRetrieval) {
+        if (reusableRetrieval) {
             if (!run.isCurrent()) return;
-            run.result = cachedRetrieval.retrieval;
-            restorePathfinderRetrievalPromptSnapshot(cachedRetrieval);
+            run.result = reusableRetrieval.retrieval;
+            restorePathfinderRetrievalPromptSnapshot(reusableRetrieval);
+            if (!cachedRetrieval && run.isCurrent() && run.result?.success && run.result.cacheable !== false && isAgentRuntimeAllowed(pathfinderAgent)) {
+                // Keep the reused lore attached to the reply too, so later swipes and
+                // the runtime exclusions see the same stored selection.
+                storePathfinderRetrievalCache(retrievalCacheTarget?.message, retrievalCacheSignature, run.result);
+            }
         } else {
             const onAbort = () => run.controller.abort(options.signal.reason);
             options?.signal?.addEventListener('abort', onAbort, { once: true });
@@ -4990,6 +5065,7 @@ async function onGenerationAfterCommands(generationType, options, dryRun) {
 
             if (run.isCurrent() && run.result?.success && run.result.cacheable !== false && isAgentRuntimeAllowed(pathfinderAgent)) {
                 storePathfinderRetrievalCache(retrievalCacheTarget?.message, retrievalCacheSignature, run.result);
+                rememberPathfinderSwipeRetrieval(swipeRetrievalSignature, run.result);
             }
         }
 
@@ -6414,6 +6490,7 @@ function onChatChangedToolSync() {
 
 function invalidatePathfinderRetrieval() {
     pathfinderRetrievalCacheRevision++;
+    pathfinderSwipeRetrievalMemory.clear();
     abortActivePathfinderRetrieval();
     clearPathfinderRetrievalToast();
     clearPathfinderExtensionPrompts();
