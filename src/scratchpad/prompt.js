@@ -14,6 +14,15 @@ export const CHANGE_FENCE = 'scratchpad-change';
 const CARD_CACHE = new Map();
 const MAX_PERSONA_CHARS = 6000;
 
+const PERSONA_CREATION_INSTRUCTIONS = [
+    'Creating a new user persona (not an assistant personality or character card):',
+    'You can draft a new persona even when no existing persona or story chat is shared.',
+    '```scratchpad-change',
+    '{"type":"persona","action":"create","name":"<new persona name>","description":"<base description>","title":"<optional display title>","reason":"<why>"}',
+    '```',
+    'Use one JSON object per block. Preserve literal macros in the description. The owner reviews and can edit the draft before Save change creates it with the default portrait. Their selected persona stays selected. Do not include avatar paths, IDs, connections or activation settings. Never claim creation has happened merely because you emitted a block.',
+].join('\n');
+
 const WEB_SEARCH_INSTRUCTIONS = [
     'Web search for this message:',
     'The user asked you to search the web for their current message. The search service receives only that message as its query; it does not receive the chat, character cards, persona or saved notes.',
@@ -94,6 +103,7 @@ function changeInstructions({ lore, character, chat, members, notebook, persona 
     const kinds = [];
     if (persona) kinds.push([
         'Shared user persona fields (not the assistant personality):',
+        `To create a saved Scenario Note for this persona, use {"type":"persona-note","action":"create","persona":${JSON.stringify(persona.name)},"name":"<note label>","description":"<note text>","reason":"<why>"}. Put it in its own scratchpad-change fence. The owner reviews and can edit it before saving. The new note is not activated automatically. Do not supply IDs, avatar paths or activation settings.`,
         `{"type":"persona","action":"replace","persona":${JSON.stringify(persona.name)},"field":"description","value":"<complete new base text>","reason":"<why>"}`,
         'Supported fields: name, description, title. Use the exact shared persona name as the target. Replace only the base field, preserving literal macros. Do not copy chat-specific additions into the base description. Connections and additions are kept. A persona rename keeps its avatar filename and chats.',
         `For an existing saved Persona Scenario Note use {"type":"persona-note","action":"replace","persona":${JSON.stringify(persona.name)},"noteId":"<exact shared note id>","field":"description","value":"<complete new note text>","reason":"<why>"}. Supported note fields: name (label), description (text). Preserve the note ID and its activation in chats. Never treat the character Scenario or Author's Note as a Persona Scenario Note.`,
@@ -141,7 +151,7 @@ function changeInstructions({ lore, character, chat, members, notebook, persona 
         ].join('\n'));
     }
     if (!kinds.length) {
-        return 'No existing story resources are shared for edits. You can still draft new character cards.';
+        return 'No existing story resources are shared for edits. You can still draft new character cards and personas.';
     }
     return [
         'When the user asks you to change something, or a change would clearly help, propose it as a change block the user can apply with one press.',
@@ -184,7 +194,7 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
     const preferences = userInstructions.trim() ? `The user's global Scratchpad instructions for you:\n${userInstructions}` : '';
     const voice = typeof customPrompt === 'string' && customPrompt.trim() ? ''
         : `For this reply, be ${persona.name} throughout: ${substituteNames(persona.personality, names)}\nGive the requested help in that voice, including explanations around any change blocks. Keep factual claims accurate and distinguish playful teasing from real advice.`;
-    return { text: [instructions, preferences, SCRATCHPAD_MACRO_GUIDANCE, CHARACTER_CREATION_INSTRUCTIONS, CREATOR_SCRATCHPAD_INSTRUCTIONS, imageInstructions(capabilities), reference, voice].filter(Boolean).join('\n\n'), persona };
+    return { text: [instructions, preferences, SCRATCHPAD_MACRO_GUIDANCE, CHARACTER_CREATION_INSTRUCTIONS, PERSONA_CREATION_INSTRUCTIONS, CREATOR_SCRATCHPAD_INSTRUCTIONS, imageInstructions(capabilities), reference, voice].filter(Boolean).join('\n\n'), persona };
 }
 
 export const SCRATCHPAD_CONTEXT_ACK = 'I have read the shared context. What would you like to work on?';

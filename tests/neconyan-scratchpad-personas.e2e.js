@@ -20,6 +20,95 @@ function picture(colour) {
 
 for (const phone of [false, true]) {
     const size = phone ? 'phone' : 'desktop';
+    test(`${size}: creates Personas and Scenario Notes through review`, async ({ app }) => {
+        test.setTimeout(180000);
+        const account = await app.account({ phone, configureSettings: saved => {
+            saved.user_avatar = avatarId;
+            saved.name1 = 'Kris';
+            saved.power_user.default_persona = avatarId;
+            saved.power_user.personas[avatarId] = 'Kris';
+            saved.power_user.persona_descriptions[avatarId] = { description: 'A traveller with a notebook.', title: 'Traveller', appendices: structuredClone(notes), activeAppendices: {}, connections: [] };
+        } });
+        await fs.writeFile(path.join(app.dataRoot, 'default-user', 'User Avatars', avatarId), picture([190, 130, 95]));
+        const page = await account.open({ workspace: true, timeout: 60000 });
+        await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'context' }));
+        await page.locator('#scratchpad-connection-miso').selectOption('durable');
+        await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+        const settings = async () => JSON.parse((await account.post('/api/settings/get')).settings);
+        const before = await settings();
+        app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: [
+            'Here are the drafts for your review.',
+            fence({ type: 'persona', action: 'create', name: 'Rowan', description: '{{user}} maps distant islands.', title: 'Cartographer' }),
+            fence({ type: 'persona-note', action: 'create', persona: 'Kris', name: 'Storm at sea', description: '{{user}} waits below deck.' }),
+        ].join('\n') } }] };
+        await page.locator('.scratchpad-composer').fill('Create a new Persona and a Scenario Note for Kris.');
+        const waiting = page.waitForResponse('**/api/scratchpad/send');
+        await page.locator('.scratchpad-send').click();
+        const response = await waiting;
+        expect(response.ok(), await response.text()).toBe(true);
+        await account.settled((await response.json()).job.id);
+        await expect(page.locator('.scratchpad-message.is-pending')).toHaveCount(0);
+        if (phone) await page.locator('.scratchpad-overview-toggle').click();
+        await page.evaluate(() => window.toastr.remove());
+        const reviews = page.getByRole('button', { name: 'Review', exact: true });
+        if (baseline) {
+            await expect(reviews).toHaveCount(0);
+            await page.screenshot({ path: `../screenshots/scratchpad-create-personas-${size}-before.png` });
+            return;
+        }
+        await expect(reviews).toHaveCount(2);
+        await reviews.first().click();
+        const popup = page.locator('dialog.popup[open]');
+        const text = popup.getByRole('textbox', { name: 'Proposed text', exact: true });
+        await expect(text).toHaveValue(/Cartographer/);
+        await checkImageControlContrast(page, ['dialog.popup[open] .popup-button-ok'], phone);
+        const box = await text.boundingBox();
+        expect(box.x).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(phone ? 393 : 1280);
+        await page.screenshot({ path: `../screenshots/scratchpad-create-personas-${size}-after.png` });
+        await popup.getByRole('button', { name: 'Not now', exact: true }).click();
+        expect((await settings()).power_user.personas).toEqual(before.power_user.personas);
+        await reviews.first().click();
+        await text.fill(JSON.stringify({ name: 'Rowan Vale', description: '{{user}} maps distant islands.', title: 'Cartographer' }, null, 2));
+        await popup.getByRole('button', { name: 'Save change', exact: true }).click();
+        await expect(page.locator('.scratchpad-change-state', { hasText: 'Saved' })).toHaveCount(1);
+        await expect(reviews).toHaveCount(1);
+        const afterPersona = await settings();
+        const created = Object.keys(afterPersona.power_user.personas).filter(id => !Object.hasOwn(before.power_user.personas, id));
+        expect(created).toHaveLength(1);
+        expect(afterPersona.power_user.personas[created[0]]).toBe('Rowan Vale');
+        expect(afterPersona.power_user.persona_descriptions[created[0]].description).toBe('{{user}} maps distant islands.');
+        expect(afterPersona.user_avatar).toBe(avatarId);
+        expect(afterPersona.power_user.default_persona).toBe(avatarId);
+        expect((await fs.stat(path.join(app.dataRoot, 'default-user', 'User Avatars', created[0]))).size).toBeGreaterThan(0);
+        await reviews.first().click();
+        await expect(text).toHaveValue(/Storm at sea/);
+        await page.screenshot({ path: `../screenshots/scratchpad-create-notes-${size}-after.png` });
+        await popup.getByRole('button', { name: 'Not now', exact: true }).click();
+        expect((await settings()).power_user.persona_descriptions[avatarId].appendices).toEqual(notes);
+        await reviews.first().click();
+        await text.fill(JSON.stringify({ name: 'After the storm', description: '{{user}} returns to the deck.' }, null, 2));
+        await popup.getByRole('button', { name: 'Save change', exact: true }).click();
+        await expect(page.locator('.scratchpad-change-state', { hasText: 'Saved' })).toHaveCount(2);
+        await expect(reviews).toHaveCount(0);
+        const after = await settings();
+        const parent = after.power_user.persona_descriptions[avatarId];
+        expect(parent.appendices.slice(0, 2)).toEqual(notes);
+        expect(parent.appendices[2]).toEqual({ id: expect.stringMatching(/^scratchpad-/), name: 'After the storm', description: '{{user}} returns to the deck.' });
+        expect(parent.activeAppendices).toEqual(before.power_user.persona_descriptions[avatarId].activeAppendices);
+        expect(parent.connections).toEqual(before.power_user.persona_descriptions[avatarId].connections);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(phone ? 393 : 1280);
+        const savedSource = await page.evaluate(async () => (await import('/scripts/scratchpad/context.js')).currentSource());
+        await page.reload();
+        await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+        await page.evaluate(async avatar => {
+            await window.SillyTavern.getContext().getCharacters();
+            await (await import('/scripts/neconyan-conversation/chrome.js')).openConversationWorkspaceForAvatar(avatar);
+        }, savedSource.avatar);
+        await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
+        await expect(page.locator('.scratchpad-change-state', { hasText: 'Saved' })).toHaveCount(2);
+        expect((await settings()).power_user.persona_descriptions[avatarId].appendices).toEqual(parent.appendices);
+    });
     test(`${size}: reviews persona fields, Scenario Notes and avatars before saving`, async ({ app }) => {
         test.setTimeout(240000);
         const images = await app.images();

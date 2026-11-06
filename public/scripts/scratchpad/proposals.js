@@ -5,7 +5,7 @@
 import { NOTE_TOOL_DEFINITIONS, NOTE_MUTATING_KINDS } from '../notebooks/assistant-note-tools.js';
 import { normaliseCharacterDraft } from '../neconyan-character-draft.js';
 import { CHARACTER_FIELDS, characterField, characterFieldName } from './character-fields.js';
-import { PERSONA_FIELDS, personaFieldValue } from './persona-fields.js';
+import { PERSONA_FIELDS, personaDraft, personaFieldValue } from './persona-fields.js';
 
 export const CHANGE_FENCE = 'scratchpad-change';
 const FENCE_PATTERN = /```scratchpad-change[^\n]*\n([\s\S]*?)```/g;
@@ -117,6 +117,14 @@ export function normaliseChange(value) {
         fail('This lorebook change has an unknown action.');
     }
     if (value.type === 'persona' || value.type === 'persona-note') {
+        if (value.action === 'create') {
+            const note = value.type === 'persona-note';
+            if (note && (typeof value.persona !== 'string' || !value.persona.trim() || value.persona.length > 200)) fail('A new Scenario Note needs the shared persona name.');
+            try {
+                return { type: value.type, action: 'create', ...personaDraft(value, { note }),
+                    ...(note ? { persona: value.persona.trim() } : {}), reason };
+            } catch (error) { fail(error.message); }
+        }
         if (!['replace', 'edit', undefined].includes(value.action) || typeof value.persona !== 'string' || !value.persona.trim() || value.persona.length > 200) fail('This persona change needs the shared persona name and a replace action.');
         try {
             if (value.type === 'persona' && value.field === 'avatar') fail('Use a generated persona avatar suggestion to replace the portrait.');
@@ -206,6 +214,8 @@ export function splitReply(reply) {
 }
 
 export function describeChange(change) {
+    if (change.type === 'persona' && change.action === 'create') return `Create persona '${change.name}'`;
+    if (change.type === 'persona-note' && change.action === 'create') return `Create Scenario Note '${change.name}' for ${change.persona}`;
     if (change.type === 'creator') return `Catelier draft: ${change.name}`;
     if (change.type === 'image') return change.target === 'persona-note-avatar' ? `New Scenario Note avatar for ${change.persona}` : change.target === 'persona-avatar' ? `New persona avatar for ${change.persona}` : change.target === 'avatar' ? `New avatar for ${change.character}` : 'Generate an image';
     if (change.type === 'persona') return `Change ${change.persona}'s persona ${PERSONA_FIELDS[change.field].toLowerCase()}`;

@@ -111,15 +111,18 @@ test('persona edit authority is captured from saved settings without image confi
     assert.equal(a.read(GENERAL).sessions[0].messages.at(-1).sharedPersona, undefined);
 });
 
-test('persona and Scenario Note contracts are available in default and custom prompts only when shared', () => {
+test('default and custom prompts allow new personas but require sharing for Scenario Notes and edits', () => {
     for (const customPrompt of [undefined, 'Be helpful.']) {
         const input = { assistant: 'miso', sourceKind: 'general', customPrompt, capabilities: { image: true, persona: { avatar: 'User.png', name: 'Kris' } } };
         const shared = buildScratchpadSystemPrompt(input).text;
         assert.match(shared, /"type":"persona-note"/);
+        assert.match(shared, /"type":"persona-note","action":"create","persona":"Kris"/);
+        assert.match(shared, /"type":"persona","action":"create"/);
         assert.match(shared, /"target":"persona-avatar","persona":"Kris"/);
         assert.match(shared, /Connections and additions are kept/);
         const hidden = buildScratchpadSystemPrompt({ ...input, capabilities: { image: true } }).text;
         assert.doesNotMatch(hidden, /"type":"persona-note"|"target":"persona-avatar"/);
+        assert.match(hidden, /"type":"persona","action":"create"/);
     }
 });
 
