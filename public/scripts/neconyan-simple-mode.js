@@ -20,8 +20,7 @@ const SIMPLE_MODE_HIDDEN_RAIL_ROUTES = Object.freeze(['mewmory', 'chat-archive',
 export const SIMPLE_MODE_KEPT_FINE_TUNING_ROUTE = 'presets';
 
 export const SIMPLE_MODE_HIDDEN_SELECTORS = Object.freeze([
-    '#neconyan-workspace-rail .neconyan-rail-advanced > .neconyan-rail-section-heading',
-    '#neconyan-workspace-rail .neconyan-rail-advanced > [data-neconyan-quick-actions]',
+    '#neconyan-workspace-rail .neconyan-rail-advanced > .neconyan-rail-section-heading:not(#neconyan-rail-quick-actions-title)',
     `#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-rail-home]:not([data-neconyan-rail-home="primary"], [data-neconyan-rail-home="modes"], [data-neconyan-route="${SIMPLE_MODE_KEPT_FINE_TUNING_ROUTE}"])`,
     '#neconyan-workspace-rail .neconyan-rail-modes-label',
     '#neconyan-workspace-rail [data-neconyan-mode-nav]',
@@ -78,7 +77,7 @@ export function buildSimpleModeCss() {
         `html.${SIMPLE_MODE_CLASS} :is(${SIMPLE_MODE_HIDDEN_SELECTORS.join(', ')}) { display: none !important; }`,
         /* A collapsed section would otherwise take Presets or a moved Workspace page with it, since its heading (the toggle) is hidden. */
         `html.${SIMPLE_MODE_CLASS} #neconyan-workspace-rail .neconyan-rail-advanced { margin-top: 0; }`,
-        `html.${SIMPLE_MODE_CLASS} #neconyan-workspace-rail .neconyan-rail-advanced > [data-neconyan-rail-group][hidden] { display: block !important; }`,
+        `html.${SIMPLE_MODE_CLASS} #neconyan-workspace-rail .neconyan-rail-advanced > [data-neconyan-rail-group][hidden]:not([data-neconyan-quick-actions]) { display: block !important; }`,
         `html:not(.${SIMPLE_MODE_CLASS}) .neconyan-rail-simple-exit { display: none !important; }`,
         /* While Nori asks, the answer buttons are the only way forward. */
         '#neconyan-tour-coachmark.neconyan-tour-asking :is([data-tour-coach-back], [data-tour-coach-next]) { display: none !important; }',

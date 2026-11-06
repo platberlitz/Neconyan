@@ -91,7 +91,7 @@ describe('Simple Mode styles and wiring', () => {
         expect(css).toContain(`html.${SIMPLE_MODE_CLASS} :is(`);
         for (const selector of SIMPLE_MODE_HIDDEN_SELECTORS) expect(css).toContain(selector);
         expect(css).toContain(`html:not(.${SIMPLE_MODE_CLASS}) .neconyan-rail-simple-exit { display: none !important; }`);
-        expect(css).toContain(`html.${SIMPLE_MODE_CLASS} #neconyan-workspace-rail .neconyan-rail-advanced > [data-neconyan-rail-group][hidden] { display: block !important; }`);
+        expect(css).toContain(`html.${SIMPLE_MODE_CLASS} #neconyan-workspace-rail .neconyan-rail-advanced > [data-neconyan-rail-group][hidden]:not([data-neconyan-quick-actions]) { display: block !important; }`);
         expect(css).toContain('#neconyan-tour-coachmark.neconyan-tour-asking :is([data-tour-coach-back], [data-tour-coach-next]) { display: none !important; }');
         expect(css).not.toMatch(/transition|animation/);
         const kept = [
@@ -105,8 +105,8 @@ describe('Simple Mode styles and wiring', () => {
 
     test('keeps Presets and Workspace pages wherever they sit, and hides the other sidebar pages', () => {
         expect(SIMPLE_MODE_KEPT_FINE_TUNING_ROUTE).toBe('presets');
-        expect(SIMPLE_MODE_HIDDEN_SELECTORS).toContain('#neconyan-workspace-rail .neconyan-rail-advanced > .neconyan-rail-section-heading');
-        expect(SIMPLE_MODE_HIDDEN_SELECTORS).toContain('#neconyan-workspace-rail .neconyan-rail-advanced > [data-neconyan-quick-actions]');
+        expect(SIMPLE_MODE_HIDDEN_SELECTORS).toContain('#neconyan-workspace-rail .neconyan-rail-advanced > .neconyan-rail-section-heading:not(#neconyan-rail-quick-actions-title)');
+        expect(SIMPLE_MODE_HIDDEN_SELECTORS).not.toContain('#neconyan-workspace-rail .neconyan-rail-advanced > [data-neconyan-quick-actions]');
         expect(SIMPLE_MODE_HIDDEN_SELECTORS).toContain('#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-rail-home]:not([data-neconyan-rail-home="primary"], [data-neconyan-rail-home="modes"], [data-neconyan-route="presets"])');
         expect(SIMPLE_MODE_HIDDEN_SELECTORS).toContain('#neconyan-workspace-rail .neconyan-rail-button[data-neconyan-rail-home="primary"][data-neconyan-route="mewmory"]');
         expect(SIMPLE_MODE_HIDDEN_SELECTORS.join(' ')).not.toContain('[data-neconyan-primary-nav]');
