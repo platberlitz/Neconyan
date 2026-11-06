@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.5.2
+
+### Merged Staging PRs
+- PR #511 (2026-11-06) `fix(personas): clarify chat and character lock badges`
+
 ## v1.5.1
 
 ### Highlights
