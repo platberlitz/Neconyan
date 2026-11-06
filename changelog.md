@@ -3,6 +3,7 @@
 ## v1.5.1
 
 ### Merged Staging PRs
+- PR #502 (2026-11-06) `fix: protect extension setup and stop iPhone startup retry loops`
 - PR #503 (2026-11-06) `feat(scratchpad): create personas and scenario notes`
 
 ## v1.5.0
