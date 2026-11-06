@@ -1476,6 +1476,12 @@ async function reviewAndSaveChange(session, message, part, key) {
         plan = part.change.type === 'image' ? await images.prepareAvatarChange({ source: wireSource(source), personaSource: source, session, message, part,
             guard: () => imageGuard(source, session, message, part) }) : await prepareChange(part.change, source, { sharedAvatar: message.sharedAvatar,
             sharedPersona: message.sharedPersona, personaGuard: () => personaGuard(source, session, message, part),
+            sharedPreset: message.sharedPreset, presetGuard: () => {
+                requireScope(source, session.id);
+                if (source.kind !== 'roleplay' || !currentSettings().include.preset || !sameChat(message.contextSource, source)) {
+                    throw new Error(t`Share the original preset in this chat before saving its changes.`);
+                }
+            },
             creationGuard: () => requireScope(source, session.id), creatorKey: JSON.stringify([source.key, session.id, message.id, part.index]) });
         requireScope(source, session.id);
         if (plan.bucket) applyBucket(plan.bucket);

@@ -12,7 +12,7 @@ const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
 const { getJob, requestCancellation } = await import('../src/jobs/store.js');
 const { readArtifact } = await import('../src/jobs/artifacts.js');
 const { testExports: { runJob }, setDirectoriesResolver } = await import('../src/jobs/runner.js');
-const { acceptScratchpadReply, finalizeScratchpadSubmission, registerScratchpadJobs, testExports: jobs } = await import('../src/scratchpad/jobs.js');
+const { acceptScratchpadReply, finalizeScratchpadSubmission, registerScratchpadJobs, normaliseCapabilities, testExports: jobs } = await import('../src/scratchpad/jobs.js');
 const store = await import('../src/scratchpad/store.js');
 const { readInstructionsLocked, updateInstructionsLocked } = await import('../src/scratchpad/instructions.js');
 const { readAssistantsLocked, saveAssistantLocked, deleteAssistantLocked, readAssistantCardLocked, assistantPortrait, resolveAssistant } = await import('../src/scratchpad/assistants.js');
@@ -36,6 +36,16 @@ after(() => cancelAutoSaves());
 const SOURCE = { kind: 'roleplay', key: 'Nova.png::Source', label: 'Nova' };
 const OTHER = { kind: 'conversation', key: 'Nova.png::main', label: 'Nova' };
 const GENERAL = { kind: 'general', key: 'general', label: 'General Scratchpad', contextMode: 'roleplay', personaId: 'User.png' };
+test('preset capabilities stay in Roleplay and remain available in custom assistant prompts', () => {
+    const preset = [{ api: 'openai', name: 'Lantern' }];
+    assert.deepEqual(normaliseCapabilities({ preset }).preset, preset);
+    for (const kind of ['general', 'conversation', 'notebook']) assert.equal(normaliseCapabilities({ preset }, kind).preset, undefined);
+    assert.equal(normaliseCapabilities({ preset: [{ api: '__proto__', name: 'No' }] }).preset, undefined);
+    const { text } = buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: { preset }, customPrompt: 'Be helpful.' });
+    assert.match(text, /"type":"preset"/);
+    assert.match(text, /"name":"Lantern"/);
+    assert.match(text, /Nothing changes until the user presses Save change/);
+});
 let counter = 0;
 
 function account(t, { oai = {}, model = 'gpt-4o' } = {}) {
@@ -109,6 +119,25 @@ test('persona edit authority is captured from saved settings without image confi
     const refusedTarget = await acceptScratchpadReply(a.request(next), next);
     await runJob(getJob(a.directories, refusedTarget.job.id));
     assert.equal(a.read(GENERAL).sessions[0].messages.at(-1).sharedPersona, undefined);
+});
+
+test('preset edit authority requires saved sharing and is stripped on import', async t => {
+    const a = account(t);
+    const source = { kind: 'roleplay', key: 'character:Nova.png:Source', label: 'Nova', scope: { kind: 'character', id: 'Nova.png' } };
+    const target = [{ api: 'openai', name: 'Garden' }];
+    registerScratchpadJobs({ generate: async () => ({ text: 'A preset suggestion.' }) });
+    for (const shared of [true, false]) {
+        const session = a.mutate(source, bucket => store.createSession(bucket, {
+            settings: { include: { preset: shared }, connection: { kind: 'profile', profileId: 'saved' } },
+        }));
+        const body = sendBody(session, { source, capabilities: { preset: target } });
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        await runJob(getJob(a.directories, accepted.job.id));
+        const message = a.read(source).sessions.find(item => item.id === session.id).messages.at(-1);
+        assert.deepEqual(message.sharedPreset, shared ? target : undefined);
+        const imported = a.mutate(source, bucket => store.createSession(bucket, { messages: [message] }));
+        assert.equal(imported.messages[0].sharedPreset, undefined);
+    }
 });
 
 test('default and custom prompts allow new personas but require sharing for Scenario Notes and edits', () => {

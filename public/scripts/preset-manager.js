@@ -902,7 +902,7 @@ class PresetManager {
      * @param {object} [options] Options for saving the preset
      * @param {boolean} [options.skipUpdate=false] If true, skips updating the preset list after saving.
      */
-    async savePreset(name, settings, { skipUpdate = false, select = true, isCurrent = () => true, quiet = false } = {}) {
+    async savePreset(name, settings, { skipUpdate = false, select = true, isCurrent = () => true, quiet = false, expectedPreset } = {}) {
         if (this.apiId === 'instruct' && settings) {
             await checkForSystemPromptInInstructTemplate(name, settings);
         }
@@ -917,10 +917,11 @@ class PresetManager {
         const response = await fetch('/api/presets/save', {
             method: 'POST',
             headers: getRequestHeaders(),
-            body: JSON.stringify({ preset, name, apiId: this.apiId }),
+            body: JSON.stringify({ preset, name, apiId: this.apiId, ...(expectedPreset !== undefined ? { expected_preset: expectedPreset } : {}) }),
         });
 
         if (!response.ok) {
+            if (response.status === 409 && expectedPreset !== undefined) throw new Error(t`This preset changed elsewhere. Reload it and review the suggestion again.`);
             if (!quiet) toastr.error(t`Your changes were not saved. Check your connection to Neconyan, then reload before editing more.`, t`Preset could not be saved`);
             console.error('Preset could not be saved', response);
             throw new Error('Preset could not be saved');

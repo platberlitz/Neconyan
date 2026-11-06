@@ -3,6 +3,7 @@ import { oai_settings, promptManager } from '../openai.js';
 import { INJECTION_POSITION } from '../PromptManager.js';
 import { power_user } from '../power-user.js';
 import { getPresetManager } from '../preset-manager.js';
+import { PRESET_FIELDS } from './preset-fields.js';
 
 const API_LABELS = {
     openai: 'Chat Completion',
@@ -45,7 +46,7 @@ function chatModules() {
             marker: Boolean(prompt.marker),
             role: prompt.marker ? '' : (prompt.role || 'system'),
             depth: inChat ? Number(prompt.injection_depth ?? 4) : null,
-            content: prompt.marker ? '' : text(prompt.content),
+            content: prompt.marker ? '' : String(prompt.content ?? ''),
         };
     }).filter(Boolean);
 }
@@ -97,5 +98,24 @@ export function readCurrentPreset() {
         api: API_LABELS[api] || api,
         name: currentPresetName(),
         modules: kind === 'chat' ? chatModules() : textModules(),
+        targets: currentPresetTargets(),
     };
+}
+
+/** Only selected presets whose prompt text is explicitly shared. */
+export function currentPresetTargets() {
+    const apis = main_api === 'openai' ? ['openai'] : ['sysprompt', 'context', 'instruct'];
+    return apis.flatMap(api => {
+        const manager = getPresetManager(api);
+        const name = manager?.getSelectedPresetName();
+        if (!name) return [];
+        const fields = api === 'openai' ? undefined : Object.fromEntries(PRESET_FIELDS[api]
+            .map(field => [field, String(power_user[api]?.[field] ?? '')]));
+        return [{ api, name, ...(fields ? { fields } : {}) }];
+    });
+}
+
+export function currentPromptOrderId() {
+    const own = promptManager.getPromptOrderForCharacter(promptManager.activeCharacter);
+    return own.length ? promptManager.activeCharacter.id : promptManager.configuration.promptOrder.dummyId;
 }
