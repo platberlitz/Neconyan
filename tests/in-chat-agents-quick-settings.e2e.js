@@ -7,6 +7,13 @@ async function openCardConnections(card) {
     await expect(card.locator('.ica--companion-quick-groups')).toBeVisible();
 }
 
+async function searchForAgent(page, text, agentId) {
+    await page.locator('#ica--search').fill(text);
+    const cards = page.locator('#ica--agentList .ica--agent-card');
+    await expect(page.locator(`#ica--agentList .ica--agent-card[data-agent-id="${agentId}"]`)).toBeVisible();
+    await expect(cards).toHaveCount(1);
+}
+
 test.use({ serviceWorkers: 'block', actionTimeout: 15000 });
 test.setTimeout(180000);
 
@@ -88,7 +95,7 @@ for (const width of [393, 1280]) {
 
                 await page.locator('#ica--selectMode').click();
                 await page.locator('#ica--agentTabs [data-tab="companion"]').click();
-                await page.locator('#ica--search').fill(`${prefix} 0`);
+                await searchForAgent(page, `${prefix} 0`, ids[0]);
                 await first.evaluate(card => { card.dataset.selectionIdentity = 'retained'; });
                 const selectionStart = Date.now();
                 await page.locator('#ica--bulkSelectAll').click();
@@ -99,7 +106,7 @@ for (const width of [393, 1280]) {
                 await expect(first).toHaveAttribute('data-selection-identity', 'retained');
                 await expect(first.locator('.ica--card-select')).toBeFocused();
                 await first.locator('.ica--card-select').check();
-                await page.locator('#ica--search').fill(`${prefix} 1`);
+                await searchForAgent(page, `${prefix} 1`, ids[1]);
                 await page.locator('#ica--bulkSelectAll').click();
                 await expect(page.locator('#ica--bulkCount')).toHaveText('2 selected');
                 const bulkSizes = await page.locator('#ica--bulkBar > div > button').evaluateAll(buttons => buttons.map(button => ({ width: button.getBoundingClientRect().width, height: button.getBoundingClientRect().height })));
@@ -136,7 +143,7 @@ for (const width of [393, 1280]) {
                 expect((await readAgents())[0].companion.contextRecipientAgentIds).toEqual([ids[1]]);
 
                 await page.locator('#ica--bulkCancel').click();
-                await page.locator('#ica--search').fill(`${prefix} 0`);
+                await searchForAgent(page, `${prefix} 0`, ids[0]);
                 await openCardConnections(first);
                 await first.getByRole('button', { name: 'More connection options', exact: true }).click();
                 const send = connections.getByRole('group', { name: 'Sends notes to', exact: true });
@@ -225,7 +232,7 @@ for (const width of [393, 1280]) {
                 await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready') && window.SillyTavern?.getContext);
                 await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
                 await expect(page.locator('#ica--settings')).toBeVisible();
-                await page.locator('#ica--search').fill(`${prefix} 0`);
+                await searchForAgent(page, `${prefix} 0`, ids[0]);
                 await expect(first.locator('.ica--companion-quick').getByLabel('Keep in chat history', { exact: true })).toBeChecked();
                 await expect(first.locator('.ica--companion-quick [data-quick-depth]')).toHaveValue('3');
                 expect((await readAgents())[0]).toMatchObject({ modelOverride: 'shared-test-model', companion: { batchAgentIds: [ids[3], ids[1]], contextRecipientAgentIds: [ids[1]], chatHistoryDepth: 3 } });

@@ -38,12 +38,14 @@ concurrency:
 jobs:
   run-release-e2e:
     name: Run Chromium E2E suite
-    # Groups 2-16 pin ubuntu-24.04: the ubuntu-latest alias now resolves to
-    # Ubuntu 26.04, which Playwright 1.60 does not support. Group 1 exercises a
-    # real renderer crash. Playwright 1.60 skips crash events on Ubuntu 24.04
-    # because Chromium never delivers them there; keep our check on 22.04.
+    # Groups other than 8 run ubuntu-24.04: the ubuntu-latest alias now resolves
+    # to Ubuntu 26.04, which Playwright 1.60 does not support. Group 8 currently
+    # contains crash-diagnostics.e2e.js, including the real renderer crash.
+    # Playwright 1.60 skips crash events on Ubuntu 24.04 because Chromium never
+    # delivers them there, so that group stays on 22.04. Re-check the group
+    # membership below when the test inventory changes.
     # https://github.com/microsoft/playwright/blob/v1.60.0/tests/library/page-event-crash.spec.ts
-    runs-on: ${{ matrix.shard == 1 && 'ubuntu-22.04' || 'ubuntu-24.04' }}
+    runs-on: ${{ matrix.shard == 8 && 'ubuntu-22.04' || 'ubuntu-24.04' }}
     timeout-minutes: 120
     strategy:
       fail-fast: false

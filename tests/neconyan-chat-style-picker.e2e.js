@@ -25,6 +25,16 @@ async function openPicker(page) {
     }
 }
 
+// These cases share the preview account, so a case that walks every Shell Style must put the
+// baseline back or later suites inherit its control styling (Sunken Reef's pill shadows, for one).
+async function restoreBaselineShell(page) {
+    if (await page.locator('html').getAttribute('data-sb-theme') === 'calico') return;
+    const saved = page.waitForResponse(response => response.url().endsWith('/api/settings/save')
+        && response.request().postDataJSON()?.power_user?.neconyan_shell_style === 'calico', { timeout: 15000 });
+    await page.evaluate(() => window.NeconyanShell.applyTheme('calico'));
+    await saved;
+}
+
 const card = (page, value) => page.locator(`.nn-chat-style-card[data-chat-style="${value}"]`);
 const classes = ['flatchat', 'bubblechat', 'documentstyle', 'echostyle', 'whisperstyle', 'hushstyle', 'ripplestyle', 'tidestyle', 'nnchat-messenger', 'nnchat-notebook', 'nnchat-script', 'nnchat-compact', 'nnchat-storybook'];
 
@@ -133,7 +143,7 @@ for (const width of [393, 1280]) {
             }
             const options = shellDrawer.locator('[data-sb-theme-option]');
             const themes = await options.evaluateAll(buttons => buttons.map(button => button.dataset.sbThemeOption));
-            expect(themes).toHaveLength(11);
+            expect(themes).toHaveLength(12);
             for (const theme of themes) {
                 const option = shellDrawer.locator(`[data-sb-theme-option="${theme}"]`);
                 await option.click();
@@ -174,7 +184,11 @@ for (const width of [393, 1280]) {
                 }
             }
         } finally {
-            await context.close();
+            try {
+                await restoreBaselineShell(page);
+            } finally {
+                await context.close();
+            }
         }
     });
 }

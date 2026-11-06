@@ -940,14 +940,16 @@ function createStage() {
         // A click or completed tap sends out two soft, fading wave fronts.
         for (let i = state.touchRipples.length - 1; i >= 0; i -= 1) {
             const ripple = state.touchRipples[i];
-            const progress = (now - ripple.bornAt) / 1100;
+            // A frame timestamp can predate the event that spawned the ripple by a
+            // few milliseconds; an unclamped negative progress draws a negative arc.
+            const progress = clamp((now - ripple.bornAt) / 1100, 0, 1);
             if (progress >= 1) {
                 state.touchRipples.splice(i, 1);
                 continue;
             }
             for (let ring = 0; ring < 2; ring += 1) {
-                const t = (progress - ring * 0.16) / (1 - ring * 0.16);
-                if (t < 0) continue;
+                const t = clamp((progress - ring * 0.16) / (1 - ring * 0.16), 0, 1);
+                if (t <= 0) continue;
                 const radius = 5 + (1 - (1 - t) ** 2) * 64;
                 const alpha = Math.sin(Math.PI * t) * (1 - t) * 0.34;
                 wakeCtx.strokeStyle = rgba(palette.lagoon, alpha);
@@ -966,7 +968,7 @@ function createStage() {
                 state.wakeRipples.splice(i, 1);
                 continue;
             }
-            const t = age / ripple.life;
+            const t = clamp(age / ripple.life, 0, 1);
             const radius = lerp(4, ripple.maxRadius, t);
             const alpha = (1 - t) * (palette.lightSurface ? 0.34 : 0.48);
             wakeCtx.strokeStyle = rgba(palette.lagoon, alpha);

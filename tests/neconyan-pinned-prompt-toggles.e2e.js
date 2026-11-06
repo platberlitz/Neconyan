@@ -5,6 +5,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { settleCssTransitions } from './chat-scroll-regression-helpers.js';
 
 const screenshots = fileURLToPath(new URL('../screenshots/', import.meta.url));
 const baseline = process.env.NECONYAN_PINNED_BASELINE === '1';
@@ -319,8 +320,10 @@ test('phone has no dock or space, and a labelled 44px pin does not edit or toggl
     const colours = [];
     for (const theme of ['Neconyan Calico Dark', 'Neconyan Calico']) {
         await page.locator('#themes').evaluate((node, name) => { node.value = name; node.dispatchEvent(new Event('change', { bubbles: true })); }, theme);
+        await settleCssTransitions(page);
         for (const accent of ['default', 'Mint Glass', 'Plum Wine']) {
             if (accent !== 'default') await page.locator(`.sb-accent-profile-apply[aria-label="Apply ${accent} accent profile"]`).evaluate(node => node.click());
+            await settleCssTransitions(page);
             const ratio = await button.evaluate(async node => {
                 const { contrastRatio } = await import('/scripts/theme-contrast.js');
                 const canvas = document.createElement('canvas').getContext('2d');
@@ -381,8 +384,10 @@ test('desktop accents, keyboard, narrow-host fallback, modes, long list, rename 
     const colours = [];
     for (const theme of ['Neconyan Calico Dark', 'Neconyan Calico']) {
         await page.locator('#themes').evaluate((node, name) => { node.value = name; node.dispatchEvent(new Event('change', { bubbles: true })); }, theme);
+        await settleCssTransitions(page);
         for (const accent of ['default', 'Mint Glass', 'Plum Wine']) {
             if (accent !== 'default') await page.locator(`.sb-accent-profile-apply[aria-label="Apply ${accent} accent profile"]`).evaluate(node => node.click());
+            await settleCssTransitions(page);
             if (accent !== 'default') {
                 await expect(page.locator('html')).toHaveAttribute('data-neconyan-accent', 'custom');
                 await expect.poll(() => page.locator('.nn-pinned-switch[aria-checked="true"] .nn-pinned-state').evaluate(node => getComputedStyle(node).backgroundColor))

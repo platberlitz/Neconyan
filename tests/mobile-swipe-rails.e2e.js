@@ -1,6 +1,6 @@
 /* global document, window, getComputedStyle, MutationObserver, requestAnimationFrame */
 import { expect, test } from '@playwright/test';
-import { isolateSettingsSaves, openReadyChat } from './chat-scroll-regression-helpers.js';
+import { isolateSettingsSaves, openReadyChat, settleCssTransitions } from './chat-scroll-regression-helpers.js';
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
 test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
@@ -89,6 +89,7 @@ test.describe('phone discovery cues', () => {
                     document.getElementById(id).dispatchEvent(new CustomEvent('change', { detail: { rgba: value } }));
                 }
             }, colour);
+            await settleCssTransitions(page);
             const contrast = await navChrome.locator('.sb-mobile-rail-left > span').evaluate(el => {
                 const ctx = document.createElement('canvas').getContext('2d');
                 const luminance = colour => {

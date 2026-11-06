@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { isolateSettingsSaves, trackNavigationErrors } from './chat-scroll-regression-helpers.js';
+import { searchAgentList, searchAgentTemplates } from './in-chat-agents-e2e-helpers.js';
 
 test.use({ serviceWorkers: 'block' });
 test.setTimeout(180000);
@@ -114,7 +115,7 @@ for (const width of [1280, 393]) {
                 if (await skipTour.isVisible()) await skipTour.click();
                 await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
                 await page.locator('#ica--agentTabs [data-tab="all"]').click();
-                await page.locator('#ica--search').fill('Scroll check');
+                await searchAgentList(page, 'Scroll check', { count: 12 });
                 const card = page.locator(`[data-agent-id="${agents[8].id}"]`);
                 const toggle = card.locator('.ica--card-toggle');
                 await toggle.evaluate(element => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
@@ -150,7 +151,7 @@ for (const width of [1280, 393]) {
                 for (const agent of agents) expect((await page.request.post('/api/in-chat-agents/save', { headers: requestHeaders, data: agent })).ok()).toBe(true);
                 await openAgents(page);
                 await page.locator('#ica--agentTabs .ica--agent-tab[data-tab="all"]').click();
-                await page.locator('#ica--search').fill('Version check:');
+                await searchAgentList(page, 'Version check:', { count: 4 });
                 for (const agent of agents) {
                     const card = page.locator(`[data-agent-id="${agent.id}"]`);
                     const badge = card.locator('.ica--card-name .ica--card-pill--version');
@@ -298,7 +299,8 @@ for (const width of [1280, 393]) {
             expect((await page.request.post('/api/in-chat-agents/save', { headers: requestHeaders, data: agent })).ok()).toBe(true);
             try {
                 await openAgents(page);
-                await page.locator('#ica--search').fill(agent.name);
+                await page.locator('#ica--agentTabs .ica--agent-tab[data-tab="all"]').click();
+                await searchAgentList(page, agent.name, { count: 1 });
                 await openCardQuickSettings(page);
                 const quick = page.locator('.ica--quick-settings');
                 const length = quick.getByLabel('Target length', { exact: true });
@@ -318,7 +320,8 @@ for (const width of [1280, 393]) {
                 await page.locator('dialog.popup:visible .popup-button-ok').click();
                 await expect(quick).toBeHidden();
                 await openAgents(page);
-                await page.locator('#ica--search').fill(agent.name);
+                await page.locator('#ica--agentTabs .ica--agent-tab[data-tab="all"]').click();
+                await searchAgentList(page, agent.name, { count: 1 });
                 const reopenedQuick = await openCardQuickSettings(page);
                 await expect(reopenedQuick.locator('.ica--quick-summary')).toContainText('Order');
                 await reopenedQuick.locator('.ica--quick-open-editor').click();
@@ -345,7 +348,8 @@ for (const width of [1280, 393]) {
                 await page.locator('dialog.popup:visible .popup-button-ok').click();
                 await expect(editor).toBeHidden();
                 await openAgents(page);
-                await page.locator('#ica--search').fill(agent.name);
+                await page.locator('#ica--agentTabs .ica--agent-tab[data-tab="all"]').click();
+                await searchAgentList(page, agent.name, { count: 1 });
                 await openCardQuickSettings(page);
                 await expect(length).toHaveValue('About 300 to 450 words');
                 await expect(context).toHaveValue('0');
@@ -536,7 +540,7 @@ test.describe('Agents navigation with an open chat', () => {
                     if (width < 769) await library.locator('.ica--template-category-select').selectOption('content');
                     else await library.locator('.ica--template-pill[data-category="content"]').click();
                     await expect(library.locator('.ica--library-kits')).toBeHidden();
-                    await library.locator('.ica--template-search').fill('Grounded Prose');
+                    await searchAgentTemplates(page, 'Grounded Prose', { count: 2 });
                     const groundedProseCard = library.locator('.ica--template-card[data-id="tpl-grounded-prose"]');
                     await expect(groundedProseCard).toHaveCount(1);
                     await expect(groundedProseCard.locator('.ica--template-card-name')).toHaveText(/^Grounded Prose v\d+$/);
@@ -615,8 +619,7 @@ test.describe('Agents navigation with an open chat', () => {
                     releaseSave();
                     await expect(editor).toBeHidden();
                     await page.unroute('**/api/in-chat-agents/save');
-                    await page.locator('#ica--search').fill(name);
-                    await expect(page.locator('#ica--agentList .ica--agent-card')).toHaveCount(1);
+                    await searchAgentList(page, name, { count: 1 });
 
                     const settingsResponse = await page.request.post('/api/settings/get', { headers: await headers(page), data: {} });
                     const saved = (await settingsResponse.json()).inChatAgents.find(agent => agent.name === name);
@@ -624,8 +627,7 @@ test.describe('Agents navigation with an open chat', () => {
                     const seeded = { ...saved, settings: { ...saved.settings, auditMarker: 'keep unknown settings' } };
                     expect((await page.request.post('/api/in-chat-agents/save', { headers: await headers(page), data: seeded })).ok()).toBe(true);
                     await openAgents(page, true);
-                    await page.locator('#ica--search').fill(name);
-                    await expect(page.locator('#ica--agentList .ica--agent-card')).toHaveCount(1);
+                    await searchAgentList(page, name, { count: 1 });
                     // The filtered card can sit below the phone viewport's setup controls.
                     const editButton = page.locator('#ica--agentList .ica--card-primary-actions .ica--btn-edit');
                     await editButton.scrollIntoViewIfNeeded();

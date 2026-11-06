@@ -1,6 +1,7 @@
 /* global document, jQuery, getComputedStyle */
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { settleCssTransitions } from './chat-scroll-regression-helpers.js';
 import { contrastRatio } from '../public/scripts/theme-contrast.js';
 
 async function sampleButtonContrast(locator) {
@@ -49,6 +50,7 @@ for (const phone of [false, true]) {
             for (const profile of [null, 'Mint Glass', 'Plum Wine']) {
                 await page.evaluate(name => jQuery('#themes').val(name).trigger('change'), theme);
                 if (profile) await page.locator(`.sb-accent-profile-apply[aria-label="Apply ${profile} accent profile"]`).evaluate(el => el.click());
+                await settleCssTransitions(page);
                 for (const [btnName, btn] of [['primary', primarySave], ['selected', selectedFormat], ['secondary', secondaryDrafts]]) {
                     const { ink, bg } = await sampleButtonContrast(btn);
                     expect(contrastRatio(ink, bg), `${theme} / ${profile || 'default'} / ${btnName}: ${ink} on ${bg}`).toBeGreaterThanOrEqual(4.5);

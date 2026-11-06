@@ -129,28 +129,55 @@ async function writeFile(inputPath, outputRelativePath, buffer = null) {
     }
 }
 
+const moduleAssets = new Set(['script.js', 'lib.js', 'notes-editor.js']);
+
+function shouldMinifyAsModule(relativePath, ext) {
+    // Most files under scripts/ are modules, but the early boot scripts
+    // (crash-diagnostics.js and neconyan-boot-guard.js) are classic scripts.
+    // Minifying those as modules would mangle or drop their top-level globals,
+    // so module-only syntax is detected by the parse fallback instead.
+    return ext === '.mjs' || moduleAssets.has(toPosix(relativePath));
+}
+
+function getMinifyOptions(module) {
+    return {
+        module,
+        compress: {
+            passes: 1,
+        },
+        mangle: true,
+        format: {
+            comments: false,
+        },
+    };
+}
+
 async function optimizeAsset(inputPath, relativePath, ext, warnings, sourceBuffer = null) {
     const buffer = sourceBuffer ?? await fs.readFile(inputPath);
 
     if (ext === '.js' || ext === '.mjs') {
         const source = buffer.toString('utf8');
+        const module = shouldMinifyAsModule(relativePath, ext);
+        let result;
         try {
-            const result = await minify(source, {
-                module: ext === '.mjs' || relativePath.includes(`${path.sep}scripts${path.sep}`) || ['script.js', 'lib.js', 'notes-editor.js'].includes(relativePath),
-                compress: {
-                    passes: 1,
-                },
-                mangle: true,
-                format: {
-                    comments: false,
-                },
-            });
-
-            if (result.code) {
-                return Buffer.from(result.code, 'utf8');
-            }
+            result = await minify(source, getMinifyOptions(module));
         } catch (error) {
-            warnings.push(`Skipped JS minification for ${toPosix(relativePath)}: ${error.message}`);
+            if (module) {
+                warnings.push(`Skipped JS minification for ${toPosix(relativePath)}: ${error.message}`);
+            } else {
+                // Terser parses import/export without module mode, but top-level
+                // await only parses as a module. Retry so such files are still
+                // minified without classifying every scripts/ file as a module.
+                try {
+                    result = await minify(source, getMinifyOptions(true));
+                } catch (moduleError) {
+                    warnings.push(`Skipped JS minification for ${toPosix(relativePath)}: ${moduleError.message}`);
+                }
+            }
+        }
+
+        if (result?.code) {
+            return Buffer.from(result.code, 'utf8');
         }
     }
 
@@ -244,7 +271,11 @@ async function build() {
     warnings.forEach(warning => console.warn(warning));
 }
 
-build().catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-});
+export { optimizeAsset };
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+    build().catch((error) => {
+        console.error(error);
+        process.exitCode = 1;
+    });
+}

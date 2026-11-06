@@ -1,6 +1,7 @@
-/* global document, requestAnimationFrame, getComputedStyle */
+/* global document, getComputedStyle */
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { settleCssTransitions } from './chat-scroll-regression-helpers.js';
 import { fileURLToPath } from 'node:url';
 
 for (const phone of [false, true]) {
@@ -41,11 +42,11 @@ for (const phone of [false, true]) {
         await expect(creator.getByRole('radio', { name: 'Custom', exact: true })).toBeChecked();
         const customPill = creator.locator('.creator-choice-grid--formats > .creator-choice-pill').filter({ hasText: 'Custom' });
         for (const accent of [null, 'rgba(110, 231, 183, 1)', 'rgba(126, 34, 206, 1)']) {
-            const contrast = await customPill.evaluate(async (node, colour) => {
-                if (colour) {
-                    for (const id of ['sb-accent-primary-picker', 'sb-accent-secondary-picker']) document.getElementById(id).dispatchEvent(new CustomEvent('change', { detail: { rgba: colour } }));
-                }
-                await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            if (accent) await page.evaluate(rgba => {
+                for (const id of ['sb-accent-primary-picker', 'sb-accent-secondary-picker']) document.getElementById(id).dispatchEvent(new CustomEvent('change', { detail: { rgba } }));
+            }, accent);
+            await settleCssTransitions(page);
+            const contrast = await customPill.evaluate(node => {
                 const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
                 const context = canvas.getContext('2d');
                 const rgba = value => {
@@ -59,7 +60,7 @@ for (const phone of [false, true]) {
                 const text = luminance(rgba(getComputedStyle(node).color));
                 const surface = luminance(background);
                 return (Math.max(text, surface) + 0.05) / (Math.min(text, surface) + 0.05);
-            }, accent);
+            });
             expect(contrast).toBeGreaterThanOrEqual(4.5);
         }
         await creator.getByLabel('Character dossier', { exact: true }).fill('Mira repairs boats in Moon Harbour.');

@@ -47,12 +47,15 @@ for (const phone of [false, true]) {
         await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
         const workspace = page.locator('#mewmory-workspace');
         await workspace.getByRole('tab', { name: 'Settings', exact: true }).click();
-        await workspace.getByLabel('Update memories as I chat', { exact: true }).uncheck();
-        await workspace.getByLabel('Token counter for replies', { exact: true }).selectOption('o200k_base');
+        // The number fields save on a debounce. Fill them before the controls that save at
+        // once: a completed save redraws the panel, and a redraw during fill() restores the
+        // old number first, so the new digits would be appended to it.
         await workspace.getByLabel('Maximum passage length, characters', { exact: true }).fill('800');
         await workspace.getByLabel('Text repeated between passages, characters', { exact: true }).fill('100');
         await workspace.getByLabel('Preference for meaning matches', { exact: true }).fill('0.7');
         await workspace.getByLabel('Maximum recalled results', { exact: true }).fill('4');
+        await workspace.getByLabel('Update memories as I chat', { exact: true }).uncheck();
+        await workspace.getByLabel('Token counter for replies', { exact: true }).selectOption('o200k_base');
         await workspace.locator('#mewmory-role-embedding').click();
         await workspace.getByLabel('Enable this role', { exact: true }).check();
         await workspace.getByLabel('Embedding connection', { exact: true }).selectOption('native');

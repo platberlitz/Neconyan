@@ -23,7 +23,7 @@ const wanted = {
     [`${conversation}/timeline-render.js`]: ['buildPartnerOptions'],
     [`${conversation}/context.js`]: ['normalizeConversationBranch', 'createConversationBranch'],
     [`${conversation}/settings-store.js`]: ['getConversationWelcomeChats'],
-    'public/scripts/welcome-screen.js': ['getNeconyanRecentChatLabel', 'isNeconyanRecentChatLabelNamed', 'createNeconyanRailButton', 'renderNeconyanRailRecentChats'],
+    'public/scripts/welcome-screen.js': ['getNeconyanRecentChatLabel', 'isNeconyanRecentChatLabelNamed', 'neconyanRailRecentSnapshots', 'createNeconyanRailButton', 'renderNeconyanRailRecentChats'],
     'public/script.js': ['openCharacterWorldPopup'],
     'public/scripts/neconyan-tabs.js': ['updateTopBarBrand'],
     [`${quickReply}/QuickReplySetLink.js`]: ['QuickReplySetLink'],
@@ -31,10 +31,14 @@ const wanted = {
     [`${quickReply}/quick-reply-set-list.js`]: ['getUniqueQuickReplySetsByName', 'getQuickReplySetNameKey', 'getQuickReplySetLinkNameKey'],
 };
 
-/** A top-level function or class as written in the file, or null when this code does not have it. */
+/** A top-level function or class as written in the file, or a top-level constant it reads, or null. */
 function declaration(text, name) {
     const match = text.match(new RegExp(`^(?:export )?(?:async )?(?:function|class) ${name}\\b[^]*?\\n}$`, 'm'));
-    return match ? match[0].replace(/^export /, '') : null;
+    if (match) return match[0].replace(/^export /, '');
+    // Module state a sliced render function closes over (for example a render cache)
+    // must travel with it, or the free name resolves to a no-op stub.
+    const constant = text.match(new RegExp(`^const ${name}\\b[^\\n]*;`, 'm'));
+    return constant ? constant[0] : null;
 }
 
 async function mergedDictionary(lang) {
@@ -66,7 +70,14 @@ async function openRender(page) {
                 return noop;
             },
         });
-        const define = name => { if (sources[name]) scope[name] = new Function('scope', `with (scope) { return (${sources[name]}); }`)(scope); };
+        const define = name => {
+            if (!sources[name]) return;
+            if (sources[name].startsWith('const ')) {
+                scope[name] = new Function('scope', `with (scope) { ${sources[name]}\nreturn ${name}; }`)(scope);
+            } else {
+                scope[name] = new Function('scope', `with (scope) { return (${sources[name]}); }`)(scope);
+            }
+        };
         Object.keys(sources).forEach(define);
         // translate() and t() as public/scripts/i18n.js defines them, reading the loaded locale.
         scope.translate = (text, key = null) => dictionary[key || text] || text;

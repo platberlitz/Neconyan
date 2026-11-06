@@ -1,6 +1,7 @@
-/* global globalThis, document, requestAnimationFrame, getComputedStyle */
+/* global globalThis, document, getComputedStyle */
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { settleCssTransitions } from './chat-scroll-regression-helpers.js';
 
 for (const phone of [false, true]) {
     test(`Catelier prefills and streams a real provider reply on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
@@ -48,11 +49,11 @@ for (const phone of [false, true]) {
         await expect(creator.getByLabel('Model reasoning', { exact: true })).toHaveValue('Considering the dossier.');
         await page.screenshot({ path: `../screenshots/catelier-stream-after-${phone ? 'phone' : 'desktop'}.png` });
         for (const accent of [null, 'rgba(245, 235, 210, 1)', 'rgba(45, 20, 70, 1)']) {
-            const measured = await creator.getByRole('button', { name: 'Expand Model reply', exact: true }).evaluate(async (node, colour) => {
-                if (colour) {
-                    for (const id of ['sb-accent-primary-picker', 'sb-accent-secondary-picker']) document.getElementById(id).dispatchEvent(new CustomEvent('change', { detail: { rgba: colour } }));
-                }
-                await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            if (accent) await page.evaluate(rgba => {
+                for (const id of ['sb-accent-primary-picker', 'sb-accent-secondary-picker']) document.getElementById(id).dispatchEvent(new CustomEvent('change', { detail: { rgba } }));
+            }, accent);
+            await settleCssTransitions(page);
+            const measured = await creator.getByRole('button', { name: 'Expand Model reply', exact: true }).evaluate(node => {
                 const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
                 const ctx = canvas.getContext('2d');
                 const rgba = value => {
@@ -69,7 +70,7 @@ for (const phone of [false, true]) {
                 const foreground = luminance(rgba(getComputedStyle(node.querySelector('i')).color));
                 const backdrop = luminance(background);
                 return { contrast: (Math.max(foreground, backdrop) + 0.05) / (Math.min(foreground, backdrop) + 0.05), height: node.getBoundingClientRect().height };
-            }, accent);
+            });
             expect(measured.contrast).toBeGreaterThanOrEqual(3);
             if (phone) expect(measured.height).toBeGreaterThanOrEqual(44);
         }

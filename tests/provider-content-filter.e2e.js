@@ -106,12 +106,16 @@ for (const phone of [false, true]) {
             ? 'An ordinary complete reply.' : '' }, finish_reason: body.model === MODEL ? 'stop' : 'content_filter' }] });
         await send(page, 'Describe the fountain.');
         await expect.poll(() => app.provider.calls.length).toBeGreaterThanOrEqual(3);
+        const terminalWarning = page.locator('#toast-container .toast').filter({ hasText: /The provider blocked an Agent request/ });
+        // The blocked pass must report before recovery runs; waiting here starts the
+        // toast's five-second life after the warning exists, rather than guessing.
+        await expect(terminalWarning).toHaveCount(1, { timeout: 20000 });
         await delay(1800);
         await wakeRecovery(page);
+        expect(app.provider.calls).toHaveLength(3);
+        await expect(terminalWarning).toHaveCount(1);
         await fs.mkdir(path.resolve('../screenshots'), { recursive: true });
         await page.screenshot({ path: path.resolve(`../screenshots/content-filter-caller-scope-parallel-${viewport}.png`) });
-        expect(app.provider.calls).toHaveLength(3);
-        await expect(page.locator('#toast-container .toast').filter({ hasText: 'will not retry automatically' })).toHaveCount(1);
         await expect(page.locator('#chat .mes').last().locator('.mes_text')).toHaveText('An ordinary complete reply.');
         const runs = await page.evaluate(async () => (await import('/script.js')).chat.at(-1).extra.inChatAgentPostRuns);
         expect(runs.length).toBeGreaterThan(0);
@@ -120,7 +124,7 @@ for (const phone of [false, true]) {
         expect(await reopened.evaluate(async () => (await import('/script.js')).chat.at(-1).extra.inChatAgentPostRuns)).toEqual(runs);
         await wakeRecovery(reopened);
         expect(app.provider.calls).toHaveLength(3);
-        await expect(reopened.locator('#toast-container .toast').filter({ hasText: 'will not retry automatically' })).toHaveCount(0);
+        await expect(reopened.locator('#toast-container .toast').filter({ hasText: /The provider blocked an Agent request/ })).toHaveCount(0);
     });
 }
 

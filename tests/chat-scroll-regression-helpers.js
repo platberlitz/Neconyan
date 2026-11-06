@@ -1,4 +1,4 @@
-/* global document, HTMLElement, requestAnimationFrame, window, WheelEvent */
+/* global document, HTMLElement, requestAnimationFrame, window, WheelEvent, CSSTransition */
 import { createMockRoleplayStore } from './roleplay-browser-fixture.js';
 
 export const APP_URL = process.env.NECONYAN_TEST_BASE_URL || '/';
@@ -310,6 +310,20 @@ export async function waitForAnimationFrames(page, frameCount = 2) {
             await new Promise(resolve => requestAnimationFrame(resolve));
         }
     }, frameCount);
+}
+
+/**
+ * Wait for colour transitions to finish before sampling computed styles. A theme, accent or
+ * pressed-state change can animate a fill while the label switches immediately, so a sample
+ * taken in the same frame pairs the new ink with the previous fill.
+ */
+export async function settleCssTransitions(page) {
+    await page.evaluate(async () => {
+        await Promise.all(document.getAnimations()
+            .filter(animation => animation instanceof CSSTransition)
+            .map(animation => animation.finished.catch(() => {})));
+    });
+    await waitForAnimationFrames(page);
 }
 
 async function renderSyntheticLongChat(page, { messageCount, visibleCount }) {

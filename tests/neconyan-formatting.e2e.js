@@ -45,7 +45,7 @@ for (const phone of [true, false]) {
                     if (typeof envelope.settings !== 'string') return route.fulfill({ json: envelope });
                     const settings = savedSettings ?? JSON.parse(envelope.settings);
                     const theme = JSON.parse(readFileSync(new URL(`../default/content/themes/Neconyan Calico${dark ? ' Dark' : ''}.json`, import.meta.url), 'utf8'));
-                    settings.power_user = { ...settings.power_user, ...theme, theme: theme.name, google_font: '' };
+                    settings.power_user = { ...settings.power_user, ...theme, theme: theme.name, google_font: '', neconyan_shell_style: 'calico' };
                     settings.firstRun = false;
                     settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
                     await route.fulfill({ json: { ...envelope, settings: JSON.stringify(settings) } });

@@ -34,4 +34,119 @@ describe('update changelog merged PR entries', () => {
             '# Changelog\n\n## v1.6.4\n\n### Merged Staging PRs\n- PR #321 (2026-06-04) `fix: unblock changelog sync`\n\n## v1.6.2\n\n### Fixed\n- Existing entry.\n',
         );
     });
+
+    test('ignores a legacy section with the same version below an older release', () => {
+        const changelog = [
+            '# Changelog',
+            '',
+            '## v1.4.1',
+            '',
+            '### Fixed',
+            '- Existing entry.',
+            '',
+            '## v1.5.0',
+            '',
+            '### Merged Staging PRs',
+            '- PR #300 (2026-01-01) `legacy entry`',
+            '',
+        ].join('\n');
+
+        expect(updateChangelog(changelog, 'v1.5.0', [mergedPr])).toBe([
+            '# Changelog',
+            '',
+            '## v1.5.0',
+            '',
+            '### Merged Staging PRs',
+            '- PR #321 (2026-06-04) `fix: unblock changelog sync`',
+            '',
+            '## v1.4.1',
+            '',
+            '### Fixed',
+            '- Existing entry.',
+            '',
+            '## v1.5.0',
+            '',
+            '### Merged Staging PRs',
+            '- PR #300 (2026-01-01) `legacy entry`',
+            '',
+        ].join('\n'));
+    });
+
+    test('updates an existing top section for the current version in place', () => {
+        const changelog = [
+            '# Changelog',
+            '',
+            '## v1.5.0',
+            '',
+            '### Merged Staging PRs',
+            '- PR #300 (2026-01-01) `legacy entry`',
+            '',
+            '## v1.4.1',
+            '',
+            '### Fixed',
+            '- Existing entry.',
+            '',
+        ].join('\n');
+
+        expect(updateChangelog(changelog, 'v1.5.0', [mergedPr])).toBe([
+            '# Changelog',
+            '',
+            '## v1.5.0',
+            '',
+            '### Merged Staging PRs',
+            '- PR #300 (2026-01-01) `legacy entry`',
+            '- PR #321 (2026-06-04) `fix: unblock changelog sync`',
+            '',
+            '## v1.4.1',
+            '',
+            '### Fixed',
+            '- Existing entry.',
+            '',
+        ].join('\n'));
+    });
+
+    test('inserts a new current section above a stale unreleased section', () => {
+        const changelog = [
+            '# Changelog',
+            '',
+            '## v1.4.2',
+            '',
+            '### Merged Staging PRs',
+            '- PR #310 (2026-01-01) `stale entry`',
+            '',
+            '## v1.4.1',
+            '',
+            '### Highlights',
+            '- Existing entry.',
+            '',
+        ].join('\n');
+
+        expect(updateChangelog(changelog, 'v1.5.0', [mergedPr])).toBe([
+            '# Changelog',
+            '',
+            '## v1.5.0',
+            '',
+            '### Merged Staging PRs',
+            '- PR #321 (2026-06-04) `fix: unblock changelog sync`',
+            '',
+            '## v1.4.2',
+            '',
+            '### Merged Staging PRs',
+            '- PR #310 (2026-01-01) `stale entry`',
+            '',
+            '## v1.4.1',
+            '',
+            '### Highlights',
+            '- Existing entry.',
+            '',
+        ].join('\n'));
+    });
+
+    test('compares four-part versions numerically when locating the current section', () => {
+        const changelog = '# Changelog\n\n## v1.4.1\n\n### Fixed\n- Existing entry.\n';
+
+        expect(updateChangelog(changelog, 'v1.4.1.1', [mergedPr])).toBe(
+            '# Changelog\n\n## v1.4.1.1\n\n### Merged Staging PRs\n- PR #321 (2026-06-04) `fix: unblock changelog sync`\n\n## v1.4.1\n\n### Fixed\n- Existing entry.\n',
+        );
+    });
 });
