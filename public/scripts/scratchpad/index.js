@@ -46,7 +46,7 @@ import * as images from './images.js';
 import { integerSettingValue, reflectSavedValue, reflectedSettingValue } from './setting-input.js';
 import { renderWebSearchSettings, renderWebSearchSources, setWebSearchToggle } from './web-search.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261105-reef-creatures';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261106-scratchpad-copy';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -1277,13 +1277,13 @@ function renderReply(session, message) {
             const block = h('div', { class: 'scratchpad-text mes_text' });
             block.innerHTML = messageFormatting(part.text, '', false, false, -1, {}, false);
             for (const code of block.querySelectorAll('pre > code')) {
-                if (![...code.classList].some(name => /^(?:custom-)?(?:language-)?(?:markdown|md)$/i.test(name))) continue;
                 const pre = code.parentElement;
                 const wrapper = h('div', { class: 'scratchpad-code-block' });
                 const text = code.textContent;
                 pre.replaceWith(wrapper);
-                wrapper.append(h('div', { class: 'scratchpad-code-actions' },
-                    iconButton(t`Copy`, () => void copyText(text), { icon: 'fa-copy', title: t`Copy Markdown`, className: 'scratchpad-copy' })), pre);
+                wrapper.append(pre, iconButton('', () => void copyText(text), {
+                    icon: 'fa-copy', title: t`Copy code`, className: 'scratchpad-copy',
+                }));
             }
             body.append(block);
         } else {

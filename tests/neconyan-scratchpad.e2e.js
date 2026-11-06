@@ -1,8 +1,10 @@
 /* global document, window */
 /* eslint-disable playwright/no-standalone-expect -- Shared fixture helpers assert their own setup. */
 import { expect } from '@playwright/test';
+import path from 'node:path';
 import { MODEL, test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
+import { checkImageControlContrast } from './scratchpad-image-contrast-helpers.js';
 
 const LONG_LORE_TITLE = 'Nightshade_by_the_garden_gate_with_a_very_long_unbroken_entry_title';
 
@@ -501,7 +503,7 @@ test('Roleplay change cards wait for successful saves and persist message and lo
 });
 
 for (const phone of [false, true]) {
-    test(`${phone ? 'iPhone stand-in' : 'desktop'} Markdown blocks each have a top-right Copy button`, async ({ app }) => {
+    test(`${phone ? 'iPhone stand-in' : 'desktop'} every code block has a top-right copy icon inside its box`, async ({ app }) => {
         test.setTimeout(120000);
         const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {} });
         if (phone) await installIPhoneSafari(account.context, { standalone: true });
@@ -510,37 +512,65 @@ for (const phone of [false, true]) {
         const source = await openScratchpad(page);
         if (phone) await applyIOSOnlyCss(page);
         const proposal = { type: 'chat', action: 'edit', message: 0, text: 'Reviewed original.' };
-        const drafts = ['# Moonflowers\n\n- Keep **petals** dry\n- Water at midnight\n', '## Second draft\n\n[Garden](https://example.com) & <leaves>\n'];
+        const drafts = ['# Moonflowers\n\n- Keep **petals** dry\n- Water at midnight\n', '## Second draft\n\n[Garden](https://example.com) & <leaves>\n',
+            'const flower = "moonflower";\n', '  Literal {{char}} & <petals>\n\nKeep indentation.\n'];
         const reply = 'Two drafts to choose from.\n\n```markdown\n' + drafts[0] + '```\n\nAnother option:\n\n```md\n' + drafts[1]
-            + '```\n\n```javascript\nconst flower = "moonflower";\n```\n\n```scratchpad-change\n' + JSON.stringify(proposal) + '\n```';
+            + '```\n\n```javascript\n' + drafts[2] + '```\n\n```\n' + drafts[3] + '```\n\n```scratchpad-change\n' + JSON.stringify(proposal) + '\n```';
         await account.post('/api/scratchpad/session/import', { source, session: { name: 'Copy', messages: [
             { role: 'user', text: '```markdown\nMy notes\n```' },
             { role: 'assistant', text: reply },
         ] } });
         await openScratchpad(page);
+        const size = phone ? 'phone' : 'desktop';
+        const baseline = process.env.NECONYAN_SCRATCHPAD_BASELINE_ROOT;
+        const reloadScratchpad = async () => {
+            await page.reload();
+            await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+            await page.evaluate(async avatar => (await import('/scripts/neconyan-conversation/chrome.js')).openConversationWorkspaceForAvatar(avatar), account.avatar);
+            await openScratchpad(page);
+            if (phone) await applyIOSOnlyCss(page);
+        };
+        if (baseline) {
+            await page.route('**/scripts/scratchpad/**', route => route.fulfill({ path: path.join(baseline, 'public', new URL(route.request().url()).pathname), contentType: 'text/javascript' }));
+            await page.route('**/css/neconyan-scratchpad.css*', route => route.fulfill({ path: path.join(baseline, 'public/css/neconyan-scratchpad.css'), contentType: 'text/css' }));
+            await reloadScratchpad();
+            await expect(page.locator('.scratchpad-code-block')).toHaveCount(2);
+            await page.locator('.scratchpad-code-block').first().scrollIntoViewIfNeeded();
+            await page.evaluate(() => window.toastr.clear());
+            await page.screenshot({ path: `../screenshots/copy-${size}-before.png` });
+            await page.unroute('**/scripts/scratchpad/**');
+            await page.unroute('**/css/neconyan-scratchpad.css*');
+            await reloadScratchpad();
+        }
         const assistant = page.locator('.scratchpad-message.is-assistant').last();
         const user = page.locator('.scratchpad-message.is-user').last();
         const blocks = assistant.locator('.scratchpad-code-block');
-        await expect(blocks).toHaveCount(2);
+        await expect(blocks).toHaveCount(4);
         await expect(user.locator('.scratchpad-copy')).toHaveCount(0);
         await expect(assistant.locator('.scratchpad-author .scratchpad-copy')).toHaveCount(0);
         for (const [index, draft] of drafts.entries()) {
             const block = blocks.nth(index);
-            const chip = block.getByRole('button', { name: 'Copy', exact: true });
+            const chip = block.getByRole('button', { name: 'Copy code', exact: true });
             await expect(chip).toHaveCount(1);
+            await expect(chip).toHaveText('');
             await chip.click();
             await expect.poll(() => page.evaluate(() => window.navigator.clipboard.readText())).toBe(draft);
             const box = await chip.boundingBox();
-            const blockBox = await block.boundingBox();
-            const codeBox = await block.locator('pre').boundingBox();
+            const codeBox = await block.locator('pre > code').boundingBox();
             expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
-            expect(Math.abs(box.x + box.width - blockBox.x - blockBox.width)).toBeLessThanOrEqual(2);
-            expect(box.y + box.height).toBeLessThanOrEqual(codeBox.y);
+            expect(Math.abs(box.x + box.width - codeBox.x - codeBox.width)).toBeLessThanOrEqual(6);
+            expect(box.y).toBeGreaterThanOrEqual(codeBox.y);
+            expect(box.y - codeBox.y).toBeLessThanOrEqual(6);
+            expect(box.y + box.height).toBeLessThanOrEqual(codeBox.y + codeBox.height);
         }
+        await blocks.first().scrollIntoViewIfNeeded();
+        await page.evaluate(() => window.toastr.clear());
+        await page.screenshot({ path: `../screenshots/copy-${size}-after.png` });
         // The overflow menu keeps copying the raw reply, change block included.
         await assistant.locator('.scratchpad-author summary[aria-label="Message actions"]').click();
         await assistant.locator('.scratchpad-message-actions').getByRole('button', { name: 'Copy', exact: true }).click();
         await expect.poll(() => page.evaluate(() => window.navigator.clipboard.readText())).toBe(reply);
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(phone ? 393 : 1280);
+        await checkImageControlContrast(page, ['.scratchpad-code-block .scratchpad-copy'], phone);
     });
 }
