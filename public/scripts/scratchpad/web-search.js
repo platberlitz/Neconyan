@@ -12,13 +12,13 @@ const PROVIDERS = [
 ];
 
 const MISSING = {
-    'off': () => t`Choose a provider, save, then turn on Web beside the message box.`,
-    'brave-key': () => t`Add a Brave Search API key, save, then turn on Web beside the message box.`,
-    'searxng-url': () => t`Add your SearXNG address, save, then turn on Web beside the message box.`,
-    'nanogpt-key': () => t`Add a NanoGPT API key, save, then turn on Web beside the message box.`,
-    'exa-key': () => t`Add an Exa API key, save, then turn on Web beside the message box.`,
-    'tavily-key': () => t`Add a Tavily API key, save, then turn on Web beside the message box.`,
-    'custom-url': () => t`Add your custom search address, save, then turn on Web beside the message box.`,
+    'off': () => t`Choose a provider, save, then turn on Web search in the + menu.`,
+    'brave-key': () => t`Add a Brave Search API key, save, then turn on Web search in the + menu.`,
+    'searxng-url': () => t`Add your SearXNG address, save, then turn on Web search in the + menu.`,
+    'nanogpt-key': () => t`Add a NanoGPT API key, save, then turn on Web search in the + menu.`,
+    'exa-key': () => t`Add an Exa API key, save, then turn on Web search in the + menu.`,
+    'tavily-key': () => t`Add a Tavily API key, save, then turn on Web search in the + menu.`,
+    'custom-url': () => t`Add your custom search address, save, then turn on Web search in the + menu.`,
 };
 
 export function setWebSearchToggle(button, { enabled = false, configured = false } = {}) {

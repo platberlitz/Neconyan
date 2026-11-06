@@ -10,6 +10,7 @@ import { readSharedBucketLocked, writeSharedBucketLocked } from './shared-sessio
 import { hasPendingImages, imagePart, imageChangeHash, normaliseStoredImages } from './image-state.js';
 import { normaliseStoredWebSearch } from './web-search-record.js';
 import { normalisePresetTargets } from '../../public/scripts/scratchpad/preset-fields.js';
+import { normaliseAttachments } from '../../public/scripts/scratchpad/attachment-data.js';
 
 export const SCRATCHPAD_SCHEMA = 1;
 export const ASSISTANT_IDS = BUILTIN_ASSISTANT_IDS;
@@ -291,6 +292,7 @@ function normaliseMessage(input, { allowInternalKeys = false } = {}) {
         text,
         created: typeof input.created === 'string' ? input.created.slice(0, 40) : now(),
     };
+    if (role === 'user' && input.attachments !== undefined) message.attachments = normaliseAttachments(input.attachments);
     if (role === 'assistant') {
         message.state = ['pending', 'done', 'failed'].includes(input.state) ? input.state : 'done';
         if (typeof input.jobId === 'string' && input.jobId.length <= 128) message.jobId = input.jobId;
@@ -720,7 +722,7 @@ export function updateMessage(bucket, sessionId, messageId, text) {
     const session = findSession(bucket, sessionId);
     const message = findMessage(session, messageId);
     if (message.state === 'pending' || hasPendingImages(message)) throw fail('SCRATCHPAD_REPLY_PENDING', 'Wait for the reply or image to finish before editing it.', 409);
-    if (typeof text !== 'string' || !text.trim()) throw fail('SCRATCHPAD_TEXT_REQUIRED', 'A message needs some text.');
+    if (typeof text !== 'string' || (!text.trim() && !message.attachments?.length)) throw fail('SCRATCHPAD_TEXT_REQUIRED', 'A message needs some text or an attachment.');
     if (byteLength(text) > (message.role === 'user' ? MAX_INPUT_BYTES : MAX_MESSAGE_BYTES)) throw fail('SCRATCHPAD_TEXT_TOO_LARGE', 'That message is too long.', 413);
     for (const [index, image] of Object.entries(message.images ?? {})) {
         const part = imagePart(text, index);

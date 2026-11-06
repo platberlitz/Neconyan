@@ -76,7 +76,7 @@ export const deleteMessage = (source, sessionId, messageId) => post('/message/de
 export const markProposal = (source, sessionId, messageId, index, state) => post('/proposal/mark', { source, sessionId, messageId, index, state });
 /** Retry an uncertain acceptance with its original identity and context. */
 export async function sendReply(body) {
-    const key = JSON.stringify([getCurrentUserHandle(), body.source?.kind, body.source?.key, body.sessionId, body.regenerate || '', body.text || '']);
+    const key = JSON.stringify([getCurrentUserHandle(), body.source?.kind, body.source?.key, body.sessionId, body.regenerate || '', body.text || '', body.attachments ?? []]);
     let request = unconfirmedSends.get(key);
     if (!request) {
         if (unconfirmedSends.size >= MAX_UNCONFIRMED_SENDS) {

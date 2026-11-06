@@ -31,9 +31,15 @@ for (const phone of [false, true]) {
         const composer = page.getByRole('textbox', { name: 'Message for Scratchpad', exact: true });
         const send = page.locator('.scratchpad-send');
         const web = page.locator('.scratchpad-web-toggle');
+        const plus = page.locator('.scratchpad-plus');
         await expect(composer).toBeEnabled();
         await expectIconButton(send, 'Send', 'fa-paper-plane');
-        await expectIconButton(web, 'Set up web search in Context', 'fa-globe');
+        await expectIconButton(plus, 'Message options', 'fa-plus');
+        await plus.click();
+        await expect(web).toHaveAccessibleName('Set up web search in Context');
+        await expect(web).toHaveText('Web search');
+        await page.keyboard.press('Escape');
+        await expect(plus).toBeFocused();
         await expect(web).toHaveAttribute('aria-pressed', 'false');
         const row = await page.locator('.scratchpad-compose-row').boundingBox();
         expect((await composer.boundingBox()).width, 'The message gets all space beyond two 44px buttons and two 8px gaps').toBeCloseTo(row.width - 104, 1);

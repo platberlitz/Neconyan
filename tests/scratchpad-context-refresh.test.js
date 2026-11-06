@@ -153,11 +153,13 @@ describe('Scratchpad Context refresh lifecycle', () => {
         const chat = { kind: 'roleplay', key: 'chat' };
         const bucket = (source, id) => ({ source, activeSessionId: id, sessions: [{ id, messages: [] }] });
         const app = { source: general, bucket: bucket(general, 'general-session'), ticket: 0, contextKey: '', tab: 'chat', openSwipes: new Set(),
-            openMenus: new Set(), openMenusSessionId: '', drafts: new Map(), draftKey: JSON.stringify(['general', 'general', 'general-session']), el: { composer: { value: 'GENERAL-DRAFT' } } };
+            openMenus: new Set(), openMenusSessionId: '', drafts: new Map(), attachments: [{ name: 'general.txt' }], attachmentDrafts: new Map(),
+            draftOwner: 'first', draftKey: JSON.stringify(['general', 'general', 'general-session']), el: { composer: { value: 'GENERAL-DRAFT' } } };
+        let owner = 'first';
         let live = general;
         const requests = [];
         const runtime = vm.createContext({ app, sameSourceBucket, sameSourceContext, PICK_PAGE: 30,
-            currentSource: () => live, stopWatchers() {}, syncWatchers() {}, reportError: error => { throw error; },
+            currentSource: () => live, getCurrentUserHandle: () => owner, stopWatchers() {}, syncWatchers() {}, closeComposeMenu() {}, reportError: error => { throw error; },
             t: parts => parts.join(''), api: { readBucket: source => new Promise(resolve => requests.push({ source, resolve })) }, wireSource: value => value,
             render() { runtime.syncDraft(); },
         });
@@ -166,6 +168,7 @@ describe('Scratchpad Context refresh lifecycle', () => {
         live = chat;
         runtime.checkSource();
         expect(app.el.composer.value).toBe('');
+        expect(app.attachments).toEqual([]);
         live = general;
         runtime.checkSource();
         requests[0].resolve({ bucket: bucket(chat, 'chat-session') });
@@ -174,12 +177,19 @@ describe('Scratchpad Context refresh lifecycle', () => {
         requests[1].resolve({ bucket: bucket(general, 'general-session') });
         for (let i = 0; i < 6; i++) await Promise.resolve();
         expect(app.el.composer.value).toBe('GENERAL-DRAFT');
+        expect(app.attachments).toEqual([{ name: 'general.txt' }]);
         expect(app.bucket.source.kind).toBe('general');
         live = { ...general, avatar: 'Nova.png', personaId: 'Other.png' };
         runtime.checkSource();
         expect(app.el.composer.value).toBe('GENERAL-DRAFT');
         expect(app.bucket.activeSessionId).toBe('general-session');
         expect(app.source).toBe(live);
+        owner = 'second';
+        runtime.syncDraft({ carry: true });
+        expect(app.attachments).toEqual([]);
+        expect(app.el.composer.value).toBe('');
+        expect(app.attachmentDrafts.size).toBe(0);
+        expect(app.drafts.size).toBe(0);
     });
     test('General card and persona changes redraw context without replacing its list or draft, rejecting delayed old notes', async () => {
         const f = fixture();
@@ -378,6 +388,8 @@ describe('Scratchpad Context refresh lifecycle', () => {
             updateMessageTokenCounts() {},
             renderReply: (_session, message) => node('div', { class: 'scratchpad-reply', text: message.text }),
             renderWebSearchSources: () => null,
+            renderAttachments: () => [],
+            closeComposeMenu() {},
             renderMessageActions: () => node('div', { class: 'scratchpad-message-actions' }, node('button', { title: 'Try again' })),
             renderHeader() {},
             renderOverview() {},

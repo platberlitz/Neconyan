@@ -1,4 +1,5 @@
 import { randomInt } from 'node:crypto';
+import { normaliseAttachments } from '../../public/scripts/scratchpad/attachment-data.js';
 import { normalisePresetTargets } from '../../public/scripts/scratchpad/preset-fields.js';
 import { runChatProfile, validateActiveGenerationContext } from '../generation/service.js';
 import { createMessageTokenCounter } from '../generation/message-token-counts.js';
@@ -47,7 +48,8 @@ export const SCRATCHPAD_JOB_TYPE = 'scratchpad.reply';
 const MAX_CONTEXT_BYTES = 1536 * 1024;
 const MAX_HELP_BYTES = 96 * 1024;
 const MAX_HISTORY_MESSAGES = 50;
-const MAX_HISTORY_BYTES = 512 * 1024;
+const MAX_HISTORY_BYTES = 3 * 1024 * 1024;
+const MAX_HISTORY_TEXT_BYTES = 512 * 1024;
 const MAX_HISTORY_MESSAGE_BYTES = 128 * 1024;
 const PREPARE_TIMEOUT_MS = 60 * 1000;
 
@@ -91,14 +93,16 @@ export function normaliseReplyRequest(body = {}) {
     const source = normaliseSource(body.source);
     const sessionId = requireId(body.sessionId, 'session');
     const regenerate = body.regenerate ? requireId(body.regenerate, 'reply') : null;
-    const text = regenerate ? '' : boundedText(body.text, MAX_INPUT_BYTES, 'The message', { required: true });
-    if (!regenerate && !text.trim()) throw fail('SCRATCHPAD_TEXT_REQUIRED', 'Write a message first.');
+    const attachments = regenerate ? [] : normaliseAttachments(body.attachments);
+    const text = regenerate ? '' : boundedText(body.text, MAX_INPUT_BYTES, 'The message');
+    if (!regenerate && !text.trim() && !attachments.length) throw fail('SCRATCHPAD_TEXT_REQUIRED', 'Write a message or attach a file first.');
     return {
         submissionKey,
         source,
         sessionId,
         regenerate,
         text,
+        attachments,
         context: boundedText(body.context, MAX_CONTEXT_BYTES, 'The shared context'),
         help: boundedText(body.help, MAX_HELP_BYTES, 'The help reference'),
         capabilities: normaliseCapabilities(body.capabilities, source.kind, source),
@@ -117,16 +121,19 @@ function historyFrom(messages) {
     const usable = messages.filter(message => message.role === 'user' || (message.state === 'done' && message.text.trim()));
     const history = [];
     let total = 0;
+    let textTotal = 0;
     for (let index = usable.length - 1; index >= 0 && history.length < MAX_HISTORY_MESSAGES; index--) {
         const text = clipBytes(usable[index].text, MAX_HISTORY_MESSAGE_BYTES);
-        const size = bytes(text);
-        if (total + size > MAX_HISTORY_BYTES) break;
+        const attachments = usable[index].attachments ?? [];
+        const size = bytes(text) + (attachments.length ? bytes(JSON.stringify(attachments)) : 0);
+        if (total + size > MAX_HISTORY_BYTES || textTotal + bytes(text) > MAX_HISTORY_TEXT_BYTES) break;
         total += size;
+        textTotal += bytes(text);
         const images = Object.entries(usable[index].images ?? {}).map(([proposal, image]) =>
             `[Server image status: ${image.target === 'avatar' ? `portrait for ${image.characterName || 'shared character'}` : 'image'}; ${image.state === 'done'
                 ? usable[index].proposals?.[proposal] === 'applied' ? 'image saved and avatar replacement approved' : 'image saved; no avatar replacement performed' : image.state}.]`).join('\n');
         const webSources = usable[index].role === 'assistant' && usable[index].state === 'done' ? webSearchHistoryLine(usable[index].webSearch) : '';
-        history.unshift({ role: usable[index].role, text: [text, webSources, images].filter(Boolean).join('\n'), ...(usable[index].assistant ? { assistant: usable[index].assistant, assistantName: usable[index].assistantName } : {}) });
+        history.unshift({ role: usable[index].role, text: [text, webSources, images].filter(Boolean).join('\n'), ...(attachments.length ? { attachments } : {}), ...(usable[index].assistant ? { assistant: usable[index].assistant, assistantName: usable[index].assistantName } : {}) });
     }
     while (history.length && history[0].role !== 'user') history.shift();
     return history;
@@ -141,7 +148,7 @@ export function planReply(session, request, chooseIndex = randomInt) {
         const assistants = session.settings.roundTable && session.settings.randomReply
             ? [participants[chooseIndex(participants.length)]] : participants;
         if (messages.length + 1 + assistants.length > MAX_MESSAGES) throw fail('SCRATCHPAD_SESSION_FULL', 'This session is full. Start a new session to keep talking.', 409);
-        return { prompt: request.text, history: historyFrom(messages), replace: null, assistants };
+        return { prompt: request.text, attachments: request.attachments ?? [], history: historyFrom(messages), replace: null, assistants };
     }
     const userIndex = messages.findLastIndex(message => message.role === 'user');
     const replyIndex = messages.findIndex(message => message.id === request.regenerate && message.role === 'assistant');
@@ -154,7 +161,7 @@ export function planReply(session, request, chooseIndex = randomInt) {
         throw fail('SCRATCHPAD_REGENERATE_INVALID', request.source.kind === 'general'
             ? 'Return to the original Scratchpad context before trying this reply again.' : 'Open the original chat before trying this reply again.', 409);
     }
-    return { prompt: messages[userIndex].text, history: historyFrom(messages.slice(0, userIndex)), replace: reply.id, assistants: [reply.assistant || session.assistant] };
+    return { prompt: messages[userIndex].text, attachments: messages[userIndex].attachments ?? [], history: historyFrom(messages.slice(0, userIndex)), replace: reply.id, assistants: [reply.assistant || session.assistant] };
 }
 
 function existingSubmission(directories, owner, request, requestHash) {
@@ -179,6 +186,7 @@ export async function acceptScratchpadReply(request, body = {}) {
     const { directories, owner } = base;
     const input = normaliseReplyRequest(body);
     const requestHash = hash({ source: input.source, sessionId: input.sessionId, regenerate: input.regenerate, text: input.text,
+        ...(input.attachments.length ? { attachments: input.attachments } : {}),
         context: input.context, help: input.help, capabilities: input.capabilities, names: input.names, chatProfileId: input.chatProfileId, genders: input.genders,
         ...(input.targets !== undefined ? { targets: input.targets } : {}) });
     const duplicate = existingSubmission(directories, owner, input, requestHash);
@@ -220,10 +228,13 @@ export async function acceptScratchpadReply(request, body = {}) {
         const system = buildScratchpadSystemPrompt({ ...speaker, assistantNames: planned.assistantNames, userName: input.names.user, participants: planned.participants, randomReply: planned.randomReply,
             characterName: input.names.character, sourceKind: input.source.kind, webSearch: Boolean(planned.webSearch),
             capabilities: { ...input.capabilities, persona: planned.sharedPersona, preset: planned.sharedPreset, image: Boolean(images), avatar: Boolean(images && planned.targets.length), notebook: Boolean(planned.notebook.text) }, help: input.help });
-        const messages = buildScratchpadMessages({ system: system.text, context: input.context, notebookContext: planned.notebook.text, history: planned.history, text: planned.prompt, assistant: speaker.assistant, assistantNames: planned.assistantNames,
+        const messages = buildScratchpadMessages({ system: system.text, context: input.context, notebookContext: planned.notebook.text, history: planned.history, text: planned.prompt, attachments: planned.attachments, assistant: speaker.assistant, assistantNames: planned.assistantNames,
             webSearchPlaceholder: planned.webSearch ? WEB_SEARCH_PLACEHOLDER : '' });
         const rawOptions = binding.kind === 'active' ? { trimNames: false } : {};
         const preparedMessages = !binding.backend || binding.backend === 'chat';
+        if (!preparedMessages && messages.some(message => Array.isArray(message.content))) {
+            throw fail('SCRATCHPAD_IMAGE_CONNECTION', 'Images need a Chat Completion connection with an image-capable model. Choose one in Context before sending.');
+        }
         const names = { user: input.names.user, char: system.persona.name };
         await validateActiveGenerationContext(resolveGenerationProfile(directories, binding), scratchpadMacroEnvironment(names, messages),
             messages, rawOptions, { maxTokens: planned.maxTokens, preparedMessages });
@@ -232,6 +243,10 @@ export async function acceptScratchpadReply(request, body = {}) {
             searchIndex: planned.webSearch ? messages.length - 2 : -1,
             functionTools: preparedMessages ? scratchpadCharacterTools() : [] };
     }));
+    const savedRequest = { source: input.source, sessionId: input.sessionId, ...(replies.length === 1 ? replies[0] : { replies }) };
+    if (bytes(JSON.stringify(savedRequest)) > 15 * 1024 * 1024) {
+        throw fail('SCRATCHPAD_ATTACHMENTS_TOO_LARGE', 'This reply has too much attached content. Send fewer files, share less context or start a new session.', 413);
+    }
     const { job, created } = acceptJob(directories, {
         owner,
         type: SCRATCHPAD_JOB_TYPE,
@@ -268,7 +283,7 @@ export async function acceptScratchpadReply(request, body = {}) {
             const created = new Date().toISOString();
             const contextSource = Object.fromEntries(Object.entries(input.source).filter(([key]) => key !== 'scope'));
             const shared = input.source.kind === 'general' && input.capabilities.character ? { sharedAvatar: input.source.avatar } : {};
-            if (!input.regenerate) session.messages.push({ id: newScratchpadId(), role: 'user', text: input.text, created, contextSource });
+            if (!input.regenerate) session.messages.push({ id: newScratchpadId(), role: 'user', text: input.text, ...(input.attachments.length ? { attachments: input.attachments } : {}), created, contextSource });
             const pending = replies.map(reply => ({ id: reply.replyId, role: 'assistant', text: '', created, contextSource, ...shared,
                 targets: planned.targets, sharedPersona: planned.sharedPersona, sharedPreset: planned.sharedPreset, imageNames: input.names, imagePersonaId: planned.imagePersonaId,
                 state: 'pending', jobId: job.id, assistant: reply.assistant, assistantName: reply.characterName, gender: reply.gender }));
@@ -279,8 +294,7 @@ export async function acceptScratchpadReply(request, body = {}) {
             writeBucketLocked(lease, current);
             return publicBucket(current);
         });
-        writeArtifact(directories, job.id, 'request', { source: input.source, sessionId: input.sessionId,
-            ...(replies.length === 1 ? replies[0] : { replies }) });
+        writeArtifact(directories, job.id, 'request', savedRequest);
     } catch (error) {
         requestCancellation(directories, job.id, { reason: 'scratchpad-preparation-failed' });
         updateJob(directories, job.id, current => ['cancelled', 'completed', 'failed'].includes(current.state) ? current : {

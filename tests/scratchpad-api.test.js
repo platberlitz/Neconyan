@@ -56,6 +56,19 @@ test('an unresolved request is not reused for a different account', async () => 
     expect(fetchMock.mock.calls[1][1].headers['X-Neconyan-Account']).toBe('other');
 });
 
+test('an uncertain send keeps its files but does not replace a later selection', async () => {
+    const first = { ...request(), attachments: [{ name: 'notes.txt', kind: 'text', size: 3, text: 'old' }] };
+    fetchMock.mockRejectedValueOnce(new Error('Offline'));
+    await expect(sendReply(first)).rejects.toThrow();
+    const next = { ...first, submissionKey: 'different-files', attachments: [{ ...first.attachments[0], text: 'new' }] };
+    fetchMock.mockResolvedValueOnce(Response.json(receipt(next)));
+    await sendReply(next);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual(next);
+    fetchMock.mockResolvedValueOnce(Response.json(receipt(first)));
+    await sendReply({ ...first, submissionKey: 'retry-files', context: 'changed' });
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual(first);
+});
+
 test.each(['network', 'server', 'unreadable'])('a lost image %s acceptance retains its exact original submission and acknowledgement', async failure => {
     const body = { submissionKey: `image-${++sequence}`, source: { kind: 'general', key: 'general', avatar: 'Nova.png' },
         sessionId: `session-${sequence}`, messageId: 'reply', index: 0, acknowledgement: { settingsRevision: 7 } };
